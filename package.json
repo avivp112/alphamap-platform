@@ -66,9 +66,11 @@
     "vaul": "1.1.2"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.54.0",
     "@tailwindcss/vite": "4.1.12",
     "@vitejs/plugin-react": "4.7.0",
     "tailwindcss": "4.1.12",
+    "tsx": "^4.19.4",
     "vite": "6.3.5"
   },
   "peerDependencies": {
