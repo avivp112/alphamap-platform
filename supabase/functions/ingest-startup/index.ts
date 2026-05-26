@@ -6,35 +6,36 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const VALID_STAGES = [
-  "Pre-Seed", "Seed", "Series A", "Series B", "Series C+",
-  "Growth", "Bootstrapped", "Acquired",
+// Must match the CHECK constraint in funding_rounds.round_type
+const VALID_ROUND_TYPES = [
+  "Pre-Seed", "Seed",
+  "Series A", "Series B", "Series C", "Series D", "Series E+",
+  "Growth", "Bridge", "Convertible Note",
+  "Bootstrapped", "Grant", "Acquired", "IPO", "Other",
 ] as const;
-type ValidStage = typeof VALID_STAGES[number];
+type ValidRoundType = typeof VALID_ROUND_TYPES[number];
 
-function cleanDomain(url: string): string | null {
-  if (!url) return null;
-  try {
-    const withProtocol = url.startsWith("http") ? url : `https://${url}`;
-    return new URL(withProtocol).hostname.replace(/^www\./, "").toLowerCase();
-  } catch {
-    return null;
-  }
-}
+// Public companies (IPO'd) are excluded from the startups page
+const EXCLUDED_ROUND_TYPES = new Set(["IPO"]);
 
-function normalizeStage(raw: string): string {
-  if (!raw) return "Unknown";
+function normalizeRoundType(raw: string): string {
+  if (!raw) return "Other";
   const s = raw.toLowerCase().trim();
   if (/pre.?seed/.test(s)) return "Pre-Seed";
   if (/\bseed\b/.test(s) && !/series/.test(s)) return "Seed";
   if (/series\s*a\b/.test(s)) return "Series A";
   if (/series\s*b\b/.test(s)) return "Series B";
-  if (/series\s*[c-z+]/.test(s) || /late.?stage/.test(s)) return "Series C+";
-  if (/\bgrowth\b/.test(s) || /expansion/.test(s) || /pre.?ipo/.test(s)) return "Growth";
+  if (/series\s*c\b/.test(s)) return "Series C";
+  if (/series\s*d\b/.test(s)) return "Series D";
+  if (/series\s*[e-z+]/.test(s) || /late.?stage/.test(s)) return "Series E+";
+  if (/\bgrowth\b/.test(s) || /expansion/.test(s)) return "Growth";
+  if (/bridge/.test(s)) return "Bridge";
+  if (/convertible/.test(s) || /\bsafe\b/.test(s) || /\bnote\b/.test(s)) return "Convertible Note";
   if (/bootstrap/.test(s)) return "Bootstrapped";
+  if (/\bgrant\b/.test(s)) return "Grant";
   if (/acqui/.test(s) || /merg/.test(s)) return "Acquired";
-  if (/\bipo\b/.test(s) || /\bpublic\b/.test(s) || /nyse|nasdaq/.test(s)) return "Public";
-  return "Unknown";
+  if (/\bipo\b/.test(s) || /\bpublic\b/.test(s) || /nyse|nasdaq/.test(s)) return "IPO";
+  return "Other";
 }
 
 async function tavilySearch(query: string, apiKey: string): Promise<string> {
@@ -86,76 +87,98 @@ Deno.serve(async (req: Request) => {
     const anthropic = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
     const tavilyKey = Deno.env.get("TAVILY_API_KEY")!;
 
-    // Phase 1: Parallel web research
+    // ── Phase 1: Parallel web research ──────────────────────────────────────
     console.log(`[ingest] Researching: ${name}`);
     const [funding, team, market, hiringJobs, hiringNews] = await Promise.all([
-      tavilySearch(`"${name}" startup valuation total raised funding round 2024 2025`, tavilyKey),
+      tavilySearch(`"${name}" startup funding round amount raised valuation 2024 2025`, tavilyKey),
       tavilySearch(`"${name}" founders CEO CTO co-founder founding team crunchbase angellist`, tavilyKey),
-      tavilySearch(`"${name}" company website industry sector description startup`, tavilyKey),
-      // LinkedIn workaround: search job boards that aggregate LinkedIn postings
-      tavilySearch(
-        `"${name}" jobs hiring site:greenhouse.io OR site:lever.co OR site:ashby.io OR site:wellfound.com`,
-        tavilyKey,
-      ),
-      // Headcount signals from news + LinkedIn snippets Tavily can index
-      tavilySearch(`"${name}" employees headcount team size linkedin layoffs hiring 2024 2025`, tavilyKey),
+      tavilySearch(`"${name}" company website headquarters country city industry description`, tavilyKey),
+      tavilySearch(`"${name}" jobs hiring site:greenhouse.io OR site:lever.co OR site:ashby.io OR site:wellfound.com`, tavilyKey),
+      tavilySearch(`"${name}" employees headcount team size layoffs hiring growth 2024 2025`, tavilyKey),
     ]);
 
-    const researchContext = `## Funding & Valuation\n${funding}\n\n## Founding Team\n${team}\n\n## Company Overview\n${market}\n\n## Hiring (Job Boards)\n${hiringJobs}\n\n## Workforce Trends\n${hiringNews}`;
+    const researchContext = [
+      `## Funding & Valuation\n${funding}`,
+      `## Founding Team\n${team}`,
+      `## Company Overview & HQ Location\n${market}`,
+      `## Hiring (Job Boards)\n${hiringJobs}`,
+      `## Workforce Trends\n${hiringNews}`,
+    ].join("\n\n");
 
-    // Phase 2: Claude extraction with structured tool_use
-    console.log(`[ingest] Extracting data via Claude`);
+    // ── Phase 2: Claude extraction ───────────────────────────────────────────
+    console.log(`[ingest] Extracting via Claude`);
     const msg = await anthropic.messages.create({
       model: "claude-opus-4-7",
       max_tokens: 2048,
       tools: [
         {
           name: "save_startup",
-          description: "Save structured, validated startup data into AlphaMap",
+          description: "Save a validated startup and its latest funding round into AlphaMap",
           input_schema: {
             type: "object" as const,
             properties: {
-              name: { type: "string", description: "Official company name" },
-              tagline: { type: "string", description: "One-line company pitch" },
-              description: { type: "string", description: "2-3 sentence company overview" },
-              industry: { type: "string", description: "Primary sector e.g. FinTech, HealthTech, AI, SaaS, CleanTech" },
-              stage: {
+              // ── startups table ─────────────────────────────────────────────
+              name: {
                 type: "string",
-                enum: ["Pre-Seed", "Seed", "Series A", "Series B", "Series C+", "Growth", "Bootstrapped", "Acquired", "Public", "Unknown"],
-                description: "Current or most recent funding stage",
+                description: "Official company name",
               },
-              website: { type: "string", description: "Full website URL including https://" },
-              linkedin_url: { type: "string", description: "Full LinkedIn company page URL" },
-              valuation_usd: { type: "number", description: "Last known valuation in USD as a plain number (e.g. 1500000000 for $1.5B)" },
-              total_raised_usd: { type: "number", description: "Total capital raised in USD as a plain number" },
-              founding_year: { type: "integer", description: "Year founded" },
-              location: { type: "string", description: "Headquarters: City, Country" },
-              employee_count: { type: "integer", description: "Current approximate headcount" },
-              last_funding_date: { type: "string", description: "Date of latest funding round in YYYY-MM-DD" },
-              founders: {
-                type: "array",
-                description: "Founding team members",
-                items: {
-                  type: "object",
-                  properties: {
-                    name: { type: "string" },
-                    title: { type: "string" },
-                    linkedin: { type: "string" },
-                  },
-                  required: ["name"],
-                },
-              },
-              hiring_trend: {
+              website: {
                 type: "string",
-                enum: ["Growing", "Stable", "Shrinking", "Unknown"],
-                description: "Growing = active job postings or headcount increase; Shrinking = layoffs or cuts reported; Stable = flat; Unknown = no data",
+                description: "Full canonical website URL including https://",
               },
-              data_confidence: {
+              description: {
+                type: "string",
+                description: "2-3 sentence company overview",
+              },
+              industry: {
+                type: "string",
+                description: "Primary sector e.g. FinTech, HealthTech, AI, SaaS, CleanTech, EdTech",
+              },
+              founded_year: {
+                type: "integer",
+                description: "Four-digit year the company was founded",
+              },
+              employee_count: {
+                type: "integer",
+                description: "Current approximate headcount",
+              },
+              country: {
+                type: "string",
+                description: "Country of headquarters e.g. United States, Israel, United Kingdom",
+              },
+              city: {
+                type: "string",
+                description: "City of headquarters e.g. San Francisco, Tel Aviv, London",
+              },
+              // ── funding_rounds table ───────────────────────────────────────
+              round_type: {
+                type: "string",
+                enum: [
+                  "Pre-Seed", "Seed",
+                  "Series A", "Series B", "Series C", "Series D", "Series E+",
+                  "Growth", "Bridge", "Convertible Note",
+                  "Bootstrapped", "Grant", "Acquired", "IPO", "Other",
+                ],
+                description: "Type of the most recent funding round",
+              },
+              amount_raised: {
                 type: "number",
-                description: "Overall confidence 0.0-1.0: how many key fields (valuation, team, stage) could you verify from sources",
+                description: "Capital raised in the most recent round, in USD as a plain number (e.g. 50000000 for $50M)",
+              },
+              valuation: {
+                type: "number",
+                description: "Post-money valuation at most recent round, in USD as a plain number (e.g. 1500000000 for $1.5B)",
+              },
+              announcement_date: {
+                type: "string",
+                description: "Date the most recent funding round was announced, in YYYY-MM-DD format",
+              },
+              source_url: {
+                type: "string",
+                description: "URL of the primary source for the funding data (press release, TechCrunch, Crunchbase, etc.)",
               },
             },
-            required: ["name", "stage"],
+            required: ["name", "round_type"],
           },
         },
       ],
@@ -163,16 +186,18 @@ Deno.serve(async (req: Request) => {
       messages: [
         {
           role: "user",
-          content: `You are a financial data analyst for AlphaMap, a market intelligence platform.
+          content: `You are a financial data analyst for AlphaMap, a market intelligence platform tracking private companies.
 
 Extract accurate, source-verified information for: "${name}"
 
 Rules:
 - Convert all financial figures to plain USD numbers ($1.5B → 1500000000, $50M → 50000000)
-- Only include website/linkedin if you are confident the URL is correct
-- For hiring_trend: check job board counts and news about headcount
-- Set data_confidence based on what you actually verified (1.0 = all key fields sourced, 0.3 = mostly inferred)
-- If the company is publicly traded (post-IPO), set stage to "Public" — they will be excluded
+- Split location into separate city and country fields
+- Only include website if you are confident the URL is correct
+- round_type must reflect the MOST RECENT funding event
+- If the company has gone public (IPO'd), set round_type to "IPO" — it will be excluded
+- Only include funding fields (amount_raised, valuation, announcement_date, source_url) if you can verify them from sources
+- Omit any field you cannot verify rather than guessing
 
 Research data:
 ${researchContext}`,
@@ -186,77 +211,109 @@ ${researchContext}`,
     }
     const extracted = toolBlock.input as Record<string, unknown>;
 
-    // Phase 3: Validation gate
+    // ── Phase 3: Validation gate ─────────────────────────────────────────────
     const finalName = String(extracted.name || "").trim();
     if (!finalName) {
-      return Response.json({ error: "Extracted company name is empty" }, { status: 422, headers: corsHeaders });
-    }
-
-    const stage = normalizeStage(String(extracted.stage || ""));
-    if (!VALID_STAGES.includes(stage as ValidStage)) {
       return Response.json(
-        {
-          error: `Stage "${extracted.stage}" (normalized: "${stage}") is not in the allowed list`,
-          reason: stage === "Public" ? "Public/post-IPO companies are excluded from AlphaMap startups" : "Stage not recognized",
-          allowed_stages: VALID_STAGES,
-        },
+        { error: "Extracted company name is empty" },
         { status: 422, headers: corsHeaders },
       );
     }
 
-    const domain = extracted.website ? cleanDomain(String(extracted.website)) : null;
-    if (domain) {
+    const roundType = normalizeRoundType(String(extracted.round_type || ""));
+    if (EXCLUDED_ROUND_TYPES.has(roundType)) {
+      return Response.json(
+        {
+          error: `"${finalName}" appears to be a public company (round_type: "${roundType}")`,
+          reason: "Post-IPO companies are excluded from AlphaMap startups",
+        },
+        { status: 422, headers: corsHeaders },
+      );
+    }
+    if (!VALID_ROUND_TYPES.includes(roundType as ValidRoundType)) {
+      return Response.json(
+        { error: `round_type "${roundType}" is not in the allowed list`, allowed: VALID_ROUND_TYPES },
+        { status: 422, headers: corsHeaders },
+      );
+    }
+
+    // Website uniqueness check (matches the UNIQUE constraint on startups.website)
+    const website = extracted.website ? String(extracted.website).trim() : null;
+    if (website) {
       const { data: dup } = await supabase
         .from("startups")
         .select("id, name")
-        .eq("domain", domain)
+        .eq("website", website)
         .maybeSingle();
       if (dup) {
         return Response.json(
-          { error: `Domain "${domain}" already exists for: ${dup.name}`, existing_id: dup.id },
+          { error: `Website "${website}" already exists for: ${dup.name}`, existing_id: dup.id },
           { status: 409, headers: corsHeaders },
         );
       }
     }
 
-    // Phase 4: Insert
-    const record = {
-      id: crypto.randomUUID(),
+    // ── Phase 4a: Insert into startups ───────────────────────────────────────
+    const startupRecord = {
       name: finalName,
-      tagline: extracted.tagline ?? null,
-      description: extracted.description ?? null,
-      industry: extracted.industry ?? null,
-      stage,
-      website: extracted.website ?? null,
-      domain,
-      linkedin_url: extracted.linkedin_url ?? null,
-      valuation_usd: extracted.valuation_usd ?? null,
-      total_raised_usd: extracted.total_raised_usd ?? null,
-      founding_year: extracted.founding_year ?? null,
-      location: extracted.location ?? null,
-      employee_count: extracted.employee_count ?? null,
-      last_funding_date: extracted.last_funding_date ?? null,
-      founders: extracted.founders ?? null,
-      hiring_trend: extracted.hiring_trend ?? "Unknown",
-      data_confidence: extracted.data_confidence ?? null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      website: website ?? null,
+      description: extracted.description ? String(extracted.description) : null,
+      industry: extracted.industry ? String(extracted.industry) : null,
+      founded_year: extracted.founded_year ? Number(extracted.founded_year) : null,
+      employee_count: extracted.employee_count ? Number(extracted.employee_count) : null,
+      country: extracted.country ? String(extracted.country) : null,
+      city: extracted.city ? String(extracted.city) : null,
     };
 
-    const { data: inserted, error: insertError } = await supabase
+    const { data: insertedStartup, error: startupError } = await supabase
       .from("startups")
-      .insert(record)
+      .insert(startupRecord)
       .select()
       .single();
 
-    if (insertError) throw insertError;
+    if (startupError) throw startupError;
 
-    console.log(`[ingest] ✓ ${finalName} (${stage}) confidence=${extracted.data_confidence}`);
+    // ── Phase 4b: Insert into funding_rounds (linked by startup_id) ──────────
+    const hasFundingData =
+      extracted.amount_raised ||
+      extracted.valuation ||
+      extracted.announcement_date ||
+      extracted.source_url;
+
+    let insertedRound = null;
+    if (hasFundingData) {
+      const roundRecord = {
+        startup_id: insertedStartup.id,
+        round_type: roundType,
+        amount_raised: extracted.amount_raised ? Number(extracted.amount_raised) : null,
+        valuation: extracted.valuation ? Number(extracted.valuation) : null,
+        announcement_date: extracted.announcement_date ? String(extracted.announcement_date) : null,
+        source_url: extracted.source_url ? String(extracted.source_url) : null,
+      };
+
+      const { data: round, error: roundError } = await supabase
+        .from("funding_rounds")
+        .insert(roundRecord)
+        .select()
+        .single();
+
+      if (roundError) {
+        // Startup was inserted successfully; log the round failure but don't roll back
+        console.error(`[ingest] funding_rounds insert failed for ${finalName}:`, roundError.message);
+      } else {
+        insertedRound = round;
+      }
+    }
+
+    console.log(
+      `[ingest] ✓ ${finalName} | round: ${roundType} | city: ${extracted.city ?? "—"}, country: ${extracted.country ?? "—"}`,
+    );
+
     return Response.json(
       {
         success: true,
-        startup: inserted,
-        meta: { stage_normalized: stage !== extracted.stage, domain_checked: !!domain, data_confidence: extracted.data_confidence },
+        startup: insertedStartup,
+        funding_round: insertedRound,
       },
       { headers: corsHeaders },
     );
