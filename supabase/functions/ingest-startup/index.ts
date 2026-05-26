@@ -15,8 +15,22 @@ const VALID_ROUND_TYPES = [
 ] as const;
 type ValidRoundType = typeof VALID_ROUND_TYPES[number];
 
-// Public companies (IPO'd) are excluded from the startups page
+// IPO round_type triggers the public-company gate (belt-and-suspenders alongside is_public_company)
 const EXCLUDED_ROUND_TYPES = new Set(["IPO"]);
+
+// Tech sectors that are allowed. Anything not clearly tech → rejected.
+const TECH_INDUSTRIES = new Set([
+  "Software", "SaaS", "AI", "Artificial Intelligence", "Machine Learning",
+  "Data", "Analytics", "Cybersecurity", "FinTech", "Financial Technology",
+  "Biotech", "Biotechnology", "MedTech", "HealthTech", "Digital Health",
+  "Hardware", "Semiconductors", "Electronics", "EdTech", "CleanTech",
+  "GreenTech", "SpaceTech", "Aerospace", "AgTech", "PropTech",
+  "MarTech", "AdTech", "LegalTech", "HRTech", "WorkTech",
+  "LogTech", "Supply Chain Tech", "DeepTech", "Robotics", "Automation",
+  "Gaming", "Game Tech", "AR/VR", "Web3", "Blockchain", "Crypto",
+  "Cloud", "DevTools", "Infrastructure", "Developer Tools", "API",
+  "InsurTech", "RegTech", "Quantum Computing", "Drones", "IoT",
+]);
 
 function normalizeRoundType(raw: string): string {
   if (!raw) return "Other";
@@ -89,19 +103,21 @@ Deno.serve(async (req: Request) => {
 
     // ── Phase 1: Parallel web research ──────────────────────────────────────
     console.log(`[ingest] Researching: ${name}`);
-    const [funding, team, market, hiringJobs, hiringNews] = await Promise.all([
+    const [funding, founders, market, status, hiringNews] = await Promise.all([
       tavilySearch(`"${name}" startup funding round amount raised valuation 2024 2025`, tavilyKey),
-      tavilySearch(`"${name}" founders CEO CTO co-founder founding team crunchbase angellist`, tavilyKey),
-      tavilySearch(`"${name}" company website headquarters country city industry description`, tavilyKey),
-      tavilySearch(`"${name}" jobs hiring site:greenhouse.io OR site:lever.co OR site:ashby.io OR site:wellfound.com`, tavilyKey),
+      // Dedicated founders search — full names are required
+      tavilySearch(`"${name}" founder co-founder "founded by" CEO CTO full name crunchbase linkedin`, tavilyKey),
+      tavilySearch(`"${name}" company website headquarters country city industry sector description what does`, tavilyKey),
+      // Explicit public/private status search to help Claude assess the privacy rule
+      tavilySearch(`"${name}" IPO "went public" NASDAQ NYSE "publicly traded" OR "private company" OR "privately held"`, tavilyKey),
       tavilySearch(`"${name}" employees headcount team size layoffs hiring growth 2024 2025`, tavilyKey),
     ]);
 
     const researchContext = [
       `## Funding & Valuation\n${funding}`,
-      `## Founding Team\n${team}`,
+      `## Founders & Leadership\n${founders}`,
       `## Company Overview & HQ Location\n${market}`,
-      `## Hiring (Job Boards)\n${hiringJobs}`,
+      `## Public vs Private Status\n${status}`,
       `## Workforce Trends\n${hiringNews}`,
     ].join("\n\n");
 
@@ -113,10 +129,21 @@ Deno.serve(async (req: Request) => {
       tools: [
         {
           name: "save_startup",
-          description: "Save a validated startup and its latest funding round into AlphaMap",
+          description: "Save a validated private tech startup and its latest funding round into AlphaMap",
           input_schema: {
             type: "object" as const,
             properties: {
+              // ── Classification flags (checked first in validation) ──────────
+              is_public_company: {
+                type: "boolean",
+                description:
+                  "TRUE if the company has completed an IPO or is currently listed on any public stock exchange (NYSE, NASDAQ, LSE, TASE, etc.). FALSE if it remains privately held.",
+              },
+              is_tech_company: {
+                type: "boolean",
+                description:
+                  "TRUE if the company is primarily tech-driven: Software, SaaS, AI/ML, Cybersecurity, FinTech, Biotech/MedTech, Hardware, EdTech, CleanTech, SpaceTech, Robotics, Web3, etc. FALSE for traditional non-tech businesses (brick-and-mortar retail, restaurants, traditional manufacturing, etc.).",
+              },
               // ── startups table ─────────────────────────────────────────────
               name: {
                 type: "string",
@@ -128,11 +155,13 @@ Deno.serve(async (req: Request) => {
               },
               description: {
                 type: "string",
-                description: "2-3 sentence company overview",
+                description:
+                  "Detailed 3-4 sentence company overview: what it does, who it serves, what problem it solves, and its key differentiator",
               },
               industry: {
                 type: "string",
-                description: "Primary sector e.g. FinTech, HealthTech, AI, SaaS, CleanTech, EdTech",
+                description:
+                  "Primary tech sector (e.g. AI, SaaS, FinTech, Cybersecurity, Biotech, EdTech, CleanTech, Hardware)",
               },
               founded_year: {
                 type: "integer",
@@ -144,11 +173,17 @@ Deno.serve(async (req: Request) => {
               },
               country: {
                 type: "string",
-                description: "Country of headquarters e.g. United States, Israel, United Kingdom",
+                description: "Country of headquarters (e.g. United States, Israel, United Kingdom)",
               },
               city: {
                 type: "string",
-                description: "City of headquarters e.g. San Francisco, Tel Aviv, London",
+                description: "City of headquarters (e.g. San Francisco, Tel Aviv, London)",
+              },
+              founders: {
+                type: "array",
+                items: { type: "string" },
+                description:
+                  "Full legal names of ALL founders/co-founders. Search thoroughly — include every person listed as a founder or co-founder. Example: [\"Patrick Collison\", \"John Collison\"]",
               },
               // ── funding_rounds table ───────────────────────────────────────
               round_type: {
@@ -163,22 +198,25 @@ Deno.serve(async (req: Request) => {
               },
               amount_raised: {
                 type: "number",
-                description: "Capital raised in the most recent round, in USD as a plain number (e.g. 50000000 for $50M)",
+                description:
+                  "Capital raised in the most recent round in USD as a plain number (e.g. 50000000 for $50M)",
               },
               valuation: {
                 type: "number",
-                description: "Post-money valuation at most recent round, in USD as a plain number (e.g. 1500000000 for $1.5B)",
+                description:
+                  "Post-money valuation at most recent round in USD as a plain number (e.g. 1500000000 for $1.5B)",
               },
               announcement_date: {
                 type: "string",
-                description: "Date the most recent funding round was announced, in YYYY-MM-DD format",
+                description: "Date the most recent funding round was announced in YYYY-MM-DD format",
               },
               source_url: {
                 type: "string",
-                description: "URL of the primary source for the funding data (press release, TechCrunch, Crunchbase, etc.)",
+                description:
+                  "URL of the primary source for the funding data (press release, TechCrunch, Crunchbase, etc.)",
               },
             },
-            required: ["name", "round_type"],
+            required: ["name", "round_type", "is_public_company", "is_tech_company"],
           },
         },
       ],
@@ -186,18 +224,40 @@ Deno.serve(async (req: Request) => {
       messages: [
         {
           role: "user",
-          content: `You are a financial data analyst for AlphaMap, a market intelligence platform tracking private companies.
+          content: `You are a financial data analyst for AlphaMap, a market intelligence platform.
+AlphaMap has two STRICT eligibility rules you MUST enforce before saving any company.
 
-Extract accurate, source-verified information for: "${name}"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RULE 1 — PRIVACY RULE (non-negotiable):
+AlphaMap tracks ONLY private companies.
+If the company has completed an IPO or is currently listed on ANY public stock exchange
+(NYSE, NASDAQ, LSE, TASE, Euronext, etc.) you MUST set is_public_company = true.
+The system will immediately reject it.
+Examples of public companies to reject: Stripe (if IPO'd), Airbnb, DoorDash, Rivian.
 
-Rules:
-- Convert all financial figures to plain USD numbers ($1.5B → 1500000000, $50M → 50000000)
-- Split location into separate city and country fields
-- Only include website if you are confident the URL is correct
+RULE 2 — INDUSTRY RULE (non-negotiable):
+AlphaMap tracks ONLY tech-driven companies.
+Allowed: Software, SaaS, AI/ML, Cybersecurity, FinTech, Biotech/MedTech/HealthTech,
+Hardware/Semiconductors, EdTech, CleanTech/GreenTech, SpaceTech, Robotics/Automation,
+Web3/Blockchain, Gaming, AR/VR, IoT, DevTools, Cloud Infrastructure, AgTech, PropTech.
+NOT allowed: traditional retail, restaurants, real estate agencies, traditional
+manufacturing, traditional media, non-tech services.
+Set is_tech_company = false for any non-tech business — the system will reject it.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ENRICHMENT PRIORITIES:
+1. founders — search carefully and list the FULL NAME of every founder/co-founder
+2. city + country — be precise about the exact headquarters location
+3. description — write a detailed 3-4 sentence overview (what it does, who it serves,
+   problem it solves, key differentiator)
+4. funding figures — convert all amounts to plain USD numbers
+
+Additional rules:
 - round_type must reflect the MOST RECENT funding event
-- If the company has gone public (IPO'd), set round_type to "IPO" — it will be excluded
-- Only include funding fields (amount_raised, valuation, announcement_date, source_url) if you can verify them from sources
+- Only include website if you are confident the URL is correct
 - Omit any field you cannot verify rather than guessing
+
+Company to research: "${name}"
 
 Research data:
 ${researchContext}`,
@@ -212,6 +272,8 @@ ${researchContext}`,
     const extracted = toolBlock.input as Record<string, unknown>;
 
     // ── Phase 3: Validation gate ─────────────────────────────────────────────
+
+    // 1. Name check
     const finalName = String(extracted.name || "").trim();
     if (!finalName) {
       return Response.json(
@@ -220,11 +282,38 @@ ${researchContext}`,
       );
     }
 
+    // 2. PRIVACY RULE — explicit flag set by Claude
+    if (extracted.is_public_company === true) {
+      return Response.json(
+        {
+          error: `"${finalName}" is a publicly traded company and cannot be added to AlphaMap`,
+          rule_violated: "PRIVACY_RULE",
+          reason: "AlphaMap exclusively tracks private companies. Public/post-IPO companies are excluded.",
+        },
+        { status: 422, headers: corsHeaders },
+      );
+    }
+
+    // 3. INDUSTRY RULE — explicit flag set by Claude
+    if (extracted.is_tech_company === false) {
+      return Response.json(
+        {
+          error: `"${finalName}" does not qualify as a tech-driven company`,
+          rule_violated: "INDUSTRY_RULE",
+          reason: "AlphaMap tracks tech companies only (Software, AI, Cyber, FinTech, Biotech, Hardware, etc.)",
+          detected_industry: extracted.industry ?? "Unknown",
+        },
+        { status: 422, headers: corsHeaders },
+      );
+    }
+
+    // 4. Round type gate — belt-and-suspenders public company check via round_type
     const roundType = normalizeRoundType(String(extracted.round_type || ""));
     if (EXCLUDED_ROUND_TYPES.has(roundType)) {
       return Response.json(
         {
-          error: `"${finalName}" appears to be a public company (round_type: "${roundType}")`,
+          error: `"${finalName}" appears to be public (round_type resolved to "${roundType}")`,
+          rule_violated: "PRIVACY_RULE",
           reason: "Post-IPO companies are excluded from AlphaMap startups",
         },
         { status: 422, headers: corsHeaders },
@@ -237,7 +326,7 @@ ${researchContext}`,
       );
     }
 
-    // Website uniqueness check (matches the UNIQUE constraint on startups.website)
+    // 5. Website uniqueness check
     const website = extracted.website ? String(extracted.website).trim() : null;
     if (website) {
       const { data: dup } = await supabase
@@ -254,6 +343,10 @@ ${researchContext}`,
     }
 
     // ── Phase 4a: Insert into startups ───────────────────────────────────────
+    const foundersArray = Array.isArray(extracted.founders)
+      ? (extracted.founders as unknown[]).map(String).filter((f) => f.trim() !== "")
+      : null;
+
     const startupRecord = {
       name: finalName,
       website: website ?? null,
@@ -263,6 +356,7 @@ ${researchContext}`,
       employee_count: extracted.employee_count ? Number(extracted.employee_count) : null,
       country: extracted.country ? String(extracted.country) : null,
       city: extracted.city ? String(extracted.city) : null,
+      founders: foundersArray && foundersArray.length > 0 ? foundersArray : null,
     };
 
     const { data: insertedStartup, error: startupError } = await supabase
@@ -273,7 +367,7 @@ ${researchContext}`,
 
     if (startupError) throw startupError;
 
-    // ── Phase 4b: Insert into funding_rounds (linked by startup_id) ──────────
+    // ── Phase 4b: Insert into funding_rounds ─────────────────────────────────
     const hasFundingData =
       extracted.amount_raised ||
       extracted.valuation ||
@@ -298,7 +392,6 @@ ${researchContext}`,
         .single();
 
       if (roundError) {
-        // Startup was inserted successfully; log the round failure but don't roll back
         console.error(`[ingest] funding_rounds insert failed for ${finalName}:`, roundError.message);
       } else {
         insertedRound = round;
@@ -306,7 +399,7 @@ ${researchContext}`,
     }
 
     console.log(
-      `[ingest] ✓ ${finalName} | round: ${roundType} | city: ${extracted.city ?? "—"}, country: ${extracted.country ?? "—"}`,
+      `[ingest] ✓ ${finalName} | ${roundType} | ${extracted.city ?? "—"}, ${extracted.country ?? "—"} | founders: ${foundersArray?.join(", ") ?? "none"}`,
     );
 
     return Response.json(

@@ -32,6 +32,7 @@ export interface Startup {
   employee_count: number | null;
   country: string | null;
   city: string | null;
+  founders: string[] | null;
   created_at: string;
   updated_at: string;
   // joined via Supabase foreign table syntax

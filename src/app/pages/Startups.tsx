@@ -4,7 +4,7 @@ import { Sidebar } from "../components/Sidebar";
 import {
   Plus, Globe, Loader2, Search, X, MapPin, Calendar, Users,
   DollarSign, Rocket, AlertCircle, CheckCircle2, ChevronDown, ChevronUp,
-  TrendingUp, Flag,
+  TrendingUp, Flag, UserRound,
 } from "lucide-react";
 import { fetchStartups, ingestStartup, type Startup, type RoundType } from "../../lib/supabase";
 
@@ -136,6 +136,28 @@ function StartupCard({ startup }: { startup: Startup }) {
             </span>
           )}
         </div>
+
+        {/* Founders */}
+        {startup.founders && startup.founders.length > 0 && (
+          <div className="mb-4">
+            <div className="flex items-center gap-1.5 mb-2">
+              <UserRound className="w-3.5 h-3.5 text-gray-400" />
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                Founder{startup.founders.length > 1 ? "s" : ""}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {startup.founders.map((founder, i) => (
+                <span
+                  key={i}
+                  className="inline-block bg-[#F8FAFC] border border-gray-100 text-xs font-medium text-[#0F172A] px-2.5 py-1 rounded-full"
+                >
+                  {founder}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Funding round details (expandable) */}
         {startup.funding_rounds && startup.funding_rounds.length > 0 && (
