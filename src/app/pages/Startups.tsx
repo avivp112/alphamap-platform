@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useSearchParams } from "react-router";
 import { TopNav } from "../components/TopNav";
 import { Sidebar } from "../components/Sidebar";
 import {
   Plus, Globe, Loader2, Search, X, MapPin, Calendar, Users,
-  DollarSign, Rocket, AlertCircle, CheckCircle2, ChevronDown, ChevronUp,
-  TrendingUp, Flag, UserRound,
+  DollarSign, Rocket, AlertCircle, CheckCircle2,
+  TrendingUp, Flag, UserRound, LayoutGrid, List, ExternalLink,
 } from "lucide-react";
 import { fetchStartups, ingestStartup, type Startup, type RoundType } from "../../lib/supabase";
 
@@ -25,20 +26,20 @@ function formatEmployees(n: number | null): string {
 }
 
 const ROUND_STYLE: Record<string, string> = {
-  "Pre-Seed":       "bg-purple-50 text-purple-700 border border-purple-100",
-  "Seed":           "bg-blue-50 text-blue-700 border border-blue-100",
-  "Series A":       "bg-emerald-50 text-emerald-700 border border-emerald-100",
-  "Series B":       "bg-amber-50 text-amber-700 border border-amber-100",
-  "Series C":       "bg-orange-50 text-orange-700 border border-orange-100",
-  "Series D":       "bg-orange-100 text-orange-800 border border-orange-200",
-  "Series E+":      "bg-red-50 text-red-700 border border-red-100",
-  "Growth":         "bg-indigo-50 text-indigo-700 border border-indigo-100",
-  "Bridge":         "bg-sky-50 text-sky-700 border border-sky-100",
+  "Pre-Seed":         "bg-purple-50 text-purple-700 border border-purple-100",
+  "Seed":             "bg-blue-50 text-blue-700 border border-blue-100",
+  "Series A":         "bg-emerald-50 text-emerald-700 border border-emerald-100",
+  "Series B":         "bg-amber-50 text-amber-700 border border-amber-100",
+  "Series C":         "bg-orange-50 text-orange-700 border border-orange-100",
+  "Series D":         "bg-orange-100 text-orange-800 border border-orange-200",
+  "Series E+":        "bg-red-50 text-red-700 border border-red-100",
+  "Growth":           "bg-indigo-50 text-indigo-700 border border-indigo-100",
+  "Bridge":           "bg-sky-50 text-sky-700 border border-sky-100",
   "Convertible Note": "bg-cyan-50 text-cyan-700 border border-cyan-100",
-  "Bootstrapped":   "bg-teal-50 text-teal-700 border border-teal-100",
-  "Grant":          "bg-lime-50 text-lime-700 border border-lime-100",
-  "Acquired":       "bg-gray-100 text-gray-600 border border-gray-200",
-  "Other":          "bg-gray-50 text-gray-500 border border-gray-100",
+  "Bootstrapped":     "bg-teal-50 text-teal-700 border border-teal-100",
+  "Grant":            "bg-lime-50 text-lime-700 border border-lime-100",
+  "Acquired":         "bg-gray-100 text-gray-600 border border-gray-200",
+  "Other":            "bg-gray-50 text-gray-500 border border-gray-100",
 };
 
 const ALL_ROUND_TYPES: RoundType[] = [
@@ -56,25 +57,203 @@ const PROGRESS_MESSAGES = [
   "Saving to AlphaMap…",
 ];
 
-// ─── Startup Card ────────────────────────────────────────────────────────────
+// ─── Startup Detail Modal ────────────────────────────────────────────────────
 
-function StartupCard({ startup }: { startup: Startup }) {
-  const [expanded, setExpanded] = useState(false);
-
-  // Use the most recent funding round (array comes ordered by created_at desc from the join)
+function StartupDetailModal({
+  startup,
+  onClose,
+}: {
+  startup: Startup;
+  onClose: () => void;
+}) {
   const latestRound = startup.funding_rounds?.[0] ?? null;
   const roundType = latestRound?.round_type ?? null;
   const roundStyle = roundType ? (ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]) : null;
+  const location = [startup.city, startup.country].filter(Boolean).join(", ") || null;
 
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div
+        className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <div className="relative bg-white rounded-[24px] shadow-[0_24px_80px_rgba(0,0,0,0.18)] w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-gray-100">
+        {/* Dark header */}
+        <div className="bg-[#0F172A] rounded-t-[24px] p-8 text-white">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <h2 className="text-2xl font-bold truncate mb-1">{startup.name}</h2>
+              {startup.industry && (
+                <span className="text-sm text-gray-400 font-medium">{startup.industry}</span>
+              )}
+              {location && (
+                <span className="flex items-center gap-1 text-sm text-gray-400 mt-1">
+                  <MapPin className="w-3.5 h-3.5" /> {location}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-3 flex-none">
+              {roundType && roundStyle && (
+                <span className={`text-xs font-semibold px-3 py-1.5 rounded-full whitespace-nowrap ${roundStyle}`}>
+                  {roundType}
+                </span>
+              )}
+              <button
+                onClick={onClose}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors text-gray-300 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-8">
+          {/* Description */}
+          {startup.description && (
+            <p className="text-sm text-gray-600 leading-relaxed mb-8">
+              {startup.description}
+            </p>
+          )}
+
+          {/* Metrics grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+            {[
+              { icon: TrendingUp, label: "Valuation",   value: formatCurrency(latestRound?.valuation) },
+              { icon: DollarSign, label: "Total Raised", value: formatCurrency(latestRound?.amount_raised) },
+              { icon: Users,      label: "Employees",   value: formatEmployees(startup.employee_count) },
+              { icon: Calendar,   label: "Founded",     value: startup.founded_year ? String(startup.founded_year) : "—" },
+            ].map(({ icon: Icon, label, value }) => (
+              <div key={label} className="bg-[#F8FAFC] rounded-[16px] p-4 flex flex-col gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Icon className="w-3.5 h-3.5 text-[#F59E0B]" />
+                  <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{label}</span>
+                </div>
+                <span className="text-base font-bold text-[#0F172A]">{value}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Founders */}
+          {startup.founders && startup.founders.length > 0 && (
+            <div className="mb-8">
+              <div className="flex items-center gap-2 mb-3">
+                <UserRound className="w-4 h-4 text-gray-400" />
+                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+                  Founder{startup.founders.length > 1 ? "s" : ""}
+                </h3>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {startup.founders.map((founder, i) => (
+                  <span
+                    key={i}
+                    className="inline-block bg-[#F8FAFC] border border-gray-100 text-sm font-medium text-[#0F172A] px-3 py-1.5 rounded-full"
+                  >
+                    {founder}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Funding rounds */}
+          {startup.funding_rounds && startup.funding_rounds.length > 0 && (
+            <div className="mb-8">
+              <div className="flex items-center gap-2 mb-4">
+                <DollarSign className="w-4 h-4 text-gray-400" />
+                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+                  Funding Rounds
+                </h3>
+              </div>
+              <div className="flex flex-col gap-3">
+                {startup.funding_rounds.map((r, idx) => (
+                  <div key={r.id ?? idx} className="flex items-start justify-between gap-4 bg-[#F8FAFC] rounded-[14px] p-4">
+                    <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {r.round_type && (
+                          <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${ROUND_STYLE[r.round_type] ?? ROUND_STYLE["Other"]}`}>
+                            {r.round_type}
+                          </span>
+                        )}
+                        {r.announcement_date && (
+                          <span className="text-xs text-gray-400">
+                            {new Date(r.announcement_date).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-4">
+                        {r.amount_raised && (
+                          <span className="text-sm text-gray-600">
+                            <span className="font-bold text-[#0F172A]">{formatCurrency(r.amount_raised)}</span> raised
+                          </span>
+                        )}
+                        {r.valuation && (
+                          <span className="text-sm text-gray-600">
+                            <span className="font-bold text-[#0F172A]">{formatCurrency(r.valuation)}</span> valuation
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {r.source_url && (
+                      <a
+                        href={r.source_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-xs text-[#F59E0B] hover:underline font-medium flex-none"
+                      >
+                        Source <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Website */}
+          {startup.website && (
+            <a
+              href={startup.website}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-sm font-medium text-[#0F172A] hover:text-[#F59E0B] transition-colors"
+            >
+              <Globe className="w-4 h-4" />
+              {startup.website}
+              <ExternalLink className="w-3.5 h-3.5 opacity-50" />
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Startup Card (Grid View) ────────────────────────────────────────────────
+
+function StartupCard({ startup, onSelect }: { startup: Startup; onSelect: () => void }) {
+  const latestRound = startup.funding_rounds?.[0] ?? null;
+  const roundType = latestRound?.round_type ?? null;
+  const roundStyle = roundType ? (ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]) : null;
   const location = [startup.city, startup.country].filter(Boolean).join(", ") || null;
 
   return (
-    <div className="bg-white rounded-[20px] border border-gray-100 shadow-[0_4px_20px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] transition-all duration-200 flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="p-6 pb-4 flex-1">
+    <div
+      onClick={onSelect}
+      className="bg-white rounded-[20px] border border-gray-100 shadow-[0_4px_20px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.10)] hover:border-gray-200 transition-all duration-200 flex flex-col overflow-hidden cursor-pointer group"
+    >
+      <div className="p-6 flex-1">
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex-1 min-w-0">
-            <h3 className="text-base font-bold text-[#0F172A] truncate leading-tight">
+            <h3 className="text-base font-bold text-[#0F172A] truncate leading-tight group-hover:text-[#F59E0B] transition-colors">
               {startup.name}
             </h3>
             {startup.industry && (
@@ -96,7 +275,6 @@ function StartupCard({ startup }: { startup: Startup }) {
           </p>
         )}
 
-        {/* Funding metrics from funding_rounds */}
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div className="bg-[#F8FAFC] rounded-xl p-3">
             <div className="flex items-center gap-1.5 mb-1">
@@ -118,8 +296,7 @@ function StartupCard({ startup }: { startup: Startup }) {
           </div>
         </div>
 
-        {/* Meta row — city + country displayed separately */}
-        <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-gray-400 mb-4">
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-gray-400">
           {location && (
             <span className="flex items-center gap-1">
               <MapPin className="w-3 h-3" /> {location}
@@ -136,97 +313,20 @@ function StartupCard({ startup }: { startup: Startup }) {
             </span>
           )}
         </div>
-
-        {/* Founders */}
-        {startup.founders && startup.founders.length > 0 && (
-          <div className="mb-4">
-            <div className="flex items-center gap-1.5 mb-2">
-              <UserRound className="w-3.5 h-3.5 text-gray-400" />
-              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
-                Founder{startup.founders.length > 1 ? "s" : ""}
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {startup.founders.map((founder, i) => (
-                <span
-                  key={i}
-                  className="inline-block bg-[#F8FAFC] border border-gray-100 text-xs font-medium text-[#0F172A] px-2.5 py-1 rounded-full"
-                >
-                  {founder}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Funding round details (expandable) */}
-        {startup.funding_rounds && startup.funding_rounds.length > 0 && (
-          <div>
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className="flex items-center gap-1 text-xs font-medium text-gray-400 hover:text-[#0F172A] transition-colors mb-2"
-            >
-              {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              {startup.funding_rounds.length} funding round{startup.funding_rounds.length > 1 ? "s" : ""}
-            </button>
-            {expanded && (
-              <div className="flex flex-col gap-2 mt-1">
-                {startup.funding_rounds.map((r) => (
-                  <div key={r.id} className="bg-[#F8FAFC] rounded-xl p-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${r.round_type ? (ROUND_STYLE[r.round_type] ?? ROUND_STYLE["Other"]) : ""}`}>
-                        {r.round_type ?? "Unknown"}
-                      </span>
-                      {r.announcement_date && (
-                        <span className="text-[10px] text-gray-400">
-                          {new Date(r.announcement_date).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex gap-4 mt-1">
-                      {r.amount_raised && (
-                        <span className="text-xs text-gray-600">
-                          <span className="font-semibold">{formatCurrency(r.amount_raised)}</span> raised
-                        </span>
-                      )}
-                      {r.valuation && (
-                        <span className="text-xs text-gray-600">
-                          <span className="font-semibold">{formatCurrency(r.valuation)}</span> valuation
-                        </span>
-                      )}
-                    </div>
-                    {r.source_url && (
-                      <a
-                        href={r.source_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[10px] text-[#F59E0B] hover:underline mt-1 block truncate"
-                      >
-                        Source ↗
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
-      {/* Footer */}
       <div className="px-6 py-3 border-t border-gray-50 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          {startup.website && (
-            <a
-              href={startup.website}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1 text-xs text-gray-400 hover:text-[#0F172A] transition-colors font-medium"
-            >
-              <Globe className="w-3.5 h-3.5" /> Website
-            </a>
-          )}
-        </div>
+        {startup.founders && startup.founders.length > 0 ? (
+          <div className="flex items-center gap-1.5">
+            <UserRound className="w-3.5 h-3.5 text-gray-300" />
+            <span className="text-xs text-gray-400 font-medium truncate max-w-[160px]">
+              {startup.founders.slice(0, 2).join(", ")}
+              {startup.founders.length > 2 ? ` +${startup.founders.length - 2}` : ""}
+            </span>
+          </div>
+        ) : (
+          <div />
+        )}
         {startup.country && (
           <div className="flex items-center gap-1.5">
             <Flag className="w-3 h-3 text-gray-300" />
@@ -235,6 +335,55 @@ function StartupCard({ startup }: { startup: Startup }) {
         )}
       </div>
     </div>
+  );
+}
+
+// ─── Startup List Row ────────────────────────────────────────────────────────
+
+function StartupListRow({ startup, onSelect }: { startup: Startup; onSelect: () => void }) {
+  const latestRound = startup.funding_rounds?.[0] ?? null;
+  const roundType = latestRound?.round_type ?? null;
+  const roundStyle = roundType ? (ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]) : null;
+  const location = [startup.city, startup.country].filter(Boolean).join(", ") || "—";
+
+  return (
+    <tr
+      onClick={onSelect}
+      className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors group"
+    >
+      <td className="py-4 px-5">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-sm font-bold text-[#0F172A] group-hover:text-[#F59E0B] transition-colors">
+            {startup.name}
+          </span>
+          {startup.industry && (
+            <span className="text-xs text-gray-400 uppercase tracking-wide">{startup.industry}</span>
+          )}
+        </div>
+      </td>
+      <td className="py-4 px-4">
+        {roundType && roundStyle ? (
+          <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${roundStyle}`}>
+            {roundType}
+          </span>
+        ) : (
+          <span className="text-xs text-gray-300">—</span>
+        )}
+      </td>
+      <td className="py-4 px-4 text-sm text-gray-500 whitespace-nowrap">{location}</td>
+      <td className="py-4 px-4 text-sm font-bold text-[#0F172A] whitespace-nowrap">
+        {formatCurrency(latestRound?.valuation)}
+      </td>
+      <td className="py-4 px-4 text-sm font-bold text-[#0F172A] whitespace-nowrap">
+        {formatCurrency(latestRound?.amount_raised)}
+      </td>
+      <td className="py-4 px-4 text-sm text-gray-500 whitespace-nowrap">
+        {startup.employee_count ? formatEmployees(startup.employee_count) : "—"}
+      </td>
+      <td className="py-4 px-4 text-gray-300 text-right">
+        <span className="text-sm group-hover:text-[#F59E0B] transition-colors">→</span>
+      </td>
+    </tr>
   );
 }
 
@@ -381,12 +530,18 @@ function AddStartupDialog({
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export function Startups() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [startups, setStartups] = useState<Startup[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [search, setSearch] = useState("");
   const [roundFilter, setRoundFilter] = useState<RoundType | "All">("All");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [selectedStartup, setSelectedStartup] = useState<Startup | null>(null);
+
+  const cityParam = searchParams.get("city") ?? "";
+  const [cityFilter, setCityFilter] = useState(cityParam);
 
   useEffect(() => {
     fetchStartups()
@@ -399,6 +554,14 @@ export function Startups() {
     setStartups((prev) => [startup, ...prev]);
   }
 
+  function clearCityFilter() {
+    setCityFilter("");
+    setSearchParams((prev) => {
+      prev.delete("city");
+      return prev;
+    });
+  }
+
   const filtered = startups.filter((s) => {
     const matchSearch =
       !search ||
@@ -408,7 +571,11 @@ export function Startups() {
       (s.city ?? "").toLowerCase().includes(search.toLowerCase());
     const latestRound = s.funding_rounds?.[0];
     const matchRound = roundFilter === "All" || latestRound?.round_type === roundFilter;
-    return matchSearch && matchRound;
+    const matchCity =
+      !cityFilter ||
+      (s.city ?? "").toLowerCase().includes(cityFilter.toLowerCase()) ||
+      (s.country ?? "").toLowerCase().includes(cityFilter.toLowerCase());
+    return matchSearch && matchRound && matchCity;
   });
 
   const roundCounts = ALL_ROUND_TYPES.map((rt) => ({
@@ -429,48 +596,85 @@ export function Startups() {
               <div>
                 <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">
                   Startups
+                  {cityFilter && (
+                    <span className="ml-3 text-lg font-medium text-[#F59E0B]">
+                      in {cityFilter}
+                    </span>
+                  )}
                 </h1>
                 <p className="mt-1 sm:mt-2 text-sm font-medium text-gray-500">
                   AI-researched private companies — funding rounds stored separately and linked by ID.
                 </p>
               </div>
-              <button
-                onClick={() => setShowAdd(true)}
-                className="flex items-center gap-2 rounded-[16px] bg-[#F59E0B] px-5 py-2.5 text-sm font-bold text-white shadow-[0_4px_14px_rgba(245,158,11,0.3)] hover:bg-amber-600 transition-all"
-              >
-                <Plus className="w-4 h-4" />
-                Add Startup
-              </button>
+              <div className="flex items-center gap-3">
+                {/* View toggle */}
+                <div className="flex items-center bg-white border border-gray-200 rounded-[12px] p-1">
+                  <button
+                    onClick={() => setViewMode("grid")}
+                    className={`p-1.5 rounded-[8px] transition-all ${viewMode === "grid" ? "bg-[#0F172A] text-white" : "text-gray-400 hover:text-gray-700"}`}
+                  >
+                    <LayoutGrid className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setViewMode("list")}
+                    className={`p-1.5 rounded-[8px] transition-all ${viewMode === "list" ? "bg-[#0F172A] text-white" : "text-gray-400 hover:text-gray-700"}`}
+                  >
+                    <List className="w-4 h-4" />
+                  </button>
+                </div>
+                <button
+                  onClick={() => setShowAdd(true)}
+                  className="flex items-center gap-2 rounded-[16px] bg-[#F59E0B] px-5 py-2.5 text-sm font-bold text-white shadow-[0_4px_14px_rgba(245,158,11,0.3)] hover:bg-amber-600 transition-all"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Startup
+                </button>
+              </div>
             </div>
 
-            {/* Round-type filter chips */}
-            {roundCounts.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-6">
+            {/* Filter bar */}
+            <div className="flex flex-wrap items-center gap-2 mb-6">
+              {/* City filter chip */}
+              {cityFilter && (
                 <button
-                  onClick={() => setRoundFilter("All")}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
-                    roundFilter === "All"
-                      ? "bg-[#0F172A] text-white border-[#0F172A]"
-                      : "bg-white text-gray-500 border-gray-200 hover:border-gray-400"
-                  }`}
+                  onClick={clearCityFilter}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-[#F59E0B] text-white border border-[#F59E0B] hover:bg-amber-600 transition-all"
                 >
-                  All ({startups.length})
+                  <MapPin className="w-3 h-3" />
+                  {cityFilter}
+                  <X className="w-3 h-3 ml-0.5" />
                 </button>
-                {roundCounts.map(({ rt, count }) => (
+              )}
+
+              {/* Round type chips */}
+              {roundCounts.length > 0 && (
+                <>
                   <button
-                    key={rt}
-                    onClick={() => setRoundFilter(roundFilter === rt ? "All" : rt)}
+                    onClick={() => setRoundFilter("All")}
                     className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
-                      roundFilter === rt
+                      roundFilter === "All"
                         ? "bg-[#0F172A] text-white border-[#0F172A]"
-                        : `${ROUND_STYLE[rt]} hover:opacity-80`
+                        : "bg-white text-gray-500 border-gray-200 hover:border-gray-400"
                     }`}
                   >
-                    {rt} ({count})
+                    All ({startups.length})
                   </button>
-                ))}
-              </div>
-            )}
+                  {roundCounts.map(({ rt, count }) => (
+                    <button
+                      key={rt}
+                      onClick={() => setRoundFilter(roundFilter === rt ? "All" : rt)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                        roundFilter === rt
+                          ? "bg-[#0F172A] text-white border-[#0F172A]"
+                          : `${ROUND_STYLE[rt]} hover:opacity-80`
+                      }`}
+                    >
+                      {rt} ({count})
+                    </button>
+                  ))}
+                </>
+              )}
+            </div>
 
             {/* Search */}
             {startups.length > 0 && (
@@ -491,7 +695,7 @@ export function Startups() {
               </div>
             )}
 
-            {/* States */}
+            {/* Content states */}
             {loading ? (
               <div className="flex items-center justify-center py-32">
                 <Loader2 className="w-6 h-6 text-[#F59E0B] animate-spin" />
@@ -521,19 +725,40 @@ export function Startups() {
               </div>
             ) : filtered.length === 0 ? (
               <div className="flex flex-col items-center py-20 gap-3 text-center">
-                <p className="text-sm font-semibold text-gray-400">No results for "{search}"</p>
+                <p className="text-sm font-semibold text-gray-400">No results for current filters</p>
                 <button
-                  onClick={() => { setSearch(""); setRoundFilter("All"); }}
+                  onClick={() => { setSearch(""); setRoundFilter("All"); clearCityFilter(); }}
                   className="text-xs text-[#F59E0B] font-medium hover:underline"
                 >
-                  Clear filters
+                  Clear all filters
                 </button>
               </div>
-            ) : (
+            ) : viewMode === "grid" ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
                 {filtered.map((s) => (
-                  <StartupCard key={s.id} startup={s} />
+                  <StartupCard key={s.id} startup={s} onSelect={() => setSelectedStartup(s)} />
                 ))}
+              </div>
+            ) : (
+              <div className="bg-white rounded-[20px] border border-gray-100 shadow-[0_4px_20px_rgba(0,0,0,0.04)] overflow-hidden">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-[#F8FAFC]">
+                      <th className="text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest py-3 px-5">Company</th>
+                      <th className="text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest py-3 px-4">Stage</th>
+                      <th className="text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest py-3 px-4">Location</th>
+                      <th className="text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest py-3 px-4">Valuation</th>
+                      <th className="text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest py-3 px-4">Raised</th>
+                      <th className="text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest py-3 px-4">Employees</th>
+                      <th className="py-3 px-4" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((s) => (
+                      <StartupListRow key={s.id} startup={s} onSelect={() => setSelectedStartup(s)} />
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
 
@@ -546,6 +771,13 @@ export function Startups() {
         onClose={() => setShowAdd(false)}
         onSuccess={handleAdded}
       />
+
+      {selectedStartup && (
+        <StartupDetailModal
+          startup={selectedStartup}
+          onClose={() => setSelectedStartup(null)}
+        />
+      )}
     </div>
   );
 }

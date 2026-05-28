@@ -62,7 +62,7 @@ export function LandingPage() {
       {/* 2. Interactive Pulse (Centered Map) */}
       <section className="relative w-full max-w-[1400px] mx-auto mb-20 px-4 flex justify-center">
         <div className="w-full lg:w-4/5">
-          <HeroMap />
+          <HeroMap onHubClick={(city) => navigate(`/startups?city=${encodeURIComponent(city)}`)} />
         </div>
       </section>
 

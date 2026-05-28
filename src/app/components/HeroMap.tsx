@@ -9,15 +9,19 @@ function cn(...inputs: ClassValue[]) {
 
 const geoUrl = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 
-export function HeroMap() {
+interface HeroMapProps {
+  onHubClick?: (city: string) => void;
+}
+
+export function HeroMap({ onHubClick }: HeroMapProps) {
   const hubs = [
-    { name: 'New York', coordinates: [-74.006, 40.7128] },       // North America
-    { name: 'São Paulo', coordinates: [-46.6333, -23.5505] },    // South America
-    { name: 'London', coordinates: [-0.1276, 51.5074] },         // Europe
-    { name: 'Johannesburg', coordinates: [28.0473, -26.2041] },  // Africa
-    { name: 'Tel Aviv', coordinates: [34.7818, 32.0853] },       // Asia (Middle East)
-    { name: 'Tokyo', coordinates: [139.6917, 35.6895] },         // Asia
-    { name: 'Sydney', coordinates: [151.2093, -33.8688] },       // Oceania
+    { name: 'New York',      coordinates: [-74.006,   40.7128]  },
+    { name: 'São Paulo',     coordinates: [-46.6333, -23.5505]  },
+    { name: 'London',        coordinates: [-0.1276,   51.5074]  },
+    { name: 'Johannesburg',  coordinates: [28.0473,  -26.2041]  },
+    { name: 'Tel Aviv',      coordinates: [34.7818,   32.0853]  },
+    { name: 'Tokyo',         coordinates: [139.6917,  35.6895]  },
+    { name: 'Sydney',        coordinates: [151.2093, -33.8688]  },
   ];
 
   const [hoveredHub, setHoveredHub] = useState<string | null>(null);
@@ -36,10 +40,7 @@ export function HeroMap() {
         `}
       </style>
       <ComposableMap
-        projectionConfig={{
-          scale: 160,
-          center: [10, 25]
-        }}
+        projectionConfig={{ scale: 160, center: [10, 25] }}
         width={800}
         height={500}
         style={{ width: "100%", height: "100%" }}
@@ -47,15 +48,15 @@ export function HeroMap() {
         <Geographies geography={geoUrl}>
           {({ geographies }) =>
             geographies.map((geo) => (
-              <Geography 
-                key={geo.rsmKey} 
-                geography={geo} 
-                fill="#9CA3AF" // Medium-dark gray
-                stroke="#F3F4F6" 
+              <Geography
+                key={geo.rsmKey}
+                geography={geo}
+                fill="#9CA3AF"
+                stroke="#F3F4F6"
                 strokeWidth={0.5}
                 style={{
                   default: { outline: "none" },
-                  hover: { outline: "none", fill: "#6B7280" },
+                  hover:   { outline: "none", fill: "#6B7280" },
                   pressed: { outline: "none" },
                 }}
               />
@@ -63,31 +64,30 @@ export function HeroMap() {
           }
         </Geographies>
 
-        {/* Hubs */}
         {hubs.map((hub) => (
-          <Marker 
-            key={hub.name} 
+          <Marker
+            key={hub.name}
             coordinates={hub.coordinates as [number, number]}
             onMouseEnter={() => setHoveredHub(hub.name)}
             onMouseLeave={() => setHoveredHub(null)}
+            onClick={() => onHubClick?.(hub.name)}
           >
-            <g className="cursor-pointer">
-              {/* Transparent hit area for hover */}
+            <g className={cn("cursor-pointer", onHubClick && "hover:opacity-80 transition-opacity")}>
               <circle r={16} fill="transparent" />
-              
-              {/* Inner dot */}
-              <circle 
-                r={5} 
-                fill="#F59E0B"
+              <circle
+                r={hoveredHub === hub.name ? 7 : 5}
+                fill={hoveredHub === hub.name ? "#F59E0B" : "#F59E0B"}
                 stroke="#F3F4F6"
                 strokeWidth={1.5}
                 className="map-dot-pulse pointer-events-none"
-                style={{ transformOrigin: "center" }}
+                style={{ transformOrigin: "center", transition: "r 0.15s ease" }}
               />
-              
+              {onHubClick && hoveredHub === hub.name && (
+                <circle r={14} fill="#F59E0B" fillOpacity={0.15} className="pointer-events-none" />
+              )}
               <text
                 textAnchor="middle"
-                y={-12}
+                y={-14}
                 className={cn(
                   "text-[11px] font-bold fill-[#111827] uppercase tracking-widest transition-opacity duration-300 pointer-events-none",
                   hoveredHub === hub.name ? "opacity-100" : "opacity-0"
@@ -96,6 +96,15 @@ export function HeroMap() {
               >
                 {hub.name}
               </text>
+              {onHubClick && hoveredHub === hub.name && (
+                <text
+                  textAnchor="middle"
+                  y={24}
+                  className="text-[9px] font-bold fill-[#F59E0B] uppercase tracking-widest pointer-events-none opacity-80"
+                >
+                  View startups →
+                </text>
+              )}
             </g>
           </Marker>
         ))}
