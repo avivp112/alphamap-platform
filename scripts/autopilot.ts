@@ -190,8 +190,8 @@ async function researchCompany(name: string): Promise<ExtractedData> {
 
   const msg = await withRetry(
     () => anthropic.messages.create({
-    model: "claude-opus-4-7",
-    max_tokens: 2048,
+    model: "claude-haiku-4-5-20251001", // Fast & cost-effective for structured data extraction
+    max_tokens: 1024,
     tools: [
       {
         name: "save_startup",
