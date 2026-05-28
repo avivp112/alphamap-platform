@@ -13,6 +13,10 @@ export const router = createBrowserRouter([
     Component: Dashboard,
   },
   {
+    path: "/markets",
+    Component: Dashboard,
+  },
+  {
     path: "/startups",
     Component: Startups,
   },

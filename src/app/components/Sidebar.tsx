@@ -10,7 +10,7 @@ function cn(...inputs: ClassValue[]) {
 
 const navItems = [
   { icon: Home, label: "Home", to: "/dashboard" },
-  { icon: LineChart, label: "Markets", to: "/dashboard" },
+  { icon: LineChart, label: "Markets", to: "/markets" },
   { icon: Rocket, label: "Startups", to: "/startups" },
   { icon: Newspaper, label: "News", to: "/dashboard" },
   { icon: Wallet, label: "My Portfolio", to: "/dashboard" },
@@ -30,7 +30,7 @@ export function Sidebar() {
               className={({ isActive }) =>
                 cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ease-in-out group",
-                  isActive && item.to !== "/dashboard"
+                  isActive
                     ? "bg-[#F3F4F6] text-[#111827] font-semibold"
                     : "text-gray-500 hover:bg-gray-50 hover:text-[#111827]",
                 )
@@ -41,7 +41,7 @@ export function Sidebar() {
                   <Icon
                     className={cn(
                       "h-5 w-5 transition-colors duration-200",
-                      isActive && item.to !== "/dashboard"
+                      isActive
                         ? "text-[#F59E0B]"
                         : "text-gray-400 group-hover:text-[#111827]",
                     )}
