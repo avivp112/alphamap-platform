@@ -4,7 +4,6 @@ import { Sidebar } from '../components/Sidebar';
 import { MarketOverview } from '../components/MarketOverview';
 import { IntelligenceFeed } from '../components/IntelligenceFeed';
 import { AIMarketStory, CrossMarketSignalsBar, PortfolioInsight } from '../components/AIMarketInsights';
-import { HeroMap } from '../components/HeroMap';
 
 export function Dashboard() {
   return (
@@ -53,16 +52,7 @@ export function Dashboard() {
                 <IntelligenceFeed />
               </div>
             </div>
-
-            {/* Global Startup Map */}
-            <div className="mt-6 lg:mt-8 rounded-[24px] border border-gray-100 bg-white shadow-[0_8px_30px_rgba(0,0,0,0.02)] p-6 md:p-8">
-              <div className="mb-4">
-                <h2 className="text-xl font-bold tracking-tight text-[#0F172A]">Global Startup Map</h2>
-                <p className="text-xs font-medium text-gray-500 mt-0.5">Major innovation hubs tracked by AlphaMap</p>
-              </div>
-              <HeroMap />
-            </div>
-
+            
           </div>
         </main>
       </div>
