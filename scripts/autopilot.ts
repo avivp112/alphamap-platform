@@ -21,7 +21,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
 // ── Configuration ─────────────────────────────────────────────────────────────
-const BATCH_SIZE = Number(process.env.BATCH_SIZE ?? 10);
+const BATCH_SIZE = Number(process.env.BATCH_SIZE ?? 100); // default: full watchlist run
 const DELAY_MS   = Number(process.env.DELAY_MS   ?? 45_000); // 45 s between companies
 const STALE_DAYS = Number(process.env.STALE_DAYS ?? 7);
 const DRY_RUN    = process.env.DRY_RUN === "true";
@@ -89,6 +89,32 @@ interface ProcessOutcome {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+function isRateLimitErr(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const e = err as Error & { status?: number };
+  return e.status === 429 || /rate.?limit|429/i.test(e.message);
+}
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  opts: { retries?: number; baseMs?: number; label?: string } = {},
+): Promise<T> {
+  const { retries = 4, baseMs = 20_000, label = "request" } = opts;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: unknown) {
+      if (attempt === retries || !isRateLimitErr(err)) throw err;
+      const wait = baseMs * Math.pow(2, attempt);
+      console.warn(
+        `    ⚠️  Rate limit on ${label} — waiting ${wait / 1000}s before retry ${attempt + 1}/${retries}…`,
+      );
+      await sleep(wait);
+    }
+  }
+  throw new Error("unreachable");
+}
+
 function normalizeRoundType(raw: string): string {
   if (!raw) return "Other";
   const s = raw.toLowerCase().trim();
@@ -109,7 +135,8 @@ function normalizeRoundType(raw: string): string {
   return "Other";
 }
 
-async function tavilySearch(query: string): Promise<string> {
+async function tavilySearch(query: string, attempt = 0): Promise<string> {
+  const MAX_RETRIES = 3;
   try {
     const res = await fetch("https://api.tavily.com/search", {
       method: "POST",
@@ -122,7 +149,16 @@ async function tavilySearch(query: string): Promise<string> {
         include_answer: true,
       }),
     });
-    if (!res.ok) return "";
+    if (res.status === 429 && attempt < MAX_RETRIES) {
+      const wait = 15_000 * Math.pow(2, attempt);
+      console.warn(`    ⚠️  Tavily rate limit (429) — waiting ${wait / 1000}s (retry ${attempt + 1}/${MAX_RETRIES})…`);
+      await sleep(wait);
+      return tavilySearch(query, attempt + 1);
+    }
+    if (!res.ok) {
+      console.warn(`    ⚠️  Tavily HTTP ${res.status} for: "${query.slice(0, 80)}"`);
+      return "";
+    }
     const data = await res.json() as Record<string, unknown>;
     const parts: string[] = [];
     if (data.answer) parts.push(`Summary: ${data.answer}`);
@@ -130,7 +166,8 @@ async function tavilySearch(query: string): Promise<string> {
       parts.push(`[${r.title}]\n${r.url}\n${String(r.content ?? "").slice(0, 500)}`);
     }
     return parts.join("\n---\n");
-  } catch {
+  } catch (err) {
+    console.warn(`    ⚠️  Tavily search failed: ${String(err)}`);
     return "";
   }
 }
@@ -151,7 +188,8 @@ async function researchCompany(name: string): Promise<ExtractedData> {
     `## Public vs Private Status\n${publicStatus}`,
   ].join("\n\n");
 
-  const msg = await anthropic.messages.create({
+  const msg = await withRetry(
+    () => anthropic.messages.create({
     model: "claude-opus-4-7",
     max_tokens: 2048,
     tools: [
@@ -221,7 +259,9 @@ Research data:
 ${context}`,
       },
     ],
-  });
+  }),
+  { retries: 4, baseMs: 20_000, label: "Claude API" },
+  );
 
   const toolBlock = msg.content.find((b) => b.type === "tool_use");
   if (!toolBlock || toolBlock.type !== "tool_use") {
@@ -397,6 +437,8 @@ async function main() {
   console.log(`║     ${runAt}                   ║`);
   console.log(`║     BATCH=${BATCH_SIZE}  DELAY=${DELAY_MS / 1000}s  STALE=${STALE_DAYS}d  DRY_RUN=${DRY_RUN}  ║`);
   console.log("╚══════════════════════════════════════════════════════╝\n");
+  // Explicit log so BATCH_SIZE is immediately verifiable in Actions output
+  console.log(`ℹ️  BATCH_SIZE = ${BATCH_SIZE}  (env BATCH_SIZE="${process.env.BATCH_SIZE ?? "unset — using default 100"}")\n`);
 
   // ── Load watchlist ───────────────────────────────────────────────────────────
   const __dir = dirname(fileURLToPath(import.meta.url));
