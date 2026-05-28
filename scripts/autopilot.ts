@@ -274,6 +274,7 @@ async function processCompany(
   if (existing) {
     const patch: Record<string, unknown> = {};
 
+    // Only overwrite if new value is non-null; for static fields only fill if currently empty
     if (extracted.employee_count)                     patch.employee_count = extracted.employee_count;
     if (extracted.description)                        patch.description    = extracted.description;
     if (extracted.website   && !existing.website)     patch.website        = extracted.website;
@@ -281,6 +282,7 @@ async function processCompany(
     if (extracted.country   && !existing.country)     patch.country        = extracted.country;
     if (extracted.city      && !existing.city)        patch.city           = extracted.city;
 
+    // Merge founders (union of old + new, deduplicated)
     if (cleanFounders && cleanFounders.length > 0) {
       patch.founders = [...new Set([...(existing.founders ?? []), ...cleanFounders])];
     }
@@ -295,6 +297,7 @@ async function processCompany(
       }
     }
 
+    // Check for a new funding round (avoid duplicating rounds with same type + close date)
     const hasFundingSignal =
       extracted.amount_raised || extracted.valuation || extracted.announcement_date;
 
@@ -307,7 +310,7 @@ async function processCompany(
       const SIX_MONTHS_MS = 180 * 24 * 60 * 60 * 1000;
       const roundAlreadyExists = (existingRounds ?? []).some((r) => {
         if (r.round_type !== roundType) return false;
-        if (!r.announcement_date || !extracted.announcement_date) return true;
+        if (!r.announcement_date || !extracted.announcement_date) return true; // same type, no date to compare
         const diff = Math.abs(
           new Date(r.announcement_date).getTime() -
           new Date(extracted.announcement_date!).getTime(),
@@ -419,7 +422,7 @@ async function main() {
     .from("startups")
     .select("id, name, website, industry, employee_count, country, city, founders, description, updated_at")
     .lt("updated_at", staleThreshold)
-    .order("updated_at", { ascending: true })
+    .order("updated_at", { ascending: true }) // oldest first
     .limit(BATCH_SIZE);
 
   if (fetchErr) {
