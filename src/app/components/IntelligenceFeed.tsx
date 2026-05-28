@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, AlertCircle, TrendingUp, BarChart2, Zap, Target, Activity } from 'lucide-react';
+import { Sparkles, AlertCircle, TrendingUp, TrendingDown, BarChart2, Zap, Target, Activity } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
