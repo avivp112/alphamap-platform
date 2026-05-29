@@ -8,14 +8,15 @@
  *   1. New companies in scripts/watchlist.json not yet in Supabase → INSERT
  *   2. Existing startups whose updated_at is older than STALE_DAYS → REFRESH
  *
- * Each company: 4 parallel Tavily searches → 1 Claude extraction →
- *               validate (privacy + industry) → upsert Supabase.
+ * Each company: 4 parallel web searches (Tavily → DuckDuckGo fallback) →
+ *               1 Claude extraction → validate (privacy + industry) → upsert Supabase.
  *
  * Set DRY_RUN=true to simulate without writing to the database.
  */
 
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
+import { search as duckSearch } from "duck-duck-scrape";
 import { readFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
@@ -27,17 +28,14 @@ const STALE_DAYS = Number(process.env.STALE_DAYS ?? 7);
 const DRY_RUN    = process.env.DRY_RUN === "true";
 
 // ── Env-var guard ─────────────────────────────────────────────────────────────
-const REQUIRED_ENV = [
-  "SUPABASE_URL",
-  "SUPABASE_SERVICE_ROLE_KEY",
-  "ANTHROPIC_API_KEY",
-  "TAVILY_API_KEY",
-];
-for (const key of REQUIRED_ENV) {
+for (const key of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "ANTHROPIC_API_KEY"]) {
   if (!process.env[key]) {
     console.error(`❌  Missing required environment variable: ${key}`);
     process.exit(1);
   }
+}
+if (!process.env.TAVILY_API_KEY) {
+  console.warn("⚠️  TAVILY_API_KEY not set — will use DuckDuckGo fallback for all searches.");
 }
 
 // ── Clients ───────────────────────────────────────────────────────────────────
@@ -148,7 +146,12 @@ function normalizeRoundType(raw: string): string {
   return "Other";
 }
 
-async function tavilySearch(query: string, attempt = 0): Promise<string> {
+// Becomes true on credit-exhaustion errors (401, 402, 432) so every
+// subsequent webSearch() call skips Tavily and goes straight to DuckDuckGo.
+let tavilyExhausted = !process.env.TAVILY_API_KEY;
+
+// Returns null on failure — never returns an empty string.
+async function tavilySearch(query: string, attempt = 0): Promise<string | null> {
   const MAX_RETRIES = 3;
   try {
     const res = await fetch("https://api.tavily.com/search", {
@@ -162,43 +165,91 @@ async function tavilySearch(query: string, attempt = 0): Promise<string> {
         include_answer: true,
       }),
     });
+
+    // Credit or auth exhaustion — permanently switch to fallback for this run
+    if (res.status === 401 || res.status === 402 || res.status === 432) {
+      const body = await res.text().catch(() => "");
+      console.warn(
+        `    ⚠️  Tavily unavailable (HTTP ${res.status}) — switching ALL remaining searches to DuckDuckGo.` +
+        (body ? `\n        ${body.slice(0, 120)}` : ""),
+      );
+      tavilyExhausted = true;
+      return null;
+    }
+
+    // Temporary rate-limit — retry with backoff (does NOT exhaust Tavily)
     if (res.status === 429 && attempt < MAX_RETRIES) {
       const wait = 15_000 * Math.pow(2, attempt);
       console.warn(`    ⚠️  Tavily rate limit (429) — waiting ${wait / 1000}s (retry ${attempt + 1}/${MAX_RETRIES})…`);
       await sleep(wait);
       return tavilySearch(query, attempt + 1);
     }
+
     if (!res.ok) {
       console.warn(`    ⚠️  Tavily HTTP ${res.status} for: "${query.slice(0, 80)}"`);
-      return "";
+      return null;
     }
+
     const data = await res.json() as Record<string, unknown>;
     const parts: string[] = [];
     if (data.answer) parts.push(`Summary: ${data.answer}`);
     for (const r of (data.results as Array<Record<string, string>> ?? [])) {
       parts.push(`[${r.title}]\n${r.url}\n${String(r.content ?? "").slice(0, 500)}`);
     }
-    return parts.join("\n---\n");
+    return parts.length > 0 ? parts.join("\n---\n") : null;
   } catch (err) {
-    console.warn(`    ⚠️  Tavily search failed: ${String(err)}`);
-    return "";
+    console.warn(`    ⚠️  Tavily request failed: ${String(err)}`);
+    return null;
   }
 }
 
-// ── Core: research a company via Tavily + Claude ──────────────────────────────
+// Free DuckDuckGo fallback — no API key required.
+async function fallbackSearch(query: string): Promise<string | null> {
+  try {
+    const results = await duckSearch(query, { safeSearch: -2 }); // SafeSearchType.OFF = -2
+    if (!results?.results?.length) return null;
+    const parts = results.results.slice(0, 6).map((r) =>
+      `[${r.title}]\n${r.url}\n${(r.description ?? "").slice(0, 500)}`,
+    );
+    return parts.join("\n---\n") || null;
+  } catch (err) {
+    console.warn(`    ⚠️  DuckDuckGo fallback failed: ${String(err)}`);
+    return null;
+  }
+}
+
+// Primary entry-point for all web searches.
+// Tries Tavily first; falls back to DuckDuckGo on any failure.
+async function webSearch(query: string): Promise<string | null> {
+  if (!tavilyExhausted) {
+    const result = await tavilySearch(query);
+    if (result !== null) return result;
+    // tavilyExhausted may now be true (set by tavilySearch on 401/402/432)
+  }
+  console.warn(`    ↩️  Using DuckDuckGo for: "${query.slice(0, 70)}…"`);
+  return fallbackSearch(query);
+}
+
+// ── Core: research a company via web search + Claude ─────────────────────────
 async function researchCompany(name: string): Promise<ExtractedData> {
   const [funding, founders, market, publicStatus] = await Promise.all([
-    tavilySearch(`"${name}" startup funding round raised valuation 2024 2025`),
-    tavilySearch(`"${name}" founder co-founder "founded by" full name crunchbase angellist`),
-    tavilySearch(`"${name}" company website headquarters country city industry description`),
-    tavilySearch(`"${name}" IPO "went public" NASDAQ NYSE OR "private company" "privately held"`),
+    webSearch(`"${name}" startup funding round raised valuation 2024 2025`),
+    webSearch(`"${name}" founder co-founder "founded by" full name crunchbase angellist`),
+    webSearch(`"${name}" company website headquarters country city industry description`),
+    webSearch(`"${name}" IPO "went public" NASDAQ NYSE OR "private company" "privately held"`),
   ]);
 
+  // Refuse to send a completely empty context to Claude — skip the company instead.
+  const successCount = [funding, founders, market, publicStatus].filter((r) => r !== null).length;
+  if (successCount === 0) {
+    throw new Error("All 4 web searches failed (Tavily + DuckDuckGo) — no data available to extract");
+  }
+
   const context = [
-    `## Funding & Valuation\n${funding}`,
-    `## Founders & Leadership\n${founders}`,
-    `## Company Overview & HQ\n${market}`,
-    `## Public vs Private Status\n${publicStatus}`,
+    `## Funding & Valuation\n${funding ?? "(no data — search failed)"}`,
+    `## Founders & Leadership\n${founders ?? "(no data — search failed)"}`,
+    `## Company Overview & HQ\n${market ?? "(no data — search failed)"}`,
+    `## Public vs Private Status\n${publicStatus ?? "(no data — search failed)"}`,
   ].join("\n\n");
 
   const msg = await withRetry(
