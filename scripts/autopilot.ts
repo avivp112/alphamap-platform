@@ -8,36 +8,34 @@
  *   1. New companies in scripts/watchlist.json not yet in Supabase → INSERT
  *   2. Existing startups whose updated_at is older than STALE_DAYS → REFRESH
  *
- * Each company: 4 parallel Tavily searches → 1 Claude extraction →
- *               validate (privacy + industry) → upsert Supabase.
+ * Each company: 4 parallel web searches (Tavily → DuckDuckGo fallback) →
+ *               1 Claude extraction → validate (privacy + industry) → upsert Supabase.
  *
  * Set DRY_RUN=true to simulate without writing to the database.
  */
 
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
+import { search as duckSearch } from "duck-duck-scrape";
 import { readFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
 // ── Configuration ─────────────────────────────────────────────────────────────
-const BATCH_SIZE = Number(process.env.BATCH_SIZE ?? 10);
+const BATCH_SIZE = Number(process.env.BATCH_SIZE ?? 100); // default: full watchlist run
 const DELAY_MS   = Number(process.env.DELAY_MS   ?? 45_000); // 45 s between companies
 const STALE_DAYS = Number(process.env.STALE_DAYS ?? 7);
 const DRY_RUN    = process.env.DRY_RUN === "true";
 
 // ── Env-var guard ─────────────────────────────────────────────────────────────
-const REQUIRED_ENV = [
-  "SUPABASE_URL",
-  "SUPABASE_SERVICE_ROLE_KEY",
-  "ANTHROPIC_API_KEY",
-  "TAVILY_API_KEY",
-];
-for (const key of REQUIRED_ENV) {
+for (const key of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "ANTHROPIC_API_KEY"]) {
   if (!process.env[key]) {
     console.error(`❌  Missing required environment variable: ${key}`);
     process.exit(1);
   }
+}
+if (!process.env.TAVILY_API_KEY) {
+  console.warn("⚠️  TAVILY_API_KEY not set — will use DuckDuckGo fallback for all searches.");
 }
 
 // ── Clients ───────────────────────────────────────────────────────────────────
@@ -53,12 +51,25 @@ interface StartupRow {
   name: string;
   website: string | null;
   industry: string | null;
+  founded_year: number | null;
   employee_count: number | null;
   country: string | null;
   city: string | null;
   founders: string[] | null;
   description: string | null;
   updated_at: string;
+}
+
+function isIncomplete(row: StartupRow): boolean {
+  return (
+    !row.description ||
+    !row.industry ||
+    !row.employee_count ||
+    !row.country ||
+    !row.city ||
+    !row.founders ||
+    row.founders.length === 0
+  );
 }
 
 interface ExtractedData {
@@ -89,6 +100,32 @@ interface ProcessOutcome {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+function isRateLimitErr(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const e = err as Error & { status?: number };
+  return e.status === 429 || /rate.?limit|429/i.test(e.message);
+}
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  opts: { retries?: number; baseMs?: number; label?: string } = {},
+): Promise<T> {
+  const { retries = 4, baseMs = 20_000, label = "request" } = opts;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: unknown) {
+      if (attempt === retries || !isRateLimitErr(err)) throw err;
+      const wait = baseMs * Math.pow(2, attempt);
+      console.warn(
+        `    ⚠️  Rate limit on ${label} — waiting ${wait / 1000}s before retry ${attempt + 1}/${retries}…`,
+      );
+      await sleep(wait);
+    }
+  }
+  throw new Error("unreachable");
+}
+
 function normalizeRoundType(raw: string): string {
   if (!raw) return "Other";
   const s = raw.toLowerCase().trim();
@@ -109,7 +146,13 @@ function normalizeRoundType(raw: string): string {
   return "Other";
 }
 
-async function tavilySearch(query: string): Promise<string> {
+// Becomes true on credit-exhaustion errors (401, 402, 432) so every
+// subsequent webSearch() call skips Tavily and goes straight to DuckDuckGo.
+let tavilyExhausted = !process.env.TAVILY_API_KEY;
+
+// Returns null on failure — never returns an empty string.
+async function tavilySearch(query: string, attempt = 0): Promise<string | null> {
+  const MAX_RETRIES = 3;
   try {
     const res = await fetch("https://api.tavily.com/search", {
       method: "POST",
@@ -122,38 +165,97 @@ async function tavilySearch(query: string): Promise<string> {
         include_answer: true,
       }),
     });
-    if (!res.ok) return "";
+
+    // Credit or auth exhaustion — permanently switch to fallback for this run
+    if (res.status === 401 || res.status === 402 || res.status === 432) {
+      const body = await res.text().catch(() => "");
+      console.warn(
+        `    ⚠️  Tavily unavailable (HTTP ${res.status}) — switching ALL remaining searches to DuckDuckGo.` +
+        (body ? `\n        ${body.slice(0, 120)}` : ""),
+      );
+      tavilyExhausted = true;
+      return null;
+    }
+
+    // Temporary rate-limit — retry with backoff (does NOT exhaust Tavily)
+    if (res.status === 429 && attempt < MAX_RETRIES) {
+      const wait = 15_000 * Math.pow(2, attempt);
+      console.warn(`    ⚠️  Tavily rate limit (429) — waiting ${wait / 1000}s (retry ${attempt + 1}/${MAX_RETRIES})…`);
+      await sleep(wait);
+      return tavilySearch(query, attempt + 1);
+    }
+
+    if (!res.ok) {
+      console.warn(`    ⚠️  Tavily HTTP ${res.status} for: "${query.slice(0, 80)}"`);
+      return null;
+    }
+
     const data = await res.json() as Record<string, unknown>;
     const parts: string[] = [];
     if (data.answer) parts.push(`Summary: ${data.answer}`);
     for (const r of (data.results as Array<Record<string, string>> ?? [])) {
       parts.push(`[${r.title}]\n${r.url}\n${String(r.content ?? "").slice(0, 500)}`);
     }
-    return parts.join("\n---\n");
-  } catch {
-    return "";
+    return parts.length > 0 ? parts.join("\n---\n") : null;
+  } catch (err) {
+    console.warn(`    ⚠️  Tavily request failed: ${String(err)}`);
+    return null;
   }
 }
 
-// ── Core: research a company via Tavily + Claude ──────────────────────────────
+// Free DuckDuckGo fallback — no API key required.
+async function fallbackSearch(query: string): Promise<string | null> {
+  try {
+    const results = await duckSearch(query, { safeSearch: -2 }); // SafeSearchType.OFF = -2
+    if (!results?.results?.length) return null;
+    const parts = results.results.slice(0, 6).map((r) =>
+      `[${r.title}]\n${r.url}\n${(r.description ?? "").slice(0, 500)}`,
+    );
+    return parts.join("\n---\n") || null;
+  } catch (err) {
+    console.warn(`    ⚠️  DuckDuckGo fallback failed: ${String(err)}`);
+    return null;
+  }
+}
+
+// Primary entry-point for all web searches.
+// Tries Tavily first; falls back to DuckDuckGo on any failure.
+async function webSearch(query: string): Promise<string | null> {
+  if (!tavilyExhausted) {
+    const result = await tavilySearch(query);
+    if (result !== null) return result;
+    // tavilyExhausted may now be true (set by tavilySearch on 401/402/432)
+  }
+  console.warn(`    ↩️  Using DuckDuckGo for: "${query.slice(0, 70)}…"`);
+  return fallbackSearch(query);
+}
+
+// ── Core: research a company via web search + Claude ─────────────────────────
 async function researchCompany(name: string): Promise<ExtractedData> {
   const [funding, founders, market, publicStatus] = await Promise.all([
-    tavilySearch(`"${name}" startup funding round raised valuation 2024 2025`),
-    tavilySearch(`"${name}" founder co-founder "founded by" full name crunchbase angellist`),
-    tavilySearch(`"${name}" company website headquarters country city industry description`),
-    tavilySearch(`"${name}" IPO "went public" NASDAQ NYSE OR "private company" "privately held"`),
+    webSearch(`"${name}" startup funding round raised valuation 2024 2025`),
+    webSearch(`"${name}" founder co-founder "founded by" full name crunchbase angellist`),
+    webSearch(`"${name}" company website headquarters country city industry description`),
+    webSearch(`"${name}" IPO "went public" NASDAQ NYSE OR "private company" "privately held"`),
   ]);
 
+  // Refuse to send a completely empty context to Claude — skip the company instead.
+  const successCount = [funding, founders, market, publicStatus].filter((r) => r !== null).length;
+  if (successCount === 0) {
+    throw new Error("All 4 web searches failed (Tavily + DuckDuckGo) — no data available to extract");
+  }
+
   const context = [
-    `## Funding & Valuation\n${funding}`,
-    `## Founders & Leadership\n${founders}`,
-    `## Company Overview & HQ\n${market}`,
-    `## Public vs Private Status\n${publicStatus}`,
+    `## Funding & Valuation\n${funding ?? "(no data — search failed)"}`,
+    `## Founders & Leadership\n${founders ?? "(no data — search failed)"}`,
+    `## Company Overview & HQ\n${market ?? "(no data — search failed)"}`,
+    `## Public vs Private Status\n${publicStatus ?? "(no data — search failed)"}`,
   ].join("\n\n");
 
-  const msg = await anthropic.messages.create({
-    model: "claude-opus-4-7",
-    max_tokens: 2048,
+  const msg = await withRetry(
+    () => anthropic.messages.create({
+    model: "claude-haiku-4-5-20251001", // Fast & cost-effective for structured data extraction
+    max_tokens: 1024,
     tools: [
       {
         name: "save_startup",
@@ -221,7 +323,9 @@ Research data:
 ${context}`,
       },
     ],
-  });
+  }),
+  { retries: 4, baseMs: 20_000, label: "Claude API" },
+  );
 
   const toolBlock = msg.content.find((b) => b.type === "tool_use");
   if (!toolBlock || toolBlock.type !== "tool_use") {
@@ -274,17 +378,21 @@ async function processCompany(
   if (existing) {
     const patch: Record<string, unknown> = {};
 
-    // Only overwrite if new value is non-null; for static fields only fill if currently empty
-    if (extracted.employee_count)                     patch.employee_count = extracted.employee_count;
-    if (extracted.description)                        patch.description    = extracted.description;
-    if (extracted.website   && !existing.website)     patch.website        = extracted.website;
-    if (extracted.industry  && !existing.industry)    patch.industry       = extracted.industry;
-    if (extracted.country   && !existing.country)     patch.country        = extracted.country;
-    if (extracted.city      && !existing.city)        patch.city           = extracted.city;
+    // Always refresh time-varying fields when new data is available
+    if (extracted.employee_count) patch.employee_count = extracted.employee_count;
+    if (extracted.description)    patch.description    = extracted.description;
 
-    // Merge founders (union of old + new, deduplicated)
+    // Fill in any field that is currently NULL (never overwrite user-provided data)
+    if (extracted.website      && !existing.website)      patch.website      = extracted.website;
+    if (extracted.industry     && !existing.industry)     patch.industry     = extracted.industry;
+    if (extracted.country      && !existing.country)      patch.country      = extracted.country;
+    if (extracted.city         && !existing.city)         patch.city         = extracted.city;
+    if (extracted.founded_year && !existing.founded_year) patch.founded_year = extracted.founded_year;
+
+    // Merge founders (union of existing + new names, deduplicated)
     if (cleanFounders && cleanFounders.length > 0) {
-      patch.founders = [...new Set([...(existing.founders ?? []), ...cleanFounders])];
+      const merged = [...new Set([...(existing.founders ?? []), ...cleanFounders])];
+      if (merged.length > (existing.founders?.length ?? 0)) patch.founders = merged;
     }
 
     if (Object.keys(patch).length > 0) {
@@ -397,6 +505,8 @@ async function main() {
   console.log(`║     ${runAt}                   ║`);
   console.log(`║     BATCH=${BATCH_SIZE}  DELAY=${DELAY_MS / 1000}s  STALE=${STALE_DAYS}d  DRY_RUN=${DRY_RUN}  ║`);
   console.log("╚══════════════════════════════════════════════════════╝\n");
+  // Explicit log so BATCH_SIZE is immediately verifiable in Actions output
+  console.log(`ℹ️  BATCH_SIZE = ${BATCH_SIZE}  (env BATCH_SIZE="${process.env.BATCH_SIZE ?? "unset — using default 100"}")\n`);
 
   // ── Load watchlist ───────────────────────────────────────────────────────────
   const __dir = dirname(fileURLToPath(import.meta.url));
@@ -413,47 +523,78 @@ async function main() {
     console.log("📋  No watchlist.json found — processing stale startups only");
   }
 
-  // ── Fetch stale startups ─────────────────────────────────────────────────────
-  const staleThreshold = new Date(
-    Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000,
-  ).toISOString();
-
-  const { data: staleRows, error: fetchErr } = await supabase
+  // ── Single DB fetch: all existing startups ───────────────────────────────────
+  const { data: allRows, error: fetchErr } = await supabase
     .from("startups")
-    .select("id, name, website, industry, employee_count, country, city, founders, description, updated_at")
-    .lt("updated_at", staleThreshold)
-    .order("updated_at", { ascending: true }) // oldest first
-    .limit(BATCH_SIZE);
+    .select("id, name, website, industry, founded_year, employee_count, country, city, founders, description, updated_at")
+    .order("updated_at", { ascending: true }); // oldest first (stale priority)
 
   if (fetchErr) {
-    console.error("❌  Failed to fetch stale startups:", fetchErr.message);
+    console.error("❌  Failed to fetch existing startups:", fetchErr.message);
     process.exit(1);
   }
 
-  console.log(`🔄  Stale startups queued for refresh: ${staleRows?.length ?? 0}`);
+  const rowByName = new Map<string, StartupRow>();
+  for (const row of (allRows ?? []) as StartupRow[]) {
+    rowByName.set(row.name.toLowerCase().trim(), row);
+  }
 
-  // ── Identify new watchlist companies not yet in DB ───────────────────────────
-  const { data: allNames } = await supabase.from("startups").select("name");
-  const existingNameSet = new Set(
-    (allNames ?? []).map((r: { name: string }) => r.name.toLowerCase().trim()),
-  );
-  const newCompanies = watchlist.filter(
-    (n) => !existingNameSet.has(n.toLowerCase().trim()),
-  );
-  console.log(`🆕  New watchlist companies to add: ${newCompanies.length}`);
+  // ── Classify watchlist entries ────────────────────────────────────────────────
+  const COOLDOWN_MS      = 24 * 60 * 60 * 1000; // 24-hour hard cooldown for all existing rows
+  const staleThresholdMs = Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000;
 
-  // ── Build work queue ─────────────────────────────────────────────────────────
+  const newCompanies:       string[]     = [];
+  const incompleteRows:     StartupRow[] = [];
+  const staleCompletedRows: StartupRow[] = [];
+  let   cooldownSkipped = 0;
+
+  for (const name of watchlist) {
+    const existing = rowByName.get(name.toLowerCase().trim());
+    if (!existing) {
+      newCompanies.push(name);
+      continue;
+    }
+
+    // Hard 24-hour cooldown — skip regardless of profile completeness
+    const ageMs = Date.now() - new Date(existing.updated_at).getTime();
+    if (ageMs < COOLDOWN_MS) {
+      cooldownSkipped++;
+      continue;
+    }
+
+    if (isIncomplete(existing)) {
+      // In DB but missing critical profile fields — enrich
+      incompleteRows.push(existing);
+    } else if (new Date(existing.updated_at).getTime() < staleThresholdMs) {
+      // Complete but stale → refresh
+      staleCompletedRows.push(existing);
+    }
+    // else: complete + fresh → skip
+  }
+
+  console.log(`🆕  New watchlist companies to add:    ${newCompanies.length}`);
+  console.log(`🩹  Incomplete profiles to enrich:     ${incompleteRows.length}`);
+  console.log(`🔄  Complete but stale (refresh):      ${staleCompletedRows.length}`);
+  console.log(`⏰  Skipped (24h cooldown):             ${cooldownSkipped}`);
+
+  // ── Build work queue (priority: incomplete → new → stale) ────────────────────
   interface WorkItem { name: string; existing: StartupRow | null }
 
-  const newItems: WorkItem[] = newCompanies
+  const incompleteItems: WorkItem[] = incompleteRows
     .slice(0, BATCH_SIZE)
+    .map((row) => ({ name: row.name, existing: row }));
+
+  const remaining1 = Math.max(0, BATCH_SIZE - incompleteItems.length);
+  const newItems: WorkItem[] = newCompanies
+    .slice(0, remaining1)
     .map((name) => ({ name, existing: null }));
 
-  const staleItems: WorkItem[] = ((staleRows ?? []) as StartupRow[])
-    .slice(0, Math.max(0, BATCH_SIZE - newItems.length))
-    .map((s) => ({ name: s.name, existing: s }));
+  const remaining2 = Math.max(0, remaining1 - newItems.length);
+  const staleItems: WorkItem[] = staleCompletedRows
+    .slice(0, remaining2)
+    .map((row) => ({ name: row.name, existing: row }));
 
-  const queue: WorkItem[] = [...newItems, ...staleItems];
+  const queue: WorkItem[] = [...incompleteItems, ...newItems, ...staleItems];
 
   if (queue.length === 0) {
     console.log("\n✅  Nothing to process — all companies are up to date!\n");
@@ -473,13 +614,23 @@ async function main() {
 
   for (let i = 0; i < queue.length; i++) {
     const { name, existing } = queue[i];
-    const tag = existing ? "REFRESH" : "NEW";
+    const tag = !existing ? "NEW"
+      : isIncomplete(existing) ? "ENRICH"
+      : "REFRESH";
     console.log(`\n[${i + 1}/${queue.length}] ${tag}: "${name}"`);
     if (existing) {
       const age = Math.floor(
         (Date.now() - new Date(existing.updated_at).getTime()) / 86_400_000,
       );
-      console.log(`    Last updated: ${existing.updated_at.slice(0, 10)} (${age}d ago)`);
+      const missing = [
+        !existing.description    && "description",
+        !existing.industry       && "industry",
+        !existing.employee_count && "employees",
+        !existing.country        && "country",
+        !existing.city           && "city",
+        (!existing.founders || existing.founders.length === 0) && "founders",
+      ].filter(Boolean).join(", ");
+      console.log(`    Last updated: ${existing.updated_at.slice(0, 10)} (${age}d ago)${missing ? ` | missing: ${missing}` : ""}`);
     }
 
     const outcome = await processCompany(name, existing);
