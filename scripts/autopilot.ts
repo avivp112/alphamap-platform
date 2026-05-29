@@ -72,6 +72,13 @@ function isIncomplete(row: StartupRow): boolean {
   );
 }
 
+// A row with both description AND employee_count is "complete enough" to skip
+// enrichment even if minor fields (founders, city, etc.) are still missing.
+// This prevents repeatedly re-queuing well-known companies like OpenAI.
+function isEssentiallyComplete(row: StartupRow): boolean {
+  return !!(row.description && row.employee_count);
+}
+
 interface ExtractedData {
   name: string;
   is_public_company: boolean;
@@ -204,7 +211,19 @@ async function tavilySearch(query: string, attempt = 0): Promise<string | null> 
 }
 
 // Free DuckDuckGo fallback — no API key required.
+// Calls are serialized with a mandatory inter-request delay to avoid DDG
+// "anomaly in request" blocks when multiple searches fire concurrently.
+const DDG_INTERVAL_MS = 12_000;
+let _ddgLock = Promise.resolve<void>(undefined);
+
 async function fallbackSearch(query: string): Promise<string | null> {
+  // Acquire position in the serial queue
+  const waitFor = _ddgLock;
+  let releaseNext!: () => void;
+  _ddgLock = new Promise<void>((resolve) => (releaseNext = resolve));
+
+  await waitFor; // wait for the previous DDG call + its cooldown to finish
+
   try {
     const results = await duckSearch(query, { safeSearch: -2 }); // SafeSearchType.OFF = -2
     if (!results?.results?.length) return null;
@@ -215,6 +234,10 @@ async function fallbackSearch(query: string): Promise<string | null> {
   } catch (err) {
     console.warn(`    ⚠️  DuckDuckGo fallback failed: ${String(err)}`);
     return null;
+  } finally {
+    // Hold the lock for DDG_INTERVAL_MS before releasing to the next waiter
+    await sleep(DDG_INTERVAL_MS);
+    releaseNext();
   }
 }
 
@@ -562,8 +585,8 @@ async function main() {
       continue;
     }
 
-    if (isIncomplete(existing)) {
-      // In DB but missing critical profile fields — enrich
+    if (isIncomplete(existing) && !isEssentiallyComplete(existing)) {
+      // Missing critical fields AND not "complete enough" — enrich
       incompleteRows.push(existing);
     } else if (new Date(existing.updated_at).getTime() < staleThresholdMs) {
       // Complete but stale → refresh
@@ -585,7 +608,7 @@ async function main() {
     if (capturedIds.has(row.id)) continue;
     const ageMs = Date.now() - new Date(row.updated_at).getTime();
     if (ageMs < COOLDOWN_MS) { cooldownSkipped++; continue; }
-    if (isIncomplete(row)) {
+    if (isIncomplete(row) && !isEssentiallyComplete(row)) {
       incompleteRows.push(row);
       capturedIds.add(row.id);
       offWatchlistEnriched++;
