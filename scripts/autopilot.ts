@@ -53,12 +53,25 @@ interface StartupRow {
   name: string;
   website: string | null;
   industry: string | null;
+  founded_year: number | null;
   employee_count: number | null;
   country: string | null;
   city: string | null;
   founders: string[] | null;
   description: string | null;
   updated_at: string;
+}
+
+function isIncomplete(row: StartupRow): boolean {
+  return (
+    !row.description ||
+    !row.industry ||
+    !row.employee_count ||
+    !row.country ||
+    !row.city ||
+    !row.founders ||
+    row.founders.length === 0
+  );
 }
 
 interface ExtractedData {
@@ -314,17 +327,21 @@ async function processCompany(
   if (existing) {
     const patch: Record<string, unknown> = {};
 
-    // Only overwrite if new value is non-null; for static fields only fill if currently empty
-    if (extracted.employee_count)                     patch.employee_count = extracted.employee_count;
-    if (extracted.description)                        patch.description    = extracted.description;
-    if (extracted.website   && !existing.website)     patch.website        = extracted.website;
-    if (extracted.industry  && !existing.industry)    patch.industry       = extracted.industry;
-    if (extracted.country   && !existing.country)     patch.country        = extracted.country;
-    if (extracted.city      && !existing.city)        patch.city           = extracted.city;
+    // Always refresh time-varying fields when new data is available
+    if (extracted.employee_count) patch.employee_count = extracted.employee_count;
+    if (extracted.description)    patch.description    = extracted.description;
 
-    // Merge founders (union of old + new, deduplicated)
+    // Fill in any field that is currently NULL (never overwrite user-provided data)
+    if (extracted.website      && !existing.website)      patch.website      = extracted.website;
+    if (extracted.industry     && !existing.industry)     patch.industry     = extracted.industry;
+    if (extracted.country      && !existing.country)      patch.country      = extracted.country;
+    if (extracted.city         && !existing.city)         patch.city         = extracted.city;
+    if (extracted.founded_year && !existing.founded_year) patch.founded_year = extracted.founded_year;
+
+    // Merge founders (union of existing + new names, deduplicated)
     if (cleanFounders && cleanFounders.length > 0) {
-      patch.founders = [...new Set([...(existing.founders ?? []), ...cleanFounders])];
+      const merged = [...new Set([...(existing.founders ?? []), ...cleanFounders])];
+      if (merged.length > (existing.founders?.length ?? 0)) patch.founders = merged;
     }
 
     if (Object.keys(patch).length > 0) {
@@ -455,47 +472,65 @@ async function main() {
     console.log("📋  No watchlist.json found — processing stale startups only");
   }
 
-  // ── Fetch stale startups ─────────────────────────────────────────────────────
-  const staleThreshold = new Date(
-    Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000,
-  ).toISOString();
-
-  const { data: staleRows, error: fetchErr } = await supabase
+  // ── Single DB fetch: all existing startups ───────────────────────────────────
+  const { data: allRows, error: fetchErr } = await supabase
     .from("startups")
-    .select("id, name, website, industry, employee_count, country, city, founders, description, updated_at")
-    .lt("updated_at", staleThreshold)
-    .order("updated_at", { ascending: true }) // oldest first
-    .limit(BATCH_SIZE);
+    .select("id, name, website, industry, founded_year, employee_count, country, city, founders, description, updated_at")
+    .order("updated_at", { ascending: true }); // oldest first (stale priority)
 
   if (fetchErr) {
-    console.error("❌  Failed to fetch stale startups:", fetchErr.message);
+    console.error("❌  Failed to fetch existing startups:", fetchErr.message);
     process.exit(1);
   }
 
-  console.log(`🔄  Stale startups queued for refresh: ${staleRows?.length ?? 0}`);
+  const rowByName = new Map<string, StartupRow>();
+  for (const row of (allRows ?? []) as StartupRow[]) {
+    rowByName.set(row.name.toLowerCase().trim(), row);
+  }
 
-  // ── Identify new watchlist companies not yet in DB ───────────────────────────
-  const { data: allNames } = await supabase.from("startups").select("name");
-  const existingNameSet = new Set(
-    (allNames ?? []).map((r: { name: string }) => r.name.toLowerCase().trim()),
-  );
-  const newCompanies = watchlist.filter(
-    (n) => !existingNameSet.has(n.toLowerCase().trim()),
-  );
-  console.log(`🆕  New watchlist companies to add: ${newCompanies.length}`);
+  // ── Classify watchlist entries ────────────────────────────────────────────────
+  const staleThresholdMs = Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000;
 
-  // ── Build work queue ─────────────────────────────────────────────────────────
+  const newCompanies:        string[]    = [];
+  const incompleteRows:      StartupRow[] = [];
+  const staleCompletedRows:  StartupRow[] = [];
+
+  for (const name of watchlist) {
+    const existing = rowByName.get(name.toLowerCase().trim());
+    if (!existing) {
+      newCompanies.push(name);
+    } else if (isIncomplete(existing)) {
+      // In DB but missing critical profile fields — enrich regardless of age
+      incompleteRows.push(existing);
+    } else if (new Date(existing.updated_at).getTime() < staleThresholdMs) {
+      // Complete but stale → refresh
+      staleCompletedRows.push(existing);
+    }
+    // else: complete + fresh → skip
+  }
+
+  console.log(`🆕  New watchlist companies to add:    ${newCompanies.length}`);
+  console.log(`🩹  Incomplete profiles to enrich:     ${incompleteRows.length}`);
+  console.log(`🔄  Complete but stale (refresh):      ${staleCompletedRows.length}`);
+
+  // ── Build work queue (priority: incomplete → new → stale) ────────────────────
   interface WorkItem { name: string; existing: StartupRow | null }
 
-  const newItems: WorkItem[] = newCompanies
+  const incompleteItems: WorkItem[] = incompleteRows
     .slice(0, BATCH_SIZE)
+    .map((row) => ({ name: row.name, existing: row }));
+
+  const remaining1 = Math.max(0, BATCH_SIZE - incompleteItems.length);
+  const newItems: WorkItem[] = newCompanies
+    .slice(0, remaining1)
     .map((name) => ({ name, existing: null }));
 
-  const staleItems: WorkItem[] = ((staleRows ?? []) as StartupRow[])
-    .slice(0, Math.max(0, BATCH_SIZE - newItems.length))
-    .map((s) => ({ name: s.name, existing: s }));
+  const remaining2 = Math.max(0, remaining1 - newItems.length);
+  const staleItems: WorkItem[] = staleCompletedRows
+    .slice(0, remaining2)
+    .map((row) => ({ name: row.name, existing: row }));
 
-  const queue: WorkItem[] = [...newItems, ...staleItems];
+  const queue: WorkItem[] = [...incompleteItems, ...newItems, ...staleItems];
 
   if (queue.length === 0) {
     console.log("\n✅  Nothing to process — all companies are up to date!\n");
@@ -515,13 +550,23 @@ async function main() {
 
   for (let i = 0; i < queue.length; i++) {
     const { name, existing } = queue[i];
-    const tag = existing ? "REFRESH" : "NEW";
+    const tag = !existing ? "NEW"
+      : isIncomplete(existing) ? "ENRICH"
+      : "REFRESH";
     console.log(`\n[${i + 1}/${queue.length}] ${tag}: "${name}"`);
     if (existing) {
       const age = Math.floor(
         (Date.now() - new Date(existing.updated_at).getTime()) / 86_400_000,
       );
-      console.log(`    Last updated: ${existing.updated_at.slice(0, 10)} (${age}d ago)`);
+      const missing = [
+        !existing.description    && "description",
+        !existing.industry       && "industry",
+        !existing.employee_count && "employees",
+        !existing.country        && "country",
+        !existing.city           && "city",
+        (!existing.founders || existing.founders.length === 0) && "founders",
+      ].filter(Boolean).join(", ");
+      console.log(`    Last updated: ${existing.updated_at.slice(0, 10)} (${age}d ago)${missing ? ` | missing: ${missing}` : ""}`);
     }
 
     const outcome = await processCompany(name, existing);
