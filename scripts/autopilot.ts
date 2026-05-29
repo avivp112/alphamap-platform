@@ -4,12 +4,16 @@
  *
  * Executed every Sunday via GitHub Actions.
  *
- * Work queue (up to BATCH_SIZE companies per run):
- *   1. New companies in scripts/watchlist.json not yet in Supabase → INSERT
- *   2. Existing startups whose updated_at is older than STALE_DAYS → REFRESH
+ * Source of truth: the 'startups' table in Supabase.
+ * The script never inserts rows on its own — it only enriches or refreshes
+ * existing rows that were added via the UI, CSV import, or Edge Function.
+ *
+ * Work queue (up to BATCH_SIZE rows per run):
+ *   1. ENRICH — rows missing description OR employee_count (not essentially complete)
+ *   2. REFRESH — fully complete rows whose updated_at is older than STALE_DAYS
  *
  * Each company: 4 parallel web searches (Tavily → DuckDuckGo fallback) →
- *               1 Claude extraction → validate (privacy + industry) → upsert Supabase.
+ *               1 Claude extraction → validate (privacy + industry) → update Supabase.
  *
  * Set DRY_RUN=true to simulate without writing to the database.
  */
@@ -17,9 +21,6 @@
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { search as duckSearch } from "duck-duck-scrape";
-import { readFileSync, existsSync } from "fs";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
 
 // ── Configuration ─────────────────────────────────────────────────────────────
 const BATCH_SIZE = Number(process.env.BATCH_SIZE ?? 100); // default: full watchlist run
@@ -70,6 +71,13 @@ function isIncomplete(row: StartupRow): boolean {
     !row.founders ||
     row.founders.length === 0
   );
+}
+
+// A row with both description AND employee_count is "complete enough" to skip
+// enrichment even if minor fields (founders, city, etc.) are still missing.
+// This prevents repeatedly re-queuing well-known companies like OpenAI.
+function isEssentiallyComplete(row: StartupRow): boolean {
+  return !!(row.description && row.employee_count);
 }
 
 interface ExtractedData {
@@ -204,7 +212,19 @@ async function tavilySearch(query: string, attempt = 0): Promise<string | null> 
 }
 
 // Free DuckDuckGo fallback — no API key required.
+// Calls are serialized with a mandatory inter-request delay to avoid DDG
+// "anomaly in request" blocks when multiple searches fire concurrently.
+const DDG_INTERVAL_MS = 12_000;
+let _ddgLock = Promise.resolve<void>(undefined);
+
 async function fallbackSearch(query: string): Promise<string | null> {
+  // Acquire position in the serial queue
+  const waitFor = _ddgLock;
+  let releaseNext!: () => void;
+  _ddgLock = new Promise<void>((resolve) => (releaseNext = resolve));
+
+  await waitFor; // wait for the previous DDG call + its cooldown to finish
+
   try {
     const results = await duckSearch(query, { safeSearch: -2 }); // SafeSearchType.OFF = -2
     if (!results?.results?.length) return null;
@@ -215,6 +235,10 @@ async function fallbackSearch(query: string): Promise<string | null> {
   } catch (err) {
     console.warn(`    ⚠️  DuckDuckGo fallback failed: ${String(err)}`);
     return null;
+  } finally {
+    // Hold the lock for DDG_INTERVAL_MS before releasing to the next waiter
+    await sleep(DDG_INTERVAL_MS);
+    releaseNext();
   }
 }
 
@@ -505,83 +529,69 @@ async function main() {
   console.log(`║     ${runAt}                   ║`);
   console.log(`║     BATCH=${BATCH_SIZE}  DELAY=${DELAY_MS / 1000}s  STALE=${STALE_DAYS}d  DRY_RUN=${DRY_RUN}  ║`);
   console.log("╚══════════════════════════════════════════════════════╝\n");
-  // Explicit log so BATCH_SIZE is immediately verifiable in Actions output
   console.log(`ℹ️  BATCH_SIZE = ${BATCH_SIZE}  (env BATCH_SIZE="${process.env.BATCH_SIZE ?? "unset — using default 100"}")\n`);
 
-  // ── Load watchlist ───────────────────────────────────────────────────────────
-  const __dir = dirname(fileURLToPath(import.meta.url));
-  const watchlistPath = join(__dir, "watchlist.json");
-  let watchlist: string[] = [];
-  if (existsSync(watchlistPath)) {
-    try {
-      watchlist = JSON.parse(readFileSync(watchlistPath, "utf-8")) as string[];
-      console.log(`📋  Watchlist loaded: ${watchlist.length} companies`);
-    } catch {
-      console.warn("⚠️  Could not parse watchlist.json — skipping watchlist");
-    }
-  } else {
-    console.log("📋  No watchlist.json found — processing stale startups only");
-  }
-
-  // ── Single DB fetch: all existing startups ───────────────────────────────────
+  // ── Fetch all rows from startups (sole source of truth) ─────────────────────
+  // Columns reflect the live schema: id, name, website, description, industry,
+  // founded_year, employee_count, country, city, founders, updated_at
   const { data: allRows, error: fetchErr } = await supabase
     .from("startups")
     .select("id, name, website, industry, founded_year, employee_count, country, city, founders, description, updated_at")
-    .order("updated_at", { ascending: true }); // oldest first (stale priority)
+    .order("updated_at", { ascending: true }); // oldest first → stale rows surface first
 
   if (fetchErr) {
-    console.error("❌  Failed to fetch existing startups:", fetchErr.message);
+    console.error("❌  Failed to fetch startups:", fetchErr.message);
     process.exit(1);
   }
 
-  const rowByName = new Map<string, StartupRow>();
-  for (const row of (allRows ?? []) as StartupRow[]) {
-    rowByName.set(row.name.toLowerCase().trim(), row);
-  }
+  const rows = (allRows ?? []) as StartupRow[];
+  console.log(`📋  Total startups in DB: ${rows.length}\n`);
 
-  // ── Classify watchlist entries ────────────────────────────────────────────────
+  // ── Classify every row ────────────────────────────────────────────────────────
+  const COOLDOWN_MS      = 24 * 60 * 60 * 1000;
   const staleThresholdMs = Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000;
 
-  const newCompanies:        string[]    = [];
-  const incompleteRows:      StartupRow[] = [];
-  const staleCompletedRows:  StartupRow[] = [];
+  const incompleteRows:     StartupRow[] = [];
+  const staleCompletedRows: StartupRow[] = [];
+  let   cooldownSkipped = 0;
+  let   freshSkipped    = 0;
 
-  for (const name of watchlist) {
-    const existing = rowByName.get(name.toLowerCase().trim());
-    if (!existing) {
-      newCompanies.push(name);
-    } else if (isIncomplete(existing)) {
-      // In DB but missing critical profile fields — enrich regardless of age
-      incompleteRows.push(existing);
-    } else if (new Date(existing.updated_at).getTime() < staleThresholdMs) {
-      // Complete but stale → refresh
-      staleCompletedRows.push(existing);
+  for (const row of rows) {
+    const ageMs = Date.now() - new Date(row.updated_at).getTime();
+
+    // Hard 24-hour cooldown — skip regardless of completeness
+    if (ageMs < COOLDOWN_MS) {
+      cooldownSkipped++;
+      continue;
     }
-    // else: complete + fresh → skip
+
+    if (isIncomplete(row) && !isEssentiallyComplete(row)) {
+      incompleteRows.push(row);
+    } else if (new Date(row.updated_at).getTime() < staleThresholdMs) {
+      staleCompletedRows.push(row);
+    } else {
+      freshSkipped++;
+    }
   }
 
-  console.log(`🆕  New watchlist companies to add:    ${newCompanies.length}`);
-  console.log(`🩹  Incomplete profiles to enrich:     ${incompleteRows.length}`);
-  console.log(`🔄  Complete but stale (refresh):      ${staleCompletedRows.length}`);
+  console.log(`🩹  Incomplete profiles to enrich:   ${incompleteRows.length}`);
+  console.log(`🔄  Complete but stale (refresh):    ${staleCompletedRows.length}`);
+  console.log(`⏰  Skipped — 24h cooldown:           ${cooldownSkipped}`);
+  console.log(`✅  Skipped — complete & fresh:       ${freshSkipped}`);
 
-  // ── Build work queue (priority: incomplete → new → stale) ────────────────────
-  interface WorkItem { name: string; existing: StartupRow | null }
+  // ── Build work queue (priority: incomplete → stale) ──────────────────────────
+  interface WorkItem { name: string; existing: StartupRow }
 
   const incompleteItems: WorkItem[] = incompleteRows
     .slice(0, BATCH_SIZE)
     .map((row) => ({ name: row.name, existing: row }));
 
-  const remaining1 = Math.max(0, BATCH_SIZE - incompleteItems.length);
-  const newItems: WorkItem[] = newCompanies
-    .slice(0, remaining1)
-    .map((name) => ({ name, existing: null }));
-
-  const remaining2 = Math.max(0, remaining1 - newItems.length);
+  const remaining = Math.max(0, BATCH_SIZE - incompleteItems.length);
   const staleItems: WorkItem[] = staleCompletedRows
-    .slice(0, remaining2)
+    .slice(0, remaining)
     .map((row) => ({ name: row.name, existing: row }));
 
-  const queue: WorkItem[] = [...incompleteItems, ...newItems, ...staleItems];
+  const queue: WorkItem[] = [...incompleteItems, ...staleItems];
 
   if (queue.length === 0) {
     console.log("\n✅  Nothing to process — all companies are up to date!\n");
@@ -601,24 +611,20 @@ async function main() {
 
   for (let i = 0; i < queue.length; i++) {
     const { name, existing } = queue[i];
-    const tag = !existing ? "NEW"
-      : isIncomplete(existing) ? "ENRICH"
-      : "REFRESH";
+    const tag = isIncomplete(existing) ? "ENRICH" : "REFRESH";
     console.log(`\n[${i + 1}/${queue.length}] ${tag}: "${name}"`);
-    if (existing) {
-      const age = Math.floor(
-        (Date.now() - new Date(existing.updated_at).getTime()) / 86_400_000,
-      );
-      const missing = [
-        !existing.description    && "description",
-        !existing.industry       && "industry",
-        !existing.employee_count && "employees",
-        !existing.country        && "country",
-        !existing.city           && "city",
-        (!existing.founders || existing.founders.length === 0) && "founders",
-      ].filter(Boolean).join(", ");
-      console.log(`    Last updated: ${existing.updated_at.slice(0, 10)} (${age}d ago)${missing ? ` | missing: ${missing}` : ""}`);
-    }
+    const age = Math.floor(
+      (Date.now() - new Date(existing.updated_at).getTime()) / 86_400_000,
+    );
+    const missing = [
+      !existing.description    && "description",
+      !existing.industry       && "industry",
+      !existing.employee_count && "employees",
+      !existing.country        && "country",
+      !existing.city           && "city",
+      (!existing.founders || existing.founders.length === 0) && "founders",
+    ].filter(Boolean).join(", ");
+    console.log(`    Last updated: ${existing.updated_at.slice(0, 10)} (${age}d ago)${missing ? ` | missing: ${missing}` : ""}`);
 
     const outcome = await processCompany(name, existing);
     tally[outcome.result]++;
