@@ -572,8 +572,28 @@ async function main() {
     // else: complete + fresh → skip
   }
 
+  // ── Also enrich incomplete rows NOT in the watchlist ─────────────────────────
+  // Manual imports in 'startups' may have NULL fields but no watchlist entry.
+  // Scan every DB row and add any incomplete + non-cooled-down row we haven't
+  // already captured above.
+  const capturedIds = new Set([
+    ...incompleteRows.map((r) => r.id),
+    ...staleCompletedRows.map((r) => r.id),
+  ]);
+  let offWatchlistEnriched = 0;
+  for (const row of (allRows ?? []) as StartupRow[]) {
+    if (capturedIds.has(row.id)) continue;
+    const ageMs = Date.now() - new Date(row.updated_at).getTime();
+    if (ageMs < COOLDOWN_MS) { cooldownSkipped++; continue; }
+    if (isIncomplete(row)) {
+      incompleteRows.push(row);
+      capturedIds.add(row.id);
+      offWatchlistEnriched++;
+    }
+  }
+
   console.log(`🆕  New watchlist companies to add:    ${newCompanies.length}`);
-  console.log(`🩹  Incomplete profiles to enrich:     ${incompleteRows.length}`);
+  console.log(`🩹  Incomplete profiles to enrich:     ${incompleteRows.length}${offWatchlistEnriched ? ` (${offWatchlistEnriched} off-watchlist)` : ""}`);
   console.log(`🔄  Complete but stale (refresh):      ${staleCompletedRows.length}`);
   console.log(`⏰  Skipped (24h cooldown):             ${cooldownSkipped}`);
 
