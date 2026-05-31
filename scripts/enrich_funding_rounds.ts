@@ -40,8 +40,8 @@ if (!process.env.TAVILY_API_KEY) {
   console.warn("⚠️  TAVILY_API_KEY not set — DuckDuckGo will be used for all searches.\n");
 }
 
-const BATCH_SIZE = Number(process.env.BATCH_SIZE ?? 50);
-const DELAY_MS   = Number(process.env.DELAY_MS   ?? 15_000); // shorter than profile enrichment
+let BATCH_SIZE = Number(process.env.BATCH_SIZE ?? 50);
+let DELAY_MS   = Number(process.env.DELAY_MS   ?? 15_000);
 const DRY_RUN    = process.env.DRY_RUN !== "false";           // safe default: dry run
 
 const supabase  = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
@@ -328,11 +328,45 @@ async function main() {
     roundsByStartup.set(r.startup_id, arr);
   }
 
-  console.log(`📋  Startups: ${startups.length}   Existing rounds: ${allRounds.length}\n`);
+  // ── Diagnostic phase ──────────────────────────────────────────────────────
+  const noRounds = startups.filter((s) => !roundsByStartup.has(s.id));
+  const needsEnrichCount = startups.filter(
+    (s) => needsEnrichment(roundsByStartup.get(s.id) ?? []),
+  ).length;
+
+  console.log("── Diagnostic ──────────────────────────────────────────────");
+  console.log(`  Total startups:             ${startups.length}`);
+  console.log(`  Total funding_rounds rows:  ${allRounds.length}`);
+  console.log(`  Startups with 0 rounds:     ${noRounds.length}  ← Phase 1 target`);
+  console.log(`  Startups with only stubs:   ${needsEnrichCount}  ← Phase 2 target`);
+
+  if (noRounds.length > 0) {
+    console.log("\n  Companies missing from funding_rounds:");
+    for (const s of noRounds) {
+      console.log(`    • ${s.name}`);
+    }
+    console.log();
+  }
+
+  // Auto-throttle when backlog is large to avoid DDG/Tavily rate-limit blocks
+  const LARGE_THRESHOLD = 10;
+  if (noRounds.length > LARGE_THRESHOLD) {
+    const cappedBatch = Math.min(BATCH_SIZE, 10);
+    const cappedDelay = Math.max(DELAY_MS, 10_000);
+    if (cappedBatch < BATCH_SIZE || cappedDelay > DELAY_MS) {
+      console.log(`⚠️  Large backlog detected (${noRounds.length} companies have no rounds).`);
+      console.log(`    Auto-throttling to prevent search API rate-limit blocks:`);
+      if (cappedBatch < BATCH_SIZE) console.log(`    BATCH_SIZE: ${BATCH_SIZE} → ${cappedBatch}`);
+      if (cappedDelay > DELAY_MS)   console.log(`    DELAY_MS:   ${DELAY_MS / 1000}s → ${cappedDelay / 1000}s`);
+      BATCH_SIZE = cappedBatch;
+      DELAY_MS   = cappedDelay;
+      console.log();
+    }
+  }
+  console.log("─".repeat(58) + "\n");
 
   // ── Phase 1: Integrity sync ────────────────────────────────────────────────
   console.log("── Phase 1: Integrity Sync ─────────────────────────────");
-  const noRounds = startups.filter((s) => (roundsByStartup.get(s.id) ?? []).length === 0);
   console.log(`🔍  Startups with 0 rounds: ${noRounds.length}`);
 
   let stubsInserted = 0;
