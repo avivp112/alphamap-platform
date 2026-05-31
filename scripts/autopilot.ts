@@ -9,8 +9,9 @@
  * existing rows that were added via the UI, CSV import, or Edge Function.
  *
  * Work queue (up to BATCH_SIZE rows per run):
- *   1. ENRICH — rows missing description OR employee_count (not essentially complete)
- *   2. REFRESH — fully complete rows whose updated_at is older than STALE_DAYS
+ *   1. ENRICH  — rows missing description OR employee_count (not essentially complete)
+ *   2. FUND    — essentially complete rows with only "Other" stub funding rounds
+ *   3. REFRESH — fully complete rows whose updated_at is older than STALE_DAYS
  *
  * Each company: 4 parallel web searches (Tavily → DuckDuckGo fallback) →
  *               1 Claude extraction → validate (privacy + industry) → update Supabase.
@@ -80,6 +81,10 @@ function isEssentiallyComplete(row: StartupRow): boolean {
   return !!(row.description && row.employee_count);
 }
 
+function needsEnrichment(rounds: Pick<FundingRoundRow, "round_type">[]): boolean {
+  return rounds.every((r) => !r.round_type || r.round_type === "Other");
+}
+
 interface ExtractedData {
   name: string;
   is_public_company: boolean;
@@ -103,6 +108,19 @@ type ProcessResult = "inserted" | "updated" | "skipped" | "rejected" | "error";
 interface ProcessOutcome {
   result: ProcessResult;
   reason?: string;
+}
+
+interface FundingRoundRow {
+  id: string; startup_id: string; round_type: string | null;
+  amount_raised: number | null; valuation: number | null;
+  announcement_date: string | null; source_url: string | null;
+}
+interface RoundData {
+  round_type: string;
+  amount_raised?: number;
+  valuation?: number;
+  announcement_date?: string;
+  source_url?: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -521,6 +539,132 @@ async function processCompany(
   return { result: "inserted" };
 }
 
+// ── FUND: research all historical funding rounds for one company ──────────────
+async function researchFundingRounds(name: string): Promise<RoundData[]> {
+  const [history, recent] = await Promise.all([
+    webSearch(`"${name}" complete funding history "Series A" OR "Series B" Crunchbase PitchBook rounds`),
+    webSearch(`"${name}" funding raised 2022 2023 2024 2025 valuation round amount`),
+  ]);
+  if (!history && !recent) throw new Error("Both searches failed");
+
+  const context = [
+    `## Complete Funding History\n${history ?? "(search failed)"}`,
+    `## Recent Rounds (2022–2025)\n${recent  ?? "(search failed)"}`,
+  ].join("\n\n");
+
+  const msg = await withRetry(
+    () => anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 2048,
+      tools: [{
+        name: "save_funding_history",
+        description: "Save the complete chronological funding history for a private tech startup",
+        input_schema: {
+          type: "object" as const,
+          properties: {
+            rounds: {
+              type: "array",
+              description: "All verified funding rounds, oldest first",
+              items: {
+                type: "object" as const,
+                properties: {
+                  round_type: {
+                    type: "string",
+                    enum: [
+                      "Pre-Seed", "Seed", "Series A", "Series B", "Series C",
+                      "Series D", "Series E+", "Growth", "Bridge",
+                      "Convertible Note", "Bootstrapped", "Grant", "Acquired", "Other",
+                    ],
+                  },
+                  amount_raised:     { type: "number", description: "USD amount (e.g. $50M → 50000000)" },
+                  valuation:         { type: "number", description: "Post-money valuation in USD" },
+                  announcement_date: { type: "string", description: "YYYY-MM-DD; YYYY-01-01 if only year is known" },
+                  source_url:        { type: "string", description: "Crunchbase, press release, or SEC filing URL" },
+                },
+                required: ["round_type"],
+              },
+            },
+          },
+          required: ["rounds"],
+        },
+      }],
+      tool_choice: { type: "tool", name: "save_funding_history" },
+      messages: [{
+        role: "user",
+        content: `Extract the COMPLETE verified funding history for "${name}".
+RULES: Include every confirmed round oldest to newest. Convert all amounts to plain USD integers ($1.5B → 1500000000). Omit unverifiable rounds — return an empty array rather than guessing.
+Research data:\n${context}`,
+      }],
+    }),
+    { retries: 3, baseMs: 20_000, label: "Claude API (funding)" },
+  );
+
+  const tool = msg.content.find((b) => b.type === "tool_use");
+  if (!tool || tool.type !== "tool_use") return [];
+  const input = tool.input as { rounds?: RoundData[] };
+  return (input.rounds ?? []).filter((r) => r.round_type);
+}
+
+async function insertNewRounds(
+  startupId: string,
+  newRounds: RoundData[],
+  existingRounds: FundingRoundRow[],
+): Promise<{ inserted: number; skipped: number }> {
+  const SIX_MONTHS_MS = 180 * 24 * 60 * 60 * 1000;
+  let inserted = 0;
+  let skipped  = 0;
+  const seen = [...existingRounds];
+
+  for (const round of newRounds) {
+    const roundType = normalizeRoundType(round.round_type);
+
+    const isDup = seen.some((e) => {
+      if (e.round_type !== roundType) return false;
+      if (!e.announcement_date || !round.announcement_date) return true;
+      return Math.abs(
+        new Date(e.announcement_date).getTime() -
+        new Date(round.announcement_date).getTime(),
+      ) < SIX_MONTHS_MS;
+    });
+
+    if (isDup) { skipped++; continue; }
+
+    const displayAmt = round.amount_raised
+      ? `$${(round.amount_raised / 1e6).toFixed(0)}M`
+      : "amt unknown";
+
+    if (DRY_RUN) {
+      console.log(`    [DRY] ${roundType} | ${round.announcement_date ?? "no date"} | ${displayAmt}`);
+      inserted++;
+      seen.push({ id: "dry", startup_id: startupId, round_type: roundType,
+        amount_raised: null, valuation: null,
+        announcement_date: round.announcement_date ?? null, source_url: null });
+      continue;
+    }
+
+    const { error } = await supabase.from("funding_rounds").insert({
+      startup_id:        startupId,
+      round_type:        roundType,
+      amount_raised:     round.amount_raised     ?? null,
+      valuation:         round.valuation         ?? null,
+      announcement_date: round.announcement_date ?? null,
+      source_url:        round.source_url        ?? null,
+    });
+
+    if (error) {
+      console.warn(`    ⚠️  Insert failed (${roundType}): ${error.message}`);
+    } else {
+      console.log(`    💰  ${roundType} | ${round.announcement_date ?? "no date"} | ${displayAmt}`);
+      inserted++;
+      seen.push({ id: "new", startup_id: startupId, round_type: roundType,
+        amount_raised: round.amount_raised ?? null, valuation: round.valuation ?? null,
+        announcement_date: round.announcement_date ?? null, source_url: null });
+    }
+  }
+
+  return { inserted, skipped };
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
   const runAt = new Date().toISOString();
@@ -534,24 +678,43 @@ async function main() {
   // ── Fetch all rows from startups (sole source of truth) ─────────────────────
   // Columns reflect the live schema: id, name, website, description, industry,
   // founded_year, employee_count, country, city, founders, updated_at
-  const { data: allRows, error: fetchErr } = await supabase
-    .from("startups")
-    .select("id, name, website, industry, founded_year, employee_count, country, city, founders, description, updated_at")
-    .order("updated_at", { ascending: true }); // oldest first → stale rows surface first
+  const [{ data: allRows, error: fetchErr }, { data: roundData, error: rErr }] =
+    await Promise.all([
+      supabase
+        .from("startups")
+        .select("id, name, website, industry, founded_year, employee_count, country, city, founders, description, updated_at")
+        .order("updated_at", { ascending: true }),
+      supabase
+        .from("funding_rounds")
+        .select("id, startup_id, round_type, amount_raised, valuation, announcement_date, source_url"),
+    ]);
 
   if (fetchErr) {
     console.error("❌  Failed to fetch startups:", fetchErr.message);
     process.exit(1);
   }
+  if (rErr) {
+    console.warn("⚠️  Could not fetch funding_rounds (FUND queue disabled):", rErr.message);
+  }
 
-  const rows = (allRows ?? []) as StartupRow[];
-  console.log(`📋  Total startups in DB: ${rows.length}\n`);
+  const rows      = (allRows   ?? []) as StartupRow[];
+  const allRounds = (roundData ?? []) as FundingRoundRow[];
+
+  const roundsByStartup = new Map<string, FundingRoundRow[]>();
+  for (const r of allRounds) {
+    const arr = roundsByStartup.get(r.startup_id) ?? [];
+    arr.push(r);
+    roundsByStartup.set(r.startup_id, arr);
+  }
+
+  console.log(`📋  Total startups in DB: ${rows.length}   Existing rounds: ${allRounds.length}\n`);
 
   // ── Classify every row ────────────────────────────────────────────────────────
   const COOLDOWN_MS      = 24 * 60 * 60 * 1000;
   const staleThresholdMs = Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000;
 
   const incompleteRows:     StartupRow[] = [];
+  const fundRows:           StartupRow[] = [];
   const staleCompletedRows: StartupRow[] = [];
   let   cooldownSkipped = 0;
   let   freshSkipped    = 0;
@@ -567,6 +730,8 @@ async function main() {
 
     if (isIncomplete(row) && !isEssentiallyComplete(row)) {
       incompleteRows.push(row);
+    } else if (isEssentiallyComplete(row) && needsEnrichment(roundsByStartup.get(row.id) ?? [])) {
+      fundRows.push(row);
     } else if (new Date(row.updated_at).getTime() < staleThresholdMs) {
       staleCompletedRows.push(row);
     } else {
@@ -575,23 +740,34 @@ async function main() {
   }
 
   console.log(`🩹  Incomplete profiles to enrich:   ${incompleteRows.length}`);
+  console.log(`💰  Need funding round enrichment:   ${fundRows.length}`);
   console.log(`🔄  Complete but stale (refresh):    ${staleCompletedRows.length}`);
   console.log(`⏰  Skipped — 24h cooldown:           ${cooldownSkipped}`);
   console.log(`✅  Skipped — complete & fresh:       ${freshSkipped}`);
 
-  // ── Build work queue (priority: incomplete → stale) ──────────────────────────
-  interface WorkItem { name: string; existing: StartupRow }
+  // ── Build work queue (priority: enrich → fund → stale) ──────────────────────
+  interface WorkItem {
+    name: string;
+    existing: StartupRow;
+    type: "ENRICH" | "FUND" | "REFRESH";
+    existingRounds?: FundingRoundRow[];
+  }
 
   const incompleteItems: WorkItem[] = incompleteRows
     .slice(0, BATCH_SIZE)
-    .map((row) => ({ name: row.name, existing: row }));
+    .map((row) => ({ name: row.name, existing: row, type: "ENRICH" as const }));
 
-  const remaining = Math.max(0, BATCH_SIZE - incompleteItems.length);
+  const afterEnrich = Math.max(0, BATCH_SIZE - incompleteItems.length);
+  const fundItems: WorkItem[] = fundRows
+    .slice(0, afterEnrich)
+    .map((row) => ({ name: row.name, existing: row, type: "FUND" as const, existingRounds: roundsByStartup.get(row.id) ?? [] }));
+
+  const afterFund = Math.max(0, afterEnrich - fundItems.length);
   const staleItems: WorkItem[] = staleCompletedRows
-    .slice(0, remaining)
-    .map((row) => ({ name: row.name, existing: row }));
+    .slice(0, afterFund)
+    .map((row) => ({ name: row.name, existing: row, type: "REFRESH" as const }));
 
-  const queue: WorkItem[] = [...incompleteItems, ...staleItems];
+  const queue: WorkItem[] = [...incompleteItems, ...fundItems, ...staleItems];
 
   if (queue.length === 0) {
     console.log("\n✅  Nothing to process — all companies are up to date!\n");
@@ -610,9 +786,8 @@ async function main() {
   };
 
   for (let i = 0; i < queue.length; i++) {
-    const { name, existing } = queue[i];
-    const tag = isIncomplete(existing) ? "ENRICH" : "REFRESH";
-    console.log(`\n[${i + 1}/${queue.length}] ${tag}: "${name}"`);
+    const { name, existing, type: itemType, existingRounds } = queue[i];
+    console.log(`\n[${i + 1}/${queue.length}] ${itemType}: "${name}"`);
     const age = Math.floor(
       (Date.now() - new Date(existing.updated_at).getTime()) / 86_400_000,
     );
@@ -626,7 +801,26 @@ async function main() {
     ].filter(Boolean).join(", ");
     console.log(`    Last updated: ${existing.updated_at.slice(0, 10)} (${age}d ago)${missing ? ` | missing: ${missing}` : ""}`);
 
-    const outcome = await processCompany(name, existing);
+    let outcome: ProcessOutcome;
+    if (itemType === "FUND") {
+      try {
+        const rounds = await researchFundingRounds(name);
+        console.log(`    📊  Claude found ${rounds.length} verifiable round(s)`);
+        if (rounds.length > 0) {
+          const { inserted, skipped } = await insertNewRounds(existing.id, rounds, existingRounds ?? []);
+          console.log(`    💰  ${inserted} round(s) inserted, ${skipped} skipped (duplicates)`);
+          outcome = inserted > 0
+            ? { result: "updated" }
+            : { result: "skipped", reason: "no new rounds (all duplicates)" };
+        } else {
+          outcome = { result: "skipped", reason: "no verifiable rounds found" };
+        }
+      } catch (e) {
+        outcome = { result: "error", reason: `Funding research failed: ${String(e)}` };
+      }
+    } else {
+      outcome = await processCompany(name, existing);
+    }
     tally[outcome.result]++;
 
     const detail = outcome.reason ? ` — ${outcome.reason}` : "";
