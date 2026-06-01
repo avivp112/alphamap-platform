@@ -4,13 +4,12 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip,
   ResponsiveContainer, Cell,
 } from "recharts";
-import { TopNav } from "../components/TopNav";
-import { Sidebar } from "../components/Sidebar";
+import { Layout } from "../components/Layout";
 import {
   Plus, Globe, Loader2, Search, X, MapPin, Calendar, Users,
   DollarSign, Rocket, AlertCircle, CheckCircle2,
   TrendingUp, UserRound, LayoutGrid, List, ExternalLink,
-  ChevronDown, Building2, SlidersHorizontal,
+  ChevronDown, Building2, SlidersHorizontal, CheckSquare, Square,
 } from "lucide-react";
 import { fetchStartups, ingestStartup, type Startup, type FundingRound, type RoundType } from "../../lib/supabase";
 
@@ -169,27 +168,27 @@ function FundingChart({ rounds }: { rounds: FundingRound[] }) {
     <div className="mt-1 mb-6">
       <div className="flex items-center gap-2 mb-3">
         <TrendingUp className="w-4 h-4 text-[#F59E0B]" />
-        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Funding History</h4>
+        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Funding History</h4>
       </div>
-      <div className="bg-[#F8FAFC] rounded-[16px] p-4">
+      <div className="bg-[#091422] rounded-[16px] p-4 border border-[#1a2a3f]">
         <ResponsiveContainer width="100%" height={160}>
           <BarChart data={data} margin={{ top: 8, right: 8, left: 4, bottom: 0 }} barCategoryGap="35%">
-            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#1a2a3f" vertical={false} />
             <XAxis
               dataKey="label"
-              tick={{ fill: "#6B7280", fontSize: 10, fontWeight: 600 }}
+              tick={{ fill: "#64748b", fontSize: 10, fontWeight: 600 }}
               axisLine={false}
               tickLine={false}
             />
             <YAxis
               tickFormatter={tickFmt}
-              tick={{ fill: "#9CA3AF", fontSize: 10 }}
+              tick={{ fill: "#475569", fontSize: 10 }}
               axisLine={false}
               tickLine={false}
               width={56}
               domain={[0, domainMax]}
             />
-            <ReTooltip content={<ChartTooltip />} cursor={{ fill: "#F3F4F6" }} />
+            <ReTooltip content={<ChartTooltip />} cursor={{ fill: "#0d1f35" }} />
             <Bar dataKey="amount" radius={[6, 6, 0, 0]} maxBarSize={48}>
               {data.map((d, i) => (
                 <Cell key={i} fill={d.color} />
@@ -221,11 +220,11 @@ function StartupDetailModal({ startup, onClose }: { startup: Startup; onClose: (
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-[24px] shadow-[0_32px_80px_rgba(0,0,0,0.18)] w-full max-w-2xl max-h-[92vh] overflow-y-auto border border-gray-100">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-[#0b1626] rounded-[24px] shadow-[0_32px_80px_rgba(0,0,0,0.6)] w-full max-w-2xl max-h-[92vh] overflow-y-auto border border-[#1a2a3f]">
 
-        {/* Dark header */}
-        <div className="bg-[#0F172A] rounded-t-[24px] p-7 text-white">
+        {/* Header */}
+        <div className="bg-[#060e1a] rounded-t-[24px] p-7 text-white border-b border-[#1a2a3f]">
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-black flex-none ${avatarColor(startup.name)}`}>
@@ -263,7 +262,7 @@ function StartupDetailModal({ startup, onClose }: { startup: Startup; onClose: (
 
         <div className="p-7">
           {startup.description && (
-            <p className="text-sm text-gray-600 leading-relaxed mb-7">{startup.description}</p>
+            <p className="text-sm text-slate-300 leading-relaxed mb-7">{startup.description}</p>
           )}
 
           {/* Metrics */}
@@ -274,12 +273,12 @@ function StartupDetailModal({ startup, onClose }: { startup: Startup; onClose: (
               { icon: Users,      label: "Employees",    value: fmtEmp(startup.employee_count) },
               { icon: Calendar,   label: "Founded",      value: startup.founded_year ? String(startup.founded_year) : "—" },
             ].map(({ icon: Icon, label, value }) => (
-              <div key={label} className="bg-[#F8FAFC] rounded-[14px] p-4 flex flex-col gap-2">
+              <div key={label} className="bg-[#091422] rounded-[14px] p-4 flex flex-col gap-2 border border-[#1a2a3f]">
                 <div className="flex items-center gap-1.5">
                   <Icon className="w-3.5 h-3.5 text-[#F59E0B]" />
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{label}</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">{label}</span>
                 </div>
-                <span className="text-sm font-bold text-[#0F172A]">{value}</span>
+                <span className="text-sm font-bold text-white">{value}</span>
               </div>
             ))}
           </div>
@@ -288,15 +287,15 @@ function StartupDetailModal({ startup, onClose }: { startup: Startup; onClose: (
           {startup.founders && startup.founders.length > 0 && (
             <div className="mb-7">
               <div className="flex items-center gap-2 mb-3">
-                <UserRound className="w-4 h-4 text-gray-400" />
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+                <UserRound className="w-4 h-4 text-slate-500" />
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">
                   Founder{startup.founders.length > 1 ? "s" : ""}
                 </h3>
               </div>
               <div className="flex flex-wrap gap-2">
                 {startup.founders.map((f, i) => (
-                  <span key={i} className="flex items-center gap-1.5 bg-[#F8FAFC] border border-gray-100 text-sm font-medium text-[#0F172A] px-3 py-1.5 rounded-full">
-                    <div className="w-5 h-5 rounded-full bg-amber-100 flex items-center justify-center text-[10px] font-black text-amber-700">
+                  <span key={i} className="flex items-center gap-1.5 bg-[#091422] border border-[#1a2a3f] text-sm font-medium text-slate-200 px-3 py-1.5 rounded-full">
+                    <div className="w-5 h-5 rounded-full bg-amber-900/60 flex items-center justify-center text-[10px] font-black text-amber-400">
                       {f[0].toUpperCase()}
                     </div>
                     {f}
@@ -313,14 +312,14 @@ function StartupDetailModal({ startup, onClose }: { startup: Startup; onClose: (
           {sortedRounds.length > 0 && (
             <div className="mb-7">
               <div className="flex items-center gap-2 mb-3">
-                <DollarSign className="w-4 h-4 text-gray-400" />
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+                <DollarSign className="w-4 h-4 text-slate-500" />
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">
                   Funding Rounds
                 </h3>
               </div>
               <div className="flex flex-col gap-2">
                 {sortedRounds.map((r, idx) => (
-                  <div key={r.id ?? idx} className="flex items-center justify-between gap-4 bg-[#F8FAFC] rounded-[14px] p-4">
+                  <div key={r.id ?? idx} className="flex items-center justify-between gap-4 bg-[#091422] border border-[#1a2a3f] rounded-[14px] p-4">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       <div
                         className="w-2.5 h-2.5 rounded-full flex-none"
@@ -334,20 +333,20 @@ function StartupDetailModal({ startup, onClose }: { startup: Startup; onClose: (
                             </span>
                           )}
                           {r.announcement_date && (
-                            <span className="text-xs text-gray-400">
+                            <span className="text-xs text-slate-500">
                               {new Date(r.announcement_date).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
                             </span>
                           )}
                         </div>
                         <div className="flex gap-3 mt-0.5">
                           {r.amount_raised && (
-                            <span className="text-xs text-gray-600">
-                              <span className="font-bold text-[#0F172A]">{fmt(r.amount_raised)}</span> raised
+                            <span className="text-xs text-slate-400">
+                              <span className="font-bold text-white">{fmt(r.amount_raised)}</span> raised
                             </span>
                           )}
                           {r.valuation && (
-                            <span className="text-xs text-gray-600">
-                              <span className="font-bold text-[#0F172A]">{fmt(r.valuation)}</span> valuation
+                            <span className="text-xs text-slate-400">
+                              <span className="font-bold text-white">{fmt(r.valuation)}</span> valuation
                             </span>
                           )}
                         </div>
@@ -375,7 +374,7 @@ function StartupDetailModal({ startup, onClose }: { startup: Startup; onClose: (
               href={startup.website}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-sm font-medium text-[#0F172A] hover:text-[#F59E0B] transition-colors"
+              className="inline-flex items-center gap-2 text-sm font-medium text-slate-300 hover:text-[#F59E0B] transition-colors"
             >
               <Globe className="w-4 h-4" />
               {startup.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
@@ -390,7 +389,17 @@ function StartupDetailModal({ startup, onClose }: { startup: Startup; onClose: (
 
 // ── Grid Card ─────────────────────────────────────────────────────────────────
 
-function StartupCard({ startup, onSelect }: { startup: Startup; onSelect: () => void }) {
+function StartupCard({
+  startup,
+  onSelect,
+  selected,
+  onToggleSelect,
+}: {
+  startup: Startup;
+  onSelect: () => void;
+  selected: boolean;
+  onToggleSelect: (e: React.MouseEvent) => void;
+}) {
   const latestRound = startup.funding_rounds?.[0] ?? null;
   const roundType = latestRound?.round_type ?? null;
   const roundStyle = roundType ? (ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]) : null;
@@ -399,20 +408,34 @@ function StartupCard({ startup, onSelect }: { startup: Startup; onSelect: () => 
   return (
     <div
       onClick={onSelect}
-      className="bg-white rounded-[20px] border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_32px_rgba(0,0,0,0.10)] hover:border-gray-200 hover:-translate-y-0.5 transition-all duration-200 flex flex-col overflow-hidden cursor-pointer group"
+      className={`relative bg-[#0b1626] rounded-[20px] border shadow-[0_2px_16px_rgba(0,0,0,0.3)] hover:shadow-[0_8px_32px_rgba(0,0,0,0.5)] hover:-translate-y-0.5 transition-all duration-200 flex flex-col overflow-hidden cursor-pointer group ${
+        selected ? "border-[#F59E0B]" : "border-[#1a2a3f] hover:border-[#243858]"
+      }`}
     >
+      {/* Selection checkbox — top-right corner */}
+      <button
+        onClick={onToggleSelect}
+        className="absolute top-3 right-3 z-10 p-0.5 rounded text-slate-500 hover:text-[#F59E0B] transition-colors"
+        aria-label={selected ? "Deselect" : "Select for comparison"}
+      >
+        {selected
+          ? <CheckSquare className="w-4 h-4 text-[#F59E0B]" />
+          : <Square className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
+        }
+      </button>
+
       {/* Card header */}
       <div className="p-5 pb-4 flex-1">
         <div className="flex items-start gap-3 mb-3">
           <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-base font-black flex-none ${avatarColor(startup.name)}`}>
             {startup.name[0].toUpperCase()}
           </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="text-[15px] font-bold text-[#0F172A] truncate leading-tight group-hover:text-[#F59E0B] transition-colors">
+          <div className="flex-1 min-w-0 pr-5">
+            <h3 className="text-[15px] font-bold text-white truncate leading-tight group-hover:text-[#F59E0B] transition-colors">
               {startup.name}
             </h3>
             {startup.industry && (
-              <span className="text-xs text-gray-400 font-medium">{startup.industry}</span>
+              <span className="text-xs text-slate-400 font-medium">{startup.industry}</span>
             )}
           </div>
           {roundType && roundStyle && (
@@ -423,25 +446,25 @@ function StartupCard({ startup, onSelect }: { startup: Startup; onSelect: () => 
         </div>
 
         {startup.description && (
-          <p className="text-xs text-gray-500 leading-relaxed line-clamp-2 mb-4">
+          <p className="text-xs text-slate-400 leading-relaxed line-clamp-2 mb-4">
             {startup.description}
           </p>
         )}
 
         {/* Metrics */}
         <div className="grid grid-cols-2 gap-2 mb-4">
-          <div className="bg-[#F8FAFC] rounded-[10px] px-3 py-2">
-            <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Valuation</div>
-            <div className="text-sm font-bold text-[#0F172A]">{fmt(latestRound?.valuation)}</div>
+          <div className="bg-[#091422] rounded-[10px] px-3 py-2">
+            <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Valuation</div>
+            <div className="text-sm font-bold text-white">{fmt(latestRound?.valuation)}</div>
           </div>
-          <div className="bg-[#F8FAFC] rounded-[10px] px-3 py-2">
-            <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Raised</div>
-            <div className="text-sm font-bold text-[#0F172A]">{fmt(latestRound?.amount_raised)}</div>
+          <div className="bg-[#091422] rounded-[10px] px-3 py-2">
+            <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Raised</div>
+            <div className="text-sm font-bold text-white">{fmt(latestRound?.amount_raised)}</div>
           </div>
         </div>
 
         {/* Meta */}
-        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-400 mb-3">
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500 mb-3">
           {location && (
             <span className="flex items-center gap-1">
               <MapPin className="w-3 h-3" />{location}
@@ -463,15 +486,15 @@ function StartupCard({ startup, onSelect }: { startup: Startup; onSelect: () => 
         {startup.founders && startup.founders.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {startup.founders.slice(0, 3).map((f, i) => (
-              <span key={i} className="flex items-center gap-1 bg-gray-50 border border-gray-100 text-[10px] font-semibold text-gray-600 px-2 py-1 rounded-full">
-                <div className="w-3.5 h-3.5 rounded-full bg-amber-100 flex items-center justify-center text-[8px] font-black text-amber-700">
+              <span key={i} className="flex items-center gap-1 bg-[#091422] border border-[#1a2a3f] text-[10px] font-semibold text-slate-300 px-2 py-1 rounded-full">
+                <div className="w-3.5 h-3.5 rounded-full bg-amber-900/60 flex items-center justify-center text-[8px] font-black text-amber-400">
                   {f[0].toUpperCase()}
                 </div>
                 {f.split(" ")[0]}
               </span>
             ))}
             {startup.founders.length > 3 && (
-              <span className="text-[10px] font-semibold text-gray-400 px-2 py-1">
+              <span className="text-[10px] font-semibold text-slate-500 px-2 py-1">
                 +{startup.founders.length - 3}
               </span>
             )}
@@ -481,9 +504,9 @@ function StartupCard({ startup, onSelect }: { startup: Startup; onSelect: () => 
 
       {/* Footer */}
       {startup.website && (
-        <div className="px-5 py-3 border-t border-gray-50 flex items-center gap-1.5">
-          <Globe className="w-3 h-3 text-gray-300" />
-          <span className="text-[10px] text-gray-400 truncate">
+        <div className="px-5 py-3 border-t border-[#1a2a3f] flex items-center gap-1.5">
+          <Globe className="w-3 h-3 text-slate-600" />
+          <span className="text-[10px] text-slate-500 truncate">
             {startup.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
           </span>
         </div>
@@ -701,6 +724,16 @@ export function Startups() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [selectedStartup, setSelectedStartup] = useState<Startup | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  function toggleSelect(id: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   const cityParam = searchParams.get("city") ?? "";
   const [cityFilter, setCityFilter] = useState(cityParam);
@@ -765,12 +798,8 @@ export function Startups() {
   }), [startups, search, industryFilter, countryFilter, cityFilter, roundFilter, empFilter]);
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#F3F4F6] font-sans antialiased text-[#0F172A]">
-      <TopNav />
-      <div className="flex flex-1">
-        <Sidebar />
-        <main className="flex-1 lg:ml-64 w-full max-w-full overflow-x-hidden">
-          <div className="mx-auto max-w-[1400px] p-4 sm:p-6 lg:p-8">
+    <Layout>
+      <div className="mx-auto max-w-[1400px] p-4 sm:p-6 lg:p-8">
 
             {/* Page header */}
             <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -933,7 +962,13 @@ export function Startups() {
             ) : viewMode === "grid" ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
                 {filtered.map((s) => (
-                  <StartupCard key={s.id} startup={s} onSelect={() => setSelectedStartup(s)} />
+                  <StartupCard
+                    key={s.id}
+                    startup={s}
+                    onSelect={() => setSelectedStartup(s)}
+                    selected={selectedIds.has(s.id)}
+                    onToggleSelect={(e) => toggleSelect(s.id, e)}
+                  />
                 ))}
               </div>
             ) : (
@@ -960,14 +995,12 @@ export function Startups() {
             )}
 
           </div>
-        </main>
-      </div>
 
       <AddStartupDialog open={showAdd} onClose={() => setShowAdd(false)} onSuccess={(s) => setStartups((p) => [s, ...p])} />
 
       {selectedStartup && (
         <StartupDetailModal startup={selectedStartup} onClose={() => setSelectedStartup(null)} />
       )}
-    </div>
+    </Layout>
   );
 }

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TopNav } from '../components/TopNav';
-import { Sidebar } from '../components/Sidebar';
+import { Layout } from '../components/Layout';
 import {
   TrendingUp, TrendingDown, Search, X, RefreshCw,
   BarChart2, DollarSign, Activity, ExternalLink, AlertCircle,
@@ -242,12 +241,8 @@ export function Stocks() {
   const losers  = quotes.filter(s => s.change < 0).length;
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#F3F4F6] font-sans antialiased text-[#0F172A]">
-      <TopNav />
-      <div className="flex flex-1">
-        <Sidebar />
-        <main className="flex-1 lg:ml-64 w-full max-w-full overflow-x-hidden">
-          <div className="mx-auto max-w-[1400px] p-4 sm:p-6 lg:p-8">
+    <Layout>
+      <div className="mx-auto max-w-[1400px] p-4 sm:p-6 lg:p-8">
 
             {/* Header */}
             <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -376,10 +371,8 @@ export function Stocks() {
             )}
 
           </div>
-        </main>
-      </div>
 
       {selected && <StockDetail stock={selected} onClose={() => setSelected(null)} />}
-    </div>
+    </Layout>
   );
 }

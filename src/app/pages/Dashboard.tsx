@@ -1,21 +1,13 @@
 import React from 'react';
-import { TopNav } from '../components/TopNav';
-import { Sidebar } from '../components/Sidebar';
+import { Layout } from '../components/Layout';
 import { MarketOverview } from '../components/MarketOverview';
 import { IntelligenceFeed } from '../components/IntelligenceFeed';
 import { AIMarketStory, CrossMarketSignalsBar, PortfolioInsight } from '../components/AIMarketInsights';
 
 export function Dashboard() {
   return (
-    <div className="flex min-h-screen flex-col bg-[#F3F4F6] font-sans antialiased text-[#0F172A]">
-      <TopNav />
-      
-      <div className="flex flex-1">
-        <Sidebar />
-        
-        {/* Main Content Area - padded left by sidebar width on desktop */}
-        <main className="flex-1 lg:ml-64 w-full max-w-full overflow-x-hidden">
-          <div className="mx-auto max-w-[1400px] p-4 sm:p-6 lg:p-8">
+    <Layout>
+      <div className="mx-auto max-w-[1400px] p-4 sm:p-6 lg:p-8">
             {/* Page Header */}
             <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
@@ -54,8 +46,6 @@ export function Dashboard() {
             </div>
             
           </div>
-        </main>
-      </div>
-    </div>
+    </Layout>
   );
 }

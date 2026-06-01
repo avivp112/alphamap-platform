@@ -1,20 +1,39 @@
 import React from 'react';
 import { Search, Bell, User, Menu } from 'lucide-react';
 
-export function TopNav() {
+interface TopNavProps {
+  onMenuToggle?: () => void;
+}
+
+export function TopNav({ onMenuToggle }: TopNavProps) {
   return (
     <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-gray-200 bg-white px-4 lg:px-6 shadow-sm">
-      {/* Mobile Menu & Logo */}
+      {/* Hamburger & Logo */}
       <div className="flex items-center gap-3">
-        <button className="lg:hidden p-2 text-gray-500 hover:bg-gray-100 rounded-md">
+        <button
+          onClick={onMenuToggle}
+          className="p-2 text-gray-500 hover:bg-gray-100 rounded-md transition-colors"
+          aria-label="Toggle navigation"
+        >
           <Menu className="h-6 w-6" />
         </button>
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#111827] text-white">
-            <div className="h-4 w-4 rounded-sm border-2 border-white/80 bg-transparent" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#0F172A]">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#FFFFFF"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="w-[18px] h-[18px]"
+            >
+              <path d="M15 8 C12 8 9 12 7 15 A4 4 0 1 1 8 8 C11 8 14 13 16 16 C17.5 18 19 12 20 6" />
+              <polyline points="15 6 20 6 20 11" />
+            </svg>
           </div>
           <span className="text-xl font-bold tracking-tight text-[#111827] hidden sm:block">
-            Unified Wealth
+            AlphaMap
           </span>
         </div>
       </div>
