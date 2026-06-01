@@ -54,12 +54,22 @@ interface FundingRoundRow {
   amount_raised: number | null; valuation: number | null;
   announcement_date: string | null; source_url: string | null;
 }
-interface RoundData {
+
+// Shape Claude returns for each round (uses "date" per the JSON schema)
+interface ClaudeRound {
   round_type: string;
-  amount_raised?: number;
-  valuation?: number;
-  announcement_date?: string;
-  source_url?: string;
+  amount_raised?: number | null;
+  valuation?: number | null;
+  date?: string | null;        // YYYY-MM-DD — mapped to announcement_date on insert
+  source_url?: string | null;
+}
+
+// Full structured response from Claude for one company
+interface EnrichmentResult {
+  funding_rounds: ClaudeRound[];
+  confidence_score: number;    // 0–100
+  reasoning: string;           // brief explanation of sources / certainty
+  source_url: string;          // primary research source for this company
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -157,8 +167,8 @@ async function webSearch(query: string): Promise<string | null> {
   return fallbackSearch(query);
 }
 
-// ── Claude: extract ALL historical rounds for one company ─────────────────────
-async function researchFundingRounds(name: string): Promise<RoundData[]> {
+// ── Claude: extract ALL historical rounds + confidence metadata ───────────────
+async function researchFundingRounds(name: string): Promise<EnrichmentResult> {
   const [history, recent] = await Promise.all([
     webSearch(`"${name}" complete funding history "Series A" OR "Series B" Crunchbase PitchBook rounds`),
     webSearch(`"${name}" funding raised 2022 2023 2024 2025 valuation round amount`),
@@ -178,13 +188,13 @@ async function researchFundingRounds(name: string): Promise<RoundData[]> {
     max_tokens: 2048,
     tools: [{
       name: "save_funding_history",
-      description: "Save the complete chronological funding history for a private tech startup",
+      description: "Save the complete funding analysis for a private tech startup",
       input_schema: {
         type: "object" as const,
         properties: {
-          rounds: {
+          funding_rounds: {
             type: "array",
-            description: "All verified funding rounds, oldest first",
+            description: "All verified funding rounds, oldest first. Empty array if none can be confirmed.",
             items: {
               type: "object" as const,
               properties: {
@@ -196,30 +206,75 @@ async function researchFundingRounds(name: string): Promise<RoundData[]> {
                     "Convertible Note", "Bootstrapped", "Grant", "Acquired", "Other",
                   ],
                 },
-                amount_raised:     { type: "number", description: "USD raised in this round (e.g. $50M → 50000000)" },
-                valuation:         { type: "number", description: "Post-money valuation in USD" },
-                announcement_date: { type: "string", description: "YYYY-MM-DD; use YYYY-01-01 if only year is known" },
-                source_url:        { type: "string", description: "Best source: Crunchbase, press release, SEC filing" },
+                amount_raised: {
+                  type: "number",
+                  description: "USD raised in this round as a plain integer (e.g. $50M → 50000000). Omit if unknown.",
+                },
+                valuation: {
+                  type: "number",
+                  description: "Post-money valuation in USD as a plain integer. Omit if unknown.",
+                },
+                date: {
+                  type: "string",
+                  description: "Announcement date as YYYY-MM-DD. Use YYYY-01-01 if only the year is known. Omit if completely unknown.",
+                },
+                source_url: {
+                  type: "string",
+                  description: "Direct URL for this specific round (press release, SEC filing, Crunchbase page).",
+                },
               },
               required: ["round_type"],
             },
           },
+          confidence_score: {
+            type: "number",
+            description: [
+              "Integer 0–100 reflecting overall data confidence.",
+              "90–100: multiple authoritative sources (Crunchbase + SEC + press release) fully agree.",
+              "70–89: one strong source with no contradictions.",
+              "50–69: limited data or minor source conflicts.",
+              "0–49: mostly inferred or unverifiable — prefer returning fewer rounds.",
+            ].join(" "),
+          },
+          reasoning: {
+            type: "string",
+            description: "2–3 sentence explanation of what sources were found, what data was confirmed, and why the confidence score was assigned.",
+          },
+          source_url: {
+            type: "string",
+            description: "Primary URL used for this company's overall funding research (Crunchbase profile, PitchBook, or official investor page).",
+          },
         },
-        required: ["rounds"],
+        required: ["funding_rounds", "confidence_score", "reasoning"],
       },
     }],
     tool_choice: { type: "tool", name: "save_funding_history" },
     messages: [{
       role: "user",
-      content: `Extract the COMPLETE verified funding history for "${name}".
+      content: `You are a financial data analyst. Research the COMPLETE verified funding history for the private tech company "${name}" and return a structured JSON response.
+
+RESPONSE SCHEMA (all fields required unless marked optional):
+{
+  "funding_rounds": [
+    {
+      "round_type": "Seed" | "Series A" | ...,  // required
+      "amount_raised": 50000000,                  // optional — plain USD integer
+      "valuation": 200000000,                     // optional — plain USD integer
+      "date": "2021-06-15",                       // optional — YYYY-MM-DD
+      "source_url": "https://..."                 // optional — per-round source
+    }
+  ],
+  "confidence_score": 85,          // 0-100 integer
+  "reasoning": "Found Crunchbase profile confirming Series A and B. Amount figures cross-referenced with TechCrunch press release. No Series C data found in any source.",
+  "source_url": "https://crunchbase.com/organization/..."  // optional — primary research URL
+}
 
 RULES:
-• Include every confirmed round: Pre-Seed, Seed, Series A, B, C, D, E+, Growth, Bridge, etc.
-• Convert all amounts to plain USD integers ($1.5B → 1500000000, $50M → 50000000)
-• Use Crunchbase, SEC filings, and official press releases as primary sources
-• Set announcement_date as YYYY-MM-DD; approximate to YYYY-01-01 if only the year is known
-• Omit any round you cannot verify — return an empty array rather than guessing
 • List rounds from OLDEST to NEWEST
+• Convert all monetary amounts to plain USD integers ($1.5B → 1500000000)
+• Omit any round you CANNOT verify — return an empty array rather than guessing
+• Set confidence_score honestly: penalise for missing amounts, conflicting sources, or no Crunchbase/PitchBook entry
+• reasoning must explain WHAT you found and WHY you assigned that confidence score
 
 Research data:
 ${context}`,
@@ -227,35 +282,43 @@ ${context}`,
   });
 
   const tool = msg.content.find((b) => b.type === "tool_use");
-  if (!tool || tool.type !== "tool_use") return [];
-  const input = tool.input as { rounds?: RoundData[] };
-  return (input.rounds ?? []).filter((r) => r.round_type);
+  if (!tool || tool.type !== "tool_use") {
+    return { funding_rounds: [], confidence_score: 0, reasoning: "Claude returned no structured output.", source_url: "" };
+  }
+
+  const input = tool.input as Partial<EnrichmentResult>;
+  return {
+    funding_rounds: (input.funding_rounds ?? []).filter((r) => r.round_type),
+    confidence_score: input.confidence_score ?? 0,
+    reasoning:        input.reasoning        ?? "(no reasoning provided)",
+    source_url:       input.source_url       ?? "",
+  };
 }
 
 // ── Deduplicate + insert rounds for one startup ───────────────────────────────
 async function insertNewRounds(
   startupId: string,
-  name: string,
-  newRounds: RoundData[],
+  newRounds: ClaudeRound[],
   existingRounds: FundingRoundRow[],
+  fallbackSourceUrl?: string,
 ): Promise<{ inserted: number; skipped: number }> {
   const SIX_MONTHS_MS = 180 * 24 * 60 * 60 * 1000;
   let inserted = 0;
   let skipped  = 0;
 
-  // Work on a local copy so we can track virtual inserts in dry-run mode
   const seen = [...existingRounds];
 
   for (const round of newRounds) {
-    const roundType = normalizeRoundType(round.round_type);
+    const roundType      = normalizeRoundType(round.round_type);
+    const announcedDate  = round.date ?? null;              // "date" in schema → announcement_date in DB
+    const sourceUrl      = round.source_url ?? fallbackSourceUrl ?? null;
 
     const isDup = seen.some((e) => {
       if (e.round_type !== roundType) return false;
-      // No dates on either side → treat as same round
-      if (!e.announcement_date || !round.announcement_date) return true;
+      if (!e.announcement_date || !announcedDate) return true;
       return Math.abs(
         new Date(e.announcement_date).getTime() -
-        new Date(round.announcement_date).getTime(),
+        new Date(announcedDate).getTime(),
       ) < SIX_MONTHS_MS;
     });
 
@@ -266,31 +329,31 @@ async function insertNewRounds(
       : "amt unknown";
 
     if (DRY_RUN) {
-      console.log(`    [DRY] ${roundType} | ${round.announcement_date ?? "no date"} | ${displayAmt}`);
+      console.log(`    [DRY] ${roundType} | ${announcedDate ?? "no date"} | ${displayAmt}`);
       inserted++;
       seen.push({ id: "dry", startup_id: startupId, round_type: roundType,
         amount_raised: null, valuation: null,
-        announcement_date: round.announcement_date ?? null, source_url: null });
+        announcement_date: announcedDate, source_url: null });
       continue;
     }
 
     const { error } = await supabase.from("funding_rounds").insert({
       startup_id:        startupId,
       round_type:        roundType,
-      amount_raised:     round.amount_raised     ?? null,
-      valuation:         round.valuation         ?? null,
-      announcement_date: round.announcement_date ?? null,
-      source_url:        round.source_url        ?? null,
+      amount_raised:     round.amount_raised ?? null,
+      valuation:         round.valuation     ?? null,
+      announcement_date: announcedDate,
+      source_url:        sourceUrl,
     });
 
     if (error) {
       console.warn(`    ⚠️  Insert failed (${roundType}): ${error.message}`);
     } else {
-      console.log(`    💰  ${roundType} | ${round.announcement_date ?? "no date"} | ${displayAmt}`);
+      console.log(`    💰  ${roundType} | ${announcedDate ?? "no date"} | ${displayAmt}`);
       inserted++;
       seen.push({ id: "new", startup_id: startupId, round_type: roundType,
         amount_raised: round.amount_raised ?? null, valuation: round.valuation ?? null,
-        announcement_date: round.announcement_date ?? null, source_url: null });
+        announcement_date: announcedDate, source_url: null });
     }
   }
 
@@ -414,10 +477,9 @@ async function main() {
     const existingRounds = roundsByStartup.get(s.id) ?? [];
     console.log(`\n[${i + 1}/${toEnrich.length}] "${s.name}"`);
 
-    let rounds: RoundData[] = [];
+    let result: EnrichmentResult;
     try {
-      rounds = await researchFundingRounds(s.name);
-      console.log(`    📊  Claude found ${rounds.length} verifiable round(s)`);
+      result = await researchFundingRounds(s.name);
     } catch (err) {
       console.warn(`    ⚠️  Research failed: ${String(err)}`);
       tally.failed++;
@@ -425,10 +487,22 @@ async function main() {
       continue;
     }
 
-    if (rounds.length === 0) {
+    // ── Management-by-Exception log ──────────────────────────────────────────
+    const scoreLabel =
+      result.confidence_score >= 90 ? "🟢" :
+      result.confidence_score >= 70 ? "🟡" :
+      result.confidence_score >= 50 ? "🟠" : "🔴";
+    console.log(`    ${scoreLabel} Confidence: ${result.confidence_score}/100`);
+    console.log(`    📝 Reasoning: ${result.reasoning}`);
+    if (result.source_url) console.log(`    🔗 Source: ${result.source_url}`);
+    console.log(`    📊 Claude found ${result.funding_rounds.length} verifiable round(s)`);
+
+    if (result.funding_rounds.length === 0) {
       console.log("    ℹ️  No verifiable rounds found — stub remains.");
     } else {
-      const { inserted, skipped } = await insertNewRounds(s.id, s.name, rounds, existingRounds);
+      const { inserted, skipped } = await insertNewRounds(
+        s.id, result.funding_rounds, existingRounds, result.source_url || undefined,
+      );
       tally.roundsInserted += inserted;
       tally.roundsSkipped  += skipped;
       if (inserted > 0) tally.enriched++;
