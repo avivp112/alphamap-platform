@@ -53,6 +53,7 @@ interface FundingRoundRow {
   id: string; startup_id: string; round_type: string | null;
   amount_raised: number | null; valuation: number | null;
   announcement_date: string | null; source_url: string | null;
+  investors: string[] | null;
 }
 
 // Shape Claude returns for each round (uses "date" per the JSON schema)
@@ -61,6 +62,7 @@ interface ClaudeRound {
   amount_raised?: number | null;
   valuation?: number | null;
   date?: string | null;        // YYYY-MM-DD — mapped to announcement_date on insert
+  investors?: string[] | null; // lead investor first, then participants
   source_url?: string | null;
 }
 
@@ -169,18 +171,21 @@ async function webSearch(query: string): Promise<string | null> {
 
 // ── Claude: extract ALL historical rounds + confidence metadata ───────────────
 async function researchFundingRounds(name: string): Promise<EnrichmentResult> {
-  const [history, recent] = await Promise.all([
-    webSearch(`"${name}" complete funding history "Series A" OR "Series B" Crunchbase PitchBook rounds`),
-    webSearch(`"${name}" funding raised 2022 2023 2024 2025 valuation round amount`),
+  // Three targeted searches: full history, recent rounds with amounts, investor names
+  const [history, recent, backers] = await Promise.all([
+    webSearch(`"${name}" complete funding history all rounds Seed "Series A" "Series B" Crunchbase PitchBook`),
+    webSearch(`"${name}" funding round amount raised USD million billion announcement date 2020 2021 2022 2023 2024 2025`),
+    webSearch(`"${name}" lead investor venture capital investors participated backed funding round`),
   ]);
 
-  if (!history && !recent) {
-    throw new Error("Both searches failed — skipping");
+  if (!history && !recent && !backers) {
+    throw new Error("All three searches failed — skipping");
   }
 
   const context = [
-    `## Complete Funding History\n${history ?? "(search failed)"}`,
-    `## Recent Rounds (2022–2025)\n${recent  ?? "(search failed)"}`,
+    `## Complete Funding History (all rounds)\n${history  ?? "(search failed)"}`,
+    `## Round Amounts & Dates\n${recent               ?? "(search failed)"}`,
+    `## Investors & Backers\n${backers                ?? "(search failed)"}`,
   ].join("\n\n");
 
   const msg = await anthropic.messages.create({
@@ -194,7 +199,12 @@ async function researchFundingRounds(name: string): Promise<EnrichmentResult> {
         properties: {
           funding_rounds: {
             type: "array",
-            description: "All verified funding rounds, oldest first. Empty array if none can be confirmed.",
+            description: [
+              "EVERY verified funding round from inception to present, sorted OLDEST → NEWEST.",
+              "If the company raised Seed, Series A, and Series B — return all three objects in the array.",
+              "Never return only the latest round. Never collapse multiple rounds into one.",
+              "Return an empty array only if zero rounds can be verified.",
+            ].join(" "),
             items: {
               type: "object" as const,
               properties: {
@@ -205,10 +215,11 @@ async function researchFundingRounds(name: string): Promise<EnrichmentResult> {
                     "Series D", "Series E+", "Growth", "Bridge",
                     "Convertible Note", "Bootstrapped", "Grant", "Acquired", "Other",
                   ],
+                  description: "Stage of this specific round.",
                 },
                 amount_raised: {
                   type: "number",
-                  description: "USD raised in this round as a plain integer (e.g. $50M → 50000000). Omit if unknown.",
+                  description: "Total USD raised IN THIS ROUND as a plain integer ($50M → 50000000). Omit if unknown.",
                 },
                 valuation: {
                   type: "number",
@@ -216,11 +227,20 @@ async function researchFundingRounds(name: string): Promise<EnrichmentResult> {
                 },
                 date: {
                   type: "string",
-                  description: "Announcement date as YYYY-MM-DD. Use YYYY-01-01 if only the year is known. Omit if completely unknown.",
+                  description: "Public announcement date as YYYY-MM-DD. If only the year is known use YYYY-01-01. Omit if completely unknown.",
+                },
+                investors: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: [
+                    "All known investors for THIS round. Put the lead investor first.",
+                    "Include full firm names (e.g. 'Sequoia Capital', 'Andreessen Horowitz').",
+                    "Omit if no investor names are mentioned in the research.",
+                  ].join(" "),
                 },
                 source_url: {
                   type: "string",
-                  description: "Direct URL for this specific round (press release, SEC filing, Crunchbase page).",
+                  description: "Best direct URL for this specific round — press release, SEC filing, or Crunchbase round page.",
                 },
               },
               required: ["round_type"],
@@ -230,19 +250,19 @@ async function researchFundingRounds(name: string): Promise<EnrichmentResult> {
             type: "number",
             description: [
               "Integer 0–100 reflecting overall data confidence.",
-              "90–100: multiple authoritative sources (Crunchbase + SEC + press release) fully agree.",
-              "70–89: one strong source with no contradictions.",
-              "50–69: limited data or minor source conflicts.",
-              "0–49: mostly inferred or unverifiable — prefer returning fewer rounds.",
+              "90–100: multiple authoritative sources (Crunchbase + SEC filing + press release) fully agree on amounts and dates.",
+              "70–89: one strong authoritative source, no contradictions found.",
+              "50–69: limited data, only partial amounts or dates available, or minor source conflicts.",
+              "0–49: mostly inferred or unverifiable — return fewer rounds, not more.",
             ].join(" "),
           },
           reasoning: {
             type: "string",
-            description: "2–3 sentence explanation of what sources were found, what data was confirmed, and why the confidence score was assigned.",
+            description: "2–3 sentences: which sources were found, which round details (amounts, dates, investors) were confirmed, and why the confidence score was assigned.",
           },
           source_url: {
             type: "string",
-            description: "Primary URL used for this company's overall funding research (Crunchbase profile, PitchBook, or official investor page).",
+            description: "Primary URL for this company's overall funding research (Crunchbase profile, PitchBook, or official investor announcement page).",
           },
         },
         required: ["funding_rounds", "confidence_score", "reasoning"],
@@ -251,30 +271,40 @@ async function researchFundingRounds(name: string): Promise<EnrichmentResult> {
     tool_choice: { type: "tool", name: "save_funding_history" },
     messages: [{
       role: "user",
-      content: `You are a financial data analyst. Research the COMPLETE verified funding history for the private tech company "${name}" and return a structured JSON response.
+      content: `You are a financial data analyst. Extract the COMPLETE verified funding history for the private tech company "${name}".
 
-RESPONSE SCHEMA (all fields required unless marked optional):
+CRITICAL RULES — read carefully:
+1. RETURN ALL ROUNDS — if the company raised Pre-Seed, Seed, Series A, and Series B, the array MUST contain 4 objects. Never return only the most recent round.
+2. AMOUNT RAISED — record the USD amount raised in each individual round as a plain integer ($1.5B → 1500000000, $50M → 50000000).
+3. INVESTORS — for each round, list the lead investor first, followed by all known participants. Use full firm names.
+4. DATE — use the public announcement date (YYYY-MM-DD). Approximate as YYYY-01-01 when only the year is known.
+5. VERIFY BEFORE ADDING — omit any round or figure you cannot confirm from the research data. Return [] rather than guess.
+6. CONFIDENCE — score honestly. Penalise for missing amounts, missing investor names, missing dates, or source conflicts.
+
+RESPONSE SCHEMA:
 {
   "funding_rounds": [
     {
-      "round_type": "Seed" | "Series A" | ...,  // required
-      "amount_raised": 50000000,                  // optional — plain USD integer
-      "valuation": 200000000,                     // optional — plain USD integer
-      "date": "2021-06-15",                       // optional — YYYY-MM-DD
-      "source_url": "https://..."                 // optional — per-round source
+      "round_type": "Seed",           // required — one of the allowed enum values
+      "amount_raised": 5000000,       // optional — plain USD integer for THIS round only
+      "valuation": 20000000,          // optional — post-money valuation in USD
+      "date": "2019-03-12",           // optional — YYYY-MM-DD announcement date
+      "investors": ["Accel", "Y Combinator", "Angel Investor Name"],  // optional — lead first
+      "source_url": "https://..."     // optional — direct URL for this round
+    },
+    {
+      "round_type": "Series A",
+      "amount_raised": 25000000,
+      "date": "2021-06-01",
+      "investors": ["Sequoia Capital", "Andreessen Horowitz"],
+      "source_url": "https://..."
     }
+    // ... every additional round as a separate object
   ],
-  "confidence_score": 85,          // 0-100 integer
-  "reasoning": "Found Crunchbase profile confirming Series A and B. Amount figures cross-referenced with TechCrunch press release. No Series C data found in any source.",
-  "source_url": "https://crunchbase.com/organization/..."  // optional — primary research URL
+  "confidence_score": 82,
+  "reasoning": "Crunchbase confirms Seed and Series A with amounts. Investor names sourced from TechCrunch announcement. Series B amount unconfirmed — omitted.",
+  "source_url": "https://crunchbase.com/organization/example"
 }
-
-RULES:
-• List rounds from OLDEST to NEWEST
-• Convert all monetary amounts to plain USD integers ($1.5B → 1500000000)
-• Omit any round you CANNOT verify — return an empty array rather than guessing
-• Set confidence_score honestly: penalise for missing amounts, conflicting sources, or no Crunchbase/PitchBook entry
-• reasoning must explain WHAT you found and WHY you assigned that confidence score
 
 Research data:
 ${context}`,
@@ -328,12 +358,17 @@ async function insertNewRounds(
       ? `$${(round.amount_raised / 1e6).toFixed(0)}M`
       : "amt unknown";
 
+    const investors = (round.investors && round.investors.length > 0)
+      ? round.investors
+      : null;
+
     if (DRY_RUN) {
-      console.log(`    [DRY] ${roundType} | ${announcedDate ?? "no date"} | ${displayAmt}`);
+      const investorStr = investors ? ` | ${investors[0]}${investors.length > 1 ? ` +${investors.length - 1}` : ""}` : "";
+      console.log(`    [DRY] ${roundType} | ${announcedDate ?? "no date"} | ${displayAmt}${investorStr}`);
       inserted++;
       seen.push({ id: "dry", startup_id: startupId, round_type: roundType,
         amount_raised: null, valuation: null,
-        announcement_date: announcedDate, source_url: null });
+        announcement_date: announcedDate, source_url: null, investors: null });
       continue;
     }
 
@@ -344,16 +379,18 @@ async function insertNewRounds(
       valuation:         round.valuation     ?? null,
       announcement_date: announcedDate,
       source_url:        sourceUrl,
+      investors:         investors,
     });
 
     if (error) {
       console.warn(`    ⚠️  Insert failed (${roundType}): ${error.message}`);
     } else {
-      console.log(`    💰  ${roundType} | ${announcedDate ?? "no date"} | ${displayAmt}`);
+      const investorStr = investors ? ` | ${investors[0]}${investors.length > 1 ? ` +${investors.length - 1}` : ""}` : "";
+      console.log(`    💰  ${roundType} | ${announcedDate ?? "no date"} | ${displayAmt}${investorStr}`);
       inserted++;
       seen.push({ id: "new", startup_id: startupId, round_type: roundType,
         amount_raised: round.amount_raised ?? null, valuation: round.valuation ?? null,
-        announcement_date: announcedDate, source_url: null });
+        announcement_date: announcedDate, source_url: null, investors });
     }
   }
 
