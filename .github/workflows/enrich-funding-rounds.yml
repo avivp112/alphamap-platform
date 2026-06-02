@@ -8,9 +8,14 @@ on:
         type: boolean
         default: true
       batch_size:
-        description: "Max companies to enrich in Phase 2 (default: 50)"
+        description: "Max companies to enrich in one run (default: 50)"
         type: number
         default: 50
+      target_company:
+        description: "Enrich a single company by exact name (e.g. 'Supabase'). Leave blank to process all eligible."
+        type: string
+        required: false
+        default: ""
 
 jobs:
   enrich:
@@ -39,4 +44,5 @@ jobs:
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
           DRY_RUN: ${{ github.event.inputs.dry_run }}
           BATCH_SIZE: ${{ github.event.inputs.batch_size }}
+          TARGET_COMPANY: ${{ github.event.inputs.target_company }}
         run: npx tsx scripts/enrich_funding_rounds.ts

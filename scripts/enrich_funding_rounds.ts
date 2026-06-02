@@ -42,7 +42,8 @@ if (!process.env.TAVILY_API_KEY) {
 
 let BATCH_SIZE = Number(process.env.BATCH_SIZE ?? 50);
 let DELAY_MS   = Number(process.env.DELAY_MS   ?? 15_000);
-const DRY_RUN    = process.env.DRY_RUN !== "false";           // safe default: dry run
+const DRY_RUN         = process.env.DRY_RUN !== "false";      // safe default: dry run
+const TARGET_COMPANY  = process.env.TARGET_COMPANY?.trim() ?? null; // force a single company
 
 const supabase  = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -52,26 +53,39 @@ interface StartupRow      { id: string; name: string }
 interface FundingRoundRow {
   id: string; startup_id: string; round_type: string | null;
   amount_raised: number | null; valuation: number | null;
+  is_valuation_estimated: boolean | null;
   announcement_date: string | null; source_url: string | null;
-  investors: string[] | null;
+  lead_investor: string | null; investors: string[] | null;
 }
 
-// Shape Claude returns for each round (uses "date" per the JSON schema)
 interface ClaudeRound {
   round_type: string;
   amount_raised?: number | null;
   valuation?: number | null;
-  date?: string | null;        // YYYY-MM-DD — mapped to announcement_date on insert
-  investors?: string[] | null; // lead investor first, then participants
+  is_valuation_estimated?: boolean;
+  date?: string | null;              // YYYY-MM-DD → announcement_date on insert
+  lead_investor?: string | null;
+  other_investors?: string[] | null;
   source_url?: string | null;
 }
 
-// Full structured response from Claude for one company
+interface ClaudeLeader {
+  name: string;
+  role: string;
+}
+
+interface ClaudeMetrics {
+  headcount: number | null;
+  growth_trend: string | null;
+}
+
 interface EnrichmentResult {
   funding_rounds: ClaudeRound[];
-  confidence_score: number;    // 0–100
-  reasoning: string;           // brief explanation of sources / certainty
-  source_url: string;          // primary research source for this company
+  leadership: ClaudeLeader[];
+  metrics: ClaudeMetrics;
+  confidence_score: number;
+  reasoning: string;
+  source_url: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -169,31 +183,33 @@ async function webSearch(query: string): Promise<string | null> {
   return fallbackSearch(query);
 }
 
-// ── Claude: extract ALL historical rounds + confidence metadata ───────────────
-async function researchFundingRounds(name: string): Promise<EnrichmentResult> {
-  // Three targeted searches: full history, recent rounds with amounts, investor names
-  const [history, recent, backers] = await Promise.all([
+// ── Claude: extract complete company profile (funding + leadership + HR) ──────
+async function researchCompanyProfile(name: string): Promise<EnrichmentResult> {
+  // Four parallel searches: funding history, round amounts/dates, investors, leadership/HR
+  const [history, recent, backers, people] = await Promise.all([
     webSearch(`"${name}" complete funding history all rounds Seed "Series A" "Series B" Crunchbase PitchBook`),
     webSearch(`"${name}" funding round amount raised USD million billion announcement date 2020 2021 2022 2023 2024 2025`),
     webSearch(`"${name}" lead investor venture capital investors participated backed funding round`),
+    webSearch(`"${name}" CEO CTO founder leadership team executives employees headcount 2024 2025`),
   ]);
 
-  if (!history && !recent && !backers) {
-    throw new Error("All three searches failed — skipping");
+  if (!history && !recent && !backers && !people) {
+    throw new Error("All four searches failed — skipping");
   }
 
   const context = [
     `## Complete Funding History (all rounds)\n${history  ?? "(search failed)"}`,
-    `## Round Amounts & Dates\n${recent               ?? "(search failed)"}`,
-    `## Investors & Backers\n${backers                ?? "(search failed)"}`,
+    `## Round Amounts & Dates\n${recent                  ?? "(search failed)"}`,
+    `## Investors & Backers\n${backers                   ?? "(search failed)"}`,
+    `## Leadership & Headcount\n${people                 ?? "(search failed)"}`,
   ].join("\n\n");
 
   const msg = await anthropic.messages.create({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 2048,
+    max_tokens: 3072,
     tools: [{
-      name: "save_funding_history",
-      description: "Save the complete funding analysis for a private tech startup",
+      name: "save_company_profile",
+      description: "Save the complete financial and organisational profile for a private tech startup",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -201,7 +217,6 @@ async function researchFundingRounds(name: string): Promise<EnrichmentResult> {
             type: "array",
             description: [
               "EVERY verified funding round from inception to present, sorted OLDEST → NEWEST.",
-              "If the company raised Seed, Series A, and Series B — return all three objects in the array.",
               "Never return only the latest round. Never collapse multiple rounds into one.",
               "Return an empty array only if zero rounds can be verified.",
             ].join(" "),
@@ -215,7 +230,6 @@ async function researchFundingRounds(name: string): Promise<EnrichmentResult> {
                     "Series D", "Series E+", "Growth", "Bridge",
                     "Convertible Note", "Bootstrapped", "Grant", "Acquired", "Other",
                   ],
-                  description: "Stage of this specific round.",
                 },
                 amount_raised: {
                   type: "number",
@@ -225,84 +239,117 @@ async function researchFundingRounds(name: string): Promise<EnrichmentResult> {
                   type: "number",
                   description: "Post-money valuation in USD as a plain integer. Omit if unknown.",
                 },
+                is_valuation_estimated: {
+                  type: "boolean",
+                  description: "true if the valuation was estimated or inferred rather than officially disclosed.",
+                },
                 date: {
                   type: "string",
-                  description: "Public announcement date as YYYY-MM-DD. If only the year is known use YYYY-01-01. Omit if completely unknown.",
+                  description: "Public announcement date as YYYY-MM-DD. Use YYYY-01-01 if only the year is known.",
                 },
-                investors: {
+                lead_investor: {
+                  type: "string",
+                  description: "Full name of the lead investor for this specific round (e.g. 'Sequoia Capital'). Omit if unknown.",
+                },
+                other_investors: {
                   type: "array",
                   items: { type: "string" },
-                  description: [
-                    "All known investors for THIS round. Put the lead investor first.",
-                    "Include full firm names (e.g. 'Sequoia Capital', 'Andreessen Horowitz').",
-                    "Omit if no investor names are mentioned in the research.",
-                  ].join(" "),
+                  description: "All other participating investors (not the lead). Full firm names. Omit if none known.",
                 },
                 source_url: {
                   type: "string",
-                  description: "Best direct URL for this specific round — press release, SEC filing, or Crunchbase round page.",
+                  description: "Best direct URL for this round — press release, SEC filing, or Crunchbase round page.",
                 },
               },
               required: ["round_type"],
+            },
+          },
+          leadership: {
+            type: "array",
+            description: "Current C-level executives and founders. Include only named, verifiable individuals.",
+            items: {
+              type: "object" as const,
+              properties: {
+                name: { type: "string", description: "Full name." },
+                role: { type: "string", description: "Current title (e.g. 'CEO', 'CTO', 'Co-Founder')." },
+              },
+              required: ["name", "role"],
+            },
+          },
+          metrics: {
+            type: "object" as const,
+            description: "Current HR snapshot.",
+            properties: {
+              headcount: {
+                type: "number",
+                description: "Best available total employee count as a plain integer. Omit if unknown.",
+              },
+              growth_trend: {
+                type: "string",
+                enum: ["rapid growth", "moderate growth", "stable", "reduction", "unknown"],
+                description: "12-month headcount trend based on LinkedIn / job-posting signals.",
+              },
             },
           },
           confidence_score: {
             type: "number",
             description: [
               "Integer 0–100 reflecting overall data confidence.",
-              "90–100: multiple authoritative sources (Crunchbase + SEC filing + press release) fully agree on amounts and dates.",
-              "70–89: one strong authoritative source, no contradictions found.",
-              "50–69: limited data, only partial amounts or dates available, or minor source conflicts.",
-              "0–49: mostly inferred or unverifiable — return fewer rounds, not more.",
+              "90–100: multiple authoritative sources fully agree on amounts and dates.",
+              "70–89: one strong source, no contradictions.",
+              "50–69: partial data or minor conflicts.",
+              "0–49: mostly inferred — return fewer rounds, not more.",
             ].join(" "),
           },
           reasoning: {
             type: "string",
-            description: "2–3 sentences: which sources were found, which round details (amounts, dates, investors) were confirmed, and why the confidence score was assigned.",
+            description: "2–3 sentences: sources found, details confirmed, why the confidence score was assigned.",
           },
           source_url: {
             type: "string",
-            description: "Primary URL for this company's overall funding research (Crunchbase profile, PitchBook, or official investor announcement page).",
+            description: "Primary URL for this company's overall funding research.",
           },
         },
-        required: ["funding_rounds", "confidence_score", "reasoning"],
+        required: ["funding_rounds", "leadership", "metrics", "confidence_score", "reasoning"],
       },
     }],
-    tool_choice: { type: "tool", name: "save_funding_history" },
+    tool_choice: { type: "tool", name: "save_company_profile" },
     messages: [{
       role: "user",
-      content: `You are a financial data analyst. Extract the COMPLETE verified funding history for the private tech company "${name}".
+      content: `You are a financial data analyst. Extract the COMPLETE verified company profile for the private tech company "${name}".
 
-CRITICAL RULES — read carefully:
-1. RETURN ALL ROUNDS — if the company raised Pre-Seed, Seed, Series A, and Series B, the array MUST contain 4 objects. Never return only the most recent round.
-2. AMOUNT RAISED — record the USD amount raised in each individual round as a plain integer ($1.5B → 1500000000, $50M → 50000000).
-3. INVESTORS — for each round, list the lead investor first, followed by all known participants. Use full firm names.
-4. DATE — use the public announcement date (YYYY-MM-DD). Approximate as YYYY-01-01 when only the year is known.
-5. VERIFY BEFORE ADDING — omit any round or figure you cannot confirm from the research data. Return [] rather than guess.
-6. CONFIDENCE — score honestly. Penalise for missing amounts, missing investor names, missing dates, or source conflicts.
+CRITICAL RULES:
+1. RETURN ALL ROUNDS — if the company raised Pre-Seed, Seed, Series A, and Series B, the array MUST contain 4 objects.
+2. AMOUNT RAISED — record the USD raised in each individual round as a plain integer ($1.5B → 1500000000, $50M → 50000000).
+3. LEAD INVESTOR — identify the primary lead investor per round in lead_investor; put all others in other_investors.
+4. VALUATION — set is_valuation_estimated: true if the figure was inferred or not officially disclosed.
+5. DATE — public announcement date (YYYY-MM-DD). Use YYYY-01-01 when only the year is known.
+6. LEADERSHIP — include current CEO, CTO, CPO, CFO, and founders. Full names and current titles only.
+7. HEADCOUNT — use the most recent available figure. growth_trend reflects the 12-month direction.
+8. VERIFY BEFORE ADDING — omit anything unconfirmable. Return [] rather than guess funding rounds.
+9. CONFIDENCE — score honestly. Penalise for missing amounts, dates, investor names, or source conflicts.
 
 RESPONSE SCHEMA:
 {
   "funding_rounds": [
     {
-      "round_type": "Seed",           // required — one of the allowed enum values
-      "amount_raised": 5000000,       // optional — plain USD integer for THIS round only
-      "valuation": 20000000,          // optional — post-money valuation in USD
-      "date": "2019-03-12",           // optional — YYYY-MM-DD announcement date
-      "investors": ["Accel", "Y Combinator", "Angel Investor Name"],  // optional — lead first
-      "source_url": "https://..."     // optional — direct URL for this round
-    },
-    {
-      "round_type": "Series A",
-      "amount_raised": 25000000,
-      "date": "2021-06-01",
-      "investors": ["Sequoia Capital", "Andreessen Horowitz"],
+      "round_type": "Seed",
+      "amount_raised": 5000000,
+      "valuation": 20000000,
+      "is_valuation_estimated": false,
+      "date": "2019-03-12",
+      "lead_investor": "Y Combinator",
+      "other_investors": ["Accel", "SV Angel"],
       "source_url": "https://..."
     }
-    // ... every additional round as a separate object
   ],
+  "leadership": [
+    { "name": "Jane Smith", "role": "CEO" },
+    { "name": "Bob Lee",    "role": "CTO" }
+  ],
+  "metrics": { "headcount": 850, "growth_trend": "moderate growth" },
   "confidence_score": 82,
-  "reasoning": "Crunchbase confirms Seed and Series A with amounts. Investor names sourced from TechCrunch announcement. Series B amount unconfirmed — omitted.",
+  "reasoning": "Crunchbase confirms Seed and Series A with amounts and dates. Leadership sourced from LinkedIn. Headcount from LinkedIn badge.",
   "source_url": "https://crunchbase.com/organization/example"
 }
 
@@ -313,12 +360,21 @@ ${context}`,
 
   const tool = msg.content.find((b) => b.type === "tool_use");
   if (!tool || tool.type !== "tool_use") {
-    return { funding_rounds: [], confidence_score: 0, reasoning: "Claude returned no structured output.", source_url: "" };
+    return {
+      funding_rounds: [], leadership: [],
+      metrics: { headcount: null, growth_trend: null },
+      confidence_score: 0, reasoning: "Claude returned no structured output.", source_url: "",
+    };
   }
 
-  const input = tool.input as Partial<EnrichmentResult>;
+  const input = tool.input as Partial<EnrichmentResult> & { metrics?: Partial<ClaudeMetrics> };
   return {
     funding_rounds: (input.funding_rounds ?? []).filter((r) => r.round_type),
+    leadership:      input.leadership    ?? [],
+    metrics: {
+      headcount:    input.metrics?.headcount    ?? null,
+      growth_trend: input.metrics?.growth_trend ?? null,
+    },
     confidence_score: input.confidence_score ?? 0,
     reasoning:        input.reasoning        ?? "(no reasoning provided)",
     source_url:       input.source_url       ?? "",
@@ -358,53 +414,102 @@ async function insertNewRounds(
       ? `$${(round.amount_raised / 1e6).toFixed(0)}M`
       : "amt unknown";
 
-    const investors = (round.investors && round.investors.length > 0)
-      ? round.investors
-      : null;
+    const leadInvestor   = round.lead_investor ?? null;
+    const otherInvestors = round.other_investors ?? [];
+    const investors      = [
+      ...(leadInvestor ? [leadInvestor] : []),
+      ...otherInvestors,
+    ].filter(Boolean) as string[];
+    const investorsArr      = investors.length > 0 ? investors : null;
+    const isValuationEst    = round.is_valuation_estimated ?? false;
 
     if (DRY_RUN) {
-      const investorStr = investors ? ` | ${investors[0]}${investors.length > 1 ? ` +${investors.length - 1}` : ""}` : "";
-      console.log(`    [DRY] ${roundType} | ${announcedDate ?? "no date"} | ${displayAmt}${investorStr}`);
+      const leadStr = leadInvestor ? ` | ${leadInvestor}${otherInvestors.length > 0 ? ` +${otherInvestors.length}` : ""}` : "";
+      console.log(`    [DRY] ${roundType} | ${announcedDate ?? "no date"} | ${displayAmt}${leadStr}`);
       inserted++;
       seen.push({ id: "dry", startup_id: startupId, round_type: roundType,
-        amount_raised: null, valuation: null,
-        announcement_date: announcedDate, source_url: null, investors: null });
+        amount_raised: null, valuation: null, is_valuation_estimated: null,
+        announcement_date: announcedDate, source_url: null,
+        lead_investor: null, investors: null });
       continue;
     }
 
     const { error } = await supabase.from("funding_rounds").insert({
-      startup_id:        startupId,
-      round_type:        roundType,
-      amount_raised:     round.amount_raised ?? null,
-      valuation:         round.valuation     ?? null,
-      announcement_date: announcedDate,
-      source_url:        sourceUrl,
-      investors:         investors,
+      startup_id:              startupId,
+      round_type:              roundType,
+      amount_raised:           round.amount_raised ?? null,
+      valuation:               round.valuation     ?? null,
+      is_valuation_estimated:  isValuationEst,
+      announcement_date:       announcedDate,
+      source_url:              sourceUrl,
+      lead_investor:           leadInvestor,
+      investors:               investorsArr,
     });
 
     if (error) {
       console.warn(`    ⚠️  Insert failed (${roundType}): ${error.message}`);
     } else {
-      const investorStr = investors ? ` | ${investors[0]}${investors.length > 1 ? ` +${investors.length - 1}` : ""}` : "";
-      console.log(`    💰  ${roundType} | ${announcedDate ?? "no date"} | ${displayAmt}${investorStr}`);
+      const leadStr = leadInvestor ? ` | ${leadInvestor}${otherInvestors.length > 0 ? ` +${otherInvestors.length}` : ""}` : "";
+      console.log(`    💰  ${roundType} | ${announcedDate ?? "no date"} | ${displayAmt}${leadStr}`);
       inserted++;
       seen.push({ id: "new", startup_id: startupId, round_type: roundType,
         amount_raised: round.amount_raised ?? null, valuation: round.valuation ?? null,
-        announcement_date: announcedDate, source_url: null, investors });
+        is_valuation_estimated: isValuationEst,
+        announcement_date: announcedDate, source_url: null,
+        lead_investor: leadInvestor, investors: investorsArr });
     }
   }
 
   return { inserted, skipped };
 }
 
+// ── Write leadership + HR metrics back to the startups row ───────────────────
+async function upsertStartupProfile(
+  startupId: string,
+  leadership: ClaudeLeader[],
+  metrics: ClaudeMetrics,
+): Promise<void> {
+  if (DRY_RUN) {
+    if (leadership.length > 0) {
+      const preview = leadership.slice(0, 3).map((l) => `${l.name} (${l.role})`).join(", ");
+      console.log(`    [DRY] Leadership (${leadership.length}): ${preview}${leadership.length > 3 ? " …" : ""}`);
+    }
+    if (metrics.headcount !== null) {
+      console.log(`    [DRY] Headcount: ~${metrics.headcount.toLocaleString()} | Trend: ${metrics.growth_trend ?? "unknown"}`);
+    }
+    return;
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (leadership.length > 0)     updates.leadership     = leadership;
+  if (metrics.headcount !== null) updates.employee_count = metrics.headcount;
+  if (metrics.growth_trend)       updates.growth_trend   = metrics.growth_trend;
+
+  if (Object.keys(updates).length === 0) return;
+
+  const { error } = await supabase.from("startups").update(updates).eq("id", startupId);
+  if (error) {
+    console.warn(`    ⚠️  Profile update failed: ${error.message}`);
+  } else {
+    const parts: string[] = [];
+    if (leadership.length > 0)     parts.push(`${leadership.length} leaders`);
+    if (metrics.headcount !== null) parts.push(`~${metrics.headcount.toLocaleString()} employees`);
+    console.log(`    👥  Profile updated: ${parts.join(", ")}`);
+  }
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
   console.log("╔══════════════════════════════════════════════════════╗");
-  console.log("║    AlphaMap — Funding Rounds Sync & Enrichment       ║");
+  console.log("║    AlphaMap — Company Profile Sync & Enrichment      ║");
   console.log(`║    ${new Date().toISOString()}           ║`);
   console.log(`║    BATCH=${BATCH_SIZE}  DELAY=${DELAY_MS / 1000}s  DRY_RUN=${String(DRY_RUN).padEnd(27)}║`);
+  if (TARGET_COMPANY) {
+    console.log(`║    TARGET=${TARGET_COMPANY.padEnd(46)}║`);
+  }
   console.log("╚══════════════════════════════════════════════════════╝\n");
   if (DRY_RUN) console.log("ℹ️  DRY RUN — set DRY_RUN=false to apply writes.\n");
+  if (TARGET_COMPANY) console.log(`🎯  Targeting single company: "${TARGET_COMPANY}"\n`);
 
   // ── 1. Fetch all startups + all existing rounds ────────────────────────────
   const [{ data: startupData, error: sErr }, { data: roundData, error: rErr }] =
@@ -475,8 +580,9 @@ async function main() {
       console.log(`  [DRY] stub → ${s.name}`);
       roundsByStartup.set(s.id, [{
         id: "stub", startup_id: s.id, round_type: "Other",
-        amount_raised: null, valuation: null,
+        amount_raised: null, valuation: null, is_valuation_estimated: null,
         announcement_date: null, source_url: null,
+        lead_investor: null, investors: null,
       }]);
     } else {
       const { error } = await supabase.from("funding_rounds")
@@ -488,21 +594,27 @@ async function main() {
       console.log(`  ✅  Stub inserted: ${s.name}`);
       roundsByStartup.set(s.id, [{
         id: "stub", startup_id: s.id, round_type: "Other",
-        amount_raised: null, valuation: null,
+        amount_raised: null, valuation: null, is_valuation_estimated: null,
         announcement_date: null, source_url: null,
+        lead_investor: null, investors: null,
       }]);
     }
     stubsInserted++;
   }
   console.log(`\n  Phase 1 complete — stubs: ${stubsInserted}\n`);
 
-  // ── Phase 2: Financial enrichment ─────────────────────────────────────────
-  console.log("── Phase 2: Financial Enrichment ───────────────────────");
+  // ── Phase 2: Company profile enrichment ───────────────────────────────────
+  console.log("── Phase 2: Company Profile Enrichment ─────────────────");
   const toEnrich = startups
-    .filter((s) => needsEnrichment(roundsByStartup.get(s.id) ?? []))
+    .filter((s) => {
+      // When a specific company is targeted, bypass the needsEnrichment check
+      // so we always run a fresh research pass (good for testing / forced refresh)
+      if (TARGET_COMPANY) return s.name.toLowerCase() === TARGET_COMPANY.toLowerCase();
+      return needsEnrichment(roundsByStartup.get(s.id) ?? []);
+    })
     .slice(0, BATCH_SIZE);
 
-  console.log(`🔬  Startups needing round enrichment: ${toEnrich.length}`);
+  console.log(`🔬  Startups queued for enrichment: ${toEnrich.length}`);
   if (toEnrich.length === 0) {
     console.log("✅  All startups already have named funding rounds.\n");
   }
@@ -516,7 +628,7 @@ async function main() {
 
     let result: EnrichmentResult;
     try {
-      result = await researchFundingRounds(s.name);
+      result = await researchCompanyProfile(s.name);
     } catch (err) {
       console.warn(`    ⚠️  Research failed: ${String(err)}`);
       tally.failed++;
@@ -532,7 +644,13 @@ async function main() {
     console.log(`    ${scoreLabel} Confidence: ${result.confidence_score}/100`);
     console.log(`    📝 Reasoning: ${result.reasoning}`);
     if (result.source_url) console.log(`    🔗 Source: ${result.source_url}`);
-    console.log(`    📊 Claude found ${result.funding_rounds.length} verifiable round(s)`);
+    console.log(`    📊 Funding rounds: ${result.funding_rounds.length} verifiable`);
+    if (result.leadership.length > 0) {
+      console.log(`    👤 Leadership: ${result.leadership.length} executive(s) found`);
+    }
+    if (result.metrics.headcount !== null) {
+      console.log(`    📈 Headcount: ~${result.metrics.headcount.toLocaleString()} (${result.metrics.growth_trend ?? "trend unknown"})`);
+    }
 
     if (result.funding_rounds.length === 0) {
       console.log("    ℹ️  No verifiable rounds found — stub remains.");
@@ -544,6 +662,9 @@ async function main() {
       tally.roundsSkipped  += skipped;
       if (inserted > 0) tally.enriched++;
     }
+
+    // Write leadership + headcount back to the startups row
+    await upsertStartupProfile(s.id, result.leadership, result.metrics);
 
     if (i < toEnrich.length - 1) {
       console.log(`    ⏳  Waiting ${DELAY_MS / 1000}s…`);
