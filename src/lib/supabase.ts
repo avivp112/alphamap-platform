@@ -11,14 +11,22 @@ export type RoundType =
   | "Growth" | "Bridge" | "Convertible Note"
   | "Bootstrapped" | "Grant" | "Acquired" | "Other";
 
+export type GrowthTrend =
+  | "rapid growth" | "moderate growth" | "stable" | "reduction" | "unknown";
+
+export interface Leader { name: string; role: string }
+
 export interface FundingRound {
   id: string;
   startup_id: string;
   round_type: RoundType | null;
   amount_raised: number | null;
   valuation: number | null;
+  is_valuation_estimated: boolean | null;
   announcement_date: string | null;
   source_url: string | null;
+  lead_investor: string | null;
+  investors: string[] | null;
   created_at: string;
 }
 
@@ -30,12 +38,13 @@ export interface Startup {
   industry: string | null;
   founded_year: number | null;
   employee_count: number | null;
+  growth_trend: GrowthTrend | null;
+  leadership: Leader[] | null;
   country: string | null;
   city: string | null;
   founders: string[] | null;
   created_at: string;
   updated_at: string;
-  // joined via Supabase foreign table syntax
   funding_rounds: FundingRound[];
 }
 
@@ -62,7 +71,6 @@ export async function ingestStartup(companyName: string): Promise<{ startup: Sta
   );
   const json = await res.json();
   if (!res.ok) throw new Error(json.error ?? `Request failed (${res.status})`);
-  // Attach empty funding_rounds array so the card renders immediately
   return {
     startup: { ...json.startup, funding_rounds: json.funding_round ? [json.funding_round] : [] },
     funding_round: json.funding_round ?? null,
