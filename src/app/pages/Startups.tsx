@@ -12,7 +12,7 @@ import {
   TrendingUp, TrendingDown, Minus,
   UserRound, LayoutGrid, List, ExternalLink,
   ChevronDown, Building2, CheckSquare, Square,
-  GitCompare, Clock, Briefcase,
+  GitCompare, Clock, Briefcase, Zap,
 } from "lucide-react";
 import {
   fetchStartups, ingestStartup,
@@ -380,14 +380,7 @@ const HEADCOUNT_STEPS = [
   { value: "500+",     label: "500+" },
 ] as const;
 type HeadcountStep = (typeof HEADCOUNT_STEPS)[number]["value"];
-
-const TIMEFRAME_OPTIONS = [
-  { label: "All time",    value: "all" },
-  { label: "Last 12 mo", value: "12m" },
-  { label: "Last 18 mo", value: "18m" },
-  { label: "Last 3 yrs", value: "36m" },
-] as const;
-type Timeframe = (typeof TIMEFRAME_OPTIONS)[number]["value"];
+type DensityFilter = "all" | "crowded" | "blue-ocean";
 
 const PROGRESS_MESSAGES = [
   "Searching the web for funding data…",
@@ -1199,7 +1192,8 @@ export function Startups() {
   const [countryFilter, setCountry]     = useState("");
   const [stageStep, setStageStep]       = useState<StageStep>("all");
   const [headcountStep, setHeadcount]   = useState<HeadcountStep>("all");
-  const [timeframe, setTimeframe]       = useState<Timeframe>("all");
+  const [momentumFilter, setMomentum]   = useState(false);
+  const [densityFilter, setDensity]     = useState<DensityFilter>("all");
   const [viewMode, setView]             = useState<"grid" | "list">("grid");
   const [selectedStartup, setSelected] = useState<Startup | null>(null);
   const [selectedIds, setSelectedIds]   = useState<Set<string>>(new Set());
@@ -1236,7 +1230,8 @@ export function Startups() {
   }
   function clearAll() {
     setSearch(""); setParentSector(""); setSubSector(""); setCountry("");
-    setStageStep("all"); setHeadcount("all"); setTimeframe("all"); clearCityFilter();
+    setStageStep("all"); setHeadcount("all"); setMomentum(false); setDensity("all");
+    clearCityFilter();
   }
 
   const countries = useMemo(
@@ -1248,55 +1243,72 @@ export function Startups() {
     search, parentSector, subSector, countryFilter, cityFilter,
     stageStep !== "all" ? "1" : "",
     headcountStep !== "all" ? "1" : "",
-    timeframe !== "all" ? "1" : "",
+    momentumFilter ? "1" : "",
+    densityFilter !== "all" ? "1" : "",
   ].filter(Boolean).length;
 
-  const cutoffDate = useMemo(() => {
-    if (timeframe === "all") return null;
-    const months = timeframe === "12m" ? 12 : timeframe === "18m" ? 18 : 36;
-    const d = new Date();
-    d.setMonth(d.getMonth() - months);
-    return d.toISOString().slice(0, 10);
-  }, [timeframe]);
-
-  const filtered = useMemo(() => startups.filter((s) => {
-    if (search) {
-      const q = search.toLowerCase();
-      if (!s.name.toLowerCase().includes(q) &&
-          !(s.industry ?? "").toLowerCase().includes(q) &&
-          !(s.country ?? "").toLowerCase().includes(q) &&
-          !(s.city ?? "").toLowerCase().includes(q) &&
-          !(s.description ?? "").toLowerCase().includes(q)) return false;
-    }
-    if (parentSector) {
-      const tax = classifyIndustry(s.industry);
-      if (tax.parent !== parentSector) return false;
-      if (subSector && tax.sub !== subSector) return false;
-    }
-    if (countryFilter && s.country !== countryFilter) return false;
-    if (cityFilter && !(s.city ?? "").toLowerCase().includes(cityFilter.toLowerCase()) &&
-        !(s.country ?? "").toLowerCase().includes(cityFilter.toLowerCase())) return false;
-    if (stageStep !== "all") {
-      const step = STAGE_STEPS.find((st) => st.value === stageStep);
-      if (step && !step.rounds.includes(s.funding_rounds?.[0]?.round_type as RoundType)) return false;
-    }
-    if (headcountStep !== "all") {
-      const n = s.employee_count ?? 0;
-      if (headcountStep === "0-50"    && n > 50)              return false;
-      if (headcountStep === "51-100"  && (n < 51  || n > 100))  return false;
-      if (headcountStep === "101-250" && (n < 101 || n > 250))  return false;
-      if (headcountStep === "251-500" && (n < 251 || n > 500))  return false;
-      if (headcountStep === "500+"    && n < 501)             return false;
-    }
-    if (cutoffDate) {
-      const hasDateData = s.funding_rounds.some((r) => r.announcement_date);
-      if (hasDateData) {
-        const hasRecent = s.funding_rounds.some((r) => r.announcement_date && r.announcement_date >= cutoffDate);
-        if (!hasRecent) return false;
+  const filtered = useMemo(() => {
+    // Precompute peer counts once when density filter is active (O(n²) but fast for small sets)
+    let peerCountMap: Map<string, number> | null = null;
+    if (densityFilter !== "all") {
+      peerCountMap = new Map<string, number>();
+      for (const s of startups) {
+        peerCountMap.set(s.id, findPeerGroup(s, startups).length);
       }
     }
-    return true;
-  }), [startups, search, parentSector, subSector, countryFilter, cityFilter, stageStep, headcountStep, cutoffDate]);
+
+    const sixMonthsAgo = (() => {
+      const d = new Date();
+      d.setMonth(d.getMonth() - 6);
+      return d.toISOString().slice(0, 10);
+    })();
+
+    return startups.filter((s) => {
+      if (search) {
+        const q = search.toLowerCase();
+        if (!s.name.toLowerCase().includes(q) &&
+            !(s.industry ?? "").toLowerCase().includes(q) &&
+            !(s.country ?? "").toLowerCase().includes(q) &&
+            !(s.city ?? "").toLowerCase().includes(q) &&
+            !(s.description ?? "").toLowerCase().includes(q)) return false;
+      }
+      if (parentSector) {
+        const tax = classifyIndustry(s.industry);
+        if (tax.parent !== parentSector) return false;
+        if (subSector && tax.sub !== subSector) return false;
+      }
+      if (countryFilter && s.country !== countryFilter) return false;
+      if (cityFilter && !(s.city ?? "").toLowerCase().includes(cityFilter.toLowerCase()) &&
+          !(s.country ?? "").toLowerCase().includes(cityFilter.toLowerCase())) return false;
+      if (stageStep !== "all") {
+        const step = STAGE_STEPS.find((st) => st.value === stageStep);
+        if (step && !step.rounds.includes(s.funding_rounds?.[0]?.round_type as RoundType)) return false;
+      }
+      if (headcountStep !== "all") {
+        const n = s.employee_count ?? 0;
+        if (headcountStep === "0-50"    && n > 50)              return false;
+        if (headcountStep === "51-100"  && (n < 51  || n > 100))  return false;
+        if (headcountStep === "101-250" && (n < 101 || n > 250))  return false;
+        if (headcountStep === "251-500" && (n < 251 || n > 500))  return false;
+        if (headcountStep === "500+"    && n < 501)             return false;
+      }
+      // Financial Momentum: raised in last 6 months + headcount growing
+      if (momentumFilter) {
+        const recentRaise = s.funding_rounds.some(
+          (r) => r.announcement_date && r.announcement_date >= sixMonthsAgo,
+        );
+        const growing = s.growth_trend === "rapid growth" || s.growth_trend === "moderate growth";
+        if (!recentRaise || !growing) return false;
+      }
+      // Competitive Density: Crowded ≥ 3 peers / Blue Ocean ≤ 1 peer
+      if (densityFilter !== "all" && peerCountMap) {
+        const count = peerCountMap.get(s.id) ?? 0;
+        if (densityFilter === "crowded"    && count < 3) return false;
+        if (densityFilter === "blue-ocean" && count > 1) return false;
+      }
+      return true;
+    });
+  }, [startups, search, parentSector, subSector, countryFilter, cityFilter, stageStep, headcountStep, momentumFilter, densityFilter]);
 
   const selectedStartups = useMemo(
     () => startups.filter((s) => selectedIds.has(s.id)),
@@ -1374,15 +1386,38 @@ export function Startups() {
               <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
             </div>
 
-            {/* Timeframe */}
-            <div className="relative">
-              <select value={timeframe} onChange={(e) => setTimeframe(e.target.value as Timeframe)}
-                className={`appearance-none pl-3 pr-8 py-2 text-xs font-semibold border rounded-[10px] bg-white transition-all focus:outline-none focus:ring-2 focus:ring-[#F59E0B]/20 cursor-pointer ${
-                  timeframe !== "all" ? "border-[#F59E0B] text-[#0F172A]" : "border-gray-200 text-gray-500"
-                }`}>
-                {TIMEFRAME_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+            {/* Financial Momentum toggle */}
+            <button
+              onClick={() => setMomentum((v) => !v)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-[10px] text-xs font-semibold border transition-all ${
+                momentumFilter
+                  ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                  : "bg-white border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700"
+              }`}
+            >
+              <Zap className={`w-3.5 h-3.5 flex-none ${momentumFilter ? "text-emerald-500" : "text-gray-400"}`} />
+              Financial Momentum
+              {momentumFilter && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-none" />}
+            </button>
+
+            {/* Competitive Density segmented control */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-bold text-gray-400 whitespace-nowrap">Density</span>
+              <div className="flex items-center bg-white border border-gray-200 rounded-[10px] p-0.5 gap-0.5">
+                {([ ["all", "All"], ["crowded", "Crowded"], ["blue-ocean", "Blue Ocean"] ] as const).map(([val, label]) => (
+                  <button
+                    key={val}
+                    onClick={() => setDensity(val)}
+                    className={`px-2.5 py-1.5 rounded-[7px] text-[10px] font-semibold transition-all whitespace-nowrap ${
+                      densityFilter === val
+                        ? "bg-[#0F172A] text-white shadow-sm"
+                        : "text-gray-400 hover:text-gray-600"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Selection badge */}
