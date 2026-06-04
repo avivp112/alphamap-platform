@@ -718,6 +718,36 @@ function AlphaMapScorePanel({ startupId }: { startupId: string }) {
   );
 }
 
+const SCORE_BADGE_STYLE: Record<'A'|'B'|'C', string> = {
+  A: 'bg-emerald-900/70 text-emerald-300 border-emerald-700/50',
+  B: 'bg-blue-900/70 text-blue-300 border-blue-700/50',
+  C: 'bg-rose-900/70 text-rose-300 border-rose-700/50',
+};
+
+function ScoreBadge({ startupId }: { startupId: string }) {
+  const [data, setData] = useState<AlphaScore | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchAlphaScore(startupId)
+      .then(setData)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [startupId]);
+
+  if (loading) {
+    return <div className="h-4 w-12 rounded bg-slate-800 animate-pulse" />;
+  }
+  if (!data || data.error) return null;
+
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border ${SCORE_BADGE_STYLE[data.tier]}`}>
+      <Activity className="w-2.5 h-2.5 opacity-70" />
+      {data.tier}&nbsp;{data.score.toFixed(0)}
+    </span>
+  );
+}
+
 // ── Tearsheet Modal ───────────────────────────────────────────────────────────
 
 function TearsheetModal({
@@ -1212,6 +1242,7 @@ function StartupCard({
             </span>
           </div>
         ) : <div />}
+        <ScoreBadge startupId={startup.id} />
         <button
           onClick={onToggleSelect}
           className="flex-none p-0.5 rounded text-slate-500 hover:text-[#F59E0B] transition-colors"
