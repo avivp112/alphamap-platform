@@ -12,7 +12,7 @@ import {
   TrendingUp, TrendingDown, Minus,
   UserRound, LayoutGrid, List, ExternalLink,
   ChevronDown, ChevronLeft, ChevronRight, Building2, CheckSquare, Square,
-  GitCompare, Clock, Briefcase, Zap,
+  GitCompare, Clock, Briefcase, Zap, Info,
 } from "lucide-react";
 import {
   fetchStartups, ingestStartup,
@@ -1179,6 +1179,47 @@ function AddStartupDialog({ open, onClose, onSuccess }: {
   );
 }
 
+// ── Info Tooltip ──────────────────────────────────────────────────────────────
+// Hover-triggered dark popover. `align` controls the arrow / box horizontal anchor.
+
+function InfoTooltip({
+  content,
+  align = "center",
+}: {
+  content: string;
+  align?: "center" | "left" | "right";
+}) {
+  const boxAlign =
+    align === "right" ? "right-0"
+    : align === "left" ? "left-0"
+    : "left-1/2 -translate-x-1/2";
+  const arrowAlign =
+    align === "right" ? "right-2.5"
+    : align === "left" ? "left-2.5"
+    : "left-1/2 -translate-x-1/2";
+
+  return (
+    <div className="relative group flex-none">
+      {/* Trigger icon */}
+      <div className="w-4 h-4 flex items-center justify-center rounded-full bg-[#1a2a3f] hover:bg-[#243858] cursor-help transition-colors">
+        <Info className="w-2.5 h-2.5 text-slate-400 group-hover:text-slate-200 transition-colors" />
+      </div>
+      {/* Popover */}
+      <div
+        className={`absolute bottom-[calc(100%+10px)] ${boxAlign} w-60 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50`}
+      >
+        <div className="bg-[#060e1a] border border-[#243858] rounded-[14px] px-3.5 py-3 text-[11px] text-slate-300 shadow-[0_12px_40px_rgba(0,0,0,0.8)] leading-relaxed">
+          {content}
+        </div>
+        {/* Arrow */}
+        <div
+          className={`absolute top-full ${arrowAlign} w-2.5 h-2.5 bg-[#060e1a] border-r border-b border-[#243858] rotate-45 -mt-[5px]`}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ── Pagination ────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 60;
@@ -1404,34 +1445,23 @@ export function Startups() {
                 <button onClick={() => setView("grid")} className={`p-1.5 rounded-[8px] transition-all ${viewMode === "grid" ? "bg-white/10 text-white" : "text-slate-500 hover:text-slate-300"}`}><LayoutGrid className="w-4 h-4" /></button>
                 <button onClick={() => setView("list")} className={`p-1.5 rounded-[8px] transition-all ${viewMode === "list" ? "bg-white/10 text-white" : "text-slate-500 hover:text-slate-300"}`}><List className="w-4 h-4" /></button>
               </div>
-              <button onClick={() => setShowCompare(true)} disabled={selectedIds.size < 2}
-                className={`flex items-center gap-2 rounded-[14px] px-4 py-2.5 text-sm font-bold transition-all ${
-                  selectedIds.size >= 2
-                    ? "bg-blue-600 text-white shadow-[0_4px_14px_rgba(37,99,235,0.3)] hover:bg-blue-700"
-                    : "bg-[#0d1f35] border border-[#1a2a3f] text-slate-600 cursor-not-allowed"
-                }`}>
-                <GitCompare className="w-4 h-4" />
-                {selectedIds.size >= 2 ? `Compare (${selectedIds.size})` : "Compare"}
+              <button onClick={() => setShowAdd(true)}
+                className="flex items-center gap-2 rounded-[14px] bg-[#F59E0B] px-4 py-2.5 text-sm font-bold text-white shadow-[0_4px_14px_rgba(245,158,11,0.3)] hover:bg-amber-600 transition-all">
+                <Plus className="w-4 h-4" />Add Startup
               </button>
             </div>
           </div>
 
-          {/* Subtitle + count + add button */}
-          <div className="flex items-center justify-between gap-4 mb-5">
-            <div className="flex items-center gap-3 min-w-0">
-              <p className="text-sm text-slate-400 leading-snug">
-                Research private tech companies with AI and other advanced tools
-              </p>
-              {!loading && (
-                <span className="text-xs font-semibold text-slate-500 bg-[#0d1f35] border border-[#1a2a3f] px-2.5 py-1 rounded-full flex-none">
-                  {filtered.length}
-                </span>
-              )}
-            </div>
-            <button onClick={() => setShowAdd(true)}
-              className="flex items-center gap-2 rounded-[14px] bg-[#F59E0B] px-4 py-2.5 text-sm font-bold text-white shadow-[0_4px_14px_rgba(245,158,11,0.3)] hover:bg-amber-600 transition-all flex-none">
-              <Plus className="w-4 h-4" />Add Startup
-            </button>
+          {/* Subtitle + count */}
+          <div className="flex items-center gap-3 mb-5">
+            <p className="text-sm text-slate-400 leading-snug">
+              Research private tech companies with AI and other advanced tools
+            </p>
+            {!loading && (
+              <span className="text-xs font-semibold text-slate-500 bg-[#0d1f35] border border-[#1a2a3f] px-2.5 py-1 rounded-full flex-none">
+                {filtered.length}
+              </span>
+            )}
           </div>
 
           {/* ── Screener ─────────────────────────────────────────────────── */}
@@ -1466,21 +1496,32 @@ export function Startups() {
                 <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
               </div>
 
-              <button
-                onClick={() => setMomentum((v) => !v)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-[10px] text-xs font-semibold border transition-all ${
-                  momentumFilter
-                    ? "bg-emerald-900/40 border-emerald-700/60 text-emerald-400"
-                    : "bg-[#0d1f35] border-[#1a2a3f] text-slate-400 hover:border-slate-600 hover:text-slate-200"
-                }`}
-              >
-                <Zap className={`w-3.5 h-3.5 flex-none ${momentumFilter ? "text-emerald-400" : "text-slate-500"}`} />
-                Financial Momentum
-                {momentumFilter && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-none" />}
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setMomentum((v) => !v)}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-[10px] text-xs font-semibold border transition-all ${
+                    momentumFilter
+                      ? "bg-emerald-900/40 border-emerald-700/60 text-emerald-400"
+                      : "bg-[#0d1f35] border-[#1a2a3f] text-slate-400 hover:border-slate-600 hover:text-slate-200"
+                  }`}
+                >
+                  <Zap className={`w-3.5 h-3.5 flex-none ${momentumFilter ? "text-emerald-400" : "text-slate-500"}`} />
+                  Financial Momentum
+                  {momentumFilter && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-none" />}
+                </button>
+                <InfoTooltip
+                  content="Filters for companies that raised capital in the last 6 months AND achieved ≥20% headcount growth (via trend tracking)."
+                />
+              </div>
 
               <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap">Density</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap">Density</span>
+                  <InfoTooltip
+                    content="Categorizes market space: 'Crowded Space' identifies companies with ≥3 peers (≥75% similarity score). 'Blue Ocean' identifies highly differentiated companies with ≤1 peer."
+                    align="right"
+                  />
+                </div>
                 <div className="flex items-center bg-[#0d1f35] border border-[#1a2a3f] rounded-[10px] p-0.5 gap-0.5">
                   {([ ["all", "All"], ["crowded", "Crowded"], ["blue-ocean", "Blue Ocean"] ] as const).map(([val, label]) => (
                     <button
@@ -1498,12 +1539,6 @@ export function Startups() {
                 </div>
               </div>
 
-              {selectedIds.size > 0 && (
-                <div className="flex items-center gap-2 bg-blue-900/40 border border-blue-800/60 rounded-[10px] px-3 py-2">
-                  <span className="text-xs font-semibold text-blue-300">{selectedIds.size} selected</span>
-                  <button onClick={() => setSelectedIds(new Set())} className="text-blue-500 hover:text-blue-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
-                </div>
-              )}
               {activeFilterCount > 0 && (
                 <button onClick={clearAll} className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-rose-400 transition-colors">
                   <X className="w-3.5 h-3.5" />Clear all ({activeFilterCount})
@@ -1546,7 +1581,7 @@ export function Startups() {
       </div>
 
       {/* ── Main content ───────────────────────────────────────────────────── */}
-      <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-6">
+      <div className={`mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-6 ${selectedIds.size >= 1 ? "pb-28" : ""}`}>
         {loading ? (
           <div className="flex items-center justify-center py-32"><Loader2 className="w-6 h-6 text-[#F59E0B] animate-spin" /></div>
         ) : loadError ? (
@@ -1616,6 +1651,35 @@ export function Startups() {
         <CompareModal startups={selectedStartups} allStartups={startups}
           onClose={() => setShowCompare(false)} onAddPeer={addPeer} />
       )}
+
+      {/* ── Floating Compare FAB ────────────────────────────────────────── */}
+      {selectedIds.size >= 1 && (
+        <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2">
+          {/* Clear selection */}
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            title="Clear selection"
+            className="w-9 h-9 flex items-center justify-center rounded-full bg-[#0b1626]/90 backdrop-blur-sm border border-[#1a2a3f] text-slate-500 hover:text-white hover:border-slate-500 transition-all shadow-[0_4px_20px_rgba(0,0,0,0.5)]"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+          {/* Compare button */}
+          <button
+            onClick={() => { if (selectedIds.size >= 2) setShowCompare(true); }}
+            className={`flex items-center gap-2.5 px-5 py-3.5 rounded-[20px] text-sm font-bold transition-all duration-200 ${
+              selectedIds.size >= 2
+                ? "bg-blue-600 text-white shadow-[0_8px_40px_rgba(37,99,235,0.45)] hover:bg-blue-500 hover:shadow-[0_12px_48px_rgba(37,99,235,0.5)] hover:scale-[1.02]"
+                : "bg-[#0b1626]/90 backdrop-blur-sm border border-[#1a2a3f] text-slate-400 shadow-[0_4px_24px_rgba(0,0,0,0.45)] cursor-default"
+            }`}
+          >
+            <GitCompare className="w-4 h-4 flex-none" />
+            {selectedIds.size >= 2
+              ? `Compare (${selectedIds.size})`
+              : `Select ${2 - selectedIds.size} more…`}
+          </button>
+        </div>
+      )}
+
     </Layout>
   );
 }
