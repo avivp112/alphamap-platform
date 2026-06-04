@@ -57,6 +57,43 @@ export async function fetchStartups(): Promise<Startup[]> {
   return (data ?? []) as Startup[];
 }
 
+export interface AlphaScorePillar {
+  label: string;
+  weight: number;
+  score: number | null;
+  valid: boolean;
+  detail: {
+    value_creation_x?: number;
+    burn_proxy_k?: number;
+    hc_growth_pct?: number;
+    serial_founder?: boolean;
+    investor_tier?: number | null;
+    follow_on?: boolean;
+  };
+}
+
+export interface AlphaScore {
+  score: number;
+  tier: 'A' | 'B' | 'C';
+  confidence: 'high' | 'medium' | 'low' | 'none';
+  base_score: number;
+  macro_adj_pct: number;
+  sector_id?: string;
+  pillars: {
+    capital_efficiency: AlphaScorePillar;
+    talent_velocity: AlphaScorePillar;
+    ecosystem_signal: AlphaScorePillar;
+  };
+  error?: string;
+  reason?: string;
+}
+
+export async function fetchAlphaScore(startupId: string): Promise<AlphaScore | null> {
+  const { data, error } = await supabase.rpc('calculate_alphamap_score', { p_startup_id: startupId });
+  if (error) throw error;
+  return data as AlphaScore | null;
+}
+
 export async function ingestStartup(companyName: string): Promise<{ startup: Startup; funding_round: FundingRound | null }> {
   const res = await fetch(
     `${supabaseUrl}/functions/v1/ingest-startup`,

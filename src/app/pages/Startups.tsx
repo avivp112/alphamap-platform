@@ -12,11 +12,11 @@ import {
   TrendingUp, TrendingDown, Minus,
   UserRound, LayoutGrid, List, ExternalLink,
   ChevronDown, ChevronLeft, ChevronRight, Building2, CheckSquare, Square,
-  GitCompare, Clock, Briefcase, Zap, Info,
+  GitCompare, Clock, Briefcase, Zap, Info, Activity,
 } from "lucide-react";
 import {
-  fetchStartups, ingestStartup,
-  type Startup, type FundingRound, type RoundType,
+  fetchStartups, ingestStartup, fetchAlphaScore,
+  type Startup, type FundingRound, type RoundType, type AlphaScore,
 } from "../../lib/supabase";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -543,6 +543,181 @@ function GrowthTrendBadge({ trend }: { trend: string | null | undefined }) {
   );
 }
 
+// ── AlphaMap Score Components ─────────────────────────────────────────────────
+
+const TIER_CONFIG = {
+  A: { ring: '#10b981', bg: 'bg-emerald-950/60', border: 'border-emerald-700/40', badge: 'bg-emerald-900/80 text-emerald-300 border border-emerald-600/50', label: 'Tier A', bar: '#10b981' },
+  B: { ring: '#3b82f6', bg: 'bg-blue-950/60',    border: 'border-blue-700/40',    badge: 'bg-blue-900/80 text-blue-300 border border-blue-600/50',       label: 'Tier B', bar: '#3b82f6' },
+  C: { ring: '#f43f5e', bg: 'bg-rose-950/60',    border: 'border-rose-700/40',    badge: 'bg-rose-900/80 text-rose-300 border border-rose-600/50',       label: 'Tier C', bar: '#f43f5e' },
+} as const;
+
+function ScoreRing({ score, tier }: { score: number; tier: 'A' | 'B' | 'C' }) {
+  const r = 34;
+  const circ = 2 * Math.PI * r;
+  const offset = circ * (1 - score / 100);
+  const cfg = TIER_CONFIG[tier];
+  return (
+    <svg width="84" height="84" viewBox="0 0 84 84" className="flex-none">
+      <circle cx="42" cy="42" r={r} fill="none" stroke="#1e293b" strokeWidth="7" />
+      <circle
+        cx="42" cy="42" r={r} fill="none"
+        stroke={cfg.ring} strokeWidth="7"
+        strokeLinecap="round"
+        strokeDasharray={circ}
+        strokeDashoffset={offset}
+        transform="rotate(-90 42 42)"
+        style={{ transition: 'stroke-dashoffset 0.8s ease' }}
+      />
+      <text x="42" y="44" textAnchor="middle" dominantBaseline="middle"
+        fill="white" fontSize="16" fontWeight="700" fontFamily="inherit">
+        {score.toFixed(0)}
+      </text>
+    </svg>
+  );
+}
+
+function AlphaMapScorePanel({ startupId }: { startupId: string }) {
+  const [data, setData] = useState<AlphaScore | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(false);
+
+  useEffect(() => {
+    setLoading(true); setErr(false); setData(null);
+    fetchAlphaScore(startupId)
+      .then(setData)
+      .catch(() => setErr(true))
+      .finally(() => setLoading(false));
+  }, [startupId]);
+
+  if (loading) {
+    return (
+      <div className="bg-[#091422] border border-[#1a2a3f] rounded-[14px] p-4 flex items-center gap-3">
+        <Activity className="w-4 h-4 text-slate-500 animate-pulse" />
+        <span className="text-xs text-slate-500">Calculating AlphaMap Score…</span>
+      </div>
+    );
+  }
+  if (err || !data || data.error) {
+    return (
+      <div className="bg-[#091422] border border-[#1a2a3f] rounded-[14px] p-4 flex items-center gap-3">
+        <Activity className="w-4 h-4 text-slate-600" />
+        <span className="text-xs text-slate-600">AlphaMap Score unavailable</span>
+      </div>
+    );
+  }
+
+  const cfg = TIER_CONFIG[data.tier];
+  const pillars = [
+    { key: 'capital_efficiency', pillar: data.pillars.capital_efficiency },
+    { key: 'talent_velocity',    pillar: data.pillars.talent_velocity },
+    { key: 'ecosystem_signal',   pillar: data.pillars.ecosystem_signal },
+  ];
+
+  return (
+    <div className={`rounded-[14px] border p-5 ${cfg.bg} ${cfg.border}`}>
+      {/* Header row */}
+      <div className="flex items-center gap-2 mb-4">
+        <Activity className="w-4 h-4 text-slate-400" />
+        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">AlphaMap Score</h3>
+        <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${cfg.badge}`}>{cfg.label}</span>
+        <span className="text-[10px] text-slate-500 capitalize">{data.confidence} confidence</span>
+      </div>
+
+      {/* Score ring + right-side breakdown */}
+      <div className="flex gap-5">
+        {/* Ring */}
+        <div className="flex flex-col items-center gap-1">
+          <ScoreRing score={data.score} tier={data.tier} />
+          <span className="text-[9px] text-slate-500 uppercase tracking-wider">Score</span>
+        </div>
+
+        {/* Pillar bars */}
+        <div className="flex-1 flex flex-col justify-center gap-2.5">
+          {pillars.map(({ pillar }) => (
+            <div key={pillar.label}>
+              <div className="flex items-center justify-between mb-0.5">
+                <span className="text-[10px] text-slate-400">{pillar.label}</span>
+                <span className="text-[10px] font-semibold text-white">
+                  {pillar.valid && pillar.score != null ? pillar.score.toFixed(0) : '—'}
+                  <span className="text-slate-600 font-normal"> / {pillar.weight}%</span>
+                </span>
+              </div>
+              <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                {pillar.valid && pillar.score != null && (
+                  <div
+                    className="h-full rounded-full transition-all duration-700"
+                    style={{ width: `${pillar.score}%`, backgroundColor: cfg.bar, opacity: 0.85 }}
+                  />
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Macro adjustment + sector footer */}
+      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] text-slate-500">
+        <span>
+          Base&nbsp;
+          <span className="text-slate-300 font-semibold">{data.base_score.toFixed(1)}</span>
+          &nbsp;→ macro&nbsp;
+          <span className={data.macro_adj_pct >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+            {data.macro_adj_pct >= 0 ? '+' : ''}{data.macro_adj_pct.toFixed(1)}%
+          </span>
+        </span>
+        {data.sector_id && data.sector_id !== 'unknown' && (
+          <span className="text-slate-600 capitalize">{data.sector_id.replace(/-/g, ' ')}</span>
+        )}
+      </div>
+
+      {/* Hover popover: detailed breakdown per pillar */}
+      <div className="mt-3 group relative">
+        <button className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors flex items-center gap-1">
+          <Info className="w-3 h-3" /> Pillar breakdown
+        </button>
+        <div className="absolute bottom-6 left-0 z-50 w-72 bg-[#060f1c] border border-[#1a2a3f] rounded-xl p-4 shadow-2xl
+                        opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto
+                        transition-opacity duration-150">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">Pillar Details</p>
+          {pillars.map(({ pillar }) => (
+            <div key={pillar.label} className="mb-3 last:mb-0">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] font-semibold text-slate-200">{pillar.label}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${pillar.valid ? cfg.badge : 'bg-slate-800 text-slate-500'}`}>
+                  {pillar.valid && pillar.score != null ? pillar.score.toFixed(1) : 'N/A'}
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-500 space-y-0.5">
+                {pillar.detail.value_creation_x != null && (
+                  <div>Value creation: <span className="text-slate-300">{pillar.detail.value_creation_x.toFixed(2)}×</span></div>
+                )}
+                {pillar.detail.burn_proxy_k != null && (
+                  <div>Burn proxy: <span className="text-slate-300">${pillar.detail.burn_proxy_k.toFixed(0)}k/hire</span></div>
+                )}
+                {pillar.detail.hc_growth_pct != null && (
+                  <div>HC growth: <span className="text-slate-300">{pillar.detail.hc_growth_pct.toFixed(1)}%</span></div>
+                )}
+                {pillar.detail.serial_founder != null && (
+                  <div>Serial founder: <span className="text-slate-300">{pillar.detail.serial_founder ? 'Yes +10' : 'No'}</span></div>
+                )}
+                {pillar.detail.investor_tier != null && (
+                  <div>Investor tier score: <span className="text-slate-300">{pillar.detail.investor_tier}</span></div>
+                )}
+                {pillar.detail.follow_on != null && (
+                  <div>Follow-on investors: <span className="text-slate-300">{pillar.detail.follow_on ? 'Yes +10' : 'No'}</span></div>
+                )}
+              </div>
+            </div>
+          ))}
+          <div className="mt-2 pt-2 border-t border-white/5 text-[10px] text-slate-500">
+            Final = base × (1 + macro adj) — capped 1–100
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Tearsheet Modal ───────────────────────────────────────────────────────────
 
 function TearsheetModal({
@@ -633,6 +808,9 @@ function TearsheetModal({
               </div>
             ))}
           </div>
+
+          {/* AlphaMap Score */}
+          <AlphaMapScorePanel startupId={startup.id} />
 
           {/* Funding timeline */}
           {sortedRounds.length >= 2 && <FundingTimeline rounds={sortedRounds} />}
