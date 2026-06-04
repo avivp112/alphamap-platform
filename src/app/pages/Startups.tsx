@@ -11,7 +11,7 @@ import {
   DollarSign, Rocket, AlertCircle, CheckCircle2,
   TrendingUp, TrendingDown, Minus,
   UserRound, LayoutGrid, List, ExternalLink,
-  ChevronDown, Building2, CheckSquare, Square,
+  ChevronDown, ChevronLeft, ChevronRight, Building2, CheckSquare, Square,
   GitCompare, Clock, Briefcase, Zap,
 } from "lucide-react";
 import {
@@ -298,11 +298,12 @@ function totalRaised(s: Startup): number {
 // ── Step Slider ───────────────────────────────────────────────────────────────
 
 function StepSlider({
-  steps, value, onChange,
+  steps, value, onChange, dark = false,
 }: {
   steps: ReadonlyArray<{ value: string; label: string }>;
   value: string;
   onChange: (v: string) => void;
+  dark?: boolean;
 }) {
   const idx = Math.max(0, steps.findIndex((s) => s.value === value));
   const pct = steps.length > 1 ? (idx / (steps.length - 1)) * 100 : 0;
@@ -310,44 +311,37 @@ function StepSlider({
   return (
     <div>
       <div className="relative h-4 flex items-center mx-1">
-        {/* Background track */}
-        <div className="absolute inset-x-0 h-[3px] rounded-full bg-gray-200" />
-        {/* Filled track */}
+        <div className={`absolute inset-x-0 h-[3px] rounded-full ${dark ? "bg-[#1a2a3f]" : "bg-gray-200"}`} />
         <div
           className="absolute left-0 h-[3px] rounded-full bg-[#F59E0B] transition-all duration-100"
           style={{ width: `${pct}%` }}
         />
-        {/* Stop dots */}
         {steps.map((_, i) => (
           <div
             key={i}
             className={`absolute w-2.5 h-2.5 rounded-full border-[2px] -translate-x-1/2 transition-all duration-100 ${
-              i < idx  ? "bg-[#F59E0B] border-[#F59E0B]"  :
+              i < idx   ? "bg-[#F59E0B] border-[#F59E0B]" :
               i === idx ? "bg-white border-[#F59E0B] scale-125" :
-                          "bg-white border-gray-300"
+              dark      ? "bg-[#0d1f35] border-[#243858]" : "bg-white border-gray-300"
             }`}
             style={{ left: `${steps.length > 1 ? (i / (steps.length - 1)) * 100 : 0}%` }}
           />
         ))}
-        {/* Invisible native range for drag + keyboard */}
         <input
-          type="range"
-          min={0}
-          max={steps.length - 1}
-          step={1}
-          value={idx}
+          type="range" min={0} max={steps.length - 1} step={1} value={idx}
           onChange={(e) => onChange(steps[Number(e.target.value)].value)}
           className="absolute inset-x-0 w-full h-full opacity-0 cursor-pointer z-10"
         />
       </div>
-      {/* Tick labels */}
       <div className="flex justify-between mt-2 px-0.5">
         {steps.map((s, i) => (
           <button
             key={s.value}
             onClick={() => onChange(s.value)}
             className={`text-[9px] font-semibold leading-none transition-colors ${
-              i === idx ? "text-[#F59E0B]" : "text-gray-400 hover:text-gray-600"
+              i === idx ? "text-[#F59E0B]"
+                : dark  ? "text-slate-500 hover:text-slate-300"
+                        : "text-gray-400 hover:text-gray-600"
             }`}
             style={{ minWidth: 0 }}
           >
@@ -396,12 +390,22 @@ const PROGRESS_MESSAGES = [
 function HierarchicalSectorFilter({
   parentSector, onParentChange,
   subSector,    onSubChange,
+  dark = false,
 }: {
   parentSector: string; onParentChange: (v: string) => void;
   subSector:    string; onSubChange:    (v: string) => void;
+  dark?: boolean;
 }) {
   const parents = Object.keys(SECTOR_TAXONOMY).filter((p) => p !== "Uncategorized");
   const subs    = parentSector ? (SECTOR_TAXONOMY[parentSector] ?? []) : [];
+
+  const base    = dark
+    ? "appearance-none pl-3 pr-8 py-2 text-xs font-semibold border rounded-[10px] bg-[#0d1f35] transition-all focus:outline-none focus:ring-2 focus:ring-[#F59E0B]/20 cursor-pointer"
+    : "appearance-none pl-3 pr-8 py-2 text-xs font-semibold border rounded-[10px] bg-white transition-all focus:outline-none focus:ring-2 focus:ring-[#F59E0B]/20 cursor-pointer";
+  const active  = dark ? "border-[#F59E0B] text-white"   : "border-[#F59E0B] text-[#0F172A]";
+  const passive = dark ? "border-[#1a2a3f] text-slate-400" : "border-gray-200 text-gray-500";
+  const chevron = dark ? "text-slate-500" : "text-gray-400";
+  const scheme  = dark ? "dark" : undefined;
 
   return (
     <div className="flex items-center gap-1.5">
@@ -409,29 +413,27 @@ function HierarchicalSectorFilter({
         <select
           value={parentSector}
           onChange={(e) => { onParentChange(e.target.value); onSubChange(""); }}
-          className={`appearance-none pl-3 pr-8 py-2 text-xs font-semibold border rounded-[10px] bg-white transition-all focus:outline-none focus:ring-2 focus:ring-[#F59E0B]/20 cursor-pointer ${
-            parentSector ? "border-[#F59E0B] text-[#0F172A]" : "border-gray-200 text-gray-500"
-          }`}
+          className={`${base} ${parentSector ? active : passive}`}
+          style={{ colorScheme: scheme }}
         >
           <option value="">All Sectors</option>
           {parents.map((p) => <option key={p} value={p}>{p}</option>)}
           <option value="Uncategorized">Uncategorized</option>
         </select>
-        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+        <ChevronDown className={`absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none ${chevron}`} />
       </div>
       {parentSector && subs.length > 0 && (
         <div className="relative">
           <select
             value={subSector}
             onChange={(e) => onSubChange(e.target.value)}
-            className={`appearance-none pl-3 pr-8 py-2 text-xs font-semibold border rounded-[10px] bg-white transition-all focus:outline-none focus:ring-2 focus:ring-[#F59E0B]/20 cursor-pointer ${
-              subSector ? "border-[#F59E0B] text-[#0F172A]" : "border-gray-200 text-gray-500"
-            }`}
+            className={`${base} ${subSector ? active : passive}`}
+            style={{ colorScheme: scheme }}
           >
             <option value="">All {parentSector}</option>
             {subs.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+          <ChevronDown className={`absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none ${chevron}`} />
         </div>
       )}
     </div>
@@ -1177,6 +1179,62 @@ function AddStartupDialog({ open, onClose, onSuccess }: {
   );
 }
 
+// ── Pagination ────────────────────────────────────────────────────────────────
+
+const PAGE_SIZE = 60;
+
+function getPageRange(current: number, total: number): Array<number | "…"> {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const range: Array<number | "…"> = [1];
+  if (current > 4) range.push("…");
+  for (let i = Math.max(2, current - 2); i <= Math.min(total - 1, current + 2); i++) range.push(i);
+  if (current < total - 3) range.push("…");
+  range.push(total);
+  return range;
+}
+
+function Pagination({ page, pageCount, onChange }: {
+  page: number; pageCount: number; onChange: (p: number) => void;
+}) {
+  if (pageCount <= 1) return null;
+  const pages = getPageRange(page, pageCount);
+  return (
+    <div className="flex items-center justify-center gap-1 mt-10 mb-2">
+      <button
+        onClick={() => onChange(page - 1)} disabled={page === 1}
+        className="flex items-center gap-1 px-3 py-2 rounded-[10px] text-xs font-semibold text-gray-500 hover:text-[#0F172A] hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-all border border-transparent hover:border-gray-200"
+      >
+        <ChevronLeft className="w-3.5 h-3.5" />Prev
+      </button>
+      <div className="flex items-center gap-1">
+        {pages.map((p, i) =>
+          p === "…" ? (
+            <span key={`gap-${i}`} className="px-1.5 text-xs text-gray-400 select-none">…</span>
+          ) : (
+            <button
+              key={p}
+              onClick={() => onChange(p as number)}
+              className={`min-w-[32px] h-8 px-2 rounded-[8px] text-xs font-semibold transition-all ${
+                p === page
+                  ? "bg-[#0F172A] text-white shadow-sm"
+                  : "text-gray-500 hover:bg-white hover:text-[#0F172A] border border-transparent hover:border-gray-200"
+              }`}
+            >
+              {p}
+            </button>
+          ),
+        )}
+      </div>
+      <button
+        onClick={() => onChange(page + 1)} disabled={page === pageCount}
+        className="flex items-center gap-1 px-3 py-2 rounded-[10px] text-xs font-semibold text-gray-500 hover:text-[#0F172A] hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-all border border-transparent hover:border-gray-200"
+      >
+        Next<ChevronRight className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function Startups() {
@@ -1198,6 +1256,7 @@ export function Startups() {
   const [selectedStartup, setSelected] = useState<Startup | null>(null);
   const [selectedIds, setSelectedIds]   = useState<Set<string>>(new Set());
   const [showCompare, setShowCompare]   = useState(false);
+  const [page, setPage]                 = useState(1);
 
   const cityParam = searchParams.get("city") ?? "";
   const [cityFilter, setCityFilter] = useState(cityParam);
@@ -1315,160 +1374,179 @@ export function Startups() {
     [startups, selectedIds],
   );
 
+  // Reset to page 1 whenever any filter changes
+  useEffect(() => { setPage(1); }, [search, parentSector, subSector, countryFilter, cityFilter, stageStep, headcountStep, momentumFilter, densityFilter]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paginated = useMemo(
+    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filtered, page],
+  );
+
   const currentStageLabel = STAGE_STEPS.find((s) => s.value === stageStep)?.label ?? "All";
   const currentHeadcountLabel = HEADCOUNT_STEPS.find((s) => s.value === headcountStep)?.label ?? "All";
 
   return (
     <Layout>
-      <div className="mx-auto max-w-[1400px] p-4 sm:p-6 lg:p-8">
 
-        {/* Page header */}
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A] flex items-center gap-3">
-              Startups
-              {cityFilter && <span className="text-lg font-medium text-[#F59E0B]">in {cityFilter}</span>}
-              {!loading && (
-                <span className="text-sm font-semibold text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">{filtered.length}</span>
-              )}
+      {/* ── Dark header band ───────────────────────────────────────────────── */}
+      <div className="bg-[#0b1626] border-b border-[#1a2a3f]">
+        <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 pt-6 pb-6">
+
+          {/* Title row */}
+          <div className="flex items-center justify-between gap-4 mb-1.5">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
+              Startups Hub
+              {cityFilter && <span className="ml-3 text-lg font-medium text-[#F59E0B]">in {cityFilter}</span>}
             </h1>
-            <p className="mt-1 text-sm font-medium text-gray-500">AI-researched private companies with funding intelligence.</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center bg-white border border-gray-200 rounded-[12px] p-1">
-              <button onClick={() => setView("grid")} className={`p-1.5 rounded-[8px] transition-all ${viewMode === "grid" ? "bg-[#0F172A] text-white" : "text-gray-400 hover:text-gray-700"}`}><LayoutGrid className="w-4 h-4" /></button>
-              <button onClick={() => setView("list")} className={`p-1.5 rounded-[8px] transition-all ${viewMode === "list" ? "bg-[#0F172A] text-white" : "text-gray-400 hover:text-gray-700"}`}><List className="w-4 h-4" /></button>
+            <div className="flex items-center gap-2 flex-none">
+              <div className="flex items-center bg-[#0d1f35] border border-[#1a2a3f] rounded-[12px] p-1">
+                <button onClick={() => setView("grid")} className={`p-1.5 rounded-[8px] transition-all ${viewMode === "grid" ? "bg-white/10 text-white" : "text-slate-500 hover:text-slate-300"}`}><LayoutGrid className="w-4 h-4" /></button>
+                <button onClick={() => setView("list")} className={`p-1.5 rounded-[8px] transition-all ${viewMode === "list" ? "bg-white/10 text-white" : "text-slate-500 hover:text-slate-300"}`}><List className="w-4 h-4" /></button>
+              </div>
+              <button onClick={() => setShowCompare(true)} disabled={selectedIds.size < 2}
+                className={`flex items-center gap-2 rounded-[14px] px-4 py-2.5 text-sm font-bold transition-all ${
+                  selectedIds.size >= 2
+                    ? "bg-blue-600 text-white shadow-[0_4px_14px_rgba(37,99,235,0.3)] hover:bg-blue-700"
+                    : "bg-[#0d1f35] border border-[#1a2a3f] text-slate-600 cursor-not-allowed"
+                }`}>
+                <GitCompare className="w-4 h-4" />
+                {selectedIds.size >= 2 ? `Compare (${selectedIds.size})` : "Compare"}
+              </button>
             </div>
-            <button onClick={() => setShowCompare(true)} disabled={selectedIds.size < 2}
-              className={`flex items-center gap-2 rounded-[14px] px-4 py-2.5 text-sm font-bold transition-all ${
-                selectedIds.size >= 2 ? "bg-blue-600 text-white shadow-[0_4px_14px_rgba(37,99,235,0.3)] hover:bg-blue-700" : "bg-gray-100 text-gray-400 cursor-not-allowed"
-              }`}>
-              <GitCompare className="w-4 h-4" />
-              {selectedIds.size >= 2 ? `Compare (${selectedIds.size})` : "Compare"}
-            </button>
+          </div>
+
+          {/* Subtitle + count + add button */}
+          <div className="flex items-center justify-between gap-4 mb-5">
+            <div className="flex items-center gap-3 min-w-0">
+              <p className="text-sm text-slate-400 leading-snug">
+                Research private tech companies with AI and other advanced tools
+              </p>
+              {!loading && (
+                <span className="text-xs font-semibold text-slate-500 bg-[#0d1f35] border border-[#1a2a3f] px-2.5 py-1 rounded-full flex-none">
+                  {filtered.length}
+                </span>
+              )}
+            </div>
             <button onClick={() => setShowAdd(true)}
-              className="flex items-center gap-2 rounded-[14px] bg-[#F59E0B] px-4 py-2.5 text-sm font-bold text-white shadow-[0_4px_14px_rgba(245,158,11,0.3)] hover:bg-amber-600 transition-all">
+              className="flex items-center gap-2 rounded-[14px] bg-[#F59E0B] px-4 py-2.5 text-sm font-bold text-white shadow-[0_4px_14px_rgba(245,158,11,0.3)] hover:bg-amber-600 transition-all flex-none">
               <Plus className="w-4 h-4" />Add Startup
             </button>
           </div>
-        </div>
 
-        {/* ── Screener ─────────────────────────────────────────────────────── */}
-        <div className="mb-5 space-y-3">
+          {/* ── Screener ─────────────────────────────────────────────────── */}
+          <div className="space-y-3">
 
-          {/* Row 1: text filters */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            {/* Search */}
-            <div className="relative flex-1 min-w-[200px] max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300" />
-              <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search companies…"
-                className="w-full pl-9 pr-4 py-2.5 text-sm bg-white border border-gray-200 rounded-[12px] focus:outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/10 transition-all" />
-              {search && (
-                <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"><X className="w-3.5 h-3.5" /></button>
+            {/* Row 1: filters */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="relative flex-1 min-w-[200px] max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search companies…"
+                  className="w-full pl-9 pr-4 py-2.5 text-sm bg-[#0d1f35] border border-[#1a2a3f] text-white placeholder-slate-600 rounded-[12px] focus:outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/10 transition-all" />
+                {search && (
+                  <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"><X className="w-3.5 h-3.5" /></button>
+                )}
+              </div>
+
+              <HierarchicalSectorFilter
+                parentSector={parentSector} onParentChange={setParentSector}
+                subSector={subSector}       onSubChange={setSubSector}
+                dark
+              />
+
+              <div className="relative">
+                <select value={countryFilter} onChange={(e) => setCountry(e.target.value)}
+                  style={{ colorScheme: "dark" }}
+                  className={`appearance-none pl-3 pr-8 py-2 text-xs font-semibold border rounded-[10px] bg-[#0d1f35] transition-all focus:outline-none focus:ring-2 focus:ring-[#F59E0B]/20 cursor-pointer ${
+                    countryFilter ? "border-[#F59E0B] text-white" : "border-[#1a2a3f] text-slate-400"
+                  }`}>
+                  <option value="">All Countries</option>
+                  {countries.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+              </div>
+
+              <button
+                onClick={() => setMomentum((v) => !v)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-[10px] text-xs font-semibold border transition-all ${
+                  momentumFilter
+                    ? "bg-emerald-900/40 border-emerald-700/60 text-emerald-400"
+                    : "bg-[#0d1f35] border-[#1a2a3f] text-slate-400 hover:border-slate-600 hover:text-slate-200"
+                }`}
+              >
+                <Zap className={`w-3.5 h-3.5 flex-none ${momentumFilter ? "text-emerald-400" : "text-slate-500"}`} />
+                Financial Momentum
+                {momentumFilter && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-none" />}
+              </button>
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap">Density</span>
+                <div className="flex items-center bg-[#0d1f35] border border-[#1a2a3f] rounded-[10px] p-0.5 gap-0.5">
+                  {([ ["all", "All"], ["crowded", "Crowded"], ["blue-ocean", "Blue Ocean"] ] as const).map(([val, label]) => (
+                    <button
+                      key={val}
+                      onClick={() => setDensity(val)}
+                      className={`px-2.5 py-1.5 rounded-[7px] text-[10px] font-semibold transition-all whitespace-nowrap ${
+                        densityFilter === val
+                          ? "bg-[#F59E0B] text-white shadow-sm"
+                          : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {selectedIds.size > 0 && (
+                <div className="flex items-center gap-2 bg-blue-900/40 border border-blue-800/60 rounded-[10px] px-3 py-2">
+                  <span className="text-xs font-semibold text-blue-300">{selectedIds.size} selected</span>
+                  <button onClick={() => setSelectedIds(new Set())} className="text-blue-500 hover:text-blue-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                </div>
+              )}
+              {activeFilterCount > 0 && (
+                <button onClick={clearAll} className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-rose-400 transition-colors">
+                  <X className="w-3.5 h-3.5" />Clear all ({activeFilterCount})
+                </button>
               )}
             </div>
 
-            {/* Hierarchical sector */}
-            <HierarchicalSectorFilter
-              parentSector={parentSector} onParentChange={setParentSector}
-              subSector={subSector}       onSubChange={setSubSector}
-            />
-
-            {/* Country */}
-            <div className="relative">
-              <select value={countryFilter} onChange={(e) => setCountry(e.target.value)}
-                className={`appearance-none pl-3 pr-8 py-2 text-xs font-semibold border rounded-[10px] bg-white transition-all focus:outline-none focus:ring-2 focus:ring-[#F59E0B]/20 cursor-pointer ${
-                  countryFilter ? "border-[#F59E0B] text-[#0F172A]" : "border-gray-200 text-gray-500"
-                }`}>
-                <option value="">All Countries</option>
-                {countries.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-            </div>
-
-            {/* Financial Momentum toggle */}
-            <button
-              onClick={() => setMomentum((v) => !v)}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-[10px] text-xs font-semibold border transition-all ${
-                momentumFilter
-                  ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-                  : "bg-white border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700"
-              }`}
-            >
-              <Zap className={`w-3.5 h-3.5 flex-none ${momentumFilter ? "text-emerald-500" : "text-gray-400"}`} />
-              Financial Momentum
-              {momentumFilter && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-none" />}
-            </button>
-
-            {/* Competitive Density segmented control */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-bold text-gray-400 whitespace-nowrap">Density</span>
-              <div className="flex items-center bg-white border border-gray-200 rounded-[10px] p-0.5 gap-0.5">
-                {([ ["all", "All"], ["crowded", "Crowded"], ["blue-ocean", "Blue Ocean"] ] as const).map(([val, label]) => (
-                  <button
-                    key={val}
-                    onClick={() => setDensity(val)}
-                    className={`px-2.5 py-1.5 rounded-[7px] text-[10px] font-semibold transition-all whitespace-nowrap ${
-                      densityFilter === val
-                        ? "bg-[#0F172A] text-white shadow-sm"
-                        : "text-gray-400 hover:text-gray-600"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
+            {/* Row 2: sliders */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 bg-[#0d1f35] border border-[#1a2a3f] rounded-[14px] px-5 py-4">
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Funding Stage</span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-all ${
+                    stageStep !== "all" ? "bg-amber-900/40 text-amber-400 border border-amber-800/60" : "text-slate-600"
+                  }`}>{currentStageLabel}</span>
+                </div>
+                <StepSlider steps={STAGE_STEPS} value={stageStep} onChange={(v) => setStageStep(v as StageStep)} dark />
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Headcount</span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-all ${
+                    headcountStep !== "all" ? "bg-amber-900/40 text-amber-400 border border-amber-800/60" : "text-slate-600"
+                  }`}>{currentHeadcountLabel}</span>
+                </div>
+                <StepSlider steps={HEADCOUNT_STEPS} value={headcountStep} onChange={(v) => setHeadcount(v as HeadcountStep)} dark />
               </div>
             </div>
 
-            {/* Selection badge */}
-            {selectedIds.size > 0 && (
-              <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-[10px] px-3 py-2">
-                <span className="text-xs font-semibold text-blue-700">{selectedIds.size} selected</span>
-                <button onClick={() => setSelectedIds(new Set())} className="text-blue-400 hover:text-blue-600 transition-colors"><X className="w-3.5 h-3.5" /></button>
+            {cityFilter && (
+              <div className="flex items-center gap-2">
+                <button onClick={clearCityFilter} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-[#F59E0B] text-white hover:bg-amber-600 transition-all">
+                  <MapPin className="w-3 h-3" />{cityFilter}<X className="w-3 h-3 ml-0.5" />
+                </button>
               </div>
             )}
-            {activeFilterCount > 0 && (
-              <button onClick={clearAll} className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 hover:text-rose-500 transition-colors">
-                <X className="w-3.5 h-3.5" />Clear all ({activeFilterCount})
-              </button>
-            )}
-          </div>
 
-          {/* Row 2: sliders */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 bg-white border border-gray-200 rounded-[14px] px-5 py-4">
-            {/* Stage slider */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Funding Stage</span>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-all ${
-                  stageStep !== "all" ? "bg-amber-50 text-amber-700 border border-amber-100" : "text-gray-400"
-                }`}>{currentStageLabel}</span>
-              </div>
-              <StepSlider steps={STAGE_STEPS} value={stageStep} onChange={(v) => setStageStep(v as StageStep)} />
-            </div>
-            {/* Headcount slider */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Headcount</span>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-all ${
-                  headcountStep !== "all" ? "bg-amber-50 text-amber-700 border border-amber-100" : "text-gray-400"
-                }`}>{currentHeadcountLabel}</span>
-              </div>
-              <StepSlider steps={HEADCOUNT_STEPS} value={headcountStep} onChange={(v) => setHeadcount(v as HeadcountStep)} />
-            </div>
           </div>
-
-          {/* City chip (URL param) */}
-          {cityFilter && (
-            <div className="flex items-center gap-2">
-              <button onClick={clearCityFilter} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-[#F59E0B] text-white hover:bg-amber-600 transition-all">
-                <MapPin className="w-3 h-3" />{cityFilter}<X className="w-3 h-3 ml-0.5" />
-              </button>
-            </div>
-          )}
         </div>
+      </div>
 
-        {/* Content */}
+      {/* ── Main content ───────────────────────────────────────────────────── */}
+      <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-6">
         {loading ? (
           <div className="flex items-center justify-center py-32"><Loader2 className="w-6 h-6 text-[#F59E0B] animate-spin" /></div>
         ) : loadError ? (
@@ -1495,31 +1573,36 @@ export function Startups() {
             <button onClick={clearAll} className="text-xs text-[#F59E0B] font-semibold hover:underline">Clear all filters</button>
           </div>
         ) : viewMode === "grid" ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-            {filtered.map((s) => (
-              <StartupCard key={s.id} startup={s} onSelect={() => setSelected(s)}
-                selected={selectedIds.has(s.id)} onToggleSelect={(e) => toggleSelect(s.id, e)} />
-            ))}
-          </div>
-        ) : (
-          <div className="bg-white rounded-[20px] border border-gray-100 shadow-[0_4px_20px_rgba(0,0,0,0.04)] overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-100 bg-[#F8FAFC]">
-                    {["Company", "Stage", "Location", "Valuation", "Raised", "Employees", "Founders", ""].map((h) => (
-                      <th key={h} className="text-left text-[9px] font-black text-gray-400 uppercase tracking-widest py-3 px-4 first:px-5 whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((s) => <StartupListRow key={s.id} startup={s} onSelect={() => setSelected(s)} />)}
-                </tbody>
-              </table>
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+              {paginated.map((s) => (
+                <StartupCard key={s.id} startup={s} onSelect={() => setSelected(s)}
+                  selected={selectedIds.has(s.id)} onToggleSelect={(e) => toggleSelect(s.id, e)} />
+              ))}
             </div>
-          </div>
+            <Pagination page={page} pageCount={pageCount} onChange={setPage} />
+          </>
+        ) : (
+          <>
+            <div className="bg-white rounded-[20px] border border-gray-100 shadow-[0_4px_20px_rgba(0,0,0,0.04)] overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-[#F8FAFC]">
+                      {["Company", "Stage", "Location", "Valuation", "Raised", "Employees", "Founders", ""].map((h) => (
+                        <th key={h} className="text-left text-[9px] font-black text-gray-400 uppercase tracking-widest py-3 px-4 first:px-5 whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginated.map((s) => <StartupListRow key={s.id} startup={s} onSelect={() => setSelected(s)} />)}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <Pagination page={page} pageCount={pageCount} onChange={setPage} />
+          </>
         )}
-
       </div>
 
       <AddStartupDialog open={showAdd} onClose={() => setShowAdd(false)} onSuccess={(s) => setStartups((p) => [s, ...p])} />
