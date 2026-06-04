@@ -597,21 +597,21 @@ function AlphaMapScorePanel({ startupId }: { startupId: string }) {
       </div>
     );
   }
-  if (err || !data || data.error) {
+  if (err || !data || data.error || !data.pillars) {
     return (
       <div className="bg-[#091422] border border-[#1a2a3f] rounded-[14px] p-4 flex items-center gap-3">
         <Activity className="w-4 h-4 text-slate-600" />
-        <span className="text-xs text-slate-600">AlphaMap Score unavailable</span>
+        <span className="text-xs text-slate-600 italic">Score pending data enrichment</span>
       </div>
     );
   }
 
-  const cfg = TIER_CONFIG[data.tier];
+  const cfg = TIER_CONFIG[data.tier] ?? TIER_CONFIG['C'];
   const pillars = [
-    { key: 'capital_efficiency', pillar: data.pillars.capital_efficiency },
-    { key: 'talent_velocity',    pillar: data.pillars.talent_velocity },
-    { key: 'ecosystem_signal',   pillar: data.pillars.ecosystem_signal },
-  ];
+    { key: 'capital_efficiency', pillar: data.pillars?.capital_efficiency },
+    { key: 'talent_velocity',    pillar: data.pillars?.talent_velocity },
+    { key: 'ecosystem_signal',   pillar: data.pillars?.ecosystem_signal },
+  ].filter((p): p is { key: string; pillar: NonNullable<typeof p.pillar> } => p.pillar != null);
 
   return (
     <div className={`rounded-[14px] border p-5 ${cfg.bg} ${cfg.border}`}>
@@ -688,22 +688,22 @@ function AlphaMapScorePanel({ startupId }: { startupId: string }) {
                 </span>
               </div>
               <div className="text-[10px] text-slate-500 space-y-0.5">
-                {pillar.detail.value_creation_x != null && (
+                {pillar.detail?.value_creation_x != null && (
                   <div>Value creation: <span className="text-slate-300">{pillar.detail.value_creation_x.toFixed(2)}×</span></div>
                 )}
-                {pillar.detail.burn_proxy_k != null && (
+                {pillar.detail?.burn_proxy_k != null && (
                   <div>Burn proxy: <span className="text-slate-300">${pillar.detail.burn_proxy_k.toFixed(0)}k/hire</span></div>
                 )}
-                {pillar.detail.hc_growth_pct != null && (
+                {pillar.detail?.hc_growth_pct != null && (
                   <div>HC growth: <span className="text-slate-300">{pillar.detail.hc_growth_pct.toFixed(1)}%</span></div>
                 )}
-                {pillar.detail.serial_founder != null && (
+                {pillar.detail?.serial_founder != null && (
                   <div>Serial founder: <span className="text-slate-300">{pillar.detail.serial_founder ? 'Yes +10' : 'No'}</span></div>
                 )}
-                {pillar.detail.investor_tier != null && (
+                {pillar.detail?.investor_tier != null && (
                   <div>Investor tier score: <span className="text-slate-300">{pillar.detail.investor_tier}</span></div>
                 )}
-                {pillar.detail.follow_on != null && (
+                {pillar.detail?.follow_on != null && (
                   <div>Follow-on investors: <span className="text-slate-300">{pillar.detail.follow_on ? 'Yes +10' : 'No'}</span></div>
                 )}
               </div>
