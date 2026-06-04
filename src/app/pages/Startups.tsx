@@ -545,16 +545,21 @@ function GrowthTrendBadge({ trend }: { trend: string | null | undefined }) {
 
 // ── AlphaMap Score Components ─────────────────────────────────────────────────
 
+function safeFixed(n: number | null | undefined, decimals: number, fallback = 'N/A'): string {
+  return typeof n === 'number' && isFinite(n) ? n.toFixed(decimals) : fallback;
+}
+
 const TIER_CONFIG = {
   A: { ring: '#10b981', bg: 'bg-emerald-950/60', border: 'border-emerald-700/40', badge: 'bg-emerald-900/80 text-emerald-300 border border-emerald-600/50', label: 'Tier A', bar: '#10b981' },
   B: { ring: '#3b82f6', bg: 'bg-blue-950/60',    border: 'border-blue-700/40',    badge: 'bg-blue-900/80 text-blue-300 border border-blue-600/50',       label: 'Tier B', bar: '#3b82f6' },
   C: { ring: '#f43f5e', bg: 'bg-rose-950/60',    border: 'border-rose-700/40',    badge: 'bg-rose-900/80 text-rose-300 border border-rose-600/50',       label: 'Tier C', bar: '#f43f5e' },
 } as const;
 
-function ScoreRing({ score, tier }: { score: number; tier: 'A' | 'B' | 'C' }) {
+function ScoreRing({ score, tier }: { score: number | null; tier: 'A' | 'B' | 'C' }) {
   const r = 34;
   const circ = 2 * Math.PI * r;
-  const offset = circ * (1 - score / 100);
+  const safeScore = typeof score === 'number' && isFinite(score) ? score : 0;
+  const offset = circ * (1 - safeScore / 100);
   const cfg = TIER_CONFIG[tier];
   return (
     <svg width="84" height="84" viewBox="0 0 84 84" className="flex-none">
@@ -570,7 +575,7 @@ function ScoreRing({ score, tier }: { score: number; tier: 'A' | 'B' | 'C' }) {
       />
       <text x="42" y="44" textAnchor="middle" dominantBaseline="middle"
         fill="white" fontSize="16" fontWeight="700" fontFamily="inherit">
-        {score.toFixed(0)}
+        {safeFixed(score, 0, '—')}
       </text>
     </svg>
   );
@@ -638,7 +643,7 @@ function AlphaMapScorePanel({ startupId }: { startupId: string }) {
               <div className="flex items-center justify-between mb-0.5">
                 <span className="text-[10px] text-slate-400">{pillar.label}</span>
                 <span className="text-[10px] font-semibold text-white">
-                  {pillar.valid && pillar.score != null ? pillar.score.toFixed(0) : '—'}
+                  {pillar.valid && pillar.score != null ? safeFixed(pillar.score, 0, '—') : '—'}
                   <span className="text-slate-600 font-normal"> / {pillar.weight}%</span>
                 </span>
               </div>
@@ -659,10 +664,10 @@ function AlphaMapScorePanel({ startupId }: { startupId: string }) {
       <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] text-slate-500">
         <span>
           Base&nbsp;
-          <span className="text-slate-300 font-semibold">{data.base_score.toFixed(1)}</span>
+          <span className="text-slate-300 font-semibold">{safeFixed(data.base_score, 1, '—')}</span>
           &nbsp;→ macro&nbsp;
-          <span className={data.macro_adj_pct >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-            {data.macro_adj_pct >= 0 ? '+' : ''}{data.macro_adj_pct.toFixed(1)}%
+          <span className={(data.macro_adj_pct ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+            {(data.macro_adj_pct ?? 0) >= 0 ? '+' : ''}{safeFixed(data.macro_adj_pct, 1, '0')}%
           </span>
         </span>
         {data.sector_id && data.sector_id !== 'unknown' && (
@@ -684,7 +689,7 @@ function AlphaMapScorePanel({ startupId }: { startupId: string }) {
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[11px] font-semibold text-slate-200">{pillar.label}</span>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${pillar.valid ? cfg.badge : 'bg-slate-800 text-slate-500'}`}>
-                  {pillar.valid && pillar.score != null ? pillar.score.toFixed(1) : 'N/A'}
+                  {pillar.valid && pillar.score != null ? safeFixed(pillar.score, 1, 'N/A') : 'N/A'}
                 </span>
               </div>
               <div className="text-[10px] text-slate-500 space-y-0.5">
@@ -738,12 +743,12 @@ function ScoreBadge({ startupId }: { startupId: string }) {
   if (loading) {
     return <div className="h-4 w-12 rounded bg-slate-800 animate-pulse" />;
   }
-  if (!data || data.error) return null;
+  if (!data || data.error || data.score == null || !(data.tier in SCORE_BADGE_STYLE)) return null;
 
   return (
-    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border ${SCORE_BADGE_STYLE[data.tier]}`}>
+    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border ${SCORE_BADGE_STYLE[data.tier as 'A'|'B'|'C']}`}>
       <Activity className="w-2.5 h-2.5 opacity-70" />
-      {data.tier}&nbsp;{data.score.toFixed(0)}
+      {data.tier}&nbsp;{safeFixed(data.score, 0, 'N/A')}
     </span>
   );
 }
