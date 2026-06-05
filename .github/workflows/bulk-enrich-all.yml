@@ -1,0 +1,83 @@
+name: Bulk Enrich All Startups
+
+# Manual trigger only — this is a long-running, resource-intensive job.
+# Run in batches of 300 to stay within the 360-minute GHA limit.
+#
+# Recommended execution plan for 913 startups (3 runs):
+#   Run 1:  OFFSET=0,   BATCH_SIZE=300  (~3.5 h — Tavily covers ~250, DDG the rest)
+#   Run 2:  OFFSET=300, BATCH_SIZE=300  (~6 h  — all DDG)
+#   Run 3:  OFFSET=600, BATCH_SIZE=313  (~6 h  — all DDG)
+#
+# Always run DRY_RUN=true first to verify queue classification before writing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run — no DB writes (always try this first)"
+        type: boolean
+        default: true
+      batch_size:
+        description: "Companies to process this run (recommended: 300)"
+        type: number
+        default: 300
+      offset:
+        description: "Skip first N companies — for resuming across runs (Run 1=0, Run 2=300, Run 3=600)"
+        type: number
+        default: 0
+      delay_ms:
+        description: "Milliseconds to wait between companies (default: 20000)"
+        type: number
+        default: 20000
+      tavily_budget:
+        description: "Max Tavily API calls this run (default: 1000 = ~250 companies)"
+        type: number
+        default: 1000
+      min_confidence:
+        description: "Minimum Claude confidence score to write data (default: 40)"
+        type: number
+        default: 40
+
+jobs:
+  bulk-enrich:
+    name: "Bulk Enrich — offset=${{ github.event.inputs.offset }} batch=${{ github.event.inputs.batch_size }} dry=${{ github.event.inputs.dry_run }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Show run parameters
+        run: |
+          echo "════════════════════════════════════════"
+          echo "  DRY_RUN        = ${{ github.event.inputs.dry_run }}"
+          echo "  BATCH_SIZE     = ${{ github.event.inputs.batch_size }}"
+          echo "  OFFSET         = ${{ github.event.inputs.offset }}"
+          echo "  DELAY_MS       = ${{ github.event.inputs.delay_ms }}"
+          echo "  TAVILY_BUDGET  = ${{ github.event.inputs.tavily_budget }}"
+          echo "  MIN_CONFIDENCE = ${{ github.event.inputs.min_confidence }}"
+          echo "════════════════════════════════════════"
+
+      - name: Run bulk enrichment
+        env:
+          SUPABASE_URL:             ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ANTHROPIC_API_KEY:        ${{ secrets.ANTHROPIC_API_KEY }}
+          TAVILY_API_KEY:           ${{ secrets.TAVILY_API_KEY }}
+          DRY_RUN:                  ${{ github.event.inputs.dry_run }}
+          BATCH_SIZE:               ${{ github.event.inputs.batch_size }}
+          OFFSET:                   ${{ github.event.inputs.offset }}
+          DELAY_MS:                 ${{ github.event.inputs.delay_ms }}
+          TAVILY_BUDGET:            ${{ github.event.inputs.tavily_budget }}
+          MIN_CONFIDENCE:           ${{ github.event.inputs.min_confidence }}
+        run: npx tsx scripts/bulk_enrich_all.ts
