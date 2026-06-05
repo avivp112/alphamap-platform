@@ -7,10 +7,17 @@
  *   Tier 2 (PARTIAL data) — has some profile/round data but key fields are missing
  *   Tier 3 (FULL data)    — complete profile; verification + new rounds + metrics refresh
  *
- * Tavily budget management:
- *   Increments tavilyCallCount on every successful call this run.
- *   Proactively switches to DuckDuckGo when tavilyCallCount >= TAVILY_BUDGET.
- *   Also permanently switches on HTTP 401 / 402 / 432.
+ * Search engine stack: Tavily (primary, budget-tracked) → Serper.dev (Google Search fallback)
+ *   Serper replaces DuckDuckGo — it is a proper REST API with no rate-limit serialisation
+ *   needed, so both primary and fallback can fire 4 searches in parallel per company.
+ *   Set SERP_KEY (Serper API key). TAVILY_API_KEY is optional; if absent, Serper is used
+ *   for everything.
+ *
+ * Resume / skip logic:
+ *   MAX_TIER (default 3) — set to 2 to skip Tier 3 (fully-complete) companies and focus
+ *   only on companies that actually need enrichment. Use after a partial run to avoid
+ *   spending credits re-researching companies already enriched.
+ *   OFFSET + BATCH_SIZE still apply within the filtered queue.
  *
  * Write strategy (enforced by code, not just prompt):
  *   All tiers   — only fills NULL profile fields (never overwrites existing non-null values)
@@ -35,7 +42,6 @@
 
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
-import { search as duckSearch } from "duck-duck-scrape";
 import { config } from "dotenv";
 import { existsSync } from "fs";
 import { fileURLToPath } from "url";
@@ -51,8 +57,9 @@ const BATCH_SIZE     = Number(process.env.BATCH_SIZE     ?? 9999);  // all by de
 const OFFSET         = Number(process.env.OFFSET         ?? 0);     // skip first N (for resume)
 const DELAY_MS       = Number(process.env.DELAY_MS       ?? 20_000); // 20 s between companies
 const DRY_RUN        = process.env.DRY_RUN               !== "false"; // safe default: dry run
-const TAVILY_BUDGET  = Number(process.env.TAVILY_BUDGET  ?? 1000);  // max calls this run
+const TAVILY_BUDGET  = Number(process.env.TAVILY_BUDGET  ?? 1000);  // max Tavily calls this run
 const MIN_CONFIDENCE = Number(process.env.MIN_CONFIDENCE ?? 40);     // skip writes below this
+const MAX_TIER       = Number(process.env.MAX_TIER       ?? 3);     // 2 = skip complete companies
 
 // ── Env-var guard ─────────────────────────────────────────────────────────────
 for (const key of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "ANTHROPIC_API_KEY"]) {
@@ -62,7 +69,10 @@ for (const key of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "ANTHROPIC_API_K
   }
 }
 if (!process.env.TAVILY_API_KEY) {
-  console.warn("⚠️  TAVILY_API_KEY not set — all searches will use DuckDuckGo.\n");
+  console.warn("⚠️  TAVILY_API_KEY not set — all searches will use Serper (Google).\n");
+}
+if (!process.env.SERP_KEY) {
+  console.warn("⚠️  SERP_KEY not set — Serper fallback unavailable. Only Tavily will be used.\n");
 }
 
 // ── Clients ───────────────────────────────────────────────────────────────────
@@ -199,7 +209,7 @@ async function tavilySearch(query: string, attempt = 0): Promise<string | null> 
     if (res.status === 401 || res.status === 402 || res.status === 432) {
       const body = await res.text().catch(() => "");
       console.warn(
-        `    ⚠️  Tavily HTTP ${res.status} — switching ALL remaining searches to DuckDuckGo.` +
+        `    ⚠️  Tavily HTTP ${res.status} — switching ALL remaining searches to Serper.` +
         (body ? `\n        ${body.slice(0, 120)}` : ""),
       );
       tavilyExhausted = true;
@@ -215,7 +225,7 @@ async function tavilySearch(query: string, attempt = 0): Promise<string | null> 
     }
 
     if (!res.ok) {
-      console.warn(`    ⚠️  Tavily HTTP ${res.status} — using DDG for this query.`);
+      console.warn(`    ⚠️  Tavily HTTP ${res.status} — using Serper for this query.`);
       return null;
     }
 
@@ -231,7 +241,7 @@ async function tavilySearch(query: string, attempt = 0): Promise<string | null> 
     tavilyCallCount++;
     if (tavilyCallCount >= TAVILY_BUDGET) {
       console.warn(
-        `    ⚠️  Tavily budget reached (${tavilyCallCount}/${TAVILY_BUDGET}) — switching to DuckDuckGo for remainder.`,
+        `    ⚠️  Tavily budget reached (${tavilyCallCount}/${TAVILY_BUDGET}) — switching to Serper for remainder.`,
       );
       tavilyExhausted = true;
     }
@@ -242,43 +252,69 @@ async function tavilySearch(query: string, attempt = 0): Promise<string | null> 
   }
 }
 
-// DuckDuckGo: serialised via mutex to avoid "anomaly in request" blocks
-const DDG_INTERVAL_MS = 12_000;
-let _ddgLock = Promise.resolve<void>(undefined);
+// ── Serper (Google Search API) fallback ───────────────────────────────────────
+// No serialisation lock needed — Serper is a proper REST API with no
+// scraping-style rate limits. All 4 per-company searches fire in parallel.
+let serperCallCount = 0;
 
-async function fallbackSearch(query: string): Promise<string | null> {
-  const waitFor = _ddgLock;
-  let releaseNext!: () => void;
-  _ddgLock = new Promise<void>((r) => (releaseNext = r));
-  await waitFor;
+async function serperSearch(query: string, attempt = 0): Promise<string | null> {
+  if (!process.env.SERP_KEY) return null;
   try {
-    const results = await duckSearch(query, { safeSearch: -2 }); // SafeSearchType.OFF
-    if (!results?.results?.length) return null;
-    return results.results.slice(0, 6)
-      .map((r) => `[${r.title}]\n${r.url}\n${(r.description ?? "").slice(0, 500)}`)
-      .join("\n---\n") || null;
+    const res = await fetch("https://google.serper.dev/search", {
+      method: "POST",
+      headers: {
+        "X-API-KEY": process.env.SERP_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ q: query, num: 10 }),
+    });
+
+    if (res.status === 429 && attempt < 3) {
+      const wait = 10_000 * 2 ** attempt;
+      console.warn(`    ⚠️  Serper 429 — waiting ${wait / 1000}s (retry ${attempt + 1}/3)…`);
+      await sleep(wait);
+      return serperSearch(query, attempt + 1);
+    }
+
+    if (!res.ok) {
+      console.warn(`    ⚠️  Serper HTTP ${res.status}`);
+      return null;
+    }
+
+    const data = await res.json() as {
+      organic?: Array<{ title: string; link: string; snippet: string }>;
+      answerBox?: { answer?: string; snippet?: string };
+      knowledgeGraph?: { description?: string };
+    };
+
+    const parts: string[] = [];
+    const answer = data.answerBox?.answer ?? data.answerBox?.snippet ?? data.knowledgeGraph?.description;
+    if (answer) parts.push(`Summary: ${answer}`);
+    for (const r of (data.organic ?? []).slice(0, 8)) {
+      parts.push(`[${r.title}]\n${r.link}\n${(r.snippet ?? "").slice(0, 600)}`);
+    }
+    if (!parts.length) return null;
+
+    serperCallCount++;
+    return parts.join("\n---\n");
   } catch (err) {
-    console.warn(`    ⚠️  DuckDuckGo failed: ${String(err)}`);
+    console.warn(`    ⚠️  Serper threw: ${String(err)}`);
     return null;
-  } finally {
-    await sleep(DDG_INTERVAL_MS);
-    releaseNext();
   }
 }
 
 function engineLabel(): string {
-  return tavilyExhausted
-    ? "DDG"
-    : `Tavily (${tavilyCallCount}/${TAVILY_BUDGET})`;
+  if (!tavilyExhausted) return `Tavily (${tavilyCallCount}/${TAVILY_BUDGET})`;
+  return process.env.SERP_KEY ? `Serper (${serperCallCount})` : "no-fallback";
 }
 
 async function webSearch(query: string): Promise<string | null> {
   if (!tavilyExhausted) {
     const r = await tavilySearch(query);
     if (r !== null) return r;
-    // tavilyExhausted may now be true; fall through to DDG
+    // tavilyExhausted may now be true; fall through to Serper
   }
-  return fallbackSearch(query);
+  return serperSearch(query);
 }
 
 // ── Claude: extract complete company profile in one call ──────────────────────
@@ -665,27 +701,35 @@ async function main() {
     else              tier3.push(row);
   }
 
+  const tier3Skipped = MAX_TIER < 3 ? tier3.length : 0;
+
   console.log("── Database Classification " + "─".repeat(36));
   console.log(`  Total startups in DB:   ${startups.length}`);
   console.log(`  Total funding_rounds:   ${allRounds.length}`);
   console.log(`  Tier 1 — NO data:       ${tier1.length}  ← processed first`);
   console.log(`  Tier 2 — PARTIAL data:  ${tier2.length}  ← processed second`);
-  console.log(`  Tier 3 — FULL data:     ${tier3.length}  ← processed last (refresh)`);
+  console.log(`  Tier 3 — FULL data:     ${tier3.length}${MAX_TIER < 3 ? "  ← SKIPPED (MAX_TIER=2)" : "  ← processed last (refresh)"}`);
 
-  // ── 3. Build ordered queue with OFFSET + BATCH_SIZE slice ─────────────────
-  const fullQueue = [...tier1, ...tier2, ...tier3];
+  // ── 3. Build ordered queue — apply MAX_TIER, then OFFSET + BATCH_SIZE ────
+  const eligibleQueue = MAX_TIER >= 3
+    ? [...tier1, ...tier2, ...tier3]
+    : [...tier1, ...tier2];              // skip complete companies when MAX_TIER=2
+
+  const fullQueue = eligibleQueue;
   const queue     = fullQueue.slice(OFFSET, OFFSET + BATCH_SIZE);
   const queueEnd  = OFFSET + queue.length;
 
   if (queue.length === 0) {
-    console.log("\n✅  Queue is empty after OFFSET/BATCH_SIZE filter. Nothing to process.\n");
+    console.log("\n✅  Queue is empty after OFFSET/BATCH_SIZE/MAX_TIER filter. Nothing to process.\n");
     return;
   }
 
-  // Approximate Tavily companies: 4 searches per company
   const tavilyCompanies = Math.floor(TAVILY_BUDGET / 4);
-  console.log(`\n  Processing range:       [${OFFSET + 1}–${queueEnd}] of ${fullQueue.length}`);
-  console.log(`  Tavily covers ~${tavilyCompanies} companies, then DDG for the remainder`);
+  const fallbackLabel   = process.env.SERP_KEY ? "Serper (Google)" : "no fallback";
+  console.log(`\n  Processing range:       [${OFFSET + 1}–${queueEnd}] of ${fullQueue.length}` +
+    (tier3Skipped > 0 ? ` (${tier3Skipped} Tier 3 skipped)` : ""));
+  console.log(`  Search:                 Tavily → ${fallbackLabel}`);
+  console.log(`  Tavily covers ~${tavilyCompanies} companies, then ${fallbackLabel} for the remainder`);
   console.log("─".repeat(62) + "\n");
 
   // ── 4. Tally ──────────────────────────────────────────────────────────────
@@ -810,6 +854,9 @@ async function main() {
   console.log(`  💰  Rounds inserted:     ${totalRoundsInserted}`);
   console.log(`  📝  Profile fields set:  ${totalFieldsPatched}`);
   console.log(`  🔌  Tavily calls used:   ${tavilyCallCount} / ${TAVILY_BUDGET}`);
+  if (serperCallCount > 0) {
+    console.log(`  🔍  Serper calls used:   ${serperCallCount}`);
+  }
   console.log(`  ⏱️   Elapsed:             ${mm}m ${ss}s`);
 
   if (DRY_RUN) {
