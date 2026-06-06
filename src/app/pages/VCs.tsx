@@ -8,15 +8,16 @@ import {
   Tooltip,
 } from "recharts";
 import {
-  Building2,
   TrendingUp,
   Globe,
-  Users,
   Star,
   ExternalLink,
   ChevronDown,
   SlidersHorizontal,
   X,
+  DollarSign,
+  Briefcase,
+  Activity,
 } from "lucide-react";
 import { Layout } from "../components/Layout";
 
@@ -25,12 +26,8 @@ import { Layout } from "../components/Layout";
 type Stage = "Pre-Seed" | "Seed" | "Series A" | "Series B" | "Growth";
 type Geography = "North America" | "Europe" | "Israel" | "Asia-Pacific" | "Global" | "MENA";
 
-interface SectorWeight {
-  sector: string;
-  weight: number;
-}
+interface SectorWeight { sector: string; weight: number }
 
-// Supabase-ready — swap DUMMY_VCS for a real fetchVCs() call when ready
 export interface VCFirm {
   id: string;
   name: string;
@@ -43,10 +40,10 @@ export interface VCFirm {
   stages: Stage[];
   sectors: string[];
   portfolio_count: number;
-  recent_investments: number; // deals in last 12 months
+  recent_investments: number;
   notable_exits: string[];
   website: string;
-  sector_weights: SectorWeight[]; // radar chart axes
+  sector_weights: SectorWeight[];
 }
 
 // ─── Dummy Data ────────────────────────────────────────────────────────────────
@@ -56,8 +53,7 @@ const DUMMY_VCS: VCFirm[] = [
     id: "sequoia",
     name: "Sequoia Capital",
     tagline: "The Venture Partner for the Long Arc",
-    description:
-      "One of the most storied venture capital firms, backing the disruptors, the doers, and the dreamers who build legendary companies.",
+    description: "One of the most storied venture capital firms, backing the disruptors, the doers, and the dreamers who build legendary companies.",
     aum_millions: 85_000,
     founded_year: 1972,
     headquarters: "Menlo Park, CA",
@@ -81,8 +77,7 @@ const DUMMY_VCS: VCFirm[] = [
     id: "a16z",
     name: "Andreessen Horowitz",
     tagline: "Software Is Eating the World",
-    description:
-      "A16z is a Silicon Valley-based venture capital firm committed to innovation. They back bold entrepreneurs building the future through technology.",
+    description: "A16z is a Silicon Valley-based venture capital firm committed to innovation. They back bold entrepreneurs building the future through technology.",
     aum_millions: 35_000,
     founded_year: 2009,
     headquarters: "Menlo Park, CA",
@@ -106,8 +101,7 @@ const DUMMY_VCS: VCFirm[] = [
     id: "accel",
     name: "Accel Partners",
     tagline: "Built for Founders. Focused on the Future.",
-    description:
-      "Accel is a leading venture capital firm that invests in people and companies that will change the world. Their network spans Silicon Valley, London, and beyond.",
+    description: "Accel is a leading venture capital firm that invests in people and companies that will change the world. Their network spans Silicon Valley, London, and beyond.",
     aum_millions: 22_000,
     founded_year: 1983,
     headquarters: "Palo Alto, CA",
@@ -131,8 +125,7 @@ const DUMMY_VCS: VCFirm[] = [
     id: "index-ventures",
     name: "Index Ventures",
     tagline: "Boldly Going Where Others Fear to Tread",
-    description:
-      "Index Ventures is a London and San Francisco-based international VC firm backing entrepreneurs who are reshaping industries with technology.",
+    description: "Index Ventures is a London and San Francisco-based international VC firm backing entrepreneurs who are reshaping industries with technology.",
     aum_millions: 8_500,
     founded_year: 1996,
     headquarters: "London, UK",
@@ -158,52 +151,158 @@ const DUMMY_VCS: VCFirm[] = [
 
 const ALL_STAGES: Stage[] = ["Pre-Seed", "Seed", "Series A", "Series B", "Growth"];
 const ALL_SECTORS = ["AI", "Fintech", "Cyber", "SaaS", "HealthTech", "FoodTech"];
-const ALL_GEOS: Geography[] = [
-  "North America", "Europe", "Israel", "Asia-Pacific", "Global", "MENA",
+const ALL_GEOS: Geography[] = ["North America", "Europe", "Israel", "Asia-Pacific", "Global", "MENA"];
+
+// Semi-transparent dark stage pills — elegant on dark cards
+const STAGE_PILL: Record<Stage, string> = {
+  "Pre-Seed":  "bg-violet-500/10 text-violet-300 border border-violet-500/20",
+  "Seed":      "bg-sky-500/10 text-sky-300 border border-sky-500/20",
+  "Series A":  "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20",
+  "Series B":  "bg-amber-500/10 text-amber-300 border border-amber-500/20",
+  "Growth":    "bg-indigo-500/10 text-indigo-300 border border-indigo-500/20",
+};
+
+// ─── Per-firm accent palette ───────────────────────────────────────────────────
+// Each firm gets a deterministic accent: radar color, card glow, avatar tint.
+
+interface AccentConfig {
+  radarStroke: string;
+  radarFill: string;
+  gridStroke: string;
+  avatarFrom: string;
+  avatarTo: string;
+  avatarText: string;
+  glowColor: string;      // CSS rgba — card hover ambient glow
+  borderHover: string;    // CSS rgba — card hover border
+  shimmerColor: string;   // CSS rgba — top shimmer line
+}
+
+const ACCENT_PALETTE: AccentConfig[] = [
+  {
+    // Sequoia → electric cyan
+    radarStroke: '#22d3ee', radarFill: 'rgba(34,211,238,0.13)', gridStroke: 'rgba(34,211,238,0.18)',
+    avatarFrom: '#0e4f5e', avatarTo: '#0a3040',
+    avatarText: '#67e8f9',
+    glowColor: 'rgba(34,211,238,0.10)', borderHover: 'rgba(34,211,238,0.22)', shimmerColor: 'rgba(34,211,238,0.35)',
+  },
+  {
+    // a16z → electric violet
+    radarStroke: '#a78bfa', radarFill: 'rgba(167,139,250,0.13)', gridStroke: 'rgba(139,92,246,0.18)',
+    avatarFrom: '#3b1f72', avatarTo: '#1e1040',
+    avatarText: '#c4b5fd',
+    glowColor: 'rgba(139,92,246,0.10)', borderHover: 'rgba(167,139,250,0.22)', shimmerColor: 'rgba(167,139,250,0.35)',
+  },
+  {
+    // Accel → emerald
+    radarStroke: '#34d399', radarFill: 'rgba(52,211,153,0.13)', gridStroke: 'rgba(16,185,129,0.18)',
+    avatarFrom: '#064e33', avatarTo: '#042a1c',
+    avatarText: '#6ee7b7',
+    glowColor: 'rgba(16,185,129,0.10)', borderHover: 'rgba(52,211,153,0.22)', shimmerColor: 'rgba(52,211,153,0.35)',
+  },
+  {
+    // Index → amber-gold
+    radarStroke: '#fbbf24', radarFill: 'rgba(251,191,36,0.13)', gridStroke: 'rgba(245,158,11,0.18)',
+    avatarFrom: '#5c3d0a', avatarTo: '#2d1d04',
+    avatarText: '#fcd34d',
+    glowColor: 'rgba(245,158,11,0.10)', borderHover: 'rgba(251,191,36,0.22)', shimmerColor: 'rgba(251,191,36,0.35)',
+  },
 ];
 
-// Stage badge styles — same as Startups ROUND_STYLE
-const STAGE_STYLE: Record<Stage, string> = {
-  "Pre-Seed":  "bg-purple-50 text-purple-700 border border-purple-100",
-  "Seed":      "bg-blue-50 text-blue-700 border border-blue-100",
-  "Series A":  "bg-emerald-50 text-emerald-700 border border-emerald-100",
-  "Series B":  "bg-amber-50 text-amber-700 border border-amber-100",
-  "Growth":    "bg-indigo-50 text-indigo-700 border border-indigo-100",
-};
+function getAccent(id: string): AccentConfig {
+  let h = 0;
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) & 0xffff;
+  return ACCENT_PALETTE[h % ACCENT_PALETTE.length];
+}
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-function formatAUM(millions: number | null): string {
-  if (millions == null) return "Undisclosed";
-  if (millions >= 1_000) return `$${(millions / 1_000).toFixed(1)}B`;
-  return `$${millions}M`;
+function formatAUM(m: number | null): string {
+  if (m == null) return "—";
+  return m >= 1_000 ? `$${(m / 1_000).toFixed(1)}B` : `$${m}M`;
+}
+
+function firmInitials(name: string): string {
+  return name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase();
 }
 
 // ─── VCCard ────────────────────────────────────────────────────────────────────
 
 function VCCard({ firm }: { firm: VCFirm }) {
+  const accent = getAccent(firm.id);
+
   return (
-    <div className="relative bg-[#0b1626] rounded-[20px] border border-[#1a2a3f] shadow-[0_2px_16px_rgba(0,0,0,0.3)] hover:shadow-[0_8px_32px_rgba(0,0,0,0.5)] hover:-translate-y-0.5 hover:border-[#243858] transition-all duration-200 flex flex-col overflow-hidden">
+    <div
+      className="relative group flex flex-col overflow-hidden rounded-[22px] border transition-all duration-300 cursor-default select-none"
+      style={{
+        background: 'linear-gradient(145deg, #1a2535 0%, #0c1524 100%)',
+        borderColor: 'rgba(255,255,255,0.07)',
+        boxShadow: '0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04)',
+        willChange: 'transform',
+      }}
+      onMouseEnter={(e) => {
+        const el = e.currentTarget;
+        el.style.transform = 'translateY(-4px)';
+        el.style.borderColor = accent.borderHover;
+        el.style.boxShadow = `0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px ${accent.borderHover}, ${accent.glowColor} 0px 0px 60px 0px, inset 0 1px 0 rgba(255,255,255,0.06)`;
+      }}
+      onMouseLeave={(e) => {
+        const el = e.currentTarget;
+        el.style.transform = '';
+        el.style.borderColor = 'rgba(255,255,255,0.07)';
+        el.style.boxShadow = '0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04)';
+      }}
+    >
+      {/* Top shimmer accent line */}
+      <div
+        className="absolute inset-x-0 top-0 h-px pointer-events-none"
+        style={{ background: `linear-gradient(90deg, transparent, ${accent.shimmerColor}, transparent)` }}
+      />
+
+      {/* Ambient glow orb (top-center, blooms on hover) */}
+      <div
+        className="absolute -top-16 left-1/2 -translate-x-1/2 w-48 h-48 rounded-full pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-3xl"
+        style={{ background: accent.glowColor }}
+      />
 
       {/* ── Card header ── */}
-      <div className="p-5 pb-4">
+      <div className="px-5 pt-5 pb-4 relative z-10">
         <div className="flex items-start justify-between gap-3 mb-3">
+          {/* Firm avatar */}
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-[#091422] border border-[#1a2a3f] flex items-center justify-center flex-none">
-              <Building2 className="w-5 h-5 text-[#F59E0B]" />
+            <div
+              className="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-black flex-none border"
+              style={{
+                background: `linear-gradient(135deg, ${accent.avatarFrom}, ${accent.avatarTo})`,
+                borderColor: `${accent.shimmerColor}`,
+                color: accent.avatarText,
+                boxShadow: `0 0 16px ${accent.glowColor}`,
+              }}
+            >
+              {firmInitials(firm.name)}
             </div>
             <div className="min-w-0">
-              <h3 className="text-[15px] font-bold text-white truncate leading-tight">{firm.name}</h3>
-              <p className="text-xs text-slate-400 font-medium mt-0.5 line-clamp-1">{firm.tagline}</p>
+              <h3 className="text-[15px] font-bold text-white truncate leading-tight tracking-tight">
+                {firm.name}
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5 line-clamp-1 leading-tight">
+                {firm.tagline}
+              </p>
             </div>
           </div>
+
+          {/* External link */}
           <a
             href={firm.website}
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="flex-none p-1.5 rounded-lg text-slate-600 hover:text-[#F59E0B] transition-colors"
-            aria-label={`Visit ${firm.name} website`}
+            className="flex-none p-1.5 rounded-lg text-slate-600 hover:text-slate-300 transition-colors"
+            aria-label={`Visit ${firm.name}`}
           >
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
@@ -214,7 +313,7 @@ function VCCard({ firm }: { firm: VCFirm }) {
           {firm.stages.map((s) => (
             <span
               key={s}
-              className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${STAGE_STYLE[s] ?? "bg-gray-50 text-gray-500 border border-gray-100"}`}
+              className={`text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${STAGE_PILL[s]}`}
             >
               {s}
             </span>
@@ -222,40 +321,71 @@ function VCCard({ firm }: { firm: VCFirm }) {
         </div>
       </div>
 
-      {/* ── Radar chart ── */}
-      <div className="px-4 pb-1">
-        <div className="bg-[#091422] border border-[#1a2a3f] rounded-[14px] px-2 pt-3 pb-1">
-          <p className="text-[9px] font-bold uppercase tracking-widest text-slate-500 text-center mb-1">
-            Sector Focus
+      {/* ── Radar HUD panel ── */}
+      <div className="px-4 pb-1 relative z-10">
+        <div
+          className="relative overflow-hidden rounded-[14px]"
+          style={{
+            background: 'rgba(5,10,20,0.7)',
+            border: '1px solid rgba(255,255,255,0.05)',
+          }}
+        >
+          {/* HUD corner brackets */}
+          {(["top-2 left-2 border-t border-l", "top-2 right-2 border-t border-r",
+             "bottom-2 left-2 border-b border-l", "bottom-2 right-2 border-b border-r"] as const
+          ).map((cls, i) => (
+            <div
+              key={i}
+              className={`absolute w-3 h-3 pointer-events-none ${cls}`}
+              style={{ borderColor: accent.shimmerColor, opacity: 0.6 }}
+            />
+          ))}
+
+          {/* Label */}
+          <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-600 text-center pt-3 pb-0.5">
+            Sector Allocation
           </p>
-          <div className="h-[188px]">
+
+          <div className="h-[190px]">
             <ResponsiveContainer width="100%" height="100%">
               <RadarChart data={firm.sector_weights} outerRadius="70%">
                 <PolarGrid
-                  stroke="#1a2a3f"
-                  strokeDasharray="3 3"
+                  stroke={accent.gridStroke}
+                  strokeDasharray="2 4"
                 />
                 <PolarAngleAxis
                   dataKey="sector"
-                  tick={{ fill: "#94a3b8", fontSize: 10.5, fontWeight: 600 }}
+                  tick={{ fill: "#64748b", fontSize: 10, fontWeight: 600 }}
                 />
                 <Radar
                   dataKey="weight"
-                  stroke="#F59E0B"
-                  fill="rgba(245,158,11,0.18)"
-                  strokeWidth={1.8}
-                  dot={{ fill: "#F59E0B", r: 2.5 }}
+                  stroke={accent.radarStroke}
+                  fill={accent.radarFill}
+                  strokeWidth={2}
+                  dot={(props: { cx: number; cy: number; index: number }) => (
+                    <circle
+                      key={props.index}
+                      cx={props.cx}
+                      cy={props.cy}
+                      r={3}
+                      fill={accent.radarStroke}
+                      stroke="rgba(0,0,0,0.4)"
+                      strokeWidth={1}
+                      style={{ filter: `drop-shadow(0 0 4px ${accent.radarStroke})` }}
+                    />
+                  )}
                 />
                 <Tooltip
                   contentStyle={{
-                    background: "#060e1a",
-                    border: "1px solid #1a2a3f",
+                    background: '#060e1a',
+                    border: `1px solid ${accent.borderHover}`,
                     borderRadius: 10,
                     fontSize: 12,
+                    boxShadow: `0 8px 32px rgba(0,0,0,0.6)`,
                   }}
-                  itemStyle={{ color: "#F59E0B" }}
-                  labelStyle={{ color: "#94a3b8", fontWeight: 600 }}
-                  formatter={(v: number) => [`${v}%`, "Weight"]}
+                  itemStyle={{ color: accent.radarStroke }}
+                  labelStyle={{ color: '#94a3b8', fontWeight: 600, fontSize: 11 }}
+                  formatter={(v: number) => [`${v}%`, "Allocation"]}
                 />
               </RadarChart>
             </ResponsiveContainer>
@@ -263,42 +393,72 @@ function VCCard({ firm }: { firm: VCFirm }) {
         </div>
       </div>
 
-      {/* ── Key stats row ── */}
-      <div className="grid grid-cols-3 gap-2 px-4 py-3">
-        <div className="bg-[#091422] rounded-[10px] px-3 py-2 border border-[#1a2a3f]">
-          <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">AUM</div>
-          <div className="text-sm font-bold text-white">{formatAUM(firm.aum_millions)}</div>
+      {/* ── Key stats ── */}
+      <div className="grid grid-cols-3 gap-1.5 px-4 py-3 relative z-10">
+        {/* AUM */}
+        <div
+          className="rounded-[10px] px-2.5 py-2.5"
+          style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}
+        >
+          <div className="flex items-center gap-1 mb-1">
+            <DollarSign className="w-2.5 h-2.5 text-emerald-500 flex-none" />
+            <span className="text-[8.5px] font-bold text-slate-600 uppercase tracking-wider">AUM</span>
+          </div>
+          <div className="text-sm font-bold text-emerald-400 leading-none">{formatAUM(firm.aum_millions)}</div>
         </div>
-        <div className="bg-[#091422] rounded-[10px] px-3 py-2 border border-[#1a2a3f]">
-          <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Portfolio</div>
-          <div className="text-sm font-bold text-white">{firm.portfolio_count}</div>
+
+        {/* Portfolio */}
+        <div
+          className="rounded-[10px] px-2.5 py-2.5"
+          style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}
+        >
+          <div className="flex items-center gap-1 mb-1">
+            <Briefcase className="w-2.5 h-2.5 text-cyan-500 flex-none" />
+            <span className="text-[8.5px] font-bold text-slate-600 uppercase tracking-wider">Portfolio</span>
+          </div>
+          <div className="text-sm font-bold text-cyan-400 leading-none">{firm.portfolio_count}</div>
         </div>
-        <div className="bg-[#091422] rounded-[10px] px-3 py-2 border border-[#1a2a3f]">
-          <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Deals / yr</div>
+
+        {/* Deals/yr */}
+        <div
+          className="rounded-[10px] px-2.5 py-2.5"
+          style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}
+        >
+          <div className="flex items-center gap-1 mb-1">
+            <Activity className="w-2.5 h-2.5 text-amber-500 flex-none" />
+            <span className="text-[8.5px] font-bold text-slate-600 uppercase tracking-wider">Deals/yr</span>
+          </div>
           <div className="flex items-center gap-1">
-            <TrendingUp className="w-3 h-3 text-emerald-400 flex-none" />
-            <span className="text-sm font-bold text-white">{firm.recent_investments}</span>
+            <TrendingUp className="w-3 h-3 text-amber-400 flex-none" />
+            <span className="text-sm font-bold text-amber-400 leading-none">{firm.recent_investments}</span>
           </div>
         </div>
       </div>
 
       {/* ── Notable exits ── */}
-      <div className="px-5 pb-3">
+      <div className="px-5 pb-4 relative z-10">
         <div className="flex items-center gap-1.5 mb-2">
-          <Star className="w-3 h-3 text-[#F59E0B]" />
-          <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Notable Exits</span>
+          <Star className="w-3 h-3" style={{ color: accent.radarStroke }} />
+          <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-600">Notable Exits</span>
         </div>
         <div className="flex flex-wrap gap-1">
-          {firm.notable_exits.slice(0, 4).map((e) => (
+          {firm.notable_exits.slice(0, 4).map((exit) => (
             <span
-              key={e}
-              className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-[#091422] border border-[#1a2a3f] text-slate-300"
+              key={exit}
+              className="px-2 py-0.5 text-[10px] font-semibold rounded-full text-slate-300 transition-colors duration-150"
+              style={{
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.08)',
+              }}
             >
-              {e}
+              {exit}
             </span>
           ))}
           {firm.notable_exits.length > 4 && (
-            <span className="px-2 py-0.5 text-[10px] rounded-full bg-[#091422] border border-[#1a2a3f] text-slate-500">
+            <span
+              className="px-2 py-0.5 text-[10px] rounded-full text-slate-600"
+              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}
+            >
               +{firm.notable_exits.length - 4}
             </span>
           )}
@@ -306,14 +466,15 @@ function VCCard({ firm }: { firm: VCFirm }) {
       </div>
 
       {/* ── Card footer ── */}
-      <div className="px-5 py-3 border-t border-[#1a2a3f] flex items-center justify-between gap-2 mt-auto">
-        <div className="flex items-center gap-1 min-w-0">
+      <div
+        className="px-5 py-3 mt-auto flex items-center justify-between gap-2 relative z-10"
+        style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}
+      >
+        <div className="flex items-center gap-1.5 min-w-0">
           <Globe className="w-3 h-3 text-slate-600 flex-none" />
-          <span className="text-[10px] text-slate-500 truncate">
-            {firm.geography.slice(0, 2).join(", ")}
-          </span>
+          <span className="text-[10px] text-slate-600 truncate">{firm.geography.slice(0, 2).join(", ")}</span>
         </div>
-        <span className="text-[10px] text-slate-600 flex-none">Est. {firm.founded_year}</span>
+        <span className="text-[10px] text-slate-700 font-medium flex-none">Est. {firm.founded_year}</span>
       </div>
     </div>
   );
@@ -333,58 +494,54 @@ function toggle<T>(arr: T[], val: T): T[] {
   return arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val];
 }
 
-function FilterSection({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function FilterSection({ title, children }: { title: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(true);
   return (
-    <div className="border-b border-[#1a2a3f] pb-4 mb-4 last:border-0 last:pb-0 last:mb-0">
+    <div
+      className="pb-3 mb-3 last:pb-0 last:mb-0"
+      style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+    >
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center justify-between w-full text-left mb-3 group"
+        className="flex items-center justify-between w-full text-left mb-2.5"
       >
-        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider group-hover:text-slate-300 transition-colors">
-          {title}
-        </span>
-        <ChevronDown
-          className={`w-3.5 h-3.5 text-slate-600 transition-transform ${open ? "rotate-180" : ""}`}
-        />
+        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-[0.15em]">{title}</span>
+        <ChevronDown className={`w-3.5 h-3.5 text-slate-700 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
-      {open && <div className="space-y-1.5">{children}</div>}
+      {open && <div className="space-y-0.5">{children}</div>}
     </div>
   );
 }
 
 function FilterCheckbox({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: () => void;
-}) {
+  label, checked, onChange,
+}: { label: string; checked: boolean; onChange: () => void }) {
   return (
     <button
       onClick={onChange}
-      className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[8px] text-xs font-semibold transition-all text-left ${
-        checked
-          ? "bg-amber-900/20 border border-amber-800/40 text-[#F59E0B]"
-          : "text-slate-400 hover:text-slate-200 hover:bg-[#0a1830]"
-      }`}
+      className="w-full flex items-center gap-2 px-2 py-1.5 rounded-[7px] text-xs font-medium transition-all duration-150 text-left"
+      style={{
+        color: checked ? '#22d3ee' : '#64748b',
+        background: checked ? 'rgba(34,211,238,0.07)' : 'transparent',
+      }}
+      onMouseEnter={(e) => {
+        if (!checked) e.currentTarget.style.color = '#94a3b8';
+      }}
+      onMouseLeave={(e) => {
+        if (!checked) e.currentTarget.style.color = '#64748b';
+      }}
     >
       <div
-        className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-none transition-colors ${
-          checked ? "bg-[#F59E0B] border-[#F59E0B]" : "bg-[#0d1f35] border-[#243858]"
-        }`}
+        className="w-3.5 h-3.5 rounded flex items-center justify-center flex-none transition-all duration-150"
+        style={{
+          background: checked ? '#06b6d4' : 'rgba(255,255,255,0.04)',
+          border: `1px solid ${checked ? '#22d3ee' : 'rgba(255,255,255,0.10)'}`,
+          boxShadow: checked ? '0 0 8px rgba(34,211,238,0.3)' : 'none',
+        }}
       >
         {checked && (
-          <svg className="w-2 h-2 text-white" viewBox="0 0 8 8" fill="none">
-            <path d="M1 4L3 6L7 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <svg className="w-2 h-2 text-slate-900" viewBox="0 0 8 8" fill="none">
+            <path d="M1 4L3 6L7 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         )}
       </div>
@@ -394,53 +551,38 @@ function FilterCheckbox({
 }
 
 function FilterSidebar({
-  filters,
-  onChange,
-  onReset,
-  mobileOpen,
-  onMobileClose,
+  filters, onChange, onReset, mobileOpen, onMobileClose,
 }: {
-  filters: Filters;
-  onChange: (f: Filters) => void;
-  onReset: () => void;
-  mobileOpen: boolean;
-  onMobileClose: () => void;
+  filters: Filters; onChange: (f: Filters) => void;
+  onReset: () => void; mobileOpen: boolean; onMobileClose: () => void;
 }) {
-  const hasActive =
-    filters.stages.length > 0 ||
-    filters.sectors.length > 0 ||
-    filters.geographies.length > 0;
-
-  const totalActive =
-    filters.stages.length + filters.sectors.length + filters.geographies.length;
+  const totalActive = filters.stages.length + filters.sectors.length + filters.geographies.length;
 
   const content = (
     <div className="h-full overflow-y-auto">
-      {/* Sidebar header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <SlidersHorizontal className="w-3.5 h-3.5 text-[#F59E0B]" />
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Screener</span>
-          {hasActive && (
-            <span className="text-[9px] font-bold bg-[#F59E0B] text-white px-1.5 py-0.5 rounded-full">
+          <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-500" />
+          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.15em]">Screener</span>
+          {totalActive > 0 && (
+            <span
+              className="text-[9px] font-bold px-1.5 py-0.5 rounded-full text-slate-900"
+              style={{ background: '#22d3ee', boxShadow: '0 0 8px rgba(34,211,238,0.4)' }}
+            >
               {totalActive}
             </span>
           )}
         </div>
         <div className="flex items-center gap-2">
-          {hasActive && (
+          {totalActive > 0 && (
             <button
               onClick={onReset}
-              className="flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-rose-400 transition-colors"
+              className="flex items-center gap-1 text-[10px] font-semibold text-slate-600 hover:text-rose-400 transition-colors"
             >
               <X className="w-3 h-3" />Clear
             </button>
           )}
-          <button
-            onClick={onMobileClose}
-            className="lg:hidden text-slate-500 hover:text-slate-300 transition-colors"
-            aria-label="Close filters"
-          >
+          <button onClick={onMobileClose} className="lg:hidden text-slate-600 hover:text-slate-300 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -448,56 +590,46 @@ function FilterSidebar({
 
       <FilterSection title="Investment Stage">
         {ALL_STAGES.map((s) => (
-          <FilterCheckbox
-            key={s}
-            label={s}
-            checked={filters.stages.includes(s)}
-            onChange={() => onChange({ ...filters, stages: toggle(filters.stages, s) })}
-          />
+          <FilterCheckbox key={s} label={s} checked={filters.stages.includes(s)}
+            onChange={() => onChange({ ...filters, stages: toggle(filters.stages, s) })} />
         ))}
       </FilterSection>
 
       <FilterSection title="Sector">
         {ALL_SECTORS.map((s) => (
-          <FilterCheckbox
-            key={s}
-            label={s}
-            checked={filters.sectors.includes(s)}
-            onChange={() => onChange({ ...filters, sectors: toggle(filters.sectors, s) })}
-          />
+          <FilterCheckbox key={s} label={s} checked={filters.sectors.includes(s)}
+            onChange={() => onChange({ ...filters, sectors: toggle(filters.sectors, s) })} />
         ))}
       </FilterSection>
 
       <FilterSection title="Geography">
         {ALL_GEOS.map((g) => (
-          <FilterCheckbox
-            key={g}
-            label={g}
-            checked={filters.geographies.includes(g)}
-            onChange={() =>
-              onChange({ ...filters, geographies: toggle(filters.geographies, g) })
-            }
-          />
+          <FilterCheckbox key={g} label={g} checked={filters.geographies.includes(g)}
+            onChange={() => onChange({ ...filters, geographies: toggle(filters.geographies, g) })} />
         ))}
       </FilterSection>
     </div>
   );
 
+  const sidebarStyle = {
+    background: 'linear-gradient(160deg, #111827 0%, #0d1525 100%)',
+    border: '1px solid rgba(255,255,255,0.07)',
+    boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+  };
+
   return (
     <>
-      {/* Desktop sticky sidebar — styled as Startups screener panel */}
-      <aside className="hidden lg:block w-52 flex-shrink-0 sticky top-6 self-start bg-[#0d1f35] border border-[#1a2a3f] rounded-[16px] px-4 py-4 max-h-[calc(100vh-5rem)] overflow-hidden">
+      <aside
+        className="hidden lg:block w-52 flex-shrink-0 sticky top-6 self-start rounded-[18px] px-4 py-4 max-h-[calc(100vh-5rem)] overflow-hidden"
+        style={sidebarStyle}
+      >
         {content}
       </aside>
 
-      {/* Mobile overlay */}
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
-          <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={onMobileClose}
-          />
-          <aside className="relative w-64 bg-[#0b1626] border-r border-[#1a2a3f] px-5 py-5 overflow-y-auto">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onMobileClose} />
+          <aside className="relative w-64 px-5 py-5 overflow-y-auto" style={sidebarStyle}>
             {content}
           </aside>
         </div>
@@ -506,7 +638,7 @@ function FilterSidebar({
   );
 }
 
-// ─── Sort / results bar ────────────────────────────────────────────────────────
+// ─── Sort bar ──────────────────────────────────────────────────────────────────
 
 type SortKey = "recent_investments" | "portfolio_count" | "aum_millions" | "founded_year";
 type SortDir = "desc" | "asc";
@@ -519,46 +651,43 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
 ];
 
 function SortBar({
-  sortKey,
-  sortDir,
-  onSort,
-  count,
-  onMobileFilter,
+  sortKey, sortDir, onSort, count, onMobileFilter,
 }: {
-  sortKey: SortKey;
-  sortDir: SortDir;
-  onSort: (k: SortKey) => void;
-  count: number;
-  onMobileFilter: () => void;
+  sortKey: SortKey; sortDir: SortDir; onSort: (k: SortKey) => void;
+  count: number; onMobileFilter: () => void;
 }) {
   return (
     <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
       <div className="flex items-center gap-2">
         <button
           onClick={onMobileFilter}
-          className="lg:hidden flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-xs font-semibold bg-[#0d1f35] border border-[#1a2a3f] text-slate-400 hover:text-slate-200 hover:border-slate-600 transition-all"
+          className="lg:hidden flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-xs font-semibold transition-all"
+          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', color: '#94a3b8' }}
         >
           <SlidersHorizontal className="w-3.5 h-3.5" />Filters
         </button>
-        <span className="text-xs font-semibold text-slate-500">
-          <span className="text-white font-bold">{count}</span>{" "}
+        <span className="text-xs text-slate-500">
+          <span className="font-bold text-white">{count}</span>{" "}
           {count === 1 ? "firm" : "firms"}
         </span>
       </div>
 
-      {/* Segmented sort control — matches Startups density filter style */}
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Sort</span>
-        <div className="flex items-center bg-[#0d1f35] border border-[#1a2a3f] rounded-[10px] p-0.5 gap-0.5">
+        <span className="text-[9px] font-bold text-slate-600 uppercase tracking-wider">Sort</span>
+        <div
+          className="flex items-center rounded-[10px] p-0.5 gap-0.5"
+          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+        >
           {SORT_OPTIONS.map((o) => (
             <button
               key={o.key}
               onClick={() => onSort(o.key)}
-              className={`px-2.5 py-1.5 rounded-[7px] text-[10px] font-semibold transition-all whitespace-nowrap ${
+              className="px-2.5 py-1.5 rounded-[7px] text-[10px] font-semibold transition-all whitespace-nowrap"
+              style={
                 sortKey === o.key
-                  ? "bg-[#F59E0B] text-white shadow-sm"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
+                  ? { background: '#F59E0B', color: '#fff', boxShadow: '0 0 12px rgba(245,158,11,0.35)' }
+                  : { color: '#64748b' }
+              }
             >
               {o.label}
               {sortKey === o.key && (
@@ -581,76 +710,72 @@ export function VCs() {
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
 
   function handleSort(key: SortKey) {
-    if (key === sortKey) {
-      setSortDir((d) => (d === "desc" ? "asc" : "desc"));
-    } else {
-      setSortKey(key);
-      setSortDir("desc");
-    }
+    if (key === sortKey) setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    else { setSortKey(key); setSortDir("desc"); }
   }
-
-  const activeFilterCount =
-    filters.stages.length + filters.sectors.length + filters.geographies.length;
 
   const filtered = useMemo<VCFirm[]>(() => {
     let result = [...DUMMY_VCS];
-
-    if (filters.stages.length > 0) {
+    if (filters.stages.length > 0)
       result = result.filter((v) => filters.stages.some((s) => v.stages.includes(s)));
-    }
-    if (filters.sectors.length > 0) {
+    if (filters.sectors.length > 0)
       result = result.filter((v) => filters.sectors.some((s) => v.sectors.includes(s)));
-    }
-    if (filters.geographies.length > 0) {
-      result = result.filter((v) =>
-        filters.geographies.some((g) => v.geography.includes(g))
-      );
-    }
-
+    if (filters.geographies.length > 0)
+      result = result.filter((v) => filters.geographies.some((g) => v.geography.includes(g)));
     result.sort((a, b) => {
       const av = (a[sortKey] ?? 0) as number;
       const bv = (b[sortKey] ?? 0) as number;
       return sortDir === "desc" ? bv - av : av - bv;
     });
-
     return result;
   }, [filters, sortKey, sortDir]);
 
   return (
     <Layout>
 
-      {/* ── Dark header band — exact Startups pattern ── */}
-      <div className="bg-[#0b1626] border-b border-[#1a2a3f]">
-        <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 pt-6 pb-6">
+      {/* ── Dark header band ── */}
+      <div
+        className="relative overflow-hidden"
+        style={{ background: 'linear-gradient(135deg, #0b1626 0%, #0e1e32 50%, #0b1626 100%)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+      >
+        {/* Subtle dot-grid texture */}
+        <div
+          className="absolute inset-0 pointer-events-none opacity-[0.025]"
+          style={{ backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)', backgroundSize: '28px 28px' }}
+        />
+        {/* Cyan top accent rule */}
+        <div className="absolute inset-x-0 top-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(34,211,238,0.4) 40%, rgba(167,139,250,0.3) 60%, transparent)' }} />
 
-          {/* Title row */}
+        <div className="relative mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 pt-7 pb-6">
           <div className="flex items-center justify-between gap-4 mb-1.5">
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
               VC Directory
             </h1>
             <div className="flex items-center gap-2 flex-none">
-              <span className="text-xs font-semibold text-slate-500 bg-[#0d1f35] border border-[#1a2a3f] px-2.5 py-1 rounded-full">
+              <span
+                className="text-[10px] font-semibold px-2.5 py-1 rounded-full"
+                style={{ background: 'rgba(34,211,238,0.08)', border: '1px solid rgba(34,211,238,0.15)', color: '#67e8f9' }}
+              >
                 {DUMMY_VCS.length} firms indexed
               </span>
-              <span className="text-xs font-semibold text-slate-500 bg-[#0d1f35] border border-[#1a2a3f] px-2.5 py-1 rounded-full hidden sm:block">
+              <span
+                className="text-[10px] font-semibold px-2.5 py-1 rounded-full hidden sm:block"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#64748b' }}
+              >
                 Supabase-ready
               </span>
             </div>
           </div>
-
-          {/* Subtitle */}
-          <p className="text-sm text-slate-400 leading-snug mb-5">
+          <p className="text-sm text-slate-500 leading-snug">
             Institutional-grade intelligence on leading VC firms — sector focus, portfolio activity, and fund size.
           </p>
-
         </div>
       </div>
 
-      {/* ── Main content area — Layout provides bg-[#F3F4F6] ── */}
+      {/* ── Main content — Layout provides bg-[#F3F4F6] ── */}
       <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex gap-6 items-start">
 
-          {/* Screener sidebar */}
           <FilterSidebar
             filters={filters}
             onChange={setFilters}
@@ -659,26 +784,26 @@ export function VCs() {
             onMobileClose={() => setMobileFilterOpen(false)}
           />
 
-          {/* Grid + sort */}
           <main className="flex-1 min-w-0">
             <SortBar
-              sortKey={sortKey}
-              sortDir={sortDir}
-              onSort={handleSort}
-              count={filtered.length}
-              onMobileFilter={() => setMobileFilterOpen(true)}
+              sortKey={sortKey} sortDir={sortDir} onSort={handleSort}
+              count={filtered.length} onMobileFilter={() => setMobileFilterOpen(true)}
             />
 
             {filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-24 text-center">
-                <Building2 className="w-8 h-8 text-gray-300 mb-3" />
-                <p className="text-sm font-semibold text-gray-400">No firms match these filters</p>
+                <div
+                  className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
+                  style={{ background: 'rgba(34,211,238,0.06)', border: '1px solid rgba(34,211,238,0.12)' }}
+                >
+                  <SlidersHorizontal className="w-6 h-6 text-cyan-600" />
+                </div>
+                <p className="text-sm font-semibold text-slate-500">No firms match these filters</p>
                 <button
                   onClick={() => setFilters(DEFAULT_FILTERS)}
-                  className="mt-3 text-xs text-[#F59E0B] font-semibold hover:underline"
+                  className="mt-3 text-xs font-semibold text-cyan-500 hover:text-cyan-300 transition-colors"
                 >
                   Clear all filters
-                  {activeFilterCount > 0 && ` (${activeFilterCount})`}
                 </button>
               </div>
             ) : (
