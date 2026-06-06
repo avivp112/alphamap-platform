@@ -16,6 +16,7 @@ import {
   ExternalLink,
   ChevronDown,
   SlidersHorizontal,
+  X,
 } from "lucide-react";
 import { Layout } from "../components/Layout";
 
@@ -29,7 +30,7 @@ interface SectorWeight {
   weight: number;
 }
 
-// Supabase-ready shape — swap DUMMY_VCS for a real fetchVCs() call
+// Supabase-ready — swap DUMMY_VCS for a real fetchVCs() call when ready
 export interface VCFirm {
   id: string;
   name: string;
@@ -45,7 +46,7 @@ export interface VCFirm {
   recent_investments: number; // deals in last 12 months
   notable_exits: string[];
   website: string;
-  sector_weights: SectorWeight[]; // radar chart data
+  sector_weights: SectorWeight[]; // radar chart axes
 }
 
 // ─── Dummy Data ────────────────────────────────────────────────────────────────
@@ -161,8 +162,14 @@ const ALL_GEOS: Geography[] = [
   "North America", "Europe", "Israel", "Asia-Pacific", "Global", "MENA",
 ];
 
-const RADAR_STROKE = "#60a5fa";
-const RADAR_FILL   = "rgba(96,165,250,0.15)";
+// Stage badge styles — same as Startups ROUND_STYLE
+const STAGE_STYLE: Record<Stage, string> = {
+  "Pre-Seed":  "bg-purple-50 text-purple-700 border border-purple-100",
+  "Seed":      "bg-blue-50 text-blue-700 border border-blue-100",
+  "Series A":  "bg-emerald-50 text-emerald-700 border border-emerald-100",
+  "Series B":  "bg-amber-50 text-amber-700 border border-amber-100",
+  "Growth":    "bg-indigo-50 text-indigo-700 border border-indigo-100",
+};
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -176,36 +183,38 @@ function formatAUM(millions: number | null): string {
 
 function VCCard({ firm }: { firm: VCFirm }) {
   return (
-    <article className="flex flex-col bg-gradient-to-br from-slate-800/80 to-blue-950/60 border border-blue-900/40 rounded-2xl overflow-hidden shadow-xl hover:shadow-blue-900/30 hover:border-blue-700/60 transition-all duration-300">
+    <div className="relative bg-[#0b1626] rounded-[20px] border border-[#1a2a3f] shadow-[0_2px_16px_rgba(0,0,0,0.3)] hover:shadow-[0_8px_32px_rgba(0,0,0,0.5)] hover:-translate-y-0.5 hover:border-[#243858] transition-all duration-200 flex flex-col overflow-hidden">
+
       {/* ── Card header ── */}
-      <div className="px-5 pt-5 pb-3 border-b border-blue-900/30">
-        <div className="flex items-start justify-between gap-3">
+      <div className="p-5 pb-4">
+        <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-blue-700/40 to-indigo-800/40 border border-blue-700/30 flex items-center justify-center">
-              <Building2 className="w-5 h-5 text-blue-300" />
+            <div className="w-10 h-10 rounded-xl bg-[#091422] border border-[#1a2a3f] flex items-center justify-center flex-none">
+              <Building2 className="w-5 h-5 text-[#F59E0B]" />
             </div>
             <div className="min-w-0">
-              <h3 className="font-bold text-white text-base leading-tight truncate">{firm.name}</h3>
-              <p className="text-xs text-blue-400/80 mt-0.5 leading-tight line-clamp-1">{firm.tagline}</p>
+              <h3 className="text-[15px] font-bold text-white truncate leading-tight">{firm.name}</h3>
+              <p className="text-xs text-slate-400 font-medium mt-0.5 line-clamp-1">{firm.tagline}</p>
             </div>
           </div>
           <a
             href={firm.website}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex-shrink-0 p-1.5 rounded-lg text-slate-500 hover:text-blue-300 hover:bg-blue-900/30 transition-colors"
+            onClick={(e) => e.stopPropagation()}
+            className="flex-none p-1.5 rounded-lg text-slate-600 hover:text-[#F59E0B] transition-colors"
             aria-label={`Visit ${firm.name} website`}
           >
-            <ExternalLink className="w-4 h-4" />
+            <ExternalLink className="w-3.5 h-3.5" />
           </a>
         </div>
 
         {/* Stage pills */}
-        <div className="flex flex-wrap gap-1 mt-3">
+        <div className="flex flex-wrap gap-1">
           {firm.stages.map((s) => (
             <span
               key={s}
-              className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-indigo-900/60 text-indigo-300 border border-indigo-700/40"
+              className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${STAGE_STYLE[s] ?? "bg-gray-50 text-gray-500 border border-gray-100"}`}
             >
               {s}
             </span>
@@ -214,78 +223,82 @@ function VCCard({ firm }: { firm: VCFirm }) {
       </div>
 
       {/* ── Radar chart ── */}
-      <div className="px-3 pt-3 pb-1">
-        <p className="text-[10px] uppercase tracking-widest text-slate-500 text-center mb-1">
-          Sector Focus
-        </p>
-        <div className="h-[196px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <RadarChart data={firm.sector_weights} outerRadius="72%">
-              <PolarGrid stroke="rgba(99,130,194,0.2)" strokeDasharray="3 3" />
-              <PolarAngleAxis
-                dataKey="sector"
-                tick={{ fill: "#94a3b8", fontSize: 11, fontWeight: 500 }}
-              />
-              <Radar
-                dataKey="weight"
-                stroke={RADAR_STROKE}
-                fill={RADAR_FILL}
-                strokeWidth={1.8}
-                dot={{ fill: RADAR_STROKE, r: 2.5 }}
-              />
-              <Tooltip
-                contentStyle={{
-                  background: "#0f172a",
-                  border: "1px solid #1e3a5f",
-                  borderRadius: 8,
-                  fontSize: 12,
-                }}
-                itemStyle={{ color: "#93c5fd" }}
-                formatter={(v: number) => [`${v}%`, "Weight"]}
-              />
-            </RadarChart>
-          </ResponsiveContainer>
+      <div className="px-4 pb-1">
+        <div className="bg-[#091422] border border-[#1a2a3f] rounded-[14px] px-2 pt-3 pb-1">
+          <p className="text-[9px] font-bold uppercase tracking-widest text-slate-500 text-center mb-1">
+            Sector Focus
+          </p>
+          <div className="h-[188px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart data={firm.sector_weights} outerRadius="70%">
+                <PolarGrid
+                  stroke="#1a2a3f"
+                  strokeDasharray="3 3"
+                />
+                <PolarAngleAxis
+                  dataKey="sector"
+                  tick={{ fill: "#94a3b8", fontSize: 10.5, fontWeight: 600 }}
+                />
+                <Radar
+                  dataKey="weight"
+                  stroke="#F59E0B"
+                  fill="rgba(245,158,11,0.18)"
+                  strokeWidth={1.8}
+                  dot={{ fill: "#F59E0B", r: 2.5 }}
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: "#060e1a",
+                    border: "1px solid #1a2a3f",
+                    borderRadius: 10,
+                    fontSize: 12,
+                  }}
+                  itemStyle={{ color: "#F59E0B" }}
+                  labelStyle={{ color: "#94a3b8", fontWeight: 600 }}
+                  formatter={(v: number) => [`${v}%`, "Weight"]}
+                />
+              </RadarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       </div>
 
       {/* ── Key stats row ── */}
-      <div className="grid grid-cols-3 gap-px bg-blue-900/20 border-t border-blue-900/30">
-        <div className="bg-slate-900/50 px-3 py-3 text-center">
+      <div className="grid grid-cols-3 gap-2 px-4 py-3">
+        <div className="bg-[#091422] rounded-[10px] px-3 py-2 border border-[#1a2a3f]">
+          <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">AUM</div>
           <div className="text-sm font-bold text-white">{formatAUM(firm.aum_millions)}</div>
-          <div className="text-[10px] text-slate-500 mt-0.5">AUM</div>
         </div>
-        <div className="bg-slate-900/50 px-3 py-3 text-center">
+        <div className="bg-[#091422] rounded-[10px] px-3 py-2 border border-[#1a2a3f]">
+          <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Portfolio</div>
           <div className="text-sm font-bold text-white">{firm.portfolio_count}</div>
-          <div className="text-[10px] text-slate-500 mt-0.5">Portfolio Cos</div>
         </div>
-        <div className="bg-slate-900/50 px-3 py-3 text-center">
-          <div className="flex items-center justify-center gap-1">
-            <TrendingUp className="w-3 h-3 text-emerald-400" />
+        <div className="bg-[#091422] rounded-[10px] px-3 py-2 border border-[#1a2a3f]">
+          <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Deals / yr</div>
+          <div className="flex items-center gap-1">
+            <TrendingUp className="w-3 h-3 text-emerald-400 flex-none" />
             <span className="text-sm font-bold text-white">{firm.recent_investments}</span>
           </div>
-          <div className="text-[10px] text-slate-500 mt-0.5">Deals / 12 mo</div>
         </div>
       </div>
 
       {/* ── Notable exits ── */}
-      <div className="px-5 py-3">
+      <div className="px-5 pb-3">
         <div className="flex items-center gap-1.5 mb-2">
-          <Star className="w-3 h-3 text-amber-400" />
-          <span className="text-[10px] uppercase tracking-widest text-slate-500 font-medium">
-            Notable Exits
-          </span>
+          <Star className="w-3 h-3 text-[#F59E0B]" />
+          <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Notable Exits</span>
         </div>
         <div className="flex flex-wrap gap-1">
           {firm.notable_exits.slice(0, 4).map((e) => (
             <span
               key={e}
-              className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-amber-900/20 text-amber-400/80 border border-amber-800/30"
+              className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-[#091422] border border-[#1a2a3f] text-slate-300"
             >
               {e}
             </span>
           ))}
           {firm.notable_exits.length > 4 && (
-            <span className="px-2 py-0.5 text-[10px] rounded-full bg-slate-800/60 text-slate-500">
+            <span className="px-2 py-0.5 text-[10px] rounded-full bg-[#091422] border border-[#1a2a3f] text-slate-500">
               +{firm.notable_exits.length - 4}
             </span>
           )}
@@ -293,18 +306,20 @@ function VCCard({ firm }: { firm: VCFirm }) {
       </div>
 
       {/* ── Card footer ── */}
-      <div className="px-5 pb-4 mt-auto flex items-center justify-between text-[11px] text-slate-500">
-        <div className="flex items-center gap-1">
-          <Globe className="w-3 h-3" />
-          <span>{firm.geography.slice(0, 2).join(", ")}</span>
+      <div className="px-5 py-3 border-t border-[#1a2a3f] flex items-center justify-between gap-2 mt-auto">
+        <div className="flex items-center gap-1 min-w-0">
+          <Globe className="w-3 h-3 text-slate-600 flex-none" />
+          <span className="text-[10px] text-slate-500 truncate">
+            {firm.geography.slice(0, 2).join(", ")}
+          </span>
         </div>
-        <span>Est. {firm.founded_year}</span>
+        <span className="text-[10px] text-slate-600 flex-none">Est. {firm.founded_year}</span>
       </div>
-    </article>
+    </div>
   );
 }
 
-// ─── Filter sidebar helpers ────────────────────────────────────────────────────
+// ─── Filter sidebar ────────────────────────────────────────────────────────────
 
 interface Filters {
   stages: Stage[];
@@ -327,22 +342,24 @@ function FilterSection({
 }) {
   const [open, setOpen] = useState(true);
   return (
-    <div className="border-b border-blue-900/30 pb-4 mb-4 last:border-0 last:pb-0 last:mb-0">
+    <div className="border-b border-[#1a2a3f] pb-4 mb-4 last:border-0 last:pb-0 last:mb-0">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center justify-between w-full text-left mb-3 text-xs font-bold text-blue-200 uppercase tracking-widest hover:text-white transition-colors"
+        className="flex items-center justify-between w-full text-left mb-3 group"
       >
-        {title}
+        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider group-hover:text-slate-300 transition-colors">
+          {title}
+        </span>
         <ChevronDown
-          className={`w-4 h-4 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`}
+          className={`w-3.5 h-3.5 text-slate-600 transition-transform ${open ? "rotate-180" : ""}`}
         />
       </button>
-      {open && <div className="space-y-2">{children}</div>}
+      {open && <div className="space-y-1.5">{children}</div>}
     </div>
   );
 }
 
-function CheckPill({
+function FilterCheckbox({
   label,
   checked,
   onChange,
@@ -352,42 +369,29 @@ function CheckPill({
   onChange: () => void;
 }) {
   return (
-    <label className="flex items-center gap-2 cursor-pointer group select-none">
-      <button
-        role="checkbox"
-        aria-checked={checked}
-        onClick={onChange}
-        className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors
-          ${
-            checked
-              ? "bg-blue-600 border-blue-500"
-              : "bg-slate-800 border-slate-600 group-hover:border-blue-600"
-          }`}
+    <button
+      onClick={onChange}
+      className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[8px] text-xs font-semibold transition-all text-left ${
+        checked
+          ? "bg-amber-900/20 border border-amber-800/40 text-[#F59E0B]"
+          : "text-slate-400 hover:text-slate-200 hover:bg-[#0a1830]"
+      }`}
+    >
+      <div
+        className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-none transition-colors ${
+          checked ? "bg-[#F59E0B] border-[#F59E0B]" : "bg-[#0d1f35] border-[#243858]"
+        }`}
       >
         {checked && (
-          <svg
-            className="w-2.5 h-2.5 text-white"
-            viewBox="0 0 10 10"
-            fill="none"
-          >
-            <path
-              d="M1.5 5L4 7.5L8.5 2.5"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
+          <svg className="w-2 h-2 text-white" viewBox="0 0 8 8" fill="none">
+            <path d="M1 4L3 6L7 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         )}
-      </button>
-      <span className="text-sm text-slate-400 group-hover:text-slate-200 transition-colors">
-        {label}
-      </span>
-    </label>
+      </div>
+      {label}
+    </button>
   );
 }
-
-// ─── FilterSidebar ─────────────────────────────────────────────────────────────
 
 function FilterSidebar({
   filters,
@@ -407,38 +411,44 @@ function FilterSidebar({
     filters.sectors.length > 0 ||
     filters.geographies.length > 0;
 
+  const totalActive =
+    filters.stages.length + filters.sectors.length + filters.geographies.length;
+
   const content = (
     <div className="h-full overflow-y-auto">
-      <div className="flex items-center justify-between mb-5">
+      {/* Sidebar header */}
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <SlidersHorizontal className="w-4 h-4 text-blue-400" />
-          <h2 className="text-sm font-bold text-white tracking-wide">Filters</h2>
+          <SlidersHorizontal className="w-3.5 h-3.5 text-[#F59E0B]" />
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Screener</span>
           {hasActive && (
-            <span className="w-2 h-2 rounded-full bg-blue-500" />
+            <span className="text-[9px] font-bold bg-[#F59E0B] text-white px-1.5 py-0.5 rounded-full">
+              {totalActive}
+            </span>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {hasActive && (
             <button
               onClick={onReset}
-              className="text-xs text-blue-400 hover:text-blue-200 transition-colors"
+              className="flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-rose-400 transition-colors"
             >
-              Reset
+              <X className="w-3 h-3" />Clear
             </button>
           )}
           <button
             onClick={onMobileClose}
-            className="lg:hidden text-slate-500 hover:text-slate-300 transition-colors text-lg leading-none"
+            className="lg:hidden text-slate-500 hover:text-slate-300 transition-colors"
             aria-label="Close filters"
           >
-            ×
+            <X className="w-4 h-4" />
           </button>
         </div>
       </div>
 
       <FilterSection title="Investment Stage">
         {ALL_STAGES.map((s) => (
-          <CheckPill
+          <FilterCheckbox
             key={s}
             label={s}
             checked={filters.stages.includes(s)}
@@ -449,7 +459,7 @@ function FilterSidebar({
 
       <FilterSection title="Sector">
         {ALL_SECTORS.map((s) => (
-          <CheckPill
+          <FilterCheckbox
             key={s}
             label={s}
             checked={filters.sectors.includes(s)}
@@ -460,7 +470,7 @@ function FilterSidebar({
 
       <FilterSection title="Geography">
         {ALL_GEOS.map((g) => (
-          <CheckPill
+          <FilterCheckbox
             key={g}
             label={g}
             checked={filters.geographies.includes(g)}
@@ -475,8 +485,8 @@ function FilterSidebar({
 
   return (
     <>
-      {/* Desktop sticky sidebar */}
-      <aside className="hidden lg:block w-56 flex-shrink-0 sticky top-6 self-start bg-gradient-to-b from-slate-900/90 to-blue-950/40 border border-blue-900/30 rounded-2xl p-5 max-h-[calc(100vh-5rem)] overflow-hidden">
+      {/* Desktop sticky sidebar — styled as Startups screener panel */}
+      <aside className="hidden lg:block w-52 flex-shrink-0 sticky top-6 self-start bg-[#0d1f35] border border-[#1a2a3f] rounded-[16px] px-4 py-4 max-h-[calc(100vh-5rem)] overflow-hidden">
         {content}
       </aside>
 
@@ -487,7 +497,7 @@ function FilterSidebar({
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={onMobileClose}
           />
-          <aside className="relative w-72 bg-slate-900 border-r border-blue-900/40 p-5 overflow-y-auto">
+          <aside className="relative w-64 bg-[#0b1626] border-r border-[#1a2a3f] px-5 py-5 overflow-y-auto">
             {content}
           </aside>
         </div>
@@ -496,7 +506,7 @@ function FilterSidebar({
   );
 }
 
-// ─── SortBar ───────────────────────────────────────────────────────────────────
+// ─── Sort / results bar ────────────────────────────────────────────────────────
 
 type SortKey = "recent_investments" | "portfolio_count" | "aum_millions" | "founded_year";
 type SortDir = "desc" | "asc";
@@ -522,46 +532,47 @@ function SortBar({
   onMobileFilter: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
-      <div className="flex items-center gap-3">
+    <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
+      <div className="flex items-center gap-2">
         <button
           onClick={onMobileFilter}
-          className="lg:hidden flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/60 text-slate-300 border border-slate-700/40 hover:border-blue-600"
+          className="lg:hidden flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-xs font-semibold bg-[#0d1f35] border border-[#1a2a3f] text-slate-400 hover:text-slate-200 hover:border-slate-600 transition-all"
         >
-          <SlidersHorizontal className="w-3.5 h-3.5" />
-          Filters
+          <SlidersHorizontal className="w-3.5 h-3.5" />Filters
         </button>
-        <span className="text-sm text-slate-400">
-          <span className="font-semibold text-white">{count}</span>{" "}
+        <span className="text-xs font-semibold text-slate-500">
+          <span className="text-white font-bold">{count}</span>{" "}
           {count === 1 ? "firm" : "firms"}
         </span>
       </div>
 
-      <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="text-xs text-slate-500 mr-1">Sort by</span>
-        {SORT_OPTIONS.map((o) => (
-          <button
-            key={o.key}
-            onClick={() => onSort(o.key)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all
-              ${
+      {/* Segmented sort control — matches Startups density filter style */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Sort</span>
+        <div className="flex items-center bg-[#0d1f35] border border-[#1a2a3f] rounded-[10px] p-0.5 gap-0.5">
+          {SORT_OPTIONS.map((o) => (
+            <button
+              key={o.key}
+              onClick={() => onSort(o.key)}
+              className={`px-2.5 py-1.5 rounded-[7px] text-[10px] font-semibold transition-all whitespace-nowrap ${
                 sortKey === o.key
-                  ? "bg-blue-700/80 text-blue-100 border border-blue-600/50"
-                  : "bg-slate-800/60 text-slate-400 border border-slate-700/40 hover:text-slate-200 hover:border-slate-600"
+                  ? "bg-[#F59E0B] text-white shadow-sm"
+                  : "text-slate-400 hover:text-slate-200"
               }`}
-          >
-            {o.label}
-            {sortKey === o.key && (
-              <span className="ml-1 opacity-60">{sortDir === "desc" ? "↓" : "↑"}</span>
-            )}
-          </button>
-        ))}
+            >
+              {o.label}
+              {sortKey === o.key && (
+                <span className="ml-1 opacity-70">{sortDir === "desc" ? "↓" : "↑"}</span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Main Page Component ───────────────────────────────────────────────────────
+// ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export function VCs() {
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
@@ -577,6 +588,9 @@ export function VCs() {
       setSortDir("desc");
     }
   }
+
+  const activeFilterCount =
+    filters.stages.length + filters.sectors.length + filters.geographies.length;
 
   const filtered = useMemo<VCFirm[]>(() => {
     let result = [...DUMMY_VCS];
@@ -604,33 +618,39 @@ export function VCs() {
 
   return (
     <Layout>
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950/20 to-slate-950">
-        {/* ── Page hero ── */}
-        <header className="px-6 md:px-8 pt-8 pb-6 border-b border-blue-900/30">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div>
-              <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
-                <Users className="w-6 h-6 text-blue-400" />
-                Venture Capital Directory
-              </h1>
-              <p className="mt-1.5 text-sm text-slate-400 max-w-lg">
-                Institutional-grade intelligence on leading VC firms — sector focus,
-                portfolio activity, and fund size at a glance.
-              </p>
-            </div>
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <span className="px-3 py-1 rounded-full text-[11px] font-medium bg-blue-900/40 text-blue-300 border border-blue-800/40">
+
+      {/* ── Dark header band — exact Startups pattern ── */}
+      <div className="bg-[#0b1626] border-b border-[#1a2a3f]">
+        <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 pt-6 pb-6">
+
+          {/* Title row */}
+          <div className="flex items-center justify-between gap-4 mb-1.5">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
+              VC Directory
+            </h1>
+            <div className="flex items-center gap-2 flex-none">
+              <span className="text-xs font-semibold text-slate-500 bg-[#0d1f35] border border-[#1a2a3f] px-2.5 py-1 rounded-full">
                 {DUMMY_VCS.length} firms indexed
               </span>
-              <span className="px-3 py-1 rounded-full text-[11px] font-medium bg-indigo-900/40 text-indigo-300 border border-indigo-800/40">
+              <span className="text-xs font-semibold text-slate-500 bg-[#0d1f35] border border-[#1a2a3f] px-2.5 py-1 rounded-full hidden sm:block">
                 Supabase-ready
               </span>
             </div>
           </div>
-        </header>
 
-        {/* ── Content ── */}
-        <div className="flex gap-6 px-6 md:px-8 pt-6 pb-12 items-start">
+          {/* Subtitle */}
+          <p className="text-sm text-slate-400 leading-snug mb-5">
+            Institutional-grade intelligence on leading VC firms — sector focus, portfolio activity, and fund size.
+          </p>
+
+        </div>
+      </div>
+
+      {/* ── Main content area — Layout provides bg-[#F3F4F6] ── */}
+      <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-6">
+        <div className="flex gap-6 items-start">
+
+          {/* Screener sidebar */}
           <FilterSidebar
             filters={filters}
             onChange={setFilters}
@@ -639,6 +659,7 @@ export function VCs() {
             onMobileClose={() => setMobileFilterOpen(false)}
           />
 
+          {/* Grid + sort */}
           <main className="flex-1 min-w-0">
             <SortBar
               sortKey={sortKey}
@@ -650,25 +671,28 @@ export function VCs() {
 
             {filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-24 text-center">
-                <Users className="w-12 h-12 text-slate-700 mb-4" />
-                <p className="text-slate-500 text-sm">No firms match your current filters.</p>
+                <Building2 className="w-8 h-8 text-gray-300 mb-3" />
+                <p className="text-sm font-semibold text-gray-400">No firms match these filters</p>
                 <button
                   onClick={() => setFilters(DEFAULT_FILTERS)}
-                  className="mt-4 text-blue-400 text-sm hover:underline"
+                  className="mt-3 text-xs text-[#F59E0B] font-semibold hover:underline"
                 >
                   Clear all filters
+                  {activeFilterCount > 0 && ` (${activeFilterCount})`}
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
                 {filtered.map((firm) => (
                   <VCCard key={firm.id} firm={firm} />
                 ))}
               </div>
             )}
           </main>
+
         </div>
       </div>
+
     </Layout>
   );
 }
