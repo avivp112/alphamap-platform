@@ -330,6 +330,36 @@ function totalRaised(s: Startup): number {
   return (s.funding_rounds ?? []).reduce((sum, r) => sum + (r.amount_raised ?? 0), 0);
 }
 
+// Profile completeness score (0–100).
+// Mirrors the Tier 1/2/3 logic used by the bulk-enrichment pipeline:
+//   Tier 3 (complete)  ≈ score ≥ 60
+//   Tier 2 (partial)   ≈ score 20–59
+//   Tier 1 (empty)     ≈ score  0–19
+// Used to sort grid cards so richest profiles surface first.
+function completenessScore(s: Startup): number {
+  let n = 0;
+  // Profile richness (40 pts)
+  if (s.description)                                   n += 20;
+  if (s.industry)                                      n += 8;
+  if (s.website)                                       n += 4;
+  if (s.founded_year)                                  n += 4;
+  if (s.country)                                       n += 4;
+  // Team signals (20 pts)
+  if (s.founders   && s.founders.length   > 0)         n += 10;
+  if (s.leadership && s.leadership.length > 0)         n += 10;
+  // Growth signals (15 pts)
+  if (s.employee_count)                                n += 8;
+  if (s.growth_trend && s.growth_trend !== "unknown")  n += 7;
+  // Funding data (25 pts)
+  const rounds     = s.funding_rounds ?? [];
+  const realRounds = rounds.filter(r => r.amount_raised && r.amount_raised > 0);
+  if (rounds.length      > 0)                          n += 5;
+  if (realRounds.length  > 0)                          n += 10;
+  if (realRounds.length >= 2)                          n += 5;
+  if (rounds.some(r => r.valuation && r.valuation > 0)) n += 5;
+  return n;
+}
+
 // ── Step Slider ───────────────────────────────────────────────────────────────
 
 function StepSlider({
@@ -1686,7 +1716,7 @@ export function Startups() {
         if (densityFilter === "blue-ocean" && count > 1) return false;
       }
       return true;
-    });
+    }).sort((a, b) => completenessScore(b) - completenessScore(a));
   }, [startups, search, parentSector, subSector, countryFilter, cityFilter, stageStep, headcountStep, momentumFilter, densityFilter]);
 
   const selectedStartups = useMemo(
