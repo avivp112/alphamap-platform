@@ -74,6 +74,41 @@ const ROUND_HEX: Record<string, string> = {
   "Grant": "#65A30D", "Acquired": "#6B7280", "Other": "#9CA3AF",
 };
 
+// Semi-transparent dark badges — used on gradient dark cards (v2 aesthetic)
+const ROUND_STYLE_CARD: Record<string, string> = {
+  "Pre-Seed":         "bg-violet-500/10 text-violet-300 border border-violet-500/20",
+  "Seed":             "bg-blue-500/10 text-blue-300 border border-blue-500/20",
+  "Series A":         "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20",
+  "Series B":         "bg-amber-500/10 text-amber-300 border border-amber-500/20",
+  "Series C":         "bg-orange-500/10 text-orange-300 border border-orange-500/20",
+  "Series D":         "bg-orange-600/10 text-orange-400 border border-orange-600/20",
+  "Series E+":        "bg-red-500/10 text-red-300 border border-red-500/20",
+  "Growth":           "bg-indigo-500/10 text-indigo-300 border border-indigo-500/20",
+  "Bridge":           "bg-sky-500/10 text-sky-300 border border-sky-500/20",
+  "Convertible Note": "bg-cyan-500/10 text-cyan-300 border border-cyan-500/20",
+  "Bootstrapped":     "bg-teal-500/10 text-teal-300 border border-teal-500/20",
+  "Grant":            "bg-lime-500/10 text-lime-300 border border-lime-500/20",
+  "Acquired":         "bg-slate-500/10 text-slate-400 border border-slate-500/20",
+  "Other":            "bg-slate-600/10 text-slate-500 border border-slate-600/20",
+};
+
+// Per-round hover glow: border highlight + ambient shadow bloom + top shimmer
+const ROUND_GLOW: Record<string, { border: string; glow: string; shimmer: string }> = {
+  "Pre-Seed":         { border: 'rgba(124,58,237,0.22)',  glow: 'rgba(124,58,237,0.09)',  shimmer: 'rgba(139,92,246,0.38)' },
+  "Seed":             { border: 'rgba(37,99,235,0.22)',   glow: 'rgba(59,130,246,0.09)',  shimmer: 'rgba(59,130,246,0.38)' },
+  "Series A":         { border: 'rgba(5,150,105,0.22)',   glow: 'rgba(16,185,129,0.09)',  shimmer: 'rgba(16,185,129,0.38)' },
+  "Series B":         { border: 'rgba(217,119,6,0.22)',   glow: 'rgba(245,158,11,0.09)',  shimmer: 'rgba(245,158,11,0.38)' },
+  "Series C":         { border: 'rgba(234,88,12,0.22)',   glow: 'rgba(249,115,22,0.09)',  shimmer: 'rgba(249,115,22,0.38)' },
+  "Series D":         { border: 'rgba(194,65,12,0.22)',   glow: 'rgba(234,88,12,0.09)',   shimmer: 'rgba(234,88,12,0.38)' },
+  "Series E+":        { border: 'rgba(220,38,38,0.22)',   glow: 'rgba(239,68,68,0.09)',   shimmer: 'rgba(239,68,68,0.38)' },
+  "Growth":           { border: 'rgba(67,56,202,0.22)',   glow: 'rgba(99,102,241,0.09)',  shimmer: 'rgba(99,102,241,0.38)' },
+  "Bridge":           { border: 'rgba(2,132,199,0.22)',   glow: 'rgba(14,165,233,0.09)',  shimmer: 'rgba(14,165,233,0.38)' },
+  "Convertible Note": { border: 'rgba(8,145,178,0.22)',   glow: 'rgba(6,182,212,0.09)',   shimmer: 'rgba(6,182,212,0.38)' },
+  "Bootstrapped":     { border: 'rgba(13,148,136,0.22)',  glow: 'rgba(20,184,166,0.09)',  shimmer: 'rgba(20,184,166,0.38)' },
+  "Grant":            { border: 'rgba(101,163,13,0.22)',  glow: 'rgba(132,204,22,0.09)',  shimmer: 'rgba(132,204,22,0.38)' },
+  "default":          { border: 'rgba(34,211,238,0.22)',  glow: 'rgba(34,211,238,0.09)',  shimmer: 'rgba(34,211,238,0.38)' },
+};
+
 // ── Sector Taxonomy ───────────────────────────────────────────────────────────
 // Two-tier hierarchy: parent → subcategories.
 // classifyIndustry() maps any free-text industry string into this tree.
@@ -1176,17 +1211,47 @@ function StartupCard({
 }) {
   const latestRound = startup.funding_rounds?.[0] ?? null;
   const roundType   = latestRound?.round_type ?? null;
-  const roundStyle  = roundType ? (ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]) : null;
   const location    = [startup.city, startup.country].filter(Boolean).join(", ") || null;
+  const cardGlow    = roundType ? (ROUND_GLOW[roundType] ?? ROUND_GLOW.default) : ROUND_GLOW.default;
 
   return (
     <div
       onClick={onSelect}
-      className={`relative bg-[#0b1626] rounded-[20px] border shadow-[0_2px_16px_rgba(0,0,0,0.3)] hover:shadow-[0_8px_32px_rgba(0,0,0,0.5)] hover:-translate-y-0.5 transition-all duration-200 flex flex-col overflow-hidden cursor-pointer group ${
-        selected ? "border-[#F59E0B]" : "border-[#1a2a3f] hover:border-[#243858]"
-      }`}
+      className="relative flex flex-col overflow-hidden cursor-pointer group rounded-[22px] border transition-all duration-300"
+      style={{
+        background: 'linear-gradient(145deg, #1a2535 0%, #0c1524 100%)',
+        borderColor: selected ? '#F59E0B' : 'rgba(255,255,255,0.07)',
+        boxShadow: selected
+          ? `0 0 0 1px #F59E0B, 0 4px 24px rgba(245,158,11,0.15), inset 0 1px 0 rgba(255,255,255,0.05)`
+          : '0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04)',
+        willChange: 'transform',
+      }}
+      onMouseEnter={(e) => {
+        if (selected) return;
+        const el = e.currentTarget;
+        el.style.transform = 'translateY(-3px)';
+        el.style.borderColor = cardGlow.border;
+        el.style.boxShadow = `0 16px 48px rgba(0,0,0,0.45), 0 0 0 1px ${cardGlow.border}, ${cardGlow.glow} 0px 0px 50px, inset 0 1px 0 rgba(255,255,255,0.06)`;
+      }}
+      onMouseLeave={(e) => {
+        if (selected) return;
+        const el = e.currentTarget;
+        el.style.transform = '';
+        el.style.borderColor = 'rgba(255,255,255,0.07)';
+        el.style.boxShadow = '0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04)';
+      }}
     >
-      <div className="p-5 pb-4 flex-1">
+      {/* Top shimmer line — color keyed to funding stage */}
+      <div
+        className="absolute inset-x-0 top-0 h-px pointer-events-none z-10"
+        style={{ background: `linear-gradient(90deg, transparent, ${cardGlow.shimmer}, transparent)` }}
+      />
+      {/* Ambient glow orb — blooms on hover */}
+      <div
+        className="absolute -top-16 left-1/2 -translate-x-1/2 w-40 h-40 rounded-full pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-3xl"
+        style={{ background: cardGlow.glow }}
+      />
+      <div className="p-5 pb-4 flex-1 relative z-10">
         <div className="flex items-start gap-3 mb-3">
           <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-base font-black flex-none ${avatarColor(startup.name)}`}>
             {startup.name[0].toUpperCase()}
@@ -1199,20 +1264,20 @@ function StartupCard({
               <span className="text-xs text-slate-400 font-medium">{startup.industry}</span>
             )}
           </div>
-          {roundType && roundStyle && (
-            <span className={`flex-none text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${roundStyle}`}>{roundType}</span>
+          {roundType && (
+            <span className={`flex-none text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${ROUND_STYLE_CARD[roundType] ?? ROUND_STYLE_CARD["Other"]}`}>{roundType}</span>
           )}
         </div>
         {startup.description && (
           <p className="text-xs text-slate-400 leading-relaxed line-clamp-2 mb-4">{startup.description}</p>
         )}
         <div className="grid grid-cols-2 gap-2 mb-4">
-          <div className="bg-[#091422] rounded-[10px] px-3 py-2">
-            <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Valuation</div>
+          <div className="rounded-[10px] px-3 py-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div className="text-[9px] font-bold text-slate-600 uppercase tracking-wider mb-0.5">Valuation</div>
             <div className="text-sm font-bold text-white">{fmt(latestRound?.valuation)}</div>
           </div>
-          <div className="bg-[#091422] rounded-[10px] px-3 py-2">
-            <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Raised</div>
+          <div className="rounded-[10px] px-3 py-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div className="text-[9px] font-bold text-slate-600 uppercase tracking-wider mb-0.5">Raised</div>
             <div className="text-sm font-bold text-white">{fmt(totalRaised(startup)) || "—"}</div>
           </div>
         </div>
@@ -1224,7 +1289,7 @@ function StartupCard({
         {startup.founders && startup.founders.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {startup.founders.slice(0, 3).map((f, i) => (
-              <span key={i} className="flex items-center gap-1 bg-[#091422] border border-[#1a2a3f] text-[10px] font-semibold text-slate-300 px-2 py-1 rounded-full">
+              <span key={i} className="flex items-center gap-1 text-[10px] font-semibold text-slate-400 px-2 py-1 rounded-full" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
                 <div className="w-3.5 h-3.5 rounded-full bg-amber-900/60 flex items-center justify-center text-[8px] font-black text-amber-400">
                   {f[0].toUpperCase()}
                 </div>
@@ -1238,7 +1303,7 @@ function StartupCard({
         )}
       </div>
       {/* Footer — website + checkbox */}
-      <div className="px-5 py-3 border-t border-[#1a2a3f] flex items-center justify-between gap-2">
+      <div className="px-5 py-3 flex items-center justify-between gap-2 relative z-10" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
         {startup.website ? (
           <div className="flex items-center gap-1.5 min-w-0">
             <Globe className="w-3 h-3 text-slate-600 flex-none" />
