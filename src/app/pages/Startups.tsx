@@ -12,7 +12,7 @@ import {
   TrendingUp, TrendingDown, Minus,
   UserRound, LayoutGrid, List, ExternalLink,
   ChevronDown, ChevronLeft, ChevronRight, Building2, CheckSquare, Square,
-  GitCompare, Clock, Briefcase, Zap, Info, Activity,
+  GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2,
 } from "lucide-react";
 import {
   fetchStartups, ingestStartup, fetchAlphaScore,
@@ -818,6 +818,226 @@ function ScoreBadge({ startupId }: { startupId: string }) {
   );
 }
 
+// ── Talent & Growth Intelligence ─────────────────────────────────────────────
+
+function buildHeadcountHistory(
+  current: number,
+  trend: string | null,
+  foundedYear: number | null,
+): Array<{ year: string; headcount: number }> {
+  const rates: Record<string, number> = {
+    "rapid growth": 0.35, "moderate growth": 0.20,
+    "stable": 0.04, "reduction": -0.15, "unknown": 0.12,
+  };
+  const rate  = rates[trend ?? "unknown"] ?? 0.12;
+  const now   = new Date().getFullYear();
+  const start = foundedYear ? Math.max(foundedYear, now - 4) : now - 4;
+  const n     = now - start;
+  const pts: Array<{ year: string; headcount: number }> = [];
+  for (let i = n; i >= 0; i--) {
+    pts.push({ year: String(now - i), headcount: Math.max(1, Math.round(current / Math.pow(1 + rate, i))) });
+  }
+  return pts;
+}
+
+const OPEN_POS_RATIO: Record<string, number> = {
+  "rapid growth": 0.14, "moderate growth": 0.08, "stable": 0.03, "reduction": 0.01,
+};
+
+interface HiringHype { label: string; style: string; text: string; }
+
+function getHiringHype(current: number, openPos: number, trend: string | null): HiringHype {
+  const ratio = current > 0 ? openPos / current : 0;
+  if (trend === "rapid growth" || ratio >= 0.12)
+    return { label: "🔥 High Growth Hype", style: "bg-rose-500/10 text-rose-300 border border-rose-500/20", text: "Aggressively scaling headcount signals strong product-market fit and significant upcoming capacity expansion." };
+  if (trend === "moderate growth" || ratio >= 0.06)
+    return { label: "🟢 Steady Hiring", style: "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20", text: "Disciplined team growth indicates healthy pipeline execution and capital-efficient scaling." };
+  if (trend === "stable" || ratio >= 0.02)
+    return { label: "📊 Selective Hiring", style: "bg-blue-500/10 text-blue-300 border border-blue-500/20", text: "Hiring activity is selective and targeted — likely filling critical roles rather than broad expansion." };
+  if (trend === "reduction")
+    return { label: "⚠️ Flat / Freeze", style: "bg-amber-500/10 text-amber-300 border border-amber-500/20", text: "Headcount contraction detected — may indicate cost optimisation, restructuring, or market adjustment." };
+  return { label: "📊 Monitoring", style: "bg-slate-500/10 text-slate-300 border border-slate-500/20", text: "Insufficient hiring signal data — check back after the next enrichment cycle." };
+}
+
+function TalentGrowthCard({ startup }: { startup: Startup }) {
+  const count    = startup.employee_count ?? 0;
+  const trend    = startup.growth_trend ?? null;
+  const history  = buildHeadcountHistory(count, trend, startup.founded_year ?? null);
+  const openPos  = Math.max(1, Math.round(count * (OPEN_POS_RATIO[trend ?? ""] ?? 0.05)));
+  const hype     = getHiringHype(count, openPos, trend);
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-3">
+        <Users className="w-4 h-4 text-slate-500" />
+        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Talent &amp; Growth Intelligence</h3>
+      </div>
+      <div className="bg-[#091422] border border-[#1a2a3f] rounded-[14px] p-5 space-y-4">
+        {/* Stat row */}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-2xl font-black text-white leading-none">
+              {count ? fmtEmp(count) : "—"}
+            </div>
+            <div className="text-[10px] text-slate-500 mt-1">employees (estimated)</div>
+          </div>
+          <div className="flex flex-col items-end gap-2">
+            <GrowthTrendBadge trend={trend} />
+            <div className="flex items-center gap-1.5 bg-[#0a1830] border border-[#1a2a3f] rounded-lg px-2.5 py-1.5">
+              <Briefcase className="w-3 h-3 text-[#22d3ee]" />
+              <span className="text-[10px] font-bold text-white">{openPos}</span>
+              <span className="text-[10px] text-slate-500">open positions</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Headcount chart */}
+        {history.length >= 2 && (
+          <div className="h-28">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={history} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="hcGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.25} />
+                    <stop offset="100%" stopColor="#22d3ee" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                <XAxis dataKey="year" tick={{ fill: "#475569", fontSize: 9 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "#475569", fontSize: 9 }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtEmp(v)} />
+                <ReTooltip
+                  contentStyle={{ background: "#0b1626", border: "1px solid #1a2a3f", borderRadius: 8, fontSize: 11 }}
+                  labelStyle={{ color: "#94a3b8" }}
+                  itemStyle={{ color: "#22d3ee" }}
+                />
+                <Area type="monotone" dataKey="headcount" stroke="#22d3ee" strokeWidth={1.5} fill="url(#hcGrad)" dot={false} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {/* Hiring hype badge + analysis */}
+        <div className={`flex flex-col gap-1.5 rounded-[10px] p-3 ${hype.style}`}>
+          <span className="text-[11px] font-bold">{hype.label}</span>
+          <p className="text-[10px] leading-relaxed opacity-80">{hype.text}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Peer Comparison Matrix ────────────────────────────────────────────────────
+
+function PeerComparisonMatrix({
+  startup, peers, onNavigate,
+}: {
+  startup: Startup;
+  peers: Array<{ startup: Startup; score: number }>;
+  onNavigate: (s: Startup) => void;
+}) {
+  const rows = peers.slice(0, 3);
+
+  const trendIcon = (trend: string | null) => {
+    if (trend === "rapid growth" || trend === "moderate growth") return <TrendingUp className="w-3 h-3 text-emerald-400" />;
+    if (trend === "reduction") return <TrendingDown className="w-3 h-3 text-rose-400" />;
+    return <Minus className="w-3 h-3 text-slate-500" />;
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-3">
+        <Building2 className="w-4 h-4 text-slate-500" />
+        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Peer Comparison Matrix</h3>
+        <span className="ml-1 text-[9px] text-slate-600 bg-[#0a1830] border border-[#1a2a3f] px-2 py-0.5 rounded-full">
+          ≥ {PEER_THRESHOLD}% match
+        </span>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="flex items-center gap-2 bg-[#091422] border border-[#1a2a3f] rounded-[12px] px-4 py-3">
+          <Building2 className="w-3.5 h-3.5 text-slate-600 flex-none" />
+          <p className="text-xs text-slate-600 italic">
+            No close peers found — no companies met the {PEER_THRESHOLD}% similarity threshold.
+          </p>
+        </div>
+      ) : (
+        <div className="bg-[#091422] border border-[#1a2a3f] rounded-[14px] overflow-hidden">
+          {/* Header */}
+          <div className="grid grid-cols-[1fr_80px_72px_72px_64px] gap-2 px-4 py-2.5 border-b border-[#1a2a3f]">
+            {["Company", "Sector", "Stage", "Raised", "Growth"].map((h) => (
+              <span key={h} className="text-[9px] font-bold text-slate-600 uppercase tracking-widest">{h}</span>
+            ))}
+          </div>
+
+          {/* Subject row (amber highlight) */}
+          {(() => {
+            const pr = startup.funding_rounds?.[0];
+            const { sub } = classifyIndustry(startup.industry);
+            return (
+              <div className="grid grid-cols-[1fr_80px_72px_72px_64px] gap-2 px-4 py-3 bg-amber-500/5 border-b border-amber-500/10">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black flex-none ${avatarColor(startup.name)}`}>
+                    {startup.name[0].toUpperCase()}
+                  </div>
+                  <span className="text-xs font-bold text-[#F59E0B] truncate">{startup.name}</span>
+                  <span className="text-[8px] text-amber-600/70 bg-amber-500/10 px-1.5 py-0.5 rounded-full font-bold flex-none">YOU</span>
+                </div>
+                <span className="text-[10px] text-slate-300 truncate self-center">{sub}</span>
+                <div className="self-center">
+                  {pr?.round_type && (
+                    <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${ROUND_STYLE[pr.round_type] ?? ROUND_STYLE["Other"]}`}>
+                      {pr.round_type}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] font-bold text-white self-center">{fmt(totalRaised(startup))}</span>
+                <div className="self-center flex items-center gap-1">
+                  {trendIcon(startup.growth_trend)}
+                  <span className="text-[9px] text-slate-400 capitalize">{startup.growth_trend ?? "—"}</span>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Peer rows */}
+          {rows.map(({ startup: peer, score }) => {
+            const pr = peer.funding_rounds?.[0];
+            const { sub } = classifyIndustry(peer.industry);
+            return (
+              <button
+                key={peer.id}
+                onClick={() => onNavigate(peer)}
+                className="w-full grid grid-cols-[1fr_80px_72px_72px_64px] gap-2 px-4 py-3 border-b border-[#1a2a3f] last:border-b-0 hover:bg-white/[0.02] transition-colors text-left group"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black flex-none ${avatarColor(peer.name)}`}>
+                    {peer.name[0].toUpperCase()}
+                  </div>
+                  <span className="text-xs font-semibold text-white group-hover:text-[#F59E0B] transition-colors truncate">{peer.name}</span>
+                  <span className="text-[8px] text-slate-600 bg-[#0a1830] border border-[#1a2a3f] px-1.5 py-0.5 rounded-full font-bold flex-none">{score}%</span>
+                </div>
+                <span className="text-[10px] text-slate-400 truncate self-center">{sub}</span>
+                <div className="self-center">
+                  {pr?.round_type && (
+                    <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${ROUND_STYLE[pr.round_type] ?? ROUND_STYLE["Other"]}`}>
+                      {pr.round_type}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] font-bold text-white self-center">{fmt(totalRaised(peer))}</span>
+                <div className="self-center flex items-center gap-1">
+                  {trendIcon(peer.growth_trend)}
+                  <span className="text-[9px] text-slate-500 capitalize">{peer.growth_trend ?? "—"}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Tearsheet Modal ───────────────────────────────────────────────────────────
 
 function TearsheetModal({
@@ -892,19 +1112,23 @@ function TearsheetModal({
           )}
 
           {/* Key metrics */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
             {[
-              { icon: DollarSign, label: "Total Raised", value: fmt(totalRaised(startup)) },
-              { icon: TrendingUp, label: "Valuation",    value: fmt(latestRound?.valuation) },
-              { icon: Users,      label: "Employees",    value: fmtEmp(startup.employee_count) },
-              { icon: Calendar,   label: "Founded",      value: startup.founded_year ? String(startup.founded_year) : "—" },
-            ].map(({ icon: Icon, label, value }) => (
-              <div key={label} className="bg-[#091422] rounded-[14px] p-4 flex flex-col gap-2 border border-[#1a2a3f]">
+              { icon: DollarSign, label: "Total Raised", value: fmt(totalRaised(startup)), muted: false },
+              { icon: TrendingUp, label: "Valuation",    value: fmt(latestRound?.valuation), muted: false },
+              { icon: Users,      label: "Employees",    value: fmtEmp(startup.employee_count), muted: false },
+              { icon: Calendar,   label: "Founded",      value: startup.founded_year ? String(startup.founded_year) : "—", muted: false },
+              { icon: BarChart2,  label: "Est. Revenue", value: "Pending", muted: true },
+            ].map(({ icon: Icon, label, value, muted }) => (
+              <div
+                key={label}
+                className={`rounded-[14px] p-4 flex flex-col gap-2 border ${muted ? "bg-[#091422]/50 border-[#1a2a3f]/60 border-dashed" : "bg-[#091422] border-[#1a2a3f]"}`}
+              >
                 <div className="flex items-center gap-1.5">
-                  <Icon className="w-3.5 h-3.5 text-[#F59E0B]" />
-                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{label}</span>
+                  <Icon className={`w-3.5 h-3.5 ${muted ? "text-slate-600" : "text-[#F59E0B]"}`} />
+                  <span className={`text-[9px] font-bold uppercase tracking-wider ${muted ? "text-slate-600" : "text-slate-500"}`}>{label}</span>
                 </div>
-                <span className="text-sm font-bold text-white">{value}</span>
+                <span className={`text-sm font-bold ${muted ? "text-slate-600 italic" : "text-white"}`}>{value}</span>
               </div>
             ))}
           </div>
@@ -976,23 +1200,9 @@ function TearsheetModal({
             </div>
           )}
 
-          {/* Headcount */}
+          {/* Talent & Growth Intelligence */}
           {(startup.employee_count || startup.growth_trend) && (
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <Users className="w-4 h-4 text-slate-500" />
-                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Headcount</h3>
-              </div>
-              <div className="bg-[#091422] border border-[#1a2a3f] rounded-[14px] p-4 flex items-center justify-between gap-4">
-                <div>
-                  <div className="text-2xl font-black text-white leading-none">
-                    {startup.employee_count ? fmtEmp(startup.employee_count) : "—"}
-                  </div>
-                  <div className="text-[10px] text-slate-500 mt-1">employees (estimated)</div>
-                </div>
-                <GrowthTrendBadge trend={startup.growth_trend} />
-              </div>
-            </div>
+            <TalentGrowthCard startup={startup} />
           )}
 
           {/* Leadership */}
@@ -1040,58 +1250,8 @@ function TearsheetModal({
             </div>
           )}
 
-          {/* Similar Companies — always render, show explicit empty state */}
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <Building2 className="w-4 h-4 text-slate-500" />
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Similar Companies</h3>
-              <span className="ml-1 text-[9px] text-slate-600 bg-[#0a1830] border border-[#1a2a3f] px-2 py-0.5 rounded-full">
-                ≥ {PEER_THRESHOLD}% match
-              </span>
-            </div>
-            {peers.length === 0 ? (
-              <div className="flex items-center gap-2 bg-[#091422] border border-[#1a2a3f] rounded-[12px] px-4 py-3">
-                <Building2 className="w-3.5 h-3.5 text-slate-600 flex-none" />
-                <p className="text-xs text-slate-600 italic">
-                  No close peers found — no companies met the {PEER_THRESHOLD}% similarity threshold.
-                </p>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {peers.map(({ startup: peer, score }) => {
-                  const pr = peer.funding_rounds?.[0];
-                  return (
-                    <button
-                      key={peer.id}
-                      onClick={() => onNavigate(peer)}
-                      className="flex items-center gap-3 bg-[#091422] border border-[#1a2a3f] hover:border-[#243858] rounded-[14px] px-4 py-3 text-left transition-colors group"
-                    >
-                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm font-black flex-none ${avatarColor(peer.name)}`}>
-                        {peer.name[0].toUpperCase()}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-bold text-white group-hover:text-[#F59E0B] transition-colors truncate">{peer.name}</div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">
-                          {[peer.industry, [peer.city, peer.country].filter(Boolean).join(", ")].filter(Boolean).join(" · ")}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 flex-none">
-                        <span className="text-[9px] font-bold text-slate-600 bg-[#0a1830] border border-[#1a2a3f] px-1.5 py-0.5 rounded-full">
-                          {score}%
-                        </span>
-                        {pr?.round_type && (
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${ROUND_STYLE[pr.round_type] ?? ROUND_STYLE["Other"]}`}>
-                            {pr.round_type}
-                          </span>
-                        )}
-                        <ExternalLink className="w-3.5 h-3.5 text-slate-600 group-hover:text-slate-400 transition-colors" />
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          {/* Peer Comparison Matrix */}
+          <PeerComparisonMatrix startup={startup} peers={peers} onNavigate={onNavigate} />
 
           {startup.website && (
             <a href={startup.website} target="_blank" rel="noopener noreferrer"
