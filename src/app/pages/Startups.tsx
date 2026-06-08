@@ -15,8 +15,8 @@ import {
   GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2,
 } from "lucide-react";
 import {
-  fetchStartups, ingestStartup, fetchAlphaScore,
-  type Startup, type FundingRound, type RoundType, type AlphaScore,
+  fetchStartups, ingestStartup, fetchAlphaScore, fetchHeadcountHistory,
+  type Startup, type FundingRound, type RoundType, type AlphaScore, type HeadcountPoint,
 } from "../../lib/supabase";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -859,12 +859,46 @@ function getHiringHype(current: number, openPos: number, trend: string | null): 
   return { label: "📊 Monitoring", style: "bg-slate-500/10 text-slate-300 border border-slate-500/20", text: "Insufficient hiring signal data — check back after the next enrichment cycle." };
 }
 
+// Maps real HeadcountPoint rows → chart-friendly shape, choosing label precision
+// based on the overall time span so x-axis labels never look crowded.
+function realHistoryToChartPoints(
+  points: HeadcountPoint[],
+): Array<{ year: string; headcount: number }> {
+  if (points.length === 0) return [];
+  const first = new Date(points[0].snapshot_date);
+  const last  = new Date(points[points.length - 1].snapshot_date);
+  const spanYears = (last.getTime() - first.getTime()) / (1000 * 60 * 60 * 24 * 365);
+  return points.map((p) => {
+    const d = new Date(p.snapshot_date);
+    const label = spanYears >= 2
+      ? String(d.getFullYear())
+      : d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+    return { year: label, headcount: p.headcount };
+  });
+}
+
 function TalentGrowthCard({ startup }: { startup: Startup }) {
-  const count    = startup.employee_count ?? 0;
-  const trend    = startup.growth_trend ?? null;
-  const history  = buildHeadcountHistory(count, trend, startup.founded_year ?? null);
-  const openPos  = Math.max(1, Math.round(count * (OPEN_POS_RATIO[trend ?? ""] ?? 0.05)));
-  const hype     = getHiringHype(count, openPos, trend);
+  const count = startup.employee_count ?? 0;
+  const trend = startup.growth_trend ?? null;
+  const openPos = Math.max(1, Math.round(count * (OPEN_POS_RATIO[trend ?? ""] ?? 0.05)));
+  const hype    = getHiringHype(count, openPos, trend);
+
+  // Real history from DB; falls back to simulated curve while table is accumulating data
+  const [realPts, setRealPts] = useState<HeadcountPoint[] | null>(null);
+  useEffect(() => {
+    fetchHeadcountHistory(startup.id)
+      .then(setRealPts)
+      .catch(() => setRealPts([]));
+  }, [startup.id]);
+
+  const chartData: Array<{ year: string; headcount: number }> = (() => {
+    if (realPts !== null && realPts.length >= 2) {
+      return realHistoryToChartPoints(realPts);
+    }
+    return buildHeadcountHistory(count, trend, startup.founded_year ?? null);
+  })();
+
+  const isReal = realPts !== null && realPts.length >= 2;
 
   return (
     <div>
@@ -891,11 +925,21 @@ function TalentGrowthCard({ startup }: { startup: Startup }) {
           </div>
         </div>
 
-        {/* Headcount chart */}
-        {history.length >= 2 && (
+        {/* Headcount chart — real data when available, simulated curve as fallback */}
+        {chartData.length >= 2 && (
           <div className="h-28">
+            {/* Source label */}
+            <div className="flex justify-end mb-1">
+              <span className={`text-[8px] font-semibold px-1.5 py-0.5 rounded-full border ${
+                isReal
+                  ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                  : "text-slate-600 bg-slate-700/20 border-slate-700/30"
+              }`}>
+                {isReal ? "Live data" : "Simulated"}
+              </span>
+            </div>
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={history} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
+              <AreaChart data={chartData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="hcGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.25} />

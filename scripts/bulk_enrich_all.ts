@@ -649,6 +649,28 @@ async function patchStartupProfile(
   return { fieldsPatched: Object.keys(patch).length };
 }
 
+// ── Headcount history snapshot ────────────────────────────────────────────────
+// Upserts one row per company per calendar day. Subsequent runs on the same day
+// update the headcount value (latest wins), so re-runs are always safe.
+async function recordHeadcountSnapshot(startupId: string, headcount: number): Promise<void> {
+  if (DRY_RUN) {
+    console.log(`    [DRY] Would upsert headcount_history: ${headcount}`);
+    return;
+  }
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const { error } = await supabase
+    .from("headcount_history")
+    .upsert(
+      { company_id: startupId, headcount, snapshot_date: today },
+      { onConflict: "company_id,snapshot_date" },
+    );
+  if (error) {
+    console.warn(`    ⚠️  headcount_history snapshot failed: ${error.message}`);
+  } else {
+    console.log(`    📈  headcount_history: ${headcount.toLocaleString()} recorded for ${today}`);
+  }
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
   const startedAt = new Date().toISOString();
@@ -803,6 +825,11 @@ async function main() {
 
         const profileResult = await patchStartupProfile(row, result);
         fieldsPatched  = profileResult.fieldsPatched;
+
+        // Persist headcount snapshot whenever a headcount value was obtained
+        if (result.metrics.headcount != null) {
+          await recordHeadcountSnapshot(row.id, result.metrics.headcount);
+        }
 
         const roundResult = await insertNewRounds(
           row.id, result.funding_rounds, rounds, result.source_url || undefined,

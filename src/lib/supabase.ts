@@ -88,6 +88,21 @@ export interface AlphaScore {
   reason?: string;
 }
 
+export interface HeadcountPoint {
+  snapshot_date: string;
+  headcount: number;
+}
+
+export async function fetchHeadcountHistory(companyId: string): Promise<HeadcountPoint[]> {
+  const { data, error } = await supabase
+    .from("headcount_history")
+    .select("snapshot_date, headcount")
+    .eq("company_id", companyId)
+    .order("snapshot_date", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as HeadcountPoint[];
+}
+
 export async function fetchAlphaScore(startupId: string): Promise<AlphaScore | null> {
   const { data, error } = await supabase.rpc('calculate_alphamap_score', { p_startup_id: startupId });
   if (error) throw error;
