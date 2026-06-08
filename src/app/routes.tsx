@@ -5,6 +5,7 @@ import { Startups } from "./pages/Startups";
 import { Stocks } from "./pages/Stocks";
 import { IPOs } from "./pages/IPOs";
 import { VCs } from "./pages/VCs";
+import { Deals } from "./pages/Deals";
 
 export const router = createBrowserRouter([
   { path: "/",          Component: LandingPage },
@@ -12,6 +13,7 @@ export const router = createBrowserRouter([
   { path: "/markets",   Component: Dashboard },  // legacy alias
   { path: "/vcs",       Component: VCs },
   { path: "/startups",  Component: Startups },
+  { path: "/deals",     Component: Deals },
   { path: "/stocks",    Component: Stocks },
   { path: "/ipos",      Component: IPOs },
 ]);
