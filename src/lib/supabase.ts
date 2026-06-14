@@ -11,14 +11,22 @@ export type RoundType =
   | "Growth" | "Bridge" | "Convertible Note"
   | "Bootstrapped" | "Grant" | "Acquired" | "Other";
 
+export type GrowthTrend =
+  | "rapid growth" | "moderate growth" | "stable" | "reduction" | "unknown";
+
+export interface Leader { name: string; role: string }
+
 export interface FundingRound {
   id: string;
   startup_id: string;
   round_type: RoundType | null;
   amount_raised: number | null;
   valuation: number | null;
+  is_valuation_estimated: boolean | null;
   announcement_date: string | null;
   source_url: string | null;
+  lead_investor: string | null;
+  investors: string[] | null;
   created_at: string;
 }
 
@@ -30,12 +38,13 @@ export interface Startup {
   industry: string | null;
   founded_year: number | null;
   employee_count: number | null;
+  growth_trend: GrowthTrend | null;
+  leadership: Leader[] | null;
   country: string | null;
   city: string | null;
   founders: string[] | null;
   created_at: string;
   updated_at: string;
-  // joined via Supabase foreign table syntax
   funding_rounds: FundingRound[];
 }
 
@@ -46,6 +55,89 @@ export async function fetchStartups(): Promise<Startup[]> {
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []) as Startup[];
+}
+
+export interface AlphaScorePillar {
+  label: string;
+  weight: number;
+  score: number | null;
+  valid: boolean;
+  detail: {
+    value_creation_x?: number;
+    burn_proxy_k?: number;
+    hc_growth_pct?: number;
+    serial_founder?: boolean;
+    investor_tier?: number | null;
+    follow_on?: boolean;
+  };
+}
+
+export interface AlphaScore {
+  score: number;
+  tier: 'A' | 'B' | 'C';
+  confidence: 'high' | 'medium' | 'low' | 'none';
+  base_score: number;
+  macro_adj_pct: number;
+  sector_id?: string;
+  pillars: {
+    capital_efficiency: AlphaScorePillar;
+    talent_velocity: AlphaScorePillar;
+    ecosystem_signal: AlphaScorePillar;
+  };
+  error?: string;
+  reason?: string;
+}
+
+export interface HeadcountPoint {
+  snapshot_date: string;
+  headcount: number;
+}
+
+export async function fetchHeadcountHistory(companyId: string): Promise<HeadcountPoint[]> {
+  const { data, error } = await supabase
+    .from("headcount_history")
+    .select("snapshot_date, headcount")
+    .eq("company_id", companyId)
+    .order("snapshot_date", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as HeadcountPoint[];
+}
+
+export async function fetchAlphaScore(startupId: string): Promise<AlphaScore | null> {
+  const { data, error } = await supabase.rpc('calculate_alphamap_score', { p_startup_id: startupId });
+  if (error) throw error;
+  return data as AlphaScore | null;
+}
+
+// ── Deals ─────────────────────────────────────────────────────────────────────
+// Maps 1-to-1 with the `deals` table schema.
+// deal_type examples: 'Series A', 'Form D (Equity)', 'M&A'
+
+export interface DealRow {
+  id: string;
+  company_name: string;
+  startup_id: string | null;
+  deal_date: string;             // ISO date "YYYY-MM-DD"
+  amount_raised: number | null;
+  target_amount: number | null;
+  deal_type: string;
+  investors: string[] | null;
+  source_url: string | null;
+  sector: string | null;
+  country: string | null;
+  valuation: number | null;
+  is_valuation_estimated: boolean;
+  created_at: string;
+}
+
+export async function fetchDeals(limit = 200): Promise<DealRow[]> {
+  const { data, error } = await supabase
+    .from("deals")
+    .select("*")
+    .order("deal_date", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as DealRow[];
 }
 
 export async function ingestStartup(companyName: string): Promise<{ startup: Startup; funding_round: FundingRound | null }> {
@@ -62,7 +154,6 @@ export async function ingestStartup(companyName: string): Promise<{ startup: Sta
   );
   const json = await res.json();
   if (!res.ok) throw new Error(json.error ?? `Request failed (${res.status})`);
-  // Attach empty funding_rounds array so the card renders immediately
   return {
     startup: { ...json.startup, funding_rounds: json.funding_round ? [json.funding_round] : [] },
     funding_round: json.funding_round ?? null,

@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink } from 'react-router';
 import {
   Home, LineChart, Newspaper, Wallet, BellRing,
-  Settings, Rocket, BarChart2, TrendingUp, X,
+  Settings, Rocket, BarChart2, TrendingUp, X, Layers,
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -15,6 +15,7 @@ const linkedItems = [
   { icon: Home,       label: 'Home',     to: '/dashboard', end: true  },
   { icon: LineChart,  label: 'VCs',      to: '/vcs',       end: false },
   { icon: Rocket,     label: 'Startups', to: '/startups',  end: false },
+  { icon: Layers,     label: 'Deals',    to: '/deals',     end: false },
   { icon: TrendingUp, label: 'IPOs',     to: '/ipos',      end: false },
   { icon: BarChart2,  label: 'Stocks',   to: '/stocks',    end: false },
 ];
