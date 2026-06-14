@@ -1,0 +1,89 @@
+name: SEC Form D Deal Ingestion
+
+# Runs automatically every weekday morning (Mon–Fri 08:00 UTC) to ingest the
+# latest Form D filings from SEC EDGAR into the `deals` table.
+#
+# SEC Form D must be filed within 15 days of a private securities offering —
+# catching these early gives TalonAI first-mover intelligence on unannounced
+# funding rounds before they appear on Crunchbase or TechCrunch.
+#
+# Can also be triggered manually with custom parameters via workflow_dispatch.
+#
+# Required secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+# Optional secrets: SEC_USER_AGENT (default: "TalonAI Platform/1.0 data@talonai.com")
+
+on:
+  # Daily automated run — weekdays at 08:00 UTC
+  schedule:
+    - cron: "0 8 * * 1-5"
+
+  # Manual trigger for ad-hoc runs and dry-run verification
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run — parse and log filings without writing to DB"
+        type: boolean
+        default: true
+      count:
+        description: "Number of recent Form D filings to fetch (max 100 per page)"
+        type: number
+        default: 100
+      min_amount:
+        description: "Minimum offering amount in USD (0 = include all)"
+        type: number
+        default: 1000000
+      delay_ms:
+        description: "Milliseconds between SEC EDGAR requests (SEC limit: 10 req/s)"
+        type: number
+        default: 150
+
+jobs:
+  ingest-form-d:
+    name: "Form D Ingest — count=${{ github.event.inputs.count || 100 }} min=${{ github.event.inputs.min_amount || 1000000 }} dry=${{ github.event.inputs.dry_run || false }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Show run parameters
+        run: |
+          echo "════════════════════════════════════════════"
+          echo "  Trigger      = ${{ github.event_name }}"
+          echo "  DRY_RUN      = ${{ github.event.inputs.dry_run || 'false' }}"
+          echo "  COUNT        = ${{ github.event.inputs.count || 100 }}"
+          echo "  MIN_AMOUNT   = ${{ github.event.inputs.min_amount || 1000000 }}"
+          echo "  DELAY_MS     = ${{ github.event.inputs.delay_ms || 150 }}"
+          echo "  SUPABASE_URL = ${{ secrets.SUPABASE_URL != '' && '✓ set' || '✗ MISSING' }}"
+          echo "════════════════════════════════════════════"
+
+      - name: Fetch and ingest SEC Form D filings
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SEC_USER_AGENT:            ${{ secrets.SEC_USER_AGENT || 'TalonAI Platform/1.0 data@talonai.com' }}
+          # Scheduled runs always write; manual runs respect the dry_run input
+          DRY_RUN:    ${{ github.event_name == 'schedule' && 'false' || github.event.inputs.dry_run || 'false' }}
+          COUNT:      ${{ github.event.inputs.count    || 100 }}
+          MIN_AMOUNT: ${{ github.event.inputs.min_amount || 1000000 }}
+          DELAY_MS:   ${{ github.event.inputs.delay_ms || 150 }}
+        run: npx tsx scripts/fetch_sec_deals.ts
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "════════════════════════════════════════════"
+          echo "  Job status: ${{ job.status }}"
+          echo "  Run at:     $(date -u '+%Y-%m-%d %H:%M UTC')"
+          echo "  View deals: https://zoesoyvctyjpufyqtcxf.supabase.co"
+          echo "════════════════════════════════════════════"
