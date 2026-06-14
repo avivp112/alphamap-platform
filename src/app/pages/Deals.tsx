@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   DollarSign, TrendingUp, Zap, Search, X,
   ChevronUp, ChevronDown, Activity, Calendar,
-  SlidersHorizontal, Layers, Building2, Info,
+  SlidersHorizontal, Layers, Building2, Info, Database,
 } from "lucide-react";
 import { Layout } from "../components/Layout";
+import { fetchDeals, type DealRow } from "../../lib/supabase";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 // Supabase-ready: swap DUMMY_DEALS for a fetchDeals() call against the `deals`
@@ -13,7 +14,9 @@ import { Layout } from "../components/Layout";
 export type DealType =
   | "Pre-Seed" | "Seed"
   | "Series A" | "Series B" | "Series C" | "Series D" | "Series E+"
-  | "Growth" | "Bridge" | "M&A" | "Acquisition" | "Grant" | "Other";
+  | "Growth" | "Bridge" | "M&A" | "Acquisition" | "Grant"
+  | "Form D" | "Form D (Equity)" | "Form D (Debt)"
+  | "Other";
 
 export interface Deal {
   id: string;
@@ -129,8 +132,12 @@ const DEAL_TYPE_CONFIG: Record<string, { bg: string; text: string; border: strin
   "M&A":        { bg: 'rgba(6,182,212,0.10)',  text: '#67e8f9', border: 'rgba(34,211,238,0.30)',   shadow: '0 0 12px rgba(34,211,238,0.22)' },
   "Acquisition":{ bg: 'rgba(6,182,212,0.10)',  text: '#67e8f9', border: 'rgba(34,211,238,0.30)',   shadow: '0 0 12px rgba(34,211,238,0.22)' },
   "Bridge":     { bg: 'rgba(2,132,199,0.10)',  text: '#7dd3fc', border: 'rgba(14,165,233,0.30)',   shadow: '0 0 10px rgba(14,165,233,0.18)' },
-  "Grant":      { bg: 'rgba(101,163,13,0.10)', text: '#bef264', border: 'rgba(132,204,22,0.30)',   shadow: '0 0 10px rgba(132,204,22,0.18)' },
-  "Other":      { bg: 'rgba(71,85,105,0.10)',  text: '#94a3b8', border: 'rgba(100,116,139,0.30)',  shadow: 'none' },
+  "Grant":           { bg: 'rgba(101,163,13,0.10)', text: '#bef264', border: 'rgba(132,204,22,0.30)',   shadow: '0 0 10px rgba(132,204,22,0.18)' },
+  "Other":           { bg: 'rgba(71,85,105,0.10)',  text: '#94a3b8', border: 'rgba(100,116,139,0.30)',  shadow: 'none' },
+  // SEC Form D — amber glow signals exclusive regulatory / unannounced deal data
+  "Form D":          { bg: 'rgba(245,158,11,0.11)', text: '#fde68a', border: 'rgba(245,158,11,0.38)', shadow: '0 0 14px rgba(245,158,11,0.24)' },
+  "Form D (Equity)": { bg: 'rgba(245,158,11,0.11)', text: '#fde68a', border: 'rgba(245,158,11,0.38)', shadow: '0 0 14px rgba(245,158,11,0.24)' },
+  "Form D (Debt)":   { bg: 'rgba(251,146,60,0.11)', text: '#fdba74', border: 'rgba(251,146,60,0.38)', shadow: '0 0 14px rgba(251,146,60,0.24)' },
 };
 
 const SECTOR_CONFIG: Record<string, { bg: string; text: string; border: string }> = {
@@ -180,7 +187,30 @@ function companyAvatar(name: string): { bg: string; fg: string; initials: string
 }
 
 function getSector(s: string) { return SECTOR_CONFIG[s] ?? SECTOR_CONFIG.default; }
-function getDealType(t: string) { return DEAL_TYPE_CONFIG[t] ?? DEAL_TYPE_CONFIG.Other; }
+// Form D variants share the amber style; all other types fall back to "Other"
+function getDealType(t: string) {
+  if (t.startsWith("Form D")) return DEAL_TYPE_CONFIG["Form D (Equity)"];
+  return DEAL_TYPE_CONFIG[t] ?? DEAL_TYPE_CONFIG.Other;
+}
+
+// ── DB → UI mapper ────────────────────────────────────────────────────────────
+function rowToDeal(row: DealRow): Deal {
+  return {
+    id:                   row.id,
+    date:                 row.deal_date,
+    company_name:         row.company_name,
+    company_id:           row.startup_id,
+    sector:               row.sector ?? "Other",
+    deal_type:            row.deal_type as DealType,
+    deal_size:            row.amount_raised,
+    lead_investors:       row.investors ?? [],
+    valuation:            row.valuation,
+    is_valuation_estimated: row.is_valuation_estimated ?? false,
+    source_url:           row.source_url,
+    country:              row.country,
+    notes:                null,
+  };
+}
 
 // ── Micro-components ──────────────────────────────────────────────────────────
 
@@ -300,7 +330,7 @@ function ColHeader({
 // ── All deal types for filter chips ──────────────────────────────────────────
 
 const FILTER_TYPES: Array<DealType | "All"> = [
-  "All", "Seed", "Series A", "Series B", "Series C", "Series D", "Growth", "M&A",
+  "All", "Seed", "Series A", "Series B", "Series C", "Series D", "Growth", "M&A", "Form D",
 ];
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
@@ -311,17 +341,37 @@ export function Deals() {
   const [sortCol,         setSortCol]         = useState<SortCol>("date");
   const [sortDir,         setSortDir]         = useState<SortDir>("desc");
 
+  // ── Real data from Supabase ────────────────────────────────────────────────
+  const [dbRows,   setDbRows]   = useState<DealRow[] | null>(null); // null = loading
+  const [dbError,  setDbError]  = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchDeals()
+      .then(rows => setDbRows(rows))
+      .catch(err  => { setDbError(String(err?.message ?? err)); setDbRows([]); });
+  }, []);
+
+  // Real data when available, mock fallback when table is empty or unreachable
+  const allDeals: Deal[] = useMemo(() => {
+    if (dbRows === null)        return DUMMY_DEALS; // still loading — show mock
+    if (dbRows.length === 0)   return DUMMY_DEALS; // empty table — show mock
+    return dbRows.map(rowToDeal);
+  }, [dbRows]);
+
+  const isLive    = dbRows !== null && dbRows.length > 0;
+  const isLoading = dbRows === null;
+
   // ── HUD metrics (always from full dataset) ─────────────────────────────────
   const metrics = useMemo(() => {
-    const total    = DUMMY_DEALS.reduce((s, d) => s + (d.deal_size ?? 0), 0);
-    const largest  = DUMMY_DEALS.reduce<Deal | null>(
+    const total    = allDeals.reduce((s, d) => s + (d.deal_size ?? 0), 0);
+    const largest  = allDeals.reduce<Deal | null>(
       (mx, d) => (!mx || (d.deal_size ?? 0) > (mx.deal_size ?? 0)) ? d : mx, null
     );
     const sectorCount: Record<string, number> = {};
-    for (const d of DUMMY_DEALS) sectorCount[d.sector] = (sectorCount[d.sector] ?? 0) + 1;
+    for (const d of allDeals) sectorCount[d.sector] = (sectorCount[d.sector] ?? 0) + 1;
     const [topSector, topSectorN] = Object.entries(sectorCount).sort((a, b) => b[1] - a[1])[0];
     const now   = new Date();
-    const mtd   = DUMMY_DEALS.filter(d => {
+    const mtd   = allDeals.filter(d => {
       const dd = new Date(d.date);
       return dd.getFullYear() === now.getFullYear() && dd.getMonth() === now.getMonth();
     });
@@ -331,7 +381,7 @@ export function Deals() {
 
   // ── Filtered + sorted deals ────────────────────────────────────────────────
   const filtered = useMemo<Deal[]>(() => {
-    let out = [...DUMMY_DEALS];
+    let out = [...allDeals];
     if (search.trim()) {
       const q = search.toLowerCase();
       out = out.filter(d => d.company_name.toLowerCase().includes(q) || d.sector.toLowerCase().includes(q));
@@ -384,11 +434,11 @@ export function Deals() {
                 className="text-[10px] font-semibold px-2.5 py-1 rounded-full"
                 style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.18)', color: '#fcd34d' }}
               >
-                {DUMMY_DEALS.length} deals tracked
+                {allDeals.length} deals tracked
               </span>
               <span className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-500">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                Live
+                <span className={`w-1.5 h-1.5 rounded-full ${isLive ? "bg-emerald-400 animate-pulse" : "bg-amber-400"}`} />
+                {isLoading ? "Loading…" : isLive ? "Live" : "Demo"}
               </span>
             </div>
           </div>
@@ -402,6 +452,33 @@ export function Deals() {
       <div className="bg-[#F3F4F6] min-h-screen">
         <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-5">
 
+          {/* ── Data source banner ── */}
+          {!isLoading && !isLive && (
+            <div
+              className="flex items-center gap-2.5 px-4 py-2.5 rounded-[12px]"
+              style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.14)' }}
+            >
+              <Database className="w-3.5 h-3.5 text-amber-500 flex-none" />
+              <p className="text-[11px] text-amber-400/80">
+                <span className="font-bold text-amber-400">Demo data</span> — run{" "}
+                <code className="text-amber-300 bg-amber-500/10 px-1 rounded text-[10px]">DRY_RUN=false npx tsx scripts/fetch_sec_deals.ts</code>{" "}
+                to populate the <code className="text-amber-300 bg-amber-500/10 px-1 rounded text-[10px]">deals</code> table with live SEC Form D filings.
+                {dbError && <span className="ml-2 text-rose-400">({dbError})</span>}
+              </p>
+            </div>
+          )}
+          {isLive && (
+            <div
+              className="flex items-center gap-2 px-4 py-2 rounded-[10px]"
+              style={{ background: 'rgba(52,211,153,0.05)', border: '1px solid rgba(52,211,153,0.12)' }}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse flex-none" />
+              <p className="text-[11px] text-emerald-400/80">
+                Live data — {allDeals.filter(d => d.deal_type.startsWith("Form D")).length} SEC Form D filing{allDeals.filter(d => d.deal_type.startsWith("Form D")).length !== 1 ? "s" : ""} · {allDeals.length} total deals from Supabase
+              </p>
+            </div>
+          )}
+
           {/* ── HUD Metrics ── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <HudCard
@@ -409,7 +486,7 @@ export function Deals() {
               icon={DollarSign}
               label="Total Capital Tracked"
               value={fmtAmount(metrics.total)}
-              sub={`${DUMMY_DEALS.length} deals · all time`}
+              sub={`${allDeals.length} deals · all time`}
             />
             <HudCard
               accent="#F59E0B"
@@ -462,7 +539,7 @@ export function Deals() {
                   className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
                   style={{ background: 'rgba(255,255,255,0.06)', color: '#64748b' }}
                 >
-                  {filtered.length} / {DUMMY_DEALS.length}
+                  {filtered.length} / {allDeals.length}
                 </span>
                 {activeFilters > 0 && (
                   <button
@@ -639,7 +716,7 @@ export function Deals() {
               <div className="flex items-center gap-2">
                 <span className="text-[10px] text-slate-600">
                   Showing <span className="text-slate-400 font-semibold">{filtered.length}</span> of{" "}
-                  <span className="text-slate-400 font-semibold">{DUMMY_DEALS.length}</span> deals
+                  <span className="text-slate-400 font-semibold">{allDeals.length}</span> deals
                 </span>
               </div>
               <div className="flex items-center gap-2">

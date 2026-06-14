@@ -109,6 +109,37 @@ export async function fetchAlphaScore(startupId: string): Promise<AlphaScore | n
   return data as AlphaScore | null;
 }
 
+// ── Deals ─────────────────────────────────────────────────────────────────────
+// Maps 1-to-1 with the `deals` table schema.
+// deal_type examples: 'Series A', 'Form D (Equity)', 'M&A'
+
+export interface DealRow {
+  id: string;
+  company_name: string;
+  startup_id: string | null;
+  deal_date: string;             // ISO date "YYYY-MM-DD"
+  amount_raised: number | null;
+  target_amount: number | null;
+  deal_type: string;
+  investors: string[] | null;
+  source_url: string | null;
+  sector: string | null;
+  country: string | null;
+  valuation: number | null;
+  is_valuation_estimated: boolean;
+  created_at: string;
+}
+
+export async function fetchDeals(limit = 200): Promise<DealRow[]> {
+  const { data, error } = await supabase
+    .from("deals")
+    .select("*")
+    .order("deal_date", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as DealRow[];
+}
+
 export async function ingestStartup(companyName: string): Promise<{ startup: Startup; funding_round: FundingRound | null }> {
   const res = await fetch(
     `${supabaseUrl}/functions/v1/ingest-startup`,
