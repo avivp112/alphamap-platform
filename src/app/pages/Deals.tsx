@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { Layout } from "../components/Layout";
 import { fetchDeals, type DealRow } from "../../lib/supabase";
+import { DealModal } from "../components/DealModal";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 // Supabase-ready: swap DUMMY_DEALS for a fetchDeals() call against the `deals`
@@ -340,6 +341,7 @@ export function Deals() {
   const [dealTypeFilter,  setDealTypeFilter]  = useState<DealType | null>(null);
   const [sortCol,         setSortCol]         = useState<SortCol>("date");
   const [sortDir,         setSortDir]         = useState<SortDir>("desc");
+  const [selectedDeal,    setSelectedDeal]    = useState<Deal | null>(null);
 
   // ── Real data from Supabase ────────────────────────────────────────────────
   const [dbRows,   setDbRows]   = useState<DealRow[] | null>(null); // null = loading
@@ -627,12 +629,13 @@ export function Deals() {
                   return (
                     <div
                       key={deal.id}
-                      className="grid px-5 py-3.5 gap-4 cursor-default transition-colors duration-100"
+                      className="grid px-5 py-3.5 gap-4 cursor-pointer transition-colors duration-100"
                       style={{
                         gridTemplateColumns: '88px 1fr 124px 108px 1fr 160px',
                         borderBottom: isLast ? 'none' : '1px solid rgba(255,255,255,0.04)',
                       }}
-                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.025)')}
+                      onClick={() => setSelectedDeal(deal)}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.035)')}
                       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                     >
                       {/* Date */}
@@ -718,6 +721,7 @@ export function Deals() {
                   Showing <span className="text-slate-400 font-semibold">{filtered.length}</span> of{" "}
                   <span className="text-slate-400 font-semibold">{allDeals.length}</span> deals
                 </span>
+                <span className="text-[9px] text-slate-700">· Click any row to open Deal Intelligence</span>
               </div>
               <div className="flex items-center gap-2">
                 <span
@@ -747,6 +751,15 @@ export function Deals() {
 
         </div>
       </div>
+
+      {/* ── Deal Intelligence Modal ── */}
+      {selectedDeal && (
+        <DealModal
+          deal={selectedDeal}
+          allDeals={allDeals}
+          onClose={() => setSelectedDeal(null)}
+        />
+      )}
     </Layout>
   );
 }
