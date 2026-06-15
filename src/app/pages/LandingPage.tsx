@@ -1,133 +1,283 @@
-import React from 'react';
-import { HeroMap } from '../components/HeroMap';
-import { Network, Brain, Map } from 'lucide-react';
-import { useNavigate } from 'react-router';
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { HeroMap } from "../components/HeroMap";
+import { Network, Brain, Map, ChevronDown } from "lucide-react";
+import { useNavigate } from "react-router";
+
+// ── Timing ─────────────────────────────────────────────────────────────────────
+// Adjust GRAPH_APPEAR_TIME to the exact second in your video when the financial
+// graphs start expanding across the screen.  The headline will fade in at that
+// precise moment.  Set to 0 to reveal text immediately.
+const GRAPH_APPEAR_TIME = 3.2; // seconds
+const FALLBACK_DELAY_MS = 6000; // show text anyway if autoplay is blocked
 
 export function LandingPage() {
-  const navigate = useNavigate();
+  const navigate    = useNavigate();
+  const videoRef    = useRef<HTMLVideoElement>(null);
+  const [textVisible, setTextVisible] = useState(false);
+  const [scrolled,    setScrolled]    = useState(false);
+
+  // Header: switch from glass-over-dark to opaque-light after hero scrolls past
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > window.innerHeight * 0.8);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Fallback reveal (autoplay blocked, video slow to load, etc.)
+  useEffect(() => {
+    const t = setTimeout(() => setTextVisible(true), FALLBACK_DELAY_MS);
+    return () => clearTimeout(t);
+  }, []);
+
+  // Precise sync: reveal exactly when video reaches the graph expansion moment
+  const handleTimeUpdate = useCallback(() => {
+    if (!textVisible && videoRef.current && videoRef.current.currentTime >= GRAPH_APPEAR_TIME) {
+      setTextVisible(true);
+    }
+  }, [textVisible]);
+
+  // Staggered fade-up: each element gets its own delay offset
+  function tx(delayMs: number): React.CSSProperties {
+    return {
+      opacity:    textVisible ? 1 : 0,
+      transform:  textVisible ? "translateY(0)" : "translateY(28px)",
+      transition: `opacity 1100ms ease-out ${delayMs}ms, transform 1100ms ease-out ${delayMs}ms`,
+    };
+  }
 
   return (
-    <div className="min-h-screen bg-[#F3F4F6] font-sans overflow-x-hidden selection:bg-[#F59E0B]/10 selection:text-[#111827]">
-      
-      {/* Header */}
-      <header className="absolute top-0 left-0 right-0 z-50 flex h-24 w-full items-center justify-between px-6 lg:px-12">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#0F172A] shadow-sm">
-            <svg 
-              viewBox="0 0 24 24" 
-              fill="none" 
-              stroke="#FFFFFF" 
-              strokeWidth="2.5" 
-              strokeLinecap="round" 
-              strokeLinejoin="round" 
-              className="w-[18px] h-[18px]"
-            >
-              {/* Continuous Alpha Symbol Flowing into Upward Arrow */}
+    <div className="min-h-screen bg-[#F3F4F6] font-sans overflow-x-hidden selection:bg-amber-400/10">
+
+      {/* ── Fixed header ─────────────────────────────────────────────────────── */}
+      <header
+        className="fixed top-0 left-0 right-0 z-50 flex h-20 w-full items-center justify-between px-6 lg:px-12"
+        style={{
+          background:    scrolled ? "rgba(255,255,255,0.94)" : "transparent",
+          backdropFilter:scrolled ? "blur(14px)"             : "none",
+          borderBottom:  scrolled ? "1px solid rgba(0,0,0,0.07)" : "none",
+          boxShadow:     scrolled ? "0 2px 20px rgba(0,0,0,0.06)" : "none",
+          transition:    "background 400ms ease, backdrop-filter 400ms ease, border-color 400ms ease, box-shadow 400ms ease",
+        }}
+      >
+        {/* Logo */}
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg"
+            style={{ background: "#0F172A", boxShadow: scrolled ? "none" : "0 0 0 1px rgba(255,255,255,0.12)" }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5"
+              strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
               <path d="M15 8 C12 8 9 12 7 15 A4 4 0 1 1 8 8 C11 8 14 13 16 16 C17.5 18 19 12 20 6" />
               <polyline points="15 6 20 6 20 11" />
             </svg>
           </div>
-          <span className="text-xl font-bold tracking-tight text-[#0F172A]">
+          <span
+            className="text-xl font-bold tracking-tight"
+            style={{ color: scrolled ? "#0F172A" : "#ffffff", transition: "color 400ms ease" }}
+          >
             AlphaMap
           </span>
         </div>
-        <div className="flex items-center gap-6">
-          <button className="text-sm font-medium text-gray-500 hover:text-[#111827] transition-colors">Log In</button>
-          <button 
-            onClick={() => navigate('/dashboard')}
-            className="rounded-full bg-white border border-gray-200 px-5 py-2.5 text-sm font-medium text-[#111827] shadow-sm hover:shadow-md transition-all duration-200"
+
+        {/* Nav */}
+        <div className="flex items-center gap-5">
+          <button
+            className="text-sm font-medium transition-colors duration-300"
+            style={{ color: scrolled ? "#6b7280" : "rgba(255,255,255,0.60)" }}
+            onMouseEnter={e => (e.currentTarget.style.color = scrolled ? "#111827" : "#fff")}
+            onMouseLeave={e => (e.currentTarget.style.color = scrolled ? "#6b7280" : "rgba(255,255,255,0.60)")}
+          >
+            Log In
+          </button>
+          <button
+            onClick={() => navigate("/dashboard")}
+            className="rounded-full px-5 py-2.5 text-sm font-semibold transition-all duration-300"
+            style={scrolled ? {
+              background: "#fff", border: "1px solid rgba(0,0,0,0.11)",
+              color: "#111827", boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
+            } : {
+              background: "rgba(255,255,255,0.11)", border: "1px solid rgba(255,255,255,0.22)", color: "#fff",
+            }}
+            onMouseEnter={e => { if (!scrolled) e.currentTarget.style.background = "rgba(255,255,255,0.20)"; }}
+            onMouseLeave={e => { if (!scrolled) e.currentTarget.style.background = "rgba(255,255,255,0.11)"; }}
           >
             View Dashboard
           </button>
         </div>
       </header>
 
-      {/* 1. Hero Section (Centered) */}
-      <section className="pt-36 lg:pt-48 pb-12 px-6 lg:px-12 w-full max-w-[1200px] mx-auto text-center relative z-10">
-        <h1 
-          className="text-4xl sm:text-5xl md:text-6xl lg:text-[4.5rem] text-[#111827] font-medium tracking-tight mb-8 drop-shadow-sm mx-auto max-w-5xl"
-          style={{ 
-            fontFamily: "'Playfair Display', serif", 
-            lineHeight: "1.15"
+      {/* ── Full-screen video hero ────────────────────────────────────────────── */}
+      <section
+        className="relative w-full overflow-hidden"
+        style={{ height: "100svh", minHeight: "640px" }}
+      >
+        {/* Background video — muted + playsInline required for autoplay on all browsers */}
+        <video
+          ref={videoRef}
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="auto"
+          onTimeUpdate={handleTimeUpdate}
+          className="absolute inset-0 w-full h-full object-cover"
+          src="/hero-bg.mp4"
+        />
+
+        {/* Cinematic overlay system
+            Layer 1: uniform base darkening
+            Layer 2: vignette (darker edges, bright centre draws focus to text)
+            Layer 3: top / bottom gradients for header and scroll-indicator legibility */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: [
+              "rgba(4,10,22,0.30)",                                                                     // base
+              "radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 25%, rgba(0,0,0,0.48) 100%)",         // vignette
+              "linear-gradient(to bottom, rgba(4,10,22,0.55) 0%, rgba(0,0,0,0) 18%, rgba(0,0,0,0) 55%, rgba(4,10,22,0.75) 100%)", // top + bottom
+            ].join(", "),
           }}
+        />
+
+        {/* Hero content — all elements use tx() for staggered sync with video */}
+        <div className="relative z-10 flex h-full flex-col items-center justify-center px-6 text-center">
+
+          {/* Eyebrow tag */}
+          <div style={tx(0)} className="mb-7">
+            <span
+              className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[11px] font-bold tracking-[0.18em] uppercase"
+              style={{
+                background: "rgba(245,158,11,0.14)",
+                border: "1px solid rgba(245,158,11,0.28)",
+                color: "#fcd34d",
+              }}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse flex-none" />
+              Private Market Intelligence
+            </span>
+          </div>
+
+          {/* Headline — Playfair Display to match existing landing page font */}
+          <h1
+            style={{
+              ...tx(160),
+              fontFamily: "'Playfair Display', serif",
+              lineHeight: "1.07",
+              textShadow: "0 2px 32px rgba(0,0,0,0.40), 0 1px 3px rgba(0,0,0,0.20)",
+            }}
+            className="text-[2.6rem] sm:text-5xl md:text-[3.8rem] lg:text-[5.2rem] font-medium text-white tracking-tight max-w-5xl mx-auto"
+          >
+            Bridging the Gap between
+            <br className="hidden sm:block" />
+            {" "}Private Innovation
+            <br className="hidden sm:block" />
+            {" "}and Public Markets
+          </h1>
+
+          {/* Sub-headline */}
+          <p
+            style={tx(360)}
+            className="mt-7 text-[1.05rem] md:text-xl text-white/62 max-w-2xl mx-auto leading-relaxed font-medium"
+          >
+            The first platform that integrates Stocks, VC, Startup, and Hedge Fund
+            data into a single, unified intelligence layer.
+          </p>
+
+          {/* CTAs */}
+          <div style={tx(560)} className="mt-11 flex flex-col sm:flex-row items-center gap-4">
+            <button
+              onClick={() => navigate("/dashboard")}
+              className="rounded-full px-9 py-4 text-[15px] font-semibold text-white"
+              style={{ background: "#F59E0B", boxShadow: "0 4px 22px rgba(245,158,11,0.48)", transition: "transform 200ms ease, box-shadow 200ms ease" }}
+              onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 10px 30px rgba(245,158,11,0.52)"; }}
+              onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 4px 22px rgba(245,158,11,0.48)"; }}
+            >
+              Explore the Platform
+            </button>
+            <button
+              className="rounded-full px-9 py-4 text-[15px] font-semibold text-white"
+              style={{ background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.26)", transition: "background 200ms ease" }}
+              onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.18)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.10)")}
+            >
+              Request Early Access
+            </button>
+          </div>
+        </div>
+
+        {/* Scroll indicator — staggered last */}
+        <div
+          style={tx(900)}
+          className="absolute bottom-9 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 pointer-events-none"
         >
-          Bridging the Gap between Private Innovation and Public Markets
-        </h1>
-        
-        <p className="text-lg md:text-xl text-gray-500 leading-relaxed max-w-3xl mx-auto font-sans font-medium">
-          The first platform that integrates Stocks, VC, Startup, and Hedge Fund data into a single, unified intelligence layer.
-        </p>
+          <span className="text-[9px] font-semibold tracking-[0.32em] text-white/30 uppercase">Scroll</span>
+          <ChevronDown className="w-4 h-4 text-white/25 animate-bounce" />
+        </div>
       </section>
 
-      {/* 2. Interactive Pulse (Centered Map) */}
-      <section className="relative w-full max-w-[1400px] mx-auto mb-20 px-4 flex justify-center">
+      {/* ── Interactive pulse map ────────────────────────────────────────────── */}
+      <section className="relative w-full max-w-[1400px] mx-auto mb-20 px-4 flex justify-center pt-20">
         <div className="w-full lg:w-4/5">
           <HeroMap onHubClick={(city) => navigate(`/startups?city=${encodeURIComponent(city)}`)} />
         </div>
       </section>
 
-      {/* 3. Data Proof Points (Centered Row) */}
+      {/* ── Data proof points ───────────────────────────────────────────────── */}
       <section className="w-full max-w-[1200px] mx-auto px-6 lg:px-12 mb-32">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
           {[
-            { label: '+10M Startups Tracked', value: '+10M' },
-            { label: '+5k VC Funds Monitored', value: '+5k' },
-            { label: '+2M Public Stocks', value: '+2M' },
-            { label: '+1k Hedge Fund Profiles', value: '+1k' },
-          ].map((point, i) => (
-            <div 
-              key={i} 
+            { label: "Startups Tracked",     value: "+10M" },
+            { label: "VC Funds Monitored",   value: "+5k"  },
+            { label: "Public Stocks",         value: "+2M"  },
+            { label: "Hedge Fund Profiles",   value: "+1k"  },
+          ].map((point) => (
+            <div
+              key={point.label}
               className="bg-white rounded-[24px] p-8 shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-gray-100 flex flex-col items-center justify-center text-center transition-transform hover:-translate-y-1 duration-300"
             >
-              <span className="text-4xl md:text-[2.5rem] font-bold text-[#111827] mb-2 font-sans tracking-tight">{point.value}</span>
-              <span className="text-sm font-medium text-gray-500 font-sans">{point.label.replace(point.value, '').trim()}</span>
+              <span className="text-4xl md:text-[2.5rem] font-bold text-[#111827] mb-2 tracking-tight">{point.value}</span>
+              <span className="text-sm font-medium text-gray-500">{point.label}</span>
             </div>
           ))}
         </div>
       </section>
 
-      {/* 4. Core Intelligence Features (Centered Grid) */}
+      {/* ── Feature cards ───────────────────────────────────────────────────── */}
       <section className="w-full max-w-[1200px] mx-auto px-6 lg:px-12 mb-32">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
-          {/* Card 1 */}
-          <div className="bg-white rounded-[24px] p-8 md:p-10 shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-gray-100 flex flex-col items-center text-center transition-all hover:shadow-[0_12px_40px_rgba(0,0,0,0.06)]">
-            <div className="h-14 w-14 rounded-2xl bg-amber-50 flex items-center justify-center text-[#F59E0B] mb-8">
-              <Network className="w-6 h-6" />
+          {[
+            {
+              icon: Network,
+              title: "Cross-Market Correlation",
+              body:  "Discover hidden links between private funding rounds and public stock movements.",
+            },
+            {
+              icon: Brain,
+              title: "AI-Powered Narratives",
+              body:  "Translate raw data into clear, actionable intelligence and business stories.",
+            },
+            {
+              icon: Map,
+              title: "Capital Flow Visualization",
+              body:  "Track where leading investors are moving their money across private and public sectors.",
+            },
+          ].map(({ icon: Icon, title, body }) => (
+            <div
+              key={title}
+              className="bg-white rounded-[24px] p-8 md:p-10 shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-gray-100 flex flex-col items-center text-center transition-all hover:shadow-[0_12px_40px_rgba(0,0,0,0.06)]"
+            >
+              <div className="h-14 w-14 rounded-2xl bg-amber-50 flex items-center justify-center text-[#F59E0B] mb-8">
+                <Icon className="w-6 h-6" />
+              </div>
+              <h3 className="text-xl font-bold text-[#111827] mb-4">{title}</h3>
+              <p className="text-gray-500 leading-relaxed font-medium">{body}</p>
             </div>
-            <h3 className="text-xl font-bold text-[#111827] mb-4 font-sans">Cross-Market Correlation</h3>
-            <p className="text-gray-500 leading-relaxed font-medium font-sans">
-              Discover hidden links between private funding rounds and public stock movements.
-            </p>
-          </div>
-
-          {/* Card 2 */}
-          <div className="bg-white rounded-[24px] p-8 md:p-10 shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-gray-100 flex flex-col items-center text-center transition-all hover:shadow-[0_12px_40px_rgba(0,0,0,0.06)]">
-            <div className="h-14 w-14 rounded-2xl bg-amber-50 flex items-center justify-center text-[#F59E0B] mb-8">
-              <Brain className="w-6 h-6" />
-            </div>
-            <h3 className="text-xl font-bold text-[#111827] mb-4 font-sans">AI-Powered Narratives</h3>
-            <p className="text-gray-500 leading-relaxed font-medium font-sans">
-              Translate raw data into clear, actionable intelligence and business stories.
-            </p>
-          </div>
-
-          {/* Card 3 */}
-          <div className="bg-white rounded-[24px] p-8 md:p-10 shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-gray-100 flex flex-col items-center text-center transition-all hover:shadow-[0_12px_40px_rgba(0,0,0,0.06)]">
-            <div className="h-14 w-14 rounded-2xl bg-amber-50 flex items-center justify-center text-[#F59E0B] mb-8">
-              <Map className="w-6 h-6" />
-            </div>
-            <h3 className="text-xl font-bold text-[#111827] mb-4 font-sans">Capital Flow Visualization</h3>
-            <p className="text-gray-500 leading-relaxed font-medium font-sans">
-              Track where leading investors are moving their money across private and public sectors.
-            </p>
-          </div>
+          ))}
         </div>
       </section>
 
-      {/* 5. Final CTA (Centered) */}
+      {/* ── Final CTA ────────────────────────────────────────────────────────── */}
       <section className="w-full max-w-[1000px] mx-auto px-6 lg:px-12 pb-32 pt-16">
         <div className="bg-white rounded-[32px] p-12 md:p-24 shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-gray-100 flex flex-col items-center text-center">
-          <h2 
+          <h2
             className="text-4xl md:text-5xl text-[#111827] font-medium tracking-tight mb-8"
             style={{ fontFamily: "'Playfair Display', serif", lineHeight: "1.2" }}
           >
