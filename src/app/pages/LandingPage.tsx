@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { HeroMap } from "../components/HeroMap";
 import { Network, Brain, Map, ChevronDown } from "lucide-react";
 import { useNavigate } from "react-router";
 
@@ -119,7 +118,7 @@ export function LandingPage() {
           preload="auto"
           onTimeUpdate={handleTimeUpdate}
           className="absolute inset-0 w-full h-full object-cover"
-          src="/hero-bg.mp4"
+          src="/hero-bg-clean.mp4"
         />
 
         {/* Cinematic overlay system
@@ -172,17 +171,8 @@ export function LandingPage() {
             {" "}and Public Markets
           </h1>
 
-          {/* Sub-headline */}
-          <p
-            style={tx(360)}
-            className="mt-7 text-[1.05rem] md:text-xl text-white/62 max-w-2xl mx-auto leading-relaxed font-medium"
-          >
-            The first platform that integrates Stocks, VC, Startup, and Hedge Fund
-            data into a single, unified intelligence layer.
-          </p>
-
           {/* CTAs */}
-          <div style={tx(560)} className="mt-11 flex flex-col sm:flex-row items-center gap-4">
+          <div style={tx(360)} className="mt-11 flex flex-col sm:flex-row items-center gap-4">
             <button
               onClick={() => navigate("/dashboard")}
               className="rounded-full px-9 py-4 text-[15px] font-semibold text-white"
@@ -205,7 +195,7 @@ export function LandingPage() {
 
         {/* Scroll indicator — staggered last */}
         <div
-          style={tx(900)}
+          style={tx(700)}
           className="absolute bottom-9 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 pointer-events-none"
         >
           <span className="text-[9px] font-semibold tracking-[0.32em] text-white/30 uppercase">Scroll</span>
@@ -213,11 +203,19 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* ── Interactive pulse map ────────────────────────────────────────────── */}
-      <section className="relative w-full max-w-[1400px] mx-auto mb-20 px-4 flex justify-center pt-20">
-        <div className="w-full lg:w-4/5">
-          <HeroMap onHubClick={(city) => navigate(`/startups?city=${encodeURIComponent(city)}`)} />
+      {/* ── Caption ──────────────────────────────────────────────────────────── */}
+      <section className="w-full max-w-[820px] mx-auto px-6 lg:px-12 pt-20 pb-16 text-center">
+        <div className="flex justify-center mb-7">
+          <div className="h-px w-16" style={{ background: "linear-gradient(90deg, transparent, #F59E0B, transparent)" }} />
         </div>
+        <p
+          className="text-xl md:text-2xl leading-relaxed font-medium"
+          style={{ color: "#374151", fontFamily: "'Playfair Display', serif", lineHeight: "1.6" }}
+        >
+          The first platform that integrates{" "}
+          <span style={{ color: "#111827", fontWeight: 600 }}>Stocks, VC, Startup, and Hedge Fund data</span>{" "}
+          into a single, unified intelligence layer.
+        </p>
       </section>
 
       {/* ── Data proof points ───────────────────────────────────────────────── */}
