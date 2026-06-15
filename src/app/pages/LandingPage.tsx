@@ -136,21 +136,7 @@ export function LandingPage() {
           }}
         />
 
-        {/* Hero content — single CTA centred over video */}
-        <div className="relative z-10 flex h-full flex-col items-center justify-center px-6 text-center">
-          <div style={tx(0)}>
-            <button
-              className="rounded-full px-9 py-4 text-[15px] font-semibold text-white"
-              style={{ background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.26)", transition: "background 200ms ease" }}
-              onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.18)")}
-              onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.10)")}
-            >
-              Request Early Access
-            </button>
-          </div>
-        </div>
-
-        {/* Scroll indicator — staggered last */}
+        {/* Scroll indicator */}
         <div
           style={tx(700)}
           className="absolute bottom-9 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 pointer-events-none"
@@ -161,13 +147,13 @@ export function LandingPage() {
       </section>
 
       {/* ── Caption ──────────────────────────────────────────────────────────── */}
-      <section className="w-full max-w-[820px] mx-auto px-6 lg:px-12 pt-20 pb-16 text-center">
+      <section className="w-full max-w-[1100px] mx-auto px-6 lg:px-12 pt-20 pb-16 text-center">
         <div className="flex justify-center mb-10">
           <div className="h-px w-16" style={{ background: "linear-gradient(90deg, transparent, #F59E0B, transparent)" }} />
         </div>
         <h1
-          className="text-[2.4rem] sm:text-5xl md:text-[3.6rem] font-medium text-[#111827] tracking-tight mb-8"
-          style={{ fontFamily: "'Playfair Display', serif", lineHeight: "1.1" }}
+          className="text-[3.2rem] sm:text-6xl md:text-[5rem] lg:text-[6rem] font-medium text-[#111827] tracking-tight mb-8"
+          style={{ fontFamily: "'Playfair Display', serif", lineHeight: "1.05" }}
         >
           Bridging the Gap between
           <br className="hidden sm:block" />
@@ -196,10 +182,11 @@ export function LandingPage() {
           ].map((point) => (
             <div
               key={point.label}
-              className="bg-white rounded-[24px] p-8 shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-gray-100 flex flex-col items-center justify-center text-center transition-transform hover:-translate-y-1 duration-300"
+              className="rounded-[24px] p-8 flex flex-col items-center justify-center text-center transition-transform hover:-translate-y-1 duration-300"
+              style={{ background: "#0F172A", boxShadow: "0 8px 30px rgba(0,0,0,0.18)" }}
             >
-              <span className="text-4xl md:text-[2.5rem] font-bold text-[#111827] mb-2 tracking-tight">{point.value}</span>
-              <span className="text-sm font-medium text-gray-500">{point.label}</span>
+              <span className="text-4xl md:text-[2.5rem] font-bold text-white mb-2 tracking-tight">{point.value}</span>
+              <span className="text-sm font-medium text-slate-400">{point.label}</span>
             </div>
           ))}
         </div>
