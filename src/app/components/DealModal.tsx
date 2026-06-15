@@ -1,7 +1,7 @@
 import React, { useEffect, useCallback } from "react";
 import {
   X, Info, Users, Zap, Clock, TrendingUp, Shield,
-  AlertTriangle, Layers, PieChart, Building2,
+  AlertTriangle, Layers, PieChart, Building2, CheckCircle,
 } from "lucide-react";
 import type { Deal } from "../pages/Deals";
 
@@ -644,6 +644,21 @@ export function DealModal({ deal, allDeals, onClose }: Props) {
                 style={{ background: cfg.bg, color: cfg.text, border: `1px solid ${cfg.border}`, boxShadow: cfg.shadow }}>
                 {deal.deal_type}
               </span>
+              {deal.company_id && (
+                <span
+                  className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
+                  style={{
+                    background: "rgba(52,211,153,0.09)",
+                    color: "#34d399",
+                    border: "1px solid rgba(52,211,153,0.22)",
+                    boxShadow: "0 0 10px rgba(52,211,153,0.12)",
+                  }}
+                  title="SEC legal name automatically matched to a startup in the AlphaMap database via entity resolution"
+                >
+                  <CheckCircle className="w-3 h-3" />
+                  Verified Entity
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-slate-500">
               <span>{fmtDateFull(deal.date)}</span>

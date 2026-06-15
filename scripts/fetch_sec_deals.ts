@@ -76,6 +76,26 @@ const US_STATE_CODES = new Set([
   "TX","UT","VT","VA","WA","WV","WI","WY","DC","PR","VI","GU","AS","MP",
 ]);
 
+// ── Entity name normalizer ────────────────────────────────────────────────────
+// Strips common legal-entity suffixes then removes all non-alphanumeric chars
+// so that "Acme Technologies, Inc." and "ACME TECHNOLOGIES INC" both resolve
+// to the same key "acmetechnologies" for fuzzy Map lookups.
+
+const SUFFIX_PAT =
+  /[,.\s]+(limited\s+liability\s+company|limited\s+partnership|incorporated|corporation|holdings?|company|limited|l\.l\.c\.?|l\.p\.?|llc|corp|inc|ltd|plc|lp|co)\.?\s*$/;
+
+export function normalizeCompanyName(name: string): string {
+  let n = name.toLowerCase().trim();
+  // Iteratively strip trailing suffixes — handles "Corp., Inc." in two passes
+  let prev = "";
+  while (n !== prev) {
+    prev = n;
+    n = n.replace(SUFFIX_PAT, "").trim();
+  }
+  // Collapse all non-alphanumeric characters (spaces, hyphens, punctuation)
+  return n.replace(/[^a-z0-9]/g, "");
+}
+
 // ── EDGAR industry group → platform sector ────────────────────────────────────
 const INDUSTRY_TO_SECTOR: Record<string, string> = {
   "Software":                     "SaaS",
@@ -262,11 +282,16 @@ function filingIndexUrl(accessionNumber: string): string {
 }
 
 // ── Startup name → id resolution (single prefetch) ───────────────────────────
+// Keys are stored normalized so that "Acme Technologies, Inc." in the DB
+// matches "ACME TECHNOLOGIES INC" coming from an SEC filing.
 
 async function buildStartupIndex(): Promise<Map<string, string>> {
   const { data } = await supabase.from("startups").select("id, name");
   const map = new Map<string, string>();
-  for (const s of data ?? []) map.set(s.name.toLowerCase(), s.id);
+  for (const s of data ?? []) {
+    const key = normalizeCompanyName(s.name);
+    if (key) map.set(key, s.id);
+  }
   return map;
 }
 
@@ -300,7 +325,7 @@ async function main() {
   console.log("─".repeat(64));
 
   // ── 3. Process each entry ─────────────────────────────────────────────────
-  const tally = { inserted: 0, skipped: 0, filtered: 0, error: 0 };
+  const tally = { inserted: 0, skipped: 0, filtered: 0, error: 0, linked: 0 };
 
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
@@ -348,8 +373,10 @@ async function main() {
       continue;
     }
 
-    // Try to link to existing startup
-    const startupId = startupIndex.get(companyName.toLowerCase()) ?? null;
+    // Entity resolution: normalize the SEC legal name and look it up in the
+    // in-memory index (also normalized). e.g. "Acme Technologies, Inc." → "acmetechnologies"
+    const normalizedName = normalizeCompanyName(companyName);
+    const startupId      = startupIndex.get(normalizedName) ?? null;
 
     const deal: DealInsert = {
       company_name:          companyName,
@@ -373,7 +400,10 @@ async function main() {
       : "amount undisclosed";
 
     console.log(`${idx} ${companyName} | ${formD.dealType} | ${amtStr} | ${sector ?? formD.industryGroup ?? "?"} | ${formD.country ?? "?"}`);
-    if (startupId) console.log(`     ✅  Linked → startups.id ${startupId}`);
+    if (startupId) {
+      tally.linked++;
+      console.log(`     🔗  Auto-linked → startups/${startupId}  (key: "${normalizedName}")`);
+    }
 
     if (DRY_RUN) {
       console.log(`     [DRY] Would upsert to deals table.`);
@@ -396,6 +426,7 @@ async function main() {
   // ── 4. Summary ────────────────────────────────────────────────────────────
   console.log("\n" + "─".repeat(64));
   console.log(`  Inserted / updated : ${tally.inserted}`);
+  console.log(`  Auto-linked        : ${tally.linked} / ${tally.inserted} deals matched to startups`);
   console.log(`  Filtered (skipped) : ${tally.filtered}`);
   console.log(`  Errors             : ${tally.error}`);
   console.log(DRY_RUN ? "\n  Re-run with DRY_RUN=false to apply writes." : "\n  ✅  Done.");
