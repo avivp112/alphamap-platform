@@ -136,52 +136,9 @@ export function LandingPage() {
           }}
         />
 
-        {/* Hero content — all elements use tx() for staggered sync with video */}
+        {/* Hero content — single CTA centred over video */}
         <div className="relative z-10 flex h-full flex-col items-center justify-center px-6 text-center">
-
-          {/* Eyebrow tag */}
-          <div style={tx(0)} className="mb-7">
-            <span
-              className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[11px] font-bold tracking-[0.18em] uppercase"
-              style={{
-                background: "rgba(245,158,11,0.14)",
-                border: "1px solid rgba(245,158,11,0.28)",
-                color: "#fcd34d",
-              }}
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse flex-none" />
-              Private Market Intelligence
-            </span>
-          </div>
-
-          {/* Headline — Playfair Display to match existing landing page font */}
-          <h1
-            style={{
-              ...tx(160),
-              fontFamily: "'Playfair Display', serif",
-              lineHeight: "1.07",
-              textShadow: "0 2px 32px rgba(0,0,0,0.40), 0 1px 3px rgba(0,0,0,0.20)",
-            }}
-            className="text-[2.6rem] sm:text-5xl md:text-[3.8rem] lg:text-[5.2rem] font-medium text-white tracking-tight max-w-5xl mx-auto"
-          >
-            Bridging the Gap between
-            <br className="hidden sm:block" />
-            {" "}Private Innovation
-            <br className="hidden sm:block" />
-            {" "}and Public Markets
-          </h1>
-
-          {/* CTAs */}
-          <div style={tx(360)} className="mt-11 flex flex-col sm:flex-row items-center gap-4">
-            <button
-              onClick={() => navigate("/dashboard")}
-              className="rounded-full px-9 py-4 text-[15px] font-semibold text-white"
-              style={{ background: "#F59E0B", boxShadow: "0 4px 22px rgba(245,158,11,0.48)", transition: "transform 200ms ease, box-shadow 200ms ease" }}
-              onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 10px 30px rgba(245,158,11,0.52)"; }}
-              onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 4px 22px rgba(245,158,11,0.48)"; }}
-            >
-              Explore the Platform
-            </button>
+          <div style={tx(0)}>
             <button
               className="rounded-full px-9 py-4 text-[15px] font-semibold text-white"
               style={{ background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.26)", transition: "background 200ms ease" }}
@@ -205,9 +162,19 @@ export function LandingPage() {
 
       {/* ── Caption ──────────────────────────────────────────────────────────── */}
       <section className="w-full max-w-[820px] mx-auto px-6 lg:px-12 pt-20 pb-16 text-center">
-        <div className="flex justify-center mb-7">
+        <div className="flex justify-center mb-10">
           <div className="h-px w-16" style={{ background: "linear-gradient(90deg, transparent, #F59E0B, transparent)" }} />
         </div>
+        <h1
+          className="text-[2.4rem] sm:text-5xl md:text-[3.6rem] font-medium text-[#111827] tracking-tight mb-8"
+          style={{ fontFamily: "'Playfair Display', serif", lineHeight: "1.1" }}
+        >
+          Bridging the Gap between
+          <br className="hidden sm:block" />
+          {" "}Private Innovation
+          <br className="hidden sm:block" />
+          {" "}and Public Markets
+        </h1>
         <p
           className="text-xl md:text-2xl leading-relaxed font-medium"
           style={{ color: "#374151", fontFamily: "'Playfair Display', serif", lineHeight: "1.6" }}
