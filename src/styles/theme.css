@@ -1,5 +1,20 @@
 @custom-variant dark (&:is(.dark *));
 
+@keyframes graphPulse {
+  0%, 100% { opacity: 0;    }
+  50%       { opacity: 1;    }
+}
+
+.graph-pulse {
+  background: linear-gradient(
+    to left,
+    rgba(245, 185, 40, 0.07) 0%,
+    rgba(245, 185, 40, 0.03) 45%,
+    transparent 100%
+  );
+  animation: graphPulse 4s ease-in-out infinite;
+}
+
 :root {
   --font-size: 16px;
   --background: #ffffff;

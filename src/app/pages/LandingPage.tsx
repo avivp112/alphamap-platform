@@ -15,6 +15,7 @@ export function LandingPage() {
   const captionRef  = useRef<HTMLElement>(null);
   const [textVisible, setTextVisible] = useState(false);
   const [scrolled,    setScrolled]    = useState(false);
+  const [videoEnded,  setVideoEnded]  = useState(false);
 
   // Header: switch from glass-over-dark to opaque-light after hero scrolls past
   useEffect(() => {
@@ -117,7 +118,10 @@ export function LandingPage() {
           playsInline
           preload="auto"
           onTimeUpdate={handleTimeUpdate}
-          onEnded={() => setTimeout(() => captionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 3000)}
+          onEnded={() => {
+            setVideoEnded(true);
+            setTimeout(() => captionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 3000);
+          }}
           className="absolute inset-0 w-full h-full object-cover"
           src="/hero-bg2-clean.mp4"
         />
@@ -136,6 +140,14 @@ export function LandingPage() {
             ].join(", "),
           }}
         />
+
+        {/* Subtle living-graph pulse — shown only after the video ends */}
+        {videoEnded && (
+          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            {/* Gentle golden shimmer sweeping across the tablet area (right 60%) */}
+            <div className="absolute top-0 right-0 h-full w-[62%] graph-pulse" />
+          </div>
+        )}
 
         {/* Scroll indicator */}
         <div
