@@ -12,6 +12,7 @@ const FALLBACK_DELAY_MS = 6000; // show text anyway if autoplay is blocked
 export function LandingPage() {
   const navigate    = useNavigate();
   const videoRef    = useRef<HTMLVideoElement>(null);
+  const captionRef  = useRef<HTMLElement>(null);
   const [textVisible, setTextVisible] = useState(false);
   const [scrolled,    setScrolled]    = useState(false);
 
@@ -116,6 +117,7 @@ export function LandingPage() {
           playsInline
           preload="auto"
           onTimeUpdate={handleTimeUpdate}
+          onEnded={() => setTimeout(() => captionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 3000)}
           className="absolute inset-0 w-full h-full object-cover"
           src="/hero-bg2-clean.mp4"
         />
@@ -146,13 +148,13 @@ export function LandingPage() {
       </section>
 
       {/* ── Caption ──────────────────────────────────────────────────────────── */}
-      <section className="w-full max-w-[1100px] mx-auto px-6 lg:px-12 pt-20 pb-16 text-center">
+      <section ref={captionRef} className="w-full max-w-[1100px] mx-auto px-6 lg:px-12 pt-20 pb-16 text-center">
         <div className="flex justify-center mb-10">
           <div className="h-px w-16" style={{ background: "linear-gradient(90deg, transparent, #F59E0B, transparent)" }} />
         </div>
         <h1
-          className="text-[3.2rem] sm:text-6xl md:text-[5rem] lg:text-[6rem] font-medium text-[#111827] tracking-tight mb-8"
-          style={{ fontFamily: "'Playfair Display', serif", lineHeight: "1.05" }}
+          className="text-[2.4rem] sm:text-5xl md:text-[3.8rem] lg:text-[4.6rem] font-medium text-[#111827] tracking-tight mb-8"
+          style={{ fontFamily: "'Playfair Display', serif", lineHeight: "1.1" }}
         >
           Bridging the Gap between
           <br className="hidden sm:block" />
@@ -213,13 +215,15 @@ export function LandingPage() {
           ].map(({ icon: Icon, title, body }) => (
             <div
               key={title}
-              className="bg-white rounded-[24px] p-8 md:p-10 shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-gray-100 flex flex-col items-center text-center transition-all hover:shadow-[0_12px_40px_rgba(0,0,0,0.06)]"
+              className="rounded-[24px] p-8 md:p-10 flex flex-col items-center text-center transition-transform hover:-translate-y-1 duration-300"
+              style={{ background: "#0F172A", boxShadow: "0 8px 30px rgba(0,0,0,0.18)" }}
             >
-              <div className="h-14 w-14 rounded-2xl bg-amber-50 flex items-center justify-center text-[#F59E0B] mb-8">
-                <Icon className="w-6 h-6" />
+              <div className="h-14 w-14 rounded-2xl flex items-center justify-center mb-8"
+                style={{ background: "rgba(245,158,11,0.15)" }}>
+                <Icon className="w-6 h-6" style={{ color: "#F59E0B" }} />
               </div>
-              <h3 className="text-xl font-bold text-[#111827] mb-4">{title}</h3>
-              <p className="text-gray-500 leading-relaxed font-medium">{body}</p>
+              <h3 className="text-xl font-bold text-white mb-4">{title}</h3>
+              <p className="leading-relaxed font-medium" style={{ color: "#94a3b8" }}>{body}</p>
             </div>
           ))}
         </div>
