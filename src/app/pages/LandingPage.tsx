@@ -113,12 +113,11 @@ export function LandingPage() {
           ref={videoRef}
           autoPlay
           muted
-          loop
           playsInline
           preload="auto"
           onTimeUpdate={handleTimeUpdate}
           className="absolute inset-0 w-full h-full object-cover"
-          src="/hero-bg-clean.mp4"
+          src="/hero-bg2-clean.mp4"
         />
 
         {/* Cinematic overlay system
