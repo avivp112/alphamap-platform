@@ -713,19 +713,36 @@ export function VCs() {
 
   const filtered = useMemo<VCFirm[]>(() => {
     let result = [...firms];
-    if (filters.stages.length > 0)
-      result = result.filter((v) => filters.stages.some((s) => v.stages.includes(s)));
-    if (filters.sectors.length > 0)
-      result = result.filter((v) => filters.sectors.some((s) => v.sectors.includes(s)));
-    if (filters.geographies.length > 0)
-      result = result.filter((v) => filters.geographies.some((g) => v.geography.includes(g)));
+
+    // Stage filter — case-insensitive, skip when nothing selected
+    if (filters.stages.length > 0) {
+      const sel = filters.stages.map(s => s.toLowerCase());
+      result = result.filter(v => v.stages.some(s => sel.includes(s.toLowerCase())));
+    }
+
+    // Sector filter — case-insensitive, skip when nothing selected
+    if (filters.sectors.length > 0) {
+      const sel = filters.sectors.map(s => s.toLowerCase());
+      result = result.filter(v => v.sectors.some(s => sel.includes(s.toLowerCase())));
+    }
+
+    // Geography filter — case-insensitive, skip when nothing selected
+    if (filters.geographies.length > 0) {
+      const sel = filters.geographies.map(g => g.toLowerCase());
+      result = result.filter(v => v.geography.some(g => sel.includes(g.toLowerCase())));
+    }
+
+    // Sort — guard against null / NaN so firms are never hidden
     result.sort((a, b) => {
-      const av = (a[sortKey] ?? 0) as number;
-      const bv = (b[sortKey] ?? 0) as number;
-      return sortDir === "desc" ? bv - av : av - bv;
+      const raw = (v: VCFirm) => {
+        const n = v[sortKey] as number | null | undefined;
+        return (n == null || isNaN(n as number)) ? 0 : n;
+      };
+      return sortDir === "desc" ? raw(b) - raw(a) : raw(a) - raw(b);
     });
+
     return result;
-  }, [filters, sortKey, sortDir]);
+  }, [firms, filters, sortKey, sortDir]); // ← `firms` added so memo re-runs after fetch
 
   return (
     <Layout>
