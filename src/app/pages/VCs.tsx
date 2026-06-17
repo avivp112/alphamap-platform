@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { Layout } from "../components/Layout";
 import { fetchInvestors, type InvestorRow } from "../../lib/supabase";
+import { VCModal } from "../components/VCModal";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -32,9 +33,12 @@ interface SectorWeight { sector: string; weight: number }
 export interface VCFirm {
   id: string;
   name: string;
+  slug: string;
   tagline: string;
   description: string;
   aum_millions: number | null;
+  fund_size: string | null;
+  typical_check_size: string | null;
   founded_year: number;
   headquarters: string;
   geography: Geography[];
@@ -81,20 +85,23 @@ function rowToFirm(row: InvestorRow): VCFirm {
   const tagline = firstSentence.length > 60 ? firstSentence.slice(0, 57) + "…" : firstSentence;
 
   return {
-    id:                 row.slug ?? row.id,
-    name:               row.name,
+    id:                  row.slug ?? row.id,
+    name:                row.name,
+    slug:                row.slug,
     tagline,
-    description:        row.description ?? "",
-    aum_millions:       parseAumMillions(row.fund_size),
-    founded_year:       row.founded_year ?? 0,
-    headquarters:       row.headquarters ?? "—",
-    geography:          deriveGeography(row.headquarters),
-    stages:             (row.stages ?? []) as Stage[],
+    description:         row.description ?? "",
+    aum_millions:        parseAumMillions(row.fund_size),
+    fund_size:           row.fund_size,
+    typical_check_size:  row.typical_check_size,
+    founded_year:        row.founded_year ?? 0,
+    headquarters:        row.headquarters ?? "—",
+    geography:           deriveGeography(row.headquarters),
+    stages:              (row.stages ?? []) as Stage[],
     sectors,
-    portfolio_count:    row.portfolio_size ?? 0,
-    recent_investments: Math.max(1, Math.round((row.portfolio_size ?? 50) / 40)),
-    notable_exits:      row.notable_investments ?? [],
-    website:            row.website ?? "#",
+    portfolio_count:     row.portfolio_size ?? 0,
+    recent_investments:  Math.max(1, Math.round((row.portfolio_size ?? 50) / 40)),
+    notable_exits:       row.notable_investments ?? [],
+    website:             row.website ?? "#",
     sector_weights,
   };
 }
@@ -184,12 +191,13 @@ function firmInitials(name: string): string {
 
 // ─── VCCard ────────────────────────────────────────────────────────────────────
 
-function VCCard({ firm }: { firm: VCFirm }) {
+function VCCard({ firm, onClick }: { firm: VCFirm; onClick: () => void }) {
   const accent = getAccent(firm.id);
 
   return (
     <div
-      className="relative group flex flex-col overflow-hidden rounded-[22px] border transition-all duration-300 cursor-default select-none"
+      className="relative group flex flex-col overflow-hidden rounded-[22px] border transition-all duration-300 cursor-pointer select-none"
+      onClick={onClick}
       style={{
         background: 'linear-gradient(145deg, #1a2535 0%, #0c1524 100%)',
         borderColor: 'rgba(255,255,255,0.07)',
@@ -698,6 +706,7 @@ export function VCs() {
   const [sortKey, setSortKey] = useState<SortKey>("recent_investments");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  const [selectedFirm, setSelectedFirm] = useState<VCFirm | null>(null);
 
   useEffect(() => {
     fetchInvestors()
@@ -832,7 +841,7 @@ export function VCs() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
                 {filtered.map((firm) => (
-                  <VCCard key={firm.id} firm={firm} />
+                  <VCCard key={firm.id} firm={firm} onClick={() => setSelectedFirm(firm)} />
                 ))}
               </div>
             )}
@@ -841,6 +850,10 @@ export function VCs() {
         </div>
       </div>
 
+
+      {selectedFirm && (
+        <VCModal firm={selectedFirm} onClose={() => setSelectedFirm(null)} />
+      )}
     </Layout>
   );
 }
