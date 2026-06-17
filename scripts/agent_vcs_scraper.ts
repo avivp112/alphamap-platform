@@ -625,17 +625,25 @@ async function run(): Promise<void> {
 
   // Load current DB state once — shared across all adapters so entity resolution
   // is globally consistent even when adapters run sequentially.
-  let byNorm: Map<string, ExistingEntry>;
-  let slugs:  Set<string>;
+  // In dry-run mode a DB connectivity failure is non-fatal: we proceed with an
+  // empty map (no dedup against existing rows) and still show adapter output.
+  let byNorm: Map<string, ExistingEntry> = new Map();
+  let slugs:  Set<string>               = new Set();
 
-  if (DRY_RUN) {
-    // In dry-run mode we still build the map but modifications are local only
+  try {
     ({ byNorm, slugs } = await buildExistingMap());
-  } else {
-    ({ byNorm, slugs } = await buildExistingMap());
+    console.log(`   DB state: ${byNorm.size} existing investors loaded\n`);
+  } catch (err) {
+    if (DRY_RUN) {
+      console.warn(
+        `   ⚠️  DB unreachable (${(err as Error).message.split(".")[0]}).\n` +
+        `   Continuing dry-run with empty state — dedup against existing rows skipped.\n`,
+      );
+    } else {
+      // In live mode a DB failure is fatal — we can't safely write without knowing current state.
+      throw err;
+    }
   }
-
-  console.log(`   DB state: ${byNorm.size} existing investors loaded\n`);
 
   for (const adapter of ADAPTER_REGISTRY) {
     if (SOURCE_FILTER && adapter.name.toLowerCase() !== SOURCE_FILTER) continue;
