@@ -140,6 +140,35 @@ export async function fetchDeals(limit = 200): Promise<DealRow[]> {
   return (data ?? []) as DealRow[];
 }
 
+// ── Investors ─────────────────────────────────────────────────────────────────
+// Maps 1-to-1 with the `investors` table schema.
+
+export interface InvestorRow {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  founded_year: number | null;
+  headquarters: string | null;
+  fund_size: string | null;
+  typical_check_size: string | null;
+  portfolio_size: number | null;
+  stages: string[];
+  sector_allocation: Record<string, number>;
+  notable_investments: string[];
+  website: string | null;
+  updated_at: string;
+}
+
+export async function fetchInvestors(): Promise<InvestorRow[]> {
+  const { data, error } = await supabase
+    .from("investors")
+    .select("*")
+    .order("portfolio_size", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as InvestorRow[];
+}
+
 export async function ingestStartup(companyName: string): Promise<{ startup: Startup; funding_round: FundingRound | null }> {
   const res = await fetch(
     `${supabaseUrl}/functions/v1/ingest-startup`,

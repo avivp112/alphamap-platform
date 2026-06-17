@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   RadarChart,
   Radar,
@@ -20,6 +20,7 @@ import {
   Activity,
 } from "lucide-react";
 import { Layout } from "../components/Layout";
+import { fetchInvestors, type InvestorRow } from "../../lib/supabase";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -46,106 +47,57 @@ export interface VCFirm {
   sector_weights: SectorWeight[];
 }
 
-// ─── Dummy Data ────────────────────────────────────────────────────────────────
+// ─── DB → VCFirm mapper ────────────────────────────────────────────────────────
 
-const DUMMY_VCS: VCFirm[] = [
-  {
-    id: "sequoia",
-    name: "Sequoia Capital",
-    tagline: "The Venture Partner for the Long Arc",
-    description: "One of the most storied venture capital firms, backing the disruptors, the doers, and the dreamers who build legendary companies.",
-    aum_millions: 85_000,
-    founded_year: 1972,
-    headquarters: "Menlo Park, CA",
-    geography: ["North America", "Global"],
-    stages: ["Seed", "Series A", "Series B", "Growth"],
-    sectors: ["AI", "Fintech", "SaaS", "HealthTech", "Consumer"],
-    portfolio_count: 250,
-    recent_investments: 28,
-    notable_exits: ["Apple", "Google", "Oracle", "Airbnb", "Zoom"],
-    website: "https://sequoiacap.com",
-    sector_weights: [
-      { sector: "AI",        weight: 90 },
-      { sector: "Fintech",   weight: 60 },
-      { sector: "Cyber",     weight: 45 },
-      { sector: "SaaS",      weight: 80 },
-      { sector: "HealthTech",weight: 50 },
-      { sector: "FoodTech",  weight: 20 },
-    ],
-  },
-  {
-    id: "a16z",
-    name: "Andreessen Horowitz",
-    tagline: "Software Is Eating the World",
-    description: "A16z is a Silicon Valley-based venture capital firm committed to innovation. They back bold entrepreneurs building the future through technology.",
-    aum_millions: 35_000,
-    founded_year: 2009,
-    headquarters: "Menlo Park, CA",
-    geography: ["North America", "Global"],
-    stages: ["Seed", "Series A", "Series B", "Growth"],
-    sectors: ["AI", "Crypto", "Fintech", "SaaS", "Biotech"],
-    portfolio_count: 180,
-    recent_investments: 34,
-    notable_exits: ["GitHub", "Lyft", "Coinbase", "Okta", "Databricks"],
-    website: "https://a16z.com",
-    sector_weights: [
-      { sector: "AI",        weight: 95 },
-      { sector: "Fintech",   weight: 75 },
-      { sector: "Cyber",     weight: 55 },
-      { sector: "SaaS",      weight: 85 },
-      { sector: "HealthTech",weight: 40 },
-      { sector: "FoodTech",  weight: 10 },
-    ],
-  },
-  {
-    id: "accel",
-    name: "Accel Partners",
-    tagline: "Built for Founders. Focused on the Future.",
-    description: "Accel is a leading venture capital firm that invests in people and companies that will change the world. Their network spans Silicon Valley, London, and beyond.",
-    aum_millions: 22_000,
-    founded_year: 1983,
-    headquarters: "Palo Alto, CA",
-    geography: ["North America", "Europe", "Asia-Pacific"],
-    stages: ["Seed", "Series A", "Series B"],
-    sectors: ["SaaS", "Cyber", "Fintech", "AI", "Marketplaces"],
-    portfolio_count: 320,
-    recent_investments: 21,
-    notable_exits: ["Facebook", "Slack", "Dropbox", "Spotify", "Atlassian"],
-    website: "https://accel.com",
-    sector_weights: [
-      { sector: "AI",        weight: 70 },
-      { sector: "Fintech",   weight: 65 },
-      { sector: "Cyber",     weight: 85 },
-      { sector: "SaaS",      weight: 95 },
-      { sector: "HealthTech",weight: 30 },
-      { sector: "FoodTech",  weight: 15 },
-    ],
-  },
-  {
-    id: "index-ventures",
-    name: "Index Ventures",
-    tagline: "Boldly Going Where Others Fear to Tread",
-    description: "Index Ventures is a London and San Francisco-based international VC firm backing entrepreneurs who are reshaping industries with technology.",
-    aum_millions: 8_500,
-    founded_year: 1996,
-    headquarters: "London, UK",
-    geography: ["Europe", "North America", "Global"],
-    stages: ["Seed", "Series A", "Series B", "Growth"],
-    sectors: ["Fintech", "E-commerce", "Gaming", "SaaS", "Crypto"],
-    portfolio_count: 170,
-    recent_investments: 15,
-    notable_exits: ["Skype", "King", "Robinhood", "Figma", "dbt Labs"],
-    website: "https://indexventures.com",
-    sector_weights: [
-      { sector: "AI",        weight: 55 },
-      { sector: "Fintech",   weight: 90 },
-      { sector: "Cyber",     weight: 40 },
-      { sector: "SaaS",      weight: 70 },
-      { sector: "HealthTech",weight: 25 },
-      { sector: "FoodTech",  weight: 35 },
-    ],
-  },
-];
+function parseAumMillions(fundSize: string | null): number | null {
+  if (!fundSize) return null;
+  const b = fundSize.match(/\$?([\d.]+)B/i);
+  if (b) return Math.round(parseFloat(b[1]) * 1_000);
+  const m = fundSize.match(/\$?([\d.]+)M/i);
+  if (m) return Math.round(parseFloat(m[1]));
+  return null;
+}
+
+function deriveGeography(hq: string | null): Geography[] {
+  if (!hq) return ["Global"];
+  const l = hq.toLowerCase();
+  if (l.includes("uk") || l.includes("london") || l.includes("berlin") || l.includes("paris")) return ["Europe"];
+  if (l.includes("israel") || l.includes("tel aviv")) return ["Israel"];
+  if (l.includes("beijing") || l.includes("shanghai") || l.includes("singapore") || l.includes("tokyo")) return ["Asia-Pacific"];
+  if (l.includes("dubai") || l.includes("riyadh")) return ["MENA"];
+  // Default US cities → North America + Global for top-tier cross-border firms
+  return ["North America", "Global"];
+}
+
+function rowToFirm(row: InvestorRow): VCFirm {
+  const alloc = row.sector_allocation ?? {};
+  const sector_weights: SectorWeight[] = Object.entries(alloc).map(([sector, weight]) => ({ sector, weight }));
+
+  // Sectors where allocation score > 55 are considered "active" for filter matching
+  const sectors = sector_weights.filter(sw => sw.weight > 55).map(sw => sw.sector);
+
+  // Tagline: first sentence of description (capped at 60 chars)
+  const firstSentence = (row.description ?? "").split(/\.\s/)[0];
+  const tagline = firstSentence.length > 60 ? firstSentence.slice(0, 57) + "…" : firstSentence;
+
+  return {
+    id:                 row.slug ?? row.id,
+    name:               row.name,
+    tagline,
+    description:        row.description ?? "",
+    aum_millions:       parseAumMillions(row.fund_size),
+    founded_year:       row.founded_year ?? 0,
+    headquarters:       row.headquarters ?? "—",
+    geography:          deriveGeography(row.headquarters),
+    stages:             (row.stages ?? []) as Stage[],
+    sectors,
+    portfolio_count:    row.portfolio_size ?? 0,
+    recent_investments: Math.max(1, Math.round((row.portfolio_size ?? 50) / 40)),
+    notable_exits:      row.notable_investments ?? [],
+    website:            row.website ?? "#",
+    sector_weights,
+  };
+}
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -703,11 +655,56 @@ function SortBar({
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
+// ─── Loading skeleton card ─────────────────────────────────────────────────────
+
+function SkeletonCard() {
+  return (
+    <div
+      className="rounded-[22px] border overflow-hidden animate-pulse"
+      style={{ background: 'linear-gradient(145deg, #1a2535 0%, #0c1524 100%)', borderColor: 'rgba(255,255,255,0.07)', height: 420 }}
+    >
+      <div className="px-5 pt-5 pb-4">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-11 h-11 rounded-xl flex-none" style={{ background: 'rgba(255,255,255,0.06)' }} />
+          <div className="flex-1 space-y-2">
+            <div className="h-3.5 rounded-full w-2/3" style={{ background: 'rgba(255,255,255,0.06)' }} />
+            <div className="h-2.5 rounded-full w-1/2" style={{ background: 'rgba(255,255,255,0.04)' }} />
+          </div>
+        </div>
+        <div className="flex gap-1">
+          {[40, 52, 44].map(w => (
+            <div key={w} className="h-4 rounded-full" style={{ width: w, background: 'rgba(255,255,255,0.05)' }} />
+          ))}
+        </div>
+      </div>
+      <div className="mx-4 rounded-[14px] h-[200px]" style={{ background: 'rgba(5,10,20,0.7)', border: '1px solid rgba(255,255,255,0.05)' }} />
+      <div className="grid grid-cols-3 gap-1.5 px-4 py-3">
+        {[0,1,2].map(i => (
+          <div key={i} className="h-14 rounded-[10px]" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Page ─────────────────────────────────────────────────────────────────
+
 export function VCs() {
+  const [firms, setFirms]   = useState<VCFirm[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [sortKey, setSortKey] = useState<SortKey>("recent_investments");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+
+  useEffect(() => {
+    fetchInvestors()
+      .then(rows => setFirms(rows.map(rowToFirm)))
+      .catch(err  => setFetchError((err as Error).message))
+      .finally(()  => setLoading(false));
+  }, []);
 
   function handleSort(key: SortKey) {
     if (key === sortKey) setSortDir((d) => (d === "desc" ? "asc" : "desc"));
@@ -715,7 +712,7 @@ export function VCs() {
   }
 
   const filtered = useMemo<VCFirm[]>(() => {
-    let result = [...DUMMY_VCS];
+    let result = [...firms];
     if (filters.stages.length > 0)
       result = result.filter((v) => filters.stages.some((s) => v.stages.includes(s)));
     if (filters.sectors.length > 0)
@@ -756,13 +753,13 @@ export function VCs() {
                 className="text-[10px] font-semibold px-2.5 py-1 rounded-full"
                 style={{ background: 'rgba(34,211,238,0.08)', border: '1px solid rgba(34,211,238,0.15)', color: '#67e8f9' }}
               >
-                {DUMMY_VCS.length} firms indexed
+                {loading ? "…" : firms.length} firms indexed
               </span>
               <span
                 className="text-[10px] font-semibold px-2.5 py-1 rounded-full hidden sm:block"
                 style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#64748b' }}
               >
-                Supabase-ready
+                Live · Supabase
               </span>
             </div>
           </div>
@@ -790,7 +787,16 @@ export function VCs() {
               count={filtered.length} onMobileFilter={() => setMobileFilterOpen(true)}
             />
 
-            {filtered.length === 0 ? (
+            {fetchError ? (
+              <div className="flex flex-col items-center justify-center py-24 text-center">
+                <p className="text-sm font-semibold text-rose-400">Failed to load investors</p>
+                <p className="mt-1 text-xs text-slate-600">{fetchError}</p>
+              </div>
+            ) : loading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+                {[0,1,2,3,4].map(i => <SkeletonCard key={i} />)}
+              </div>
+            ) : filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-24 text-center">
                 <div
                   className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
