@@ -130,6 +130,28 @@ export function normalizeName(raw: string): string {
   return s.replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Extracts a canonical domain from a URL — the primary entity key.
+ * More stable than firm names ("Andreessen Horowitz" == "a16z" but both
+ * point to a16z.com). Returns null for unparseable / missing URLs.
+ *
+ *   "https://www.sequoiacap.com/"  →  "sequoiacap.com"
+ *   "https://a16z.com"             →  "a16z.com"
+ *   "www.benchmark.com"            →  "benchmark.com"
+ */
+export function normalizeDomain(url: string): string | null {
+  if (!url?.trim()) return null;
+  try {
+    const full = url.startsWith("http") ? url : `https://${url}`;
+    const { hostname } = new URL(full);
+    return hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    // Bare domain without protocol (e.g. "lsvp.com") — try a quick regex
+    const m = url.match(/^(?:www\.)?([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+    return m ? m[1].toLowerCase() : null;
+  }
+}
+
 /** Derives a unique 3-6 char slug from a firm name. */
 function generateSlug(name: string, takenSlugs: Set<string>): string {
   const words = name
@@ -152,71 +174,113 @@ function generateSlug(name: string, takenSlugs: Set<string>): string {
 
 // ── DB Utilities ──────────────────────────────────────────────────────────────
 
-interface ExistingEntry { id: string; name: string; slug: string; verified: boolean }
+interface ExistingEntry {
+  id:       string;
+  name:     string;
+  slug:     string;
+  verified: boolean;
+  domain:   string | null;  // normalized domain — primary entity key
+}
 
-/** Loads all existing investors and indexes them by normalized name. */
+/**
+ * Loads all existing investors and builds two lookup indexes:
+ *   byDomain — keyed by normalizeDomain(website)  ← primary resolution key
+ *   byNorm   — keyed by normalizeName(name)        ← fallback when no website
+ */
 async function buildExistingMap(): Promise<{
-  byNorm:  Map<string, ExistingEntry>;
-  slugs:   Set<string>;
+  byNorm:   Map<string, ExistingEntry>;
+  byDomain: Map<string, ExistingEntry>;
+  slugs:    Set<string>;
 }> {
   const { data, error } = await supabase
     .from("investors")
-    .select("id, name, slug, is_manually_verified");
+    .select("id, name, slug, website, is_manually_verified");
 
   if (error) throw new Error(`buildExistingMap: ${error.message}`);
 
-  const byNorm = new Map<string, ExistingEntry>();
-  const slugs  = new Set<string>();
+  const byNorm   = new Map<string, ExistingEntry>();
+  const byDomain = new Map<string, ExistingEntry>();
+  const slugs    = new Set<string>();
 
   for (const row of data ?? []) {
-    byNorm.set(normalizeName(row.name), {
+    const domain = normalizeDomain(row.website);
+    const entry: ExistingEntry = {
       id:       row.id,
       name:     row.name,
       slug:     row.slug,
       verified: row.is_manually_verified ?? false,
-    });
+      domain,
+    };
+    byNorm.set(normalizeName(row.name), entry);
+    if (domain) byDomain.set(domain, entry);
     slugs.add(row.slug);
   }
-  return { byNorm, slugs };
+  return { byNorm, byDomain, slugs };
 }
 
 /**
- * Upserts a profile with three safety layers:
- *  1. Duplicate detection via normalizeName — skips cross-name duplicates.
- *  2. is_manually_verified guard — protects human-edited rows.
- *  3. ON CONFLICT (name) — DB-level idempotency for exact-name matches.
+ * Writes a single profile with four safety layers applied in order:
+ *
+ *  1. Domain-first resolution — if the profile has a website, its normalized
+ *     domain is checked against byDomain first. This is the primary key because
+ *     it survives name variations ("a16z" vs "Andreessen Horowitz" both map to
+ *     a16z.com). When a domain match is found, we UPDATE that existing row by id.
+ *
+ *  2. Name-fallback resolution — for firms without a known website, fall back to
+ *     normalizeName(). Cross-alias collisions (same normalized form, different raw
+ *     name) are logged as duplicates and skipped rather than inserted as new rows.
+ *
+ *  3. is_manually_verified safety gate — if either resolution path finds a row
+ *     with is_manually_verified=TRUE, the write is skipped entirely.
+ *
+ *  4. ON CONFLICT (name) — DB-level safety net for truly new insertions.
  */
 async function safeUpsert(
-  profile:  RawVCProfile,
-  byNorm:   Map<string, ExistingEntry>,
-  slugs:    Set<string>,
-  source:   string,
+  profile:   RawVCProfile,
+  byNorm:    Map<string, ExistingEntry>,
+  byDomain:  Map<string, ExistingEntry>,
+  slugs:     Set<string>,
+  source:    string,
 ): Promise<UpsertResult> {
-  const norm     = normalizeName(profile.name);
-  const existing = byNorm.get(norm);
+  // ── 1. Domain-first resolution ────────────────────────────────────────────
+  const domain = normalizeDomain(profile.website ?? "");
+  let existing: ExistingEntry | undefined = domain ? byDomain.get(domain) : undefined;
 
-  if (existing) {
-    if (existing.name !== profile.name) {
-      // Same normalized form, different raw name → duplicate from a different alias.
-      console.log(
-        `  ↩  [${source}] "${profile.name}" normalises to "${norm}" ` +
-        `— already indexed as "${existing.name}" — skipping`,
-      );
-      return "duplicate";
-    }
-    // Same exact name — check safety gate.
-    if (existing.verified) {
-      console.log(`  🔒 [${source}] "${profile.name}" is manually verified — skipping`);
-      return "protected";
+  if (existing && existing.name !== profile.name) {
+    console.log(
+      `  ~  [${source}] "${profile.name}" → ${domain} matches ` +
+      `"${existing.name}" (same firm, different alias)`,
+    );
+  }
+
+  // ── 2. Name-fallback resolution ───────────────────────────────────────────
+  if (!existing) {
+    const norm      = normalizeName(profile.name);
+    const nameMatch = byNorm.get(norm);
+    if (nameMatch) {
+      if (nameMatch.name !== profile.name) {
+        // Different raw name, same normalized form — cross-alias duplicate
+        console.log(
+          `  ↩  [${source}] "${profile.name}" normalises to "${norm}" ` +
+          `— already indexed as "${nameMatch.name}" — skipping`,
+        );
+        return "duplicate";
+      }
+      existing = nameMatch;
     }
   }
 
-  // Assemble the DB row
-  const slug = existing?.slug ?? generateSlug(profile.name, slugs);
+  // ── 3. is_manually_verified safety gate ──────────────────────────────────
+  if (existing?.verified) {
+    console.log(`  🔒 [${source}] "${profile.name}" is manually verified — skipping`);
+    return "protected";
+  }
 
-  const row = {
-    name:                profile.name,
-    slug,
+  // ── 4. Assemble the DB row ────────────────────────────────────────────────
+  const slug = existing?.slug ?? generateSlug(profile.name, slugs);
+  const now  = new Date().toISOString();
+
+  const fields = {
     description:         profile.description         ?? null,
     founded_year:        profile.founded_year         ?? null,
     headquarters:        profile.headquarters         ?? null,
@@ -227,39 +291,56 @@ async function safeUpsert(
     sector_allocation:   profile.sector_allocation    ?? {},
     notable_investments: profile.notable_investments  ?? [],
     website:             profile.website              ?? null,
-    is_manually_verified: false,
-    updated_at:          new Date().toISOString(),
+    updated_at:          now,
   };
 
   if (DRY_RUN) {
+    const action = existing ? "Would update" : "Would insert";
     console.log(
-      `  [DRY RUN] [${source}] Would upsert "${profile.name}" ` +
-      `(slug: ${slug}, founded: ${row.founded_year ?? "?"})`,
+      `  [DRY RUN] [${source}] ${action} "${profile.name}" ` +
+      `(slug: ${slug}, domain: ${domain ?? "—"}, founded: ${fields.founded_year ?? "?"})`,
     );
-    // Register in local state so later adapters see this as "existing"
+    // Register in local maps so later adapters see this as "existing"
     if (!existing) {
+      const entry: ExistingEntry = { id: "dry-run", name: profile.name, slug, verified: false, domain };
       slugs.add(slug);
-      byNorm.set(norm, { id: "dry-run", name: profile.name, slug, verified: false });
+      byNorm.set(normalizeName(profile.name), entry);
+      if (domain) byDomain.set(domain, entry);
     }
     return "upserted";
   }
 
-  const { error } = await supabase
-    .from("investors")
-    .upsert(row, { onConflict: "name" });
+  // ── 5. Write to DB ────────────────────────────────────────────────────────
+  let dbError: { message: string } | null = null;
 
-  if (error) {
-    console.error(`  ❌ [${source}] Upsert failed for "${profile.name}": ${error.message}`);
+  if (existing) {
+    // UPDATE by id — domain matched (possibly different name); preserves slug and FK links
+    const { error } = await supabase
+      .from("investors")
+      .update(fields)
+      .eq("id", existing.id);
+    dbError = error;
+  } else {
+    // INSERT — new firm; ON CONFLICT (name) is the final DB-level safety net
+    const { error } = await supabase
+      .from("investors")
+      .upsert({ name: profile.name, slug, ...fields, is_manually_verified: false }, { onConflict: "name" });
+    dbError = error;
+    if (!error) {
+      const entry: ExistingEntry = { id: "new", name: profile.name, slug, verified: false, domain };
+      slugs.add(slug);
+      byNorm.set(normalizeName(profile.name), entry);
+      if (domain) byDomain.set(domain, entry);
+    }
+  }
+
+  if (dbError) {
+    console.error(`  ❌ [${source}] "${profile.name}": ${dbError.message}`);
     return "error";
   }
 
-  // Register new slug/entry in local maps so subsequent adapters see it
-  if (!existing) {
-    slugs.add(slug);
-    byNorm.set(norm, { id: "unknown", name: profile.name, slug, verified: false });
-  }
-
-  console.log(`  ✅ [${source}] Upserted "${profile.name}" (slug: ${slug})`);
+  const verb = existing ? "Updated " : "Inserted";
+  console.log(`  ✅ [${source}] ${verb} "${profile.name}" (slug: ${slug}, domain: ${domain ?? "—"})`);
   return "upserted";
 }
 
@@ -623,27 +704,12 @@ async function run(): Promise<void> {
 
   const grand = { upserted: 0, protected: 0, duplicate: 0, error: 0, total: 0 };
 
-  // Load current DB state once — shared across all adapters so entity resolution
-  // is globally consistent even when adapters run sequentially.
-  // In dry-run mode a DB connectivity failure is non-fatal: we proceed with an
-  // empty map (no dedup against existing rows) and still show adapter output.
-  let byNorm: Map<string, ExistingEntry> = new Map();
-  let slugs:  Set<string>               = new Set();
-
-  try {
-    ({ byNorm, slugs } = await buildExistingMap());
-    console.log(`   DB state: ${byNorm.size} existing investors loaded\n`);
-  } catch (err) {
-    if (DRY_RUN) {
-      console.warn(
-        `   ⚠️  DB unreachable (${(err as Error).message.split(".")[0]}).\n` +
-        `   Continuing dry-run with empty state — dedup against existing rows skipped.\n`,
-      );
-    } else {
-      // In live mode a DB failure is fatal — we can't safely write without knowing current state.
-      throw err;
-    }
-  }
+  // Load current DB state once — always required and always fatal if it fails.
+  // Both dry-run and live-write need the existing map for accurate entity
+  // resolution; a DB connection error here means the Action should fail visibly
+  // rather than silently skipping dedup checks.
+  const { byNorm, byDomain, slugs } = await buildExistingMap();
+  console.log(`   DB state: ${byNorm.size} existing investors loaded\n`);
 
   for (const adapter of ADAPTER_REGISTRY) {
     if (SOURCE_FILTER && adapter.name.toLowerCase() !== SOURCE_FILTER) continue;
@@ -666,7 +732,7 @@ async function run(): Promise<void> {
       if (!profile.name?.trim()) continue;
       grand.total++;
 
-      const result = await safeUpsert(profile, byNorm, slugs, adapter.name);
+      const result = await safeUpsert(profile, byNorm, byDomain, slugs, adapter.name);
       tally[result === "skipped" ? "protected" : result]++;
     }
 
