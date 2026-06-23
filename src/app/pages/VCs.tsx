@@ -1,13 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
 import {
-  RadarChart,
-  Radar,
-  PolarGrid,
-  PolarAngleAxis,
-  ResponsiveContainer,
-  Tooltip,
-} from "recharts";
-import {
   TrendingUp,
   Globe,
   Star,
@@ -22,6 +14,7 @@ import {
 import { Layout } from "../components/Layout";
 import { fetchInvestors, type InvestorRow } from "../../lib/supabase";
 import { VCModal } from "../components/VCModal";
+import { DonutFocusChart } from "../components/DonutFocusChart";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -281,7 +274,7 @@ function VCCard({ firm, onClick }: { firm: VCFirm; onClick: () => void }) {
         </div>
       </div>
 
-      {/* ── Radar HUD panel ── */}
+      {/* ── Donut focus chart panel ── */}
       <div className="px-4 pb-1 relative z-10">
         <div
           className="relative overflow-hidden rounded-[14px]"
@@ -303,53 +296,14 @@ function VCCard({ firm, onClick }: { firm: VCFirm; onClick: () => void }) {
 
           {/* Label */}
           <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-600 text-center pt-3 pb-0.5">
-            Sector Allocation
+            Focus Areas
           </p>
 
-          <div className="h-[190px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={firm.sector_weights} outerRadius="70%">
-                <PolarGrid
-                  stroke={accent.gridStroke}
-                  strokeDasharray="2 4"
-                />
-                <PolarAngleAxis
-                  dataKey="sector"
-                  tick={{ fill: "#64748b", fontSize: 10, fontWeight: 600 }}
-                />
-                <Radar
-                  dataKey="weight"
-                  stroke={accent.radarStroke}
-                  fill={accent.radarFill}
-                  strokeWidth={2}
-                  dot={(props: { cx: number; cy: number; index: number }) => (
-                    <circle
-                      key={props.index}
-                      cx={props.cx}
-                      cy={props.cy}
-                      r={3}
-                      fill={accent.radarStroke}
-                      stroke="rgba(0,0,0,0.4)"
-                      strokeWidth={1}
-                      style={{ filter: `drop-shadow(0 0 4px ${accent.radarStroke})` }}
-                    />
-                  )}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: '#060e1a',
-                    border: `1px solid ${accent.borderHover}`,
-                    borderRadius: 10,
-                    fontSize: 12,
-                    boxShadow: `0 8px 32px rgba(0,0,0,0.6)`,
-                  }}
-                  itemStyle={{ color: accent.radarStroke }}
-                  labelStyle={{ color: '#94a3b8', fontWeight: 600, fontSize: 11 }}
-                  formatter={(v: number) => [`${v}%`, "Allocation"]}
-                />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
+          <DonutFocusChart
+            data={firm.sector_weights}
+            accentColor={accent.radarStroke}
+            height={190}
+          />
         </div>
       </div>
 
