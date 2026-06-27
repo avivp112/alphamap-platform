@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Network, Brain, Map, ChevronDown } from "lucide-react";
 import { useNavigate } from "react-router";
-import { GlobalTechHubMap } from "../components/GlobalTechHubMap";
+import GlobalTechHubMap from "../components/GlobalTechHubMap";
 
 // ── Timing ─────────────────────────────────────────────────────────────────────
 // Adjust GRAPH_APPEAR_TIME to the exact second in your video when the financial
