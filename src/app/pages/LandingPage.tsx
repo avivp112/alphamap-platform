@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Network, Brain, Map, ChevronDown } from "lucide-react";
 import { useNavigate } from "react-router";
+import { GlobalTechHubMap } from "../components/GlobalTechHubMap";
 
 // ── Timing ─────────────────────────────────────────────────────────────────────
 // Adjust GRAPH_APPEAR_TIME to the exact second in your video when the financial
@@ -239,6 +240,11 @@ export function LandingPage() {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* ── Global Tech Hub Map ──────────────────────────────────────────────── */}
+      <section className="w-full max-w-[1200px] mx-auto px-6 lg:px-12 mb-32">
+        <GlobalTechHubMap />
       </section>
 
       {/* ── Final CTA ────────────────────────────────────────────────────────── */}
