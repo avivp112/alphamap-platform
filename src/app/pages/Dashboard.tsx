@@ -3,6 +3,7 @@ import { Layout } from '../components/Layout';
 import { MarketOverview } from '../components/MarketOverview';
 import { IntelligenceFeed } from '../components/IntelligenceFeed';
 import { AIMarketStory, CrossMarketSignalsBar, PortfolioInsight } from '../components/AIMarketInsights';
+import { GlobalTechHubMap } from '../components/GlobalTechHubMap';
 
 export function Dashboard() {
   return (
@@ -27,6 +28,11 @@ export function Dashboard() {
                   Customize View
                 </button>
               </div>
+            </div>
+
+            {/* Global Capital Flow Map */}
+            <div className="mb-6 lg:mb-8">
+              <GlobalTechHubMap />
             </div>
 
             {/* Dashboard Grid */}
