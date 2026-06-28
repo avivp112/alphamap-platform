@@ -104,7 +104,7 @@ export function CompanyLogo({
         style={{ ...containerStyle, background: '#0d1f35', border: '1px solid #1a2a3f' }}
       >
         <img
-          src={`https://logo.clearbit.com/${domain}`}
+          src={`https://img.logo.dev/${domain}?token=pk_X-1ZO13GSgeOoUrIuJ6BeQ&size=128&format=png`}
           alt={`${name} logo`}
           draggable={false}
           loading="lazy"
