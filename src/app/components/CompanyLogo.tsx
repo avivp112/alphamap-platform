@@ -12,12 +12,20 @@ export function extractDomain(website: string | null | undefined): string | null
     .split('/')[0]
     .split('?')[0]
     .replace(/\.$/, '');
-  // Guard against placeholder values like "#", "-", or bare strings with no TLD
   if (!d || d === '#' || d === '-' || !d.includes('.')) return null;
   return d;
 }
 
-// ── Initials fallback palette (dark-mode) ─────────────────────────────────────
+// ── Initials helper ────────────────────────────────────────────────────────────
+
+function getInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '?';
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
+}
+
+// ── Colour palette (dark-mode) ────────────────────────────────────────────────
 
 const PALETTE = [
   { bg: '#0e4f5e', text: '#67e8f9' },
@@ -36,16 +44,7 @@ function paletteFor(name: string): { bg: string; text: string } {
   return PALETTE[h % PALETTE.length];
 }
 
-function getInitials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return '?';
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return (words[0][0] + words[1][0]).toUpperCase();
-}
-
 // ── Component ──────────────────────────────────────────────────────────────────
-
-type LogoState = 'clearbit' | 'google' | 'initials';
 
 export interface CompanyLogoProps {
   /** Company or fund name — used for initials fallback and colour derivation */
@@ -68,61 +67,34 @@ export function CompanyLogo({
   className = '',
 }: CompanyLogoProps) {
   const domain = extractDomain(website);
-
-  const [state, setState] = useState<LogoState>(domain ? 'clearbit' : 'initials');
-
-  const clearbitUrl = domain ? `https://logo.clearbit.com/${domain}` : null;
-  const googleUrl   = domain
-    ? `https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://${domain}&size=128`
-    : null;
+  const [showInitials, setShowInitials] = useState(!domain);
 
   const { bg, text } = paletteFor(name);
   const initials = getInitials(name);
 
   const containerStyle: React.CSSProperties = { width: size, height: size, flexShrink: 0 };
-
-  // Shared container class
   const base = `flex-none flex items-center justify-center overflow-hidden ${rounded} ${className}`;
 
-  // ── Tier 1: Clearbit Logo API ──────────────────────────────────────────────
-  if (state === 'clearbit' && clearbitUrl) {
+  // ── Clearbit logo ──────────────────────────────────────────────────────────
+  if (!showInitials && domain) {
     return (
       <div
         className={base}
         style={{ ...containerStyle, background: '#0d1f35', border: '1px solid #1a2a3f' }}
       >
         <img
-          src={clearbitUrl}
+          src={`https://logo.clearbit.com/${domain}`}
           alt={`${name} logo`}
           draggable={false}
           loading="lazy"
-          onError={() => setState('google')}
-          style={{ width: '76%', height: '76%', objectFit: 'contain', display: 'block' }}
+          onError={() => setShowInitials(true)}
+          className="w-full h-full object-contain"
         />
       </div>
     );
   }
 
-  // ── Tier 2: Google Favicon API ────────────────────────────────────────────
-  if (state === 'google' && googleUrl) {
-    return (
-      <div
-        className={base}
-        style={{ ...containerStyle, background: '#0d1f35', border: '1px solid #1a2a3f' }}
-      >
-        <img
-          src={googleUrl}
-          alt={`${name} logo`}
-          draggable={false}
-          loading="lazy"
-          onError={() => setState('initials')}
-          style={{ width: '60%', height: '60%', objectFit: 'contain', display: 'block' }}
-        />
-      </div>
-    );
-  }
-
-  // ── Tier 3: Coloured initials circle ─────────────────────────────────────
+  // ── Initials fallback ──────────────────────────────────────────────────────
   return (
     <div
       className={`${base} font-black select-none`}
@@ -132,7 +104,6 @@ export function CompanyLogo({
         color: text,
         fontSize: Math.round(size * 0.35),
         letterSpacing: '-0.01em',
-        border: '1px solid transparent',
       }}
     >
       {initials}
