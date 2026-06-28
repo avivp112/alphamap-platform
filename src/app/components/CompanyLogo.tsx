@@ -1,19 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 // ── Domain extraction ──────────────────────────────────────────────────────────
+// Returns the bare root domain (e.g. "a16z.com") or null for missing/invalid.
 
 export function extractDomain(website: string | null | undefined): string | null {
   if (!website) return null;
-  const d = website
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, '')
-    .replace(/^www\./, '')
-    .split('/')[0]
-    .split('?')[0]
-    .replace(/\.$/, '');
-  if (!d || d === '#' || d === '-' || !d.includes('.')) return null;
-  return d;
+
+  let s = website.trim();
+
+  // Strip protocol
+  s = s.replace(/^https?:\/\//i, '');
+
+  // Strip leading www. (any capitalisation)
+  s = s.replace(/^www\./i, '');
+
+  // Take only the host part (drop path, query, hash)
+  s = s.split('/')[0].split('?')[0].split('#')[0];
+
+  // Strip port
+  s = s.split(':')[0];
+
+  // Strip trailing dots / whitespace
+  s = s.replace(/\.+$/, '').trim().toLowerCase();
+
+  // Must be a non-empty string that contains at least one dot
+  // and isn't a placeholder value
+  if (!s || s === '#' || s === '-' || !s.includes('.')) return null;
+
+  return s;
 }
 
 // ── Initials helper ────────────────────────────────────────────────────────────
@@ -47,15 +61,10 @@ function paletteFor(name: string): { bg: string; text: string } {
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export interface CompanyLogoProps {
-  /** Company or fund name — used for initials fallback and colour derivation */
   name: string;
-  /** Raw website URL — domain is extracted automatically */
   website?: string | null;
-  /** Pixel size of the square container (default 40) */
   size?: number;
-  /** Tailwind border-radius class applied to the container (default 'rounded-xl') */
   rounded?: string;
-  /** Extra classes forwarded to the container */
   className?: string;
 }
 
@@ -66,8 +75,20 @@ export function CompanyLogo({
   rounded = 'rounded-xl',
   className = '',
 }: CompanyLogoProps) {
+  // Derive domain synchronously — needed for lazy useState and the effect below
   const domain = extractDomain(website);
-  const [showInitials, setShowInitials] = useState(!domain);
+
+  // Lazy initialiser: only evaluated once on mount, avoids the stale-closure
+  // problem where re-renders with a new `website` prop would not change state.
+  const [showInitials, setShowInitials] = useState<boolean>(() => domain === null);
+
+  // If the parent feeds us a valid website AFTER the first render (e.g. data
+  // loaded asynchronously), reset so we attempt the Clearbit URL again.
+  useEffect(() => {
+    if (domain !== null) {
+      setShowInitials(false);
+    }
+  }, [domain]);
 
   const { bg, text } = paletteFor(name);
   const initials = getInitials(name);
