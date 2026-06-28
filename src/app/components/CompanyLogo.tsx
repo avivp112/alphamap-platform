@@ -1,33 +1,33 @@
 import React, { useState, useEffect } from 'react';
 
 // ── Domain extraction ──────────────────────────────────────────────────────────
-// Returns the bare root domain (e.g. "a16z.com") or null for missing/invalid.
 
 export function extractDomain(website: string | null | undefined): string | null {
   if (!website) return null;
 
   let s = website.trim();
-
-  // Strip protocol
   s = s.replace(/^https?:\/\//i, '');
-
-  // Strip leading www. (any capitalisation)
   s = s.replace(/^www\./i, '');
-
-  // Take only the host part (drop path, query, hash)
   s = s.split('/')[0].split('?')[0].split('#')[0];
-
-  // Strip port
   s = s.split(':')[0];
-
-  // Strip trailing dots / whitespace
   s = s.replace(/\.+$/, '').trim().toLowerCase();
 
-  // Must be a non-empty string that contains at least one dot
-  // and isn't a placeholder value
   if (!s || s === '#' || s === '-' || !s.includes('.')) return null;
-
   return s;
+}
+
+// ── Logo source chain (no auth required) ──────────────────────────────────────
+// 0: Google S2 favicon at 64px — globe fallback detected by naturalWidth ≤ 16
+// 1: Apple touch icon served directly from the company domain (180×180, high quality)
+// 2: Standard favicon.ico served directly from the company domain
+// 3+: show initials
+
+function getSources(domain: string): string[] {
+  return [
+    `https://www.google.com/s2/favicons?domain=${domain}&sz=64`,
+    `https://${domain}/apple-touch-icon.png`,
+    `https://${domain}/favicon.ico`,
+  ];
 }
 
 // ── Initials helper ────────────────────────────────────────────────────────────
@@ -75,41 +75,49 @@ export function CompanyLogo({
   rounded = 'rounded-xl',
   className = '',
 }: CompanyLogoProps) {
-  // Derive domain synchronously — needed for lazy useState and the effect below
   const domain = extractDomain(website);
+  const sources = domain ? getSources(domain) : [];
 
-  // Lazy initialiser: only evaluated once on mount, avoids the stale-closure
-  // problem where re-renders with a new `website` prop would not change state.
-  const [showInitials, setShowInitials] = useState<boolean>(() => domain === null);
+  // Index into sources[]; sources.length means "show initials"
+  const [srcIdx, setSrcIdx] = useState<number>(() => (domain === null ? sources.length : 0));
 
-  // If the parent feeds us a valid website AFTER the first render (e.g. data
-  // loaded asynchronously), reset so we attempt the Clearbit URL again.
+  // Reset when domain changes (data loaded async, or different company rendered)
   useEffect(() => {
-    if (domain !== null) {
-      setShowInitials(false);
-    }
+    setSrcIdx(domain === null ? (sources.length || 3) : 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [domain]);
 
   const { bg, text } = paletteFor(name);
   const initials = getInitials(name);
-
   const containerStyle: React.CSSProperties = { width: size, height: size, flexShrink: 0 };
   const base = `flex-none flex items-center justify-center overflow-hidden ${rounded} ${className}`;
 
-  // ── Clearbit logo ──────────────────────────────────────────────────────────
-  if (!showInitials && domain) {
+  const advance = () => setSrcIdx(i => i + 1);
+
+  // ── Logo image ─────────────────────────────────────────────────────────────
+  if (domain && srcIdx < sources.length) {
+    const src = sources[srcIdx];
+    const isGoogle = srcIdx === 0;
+
     return (
       <div
         className={base}
         style={{ ...containerStyle, background: '#0d1f35', border: '1px solid #1a2a3f' }}
       >
         <img
-          src={`https://img.logo.dev/${domain}?token=pk_X-1ZO13GSgeOoUrIuJ6BeQ&size=128&format=png`}
+          key={src}
+          src={src}
           alt={`${name} logo`}
           draggable={false}
           loading="lazy"
-          onError={() => setShowInitials(true)}
-          className="w-full h-full object-contain"
+          onLoad={isGoogle ? (e) => {
+            // Google returns the generic globe at 16×16 for unknown domains.
+            // Any real favicon is at least 32px when sz=64 is requested.
+            const img = e.currentTarget;
+            if (img.naturalWidth <= 16 || img.naturalHeight <= 16) advance();
+          } : undefined}
+          onError={advance}
+          className="w-full h-full object-contain p-1"
         />
       </div>
     );
