@@ -7,6 +7,7 @@ import { Layout } from "../components/Layout";
 import { fetchInvestors, type InvestorRow } from "../../lib/supabase";
 import { VCModal } from "../components/VCModal";
 import { DonutFocusChart } from "../components/DonutFocusChart";
+import { CompanyLogo } from "../components/CompanyLogo";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -318,17 +319,7 @@ function VCCard({ firm, onClick }: { firm: VCFirm; onClick: () => void }) {
       <div className="px-5 pt-5 pb-4 relative z-10">
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div
-              className="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-black flex-none border"
-              style={{
-                background: `linear-gradient(135deg, ${accent.avatarFrom}, ${accent.avatarTo})`,
-                borderColor: accent.shimmerColor,
-                color: accent.avatarText,
-                boxShadow: `0 0 16px ${accent.glowColor}`,
-              }}
-            >
-              {firmInitials(firm.name)}
-            </div>
+            <CompanyLogo name={firm.name} website={firm.website} size={44} rounded="rounded-xl" />
             <div className="min-w-0">
               <h3 className="text-[15px] font-bold text-white truncate leading-tight tracking-tight">
                 {firm.name}

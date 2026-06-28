@@ -6,6 +6,7 @@ import {
   ResponsiveContainer, Cell,
 } from "recharts";
 import { Layout } from "../components/Layout";
+import { CompanyLogo } from "../components/CompanyLogo";
 import {
   Plus, Globe, Loader2, Search, X, MapPin, Calendar, Users,
   DollarSign, Rocket, AlertCircle, CheckCircle2,
@@ -1119,9 +1120,7 @@ function TearsheetModal({
         <div className="sticky top-0 z-10 bg-[#060e1a] rounded-t-[24px] px-7 py-5 border-b border-[#1a2a3f]">
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-4 min-w-0">
-              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-black flex-none ${avatarColor(startup.name)}`}>
-                {startup.name[0].toUpperCase()}
-              </div>
+              <CompanyLogo name={startup.name} website={startup.website} size={48} rounded="rounded-2xl" />
               <div className="min-w-0">
                 <h2 className="text-xl font-bold text-white leading-tight truncate">{startup.name}</h2>
                 <div className="flex items-center gap-3 mt-1 flex-wrap">
@@ -1368,7 +1367,7 @@ function CompareModal({
             <div />
             {startups.map((s) => (
               <div key={s.id} className="flex flex-col items-center gap-2 text-center">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-base font-black ${avatarColor(s.name)}`}>{s.name[0].toUpperCase()}</div>
+                <CompanyLogo name={s.name} website={s.website} size={40} rounded="rounded-xl" />
                 <span className="text-sm font-bold text-white leading-tight">{s.name}</span>
               </div>
             ))}
@@ -1487,9 +1486,7 @@ function StartupCard({
       />
       <div className="p-5 pb-4 flex-1 relative z-10">
         <div className="flex items-start gap-3 mb-3">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-base font-black flex-none ${avatarColor(startup.name)}`}>
-            {startup.name[0].toUpperCase()}
-          </div>
+          <CompanyLogo name={startup.name} website={startup.website} size={40} rounded="rounded-xl" />
           <div className="flex-1 min-w-0">
             <h3 className="text-[15px] font-bold text-white truncate leading-tight group-hover:text-[#F59E0B] transition-colors">
               {startup.name}

@@ -4,6 +4,7 @@ import {
   TrendingUp, Users, Zap, Activity, ExternalLink, Info,
 } from "lucide-react";
 import type { VCFirm } from "../pages/VCs";
+import { CompanyLogo } from "./CompanyLogo";
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -378,17 +379,7 @@ export function VCModal({ firm, onClose }: Props) {
           style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}
         >
           {/* Avatar */}
-          <div
-            className="w-14 h-14 rounded-2xl flex items-center justify-center text-lg font-black flex-none shrink-0 border"
-            style={{
-              background: `linear-gradient(135deg, ${accent.avatarFrom}, ${accent.avatarTo})`,
-              borderColor: accent.shimmerColor,
-              color: accent.avatarText,
-              boxShadow: `0 0 20px ${accent.glowColor}`,
-            }}
-          >
-            {firm.slug}
-          </div>
+          <CompanyLogo name={firm.name} website={firm.website} size={56} rounded="rounded-2xl" />
 
           {/* Name + meta */}
           <div className="flex-1 min-w-0 pt-0.5">
