@@ -2,11 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ComposableMap, Geographies, Geography, Marker } from 'react-simple-maps';
 import { fetchStartups, fetchInvestors, type Startup, type InvestorRow } from '../../lib/supabase';
 
-// ── Projection constants (geoEquirectangular, scale=140, center=[10,20]) ──────
+// ── Projection constants (geoEquirectangular, scale=140, center=[10,15]) ──────
+// MAP_H=370 crops the empty polar ocean — inhabited world fills the frame.
 const MAP_W = 800;
-const MAP_H = 450;
+const MAP_H = 370;
 const MAP_SCALE = 140;
-const MAP_CENTER: [number, number] = [10, 20];
+const MAP_CENTER: [number, number] = [10, 15];
 const K = MAP_SCALE * Math.PI / 180; // px per degree
 
 function project(lng: number, lat: number): [number, number] {
@@ -363,14 +364,15 @@ export function GlobalTechHubMap() {
       {/* ── Map + Panel ─────────────────────────────────────────────────────── */}
       <div className="flex flex-col lg:flex-row">
 
-        {/* Map */}
-        <div className="flex-1 relative" style={{ height: 450 }}>
+        {/* Map — height: auto lets the SVG intrinsically size to its aspect ratio,
+             eliminating the letterbox gap that a fixed height produced. */}
+        <div className="flex-1 relative overflow-hidden">
           <ComposableMap
             projection="geoEquirectangular"
             projectionConfig={{ scale: MAP_SCALE, center: MAP_CENTER }}
             width={MAP_W}
             height={MAP_H}
-            style={{ width: '100%', height: '100%' }}
+            style={{ width: '100%', height: 'auto', display: 'block' }}
           >
             <Geographies geography={GEO_URL}>
               {({ geographies }) =>
@@ -505,7 +507,7 @@ export function GlobalTechHubMap() {
         {/* ── Side Panel ───────────────────────────────────────────────────── */}
         <div
           className="w-full lg:w-[340px] shrink-0 flex flex-col"
-          style={{ borderLeft: '1px solid #1a2a3f', minHeight: 450 }}
+          style={{ borderLeft: '1px solid #1a2a3f' }}
         >
           {activeHub && hubStats && insights ? (
             <>
@@ -624,18 +626,25 @@ export function GlobalTechHubMap() {
 
       {/* ── Ticker ──────────────────────────────────────────────────────────── */}
       {ticker.length > 0 && (
-        <div className="flex items-center overflow-hidden" style={{ borderTop: '1px solid #1a2a3f', background: '#030d19' }}>
+        <div
+          className="flex items-center overflow-hidden backdrop-blur-sm"
+          style={{
+            borderTop: '1px solid rgba(51,65,85,0.6)',
+            background: 'rgba(15,23,42,0.75)',
+          }}
+        >
           <div
-            className="shrink-0 px-4 py-2.5 text-[9px] font-bold uppercase tracking-widest text-amber-400"
-            style={{ borderRight: '1px solid #1a2a3f' }}
+            className="shrink-0 px-4 py-2 flex items-center gap-1.5"
+            style={{ borderRight: '1px solid rgba(51,65,85,0.5)' }}
           >
-            Live
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+            <span className="text-[9px] font-bold uppercase tracking-widest text-amber-400">Live</span>
           </div>
           <div className="overflow-hidden flex-1">
-            <div className="ticker-track flex gap-16 py-2.5 whitespace-nowrap">
+            <div className="ticker-track flex gap-16 py-2 whitespace-nowrap">
               {[...ticker, ...ticker].map((item, i) => (
                 <span key={i} className="text-[11px] text-slate-400 shrink-0">
-                  <span className="text-amber-400 mr-1.5">●</span>{item}
+                  <span className="text-amber-500/70 mr-1.5">◆</span>{item}
                 </span>
               ))}
             </div>
