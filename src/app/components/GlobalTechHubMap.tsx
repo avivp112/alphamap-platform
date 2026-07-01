@@ -8,7 +8,6 @@ const MAP_W = 800;
 const MAP_H = 370;
 const MAP_SCALE = 140;
 const MAP_CENTER: [number, number] = [10, 15];
-const MAP_ASPECT = `${MAP_W} / ${MAP_H}`;
 
 // ── Hub registry ───────────────────────────────────────────────────────────────
 
@@ -278,8 +277,16 @@ export function GlobalTechHubMap() {
 
       {/* ── CSS ─────────────────────────────────────────────────────────────── */}
       <style>{`
-        @keyframes hub-pulse { 0%,100%{opacity:.55} 50%{opacity:.05} }
-        .hub-pulse-ring { animation: hub-pulse 2.8s ease-in-out infinite; }
+        @keyframes hub-ping {
+          0%   { transform: scale(1);   opacity: 0.5; }
+          75%  { transform: scale(2.4); opacity: 0; }
+          100% { transform: scale(2.4); opacity: 0; }
+        }
+        .hub-ping-ring {
+          animation: hub-ping 2.4s cubic-bezier(0,0,0.2,1) infinite;
+          transform-box: fill-box;
+          transform-origin: center;
+        }
         @keyframes ticker-scroll { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
         .ticker-track { animation: ticker-scroll 70s linear infinite; }
       `}</style>
@@ -310,18 +317,18 @@ export function GlobalTechHubMap() {
       </div>
 
       {/* ── Map + Panel ─────────────────────────────────────────────────────── */}
-      {/* items-start prevents the flex row's default stretch behavior from
-          forcing the map to grow to match the sidebar's height when its
-          content (hub stats + insights) is taller than the map. */}
+      {/* items-start is the actual fix: a flex row's default (align-items:
+          stretch) forces every child — including the map wrapper — to grow
+          to match the tallest sibling (the side panel once hub stats +
+          insights render). That stretched wrapper then had empty space
+          below the map, because the SVG inside only ever sizes itself to
+          its own width:100%/height:auto aspect ratio and can't stretch to
+          fill it. items-start lets each child size to its own content, so
+          the map wrapper's height comes solely from the SVG's intrinsic
+          aspect ratio — never taller, and never cropped. */}
       <div className="flex flex-col lg:flex-row lg:items-start">
 
-        {/* Map — aspectRatio locks the container to the map's own W:H ratio so
-            its height is derived purely from its own width, completely
-            decoupled from the sidebar's height (no more vertical stretch). */}
-        <div
-          className="flex-1 relative overflow-hidden"
-          style={{ aspectRatio: MAP_ASPECT, maxHeight: MAP_H }}
-        >
+        <div className="flex-1 relative overflow-hidden">
           <ComposableMap
             projection="geoEquirectangular"
             projectionConfig={{ scale: MAP_SCALE, center: MAP_CENTER }}
@@ -367,12 +374,11 @@ export function GlobalTechHubMap() {
                     {isSelected && (
                       <circle r={r + 7} fill="rgba(245,158,11,0.12)" stroke="rgba(245,158,11,0.35)" strokeWidth={1.5} />
                     )}
+                    {/* Continuous low-opacity "ping" ring — gentle, uninterrupted radar pulse */}
                     <circle
-                      className={!isSelected ? 'hub-pulse-ring' : ''}
-                      r={r + 5}
-                      fill="none"
-                      stroke="rgba(245,158,11,0.4)"
-                      strokeWidth={1}
+                      className="hub-ping-ring"
+                      r={r}
+                      fill="rgba(245,158,11,0.35)"
                     />
                     <circle
                       r={isSelected || isHovered ? r + 2 : r}
@@ -456,30 +462,6 @@ export function GlobalTechHubMap() {
                   </div>
                 ))}
               </div>
-
-              {/* Alpha Insights */}
-              <div className="px-6 py-5" style={{ borderBottom: '1px solid #1a2a3f' }}>
-                <h4 className="text-[9px] font-bold uppercase tracking-widest text-amber-400 mb-4">Alpha Insights</h4>
-                {[
-                  { label: 'Capital Concentration', value: insights.capitalConcentration, desc: 'Top investor share of total deployed' },
-                  { label: 'Market Rating',          value: insights.marketRating,          desc: 'Investor-to-startup density score'   },
-                  { label: 'Talent Signal',          value: insights.talentSignal,          desc: '% startups with rapid growth'        },
-                ].map(item => (
-                  <div key={item.label} className="mb-4">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs text-slate-400">{item.label}</span>
-                      <span className="text-sm font-bold text-white">{item.value}%</span>
-                    </div>
-                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#1a2a3f' }}>
-                      <div
-                        className="h-full rounded-full"
-                        style={{ width: `${Math.min(100, item.value)}%`, background: 'linear-gradient(90deg,#F59E0B,#FCD34D)', transition: 'width .6s ease' }}
-                      />
-                    </div>
-                    <p className="text-[10px] text-slate-600 mt-1">{item.desc}</p>
-                  </div>
-                ))}
-              </div>
             </>
           ) : (
             /* Empty state */
@@ -520,25 +502,34 @@ export function GlobalTechHubMap() {
         </div>
       </div>
 
-      {/* ── Ecosystem Health — horizontal row underneath the map, avoids
-           pushing the side panel's height past the map's locked aspect ratio ── */}
+      {/* ── Alpha Insights + Ecosystem Health — combined horizontal data row
+           underneath the map, keeping the side panel to just header + stats
+           so it never dramatically outgrows the map's natural height ── */}
       {activeHub && insights && (
-        <div
-          className="flex flex-wrap items-center gap-x-10 gap-y-3 px-6 py-4"
-          style={{ borderTop: '1px solid #1a2a3f', background: '#08111f' }}
-        >
-          <h4 className="text-[9px] font-bold uppercase tracking-widest text-emerald-400 flex-none">
-            Ecosystem Health · {activeHub.name}
+        <div className="px-6 py-5" style={{ borderTop: '1px solid #1a2a3f', background: '#08111f' }}>
+          <h4 className="text-[9px] font-bold uppercase tracking-widest text-slate-500 mb-4">
+            Alpha Insights &amp; Ecosystem Health · <span className="text-slate-300">{activeHub.name}</span>
           </h4>
-          <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-6 gap-y-4">
             {[
-              { label: 'Local Capital',     value: insights.localCapitalPct, suffix: '%' },
-              { label: 'Hub Momentum',      value: insights.hubMomentum,      suffix: ''  },
-              { label: 'Cross-Border Index', value: insights.crossBorderIndex, suffix: '%' },
+              { label: 'Capital Concentration', value: insights.capitalConcentration, suffix: '%', color: '#F59E0B' },
+              { label: 'Market Rating',          value: insights.marketRating,          suffix: '%', color: '#F59E0B' },
+              { label: 'Talent Signal',          value: insights.talentSignal,          suffix: '%', color: '#F59E0B' },
+              { label: 'Local Capital',          value: insights.localCapitalPct,       suffix: '%', color: '#10b981' },
+              { label: 'Hub Momentum',           value: insights.hubMomentum,           suffix: '',  color: '#10b981' },
+              { label: 'Cross-Border Index',     value: insights.crossBorderIndex,      suffix: '%', color: '#10b981' },
             ].map(item => (
-              <div key={item.label} className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">{item.label}</span>
-                <span className="text-sm font-bold" style={{ color: '#10b981' }}>{item.value}{item.suffix}</span>
+              <div key={item.label}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] text-slate-400">{item.label}</span>
+                  <span className="text-xs font-bold text-white">{item.value}{item.suffix}</span>
+                </div>
+                <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#1a2a3f' }}>
+                  <div
+                    className="h-full rounded-full"
+                    style={{ width: `${Math.min(100, item.value)}%`, background: item.color, transition: 'width .6s ease' }}
+                  />
+                </div>
               </div>
             ))}
           </div>
