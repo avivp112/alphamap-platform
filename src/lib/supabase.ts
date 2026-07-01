@@ -46,6 +46,11 @@ export interface Startup {
   created_at: string;
   updated_at: string;
   funding_rounds: FundingRound[];
+  // Explicit competitor relationships — no such column exists in the schema
+  // yet, so this is always undefined today. Left typed here so the
+  // Competitors & Market tab picks it up automatically once a real
+  // `competitors` column/table is added; until then it renders as missing.
+  competitors?: string[] | null;
 }
 
 export async function fetchStartups(): Promise<Startup[]> {
@@ -174,6 +179,7 @@ export interface InvestorRow {
   sector_allocation: Record<string, number>;
   notable_investments: string[];
   website: string | null;
+  tier: number | null;
   updated_at: string;
 }
 
@@ -184,6 +190,20 @@ export async function fetchInvestors(): Promise<InvestorRow[]> {
     .order("portfolio_size", { ascending: false });
   if (error) throw error;
   return (data ?? []) as InvestorRow[];
+}
+
+// Lightweight name → tier lookup used by the Startup Cap Table tab to grade
+// the investors backing a given round (1 = top-tier … 3 = long-tail).
+// Keyed by lower-cased/trimmed name to match however funding_rounds.investors
+// / lead_investor happen to be capitalized.
+export async function fetchInvestorTierMap(): Promise<Map<string, number>> {
+  const { data, error } = await supabase.from("investors").select("name, tier");
+  if (error) throw error;
+  const map = new Map<string, number>();
+  for (const row of (data ?? []) as Array<{ name: string; tier: number | null }>) {
+    if (row.tier != null) map.set(row.name.trim().toLowerCase(), row.tier);
+  }
+  return map;
 }
 
 export async function ingestStartup(companyName: string): Promise<{ startup: Startup; funding_round: FundingRound | null }> {

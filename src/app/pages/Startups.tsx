@@ -16,7 +16,7 @@ import {
   GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2,
 } from "lucide-react";
 import {
-  fetchStartups, ingestStartup, fetchAlphaScore, fetchHeadcountHistory,
+  fetchStartups, ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
   type Startup, type FundingRound, type RoundType, type AlphaScore, type HeadcountPoint,
 } from "../../lib/supabase";
 
@@ -647,19 +647,9 @@ function ScoreRing({ score, tier }: { score: number | null; tier: 'A' | 'B' | 'C
   );
 }
 
-function AlphaMapScorePanel({ startupId }: { startupId: string }) {
-  const [data, setData] = useState<AlphaScore | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState(false);
-
-  useEffect(() => {
-    setLoading(true); setErr(false); setData(null);
-    fetchAlphaScore(startupId)
-      .then(setData)
-      .catch(() => setErr(true))
-      .finally(() => setLoading(false));
-  }, [startupId]);
-
+function AlphaMapScorePanel({ data, loading, err }: {
+  data: AlphaScore | null; loading: boolean; err: boolean;
+}) {
   if (loading) {
     return (
       <div className="bg-[#091422] border border-[#1a2a3f] rounded-[14px] p-4 flex items-center gap-3">
@@ -826,45 +816,9 @@ function ScoreBadge({ startupId }: { startupId: string }) {
 }
 
 // ── Talent & Growth Intelligence ─────────────────────────────────────────────
-
-function buildHeadcountHistory(
-  current: number,
-  trend: string | null,
-  foundedYear: number | null,
-): Array<{ year: string; headcount: number }> {
-  const rates: Record<string, number> = {
-    "rapid growth": 0.35, "moderate growth": 0.20,
-    "stable": 0.04, "reduction": -0.15, "unknown": 0.12,
-  };
-  const rate  = rates[trend ?? "unknown"] ?? 0.12;
-  const now   = new Date().getFullYear();
-  const start = foundedYear ? Math.max(foundedYear, now - 4) : now - 4;
-  const n     = now - start;
-  const pts: Array<{ year: string; headcount: number }> = [];
-  for (let i = n; i >= 0; i--) {
-    pts.push({ year: String(now - i), headcount: Math.max(1, Math.round(current / Math.pow(1 + rate, i))) });
-  }
-  return pts;
-}
-
-const OPEN_POS_RATIO: Record<string, number> = {
-  "rapid growth": 0.14, "moderate growth": 0.08, "stable": 0.03, "reduction": 0.01,
-};
-
-interface HiringHype { label: string; style: string; text: string; }
-
-function getHiringHype(current: number, openPos: number, trend: string | null): HiringHype {
-  const ratio = current > 0 ? openPos / current : 0;
-  if (trend === "rapid growth" || ratio >= 0.12)
-    return { label: "🔥 High Growth Hype", style: "bg-rose-500/10 text-rose-300 border border-rose-500/20", text: "Aggressively scaling headcount signals strong product-market fit and significant upcoming capacity expansion." };
-  if (trend === "moderate growth" || ratio >= 0.06)
-    return { label: "🟢 Steady Hiring", style: "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20", text: "Disciplined team growth indicates healthy pipeline execution and capital-efficient scaling." };
-  if (trend === "stable" || ratio >= 0.02)
-    return { label: "📊 Selective Hiring", style: "bg-blue-500/10 text-blue-300 border border-blue-500/20", text: "Hiring activity is selective and targeted — likely filling critical roles rather than broad expansion." };
-  if (trend === "reduction")
-    return { label: "⚠️ Flat / Freeze", style: "bg-amber-500/10 text-amber-300 border border-amber-500/20", text: "Headcount contraction detected — may indicate cost optimisation, restructuring, or market adjustment." };
-  return { label: "📊 Monitoring", style: "bg-slate-500/10 text-slate-300 border border-slate-500/20", text: "Insufficient hiring signal data — check back after the next enrichment cycle." };
-}
+// NOTE: no simulated/fabricated headcount curve — if fewer than 2 real
+// `headcount_history` snapshots exist for a company, the Talent & Growth tab
+// renders an explicit "Data requires filling" state rather than guessing.
 
 // Maps real HeadcountPoint rows → chart-friendly shape, choosing label precision
 // based on the overall time span so x-axis labels never look crowded.
@@ -884,219 +838,459 @@ function realHistoryToChartPoints(
   });
 }
 
-function TalentGrowthCard({ startup }: { startup: Startup }) {
-  const count = startup.employee_count ?? 0;
-  const trend = startup.growth_trend ?? null;
-  const openPos = Math.max(1, Math.round(count * (OPEN_POS_RATIO[trend ?? ""] ?? 0.05)));
-  const hype    = getHiringHype(count, openPos, trend);
+// ── Shared tab primitives ─────────────────────────────────────────────────────
 
-  // Real history from DB; falls back to simulated curve while table is accumulating data
-  const [realPts, setRealPts] = useState<HeadcountPoint[] | null>(null);
-  useEffect(() => {
-    fetchHeadcountHistory(startup.id)
-      .then(setRealPts)
-      .catch(() => setRealPts([]));
-  }, [startup.id]);
-
-  const chartData: Array<{ year: string; headcount: number }> = (() => {
-    if (realPts !== null && realPts.length >= 2) {
-      return realHistoryToChartPoints(realPts);
-    }
-    return buildHeadcountHistory(count, trend, startup.founded_year ?? null);
-  })();
-
-  const isReal = realPts !== null && realPts.length >= 2;
-
+function StatCard({ icon: Icon, label, value, accent = "#F59E0B" }: {
+  icon: React.ElementType; label: string; value: string; accent?: string;
+}) {
   return (
-    <div>
-      <div className="flex items-center gap-2 mb-3">
-        <Users className="w-4 h-4 text-slate-500" />
-        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Talent &amp; Growth Intelligence</h3>
+    <div className="rounded-[14px] p-4 flex flex-col gap-2 border bg-[#091422] border-[#1a2a3f]">
+      <div className="flex items-center gap-1.5">
+        <Icon className="w-3.5 h-3.5 flex-none" style={{ color: accent }} />
+        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">{label}</span>
       </div>
-      <div className="bg-[#091422] border border-[#1a2a3f] rounded-[14px] p-5 space-y-4">
-        {/* Stat row */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="text-2xl font-black text-white leading-none">
-              {count ? fmtEmp(count) : "—"}
-            </div>
-            <div className="text-[10px] text-slate-500 mt-1">employees (estimated)</div>
-          </div>
-          <div className="flex flex-col items-end gap-2">
-            <GrowthTrendBadge trend={trend} />
-            <div className="flex items-center gap-1.5 bg-[#0a1830] border border-[#1a2a3f] rounded-lg px-2.5 py-1.5">
-              <Briefcase className="w-3 h-3 text-[#22d3ee]" />
-              <span className="text-[10px] font-bold text-white">{openPos}</span>
-              <span className="text-[10px] text-slate-500">open positions</span>
-            </div>
-          </div>
-        </div>
+      <span className="text-sm font-bold text-white truncate">{value}</span>
+    </div>
+  );
+}
 
-        {/* Headcount chart — real data when available, simulated curve as fallback */}
-        {chartData.length >= 2 && (
-          <div className="h-28">
-            {/* Source label */}
-            <div className="flex justify-end mb-1">
-              <span className={`text-[8px] font-semibold px-1.5 py-0.5 rounded-full border ${
-                isReal
-                  ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
-                  : "text-slate-600 bg-slate-700/20 border-slate-700/30"
-              }`}>
-                {isReal ? "Live data" : "Simulated"}
-              </span>
-            </div>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="hcGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.25} />
-                    <stop offset="100%" stopColor="#22d3ee" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                <XAxis dataKey="year" tick={{ fill: "#475569", fontSize: 9 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "#475569", fontSize: 9 }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtEmp(v)} />
-                <ReTooltip
-                  contentStyle={{ background: "#0b1626", border: "1px solid #1a2a3f", borderRadius: 8, fontSize: 11 }}
-                  labelStyle={{ color: "#94a3b8" }}
-                  itemStyle={{ color: "#22d3ee" }}
-                />
-                <Area type="monotone" dataKey="headcount" stroke="#22d3ee" strokeWidth={1.5} fill="url(#hcGrad)" dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-
-        {/* Hiring hype badge + analysis */}
-        <div className={`flex flex-col gap-1.5 rounded-[10px] p-3 ${hype.style}`}>
-          <span className="text-[11px] font-bold">{hype.label}</span>
-          <p className="text-[10px] leading-relaxed opacity-80">{hype.text}</p>
-        </div>
+// Highly visible placeholder for any dataset that is null/empty/undefined in
+// the DB. Per an explicit product decision, missing data is NEVER mocked,
+// guessed, or auto-filled — it's surfaced so the admin/data team can see the
+// gap and go fill it.
+function MissingDataState({ message }: { message: string }) {
+  return (
+    <div className="flex items-start gap-3 rounded-[14px] p-5 border border-dashed border-amber-500/30 bg-amber-500/[0.04]">
+      <AlertCircle className="w-5 h-5 text-amber-400 flex-none mt-0.5" />
+      <div>
+        <p className="text-sm font-bold text-amber-300">Data requires filling</p>
+        <p className="text-xs text-slate-400 mt-1 leading-relaxed">{message}</p>
       </div>
     </div>
   );
 }
 
-// ── Peer Comparison Matrix ────────────────────────────────────────────────────
+// ── Tearsheet accent palette (mirrors VCModal's per-entity accent system) ────
 
-function PeerComparisonMatrix({
-  startup, peers, onNavigate,
+interface TearsheetAccent { ring: string; glow: string; border: string; text: string }
+
+const TEARSHEET_ACCENTS: TearsheetAccent[] = [
+  { ring: '#22d3ee', glow: 'rgba(34,211,238,0.35)',  border: 'rgba(34,211,238,0.22)',  text: '#67e8f9' },
+  { ring: '#a78bfa', glow: 'rgba(167,139,250,0.35)', border: 'rgba(167,139,250,0.22)', text: '#c4b5fd' },
+  { ring: '#34d399', glow: 'rgba(52,211,153,0.35)',  border: 'rgba(52,211,153,0.22)',  text: '#6ee7b7' },
+  { ring: '#fbbf24', glow: 'rgba(251,191,36,0.35)',  border: 'rgba(251,191,36,0.22)',  text: '#fcd34d' },
+  { ring: '#f472b6', glow: 'rgba(244,114,182,0.35)', border: 'rgba(244,114,182,0.22)', text: '#f9a8d4' },
+];
+
+function getTearsheetAccent(id: string): TearsheetAccent {
+  let h = 0;
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) & 0xffff;
+  return TEARSHEET_ACCENTS[h % TEARSHEET_ACCENTS.length];
+}
+
+// ── Tab 1: Overview ───────────────────────────────────────────────────────────
+
+function OverviewTab({
+  startup, alphaScore, alphaLoading, alphaErr,
 }: {
-  startup: Startup;
-  peers: Array<{ startup: Startup; score: number }>;
-  onNavigate: (s: Startup) => void;
+  startup: Startup; alphaScore: AlphaScore | null; alphaLoading: boolean; alphaErr: boolean;
 }) {
-  const rows = peers.slice(0, 3);
-
-  const trendIcon = (trend: string | null) => {
-    if (trend === "rapid growth" || trend === "moderate growth") return <TrendingUp className="w-3 h-3 text-emerald-400" />;
-    if (trend === "reduction") return <TrendingDown className="w-3 h-3 text-rose-400" />;
-    return <Minus className="w-3 h-3 text-slate-500" />;
-  };
+  const location = [startup.city, startup.country].filter(Boolean).join(", ") || "—";
+  const sector = classifyIndustry(startup.industry);
 
   return (
-    <div>
-      <div className="flex items-center gap-2 mb-3">
-        <Building2 className="w-4 h-4 text-slate-500" />
-        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Peer Comparison Matrix</h3>
-        <span className="ml-1 text-[9px] text-slate-600 bg-[#0a1830] border border-[#1a2a3f] px-2 py-0.5 rounded-full">
-          ≥ {PEER_THRESHOLD}% match
-        </span>
+    <div className="space-y-6">
+      {startup.description ? (
+        <p className="text-sm text-slate-300 leading-relaxed">{startup.description}</p>
+      ) : (
+        <MissingDataState message="No company description on file." />
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatCard icon={Calendar}  label="Founded"   value={startup.founded_year ? String(startup.founded_year) : "—"} accent="#F59E0B" />
+        <StatCard icon={MapPin}    label="Location"  value={location} accent="#22d3ee" />
+        <StatCard icon={Users}     label="Employees" value={fmtEmp(startup.employee_count)} accent="#a78bfa" />
+        <StatCard icon={Briefcase} label="Sector"    value={sector.parent} accent="#f472b6" />
       </div>
 
-      {rows.length === 0 ? (
-        <div className="flex items-center gap-2 bg-[#091422] border border-[#1a2a3f] rounded-[12px] px-4 py-3">
-          <Building2 className="w-3.5 h-3.5 text-slate-600 flex-none" />
-          <p className="text-xs text-slate-600 italic">
-            No close peers found — no companies met the {PEER_THRESHOLD}% similarity threshold.
-          </p>
-        </div>
-      ) : (
-        <div className="bg-[#091422] border border-[#1a2a3f] rounded-[14px] overflow-hidden">
-          {/* Header */}
-          <div className="grid grid-cols-[1fr_80px_72px_72px_64px] gap-2 px-4 py-2.5 border-b border-[#1a2a3f]">
-            {["Company", "Sector", "Stage", "Raised", "Growth"].map((h) => (
-              <span key={h} className="text-[9px] font-bold text-slate-600 uppercase tracking-widest">{h}</span>
-            ))}
-          </div>
+      <AlphaMapScorePanel data={alphaScore} loading={alphaLoading} err={alphaErr} />
 
-          {/* Subject row (amber highlight) */}
-          {(() => {
-            const pr = startup.funding_rounds?.[0];
-            const { sub } = classifyIndustry(startup.industry);
-            return (
-              <div className="grid grid-cols-[1fr_80px_72px_72px_64px] gap-2 px-4 py-3 bg-amber-500/5 border-b border-amber-500/10">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black flex-none ${avatarColor(startup.name)}`}>
-                    {startup.name[0].toUpperCase()}
-                  </div>
-                  <span className="text-xs font-bold text-[#F59E0B] truncate">{startup.name}</span>
-                  <span className="text-[8px] text-amber-600/70 bg-amber-500/10 px-1.5 py-0.5 rounded-full font-bold flex-none">YOU</span>
+      {startup.leadership && startup.leadership.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Briefcase className="w-4 h-4 text-slate-500" />
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Leadership</h3>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {startup.leadership.map((l, i) => (
+              <div key={i} className="flex items-center gap-2.5 bg-[#091422] border border-[#1a2a3f] rounded-[12px] px-3 py-2">
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black flex-none ${avatarColor(l.name)}`}>
+                  {l.name[0]}
                 </div>
-                <span className="text-[10px] text-slate-300 truncate self-center">{sub}</span>
-                <div className="self-center">
-                  {pr?.round_type && (
-                    <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${ROUND_STYLE[pr.round_type] ?? ROUND_STYLE["Other"]}`}>
-                      {pr.round_type}
-                    </span>
-                  )}
-                </div>
-                <span className="text-[10px] font-bold text-white self-center">{fmt(totalRaised(startup))}</span>
-                <div className="self-center flex items-center gap-1">
-                  {trendIcon(startup.growth_trend)}
-                  <span className="text-[9px] text-slate-400 capitalize">{startup.growth_trend ?? "—"}</span>
+                <div>
+                  <div className="text-xs font-bold text-white leading-tight">{l.name}</div>
+                  <div className="text-[9px] text-slate-500">{l.role}</div>
                 </div>
               </div>
-            );
-          })()}
+            ))}
+          </div>
+        </div>
+      )}
 
-          {/* Peer rows */}
-          {rows.map(({ startup: peer, score }) => {
-            const pr = peer.funding_rounds?.[0];
-            const { sub } = classifyIndustry(peer.industry);
-            return (
-              <button
-                key={peer.id}
-                onClick={() => onNavigate(peer)}
-                className="w-full grid grid-cols-[1fr_80px_72px_72px_64px] gap-2 px-4 py-3 border-b border-[#1a2a3f] last:border-b-0 hover:bg-white/[0.02] transition-colors text-left group"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black flex-none ${avatarColor(peer.name)}`}>
-                    {peer.name[0].toUpperCase()}
-                  </div>
-                  <span className="text-xs font-semibold text-white group-hover:text-[#F59E0B] transition-colors truncate">{peer.name}</span>
-                  <span className="text-[8px] text-slate-600 bg-[#0a1830] border border-[#1a2a3f] px-1.5 py-0.5 rounded-full font-bold flex-none">{score}%</span>
+      {startup.founders && startup.founders.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <UserRound className="w-4 h-4 text-slate-500" />
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+              Founder{startup.founders.length > 1 ? "s" : ""}
+            </h3>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {startup.founders.map((f, i) => (
+              <span key={i} className="flex items-center gap-1.5 bg-[#091422] border border-[#1a2a3f] text-sm font-medium text-slate-200 px-3 py-1.5 rounded-full">
+                <div className="w-5 h-5 rounded-full bg-amber-900/60 flex items-center justify-center text-[10px] font-black text-amber-400">
+                  {f[0].toUpperCase()}
                 </div>
-                <span className="text-[10px] text-slate-400 truncate self-center">{sub}</span>
-                <div className="self-center">
-                  {pr?.round_type && (
-                    <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${ROUND_STYLE[pr.round_type] ?? ROUND_STYLE["Other"]}`}>
-                      {pr.round_type}
-                    </span>
-                  )}
-                </div>
-                <span className="text-[10px] font-bold text-white self-center">{fmt(totalRaised(peer))}</span>
-                <div className="self-center flex items-center gap-1">
-                  {trendIcon(peer.growth_trend)}
-                  <span className="text-[9px] text-slate-500 capitalize">{peer.growth_trend ?? "—"}</span>
-                </div>
-              </button>
-            );
-          })}
+                {f}
+              </span>
+            ))}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
+// ── Tab 2: Funding & Valuation ────────────────────────────────────────────────
+
+function VerticalFundingTimeline({ rounds }: { rounds: FundingRound[] }) {
+  const newestFirst = useMemo(
+    () => [...rounds].sort((a, b) => (b.announcement_date ?? "").localeCompare(a.announcement_date ?? "")),
+    [rounds],
+  );
+
+  return (
+    <div className="relative">
+      <div className="absolute left-[13px] top-2 bottom-2 w-px bg-[#1a2a3f]" />
+      <div className="space-y-4">
+        {newestFirst.map((r, idx) => {
+          const color = ROUND_HEX[r.round_type ?? "Other"] ?? "#9CA3AF";
+          return (
+            <div key={r.id ?? idx} className="relative pl-9">
+              <div
+                className="absolute left-0 top-1 w-[27px] h-[27px] rounded-full flex items-center justify-center border-2"
+                style={{ background: "#0b1626", borderColor: color }}
+              >
+                <div className="w-2 h-2 rounded-full" style={{ background: color }} />
+              </div>
+              <div className="bg-[#091422] border border-[#1a2a3f] rounded-[14px] p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {r.round_type && (
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${ROUND_STYLE[r.round_type] ?? ROUND_STYLE["Other"]}`}>
+                          {r.round_type}
+                        </span>
+                      )}
+                      {r.announcement_date && (
+                        <span className="text-xs text-slate-500">
+                          {new Date(r.announcement_date).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                      {r.amount_raised && (
+                        <span className="text-xs text-slate-400">
+                          <span className="font-bold text-white">{fmt(r.amount_raised)}</span> raised
+                        </span>
+                      )}
+                      {r.valuation && (
+                        <span className="text-xs text-slate-400">
+                          <span className="font-bold text-white">{fmt(r.valuation)}</span>
+                          {r.is_valuation_estimated && <span className="text-slate-500"> est.</span>} val.
+                        </span>
+                      )}
+                    </div>
+                    {r.lead_investor ? (
+                      <span className="text-[10px] text-slate-500">
+                        Lead: <span className="text-slate-300 font-medium">{r.lead_investor}</span>
+                        {r.investors && r.investors.length > 1 && (
+                          <span className="text-slate-600"> +{r.investors.length - 1} more</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-slate-700 italic">Investor data requires filling</span>
+                    )}
+                  </div>
+                  {r.source_url && (
+                    <a href={r.source_url} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-xs text-[#F59E0B] hover:underline font-medium flex-none">
+                      Source <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function FundingValuationTab({ startup, sortedRounds }: { startup: Startup; sortedRounds: FundingRound[] }) {
+  const latestRound = sortedRounds[sortedRounds.length - 1] ?? null;
+  const raised = totalRaised(startup);
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <StatCard icon={DollarSign} label="Total Raised"     value={raised ? fmt(raised) : "—"} accent="#F59E0B" />
+        <StatCard icon={TrendingUp} label="Latest Valuation" value={fmt(latestRound?.valuation)} accent="#22d3ee" />
+        <StatCard icon={Clock}      label="Last Round Type"  value={latestRound?.round_type ?? "—"} accent="#a78bfa" />
+      </div>
+
+      {sortedRounds.length >= 2 && <FundingTimeline rounds={sortedRounds} />}
+
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <Clock className="w-4 h-4 text-slate-500" />
+          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Funding Timeline</h3>
+        </div>
+        {sortedRounds.length === 0 ? (
+          <MissingDataState message="No funding rounds have been recorded for this company yet." />
+        ) : (
+          <VerticalFundingTimeline rounds={sortedRounds} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Tab 3: Cap Table & Investors ──────────────────────────────────────────────
+
+const CAP_TABLE_TIER_STYLE: Record<number, { label: string; cls: string; dot: string }> = {
+  1: { label: "Tier 1 · Top-Tier",  cls: "bg-amber-500/10 text-amber-300 border-amber-500/25", dot: "#F59E0B" },
+  2: { label: "Tier 2 · Mid-Tier",  cls: "bg-cyan-500/10 text-cyan-300 border-cyan-500/25",     dot: "#22d3ee" },
+  3: { label: "Tier 3 · Long-Tail", cls: "bg-slate-600/15 text-slate-400 border-slate-600/30",  dot: "#64748b" },
+};
+const CAP_TABLE_UNRANKED = { label: "Unranked", cls: "bg-slate-800/40 text-slate-500 border-slate-700/40", dot: "#475569" };
+
+function buildCapTable(rounds: FundingRound[]): { leads: string[]; participants: string[] } {
+  const leadSet = new Set<string>();
+  const allSet  = new Set<string>();
+  for (const r of rounds) {
+    const lead = r.lead_investor?.trim();
+    if (lead) { leadSet.add(lead); allSet.add(lead); }
+    for (const inv of r.investors ?? []) {
+      const name = inv?.trim();
+      if (name) allSet.add(name);
+    }
+  }
+  const leads = Array.from(leadSet).sort();
+  const participants = Array.from(allSet).filter((n) => !leadSet.has(n)).sort();
+  return { leads, participants };
+}
+
+function CapTableInvestorRow({ name, tierMap }: { name: string; tierMap: Map<string, number> | null }) {
+  const tier = tierMap?.get(name.toLowerCase()) ?? null;
+  const style = tier != null ? CAP_TABLE_TIER_STYLE[tier] : CAP_TABLE_UNRANKED;
+  return (
+    <div className="flex items-center justify-between gap-3 bg-[#091422] border border-[#1a2a3f] rounded-[12px] px-4 py-3">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <div
+          className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black flex-none"
+          style={{ background: `${style.dot}22`, border: `1px solid ${style.dot}44`, color: style.dot }}
+        >
+          {name[0]?.toUpperCase() ?? "?"}
+        </div>
+        <span className="text-sm font-semibold text-white truncate">{name}</span>
+      </div>
+      <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border flex-none whitespace-nowrap ${style.cls}`}>{style.label}</span>
+    </div>
+  );
+}
+
+function CapTableTab({ startup }: { startup: Startup }) {
+  const [tierMap, setTierMap] = useState<Map<string, number> | null>(null);
+
+  useEffect(() => {
+    fetchInvestorTierMap().then(setTierMap).catch(() => setTierMap(new Map()));
+  }, []);
+
+  const { leads, participants } = useMemo(
+    () => buildCapTable(startup.funding_rounds ?? []),
+    [startup.funding_rounds],
+  );
+
+  if (leads.length === 0 && participants.length === 0) {
+    return <MissingDataState message="No investors are linked to this company's funding rounds yet — the cap table has not been ingested." />;
+  }
+
+  return (
+    <div className="space-y-6">
+      {leads.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Zap className="w-4 h-4 text-[#F59E0B]" />
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Lead Investors</h3>
+          </div>
+          <div className="space-y-2">
+            {leads.map((n) => <CapTableInvestorRow key={n} name={n} tierMap={tierMap} />)}
+          </div>
+        </div>
+      )}
+      {participants.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Users className="w-4 h-4 text-slate-500" />
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Participating Investors</h3>
+          </div>
+          <div className="space-y-2">
+            {participants.map((n) => <CapTableInvestorRow key={n} name={n} tierMap={tierMap} />)}
+          </div>
+        </div>
+      )}
+      <p className="text-[10px] text-slate-600 italic flex items-center gap-1.5">
+        <Info className="w-3 h-3 flex-none" />
+        Investor tier is looked up from the AlphaMap investor directory — firms not yet tracked there show as "Unranked".
+      </p>
+    </div>
+  );
+}
+
+// ── Tab 4: Talent & Growth ─────────────────────────────────────────────────────
+
+function TalentGrowthTab({
+  startup, alphaScore, alphaLoading,
+}: {
+  startup: Startup; alphaScore: AlphaScore | null; alphaLoading: boolean;
+}) {
+  const [realPts, setRealPts] = useState<HeadcountPoint[] | null>(null);
+
+  useEffect(() => {
+    setRealPts(null);
+    fetchHeadcountHistory(startup.id).then(setRealPts).catch(() => setRealPts([]));
+  }, [startup.id]);
+
+  const chartData = realPts && realPts.length >= 2 ? realHistoryToChartPoints(realPts) : null;
+  const talentPillar = alphaScore?.pillars?.talent_velocity ?? null;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <StatCard icon={Users}    label="Employees"      value={fmtEmp(startup.employee_count)} accent="#22d3ee" />
+        <StatCard icon={Activity} label="Talent Velocity" accent="#a78bfa"
+          value={talentPillar?.valid && talentPillar.score != null ? `${safeFixed(talentPillar.score, 0)} / 100` : "—"} />
+        <div className="rounded-[14px] p-4 flex flex-col gap-2 border bg-[#091422] border-[#1a2a3f]">
+          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Growth Trend</span>
+          <GrowthTrendBadge trend={startup.growth_trend} />
+          {(!startup.growth_trend || startup.growth_trend === "unknown") && (
+            <span className="text-sm font-bold text-slate-600">—</span>
+          )}
+        </div>
+      </div>
+
+      {!alphaLoading && talentPillar && (
+        <div className="bg-[#091422] border border-[#1a2a3f] rounded-[14px] p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Activity className="w-4 h-4 text-[#a78bfa]" />
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Talent Velocity Breakdown</h3>
+          </div>
+          <div className="text-[11px] text-slate-500 space-y-1.5">
+            {talentPillar.detail?.hc_growth_pct != null && (
+              <div>Headcount growth: <span className="text-slate-300 font-medium">{talentPillar.detail.hc_growth_pct.toFixed(1)}%</span></div>
+            )}
+            {talentPillar.detail?.serial_founder != null && (
+              <div>Serial founder bonus: <span className="text-slate-300 font-medium">{talentPillar.detail.serial_founder ? "Yes (+10)" : "No"}</span></div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <Users className="w-4 h-4 text-slate-500" />
+          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Headcount History</h3>
+        </div>
+        {chartData ? (
+          <div className="bg-[#091422] border border-[#1a2a3f] rounded-[14px] p-4">
+            <div className="flex justify-end mb-2">
+              <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full border text-emerald-400 bg-emerald-500/10 border-emerald-500/20">
+                Live data
+              </span>
+            </div>
+            <div className="h-32">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="hcGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.25} />
+                      <stop offset="100%" stopColor="#22d3ee" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                  <XAxis dataKey="year" tick={{ fill: "#475569", fontSize: 9 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: "#475569", fontSize: 9 }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtEmp(v)} />
+                  <ReTooltip
+                    contentStyle={{ background: "#0b1626", border: "1px solid #1a2a3f", borderRadius: 8, fontSize: 11 }}
+                    labelStyle={{ color: "#94a3b8" }}
+                    itemStyle={{ color: "#22d3ee" }}
+                  />
+                  <Area type="monotone" dataKey="headcount" stroke="#22d3ee" strokeWidth={1.5} fill="url(#hcGrad)" dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        ) : (
+          <MissingDataState message="No historical headcount snapshots have been recorded for this company yet — at least 2 data points are needed to plot a trend." />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Tab 5: Competitors & Market ────────────────────────────────────────────────
+// Strictly explicit: only renders data from startup.competitors (a real
+// competitor relationship pulled from the DB). Never falls back to
+// sector-based or similarity-based peer matching.
+
+function CompetitorsMarketTab({ startup }: { startup: Startup }) {
+  const competitors = (startup.competitors ?? []).filter(Boolean);
+
+  if (competitors.length === 0) {
+    return (
+      <MissingDataState message="No competitor relationships have been mapped for this company yet. This must be added by the research team — it is not inferred automatically from sector or stage." />
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {competitors.map((c) => (
+        <span key={c} className="flex items-center gap-2 bg-[#091422] border border-[#1a2a3f] rounded-full px-3.5 py-2 text-sm font-semibold text-white">
+          <Building2 className="w-3.5 h-3.5 text-slate-500 flex-none" />{c}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 // ── Tearsheet Modal ───────────────────────────────────────────────────────────
 
-function TearsheetModal({
-  startup, allStartups, onClose, onNavigate,
-}: {
-  startup: Startup; allStartups: Startup[];
-  onClose: () => void; onNavigate: (s: Startup) => void;
-}) {
+type TearsheetTab = "overview" | "funding" | "captable" | "talent" | "competitors";
+
+const TEARSHEET_TABS: { id: TearsheetTab; label: string }[] = [
+  { id: "overview",    label: "Overview" },
+  { id: "funding",     label: "Funding & Valuation" },
+  { id: "captable",    label: "Cap Table & Investors" },
+  { id: "talent",      label: "Talent & Growth" },
+  { id: "competitors", label: "Competitors & Market" },
+];
+
+function TearsheetModal({ startup, onClose }: { startup: Startup; onClose: () => void }) {
+  const accent = getTearsheetAccent(startup.id);
+  const [activeTab, setActiveTab] = useState<TearsheetTab>("overview");
+
   const latestRound = startup.funding_rounds?.[0] ?? null;
   const roundType   = latestRound?.round_type ?? null;
   const roundStyle  = roundType ? (ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]) : null;
@@ -1109,7 +1303,21 @@ function TearsheetModal({
     [startup.funding_rounds],
   );
 
-  const peers = useMemo(() => findPeerGroup(startup, allStartups), [startup, allStartups]);
+  // AlphaMap Score is fetched once here and shared by Overview + Talent tabs
+  // so switching tabs doesn't re-trigger the RPC call.
+  const [alphaScore, setAlphaScore]     = useState<AlphaScore | null>(null);
+  const [alphaLoading, setAlphaLoading] = useState(true);
+  const [alphaErr, setAlphaErr]         = useState(false);
+
+  useEffect(() => {
+    setAlphaLoading(true); setAlphaErr(false); setAlphaScore(null);
+    fetchAlphaScore(startup.id)
+      .then(setAlphaScore)
+      .catch(() => setAlphaErr(true))
+      .finally(() => setAlphaLoading(false));
+  }, [startup.id]);
+
+  useEffect(() => { setActiveTab("overview"); }, [startup.id]);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -1118,198 +1326,115 @@ function TearsheetModal({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-[#0b1626] rounded-[24px] shadow-[0_32px_80px_rgba(0,0,0,0.7)] w-full max-w-2xl max-h-[92vh] overflow-y-auto border border-[#1a2a3f]">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+      style={{ background: "rgba(6,13,25,0.85)", backdropFilter: "blur(10px)" }}
+      onClick={onClose}
+    >
+      <div
+        className="relative flex flex-col w-[90vw] max-w-6xl"
+        style={{
+          height: "85vh",
+          background: "linear-gradient(145deg, #0f1d2e 0%, #0a1520 100%)",
+          border: "1px solid rgba(255,255,255,0.09)",
+          borderRadius: 24,
+          boxShadow: `0 32px 80px rgba(0,0,0,0.70), 0 0 0 1px rgba(255,255,255,0.03), inset 0 1px 0 rgba(255,255,255,0.05), 0 0 80px ${accent.glow}`,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          className="absolute inset-x-0 top-0 h-px pointer-events-none rounded-t-[24px]"
+          style={{ background: `linear-gradient(90deg, transparent, ${accent.glow}, transparent)` }}
+        />
 
-        {/* Sticky header */}
-        <div className="sticky top-0 z-10 bg-[#060e1a] rounded-t-[24px] px-7 py-5 border-b border-[#1a2a3f]">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-center gap-4 min-w-0">
-              <CompanyLogo name={startup.name} website={startup.website} size={48} rounded="rounded-2xl" />
-              <div className="min-w-0">
-                <h2 className="text-xl font-bold text-white leading-tight truncate">{startup.name}</h2>
-                <div className="flex items-center gap-3 mt-1 flex-wrap">
-                  {startup.industry && <span className="text-xs text-slate-400 font-medium">{startup.industry}</span>}
-                  {location && (
-                    <span className="flex items-center gap-1 text-xs text-slate-400">
-                      <MapPin className="w-3 h-3" />{location}
-                    </span>
-                  )}
-                  {startup.founded_year && (
-                    <span className="flex items-center gap-1 text-xs text-slate-500">
-                      <Calendar className="w-3 h-3" />est. {startup.founded_year}
-                    </span>
-                  )}
-                </div>
+        {/* ── Fixed header ── */}
+        <div className="flex-none px-6 pt-5 pb-4" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+          <div className="flex items-start gap-4">
+            <CompanyLogo name={startup.name} website={startup.website} size={52} rounded="rounded-2xl" />
+            <div className="flex-1 min-w-0">
+              <h2 className="text-xl font-black text-white tracking-tight leading-none mb-1.5 truncate">{startup.name}</h2>
+              <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                {location && (
+                  <span className="flex items-center gap-1"><MapPin className="w-3 h-3 flex-none" />{location}</span>
+                )}
+                {startup.founded_year && (
+                  <>
+                    <span className="text-slate-700">·</span>
+                    <span className="flex items-center gap-1"><Calendar className="w-3 h-3 flex-none" />Est. {startup.founded_year}</span>
+                  </>
+                )}
+                {startup.website && (
+                  <>
+                    <span className="text-slate-700">·</span>
+                    <a href={startup.website} target="_blank" rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex items-center gap-1 hover:text-cyan-400 transition-colors">
+                      <Globe className="w-3 h-3 flex-none" />Website
+                    </a>
+                  </>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-2 flex-none">
               {roundType && roundStyle && (
                 <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${roundStyle}`}>{roundType}</span>
               )}
-              <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
-                <X className="w-4 h-4 text-white" />
+              <button
+                onClick={onClose}
+                className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-slate-500 hover:text-white transition-all"
+                style={{ background: "rgba(255,255,255,0)" }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0)")}
+              >
+                <X className="w-4 h-4" />
               </button>
             </div>
           </div>
         </div>
 
-        <div className="p-7 space-y-7">
-          {startup.description && (
-            <p className="text-sm text-slate-300 leading-relaxed">{startup.description}</p>
-          )}
-
-          {/* Key metrics */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-            {[
-              { icon: DollarSign, label: "Total Raised", value: fmt(totalRaised(startup)), muted: false },
-              { icon: TrendingUp, label: "Valuation",    value: fmt(latestRound?.valuation), muted: false },
-              { icon: Users,      label: "Employees",    value: fmtEmp(startup.employee_count), muted: false },
-              { icon: Calendar,   label: "Founded",      value: startup.founded_year ? String(startup.founded_year) : "—", muted: false },
-              { icon: BarChart2,  label: "Est. Revenue", value: "Pending", muted: true },
-            ].map(({ icon: Icon, label, value, muted }) => (
-              <div
-                key={label}
-                className={`rounded-[14px] p-4 flex flex-col gap-2 border ${muted ? "bg-[#091422]/50 border-[#1a2a3f]/60 border-dashed" : "bg-[#091422] border-[#1a2a3f]"}`}
-              >
-                <div className="flex items-center gap-1.5">
-                  <Icon className={`w-3.5 h-3.5 ${muted ? "text-slate-600" : "text-[#F59E0B]"}`} />
-                  <span className={`text-[9px] font-bold uppercase tracking-wider ${muted ? "text-slate-600" : "text-slate-500"}`}>{label}</span>
-                </div>
-                <span className={`text-sm font-bold ${muted ? "text-slate-600 italic" : "text-white"}`}>{value}</span>
-              </div>
-            ))}
+        {/* ── Tab bar ── */}
+        <div className="flex-none" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+          <div className="flex items-center overflow-x-auto px-4" style={{ scrollbarWidth: "none" }}>
+            {TEARSHEET_TABS.map((tab) => {
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className="relative flex-none px-4 py-3.5 text-[11.5px] font-semibold whitespace-nowrap transition-colors"
+                  style={{ color: active ? accent.ring : "#64748b" }}
+                  onMouseEnter={(e) => { if (!active) e.currentTarget.style.color = "#94a3b8"; }}
+                  onMouseLeave={(e) => { if (!active) e.currentTarget.style.color = "#64748b"; }}
+                >
+                  {tab.label}
+                  {active && (
+                    <span
+                      className="absolute bottom-0 inset-x-2 h-[2px] rounded-full"
+                      style={{ background: accent.ring, boxShadow: `0 0 8px ${accent.ring}80` }}
+                    />
+                  )}
+                </button>
+              );
+            })}
           </div>
+        </div>
 
-          {/* AlphaMap Score */}
-          <AlphaMapScorePanel startupId={startup.id} />
-
-          {/* Funding timeline */}
-          {sortedRounds.length >= 2 && <FundingTimeline rounds={sortedRounds} />}
-
-          {/* Funding rounds list */}
-          {sortedRounds.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <DollarSign className="w-4 h-4 text-slate-500" />
-                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Funding Rounds</h3>
-              </div>
-              <div className="flex flex-col gap-2">
-                {sortedRounds.map((r, idx) => (
-                  <div key={r.id ?? idx} className="flex items-start justify-between gap-4 bg-[#091422] border border-[#1a2a3f] rounded-[14px] p-4">
-                    <div className="flex items-start gap-3 flex-1 min-w-0">
-                      <div className="w-2.5 h-2.5 rounded-full flex-none mt-1"
-                        style={{ backgroundColor: ROUND_HEX[r.round_type ?? "Other"] ?? "#9CA3AF" }} />
-                      <div className="flex flex-col gap-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {r.round_type && (
-                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${ROUND_STYLE[r.round_type] ?? ROUND_STYLE["Other"]}`}>
-                              {r.round_type}
-                            </span>
-                          )}
-                          {r.announcement_date && (
-                            <span className="text-xs text-slate-500">
-                              {new Date(r.announcement_date).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap gap-3">
-                          {r.amount_raised && (
-                            <span className="text-xs text-slate-400">
-                              <span className="font-bold text-white">{fmt(r.amount_raised)}</span> raised
-                            </span>
-                          )}
-                          {r.valuation && (
-                            <span className="text-xs text-slate-400">
-                              <span className="font-bold text-white">{fmt(r.valuation)}</span>
-                              {r.is_valuation_estimated && <span className="text-slate-500"> est.</span>} val.
-                            </span>
-                          )}
-                        </div>
-                        {r.lead_investor && (
-                          <span className="text-[10px] text-slate-500">
-                            Lead: <span className="text-slate-300 font-medium">{r.lead_investor}</span>
-                            {r.investors && r.investors.length > 1 && (
-                              <span className="text-slate-600"> +{r.investors.length - 1} more</span>
-                            )}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    {r.source_url && (
-                      <a href={r.source_url} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-xs text-[#F59E0B] hover:underline font-medium flex-none">
-                        Source <ExternalLink className="w-3 h-3" />
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
+        {/* ── Scrollable tab content ── */}
+        <div
+          className="flex-1 overflow-y-auto px-6 py-5"
+          style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(255,255,255,0.07) transparent" }}
+        >
+          {activeTab === "overview" && (
+            <OverviewTab startup={startup} alphaScore={alphaScore} alphaLoading={alphaLoading} alphaErr={alphaErr} />
           )}
-
-          {/* Talent & Growth Intelligence */}
-          {(startup.employee_count || startup.growth_trend) && (
-            <TalentGrowthCard startup={startup} />
+          {activeTab === "funding" && (
+            <FundingValuationTab startup={startup} sortedRounds={sortedRounds} />
           )}
-
-          {/* Leadership */}
-          {startup.leadership && startup.leadership.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <Briefcase className="w-4 h-4 text-slate-500" />
-                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Leadership</h3>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {startup.leadership.map((l, i) => (
-                  <div key={i} className="flex items-center gap-2.5 bg-[#091422] border border-[#1a2a3f] rounded-[12px] px-3 py-2">
-                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black flex-none ${avatarColor(l.name)}`}>
-                      {l.name[0]}
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold text-white leading-tight">{l.name}</div>
-                      <div className="text-[9px] text-slate-500">{l.role}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {activeTab === "captable" && <CapTableTab startup={startup} />}
+          {activeTab === "talent" && (
+            <TalentGrowthTab startup={startup} alphaScore={alphaScore} alphaLoading={alphaLoading} />
           )}
-
-          {/* Founders */}
-          {startup.founders && startup.founders.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <UserRound className="w-4 h-4 text-slate-500" />
-                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                  Founder{startup.founders.length > 1 ? "s" : ""}
-                </h3>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {startup.founders.map((f, i) => (
-                  <span key={i} className="flex items-center gap-1.5 bg-[#091422] border border-[#1a2a3f] text-sm font-medium text-slate-200 px-3 py-1.5 rounded-full">
-                    <div className="w-5 h-5 rounded-full bg-amber-900/60 flex items-center justify-center text-[10px] font-black text-amber-400">
-                      {f[0].toUpperCase()}
-                    </div>
-                    {f}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Peer Comparison Matrix */}
-          <PeerComparisonMatrix startup={startup} peers={peers} onNavigate={onNavigate} />
-
-          {startup.website && (
-            <a href={startup.website} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-[#F59E0B] transition-colors">
-              <Globe className="w-4 h-4" />
-              {startup.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
-              <ExternalLink className="w-3.5 h-3.5 opacity-40" />
-            </a>
-          )}
+          {activeTab === "competitors" && <CompetitorsMarketTab startup={startup} />}
         </div>
       </div>
     </div>
@@ -2159,8 +2284,7 @@ export function Startups() {
       <AddStartupDialog open={showAdd} onClose={() => setShowAdd(false)} onSuccess={(s) => setStartups((p) => [s, ...p])} />
 
       {selectedStartup && (
-        <TearsheetModal startup={selectedStartup} allStartups={startups}
-          onClose={() => setSelected(null)} onNavigate={(s) => setSelected(s)} />
+        <TearsheetModal startup={selectedStartup} onClose={() => setSelected(null)} />
       )}
 
       {showCompare && selectedStartups.length >= 2 && (
