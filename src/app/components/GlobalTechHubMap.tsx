@@ -8,22 +8,7 @@ const MAP_W = 800;
 const MAP_H = 370;
 const MAP_SCALE = 140;
 const MAP_CENTER: [number, number] = [10, 15];
-const K = MAP_SCALE * Math.PI / 180; // px per degree
-
-function project(lng: number, lat: number): [number, number] {
-  return [
-    (lng - MAP_CENTER[0]) * K + MAP_W / 2,
-    -(lat - MAP_CENTER[1]) * K + MAP_H / 2,
-  ];
-}
-
-function bezierPath([x1, y1]: [number, number], [x2, y2]: [number, number]): string {
-  const mx = (x1 + x2) / 2;
-  const my = (y1 + y2) / 2;
-  const dist = Math.hypot(x2 - x1, y2 - y1);
-  const cy = my - dist * 0.38;
-  return `M${x1.toFixed(1)},${y1.toFixed(1)} Q${mx.toFixed(1)},${cy.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`;
-}
+const MAP_ASPECT = `${MAP_W} / ${MAP_H}`;
 
 // ── Hub registry ───────────────────────────────────────────────────────────────
 
@@ -138,8 +123,6 @@ const G_SCORE: Record<string, number> = {
 
 // ── Data derivation ────────────────────────────────────────────────────────────
 
-interface ArcData { fromId: string; toId: string; count: number; totalAmount: number }
-
 interface HubStats {
   companies: number; capital: number; unicorns: number;
   avgAlpha: number; velocity: number; talent: number;
@@ -159,32 +142,6 @@ function buildInvHub(investors: InvestorRow[]): Record<string, string> {
     if (h) m[inv.name.toLowerCase()] = h;
   }
   return m;
-}
-
-function computeArcs(startups: Startup[], investors: InvestorRow[]): ArcData[] {
-  const invHub = buildInvHub(investors);
-  const map = new Map<string, { count: number; total: number }>();
-
-  for (const s of startups) {
-    const toHub = resolveHub(s.city, s.country);
-    if (!toHub) continue;
-    for (const fr of s.funding_rounds) {
-      const li = fr.lead_investor?.toLowerCase();
-      if (!li) continue;
-      const fromHub = invHub[li];
-      if (!fromHub || fromHub === toHub) continue;
-      const key = `${fromHub}→${toHub}`;
-      const ex = map.get(key) ?? { count: 0, total: 0 };
-      ex.count++;
-      ex.total += fr.amount_raised ?? 0;
-      map.set(key, ex);
-    }
-  }
-
-  return Array.from(map.entries())
-    .map(([key, d]) => { const [fromId, toId] = key.split('→'); return { fromId, toId, count: d.count, totalAmount: d.total }; })
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 60);
 }
 
 function computeHubStats(startups: Startup[], hubId: string, sector: SectorKey): HubStats {
@@ -302,13 +259,6 @@ export function GlobalTechHubMap() {
       .finally(() => setLoading(false));
   }, []);
 
-  const arcs = useMemo(() => computeArcs(startups, investors), [startups, investors]);
-
-  const visibleArcs = useMemo(() =>
-    arcs.filter(a => !selectedHub || a.fromId === selectedHub || a.toId === selectedHub),
-    [arcs, selectedHub]
-  );
-
   const hubCounts = useMemo(() => {
     const c: Record<string, number> = {};
     for (const s of startups) { const h = resolveHub(s.city, s.country); if (h) c[h] = (c[h] ?? 0) + 1; }
@@ -332,8 +282,6 @@ export function GlobalTechHubMap() {
         .hub-pulse-ring { animation: hub-pulse 2.8s ease-in-out infinite; }
         @keyframes ticker-scroll { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
         .ticker-track { animation: ticker-scroll 70s linear infinite; }
-        @keyframes arc-dash { to { stroke-dashoffset: -200; } }
-        .arc-flow { stroke-dasharray: 6 10; animation: arc-dash 3s linear infinite; }
       `}</style>
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
@@ -362,11 +310,18 @@ export function GlobalTechHubMap() {
       </div>
 
       {/* ── Map + Panel ─────────────────────────────────────────────────────── */}
-      <div className="flex flex-col lg:flex-row">
+      {/* items-start prevents the flex row's default stretch behavior from
+          forcing the map to grow to match the sidebar's height when its
+          content (hub stats + insights) is taller than the map. */}
+      <div className="flex flex-col lg:flex-row lg:items-start">
 
-        {/* Map — height: auto lets the SVG intrinsically size to its aspect ratio,
-             eliminating the letterbox gap that a fixed height produced. */}
-        <div className="flex-1 relative overflow-hidden">
+        {/* Map — aspectRatio locks the container to the map's own W:H ratio so
+            its height is derived purely from its own width, completely
+            decoupled from the sidebar's height (no more vertical stretch). */}
+        <div
+          className="flex-1 relative overflow-hidden"
+          style={{ aspectRatio: MAP_ASPECT, maxHeight: MAP_H }}
+        >
           <ComposableMap
             projection="geoEquirectangular"
             projectionConfig={{ scale: MAP_SCALE, center: MAP_CENTER }}
@@ -447,51 +402,11 @@ export function GlobalTechHubMap() {
             })}
           </ComposableMap>
 
-          {/* Arc overlay — uses same equirectangular math, coordinates align exactly */}
-          <svg
-            viewBox={`0 0 ${MAP_W} ${MAP_H}`}
-            preserveAspectRatio="xMidYMid meet"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
-          >
-            <defs>
-              <filter id="glow-arc" x="-20%" y="-20%" width="140%" height="140%">
-                <feGaussianBlur stdDeviation="1.5" result="blur" />
-                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-              </filter>
-            </defs>
-            {visibleArcs.map(arc => {
-              const from = HUB_BY_ID[arc.fromId];
-              const to   = HUB_BY_ID[arc.toId];
-              if (!from || !to) return null;
-              const p1 = project(from.lng, from.lat);
-              const p2 = project(to.lng, to.lat);
-              const d  = bezierPath(p1, p2);
-              const op = Math.min(0.7, 0.2 + arc.count * 0.08);
-              const sw = Math.min(2.0, 0.5 + arc.count * 0.2);
-              return (
-                <path
-                  key={`${arc.fromId}-${arc.toId}`}
-                  d={d}
-                  fill="none"
-                  stroke="#F59E0B"
-                  strokeWidth={sw}
-                  opacity={op}
-                  filter="url(#glow-arc)"
-                  className="arc-flow"
-                />
-              );
-            })}
-          </svg>
-
           {/* Legend */}
           <div className="absolute bottom-3 left-4 flex items-center gap-4 pointer-events-none">
             <div className="flex items-center gap-1.5">
               <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#F59E0B', opacity: 0.7 }} />
               <span className="text-[10px] text-slate-500">Tech Hub</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-5 h-px" style={{ background: 'rgba(245,158,11,0.6)' }} />
-              <span className="text-[10px] text-slate-500">Capital Flow</span>
             </div>
             <span className="text-[10px] text-slate-600">Click a hub to explore</span>
           </div>
@@ -565,25 +480,6 @@ export function GlobalTechHubMap() {
                   </div>
                 ))}
               </div>
-
-              {/* Ecosystem Health */}
-              <div className="px-6 py-5">
-                <h4 className="text-[9px] font-bold uppercase tracking-widest text-emerald-400 mb-3">Ecosystem Health</h4>
-                {[
-                  { label: 'Local Capital',       value: insights.localCapitalPct,  suffix: '%', color: '#10b981' },
-                  { label: 'Hub Momentum',         value: insights.hubMomentum,       suffix: '',  color: '#10b981' },
-                  { label: 'Cross-Border Index',   value: insights.crossBorderIndex,  suffix: '%', color: '#10b981' },
-                ].map((item, i, arr) => (
-                  <div
-                    key={item.label}
-                    className="flex items-center justify-between py-3"
-                    style={{ borderBottom: i < arr.length - 1 ? '1px solid #0d1e35' : 'none' }}
-                  >
-                    <span className="text-xs text-slate-400">{item.label}</span>
-                    <span className="text-sm font-bold" style={{ color: item.color }}>{item.value}{item.suffix}</span>
-                  </div>
-                ))}
-              </div>
             </>
           ) : (
             /* Empty state */
@@ -599,7 +495,7 @@ export function GlobalTechHubMap() {
               </div>
               <p className="text-sm font-semibold text-slate-300 mb-2">Select a Hub</p>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Click any pulsing dot on the map to explore hub analytics, capital flows, and ecosystem health metrics.
+                Click any pulsing dot on the map to explore hub analytics and ecosystem health metrics.
               </p>
               {loading && (
                 <div className="flex items-center gap-2 mt-5 text-xs text-amber-400">
@@ -623,6 +519,31 @@ export function GlobalTechHubMap() {
           )}
         </div>
       </div>
+
+      {/* ── Ecosystem Health — horizontal row underneath the map, avoids
+           pushing the side panel's height past the map's locked aspect ratio ── */}
+      {activeHub && insights && (
+        <div
+          className="flex flex-wrap items-center gap-x-10 gap-y-3 px-6 py-4"
+          style={{ borderTop: '1px solid #1a2a3f', background: '#08111f' }}
+        >
+          <h4 className="text-[9px] font-bold uppercase tracking-widest text-emerald-400 flex-none">
+            Ecosystem Health · {activeHub.name}
+          </h4>
+          <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
+            {[
+              { label: 'Local Capital',     value: insights.localCapitalPct, suffix: '%' },
+              { label: 'Hub Momentum',      value: insights.hubMomentum,      suffix: ''  },
+              { label: 'Cross-Border Index', value: insights.crossBorderIndex, suffix: '%' },
+            ].map(item => (
+              <div key={item.label} className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">{item.label}</span>
+                <span className="text-sm font-bold" style={{ color: '#10b981' }}>{item.value}{item.suffix}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Ticker ──────────────────────────────────────────────────────────── */}
       {ticker.length > 0 && (
