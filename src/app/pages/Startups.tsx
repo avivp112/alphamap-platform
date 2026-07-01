@@ -777,6 +777,12 @@ function AlphaMapScorePanel({ startupId }: { startupId: string }) {
                 {pillar.detail?.follow_on != null && (
                   <div>Follow-on investors: <span className="text-slate-300">{pillar.detail.follow_on ? 'Yes +10' : 'No'}</span></div>
                 )}
+                {pillar.detail?.n_investors != null && (
+                  <div>Investors tracked: <span className="text-slate-300">{pillar.detail.n_investors} ({pillar.detail.n_matched ?? 0} ranked)</span></div>
+                )}
+                {pillar.detail?.tier != null && (
+                  <div>Basis: <span className="text-slate-300 capitalize">{pillar.detail.tier.replace(/_/g, ' ')}</span></div>
+                )}
               </div>
             </div>
           ))}

@@ -65,10 +65,14 @@ export interface AlphaScorePillar {
   detail: {
     value_creation_x?: number;
     burn_proxy_k?: number;
+    tier?: string;
     hc_growth_pct?: number;
     serial_founder?: boolean;
     investor_tier?: number | null;
     follow_on?: boolean;
+    source?: string;
+    n_investors?: number;
+    n_matched?: number;
   };
 }
 
@@ -105,8 +109,21 @@ export async function fetchHeadcountHistory(companyId: string): Promise<Headcoun
 
 export async function fetchAlphaScore(startupId: string): Promise<AlphaScore | null> {
   const { data, error } = await supabase.rpc('calculate_alphamap_score', { p_startup_id: startupId });
-  if (error) throw error;
-  return data as AlphaScore | null;
+  if (error) {
+    console.error(`[AlphaMapEngine] RPC error for startup ${startupId}:`, error);
+    throw error;
+  }
+  const score = data as AlphaScore | null;
+  if (score?.error) {
+    console.warn(`[AlphaMapEngine] startup ${startupId} returned no score:`, score.error ?? score.reason);
+  } else if (score?.pillars) {
+    console.log(`[AlphaMapEngine] startup ${startupId} → score=${score.score} tier=${score.tier} confidence=${score.confidence}`, {
+      capital_efficiency: score.pillars.capital_efficiency,
+      talent_velocity:    score.pillars.talent_velocity,
+      ecosystem_signal:   score.pillars.ecosystem_signal,
+    });
+  }
+  return score;
 }
 
 // ── Deals ─────────────────────────────────────────────────────────────────────
