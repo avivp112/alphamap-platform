@@ -17,6 +17,11 @@
 
 :root {
   --font-size: 16px;
+  /* Self-hosted Inter as the primary UI face — chosen for its close kinship
+     to San Francisco (Apple's system font) in proportions and x-height, so
+     the app reads consistently "SF-like" on every OS rather than only on
+     Mac (where system-ui would already resolve to real SF Pro). */
+  --font-sans: 'InterVariable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --background: #ffffff;
   --foreground: oklch(0.145 0 0);
   --card: #ffffff;
@@ -94,6 +99,7 @@
 }
 
 @theme inline {
+  --font-sans: var(--font-sans);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -150,6 +156,7 @@
 
   html {
     font-size: var(--font-size);
+    font-family: var(--font-sans);
   }
 
   h1 {
