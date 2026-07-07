@@ -540,10 +540,10 @@ function FundingTimeline({ rounds }: { rounds: FundingRound[] }) {
     <div className="mb-7">
       <div className="flex items-center gap-2 mb-3">
         <Clock className="w-4 h-4 text-[#F59E0B]" />
-        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Funding Timeline</h4>
-        <span className="text-[9px] text-slate-600 ml-auto">Cumulative raised</span>
+        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Funding Timeline</h4>
+        <span className="text-[9px] text-gray-300 ml-auto">Cumulative raised</span>
       </div>
-      <div className="bg-[#091422] rounded-[16px] p-4 border border-[#1a2a3f]">
+      <div className="bg-gray-50 rounded-[16px] p-4 border border-gray-100">
         <ResponsiveContainer width="100%" height={160}>
           <AreaChart data={data} margin={{ top: 12, right: 8, left: 4, bottom: 0 }}>
             <defs>
@@ -552,18 +552,18 @@ function FundingTimeline({ rounds }: { rounds: FundingRound[] }) {
                 <stop offset="95%" stopColor="#F59E0B" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1a2a3f" vertical={false} />
-            <XAxis dataKey="year" tick={{ fill: "#64748b", fontSize: 10, fontWeight: 600 }} axisLine={false} tickLine={false} />
-            <YAxis tickFormatter={tickFmt} tick={{ fill: "#475569", fontSize: 10 }} axisLine={false} tickLine={false} width={56} domain={[0, domainMax]} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
+            <XAxis dataKey="year" tick={{ fill: "#6B7280", fontSize: 10, fontWeight: 600 }} axisLine={false} tickLine={false} />
+            <YAxis tickFormatter={tickFmt} tick={{ fill: "#9CA3AF", fontSize: 10 }} axisLine={false} tickLine={false} width={56} domain={[0, domainMax]} />
             <ReTooltip content={<TimelineTooltip />} cursor={{ stroke: "#F59E0B", strokeWidth: 1, strokeDasharray: "4 2" }} />
             <Area
               type="monotone" dataKey="cumulative"
               stroke="#F59E0B" strokeWidth={2} fill="url(#fundGrad)"
               dot={(props: { cx: number; cy: number; payload: TimelinePoint }) => (
                 <circle key={props.payload.date} cx={props.cx} cy={props.cy} r={5}
-                  fill={props.payload.color} stroke="#0b1626" strokeWidth={2} />
+                  fill={props.payload.color} stroke="#F9FAFB" strokeWidth={2} />
               )}
-              activeDot={{ r: 7, fill: "#F59E0B", stroke: "#0b1626", strokeWidth: 2 }}
+              activeDot={{ r: 7, fill: "#F59E0B", stroke: "#F9FAFB", strokeWidth: 2 }}
             />
           </AreaChart>
         </ResponsiveContainer>
@@ -574,15 +574,21 @@ function FundingTimeline({ rounds }: { rounds: FundingRound[] }) {
 
 // ── Growth Trend Badge ────────────────────────────────────────────────────────
 
-function GrowthTrendBadge({ trend }: { trend: string | null | undefined }) {
+function GrowthTrendBadge({ trend, light = false }: { trend: string | null | undefined; light?: boolean }) {
   if (!trend || trend === "unknown") return null;
-  const cfg: Record<string, { Icon: React.ComponentType<{ className?: string }>; label: string; cls: string }> = {
+  const cfgDark: Record<string, { Icon: React.ComponentType<{ className?: string }>; label: string; cls: string }> = {
     "rapid growth":    { Icon: TrendingUp,   label: "Rapid Growth",    cls: "bg-emerald-900/40 text-emerald-400 border-emerald-800/60" },
     "moderate growth": { Icon: TrendingUp,   label: "Moderate Growth", cls: "bg-blue-900/40 text-blue-400 border-blue-800/60" },
     "stable":          { Icon: Minus,        label: "Stable",          cls: "bg-slate-700/60 text-slate-300 border-slate-600/60" },
     "reduction":       { Icon: TrendingDown, label: "Reduction",       cls: "bg-red-900/40 text-red-400 border-red-800/60" },
   };
-  const c = cfg[trend];
+  const cfgLight: Record<string, { Icon: React.ComponentType<{ className?: string }>; label: string; cls: string }> = {
+    "rapid growth":    { Icon: TrendingUp,   label: "Rapid Growth",    cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+    "moderate growth": { Icon: TrendingUp,   label: "Moderate Growth", cls: "bg-blue-50 text-blue-700 border-blue-200" },
+    "stable":          { Icon: Minus,        label: "Stable",          cls: "bg-gray-100 text-gray-600 border-gray-200" },
+    "reduction":       { Icon: TrendingDown, label: "Reduction",       cls: "bg-red-50 text-red-700 border-red-200" },
+  };
+  const c = (light ? cfgLight : cfgDark)[trend];
   if (!c) return null;
   return (
     <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full border ${c.cls}`}>
@@ -598,9 +604,9 @@ function safeFixed(n: number | null | undefined, decimals: number, fallback = 'N
 }
 
 const TIER_CONFIG = {
-  A: { ring: '#10b981', bg: 'bg-emerald-950/60', border: 'border-emerald-700/40', badge: 'bg-emerald-900/80 text-emerald-300 border border-emerald-600/50', label: 'Tier A', bar: '#10b981' },
-  B: { ring: '#3b82f6', bg: 'bg-blue-950/60',    border: 'border-blue-700/40',    badge: 'bg-blue-900/80 text-blue-300 border border-blue-600/50',       label: 'Tier B', bar: '#3b82f6' },
-  C: { ring: '#f43f5e', bg: 'bg-rose-950/60',    border: 'border-rose-700/40',    badge: 'bg-rose-900/80 text-rose-300 border border-rose-600/50',       label: 'Tier C', bar: '#f43f5e' },
+  A: { ring: '#059669', bg: 'bg-emerald-50', border: 'border-emerald-200', badge: 'bg-emerald-100 text-emerald-700 border border-emerald-300', label: 'Tier A', bar: '#059669' },
+  B: { ring: '#2563eb', bg: 'bg-blue-50',    border: 'border-blue-200',    badge: 'bg-blue-100 text-blue-700 border border-blue-300',       label: 'Tier B', bar: '#2563eb' },
+  C: { ring: '#e11d48', bg: 'bg-rose-50',    border: 'border-rose-200',    badge: 'bg-rose-100 text-rose-700 border border-rose-300',       label: 'Tier C', bar: '#e11d48' },
 } as const;
 
 function ScoreRing({ score, tier }: { score: number | null; tier: 'A' | 'B' | 'C' }) {
@@ -611,7 +617,7 @@ function ScoreRing({ score, tier }: { score: number | null; tier: 'A' | 'B' | 'C
   const cfg = TIER_CONFIG[tier];
   return (
     <svg width="84" height="84" viewBox="0 0 84 84" className="flex-none">
-      <circle cx="42" cy="42" r={r} fill="none" stroke="#1e293b" strokeWidth="7" />
+      <circle cx="42" cy="42" r={r} fill="none" stroke="#E5E7EB" strokeWidth="7" />
       <circle
         cx="42" cy="42" r={r} fill="none"
         stroke={cfg.ring} strokeWidth="7"
@@ -622,7 +628,7 @@ function ScoreRing({ score, tier }: { score: number | null; tier: 'A' | 'B' | 'C
         style={{ transition: 'stroke-dashoffset 0.8s ease' }}
       />
       <text x="42" y="44" textAnchor="middle" dominantBaseline="middle"
-        fill="white" fontSize="16" fontWeight="700" fontFamily="inherit">
+        fill="#111827" fontSize="16" fontWeight="700" fontFamily="inherit">
         {safeFixed(score, 0, '—')}
       </text>
     </svg>
@@ -634,17 +640,17 @@ function AlphaMapScorePanel({ data, loading, err }: {
 }) {
   if (loading) {
     return (
-      <div className="bg-[#091422] border border-[#1a2a3f] rounded-[14px] p-4 flex items-center gap-3">
-        <Activity className="w-4 h-4 text-slate-500 animate-pulse" />
-        <span className="text-xs text-slate-500">Calculating AlphaMap Score…</span>
+      <div className="bg-gray-50 border border-gray-100 rounded-[14px] p-4 flex items-center gap-3">
+        <Activity className="w-4 h-4 text-gray-400 animate-pulse" />
+        <span className="text-xs text-gray-400">Calculating AlphaMap Score…</span>
       </div>
     );
   }
   if (err || !data || data.error || !data.pillars) {
     return (
-      <div className="bg-[#091422] border border-[#1a2a3f] rounded-[14px] p-4 flex items-center gap-3">
-        <Activity className="w-4 h-4 text-slate-600" />
-        <span className="text-xs text-slate-600 italic">Score pending data enrichment</span>
+      <div className="bg-gray-50 border border-gray-100 rounded-[14px] p-4 flex items-center gap-3">
+        <Activity className="w-4 h-4 text-gray-300" />
+        <span className="text-xs text-gray-400 italic">Score pending data enrichment</span>
       </div>
     );
   }
@@ -660,10 +666,10 @@ function AlphaMapScorePanel({ data, loading, err }: {
     <div className={`rounded-[14px] border p-5 ${cfg.bg} ${cfg.border}`}>
       {/* Header row */}
       <div className="flex items-center gap-2 mb-4">
-        <Activity className="w-4 h-4 text-slate-400" />
-        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">AlphaMap Score</h3>
+        <Activity className="w-4 h-4 text-gray-500" />
+        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest">AlphaMap Score</h3>
         <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${cfg.badge}`}>{cfg.label}</span>
-        <span className="text-[10px] text-slate-500 capitalize">{data.confidence} confidence</span>
+        <span className="text-[10px] text-gray-400 capitalize">{data.confidence} confidence</span>
       </div>
 
       {/* Score ring + right-side breakdown */}
@@ -671,7 +677,7 @@ function AlphaMapScorePanel({ data, loading, err }: {
         {/* Ring */}
         <div className="flex flex-col items-center gap-1">
           <ScoreRing score={data.score} tier={data.tier} />
-          <span className="text-[9px] text-slate-500 uppercase tracking-wider">Score</span>
+          <span className="text-[9px] text-gray-400 uppercase tracking-wider">Score</span>
         </div>
 
         {/* Pillar bars */}
@@ -679,17 +685,17 @@ function AlphaMapScorePanel({ data, loading, err }: {
           {pillars.map(({ pillar }) => (
             <div key={pillar.label}>
               <div className="flex items-center justify-between mb-0.5">
-                <span className="text-[10px] text-slate-400">{pillar.label}</span>
-                <span className="text-[10px] font-semibold text-white">
+                <span className="text-[10px] text-gray-500">{pillar.label}</span>
+                <span className="text-[10px] font-semibold text-gray-900">
                   {pillar.valid && pillar.score != null ? safeFixed(pillar.score, 0, '—') : '—'}
-                  <span className="text-slate-600 font-normal"> / {pillar.weight}%</span>
+                  <span className="text-gray-400 font-normal"> / {pillar.weight}%</span>
                 </span>
               </div>
-              <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+              <div className="h-1.5 rounded-full bg-white/60 overflow-hidden">
                 {pillar.valid && pillar.score != null && (
                   <div
                     className="h-full rounded-full transition-all duration-700"
-                    style={{ width: `${pillar.score}%`, backgroundColor: cfg.bar, opacity: 0.85 }}
+                    style={{ width: `${pillar.score}%`, backgroundColor: cfg.bar }}
                   />
                 )}
               </div>
@@ -699,23 +705,24 @@ function AlphaMapScorePanel({ data, loading, err }: {
       </div>
 
       {/* Macro adjustment + sector footer */}
-      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] text-slate-500">
+      <div className="mt-3 pt-3 border-t border-black/5 flex items-center justify-between text-[10px] text-gray-500">
         <span>
           Base&nbsp;
-          <span className="text-slate-300 font-semibold">{safeFixed(data.base_score, 1, '—')}</span>
+          <span className="text-gray-700 font-semibold">{safeFixed(data.base_score, 1, '—')}</span>
           &nbsp;→ macro&nbsp;
-          <span className={(data.macro_adj_pct ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+          <span className={(data.macro_adj_pct ?? 0) >= 0 ? 'text-emerald-700' : 'text-rose-700'}>
             {(data.macro_adj_pct ?? 0) >= 0 ? '+' : ''}{safeFixed(data.macro_adj_pct, 1, '0')}%
           </span>
         </span>
         {data.sector_id && data.sector_id !== 'unknown' && (
-          <span className="text-slate-600 capitalize">{data.sector_id.replace(/-/g, ' ')}</span>
+          <span className="text-gray-400 capitalize">{data.sector_id.replace(/-/g, ' ')}</span>
         )}
       </div>
 
-      {/* Hover popover: detailed breakdown per pillar */}
+      {/* Hover popover: detailed breakdown per pillar (kept dark — a floating
+          overlay pops the same way regardless of the page underneath) */}
       <div className="mt-3 group relative">
-        <button className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors flex items-center gap-1">
+        <button className="text-[10px] text-gray-500 hover:text-gray-700 transition-colors flex items-center gap-1">
           <Info className="w-3 h-3" /> Pillar breakdown
         </button>
         <div className="absolute bottom-6 left-0 z-50 w-72 bg-[#060f1c] border border-[#1a2a3f] rounded-xl p-4 shadow-2xl
@@ -768,9 +775,9 @@ function AlphaMapScorePanel({ data, loading, err }: {
 }
 
 const SCORE_BADGE_STYLE: Record<'A'|'B'|'C', string> = {
-  A: 'bg-emerald-900/70 text-emerald-300 border-emerald-700/50',
-  B: 'bg-blue-900/70 text-blue-300 border-blue-700/50',
-  C: 'bg-rose-900/70 text-rose-300 border-rose-700/50',
+  A: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  B: 'bg-blue-50 text-blue-700 border-blue-200',
+  C: 'bg-rose-50 text-rose-700 border-rose-200',
 };
 
 function ScoreBadge({ startupId }: { startupId: string }) {
@@ -785,7 +792,7 @@ function ScoreBadge({ startupId }: { startupId: string }) {
   }, [startupId]);
 
   if (loading) {
-    return <div className="h-4 w-12 rounded bg-slate-800 animate-pulse" />;
+    return <div className="h-4 w-12 rounded bg-gray-100 animate-pulse" />;
   }
   if (!data || data.error || data.score == null || !(data.tier in SCORE_BADGE_STYLE)) return null;
 
@@ -826,12 +833,12 @@ function StatCard({ icon: Icon, label, value, accent = "#F59E0B" }: {
   icon: React.ElementType; label: string; value: string; accent?: string;
 }) {
   return (
-    <div className="rounded-[14px] p-4 flex flex-col gap-2 border bg-[#091422] border-[#1a2a3f]">
+    <div className="rounded-[14px] p-4 flex flex-col gap-2 border bg-gray-50 border-gray-100">
       <div className="flex items-center gap-1.5">
         <Icon className="w-3.5 h-3.5 flex-none" style={{ color: accent }} />
-        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">{label}</span>
+        <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">{label}</span>
       </div>
-      <span className="text-sm font-bold text-white truncate">{value}</span>
+      <span className="text-sm font-bold text-gray-900 truncate">{value}</span>
     </div>
   );
 }
@@ -842,32 +849,14 @@ function StatCard({ icon: Icon, label, value, accent = "#F59E0B" }: {
 // gap and go fill it.
 function MissingDataState({ message }: { message: string }) {
   return (
-    <div className="flex items-start gap-3 rounded-[14px] p-5 border border-dashed border-amber-500/30 bg-amber-500/[0.04]">
-      <AlertCircle className="w-5 h-5 text-amber-400 flex-none mt-0.5" />
+    <div className="flex items-start gap-3 rounded-[14px] p-5 border border-dashed border-amber-400/60 bg-amber-50/60">
+      <AlertCircle className="w-5 h-5 text-amber-600 flex-none mt-0.5" />
       <div>
-        <p className="text-sm font-bold text-amber-300">Data requires filling</p>
-        <p className="text-xs text-slate-400 mt-1 leading-relaxed">{message}</p>
+        <p className="text-sm font-bold text-amber-800">Data requires filling</p>
+        <p className="text-xs text-gray-500 mt-1 leading-relaxed">{message}</p>
       </div>
     </div>
   );
-}
-
-// ── Tearsheet accent palette (mirrors VCModal's per-entity accent system) ────
-
-interface TearsheetAccent { ring: string; glow: string; border: string; text: string }
-
-const TEARSHEET_ACCENTS: TearsheetAccent[] = [
-  { ring: '#22d3ee', glow: 'rgba(34,211,238,0.35)',  border: 'rgba(34,211,238,0.22)',  text: '#67e8f9' },
-  { ring: '#a78bfa', glow: 'rgba(167,139,250,0.35)', border: 'rgba(167,139,250,0.22)', text: '#c4b5fd' },
-  { ring: '#34d399', glow: 'rgba(52,211,153,0.35)',  border: 'rgba(52,211,153,0.22)',  text: '#6ee7b7' },
-  { ring: '#fbbf24', glow: 'rgba(251,191,36,0.35)',  border: 'rgba(251,191,36,0.22)',  text: '#fcd34d' },
-  { ring: '#f472b6', glow: 'rgba(244,114,182,0.35)', border: 'rgba(244,114,182,0.22)', text: '#f9a8d4' },
-];
-
-function getTearsheetAccent(id: string): TearsheetAccent {
-  let h = 0;
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) & 0xffff;
-  return TEARSHEET_ACCENTS[h % TEARSHEET_ACCENTS.length];
 }
 
 // ── Tab 1: Overview ───────────────────────────────────────────────────────────
@@ -883,16 +872,16 @@ function OverviewTab({
   return (
     <div className="space-y-6">
       {startup.description ? (
-        <p className="text-sm text-slate-300 leading-relaxed">{startup.description}</p>
+        <p className="text-sm text-gray-700 leading-relaxed">{startup.description}</p>
       ) : (
         <MissingDataState message="No company description on file." />
       )}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard icon={Calendar}  label="Founded"   value={startup.founded_year ? String(startup.founded_year) : "—"} accent="#F59E0B" />
-        <StatCard icon={MapPin}    label="Location"  value={location} accent="#22d3ee" />
-        <StatCard icon={Users}     label="Employees" value={fmtEmp(startup.employee_count)} accent="#a78bfa" />
-        <StatCard icon={Briefcase} label="Sector"    value={sector.parent} accent="#f472b6" />
+        <StatCard icon={MapPin}    label="Location"  value={location} accent="#0e7490" />
+        <StatCard icon={Users}     label="Employees" value={fmtEmp(startup.employee_count)} accent="#6d28d7" />
+        <StatCard icon={Briefcase} label="Sector"    value={sector.parent} accent="#be185d" />
       </div>
 
       <AlphaMapScorePanel data={alphaScore} loading={alphaLoading} err={alphaErr} />
@@ -900,18 +889,18 @@ function OverviewTab({
       {startup.leadership && startup.leadership.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-3">
-            <Briefcase className="w-4 h-4 text-slate-500" />
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Leadership</h3>
+            <Briefcase className="w-4 h-4 text-gray-400" />
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Leadership</h3>
           </div>
           <div className="flex flex-wrap gap-2">
             {startup.leadership.map((l, i) => (
-              <div key={i} className="flex items-center gap-2.5 bg-[#091422] border border-[#1a2a3f] rounded-[12px] px-3 py-2">
+              <div key={i} className="flex items-center gap-2.5 bg-gray-50 border border-gray-100 rounded-[12px] px-3 py-2">
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black flex-none ${avatarColor(l.name)}`}>
                   {l.name[0]}
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-white leading-tight">{l.name}</div>
-                  <div className="text-[9px] text-slate-500">{l.role}</div>
+                  <div className="text-xs font-bold text-gray-900 leading-tight">{l.name}</div>
+                  <div className="text-[9px] text-gray-400">{l.role}</div>
                 </div>
               </div>
             ))}
@@ -922,15 +911,15 @@ function OverviewTab({
       {startup.founders && startup.founders.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-3">
-            <UserRound className="w-4 h-4 text-slate-500" />
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+            <UserRound className="w-4 h-4 text-gray-400" />
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">
               Founder{startup.founders.length > 1 ? "s" : ""}
             </h3>
           </div>
           <div className="flex flex-wrap gap-2">
             {startup.founders.map((f, i) => (
-              <span key={i} className="flex items-center gap-1.5 bg-[#091422] border border-[#1a2a3f] text-sm font-medium text-slate-200 px-3 py-1.5 rounded-full">
-                <div className="w-5 h-5 rounded-full bg-amber-900/60 flex items-center justify-center text-[10px] font-black text-amber-400">
+              <span key={i} className="flex items-center gap-1.5 bg-gray-50 border border-gray-100 text-sm font-medium text-gray-700 px-3 py-1.5 rounded-full">
+                <div className="w-5 h-5 rounded-full bg-amber-100 flex items-center justify-center text-[10px] font-black text-amber-700">
                   {f[0].toUpperCase()}
                 </div>
                 {f}
@@ -953,19 +942,19 @@ function VerticalFundingTimeline({ rounds }: { rounds: FundingRound[] }) {
 
   return (
     <div className="relative">
-      <div className="absolute left-[13px] top-2 bottom-2 w-px bg-[#1a2a3f]" />
+      <div className="absolute left-[13px] top-2 bottom-2 w-px bg-gray-200" />
       <div className="space-y-4">
         {newestFirst.map((r, idx) => {
           const color = ROUND_HEX[r.round_type ?? "Other"] ?? "#9CA3AF";
           return (
             <div key={r.id ?? idx} className="relative pl-9">
               <div
-                className="absolute left-0 top-1 w-[27px] h-[27px] rounded-full flex items-center justify-center border-2"
-                style={{ background: "#0b1626", borderColor: color }}
+                className="absolute left-0 top-1 w-[27px] h-[27px] rounded-full flex items-center justify-center border-2 bg-white"
+                style={{ borderColor: color }}
               >
                 <div className="w-2 h-2 rounded-full" style={{ background: color }} />
               </div>
-              <div className="bg-[#091422] border border-[#1a2a3f] rounded-[14px] p-4">
+              <div className="bg-gray-50 border border-gray-100 rounded-[14px] p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex flex-col gap-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -975,33 +964,33 @@ function VerticalFundingTimeline({ rounds }: { rounds: FundingRound[] }) {
                         </span>
                       )}
                       {r.announcement_date && (
-                        <span className="text-xs text-slate-500">
+                        <span className="text-xs text-gray-400">
                           {new Date(r.announcement_date).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
                         </span>
                       )}
                     </div>
                     <div className="flex flex-wrap gap-3">
                       {r.amount_raised && (
-                        <span className="text-xs text-slate-400">
-                          <span className="font-bold text-white">{fmt(r.amount_raised)}</span> raised
+                        <span className="text-xs text-gray-500">
+                          <span className="font-bold text-gray-900">{fmt(r.amount_raised)}</span> raised
                         </span>
                       )}
                       {r.valuation && (
-                        <span className="text-xs text-slate-400">
-                          <span className="font-bold text-white">{fmt(r.valuation)}</span>
-                          {r.is_valuation_estimated && <span className="text-slate-500"> est.</span>} val.
+                        <span className="text-xs text-gray-500">
+                          <span className="font-bold text-gray-900">{fmt(r.valuation)}</span>
+                          {r.is_valuation_estimated && <span className="text-gray-400"> est.</span>} val.
                         </span>
                       )}
                     </div>
                     {r.lead_investor ? (
-                      <span className="text-[10px] text-slate-500">
-                        Lead: <span className="text-slate-300 font-medium">{r.lead_investor}</span>
+                      <span className="text-[10px] text-gray-400">
+                        Lead: <span className="text-gray-600 font-medium">{r.lead_investor}</span>
                         {r.investors && r.investors.length > 1 && (
-                          <span className="text-slate-600"> +{r.investors.length - 1} more</span>
+                          <span className="text-gray-300"> +{r.investors.length - 1} more</span>
                         )}
                       </span>
                     ) : (
-                      <span className="text-[10px] text-slate-700 italic">Investor data requires filling</span>
+                      <span className="text-[10px] text-gray-300 italic">Investor data requires filling</span>
                     )}
                   </div>
                   {r.source_url && (
@@ -1028,16 +1017,16 @@ function FundingValuationTab({ startup, sortedRounds }: { startup: Startup; sort
     <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <StatCard icon={DollarSign} label="Total Raised"     value={raised ? fmt(raised) : "—"} accent="#F59E0B" />
-        <StatCard icon={TrendingUp} label="Latest Valuation" value={fmt(latestRound?.valuation)} accent="#22d3ee" />
-        <StatCard icon={Clock}      label="Last Round Type"  value={latestRound?.round_type ?? "—"} accent="#a78bfa" />
+        <StatCard icon={TrendingUp} label="Latest Valuation" value={fmt(latestRound?.valuation)} accent="#0e7490" />
+        <StatCard icon={Clock}      label="Last Round Type"  value={latestRound?.round_type ?? "—"} accent="#6d28d7" />
       </div>
 
       {sortedRounds.length >= 2 && <FundingTimeline rounds={sortedRounds} />}
 
       <div>
         <div className="flex items-center gap-2 mb-3">
-          <Clock className="w-4 h-4 text-slate-500" />
-          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Funding Timeline</h3>
+          <Clock className="w-4 h-4 text-gray-400" />
+          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Funding Timeline</h3>
         </div>
         {sortedRounds.length === 0 ? (
           <MissingDataState message="No funding rounds have been recorded for this company yet." />
@@ -1052,11 +1041,11 @@ function FundingValuationTab({ startup, sortedRounds }: { startup: Startup; sort
 // ── Tab 3: Cap Table & Investors ──────────────────────────────────────────────
 
 const CAP_TABLE_TIER_STYLE: Record<number, { label: string; cls: string; dot: string }> = {
-  1: { label: "Tier 1 · Top-Tier",  cls: "bg-amber-500/10 text-amber-300 border-amber-500/25", dot: "#F59E0B" },
-  2: { label: "Tier 2 · Mid-Tier",  cls: "bg-cyan-500/10 text-cyan-300 border-cyan-500/25",     dot: "#22d3ee" },
-  3: { label: "Tier 3 · Long-Tail", cls: "bg-slate-600/15 text-slate-400 border-slate-600/30",  dot: "#64748b" },
+  1: { label: "Tier 1 · Top-Tier",  cls: "bg-amber-50 text-amber-700 border-amber-200", dot: "#B45309" },
+  2: { label: "Tier 2 · Mid-Tier",  cls: "bg-cyan-50 text-cyan-700 border-cyan-200",     dot: "#0e7490" },
+  3: { label: "Tier 3 · Long-Tail", cls: "bg-gray-100 text-gray-500 border-gray-200",    dot: "#6B7280" },
 };
-const CAP_TABLE_UNRANKED = { label: "Unranked", cls: "bg-slate-800/40 text-slate-500 border-slate-700/40", dot: "#475569" };
+const CAP_TABLE_UNRANKED = { label: "Unranked", cls: "bg-gray-50 text-gray-400 border-gray-200", dot: "#9CA3AF" };
 
 function buildCapTable(rounds: FundingRound[]): { leads: string[]; participants: string[] } {
   const leadSet = new Set<string>();
@@ -1078,15 +1067,15 @@ function CapTableInvestorRow({ name, tierMap }: { name: string; tierMap: Map<str
   const tier = tierMap?.get(name.toLowerCase()) ?? null;
   const style = tier != null ? CAP_TABLE_TIER_STYLE[tier] : CAP_TABLE_UNRANKED;
   return (
-    <div className="flex items-center justify-between gap-3 bg-[#091422] border border-[#1a2a3f] rounded-[12px] px-4 py-3">
+    <div className="flex items-center justify-between gap-3 bg-gray-50 border border-gray-100 rounded-[12px] px-4 py-3">
       <div className="flex items-center gap-2.5 min-w-0">
         <div
           className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black flex-none"
-          style={{ background: `${style.dot}22`, border: `1px solid ${style.dot}44`, color: style.dot }}
+          style={{ background: `${style.dot}18`, border: `1px solid ${style.dot}40`, color: style.dot }}
         >
           {name[0]?.toUpperCase() ?? "?"}
         </div>
-        <span className="text-sm font-semibold text-white truncate">{name}</span>
+        <span className="text-sm font-semibold text-gray-900 truncate">{name}</span>
       </div>
       <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border flex-none whitespace-nowrap ${style.cls}`}>{style.label}</span>
     </div>
@@ -1115,7 +1104,7 @@ function CapTableTab({ startup }: { startup: Startup }) {
         <div>
           <div className="flex items-center gap-2 mb-3">
             <Zap className="w-4 h-4 text-[#F59E0B]" />
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Lead Investors</h3>
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Lead Investors</h3>
           </div>
           <div className="space-y-2">
             {leads.map((n) => <CapTableInvestorRow key={n} name={n} tierMap={tierMap} />)}
@@ -1125,15 +1114,15 @@ function CapTableTab({ startup }: { startup: Startup }) {
       {participants.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-3">
-            <Users className="w-4 h-4 text-slate-500" />
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Participating Investors</h3>
+            <Users className="w-4 h-4 text-gray-400" />
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Participating Investors</h3>
           </div>
           <div className="space-y-2">
             {participants.map((n) => <CapTableInvestorRow key={n} name={n} tierMap={tierMap} />)}
           </div>
         </div>
       )}
-      <p className="text-[10px] text-slate-600 italic flex items-center gap-1.5">
+      <p className="text-[10px] text-gray-400 italic flex items-center gap-1.5">
         <Info className="w-3 h-3 flex-none" />
         Investor tier is looked up from the AlphaMap investor directory — firms not yet tracked there show as "Unranked".
       </p>
@@ -1161,30 +1150,30 @@ function TalentGrowthTab({
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <StatCard icon={Users}    label="Employees"      value={fmtEmp(startup.employee_count)} accent="#22d3ee" />
-        <StatCard icon={Activity} label="Talent Velocity" accent="#a78bfa"
+        <StatCard icon={Users}    label="Employees"      value={fmtEmp(startup.employee_count)} accent="#0e7490" />
+        <StatCard icon={Activity} label="Talent Velocity" accent="#6d28d7"
           value={talentPillar?.valid && talentPillar.score != null ? `${safeFixed(talentPillar.score, 0)} / 100` : "—"} />
-        <div className="rounded-[14px] p-4 flex flex-col gap-2 border bg-[#091422] border-[#1a2a3f]">
-          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Growth Trend</span>
-          <GrowthTrendBadge trend={startup.growth_trend} />
+        <div className="rounded-[14px] p-4 flex flex-col gap-2 border bg-gray-50 border-gray-100">
+          <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">Growth Trend</span>
+          <GrowthTrendBadge trend={startup.growth_trend} light />
           {(!startup.growth_trend || startup.growth_trend === "unknown") && (
-            <span className="text-sm font-bold text-slate-600">—</span>
+            <span className="text-sm font-bold text-gray-400">—</span>
           )}
         </div>
       </div>
 
       {!alphaLoading && talentPillar && (
-        <div className="bg-[#091422] border border-[#1a2a3f] rounded-[14px] p-5">
+        <div className="bg-gray-50 border border-gray-100 rounded-[14px] p-5">
           <div className="flex items-center gap-2 mb-3">
-            <Activity className="w-4 h-4 text-[#a78bfa]" />
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Talent Velocity Breakdown</h3>
+            <Activity className="w-4 h-4 text-[#6d28d7]" />
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Talent Velocity Breakdown</h3>
           </div>
-          <div className="text-[11px] text-slate-500 space-y-1.5">
+          <div className="text-[11px] text-gray-500 space-y-1.5">
             {talentPillar.detail?.hc_growth_pct != null && (
-              <div>Headcount growth: <span className="text-slate-300 font-medium">{talentPillar.detail.hc_growth_pct.toFixed(1)}%</span></div>
+              <div>Headcount growth: <span className="text-gray-700 font-medium">{talentPillar.detail.hc_growth_pct.toFixed(1)}%</span></div>
             )}
             {talentPillar.detail?.serial_founder != null && (
-              <div>Serial founder bonus: <span className="text-slate-300 font-medium">{talentPillar.detail.serial_founder ? "Yes (+10)" : "No"}</span></div>
+              <div>Serial founder bonus: <span className="text-gray-700 font-medium">{talentPillar.detail.serial_founder ? "Yes (+10)" : "No"}</span></div>
             )}
           </div>
         </div>
@@ -1192,13 +1181,13 @@ function TalentGrowthTab({
 
       <div>
         <div className="flex items-center gap-2 mb-3">
-          <Users className="w-4 h-4 text-slate-500" />
-          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Headcount History</h3>
+          <Users className="w-4 h-4 text-gray-400" />
+          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Headcount History</h3>
         </div>
         {chartData ? (
-          <div className="bg-[#091422] border border-[#1a2a3f] rounded-[14px] p-4">
+          <div className="bg-gray-50 border border-gray-100 rounded-[14px] p-4">
             <div className="flex justify-end mb-2">
-              <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full border text-emerald-400 bg-emerald-500/10 border-emerald-500/20">
+              <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full border text-emerald-700 bg-emerald-50 border-emerald-200">
                 Live data
               </span>
             </div>
@@ -1207,19 +1196,19 @@ function TalentGrowthTab({
                 <AreaChart data={chartData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="hcGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.25} />
-                      <stop offset="100%" stopColor="#22d3ee" stopOpacity={0} />
+                      <stop offset="0%" stopColor="#0e7490" stopOpacity={0.25} />
+                      <stop offset="100%" stopColor="#0e7490" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                  <XAxis dataKey="year" tick={{ fill: "#475569", fontSize: 9 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: "#475569", fontSize: 9 }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtEmp(v)} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
+                  <XAxis dataKey="year" tick={{ fill: "#9CA3AF", fontSize: 9 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: "#9CA3AF", fontSize: 9 }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtEmp(v)} />
                   <ReTooltip
                     contentStyle={{ background: "#0b1626", border: "1px solid #1a2a3f", borderRadius: 8, fontSize: 11 }}
                     labelStyle={{ color: "#94a3b8" }}
                     itemStyle={{ color: "#22d3ee" }}
                   />
-                  <Area type="monotone" dataKey="headcount" stroke="#22d3ee" strokeWidth={1.5} fill="url(#hcGrad)" dot={false} />
+                  <Area type="monotone" dataKey="headcount" stroke="#0e7490" strokeWidth={1.5} fill="url(#hcGrad)" dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -1249,8 +1238,8 @@ function CompetitorsMarketTab({ startup }: { startup: Startup }) {
   return (
     <div className="flex flex-wrap gap-2">
       {competitors.map((c) => (
-        <span key={c} className="flex items-center gap-2 bg-[#091422] border border-[#1a2a3f] rounded-full px-3.5 py-2 text-sm font-semibold text-white">
-          <Building2 className="w-3.5 h-3.5 text-slate-500 flex-none" />{c}
+        <span key={c} className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-full px-3.5 py-2 text-sm font-semibold text-gray-900">
+          <Building2 className="w-3.5 h-3.5 text-gray-400 flex-none" />{c}
         </span>
       ))}
     </div>
@@ -1270,7 +1259,6 @@ const TEARSHEET_TABS: { id: TearsheetTab; label: string }[] = [
 ];
 
 function TearsheetModal({ startup, onClose }: { startup: Startup; onClose: () => void }) {
-  const accent = getTearsheetAccent(startup.id);
   const [activeTab, setActiveTab] = useState<TearsheetTab>("overview");
 
   const latestRound = startup.funding_rounds?.[0] ?? null;
@@ -1310,47 +1298,42 @@ function TearsheetModal({ startup, onClose }: { startup: Startup; onClose: () =>
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
-      style={{ background: "rgba(6,13,25,0.85)", backdropFilter: "blur(10px)" }}
+      style={{ background: "rgba(6,13,25,0.55)", backdropFilter: "blur(10px)" }}
       onClick={onClose}
     >
       <div
-        className="relative flex flex-col w-[90vw] max-w-6xl"
+        className="relative flex flex-col w-[90vw] max-w-6xl bg-white"
         style={{
           height: "85vh",
-          background: "linear-gradient(145deg, #0f1d2e 0%, #0a1520 100%)",
-          border: "1px solid rgba(255,255,255,0.09)",
+          border: "1px solid rgba(15,23,42,0.08)",
           borderRadius: 24,
-          boxShadow: `0 32px 80px rgba(0,0,0,0.70), 0 0 0 1px rgba(255,255,255,0.03), inset 0 1px 0 rgba(255,255,255,0.05), 0 0 80px ${accent.glow}`,
+          boxShadow: "0 32px 80px rgba(15,23,42,0.35), 0 0 0 1px rgba(15,23,42,0.02)",
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div
-          className="absolute inset-x-0 top-0 h-px pointer-events-none rounded-t-[24px]"
-          style={{ background: `linear-gradient(90deg, transparent, ${accent.glow}, transparent)` }}
-        />
-
-        {/* ── Fixed header ── */}
-        <div className="flex-none px-6 pt-5 pb-4" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+        {/* ── Fixed header (blue-gray) ── */}
+        <div className="flex-none px-6 pt-5 pb-4 rounded-t-[24px]"
+          style={{ background: "#B8C9D1", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
           <div className="flex items-start gap-4">
             <CompanyLogo name={startup.name} website={startup.website} size={52} rounded="rounded-2xl" />
             <div className="flex-1 min-w-0">
-              <h2 className="text-xl font-black text-white tracking-tight leading-none mb-1.5 truncate">{startup.name}</h2>
-              <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
+              <h2 className="text-xl font-black text-[#0F172A] tracking-tight leading-none mb-1.5 truncate">{startup.name}</h2>
+              <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[11px] text-[#0F172A]/60">
                 {location && (
                   <span className="flex items-center gap-1"><MapPin className="w-3 h-3 flex-none" />{location}</span>
                 )}
                 {startup.founded_year && (
                   <>
-                    <span className="text-slate-700">·</span>
+                    <span className="text-[#0F172A]/30">·</span>
                     <span className="flex items-center gap-1"><Calendar className="w-3 h-3 flex-none" />Est. {startup.founded_year}</span>
                   </>
                 )}
                 {startup.website && (
                   <>
-                    <span className="text-slate-700">·</span>
+                    <span className="text-[#0F172A]/30">·</span>
                     <a href={startup.website} target="_blank" rel="noopener noreferrer"
                       onClick={(e) => e.stopPropagation()}
-                      className="flex items-center gap-1 hover:text-cyan-400 transition-colors">
+                      className="flex items-center gap-1 hover:text-cyan-700 transition-colors">
                       <Globe className="w-3 h-3 flex-none" />Website
                     </a>
                   </>
@@ -1359,13 +1342,13 @@ function TearsheetModal({ startup, onClose }: { startup: Startup; onClose: () =>
             </div>
             <div className="flex items-center gap-2 flex-none">
               {roundType && roundStyle && (
-                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${roundStyle}`}>{roundType}</span>
+                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap bg-white/70`} style={{ border: "1px solid rgba(15,23,42,0.12)" }}>{roundType}</span>
               )}
               <button
                 onClick={onClose}
-                className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-slate-500 hover:text-white transition-all"
+                className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-[#0F172A]/50 hover:text-[#0F172A] transition-all"
                 style={{ background: "rgba(255,255,255,0)" }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.35)")}
                 onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0)")}
               >
                 <X className="w-4 h-4" />
@@ -1374,8 +1357,8 @@ function TearsheetModal({ startup, onClose }: { startup: Startup; onClose: () =>
           </div>
         </div>
 
-        {/* ── Tab bar ── */}
-        <div className="flex-none" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+        {/* ── Tab bar (same blue-gray, slightly deeper) ── */}
+        <div className="flex-none" style={{ background: "#AFC2CB", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
           <div className="flex items-center overflow-x-auto px-4" style={{ scrollbarWidth: "none" }}>
             {TEARSHEET_TABS.map((tab) => {
               const active = activeTab === tab.id;
@@ -1384,15 +1367,15 @@ function TearsheetModal({ startup, onClose }: { startup: Startup; onClose: () =>
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className="relative flex-none px-4 py-3.5 text-[11.5px] font-semibold whitespace-nowrap transition-colors"
-                  style={{ color: active ? accent.ring : "#64748b" }}
-                  onMouseEnter={(e) => { if (!active) e.currentTarget.style.color = "#94a3b8"; }}
-                  onMouseLeave={(e) => { if (!active) e.currentTarget.style.color = "#64748b"; }}
+                  style={{ color: active ? "#0F172A" : "rgba(15,23,42,0.55)" }}
+                  onMouseEnter={(e) => { if (!active) e.currentTarget.style.color = "rgba(15,23,42,0.8)"; }}
+                  onMouseLeave={(e) => { if (!active) e.currentTarget.style.color = "rgba(15,23,42,0.55)"; }}
                 >
                   {tab.label}
                   {active && (
                     <span
                       className="absolute bottom-0 inset-x-2 h-[2px] rounded-full"
-                      style={{ background: accent.ring, boxShadow: `0 0 8px ${accent.ring}80` }}
+                      style={{ background: "#0F172A" }}
                     />
                   )}
                 </button>
@@ -1401,10 +1384,10 @@ function TearsheetModal({ startup, onClose }: { startup: Startup; onClose: () =>
           </div>
         </div>
 
-        {/* ── Scrollable tab content ── */}
+        {/* ── Scrollable tab content (white) ── */}
         <div
-          className="flex-1 overflow-y-auto px-6 py-5"
-          style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(255,255,255,0.07) transparent" }}
+          className="flex-1 overflow-y-auto px-6 py-5 bg-white"
+          style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(15,23,42,0.15) transparent" }}
         >
           {activeTab === "overview" && (
             <OverviewTab startup={startup} alphaScore={alphaScore} alphaLoading={alphaLoading} alphaErr={alphaErr} />
@@ -2047,8 +2030,8 @@ export function Startups() {
   return (
     <Layout>
 
-      {/* ── Filter bar (sage — compare against VCs' blue-gray) ──────────── */}
-      <div style={{ background: "#D3D3C0", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
+      {/* ── Filter bar ───────────────────────────────────────────────────── */}
+      <div style={{ background: "#B8C9D1", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
         <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 pt-6 pb-6">
 
           {/* Title row */}

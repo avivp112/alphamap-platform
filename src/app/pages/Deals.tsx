@@ -406,51 +406,33 @@ export function Deals() {
   return (
     <Layout>
 
-      {/* ── Dark header band ── */}
-      <div
-        className="relative overflow-hidden"
-        style={{
-          background: 'linear-gradient(135deg, #0b1626 0%, #0e1e32 50%, #0b1626 100%)',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
-        }}
-      >
-        {/* Dot-grid texture */}
-        <div
-          className="absolute inset-0 pointer-events-none opacity-[0.025]"
-          style={{ backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)', backgroundSize: '28px 28px' }}
-        />
-        {/* Top accent rule — amber for this page */}
-        <div
-          className="absolute inset-x-0 top-0 h-px pointer-events-none"
-          style={{ background: 'linear-gradient(90deg, transparent, rgba(245,158,11,0.45) 40%, rgba(34,211,238,0.25) 60%, transparent)' }}
-        />
-
-        <div className="relative mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 pt-7 pb-6">
+      {/* ── Filter bar ───────────────────────────────────────────────────── */}
+      <div style={{ background: "#B8C9D1", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
+        <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 pt-7 pb-6">
           <div className="flex items-center justify-between gap-4 mb-1.5">
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">
               Deal Flow
             </h1>
             <div className="flex items-center gap-2 flex-none">
               <span
-                className="text-[10px] font-semibold px-2.5 py-1 rounded-full"
-                style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.18)', color: '#fcd34d' }}
+                className="text-[10px] font-semibold px-2.5 py-1 rounded-full bg-amber-100 border border-amber-300 text-amber-800"
               >
                 {allDeals.length} deals tracked
               </span>
-              <span className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-500">
-                <span className={`w-1.5 h-1.5 rounded-full ${isLive ? "bg-emerald-400 animate-pulse" : "bg-amber-400"}`} />
+              <span className="flex items-center gap-1.5 text-[10px] font-semibold text-[#0F172A]/55">
+                <span className={`w-1.5 h-1.5 rounded-full ${isLive ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`} />
                 {isLoading ? "Loading…" : isLive ? "Live" : "Demo"}
               </span>
             </div>
           </div>
-          <p className="text-sm text-slate-500 font-medium">
+          <p className="text-sm text-[#0F172A]/60 font-medium">
             Transactional ledger of tracked private market deals — rounds, M&amp;A, and strategic investments.
           </p>
         </div>
       </div>
 
       {/* ── Main content ── */}
-      <div className="bg-[#F3F4F6] min-h-screen">
+      <div className="bg-[#F8F9FA] min-h-screen">
         <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-5">
 
           {/* ── Data source banner ── */}
