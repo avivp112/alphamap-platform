@@ -122,35 +122,35 @@ const DUMMY_DEALS: Deal[] = [
 // ── Style configs ─────────────────────────────────────────────────────────────
 
 const DEAL_TYPE_CONFIG: Record<string, { bg: string; text: string; border: string; shadow: string }> = {
-  "Pre-Seed":   { bg: 'rgba(124,58,237,0.10)', text: '#c4b5fd', border: 'rgba(139,92,246,0.30)',  shadow: '0 0 10px rgba(139,92,246,0.18)' },
-  "Seed":       { bg: 'rgba(37,99,235,0.10)',  text: '#93c5fd', border: 'rgba(59,130,246,0.30)',   shadow: '0 0 10px rgba(59,130,246,0.18)' },
-  "Series A":   { bg: 'rgba(5,150,105,0.10)',  text: '#6ee7b7', border: 'rgba(16,185,129,0.30)',   shadow: '0 0 10px rgba(16,185,129,0.18)' },
-  "Series B":   { bg: 'rgba(217,119,6,0.10)',  text: '#fcd34d', border: 'rgba(245,158,11,0.30)',   shadow: '0 0 10px rgba(245,158,11,0.18)' },
-  "Series C":   { bg: 'rgba(234,88,12,0.10)',  text: '#fdba74', border: 'rgba(249,115,22,0.30)',   shadow: '0 0 10px rgba(249,115,22,0.18)' },
-  "Series D":   { bg: 'rgba(220,38,38,0.10)',  text: '#fca5a5', border: 'rgba(239,68,68,0.30)',    shadow: '0 0 10px rgba(239,68,68,0.18)' },
-  "Series E+":  { bg: 'rgba(190,18,60,0.10)',  text: '#fda4af', border: 'rgba(244,63,94,0.30)',    shadow: '0 0 10px rgba(244,63,94,0.18)' },
-  "Growth":     { bg: 'rgba(67,56,202,0.10)',  text: '#a5b4fc', border: 'rgba(99,102,241,0.30)',   shadow: '0 0 10px rgba(99,102,241,0.18)' },
-  "M&A":        { bg: 'rgba(6,182,212,0.10)',  text: '#67e8f9', border: 'rgba(34,211,238,0.30)',   shadow: '0 0 12px rgba(34,211,238,0.22)' },
-  "Acquisition":{ bg: 'rgba(6,182,212,0.10)',  text: '#67e8f9', border: 'rgba(34,211,238,0.30)',   shadow: '0 0 12px rgba(34,211,238,0.22)' },
-  "Bridge":     { bg: 'rgba(2,132,199,0.10)',  text: '#7dd3fc', border: 'rgba(14,165,233,0.30)',   shadow: '0 0 10px rgba(14,165,233,0.18)' },
-  "Grant":           { bg: 'rgba(101,163,13,0.10)', text: '#bef264', border: 'rgba(132,204,22,0.30)',   shadow: '0 0 10px rgba(132,204,22,0.18)' },
-  "Other":           { bg: 'rgba(71,85,105,0.10)',  text: '#94a3b8', border: 'rgba(100,116,139,0.30)',  shadow: 'none' },
-  // SEC Form D — amber glow signals exclusive regulatory / unannounced deal data
-  "Form D":          { bg: 'rgba(245,158,11,0.11)', text: '#fde68a', border: 'rgba(245,158,11,0.38)', shadow: '0 0 14px rgba(245,158,11,0.24)' },
-  "Form D (Equity)": { bg: 'rgba(245,158,11,0.11)', text: '#fde68a', border: 'rgba(245,158,11,0.38)', shadow: '0 0 14px rgba(245,158,11,0.24)' },
-  "Form D (Debt)":   { bg: 'rgba(251,146,60,0.11)', text: '#fdba74', border: 'rgba(251,146,60,0.38)', shadow: '0 0 14px rgba(251,146,60,0.24)' },
+  "Pre-Seed":   { bg: 'rgba(124,58,237,0.08)', text: '#6d28d9', border: 'rgba(139,92,246,0.30)',  shadow: 'none' },
+  "Seed":       { bg: 'rgba(37,99,235,0.08)',  text: '#1d4ed8', border: 'rgba(59,130,246,0.30)',   shadow: 'none' },
+  "Series A":   { bg: 'rgba(5,150,105,0.08)',  text: '#047857', border: 'rgba(16,185,129,0.30)',   shadow: 'none' },
+  "Series B":   { bg: 'rgba(217,119,6,0.08)',  text: '#b45309', border: 'rgba(245,158,11,0.30)',   shadow: 'none' },
+  "Series C":   { bg: 'rgba(234,88,12,0.08)',  text: '#c2410c', border: 'rgba(249,115,22,0.30)',   shadow: 'none' },
+  "Series D":   { bg: 'rgba(220,38,38,0.08)',  text: '#b91c1c', border: 'rgba(239,68,68,0.30)',    shadow: 'none' },
+  "Series E+":  { bg: 'rgba(190,18,60,0.08)',  text: '#9f1239', border: 'rgba(244,63,94,0.30)',    shadow: 'none' },
+  "Growth":     { bg: 'rgba(67,56,202,0.08)',  text: '#4338ca', border: 'rgba(99,102,241,0.30)',   shadow: 'none' },
+  "M&A":        { bg: 'rgba(6,182,212,0.08)',  text: '#0e7490', border: 'rgba(34,211,238,0.30)',   shadow: 'none' },
+  "Acquisition":{ bg: 'rgba(6,182,212,0.08)',  text: '#0e7490', border: 'rgba(34,211,238,0.30)',   shadow: 'none' },
+  "Bridge":     { bg: 'rgba(2,132,199,0.08)',  text: '#0369a1', border: 'rgba(14,165,233,0.30)',   shadow: 'none' },
+  "Grant":           { bg: 'rgba(101,163,13,0.08)', text: '#4d7c0f', border: 'rgba(132,204,22,0.30)',   shadow: 'none' },
+  "Other":           { bg: 'rgba(71,85,105,0.08)',  text: '#475569', border: 'rgba(100,116,139,0.30)',  shadow: 'none' },
+  // SEC Form D — amber marks exclusive regulatory / unannounced deal data
+  "Form D":          { bg: 'rgba(245,158,11,0.10)', text: '#92400e', border: 'rgba(245,158,11,0.38)', shadow: 'none' },
+  "Form D (Equity)": { bg: 'rgba(245,158,11,0.10)', text: '#92400e', border: 'rgba(245,158,11,0.38)', shadow: 'none' },
+  "Form D (Debt)":   { bg: 'rgba(251,146,60,0.10)', text: '#9a3412', border: 'rgba(251,146,60,0.38)', shadow: 'none' },
 };
 
 const SECTOR_CONFIG: Record<string, { bg: string; text: string; border: string }> = {
-  "AI & ML":           { bg: 'rgba(34,211,238,0.07)',  text: '#67e8f9', border: 'rgba(34,211,238,0.18)'  },
-  "Cybersecurity":     { bg: 'rgba(167,139,250,0.07)', text: '#c4b5fd', border: 'rgba(167,139,250,0.18)' },
-  "Fintech":           { bg: 'rgba(96,165,250,0.07)',  text: '#93c5fd', border: 'rgba(96,165,250,0.18)'  },
-  "SaaS":              { bg: 'rgba(52,211,153,0.07)',  text: '#6ee7b7', border: 'rgba(52,211,153,0.18)'  },
-  "HealthTech":        { bg: 'rgba(251,113,133,0.07)', text: '#fda4af', border: 'rgba(251,113,133,0.18)' },
-  "AI Infrastructure": { bg: 'rgba(251,191,36,0.07)',  text: '#fcd34d', border: 'rgba(251,191,36,0.18)'  },
-  "Legal Tech":        { bg: 'rgba(192,132,252,0.07)', text: '#d8b4fe', border: 'rgba(192,132,252,0.18)' },
-  "DeepTech":          { bg: 'rgba(249,115,22,0.07)',  text: '#fdba74', border: 'rgba(249,115,22,0.18)'  },
-  "default":           { bg: 'rgba(100,116,139,0.07)', text: '#94a3b8', border: 'rgba(100,116,139,0.18)' },
+  "AI & ML":           { bg: 'rgba(34,211,238,0.08)',  text: '#0e7490', border: 'rgba(34,211,238,0.20)'  },
+  "Cybersecurity":     { bg: 'rgba(167,139,250,0.08)', text: '#6d28d9', border: 'rgba(167,139,250,0.20)' },
+  "Fintech":           { bg: 'rgba(96,165,250,0.08)',  text: '#1d4ed8', border: 'rgba(96,165,250,0.20)'  },
+  "SaaS":              { bg: 'rgba(52,211,153,0.08)',  text: '#047857', border: 'rgba(52,211,153,0.20)'  },
+  "HealthTech":        { bg: 'rgba(251,113,133,0.08)', text: '#be123c', border: 'rgba(251,113,133,0.20)' },
+  "AI Infrastructure": { bg: 'rgba(251,191,36,0.08)',  text: '#b45309', border: 'rgba(251,191,36,0.20)'  },
+  "Legal Tech":        { bg: 'rgba(192,132,252,0.08)', text: '#7e22ce', border: 'rgba(192,132,252,0.20)' },
+  "DeepTech":          { bg: 'rgba(249,115,22,0.08)',  text: '#c2410c', border: 'rgba(249,115,22,0.20)'  },
+  "default":           { bg: 'rgba(100,116,139,0.08)', text: '#475569', border: 'rgba(100,116,139,0.20)' },
 };
 
 const AVATAR_BG = ['#1e3a5f','#1e2d54','#2d1b47','#1a3d2b','#3d1a1a','#1a3d3d','#3d2d1a','#2d1a3d'];
@@ -245,14 +245,14 @@ function SectorPill({ sector }: { sector: string }) {
 }
 
 function ValuationCell({ value, isEstimated }: { value: number | null; isEstimated: boolean }) {
-  if (!value) return <span className="text-xs text-slate-600">—</span>;
+  if (!value) return <span className="text-xs text-gray-400">—</span>;
   if (!isEstimated) {
-    return <span className="text-xs font-bold text-white">{fmtAmount(value)}</span>;
+    return <span className="text-xs font-bold text-gray-900">{fmtAmount(value)}</span>;
   }
   return (
     <span className="inline-flex items-center gap-1">
       <Zap className="w-2.5 h-2.5 text-amber-500 flex-none" />
-      <span className="text-xs font-semibold italic text-amber-400">~{fmtAmount(value)}</span>
+      <span className="text-xs font-semibold italic text-amber-700">~{fmtAmount(value)}</span>
       <span className="text-[8px] font-bold text-amber-600/70 leading-none">(Est.)</span>
     </span>
   );
@@ -271,11 +271,10 @@ interface HudCardProps {
 function HudCard({ accent, icon: Icon, label, value, sub }: HudCardProps) {
   return (
     <div
-      className="relative rounded-[18px] px-5 py-4 overflow-hidden"
+      className="relative rounded-[18px] px-5 py-4 overflow-hidden bg-white"
       style={{
-        background: 'linear-gradient(145deg, #1a2535 0%, #0c1524 100%)',
-        border: '1px solid rgba(255,255,255,0.07)',
-        boxShadow: '0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04)',
+        border: '1px solid #E5E7EB',
+        boxShadow: '0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)',
       }}
     >
       {/* Top shimmer accent */}
@@ -285,10 +284,10 @@ function HudCard({ accent, icon: Icon, label, value, sub }: HudCardProps) {
       />
       <div className="flex items-center gap-2 mb-2.5">
         <Icon className="w-3.5 h-3.5 flex-none" style={{ color: accent }} />
-        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-[0.13em]">{label}</span>
+        <span className="text-[9px] font-bold text-gray-400 uppercase tracking-[0.13em]">{label}</span>
       </div>
-      <div className="text-2xl font-black text-white leading-none tracking-tight">{value}</div>
-      {sub && <div className="text-[10px] text-slate-500 mt-1.5 leading-snug">{sub}</div>}
+      <div className="text-2xl font-black text-gray-900 leading-none tracking-tight">{value}</div>
+      {sub && <div className="text-[10px] text-gray-400 mt-1.5 leading-snug">{sub}</div>}
     </div>
   );
 }
@@ -307,7 +306,7 @@ function ColHeader({
   const active = col !== null && sortCol === col;
   if (!col) {
     return (
-      <span className={`text-[9px] font-bold text-slate-600 uppercase tracking-[0.13em] ${className}`}>
+      <span className={`text-[9px] font-bold text-gray-400 uppercase tracking-[0.13em] ${className}`}>
         {label}
       </span>
     );
@@ -316,7 +315,7 @@ function ColHeader({
     <button
       onClick={() => onSort(col)}
       className={`flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.13em] transition-colors ${
-        active ? "text-slate-300" : "text-slate-600 hover:text-slate-400"
+        active ? "text-gray-700" : "text-gray-400 hover:text-gray-600"
       } ${className}`}
     >
       {label}
@@ -515,11 +514,10 @@ export function Deals() {
 
           {/* ── Table card ── */}
           <div
-            className="rounded-[22px] overflow-hidden"
+            className="relative rounded-[22px] overflow-hidden bg-white"
             style={{
-              background: 'linear-gradient(145deg, #111d2e 0%, #0b1422 100%)',
-              border: '1px solid rgba(255,255,255,0.07)',
-              boxShadow: '0 8px 40px rgba(0,0,0,0.40), inset 0 1px 0 rgba(255,255,255,0.04)',
+              border: '1px solid #E5E7EB',
+              boxShadow: '0 1px 3px rgba(15,23,42,0.06), 0 4px 16px rgba(15,23,42,0.05)',
             }}
           >
             {/* Top shimmer */}
@@ -530,23 +528,21 @@ export function Deals() {
 
             {/* Card toolbar ── */}
             <div
-              className="px-5 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
-              style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+              className="px-5 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-gray-100"
             >
               {/* Title + count */}
               <div className="flex items-center gap-3">
                 <Activity className="w-4 h-4 text-amber-500 flex-none" />
-                <span className="text-xs font-bold text-white uppercase tracking-widest">Ledger</span>
+                <span className="text-xs font-bold text-gray-900 uppercase tracking-widest">Ledger</span>
                 <span
-                  className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-                  style={{ background: 'rgba(255,255,255,0.06)', color: '#64748b' }}
+                  className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500"
                 >
                   {filtered.length} / {allDeals.length}
                 </span>
                 {activeFilters > 0 && (
                   <button
                     onClick={() => { setSearch(""); setDealTypeFilter(null); }}
-                    className="flex items-center gap-1 text-[10px] text-slate-600 hover:text-rose-400 transition-colors"
+                    className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-rose-600 transition-colors"
                   >
                     <X className="w-3 h-3" />Clear
                   </button>
@@ -557,18 +553,17 @@ export function Deals() {
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full sm:w-auto">
                 {/* Search */}
                 <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600 pointer-events-none" />
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
                   <input
                     value={search}
                     onChange={e => setSearch(e.target.value)}
                     placeholder="Search company…"
-                    className="w-full sm:w-44 pl-8 pr-8 py-1.5 text-xs text-white placeholder:text-slate-600 rounded-[10px] focus:outline-none focus:ring-1 focus:ring-cyan-500/30"
-                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+                    className="w-full sm:w-44 pl-8 pr-8 py-1.5 text-xs text-gray-900 placeholder:text-gray-400 rounded-[10px] bg-gray-50 border border-gray-200 focus:outline-none focus:ring-1 focus:ring-cyan-500/30"
                   />
                   {search && (
                     <button
                       onClick={() => setSearch("")}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-300 transition-colors"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -577,8 +572,7 @@ export function Deals() {
 
                 {/* Deal type chips */}
                 <div
-                  className="flex items-center gap-0.5 rounded-[10px] p-0.5"
-                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+                  className="flex items-center gap-0.5 rounded-[10px] p-0.5 bg-gray-50 border border-gray-200"
                 >
                   {FILTER_TYPES.map(t => {
                     const isActive = t === "All" ? !dealTypeFilter : dealTypeFilter === t;
@@ -589,8 +583,8 @@ export function Deals() {
                         className="px-2.5 py-1 rounded-[7px] text-[10px] font-semibold transition-all whitespace-nowrap"
                         style={
                           isActive
-                            ? { background: '#F59E0B', color: '#fff', boxShadow: '0 0 12px rgba(245,158,11,0.35)' }
-                            : { color: '#64748b' }
+                            ? { background: '#F59E0B', color: '#fff' }
+                            : { color: '#9CA3AF' }
                         }
                       >
                         {t}
@@ -607,11 +601,9 @@ export function Deals() {
 
                 {/* Column headers */}
                 <div
-                  className="grid px-5 py-3 gap-4"
+                  className="grid px-5 py-3 gap-4 bg-gray-50 border-b border-gray-100"
                   style={{
                     gridTemplateColumns: '88px 1fr 124px 108px 1fr 160px',
-                    borderBottom: '1px solid rgba(255,255,255,0.05)',
-                    background: 'rgba(0,0,0,0.15)',
                   }}
                 >
                   <ColHeader col="date"      label="Date"      sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
@@ -632,18 +624,18 @@ export function Deals() {
                       className="grid px-5 py-3.5 gap-4 cursor-pointer transition-colors duration-100"
                       style={{
                         gridTemplateColumns: '88px 1fr 124px 108px 1fr 160px',
-                        borderBottom: isLast ? 'none' : '1px solid rgba(255,255,255,0.04)',
+                        borderBottom: isLast ? 'none' : '1px solid #F3F4F6',
                       }}
                       onClick={() => setSelectedDeal(deal)}
-                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.035)')}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(15,23,42,0.025)')}
                       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                     >
                       {/* Date */}
                       <div className="flex flex-col justify-center gap-0.5">
-                        <span className="text-xs font-bold text-slate-300 leading-tight tabular-nums">
+                        <span className="text-xs font-bold text-gray-700 leading-tight tabular-nums">
                           {fmtDate(deal.date)}
                         </span>
-                        <span className="text-[9px] text-slate-600 leading-tight">{daysAgo(deal.date)}</span>
+                        <span className="text-[9px] text-gray-400 leading-tight">{daysAgo(deal.date)}</span>
                       </div>
 
                       {/* Company */}
@@ -655,13 +647,13 @@ export function Deals() {
                           {av.initials}
                         </div>
                         <div className="min-w-0">
-                          <div className="text-xs font-bold text-white leading-tight truncate">{deal.company_name}</div>
+                          <div className="text-xs font-bold text-gray-900 leading-tight truncate">{deal.company_name}</div>
                           <div className="mt-0.5">
                             <SectorPill sector={deal.sector} />
                           </div>
                         </div>
                         {deal.country && (
-                          <span className="text-[9px] text-slate-600 ml-auto flex-none">{deal.country}</span>
+                          <span className="text-[9px] text-gray-400 ml-auto flex-none">{deal.country}</span>
                         )}
                       </div>
 
@@ -672,14 +664,14 @@ export function Deals() {
 
                       {/* Deal Size */}
                       <div className="flex items-center">
-                        <span className="text-xs font-black text-white tabular-nums">
+                        <span className="text-xs font-black text-gray-900 tabular-nums">
                           {fmtAmount(deal.deal_size)}
                         </span>
                       </div>
 
                       {/* Lead Investors */}
                       <div className="flex items-center min-w-0">
-                        <span className="text-xs text-slate-400 leading-snug truncate" title={deal.lead_investors.join(", ")}>
+                        <span className="text-xs text-gray-500 leading-snug truncate" title={deal.lead_investors.join(", ")}>
                           {deal.lead_investors.join(", ")}
                         </span>
                       </div>
@@ -698,11 +690,11 @@ export function Deals() {
                   );
                 }) : (
                   <div className="py-16 flex flex-col items-center gap-3 text-center">
-                    <Building2 className="w-8 h-8 text-slate-700" />
-                    <p className="text-sm text-slate-600 font-medium">No deals match your filters</p>
+                    <Building2 className="w-8 h-8 text-gray-300" />
+                    <p className="text-sm text-gray-400 font-medium">No deals match your filters</p>
                     <button
                       onClick={() => { setSearch(""); setDealTypeFilter(null); }}
-                      className="text-xs text-cyan-500 hover:text-cyan-400 transition-colors"
+                      className="text-xs text-cyan-600 hover:text-cyan-700 transition-colors"
                     >
                       Clear all filters
                     </button>
@@ -713,24 +705,22 @@ export function Deals() {
 
             {/* ── Footer ── */}
             <div
-              className="px-5 py-3 flex items-center justify-between"
-              style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}
+              className="px-5 py-3 flex items-center justify-between border-t border-gray-100"
             >
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-slate-600">
-                  Showing <span className="text-slate-400 font-semibold">{filtered.length}</span> of{" "}
-                  <span className="text-slate-400 font-semibold">{allDeals.length}</span> deals
+                <span className="text-[10px] text-gray-400">
+                  Showing <span className="text-gray-600 font-semibold">{filtered.length}</span> of{" "}
+                  <span className="text-gray-600 font-semibold">{allDeals.length}</span> deals
                 </span>
-                <span className="text-[9px] text-slate-700">· Click any row to open Deal Intelligence</span>
+                <span className="text-[9px] text-gray-300">· Click any row to open Deal Intelligence</span>
               </div>
               <div className="flex items-center gap-2">
                 <span
-                  className="text-[9px] font-semibold px-2 py-0.5 rounded-full"
-                  style={{ background: 'rgba(34,211,238,0.06)', border: '1px solid rgba(34,211,238,0.12)', color: '#22d3ee' }}
+                  className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-700"
                 >
                   AlphaMap Est.
                 </span>
-                <span className="text-[9px] text-slate-700 font-medium">= proprietary model valuation</span>
+                <span className="text-[9px] text-gray-300 font-medium">= proprietary model valuation</span>
               </div>
             </div>
           </div>
@@ -741,11 +731,11 @@ export function Deals() {
             style={{ background: 'rgba(245,158,11,0.04)', border: '1px solid rgba(245,158,11,0.10)' }}
           >
             <Zap className="w-3.5 h-3.5 text-amber-500 mt-0.5 flex-none" />
-            <p className="text-[11px] text-slate-500 leading-relaxed">
-              <span className="text-amber-400 font-bold">AlphaMap Estimated Valuation</span> — When a deal&apos;s
+            <p className="text-[11px] text-gray-500 leading-relaxed">
+              <span className="text-amber-700 font-bold">AlphaMap Estimated Valuation</span> — When a deal&apos;s
               official valuation is undisclosed, AlphaMap uses a proprietary model (sector multiples ×
               capital efficiency × talent velocity) to produce a best-estimate mark. These are highlighted
-              in <span className="italic text-amber-400">amber italic</span> with a ⚡ indicator.
+              in <span className="italic text-amber-700">amber italic</span> with a ⚡ indicator.
             </p>
           </div>
 

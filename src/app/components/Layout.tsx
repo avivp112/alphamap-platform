@@ -10,7 +10,7 @@ export function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#F3F4F6] font-sans antialiased text-[#0F172A]">
+    <div className="flex min-h-screen flex-col bg-[#F8F9FA] font-sans antialiased text-[#0F172A]">
       <TopNav onMenuToggle={() => setSidebarOpen((o) => !o)} />
 
       {/* Backdrop — sits below sidebar, above content, covers area under TopNav only */}

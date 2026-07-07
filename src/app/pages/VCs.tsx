@@ -115,11 +115,11 @@ const ALL_SECTORS             = ["AI", "Fintech", "Cyber", "SaaS", "HealthTech",
 const GEO_OPTIONS: Geography[] = ["North America", "Europe", "Israel", "Asia-Pacific", "Global", "MENA"];
 
 const STAGE_PILL: Record<Stage, string> = {
-  "Pre-Seed": "bg-violet-500/10 text-violet-300 border border-violet-500/20",
-  "Seed":     "bg-sky-500/10 text-sky-300 border border-sky-500/20",
-  "Series A": "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20",
-  "Series B": "bg-amber-500/10 text-amber-300 border border-amber-500/20",
-  "Growth":   "bg-indigo-500/10 text-indigo-300 border border-indigo-500/20",
+  "Pre-Seed": "bg-violet-50 text-violet-700 border border-violet-200",
+  "Seed":     "bg-sky-50 text-sky-700 border border-sky-200",
+  "Series A": "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  "Series B": "bg-amber-50 text-amber-700 border border-amber-200",
+  "Growth":   "bg-indigo-50 text-indigo-700 border border-indigo-200",
 };
 
 // ─── Sort ─────────────────────────────────────────────────────────────────────
@@ -235,7 +235,7 @@ function StepSlider({
   return (
     <div>
       <div className="relative h-4 flex items-center mx-1">
-        <div className="absolute inset-x-0 h-[3px] rounded-full bg-[#1a2a3f]" />
+        <div className="absolute inset-x-0 h-[3px] rounded-full bg-black/10" />
         <div
           className="absolute left-0 h-[3px] rounded-full bg-[#F59E0B] transition-all duration-100"
           style={{ width: `${pct}%` }}
@@ -246,7 +246,7 @@ function StepSlider({
             className={`absolute w-2.5 h-2.5 rounded-full border-[2px] -translate-x-1/2 transition-all duration-100 ${
               i < idx   ? "bg-[#F59E0B] border-[#F59E0B]" :
               i === idx ? "bg-white border-[#F59E0B] scale-125" :
-                          "bg-[#0d1f35] border-[#243858]"
+                          "bg-white border-black/20"
             }`}
             style={{ left: `${steps.length > 1 ? (i / (steps.length - 1)) * 100 : 0}%` }}
           />
@@ -263,7 +263,7 @@ function StepSlider({
             key={s.value}
             onClick={() => onChange(s.value)}
             className={`text-[9px] font-semibold leading-none transition-colors ${
-              i === idx ? "text-[#F59E0B]" : "text-slate-500 hover:text-slate-300"
+              i === idx ? "text-[#F59E0B]" : "text-[#0F172A]/45 hover:text-[#0F172A]/70"
             }`}
             style={{ minWidth: 0 }}
           >
@@ -285,22 +285,22 @@ function VCCard({ firm, onClick }: { firm: VCFirm; onClick: () => void }) {
       className="relative group flex flex-col overflow-hidden rounded-[22px] border transition-all duration-300 cursor-pointer select-none"
       onClick={onClick}
       style={{
-        background: "linear-gradient(145deg, #1a2535 0%, #0c1524 100%)",
-        borderColor: "rgba(255,255,255,0.07)",
-        boxShadow: "0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04)",
+        background: "#FFFFFF",
+        borderColor: "#E5E7EB",
+        boxShadow: "0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)",
         willChange: "transform",
       }}
       onMouseEnter={e => {
         const el = e.currentTarget;
         el.style.transform = "translateY(-4px)";
         el.style.borderColor = accent.borderHover;
-        el.style.boxShadow = `0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px ${accent.borderHover}, ${accent.glowColor} 0px 0px 60px 0px, inset 0 1px 0 rgba(255,255,255,0.06)`;
+        el.style.boxShadow = `0 16px 40px rgba(15,23,42,0.10), 0 0 0 1px ${accent.borderHover}`;
       }}
       onMouseLeave={e => {
         const el = e.currentTarget;
         el.style.transform = "";
-        el.style.borderColor = "rgba(255,255,255,0.07)";
-        el.style.boxShadow = "0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04)";
+        el.style.borderColor = "#E5E7EB";
+        el.style.boxShadow = "0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)";
       }}
     >
       {/* Top shimmer accent line */}
@@ -309,22 +309,16 @@ function VCCard({ firm, onClick }: { firm: VCFirm; onClick: () => void }) {
         style={{ background: `linear-gradient(90deg, transparent, ${accent.shimmerColor}, transparent)` }}
       />
 
-      {/* Ambient glow orb */}
-      <div
-        className="absolute -top-16 left-1/2 -translate-x-1/2 w-48 h-48 rounded-full pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-3xl"
-        style={{ background: accent.glowColor }}
-      />
-
       {/* Card header */}
       <div className="px-5 pt-5 pb-4 relative z-10">
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-3 min-w-0">
             <CompanyLogo name={firm.name} website={firm.website} size={44} rounded="rounded-xl" />
             <div className="min-w-0">
-              <h3 className="text-[15px] font-bold text-white truncate leading-tight tracking-tight">
+              <h3 className="text-[15px] font-bold text-gray-900 truncate leading-tight tracking-tight">
                 {firm.name}
               </h3>
-              <p className="text-xs text-slate-500 mt-0.5 line-clamp-1 leading-tight">
+              <p className="text-xs text-gray-500 mt-0.5 line-clamp-1 leading-tight">
                 {firm.tagline}
               </p>
             </div>
@@ -335,7 +329,7 @@ function VCCard({ firm, onClick }: { firm: VCFirm; onClick: () => void }) {
             target="_blank"
             rel="noopener noreferrer"
             onClick={e => e.stopPropagation()}
-            className="flex-none p-1.5 rounded-lg text-slate-600 hover:text-slate-300 transition-colors"
+            className="flex-none p-1.5 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
             aria-label={`Visit ${firm.name}`}
           >
             <ExternalLink className="w-3.5 h-3.5" />
@@ -355,7 +349,7 @@ function VCCard({ firm, onClick }: { firm: VCFirm; onClick: () => void }) {
       <div className="px-4 pb-1 relative z-10">
         <div
           className="relative overflow-hidden rounded-[14px]"
-          style={{ background: "rgba(5,10,20,0.7)", border: "1px solid rgba(255,255,255,0.05)" }}
+          style={{ background: "#F8F9FA", border: "1px solid #EEF0F2" }}
         >
           {(["top-2 left-2 border-t border-l", "top-2 right-2 border-t border-r",
              "bottom-2 left-2 border-b border-l", "bottom-2 right-2 border-b border-r"] as const
@@ -367,7 +361,7 @@ function VCCard({ firm, onClick }: { firm: VCFirm; onClick: () => void }) {
             />
           ))}
 
-          <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-600 text-center pt-3 pb-0.5">
+          <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-gray-400 text-center pt-3 pb-0.5">
             Focus Areas
           </p>
 
@@ -377,30 +371,30 @@ function VCCard({ firm, onClick }: { firm: VCFirm; onClick: () => void }) {
 
       {/* Key stats */}
       <div className="grid grid-cols-3 gap-1.5 px-4 py-3 relative z-10">
-        <div className="rounded-[10px] px-2.5 py-2.5" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
+        <div className="rounded-[10px] px-2.5 py-2.5 bg-gray-50 border border-gray-100">
           <div className="flex items-center gap-1 mb-1">
-            <DollarSign className="w-2.5 h-2.5 text-emerald-500 flex-none" />
-            <span className="text-[8.5px] font-bold text-slate-600 uppercase tracking-wider">AUM</span>
+            <DollarSign className="w-2.5 h-2.5 text-emerald-600 flex-none" />
+            <span className="text-[8.5px] font-bold text-gray-400 uppercase tracking-wider">AUM</span>
           </div>
-          <div className="text-sm font-bold text-emerald-400 leading-none">{formatAUM(firm.aum_millions)}</div>
+          <div className="text-sm font-bold text-emerald-600 leading-none">{formatAUM(firm.aum_millions)}</div>
         </div>
 
-        <div className="rounded-[10px] px-2.5 py-2.5" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
+        <div className="rounded-[10px] px-2.5 py-2.5 bg-gray-50 border border-gray-100">
           <div className="flex items-center gap-1 mb-1">
-            <Briefcase className="w-2.5 h-2.5 text-cyan-500 flex-none" />
-            <span className="text-[8.5px] font-bold text-slate-600 uppercase tracking-wider">Portfolio</span>
+            <Briefcase className="w-2.5 h-2.5 text-cyan-600 flex-none" />
+            <span className="text-[8.5px] font-bold text-gray-400 uppercase tracking-wider">Portfolio</span>
           </div>
-          <div className="text-sm font-bold text-cyan-400 leading-none">{firm.portfolio_count}</div>
+          <div className="text-sm font-bold text-cyan-600 leading-none">{firm.portfolio_count}</div>
         </div>
 
-        <div className="rounded-[10px] px-2.5 py-2.5" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
+        <div className="rounded-[10px] px-2.5 py-2.5 bg-gray-50 border border-gray-100">
           <div className="flex items-center gap-1 mb-1">
-            <Activity className="w-2.5 h-2.5 text-amber-500 flex-none" />
-            <span className="text-[8.5px] font-bold text-slate-600 uppercase tracking-wider">Deals/yr</span>
+            <Activity className="w-2.5 h-2.5 text-amber-600 flex-none" />
+            <span className="text-[8.5px] font-bold text-gray-400 uppercase tracking-wider">Deals/yr</span>
           </div>
           <div className="flex items-center gap-1">
-            <TrendingUp className="w-3 h-3 text-amber-400 flex-none" />
-            <span className="text-sm font-bold text-amber-400 leading-none">{firm.recent_investments}</span>
+            <TrendingUp className="w-3 h-3 text-amber-600 flex-none" />
+            <span className="text-sm font-bold text-amber-600 leading-none">{firm.recent_investments}</span>
           </div>
         </div>
       </div>
@@ -409,22 +403,20 @@ function VCCard({ firm, onClick }: { firm: VCFirm; onClick: () => void }) {
       <div className="px-5 pb-4 relative z-10">
         <div className="flex items-center gap-1.5 mb-2">
           <Star className="w-3 h-3" style={{ color: accent.radarStroke }} />
-          <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-600">Notable Exits</span>
+          <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-gray-400">Notable Exits</span>
         </div>
         <div className="flex flex-wrap gap-1">
           {firm.notable_exits.slice(0, 4).map(exit => (
             <span
               key={exit}
-              className="px-2 py-0.5 text-[10px] font-semibold rounded-full text-slate-300"
-              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
+              className="px-2 py-0.5 text-[10px] font-semibold rounded-full text-gray-700 bg-gray-50 border border-gray-200"
             >
               {exit}
             </span>
           ))}
           {firm.notable_exits.length > 4 && (
             <span
-              className="px-2 py-0.5 text-[10px] rounded-full text-slate-600"
-              style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}
+              className="px-2 py-0.5 text-[10px] rounded-full text-gray-400 bg-gray-50 border border-gray-100"
             >
               +{firm.notable_exits.length - 4}
             </span>
@@ -434,14 +426,13 @@ function VCCard({ firm, onClick }: { firm: VCFirm; onClick: () => void }) {
 
       {/* Card footer */}
       <div
-        className="px-5 py-3 mt-auto flex items-center justify-between gap-2 relative z-10"
-        style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
+        className="px-5 py-3 mt-auto flex items-center justify-between gap-2 relative z-10 border-t border-gray-100"
       >
         <div className="flex items-center gap-1.5 min-w-0">
-          <Globe className="w-3 h-3 text-slate-600 flex-none" />
-          <span className="text-[10px] text-slate-600 truncate">{firm.geography.slice(0, 2).join(", ")}</span>
+          <Globe className="w-3 h-3 text-gray-400 flex-none" />
+          <span className="text-[10px] text-gray-500 truncate">{firm.geography.slice(0, 2).join(", ")}</span>
         </div>
-        <span className="text-[10px] text-slate-700 font-medium flex-none">Est. {firm.founded_year}</span>
+        <span className="text-[10px] text-gray-400 font-medium flex-none">Est. {firm.founded_year}</span>
       </div>
     </div>
   );
@@ -452,27 +443,27 @@ function VCCard({ firm, onClick }: { firm: VCFirm; onClick: () => void }) {
 function SkeletonCard() {
   return (
     <div
-      className="rounded-[22px] border overflow-hidden animate-pulse"
-      style={{ background: "linear-gradient(145deg, #1a2535 0%, #0c1524 100%)", borderColor: "rgba(255,255,255,0.07)", height: 420 }}
+      className="rounded-[22px] border overflow-hidden animate-pulse bg-white"
+      style={{ borderColor: "#E5E7EB", height: 420 }}
     >
       <div className="px-5 pt-5 pb-4">
         <div className="flex items-center gap-3 mb-3">
-          <div className="w-11 h-11 rounded-xl flex-none" style={{ background: "rgba(255,255,255,0.06)" }} />
+          <div className="w-11 h-11 rounded-xl flex-none bg-gray-100" />
           <div className="flex-1 space-y-2">
-            <div className="h-3.5 rounded-full w-2/3" style={{ background: "rgba(255,255,255,0.06)" }} />
-            <div className="h-2.5 rounded-full w-1/2" style={{ background: "rgba(255,255,255,0.04)" }} />
+            <div className="h-3.5 rounded-full w-2/3 bg-gray-100" />
+            <div className="h-2.5 rounded-full w-1/2 bg-gray-100" />
           </div>
         </div>
         <div className="flex gap-1">
           {[40, 52, 44].map(w => (
-            <div key={w} className="h-4 rounded-full" style={{ width: w, background: "rgba(255,255,255,0.05)" }} />
+            <div key={w} className="h-4 rounded-full bg-gray-100" style={{ width: w }} />
           ))}
         </div>
       </div>
-      <div className="mx-4 rounded-[14px] h-[200px]" style={{ background: "rgba(5,10,20,0.7)", border: "1px solid rgba(255,255,255,0.05)" }} />
+      <div className="mx-4 rounded-[14px] h-[200px] bg-gray-50 border border-gray-100" />
       <div className="grid grid-cols-3 gap-1.5 px-4 py-3">
         {[0, 1, 2].map(i => (
-          <div key={i} className="h-14 rounded-[10px]" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }} />
+          <div key={i} className="h-14 rounded-[10px] bg-gray-50 border border-gray-100" />
         ))}
       </div>
     </div>
@@ -659,20 +650,20 @@ export function VCs() {
   return (
     <Layout>
 
-      {/* ── Dark header band (matches Startups page) ────────────────────── */}
-      <div className="bg-[#0b1626] border-b border-[#1a2a3f]">
+      {/* ── Filter bar (blue-gray — compare against Startups' sage) ─────── */}
+      <div style={{ background: "#B8C9D1", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
         <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 pt-6 pb-6">
 
           {/* Title row */}
           <div className="flex items-center justify-between gap-4 mb-1.5">
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">
               VC Directory
             </h1>
 
             {/* Sort segmented control */}
             <div className="flex items-center gap-2 flex-none">
-              <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider hidden sm:block">Sort</span>
-              <div className="flex items-center bg-[#0d1f35] border border-[#1a2a3f] rounded-[10px] p-0.5 gap-0.5">
+              <span className="text-[10px] font-bold text-[#0F172A]/50 uppercase tracking-wider hidden sm:block">Sort</span>
+              <div className="flex items-center bg-white/60 border border-black/10 rounded-[10px] p-0.5 gap-0.5">
                 {SORT_OPTIONS.map(o => (
                   <button
                     key={o.key}
@@ -680,7 +671,7 @@ export function VCs() {
                     className={`px-2.5 py-1.5 rounded-[7px] text-[10px] font-semibold transition-all whitespace-nowrap ${
                       sortKey === o.key
                         ? "bg-[#F59E0B] text-white shadow-sm"
-                        : "text-slate-400 hover:text-slate-200"
+                        : "text-[#0F172A]/60 hover:text-[#0F172A]"
                     }`}
                   >
                     {o.label}
@@ -695,11 +686,11 @@ export function VCs() {
 
           {/* Subtitle + count */}
           <div className="flex items-center gap-3 mb-5">
-            <p className="text-sm text-slate-400 leading-snug">
+            <p className="text-sm text-[#0F172A]/60 leading-snug">
               Institutional-grade intelligence on leading VC firms — sector focus, portfolio activity, and fund size.
             </p>
             {!loading && (
-              <span className="text-xs font-semibold text-slate-500 bg-[#0d1f35] border border-[#1a2a3f] px-2.5 py-1 rounded-full flex-none">
+              <span className="text-xs font-semibold text-[#0F172A]/60 bg-white/60 border border-black/10 px-2.5 py-1 rounded-full flex-none">
                 {filtered.length}
               </span>
             )}
@@ -713,16 +704,16 @@ export function VCs() {
 
               {/* Search */}
               <div className="relative min-w-[180px] max-w-xs flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#0F172A]/40" />
                 <input
                   type="text" value={search} onChange={e => setSearch(e.target.value)}
                   placeholder="Search firms…"
-                  className="w-full pl-9 pr-4 py-2.5 text-sm bg-[#0d1f35] border border-[#1a2a3f] text-white placeholder-slate-600 rounded-[12px] focus:outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/10 transition-all"
+                  className="w-full pl-9 pr-4 py-2.5 text-sm bg-white border border-black/10 text-[#0F172A] placeholder-[#0F172A]/35 rounded-[12px] focus:outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/10 transition-all"
                 />
                 {search && (
                   <button
                     onClick={() => setSearch("")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#0F172A]/40 hover:text-[#0F172A]/70"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -737,7 +728,7 @@ export function VCs() {
                   className={`px-2.5 py-1.5 rounded-full text-[11px] font-semibold border transition-all whitespace-nowrap ${
                     filters.stages.includes(s)
                       ? "bg-[#F59E0B] text-white border-[#F59E0B] shadow-sm"
-                      : "bg-[#0d1f35] border-[#1a2a3f] text-slate-400 hover:border-slate-600 hover:text-slate-200"
+                      : "bg-white/60 border-black/10 text-[#0F172A]/60 hover:border-black/25 hover:text-[#0F172A]"
                   }`}
                 >
                   {s}
@@ -745,7 +736,7 @@ export function VCs() {
               ))}
 
               {/* Vertical divider */}
-              <div className="w-px h-5 bg-[#1a2a3f] flex-none hidden sm:block" />
+              <div className="w-px h-5 bg-black/10 flex-none hidden sm:block" />
 
               {/* Sector pills */}
               {ALL_SECTORS.map(s => (
@@ -755,7 +746,7 @@ export function VCs() {
                   className={`px-2.5 py-1.5 rounded-full text-[11px] font-semibold border transition-all whitespace-nowrap ${
                     filters.sectors.includes(s)
                       ? "bg-[#F59E0B] text-white border-[#F59E0B] shadow-sm"
-                      : "bg-[#0d1f35] border-[#1a2a3f] text-slate-400 hover:border-slate-600 hover:text-slate-200"
+                      : "bg-white/60 border-black/10 text-[#0F172A]/60 hover:border-black/25 hover:text-[#0F172A]"
                   }`}
                 >
                   {s}
@@ -763,22 +754,22 @@ export function VCs() {
               ))}
 
               {/* Vertical divider */}
-              <div className="w-px h-5 bg-[#1a2a3f] flex-none hidden sm:block" />
+              <div className="w-px h-5 bg-black/10 flex-none hidden sm:block" />
 
               {/* Geography dropdown */}
               <div className="relative">
                 <select
                   value={filters.geo}
                   onChange={e => setFilters(f => ({ ...f, geo: e.target.value as Geography | "" }))}
-                  style={{ colorScheme: "dark" }}
-                  className={`appearance-none pl-3 pr-8 py-2 text-xs font-semibold border rounded-[10px] bg-[#0d1f35] transition-all focus:outline-none focus:ring-2 focus:ring-[#F59E0B]/20 cursor-pointer ${
-                    filters.geo ? "border-[#F59E0B] text-white" : "border-[#1a2a3f] text-slate-400"
+                  style={{ colorScheme: "light" }}
+                  className={`appearance-none pl-3 pr-8 py-2 text-xs font-semibold border rounded-[10px] bg-white transition-all focus:outline-none focus:ring-2 focus:ring-[#F59E0B]/20 cursor-pointer ${
+                    filters.geo ? "border-[#F59E0B] text-[#0F172A]" : "border-black/10 text-[#0F172A]/60"
                   }`}
                 >
                   <option value="">All Regions</option>
                   {GEO_OPTIONS.map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
-                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0F172A]/40 pointer-events-none" />
               </div>
 
               {/* Lead Investors toggle */}
@@ -786,20 +777,20 @@ export function VCs() {
                 onClick={() => setFilters(f => ({ ...f, leadOnly: !f.leadOnly }))}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-[10px] text-xs font-semibold border transition-all ${
                   filters.leadOnly
-                    ? "bg-emerald-900/40 border-emerald-700/60 text-emerald-400"
-                    : "bg-[#0d1f35] border-[#1a2a3f] text-slate-400 hover:border-slate-600 hover:text-slate-200"
+                    ? "bg-emerald-50 border-emerald-400/60 text-emerald-700"
+                    : "bg-white/60 border-black/10 text-[#0F172A]/60 hover:border-black/25 hover:text-[#0F172A]"
                 }`}
               >
-                <Zap className={`w-3.5 h-3.5 flex-none ${filters.leadOnly ? "text-emerald-400" : "text-slate-500"}`} />
+                <Zap className={`w-3.5 h-3.5 flex-none ${filters.leadOnly ? "text-emerald-600" : "text-[#0F172A]/40"}`} />
                 Lead Investors
-                {filters.leadOnly && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-none" />}
+                {filters.leadOnly && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-none" />}
               </button>
 
               {/* Clear all */}
               {activeFilterCount > 0 && (
                 <button
                   onClick={clearAll}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-rose-400 transition-colors"
+                  className="flex items-center gap-1.5 text-xs font-semibold text-[#0F172A]/50 hover:text-rose-600 transition-colors"
                 >
                   <X className="w-3.5 h-3.5" />Clear all ({activeFilterCount})
                 </button>
@@ -807,16 +798,16 @@ export function VCs() {
             </div>
 
             {/* Row 2: range sliders for Check Size + AUM */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 bg-[#0d1f35] border border-[#1a2a3f] rounded-[14px] px-5 py-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 bg-white/50 border border-black/10 rounded-[14px] px-5 py-4">
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                  <span className="text-[10px] font-bold text-[#0F172A]/55 uppercase tracking-wider">
                     Typical Check Size
                   </span>
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-all ${
                     filters.checkStep !== "all"
-                      ? "bg-amber-900/40 text-amber-400 border border-amber-800/60"
-                      : "text-slate-600"
+                      ? "bg-amber-100 text-amber-700 border border-amber-300"
+                      : "text-[#0F172A]/40"
                   }`}>
                     {checkLabel}
                   </span>
@@ -829,13 +820,13 @@ export function VCs() {
               </div>
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                  <span className="text-[10px] font-bold text-[#0F172A]/55 uppercase tracking-wider">
                     Fund Size / AUM
                   </span>
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-all ${
                     filters.aumStep !== "all"
-                      ? "bg-amber-900/40 text-amber-400 border border-amber-800/60"
-                      : "text-slate-600"
+                      ? "bg-amber-100 text-amber-700 border border-amber-300"
+                      : "text-[#0F172A]/40"
                   }`}>
                     {aumLabel}
                   </span>

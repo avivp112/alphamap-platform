@@ -75,24 +75,6 @@ const ROUND_HEX: Record<string, string> = {
   "Grant": "#65A30D", "Acquired": "#6B7280", "Other": "#9CA3AF",
 };
 
-// Semi-transparent dark badges — used on gradient dark cards (v2 aesthetic)
-const ROUND_STYLE_CARD: Record<string, string> = {
-  "Pre-Seed":         "bg-violet-500/10 text-violet-300 border border-violet-500/20",
-  "Seed":             "bg-blue-500/10 text-blue-300 border border-blue-500/20",
-  "Series A":         "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20",
-  "Series B":         "bg-amber-500/10 text-amber-300 border border-amber-500/20",
-  "Series C":         "bg-orange-500/10 text-orange-300 border border-orange-500/20",
-  "Series D":         "bg-orange-600/10 text-orange-400 border border-orange-600/20",
-  "Series E+":        "bg-red-500/10 text-red-300 border border-red-500/20",
-  "Growth":           "bg-indigo-500/10 text-indigo-300 border border-indigo-500/20",
-  "Bridge":           "bg-sky-500/10 text-sky-300 border border-sky-500/20",
-  "Convertible Note": "bg-cyan-500/10 text-cyan-300 border border-cyan-500/20",
-  "Bootstrapped":     "bg-teal-500/10 text-teal-300 border border-teal-500/20",
-  "Grant":            "bg-lime-500/10 text-lime-300 border border-lime-500/20",
-  "Acquired":         "bg-slate-500/10 text-slate-400 border border-slate-500/20",
-  "Other":            "bg-slate-600/10 text-slate-500 border border-slate-600/20",
-};
-
 // Per-round hover glow: border highlight + ambient shadow bloom + top shimmer
 const ROUND_GLOW: Record<string, { border: string; glow: string; shimmer: string }> = {
   "Pre-Seed":         { border: 'rgba(124,58,237,0.22)',  glow: 'rgba(124,58,237,0.09)',  shimmer: 'rgba(139,92,246,0.38)' },
@@ -1581,13 +1563,12 @@ function StartupCard({
   return (
     <div
       onClick={onSelect}
-      className="relative flex flex-col overflow-hidden cursor-pointer group rounded-[22px] border transition-all duration-300"
+      className="relative flex flex-col overflow-hidden cursor-pointer group rounded-[22px] border transition-all duration-300 bg-white"
       style={{
-        background: 'linear-gradient(145deg, #1a2535 0%, #0c1524 100%)',
-        borderColor: selected ? '#F59E0B' : 'rgba(255,255,255,0.07)',
+        borderColor: selected ? '#F59E0B' : '#E5E7EB',
         boxShadow: selected
-          ? `0 0 0 1px #F59E0B, 0 4px 24px rgba(245,158,11,0.15), inset 0 1px 0 rgba(255,255,255,0.05)`
-          : '0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04)',
+          ? `0 0 0 1px #F59E0B, 0 4px 16px rgba(245,158,11,0.15)`
+          : '0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)',
         willChange: 'transform',
       }}
       onMouseEnter={(e) => {
@@ -1595,14 +1576,14 @@ function StartupCard({
         const el = e.currentTarget;
         el.style.transform = 'translateY(-3px)';
         el.style.borderColor = cardGlow.border;
-        el.style.boxShadow = `0 16px 48px rgba(0,0,0,0.45), 0 0 0 1px ${cardGlow.border}, ${cardGlow.glow} 0px 0px 50px, inset 0 1px 0 rgba(255,255,255,0.06)`;
+        el.style.boxShadow = `0 16px 40px rgba(15,23,42,0.10), 0 0 0 1px ${cardGlow.border}`;
       }}
       onMouseLeave={(e) => {
         if (selected) return;
         const el = e.currentTarget;
         el.style.transform = '';
-        el.style.borderColor = 'rgba(255,255,255,0.07)';
-        el.style.boxShadow = '0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04)';
+        el.style.borderColor = '#E5E7EB';
+        el.style.boxShadow = '0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)';
       }}
     >
       {/* Top shimmer line — color keyed to funding stage */}
@@ -1610,40 +1591,35 @@ function StartupCard({
         className="absolute inset-x-0 top-0 h-px pointer-events-none z-10"
         style={{ background: `linear-gradient(90deg, transparent, ${cardGlow.shimmer}, transparent)` }}
       />
-      {/* Ambient glow orb — blooms on hover */}
-      <div
-        className="absolute -top-16 left-1/2 -translate-x-1/2 w-40 h-40 rounded-full pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-3xl"
-        style={{ background: cardGlow.glow }}
-      />
       <div className="p-5 pb-4 flex-1 relative z-10">
         <div className="flex items-start gap-3 mb-3">
           <CompanyLogo name={startup.name} website={startup.website} size={40} rounded="rounded-xl" />
           <div className="flex-1 min-w-0">
-            <h3 className="text-[15px] font-bold text-white truncate leading-tight group-hover:text-[#F59E0B] transition-colors">
+            <h3 className="text-[15px] font-bold text-gray-900 truncate leading-tight group-hover:text-[#F59E0B] transition-colors">
               {startup.name}
             </h3>
             {startup.industry && (
-              <span className="text-xs text-slate-400 font-medium">{startup.industry}</span>
+              <span className="text-xs text-gray-500 font-medium">{startup.industry}</span>
             )}
           </div>
           {roundType && (
-            <span className={`flex-none text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${ROUND_STYLE_CARD[roundType] ?? ROUND_STYLE_CARD["Other"]}`}>{roundType}</span>
+            <span className={`flex-none text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]}`}>{roundType}</span>
           )}
         </div>
         {startup.description && (
-          <p className="text-xs text-slate-400 leading-relaxed line-clamp-2 mb-4">{startup.description}</p>
+          <p className="text-xs text-gray-500 leading-relaxed line-clamp-2 mb-4">{startup.description}</p>
         )}
         <div className="grid grid-cols-2 gap-2 mb-4">
-          <div className="rounded-[10px] px-3 py-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <div className="text-[9px] font-bold text-slate-600 uppercase tracking-wider mb-0.5">Valuation</div>
-            <div className="text-sm font-bold text-white">{fmt(latestRound?.valuation)}</div>
+          <div className="rounded-[10px] px-3 py-2 bg-gray-50 border border-gray-100">
+            <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Valuation</div>
+            <div className="text-sm font-bold text-gray-900">{fmt(latestRound?.valuation)}</div>
           </div>
-          <div className="rounded-[10px] px-3 py-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <div className="text-[9px] font-bold text-slate-600 uppercase tracking-wider mb-0.5">Raised</div>
-            <div className="text-sm font-bold text-white">{fmt(totalRaised(startup)) || "—"}</div>
+          <div className="rounded-[10px] px-3 py-2 bg-gray-50 border border-gray-100">
+            <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Raised</div>
+            <div className="text-sm font-bold text-gray-900">{fmt(totalRaised(startup)) || "—"}</div>
           </div>
         </div>
-        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500 mb-3">
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500 mb-3">
           {location    && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{location}</span>}
           {startup.employee_count && <span className="flex items-center gap-1"><Users className="w-3 h-3" />{fmtEmp(startup.employee_count)} emp</span>}
           {startup.founded_year   && <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{startup.founded_year}</span>}
@@ -1651,25 +1627,25 @@ function StartupCard({
         {startup.founders && startup.founders.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {startup.founders.slice(0, 3).map((f, i) => (
-              <span key={i} className="flex items-center gap-1 text-[10px] font-semibold text-slate-400 px-2 py-1 rounded-full" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                <div className="w-3.5 h-3.5 rounded-full bg-amber-900/60 flex items-center justify-center text-[8px] font-black text-amber-400">
+              <span key={i} className="flex items-center gap-1 text-[10px] font-semibold text-gray-600 px-2 py-1 rounded-full bg-gray-50 border border-gray-200">
+                <div className="w-3.5 h-3.5 rounded-full bg-amber-100 flex items-center justify-center text-[8px] font-black text-amber-700">
                   {f[0].toUpperCase()}
                 </div>
                 {f.split(" ")[0]}
               </span>
             ))}
             {startup.founders.length > 3 && (
-              <span className="text-[10px] font-semibold text-slate-500 px-2 py-1">+{startup.founders.length - 3}</span>
+              <span className="text-[10px] font-semibold text-gray-400 px-2 py-1">+{startup.founders.length - 3}</span>
             )}
           </div>
         )}
       </div>
       {/* Footer — website + checkbox */}
-      <div className="px-5 py-3 flex items-center justify-between gap-2 relative z-10" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+      <div className="px-5 py-3 flex items-center justify-between gap-2 relative z-10 border-t border-gray-100">
         {startup.website ? (
           <div className="flex items-center gap-1.5 min-w-0">
-            <Globe className="w-3 h-3 text-slate-600 flex-none" />
-            <span className="text-[10px] text-slate-500 truncate">
+            <Globe className="w-3 h-3 text-gray-400 flex-none" />
+            <span className="text-[10px] text-gray-500 truncate">
               {startup.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
             </span>
           </div>
@@ -1677,7 +1653,7 @@ function StartupCard({
         <ScoreBadge startupId={startup.id} />
         <button
           onClick={onToggleSelect}
-          className="flex-none p-0.5 rounded text-slate-500 hover:text-[#F59E0B] transition-colors"
+          className="flex-none p-0.5 rounded text-gray-400 hover:text-[#F59E0B] transition-colors"
           aria-label={selected ? "Deselect" : "Select for comparison"}
         >
           {selected
@@ -2071,20 +2047,20 @@ export function Startups() {
   return (
     <Layout>
 
-      {/* ── Dark header band ───────────────────────────────────────────────── */}
-      <div className="bg-[#0b1626] border-b border-[#1a2a3f]">
+      {/* ── Filter bar (sage — compare against VCs' blue-gray) ──────────── */}
+      <div style={{ background: "#D3D3C0", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
         <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 pt-6 pb-6">
 
           {/* Title row */}
           <div className="flex items-center justify-between gap-4 mb-1.5">
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">
               Startups Hub
-              {cityFilter && <span className="ml-3 text-lg font-medium text-[#F59E0B]">in {cityFilter}</span>}
+              {cityFilter && <span className="ml-3 text-lg font-medium text-[#B45309]">in {cityFilter}</span>}
             </h1>
             <div className="flex items-center gap-2 flex-none">
-              <div className="flex items-center bg-[#0d1f35] border border-[#1a2a3f] rounded-[12px] p-1">
-                <button onClick={() => setView("grid")} className={`p-1.5 rounded-[8px] transition-all ${viewMode === "grid" ? "bg-white/10 text-white" : "text-slate-500 hover:text-slate-300"}`}><LayoutGrid className="w-4 h-4" /></button>
-                <button onClick={() => setView("list")} className={`p-1.5 rounded-[8px] transition-all ${viewMode === "list" ? "bg-white/10 text-white" : "text-slate-500 hover:text-slate-300"}`}><List className="w-4 h-4" /></button>
+              <div className="flex items-center bg-white/60 border border-black/10 rounded-[12px] p-1">
+                <button onClick={() => setView("grid")} className={`p-1.5 rounded-[8px] transition-all ${viewMode === "grid" ? "bg-white text-[#0F172A] shadow-sm" : "text-[#0F172A]/50 hover:text-[#0F172A]"}`}><LayoutGrid className="w-4 h-4" /></button>
+                <button onClick={() => setView("list")} className={`p-1.5 rounded-[8px] transition-all ${viewMode === "list" ? "bg-white text-[#0F172A] shadow-sm" : "text-[#0F172A]/50 hover:text-[#0F172A]"}`}><List className="w-4 h-4" /></button>
               </div>
               <button onClick={() => setShowAdd(true)}
                 className="flex items-center gap-2 rounded-[14px] bg-[#F59E0B] px-4 py-2.5 text-sm font-bold text-white shadow-[0_4px_14px_rgba(245,158,11,0.3)] hover:bg-amber-600 transition-all">
@@ -2095,11 +2071,11 @@ export function Startups() {
 
           {/* Subtitle + count */}
           <div className="flex items-center gap-3 mb-5">
-            <p className="text-sm text-slate-400 leading-snug">
+            <p className="text-sm text-[#0F172A]/60 leading-snug">
               Research private tech companies with AI and other advanced tools
             </p>
             {!loading && (
-              <span className="text-xs font-semibold text-slate-500 bg-[#0d1f35] border border-[#1a2a3f] px-2.5 py-1 rounded-full flex-none">
+              <span className="text-xs font-semibold text-[#0F172A]/60 bg-white/60 border border-black/10 px-2.5 py-1 rounded-full flex-none">
                 {filtered.length}
               </span>
             )}
@@ -2111,30 +2087,29 @@ export function Startups() {
             {/* Row 1: filters */}
             <div className="flex flex-wrap items-center gap-2.5">
               <div className="relative flex-1 min-w-[200px] max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#0F172A]/40" />
                 <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search companies…"
-                  className="w-full pl-9 pr-4 py-2.5 text-sm bg-[#0d1f35] border border-[#1a2a3f] text-white placeholder-slate-600 rounded-[12px] focus:outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/10 transition-all" />
+                  className="w-full pl-9 pr-4 py-2.5 text-sm bg-white border border-black/10 text-[#0F172A] placeholder-[#0F172A]/35 rounded-[12px] focus:outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/10 transition-all" />
                 {search && (
-                  <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"><X className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#0F172A]/40 hover:text-[#0F172A]/70"><X className="w-3.5 h-3.5" /></button>
                 )}
               </div>
 
               <HierarchicalSectorFilter
                 parentSector={parentSector} onParentChange={setParentSector}
                 subSector={subSector}       onSubChange={setSubSector}
-                dark
               />
 
               <div className="relative">
                 <select value={countryFilter} onChange={(e) => setCountry(e.target.value)}
-                  style={{ colorScheme: "dark" }}
-                  className={`appearance-none pl-3 pr-8 py-2 text-xs font-semibold border rounded-[10px] bg-[#0d1f35] transition-all focus:outline-none focus:ring-2 focus:ring-[#F59E0B]/20 cursor-pointer ${
-                    countryFilter ? "border-[#F59E0B] text-white" : "border-[#1a2a3f] text-slate-400"
+                  style={{ colorScheme: "light" }}
+                  className={`appearance-none pl-3 pr-8 py-2 text-xs font-semibold border rounded-[10px] bg-white transition-all focus:outline-none focus:ring-2 focus:ring-[#F59E0B]/20 cursor-pointer ${
+                    countryFilter ? "border-[#F59E0B] text-[#0F172A]" : "border-black/10 text-[#0F172A]/60"
                   }`}>
                   <option value="">All Countries</option>
                   {countries.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
-                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0F172A]/40 pointer-events-none" />
               </div>
 
               <div className="flex items-center gap-1">
@@ -2142,13 +2117,13 @@ export function Startups() {
                   onClick={() => setMomentum((v) => !v)}
                   className={`flex items-center gap-1.5 px-3 py-2 rounded-[10px] text-xs font-semibold border transition-all ${
                     momentumFilter
-                      ? "bg-emerald-900/40 border-emerald-700/60 text-emerald-400"
-                      : "bg-[#0d1f35] border-[#1a2a3f] text-slate-400 hover:border-slate-600 hover:text-slate-200"
+                      ? "bg-emerald-50 border-emerald-400/60 text-emerald-700"
+                      : "bg-white/60 border-black/10 text-[#0F172A]/60 hover:border-black/25 hover:text-[#0F172A]"
                   }`}
                 >
-                  <Zap className={`w-3.5 h-3.5 flex-none ${momentumFilter ? "text-emerald-400" : "text-slate-500"}`} />
+                  <Zap className={`w-3.5 h-3.5 flex-none ${momentumFilter ? "text-emerald-600" : "text-[#0F172A]/40"}`} />
                   Financial Momentum
-                  {momentumFilter && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-none" />}
+                  {momentumFilter && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-none" />}
                 </button>
                 <InfoTooltip
                   content="Filters for companies that raised capital in the last 6 months AND achieved ≥20% headcount growth (via trend tracking)."
@@ -2157,13 +2132,13 @@ export function Startups() {
 
               <div className="flex items-center gap-1.5">
                 <div className="flex items-center gap-1">
-                  <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap">Density</span>
+                  <span className="text-[10px] font-bold text-[#0F172A]/55 whitespace-nowrap">Density</span>
                   <InfoTooltip
                     content="Categorizes market space: 'Crowded Space' identifies companies with ≥3 peers (≥75% similarity score). 'Blue Ocean' identifies highly differentiated companies with ≤1 peer."
                     align="right"
                   />
                 </div>
-                <div className="flex items-center bg-[#0d1f35] border border-[#1a2a3f] rounded-[10px] p-0.5 gap-0.5">
+                <div className="flex items-center bg-white/60 border border-black/10 rounded-[10px] p-0.5 gap-0.5">
                   {([ ["all", "All"], ["crowded", "Crowded"], ["blue-ocean", "Blue Ocean"] ] as const).map(([val, label]) => (
                     <button
                       key={val}
@@ -2171,7 +2146,7 @@ export function Startups() {
                       className={`px-2.5 py-1.5 rounded-[7px] text-[10px] font-semibold transition-all whitespace-nowrap ${
                         densityFilter === val
                           ? "bg-[#F59E0B] text-white shadow-sm"
-                          : "text-slate-400 hover:text-slate-200"
+                          : "text-[#0F172A]/60 hover:text-[#0F172A]"
                       }`}
                     >
                       {label}
@@ -2181,31 +2156,31 @@ export function Startups() {
               </div>
 
               {activeFilterCount > 0 && (
-                <button onClick={clearAll} className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-rose-400 transition-colors">
+                <button onClick={clearAll} className="flex items-center gap-1.5 text-xs font-semibold text-[#0F172A]/50 hover:text-rose-600 transition-colors">
                   <X className="w-3.5 h-3.5" />Clear all ({activeFilterCount})
                 </button>
               )}
             </div>
 
             {/* Row 2: sliders */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 bg-[#0d1f35] border border-[#1a2a3f] rounded-[14px] px-5 py-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 bg-white/50 border border-black/10 rounded-[14px] px-5 py-4">
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Funding Stage</span>
+                  <span className="text-[10px] font-bold text-[#0F172A]/55 uppercase tracking-wider">Funding Stage</span>
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-all ${
-                    stageStep !== "all" ? "bg-amber-900/40 text-amber-400 border border-amber-800/60" : "text-slate-600"
+                    stageStep !== "all" ? "bg-amber-100 text-amber-700 border border-amber-300" : "text-[#0F172A]/40"
                   }`}>{currentStageLabel}</span>
                 </div>
-                <StepSlider steps={STAGE_STEPS} value={stageStep} onChange={(v) => setStageStep(v as StageStep)} dark />
+                <StepSlider steps={STAGE_STEPS} value={stageStep} onChange={(v) => setStageStep(v as StageStep)} />
               </div>
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Headcount</span>
+                  <span className="text-[10px] font-bold text-[#0F172A]/55 uppercase tracking-wider">Headcount</span>
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-all ${
-                    headcountStep !== "all" ? "bg-amber-900/40 text-amber-400 border border-amber-800/60" : "text-slate-600"
+                    headcountStep !== "all" ? "bg-amber-100 text-amber-700 border border-amber-300" : "text-[#0F172A]/40"
                   }`}>{currentHeadcountLabel}</span>
                 </div>
-                <StepSlider steps={HEADCOUNT_STEPS} value={headcountStep} onChange={(v) => setHeadcount(v as HeadcountStep)} dark />
+                <StepSlider steps={HEADCOUNT_STEPS} value={headcountStep} onChange={(v) => setHeadcount(v as HeadcountStep)} />
               </div>
             </div>
 
