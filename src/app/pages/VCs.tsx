@@ -237,15 +237,15 @@ function StepSlider({
       <div className="relative h-4 flex items-center mx-1">
         <div className="absolute inset-x-0 h-[3px] rounded-full bg-black/10" />
         <div
-          className="absolute left-0 h-[3px] rounded-full bg-[#F59E0B] transition-all duration-100"
+          className="absolute left-0 h-[3px] rounded-full bg-[#0F172A] transition-all duration-100"
           style={{ width: `${pct}%` }}
         />
         {steps.map((_, i) => (
           <div
             key={i}
             className={`absolute w-2.5 h-2.5 rounded-full border-[2px] -translate-x-1/2 transition-all duration-100 ${
-              i < idx   ? "bg-[#F59E0B] border-[#F59E0B]" :
-              i === idx ? "bg-white border-[#F59E0B] scale-125" :
+              i < idx   ? "bg-[#0F172A] border-[#0F172A]" :
+              i === idx ? "bg-white border-[#0F172A] scale-125" :
                           "bg-white border-black/20"
             }`}
             style={{ left: `${steps.length > 1 ? (i / (steps.length - 1)) * 100 : 0}%` }}
@@ -263,7 +263,7 @@ function StepSlider({
             key={s.value}
             onClick={() => onChange(s.value)}
             className={`text-[9px] font-semibold leading-none transition-colors ${
-              i === idx ? "text-[#F59E0B]" : "text-[#0F172A]/45 hover:text-[#0F172A]/70"
+              i === idx ? "text-[#0F172A]" : "text-[#0F172A]/45 hover:text-[#0F172A]/70"
             }`}
             style={{ minWidth: 0 }}
           >
@@ -670,7 +670,7 @@ export function VCs() {
                     onClick={() => handleSort(o.key)}
                     className={`px-2.5 py-1.5 rounded-[7px] text-[10px] font-semibold transition-all whitespace-nowrap ${
                       sortKey === o.key
-                        ? "bg-[#F59E0B] text-white shadow-sm"
+                        ? "bg-[#0F172A] text-white shadow-sm"
                         : "text-[#0F172A]/60 hover:text-[#0F172A]"
                     }`}
                   >
@@ -708,7 +708,7 @@ export function VCs() {
                 <input
                   type="text" value={search} onChange={e => setSearch(e.target.value)}
                   placeholder="Search firms…"
-                  className="w-full pl-9 pr-4 py-2.5 text-sm bg-white border border-black/10 text-[#0F172A] placeholder-[#0F172A]/35 rounded-[12px] focus:outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/10 transition-all"
+                  className="w-full pl-9 pr-4 py-2.5 text-sm bg-white border border-black/10 text-[#0F172A] placeholder-[#0F172A]/35 rounded-[12px] focus:outline-none focus:border-[#0F172A]/30 focus:ring-2 focus:ring-[#0F172A]/10 transition-all"
                 />
                 {search && (
                   <button
@@ -727,7 +727,7 @@ export function VCs() {
                   onClick={() => setFilters(f => ({ ...f, stages: toggle(f.stages, s) }))}
                   className={`px-2.5 py-1.5 rounded-full text-[11px] font-semibold border transition-all whitespace-nowrap ${
                     filters.stages.includes(s)
-                      ? "bg-[#F59E0B] text-white border-[#F59E0B] shadow-sm"
+                      ? "bg-[#0F172A] text-white border-[#0F172A] shadow-sm"
                       : "bg-white/60 border-black/10 text-[#0F172A]/60 hover:border-black/25 hover:text-[#0F172A]"
                   }`}
                 >
@@ -745,7 +745,7 @@ export function VCs() {
                   onClick={() => setFilters(f => ({ ...f, sectors: toggle(f.sectors, s) }))}
                   className={`px-2.5 py-1.5 rounded-full text-[11px] font-semibold border transition-all whitespace-nowrap ${
                     filters.sectors.includes(s)
-                      ? "bg-[#F59E0B] text-white border-[#F59E0B] shadow-sm"
+                      ? "bg-[#0F172A] text-white border-[#0F172A] shadow-sm"
                       : "bg-white/60 border-black/10 text-[#0F172A]/60 hover:border-black/25 hover:text-[#0F172A]"
                   }`}
                 >
@@ -762,8 +762,8 @@ export function VCs() {
                   value={filters.geo}
                   onChange={e => setFilters(f => ({ ...f, geo: e.target.value as Geography | "" }))}
                   style={{ colorScheme: "light" }}
-                  className={`appearance-none pl-3 pr-8 py-2 text-xs font-semibold border rounded-[10px] bg-white transition-all focus:outline-none focus:ring-2 focus:ring-[#F59E0B]/20 cursor-pointer ${
-                    filters.geo ? "border-[#F59E0B] text-[#0F172A]" : "border-black/10 text-[#0F172A]/60"
+                  className={`appearance-none pl-3 pr-8 py-2 text-xs font-semibold border rounded-[10px] bg-white transition-all focus:outline-none focus:ring-2 focus:ring-[#0F172A]/15 cursor-pointer ${
+                    filters.geo ? "border-[#0F172A] text-[#0F172A]" : "border-black/10 text-[#0F172A]/60"
                   }`}
                 >
                   <option value="">All Regions</option>
@@ -863,7 +863,7 @@ export function VCs() {
               <p className="text-sm font-semibold text-gray-500">No firms match these filters</p>
               <button
                 onClick={clearAll}
-                className="mt-3 text-xs font-semibold text-[#F59E0B] hover:text-amber-600 transition-colors"
+                className="mt-3 text-xs font-semibold text-gray-500 hover:text-rose-600 transition-colors"
               >
                 Clear all filters
               </button>

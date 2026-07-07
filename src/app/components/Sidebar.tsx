@@ -78,7 +78,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                       strokeWidth={1.5}
                       className={cn(
                         "h-6 w-6 transition-colors duration-200",
-                        isActive ? "text-[#F59E0B]" : "text-gray-500",
+                        isActive ? "text-[#0F172A]" : "text-gray-500",
                       )}
                     />
                     <span className={cn(

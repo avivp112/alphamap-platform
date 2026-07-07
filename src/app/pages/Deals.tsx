@@ -565,7 +565,7 @@ export function Deals() {
                         className="px-2.5 py-1 rounded-[7px] text-[10px] font-semibold transition-all whitespace-nowrap"
                         style={
                           isActive
-                            ? { background: '#F59E0B', color: '#fff' }
+                            ? { background: '#0F172A', color: '#fff' }
                             : { color: '#9CA3AF' }
                         }
                       >
