@@ -2026,7 +2026,7 @@ export function Startups() {
 
           {/* Title row */}
           <div className="flex items-center justify-between gap-4 mb-1.5">
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">
+            <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">
               Startups Hub
               {cityFilter && <span className="ml-3 text-lg font-medium text-[#0F172A]">in {cityFilter}</span>}
             </h1>

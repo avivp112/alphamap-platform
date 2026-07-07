@@ -410,7 +410,7 @@ export function Deals() {
       <div style={{ background: "#B8C9D1", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
         <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 pt-7 pb-6">
           <div className="flex items-center justify-between gap-4 mb-1.5">
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">
+            <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">
               Deal Flow
             </h1>
             <div className="flex items-center gap-2 flex-none">
