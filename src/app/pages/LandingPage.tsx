@@ -7,12 +7,16 @@ const HEADLINE = "Bridging the Gap between Private Innovation and Public Markets
 const SUBHEAD  = "An AI-driven investment research platform that transforms global market data into a clear strategy.";
 const TYPE_START_DELAY_MS = 400;
 const TYPE_SPEED_MS       = 85;
+const SUBHEAD_PAUSE_MS    = 350; // pause after the headline finishes, before the subheading starts typing
 
 export function LandingPage() {
-  const navigate     = useNavigate();
-  const [scrolled,   setScrolled]   = useState(false);
-  const [typedCount, setTypedCount] = useState(0);
-  const doneTyping = typedCount >= HEADLINE.length;
+  const navigate        = useNavigate();
+  const [scrolled,      setScrolled]      = useState(false);
+  const [typedCount,    setTypedCount]    = useState(0);
+  const [subTypedCount, setSubTypedCount] = useState(0);
+  const headlineDone  = typedCount >= HEADLINE.length;
+  const subheadStarted = subTypedCount > 0;
+  const subheadDone    = subTypedCount >= SUBHEAD.length;
 
   // Header gains a light glass border/shadow once the page scrolls past the hero
   useEffect(() => {
@@ -35,11 +39,26 @@ export function LandingPage() {
     return () => { clearTimeout(startId); clearInterval(intervalId); };
   }, []);
 
-  // Fade-up for the subheading, once the headline finishes typing
-  function tx(delayMs: number): React.CSSProperties {
+  // Typewriter reveal of the subheading, starting once the headline is fully typed
+  useEffect(() => {
+    if (!headlineDone) return;
+    let charIndex = 0;
+    let intervalId: ReturnType<typeof setInterval>;
+    const startId = setTimeout(() => {
+      intervalId = setInterval(() => {
+        charIndex += 1;
+        setSubTypedCount(charIndex);
+        if (charIndex >= SUBHEAD.length) clearInterval(intervalId);
+      }, TYPE_SPEED_MS);
+    }, SUBHEAD_PAUSE_MS);
+    return () => { clearTimeout(startId); clearInterval(intervalId); };
+  }, [headlineDone]);
+
+  // Fade-up for the scroll cue, once the subheading finishes typing
+  function tx(visible: boolean, delayMs: number): React.CSSProperties {
     return {
-      opacity:    doneTyping ? 1 : 0,
-      transform:  doneTyping ? "translateY(0)" : "translateY(14px)",
+      opacity:    visible ? 1 : 0,
+      transform:  visible ? "translateY(0)" : "translateY(14px)",
       transition: `opacity 700ms ease-out ${delayMs}ms, transform 700ms ease-out ${delayMs}ms`,
     };
   }
@@ -100,19 +119,19 @@ export function LandingPage() {
           style={{ fontFamily: "'Playfair Display', serif", lineHeight: "1.15" }}
         >
           {HEADLINE.slice(0, typedCount)}
-          <span className="typewriter-cursor" aria-hidden="true" />
+          {!subheadStarted && <span className="typewriter-cursor" aria-hidden="true" />}
         </h1>
 
         <p
-          className="max-w-[720px] mt-8 text-xl md:text-2xl leading-relaxed font-normal text-[#374151]"
-          style={tx(150)}
+          className="max-w-[720px] mt-6 text-xl md:text-2xl leading-relaxed font-normal text-[#374151]"
         >
-          {SUBHEAD}
+          {SUBHEAD.slice(0, subTypedCount)}
+          {subheadStarted && <span className="typewriter-cursor" aria-hidden="true" />}
         </p>
 
         {/* Scroll indicator */}
         <div
-          style={tx(500)}
+          style={tx(subheadDone, 500)}
           className="absolute bottom-9 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 pointer-events-none"
         >
           <span className="text-[9px] font-semibold tracking-[0.32em] text-[#0F172A]/30 uppercase">Scroll</span>
