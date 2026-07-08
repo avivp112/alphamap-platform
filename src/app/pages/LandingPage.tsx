@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Network, Brain, Map, ChevronDown } from "lucide-react";
+import { Network, Brain, Map, ChevronDown, Sparkles, TrendingUp } from "lucide-react";
 import { useNavigate } from "react-router";
 
 // ── Hero typewriter copy ─────────────────────────────────────────────────────
@@ -9,11 +9,85 @@ const TYPE_START_DELAY_MS = 400;
 const TYPE_SPEED_MS       = 85;
 const SUBHEAD_PAUSE_MS    = 350; // pause after the headline finishes, before the subheading starts typing
 
+// ── Product showcase (illustrative mock data + a hand-rolled smooth chart) ──
+const STAGE_STYLES: Record<string, string> = {
+  "Pre-Seed": "bg-gray-100 border-gray-200 text-gray-600",
+  "Seed":     "bg-emerald-50 border-emerald-200 text-emerald-700",
+  "Series A": "bg-blue-50 border-blue-200 text-blue-700",
+  "Series B": "bg-violet-50 border-violet-200 text-violet-700",
+  "Growth":   "bg-amber-50 border-amber-200 text-amber-700",
+};
+
+const SHOWCASE_TABS: { key: string; label: string }[] = [
+  { key: "startups", label: "Startups" },
+  { key: "deals",    label: "Deal Flow" },
+  { key: "sourcing", label: "AI Sourcing" },
+  { key: "vcs",      label: "VC Directory" },
+];
+
+const DEAL_ROWS = [
+  { company: "Cortex Analytics", logo: "C", color: "#0F172A", type: "Series A", size: "$38M",  leads: "Meridian Partners", valuation: "$310M", estimated: false },
+  { company: "Fathom Robotics",  logo: "F", color: "#2563EB", type: "Seed",     size: "$6.2M", leads: "Northbeam Capital", valuation: "$42M",  estimated: true  },
+  { company: "Vantage Health",   logo: "V", color: "#059669", type: "Series B", size: "$85M",  leads: "Ridgeline Growth",  valuation: "$640M", estimated: false },
+  { company: "Loop Freight",     logo: "L", color: "#B45309", type: "Seed",     size: "$4.8M", leads: "Anchor Point VC",   valuation: "$28M",  estimated: true  },
+];
+
+const SOURCING_ROWS = [
+  { company: "Artisan Systems",  match: 96, momentum: 92, sector: "B2B",      tag2: "Outbound",     stage: "Series A" },
+  { company: "Sparro AI",        match: 93, momentum: 88, sector: "B2B",      tag2: "Inbound",      stage: "Seed"     },
+  { company: "Fathom Robotics",  match: 90, momentum: 84, sector: "Robotics", tag2: "Hardware",     stage: "Seed"     },
+  { company: "Jeeva Logic",      match: 87, momentum: 81, sector: "SaaS",     tag2: "Multichannel", stage: "Series A" },
+];
+
+const VC_ROWS = [
+  { name: "Meridian Partners", stages: ["Seed", "Series A"],    aum: "$1.4B", portfolio: 62 },
+  { name: "Ridgeline Growth",  stages: ["Series B", "Growth"],  aum: "$3.2B", portfolio: 41 },
+  { name: "Anchor Point VC",   stages: ["Pre-Seed", "Seed"],    aum: "$420M", portfolio: 88 },
+];
+
+const VALUATION_TREND = [22, 19, 27, 33, 29, 41, 47, 43, 57, 64, 71, 88];
+const CHART_W = 600;
+const CHART_H = 200;
+
+function catmullRomPath(points: [number, number][]): string {
+  if (points.length < 2) return "";
+  let d = `M${points[0][0]},${points[0][1]}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] ?? points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] ?? p2;
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+    const c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+    const c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    d += ` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2[0]},${p2[1]}`;
+  }
+  return d;
+}
+
+function buildChartPoints(values: number[], width: number, height: number, padY: number): [number, number][] {
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  const range = max - min || 1;
+  return values.map((v, i) => {
+    const x = (i / (values.length - 1)) * width;
+    const y = height - padY - ((v - min) / range) * (height - padY * 2);
+    return [Number(x.toFixed(1)), Number(y.toFixed(1))] as [number, number];
+  });
+}
+
+const CHART_POINTS    = buildChartPoints(VALUATION_TREND, CHART_W, CHART_H, 16);
+const CHART_LINE_PATH = catmullRomPath(CHART_POINTS);
+const CHART_AREA_PATH = `${CHART_LINE_PATH} L${CHART_W},${CHART_H} L0,${CHART_H} Z`;
+const CHART_LAST_POINT = CHART_POINTS[CHART_POINTS.length - 1];
+
 export function LandingPage() {
   const navigate        = useNavigate();
   const [scrolled,      setScrolled]      = useState(false);
   const [typedCount,    setTypedCount]    = useState(0);
   const [subTypedCount, setSubTypedCount] = useState(0);
+  const [activeTab,     setActiveTab]     = useState("startups");
   const headlineDone  = typedCount >= HEADLINE.length;
   const subheadStarted = subTypedCount > 0;
   const subheadDone    = subTypedCount >= SUBHEAD.length;
@@ -139,24 +213,220 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* ── Data proof points ───────────────────────────────────────────────── */}
+      {/* ── Interactive product showcase ─────────────────────────────────────── */}
       <section className="w-full max-w-[1200px] mx-auto px-6 lg:px-12 mb-32">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
-          {[
-            { label: "Startups Tracked",     value: "+10M" },
-            { label: "VC Funds Monitored",   value: "+5k"  },
-            { label: "Public Stocks",         value: "+2M"  },
-            { label: "Hedge Fund Profiles",   value: "+1k"  },
-          ].map((point) => (
-            <div
-              key={point.label}
-              className="rounded-[24px] p-8 flex flex-col items-center justify-center text-center transition-transform hover:-translate-y-1 duration-300"
-              style={{ background: "#0F172A", boxShadow: "0 8px 30px rgba(0,0,0,0.18)" }}
-            >
-              <span className="text-4xl md:text-[2.5rem] font-bold text-white mb-2 tracking-tight">{point.value}</span>
-              <span className="text-sm font-medium text-slate-400">{point.label}</span>
+        <div className="text-center max-w-2xl mx-auto mb-10">
+          <span className="text-xs font-bold tracking-[0.22em] text-[#0F172A]/40 uppercase">Inside AlphaMap</span>
+          <h2
+            className="mt-3 text-3xl md:text-4xl font-normal text-[#111827] tracking-tight"
+            style={{ fontFamily: "'Playfair Display', serif" }}
+          >
+            One workspace for every side of the market
+          </h2>
+        </div>
+
+        <div
+          className="rounded-[28px] border border-gray-200/80 p-2 sm:p-3 shadow-[0_20px_60px_rgba(15,23,42,0.08)]"
+          style={{ background: "linear-gradient(180deg, #EEF1F4 0%, #E4E9ED 100%)" }}
+        >
+          {/* Tab bar */}
+          <div className="flex items-center gap-1 px-1 pt-1 pb-2 overflow-x-auto">
+            {SHOWCASE_TABS.map((tab) => {
+              const active = tab.key === activeTab;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`relative flex-none px-4 py-2.5 text-sm font-semibold rounded-xl transition-all whitespace-nowrap ${
+                    active ? "bg-white text-[#0F172A] shadow-sm" : "text-gray-400 hover:text-gray-600"
+                  }`}
+                >
+                  {tab.label}
+                  {active && <span className="absolute left-4 right-4 -bottom-[1px] h-[2px] rounded-full bg-[#0F172A]" />}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Window */}
+          <div className="rounded-[22px] bg-white border border-gray-100 p-6 sm:p-10 min-h-[460px]">
+            <div className="flex items-center gap-1.5 mb-6">
+              <span className="h-2.5 w-2.5 rounded-full bg-gray-200" />
+              <span className="h-2.5 w-2.5 rounded-full bg-gray-200" />
+              <span className="h-2.5 w-2.5 rounded-full bg-gray-200" />
             </div>
-          ))}
+
+            {activeTab === "startups" && (
+              <div>
+                <div className="flex items-center gap-4 mb-8">
+                  <div className="h-12 w-12 rounded-xl flex items-center justify-center text-white font-bold text-lg flex-none" style={{ background: "#0F172A" }}>C</div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-bold text-[#111827]">Cortex Analytics</span>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700">AI / ML</span>
+                    </div>
+                    <p className="text-sm text-gray-400 mt-0.5">Private · Last round Jun 2026</p>
+                  </div>
+                </div>
+
+                <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase">AlphaMap Valuation Estimate</span>
+                <div className="flex items-end gap-3 mt-2 flex-wrap">
+                  <span className="text-5xl font-normal text-[#111827] tracking-tight" style={{ fontFamily: "'Playfair Display', serif" }}>$412M</span>
+                  <span className="mb-1.5 inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700">
+                    <TrendingUp className="w-3 h-3" /> 18.6% · 90d
+                  </span>
+                </div>
+                <p className="text-sm text-gray-400 mt-3 max-w-md">Modeled from funding velocity, hiring signals &amp; sector multiples across 40+ comparable rounds.</p>
+
+                <div className="mt-8">
+                  <span className="text-[11px] font-bold tracking-[0.1em] text-gray-400 uppercase">Valuation trend · 12 mo</span>
+                  <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} className="w-full h-auto mt-2">
+                    <defs>
+                      <linearGradient id="showcaseChartFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#2563EB" stopOpacity="0.18" />
+                        <stop offset="100%" stopColor="#2563EB" stopOpacity="0" />
+                      </linearGradient>
+                    </defs>
+                    <path d={CHART_AREA_PATH} fill="url(#showcaseChartFill)" stroke="none" />
+                    <path d={CHART_LINE_PATH} fill="none" stroke="#2563EB" strokeWidth="2.5" strokeLinecap="round" />
+                    <circle cx={CHART_LAST_POINT[0]} cy={CHART_LAST_POINT[1]} r="9" fill="#2563EB" fillOpacity="0.15" />
+                    <circle cx={CHART_LAST_POINT[0]} cy={CHART_LAST_POINT[1]} r="4.5" fill="#2563EB" stroke="white" strokeWidth="2" />
+                  </svg>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "deals" && (
+              <div>
+                <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase">Deal Flow</span>
+                <h3 className="text-2xl font-bold text-[#111827] mt-2 mb-1">Every private round, tracked in real time</h3>
+                <p className="text-sm text-gray-400 mb-6 max-w-lg">From seed checks to late-stage megarounds — sourced, verified, and structured the moment they close.</p>
+
+                <div className="overflow-x-auto -mx-1">
+                  <table className="w-full text-sm min-w-[560px]">
+                    <thead>
+                      <tr className="text-[10px] font-bold tracking-wider text-gray-400 uppercase border-b border-gray-100">
+                        <th className="text-left py-2 px-1">Company</th>
+                        <th className="text-left py-2 px-1">Type</th>
+                        <th className="text-left py-2 px-1">Size</th>
+                        <th className="text-left py-2 px-1">Lead Investors</th>
+                        <th className="text-right py-2 px-1">Valuation</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {DEAL_ROWS.map((row) => (
+                        <tr key={row.company} className="border-b border-gray-50 last:border-0">
+                          <td className="py-3 px-1">
+                            <div className="flex items-center gap-2.5">
+                              <div className="h-7 w-7 rounded-lg flex items-center justify-center text-white text-[11px] font-bold flex-none" style={{ background: row.color }}>{row.logo}</div>
+                              <span className="font-semibold text-[#111827] whitespace-nowrap">{row.company}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-1">
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${STAGE_STYLES[row.type]}`}>{row.type}</span>
+                          </td>
+                          <td className="py-3 px-1 font-medium text-[#111827] whitespace-nowrap">{row.size}</td>
+                          <td className="py-3 px-1 text-gray-500 whitespace-nowrap">{row.leads}</td>
+                          <td className="py-3 px-1 text-right">
+                            {row.estimated ? (
+                              <span className="inline-flex items-center gap-1 justify-end whitespace-nowrap">
+                                <Sparkles className="w-3 h-3 text-amber-500" />
+                                <span className="text-xs font-semibold italic text-amber-700">~{row.valuation}</span>
+                              </span>
+                            ) : (
+                              <span className="font-semibold text-[#111827] whitespace-nowrap">{row.valuation}</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "sourcing" && (
+              <div>
+                <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase">Company Sourcing</span>
+                <h3 className="text-2xl font-bold text-[#111827] mt-2 mb-1">Find your next investment</h3>
+                <p className="text-sm text-gray-400 mb-6">Search across startups, VCs, and deals in plain English.</p>
+
+                <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-3 mb-6">
+                  <Sparkles className="w-4 h-4 text-[#0F172A]/40 flex-none" />
+                  <span className="text-sm text-[#111827] font-medium">
+                    Early-stage fintech infra in Europe
+                    <span className="typewriter-cursor" aria-hidden="true" />
+                  </span>
+                  <button className="ml-auto flex-none rounded-full bg-[#0F172A] px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#1e293b] transition-colors">Ask</button>
+                </div>
+
+                <div className="overflow-x-auto -mx-1">
+                  <table className="w-full text-sm min-w-[560px]">
+                    <thead>
+                      <tr className="text-[10px] font-bold tracking-wider text-gray-400 uppercase border-b border-gray-100">
+                        <th className="text-left py-2 px-1">Company</th>
+                        <th className="text-left py-2 px-1">Match</th>
+                        <th className="text-left py-2 px-1">Momentum</th>
+                        <th className="text-left py-2 px-1">Sector</th>
+                        <th className="text-right py-2 px-1">Stage</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {SOURCING_ROWS.map((row) => (
+                        <tr key={row.company} className="border-b border-gray-50 last:border-0">
+                          <td className="py-3 px-1 font-semibold text-[#111827] whitespace-nowrap">{row.company}</td>
+                          <td className="py-3 px-1">
+                            <span className="inline-flex items-center justify-center min-w-[34px] px-1.5 py-0.5 rounded-md border border-blue-200 bg-blue-50 text-blue-700 font-bold text-xs">{row.match}</span>
+                          </td>
+                          <td className="py-3 px-1">
+                            <span className="inline-flex items-center gap-1 text-emerald-600 font-semibold text-xs">
+                              <TrendingUp className="w-3 h-3" />{row.momentum}
+                            </span>
+                          </td>
+                          <td className="py-3 px-1">
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 mr-1 whitespace-nowrap">{row.sector}</span>
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 hidden sm:inline-block whitespace-nowrap">{row.tag2}</span>
+                          </td>
+                          <td className="py-3 px-1 text-right">
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${STAGE_STYLES[row.stage]}`}>{row.stage}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "vcs" && (
+              <div>
+                <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase">VC Directory</span>
+                <h3 className="text-2xl font-bold text-[#111827] mt-2 mb-1">Every fund that matters, in one view</h3>
+                <p className="text-sm text-gray-400 mb-6 max-w-lg">Stage focus, sector concentration, and portfolio activity — normalized across 5,000+ firms.</p>
+
+                <div className="grid sm:grid-cols-3 gap-4">
+                  {VC_ROWS.map((vc) => (
+                    <div key={vc.name} className="rounded-2xl border border-gray-100 bg-gray-50/60 p-5">
+                      <p className="font-bold text-[#111827] mb-2">{vc.name}</p>
+                      <div className="flex flex-wrap gap-1 mb-3">
+                        {vc.stages.map((s) => (
+                          <span key={s} className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${STAGE_STYLES[s]}`}>{s}</span>
+                        ))}
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-gray-400">AUM</span>
+                        <span className="font-semibold text-[#111827]">{vc.aum}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs mt-1">
+                        <span className="text-gray-400">Portfolio</span>
+                        <span className="font-semibold text-[#111827]">{vc.portfolio} cos.</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </section>
 
