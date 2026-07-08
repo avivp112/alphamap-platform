@@ -6,7 +6,7 @@ import { useNavigate } from "react-router";
 const HEADLINE = "Bridging the Gap between Private Innovation and Public Markets.";
 const SUBHEAD  = "An AI-driven investment research platform that transforms global market data into a clear strategy.";
 const TYPE_START_DELAY_MS = 400;
-const TYPE_SPEED_MS       = 45;
+const TYPE_SPEED_MS       = 85;
 
 export function LandingPage() {
   const navigate     = useNavigate();
@@ -90,15 +90,13 @@ export function LandingPage() {
 
       {/* ── Hero: typewriter headline over a light backdrop ───────────────────── */}
       <section
-        className="relative w-full flex flex-col items-center justify-center text-center px-6"
+        className="relative w-full flex flex-col items-start justify-center text-left px-6 lg:px-12"
         style={{ minHeight: "100svh", background: "linear-gradient(180deg, #FAFAF9 0%, #F3F4F6 100%)" }}
       >
-        <div className="flex justify-center mb-10">
-          <div className="h-px w-16" style={{ background: "linear-gradient(90deg, transparent, #F59E0B, transparent)" }} />
-        </div>
+        <div className="h-px w-16 mb-10" style={{ background: "linear-gradient(90deg, #F59E0B, transparent)" }} />
 
         <h1
-          className="max-w-[1100px] text-[2.4rem] sm:text-5xl md:text-[3.8rem] lg:text-[4.6rem] font-medium text-[#111827] tracking-tight"
+          className="max-w-[1100px] text-[2.4rem] sm:text-5xl md:text-[3.8rem] lg:text-[4.6rem] font-normal text-[#111827] tracking-tight"
           style={{ fontFamily: "'Playfair Display', serif", lineHeight: "1.15" }}
         >
           {HEADLINE.slice(0, typedCount)}
@@ -106,7 +104,7 @@ export function LandingPage() {
         </h1>
 
         <p
-          className="max-w-[720px] mt-8 text-xl md:text-2xl leading-relaxed font-medium text-[#374151]"
+          className="max-w-[720px] mt-8 text-xl md:text-2xl leading-relaxed font-normal text-[#374151]"
           style={tx(150)}
         >
           {SUBHEAD}
