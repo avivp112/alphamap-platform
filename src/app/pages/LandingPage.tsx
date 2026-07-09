@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   ChevronDown, Sparkles, TrendingUp, Loader2, Search, ArrowLeft,
   Building2, MousePointer2, MousePointerClick, AtSign, Code2, Lightbulb, ArrowRight,
+  Linkedin, Instagram,
 } from "lucide-react";
 import {
   SiAnthropic, SiDatabricks, SiStripe, SiPerplexity, SiBrex, SiNotion, SiDiscord, SiMiro,
@@ -9,6 +10,10 @@ import {
 } from "react-icons/si";
 import type { IconType } from "react-icons";
 import { useNavigate } from "react-router";
+
+// ── Shared dark section (CTA + footer) ───────────────────────────────────────
+const DARK_SECTION_BG = "#242322";
+const FOOTER_LINKS = ["About Us", "Privacy Policy", "Terms of Use", "Contact Us"];
 
 // ── Hero typewriter copy ─────────────────────────────────────────────────────
 const HEADLINE = "Bridging the Gap between Private Innovation and Public Markets.";
@@ -1048,19 +1053,41 @@ export function LandingPage() {
       <UseCasesSection />
 
       {/* ── Final CTA ────────────────────────────────────────────────────────── */}
-      <section className="w-full max-w-[1000px] mx-auto px-6 lg:px-12 pb-32 pt-16">
-        <div className="bg-white rounded-[32px] p-12 md:p-24 shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-gray-100 flex flex-col items-center text-center">
+      <section className="w-full max-w-[1000px] mx-auto px-6 lg:px-12 pb-16 pt-16">
+        <div className="rounded-[32px] p-12 md:p-24 flex flex-col items-center text-center" style={{ background: DARK_SECTION_BG }}>
           <h2
-            className="text-4xl md:text-5xl text-[#111827] font-medium tracking-tight mb-8"
+            className="text-4xl md:text-5xl text-white font-medium tracking-tight mb-8"
             style={{ fontFamily: "'Playfair Display', serif", lineHeight: "1.2" }}
           >
             Are you ready to see the full picture?
           </h2>
-          <button className="rounded-full bg-[#F59E0B] px-10 py-4 text-base font-semibold text-white shadow-[0_4px_14px_0_rgba(245,158,11,0.39)] transition-all hover:bg-amber-600 hover:shadow-[0_6px_20px_rgba(245,158,11,0.23)] hover:-translate-y-0.5">
+          <button className="rounded-full bg-white px-10 py-4 text-base font-semibold text-[#111827] shadow-[0_4px_14px_0_rgba(0,0,0,0.25)] transition-all hover:bg-gray-100 hover:-translate-y-0.5">
             Request Early Access
           </button>
         </div>
       </section>
+
+      {/* ── Footer ───────────────────────────────────────────────────────────── */}
+      <footer className="w-full" style={{ background: DARK_SECTION_BG }}>
+        <div className="max-w-[1200px] mx-auto px-6 lg:px-12 py-16">
+          <span className="block text-xs font-semibold tracking-[0.14em] text-gray-500 uppercase mb-6">Explore</span>
+          <nav className="flex flex-col gap-4 mb-10">
+            {FOOTER_LINKS.map((label) => (
+              <a key={label} href="#" className="text-lg text-white hover:text-gray-300 transition-colors w-fit">
+                {label}
+              </a>
+            ))}
+          </nav>
+          <div className="flex items-center gap-4 pt-8 border-t border-white/10">
+            <a href="#" aria-label="LinkedIn" className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 text-white hover:bg-white/10 transition-colors">
+              <Linkedin className="w-4 h-4" />
+            </a>
+            <a href="#" aria-label="Instagram" className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 text-white hover:bg-white/10 transition-colors">
+              <Instagram className="w-4 h-4" />
+            </a>
+          </div>
+        </div>
+      </footer>
 
     </div>
   );
