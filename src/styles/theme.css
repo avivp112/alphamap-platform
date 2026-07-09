@@ -16,6 +16,12 @@
   animation: caretBlink 1s step-end infinite;
 }
 
+/* Staggered row entrance for the landing-page product showcase */
+@keyframes showcaseFadeInUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 :root {
   --font-size: 16px;
   /* Self-hosted Inter as the primary UI face — chosen for its close kinship
