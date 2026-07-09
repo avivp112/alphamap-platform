@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   ChevronDown, Sparkles, TrendingUp, Loader2, Search, ArrowLeft,
-  Building2, MousePointer2, MousePointerClick,
+  Building2, MousePointer2, MousePointerClick, AtSign, Code2, Lightbulb, ArrowRight,
 } from "lucide-react";
 import {
   SiAnthropic, SiDatabricks, SiStripe, SiPerplexity, SiBrex, SiNotion, SiDiscord, SiMiro,
@@ -641,13 +641,116 @@ const USE_CASES_HEADLINE =
   "Beyond the data, you can access trading history, company growth signals, investor insights, and key analyses—";
 
 const USE_CASES = [
-  { heading: "Cross-Market Correlation",   body: "Discover hidden links between private funding rounds and public stock movements." },
-  { heading: "AI-Powered Narratives",      body: "Translate raw data into clear, actionable intelligence and business stories." },
-  { heading: "Capital Flow Visualization", body: "Track where leading investors are moving their money across private and public sectors." },
+  {
+    heading: "Cross-Market Correlation",
+    command: "/correlate",
+    body:    "Discover hidden links between private funding rounds and public stock movements.",
+    status:  ["Reading sources…", "Cross-referencing filings…", "Correlation found"],
+  },
+  {
+    heading: "AI-Powered Narratives",
+    command: "/narrate",
+    body:    "Translate raw data into clear, actionable intelligence and business stories.",
+    status:  ["Reading sources…", "Synthesizing narrative…", "Story ready"],
+  },
+  {
+    heading: "Capital Flow Visualization",
+    command: "/flow",
+    body:    "Track where leading investors are moving their money across private and public sectors.",
+    status:  ["Reading sources…", "Mapping capital flows…", "Flow mapped"],
+  },
 ];
 
-const USE_CASES_BG      = "#CDD1C3"; // sage wash the section transitions into
-const USE_CASES_PANEL   = "#DEE1D5"; // lighter tint for the pinned panel
+const USE_CASES_BG = "#CDD1C3"; // sage wash the section transitions into
+
+// ── Right-side "AI query" panel: dark backdrop + a white card that types out
+// the kept description text like a live query, then a status line beneath it.
+const QUERY_PANEL_BG =
+  "radial-gradient(ellipse 90% 70% at 22% 12%, rgba(100,116,139,0.55), transparent 60%), " +
+  "radial-gradient(ellipse 75% 65% at 88% 90%, rgba(15,23,42,0.9), transparent 65%), " +
+  "linear-gradient(160deg, #334155 0%, #0f172a 55%, #1e293b 100%)";
+
+const QUERY_TYPE_SPEED_MS   = 20;
+const QUERY_STATUS_GAP_MS   = 450;  // pause after typing before the first status line
+const QUERY_STATUS_STEP_MS  = 1300; // how long each status line is shown
+
+function QueryStatusDot() {
+  return (
+    <span className="relative flex h-2 w-2 flex-none">
+      <span className="absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75 animate-ping" />
+      <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-400" />
+    </span>
+  );
+}
+
+function UseCaseQueryPanel({ item }: { item: (typeof USE_CASES)[number] }) {
+  const [typedCount, setTypedCount] = useState(0);
+  const [statusStep, setStatusStep] = useState(0); // 0 = hidden, 1..n = status[i-1]
+
+  useEffect(() => {
+    setTypedCount(0);
+    setStatusStep(0);
+
+    let charIndex = 0;
+    const typeInterval = setInterval(() => {
+      charIndex += 1;
+      setTypedCount(charIndex);
+      if (charIndex >= item.body.length) clearInterval(typeInterval);
+    }, QUERY_TYPE_SPEED_MS);
+
+    const typingDurationMs = item.body.length * QUERY_TYPE_SPEED_MS;
+    const statusTimeouts = item.status.map((_, i) =>
+      setTimeout(() => setStatusStep(i + 1), typingDurationMs + QUERY_STATUS_GAP_MS + i * QUERY_STATUS_STEP_MS)
+    );
+
+    return () => {
+      clearInterval(typeInterval);
+      statusTimeouts.forEach(clearTimeout);
+    };
+  }, [item]);
+
+  const typedText   = item.body.slice(0, typedCount);
+  const doneTyping  = typedCount >= item.body.length;
+  const statusIndex = Math.min(statusStep, item.status.length) - 1;
+
+  return (
+    <div className="rounded-[28px] p-3 sm:p-4 overflow-hidden" style={{ background: QUERY_PANEL_BG }}>
+      <span className="block text-[11px] font-mono text-white/50 px-3 pt-2 pb-3">{item.command}</span>
+
+      <div className="rounded-2xl bg-white p-6 shadow-[0_12px_30px_rgba(0,0,0,0.28)]">
+        <span className="block text-[10px] font-bold tracking-[0.14em] text-gray-400 uppercase mb-2">Query</span>
+        <p className="text-lg sm:text-xl font-medium text-[#111827] leading-snug min-h-[3.6em]">
+          {typedText}
+          {!doneTyping && <span className="typewriter-cursor" aria-hidden="true" />}
+        </p>
+
+        <div className="flex items-center gap-2 mt-4 pt-4 border-t border-gray-100">
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-500 bg-gray-50 border border-gray-200 rounded-full px-2.5 py-1">
+            <AtSign className="w-3 h-3" />Sources
+          </span>
+          <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-gray-50 border border-gray-200 text-gray-500">
+            <Code2 className="w-3.5 h-3.5" />
+          </span>
+          <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-gray-50 border border-gray-200 text-gray-500">
+            <Lightbulb className="w-3.5 h-3.5" />
+          </span>
+          <span className="ml-auto inline-flex items-center justify-center w-8 h-8 rounded-full bg-[#0F172A] text-white flex-none">
+            <ArrowRight className="w-4 h-4" />
+          </span>
+        </div>
+      </div>
+
+      <div className="h-10 flex items-center px-3">
+        {statusStep > 0 && (
+          <div key={statusStep} className="flex items-center gap-2" style={{ animation: "showcaseFadeInUp 400ms ease-out both" }}>
+            <QueryStatusDot />
+            <span className="text-xs font-medium text-white/70">{item.status[statusIndex]}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function UseCasesSection() {
   const [activeIndex, setActiveIndex] = useState(0);
@@ -707,15 +810,7 @@ function UseCasesSection() {
             its room to hold in place while the list scrolls past. */}
         <div>
           <div className="lg:sticky lg:top-32">
-            <div className="rounded-[28px] p-10 sm:p-14 min-h-[280px] flex items-center overflow-hidden" style={{ background: USE_CASES_PANEL }}>
-              <p
-                key={activeIndex}
-                className="text-xl sm:text-2xl font-normal text-[#111827] leading-relaxed"
-                style={{ fontFamily: "'Playfair Display', serif", animation: "showcaseFadeInUp 500ms ease-out both" }}
-              >
-                {active.body}
-              </p>
-            </div>
+            <UseCaseQueryPanel key={activeIndex} item={active} />
           </div>
         </div>
       </div>
