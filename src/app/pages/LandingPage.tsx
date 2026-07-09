@@ -1052,28 +1052,27 @@ export function LandingPage() {
       {/* ── Use cases: scroll-linked list with a pinned right panel ──────────── */}
       <UseCasesSection />
 
-      {/* ── Final CTA ────────────────────────────────────────────────────────── */}
-      <section className="w-full max-w-[1000px] mx-auto px-6 lg:px-12 pb-16 pt-16">
-        <div className="rounded-[32px] p-12 md:p-24 flex flex-col items-center text-center" style={{ background: DARK_SECTION_BG }}>
-          <h2
-            className="text-4xl md:text-5xl text-white font-medium tracking-tight mb-8"
-            style={{ fontFamily: "'Playfair Display', serif", lineHeight: "1.2" }}
-          >
-            Are you ready to see the full picture?
-          </h2>
-          <button className="rounded-full bg-white px-10 py-4 text-base font-semibold text-[#111827] shadow-[0_4px_14px_0_rgba(0,0,0,0.25)] transition-all hover:bg-gray-100 hover:-translate-y-0.5">
-            Request Early Access
-          </button>
-        </div>
+      {/* ── Final CTA + Footer: one continuous dark block, no gray gap between them.
+          mt (not pt) keeps the gray breathing room above the CTA while the CTA
+          itself sits flush against the footer with zero gap below. ───────── */}
+      <section className="w-full mt-16 md:mt-20 rounded-t-[32px] px-6 lg:px-12 py-16 md:py-20 flex flex-col items-center text-center" style={{ background: DARK_SECTION_BG }}>
+        <h2
+          className="text-4xl md:text-5xl text-white font-medium tracking-tight mb-4"
+          style={{ fontFamily: "'Playfair Display', serif", lineHeight: "1.2" }}
+        >
+          Are you ready to see the full picture?
+        </h2>
+        <button className="rounded-full bg-white px-10 py-4 text-base font-semibold text-[#111827] shadow-[0_4px_14px_0_rgba(0,0,0,0.25)] transition-all hover:bg-gray-100 hover:-translate-y-0.5">
+          Request Early Access
+        </button>
       </section>
 
-      {/* ── Footer ───────────────────────────────────────────────────────────── */}
       <footer className="w-full" style={{ background: DARK_SECTION_BG }}>
-        <div className="max-w-[1200px] mx-auto px-6 lg:px-12 py-16">
+        <div className="max-w-[1200px] mx-auto px-6 lg:px-12 pt-8 pb-16">
           <span className="block text-xs font-semibold tracking-[0.14em] text-gray-500 uppercase mb-6">Explore</span>
           <nav className="flex flex-col gap-4 mb-10">
             {FOOTER_LINKS.map((label) => (
-              <a key={label} href="#" className="text-lg text-white hover:text-gray-300 transition-colors w-fit">
+              <a key={label} href="#" className="text-sm text-white hover:text-gray-300 transition-colors w-fit">
                 {label}
               </a>
             ))}
