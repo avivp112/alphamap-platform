@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Network, Brain, Map, ChevronDown, Sparkles, TrendingUp, Loader2, Search, ArrowLeft,
-  Shield, Database, Boxes, CreditCard, FileText, DollarSign, Palette, Bot, Mail,
-  MessageSquare, Send, ShoppingBag, Wrench, Building2, MousePointer2, MousePointerClick,
-  type LucideIcon,
+  Building2, MousePointer2, MousePointerClick,
 } from "lucide-react";
+import {
+  SiAnthropic, SiDatabricks, SiStripe, SiPerplexity, SiBrex, SiNotion, SiDiscord, SiMiro,
+  SiHuggingface, SiKlarna, SiRetool, SiLinear, SiVercel, SiZapier, SiWebflow, SiCoda, SiRevolut,
+} from "react-icons/si";
+import type { IconType } from "react-icons";
 import { useNavigate } from "react-router";
 
 // ── Hero typewriter copy ─────────────────────────────────────────────────────
@@ -31,62 +34,83 @@ const STAGE_STYLES: Record<string, string> = {
 };
 
 const SHOWCASE_TABS: { key: string; label: string }[] = [
-  { key: "startups", label: "Startups" },
-  { key: "deals",    label: "Deal Flow" },
   { key: "sourcing", label: "AI Sourcing" },
+  { key: "startups", label: "Startups" },
   { key: "vcs",      label: "VC Directory" },
+  { key: "deals",    label: "Deal Flow" },
 ];
 
-// Shared brand mark per real company — a representative icon in the brand's
-// color, since we don't ship third-party trademarked logo assets.
-const COMPANY_META: Record<string, { icon: LucideIcon; color: string }> = {
-  "Anduril":    { icon: Shield,        color: "#0B0B10" },
-  "Databricks": { icon: Database,      color: "#FF3621" },
-  "Scale AI":   { icon: Boxes,         color: "#0A0A0A" },
-  "Perplexity": { icon: Search,        color: "#14B8A6" },
-  "Ramp":       { icon: CreditCard,    color: "#0C4A3E" },
-  "Notion":     { icon: FileText,      color: "#000000" },
-  "Stripe":     { icon: DollarSign,    color: "#635BFF" },
-  "Canva":      { icon: Palette,       color: "#7D2AE8" },
-  "Klarna":     { icon: ShoppingBag,   color: "#E8578C" },
-  "Retool":     { icon: Wrench,        color: "#2E2E2E" },
-  "Artisan":    { icon: Bot,           color: "#4C1D95" },
-  "Spara":      { icon: TrendingUp,    color: "#0F172A" },
-  "AiSDR":      { icon: Mail,          color: "#2563EB" },
-  "Jeeva AI":   { icon: MessageSquare, color: "#0369A1" },
-  "Floworks":   { icon: Send,          color: "#B45309" },
+// Shared brand mark per real company — official Simple Icons logo + brand color.
+// Companies below were deliberately chosen from the set that has a real,
+// precise mark available (react-icons/si) rather than approximated.
+const COMPANY_META: Record<string, { icon: IconType; color: string }> = {
+  "Anthropic":    { icon: SiAnthropic,   color: "#191919" },
+  "Databricks":   { icon: SiDatabricks,  color: "#FF3621" },
+  "Stripe":       { icon: SiStripe,      color: "#635BFF" },
+  "Perplexity":   { icon: SiPerplexity,  color: "#1FB8CD" },
+  "Brex":         { icon: SiBrex,        color: "#212121" },
+  "Notion":       { icon: SiNotion,      color: "#000000" },
+  "Discord":      { icon: SiDiscord,     color: "#5865F2" },
+  "Miro":         { icon: SiMiro,        color: "#050038" },
+  "Hugging Face": { icon: SiHuggingface, color: "#FFD21E" },
+  "Klarna":       { icon: SiKlarna,      color: "#FFB3C7" },
+  "Retool":       { icon: SiRetool,      color: "#3D3D3D" },
+  "Linear":       { icon: SiLinear,      color: "#5E6AD2" },
+  "Vercel":       { icon: SiVercel,      color: "#000000" },
+  "Zapier":       { icon: SiZapier,      color: "#FF4F00" },
+  "Webflow":      { icon: SiWebflow,     color: "#146EF5" },
+  "Coda":         { icon: SiCoda,        color: "#F46A54" },
+  "Revolut":      { icon: SiRevolut,     color: "#191C1F" },
 };
 
+// Auto-contrast so pale brand colors (e.g. Klarna pink, Hugging Face yellow)
+// still read clearly instead of washing out a white glyph.
+function iconContrastColor(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.6 ? "#111827" : "#FFFFFF";
+}
+
 function CompanyLogo({ company, size = 28 }: { company: string; size?: number }) {
-  const meta = COMPANY_META[company] ?? { icon: Building2, color: "#6B7280" };
+  const meta = COMPANY_META[company];
+  if (!meta) {
+    return (
+      <div className="rounded-lg flex items-center justify-center bg-gray-400 text-white flex-none" style={{ width: size, height: size }}>
+        <Building2 style={{ width: size * 0.55, height: size * 0.55 }} />
+      </div>
+    );
+  }
   const Icon = meta.icon;
   return (
     <div
-      className="rounded-lg flex items-center justify-center text-white flex-none"
+      className="rounded-lg flex items-center justify-center flex-none"
       style={{ background: meta.color, width: size, height: size }}
     >
-      <Icon style={{ width: size * 0.55, height: size * 0.55 }} strokeWidth={2.2} />
+      <Icon size={size * 0.55} color={iconContrastColor(meta.color)} />
     </div>
   );
 }
 
 const DEAL_ROWS = [
-  { company: "Anduril",     type: "Series G",  size: "$2.5B",  leads: "a16z, Founders Fund",     valuation: "$30.5B", estimated: false, pulse: true  },
-  { company: "Databricks",  type: "Series K",  size: "$1B",    leads: "Thrive Capital",          valuation: "$62B",   estimated: false, pulse: false },
-  { company: "Scale AI",    type: "Series F",  size: "$1B",    leads: "Accel",                   valuation: "$13.8B", estimated: false, pulse: true  },
-  { company: "Perplexity",  type: "Series D",  size: "$500M",  leads: "IVP",                     valuation: "$18B",   estimated: true,  pulse: false },
-  { company: "Ramp",        type: "Series E",  size: "$150M",  leads: "Founders Fund",           valuation: "$16B",   estimated: false, pulse: true  },
-  { company: "Notion",      type: "Series C",  size: "$343M",  leads: "Coatue",                  valuation: "$10.2B", estimated: true,  pulse: false },
-  { company: "Stripe",      type: "Tender",    size: "$700M",  leads: "Goldman Sachs, Thrive",   valuation: "$91.5B", estimated: false, pulse: false },
-  { company: "Canva",       type: "Series F",  size: "$200M",  leads: "T. Rowe Price",           valuation: "$32B",   estimated: false, pulse: true  },
+  { company: "Databricks",   type: "Series K", size: "$1B",   leads: "Thrive Capital",         valuation: "$62B",   estimated: false, pulse: true  },
+  { company: "Stripe",       type: "Tender",   size: "$700M", leads: "Goldman Sachs, Thrive",  valuation: "$91.5B", estimated: false, pulse: false },
+  { company: "Perplexity",   type: "Series D", size: "$500M", leads: "IVP",                    valuation: "$18B",   estimated: true,  pulse: false },
+  { company: "Brex",         type: "Series D", size: "$300M", leads: "Greenoaks",              valuation: "$12.3B", estimated: false, pulse: true  },
+  { company: "Notion",       type: "Series C", size: "$343M", leads: "Coatue",                 valuation: "$10.2B", estimated: true,  pulse: false },
+  { company: "Discord",      type: "Series H", size: "$500M", leads: "Tencent, Various",       valuation: "$15B",   estimated: true,  pulse: true  },
+  { company: "Miro",         type: "Series C", size: "$400M", leads: "ICONIQ Growth",          valuation: "$17.5B", estimated: false, pulse: false },
+  { company: "Hugging Face", type: "Series D", size: "$235M", leads: "Salesforce Ventures",    valuation: "$4.5B",  estimated: false, pulse: true  },
 ];
 
+const SOURCING_QUERY = "High-growth B2B SaaS companies";
 const SOURCING_ROWS = [
-  { company: "Artisan",  match: 96, momentum: 92, sector: "B2B", tag2: "Outbound",     stage: "Series A" },
-  { company: "Spara",    match: 93, momentum: 88, sector: "B2B", tag2: "Inbound",      stage: "Seed"     },
-  { company: "AiSDR",    match: 90, momentum: 84, sector: "B2B", tag2: "Email",        stage: "Seed"     },
-  { company: "Jeeva AI", match: 87, momentum: 81, sector: "SaaS", tag2: "Multichannel", stage: "Series A" },
-  { company: "Floworks", match: 84, momentum: 77, sector: "SaaS", tag2: "Cold Email",   stage: "Seed"     },
+  { company: "Linear",  match: 96, momentum: 92, sector: "Dev Tools",   tag2: "Project Mgmt", stage: "Series B" },
+  { company: "Vercel",  match: 93, momentum: 88, sector: "Dev Tools",   tag2: "Infra",         stage: "Series D" },
+  { company: "Zapier",  match: 90, momentum: 84, sector: "Automation",  tag2: "No-Code",       stage: "Series C" },
+  { company: "Webflow", match: 87, momentum: 81, sector: "No-Code",     tag2: "Design",        stage: "Series C" },
+  { company: "Coda",    match: 84, momentum: 77, sector: "Productivity", tag2: "Docs",         stage: "Series D" },
 ];
 
 const VC_FUNDS = [
@@ -102,19 +126,19 @@ const VC_FUNDS = [
   {
     key: "a16z", name: "Andreessen Horowitz", stages: ["Series A", "Series B"], aum: "$45B", portfolio: 350, pulse: false,
     investments: [
-      { company: "Anduril",   round: "Series G", amount: "$500M", estimated: true  },
       { company: "Databricks", round: "Series K", amount: "$250M", estimated: true  },
-      { company: "Ramp",      round: "Series E", amount: "$120M", estimated: false },
+      { company: "Discord",    round: "Series H", amount: "$180M", estimated: true  },
+      { company: "Brex",       round: "Series D", amount: "$120M", estimated: false },
       { company: "Perplexity", round: "Series D", amount: "$150M", estimated: true  },
     ],
   },
   {
     key: "index", name: "Index Ventures", stages: ["Seed", "Series B"], aum: "$20B", portfolio: 280, pulse: false,
     investments: [
-      { company: "Canva",   round: "Series F", amount: "$60M",  estimated: true  },
-      { company: "Scale AI", round: "Series F", amount: "$90M",  estimated: true  },
-      { company: "Ramp",    round: "Series D", amount: "$75M",  estimated: false },
-      { company: "Notion",  round: "Series B", amount: "$18M",  estimated: true  },
+      { company: "Miro",         round: "Series C", amount: "$90M", estimated: true  },
+      { company: "Hugging Face", round: "Series D", amount: "$60M", estimated: true  },
+      { company: "Revolut",      round: "Growth",   amount: "$75M", estimated: false },
+      { company: "Webflow",      round: "Series C", amount: "$45M", estimated: true  },
     ],
   },
 ];
@@ -186,7 +210,7 @@ function StartupsShowcase() {
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-3.5 mb-5 flex-none">
-        <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white font-bold text-base flex-none" style={{ background: "#0F172A" }}>A</div>
+        <CompanyLogo company="Anthropic" size={40} />
         <div>
           <div className="flex items-center gap-2">
             <span className="text-base font-bold text-[#111827]">Anthropic</span>
@@ -309,7 +333,6 @@ function DealsShowcase() {
 }
 
 // ── AI Sourcing tab ───────────────────────────────────────────────────────────
-const SOURCING_QUERY = "Early-stage AI SDR startups";
 const SOURCING_ASK_MS = 900;
 // Simulated-cursor timeline: appear → move onto the button → click (fires Ask) → fade out
 const CURSOR_START_MS = 350;
@@ -461,19 +484,20 @@ function SourcingShowcase() {
 
 // ── VC Directory tab ──────────────────────────────────────────────────────────
 const FUND_FLASH_MS = 1050;
+const VC_AUTOPLAY_DELAY_MS = 700;
 
 function VCsShowcase() {
   const [selectedKey,  setSelectedKey]  = useState<string | null>(null);
   const [flashingKey,  setFlashingKey]  = useState<string | null>(null);
-  const flashTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashTimeout    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoplayTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selected = VC_FUNDS.find((f) => f.key === selectedKey) ?? null;
 
-  useEffect(() => () => { if (flashTimeout.current) clearTimeout(flashTimeout.current); }, []);
-
   function handleFundClick(vc: typeof VC_FUNDS[number]) {
+    if (autoplayTimeout.current) { clearTimeout(autoplayTimeout.current); autoplayTimeout.current = null; }
     if (flashingKey) return;
     if (vc.pulse) {
-      // Flash green a few times to call out the highlighted fund, then reveal its portfolio
+      // Flash green three times to call out the highlighted fund, then reveal its portfolio
       setFlashingKey(vc.key);
       flashTimeout.current = setTimeout(() => {
         setFlashingKey(null);
@@ -483,6 +507,18 @@ function VCsShowcase() {
       setSelectedKey(vc.key);
     }
   }
+
+  // Fully automatic — the highlighted fund flashes and opens on its own, no click needed
+  useEffect(() => {
+    const pulsing = VC_FUNDS.find((f) => f.pulse);
+    if (pulsing) {
+      autoplayTimeout.current = setTimeout(() => handleFundClick(pulsing), VC_AUTOPLAY_DELAY_MS);
+    }
+    return () => {
+      if (autoplayTimeout.current) clearTimeout(autoplayTimeout.current);
+      if (flashTimeout.current) clearTimeout(flashTimeout.current);
+    };
+  }, []);
 
   if (selected) {
     return (
@@ -548,7 +584,7 @@ function VCsShowcase() {
     <div className="flex flex-col h-full">
       <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase flex-none">VC Directory</span>
       <h3 className="text-2xl font-bold text-[#111827] mt-2 mb-1 flex-none">Every fund that matters, in one view</h3>
-      <p className="text-sm text-gray-400 mb-6 max-w-lg flex-none">Stage focus, sector concentration, and portfolio activity — normalized across 5,000+ firms. Click a fund to see its portfolio.</p>
+      <p className="text-sm text-gray-400 mb-6 max-w-lg flex-none">Stage focus, sector concentration, and portfolio activity — normalized across 5,000+ firms.</p>
 
       <div className="grid sm:grid-cols-3 gap-4 flex-1 min-h-0">
         {VC_FUNDS.map((vc) => (
@@ -599,8 +635,8 @@ export function LandingPage() {
   const [scrolled,      setScrolled]      = useState(false);
   const [typedCount,    setTypedCount]    = useState(0);
   const [subTypedCount, setSubTypedCount] = useState(0);
-  const [activeTab,     setActiveTab]     = useState("startups"); // tab bar highlight (target)
-  const [displayTab,    setDisplayTab]    = useState("startups"); // tab actually rendered
+  const [activeTab,     setActiveTab]     = useState("sourcing"); // tab bar highlight (target)
+  const [displayTab,    setDisplayTab]    = useState("sourcing"); // tab actually rendered
   const [tabLoading,    setTabLoading]    = useState(false);
   const tabSwitchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const headlineDone  = typedCount >= HEADLINE.length;
