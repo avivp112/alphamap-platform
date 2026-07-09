@@ -1052,10 +1052,10 @@ export function LandingPage() {
       {/* ── Use cases: scroll-linked list with a pinned right panel ──────────── */}
       <UseCasesSection />
 
-      {/* ── Final CTA + Footer: one continuous dark block, no gray gap between them.
-          mt (not pt) keeps the gray breathing room above the CTA while the CTA
-          itself sits flush against the footer with zero gap below. ───────── */}
-      <section className="w-full mt-16 md:mt-20 rounded-t-[32px] px-6 lg:px-12 py-16 md:py-20 flex flex-col items-center text-center" style={{ background: DARK_SECTION_BG }}>
+      {/* ── Final CTA + Footer: one continuous dark block, hard-edged on every
+          side — no gray gap and no rounded corners, same sharp cut used for
+          the sage section's own top/bottom edges. ─────────────────────────── */}
+      <section className="w-full px-6 lg:px-12 py-16 md:py-20 flex flex-col items-center text-center" style={{ background: DARK_SECTION_BG }}>
         <h2
           className="text-4xl md:text-5xl text-white font-medium tracking-tight mb-4"
           style={{ fontFamily: "'Playfair Display', serif", lineHeight: "1.2" }}
