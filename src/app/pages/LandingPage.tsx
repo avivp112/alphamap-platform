@@ -182,10 +182,12 @@ const STARTUP_VALUE_TARGET = 61.5;
 const STARTUP_GAIN_TARGET = 24.3;
 const STARTUP_ANIM_MS = 1600;
 
-function StartupsShowcase() {
+function StartupsShowcase({ active }: { active: boolean }) {
   const [progress, setProgress] = useState(0);
 
+  // Wait until the showcase has actually scrolled into view before animating
   useEffect(() => {
+    if (!active) return;
     let raf: number;
     const t0 = performance.now();
     function tick(now: number) {
@@ -196,7 +198,7 @@ function StartupsShowcase() {
     }
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [active]);
 
   const points   = useMemo(() => buildChartPoints(VALUATION_TREND, CHART_W, CHART_H, 16), []);
   const linePath = useMemo(() => catmullRomPath(points), [points]);
@@ -280,7 +282,7 @@ function LivePulseDot() {
   );
 }
 
-function DealsShowcase() {
+function DealsShowcase(_props: { active: boolean }) {
   return (
     <div className="flex flex-col h-full">
       <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase flex-none">Deal Flow</span>
@@ -364,7 +366,7 @@ function SimulatedCursor({ stage }: { stage: CursorStage }) {
   );
 }
 
-function SourcingShowcase() {
+function SourcingShowcase({ active }: { active: boolean }) {
   const [asked,  setAsked]  = useState(false);
   const [asking, setAsking] = useState(false);
   const [cursorStage, setCursorStage] = useState<CursorStage>("hidden");
@@ -379,8 +381,10 @@ function SourcingShowcase() {
     }, SOURCING_ASK_MS);
   }
 
-  // Fully automatic demo — a simulated cursor moves to "Ask" and clicks it, no user input needed
+  // Fully automatic demo — a simulated cursor moves to "Ask" and clicks it, no user input
+  // needed — but only once the showcase has actually scrolled into view
   useEffect(() => {
+    if (!active) return;
     const timers = [
       setTimeout(() => setCursorStage("start"), CURSOR_START_MS),
       setTimeout(() => setCursorStage("move"), CURSOR_START_MS + 120),
@@ -391,7 +395,7 @@ function SourcingShowcase() {
       timers.forEach(clearTimeout);
       if (askTimeout.current) clearTimeout(askTimeout.current);
     };
-  }, []);
+  }, [active]);
 
   return (
     <div className="flex flex-col h-full">
@@ -486,7 +490,7 @@ function SourcingShowcase() {
 const FUND_FLASH_MS = 1050;
 const VC_AUTOPLAY_DELAY_MS = 700;
 
-function VCsShowcase() {
+function VCsShowcase({ active }: { active: boolean }) {
   const [selectedKey,  setSelectedKey]  = useState<string | null>(null);
   const [flashingKey,  setFlashingKey]  = useState<string | null>(null);
   const flashTimeout    = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -508,8 +512,10 @@ function VCsShowcase() {
     }
   }
 
-  // Fully automatic — the highlighted fund flashes and opens on its own, no click needed
+  // Fully automatic — the highlighted fund flashes and opens on its own, no click needed —
+  // but only once the showcase has actually scrolled into view
   useEffect(() => {
+    if (!active) return;
     const pulsing = VC_FUNDS.find((f) => f.pulse);
     if (pulsing) {
       autoplayTimeout.current = setTimeout(() => handleFundClick(pulsing), VC_AUTOPLAY_DELAY_MS);
@@ -518,7 +524,7 @@ function VCsShowcase() {
       if (autoplayTimeout.current) clearTimeout(autoplayTimeout.current);
       if (flashTimeout.current) clearTimeout(flashTimeout.current);
     };
-  }, []);
+  }, [active]);
 
   if (selected) {
     return (
@@ -623,7 +629,7 @@ function VCsShowcase() {
   );
 }
 
-const SHOWCASE_CONTENT: Record<string, React.ComponentType> = {
+const SHOWCASE_CONTENT: Record<string, React.ComponentType<{ active: boolean }>> = {
   startups: StartupsShowcase,
   deals:    DealsShowcase,
   sourcing: SourcingShowcase,
@@ -638,7 +644,9 @@ export function LandingPage() {
   const [activeTab,     setActiveTab]     = useState("sourcing"); // tab bar highlight (target)
   const [displayTab,    setDisplayTab]    = useState("sourcing"); // tab actually rendered
   const [tabLoading,    setTabLoading]    = useState(false);
+  const [showcaseInView, setShowcaseInView] = useState(false);
   const tabSwitchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showcaseRef = useRef<HTMLDivElement>(null);
   const headlineDone  = typedCount >= HEADLINE.length;
   const subheadStarted = subTypedCount > 0;
   const subheadDone    = subTypedCount >= SUBHEAD.length;
@@ -655,6 +663,24 @@ export function LandingPage() {
     }, 550);
   }
   useEffect(() => () => { if (tabSwitchTimeout.current) clearTimeout(tabSwitchTimeout.current); }, []);
+
+  // The showcase's self-playing demos (Startups chart, AI Sourcing "Ask", VC auto-flash)
+  // should only start once the section has actually scrolled into view
+  useEffect(() => {
+    const el = showcaseRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setShowcaseInView(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.35 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // Header gains a light glass border/shadow once the page scrolls past the hero
   useEffect(() => {
@@ -778,7 +804,7 @@ export function LandingPage() {
       </section>
 
       {/* ── Interactive product showcase ─────────────────────────────────────── */}
-      <section className="w-full max-w-[1200px] mx-auto px-6 lg:px-12 mb-32">
+      <section ref={showcaseRef} className="w-full max-w-[1200px] mx-auto px-6 lg:px-12 mb-32">
         <div className="text-center max-w-2xl mx-auto mb-10">
           <span className="text-xs font-bold tracking-[0.22em] text-[#0F172A]/40 uppercase">Inside AlphaMap</span>
           <h2
@@ -831,7 +857,7 @@ export function LandingPage() {
               ) : (
                 (() => {
                   const TabContent = SHOWCASE_CONTENT[displayTab];
-                  return <TabContent />;
+                  return <TabContent active={showcaseInView} />;
                 })()
               )}
             </div>
