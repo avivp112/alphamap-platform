@@ -775,7 +775,7 @@ function UseCasesSection() {
         {/* Left: headline + compact list */}
         <div>
           <h2
-            className="text-2xl sm:text-3xl md:text-[2.25rem] font-normal text-[#111827] tracking-tight mb-12 lg:mb-16 max-w-lg"
+            className="text-2xl sm:text-3xl md:text-[2.25rem] font-normal text-[#111827] tracking-tight mb-6 lg:mb-8 max-w-lg"
             style={{ fontFamily: "'Playfair Display', serif", lineHeight: 1.25 }}
           >
             {USE_CASES_HEADLINE}
@@ -786,11 +786,11 @@ function UseCasesSection() {
               <div
                 key={item.heading}
                 ref={(el) => { itemRefs.current[i] = el; }}
-                className="py-7 sm:py-8 border-t first:border-t-0"
+                className="py-4 sm:py-5 border-t first:border-t-0"
                 style={{ borderColor: "rgba(17,24,39,0.12)" }}
               >
                 <h3
-                  className="text-lg sm:text-xl font-semibold tracking-tight transition-colors duration-300"
+                  className="text-base sm:text-lg font-semibold tracking-tight transition-colors duration-300"
                   style={{ color: i === activeIndex ? "#111827" : "rgba(17,24,39,0.35)" }}
                 >
                   <span className="mr-2">&amp;</span>{item.heading}
