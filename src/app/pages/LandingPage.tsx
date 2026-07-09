@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
-  Network, Brain, Map, ChevronDown, Sparkles, TrendingUp, Loader2, Search, ArrowLeft,
+  ChevronDown, Sparkles, TrendingUp, Loader2, Search, ArrowLeft,
   Building2, MousePointer2, MousePointerClick,
 } from "lucide-react";
 import {
@@ -636,6 +636,96 @@ const SHOWCASE_CONTENT: Record<string, React.ComponentType<{ active: boolean }>>
   vcs:      VCsShowcase,
 };
 
+// ── Scroll-linked use cases: left list scrolls, right panel stays pinned ─────
+const USE_CASES_HEADLINE =
+  "Beyond the data, you can access trading history, company growth signals, investor insights, and key analyses—";
+
+const USE_CASES = [
+  { heading: "Cross-Market Correlation",   body: "Discover hidden links between private funding rounds and public stock movements." },
+  { heading: "AI-Powered Narratives",      body: "Translate raw data into clear, actionable intelligence and business stories." },
+  { heading: "Capital Flow Visualization", body: "Track where leading investors are moving their money across private and public sectors." },
+];
+
+const USE_CASES_BG      = "#CDD1C3"; // sage wash the section transitions into
+const USE_CASES_PANEL   = "#DEE1D5"; // lighter tint for the pinned panel
+
+function UseCasesSection() {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  useEffect(() => {
+    const observers: IntersectionObserver[] = [];
+    itemRefs.current.forEach((el, i) => {
+      if (!el) return;
+      const observer = new IntersectionObserver(
+        ([entry]) => { if (entry.isIntersecting) setActiveIndex(i); },
+        { rootMargin: "-45% 0px -45% 0px", threshold: 0 }
+      );
+      observer.observe(el);
+      observers.push(observer);
+    });
+    return () => observers.forEach((o) => o.disconnect());
+  }, []);
+
+  const active = USE_CASES[activeIndex];
+
+  return (
+    <section
+      className="w-full"
+      style={{ background: `linear-gradient(180deg, #F3F4F6 0%, ${USE_CASES_BG} 12%, ${USE_CASES_BG} 88%, #F3F4F6 100%)` }}
+    >
+      <div className="max-w-[1200px] mx-auto px-6 lg:px-12 py-28 lg:py-36 grid lg:grid-cols-2 gap-12 lg:gap-20">
+        {/* Left: headline + scrolling list */}
+        <div>
+          <h2
+            className="text-3xl sm:text-4xl md:text-[2.75rem] font-normal text-[#111827] tracking-tight mb-16 lg:mb-24 max-w-lg"
+            style={{ fontFamily: "'Playfair Display', serif", lineHeight: 1.25 }}
+          >
+            {USE_CASES_HEADLINE}
+          </h2>
+
+          <div className="flex flex-col">
+            {USE_CASES.map((item, i) => (
+              <div
+                key={item.heading}
+                ref={(el) => { itemRefs.current[i] = el; }}
+                className="min-h-[55vh] lg:min-h-[70vh] flex items-center border-t first:border-t-0"
+                style={{ borderColor: "rgba(17,24,39,0.1)" }}
+              >
+                <h3
+                  className="text-2xl sm:text-3xl font-semibold tracking-tight transition-colors duration-300"
+                  style={{ color: i === activeIndex ? "#111827" : "rgba(17,24,39,0.35)" }}
+                >
+                  <span className="mr-2">&amp;</span>{item.heading}
+                </h3>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Right: pinned panel — only this side updates as you scroll the list.
+            This grid item stretches to the row's full height by default (it's
+            the tall left column that sets the row height); the inner div is
+            what actually carries position:sticky, using that extra height as
+            its room to hold in place while the list scrolls past. */}
+        <div>
+          <div className="lg:sticky lg:top-32">
+            <div className="rounded-[28px] p-10 sm:p-14 min-h-[280px] flex items-center overflow-hidden" style={{ background: USE_CASES_PANEL }}>
+              <p
+                key={activeIndex}
+                className="text-2xl sm:text-3xl font-normal text-[#111827] leading-relaxed"
+                style={{ fontFamily: "'Playfair Display', serif", animation: "showcaseFadeInUp 500ms ease-out both" }}
+              >
+                {active.body}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function LandingPage() {
   const navigate        = useNavigate();
   const [scrolled,      setScrolled]      = useState(false);
@@ -728,7 +818,7 @@ export function LandingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F3F4F6] font-sans overflow-x-hidden selection:bg-amber-400/10">
+    <div className="min-h-screen bg-[#F3F4F6] font-sans selection:bg-amber-400/10">
 
       {/* ── Fixed header ─────────────────────────────────────────────────────── */}
       <header
@@ -865,41 +955,8 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* ── Feature cards ───────────────────────────────────────────────────── */}
-      <section className="w-full max-w-[1200px] mx-auto px-6 lg:px-12 mb-32">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
-          {[
-            {
-              icon: Network,
-              title: "Cross-Market Correlation",
-              body:  "Discover hidden links between private funding rounds and public stock movements.",
-            },
-            {
-              icon: Brain,
-              title: "AI-Powered Narratives",
-              body:  "Translate raw data into clear, actionable intelligence and business stories.",
-            },
-            {
-              icon: Map,
-              title: "Capital Flow Visualization",
-              body:  "Track where leading investors are moving their money across private and public sectors.",
-            },
-          ].map(({ icon: Icon, title, body }) => (
-            <div
-              key={title}
-              className="rounded-[24px] p-8 md:p-10 flex flex-col items-center text-center transition-transform hover:-translate-y-1 duration-300"
-              style={{ background: "#0F172A", boxShadow: "0 8px 30px rgba(0,0,0,0.18)" }}
-            >
-              <div className="h-14 w-14 rounded-2xl flex items-center justify-center mb-8"
-                style={{ background: "rgba(245,158,11,0.15)" }}>
-                <Icon className="w-6 h-6" style={{ color: "#F59E0B" }} />
-              </div>
-              <h3 className="text-xl font-bold text-white mb-4">{title}</h3>
-              <p className="leading-relaxed font-medium" style={{ color: "#94a3b8" }}>{body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+      {/* ── Use cases: scroll-linked list with a pinned right panel ──────────── */}
+      <UseCasesSection />
 
       {/* ── Final CTA ────────────────────────────────────────────────────────── */}
       <section className="w-full max-w-[1000px] mx-auto px-6 lg:px-12 pb-32 pt-16">
