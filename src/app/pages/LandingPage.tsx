@@ -663,12 +663,9 @@ const USE_CASES = [
 
 const USE_CASES_BG = "#CDD1C3"; // sage wash the section transitions into
 
-// ── Right-side "AI query" panel: dark backdrop + a white card that types out
+// ── Right-side "AI query" panel: gray frame + a white card that types out
 // the kept description text like a live query, then a status line beneath it.
-const QUERY_PANEL_BG =
-  "radial-gradient(ellipse 90% 70% at 22% 12%, rgba(100,116,139,0.55), transparent 60%), " +
-  "radial-gradient(ellipse 75% 65% at 88% 90%, rgba(15,23,42,0.9), transparent 65%), " +
-  "linear-gradient(160deg, #334155 0%, #0f172a 55%, #1e293b 100%)";
+const QUERY_PANEL_BG = "#E4E6E1"; // neutral gray frame, matches the page's light-gray background
 
 const QUERY_TYPE_SPEED_MS   = 20;
 const QUERY_STATUS_GAP_MS   = 450;  // pause after typing before the first status line
@@ -715,11 +712,11 @@ function UseCaseQueryPanel({ item }: { item: (typeof USE_CASES)[number] }) {
 
   return (
     <div className="rounded-[28px] p-3 sm:p-4 overflow-hidden" style={{ background: QUERY_PANEL_BG }}>
-      <span className="block text-[11px] font-mono text-white/50 px-3 pt-2 pb-3">{item.command}</span>
+      <span className="block text-[11px] font-mono text-gray-500 px-3 pt-2 pb-3">{item.command}</span>
 
-      <div className="rounded-2xl bg-white p-6 shadow-[0_12px_30px_rgba(0,0,0,0.28)]">
+      <div className="rounded-2xl bg-white p-6 shadow-[0_8px_20px_rgba(0,0,0,0.08)]">
         <span className="block text-[10px] font-bold tracking-[0.14em] text-gray-400 uppercase mb-2">Query</span>
-        <p className="text-lg sm:text-xl font-medium text-[#111827] leading-snug min-h-[3.6em]">
+        <p className="text-base sm:text-lg font-medium text-[#111827] leading-snug min-h-[3.6em]">
           {typedText}
           {!doneTyping && <span className="typewriter-cursor" aria-hidden="true" />}
         </p>
@@ -744,7 +741,7 @@ function UseCaseQueryPanel({ item }: { item: (typeof USE_CASES)[number] }) {
         {statusStep > 0 && (
           <div key={statusStep} className="flex items-center gap-2" style={{ animation: "showcaseFadeInUp 400ms ease-out both" }}>
             <QueryStatusDot />
-            <span className="text-xs font-medium text-white/70">{item.status[statusIndex]}</span>
+            <span className="text-xs font-medium text-gray-500">{item.status[statusIndex]}</span>
           </div>
         )}
       </div>
