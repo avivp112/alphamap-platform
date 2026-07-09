@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Network, Brain, Map, ChevronDown, Sparkles, TrendingUp } from "lucide-react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { Network, Brain, Map, ChevronDown, Sparkles, TrendingUp, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router";
 
 // ── Hero typewriter copy ─────────────────────────────────────────────────────
@@ -48,6 +48,7 @@ const VC_ROWS = [
 const VALUATION_TREND = [22, 19, 27, 33, 29, 41, 47, 43, 57, 64, 71, 88];
 const CHART_W = 600;
 const CHART_H = 200;
+const CHART_COLOR = "#7C8967"; // muted sage — matches the reference swatch
 
 function catmullRomPath(points: [number, number][]): string {
   if (points.length < 2) return "";
@@ -77,20 +78,272 @@ function buildChartPoints(values: number[], width: number, height: number, padY:
   });
 }
 
-const CHART_POINTS    = buildChartPoints(VALUATION_TREND, CHART_W, CHART_H, 16);
-const CHART_LINE_PATH = catmullRomPath(CHART_POINTS);
-const CHART_AREA_PATH = `${CHART_LINE_PATH} L${CHART_W},${CHART_H} L0,${CHART_H} Z`;
-const CHART_LAST_POINT = CHART_POINTS[CHART_POINTS.length - 1];
+// ── Startups tab: animated valuation card ────────────────────────────────────
+const STARTUP_VALUE_START = 48.2;
+const STARTUP_VALUE_TARGET = 61.5;
+const STARTUP_GAIN_TARGET = 24.3;
+const STARTUP_ANIM_MS = 1600;
+
+function StartupsShowcase() {
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    let raf: number;
+    const t0 = performance.now();
+    function tick(now: number) {
+      const p = Math.min(1, (now - t0) / STARTUP_ANIM_MS);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setProgress(eased);
+      if (p < 1) raf = requestAnimationFrame(tick);
+    }
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  const points   = useMemo(() => buildChartPoints(VALUATION_TREND, CHART_W, CHART_H, 16), []);
+  const linePath = useMemo(() => catmullRomPath(points), [points]);
+  const areaPath = `${linePath} L${CHART_W},${CHART_H} L0,${CHART_H} Z`;
+  const lastPoint = points[points.length - 1];
+
+  const value    = STARTUP_VALUE_START + (STARTUP_VALUE_TARGET - STARTUP_VALUE_START) * progress;
+  const gain     = STARTUP_GAIN_TARGET * progress;
+  const dotShown = progress > 0.98;
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3.5 mb-5 flex-none">
+        <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white font-bold text-base flex-none" style={{ background: "#0F172A" }}>A</div>
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-base font-bold text-[#111827]">Anthropic</span>
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700">AI / ML</span>
+          </div>
+          <p className="text-xs text-gray-400 mt-0.5">Private · Last round Mar 2026</p>
+        </div>
+      </div>
+
+      <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase flex-none">AlphaMap Valuation Estimate</span>
+      <div className="flex items-baseline gap-3 mt-1.5 flex-wrap flex-none">
+        <span className="text-4xl sm:text-5xl font-normal text-[#111827] tracking-tight tabular-nums" style={{ fontFamily: "'Playfair Display', serif" }}>
+          ${value.toFixed(1)}<span className="text-xl sm:text-2xl ml-1">B</span>
+        </span>
+        <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 tabular-nums">
+          <TrendingUp className="w-3 h-3" /> {gain.toFixed(1)}% · 90d
+        </span>
+      </div>
+      <p className="text-xs text-gray-400 mt-2 max-w-md flex-none">Modeled from funding velocity, hiring signals &amp; sector multiples across 40+ comparable rounds.</p>
+
+      <div className="mt-4 flex-1 min-h-0 flex flex-col">
+        <span className="text-[11px] font-bold tracking-[0.1em] text-gray-400 uppercase flex-none">Valuation trend · 12 mo</span>
+        <div className="relative flex-1 min-h-0 mt-2">
+          <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} preserveAspectRatio="none" className="w-full h-full">
+            <defs>
+              <linearGradient id="showcaseChartFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={CHART_COLOR} stopOpacity="0.22" />
+                <stop offset="100%" stopColor={CHART_COLOR} stopOpacity="0" />
+              </linearGradient>
+              <clipPath id="showcaseChartReveal">
+                <rect x="0" y="0" width={CHART_W * progress} height={CHART_H} />
+              </clipPath>
+            </defs>
+            <g clipPath="url(#showcaseChartReveal)">
+              <path d={areaPath} fill="url(#showcaseChartFill)" stroke="none" />
+              <path d={linePath} fill="none" stroke={CHART_COLOR} strokeWidth="3" strokeLinecap="round" />
+            </g>
+          </svg>
+          <span
+            className="absolute h-2.5 w-2.5 rounded-full transition-opacity duration-300"
+            style={{
+              left: `${(lastPoint[0] / CHART_W) * 100}%`,
+              top: `${(lastPoint[1] / CHART_H) * 100}%`,
+              transform: "translate(-50%, -50%)",
+              background: CHART_COLOR,
+              opacity: dotShown ? 1 : 0,
+            }}
+          >
+            <span
+              className="absolute inset-0 rounded-full animate-ping"
+              style={{ background: CHART_COLOR, opacity: dotShown ? 0.55 : 0 }}
+            />
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Deal Flow tab ─────────────────────────────────────────────────────────────
+function DealsShowcase() {
+  return (
+    <div className="flex flex-col h-full">
+      <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase flex-none">Deal Flow</span>
+      <h3 className="text-2xl font-bold text-[#111827] mt-2 mb-1 flex-none">Every private round, tracked in real time</h3>
+      <p className="text-sm text-gray-400 mb-6 max-w-lg flex-none">From seed checks to late-stage megarounds — sourced, verified, and structured the moment they close.</p>
+
+      <div className="overflow-x-auto -mx-1 flex-1 min-h-0">
+        <table className="w-full text-sm min-w-[560px]">
+          <thead>
+            <tr className="text-[10px] font-bold tracking-wider text-gray-400 uppercase border-b border-gray-100">
+              <th className="text-left py-2 px-1">Company</th>
+              <th className="text-left py-2 px-1">Type</th>
+              <th className="text-left py-2 px-1">Size</th>
+              <th className="text-left py-2 px-1">Lead Investors</th>
+              <th className="text-right py-2 px-1">Valuation</th>
+            </tr>
+          </thead>
+          <tbody>
+            {DEAL_ROWS.map((row) => (
+              <tr key={row.company} className="border-b border-gray-50 last:border-0">
+                <td className="py-3 px-1">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-7 w-7 rounded-lg flex items-center justify-center text-white text-[11px] font-bold flex-none" style={{ background: row.color }}>{row.logo}</div>
+                    <span className="font-semibold text-[#111827] whitespace-nowrap">{row.company}</span>
+                  </div>
+                </td>
+                <td className="py-3 px-1">
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${STAGE_STYLES[row.type]}`}>{row.type}</span>
+                </td>
+                <td className="py-3 px-1 font-medium text-[#111827] whitespace-nowrap">{row.size}</td>
+                <td className="py-3 px-1 text-gray-500 whitespace-nowrap">{row.leads}</td>
+                <td className="py-3 px-1 text-right">
+                  {row.estimated ? (
+                    <span className="inline-flex items-center gap-1 justify-end whitespace-nowrap">
+                      <Sparkles className="w-3 h-3 text-amber-500" />
+                      <span className="text-xs font-semibold italic text-amber-700">~{row.valuation}</span>
+                    </span>
+                  ) : (
+                    <span className="font-semibold text-[#111827] whitespace-nowrap">{row.valuation}</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── AI Sourcing tab ───────────────────────────────────────────────────────────
+function SourcingShowcase() {
+  return (
+    <div className="flex flex-col h-full">
+      <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase flex-none">Company Sourcing</span>
+      <h3 className="text-2xl font-bold text-[#111827] mt-2 mb-1 flex-none">Find your next investment</h3>
+      <p className="text-sm text-gray-400 mb-6 flex-none">Search across startups, VCs, and deals in plain English.</p>
+
+      <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-3 mb-6 flex-none">
+        <Sparkles className="w-4 h-4 text-[#0F172A]/40 flex-none" />
+        <span className="text-sm text-[#111827] font-medium">
+          Early-stage fintech infra in Europe
+          <span className="typewriter-cursor" aria-hidden="true" />
+        </span>
+        <button className="ml-auto flex-none rounded-full bg-[#0F172A] px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#1e293b] transition-colors">Ask</button>
+      </div>
+
+      <div className="overflow-x-auto -mx-1 flex-1 min-h-0">
+        <table className="w-full text-sm min-w-[560px]">
+          <thead>
+            <tr className="text-[10px] font-bold tracking-wider text-gray-400 uppercase border-b border-gray-100">
+              <th className="text-left py-2 px-1">Company</th>
+              <th className="text-left py-2 px-1">Match</th>
+              <th className="text-left py-2 px-1">Momentum</th>
+              <th className="text-left py-2 px-1">Sector</th>
+              <th className="text-right py-2 px-1">Stage</th>
+            </tr>
+          </thead>
+          <tbody>
+            {SOURCING_ROWS.map((row) => (
+              <tr key={row.company} className="border-b border-gray-50 last:border-0">
+                <td className="py-3 px-1 font-semibold text-[#111827] whitespace-nowrap">{row.company}</td>
+                <td className="py-3 px-1">
+                  <span className="inline-flex items-center justify-center min-w-[34px] px-1.5 py-0.5 rounded-md border border-blue-200 bg-blue-50 text-blue-700 font-bold text-xs">{row.match}</span>
+                </td>
+                <td className="py-3 px-1">
+                  <span className="inline-flex items-center gap-1 text-emerald-600 font-semibold text-xs">
+                    <TrendingUp className="w-3 h-3" />{row.momentum}
+                  </span>
+                </td>
+                <td className="py-3 px-1">
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 mr-1 whitespace-nowrap">{row.sector}</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 hidden sm:inline-block whitespace-nowrap">{row.tag2}</span>
+                </td>
+                <td className="py-3 px-1 text-right">
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${STAGE_STYLES[row.stage]}`}>{row.stage}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── VC Directory tab ──────────────────────────────────────────────────────────
+function VCsShowcase() {
+  return (
+    <div className="flex flex-col h-full">
+      <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase flex-none">VC Directory</span>
+      <h3 className="text-2xl font-bold text-[#111827] mt-2 mb-1 flex-none">Every fund that matters, in one view</h3>
+      <p className="text-sm text-gray-400 mb-6 max-w-lg flex-none">Stage focus, sector concentration, and portfolio activity — normalized across 5,000+ firms.</p>
+
+      <div className="grid sm:grid-cols-3 gap-4 flex-1 min-h-0">
+        {VC_ROWS.map((vc) => (
+          <div key={vc.name} className="rounded-2xl border border-gray-100 bg-gray-50/60 p-5">
+            <p className="font-bold text-[#111827] mb-2">{vc.name}</p>
+            <div className="flex flex-wrap gap-1 mb-3">
+              {vc.stages.map((s) => (
+                <span key={s} className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${STAGE_STYLES[s]}`}>{s}</span>
+              ))}
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-gray-400">AUM</span>
+              <span className="font-semibold text-[#111827]">{vc.aum}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs mt-1">
+              <span className="text-gray-400">Portfolio</span>
+              <span className="font-semibold text-[#111827]">{vc.portfolio} cos.</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const SHOWCASE_CONTENT: Record<string, React.ComponentType> = {
+  startups: StartupsShowcase,
+  deals:    DealsShowcase,
+  sourcing: SourcingShowcase,
+  vcs:      VCsShowcase,
+};
 
 export function LandingPage() {
   const navigate        = useNavigate();
   const [scrolled,      setScrolled]      = useState(false);
   const [typedCount,    setTypedCount]    = useState(0);
   const [subTypedCount, setSubTypedCount] = useState(0);
-  const [activeTab,     setActiveTab]     = useState("startups");
+  const [activeTab,     setActiveTab]     = useState("startups"); // tab bar highlight (target)
+  const [displayTab,    setDisplayTab]    = useState("startups"); // tab actually rendered
+  const [tabLoading,    setTabLoading]    = useState(false);
+  const tabSwitchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const headlineDone  = typedCount >= HEADLINE.length;
   const subheadStarted = subTypedCount > 0;
   const subheadDone    = subTypedCount >= SUBHEAD.length;
+
+  // Switching tabs shows a brief loading state before the new panel mounts
+  function handleTabClick(key: string) {
+    if (key === activeTab) return;
+    setActiveTab(key);
+    setTabLoading(true);
+    if (tabSwitchTimeout.current) clearTimeout(tabSwitchTimeout.current);
+    tabSwitchTimeout.current = setTimeout(() => {
+      setDisplayTab(key);
+      setTabLoading(false);
+    }, 550);
+  }
+  useEffect(() => () => { if (tabSwitchTimeout.current) clearTimeout(tabSwitchTimeout.current); }, []);
 
   // Header gains a light glass border/shadow once the page scrolls past the hero
   useEffect(() => {
@@ -236,7 +489,7 @@ export function LandingPage() {
               return (
                 <button
                   key={tab.key}
-                  onClick={() => setActiveTab(tab.key)}
+                  onClick={() => handleTabClick(tab.key)}
                   className={`relative flex-none px-4 py-2.5 text-sm font-semibold rounded-xl transition-all whitespace-nowrap ${
                     active ? "bg-white text-[#0F172A] shadow-sm" : "text-gray-400 hover:text-gray-600"
                   }`}
@@ -248,184 +501,29 @@ export function LandingPage() {
             })}
           </div>
 
-          {/* Window */}
-          <div className="rounded-[22px] bg-white border border-gray-100 p-6 sm:p-10 min-h-[460px]">
-            <div className="flex items-center gap-1.5 mb-6">
+          {/* Window — fixed size so switching tabs never resizes the card */}
+          <div className="rounded-[22px] bg-white border border-gray-100 p-6 sm:p-10 h-[600px] sm:h-[520px] flex flex-col overflow-hidden">
+            <div className="flex items-center gap-1.5 mb-6 flex-none">
               <span className="h-2.5 w-2.5 rounded-full bg-gray-200" />
               <span className="h-2.5 w-2.5 rounded-full bg-gray-200" />
               <span className="h-2.5 w-2.5 rounded-full bg-gray-200" />
             </div>
 
-            {activeTab === "startups" && (
-              <div>
-                <div className="flex items-center gap-4 mb-8">
-                  <div className="h-12 w-12 rounded-xl flex items-center justify-center text-white font-bold text-lg flex-none" style={{ background: "#0F172A" }}>C</div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg font-bold text-[#111827]">Cortex Analytics</span>
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700">AI / ML</span>
-                    </div>
-                    <p className="text-sm text-gray-400 mt-0.5">Private · Last round Jun 2026</p>
-                  </div>
-                </div>
-
-                <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase">AlphaMap Valuation Estimate</span>
-                <div className="flex items-end gap-3 mt-2 flex-wrap">
-                  <span className="text-5xl font-normal text-[#111827] tracking-tight" style={{ fontFamily: "'Playfair Display', serif" }}>$412M</span>
-                  <span className="mb-1.5 inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700">
-                    <TrendingUp className="w-3 h-3" /> 18.6% · 90d
+            <div className="flex-1 min-h-0 relative">
+              {tabLoading ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+                  <Loader2 className="w-6 h-6 animate-spin" style={{ color: "#0F172A" }} />
+                  <span className="text-xs font-semibold tracking-wide text-gray-400">
+                    Loading {SHOWCASE_TABS.find((t) => t.key === activeTab)?.label}…
                   </span>
                 </div>
-                <p className="text-sm text-gray-400 mt-3 max-w-md">Modeled from funding velocity, hiring signals &amp; sector multiples across 40+ comparable rounds.</p>
-
-                <div className="mt-8">
-                  <span className="text-[11px] font-bold tracking-[0.1em] text-gray-400 uppercase">Valuation trend · 12 mo</span>
-                  <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} className="w-full h-auto mt-2">
-                    <defs>
-                      <linearGradient id="showcaseChartFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#2563EB" stopOpacity="0.18" />
-                        <stop offset="100%" stopColor="#2563EB" stopOpacity="0" />
-                      </linearGradient>
-                    </defs>
-                    <path d={CHART_AREA_PATH} fill="url(#showcaseChartFill)" stroke="none" />
-                    <path d={CHART_LINE_PATH} fill="none" stroke="#2563EB" strokeWidth="2.5" strokeLinecap="round" />
-                    <circle cx={CHART_LAST_POINT[0]} cy={CHART_LAST_POINT[1]} r="9" fill="#2563EB" fillOpacity="0.15" />
-                    <circle cx={CHART_LAST_POINT[0]} cy={CHART_LAST_POINT[1]} r="4.5" fill="#2563EB" stroke="white" strokeWidth="2" />
-                  </svg>
-                </div>
-              </div>
-            )}
-
-            {activeTab === "deals" && (
-              <div>
-                <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase">Deal Flow</span>
-                <h3 className="text-2xl font-bold text-[#111827] mt-2 mb-1">Every private round, tracked in real time</h3>
-                <p className="text-sm text-gray-400 mb-6 max-w-lg">From seed checks to late-stage megarounds — sourced, verified, and structured the moment they close.</p>
-
-                <div className="overflow-x-auto -mx-1">
-                  <table className="w-full text-sm min-w-[560px]">
-                    <thead>
-                      <tr className="text-[10px] font-bold tracking-wider text-gray-400 uppercase border-b border-gray-100">
-                        <th className="text-left py-2 px-1">Company</th>
-                        <th className="text-left py-2 px-1">Type</th>
-                        <th className="text-left py-2 px-1">Size</th>
-                        <th className="text-left py-2 px-1">Lead Investors</th>
-                        <th className="text-right py-2 px-1">Valuation</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {DEAL_ROWS.map((row) => (
-                        <tr key={row.company} className="border-b border-gray-50 last:border-0">
-                          <td className="py-3 px-1">
-                            <div className="flex items-center gap-2.5">
-                              <div className="h-7 w-7 rounded-lg flex items-center justify-center text-white text-[11px] font-bold flex-none" style={{ background: row.color }}>{row.logo}</div>
-                              <span className="font-semibold text-[#111827] whitespace-nowrap">{row.company}</span>
-                            </div>
-                          </td>
-                          <td className="py-3 px-1">
-                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${STAGE_STYLES[row.type]}`}>{row.type}</span>
-                          </td>
-                          <td className="py-3 px-1 font-medium text-[#111827] whitespace-nowrap">{row.size}</td>
-                          <td className="py-3 px-1 text-gray-500 whitespace-nowrap">{row.leads}</td>
-                          <td className="py-3 px-1 text-right">
-                            {row.estimated ? (
-                              <span className="inline-flex items-center gap-1 justify-end whitespace-nowrap">
-                                <Sparkles className="w-3 h-3 text-amber-500" />
-                                <span className="text-xs font-semibold italic text-amber-700">~{row.valuation}</span>
-                              </span>
-                            ) : (
-                              <span className="font-semibold text-[#111827] whitespace-nowrap">{row.valuation}</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {activeTab === "sourcing" && (
-              <div>
-                <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase">Company Sourcing</span>
-                <h3 className="text-2xl font-bold text-[#111827] mt-2 mb-1">Find your next investment</h3>
-                <p className="text-sm text-gray-400 mb-6">Search across startups, VCs, and deals in plain English.</p>
-
-                <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-3 mb-6">
-                  <Sparkles className="w-4 h-4 text-[#0F172A]/40 flex-none" />
-                  <span className="text-sm text-[#111827] font-medium">
-                    Early-stage fintech infra in Europe
-                    <span className="typewriter-cursor" aria-hidden="true" />
-                  </span>
-                  <button className="ml-auto flex-none rounded-full bg-[#0F172A] px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#1e293b] transition-colors">Ask</button>
-                </div>
-
-                <div className="overflow-x-auto -mx-1">
-                  <table className="w-full text-sm min-w-[560px]">
-                    <thead>
-                      <tr className="text-[10px] font-bold tracking-wider text-gray-400 uppercase border-b border-gray-100">
-                        <th className="text-left py-2 px-1">Company</th>
-                        <th className="text-left py-2 px-1">Match</th>
-                        <th className="text-left py-2 px-1">Momentum</th>
-                        <th className="text-left py-2 px-1">Sector</th>
-                        <th className="text-right py-2 px-1">Stage</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {SOURCING_ROWS.map((row) => (
-                        <tr key={row.company} className="border-b border-gray-50 last:border-0">
-                          <td className="py-3 px-1 font-semibold text-[#111827] whitespace-nowrap">{row.company}</td>
-                          <td className="py-3 px-1">
-                            <span className="inline-flex items-center justify-center min-w-[34px] px-1.5 py-0.5 rounded-md border border-blue-200 bg-blue-50 text-blue-700 font-bold text-xs">{row.match}</span>
-                          </td>
-                          <td className="py-3 px-1">
-                            <span className="inline-flex items-center gap-1 text-emerald-600 font-semibold text-xs">
-                              <TrendingUp className="w-3 h-3" />{row.momentum}
-                            </span>
-                          </td>
-                          <td className="py-3 px-1">
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 mr-1 whitespace-nowrap">{row.sector}</span>
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 hidden sm:inline-block whitespace-nowrap">{row.tag2}</span>
-                          </td>
-                          <td className="py-3 px-1 text-right">
-                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${STAGE_STYLES[row.stage]}`}>{row.stage}</span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {activeTab === "vcs" && (
-              <div>
-                <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase">VC Directory</span>
-                <h3 className="text-2xl font-bold text-[#111827] mt-2 mb-1">Every fund that matters, in one view</h3>
-                <p className="text-sm text-gray-400 mb-6 max-w-lg">Stage focus, sector concentration, and portfolio activity — normalized across 5,000+ firms.</p>
-
-                <div className="grid sm:grid-cols-3 gap-4">
-                  {VC_ROWS.map((vc) => (
-                    <div key={vc.name} className="rounded-2xl border border-gray-100 bg-gray-50/60 p-5">
-                      <p className="font-bold text-[#111827] mb-2">{vc.name}</p>
-                      <div className="flex flex-wrap gap-1 mb-3">
-                        {vc.stages.map((s) => (
-                          <span key={s} className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${STAGE_STYLES[s]}`}>{s}</span>
-                        ))}
-                      </div>
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-gray-400">AUM</span>
-                        <span className="font-semibold text-[#111827]">{vc.aum}</span>
-                      </div>
-                      <div className="flex items-center justify-between text-xs mt-1">
-                        <span className="text-gray-400">Portfolio</span>
-                        <span className="font-semibold text-[#111827]">{vc.portfolio} cos.</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+              ) : (
+                (() => {
+                  const TabContent = SHOWCASE_CONTENT[displayTab];
+                  return <TabContent />;
+                })()
+              )}
+            </div>
           </div>
         </div>
       </section>
