@@ -670,15 +670,12 @@ function UseCasesSection() {
   const active = USE_CASES[activeIndex];
 
   return (
-    <section
-      className="w-full"
-      style={{ background: `linear-gradient(180deg, #F3F4F6 0%, ${USE_CASES_BG} 12%, ${USE_CASES_BG} 88%, #F3F4F6 100%)` }}
-    >
-      <div className="max-w-[1200px] mx-auto px-6 lg:px-12 py-28 lg:py-36 grid lg:grid-cols-2 gap-12 lg:gap-20">
-        {/* Left: headline + scrolling list */}
+    <section className="w-full" style={{ background: USE_CASES_BG }}>
+      <div className="max-w-[1200px] mx-auto px-6 lg:px-12 py-24 lg:py-32 grid lg:grid-cols-2 gap-12 lg:gap-20">
+        {/* Left: headline + compact list */}
         <div>
           <h2
-            className="text-3xl sm:text-4xl md:text-[2.75rem] font-normal text-[#111827] tracking-tight mb-16 lg:mb-24 max-w-lg"
+            className="text-3xl sm:text-4xl md:text-[2.75rem] font-normal text-[#111827] tracking-tight mb-12 lg:mb-16 max-w-lg"
             style={{ fontFamily: "'Playfair Display', serif", lineHeight: 1.25 }}
           >
             {USE_CASES_HEADLINE}
@@ -689,11 +686,11 @@ function UseCasesSection() {
               <div
                 key={item.heading}
                 ref={(el) => { itemRefs.current[i] = el; }}
-                className="min-h-[55vh] lg:min-h-[70vh] flex items-center border-t first:border-t-0"
-                style={{ borderColor: "rgba(17,24,39,0.1)" }}
+                className="py-7 sm:py-8 border-t first:border-t-0"
+                style={{ borderColor: "rgba(17,24,39,0.12)" }}
               >
                 <h3
-                  className="text-2xl sm:text-3xl font-semibold tracking-tight transition-colors duration-300"
+                  className="text-xl sm:text-2xl font-semibold tracking-tight transition-colors duration-300"
                   style={{ color: i === activeIndex ? "#111827" : "rgba(17,24,39,0.35)" }}
                 >
                   <span className="mr-2">&amp;</span>{item.heading}
