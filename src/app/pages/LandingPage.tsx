@@ -1,5 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Network, Brain, Map, ChevronDown, Sparkles, TrendingUp, Loader2, Search, ArrowLeft } from "lucide-react";
+import {
+  Network, Brain, Map, ChevronDown, Sparkles, TrendingUp, Loader2, Search, ArrowLeft,
+  Shield, Database, Boxes, CreditCard, FileText, DollarSign, Palette, Bot, Mail,
+  MessageSquare, Send, ShoppingBag, Wrench, Building2, MousePointer2, MousePointerClick,
+  type LucideIcon,
+} from "lucide-react";
 import { useNavigate } from "react-router";
 
 // ── Hero typewriter copy ─────────────────────────────────────────────────────
@@ -32,23 +37,56 @@ const SHOWCASE_TABS: { key: string; label: string }[] = [
   { key: "vcs",      label: "VC Directory" },
 ];
 
+// Shared brand mark per real company — a representative icon in the brand's
+// color, since we don't ship third-party trademarked logo assets.
+const COMPANY_META: Record<string, { icon: LucideIcon; color: string }> = {
+  "Anduril":    { icon: Shield,        color: "#0B0B10" },
+  "Databricks": { icon: Database,      color: "#FF3621" },
+  "Scale AI":   { icon: Boxes,         color: "#0A0A0A" },
+  "Perplexity": { icon: Search,        color: "#14B8A6" },
+  "Ramp":       { icon: CreditCard,    color: "#0C4A3E" },
+  "Notion":     { icon: FileText,      color: "#000000" },
+  "Stripe":     { icon: DollarSign,    color: "#635BFF" },
+  "Canva":      { icon: Palette,       color: "#7D2AE8" },
+  "Klarna":     { icon: ShoppingBag,   color: "#E8578C" },
+  "Retool":     { icon: Wrench,        color: "#2E2E2E" },
+  "Artisan":    { icon: Bot,           color: "#4C1D95" },
+  "Spara":      { icon: TrendingUp,    color: "#0F172A" },
+  "AiSDR":      { icon: Mail,          color: "#2563EB" },
+  "Jeeva AI":   { icon: MessageSquare, color: "#0369A1" },
+  "Floworks":   { icon: Send,          color: "#B45309" },
+};
+
+function CompanyLogo({ company, size = 28 }: { company: string; size?: number }) {
+  const meta = COMPANY_META[company] ?? { icon: Building2, color: "#6B7280" };
+  const Icon = meta.icon;
+  return (
+    <div
+      className="rounded-lg flex items-center justify-center text-white flex-none"
+      style={{ background: meta.color, width: size, height: size }}
+    >
+      <Icon style={{ width: size * 0.55, height: size * 0.55 }} strokeWidth={2.2} />
+    </div>
+  );
+}
+
 const DEAL_ROWS = [
-  { company: "Anduril",     logo: "AN", color: "#0B0B10", type: "Series G",  size: "$2.5B",  leads: "a16z, Founders Fund",     valuation: "$30.5B", estimated: false, pulse: true  },
-  { company: "Databricks",  logo: "DB", color: "#FF3621", type: "Series K",  size: "$1B",    leads: "Thrive Capital",          valuation: "$62B",   estimated: false, pulse: false },
-  { company: "Scale AI",    logo: "SC", color: "#0A0A0A", type: "Series F",  size: "$1B",    leads: "Accel",                   valuation: "$13.8B", estimated: false, pulse: true  },
-  { company: "Perplexity",  logo: "PX", color: "#14B8A6", type: "Series D",  size: "$500M",  leads: "IVP",                     valuation: "$18B",   estimated: true,  pulse: false },
-  { company: "Ramp",        logo: "RA", color: "#0C4A3E", type: "Series E",  size: "$150M",  leads: "Founders Fund",           valuation: "$16B",   estimated: false, pulse: true  },
-  { company: "Notion",      logo: "NO", color: "#000000", type: "Series C",  size: "$343M",  leads: "Coatue",                  valuation: "$10.2B", estimated: true,  pulse: false },
-  { company: "Stripe",      logo: "ST", color: "#635BFF", type: "Tender",    size: "$700M",  leads: "Goldman Sachs, Thrive",   valuation: "$91.5B", estimated: false, pulse: false },
-  { company: "Canva",       logo: "CV", color: "#7D2AE8", type: "Series F",  size: "$200M",  leads: "T. Rowe Price",           valuation: "$32B",   estimated: false, pulse: true  },
+  { company: "Anduril",     type: "Series G",  size: "$2.5B",  leads: "a16z, Founders Fund",     valuation: "$30.5B", estimated: false, pulse: true  },
+  { company: "Databricks",  type: "Series K",  size: "$1B",    leads: "Thrive Capital",          valuation: "$62B",   estimated: false, pulse: false },
+  { company: "Scale AI",    type: "Series F",  size: "$1B",    leads: "Accel",                   valuation: "$13.8B", estimated: false, pulse: true  },
+  { company: "Perplexity",  type: "Series D",  size: "$500M",  leads: "IVP",                     valuation: "$18B",   estimated: true,  pulse: false },
+  { company: "Ramp",        type: "Series E",  size: "$150M",  leads: "Founders Fund",           valuation: "$16B",   estimated: false, pulse: true  },
+  { company: "Notion",      type: "Series C",  size: "$343M",  leads: "Coatue",                  valuation: "$10.2B", estimated: true,  pulse: false },
+  { company: "Stripe",      type: "Tender",    size: "$700M",  leads: "Goldman Sachs, Thrive",   valuation: "$91.5B", estimated: false, pulse: false },
+  { company: "Canva",       type: "Series F",  size: "$200M",  leads: "T. Rowe Price",           valuation: "$32B",   estimated: false, pulse: true  },
 ];
 
 const SOURCING_ROWS = [
-  { company: "Artisan",  logo: "AR", color: "#4C1D95", match: 96, momentum: 92, sector: "B2B", tag2: "Outbound",     stage: "Series A" },
-  { company: "Spara",    logo: "SP", color: "#0F172A", match: 93, momentum: 88, sector: "B2B", tag2: "Inbound",      stage: "Seed"     },
-  { company: "AiSDR",    logo: "AI", color: "#2563EB", match: 90, momentum: 84, sector: "B2B", tag2: "Email",        stage: "Seed"     },
-  { company: "Jeeva AI", logo: "JE", color: "#0369A1", match: 87, momentum: 81, sector: "SaaS", tag2: "Multichannel", stage: "Series A" },
-  { company: "Floworks", logo: "FL", color: "#B45309", match: 84, momentum: 77, sector: "SaaS", tag2: "Cold Email",   stage: "Seed"     },
+  { company: "Artisan",  match: 96, momentum: 92, sector: "B2B", tag2: "Outbound",     stage: "Series A" },
+  { company: "Spara",    match: 93, momentum: 88, sector: "B2B", tag2: "Inbound",      stage: "Seed"     },
+  { company: "AiSDR",    match: 90, momentum: 84, sector: "B2B", tag2: "Email",        stage: "Seed"     },
+  { company: "Jeeva AI", match: 87, momentum: 81, sector: "SaaS", tag2: "Multichannel", stage: "Series A" },
+  { company: "Floworks", match: 84, momentum: 77, sector: "SaaS", tag2: "Cold Email",   stage: "Seed"     },
 ];
 
 const VC_FUNDS = [
@@ -241,7 +279,7 @@ function DealsShowcase() {
               <tr key={row.company} className="border-b border-gray-50 last:border-0">
                 <td className="py-2.5 px-1">
                   <div className="flex items-center gap-2.5">
-                    <div className="h-7 w-7 rounded-lg flex items-center justify-center text-white text-[10px] font-bold flex-none" style={{ background: row.color }}>{row.logo}</div>
+                    <CompanyLogo company={row.company} size={28} />
                     <span className="font-semibold text-[#111827] whitespace-nowrap">{row.company}</span>
                     {row.pulse && <LivePulseDot />}
                   </div>
@@ -273,13 +311,41 @@ function DealsShowcase() {
 // ── AI Sourcing tab ───────────────────────────────────────────────────────────
 const SOURCING_QUERY = "Early-stage AI SDR startups";
 const SOURCING_ASK_MS = 900;
+// Simulated-cursor timeline: appear → move onto the button → click (fires Ask) → fade out
+const CURSOR_START_MS = 350;
+const CURSOR_MOVE_MS  = 700;
+const CURSOR_CLICK_MS = 1350;
+const CURSOR_HIDE_MS  = 1750;
+
+type CursorStage = "hidden" | "start" | "move" | "click" | "gone";
+
+function SimulatedCursor({ stage }: { stage: CursorStage }) {
+  if (stage === "hidden" || stage === "gone") return null;
+  const atButton = stage === "move" || stage === "click";
+  const Icon = stage === "click" ? MousePointerClick : MousePointer2;
+  return (
+    <div
+      className="absolute pointer-events-none z-10 ease-in-out"
+      style={{
+        right: atButton ? "20px" : "38%",
+        top: atButton ? "50%" : "150%",
+        transform: `translate(50%, -50%) scale(${stage === "click" ? 0.85 : 1})`,
+        transition: `right ${CURSOR_MOVE_MS - CURSOR_START_MS}ms ease-in-out, top ${CURSOR_MOVE_MS - CURSOR_START_MS}ms ease-in-out, transform 200ms ease-in-out`,
+      }}
+    >
+      <Icon className="w-5 h-5" fill={stage === "click" ? "none" : "#0F172A"} style={{ color: "#0F172A", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.3))" }} />
+      {stage === "click" && (
+        <span className="absolute -inset-2.5 rounded-full border-2 border-[#0F172A]/50 animate-ping" />
+      )}
+    </div>
+  );
+}
 
 function SourcingShowcase() {
   const [asked,  setAsked]  = useState(false);
   const [asking, setAsking] = useState(false);
+  const [cursorStage, setCursorStage] = useState<CursorStage>("hidden");
   const askTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => () => { if (askTimeout.current) clearTimeout(askTimeout.current); }, []);
 
   function handleAsk() {
     if (asking || asked) return;
@@ -290,13 +356,27 @@ function SourcingShowcase() {
     }, SOURCING_ASK_MS);
   }
 
+  // Fully automatic demo — a simulated cursor moves to "Ask" and clicks it, no user input needed
+  useEffect(() => {
+    const timers = [
+      setTimeout(() => setCursorStage("start"), CURSOR_START_MS),
+      setTimeout(() => setCursorStage("move"), CURSOR_START_MS + 120),
+      setTimeout(() => { setCursorStage("click"); handleAsk(); }, CURSOR_CLICK_MS),
+      setTimeout(() => setCursorStage("gone"), CURSOR_HIDE_MS),
+    ];
+    return () => {
+      timers.forEach(clearTimeout);
+      if (askTimeout.current) clearTimeout(askTimeout.current);
+    };
+  }, []);
+
   return (
     <div className="flex flex-col h-full">
       <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase flex-none">Company Sourcing</span>
       <h3 className="text-2xl font-bold text-[#111827] mt-2 mb-1 flex-none">Find your next investment</h3>
       <p className="text-sm text-gray-400 mb-6 flex-none">Search across startups, VCs, and deals in plain English.</p>
 
-      <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-3 mb-6 flex-none">
+      <div className="relative flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-3 mb-6 flex-none">
         <Sparkles className="w-4 h-4 text-[#0F172A]/40 flex-none" />
         <span className="text-sm text-[#111827] font-medium">
           {SOURCING_QUERY}
@@ -310,13 +390,14 @@ function SourcingShowcase() {
           {asking && <Loader2 className="w-3 h-3 animate-spin" />}
           {asking ? "Searching…" : asked ? "Asked ✓" : "Ask"}
         </button>
+        <SimulatedCursor stage={cursorStage} />
       </div>
 
       <div className="flex-1 min-h-0 relative">
         {!asked && !asking && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-gray-300">
             <Search className="w-5 h-5" />
-            <span className="text-xs font-medium text-gray-400">Click &quot;Ask&quot; to see matching companies</span>
+            <span className="text-xs font-medium text-gray-400">AlphaMap is about to search…</span>
           </div>
         )}
         {asking && (
@@ -342,11 +423,13 @@ function SourcingShowcase() {
                   <tr
                     key={row.company}
                     className="border-b border-gray-50 last:border-0"
-                    style={{ animation: `showcaseFadeInUp 380ms ease-out ${i * 70}ms both` }}
+                    style={{
+                      animation: `showcaseFadeInUp 380ms ease-out ${i * 70}ms both, showcaseRowFlash 900ms ease-out ${i * 70 + 150}ms both`,
+                    }}
                   >
                     <td className="py-2.5 px-1">
                       <div className="flex items-center gap-2">
-                        <div className="h-6 w-6 rounded-md flex items-center justify-center text-white text-[9px] font-bold flex-none" style={{ background: row.color }}>{row.logo}</div>
+                        <CompanyLogo company={row.company} size={24} />
                         <span className="font-semibold text-[#111827] whitespace-nowrap">{row.company}</span>
                       </div>
                     </td>
@@ -377,9 +460,29 @@ function SourcingShowcase() {
 }
 
 // ── VC Directory tab ──────────────────────────────────────────────────────────
+const FUND_FLASH_MS = 1050;
+
 function VCsShowcase() {
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selectedKey,  setSelectedKey]  = useState<string | null>(null);
+  const [flashingKey,  setFlashingKey]  = useState<string | null>(null);
+  const flashTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selected = VC_FUNDS.find((f) => f.key === selectedKey) ?? null;
+
+  useEffect(() => () => { if (flashTimeout.current) clearTimeout(flashTimeout.current); }, []);
+
+  function handleFundClick(vc: typeof VC_FUNDS[number]) {
+    if (flashingKey) return;
+    if (vc.pulse) {
+      // Flash green a few times to call out the highlighted fund, then reveal its portfolio
+      setFlashingKey(vc.key);
+      flashTimeout.current = setTimeout(() => {
+        setFlashingKey(null);
+        setSelectedKey(vc.key);
+      }, FUND_FLASH_MS);
+    } else {
+      setSelectedKey(vc.key);
+    }
+  }
 
   if (selected) {
     return (
@@ -413,7 +516,12 @@ function VCsShowcase() {
                   className="border-b border-gray-50 last:border-0"
                   style={{ animation: `showcaseFadeInUp 340ms ease-out ${i * 70}ms both` }}
                 >
-                  <td className="py-3 px-1 font-semibold text-[#111827] whitespace-nowrap">{inv.company}</td>
+                  <td className="py-3 px-1">
+                    <div className="flex items-center gap-2.5">
+                      <CompanyLogo company={inv.company} size={26} />
+                      <span className="font-semibold text-[#111827] whitespace-nowrap">{inv.company}</span>
+                    </div>
+                  </td>
                   <td className="py-3 px-1">
                     <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${STAGE_STYLES[inv.round] ?? "bg-gray-100 border-gray-200 text-gray-600"}`}>{inv.round}</span>
                   </td>
@@ -446,7 +554,8 @@ function VCsShowcase() {
         {VC_FUNDS.map((vc) => (
           <button
             key={vc.key}
-            onClick={() => setSelectedKey(vc.key)}
+            onClick={() => handleFundClick(vc)}
+            style={flashingKey === vc.key ? { animation: `showcaseTripleFlash ${FUND_FLASH_MS}ms ease-in-out` } : undefined}
             className={`relative text-left rounded-2xl border p-5 transition-all hover:-translate-y-0.5 ${
               vc.pulse ? "border-emerald-300 bg-emerald-50/40 shadow-[0_0_0_1px_rgba(16,185,129,0.15)]" : "border-gray-100 bg-gray-50/60 hover:border-gray-200"
             }`}
