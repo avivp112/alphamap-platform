@@ -57,7 +57,7 @@ interface StartupRow {
   employee_count: number | null;
   country: string | null;
   city: string | null;
-  founders: string[] | null;
+  founders: Array<{ name: string; linkedin_url: string | null }> | null;
   description: string | null;
   updated_at: string;
 }
@@ -412,9 +412,9 @@ async function processCompany(
     return { result: existing ? "updated" : "inserted" };
   }
 
-  const cleanFounders = Array.isArray(extracted.founders)
+  const cleanFounderNames = Array.isArray(extracted.founders)
     ? extracted.founders.map(String).filter((f) => f.trim() !== "")
-    : null;
+    : [];
 
   // ── UPDATE existing startup ─────────────────────────────────────────────────
   if (existing) {
@@ -431,10 +431,14 @@ async function processCompany(
     if (extracted.city         && !existing.city)         patch.city         = extracted.city;
     if (extracted.founded_year && !existing.founded_year) patch.founded_year = extracted.founded_year;
 
-    // Merge founders (union of existing + new names, deduplicated)
-    if (cleanFounders && cleanFounders.length > 0) {
-      const merged = [...new Set([...(existing.founders ?? []), ...cleanFounders])];
-      if (merged.length > (existing.founders?.length ?? 0)) patch.founders = merged;
+    // Merge founders (union of existing + new names, deduplicated by name)
+    if (cleanFounderNames.length > 0) {
+      const existingFounders = existing.founders ?? [];
+      const existingNames = new Set(existingFounders.map((f) => f.name.toLowerCase()));
+      const newFounders = cleanFounderNames
+        .filter((name) => !existingNames.has(name.toLowerCase()))
+        .map((name) => ({ name, linkedin_url: null }));
+      if (newFounders.length > 0) patch.founders = [...existingFounders, ...newFounders];
     }
 
     if (Object.keys(patch).length > 0) {
@@ -511,7 +515,7 @@ async function processCompany(
       employee_count: extracted.employee_count ?? null,
       country:        extracted.country        ?? null,
       city:           extracted.city           ?? null,
-      founders:       cleanFounders && cleanFounders.length > 0 ? cleanFounders : null,
+      founders:       cleanFounderNames.length > 0 ? cleanFounderNames.map((name) => ({ name, linkedin_url: null })) : null,
     })
     .select("id")
     .single();

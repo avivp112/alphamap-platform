@@ -14,7 +14,9 @@ export type RoundType =
 export type GrowthTrend =
   | "rapid growth" | "moderate growth" | "stable" | "reduction" | "unknown";
 
-export interface Leader { name: string; role: string }
+export interface Leader { name: string; role: string; linkedin_url?: string | null }
+
+export interface Founder { name: string; linkedin_url?: string | null }
 
 export interface FundingRound {
   id: string;
@@ -42,14 +44,12 @@ export interface Startup {
   leadership: Leader[] | null;
   country: string | null;
   city: string | null;
-  founders: string[] | null;
+  founders: Founder[] | null;
   created_at: string;
   updated_at: string;
   funding_rounds: FundingRound[];
-  // Explicit competitor relationships — no such column exists in the schema
-  // yet, so this is always undefined today. Left typed here so the
-  // Competitors & Market tab picks it up automatically once a real
-  // `competitors` column/table is added; until then it renders as missing.
+  // Competitor names or URLs, manually curated by the research team — never
+  // inferred from sector/stage similarity (see CompetitorsMarketTab).
   competitors?: string[] | null;
 }
 
@@ -98,16 +98,16 @@ export interface AlphaScore {
 }
 
 export interface HeadcountPoint {
-  snapshot_date: string;
-  headcount: number;
+  recorded_date: string;
+  employee_count: number;
 }
 
-export async function fetchHeadcountHistory(companyId: string): Promise<HeadcountPoint[]> {
+export async function fetchHeadcountHistory(startupId: string): Promise<HeadcountPoint[]> {
   const { data, error } = await supabase
     .from("headcount_history")
-    .select("snapshot_date, headcount")
-    .eq("company_id", companyId)
-    .order("snapshot_date", { ascending: true });
+    .select("recorded_date, employee_count")
+    .eq("startup_id", startupId)
+    .order("recorded_date", { ascending: true });
   if (error) throw error;
   return (data ?? []) as HeadcountPoint[];
 }

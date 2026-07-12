@@ -805,15 +805,15 @@ function realHistoryToChartPoints(
   points: HeadcountPoint[],
 ): Array<{ year: string; headcount: number }> {
   if (points.length === 0) return [];
-  const first = new Date(points[0].snapshot_date);
-  const last  = new Date(points[points.length - 1].snapshot_date);
+  const first = new Date(points[0].recorded_date);
+  const last  = new Date(points[points.length - 1].recorded_date);
   const spanYears = (last.getTime() - first.getTime()) / (1000 * 60 * 60 * 24 * 365);
   return points.map((p) => {
-    const d = new Date(p.snapshot_date);
+    const d = new Date(p.recorded_date);
     const label = spanYears >= 2
       ? String(d.getFullYear())
       : d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
-    return { year: label, headcount: p.headcount };
+    return { year: label, headcount: p.employee_count };
   });
 }
 
@@ -910,9 +910,9 @@ function OverviewTab({
             {startup.founders.map((f, i) => (
               <span key={i} className="flex items-center gap-1.5 bg-gray-50 border border-gray-100 text-sm font-medium text-gray-700 px-3 py-1.5 rounded-full">
                 <div className="w-5 h-5 rounded-full bg-amber-100 flex items-center justify-center text-[10px] font-black text-amber-700">
-                  {f[0].toUpperCase()}
+                  {f.name[0].toUpperCase()}
                 </div>
-                {f}
+                {f.name}
               </span>
             ))}
           </div>
@@ -1602,9 +1602,9 @@ function StartupCard({
             {startup.founders.slice(0, 3).map((f, i) => (
               <span key={i} className="flex items-center gap-1 text-[10px] font-semibold text-gray-600 px-2 py-1 rounded-full bg-gray-50 border border-gray-200">
                 <div className="w-3.5 h-3.5 rounded-full bg-amber-100 flex items-center justify-center text-[8px] font-black text-amber-700">
-                  {f[0].toUpperCase()}
+                  {f.name[0].toUpperCase()}
                 </div>
-                {f.split(" ")[0]}
+                {f.name.split(" ")[0]}
               </span>
             ))}
             {startup.founders.length > 3 && (
@@ -1666,7 +1666,7 @@ function StartupListRow({ startup, onSelect }: { startup: Startup; onSelect: () 
         {startup.founders && startup.founders.length > 0 ? (
           <div className="flex flex-wrap gap-1">
             {startup.founders.slice(0, 2).map((f, i) => (
-              <span key={i} className="text-[10px] bg-gray-50 border border-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{f.split(" ")[0]}</span>
+              <span key={i} className="text-[10px] bg-gray-50 border border-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{f.name.split(" ")[0]}</span>
             ))}
             {startup.founders.length > 2 && <span className="text-[10px] text-gray-400">+{startup.founders.length - 2}</span>}
           </div>

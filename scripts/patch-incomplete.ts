@@ -52,7 +52,7 @@ interface StartupRow {
   industry: string | null;
   country: string | null;
   city: string | null;
-  founders: string[] | null;
+  founders: Array<{ name: string; linkedin_url: string | null }> | null;
 }
 
 interface RoundRow {

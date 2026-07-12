@@ -94,8 +94,8 @@ interface StartupRow {
   growth_trend: string | null;
   country: string | null;
   city: string | null;
-  founders: string[] | null;
-  leadership: Array<{ name: string; role: string }> | null;
+  founders: Array<{ name: string; linkedin_url: string | null }> | null;
+  leadership: Array<{ name: string; role: string; linkedin_url?: string | null }> | null;
   updated_at: string;
 }
 
@@ -608,11 +608,17 @@ async function patchStartupProfile(
   if (!existing.country      && profile.country)      patch.country      = profile.country;
   if (!existing.city         && profile.city)         patch.city         = profile.city;
 
-  // Founders: merge as union (additive, never destructive)
-  const cleanFounders = (profile.founders ?? []).map(String).filter((f) => f.trim());
-  if (cleanFounders.length > 0) {
-    const merged = [...new Set([...(existing.founders ?? []), ...cleanFounders])];
-    if (merged.length > (existing.founders?.length ?? 0)) patch.founders = merged;
+  // Founders: merge as union (additive, never destructive), deduped by name.
+  // Newly-extracted founders have no linkedin_url source yet, so it's null
+  // until a future enrichment pass fills it in.
+  const cleanFounderNames = (profile.founders ?? []).map(String).filter((f) => f.trim());
+  if (cleanFounderNames.length > 0) {
+    const existingFounders = existing.founders ?? [];
+    const existingNames = new Set(existingFounders.map((f) => f.name.toLowerCase()));
+    const newFounders = cleanFounderNames
+      .filter((name) => !existingNames.has(name.toLowerCase()))
+      .map((name) => ({ name, linkedin_url: null }));
+    if (newFounders.length > 0) patch.founders = [...existingFounders, ...newFounders];
   }
 
   // Leadership: set only when currently NULL (Tier 3 strategy: no blind overwrites)
@@ -652,22 +658,22 @@ async function patchStartupProfile(
 // ── Headcount history snapshot ────────────────────────────────────────────────
 // Upserts one row per company per calendar day. Subsequent runs on the same day
 // update the headcount value (latest wins), so re-runs are always safe.
-async function recordHeadcountSnapshot(startupId: string, headcount: number): Promise<void> {
+async function recordHeadcountSnapshot(startupId: string, employeeCount: number): Promise<void> {
   if (DRY_RUN) {
-    console.log(`    [DRY] Would upsert headcount_history: ${headcount}`);
+    console.log(`    [DRY] Would upsert headcount_history: ${employeeCount}`);
     return;
   }
   const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   const { error } = await supabase
     .from("headcount_history")
     .upsert(
-      { company_id: startupId, headcount, snapshot_date: today },
-      { onConflict: "company_id,snapshot_date" },
+      { startup_id: startupId, employee_count: employeeCount, snapshot_date: today },
+      { onConflict: "startup_id,snapshot_date" },
     );
   if (error) {
     console.warn(`    ⚠️  headcount_history snapshot failed: ${error.message}`);
   } else {
-    console.log(`    📈  headcount_history: ${headcount.toLocaleString()} recorded for ${today}`);
+    console.log(`    📈  headcount_history: ${employeeCount.toLocaleString()} recorded for ${today}`);
   }
 }
 // ── Main ──────────────────────────────────────────────────────────────────────

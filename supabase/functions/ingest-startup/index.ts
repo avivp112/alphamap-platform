@@ -343,9 +343,12 @@ ${researchContext}`,
     }
 
     // ── Phase 4a: Insert into startups ───────────────────────────────────────
-    const foundersArray = Array.isArray(extracted.founders)
+    const founderNames = Array.isArray(extracted.founders)
       ? (extracted.founders as unknown[]).map(String).filter((f) => f.trim() !== "")
-      : null;
+      : [];
+    // No linkedin_url source in this extraction pipeline yet — left null until
+    // a future enrichment pass fills it in (matches bulk_enrich_all.ts).
+    const foundersArray = founderNames.map((name) => ({ name, linkedin_url: null }));
 
     const startupRecord = {
       name: finalName,
@@ -356,7 +359,7 @@ ${researchContext}`,
       employee_count: extracted.employee_count ? Number(extracted.employee_count) : null,
       country: extracted.country ? String(extracted.country) : null,
       city: extracted.city ? String(extracted.city) : null,
-      founders: foundersArray && foundersArray.length > 0 ? foundersArray : null,
+      founders: foundersArray.length > 0 ? foundersArray : null,
     };
 
     const { data: insertedStartup, error: startupError } = await supabase
@@ -399,7 +402,7 @@ ${researchContext}`,
     }
 
     console.log(
-      `[ingest] ✓ ${finalName} | ${roundType} | ${extracted.city ?? "—"}, ${extracted.country ?? "—"} | founders: ${foundersArray?.join(", ") ?? "none"}`,
+      `[ingest] ✓ ${finalName} | ${roundType} | ${extracted.city ?? "—"}, ${extracted.country ?? "—"} | founders: ${founderNames.join(", ") || "none"}`,
     );
 
     return Response.json(
