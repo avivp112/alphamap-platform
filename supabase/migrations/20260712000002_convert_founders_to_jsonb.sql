@@ -4,6 +4,13 @@
 -- Description: Converts startups.founders from a plain text[] of names to a
 --              jsonb array of { name: text, linkedin_url: text | null }
 --              objects, matching the shape already used by `leadership`.
+--
+--              Postgres does not allow a subquery inside the USING clause of
+--              ALTER COLUMN ... TYPE ("cannot use subquery in transform
+--              expression"), so this uses the standard workaround instead:
+--              add a new jsonb column, backfill it with an UPDATE (which can
+--              use subqueries freely), then drop the old column and rename.
+--
 --              Existing string values are migrated in place, e.g.
 --                ARRAY['Patrick Collison', 'John Collison']
 --              becomes
@@ -15,17 +22,22 @@
 --              updated in the same change to write the new object shape.
 -- =============================================================================
 
-ALTER TABLE startups
-  ALTER COLUMN founders TYPE jsonb
-  USING (
-    CASE
-      WHEN founders IS NULL THEN NULL
-      ELSE (
-        SELECT jsonb_agg(jsonb_build_object('name', f, 'linkedin_url', NULL))
-        FROM unnest(founders) AS f
-      )
-    END
-  );
+ALTER TABLE startups ADD COLUMN IF NOT EXISTS founders_jsonb jsonb;
+
+UPDATE startups
+SET founders_jsonb = (
+  CASE
+    WHEN founders IS NULL THEN NULL
+    ELSE (
+      SELECT jsonb_agg(jsonb_build_object('name', f, 'linkedin_url', NULL))
+      FROM unnest(founders) AS f
+    )
+  END
+)
+WHERE founders_jsonb IS NULL;
+
+ALTER TABLE startups DROP COLUMN founders;
+ALTER TABLE startups RENAME COLUMN founders_jsonb TO founders;
 
 COMMENT ON COLUMN startups.founders
   IS 'JSONB array of { name: text, linkedin_url: text | null }, e.g. [{"name": "Patrick Collison", "linkedin_url": null}]';
