@@ -13,11 +13,15 @@ import {
   TrendingUp, TrendingDown, Minus,
   UserRound, LayoutGrid, List, ExternalLink,
   ChevronDown, ChevronLeft, ChevronRight, Building2, CheckSquare, Square,
-  GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2,
+  GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2, ChevronUp,
+  SlidersHorizontal,
 } from "lucide-react";
 import {
-  fetchStartups, ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
+  ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
+  fetchStartupsPage, fetchStartupsCount, fetchDistinctCountries, fetchStartupDetail,
+  fetchSuggestedPeers, STARTUPS_PAGE_SIZE,
   type Startup, type FundingRound, type RoundType, type AlphaScore, type HeadcountPoint,
+  type StartupListRow, type StartupSearchFilters,
 } from "../../lib/supabase";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -227,120 +231,14 @@ function classifyIndustry(industry: string | null): { parent: string; sub: strin
   return { parent: "Uncategorized", sub: industry };   // preserve original value as the sub label
 }
 
-// ── Country / Region helpers ──────────────────────────────────────────────────
-
-const COUNTRY_REGION: Record<string, string> = {
-  "Israel": "Middle East",
-  "UAE": "Middle East", "United Arab Emirates": "Middle East",
-  "Saudi Arabia": "Middle East", "Jordan": "Middle East", "Egypt": "Middle East",
-  "United States": "North America", "USA": "North America", "US": "North America",
-  "Canada": "North America",
-  "United Kingdom": "Europe", "UK": "Europe", "England": "Europe",
-  "Germany": "Europe", "France": "Europe", "Netherlands": "Europe",
-  "Sweden": "Europe", "Switzerland": "Europe", "Estonia": "Europe",
-  "Spain": "Europe", "Italy": "Europe", "Poland": "Europe",
-  "India": "Asia", "Singapore": "Asia", "China": "Asia",
-  "Japan": "Asia", "South Korea": "Asia", "Hong Kong": "Asia",
-  "Australia": "Oceania", "New Zealand": "Oceania",
-  "Brazil": "Latin America", "Mexico": "Latin America", "Colombia": "Latin America",
-};
-
-function getRegion(country: string | null): string {
-  if (!country) return "unknown";
-  return COUNTRY_REGION[country] ?? "other";
-}
-
-// ── Stage helpers ─────────────────────────────────────────────────────────────
-
-type StageGroup = "early" | "growth" | "late" | "unknown";
-const STAGE_GROUP_ORDER: StageGroup[] = ["early", "growth", "late"];
-
-function getStageGroup(rt: RoundType | null | undefined): StageGroup {
-  if (!rt || rt === "Other" || rt === "Bootstrapped" || rt === "Grant") return "unknown";
-  if (["Pre-Seed", "Seed", "Convertible Note", "Bridge"].includes(rt)) return "early";
-  if (["Series A", "Series B"].includes(rt)) return "growth";
-  return "late";
-}
-
-function isAdjacentStage(a: StageGroup, b: StageGroup): boolean {
-  if (a === "unknown" || b === "unknown") return false;
-  return Math.abs(STAGE_GROUP_ORDER.indexOf(a) - STAGE_GROUP_ORDER.indexOf(b)) === 1;
-}
-
-// ── Weighted peer scoring (Industry 50 / Stage 30 / Geo 20) ──────────────────
-
-const PEER_THRESHOLD = 75;
-
-function scorePeer(target: Startup, candidate: Startup): number {
-  let score = 0;
-
-  // Industry (50 pts)
-  const tt = classifyIndustry(target.industry);
-  const ct = classifyIndustry(candidate.industry);
-  if (tt.parent !== "Uncategorized" && ct.parent !== "Uncategorized") {
-    if (tt.sub === ct.sub)         score += 50;
-    else if (tt.parent === ct.parent) score += 30;
-  }
-
-  // Stage (30 pts)
-  const ts = getStageGroup(target.funding_rounds?.[0]?.round_type);
-  const cs = getStageGroup(candidate.funding_rounds?.[0]?.round_type);
-  if (ts !== "unknown" && cs !== "unknown") {
-    if (ts === cs)                 score += 30;
-    else if (isAdjacentStage(ts, cs)) score += 15;
-  }
-
-  // Geography (20 pts)
-  if (target.country && candidate.country) {
-    if (target.country === candidate.country) score += 20;
-    else if (getRegion(target.country) === getRegion(candidate.country) &&
-             getRegion(target.country) !== "other") score += 8;
-  }
-
-  return score;
-}
-
-function findPeerGroup(target: Startup, pool: Startup[]): Array<{ startup: Startup; score: number }> {
-  return pool
-    .filter((s) => s.id !== target.id)
-    .map((s) => ({ startup: s, score: scorePeer(target, s) }))
-    .filter((x) => x.score >= PEER_THRESHOLD)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 4);
-}
-
-function totalRaised(s: Startup): number {
-  return (s.funding_rounds ?? []).reduce((sum, r) => sum + (r.amount_raised ?? 0), 0);
-}
-
-// Profile completeness score (0–100).
-// Mirrors the Tier 1/2/3 logic used by the bulk-enrichment pipeline:
-//   Tier 3 (complete)  ≈ score ≥ 60
-//   Tier 2 (partial)   ≈ score 20–59
-//   Tier 1 (empty)     ≈ score  0–19
-// Used to sort grid cards so richest profiles surface first.
-function completenessScore(s: Startup): number {
-  let n = 0;
-  // Profile richness (40 pts)
-  if (s.description)                                   n += 20;
-  if (s.industry)                                      n += 8;
-  if (s.website)                                       n += 4;
-  if (s.founded_year)                                  n += 4;
-  if (s.country)                                       n += 4;
-  // Team signals (20 pts)
-  if (s.founders   && s.founders.length   > 0)         n += 10;
-  if (s.leadership && s.leadership.length > 0)         n += 10;
-  // Growth signals (15 pts)
-  if (s.employee_count)                                n += 8;
-  if (s.growth_trend && s.growth_trend !== "unknown")  n += 7;
-  // Funding data (25 pts)
-  const rounds     = s.funding_rounds ?? [];
-  const realRounds = rounds.filter(r => r.amount_raised && r.amount_raised > 0);
-  if (rounds.length      > 0)                          n += 5;
-  if (realRounds.length  > 0)                          n += 10;
-  if (realRounds.length >= 2)                          n += 5;
-  if (rounds.some(r => r.valuation && r.valuation > 0)) n += 5;
-  return n;
+// Keywords from INDUSTRY_KEYWORD_MAP that resolve to a given {parent, sub} —
+// used to build a server-side ILIKE-OR filter for sub-sector drill-down
+// without duplicating the keyword map itself as SQL (only the parent-level
+// bucket is ported server-side, via classify_sector_parent() in the DB).
+function keywordsForSub(parent: string, sub: string): string[] {
+  return INDUSTRY_KEYWORD_MAP
+    .filter(([, mapping]) => mapping.parent === parent && mapping.sub === sub)
+    .map(([keyword]) => keyword);
 }
 
 // ── Step Slider ───────────────────────────────────────────────────────────────
@@ -430,7 +328,37 @@ const PROGRESS_MESSAGES = [
   "Saving to AlphaMap…",
 ];
 
+// ── Sidebar Filter Accordion ──────────────────────────────────────────────────
+// Collapsible section shell used for every sidebar filter category.
+
+function FilterAccordion({
+  title, defaultOpen = true, badge, children,
+}: {
+  title: string; defaultOpen?: boolean; badge?: React.ReactNode; children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border-b border-gray-100 py-4 first:pt-0 last:border-b-0">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between gap-2 text-left group"
+      >
+        <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider group-hover:text-[#0F172A] transition-colors">{title}</span>
+        <div className="flex items-center gap-2 flex-none">
+          {badge}
+          {open
+            ? <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
+            : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />}
+        </div>
+      </button>
+      {open && <div className="mt-3">{children}</div>}
+    </div>
+  );
+}
+
 // ── Hierarchical Sector Filter ────────────────────────────────────────────────
+// Tag/checkbox-style list for the sidebar: selecting a parent sector reveals
+// its sub-sectors nested directly beneath it.
 
 function HierarchicalSectorFilter({
   parentSector, onParentChange,
@@ -440,40 +368,103 @@ function HierarchicalSectorFilter({
   subSector:    string; onSubChange:    (v: string) => void;
 }) {
   const parents = Object.keys(SECTOR_TAXONOMY).filter((p) => p !== "Uncategorized");
-  const subs    = parentSector ? (SECTOR_TAXONOMY[parentSector] ?? []) : [];
 
-  const base    = "appearance-none pl-3 pr-8 py-2 text-xs font-semibold border rounded-[10px] bg-white transition-all focus:outline-none focus:ring-2 focus:ring-[#0F172A]/15 cursor-pointer";
-  const active  = "border-[#0F172A] text-[#0F172A]";
-  const passive = "border-gray-200 text-gray-500";
-  const chevron = "text-gray-400";
+  function selectParent(p: string) {
+    onParentChange(parentSector === p ? "" : p);
+    onSubChange("");
+  }
+
+  const rowBase = "w-full text-left px-2.5 py-1.5 rounded-[8px] text-xs font-semibold transition-colors flex items-center justify-between";
+  const rowActive = "bg-[#0F172A] text-white";
+  const rowPassive = "text-gray-600 hover:bg-gray-50";
 
   return (
-    <div className="flex items-center gap-1.5">
-      <div className="relative">
-        <select
-          value={parentSector}
-          onChange={(e) => { onParentChange(e.target.value); onSubChange(""); }}
-          className={`${base} ${parentSector ? active : passive}`}
-        >
-          <option value="">All Sectors</option>
-          {parents.map((p) => <option key={p} value={p}>{p}</option>)}
-          <option value="Uncategorized">Uncategorized</option>
-        </select>
-        <ChevronDown className={`absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none ${chevron}`} />
+    <div className="space-y-0.5 max-h-80 overflow-y-auto pr-1">
+      <button onClick={() => selectParent("")} className={`${rowBase} ${!parentSector ? rowActive : rowPassive}`}>
+        All Sectors
+      </button>
+      {parents.map((p) => {
+        const subs = SECTOR_TAXONOMY[p] ?? [];
+        const isActive = parentSector === p;
+        return (
+          <div key={p}>
+            <button onClick={() => selectParent(p)} className={`${rowBase} ${isActive ? rowActive : rowPassive}`}>
+              <span>{p}</span>
+              {isActive && subs.length > 0 && <ChevronDown className="w-3 h-3 flex-none" />}
+            </button>
+            {isActive && subs.length > 0 && (
+              <div className="ml-2.5 mt-1 mb-1.5 space-y-0.5 border-l-2 border-gray-100 pl-2.5">
+                <button
+                  onClick={() => onSubChange("")}
+                  className={`w-full text-left px-2 py-1 rounded-[6px] text-[11px] transition-colors ${!subSector ? "text-[#0F172A] font-bold bg-gray-50" : "text-gray-500 font-medium hover:text-gray-700"}`}
+                >
+                  All {p}
+                </button>
+                {subs.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => onSubChange(subSector === s ? "" : s)}
+                    className={`w-full text-left px-2 py-1 rounded-[6px] text-[11px] transition-colors ${subSector === s ? "text-[#0F172A] font-bold bg-gray-50" : "text-gray-500 font-medium hover:text-gray-700"}`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      <button onClick={() => selectParent("Uncategorized")} className={`${rowBase} ${parentSector === "Uncategorized" ? rowActive : rowPassive}`}>
+        Uncategorized
+      </button>
+    </div>
+  );
+}
+
+// Small pill shown in a collapsed FilterAccordion header when a filter in
+// that section is active, so the current selection is visible even closed.
+function FilterBadge({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-[#0F172A] border border-gray-200 whitespace-nowrap max-w-[110px] truncate">
+      {children}
+    </span>
+  );
+}
+
+// ── Country Filter (sidebar) ─────────────────────────────────────────────────
+// Flat searchable tag list — countries have no hierarchy, unlike sectors.
+
+function CountryFilterList({
+  countries, value, onChange,
+}: {
+  countries: string[]; value: string; onChange: (v: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const filtered = useMemo(
+    () => countries.filter((c) => c.toLowerCase().includes(query.toLowerCase())),
+    [countries, query],
+  );
+  const rowBase = "w-full text-left px-2.5 py-1.5 rounded-[8px] text-xs font-semibold transition-colors";
+  const rowActive = "bg-[#0F172A] text-white";
+  const rowPassive = "text-gray-600 hover:bg-gray-50";
+
+  return (
+    <div>
+      <div className="relative mb-2">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-300" />
+        <input
+          type="text" value={query} onChange={(e) => setQuery(e.target.value)}
+          placeholder="Filter countries…"
+          className="w-full pl-7 pr-2 py-1.5 text-xs bg-gray-50 border border-gray-100 rounded-[8px] focus:outline-none focus:border-gray-300 focus:ring-2 focus:ring-[#0F172A]/10 transition-all"
+        />
       </div>
-      {parentSector && subs.length > 0 && (
-        <div className="relative">
-          <select
-            value={subSector}
-            onChange={(e) => onSubChange(e.target.value)}
-            className={`${base} ${subSector ? active : passive}`}
-          >
-            <option value="">All {parentSector}</option>
-            {subs.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <ChevronDown className={`absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none ${chevron}`} />
-        </div>
-      )}
+      <div className="space-y-0.5 max-h-56 overflow-y-auto pr-1">
+        <button onClick={() => onChange("")} className={`${rowBase} ${!value ? rowActive : rowPassive}`}>All Countries</button>
+        {filtered.map((c) => (
+          <button key={c} onClick={() => onChange(value === c ? "" : c)} className={`${rowBase} ${value === c ? rowActive : rowPassive}`}>{c}</button>
+        ))}
+        {filtered.length === 0 && <p className="text-[11px] text-gray-300 px-2 py-1">No matches</p>}
+      </div>
     </div>
   );
 }
@@ -999,9 +990,9 @@ function VerticalFundingTimeline({ rounds }: { rounds: FundingRound[] }) {
   );
 }
 
-function FundingValuationTab({ startup, sortedRounds }: { startup: Startup; sortedRounds: FundingRound[] }) {
+function FundingValuationTab({ sortedRounds }: { sortedRounds: FundingRound[] }) {
   const latestRound = sortedRounds[sortedRounds.length - 1] ?? null;
-  const raised = totalRaised(startup);
+  const raised = sortedRounds.reduce((sum, r) => sum + (r.amount_raised ?? 0), 0);
 
   return (
     <div className="space-y-6">
@@ -1248,19 +1239,33 @@ const TEARSHEET_TABS: { id: TearsheetTab; label: string }[] = [
   { id: "competitors", label: "Competitors & Market" },
 ];
 
-function TearsheetModal({ startup, onClose }: { startup: Startup; onClose: () => void }) {
+function TearsheetModal({ startup, onClose }: { startup: StartupListRow; onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<TearsheetTab>("overview");
 
-  const latestRound = startup.funding_rounds?.[0] ?? null;
-  const roundType   = latestRound?.round_type ?? null;
+  const roundType   = startup.latest_round_type ?? null;
   const roundStyle  = roundType ? (ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]) : null;
   const location    = [startup.city, startup.country].filter(Boolean).join(", ") || null;
 
+  // The list only carries a lightweight summary row (no funding_rounds), so
+  // the full record — including every round, needed by the Funding/Cap Table
+  // tabs — is fetched on demand the moment the tearsheet opens.
+  const [detail, setDetail]             = useState<Startup | null>(null);
+  const [detailLoading, setDetailLoading] = useState(true);
+  const [detailErr, setDetailErr]       = useState(false);
+
+  useEffect(() => {
+    setDetail(null); setDetailLoading(true); setDetailErr(false);
+    fetchStartupDetail(startup.id)
+      .then(setDetail)
+      .catch(() => setDetailErr(true))
+      .finally(() => setDetailLoading(false));
+  }, [startup.id]);
+
   const sortedRounds = useMemo(
-    () => [...(startup.funding_rounds ?? [])].sort(
+    () => [...(detail?.funding_rounds ?? [])].sort(
       (a, b) => (a.announcement_date ?? "").localeCompare(b.announcement_date ?? ""),
     ),
-    [startup.funding_rounds],
+    [detail],
   );
 
   // AlphaMap Score is fetched once here and shared by Overview + Talent tabs
@@ -1379,17 +1384,28 @@ function TearsheetModal({ startup, onClose }: { startup: Startup; onClose: () =>
           className="flex-1 overflow-y-auto px-6 py-5 bg-white"
           style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(15,23,42,0.15) transparent" }}
         >
-          {activeTab === "overview" && (
-            <OverviewTab startup={startup} alphaScore={alphaScore} alphaLoading={alphaLoading} alphaErr={alphaErr} />
+          {detailLoading ? (
+            <div className="flex items-center justify-center py-32"><Loader2 className="w-6 h-6 text-[#F59E0B] animate-spin" /></div>
+          ) : detailErr || !detail ? (
+            <div className="flex flex-col items-center py-24 gap-3 text-center">
+              <AlertCircle className="w-8 h-8 text-red-400" />
+              <p className="text-sm font-semibold text-[#0F172A]">Failed to load company details</p>
+            </div>
+          ) : (
+            <>
+              {activeTab === "overview" && (
+                <OverviewTab startup={detail} alphaScore={alphaScore} alphaLoading={alphaLoading} alphaErr={alphaErr} />
+              )}
+              {activeTab === "funding" && (
+                <FundingValuationTab sortedRounds={sortedRounds} />
+              )}
+              {activeTab === "captable" && <CapTableTab startup={detail} />}
+              {activeTab === "talent" && (
+                <TalentGrowthTab startup={detail} alphaScore={alphaScore} alphaLoading={alphaLoading} />
+              )}
+              {activeTab === "competitors" && <CompetitorsMarketTab startup={detail} />}
+            </>
           )}
-          {activeTab === "funding" && (
-            <FundingValuationTab startup={startup} sortedRounds={sortedRounds} />
-          )}
-          {activeTab === "captable" && <CapTableTab startup={startup} />}
-          {activeTab === "talent" && (
-            <TalentGrowthTab startup={startup} alphaScore={alphaScore} alphaLoading={alphaLoading} />
-          )}
-          {activeTab === "competitors" && <CompetitorsMarketTab startup={startup} />}
         </div>
       </div>
     </div>
@@ -1399,29 +1415,35 @@ function TearsheetModal({ startup, onClose }: { startup: Startup; onClose: () =>
 // ── Comparison Modal ──────────────────────────────────────────────────────────
 
 function CompareModal({
-  startups, allStartups, onClose, onAddPeer,
+  startups, onClose, onAddPeer,
 }: {
-  startups: Startup[]; allStartups: Startup[];
-  onClose: () => void; onAddPeer: (s: Startup) => void;
+  startups: StartupListRow[];
+  onClose: () => void; onAddPeer: (s: StartupListRow) => void;
 }) {
-  const peers = useMemo(
-    () =>
-      findPeerGroup(startups[0], allStartups)
-        .filter(({ startup: p }) => !startups.some((s) => s.id === p.id))
-        .slice(0, 3),
-    [startups, allStartups],
-  );
+  // Suggested peers are resolved server-side (same sector_parent + stage
+  // bucket) instead of scanning the full in-memory dataset — required now
+  // that only the current page of startups is ever held client-side.
+  const [peers, setPeers] = useState<StartupListRow[]>([]);
+  const [peersLoading, setPeersLoading] = useState(true);
+
+  useEffect(() => {
+    setPeersLoading(true);
+    fetchSuggestedPeers(startups[0].id, startups.map((s) => s.id), 3)
+      .then(setPeers)
+      .catch(() => setPeers([]))
+      .finally(() => setPeersLoading(false));
+  }, [startups]);
 
   const chartData = startups.map((s) => ({
     name:  s.name.length > 10 ? s.name.slice(0, 9) + "…" : s.name,
-    total: totalRaised(s) / 1e6,
-    color: ROUND_HEX[s.funding_rounds?.[0]?.round_type ?? "Other"] ?? "#9CA3AF",
+    total: s.total_raised / 1e6,
+    color: ROUND_HEX[s.latest_round_type ?? "Other"] ?? "#9CA3AF",
   }));
 
   const rows: Array<{ label: string; values: React.ReactNode[] }> = [
-    { label: "Stage",       values: startups.map((s) => { const rt = s.funding_rounds?.[0]?.round_type; return rt ? <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${ROUND_STYLE[rt] ?? ROUND_STYLE["Other"]}`}>{rt}</span> : <span className="text-slate-600">—</span>; }) },
-    { label: "Total Raised",values: startups.map((s) => { const t = totalRaised(s); return <span className="font-bold text-white">{t ? fmt(t) : "—"}</span>; }) },
-    { label: "Valuation",   values: startups.map((s) => <span className="font-bold text-white">{fmt(s.funding_rounds?.[0]?.valuation)}</span>) },
+    { label: "Stage",       values: startups.map((s) => { const rt = s.latest_round_type; return rt ? <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${ROUND_STYLE[rt] ?? ROUND_STYLE["Other"]}`}>{rt}</span> : <span className="text-slate-600">—</span>; }) },
+    { label: "Total Raised",values: startups.map((s) => <span className="font-bold text-white">{s.total_raised ? fmt(s.total_raised) : "—"}</span>) },
+    { label: "Valuation",   values: startups.map((s) => <span className="font-bold text-white">{fmt(s.latest_valuation)}</span>) },
     { label: "Employees",   values: startups.map((s) => <div className="flex flex-col items-center gap-1"><span className="font-bold text-white">{fmtEmp(s.employee_count)}</span>{s.growth_trend && <GrowthTrendBadge trend={s.growth_trend} />}</div>) },
     { label: "Sector",      values: startups.map((s) => { const t = classifyIndustry(s.industry); return <div className="text-center"><div className="text-xs text-slate-300">{t.parent}</div><div className="text-[9px] text-slate-500">{t.sub !== t.parent && t.sub !== "Uncategorized" ? t.sub : ""}</div></div>; }) },
     { label: "Location",    values: startups.map((s) => <span className="text-slate-300 text-xs">{[s.city, s.country].filter(Boolean).join(", ") || "—"}</span>) },
@@ -1490,13 +1512,17 @@ function CompareModal({
             </div>
           )}
           {/* Peer suggestions */}
-          {peers.length > 0 && (
+          {peersLoading ? (
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />Finding peers…
+            </div>
+          ) : peers.length > 0 && (
             <div>
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">
-                Suggested Peers <span className="text-slate-600 font-medium normal-case">· ≥ {PEER_THRESHOLD}% match</span>
+                Suggested Peers <span className="text-slate-600 font-medium normal-case">· same sector &amp; stage</span>
               </h3>
               <div className="flex flex-wrap gap-2">
-                {peers.map(({ startup: peer, score }) => (
+                {peers.map((peer) => (
                   <button key={peer.id} onClick={() => onAddPeer(peer)} disabled={startups.length >= 3}
                     className="flex items-center gap-2 bg-[#091422] border border-[#1a2a3f] hover:border-[#243858] disabled:opacity-40 disabled:cursor-not-allowed rounded-[12px] px-3 py-2 transition-colors">
                     <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-black flex-none ${avatarColor(peer.name)}`}>{peer.name[0]}</div>
@@ -1504,7 +1530,6 @@ function CompareModal({
                       <div className="text-xs font-bold text-white">{peer.name}</div>
                       <div className="text-[9px] text-slate-500">{peer.industry}</div>
                     </div>
-                    <span className="text-[9px] text-slate-600 font-bold ml-1">{score}%</span>
                     <Plus className="w-3 h-3 text-slate-500" />
                   </button>
                 ))}
@@ -1525,11 +1550,10 @@ function CompareModal({
 function StartupCard({
   startup, onSelect, selected, onToggleSelect,
 }: {
-  startup: Startup; onSelect: () => void;
+  startup: StartupListRow; onSelect: () => void;
   selected: boolean; onToggleSelect: (e: React.MouseEvent) => void;
 }) {
-  const latestRound = startup.funding_rounds?.[0] ?? null;
-  const roundType   = latestRound?.round_type ?? null;
+  const roundType   = startup.latest_round_type ?? null;
   const location    = [startup.city, startup.country].filter(Boolean).join(", ") || null;
   const cardGlow    = roundType ? (ROUND_GLOW[roundType] ?? ROUND_GLOW.default) : ROUND_GLOW.default;
 
@@ -1585,11 +1609,11 @@ function StartupCard({
         <div className="grid grid-cols-2 gap-2 mb-4">
           <div className="rounded-[10px] px-3 py-2 bg-gray-50 border border-gray-100">
             <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Valuation</div>
-            <div className="text-sm font-bold text-gray-900">{fmt(latestRound?.valuation)}</div>
+            <div className="text-sm font-bold text-gray-900">{fmt(startup.latest_valuation)}</div>
           </div>
           <div className="rounded-[10px] px-3 py-2 bg-gray-50 border border-gray-100">
             <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Raised</div>
-            <div className="text-sm font-bold text-gray-900">{fmt(totalRaised(startup)) || "—"}</div>
+            <div className="text-sm font-bold text-gray-900">{fmt(startup.total_raised) || "—"}</div>
           </div>
         </div>
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500 mb-3">
@@ -1640,9 +1664,8 @@ function StartupCard({
 
 // ── List Row ──────────────────────────────────────────────────────────────────
 
-function StartupListRow({ startup, onSelect }: { startup: Startup; onSelect: () => void }) {
-  const latestRound = startup.funding_rounds?.[0] ?? null;
-  const roundType   = latestRound?.round_type ?? null;
+function StartupTableRow({ startup, onSelect }: { startup: StartupListRow; onSelect: () => void }) {
+  const roundType   = startup.latest_round_type ?? null;
   const roundStyle  = roundType ? (ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]) : null;
   return (
     <tr onClick={onSelect} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors group">
@@ -1659,8 +1682,8 @@ function StartupListRow({ startup, onSelect }: { startup: Startup; onSelect: () 
         {roundType && roundStyle ? <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${roundStyle}`}>{roundType}</span> : <span className="text-xs text-gray-300">—</span>}
       </td>
       <td className="py-3.5 px-4 text-xs text-gray-500">{[startup.city, startup.country].filter(Boolean).join(", ") || "—"}</td>
-      <td className="py-3.5 px-4 text-sm font-bold text-[#0F172A]">{fmt(latestRound?.valuation)}</td>
-      <td className="py-3.5 px-4 text-sm font-bold text-[#0F172A]">{fmt(totalRaised(startup)) || "—"}</td>
+      <td className="py-3.5 px-4 text-sm font-bold text-[#0F172A]">{fmt(startup.latest_valuation)}</td>
+      <td className="py-3.5 px-4 text-sm font-bold text-[#0F172A]">{fmt(startup.total_raised) || "—"}</td>
       <td className="py-3.5 px-4 text-xs text-gray-500">{fmtEmp(startup.employee_count)}</td>
       <td className="py-3.5 px-4">
         {startup.founders && startup.founders.length > 0 ? (
@@ -1812,8 +1835,6 @@ function InfoTooltip({
 
 // ── Pagination ────────────────────────────────────────────────────────────────
 
-const PAGE_SIZE = 60;
-
 function getPageRange(current: number, total: number): Array<number | "…"> {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
   const range: Array<number | "…"> = [1];
@@ -1868,14 +1889,31 @@ function Pagination({ page, pageCount, onChange }: {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
+function headcountRange(step: HeadcountStep): { min?: number; max?: number } {
+  switch (step) {
+    case "0-50":    return { max: 50 };
+    case "51-100":  return { min: 51,  max: 100 };
+    case "101-250": return { min: 101, max: 250 };
+    case "251-500": return { min: 251, max: 500 };
+    case "500+":    return { min: 501 };
+    default:        return {};
+  }
+}
+
 export function Startups() {
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [startups, setStartups]         = useState<Startup[]>([]);
-  const [loading, setLoading]           = useState(true);
+  // ── Server-side rows for the CURRENT page only — never the full dataset ──
+  const [rows, setRows]                 = useState<StartupListRow[]>([]);
+  const [rowsLoading, setRowsLoading]   = useState(true);
   const [loadError, setLoadError]       = useState<string | null>(null);
+  const [totalCount, setTotalCount]     = useState(0);
+  const [countries, setCountries]       = useState<string[]>([]);
+  const [refreshKey, setRefreshKey]     = useState(0);
+
   const [showAdd, setShowAdd]           = useState(false);
   const [search, setSearch]             = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [parentSector, setParentSector] = useState("");
   const [subSector, setSubSector]       = useState("");
   const [countryFilter, setCountry]     = useState("");
@@ -1884,34 +1922,43 @@ export function Startups() {
   const [momentumFilter, setMomentum]   = useState(false);
   const [densityFilter, setDensity]     = useState<DensityFilter>("all");
   const [viewMode, setView]             = useState<"grid" | "list">("grid");
-  const [selectedStartup, setSelected] = useState<Startup | null>(null);
-  const [selectedIds, setSelectedIds]   = useState<Set<string>>(new Set());
+  const [tearsheetStartup, setSelected] = useState<StartupListRow | null>(null);
+  // Map (not Set) so a selection made on one page survives navigating to
+  // another page — Compare needs the full row object, not just an id, since
+  // `rows` only ever holds the current page's 40 records.
+  const [selected, setSelectedMap]      = useState<Map<string, StartupListRow>>(new Map());
   const [showCompare, setShowCompare]   = useState(false);
   const [page, setPage]                 = useState(1);
 
   const cityParam = searchParams.get("city") ?? "";
   const [cityFilter, setCityFilter] = useState(cityParam);
 
-  function toggleSelect(id: string, e: React.MouseEvent) {
+  function toggleSelect(row: StartupListRow, e: React.MouseEvent) {
     e.stopPropagation();
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) { next.delete(id); } else if (next.size < 3) { next.add(id); }
+    setSelectedMap((prev) => {
+      const next = new Map(prev);
+      if (next.has(row.id)) { next.delete(row.id); }
+      else if (next.size < 3) { next.set(row.id, row); }
       return next;
     });
   }
-  function addPeer(peer: Startup) {
-    setSelectedIds((prev) => {
+  function addPeer(peer: StartupListRow) {
+    setSelectedMap((prev) => {
       if (prev.size >= 3 || prev.has(peer.id)) return prev;
-      return new Set([...prev, peer.id]);
+      const next = new Map(prev);
+      next.set(peer.id, peer);
+      return next;
     });
   }
 
+  // Debounce free-text search 300ms so filters don't refire on every keystroke.
   useEffect(() => {
-    fetchStartups()
-      .then(setStartups)
-      .catch((e) => setLoadError(e.message))
-      .finally(() => setLoading(false));
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
+    fetchDistinctCountries().then(setCountries).catch(() => {});
   }, []);
 
   function clearCityFilter() {
@@ -1924,11 +1971,6 @@ export function Startups() {
     clearCityFilter();
   }
 
-  const countries = useMemo(
-    () => [...new Set(startups.map((s) => s.country).filter(Boolean) as string[])].sort(),
-    [startups],
-  );
-
   const activeFilterCount = [
     search, parentSector, subSector, countryFilter, cityFilter,
     stageStep !== "all" ? "1" : "",
@@ -1937,82 +1979,54 @@ export function Startups() {
     densityFilter !== "all" ? "1" : "",
   ].filter(Boolean).length;
 
-  const filtered = useMemo(() => {
-    // Precompute peer counts once when density filter is active (O(n²) but fast for small sets)
-    let peerCountMap: Map<string, number> | null = null;
-    if (densityFilter !== "all") {
-      peerCountMap = new Map<string, number>();
-      for (const s of startups) {
-        peerCountMap.set(s.id, findPeerGroup(s, startups).length);
-      }
+  // Everything the sidebar controls collapses into one filters object, which
+  // is what actually drives the Supabase query — no in-memory dataset to
+  // filter against exists anymore.
+  const filters: StartupSearchFilters = useMemo(() => {
+    const f: StartupSearchFilters = {};
+    if (debouncedSearch) f.search = debouncedSearch;
+    if (parentSector) f.sectorParent = parentSector;
+    if (parentSector && subSector) f.sectorSubKeywords = keywordsForSub(parentSector, subSector);
+    if (countryFilter) f.country = countryFilter;
+    if (cityFilter) f.city = cityFilter;
+    if (stageStep !== "all") {
+      const step = STAGE_STEPS.find((st) => st.value === stageStep);
+      if (step && step.rounds.length > 0) f.stageRoundTypes = step.rounds;
     }
+    if (headcountStep !== "all") {
+      const { min, max } = headcountRange(headcountStep);
+      if (min != null) f.headcountMin = min;
+      if (max != null) f.headcountMax = max;
+    }
+    if (momentumFilter) f.momentum = true;
+    if (densityFilter !== "all") f.density = densityFilter;
+    return f;
+  }, [debouncedSearch, parentSector, subSector, countryFilter, cityFilter, stageStep, headcountStep, momentumFilter, densityFilter]);
 
-    const sixMonthsAgo = (() => {
-      const d = new Date();
-      d.setMonth(d.getMonth() - 6);
-      return d.toISOString().slice(0, 10);
-    })();
+  // Any filter change starts the user back on page 1.
+  useEffect(() => { setPage(1); }, [filters]);
 
-    return startups.filter((s) => {
-      if (search) {
-        const q = search.toLowerCase();
-        if (!s.name.toLowerCase().includes(q) &&
-            !(s.industry ?? "").toLowerCase().includes(q) &&
-            !(s.country ?? "").toLowerCase().includes(q) &&
-            !(s.city ?? "").toLowerCase().includes(q) &&
-            !(s.description ?? "").toLowerCase().includes(q)) return false;
-      }
-      if (parentSector) {
-        const tax = classifyIndustry(s.industry);
-        if (tax.parent !== parentSector) return false;
-        if (subSector && tax.sub !== subSector) return false;
-      }
-      if (countryFilter && s.country !== countryFilter) return false;
-      if (cityFilter && !(s.city ?? "").toLowerCase().includes(cityFilter.toLowerCase()) &&
-          !(s.country ?? "").toLowerCase().includes(cityFilter.toLowerCase())) return false;
-      if (stageStep !== "all") {
-        const step = STAGE_STEPS.find((st) => st.value === stageStep);
-        if (step && !step.rounds.includes(s.funding_rounds?.[0]?.round_type as RoundType)) return false;
-      }
-      if (headcountStep !== "all") {
-        const n = s.employee_count ?? 0;
-        if (headcountStep === "0-50"    && n > 50)              return false;
-        if (headcountStep === "51-100"  && (n < 51  || n > 100))  return false;
-        if (headcountStep === "101-250" && (n < 101 || n > 250))  return false;
-        if (headcountStep === "251-500" && (n < 251 || n > 500))  return false;
-        if (headcountStep === "500+"    && n < 501)             return false;
-      }
-      // Financial Momentum: raised in last 6 months + headcount growing
-      if (momentumFilter) {
-        const recentRaise = s.funding_rounds.some(
-          (r) => r.announcement_date && r.announcement_date >= sixMonthsAgo,
-        );
-        const growing = s.growth_trend === "rapid growth" || s.growth_trend === "moderate growth";
-        if (!recentRaise || !growing) return false;
-      }
-      // Competitive Density: Crowded ≥ 3 peers / Blue Ocean ≤ 1 peer
-      if (densityFilter !== "all" && peerCountMap) {
-        const count = peerCountMap.get(s.id) ?? 0;
-        if (densityFilter === "crowded"    && count < 3) return false;
-        if (densityFilter === "blue-ocean" && count > 1) return false;
-      }
-      return true;
-    }).sort((a, b) => completenessScore(b) - completenessScore(a));
-  }, [startups, search, parentSector, subSector, countryFilter, cityFilter, stageStep, headcountStep, momentumFilter, densityFilter]);
+  useEffect(() => {
+    let cancelled = false;
+    setRowsLoading(true); setLoadError(null);
+    fetchStartupsPage(filters, page)
+      .then((data) => { if (!cancelled) setRows(data); })
+      .catch((e) => { if (!cancelled) setLoadError(e instanceof Error ? e.message : "Unknown error"); })
+      .finally(() => { if (!cancelled) setRowsLoading(false); });
+    return () => { cancelled = true; };
+  }, [filters, page, refreshKey]);
 
-  const selectedStartups = useMemo(
-    () => startups.filter((s) => selectedIds.has(s.id)),
-    [startups, selectedIds],
-  );
+  useEffect(() => {
+    let cancelled = false;
+    fetchStartupsCount(filters)
+      .then((c) => { if (!cancelled) setTotalCount(c); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [filters, refreshKey]);
 
-  // Reset to page 1 whenever any filter changes
-  useEffect(() => { setPage(1); }, [search, parentSector, subSector, countryFilter, cityFilter, stageStep, headcountStep, momentumFilter, densityFilter]);
+  const selectedStartups = useMemo(() => Array.from(selected.values()), [selected]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paginated = useMemo(
-    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
-    [filtered, page],
-  );
+  const pageCount = Math.max(1, Math.ceil(totalCount / STARTUPS_PAGE_SIZE));
 
   const currentStageLabel = STAGE_STEPS.find((s) => s.value === stageStep)?.label ?? "All";
   const currentHeadcountLabel = HEADCOUNT_STEPS.find((s) => s.value === headcountStep)?.label ?? "All";
@@ -2020,11 +2034,9 @@ export function Startups() {
   return (
     <Layout>
 
-      {/* ── Filter bar ───────────────────────────────────────────────────── */}
+      {/* ── Title bar ────────────────────────────────────────────────────── */}
       <div style={{ background: "#B8C9D1", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
-        <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 pt-6 pb-6">
-
-          {/* Title row */}
+        <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 pt-6 pb-5">
           <div className="flex items-center justify-between gap-4 mb-1.5">
             <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">
               Startups Hub
@@ -2041,211 +2053,206 @@ export function Startups() {
               </button>
             </div>
           </div>
-
-          {/* Subtitle + count */}
-          <div className="flex items-center gap-3 mb-5">
+          <div className="flex items-center gap-3">
             <p className="text-sm text-[#0F172A]/60 leading-snug">
               Research private tech companies with AI and other advanced tools
             </p>
-            {!loading && (
-              <span className="text-xs font-semibold text-[#0F172A]/60 bg-white/60 border border-black/10 px-2.5 py-1 rounded-full flex-none">
-                {filtered.length}
-              </span>
-            )}
-          </div>
-
-          {/* ── Screener ─────────────────────────────────────────────────── */}
-          <div className="space-y-3">
-
-            {/* Row 1: filters */}
-            <div className="flex flex-wrap items-center gap-2.5">
-              <div className="relative flex-1 min-w-[200px] max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#0F172A]/40" />
-                <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search companies…"
-                  className="w-full pl-9 pr-4 py-2.5 text-sm bg-white border border-black/10 text-[#0F172A] placeholder-[#0F172A]/35 rounded-[12px] focus:outline-none focus:border-[#0F172A]/30 focus:ring-2 focus:ring-[#0F172A]/10 transition-all" />
-                {search && (
-                  <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#0F172A]/40 hover:text-[#0F172A]/70"><X className="w-3.5 h-3.5" /></button>
-                )}
-              </div>
-
-              <HierarchicalSectorFilter
-                parentSector={parentSector} onParentChange={setParentSector}
-                subSector={subSector}       onSubChange={setSubSector}
-              />
-
-              <div className="relative">
-                <select value={countryFilter} onChange={(e) => setCountry(e.target.value)}
-                  style={{ colorScheme: "light" }}
-                  className={`appearance-none pl-3 pr-8 py-2 text-xs font-semibold border rounded-[10px] bg-white transition-all focus:outline-none focus:ring-2 focus:ring-[#0F172A]/15 cursor-pointer ${
-                    countryFilter ? "border-[#0F172A] text-[#0F172A]" : "border-black/10 text-[#0F172A]/60"
-                  }`}>
-                  <option value="">All Countries</option>
-                  {countries.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0F172A]/40 pointer-events-none" />
-              </div>
-
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setMomentum((v) => !v)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-[10px] text-xs font-semibold border transition-all ${
-                    momentumFilter
-                      ? "bg-emerald-50 border-emerald-400/60 text-emerald-700"
-                      : "bg-white/60 border-black/10 text-[#0F172A]/60 hover:border-black/25 hover:text-[#0F172A]"
-                  }`}
-                >
-                  <Zap className={`w-3.5 h-3.5 flex-none ${momentumFilter ? "text-emerald-600" : "text-[#0F172A]/40"}`} />
-                  Financial Momentum
-                  {momentumFilter && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-none" />}
-                </button>
-                <InfoTooltip
-                  content="Filters for companies that raised capital in the last 6 months AND achieved ≥20% headcount growth (via trend tracking)."
-                />
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] font-bold text-[#0F172A]/55 whitespace-nowrap">Density</span>
-                  <InfoTooltip
-                    content="Categorizes market space: 'Crowded Space' identifies companies with ≥3 peers (≥75% similarity score). 'Blue Ocean' identifies highly differentiated companies with ≤1 peer."
-                    align="right"
-                  />
-                </div>
-                <div className="flex items-center bg-white/60 border border-black/10 rounded-[10px] p-0.5 gap-0.5">
-                  {([ ["all", "All"], ["crowded", "Crowded"], ["blue-ocean", "Blue Ocean"] ] as const).map(([val, label]) => (
-                    <button
-                      key={val}
-                      onClick={() => setDensity(val)}
-                      className={`px-2.5 py-1.5 rounded-[7px] text-[10px] font-semibold transition-all whitespace-nowrap ${
-                        densityFilter === val
-                          ? "bg-[#0F172A] text-white shadow-sm"
-                          : "text-[#0F172A]/60 hover:text-[#0F172A]"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {activeFilterCount > 0 && (
-                <button onClick={clearAll} className="flex items-center gap-1.5 text-xs font-semibold text-[#0F172A]/50 hover:text-rose-600 transition-colors">
-                  <X className="w-3.5 h-3.5" />Clear all ({activeFilterCount})
-                </button>
-              )}
-            </div>
-
-            {/* Row 2: sliders */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 bg-white/50 border border-black/10 rounded-[14px] px-5 py-4">
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-[10px] font-bold text-[#0F172A]/55 uppercase tracking-wider">Funding Stage</span>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-all ${
-                    stageStep !== "all" ? "bg-gray-100 text-[#0F172A] border border-gray-300" : "text-[#0F172A]/40"
-                  }`}>{currentStageLabel}</span>
-                </div>
-                <StepSlider steps={STAGE_STEPS} value={stageStep} onChange={(v) => setStageStep(v as StageStep)} />
-              </div>
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-[10px] font-bold text-[#0F172A]/55 uppercase tracking-wider">Headcount</span>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-all ${
-                    headcountStep !== "all" ? "bg-gray-100 text-[#0F172A] border border-gray-300" : "text-[#0F172A]/40"
-                  }`}>{currentHeadcountLabel}</span>
-                </div>
-                <StepSlider steps={HEADCOUNT_STEPS} value={headcountStep} onChange={(v) => setHeadcount(v as HeadcountStep)} />
-              </div>
-            </div>
-
-            {cityFilter && (
-              <div className="flex items-center gap-2">
-                <button onClick={clearCityFilter} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-[#0F172A] text-white hover:bg-[#1e293b] transition-all">
-                  <MapPin className="w-3 h-3" />{cityFilter}<X className="w-3 h-3 ml-0.5" />
-                </button>
-              </div>
-            )}
-
+            <span className="text-xs font-semibold text-[#0F172A]/60 bg-white/60 border border-black/10 px-2.5 py-1 rounded-full flex-none">
+              {totalCount.toLocaleString()} {totalCount === 1 ? "company" : "companies"}
+            </span>
           </div>
         </div>
       </div>
 
-      {/* ── Main content ───────────────────────────────────────────────────── */}
-      <div className={`mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-6 ${selectedIds.size >= 1 ? "pb-28" : ""}`}>
-        {loading ? (
-          <div className="flex items-center justify-center py-32"><Loader2 className="w-6 h-6 text-[#F59E0B] animate-spin" /></div>
-        ) : loadError ? (
-          <div className="flex flex-col items-center py-24 gap-3 text-center">
-            <AlertCircle className="w-8 h-8 text-red-400" />
-            <p className="text-sm font-semibold text-[#0F172A]">Failed to load startups</p>
-            <p className="text-xs text-gray-400 max-w-xs">{loadError}</p>
-          </div>
-        ) : startups.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-32 text-center">
-            <div className="w-16 h-16 rounded-3xl bg-amber-50 flex items-center justify-center mb-6"><Rocket className="w-7 h-7 text-[#F59E0B]" /></div>
-            <h2 className="text-xl font-bold text-[#0F172A] mb-3">No startups yet</h2>
-            <p className="text-sm text-gray-400 max-w-sm leading-relaxed mb-8">
-              Add your first startup — the AI agent will research, validate, and store it with full funding history.
-            </p>
-            <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 rounded-[16px] bg-[#0F172A] px-6 py-3 text-sm font-bold text-white shadow-[0_4px_14px_rgba(15,23,42,0.25)] hover:bg-[#1e293b] transition-all">
-              <Plus className="w-4 h-4" />Add First Startup
-            </button>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center py-20 gap-3 text-center">
-            <Building2 className="w-8 h-8 text-gray-300" />
-            <p className="text-sm font-semibold text-gray-400">No companies match these filters</p>
-            <button onClick={clearAll} className="text-xs text-gray-500 font-semibold hover:text-rose-600 transition-colors">Clear all filters</button>
-          </div>
-        ) : viewMode === "grid" ? (
-          <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-              {paginated.map((s) => (
-                <StartupCard key={s.id} startup={s} onSelect={() => setSelected(s)}
-                  selected={selectedIds.has(s.id)} onToggleSelect={(e) => toggleSelect(s.id, e)} />
-              ))}
-            </div>
-            <Pagination page={page} pageCount={pageCount} onChange={setPage} />
-          </>
-        ) : (
-          <>
-            <div className="bg-white rounded-[20px] border border-gray-100 shadow-[0_4px_20px_rgba(0,0,0,0.04)] overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-gray-100 bg-[#F8FAFC]">
-                      {["Company", "Stage", "Location", "Valuation", "Raised", "Employees", "Founders", ""].map((h) => (
-                        <th key={h} className="text-left text-[9px] font-black text-gray-400 uppercase tracking-widest py-3 px-4 first:px-5 whitespace-nowrap">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paginated.map((s) => <StartupListRow key={s.id} startup={s} onSelect={() => setSelected(s)} />)}
-                  </tbody>
-                </table>
+      {/* ── Sidebar + main content ──────────────────────────────────────── */}
+      <div className={`mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 py-6 ${selected.size >= 1 ? "pb-28" : ""}`}>
+        <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 items-start">
+
+          {/* ── Left sidebar: faceted search ── */}
+          <aside className="w-full lg:w-[300px] lg:flex-none lg:sticky lg:top-6">
+            <div className="bg-white border border-gray-100 rounded-[20px] shadow-[0_1px_3px_rgba(15,23,42,0.04)] px-5 py-1 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto">
+              <div className="flex items-center justify-between py-3.5 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <SlidersHorizontal className="w-4 h-4 text-[#0F172A]/50" />
+                  <h2 className="text-sm font-bold text-[#0F172A]">Filters</h2>
+                </div>
+                {activeFilterCount > 0 && (
+                  <button onClick={clearAll} className="flex items-center gap-1 text-[11px] font-semibold text-gray-400 hover:text-rose-600 transition-colors">
+                    <X className="w-3 h-3" />Clear ({activeFilterCount})
+                  </button>
+                )}
               </div>
+
+              {/* Search */}
+              <div className="py-4 border-b border-gray-100">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-300" />
+                  <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search companies…"
+                    className="w-full pl-8 pr-8 py-2 text-sm bg-gray-50 border border-gray-100 text-[#0F172A] placeholder-gray-400 rounded-[10px] focus:outline-none focus:border-gray-300 focus:ring-2 focus:ring-[#0F172A]/10 transition-all" />
+                  {search && (
+                    <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"><X className="w-3.5 h-3.5" /></button>
+                  )}
+                </div>
+              </div>
+
+              <FilterAccordion title="Sectors" defaultOpen
+                badge={parentSector ? <FilterBadge>{subSector || parentSector}</FilterBadge> : undefined}>
+                <HierarchicalSectorFilter
+                  parentSector={parentSector} onParentChange={setParentSector}
+                  subSector={subSector}       onSubChange={setSubSector}
+                />
+              </FilterAccordion>
+
+              <FilterAccordion title="Countries" defaultOpen={false}
+                badge={countryFilter ? <FilterBadge>{countryFilter}</FilterBadge> : undefined}>
+                <CountryFilterList countries={countries} value={countryFilter} onChange={setCountry} />
+              </FilterAccordion>
+
+              <FilterAccordion title="Funding Stage" defaultOpen
+                badge={stageStep !== "all" ? <FilterBadge>{currentStageLabel}</FilterBadge> : undefined}>
+                <StepSlider steps={STAGE_STEPS} value={stageStep} onChange={(v) => setStageStep(v as StageStep)} />
+              </FilterAccordion>
+
+              <FilterAccordion title="Headcount" defaultOpen
+                badge={headcountStep !== "all" ? <FilterBadge>{currentHeadcountLabel}</FilterBadge> : undefined}>
+                <StepSlider steps={HEADCOUNT_STEPS} value={headcountStep} onChange={(v) => setHeadcount(v as HeadcountStep)} />
+              </FilterAccordion>
+
+              <FilterAccordion title="Financial Momentum" defaultOpen={false}
+                badge={momentumFilter ? <FilterBadge>On</FilterBadge> : undefined}>
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    onClick={() => setMomentum((v) => !v)}
+                    className={`flex-1 flex items-center gap-1.5 px-3 py-2 rounded-[10px] text-xs font-semibold border transition-all ${
+                      momentumFilter
+                        ? "bg-emerald-50 border-emerald-400/60 text-emerald-700"
+                        : "bg-gray-50 border-gray-100 text-gray-500 hover:border-gray-300 hover:text-[#0F172A]"
+                    }`}
+                  >
+                    <Zap className={`w-3.5 h-3.5 flex-none ${momentumFilter ? "text-emerald-600" : "text-gray-400"}`} />
+                    Raised + growing (6mo)
+                    {momentumFilter && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-none ml-auto" />}
+                  </button>
+                  <InfoTooltip content="Filters for companies that raised capital in the last 6 months AND achieved ≥20% headcount growth (via trend tracking)." align="right" />
+                </div>
+              </FilterAccordion>
+
+              <FilterAccordion title="Competitive Density" defaultOpen={false}
+                badge={densityFilter !== "all" ? <FilterBadge>{densityFilter === "crowded" ? "Crowded" : "Blue Ocean"}</FilterBadge> : undefined}>
+                <div className="flex items-center gap-1.5">
+                  <div className="flex-1 flex items-center bg-gray-50 border border-gray-100 rounded-[10px] p-0.5 gap-0.5">
+                    {([ ["all", "All"], ["crowded", "Crowded"], ["blue-ocean", "Blue Ocean"] ] as const).map(([val, label]) => (
+                      <button
+                        key={val}
+                        onClick={() => setDensity(val)}
+                        className={`flex-1 px-2 py-1.5 rounded-[7px] text-[10px] font-semibold transition-all whitespace-nowrap ${
+                          densityFilter === val
+                            ? "bg-[#0F172A] text-white shadow-sm"
+                            : "text-gray-500 hover:text-[#0F172A]"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <InfoTooltip content="Categorizes market space by peer density: 'Crowded' identifies companies with several peers in the same sector and funding stage. 'Blue Ocean' identifies highly differentiated companies with few or no peers." align="right" />
+                </div>
+              </FilterAccordion>
+
+              {cityFilter && (
+                <div className="py-4">
+                  <button onClick={clearCityFilter} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-[#0F172A] text-white hover:bg-[#1e293b] transition-all">
+                    <MapPin className="w-3 h-3" />{cityFilter}<X className="w-3 h-3 ml-0.5" />
+                  </button>
+                </div>
+              )}
             </div>
-            <Pagination page={page} pageCount={pageCount} onChange={setPage} />
-          </>
-        )}
+          </aside>
+
+          {/* ── Main content ── */}
+          <div className="flex-1 min-w-0 w-full">
+            {loadError && rows.length === 0 ? (
+              <div className="flex flex-col items-center py-24 gap-3 text-center">
+                <AlertCircle className="w-8 h-8 text-red-400" />
+                <p className="text-sm font-semibold text-[#0F172A]">Failed to load startups</p>
+                <p className="text-xs text-gray-400 max-w-xs">{loadError}</p>
+              </div>
+            ) : rowsLoading && rows.length === 0 ? (
+              <div className="flex items-center justify-center py-32"><Loader2 className="w-6 h-6 text-[#F59E0B] animate-spin" /></div>
+            ) : rows.length === 0 && activeFilterCount === 0 ? (
+              <div className="flex flex-col items-center justify-center py-32 text-center">
+                <div className="w-16 h-16 rounded-3xl bg-amber-50 flex items-center justify-center mb-6"><Rocket className="w-7 h-7 text-[#F59E0B]" /></div>
+                <h2 className="text-xl font-bold text-[#0F172A] mb-3">No startups yet</h2>
+                <p className="text-sm text-gray-400 max-w-sm leading-relaxed mb-8">
+                  Add your first startup — the AI agent will research, validate, and store it with full funding history.
+                </p>
+                <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 rounded-[16px] bg-[#0F172A] px-6 py-3 text-sm font-bold text-white shadow-[0_4px_14px_rgba(15,23,42,0.25)] hover:bg-[#1e293b] transition-all">
+                  <Plus className="w-4 h-4" />Add First Startup
+                </button>
+              </div>
+            ) : rows.length === 0 ? (
+              <div className="flex flex-col items-center py-20 gap-3 text-center">
+                <Building2 className="w-8 h-8 text-gray-300" />
+                <p className="text-sm font-semibold text-gray-400">No companies match these filters</p>
+                <button onClick={clearAll} className="text-xs text-gray-500 font-semibold hover:text-rose-600 transition-colors">Clear all filters</button>
+              </div>
+            ) : (
+              <div className="relative">
+                {rowsLoading && (
+                  <div className="absolute inset-0 z-10 flex items-start justify-center pt-16 bg-white/50 backdrop-blur-[1px] rounded-[20px] transition-opacity">
+                    <Loader2 className="w-5 h-5 text-[#F59E0B] animate-spin" />
+                  </div>
+                )}
+                {viewMode === "grid" ? (
+                  <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 transition-opacity duration-150 ${rowsLoading ? "opacity-40" : "opacity-100"}`}>
+                    {rows.map((s) => (
+                      <StartupCard key={s.id} startup={s} onSelect={() => setSelected(s)}
+                        selected={selected.has(s.id)} onToggleSelect={(e) => toggleSelect(s, e)} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className={`bg-white rounded-[20px] border border-gray-100 shadow-[0_4px_20px_rgba(0,0,0,0.04)] overflow-hidden transition-opacity duration-150 ${rowsLoading ? "opacity-40" : "opacity-100"}`}>
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-gray-100 bg-[#F8FAFC]">
+                            {["Company", "Stage", "Location", "Valuation", "Raised", "Employees", "Founders", ""].map((h) => (
+                              <th key={h} className="text-left text-[9px] font-black text-gray-400 uppercase tracking-widest py-3 px-4 first:px-5 whitespace-nowrap">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((s) => <StartupTableRow key={s.id} startup={s} onSelect={() => setSelected(s)} />)}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+                <Pagination page={page} pageCount={pageCount} onChange={setPage} />
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
-      <AddStartupDialog open={showAdd} onClose={() => setShowAdd(false)} onSuccess={(s) => setStartups((p) => [s, ...p])} />
+      <AddStartupDialog open={showAdd} onClose={() => setShowAdd(false)}
+        onSuccess={() => { setPage(1); setRefreshKey((k) => k + 1); }} />
 
-      {selectedStartup && (
-        <TearsheetModal startup={selectedStartup} onClose={() => setSelected(null)} />
+      {tearsheetStartup && (
+        <TearsheetModal startup={tearsheetStartup} onClose={() => setSelected(null)} />
       )}
 
       {showCompare && selectedStartups.length >= 2 && (
-        <CompareModal startups={selectedStartups} allStartups={startups}
+        <CompareModal startups={selectedStartups}
           onClose={() => setShowCompare(false)} onAddPeer={addPeer} />
       )}
 
       {/* ── Floating Compare FAB ────────────────────────────────────────── */}
-      {selectedIds.size >= 1 && (
+      {selected.size >= 1 && (
         <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2">
           {/* Clear selection */}
           <button
-            onClick={() => setSelectedIds(new Set())}
+            onClick={() => setSelectedMap(new Map())}
             title="Clear selection"
             className="w-9 h-9 flex items-center justify-center rounded-full bg-[#0b1626]/90 backdrop-blur-sm border border-[#1a2a3f] text-slate-500 hover:text-white hover:border-slate-500 transition-all shadow-[0_4px_20px_rgba(0,0,0,0.5)]"
           >
@@ -2253,17 +2260,17 @@ export function Startups() {
           </button>
           {/* Compare button */}
           <button
-            onClick={() => { if (selectedIds.size >= 2) setShowCompare(true); }}
+            onClick={() => { if (selected.size >= 2) setShowCompare(true); }}
             className={`flex items-center gap-2.5 px-5 py-3.5 rounded-[20px] text-sm font-bold transition-all duration-200 ${
-              selectedIds.size >= 2
+              selected.size >= 2
                 ? "bg-blue-600 text-white shadow-[0_8px_40px_rgba(37,99,235,0.45)] hover:bg-blue-500 hover:shadow-[0_12px_48px_rgba(37,99,235,0.5)] hover:scale-[1.02]"
                 : "bg-[#0b1626]/90 backdrop-blur-sm border border-[#1a2a3f] text-slate-400 shadow-[0_4px_24px_rgba(0,0,0,0.45)] cursor-default"
             }`}
           >
             <GitCompare className="w-4 h-4 flex-none" />
-            {selectedIds.size >= 2
-              ? `Compare (${selectedIds.size})`
-              : `Select ${2 - selectedIds.size} more…`}
+            {selected.size >= 2
+              ? `Compare (${selected.size})`
+              : `Select ${2 - selected.size} more…`}
           </button>
         </div>
       )}
