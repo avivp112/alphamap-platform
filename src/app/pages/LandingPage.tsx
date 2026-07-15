@@ -791,7 +791,7 @@ function UseCasesSection() {
               <div
                 key={item.heading}
                 ref={(el) => { itemRefs.current[i] = el; }}
-                className="py-4 sm:py-5 border-t first:border-t-0"
+                className="flex items-center min-h-[70vh] lg:min-h-[60vh] py-4 sm:py-5 border-t first:border-t-0"
                 style={{ borderColor: "rgba(17,24,39,0.12)" }}
               >
                 <h3
