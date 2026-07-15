@@ -7,10 +7,12 @@ import { IPOs } from "./pages/IPOs";
 import { VCs } from "./pages/VCs";
 import { Deals } from "./pages/Deals";
 import { SignUp } from "./pages/SignUp";
+import { Login } from "./pages/Login";
 
 export const router = createBrowserRouter([
   { path: "/",          Component: LandingPage },
   { path: "/signup",    Component: SignUp },
+  { path: "/login",     Component: Login },
   { path: "/dashboard", Component: Dashboard },
   { path: "/markets",   Component: Dashboard },  // legacy alias
   { path: "/vcs",       Component: VCs },

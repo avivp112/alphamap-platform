@@ -947,6 +947,7 @@ export function LandingPage() {
         {/* Nav */}
         <div className="flex items-center gap-5">
           <button
+            onClick={() => navigate("/login")}
             className="text-sm font-medium text-gray-500 transition-colors duration-300 hover:text-[#111827]"
           >
             Log In

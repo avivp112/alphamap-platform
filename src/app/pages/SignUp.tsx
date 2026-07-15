@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, Link } from "react-router";
 import {
   Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, Mail, ArrowRight, ArrowLeft, ShieldCheck,
 } from "lucide-react";
@@ -442,7 +442,7 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
       </p>
       <p className="mt-3 text-center text-sm text-gray-500">
         Already have an account?{" "}
-        <span className="font-semibold text-[#0F172A]">Log in</span>
+        <Link to="/login" className="font-semibold text-[#0F172A] hover:underline">Log in</Link>
       </p>
     </div>
   );
