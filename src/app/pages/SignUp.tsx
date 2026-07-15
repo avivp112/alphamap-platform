@@ -311,7 +311,7 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
 
     setLoading("submit");
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email: values.email.trim(),
         password: values.password,
         options: {
@@ -322,6 +322,16 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
         },
       });
       if (error) throw error;
+
+      // Supabase returns a 200 with no error — and sends no email — when the
+      // address already belongs to a confirmed account (this is deliberate,
+      // to avoid leaking which emails are registered). The only signal is an
+      // empty identities array, so surface it explicitly instead of silently
+      // advancing to an OTP screen for a code that will never arrive.
+      if (data.user && data.user.identities && data.user.identities.length === 0) {
+        throw new Error("An account with this email already exists. Try logging in instead.");
+      }
+
       onSignedUp(values.email.trim());
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Something went wrong creating your account. Please try again.");
