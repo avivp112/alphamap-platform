@@ -947,7 +947,7 @@ export function LandingPage() {
             Log In
           </button>
           <button
-            onClick={() => navigate("/dashboard")}
+            onClick={() => navigate("/signup")}
             className="rounded-full px-5 py-2.5 text-sm font-semibold transition-all duration-300 bg-white border border-black/10 text-[#111827] shadow-[0_1px_4px_rgba(0,0,0,0.08)] hover:bg-gray-50"
           >
             View Dashboard
@@ -1062,7 +1062,10 @@ export function LandingPage() {
         >
           Are you ready to see the full picture?
         </h2>
-        <button className="rounded-full bg-white px-10 py-4 text-base font-semibold text-[#111827] shadow-[0_4px_14px_0_rgba(0,0,0,0.25)] transition-all hover:bg-gray-100 hover:-translate-y-0.5">
+        <button
+          onClick={() => navigate("/signup")}
+          className="rounded-full bg-white px-10 py-4 text-base font-semibold text-[#111827] shadow-[0_4px_14px_0_rgba(0,0,0,0.25)] transition-all hover:bg-gray-100 hover:-translate-y-0.5"
+        >
           Request Early Access
         </button>
       </section>
