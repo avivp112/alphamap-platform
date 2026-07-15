@@ -988,7 +988,7 @@ export function LandingPage() {
       </section>
 
       {/* ── Interactive product showcase ─────────────────────────────────────── */}
-      <section ref={showcaseRef} className="w-full max-w-[1200px] mx-auto px-6 lg:px-12 mb-32">
+      <section ref={showcaseRef} className="w-full max-w-[1040px] mx-auto px-6 lg:px-12 mb-32">
         <div className="text-center max-w-2xl mx-auto mb-10">
           <span className="text-xs font-bold tracking-[0.22em] text-[#0F172A]/40 uppercase">Inside AlphaMap</span>
           <h2
@@ -1004,14 +1004,14 @@ export function LandingPage() {
           style={{ background: "linear-gradient(180deg, #EEF1F4 0%, #E4E9ED 100%)" }}
         >
           {/* Tab bar */}
-          <div className="flex items-center gap-1 px-1 pt-1 pb-2 overflow-x-auto">
+          <div className="flex items-center gap-1 px-1 pt-1 pb-2">
             {SHOWCASE_TABS.map((tab) => {
               const active = tab.key === activeTab;
               return (
                 <button
                   key={tab.key}
                   onClick={() => handleTabClick(tab.key)}
-                  className={`relative flex-none px-4 py-2.5 text-sm font-semibold rounded-xl transition-all whitespace-nowrap ${
+                  className={`relative flex-1 flex items-center justify-center px-4 py-2.5 text-sm font-semibold text-center rounded-xl transition-all whitespace-nowrap ${
                     active ? "bg-white text-[#0F172A] shadow-sm" : "text-gray-400 hover:text-gray-600"
                   }`}
                 >
