@@ -756,11 +756,11 @@ function UseCaseQueryPanel({ item }: { item: (typeof USE_CASES)[number] }) {
 
 function UseCasesSection() {
   const [activeIndex, setActiveIndex] = useState(0);
-  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const stepRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
     const observers: IntersectionObserver[] = [];
-    itemRefs.current.forEach((el, i) => {
+    stepRefs.current.forEach((el, i) => {
       if (!el) return;
       const observer = new IntersectionObserver(
         ([entry]) => { if (entry.isIntersecting) setActiveIndex(i); },
@@ -777,8 +777,9 @@ function UseCasesSection() {
   return (
     <section className="w-full" style={{ background: USE_CASES_BG }}>
       <div className="max-w-[1200px] mx-auto px-6 lg:px-12 py-24 lg:py-32 grid lg:grid-cols-2 gap-12 lg:gap-20">
-        {/* Left: headline + compact list */}
-        <div>
+        {/* Left: headline + compact list, pinned in place (stays put right next
+            to the panel — only the active-item highlight changes as you scroll). */}
+        <div className="lg:sticky lg:top-32 lg:self-start">
           <h2
             className="text-2xl sm:text-3xl md:text-[2.25rem] font-normal text-[#111827] tracking-tight mb-6 lg:mb-8 max-w-lg"
             style={{ fontFamily: "'Playfair Display', serif", lineHeight: 1.25 }}
@@ -790,8 +791,7 @@ function UseCasesSection() {
             {USE_CASES.map((item, i) => (
               <div
                 key={item.heading}
-                ref={(el) => { itemRefs.current[i] = el; }}
-                className="flex items-center min-h-[70vh] lg:min-h-[60vh] py-4 sm:py-5 border-t first:border-t-0"
+                className="py-4 sm:py-5 border-t first:border-t-0"
                 style={{ borderColor: "rgba(17,24,39,0.12)" }}
               >
                 <h3
@@ -805,14 +805,19 @@ function UseCasesSection() {
           </div>
         </div>
 
-        {/* Right: pinned panel — only this side updates as you scroll the list.
-            This grid item stretches to the row's full height by default (it's
-            the tall left column that sets the row height); the inner div is
-            what actually carries position:sticky, using that extra height as
-            its room to hold in place while the list scrolls past. */}
+        {/* Right: pinned panel, plus an invisible scroll track stacked beneath it.
+            The track (one tall step per use case) is what gives this row real
+            scroll distance and drives activeIndex via IntersectionObserver — the
+            visible list and panel both just stay pinned side by side the whole
+            time, and only unstick together once the track scrolls past. */}
         <div>
           <div className="lg:sticky lg:top-32">
             <UseCaseQueryPanel key={activeIndex} item={active} />
+          </div>
+          <div aria-hidden="true" className="flex flex-col">
+            {USE_CASES.map((_, i) => (
+              <div key={i} ref={(el) => { stepRefs.current[i] = el; }} className="lg:min-h-[60vh]" />
+            ))}
           </div>
         </div>
       </div>
