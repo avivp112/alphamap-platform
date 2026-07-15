@@ -62,6 +62,152 @@ export async function fetchStartups(): Promise<Startup[]> {
   return (data ?? []) as Startup[];
 }
 
+// ── Startups Hub: server-side filtered + paginated search ───────────────────
+// Backed by the `startups_search` view (see supabase/migrations/
+// 20260713000000_startups_scalable_search.sql), which precomputes the latest
+// funding round, total raised, sector bucket, and a scalable peer_count — so
+// none of this needs the full `startups` table (or its funding_rounds) in
+// memory. Every field below lives directly on that view.
+export interface StartupListRow {
+  id: string;
+  name: string;
+  website: string | null;
+  description: string | null;
+  industry: string | null;
+  founded_year: number | null;
+  employee_count: number | null;
+  growth_trend: GrowthTrend | null;
+  leadership: Leader[] | null;
+  country: string | null;
+  city: string | null;
+  founders: Founder[] | null;
+  created_at: string;
+  updated_at: string;
+  competitors?: string[] | null;
+  sector_parent: string;
+  stage_group_val: "early" | "growth" | "late" | "unknown";
+  latest_round_type: RoundType | null;
+  latest_valuation: number | null;
+  latest_round_date: string | null;
+  latest_round_is_estimated: boolean | null;
+  total_raised: number;
+  has_recent_round: boolean;
+  peer_count: number;
+  peer_count_valid: boolean;
+}
+
+export interface StartupSearchFilters {
+  search?: string;
+  sectorParent?: string;
+  // Dynamic ILIKE-OR patterns for sub-sector drill-down, built client-side
+  // from the same INDUSTRY_KEYWORD_MAP used for display classification —
+  // avoids duplicating ~90 keyword→sub mappings as SQL.
+  sectorSubKeywords?: string[];
+  country?: string;
+  city?: string;
+  stageRoundTypes?: RoundType[];
+  headcountMin?: number;
+  headcountMax?: number;
+  momentum?: boolean;
+  density?: "crowded" | "blue-ocean";
+}
+
+export const STARTUPS_PAGE_SIZE = 40;
+
+function applyStartupSearchFilters(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  query: any,
+  filters: StartupSearchFilters,
+) {
+  let q = query;
+  if (filters.search) {
+    const term = filters.search.replace(/[%,]/g, "");
+    q = q.or(
+      [
+        `name.ilike.%${term}%`,
+        `industry.ilike.%${term}%`,
+        `country.ilike.%${term}%`,
+        `city.ilike.%${term}%`,
+        `description.ilike.%${term}%`,
+      ].join(","),
+    );
+  }
+  if (filters.sectorParent) q = q.eq("sector_parent", filters.sectorParent);
+  if (filters.sectorSubKeywords && filters.sectorSubKeywords.length > 0) {
+    q = q.or(filters.sectorSubKeywords.map((k) => `industry.ilike.%${k.replace(/[%,]/g, "")}%`).join(","));
+  }
+  if (filters.country) q = q.eq("country", filters.country);
+  if (filters.city) q = q.or(`city.ilike.%${filters.city}%,country.ilike.%${filters.city}%`);
+  if (filters.stageRoundTypes && filters.stageRoundTypes.length > 0) {
+    q = q.in("latest_round_type", filters.stageRoundTypes);
+  }
+  if (filters.headcountMin != null) q = q.gte("employee_count", filters.headcountMin);
+  if (filters.headcountMax != null) q = q.lte("employee_count", filters.headcountMax);
+  if (filters.momentum) {
+    q = q.eq("has_recent_round", true).in("growth_trend", ["rapid growth", "moderate growth"]);
+  }
+  if (filters.density === "crowded")    q = q.eq("peer_count_valid", true).gte("peer_count", 4);
+  if (filters.density === "blue-ocean") q = q.eq("peer_count_valid", true).lte("peer_count", 2);
+  return q;
+}
+
+export async function fetchStartupsPage(
+  filters: StartupSearchFilters,
+  page: number,
+): Promise<StartupListRow[]> {
+  const from = (page - 1) * STARTUPS_PAGE_SIZE;
+  const to = from + STARTUPS_PAGE_SIZE - 1;
+  const query = applyStartupSearchFilters(supabase.from("startups_search").select("*"), filters);
+  const { data, error } = await query
+    .order("updated_at", { ascending: false })
+    .range(from, to);
+  if (error) throw error;
+  return (data ?? []) as StartupListRow[];
+}
+
+export async function fetchStartupsCount(filters: StartupSearchFilters): Promise<number> {
+  const query = applyStartupSearchFilters(
+    supabase.from("startups_search").select("id", { count: "exact", head: true }),
+    filters,
+  );
+  const { count, error } = await query;
+  if (error) throw error;
+  return count ?? 0;
+}
+
+export async function fetchDistinctCountries(): Promise<string[]> {
+  const { data, error } = await supabase.rpc("distinct_startup_countries");
+  if (error) throw error;
+  return ((data ?? []) as Array<{ country: string }>).map((r) => r.country);
+}
+
+// Full record (including every funding round) for the Tearsheet modal —
+// fetched on demand when a card is opened, since the list view intentionally
+// only carries the latest-round summary to keep pages light at 10,000+ rows.
+export async function fetchStartupDetail(id: string): Promise<Startup> {
+  const { data, error } = await supabase
+    .from("startups")
+    .select("*, funding_rounds(*)")
+    .eq("id", id)
+    .single();
+  if (error) throw error;
+  return data as Startup;
+}
+
+export async function fetchSuggestedPeers(
+  startupId: string,
+  excludeIds: string[],
+  limit = 5,
+): Promise<StartupListRow[]> {
+  const { data, error } = await supabase.rpc("suggested_startup_peers", {
+    p_startup_id: startupId,
+    p_exclude_ids: excludeIds,
+    p_limit: limit,
+  });
+  if (error) throw error;
+  return (data ?? []) as StartupListRow[];
+}
+
 export interface AlphaScorePillar {
   label: string;
   weight: number;

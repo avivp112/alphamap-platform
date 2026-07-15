@@ -229,7 +229,7 @@ function StartupsShowcase({ active }: { active: boolean }) {
 
       <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase flex-none">AlphaMap Valuation Estimate</span>
       <div className="flex items-baseline gap-3 mt-1.5 flex-wrap flex-none">
-        <span className="text-4xl sm:text-5xl font-normal text-[#111827] tracking-tight tabular-nums" style={{ fontFamily: "'Playfair Display', serif" }}>
+        <span className="text-4xl sm:text-5xl font-normal text-[#111827] tracking-tight tabular-nums">
           ${value.toFixed(1)}<span className="text-xl sm:text-2xl ml-1">B</span>
         </span>
         <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 tabular-nums">
@@ -756,11 +756,11 @@ function UseCaseQueryPanel({ item }: { item: (typeof USE_CASES)[number] }) {
 
 function UseCasesSection() {
   const [activeIndex, setActiveIndex] = useState(0);
-  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const stepRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
     const observers: IntersectionObserver[] = [];
-    itemRefs.current.forEach((el, i) => {
+    stepRefs.current.forEach((el, i) => {
       if (!el) return;
       const observer = new IntersectionObserver(
         ([entry]) => { if (entry.isIntersecting) setActiveIndex(i); },
@@ -777,8 +777,9 @@ function UseCasesSection() {
   return (
     <section className="w-full" style={{ background: USE_CASES_BG }}>
       <div className="max-w-[1200px] mx-auto px-6 lg:px-12 py-24 lg:py-32 grid lg:grid-cols-2 gap-12 lg:gap-20">
-        {/* Left: headline + compact list */}
-        <div>
+        {/* Left: headline + compact list, pinned in place (stays put right next
+            to the panel — only the active-item highlight changes as you scroll). */}
+        <div className="lg:sticky lg:top-32 lg:self-start">
           <h2
             className="text-2xl sm:text-3xl md:text-[2.25rem] font-normal text-[#111827] tracking-tight mb-6 lg:mb-8 max-w-lg"
             style={{ fontFamily: "'Playfair Display', serif", lineHeight: 1.25 }}
@@ -790,7 +791,6 @@ function UseCasesSection() {
             {USE_CASES.map((item, i) => (
               <div
                 key={item.heading}
-                ref={(el) => { itemRefs.current[i] = el; }}
                 className="py-4 sm:py-5 border-t first:border-t-0"
                 style={{ borderColor: "rgba(17,24,39,0.12)" }}
               >
@@ -805,14 +805,19 @@ function UseCasesSection() {
           </div>
         </div>
 
-        {/* Right: pinned panel — only this side updates as you scroll the list.
-            This grid item stretches to the row's full height by default (it's
-            the tall left column that sets the row height); the inner div is
-            what actually carries position:sticky, using that extra height as
-            its room to hold in place while the list scrolls past. */}
+        {/* Right: pinned panel, plus an invisible scroll track stacked beneath it.
+            The track (one tall step per use case) is what gives this row real
+            scroll distance and drives activeIndex via IntersectionObserver — the
+            visible list and panel both just stay pinned side by side the whole
+            time, and only unstick together once the track scrolls past. */}
         <div>
           <div className="lg:sticky lg:top-32">
             <UseCaseQueryPanel key={activeIndex} item={active} />
+          </div>
+          <div aria-hidden="true" className="flex flex-col">
+            {USE_CASES.map((_, i) => (
+              <div key={i} ref={(el) => { stepRefs.current[i] = el; }} className="lg:min-h-[60vh]" />
+            ))}
           </div>
         </div>
       </div>
@@ -942,12 +947,13 @@ export function LandingPage() {
         {/* Nav */}
         <div className="flex items-center gap-5">
           <button
+            onClick={() => navigate("/login")}
             className="text-sm font-medium text-gray-500 transition-colors duration-300 hover:text-[#111827]"
           >
             Log In
           </button>
           <button
-            onClick={() => navigate("/dashboard")}
+            onClick={() => navigate("/signup")}
             className="rounded-full px-5 py-2.5 text-sm font-semibold transition-all duration-300 bg-white border border-black/10 text-[#111827] shadow-[0_1px_4px_rgba(0,0,0,0.08)] hover:bg-gray-50"
           >
             View Dashboard
@@ -988,7 +994,7 @@ export function LandingPage() {
       </section>
 
       {/* ── Interactive product showcase ─────────────────────────────────────── */}
-      <section ref={showcaseRef} className="w-full max-w-[1200px] mx-auto px-6 lg:px-12 mb-32">
+      <section ref={showcaseRef} className="w-full max-w-[1040px] mx-auto px-6 lg:px-12 mb-32">
         <div className="text-center max-w-2xl mx-auto mb-10">
           <span className="text-xs font-bold tracking-[0.22em] text-[#0F172A]/40 uppercase">Inside AlphaMap</span>
           <h2
@@ -1004,14 +1010,14 @@ export function LandingPage() {
           style={{ background: "linear-gradient(180deg, #EEF1F4 0%, #E4E9ED 100%)" }}
         >
           {/* Tab bar */}
-          <div className="flex items-center gap-1 px-1 pt-1 pb-2 overflow-x-auto">
+          <div className="flex items-center gap-1 px-1 pt-1 pb-2">
             {SHOWCASE_TABS.map((tab) => {
               const active = tab.key === activeTab;
               return (
                 <button
                   key={tab.key}
                   onClick={() => handleTabClick(tab.key)}
-                  className={`relative flex-none px-4 py-2.5 text-sm font-semibold rounded-xl transition-all whitespace-nowrap ${
+                  className={`relative flex-1 flex items-center justify-center px-4 py-2.5 text-sm font-semibold text-center rounded-xl transition-all whitespace-nowrap ${
                     active ? "bg-white text-[#0F172A] shadow-sm" : "text-gray-400 hover:text-gray-600"
                   }`}
                 >
@@ -1062,7 +1068,10 @@ export function LandingPage() {
         >
           Are you ready to see the full picture?
         </h2>
-        <button className="rounded-full bg-white px-10 py-4 text-base font-semibold text-[#111827] shadow-[0_4px_14px_0_rgba(0,0,0,0.25)] transition-all hover:bg-gray-100 hover:-translate-y-0.5">
+        <button
+          onClick={() => navigate("/signup")}
+          className="rounded-full bg-white px-10 py-4 text-base font-semibold text-[#111827] shadow-[0_4px_14px_0_rgba(0,0,0,0.25)] transition-all hover:bg-gray-100 hover:-translate-y-0.5"
+        >
           Request Early Access
         </button>
       </section>
