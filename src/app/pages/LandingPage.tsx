@@ -782,7 +782,7 @@ function UseCasesSection() {
         <div className="lg:sticky lg:top-32 lg:self-start">
           <h2
             className="text-2xl sm:text-3xl md:text-[2.25rem] font-normal text-[#111827] tracking-tight mb-6 lg:mb-8 max-w-lg"
-            style={{ lineHeight: 1.25 }}
+            style={{ fontFamily: "'Playfair Display', serif", lineHeight: 1.25 }}
           >
             {USE_CASES_HEADLINE}
           </h2>
@@ -969,7 +969,7 @@ export function LandingPage() {
 
         <h1
           className="max-w-[1100px] text-[2.4rem] sm:text-5xl md:text-[3.8rem] lg:text-[4.6rem] font-normal text-[#111827] tracking-tight"
-          style={{ lineHeight: "1.15" }}
+          style={{ fontFamily: "'Playfair Display', serif", lineHeight: "1.15" }}
         >
           {HEADLINE.slice(0, typedCount)}
           {!subheadStarted && <span className="typewriter-cursor" aria-hidden="true" />}
@@ -996,7 +996,10 @@ export function LandingPage() {
       <section ref={showcaseRef} className="w-full max-w-[1040px] mx-auto px-6 lg:px-12 mb-32">
         <div className="text-center max-w-2xl mx-auto mb-10">
           <span className="text-xs font-bold tracking-[0.22em] text-[#0F172A]/40 uppercase">Inside AlphaMap</span>
-          <h2 className="mt-3 text-3xl md:text-4xl font-normal text-[#111827] tracking-tight">
+          <h2
+            className="mt-3 text-3xl md:text-4xl font-normal text-[#111827] tracking-tight"
+            style={{ fontFamily: "'Playfair Display', serif" }}
+          >
             One workspace for every side of the market
           </h2>
         </div>
@@ -1060,7 +1063,7 @@ export function LandingPage() {
       <section className="w-full px-6 lg:px-12 py-16 md:py-20 flex flex-col items-center text-center" style={{ background: DARK_SECTION_BG }}>
         <h2
           className="text-4xl md:text-5xl text-white font-medium tracking-tight mb-4"
-          style={{ lineHeight: "1.2" }}
+          style={{ fontFamily: "'Playfair Display', serif", lineHeight: "1.2" }}
         >
           Are you ready to see the full picture?
         </h2>
