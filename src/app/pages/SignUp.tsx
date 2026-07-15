@@ -314,7 +314,12 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
       const { error } = await supabase.auth.signUp({
         email: values.email.trim(),
         password: values.password,
-        options: { data: { full_name: values.fullName.trim() } },
+        options: {
+          data: { full_name: values.fullName.trim() },
+          // No redirect URL — we want the "Confirm signup" email to carry a
+          // {{ .Token }} OTP code, not a clickable {{ .ConfirmationURL }} link.
+          emailRedirectTo: undefined,
+        },
       });
       if (error) throw error;
       onSignedUp(values.email.trim());
