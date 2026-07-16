@@ -20,7 +20,7 @@ export function BrandMark({ size = 32 }: { size?: number }) {
       viewBox="0 0 100 81.4"
       fill={RHINO_FILL}
       className="flex-none"
-      style={{ width: size * 1.15, height: size * 1.15 * (81.4 / 100) }}
+      style={{ width: size * 1.4, height: size * 1.4 * (81.4 / 100) }}
     >
       <polygon points="32.52,22.91 29.04,12.48 35.38,0 40.9,11.25 38.85,17.38" />
       <polygon points="51.33,18.82 44.17,14.93 57.46,4.09 56.03,15.34" />
