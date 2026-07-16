@@ -54,7 +54,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       </button>
 
       <nav className="p-4 pt-12">
-        <div className="flex flex-col gap-1">
+        <div className="grid grid-cols-2 gap-3">
           {linkedItems.map((item) => {
             const Icon = item.icon;
             return (
@@ -64,10 +64,10 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                 end={item.end}
                 onClick={onClose}
                 className={({ isActive }) => cn(
-                  "flex items-center gap-3 rounded-xl px-3 py-2.5 border border-transparent transition-all duration-200",
+                  "relative flex flex-col items-center justify-center gap-2 aspect-square rounded-2xl border text-center px-1.5 transition-all duration-200",
                   isActive
-                    ? "bg-[#F3F4F6] border-gray-200"
-                    : "hover:bg-gray-50",
+                    ? "bg-[#F3F4F6] border-gray-200 shadow-sm"
+                    : "bg-gray-50 border-gray-100 hover:bg-gray-100 hover:border-gray-200",
                 )}
               >
                 {({ isActive }) => (
@@ -75,13 +75,13 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                     <Icon
                       strokeWidth={1.5}
                       className={cn(
-                        "h-5 w-5 flex-none transition-colors duration-200",
+                        "h-6 w-6 transition-colors duration-200",
                         isActive ? "text-[#0F172A]" : "text-gray-500",
                       )}
                     />
                     <span className={cn(
-                      "text-sm font-semibold tracking-tight transition-colors duration-200",
-                      isActive ? "text-[#111827]" : "text-gray-700",
+                      "text-[11px] font-semibold tracking-tight leading-tight transition-colors duration-200",
+                      isActive ? "text-[#111827]" : "text-gray-600",
                     )}>
                       {item.label}
                     </span>
@@ -94,21 +94,21 @@ export function Sidebar({ open, onClose }: SidebarProps) {
 
         <div className="my-4 h-px bg-gray-100" />
 
-        <div className="flex flex-col gap-1">
+        <div className="grid grid-cols-2 gap-3">
           {staticItems.map((item) => {
             const Icon = item.icon;
             return (
               <div
                 key={item.label}
                 aria-disabled="true"
-                className="flex items-center gap-3 rounded-xl px-3 py-2.5 cursor-default select-none"
+                className="relative flex flex-col items-center justify-center gap-2 aspect-square rounded-2xl border border-gray-100 bg-gray-50/60 cursor-default select-none text-center px-1.5"
               >
-                <Icon strokeWidth={1.5} className="h-5 w-5 flex-none text-gray-300" />
-                <span className="text-sm font-medium text-gray-400 leading-tight">
-                  {item.label}
-                </span>
-                <span className="ml-auto text-[9px] font-bold uppercase tracking-wider text-gray-300 bg-gray-50 border border-gray-100 rounded-full px-2 py-0.5 flex-none">
+                <span className="absolute top-2 right-2 text-[8px] font-bold uppercase tracking-wider text-gray-300 bg-white border border-gray-100 rounded-full px-1.5 py-0.5">
                   Soon
+                </span>
+                <Icon strokeWidth={1.5} className="h-6 w-6 text-gray-300" />
+                <span className="text-[11px] font-semibold tracking-tight leading-tight text-gray-400">
+                  {item.label}
                 </span>
               </div>
             );
