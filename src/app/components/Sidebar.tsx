@@ -1,9 +1,8 @@
 import React from 'react';
 import { NavLink } from 'react-router';
 import {
-  LayoutDashboard, Landmark, Rocket, Handshake, CandlestickChart, Building2,
-  Newspaper, Briefcase, BellRing, Vault, ClipboardCheck, Gauge, Presentation,
-  Settings, X,
+  LayoutDashboard, Rocket, CandlestickChart, Landmark, Vault, Handshake,
+  Globe2, ClipboardCheck, Eye, Settings, X,
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -12,23 +11,22 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// Real, navigable pages.
 const linkedItems = [
-  { icon: LayoutDashboard,  label: 'Home',       to: '/dashboard', end: true  },
-  { icon: Landmark,         label: 'VCs',        to: '/vcs',       end: false },
-  { icon: Rocket,           label: 'Startups',   to: '/startups',  end: false },
-  { icon: Handshake,        label: 'Deals',      to: '/deals',     end: false },
-  { icon: CandlestickChart, label: 'IPOs',       to: '/ipos',      end: false },
-  { icon: Building2,        label: 'Corporates', to: '/stocks',    end: false },
+  { icon: LayoutDashboard,  label: 'Home',            to: '/dashboard',  end: true  },
+  { icon: Rocket,           label: 'Private Market',  to: '/startups',   end: false },
+  { icon: CandlestickChart, label: 'Public Market',   to: '/stocks',     end: false },
+  { icon: Landmark,         label: 'Venture Capital', to: '/vcs',        end: false },
+  { icon: Handshake,        label: 'Deals',           to: '/deals',      end: false },
+  { icon: Globe2,           label: 'Market Map',      to: '/market-map', end: false },
 ];
 
+// Not built yet — shown dimmed and inert so the full nav is visible without
+// implying these pages already work.
 const staticItems = [
-  { icon: Newspaper,      label: 'News' },
-  { icon: Briefcase,      label: 'My Portfolio' },
-  { icon: BellRing,       label: 'Alerts' },
-  { icon: Vault,          label: 'Private Equity' },
-  { icon: ClipboardCheck, label: 'Due Diligence' },
-  { icon: Gauge,          label: 'Benchmarking' },
-  { icon: Presentation,   label: 'Business Development' },
+  { icon: Vault,          label: 'Funds Private Equity' },
+  { icon: ClipboardCheck, label: 'Valuations and Due Diligence' },
+  { icon: Eye,            label: 'My Watchlist' },
 ];
 
 interface SidebarProps {
@@ -56,7 +54,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       </button>
 
       <nav className="p-4 pt-12">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-1">
           {linkedItems.map((item) => {
             const Icon = item.icon;
             return (
@@ -66,10 +64,10 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                 end={item.end}
                 onClick={onClose}
                 className={({ isActive }) => cn(
-                  "relative flex flex-col items-center justify-center gap-2 aspect-square rounded-2xl border transition-all duration-200",
+                  "flex items-center gap-3 rounded-xl px-3 py-2.5 border border-transparent transition-all duration-200",
                   isActive
-                    ? "bg-[#F3F4F6] border-gray-200 shadow-sm"
-                    : "bg-gray-50 border-gray-100 hover:bg-gray-100 hover:border-gray-200",
+                    ? "bg-[#F3F4F6] border-gray-200"
+                    : "hover:bg-gray-50",
                 )}
               >
                 {({ isActive }) => (
@@ -77,13 +75,13 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                     <Icon
                       strokeWidth={1.5}
                       className={cn(
-                        "h-6 w-6 transition-colors duration-200",
+                        "h-5 w-5 flex-none transition-colors duration-200",
                         isActive ? "text-[#0F172A]" : "text-gray-500",
                       )}
                     />
                     <span className={cn(
-                      "text-[11px] font-semibold tracking-tight transition-colors duration-200",
-                      isActive ? "text-[#111827]" : "text-gray-600",
+                      "text-sm font-semibold tracking-tight transition-colors duration-200",
+                      isActive ? "text-[#111827]" : "text-gray-700",
                     )}>
                       {item.label}
                     </span>
@@ -96,17 +94,23 @@ export function Sidebar({ open, onClose }: SidebarProps) {
 
         <div className="my-4 h-px bg-gray-100" />
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-1">
           {staticItems.map((item) => {
             const Icon = item.icon;
             return (
-              <button
+              <div
                 key={item.label}
-                className="flex flex-col items-center justify-center gap-2 aspect-square rounded-2xl border border-gray-100 bg-gray-50/60 cursor-default opacity-60 text-center px-1"
+                aria-disabled="true"
+                className="flex items-center gap-3 rounded-xl px-3 py-2.5 cursor-default select-none"
               >
-                <Icon strokeWidth={1.5} className="h-6 w-6 text-gray-400" />
-                <span className="text-[11px] font-semibold tracking-tight text-gray-500 leading-tight">{item.label}</span>
-              </button>
+                <Icon strokeWidth={1.5} className="h-5 w-5 flex-none text-gray-300" />
+                <span className="text-sm font-medium text-gray-400 leading-tight">
+                  {item.label}
+                </span>
+                <span className="ml-auto text-[9px] font-bold uppercase tracking-wider text-gray-300 bg-gray-50 border border-gray-100 rounded-full px-2 py-0.5 flex-none">
+                  Soon
+                </span>
+              </div>
             );
           })}
         </div>
