@@ -6,7 +6,7 @@ import {
 import { FcGoogle } from "react-icons/fc";
 import { FaLinkedin } from "react-icons/fa";
 import { supabase } from "../../lib/supabase";
-import { BrandMark } from "../components/BrandMark";
+import { BrandMark, BrandWordmark } from "../components/BrandMark";
 
 // ── Validation ────────────────────────────────────────────────────────────────
 
@@ -109,7 +109,7 @@ function BrandPanel() {
 
       <div className="relative z-10 flex items-center gap-2.5">
         <BrandMark size={36} />
-        <span className="text-2xl font-bold tracking-tight text-white">AlphaMap</span>
+        <BrandWordmark className="text-2xl tracking-tight text-white" />
       </div>
 
       <div className="relative z-10 max-w-md">
@@ -325,7 +325,7 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
     <div className="w-full max-w-sm mx-auto">
       <div className="lg:hidden flex items-center gap-2.5 mb-8">
         <BrandMark size={32} />
-        <span className="text-xl font-bold tracking-tight text-[#0F172A]">AlphaMap</span>
+        <BrandWordmark className="text-xl tracking-tight text-[#0F172A]" />
       </div>
 
       <h1 className="font-serif text-2xl font-bold text-[#0F172A] mb-1.5">Create your account</h1>

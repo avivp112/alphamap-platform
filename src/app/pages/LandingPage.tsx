@@ -10,7 +10,7 @@ import {
 } from "react-icons/si";
 import type { IconType } from "react-icons";
 import { useNavigate } from "react-router";
-import { BrandMark } from "../components/BrandMark";
+import { BrandMark, BrandWordmark } from "../components/BrandMark";
 
 // ── Shared dark section (CTA + footer) ───────────────────────────────────────
 const DARK_SECTION_BG = "#242322";
@@ -934,9 +934,7 @@ export function LandingPage() {
         {/* Logo */}
         <div className="flex items-center gap-2.5">
           <BrandMark size={32} />
-          <span className="text-xl font-bold tracking-tight text-[#0F172A]">
-            AlphaMap
-          </span>
+          <BrandWordmark className="text-xl tracking-tight text-[#0F172A]" />
         </div>
 
         {/* Nav */}

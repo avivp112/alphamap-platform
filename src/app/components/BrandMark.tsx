@@ -33,3 +33,16 @@ export function BrandMark({ size = 32 }: { size?: number }) {
     </div>
   );
 }
+
+/**
+ * The "AlphaMap" logotype. `className` controls size/color/visibility per
+ * call site (e.g. text-xl vs text-2xl, dark text on light vs white on the
+ * dark brand panel) — the font itself lives here so it only changes once.
+ */
+export function BrandWordmark({ className = "" }: { className?: string }) {
+  return (
+    <span className={className} style={{ fontFamily: "'Fraunces', serif", fontWeight: 600 }}>
+      AlphaMap
+    </span>
+  );
+}
