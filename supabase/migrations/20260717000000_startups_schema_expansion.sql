@@ -35,6 +35,18 @@
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
+-- 0) Drop dependents FIRST
+--    On this database the live startups_search view was created after a text
+--    sector_id column already existed on startups, so the view's s.* baked
+--    that column in. Renaming/dropping it below would fail with "cannot drop
+--    column ... because other objects depend on it" while the view exists.
+--    Drop the view — and suggested_startup_peers, whose return type depends
+--    on it — up front; both are recreated in section 6 at the end.
+-- -----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS suggested_startup_peers(uuid, uuid[], int);
+DROP VIEW IF EXISTS startups_search;
+
+-- -----------------------------------------------------------------------------
 -- 1) sectors — two-tier taxonomy (parent rows have parent_id NULL)
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS sectors (
