@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router';
 import { Search, Bell, User, Menu, ChevronDown, UserCircle, LogOut } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { BrandMark, BrandWordmark } from './BrandMark';
 
 interface TopNavProps {
   onMenuToggle?: () => void;
@@ -97,23 +98,8 @@ export function TopNav({ onMenuToggle }: TopNavProps) {
           <Menu className="h-6 w-6" />
         </button>
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#0F172A]">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#FFFFFF"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="w-[18px] h-[18px]"
-            >
-              <path d="M15 8 C12 8 9 12 7 15 A4 4 0 1 1 8 8 C11 8 14 13 16 16 C17.5 18 19 12 20 6" />
-              <polyline points="15 6 20 6 20 11" />
-            </svg>
-          </div>
-          <span className="text-xl font-bold tracking-tight text-[#111827] hidden sm:block">
-            AlphaMap
-          </span>
+          <BrandMark size={32} />
+          <BrandWordmark className="text-xl tracking-tight text-[#111827] hidden sm:block" />
         </div>
       </div>
 

@@ -1,0 +1,56 @@
+name: Import Master Startups List
+
+# Syncs the startups table with public/startups_list_v1.csv — the source of
+# truth for which companies belong in the database. Matched rows get their
+# name/website corrected (and, by default, unreliable profile fields reset to
+# NULL for re-enrichment); new companies are inserted; rows missing from the
+# CSV are reported (deleted only when purge_missing is checked).
+#
+# Always dry-run first. After a live run, execute "Bulk Enrich All Startups"
+# in batches to fill the emptied/new fields.
+#
+# Required secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run — report only, no DB writes (always try this first)"
+        type: boolean
+        default: true
+      reset_fields:
+        description: "Reset profile fields on matched rows so enrichment re-researches them (old values saved to startup_changes)"
+        type: boolean
+        default: true
+      purge_missing:
+        description: "DELETE companies that are in the DB but not in the CSV (irreversible — cascades to funding rounds)"
+        type: boolean
+        default: false
+
+jobs:
+  import:
+    name: "Import — dry=${{ github.event.inputs.dry_run }} reset=${{ github.event.inputs.reset_fields }} purge=${{ github.event.inputs.purge_missing }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run import
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DRY_RUN:       ${{ github.event.inputs.dry_run }}
+          RESET_FIELDS:  ${{ github.event.inputs.reset_fields }}
+          PURGE_MISSING: ${{ github.event.inputs.purge_missing }}
+        run: npx tsx scripts/import_startups_list.ts

@@ -4,26 +4,7 @@ import { Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, Mail, ArrowRight } fro
 import { FcGoogle } from "react-icons/fc";
 import { FaLinkedin } from "react-icons/fa";
 import { supabase } from "../../lib/supabase";
-
-// ── Brand mark (matches TopNav.tsx / SignUp.tsx exactly) ─────────────────────
-
-function BrandMark({ size = 32 }: { size?: number }) {
-  return (
-    <div
-      className="flex items-center justify-center rounded-lg bg-[#0F172A] flex-none"
-      style={{ width: size, height: size }}
-    >
-      <svg
-        viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5"
-        strokeLinecap="round" strokeLinejoin="round"
-        style={{ width: size * 0.56, height: size * 0.56 }}
-      >
-        <path d="M15 8 C12 8 9 12 7 15 A4 4 0 1 1 8 8 C11 8 14 13 16 16 C17.5 18 19 12 20 6" />
-        <polyline points="15 6 20 6 20 11" />
-      </svg>
-    </div>
-  );
-}
+import { BrandMark, BrandWordmark } from "../components/BrandMark";
 
 // ── Validation ────────────────────────────────────────────────────────────────
 
@@ -114,7 +95,7 @@ function BrandPanel() {
 
       <div className="relative z-10 flex items-center gap-2.5">
         <BrandMark size={36} />
-        <span className="text-2xl font-bold tracking-tight text-white">AlphaMap</span>
+        <BrandWordmark className="text-2xl tracking-tight text-white" />
       </div>
 
       <div className="relative z-10 max-w-md">
@@ -218,7 +199,7 @@ function LoginForm() {
     <div className="w-full max-w-sm mx-auto">
       <div className="lg:hidden flex items-center gap-2.5 mb-8">
         <BrandMark size={32} />
-        <span className="text-xl font-bold tracking-tight text-[#0F172A]">AlphaMap</span>
+        <BrandWordmark className="text-xl tracking-tight text-[#0F172A]" />
       </div>
 
       <h1 className="font-serif text-2xl font-bold text-[#0F172A] mb-1.5">Welcome back</h1>

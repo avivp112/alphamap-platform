@@ -1,9 +1,8 @@
 import React from 'react';
 import { NavLink } from 'react-router';
 import {
-  LayoutDashboard, Landmark, Rocket, Handshake, CandlestickChart, Building2,
-  Newspaper, Briefcase, BellRing, Vault, ClipboardCheck, Gauge, Presentation,
-  Settings, X,
+  LayoutDashboard, Rocket, CandlestickChart, Landmark, Vault, Handshake,
+  Globe2, ClipboardCheck, Eye, Settings, X,
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -12,23 +11,22 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// Real, navigable pages.
 const linkedItems = [
-  { icon: LayoutDashboard,  label: 'Home',       to: '/dashboard', end: true  },
-  { icon: Landmark,         label: 'VCs',        to: '/vcs',       end: false },
-  { icon: Rocket,           label: 'Startups',   to: '/startups',  end: false },
-  { icon: Handshake,        label: 'Deals',      to: '/deals',     end: false },
-  { icon: CandlestickChart, label: 'IPOs',       to: '/ipos',      end: false },
-  { icon: Building2,        label: 'Corporates', to: '/stocks',    end: false },
+  { icon: LayoutDashboard,  label: 'Home',            to: '/dashboard',  end: true  },
+  { icon: Rocket,           label: 'Private Market',  to: '/startups',   end: false },
+  { icon: CandlestickChart, label: 'Public Market',   to: '/stocks',     end: false },
+  { icon: Landmark,         label: 'Venture Capital', to: '/vcs',        end: false },
+  { icon: Handshake,        label: 'Deals',           to: '/deals',      end: false },
+  { icon: Globe2,           label: 'Market Map',      to: '/market-map', end: false },
 ];
 
+// Not built yet — shown dimmed and inert so the full nav is visible without
+// implying these pages already work.
 const staticItems = [
-  { icon: Newspaper,      label: 'News' },
-  { icon: Briefcase,      label: 'My Portfolio' },
-  { icon: BellRing,       label: 'Alerts' },
-  { icon: Vault,          label: 'Private Equity' },
-  { icon: ClipboardCheck, label: 'Due Diligence' },
-  { icon: Gauge,          label: 'Benchmarking' },
-  { icon: Presentation,   label: 'Business Development' },
+  { icon: Vault,          label: 'Funds Private Equity' },
+  { icon: ClipboardCheck, label: 'Valuations and Due Diligence' },
+  { icon: Eye,            label: 'My Watchlist' },
 ];
 
 interface SidebarProps {
@@ -66,7 +64,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                 end={item.end}
                 onClick={onClose}
                 className={({ isActive }) => cn(
-                  "relative flex flex-col items-center justify-center gap-2 aspect-square rounded-2xl border transition-all duration-200",
+                  "relative flex flex-col items-center justify-center gap-2 aspect-square rounded-2xl border text-center px-1.5 transition-all duration-200",
                   isActive
                     ? "bg-[#F3F4F6] border-gray-200 shadow-sm"
                     : "bg-gray-50 border-gray-100 hover:bg-gray-100 hover:border-gray-200",
@@ -82,7 +80,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                       )}
                     />
                     <span className={cn(
-                      "text-[11px] font-semibold tracking-tight transition-colors duration-200",
+                      "text-[11px] font-semibold tracking-tight leading-tight transition-colors duration-200",
                       isActive ? "text-[#111827]" : "text-gray-600",
                     )}>
                       {item.label}
@@ -100,13 +98,19 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           {staticItems.map((item) => {
             const Icon = item.icon;
             return (
-              <button
+              <div
                 key={item.label}
-                className="flex flex-col items-center justify-center gap-2 aspect-square rounded-2xl border border-gray-100 bg-gray-50/60 cursor-default opacity-60 text-center px-1"
+                aria-disabled="true"
+                className="relative flex flex-col items-center justify-center gap-2 aspect-square rounded-2xl border border-gray-100 bg-gray-50/60 cursor-default select-none text-center px-1.5"
               >
-                <Icon strokeWidth={1.5} className="h-6 w-6 text-gray-400" />
-                <span className="text-[11px] font-semibold tracking-tight text-gray-500 leading-tight">{item.label}</span>
-              </button>
+                <span className="absolute top-2 right-2 text-[8px] font-bold uppercase tracking-wider text-gray-300 bg-white border border-gray-100 rounded-full px-1.5 py-0.5">
+                  Soon
+                </span>
+                <Icon strokeWidth={1.5} className="h-6 w-6 text-gray-300" />
+                <span className="text-[11px] font-semibold tracking-tight leading-tight text-gray-400">
+                  {item.label}
+                </span>
+              </div>
             );
           })}
         </div>

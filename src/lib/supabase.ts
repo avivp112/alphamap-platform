@@ -53,13 +53,28 @@ export interface Startup {
   competitors?: string[] | null;
 }
 
+// PostgREST caps any single response at its configured max-rows (1000 by
+// default), so a plain unpaginated select silently truncates once the table
+// grows past that — this loops in batches until a short page signals the end,
+// so callers that genuinely need the whole table (e.g. GlobalTechHubMap) get
+// all of it regardless of how large `startups` gets.
 export async function fetchStartups(): Promise<Startup[]> {
-  const { data, error } = await supabase
-    .from("startups")
-    .select("*, funding_rounds(*)")
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as Startup[];
+  const BATCH = 1000;
+  const all: Startup[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from("startups")
+      .select("*, funding_rounds(*)")
+      .order("created_at", { ascending: false })
+      .range(from, from + BATCH - 1);
+    if (error) throw error;
+    const batch = (data ?? []) as Startup[];
+    all.push(...batch);
+    if (batch.length < BATCH) break;
+    from += BATCH;
+  }
+  return all;
 }
 
 // ── Startups Hub: server-side filtered + paginated search ───────────────────
