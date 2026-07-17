@@ -149,6 +149,32 @@ $$;
 -- -----------------------------------------------------------------------------
 -- 2) startups — new columns
 -- -----------------------------------------------------------------------------
+
+-- Live-schema guard: the live database may already have sector_id /
+-- sub_sector_id columns created earlier as TEXT. ADD COLUMN IF NOT EXISTS
+-- silently keeps such a column, and the view rebuild below then fails on
+-- "operator does not exist: uuid = text" when joining sectors.id against it.
+-- Rename any non-uuid version aside; the proper uuid columns are added below
+-- and any salvageable legacy values are migrated right after.
+DO $do$
+DECLARE
+  v_col  text;
+  v_type text;
+BEGIN
+  FOREACH v_col IN ARRAY ARRAY['sector_id', 'sub_sector_id'] LOOP
+    SELECT data_type INTO v_type
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'startups' AND column_name = v_col;
+
+    IF v_type IS NOT NULL AND v_type <> 'uuid' THEN
+      EXECUTE format('ALTER TABLE startups RENAME COLUMN %I TO %I', v_col, v_col || '_legacy_text');
+      RAISE NOTICE 'startups.% was type % (not uuid) — renamed to %_legacy_text; values migrated below',
+        v_col, v_type, v_col;
+    END IF;
+  END LOOP;
+END
+$do$;
+
 ALTER TABLE startups
   ADD COLUMN IF NOT EXISTS linkedin_url          text,
   ADD COLUMN IF NOT EXISTS logo_url              text,
@@ -169,6 +195,53 @@ ALTER TABLE startups
   ADD COLUMN IF NOT EXISTS enrichment_confidence integer CHECK (enrichment_confidence BETWEEN 0 AND 100),
   ADD COLUMN IF NOT EXISTS is_manually_verified  boolean NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS data_sources          jsonb;
+
+-- Migrate values from any legacy text column renamed aside above: first match
+-- sector NAMES against the taxonomy, then literal uuid strings that point at
+-- a real sectors row. The legacy column is dropped only once every non-null
+-- value has been mapped; otherwise it is kept (as *_legacy_text) for manual
+-- review, and this block will finish the cleanup on a later re-run.
+DO $do$
+DECLARE
+  v_target     text;
+  v_legacy     text;
+  v_all_mapped boolean;
+BEGIN
+  FOR v_target, v_legacy IN
+    VALUES ('sector_id',     'sector_id_legacy_text'),
+           ('sub_sector_id', 'sub_sector_id_legacy_text')
+  LOOP
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'startups' AND column_name = v_legacy
+    ) THEN
+      EXECUTE format(
+        'UPDATE startups s SET %1$I = sec.id FROM sectors sec
+          WHERE s.%1$I IS NULL AND s.%2$I IS NOT NULL
+            AND lower(sec.name) = lower(trim(s.%2$I))',
+        v_target, v_legacy);
+
+      EXECUTE format(
+        'UPDATE startups s SET %1$I = s.%2$I::uuid
+          WHERE s.%1$I IS NULL
+            AND s.%2$I ~* ''^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$''
+            AND EXISTS (SELECT 1 FROM sectors x WHERE x.id = s.%2$I::uuid)',
+        v_target, v_legacy);
+
+      EXECUTE format(
+        'SELECT NOT EXISTS (SELECT 1 FROM startups WHERE %2$I IS NOT NULL AND %1$I IS NULL)',
+        v_target, v_legacy)
+      INTO v_all_mapped;
+
+      IF v_all_mapped THEN
+        EXECUTE format('ALTER TABLE startups DROP COLUMN %I', v_legacy);
+      ELSE
+        RAISE NOTICE 'startups.% kept — some values could not be mapped to the sectors taxonomy; review manually, then drop it', v_legacy;
+      END IF;
+    END IF;
+  END LOOP;
+END
+$do$;
 
 COMMENT ON COLUMN startups.linkedin_url          IS 'Company LinkedIn page URL — secondary dedup key after website.';
 COMMENT ON COLUMN startups.status                IS 'active | acquired | ipo | closed. Exit details in acquired_by / exit_date / exit_value / ticker.';
