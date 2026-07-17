@@ -245,6 +245,14 @@ BEGIN
         v_target, v_legacy)
       INTO v_all_mapped;
 
+      -- Defense in depth: the live view may still reference this legacy
+      -- column (its s.* was expanded while the column existed under its old
+      -- name), which blocks DROP COLUMN. Drop the dependents here as well —
+      -- not only in section 0 — so the cleanup succeeds even if an earlier
+      -- part of the file was skipped. Section 6 recreates both.
+      DROP FUNCTION IF EXISTS suggested_startup_peers(uuid, uuid[], int);
+      DROP VIEW IF EXISTS startups_search;
+
       IF v_all_mapped THEN
         EXECUTE format('ALTER TABLE startups DROP COLUMN %I', v_legacy);
       ELSE
