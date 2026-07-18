@@ -3,11 +3,12 @@ name: Bulk Enrich All Startups
 # Manual trigger only — this is a long-running, resource-intensive job.
 # Run in batches of 300 to stay within the 360-minute GHA limit.
 #
-# Recommended execution plan for remaining unenriched startups:
-#   Dry run first:  MAX_TIER=2 BATCH_SIZE=913 OFFSET=0  dry_run=true
-#   Live run 1:     MAX_TIER=2 BATCH_SIZE=300 OFFSET=0   (~2.5 h — Tier 1+2 only)
-#   Live run 2:     MAX_TIER=2 BATCH_SIZE=300 OFFSET=300 (~3.5 h — Serper for all)
-#   Live run 3:     MAX_TIER=2 BATCH_SIZE=300 OFFSET=600 (~3.5 h — Serper for all)
+# Recommended execution plan for a large unenriched database:
+#   Dry run first:  MAX_TIER=2 BATCH_SIZE=300 dry_run=true
+#   Then repeat:    MAX_TIER=2 BATCH_SIZE=300 dry_run=false  (keep OFFSET=0)
+#   Every processed company is stamped with last_enriched_at and moves behind
+#   the untouched ones, so identical re-runs walk the whole database batch by
+#   batch — no OFFSET arithmetic needed.
 #
 # Search engine: Tavily (primary, budget-controlled) → Serper/Google (fallback)
 # Requires secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY,
@@ -25,7 +26,7 @@ on:
         type: number
         default: 300
       offset:
-        description: "Skip first N companies — use to resume across runs (0, 300, 600…)"
+        description: "Normally leave at 0 — the queue advances automatically via last_enriched_at. Only for resuming a cancelled run."
         type: number
         default: 0
       max_tier:
