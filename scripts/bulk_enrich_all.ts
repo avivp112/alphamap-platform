@@ -17,7 +17,13 @@
  *   MAX_TIER (default 3) — set to 2 to skip Tier 3 (fully-complete) companies and focus
  *   only on companies that actually need enrichment. Use after a partial run to avoid
  *   spending credits re-researching companies already enriched.
- *   OFFSET + BATCH_SIZE still apply within the filtered queue.
+ *
+ *   Every processed company is stamped with last_enriched_at, and the queue
+ *   puts never-enriched companies first (then oldest-stamped). So to walk a
+ *   large database across many runs, just re-run with the SAME settings and
+ *   OFFSET=0 — each run automatically picks up the next BATCH_SIZE companies
+ *   that haven't been touched yet. (OFFSET still exists for resuming a
+ *   cancelled run against an unchanged queue, but is normally left at 0.)
  *
  * Write strategy (enforced by code, not just prompt):
  *   All tiers   — only fills NULL profile fields (never overwrites existing non-null values)
@@ -31,11 +37,10 @@
  *                 Logged as "Low Confidence" for later manual review
  *
  * Usage:
- *   npx tsx scripts/bulk_enrich_all.ts                              # dry run (default)
- *   DRY_RUN=false npx tsx scripts/bulk_enrich_all.ts
- *   DRY_RUN=false BATCH_SIZE=300 OFFSET=0   npx tsx scripts/bulk_enrich_all.ts
- *   DRY_RUN=false BATCH_SIZE=300 OFFSET=300 npx tsx scripts/bulk_enrich_all.ts
- *   DRY_RUN=false BATCH_SIZE=300 OFFSET=600 npx tsx scripts/bulk_enrich_all.ts
+ *   npx tsx scripts/bulk_enrich_all.ts                            # dry run (default)
+ *   DRY_RUN=false BATCH_SIZE=300 npx tsx scripts/bulk_enrich_all.ts
+ *   …then simply re-run the same command until the queue is empty —
+ *   last_enriched_at ordering advances the batch window automatically.
  *
  * GitHub Actions: see .github/workflows/bulk-enrich-all.yml
  */
@@ -97,6 +102,7 @@ interface StartupRow {
   founders: Array<{ name: string; linkedin_url: string | null }> | null;
   leadership: Array<{ name: string; role: string; linkedin_url?: string | null }> | null;
   updated_at: string;
+  last_enriched_at: string | null;
 }
 
 interface FundingRoundRow {
@@ -690,23 +696,39 @@ async function main() {
 
   if (DRY_RUN) console.log("ℹ️  DRY RUN — set DRY_RUN=false to apply writes to the database.\n");
 
-  // ── 1. Fetch all startups + all rounds in one shot ────────────────────────
-  const [{ data: startupData, error: sErr }, { data: roundData, error: rErr }] =
-    await Promise.all([
-      supabase
-        .from("startups")
-        .select("id, name, website, description, industry, founded_year, employee_count, growth_trend, country, city, founders, leadership, updated_at")
-        .order("name"),
-      supabase
-        .from("funding_rounds")
-        .select("id, startup_id, round_type, amount_raised, valuation, is_valuation_estimated, announcement_date, source_url, lead_investor, investors"),
-    ]);
+  // ── 1. Fetch all startups + all rounds ────────────────────────────────────
+  // Paginated: PostgREST caps any single response at its max-rows setting
+  // (1000 by default), which would silently hide everything past the first
+  // 1000 rows of a 5,000+-company table.
+  async function fetchAllPaginated<T>(build: (from: number, to: number) => any): Promise<T[]> {
+    const PAGE = 1000;
+    const all: T[] = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await build(from, from + PAGE - 1);
+      if (error) { console.error("❌  fetch failed:", error.message); process.exit(1); }
+      const batch = (data ?? []) as T[];
+      all.push(...batch);
+      if (batch.length < PAGE) break;
+      from += PAGE;
+    }
+    return all;
+  }
 
-  if (sErr) { console.error("❌  startups fetch failed:", sErr.message); process.exit(1); }
-  if (rErr) { console.error("❌  funding_rounds fetch failed:", rErr.message); process.exit(1); }
-
-  const startups  = (startupData ?? []) as StartupRow[];
-  const allRounds = (roundData   ?? []) as FundingRoundRow[];
+  const startups = await fetchAllPaginated<StartupRow>((from, to) =>
+    supabase
+      .from("startups")
+      .select("id, name, website, description, industry, founded_year, employee_count, growth_trend, country, city, founders, leadership, updated_at, last_enriched_at")
+      .order("name")
+      .range(from, to),
+  );
+  const allRounds = await fetchAllPaginated<FundingRoundRow>((from, to) =>
+    supabase
+      .from("funding_rounds")
+      .select("id, startup_id, round_type, amount_raised, valuation, is_valuation_estimated, announcement_date, source_url, lead_investor, investors")
+      .order("created_at")
+      .range(from, to),
+  );
 
   const roundsByStartup = new Map<string, FundingRoundRow[]>();
   for (const r of allRounds) {
@@ -719,10 +741,12 @@ async function main() {
   const tier1: StartupRow[] = [];
   const tier2: StartupRow[] = [];
   const tier3: StartupRow[] = [];
+  const tierById = new Map<string, 1 | 2 | 3>();
 
   for (const row of startups) {
     const rounds = roundsByStartup.get(row.id) ?? [];
     const t = classifyTier(row, rounds);
+    tierById.set(row.id, t);
     if      (t === 1) tier1.push(row);
     else if (t === 2) tier2.push(row);
     else              tier3.push(row);
@@ -741,6 +765,23 @@ async function main() {
   const eligibleQueue = MAX_TIER >= 3
     ? [...tier1, ...tier2, ...tier3]
     : [...tier1, ...tier2];              // skip complete companies when MAX_TIER=2
+
+  // Queue order: never-enriched companies first (tier-priority within them),
+  // then previously-processed ones, oldest stamp first. This is what makes
+  // repeated OFFSET=0 runs walk the whole database without skips or repeats:
+  // each run stamps its batch, pushing those companies behind everything
+  // still untouched.
+  eligibleQueue.sort((a, b) => {
+    const aNever = a.last_enriched_at == null;
+    const bNever = b.last_enriched_at == null;
+    if (aNever !== bNever) return aNever ? -1 : 1;
+    if (!aNever && a.last_enriched_at !== b.last_enriched_at) {
+      return a.last_enriched_at! < b.last_enriched_at! ? -1 : 1;
+    }
+    const tierDiff = (tierById.get(a.id) ?? 3) - (tierById.get(b.id) ?? 3);
+    if (tierDiff !== 0) return tierDiff;
+    return a.name.localeCompare(b.name);
+  });
 
   const fullQueue = eligibleQueue;
   const queue     = fullQueue.slice(OFFSET, OFFSET + BATCH_SIZE);
@@ -797,9 +838,11 @@ async function main() {
     let status: ProcessStatus = "error";
     let roundsInserted = 0;
     let fieldsPatched  = 0;
+    let confidenceSeen: number | null = null;
 
     try {
       const result = await researchCompany(row.name);
+      if (result) confidenceSeen = result.confidence_score;
 
       if (!result) {
         // All four searches failed
@@ -853,6 +896,16 @@ async function main() {
 
     tally[status]++;
 
+    // Stamp every processed company so the queue advances across runs.
+    // Hard errors are left unstamped so a transient failure is retried at
+    // the front of the next run instead of being buried.
+    if (status !== "error" && !DRY_RUN) {
+      const stamp: Record<string, unknown> = { last_enriched_at: new Date().toISOString() };
+      if (confidenceSeen != null) stamp.enrichment_confidence = confidenceSeen;
+      const { error: stampErr } = await supabase.from("startups").update(stamp).eq("id", row.id);
+      if (stampErr) console.warn(`    ⚠️  last_enriched_at stamp failed: ${stampErr.message}`);
+    }
+
     // ── Summary line in the requested format ─────────────────────────────────
     const detail = status === "success"
       ? ` | ${fieldsPatched} fields | ${roundsInserted} rounds`
@@ -897,9 +950,10 @@ async function main() {
   }
 
   if (queueEnd < fullQueue.length) {
-    const nextOffset = queueEnd;
-    console.log(`\n  ▶️  To continue:  OFFSET=${nextOffset} BATCH_SIZE=${BATCH_SIZE <= 9999 ? BATCH_SIZE : 300}`);
-    console.log(`                   DRY_RUN=false OFFSET=${nextOffset} BATCH_SIZE=${BATCH_SIZE <= 9999 ? BATCH_SIZE : 300} npx tsx scripts/bulk_enrich_all.ts`);
+    const remaining = fullQueue.length - queue.length;
+    console.log(`\n  ▶️  ~${remaining} companies still waiting in the queue.`);
+    console.log(`     Re-run with the SAME settings (keep OFFSET=0) — processed companies`);
+    console.log(`     are stamped with last_enriched_at and move behind the untouched ones.`);
   } else {
     console.log(`\n  🏁  All ${fullQueue.length} companies in the full queue have been processed.`);
   }
