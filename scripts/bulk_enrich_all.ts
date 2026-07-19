@@ -10,7 +10,10 @@
  * Search engine stack: Tavily (primary, budget-tracked) → Serper.dev (Google Search fallback)
  *   Serper replaces DuckDuckGo — it is a proper REST API with no rate-limit serialisation
  *   needed, so both primary and fallback can fire 5 searches in parallel per company
- *   (funding history, amounts, investors, profile/headcount, competitors).
+ *   (funding history, amounts, investors, profile/headcount, competitors). Every query is
+ *   anchored on the company's known website domain when one exists (preserved from the CSV
+ *   import, not reset) — this disambiguates generic/ambiguous company names (e.g. "Actuality")
+ *   from unrelated same-named entities and noise in plain name-only search.
  *   Set SERP_KEY (Serper API key). TAVILY_API_KEY is optional; if absent, Serper is used
  *   for everything.
  *
@@ -422,13 +425,21 @@ async function webSearch(query: string): Promise<string | null> {
 }
 
 // ── Claude: extract complete company profile in one call ──────────────────────
-async function researchCompany(name: string): Promise<EnrichmentResult | null> {
+// `website` (already known for most rows from the master CSV import, which
+// deliberately never resets it) disambiguates generic/ambiguous company names
+// — e.g. a one-word name like "Actuality" collides with unrelated Instagram
+// posts and other companies in plain name search. When known, it's added to
+// every query as a second anchor so results have to match BOTH the name and
+// the known domain, not just the name alone.
+async function researchCompany(name: string, website?: string | null): Promise<EnrichmentResult | null> {
+  const domain = websiteDomain(website);
+  const anchor = domain ? ` "${domain}"` : "";
   const [historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw] = await Promise.all([
-    webSearch(`"${name}" seed round "Series A" first funding earliest founding investors site:crunchbase.com OR site:techcrunch.com OR site:pitchbook.com`),
-    webSearch(`"${name}" total funding raised since founding all rounds USD million billion valuation announcement history`),
-    webSearch(`"${name}" lead investor venture capital backed participated investors funded round investment amount check size`),
-    webSearch(`"${name}" company founder CEO CTO description industry headquarters country city employees headcount acquired acquisition patents intellectual property 2024 2025`),
-    webSearch(`"${name}" competitors alternatives vs rivals "compared to" market landscape`),
+    webSearch(`"${name}"${anchor} seed round "Series A" first funding earliest founding investors site:crunchbase.com OR site:techcrunch.com OR site:pitchbook.com`),
+    webSearch(`"${name}"${anchor} total funding raised since founding all rounds USD million billion valuation announcement history`),
+    webSearch(`"${name}"${anchor} lead investor venture capital backed participated investors funded round investment amount check size`),
+    webSearch(`"${name}"${anchor} company founder CEO CTO description industry headquarters country city employees headcount acquired acquisition patents intellectual property 2024 2025`),
+    webSearch(`"${name}"${anchor} competitors alternatives vs rivals "compared to" market landscape`),
   ]);
 
   if (![historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw].some(Boolean)) return null;
@@ -1227,7 +1238,7 @@ async function main() {
     let rowDeleted = false;
 
     try {
-      const result = await researchCompany(row.name);
+      const result = await researchCompany(row.name, row.website);
       if (result) confidenceSeen = result.confidence_score;
 
       if (!result) {
