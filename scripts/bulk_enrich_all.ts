@@ -262,6 +262,14 @@ function websiteDomain(url: string | null | undefined): string | null {
   }
 }
 
+// ── Claude token/cost tracking ─────────────────────────────────────────────────
+// Haiku 4.5 pricing: $1.00 / MTok input, $5.00 / MTok output (see console.claude.com/pricing).
+// Search API costs (Tavily/Serper) are separate and not included in this figure.
+const HAIKU_INPUT_PRICE_PER_TOKEN  = 1 / 1_000_000;
+const HAIKU_OUTPUT_PRICE_PER_TOKEN = 5 / 1_000_000;
+let totalInputTokens  = 0;
+let totalOutputTokens = 0;
+
 // ── Search stack: Tavily → DuckDuckGo ─────────────────────────────────────────
 let tavilyCallCount = 0;
 let tavilyExhausted = !process.env.TAVILY_API_KEY;
@@ -706,6 +714,9 @@ Research data:
 ${context}`,
     }],
   });
+
+  totalInputTokens  += msg.usage.input_tokens;
+  totalOutputTokens += msg.usage.output_tokens;
 
   const tool = msg.content.find((b) => b.type === "tool_use");
   if (!tool || tool.type !== "tool_use") return null;
@@ -1251,6 +1262,13 @@ async function main() {
   console.log(`  🔌  Tavily calls used:   ${tavilyCallCount} / ${TAVILY_BUDGET}`);
   if (serperCallCount > 0) {
     console.log(`  🔍  Serper calls used:   ${serperCallCount}`);
+  }
+  const claudeCost = totalInputTokens * HAIKU_INPUT_PRICE_PER_TOKEN + totalOutputTokens * HAIKU_OUTPUT_PRICE_PER_TOKEN;
+  console.log(`  🧠  Claude tokens:       ${totalInputTokens.toLocaleString()} in / ${totalOutputTokens.toLocaleString()} out`);
+  console.log(`  💵  Claude cost (est.):  $${claudeCost.toFixed(2)}  (Haiku 4.5 @ $1/$5 per MTok — search API cost is separate)`);
+  if (queue.length > 0) {
+    const perCompany = claudeCost / queue.length;
+    console.log(`      → $${perCompany.toFixed(4)}/company → ~$${(perCompany * fullQueue.length).toFixed(0)} projected for all ${fullQueue.length} in the current queue`);
   }
   console.log(`  ⏱️   Elapsed:             ${mm}m ${ss}s`);
 
