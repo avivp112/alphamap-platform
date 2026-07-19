@@ -141,13 +141,19 @@ interface ExtractedProfile {
 
 interface ExtractedLeader { name: string; role: string }
 
+interface ExtractedHeadcountPoint { date: string; employee_count: number; source?: string }
+
 interface EnrichmentResult {
   is_public_company: boolean;
   is_tech_company: boolean;
   profile: ExtractedProfile;
   funding_rounds: ExtractedRound[];
   leadership: ExtractedLeader[];
-  metrics: { headcount: number | null; growth_trend: string | null };
+  metrics: {
+    headcount: number | null;
+    growth_trend: string | null;
+    headcount_history: ExtractedHeadcountPoint[];
+  };
   confidence_score: number;
   reasoning: string;
   source_url: string;
@@ -363,7 +369,17 @@ async function researchCompany(name: string): Promise<EnrichmentResult | null> {
             description: "Company profile — omit any field you cannot verify.",
             properties: {
               website:      { type: "string",  description: "Root domain URL (https://example.com)" },
-              description:  { type: "string",  description: "3-4 sentences: what it does, who it serves, key differentiator." },
+              description:  {
+                type: "string",
+                description: [
+                  "4-6 detailed sentences, not a summary blurb. Must cover, in order:",
+                  "(1) what the company does and its core product/technology,",
+                  "(2) who it serves — target customers, market, or use case,",
+                  "(3) its key differentiator vs. competitors,",
+                  "(4) one concrete detail of traction, market position, or founding story pulled from the research (e.g. notable customers, awards, a specific milestone).",
+                  "Every sentence must add real information found in the research — never pad with generic filler.",
+                ].join(" "),
+              },
               industry:     { type: "string",  description: "Primary tech sector (e.g. 'AI & ML', 'Cybersecurity', 'FinTech')." },
               founded_year: { type: "integer", description: "Year the company was incorporated." },
               country:      { type: "string",  description: "HQ country full name (e.g. 'United States')." },
@@ -439,12 +455,42 @@ async function researchCompany(name: string): Promise<EnrichmentResult | null> {
             properties: {
               headcount: {
                 type: "number",
-                description: "Best available total employee count as a plain integer. Omit if unknown.",
+                description: "Best available CURRENT total employee count as a plain integer. Omit if unknown.",
               },
               growth_trend: {
                 type: "string",
                 enum: ["rapid growth","moderate growth","stable","reduction","unknown"],
                 description: "12-month headcount trend based on LinkedIn / job-posting signals.",
+              },
+              headcount_history: {
+                type: "array",
+                description: [
+                  "Every DISTINCT dated employee-count figure found anywhere in the research —",
+                  "not just the current figure. Funding announcements, news articles, and LinkedIn",
+                  "snapshots often state headcount as of a specific point in time (e.g. \"the 45-person",
+                  "startup raised a Series A\", \"now employing over 200 people\" in a 2023 article).",
+                  "Scan ALL research sections (funding history, amounts, profile) for these, not just",
+                  "the most recent one. Return one entry per distinct data point you can verify, oldest",
+                  "to newest. Return [] if no dated figures are found — never invent intermediate points.",
+                ].join(" "),
+                items: {
+                  type: "object" as const,
+                  properties: {
+                    date: {
+                      type: "string",
+                      description: "Date this figure was reported/accurate, YYYY-MM-DD. Use YYYY-01-01 if only the year is known.",
+                    },
+                    employee_count: {
+                      type: "integer",
+                      description: "Employee count as of that date, as a plain integer.",
+                    },
+                    source: {
+                      type: "string",
+                      description: "Where this figure came from, e.g. 'Series A announcement', 'LinkedIn', 'TechCrunch article'.",
+                    },
+                  },
+                  required: ["date", "employee_count"],
+                },
               },
             },
           },
@@ -485,7 +531,12 @@ STRICT RULES:
 4. VALUATION — set is_valuation_estimated: true if inferred or not officially disclosed.
 5. DATES — YYYY-MM-DD; use YYYY-01-01 when only the year is known.
 6. FOUNDERS — full legal names only. Distinguish founders from hired executives.
-7. HEADCOUNT — most recent available figure. growth_trend reflects 12-month direction.
+7. HEADCOUNT — most recent available figure in metrics.headcount. growth_trend reflects 12-month direction.
+7b. HEADCOUNT HISTORY — separately, mine ALL research sections (not just the profile search) for any
+    other dated employee-count mentions — funding announcements frequently state headcount at that time
+    (e.g. "the 45-person startup raised..."). Put every distinct dated figure you find into
+    metrics.headcount_history, oldest to newest. This is REQUIRED whenever the research contains more
+    than one dated headcount figure — do not just report the current number and stop looking.
 8. VERIFY BEFORE ADDING — omit anything unconfirmable. Return [] for rounds rather than guess.
 9. CONFIDENCE — score honestly and conservatively. Penalise for missing amounts, dates, investor names, or conflicting sources.
 10. PRIVACY — if this company has IPO'd or is publicly traded, set is_public_company: true.
@@ -500,7 +551,7 @@ ${context}`,
 
   const i = tool.input as Partial<EnrichmentResult> & {
     profile?: Partial<ExtractedProfile>;
-    metrics?: { headcount?: number; growth_trend?: string };
+    metrics?: { headcount?: number; growth_trend?: string; headcount_history?: ExtractedHeadcountPoint[] };
   };
 
   return {
@@ -510,8 +561,9 @@ ${context}`,
     funding_rounds:    (i.funding_rounds   ?? []).filter((r) => r.round_type),
     leadership:        i.leadership        ?? [],
     metrics: {
-      headcount:    i.metrics?.headcount    ?? null,
-      growth_trend: i.metrics?.growth_trend ?? null,
+      headcount:         i.metrics?.headcount         ?? null,
+      growth_trend:      i.metrics?.growth_trend      ?? null,
+      headcount_history: (i.metrics?.headcount_history ?? []).filter((p) => p.date && p.employee_count != null),
     },
     confidence_score: typeof i.confidence_score === "number" ? i.confidence_score : 0,
     reasoning:        i.reasoning  ?? "",
@@ -662,24 +714,31 @@ async function patchStartupProfile(
 }
 
 // ── Headcount history snapshot ────────────────────────────────────────────────
-// Upserts one row per company per calendar day. Subsequent runs on the same day
-// update the headcount value (latest wins), so re-runs are always safe.
-async function recordHeadcountSnapshot(startupId: string, employeeCount: number): Promise<void> {
+// Upserts one row per company per calendar day. Subsequent runs/points on the
+// same day update the headcount value (latest wins), so re-runs are always
+// safe. Pass an explicit snapshotDate to backfill a historical data point
+// mined from research (e.g. a headcount mentioned in a 2021 Series A
+// announcement) rather than today's date.
+async function recordHeadcountSnapshot(
+  startupId: string,
+  employeeCount: number,
+  snapshotDate?: string,
+): Promise<void> {
+  const date = snapshotDate ?? new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   if (DRY_RUN) {
-    console.log(`    [DRY] Would upsert headcount_history: ${employeeCount}`);
+    console.log(`    [DRY] Would upsert headcount_history: ${employeeCount} @ ${date}`);
     return;
   }
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   const { error } = await supabase
     .from("headcount_history")
     .upsert(
-      { startup_id: startupId, employee_count: employeeCount, snapshot_date: today },
+      { startup_id: startupId, employee_count: employeeCount, snapshot_date: date },
       { onConflict: "startup_id,snapshot_date" },
     );
   if (error) {
     console.warn(`    ⚠️  headcount_history snapshot failed: ${error.message}`);
   } else {
-    console.log(`    📈  headcount_history: ${employeeCount.toLocaleString()} recorded for ${today}`);
+    console.log(`    📈  headcount_history: ${employeeCount.toLocaleString()} recorded for ${date}`);
   }
 }
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -874,7 +933,13 @@ async function main() {
         const profileResult = await patchStartupProfile(row, result);
         fieldsPatched  = profileResult.fieldsPatched;
 
-        // Persist headcount snapshot whenever a headcount value was obtained
+        // Persist every dated historical headcount point mined from research
+        // (e.g. figures found in older funding announcements/news articles),
+        // then the current figure as of today — building a real lifespan
+        // series across a single run instead of one point per calendar day.
+        for (const point of result.metrics.headcount_history) {
+          await recordHeadcountSnapshot(row.id, point.employee_count, point.date);
+        }
         if (result.metrics.headcount != null) {
           await recordHeadcountSnapshot(row.id, result.metrics.headcount);
         }
