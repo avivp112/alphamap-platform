@@ -34,6 +34,12 @@
  *                 sets leadership only when currently NULL
  *                 sets competitors (4-5, each with a how-it-competes explanation) only when
  *                 currently NULL — cross-linked to our own tracked startups by domain match
+ *                 sets acquisitions (companies THIS company bought) only when currently NULL —
+ *                 same domain cross-link; [] from the model does NOT count as "set"
+ *                 sets patent_count/patent_fields only when currently NULL — best-effort, no
+ *                 dedicated search call, omitted rather than guessed
+ *                 records per-investor dollar amounts on a round (funding_rounds.investor_amounts)
+ *                 only for names explicitly disclosed — never a split of the round total
  *   Tier 3      — identical rule: since profile is complete, only headcount/growth_trend
  *                 are refreshed; everything else is fill-NULL only
  *   Confidence  — SKIPS ALL WRITES if confidence_score < MIN_CONFIDENCE (default: 40)
@@ -105,6 +111,9 @@ interface StartupRow {
   founders: Array<{ name: string; linkedin_url: string | null }> | null;
   leadership: Array<{ name: string; role: string; linkedin_url?: string | null }> | null;
   competitors: Competitor[] | null;
+  acquisitions: Acquisition[] | null;
+  patent_count: number | null;
+  patent_fields: string[] | null;
   updated_at: string;
   last_enriched_at: string | null;
 }
@@ -115,6 +124,17 @@ interface Competitor {
   how_it_competes: string;
   startup_id: string | null;
 }
+
+interface Acquisition {
+  company_name: string;
+  website: string | null;
+  acquired_date: string | null;
+  amount: number | null;
+  description: string | null;
+  acquired_startup_id: string | null;
+}
+
+interface InvestorAmount { name: string; amount: number }
 
 interface FundingRoundRow {
   id: string;
@@ -127,6 +147,7 @@ interface FundingRoundRow {
   source_url: string | null;
   lead_investor: string | null;
   investors: string[] | null;
+  investor_amounts: InvestorAmount[] | null;
 }
 
 interface ExtractedRound {
@@ -137,6 +158,7 @@ interface ExtractedRound {
   date?: string | null;
   lead_investor?: string | null;
   other_investors?: string[] | null;
+  investor_amounts?: InvestorAmount[] | null;
   source_url?: string | null;
 }
 
@@ -156,6 +178,14 @@ interface ExtractedHeadcountPoint { date: string; employee_count: number; source
 
 interface ExtractedCompetitor { name: string; website?: string; how_it_competes: string }
 
+interface ExtractedAcquisition {
+  company_name: string;
+  website?: string;
+  acquired_date?: string;
+  amount?: number;
+  description?: string;
+}
+
 interface EnrichmentResult {
   is_public_company: boolean;
   is_tech_company: boolean;
@@ -168,6 +198,8 @@ interface EnrichmentResult {
     headcount_history: ExtractedHeadcountPoint[];
   };
   competitors: ExtractedCompetitor[];
+  acquisitions: ExtractedAcquisition[];
+  patents: { patent_count: number | null; patent_fields: string[] };
   confidence_score: number;
   reasoning: string;
   source_url: string;
@@ -366,8 +398,8 @@ async function researchCompany(name: string): Promise<EnrichmentResult | null> {
   const [historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw] = await Promise.all([
     webSearch(`"${name}" complete funding history all rounds Seed "Series A" "Series B" site:crunchbase.com OR site:techcrunch.com OR site:pitchbook.com`),
     webSearch(`"${name}" funding raised USD million billion amount valuation announcement date 2019 2020 2021 2022 2023 2024 2025`),
-    webSearch(`"${name}" lead investor venture capital backed participated investors funded round`),
-    webSearch(`"${name}" company founder CEO CTO description industry headquarters country city employees headcount 2024 2025`),
+    webSearch(`"${name}" lead investor venture capital backed participated investors funded round investment amount check size`),
+    webSearch(`"${name}" company founder CEO CTO description industry headquarters country city employees headcount acquired acquisition patents intellectual property 2024 2025`),
     webSearch(`"${name}" competitors alternatives vs rivals "compared to" market landscape`),
   ]);
 
@@ -464,6 +496,24 @@ async function researchCompany(name: string): Promise<EnrichmentResult | null> {
                   items: { type: "string" },
                   description: "All other participating investors (not the lead). Omit if none known.",
                 },
+                investor_amounts: {
+                  type: "array",
+                  description: [
+                    "For any investor named in lead_investor or other_investors whose SPECIFIC dollar",
+                    "contribution to THIS round is explicitly disclosed (e.g. 'Sequoia led with $20M of",
+                    "the $50M round'), record it here. This is rare — most rounds only disclose the round",
+                    "total, not the per-investor split. Return [] if no per-investor amount is disclosed.",
+                    "NEVER estimate or split the round total evenly across participants.",
+                  ].join(" "),
+                  items: {
+                    type: "object" as const,
+                    properties: {
+                      name: { type: "string", description: "Investor name — must match lead_investor or an entry in other_investors." },
+                      amount: { type: "number", description: "USD this investor specifically contributed to this round, as a plain integer." },
+                    },
+                    required: ["name", "amount"],
+                  },
+                },
                 source_url: {
                   type: "string",
                   description: "Best URL for this round: press release, SEC filing, or Crunchbase round page.",
@@ -552,6 +602,48 @@ async function researchCompany(name: string): Promise<EnrichmentResult | null> {
               required: ["name", "how_it_competes"],
             },
           },
+          acquisitions: {
+            type: "array",
+            description: [
+              "Companies THIS company has ACQUIRED — the OUTBOUND direction only. Do NOT list this",
+              "company being acquired by someone else here (that belongs in funding_rounds with",
+              "round_type 'Acquired'). For each acquisition, give the acquired company's name, the",
+              "acquisition date, the disclosed amount if any, and a one-sentence description of why",
+              "(e.g. talent acqui-hire, product/technology, market expansion). Return [] if this",
+              "company hasn't acquired anyone, or if you cannot verify any acquisitions — most startups",
+              "have never acquired another company, so [] is the common, correct answer.",
+            ].join(" "),
+            items: {
+              type: "object" as const,
+              properties: {
+                company_name: { type: "string", description: "Name of the company that was acquired." },
+                website: { type: "string", description: "Acquired company's root domain URL, if known. Omit if unknown." },
+                acquired_date: { type: "string", description: "Acquisition date YYYY-MM-DD. Use YYYY-01-01 if only the year is known. Omit if unknown." },
+                amount: { type: "number", description: "USD acquisition price as a plain integer. Omit if undisclosed." },
+                description: { type: "string", description: "One sentence: why this acquisition happened (talent, technology, market expansion, etc.)." },
+              },
+              required: ["company_name"],
+            },
+          },
+          patents: {
+            type: "object" as const,
+            description: [
+              "Best-effort patent signal — general web search often can't surface real patent data, so",
+              "omit rather than guess. Only fill this in when you find genuine evidence (a patents/IP",
+              "page, a news article citing a patent count, Google Patents results, etc.).",
+            ].join(" "),
+            properties: {
+              patent_count: {
+                type: "integer",
+                description: "Best available count of patents held or filed (granted + pending combined is fine). Omit entirely if not found — never default to 0.",
+              },
+              patent_fields: {
+                type: "array",
+                items: { type: "string" },
+                description: "2-5 technology/subject areas the company's patents cover (e.g. 'Natural Language Processing', 'Battery Chemistry'). Omit if unknown.",
+              },
+            },
+          },
           confidence_score: {
             type: "number",
             description: [
@@ -602,6 +694,13 @@ STRICT RULES:
     how and in what way they compete (shared product space, shared target customer, positioned as an
     alternative, etc.) — not just that they're in the same broad sector. Verify from the research; return
     [] rather than guess generic same-sector companies.
+12. INVESTOR AMOUNTS — only fill investor_amounts on a round when a SPECIFIC investor's dollar contribution
+    is explicitly stated. Never split a round total evenly across participants to fabricate a number.
+13. ACQUISITIONS — acquisitions is for companies THIS company bought (outbound only). If this company was
+    itself acquired, that goes in funding_rounds as round_type 'Acquired', NOT here. [] is the normal,
+    correct answer for most companies — do not force an entry.
+14. PATENTS — best-effort only. Omit patent_count/patent_fields entirely unless you find real evidence
+    (an IP page, a news article, Google Patents). Never default patent_count to 0.
 
 Research data:
 ${context}`,
@@ -615,6 +714,8 @@ ${context}`,
     profile?: Partial<ExtractedProfile>;
     metrics?: { headcount?: number; growth_trend?: string; headcount_history?: ExtractedHeadcountPoint[] };
     competitors?: ExtractedCompetitor[];
+    acquisitions?: ExtractedAcquisition[];
+    patents?: { patent_count?: number; patent_fields?: string[] };
   };
 
   return {
@@ -628,7 +729,12 @@ ${context}`,
       growth_trend:      i.metrics?.growth_trend      ?? null,
       headcount_history: (i.metrics?.headcount_history ?? []).filter((p) => p.date && p.employee_count != null),
     },
-    competitors:      (i.competitors ?? []).filter((c) => c.name && c.how_it_competes),
+    competitors:      (i.competitors  ?? []).filter((c) => c.name && c.how_it_competes),
+    acquisitions:     (i.acquisitions ?? []).filter((a) => a.company_name),
+    patents: {
+      patent_count:  typeof i.patents?.patent_count === "number" ? i.patents.patent_count : null,
+      patent_fields: (i.patents?.patent_fields ?? []).filter(Boolean),
+    },
     confidence_score: typeof i.confidence_score === "number" ? i.confidence_score : 0,
     reasoning:        i.reasoning  ?? "",
     source_url:       i.source_url ?? "",
@@ -670,15 +776,24 @@ async function insertNewRounds(
     const allInv = [...(lead ? [lead] : []), ...others].filter(Boolean) as string[];
     const isEst  = round.is_valuation_estimated ?? false;
 
+    // Only keep per-investor amounts for names that are actually listed as
+    // participants in this round — guards against a malformed/unlinked entry.
+    const investorAmounts = (round.investor_amounts ?? [])
+      .filter((a): a is InvestorAmount => !!a?.name && typeof a.amount === "number" && a.amount > 0)
+      .filter((a) => allInv.some((n) => n.toLowerCase() === a.name.toLowerCase()));
+
     if (DRY_RUN) {
-      const leadStr = lead ? ` | ${lead}${others.length > 0 ? ` +${others.length}` : ""}` : "";
-      console.log(`    [DRY] ${roundType} | ${announcedDate ?? "no date"} | ${amt}${leadStr}`);
+      const leadStr   = lead ? ` | ${lead}${others.length > 0 ? ` +${others.length}` : ""}` : "";
+      const amountsStr = investorAmounts.length > 0
+        ? ` | amounts: ${investorAmounts.map((a) => `${a.name} $${(a.amount / 1e6).toFixed(0)}M`).join(", ")}`
+        : "";
+      console.log(`    [DRY] ${roundType} | ${announcedDate ?? "no date"} | ${amt}${leadStr}${amountsStr}`);
       inserted++;
       seen.push({
         id: "dry", startup_id: startupId, round_type: roundType,
         amount_raised: null, valuation: null, is_valuation_estimated: null,
         announcement_date: announcedDate, source_url: null,
-        lead_investor: null, investors: null,
+        lead_investor: null, investors: null, investor_amounts: null,
       });
       continue;
     }
@@ -693,13 +808,17 @@ async function insertNewRounds(
       source_url:             sourceUrl,
       lead_investor:          lead,
       investors:              allInv.length > 0 ? allInv : null,
+      investor_amounts:       investorAmounts.length > 0 ? investorAmounts : null,
     });
 
     if (error) {
       console.warn(`    ⚠️  Round insert failed (${roundType}): ${error.message}`);
     } else {
-      const leadStr = lead ? ` | ${lead}${others.length > 0 ? ` +${others.length}` : ""}` : "";
-      console.log(`    💰  ${roundType} | ${announcedDate ?? "no date"} | ${amt}${leadStr}`);
+      const leadStr   = lead ? ` | ${lead}${others.length > 0 ? ` +${others.length}` : ""}` : "";
+      const amountsStr = investorAmounts.length > 0
+        ? ` | amounts: ${investorAmounts.map((a) => `${a.name} $${(a.amount / 1e6).toFixed(0)}M`).join(", ")}`
+        : "";
+      console.log(`    💰  ${roundType} | ${announcedDate ?? "no date"} | ${amt}${leadStr}${amountsStr}`);
       inserted++;
       seen.push({
         id: "new", startup_id: startupId, round_type: roundType,
@@ -707,6 +826,7 @@ async function insertNewRounds(
         is_valuation_estimated: isEst,
         announcement_date: announcedDate, source_url: null,
         lead_investor: lead, investors: allInv.length > 0 ? allInv : null,
+        investor_amounts: investorAmounts.length > 0 ? investorAmounts : null,
       });
     }
   }
@@ -769,6 +889,34 @@ async function patchStartupProfile(
     });
   }
 
+  // Acquisitions: set only when currently empty — same fill-null + domain
+  // cross-link pattern as competitors. [] found by Claude is NOT written
+  // here (only a non-empty result fills the slot); a genuinely-empty company
+  // stays NULL rather than being stamped with an empty array, so it's still
+  // picked up for review rather than looking like a verified "no acquisitions".
+  if (result.acquisitions.length > 0 && (!existing.acquisitions || existing.acquisitions.length === 0)) {
+    patch.acquisitions = result.acquisitions.map((a): Acquisition => {
+      const domain = websiteDomain(a.website);
+      const match  = domain ? startupByDomain.get(domain) : undefined;
+      return {
+        company_name: a.company_name,
+        website: a.website ?? null,
+        acquired_date: a.acquired_date ?? null,
+        amount: a.amount ?? null,
+        description: a.description ?? null,
+        acquired_startup_id: match && match.id !== existing.id ? match.id : null,
+      };
+    });
+  }
+
+  // Patents: fill-null only, same as the rest of the profile block.
+  if (existing.patent_count == null && result.patents.patent_count != null) {
+    patch.patent_count = result.patents.patent_count;
+  }
+  if ((!existing.patent_fields || existing.patent_fields.length === 0) && result.patents.patent_fields.length > 0) {
+    patch.patent_fields = result.patents.patent_fields;
+  }
+
   // Headcount + growth_trend: always refresh (time-varying — valid for all tiers)
   if (metrics.headcount    != null) patch.employee_count = metrics.headcount;
   if (metrics.growth_trend != null) patch.growth_trend   = metrics.growth_trend;
@@ -791,6 +939,8 @@ async function patchStartupProfile(
   if (patch.growth_trend)   parts.push(`trend: ${metrics.growth_trend}`);
   if (patch.leadership)     parts.push(`${leadership.length} leaders`);
   if (patch.competitors)    parts.push(`${(patch.competitors as Competitor[]).length} competitors`);
+  if (patch.acquisitions)   parts.push(`${(patch.acquisitions as Acquisition[]).length} acquisitions`);
+  if (patch.patent_count != null) parts.push(`${patch.patent_count} patents`);
   const profileKeys = ["website","description","industry","founded_year","country","city","founders"]
     .filter((k) => patch[k] !== undefined);
   if (profileKeys.length > 0) parts.push(`profile: ${profileKeys.join(", ")}`);
@@ -863,14 +1013,14 @@ async function main() {
   const startups = await fetchAllPaginated<StartupRow>((from, to) =>
     supabase
       .from("startups")
-      .select("id, name, website, description, industry, founded_year, employee_count, growth_trend, country, city, founders, leadership, competitors, updated_at, last_enriched_at")
+      .select("id, name, website, description, industry, founded_year, employee_count, growth_trend, country, city, founders, leadership, competitors, acquisitions, patent_count, patent_fields, updated_at, last_enriched_at")
       .order("name")
       .range(from, to),
   );
   const allRounds = await fetchAllPaginated<FundingRoundRow>((from, to) =>
     supabase
       .from("funding_rounds")
-      .select("id, startup_id, round_type, amount_raised, valuation, is_valuation_estimated, announcement_date, source_url, lead_investor, investors")
+      .select("id, startup_id, round_type, amount_raised, valuation, is_valuation_estimated, announcement_date, source_url, lead_investor, investors, investor_amounts")
       .order("created_at")
       .range(from, to),
   );

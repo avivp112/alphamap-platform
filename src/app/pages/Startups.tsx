@@ -14,7 +14,7 @@ import {
   UserRound, LayoutGrid, List, ExternalLink,
   ChevronDown, ChevronLeft, ChevronRight, Building2, CheckSquare, Square,
   GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2, ChevronUp,
-  SlidersHorizontal,
+  SlidersHorizontal, Award,
 } from "lucide-react";
 import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
@@ -1028,24 +1028,55 @@ const CAP_TABLE_TIER_STYLE: Record<number, { label: string; cls: string; dot: st
 };
 const CAP_TABLE_UNRANKED = { label: "Unranked", cls: "bg-gray-50 text-gray-400 border-gray-200", dot: "#9CA3AF" };
 
-function buildCapTable(rounds: FundingRound[]): { leads: string[]; participants: string[] } {
-  const leadSet = new Set<string>();
-  const allSet  = new Set<string>();
-  for (const r of rounds) {
-    const lead = r.lead_investor?.trim();
-    if (lead) { leadSet.add(lead); allSet.add(lead); }
-    for (const inv of r.investors ?? []) {
-      const name = inv?.trim();
-      if (name) allSet.add(name);
-    }
-  }
-  const leads = Array.from(leadSet).sort();
-  const participants = Array.from(allSet).filter((n) => !leadSet.has(n)).sort();
-  return { leads, participants };
+interface InvestorScheduleEntry {
+  name: string;
+  isLead: boolean;
+  roundCount: number;
+  // Sum of disclosed per-round investor_amounts for this name. null means no
+  // per-investor split was ever disclosed — NOT that they invested nothing.
+  totalAmount: number | null;
 }
 
-function CapTableInvestorRow({ name, tierMap }: { name: string; tierMap: Map<string, number> | null }) {
-  const tier = tierMap?.get(name.toLowerCase()) ?? null;
+// Aggregates every named investor across a company's full funding history —
+// the investor schedule. Per-investor totals only include amounts explicitly
+// disclosed per round (funding_rounds.investor_amounts); most rounds only
+// disclose the round total, so totalAmount is commonly null even for an
+// active lead investor.
+function buildInvestorSchedule(rounds: FundingRound[]): InvestorScheduleEntry[] {
+  const byName = new Map<string, InvestorScheduleEntry>();
+  for (const r of rounds) {
+    const lead = r.lead_investor?.trim();
+    const names = new Set<string>();
+    if (lead) names.add(lead);
+    for (const inv of r.investors ?? []) {
+      const name = inv?.trim();
+      if (name) names.add(name);
+    }
+    const amountByName = new Map<string, number>();
+    for (const a of r.investor_amounts ?? []) {
+      if (a?.name && typeof a.amount === "number") amountByName.set(a.name.trim().toLowerCase(), a.amount);
+    }
+    for (const name of names) {
+      const key = name.toLowerCase();
+      const entry = byName.get(key) ?? { name, isLead: false, roundCount: 0, totalAmount: null };
+      entry.roundCount += 1;
+      if (name === lead) entry.isLead = true;
+      const amt = amountByName.get(key);
+      if (amt != null) entry.totalAmount = (entry.totalAmount ?? 0) + amt;
+      byName.set(key, entry);
+    }
+  }
+  return Array.from(byName.values()).sort((a, b) => {
+    if (a.isLead !== b.isLead) return a.isLead ? -1 : 1;
+    if (a.totalAmount != null && b.totalAmount != null) return b.totalAmount - a.totalAmount;
+    if (a.totalAmount != null) return -1;
+    if (b.totalAmount != null) return 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function CapTableInvestorRow({ entry, tierMap }: { entry: InvestorScheduleEntry; tierMap: Map<string, number> | null }) {
+  const tier = tierMap?.get(entry.name.toLowerCase()) ?? null;
   const style = tier != null ? CAP_TABLE_TIER_STYLE[tier] : CAP_TABLE_UNRANKED;
   return (
     <div className="flex items-center justify-between gap-3 bg-gray-50 border border-gray-100 rounded-[12px] px-4 py-3">
@@ -1054,11 +1085,20 @@ function CapTableInvestorRow({ name, tierMap }: { name: string; tierMap: Map<str
           className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black flex-none"
           style={{ background: `${style.dot}18`, border: `1px solid ${style.dot}40`, color: style.dot }}
         >
-          {name[0]?.toUpperCase() ?? "?"}
+          {entry.name[0]?.toUpperCase() ?? "?"}
         </div>
-        <span className="text-sm font-semibold text-gray-900 truncate">{name}</span>
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm font-semibold text-gray-900 truncate">{entry.name}</span>
+            {entry.isLead && <Zap className="w-3 h-3 text-[#F59E0B] flex-none" />}
+          </div>
+          <span className="text-[10px] text-gray-400">{entry.roundCount} round{entry.roundCount === 1 ? "" : "s"}</span>
+        </div>
       </div>
-      <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border flex-none whitespace-nowrap ${style.cls}`}>{style.label}</span>
+      <div className="flex items-center gap-2 flex-none">
+        <span className="text-xs font-bold text-gray-700 whitespace-nowrap">{entry.totalAmount != null ? fmt(entry.totalAmount) : "—"}</span>
+        <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border whitespace-nowrap ${style.cls}`}>{style.label}</span>
+      </div>
     </div>
   );
 }
@@ -1070,42 +1110,37 @@ function CapTableTab({ startup }: { startup: Startup }) {
     fetchInvestorTierMap().then(setTierMap).catch(() => setTierMap(new Map()));
   }, []);
 
-  const { leads, participants } = useMemo(
-    () => buildCapTable(startup.funding_rounds ?? []),
+  const schedule = useMemo(
+    () => buildInvestorSchedule(startup.funding_rounds ?? []),
+    [startup.funding_rounds],
+  );
+  const totalRaised = useMemo(
+    () => (startup.funding_rounds ?? []).reduce((sum, r) => sum + (r.amount_raised ?? 0), 0),
     [startup.funding_rounds],
   );
 
-  if (leads.length === 0 && participants.length === 0) {
+  if (schedule.length === 0) {
     return <MissingDataState message="No investors are linked to this company's funding rounds yet — the cap table has not been ingested." />;
   }
 
   return (
     <div className="space-y-6">
-      {leads.length > 0 && (
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <Zap className="w-4 h-4 text-[#F59E0B]" />
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Lead Investors</h3>
-          </div>
-          <div className="space-y-2">
-            {leads.map((n) => <CapTableInvestorRow key={n} name={n} tierMap={tierMap} />)}
-          </div>
+      <div className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-[14px] px-4 py-3.5">
+        <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Total Raised</span>
+        <span className="text-lg font-black text-gray-900">{totalRaised > 0 ? fmt(totalRaised) : "—"}</span>
+      </div>
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <Users className="w-4 h-4 text-gray-400" />
+          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Investor Schedule</h3>
         </div>
-      )}
-      {participants.length > 0 && (
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <Users className="w-4 h-4 text-gray-400" />
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Participating Investors</h3>
-          </div>
-          <div className="space-y-2">
-            {participants.map((n) => <CapTableInvestorRow key={n} name={n} tierMap={tierMap} />)}
-          </div>
+        <div className="space-y-2">
+          {schedule.map((e) => <CapTableInvestorRow key={e.name} entry={e} tierMap={tierMap} />)}
         </div>
-      )}
+      </div>
       <p className="text-[10px] text-gray-400 italic flex items-center gap-1.5">
         <Info className="w-3 h-3 flex-none" />
-        Investor tier is looked up from the AlphaMap investor directory — firms not yet tracked there show as "Unranked".
+        Per-investor amounts (⚡ = lead) are shown only when specifically disclosed in research — most rounds only report the round total, so "—" means the split wasn't public, not zero investment. Investor tier is looked up from the AlphaMap investor directory — firms not yet tracked there show as "Unranked".
       </p>
     </div>
   );
@@ -1258,9 +1293,78 @@ function CompetitorsMarketTab({ startup, onNavigate }: { startup: Startup; onNav
   );
 }
 
+// ── Tab 6: Acquisitions & IP ───────────────────────────────────────────────────
+// Renders startup.acquisitions (companies THIS company bought — outbound only)
+// and startup.patent_count/patent_fields. Both are best-effort: an empty/null
+// state here is the common, correct answer for most companies, not missing data.
+
+function AcquisitionsIPTab({ startup, onNavigate }: { startup: Startup; onNavigate: (id: string) => void }) {
+  const acquisitions = (startup.acquisitions ?? []).filter(Boolean);
+  const hasPatents = startup.patent_count != null;
+
+  if (acquisitions.length === 0 && !hasPatents) {
+    return <MissingDataState message="No acquisitions or patent data have been found for this company yet." />;
+  }
+
+  return (
+    <div className="space-y-6">
+      {hasPatents && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Award className="w-4 h-4 text-[#6d28d7]" />
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Patent Portfolio</h3>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
+            <StatCard icon={Award} label="Patents Held" value={String(startup.patent_count)} accent="#6d28d7" />
+          </div>
+          {startup.patent_fields && startup.patent_fields.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {startup.patent_fields.map((f) => (
+                <span key={f} className="text-[10px] font-semibold px-2.5 py-1 rounded-full bg-violet-50 text-violet-700 border border-violet-200">{f}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {acquisitions.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Building2 className="w-4 h-4 text-gray-400" />
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Acquisitions</h3>
+          </div>
+          <div className="space-y-2">
+            {acquisitions.map((a, idx) => {
+              const linked = Boolean(a.acquired_startup_id);
+              return (
+                <div
+                  key={`${a.company_name}-${idx}`}
+                  className={`flex flex-col gap-1.5 bg-gray-50 border border-gray-100 rounded-[14px] px-4 py-3.5 ${linked ? "cursor-pointer hover:border-cyan-300 hover:bg-cyan-50/40 transition-colors" : ""}`}
+                  onClick={linked ? () => onNavigate(a.acquired_startup_id as string) : undefined}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-sm font-bold text-gray-900 truncate">{a.company_name}</span>
+                      {linked && <span className="text-[10px] font-semibold text-cyan-700 bg-cyan-100 rounded-full px-2 py-0.5 flex-none">Tracked ↗</span>}
+                    </div>
+                    <div className="flex items-center gap-2 flex-none">
+                      {a.amount != null && <span className="text-xs font-bold text-gray-700 whitespace-nowrap">{fmt(a.amount)}</span>}
+                      {a.acquired_date && <span className="text-[10px] text-gray-400 whitespace-nowrap">{a.acquired_date.slice(0, 4)}</span>}
+                    </div>
+                  </div>
+                  {a.description && <p className="text-xs text-gray-600 leading-relaxed">{a.description}</p>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Tearsheet Modal ───────────────────────────────────────────────────────────
 
-type TearsheetTab = "overview" | "funding" | "captable" | "talent" | "competitors";
+type TearsheetTab = "overview" | "funding" | "captable" | "talent" | "competitors" | "acquisitions";
 
 const TEARSHEET_TABS: { id: TearsheetTab; label: string }[] = [
   { id: "overview",    label: "Overview" },
@@ -1268,13 +1372,14 @@ const TEARSHEET_TABS: { id: TearsheetTab; label: string }[] = [
   { id: "captable",    label: "Cap Table & Investors" },
   { id: "talent",      label: "Talent & Growth" },
   { id: "competitors", label: "Competitors & Market" },
+  { id: "acquisitions", label: "Acquisitions & IP" },
 ];
 
 function TearsheetModal({ startup, onClose, onNavigate }: { startup: StartupListRow; onClose: () => void; onNavigate: (row: StartupListRow) => void }) {
   const [activeTab, setActiveTab] = useState<TearsheetTab>("overview");
   const [navLoading, setNavLoading] = useState(false);
 
-  async function handleNavigateToCompetitor(id: string) {
+  async function handleNavigateToLinked(id: string) {
     if (navLoading) return;
     setNavLoading(true);
     try {
@@ -1448,7 +1553,8 @@ function TearsheetModal({ startup, onClose, onNavigate }: { startup: StartupList
               {activeTab === "talent" && (
                 <TalentGrowthTab startup={detail} alphaScore={alphaScore} alphaLoading={alphaLoading} />
               )}
-              {activeTab === "competitors" && <CompetitorsMarketTab startup={detail} onNavigate={handleNavigateToCompetitor} />}
+              {activeTab === "competitors" && <CompetitorsMarketTab startup={detail} onNavigate={handleNavigateToLinked} />}
+              {activeTab === "acquisitions" && <AcquisitionsIPTab startup={detail} onNavigate={handleNavigateToLinked} />}
             </>
           )}
         </div>

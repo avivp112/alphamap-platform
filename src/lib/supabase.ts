@@ -28,6 +28,10 @@ export interface Competitor {
   startup_id?: string | null;
 }
 
+// One entry per investor whose SPECIFIC dollar contribution to a round is
+// disclosed — rare; most rounds only report the round total (amount_raised).
+export interface InvestorAmount { name: string; amount: number }
+
 export interface FundingRound {
   id: string;
   startup_id: string;
@@ -39,7 +43,19 @@ export interface FundingRound {
   source_url: string | null;
   lead_investor: string | null;
   investors: string[] | null;
+  investor_amounts?: InvestorAmount[] | null;
   created_at: string;
+}
+
+// acquired_startup_id is set when the acquired company could be matched to
+// another row in this table by website domain, same as Competitor.
+export interface Acquisition {
+  company_name: string;
+  website?: string | null;
+  acquired_date?: string | null;
+  amount?: number | null;
+  description?: string | null;
+  acquired_startup_id?: string | null;
 }
 
 export interface Startup {
@@ -62,6 +78,13 @@ export interface Startup {
   // overwrites pre-existing curated data). Accepts the legacy plain-string
   // shape too, for any rows written before the structured format landed.
   competitors?: (Competitor | string)[] | null;
+  // Companies THIS startup has acquired (outbound only — being acquired is
+  // tracked via a funding_rounds row with round_type 'Acquired'). Same
+  // fill-null write policy as competitors.
+  acquisitions?: Acquisition[] | null;
+  // Best-effort IP signal — NULL means "not found", never "zero patents".
+  patent_count?: number | null;
+  patent_fields?: string[] | null;
 }
 
 // PostgREST caps any single response at its configured max-rows (1000 by
