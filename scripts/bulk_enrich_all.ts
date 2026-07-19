@@ -124,6 +124,7 @@ interface StartupRow {
   acquisitions: Acquisition[] | null;
   patent_count: number | null;
   patent_fields: string[] | null;
+  funding_history_complete: boolean | null;
   updated_at: string;
   last_enriched_at: string | null;
 }
@@ -200,6 +201,7 @@ interface EnrichmentResult {
   is_public_company: boolean;
   is_tech_company: boolean;
   profile: ExtractedProfile;
+  funding_history_complete: boolean;
   funding_rounds: ExtractedRound[];
   leadership: ExtractedLeader[];
   metrics: {
@@ -422,8 +424,8 @@ async function webSearch(query: string): Promise<string | null> {
 // ── Claude: extract complete company profile in one call ──────────────────────
 async function researchCompany(name: string): Promise<EnrichmentResult | null> {
   const [historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw] = await Promise.all([
-    webSearch(`"${name}" complete funding history all rounds Seed "Series A" "Series B" site:crunchbase.com OR site:techcrunch.com OR site:pitchbook.com`),
-    webSearch(`"${name}" funding raised USD million billion amount valuation announcement date 2019 2020 2021 2022 2023 2024 2025`),
+    webSearch(`"${name}" seed round "Series A" first funding earliest founding investors site:crunchbase.com OR site:techcrunch.com OR site:pitchbook.com`),
+    webSearch(`"${name}" total funding raised since founding all rounds USD million billion valuation announcement history`),
     webSearch(`"${name}" lead investor venture capital backed participated investors funded round investment amount check size`),
     webSearch(`"${name}" company founder CEO CTO description industry headquarters country city employees headcount acquired acquisition patents intellectual property 2024 2025`),
     webSearch(`"${name}" competitors alternatives vs rivals "compared to" market landscape`),
@@ -432,8 +434,8 @@ async function researchCompany(name: string): Promise<EnrichmentResult | null> {
   if (![historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw].some(Boolean)) return null;
 
   const context = [
-    `## Funding History (all rounds)\n${historyRaw  ?? "(search failed)"}`,
-    `## Round Amounts & Valuations\n${amountsRaw    ?? "(search failed)"}`,
+    `## Earliest Rounds (Seed / Series A — search deliberately biased toward early-stage, since general searches tend to surface only the most recent round)\n${historyRaw  ?? "(search failed)"}`,
+    `## Full Funding History & Total Raised (all rounds, not year-restricted)\n${amountsRaw    ?? "(search failed)"}`,
     `## Investors & Backers\n${backersRaw            ?? "(search failed)"}`,
     `## Company Profile & Headcount\n${profileRaw   ?? "(search failed)"}`,
     `## Competitors & Alternatives\n${competitorsRaw ?? "(search failed)"}`,
@@ -492,6 +494,18 @@ async function researchCompany(name: string): Promise<EnrichmentResult | null> {
                 description: "Full legal names of ALL founders/co-founders.",
               },
             },
+          },
+          funding_history_complete: {
+            type: "boolean",
+            description: [
+              "FALSE if you have reason to believe funding_rounds is NOT the company's complete history —",
+              "e.g. you found a Series B or later round but no earlier Seed/Series A despite the company",
+              "being multiple years old and clearly not bootstrapped; or a source states an aggregate like",
+              "'8 total funding rounds' or 'raised $500M since founding' that you cannot fully break down",
+              "into individual verified rounds. TRUE only when you're confident funding_rounds is the",
+              "complete history (including the case where the company has genuinely raised only what's",
+              "listed). Default TRUE if you have no specific reason to suspect a gap.",
+            ].join(" "),
           },
           funding_rounds: {
             type: "array",
@@ -712,6 +726,14 @@ async function researchCompany(name: string): Promise<EnrichmentResult | null> {
 
 STRICT RULES:
 1. ALL FUNDING ROUNDS — if the company raised Pre-Seed, Seed, Series A, and Series B, the array MUST have 4 items. Never collapse rounds.
+1b. DIG FOR EARLY ROUNDS — if you find a Series B or later round, that is strong evidence earlier rounds
+    (Seed, Series A) exist, since companies virtually never skip straight to a late round. Before
+    concluding there's no earlier round, actively re-scan EVERY research section (not just the ones
+    labeled "earliest rounds") for any mention of a founding-era raise, an aggregate round count ("8 total
+    rounds"), or a "total raised since founding" figure that's higher than what you can itemize. Only
+    conclude a company genuinely skipped early rounds (self-funded/bootstrapped to a late raise) when a
+    source says so explicitly. If you still can't verify the earlier rounds after this, set
+    funding_history_complete: false rather than silently presenting a partial history as complete.
 2. AMOUNTS — plain USD integers ($1.5B → 1500000000, $50M → 50000000). Omit if unverifiable.
 3. LEAD INVESTOR — one lead per round in lead_investor; all others in other_investors.
 4. VALUATION — set is_valuation_estimated: true if inferred or not officially disclosed.
@@ -766,6 +788,7 @@ ${context}`,
     is_public_company: i.is_public_company ?? false,
     is_tech_company:   i.is_tech_company   ?? true,
     profile:           i.profile           ?? {},
+    funding_history_complete: i.funding_history_complete ?? true,
     funding_rounds:    (i.funding_rounds   ?? []).filter((r) => r.round_type),
     leadership:        i.leadership        ?? [],
     metrics: {
@@ -965,11 +988,22 @@ async function patchStartupProfile(
   if (metrics.headcount    != null) patch.employee_count = metrics.headcount;
   if (metrics.growth_trend != null) patch.growth_trend   = metrics.growth_trend;
 
-  if (Object.keys(patch).length === 0) return { fieldsPatched: 0 };
+  // fieldsPatched (the meaningful, user-facing count used to decide whether
+  // anything of substance was found) is captured BEFORE funding_history_complete
+  // is added below — that flag always gets written and would otherwise inflate
+  // the count for companies where nothing else was actually found.
+  const fieldsPatched = Object.keys(patch).length;
+
+  // Funding history completeness: always overwrite with the latest run's
+  // assessment (not fill-null-only) — a later pass that finds the missing
+  // early round should be able to flip false -> true, and vice versa if new
+  // evidence of a gap surfaces. Written even when nothing else was — it's a
+  // real (if minor) signal on its own.
+  patch.funding_history_complete = result.funding_history_complete;
 
   if (DRY_RUN) {
     console.log(`    [DRY] Would patch: ${Object.keys(patch).join(", ")}`);
-    return { fieldsPatched: Object.keys(patch).length };
+    return { fieldsPatched };
   }
 
   const { error } = await supabase.from("startups").update(patch).eq("id", existing.id);
@@ -990,7 +1024,7 @@ async function patchStartupProfile(
   if (profileKeys.length > 0) parts.push(`profile: ${profileKeys.join(", ")}`);
   if (parts.length > 0) console.log(`    👤  Patched: ${parts.join(" | ")}`);
 
-  return { fieldsPatched: Object.keys(patch).length };
+  return { fieldsPatched };
 }
 
 // ── Headcount history snapshot ────────────────────────────────────────────────
@@ -1058,7 +1092,7 @@ async function main() {
   const startups = await fetchAllPaginated<StartupRow>((from, to) =>
     supabase
       .from("startups")
-      .select("id, name, website, description, industry, founded_year, employee_count, growth_trend, country, city, founders, leadership, competitors, acquisitions, patent_count, patent_fields, updated_at, last_enriched_at")
+      .select("id, name, website, description, industry, founded_year, employee_count, growth_trend, country, city, founders, leadership, competitors, acquisitions, patent_count, patent_fields, funding_history_complete, updated_at, last_enriched_at")
       .order("name")
       .range(from, to),
   );

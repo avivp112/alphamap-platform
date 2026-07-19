@@ -990,12 +990,20 @@ function VerticalFundingTimeline({ rounds }: { rounds: FundingRound[] }) {
   );
 }
 
-function FundingValuationTab({ sortedRounds }: { sortedRounds: FundingRound[] }) {
+function FundingValuationTab({ sortedRounds, fundingHistoryComplete }: { sortedRounds: FundingRound[]; fundingHistoryComplete?: boolean | null }) {
   const latestRound = sortedRounds[sortedRounds.length - 1] ?? null;
   const raised = sortedRounds.reduce((sum, r) => sum + (r.amount_raised ?? 0), 0);
 
   return (
     <div className="space-y-6">
+      {fundingHistoryComplete === false && (
+        <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-[12px] px-4 py-3">
+          <AlertCircle className="w-4 h-4 text-amber-600 flex-none mt-0.5" />
+          <p className="text-xs text-amber-800 leading-relaxed">
+            <span className="font-bold">Funding history may be incomplete.</span> Research found signs of earlier rounds (e.g. a later-stage round with no matching Seed/Series A, or a source citing more total rounds than could be verified) that couldn't be confirmed in detail — the rounds below may not be the full story.
+          </p>
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <StatCard icon={DollarSign} label="Total Raised"     value={raised ? fmt(raised) : "—"} accent="#F59E0B" />
         <StatCard icon={TrendingUp} label="Latest Valuation" value={fmt(latestRound?.valuation)} accent="#0e7490" />
@@ -1547,7 +1555,7 @@ function TearsheetModal({ startup, onClose, onNavigate }: { startup: StartupList
                 <OverviewTab startup={detail} alphaScore={alphaScore} alphaLoading={alphaLoading} alphaErr={alphaErr} />
               )}
               {activeTab === "funding" && (
-                <FundingValuationTab sortedRounds={sortedRounds} />
+                <FundingValuationTab sortedRounds={sortedRounds} fundingHistoryComplete={detail.funding_history_complete} />
               )}
               {activeTab === "captable" && <CapTableTab startup={detail} />}
               {activeTab === "talent" && (

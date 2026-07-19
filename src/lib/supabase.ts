@@ -85,6 +85,12 @@ export interface Startup {
   // Best-effort IP signal — NULL means "not found", never "zero patents".
   patent_count?: number | null;
   patent_fields?: string[] | null;
+  // Claude's assessment (as of the last enrichment run) of whether
+  // funding_rounds is this company's complete history. NULL = not yet
+  // assessed. FALSE = a gap is suspected (e.g. a Series B+ round found with
+  // no earlier Seed/Series A) — surface a warning rather than presenting
+  // the rounds shown as if they were the whole story.
+  funding_history_complete?: boolean | null;
 }
 
 // PostgREST caps any single response at its configured max-rows (1000 by
