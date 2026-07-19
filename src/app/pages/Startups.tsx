@@ -14,7 +14,7 @@ import {
   UserRound, LayoutGrid, List, ExternalLink,
   ChevronDown, ChevronLeft, ChevronRight, Building2, CheckSquare, Square,
   GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2, ChevronUp,
-  SlidersHorizontal, Award,
+  SlidersHorizontal, Award, Linkedin,
 } from "lucide-react";
 import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
@@ -840,6 +840,26 @@ function MissingDataState({ message }: { message: string }) {
   );
 }
 
+// Small circular LinkedIn link shown next to a founder/leader's name when a
+// profile URL is on file. Renders nothing when absent — never a placeholder.
+function LinkedInBadge({ url, name }: { url?: string | null; name: string }) {
+  if (!url) return null;
+  const href = url.startsWith("http") ? url : `https://${url}`;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      title={`${name} on LinkedIn`}
+      aria-label={`${name} on LinkedIn`}
+      className="flex items-center justify-center w-5 h-5 rounded-full bg-[#0A66C2]/10 text-[#0A66C2] hover:bg-[#0A66C2]/20 transition-colors flex-none"
+    >
+      <Linkedin className="w-3 h-3" />
+    </a>
+  );
+}
+
 // ── Tab 1: Overview ───────────────────────────────────────────────────────────
 
 function OverviewTab({
@@ -883,6 +903,7 @@ function OverviewTab({
                   <div className="text-xs font-bold text-gray-900 leading-tight">{l.name}</div>
                   <div className="text-[9px] text-gray-400">{l.role}</div>
                 </div>
+                <LinkedInBadge url={l.linkedin_url} name={l.name} />
               </div>
             ))}
           </div>
@@ -899,11 +920,12 @@ function OverviewTab({
           </div>
           <div className="flex flex-wrap gap-2">
             {startup.founders.map((f, i) => (
-              <span key={i} className="flex items-center gap-1.5 bg-gray-50 border border-gray-100 text-sm font-medium text-gray-700 px-3 py-1.5 rounded-full">
+              <span key={i} className="flex items-center gap-1.5 bg-gray-50 border border-gray-100 text-sm font-medium text-gray-700 pl-3 pr-1.5 py-1.5 rounded-full">
                 <div className="w-5 h-5 rounded-full bg-amber-100 flex items-center justify-center text-[10px] font-black text-amber-700">
                   {f.name[0].toUpperCase()}
                 </div>
                 {f.name}
+                <LinkedInBadge url={f.linkedin_url} name={f.name} />
               </span>
             ))}
           </div>

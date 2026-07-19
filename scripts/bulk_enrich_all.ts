@@ -184,6 +184,8 @@ interface ExtractedRound {
   source_url?: string | null;
 }
 
+interface ExtractedFounder { name: string; linkedin_url?: string }
+
 interface ExtractedProfile {
   website?: string;
   description?: string;
@@ -191,10 +193,10 @@ interface ExtractedProfile {
   founded_year?: number;
   country?: string;
   city?: string;
-  founders?: string[];
+  founders?: ExtractedFounder[];
 }
 
-interface ExtractedLeader { name: string; role: string }
+interface ExtractedLeader { name: string; role: string; linkedin_url?: string }
 
 interface ExtractedHeadcountPoint { date: string; employee_count: number; source?: string }
 
@@ -502,7 +504,7 @@ async function researchCompany(name: string, website?: string | null): Promise<E
     webSearch(`"${name}"${anchor} seed round "Series A" first funding earliest founding investors site:crunchbase.com OR site:techcrunch.com OR site:pitchbook.com`),
     webSearch(`"${name}"${anchor} total funding raised since founding all rounds USD million billion valuation announcement history`),
     webSearch(`"${name}"${anchor} lead investor venture capital backed participated investors funded round investment amount check size`),
-    webSearch(`"${name}"${anchor} company founder CEO CTO description industry headquarters country city employees headcount acquired acquisition patents intellectual property 2024 2025`),
+    webSearch(`"${name}"${anchor} company founder CEO CTO description industry headquarters country city employees headcount acquired acquisition patents intellectual property linkedin.com/in profile 2024 2025`),
     webSearch(`"${name}"${anchor} competitors alternatives vs rivals "compared to" market landscape`),
     fetchCompanyWebsite(website),
   ]);
@@ -567,8 +569,15 @@ async function researchCompany(name: string, website?: string | null): Promise<E
               city:         { type: "string",  description: "HQ city (e.g. 'San Francisco')." },
               founders: {
                 type: "array",
-                items: { type: "string" },
-                description: "Full legal names of ALL founders/co-founders.",
+                description: "ALL founders/co-founders, full legal names.",
+                items: {
+                  type: "object" as const,
+                  properties: {
+                    name:         { type: "string", description: "Full legal name." },
+                    linkedin_url: { type: "string", description: "Their personal linkedin.com/in/... profile URL, if found. Omit if not found — never guess or construct one from a name." },
+                  },
+                  required: ["name"],
+                },
               },
             },
           },
@@ -655,8 +664,9 @@ async function researchCompany(name: string, website?: string | null): Promise<E
             items: {
               type: "object" as const,
               properties: {
-                name: { type: "string", description: "Full name." },
-                role: { type: "string", description: "Current title (CEO, CTO, Co-Founder, etc.)." },
+                name:         { type: "string", description: "Full name." },
+                role:         { type: "string", description: "Current title (CEO, CTO, Co-Founder, etc.)." },
+                linkedin_url: { type: "string", description: "Their personal linkedin.com/in/... profile URL, if found. Omit if not found — never guess or construct one from a name." },
               },
               required: ["name", "role"],
             },
@@ -823,6 +833,9 @@ STRICT RULES:
     is no excuse for a company that has ANY research data at all to come back with profile: {} — at
     minimum, describe what it does if that's mentioned anywhere in the research.
 6. FOUNDERS — full legal names only. Distinguish founders from hired executives.
+6b. LINKEDIN — when a founder's or leader's personal linkedin.com/in/... profile URL appears in the
+    research, include it as linkedin_url on that person's entry (in founders and/or leadership). Omit
+    the field entirely if not found — never guess, construct, or infer a LinkedIn URL from a name.
 7. HEADCOUNT — most recent available figure in metrics.headcount. growth_trend reflects 12-month direction.
 7b. HEADCOUNT HISTORY — separately, mine ALL research sections (not just the profile search) for any
     other dated employee-count mentions — funding announcements frequently state headcount at that time
@@ -1007,16 +1020,31 @@ async function patchStartupProfile(
   if (!existing.city         && profile.city)         patch.city         = profile.city;
 
   // Founders: merge as union (additive, never destructive), deduped by name.
-  // Newly-extracted founders have no linkedin_url source yet, so it's null
-  // until a future enrichment pass fills it in.
-  const cleanFounderNames = (profile.founders ?? []).map(String).filter((f) => f.trim());
-  if (cleanFounderNames.length > 0) {
+  // Also backfills linkedin_url onto an already-recorded founder if this pass
+  // found one and a prior pass didn't — never overwrites an existing URL.
+  const cleanFounders = (profile.founders ?? [])
+    .filter((f) => f && f.name && String(f.name).trim())
+    .map((f) => ({ name: String(f.name).trim(), linkedin_url: f.linkedin_url?.trim() || null }));
+
+  if (cleanFounders.length > 0) {
     const existingFounders = existing.founders ?? [];
+    const byName = new Map(cleanFounders.map((f) => [f.name.toLowerCase(), f]));
+    let foundersChanged = false;
+
+    const updatedExisting = existingFounders.map((ef) => {
+      const match = byName.get(ef.name.toLowerCase());
+      if (match?.linkedin_url && !ef.linkedin_url) {
+        foundersChanged = true;
+        return { ...ef, linkedin_url: match.linkedin_url };
+      }
+      return ef;
+    });
+
     const existingNames = new Set(existingFounders.map((f) => f.name.toLowerCase()));
-    const newFounders = cleanFounderNames
-      .filter((name) => !existingNames.has(name.toLowerCase()))
-      .map((name) => ({ name, linkedin_url: null }));
-    if (newFounders.length > 0) patch.founders = [...existingFounders, ...newFounders];
+    const newFounders = cleanFounders.filter((f) => !existingNames.has(f.name.toLowerCase()));
+    if (newFounders.length > 0) foundersChanged = true;
+
+    if (foundersChanged) patch.founders = [...updatedExisting, ...newFounders];
   }
 
   // Leadership: set only when currently NULL (Tier 3 strategy: no blind overwrites)
