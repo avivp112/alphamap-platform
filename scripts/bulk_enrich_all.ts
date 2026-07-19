@@ -74,6 +74,7 @@ const DRY_RUN        = process.env.DRY_RUN               !== "false"; // safe de
 const TAVILY_BUDGET  = Number(process.env.TAVILY_BUDGET  ?? 1000);  // max Tavily calls this run
 const MIN_CONFIDENCE = Number(process.env.MIN_CONFIDENCE ?? 40);     // skip writes below this
 const MAX_TIER       = Number(process.env.MAX_TIER       ?? 3);     // 2 = skip complete companies
+const MODEL           = process.env.ENRICH_MODEL ?? "claude-haiku-4-5-20251001";
 
 // ── Env-var guard ─────────────────────────────────────────────────────────────
 for (const key of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "ANTHROPIC_API_KEY"]) {
@@ -263,10 +264,17 @@ function websiteDomain(url: string | null | undefined): string | null {
 }
 
 // ── Claude token/cost tracking ─────────────────────────────────────────────────
-// Haiku 4.5 pricing: $1.00 / MTok input, $5.00 / MTok output (see console.claude.com/pricing).
-// Search API costs (Tavily/Serper) are separate and not included in this figure.
-const HAIKU_INPUT_PRICE_PER_TOKEN  = 1 / 1_000_000;
-const HAIKU_OUTPUT_PRICE_PER_TOKEN = 5 / 1_000_000;
+// $/token by model, used only for the cost estimate printed in the run summary
+// — informational, not billed by this script. Search API costs (Tavily/Serper)
+// are separate and not included. Verified current published pricing (2026-07);
+// re-check console.claude.com/pricing if it's been a while.
+const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  "claude-haiku-4-5":          { input: 1 / 1_000_000, output: 5  / 1_000_000 },
+  "claude-haiku-4-5-20251001": { input: 1 / 1_000_000, output: 5  / 1_000_000 },
+  "claude-sonnet-5":           { input: 3 / 1_000_000, output: 15 / 1_000_000 }, // $2/$10 intro pricing through 2026-08-31
+  "claude-opus-4-8":           { input: 5 / 1_000_000, output: 25 / 1_000_000 },
+};
+const PRICING = MODEL_PRICING[MODEL] ?? MODEL_PRICING["claude-haiku-4-5-20251001"];
 let totalInputTokens  = 0;
 let totalOutputTokens = 0;
 
@@ -423,7 +431,7 @@ async function researchCompany(name: string): Promise<EnrichmentResult | null> {
   ].join("\n\n");
 
   const msg = await anthropic.messages.create({
-    model: "claude-haiku-4-5-20251001",
+    model: MODEL,
     max_tokens: 4096,
     tools: [{
       name: "save_enrichment",
@@ -999,6 +1007,7 @@ async function main() {
   console.log(`║  ${startedAt}${"".padEnd(62 - 2 - startedAt.length)}║`);
   console.log(`║  DRY_RUN=${String(DRY_RUN).padEnd(5)} | BATCH=${String(BATCH_SIZE).padEnd(6)} | OFFSET=${String(OFFSET).padEnd(5)} | DELAY=${DELAY_MS / 1000}s${" ".padEnd(62 - 58)}║`);
   console.log(`║  TAVILY_BUDGET=${String(TAVILY_BUDGET).padEnd(5)} | MIN_CONFIDENCE=${String(MIN_CONFIDENCE).padEnd(17)}║`);
+  console.log(`║  MODEL=${MODEL}${" ".padEnd(Math.max(0, 62 - 9 - MODEL.length))}║`);
   console.log(`╚${"═".repeat(62)}╝\n`);
 
   if (DRY_RUN) console.log("ℹ️  DRY RUN — set DRY_RUN=false to apply writes to the database.\n");
@@ -1264,9 +1273,9 @@ async function main() {
   if (serperCallCount > 0) {
     console.log(`  🔍  Serper calls used:   ${serperCallCount}`);
   }
-  const claudeCost = totalInputTokens * HAIKU_INPUT_PRICE_PER_TOKEN + totalOutputTokens * HAIKU_OUTPUT_PRICE_PER_TOKEN;
+  const claudeCost = totalInputTokens * PRICING.input + totalOutputTokens * PRICING.output;
   console.log(`  🧠  Claude tokens:       ${totalInputTokens.toLocaleString()} in / ${totalOutputTokens.toLocaleString()} out`);
-  console.log(`  💵  Claude cost (est.):  $${claudeCost.toFixed(2)}  (Haiku 4.5 @ $1/$5 per MTok — search API cost is separate)`);
+  console.log(`  💵  Claude cost (est.):  $${claudeCost.toFixed(2)}  (${MODEL} @ $${(PRICING.input * 1_000_000).toFixed(2)}/$${(PRICING.output * 1_000_000).toFixed(2)} per MTok — search API cost is separate)`);
   if (queue.length > 0) {
     const perCompany = claudeCost / queue.length;
     console.log(`      → $${perCompany.toFixed(4)}/company → ~$${(perCompany * fullQueue.length).toFixed(0)} projected for all ${fullQueue.length} in the current queue`);

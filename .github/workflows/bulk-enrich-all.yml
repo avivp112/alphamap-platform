@@ -45,6 +45,13 @@ on:
         description: "Minimum Claude confidence score to write data (default: 40)"
         type: number
         default: 40
+      model:
+        description: "Claude model for extraction (Haiku 4.5 is the cost-efficient default; Sonnet 5 costs ~2-4x more)"
+        type: choice
+        default: "claude-haiku-4-5-20251001"
+        options:
+          - "claude-haiku-4-5-20251001"
+          - "claude-sonnet-5"
 
 jobs:
   bulk-enrich:
@@ -75,6 +82,7 @@ jobs:
           echo "  TAVILY_BUDGET  = ${{ github.event.inputs.tavily_budget }}"
           echo "  DELAY_MS       = ${{ github.event.inputs.delay_ms }}"
           echo "  MIN_CONFIDENCE = ${{ github.event.inputs.min_confidence }}"
+          echo "  MODEL          = ${{ github.event.inputs.model }}"
           echo "  SERP_KEY set   = ${{ secrets.SERP_KEY != '' }}"
           echo "════════════════════════════════════════"
 
@@ -92,4 +100,5 @@ jobs:
           TAVILY_BUDGET:             ${{ github.event.inputs.tavily_budget }}
           DELAY_MS:                  ${{ github.event.inputs.delay_ms }}
           MIN_CONFIDENCE:            ${{ github.event.inputs.min_confidence }}
+          ENRICH_MODEL:              ${{ github.event.inputs.model }}
         run: npx tsx scripts/bulk_enrich_all.ts
