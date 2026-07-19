@@ -17,6 +17,13 @@
  *   Set SERP_KEY (Serper API key). TAVILY_API_KEY is optional; if absent, Serper is used
  *   for everything.
  *
+ *   A 6th context source runs alongside the 5 searches: a direct fetch of the company's own
+ *   website (when known), parsed with cheerio for its title/meta description/body text — the
+ *   single most reliable source for description/industry/HQ location, since it costs zero
+ *   Tavily/Serper budget (no search API call) and is the company describing itself rather than
+ *   a third party. Best-effort: sites that block bots, are JS-only SPAs, or time out just fail
+ *   silently, same as a failed search — this never blocks or slows down a company's processing.
+ *
  * Resume / skip logic:
  *   MAX_TIER (default 3) — set to 2 to skip Tier 3 (fully-complete) companies and focus
  *   only on companies that actually need enrichment. Use after a partial run to avoid
@@ -72,6 +79,7 @@ import { config } from "dotenv";
 import { existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import * as cheerio from "cheerio";
 
 // ── Bootstrap: load .env for local dev (GHA uses repository secrets) ──────────
 const __dir   = dirname(fileURLToPath(import.meta.url));
@@ -424,6 +432,62 @@ async function webSearch(query: string): Promise<string | null> {
   return serperSearch(query);
 }
 
+// ── Company's own website — direct fetch, no search API involved ──────────────
+// The single most reliable source for description/industry/HQ location is the
+// company's own site, but search-engine snippets rarely capture it in full
+// (they show a fragment of whatever page ranked, not the "About" copy). This
+// costs zero Tavily/Serper budget — it's a plain HTTP fetch of a URL we
+// already know — so it doesn't touch the cost tradeoffs already made on
+// search engine choice. Best-effort: many sites block bots, are JS-rendered
+// SPAs with no server-rendered text, or simply time out — any failure here
+// just means one fewer context section, same as a failed search.
+const FETCH_TIMEOUT_MS = 8_000;
+const MAX_WEBSITE_CHARS = 3_000;
+
+async function fetchCompanyWebsite(website: string | null | undefined): Promise<string | null> {
+  if (!website) return null;
+  const url = website.startsWith("http") ? website : `https://${website}`;
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    const res = await fetch(url, {
+      signal: controller.signal,
+      redirect: "follow",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; AlphaMapEnrichmentBot/1.0; +https://alphamap.app)",
+        "Accept": "text/html",
+      },
+    }).finally(() => clearTimeout(timer));
+
+    if (!res.ok) return null;
+    const contentType = res.headers.get("content-type") ?? "";
+    if (!contentType.includes("text/html")) return null;
+
+    const html = await res.text();
+    const $ = cheerio.load(html);
+    $("script, style, noscript, svg, nav, footer").remove();
+
+    const title       = $("title").first().text().trim();
+    const metaDesc     = $('meta[name="description"]').attr("content")?.trim()
+      ?? $('meta[property="og:description"]').attr("content")?.trim()
+      ?? "";
+    const bodyText     = $("body").text().replace(/\s+/g, " ").trim();
+
+    const parts = [
+      title      ? `Title: ${title}` : "",
+      metaDesc   ? `Meta description: ${metaDesc}` : "",
+      bodyText   ? `Page text: ${bodyText.slice(0, MAX_WEBSITE_CHARS)}` : "",
+    ].filter(Boolean);
+
+    return parts.length > 0 ? parts.join("\n") : null;
+  } catch {
+    // Bot-blocked, timed out, JS-only SPA with no server-rendered text, DNS
+    // failure, etc. — best-effort, fail silently like a failed search.
+    return null;
+  }
+}
+
 // ── Claude: extract complete company profile in one call ──────────────────────
 // `website` (already known for most rows from the master CSV import, which
 // deliberately never resets it) disambiguates generic/ambiguous company names
@@ -434,17 +498,19 @@ async function webSearch(query: string): Promise<string | null> {
 async function researchCompany(name: string, website?: string | null): Promise<EnrichmentResult | null> {
   const domain = websiteDomain(website);
   const anchor = domain ? ` "${domain}"` : "";
-  const [historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw] = await Promise.all([
+  const [historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw, ownSiteRaw] = await Promise.all([
     webSearch(`"${name}"${anchor} seed round "Series A" first funding earliest founding investors site:crunchbase.com OR site:techcrunch.com OR site:pitchbook.com`),
     webSearch(`"${name}"${anchor} total funding raised since founding all rounds USD million billion valuation announcement history`),
     webSearch(`"${name}"${anchor} lead investor venture capital backed participated investors funded round investment amount check size`),
     webSearch(`"${name}"${anchor} company founder CEO CTO description industry headquarters country city employees headcount acquired acquisition patents intellectual property 2024 2025`),
     webSearch(`"${name}"${anchor} competitors alternatives vs rivals "compared to" market landscape`),
+    fetchCompanyWebsite(website),
   ]);
 
-  if (![historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw].some(Boolean)) return null;
+  if (![historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw, ownSiteRaw].some(Boolean)) return null;
 
   const context = [
+    `## Company's Own Website (HIGHEST TRUST for description, industry, and HQ location — this is the company describing itself, not a third party)\n${ownSiteRaw ?? "(not fetched — no known website, fetch failed, or bot-blocked)"}`,
     `## Earliest Rounds (Seed / Series A — search deliberately biased toward early-stage, since general searches tend to surface only the most recent round)\n${historyRaw  ?? "(search failed)"}`,
     `## Full Funding History & Total Raised (all rounds, not year-restricted)\n${amountsRaw    ?? "(search failed)"}`,
     `## Investors & Backers\n${backersRaw            ?? "(search failed)"}`,
@@ -749,6 +815,13 @@ STRICT RULES:
 3. LEAD INVESTOR — one lead per round in lead_investor; all others in other_investors.
 4. VALUATION — set is_valuation_estimated: true if inferred or not officially disclosed.
 5. DATES — YYYY-MM-DD; use YYYY-01-01 when only the year is known.
+5b. BASIC PROFILE FACTS — description, industry, country, city, and headcount are usually the EASIEST
+    facts to verify, not the hardest: the "Company's Own Website" section (when present) is the
+    company describing itself and is the highest-trust source for exactly these fields. Prioritize it
+    over inferring from third-party search snippets. A missing website fetch does NOT mean these facts
+    are unavailable — still extract them from the other research sections whenever present there. There
+    is no excuse for a company that has ANY research data at all to come back with profile: {} — at
+    minimum, describe what it does if that's mentioned anywhere in the research.
 6. FOUNDERS — full legal names only. Distinguish founders from hired executives.
 7. HEADCOUNT — most recent available figure in metrics.headcount. growth_trend reflects 12-month direction.
 7b. HEADCOUNT HISTORY — separately, mine ALL research sections (not just the profile search) for any
