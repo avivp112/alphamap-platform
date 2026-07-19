@@ -42,8 +42,17 @@
  *                 only for names explicitly disclosed — never a split of the round total
  *   Tier 3      — identical rule: since profile is complete, only headcount/growth_trend
  *                 are refreshed; everything else is fill-NULL only
- *   Confidence  — SKIPS ALL WRITES if confidence_score < MIN_CONFIDENCE (default: 40)
- *                 Logged as "Low Confidence" for later manual review
+ *   Confidence  — gates ONLY funding-round dollar figures, not the whole company. Profile
+ *                 fields always write regardless of the overall score (each field already
+ *                 carries its own "omit if unverifiable" instruction, so fabrication risk is
+ *                 low). If confidence_score < MIN_CONFIDENCE (default: 40), funding_rounds are
+ *                 withheld and the row is logged "partial" instead of "success" — profile data
+ *                 still lands, funding just waits for a stronger source. A row where NOTHING
+ *                 at all was written (empty profile + no rounds) is logged "low_confidence".
+ *   Public co.  — is_public_company DELETES the row outright (never touches a
+ *                 is_manually_verified=true row) — public companies aren't tracked here, so an
+ *                 empty dead row isn't useful; removing it also means it won't keep being
+ *                 re-researched every time the queue cycles back around.
  *
  * Usage:
  *   npx tsx scripts/bulk_enrich_all.ts                            # dry run (default)
@@ -206,7 +215,7 @@ interface EnrichmentResult {
   source_url: string;
 }
 
-type ProcessStatus = "success" | "low_confidence" | "rejected" | "no_data" | "error";
+type ProcessStatus = "success" | "partial" | "low_confidence" | "rejected" | "removed_public" | "no_data" | "error";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -445,7 +454,17 @@ async function researchCompany(name: string): Promise<EnrichmentResult | null> {
           },
           is_tech_company: {
             type: "boolean",
-            description: "TRUE for Software, SaaS, AI/ML, Cybersecurity, FinTech, Biotech, Hardware, EdTech, CleanTech, etc.",
+            description: [
+              "TRUE for ANY company whose core product or competitive edge IS its own technology, software,",
+              "or R&D — a broad category, not just \"classic\" software/SaaS. Includes AI/ML, fintech,",
+              "biotech/life sciences, healthtech, agtech, proptech, insurtech, cleantech/climate tech, deep",
+              "tech, hardware/robotics/IoT, and traditional-industry companies (retail, real estate,",
+              "healthcare services, logistics, manufacturing, etc.) whose product IS a proprietary tech",
+              "platform — not just a company that merely uses off-the-shelf software to run its business.",
+              "This name comes from a curated startup/VC tracking database, so default to TRUE unless the",
+              "company is clearly a plain traditional business with no technology product of its own (e.g. a",
+              "restaurant chain, a law firm, a construction contractor, a generic local retailer).",
+            ].join(" "),
           },
           profile: {
             type: "object" as const,
@@ -718,6 +737,11 @@ STRICT RULES:
     correct answer for most companies — do not force an entry.
 14. PATENTS — best-effort only. Omit patent_count/patent_fields entirely unless you find real evidence
     (an IP page, a news article, Google Patents). Never default patent_count to 0.
+15. TECH CLASSIFICATION — is_tech_company is a BROAD category: any company whose core product or
+    competitive edge is its own technology/software/R&D, including fintech, biotech, healthtech, agtech,
+    proptech, insurtech, cleantech, deep tech, hardware, and traditional industries with a genuine
+    tech-driven product — not just classic SaaS. This name comes from a curated startup/VC database, so
+    default to TRUE unless it's clearly a plain traditional business with no technology product of its own.
 
 Research data:
 ${context}`,
@@ -1125,15 +1149,18 @@ async function main() {
 
   // ── 4. Tally ──────────────────────────────────────────────────────────────
   const tally: Record<ProcessStatus, number> = {
-    success: 0, low_confidence: 0, rejected: 0, no_data: 0, error: 0,
+    success: 0, partial: 0, low_confidence: 0, rejected: 0, removed_public: 0, no_data: 0, error: 0,
   };
   let totalRoundsInserted = 0;
   let totalFieldsPatched  = 0;
+  let totalRemovedPublic  = 0;
 
   const STATUS_ICON: Record<ProcessStatus, string> = {
     success:        "✅",
+    partial:        "🟠",
     low_confidence: "⚠️ ",
     rejected:       "🚫",
+    removed_public: "🗑️ ",
     no_data:        "🔍",
     error:          "❌",
   };
@@ -1163,6 +1190,7 @@ async function main() {
     let roundsInserted = 0;
     let fieldsPatched  = 0;
     let confidenceSeen: number | null = null;
+    let rowDeleted = false;
 
     try {
       const result = await researchCompany(row.name);
@@ -1174,29 +1202,46 @@ async function main() {
         status = "no_data";
 
       } else if (result.is_public_company) {
-        console.log(`    🚫  REJECTED — publicly traded company (privacy rule)`);
-        status = "rejected";
+        // Publicly traded companies are out of scope for this private-market
+        // tool — remove the row entirely rather than leave a dead, empty
+        // entry sitting in the list forever. Never touch a manually-verified
+        // row, even if the model (wrongly) flags it public.
+        console.log(`    🗑️  REMOVED — publicly traded company (not tracked here)`);
+        if (!DRY_RUN) {
+          const { error: delErr, count } = await supabase
+            .from("startups")
+            .delete({ count: "exact" })
+            .eq("id", row.id)
+            .eq("is_manually_verified", false);
+          if (delErr) console.warn(`    ⚠️  Delete failed: ${delErr.message}`);
+          else if (!count) console.warn(`    ⚠️  Not deleted — row is manually verified, left in place`);
+          else { totalRemovedPublic++; rowDeleted = true; }
+        } else {
+          console.log(`    [DRY] Would delete this row (publicly traded), unless manually verified`);
+        }
+        status = "removed_public";
 
       } else if (!result.is_tech_company) {
-        console.log(`    🚫  REJECTED — not a tech company`);
+        console.log(`    🚫  REJECTED — not a technology-driven company`);
         status = "rejected";
 
-      } else if (result.confidence_score < MIN_CONFIDENCE) {
-        const icon = result.confidence_score >= 30 ? "🟠" : "🔴";
-        console.log(`    ${icon}  LOW CONFIDENCE ${result.confidence_score}/100 — skipping writes`);
-        console.log(`    📝  ${result.reasoning}`);
-        status = "low_confidence";
-
       } else {
-        // ── Confident result: apply writes ──────────────────────────────────
+        // Profile fields (description, industry, founders, leadership,
+        // competitors, acquisitions, patents, headcount) are written
+        // regardless of the overall confidence score — each field already
+        // carries its own "omit if unverifiable" instruction, so the risk
+        // of fabrication is low. MIN_CONFIDENCE gates ONLY funding-round
+        // dollar figures, which is what the confidence score is actually
+        // scoring ("multiple sources agree on amounts and dates").
         const scoreIcon =
           result.confidence_score >= 90 ? "🟢" :
-          result.confidence_score >= 70 ? "🟡" : "🟠";
+          result.confidence_score >= 70 ? "🟡" :
+          result.confidence_score >= MIN_CONFIDENCE ? "🟠" : "🔴";
         console.log(`    ${scoreIcon}  Confidence: ${result.confidence_score}/100 | ${result.funding_rounds.length} round(s) found`);
         if (result.reasoning) console.log(`    📝  ${result.reasoning}`);
 
         const profileResult = await patchStartupProfile(row, result);
-        fieldsPatched  = profileResult.fieldsPatched;
+        fieldsPatched = profileResult.fieldsPatched;
 
         // Persist every dated historical headcount point mined from research
         // (e.g. figures found in older funding announcements/news articles),
@@ -1209,15 +1254,22 @@ async function main() {
           await recordHeadcountSnapshot(row.id, result.metrics.headcount);
         }
 
+        const confidentEnough = result.confidence_score >= MIN_CONFIDENCE;
+        if (confidentEnough) {
+          const roundResult = await insertNewRounds(
+            row.id, result.funding_rounds, rounds, result.source_url || undefined,
+          );
+          roundsInserted = roundResult.inserted;
+          totalRoundsInserted += roundsInserted;
+        } else if (result.funding_rounds.length > 0) {
+          console.log(`    🟠  ${result.funding_rounds.length} funding round(s) found but confidence ${result.confidence_score} < ${MIN_CONFIDENCE} — not inserted`);
+        }
 
-        const roundResult = await insertNewRounds(
-          row.id, result.funding_rounds, rounds, result.source_url || undefined,
-        );
-        roundsInserted = roundResult.inserted;
+        totalFieldsPatched += fieldsPatched;
 
-        totalRoundsInserted += roundsInserted;
-        totalFieldsPatched  += fieldsPatched;
-        status = "success";
+        status = (fieldsPatched === 0 && roundsInserted === 0)
+          ? "low_confidence"                 // nothing usable was found or written at all
+          : confidentEnough ? "success" : "partial"; // profile written; funding withheld pending confirmation
       }
     } catch (err) {
       console.error(`    ❌  Unhandled error: ${String(err)}`);
@@ -1228,8 +1280,9 @@ async function main() {
 
     // Stamp every processed company so the queue advances across runs.
     // Hard errors are left unstamped so a transient failure is retried at
-    // the front of the next run instead of being buried.
-    if (status !== "error" && !DRY_RUN) {
+    // the front of the next run instead of being buried. Deleted rows have
+    // nothing left to stamp.
+    if (status !== "error" && !rowDeleted && !DRY_RUN) {
       const stamp: Record<string, unknown> = { last_enriched_at: new Date().toISOString() };
       if (confidenceSeen != null) stamp.enrichment_confidence = confidenceSeen;
       const { error: stampErr } = await supabase.from("startups").update(stamp).eq("id", row.id);
@@ -1237,8 +1290,8 @@ async function main() {
     }
 
     // ── Summary line in the requested format ─────────────────────────────────
-    const detail = status === "success"
-      ? ` | ${fieldsPatched} fields | ${roundsInserted} rounds`
+    const detail = status === "success" || status === "partial"
+      ? ` | ${fieldsPatched} fields | ${roundsInserted} rounds${status === "partial" ? " | funding withheld (low confidence)" : ""}`
       : status === "low_confidence"
       ? ` | confidence < ${MIN_CONFIDENCE}`
       : "";
@@ -1263,8 +1316,10 @@ async function main() {
   console.log(bar);
   console.log(`  Companies processed:    ${queue.length}  (range: [${OFFSET + 1}–${queueEnd}] of ${fullQueue.length})`);
   console.log(`  ✅  Success:             ${tally.success}`);
-  console.log(`  ⚠️   Low confidence:     ${tally.low_confidence}  (score < ${MIN_CONFIDENCE} — skipped)`);
-  console.log(`  🚫  Rejected:            ${tally.rejected}  (public company / non-tech)`);
+  console.log(`  🟠  Partial:             ${tally.partial}  (profile written, funding withheld — confidence < ${MIN_CONFIDENCE})`);
+  console.log(`  ⚠️   Low confidence:     ${tally.low_confidence}  (nothing usable found — score < ${MIN_CONFIDENCE})`);
+  console.log(`  🚫  Rejected:            ${tally.rejected}  (not a tech company)`);
+  console.log(`  🗑️   Removed (public):   ${tally.removed_public}  (${totalRemovedPublic} row(s) actually deleted)`);
   console.log(`  🔍  No data:             ${tally.no_data}`);
   console.log(`  ❌  Errors:              ${tally.error}`);
   console.log(`  💰  Rounds inserted:     ${totalRoundsInserted}`);

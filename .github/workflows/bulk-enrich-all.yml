@@ -13,6 +13,10 @@ name: Bulk Enrich All Startups
 # Search engine: Tavily (primary, budget-controlled) → Serper/Google (fallback), 5 searches/company
 # Requires secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY,
 #                   TAVILY_API_KEY (optional), SERP_KEY
+#
+# Note: rows the model identifies as publicly traded are DELETED outright (not just
+# skipped) — this tool only tracks private companies. Manually-verified rows are never
+# deleted even if flagged public.
 
 on:
   workflow_dispatch:
@@ -42,7 +46,7 @@ on:
         type: number
         default: 15000
       min_confidence:
-        description: "Minimum Claude confidence score to write data (default: 40)"
+        description: "Minimum confidence to write funding rounds (default: 40). Profile fields (description, founders, etc.) always write regardless — this only gates dollar figures."
         type: number
         default: 40
       model:
