@@ -248,6 +248,12 @@ function normalizeRoundType(raw: string): string {
   if (/\bgrowth\b/.test(s) || /expansion/.test(s))                return "Growth";
   if (/bridge/.test(s))                                           return "Bridge";
   if (/convertible|safe\b|\bnote\b/.test(s))                      return "Convertible Note";
+  if (/\bdebt\b|credit facilit|term loan|\bloan\b|mezzanine/.test(s)) return "Debt";
+  if (/secondar/.test(s))                                         return "Secondary";
+  // Financial-sponsor take-overs (checked BEFORE the generic acquisition
+  // match): press coverage rarely distinguishes a leveraged from an
+  // unleveraged buyout, so LBOs map to the same canonical "PE Buyout".
+  if (/buyout|\blbo\b|leveraged buy|take.?private/.test(s))       return "PE Buyout";
   if (/bootstrap/.test(s))                                        return "Bootstrapped";
   if (/\bgrant\b/.test(s))                                        return "Grant";
   if (/acqui|merg/.test(s))                                       return "Acquired";
@@ -604,7 +610,8 @@ async function researchCompany(name: string, website?: string | null): Promise<E
                   enum: [
                     "Pre-Seed","Seed","Series A","Series B","Series C",
                     "Series D","Series E+","Growth","Bridge",
-                    "Convertible Note","Bootstrapped","Grant","Acquired","Other",
+                    "Convertible Note","Bootstrapped","Grant","Acquired",
+                    "PE Buyout","Secondary","Debt","Other",
                   ],
                 },
                 amount_raised: {
@@ -861,6 +868,13 @@ STRICT RULES:
     proptech, insurtech, cleantech, deep tech, hardware, and traditional industries with a genuine
     tech-driven product — not just classic SaaS. This name comes from a curated startup/VC database, so
     default to TRUE unless it's clearly a plain traditional business with no technology product of its own.
+16. NON-VC FINANCIAL EVENTS — categorize precisely, they are scored differently from VC equity:
+    'PE Buyout' = a private-equity firm takes over the company (buyout, LBO, take-private — e.g.
+    "acquired by Hellman & Friedman and Bain Capital"). 'Acquired' = bought by a STRATEGIC acquirer
+    (another operating company). 'Secondary' = existing shareholders selling their stake; NO new money
+    reaches the company — never report a secondary as capital raised. 'Debt' = venture debt, credit
+    facilities, term loans; report the amount but never conflate it with an equity round. When a company
+    is majority-owned by a PE firm, it is still PRIVATE — do not set is_public_company for buyouts.
 
 Research data:
 ${context}`,

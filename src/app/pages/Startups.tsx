@@ -69,6 +69,9 @@ const ROUND_STYLE: Record<string, string> = {
   "Bootstrapped":     "bg-teal-50 text-teal-700 border border-teal-100",
   "Grant":            "bg-lime-50 text-lime-700 border border-lime-100",
   "Acquired":         "bg-gray-100 text-gray-600 border border-gray-200",
+  "PE Buyout":        "bg-slate-100 text-slate-700 border border-slate-200",
+  "Secondary":        "bg-stone-50 text-stone-600 border border-stone-200",
+  "Debt":             "bg-zinc-50 text-zinc-600 border border-zinc-200",
   "Other":            "bg-gray-50 text-gray-500 border border-gray-100",
 };
 const ROUND_HEX: Record<string, string> = {
@@ -76,7 +79,9 @@ const ROUND_HEX: Record<string, string> = {
   "Series B": "#D97706", "Series C": "#EA580C", "Series D": "#C2410C",
   "Series E+": "#DC2626", "Growth": "#4338CA", "Bridge": "#0284C7",
   "Convertible Note": "#0891B2", "Bootstrapped": "#0D9488",
-  "Grant": "#65A30D", "Acquired": "#6B7280", "Other": "#9CA3AF",
+  "Grant": "#65A30D", "Acquired": "#6B7280",
+  "PE Buyout": "#475569", "Secondary": "#78716C", "Debt": "#71717A",
+  "Other": "#9CA3AF",
 };
 
 // Per-round hover glow: border highlight + ambient shadow bloom + top shimmer
@@ -304,7 +309,7 @@ const STAGE_STEPS = [
   { value: "seed",      label: "Seed",       rounds: ["Seed", "Bridge"] as RoundType[] },
   { value: "series-a",  label: "Series A",   rounds: ["Series A"] as RoundType[] },
   { value: "series-b",  label: "Series B",   rounds: ["Series B"] as RoundType[] },
-  { value: "growth",    label: "Growth/Late", rounds: ["Series C", "Series D", "Series E+", "Growth", "Acquired"] as RoundType[] },
+  { value: "growth",    label: "Growth/Late", rounds: ["Series C", "Series D", "Series E+", "Growth", "Acquired", "PE Buyout", "Secondary"] as RoundType[] },
 ] as const;
 type StageStep = (typeof STAGE_STEPS)[number]["value"];
 
@@ -649,6 +654,18 @@ function AlphaMapScorePanel({ data, loading, err }: {
       <div className="flex items-center gap-2 mb-4">
         <Activity className="w-4 h-4 text-gray-500" />
         <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest">AlphaMap Score</h3>
+        {data.archetype && (
+          <span
+            className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-white/70 text-gray-500 border border-black/5"
+            title={
+              data.archetype === 'mature_private'
+                ? 'Scored on the mature-company track: absolute scale, longevity, headcount stability, and M&A activity — not funding velocity.'
+                : 'Scored on the venture track: capital efficiency, headcount growth rate, and investor quality.'
+            }
+          >
+            {data.archetype === 'mature_private' ? 'Mature Private' : 'Venture-Backed'}
+          </span>
+        )}
         <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${cfg.badge}`}>{cfg.label}</span>
         <span className="text-[10px] text-gray-400 capitalize">{data.confidence} confidence</span>
       </div>

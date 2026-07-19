@@ -9,7 +9,13 @@ export type RoundType =
   | "Pre-Seed" | "Seed"
   | "Series A" | "Series B" | "Series C" | "Series D" | "Series E+"
   | "Growth" | "Bridge" | "Convertible Note"
-  | "Bootstrapped" | "Grant" | "Acquired" | "Other";
+  | "Bootstrapped" | "Grant" | "Acquired"
+  // Non-VC financial events — categorized distinctly so the scoring engine
+  // can exclude them from equity-capital math (a debt facility is not a
+  // dilutive round; a secondary sends no money to the company; a PE buyout
+  // signals the mature_private archetype rather than venture traction).
+  | "PE Buyout" | "Secondary" | "Debt"
+  | "Other";
 
 export type GrowthTrend =
   | "rapid growth" | "moderate growth" | "stable" | "reduction" | "unknown";
@@ -275,6 +281,12 @@ export async function fetchSuggestedPeers(
   return (data ?? []) as StartupListRow[];
 }
 
+// Dual-track scoring: the engine classifies each company's archetype before
+// scoring and re-weights the pillars accordingly (see the
+// dual_track_scoring migration). Pillar labels come from the response, so
+// mature companies show "Scale & Longevity" / "M&A & Backing" automatically.
+export type CompanyArchetype = 'venture_backed' | 'mature_private';
+
 export interface AlphaScorePillar {
   label: string;
   weight: number;
@@ -291,6 +303,12 @@ export interface AlphaScorePillar {
     source?: string;
     n_investors?: number;
     n_matched?: number;
+    // mature_private track only
+    headcount?: number;
+    years_active?: number | null;
+    stability?: string;
+    scale_score?: number;
+    n_acquisitions?: number | null;
   };
 }
 
@@ -298,6 +316,8 @@ export interface AlphaScore {
   score: number;
   tier: 'A' | 'B' | 'C';
   confidence: 'high' | 'medium' | 'low' | 'none';
+  archetype?: CompanyArchetype;
+  archetype_reasons?: string[];
   base_score: number;
   macro_adj_pct: number;
   sector_id?: string;
