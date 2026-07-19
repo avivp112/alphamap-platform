@@ -361,7 +361,8 @@ async function serperSearch(query: string, attempt = 0): Promise<string | null> 
     }
 
     if (!res.ok) {
-      console.warn(`    ⚠️  Serper HTTP ${res.status}`);
+      const body = await res.text().catch(() => "");
+      console.warn(`    ⚠️  Serper HTTP ${res.status}` + (body ? ` — ${body.slice(0, 200)}` : ""));
       return null;
     }
 
