@@ -9,7 +9,8 @@
  *
  * Search engine stack: Tavily (primary, budget-tracked) → Serper.dev (Google Search fallback)
  *   Serper replaces DuckDuckGo — it is a proper REST API with no rate-limit serialisation
- *   needed, so both primary and fallback can fire 4 searches in parallel per company.
+ *   needed, so both primary and fallback can fire 5 searches in parallel per company
+ *   (funding history, amounts, investors, profile/headcount, competitors).
  *   Set SERP_KEY (Serper API key). TAVILY_API_KEY is optional; if absent, Serper is used
  *   for everything.
  *
@@ -31,6 +32,8 @@
  *                 merges founders as a union (additive, never destructive)
  *                 appends new funding rounds with dedup (same type + date ±6 months)
  *                 sets leadership only when currently NULL
+ *                 sets competitors (4-5, each with a how-it-competes explanation) only when
+ *                 currently NULL — cross-linked to our own tracked startups by domain match
  *   Tier 3      — identical rule: since profile is complete, only headcount/growth_trend
  *                 are refreshed; everything else is fill-NULL only
  *   Confidence  — SKIPS ALL WRITES if confidence_score < MIN_CONFIDENCE (default: 40)
@@ -101,8 +104,16 @@ interface StartupRow {
   city: string | null;
   founders: Array<{ name: string; linkedin_url: string | null }> | null;
   leadership: Array<{ name: string; role: string; linkedin_url?: string | null }> | null;
+  competitors: Competitor[] | null;
   updated_at: string;
   last_enriched_at: string | null;
+}
+
+interface Competitor {
+  name: string;
+  website: string | null;
+  how_it_competes: string;
+  startup_id: string | null;
 }
 
 interface FundingRoundRow {
@@ -143,6 +154,8 @@ interface ExtractedLeader { name: string; role: string }
 
 interface ExtractedHeadcountPoint { date: string; employee_count: number; source?: string }
 
+interface ExtractedCompetitor { name: string; website?: string; how_it_competes: string }
+
 interface EnrichmentResult {
   is_public_company: boolean;
   is_tech_company: boolean;
@@ -154,6 +167,7 @@ interface EnrichmentResult {
     growth_trend: string | null;
     headcount_history: ExtractedHeadcountPoint[];
   };
+  competitors: ExtractedCompetitor[];
   confidence_score: number;
   reasoning: string;
   source_url: string;
@@ -188,14 +202,32 @@ function hasRealRounds(rounds: Pick<FundingRoundRow, "round_type">[]): boolean {
   return rounds.some((r) => r.round_type && r.round_type !== "Other");
 }
 
+function hasCompetitors(row: Pick<StartupRow, "competitors">): boolean {
+  return Array.isArray(row.competitors) && row.competitors.length > 0;
+}
+
 function classifyTier(row: StartupRow, rounds: FundingRoundRow[]): 1 | 2 | 3 {
   const realRounds = hasRealRounds(rounds);
   // Tier 1: no profile data AND no real funding round history
   if (!row.description && !row.employee_count && !realRounds) return 1;
-  // Tier 3: has description + employee_count + at least one real round
-  if (row.description && row.employee_count && realRounds) return 3;
+  // Tier 3: has description + employee_count + at least one real round + competitors mapped
+  if (row.description && row.employee_count && realRounds && hasCompetitors(row)) return 3;
   // Tier 2: has some data but key fields are missing
   return 2;
+}
+
+// Domain matcher used to cross-link a found competitor to one of our own
+// tracked startups (matches import_startups_list.ts's domain-first strategy).
+function websiteDomain(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const raw = url.trim();
+  if (!raw) return null;
+  try {
+    const u = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
+    return u.hostname.replace(/^www\./, "").toLowerCase() || null;
+  } catch {
+    return null;
+  }
 }
 
 // ── Search stack: Tavily → DuckDuckGo ─────────────────────────────────────────
@@ -331,20 +363,22 @@ async function webSearch(query: string): Promise<string | null> {
 
 // ── Claude: extract complete company profile in one call ──────────────────────
 async function researchCompany(name: string): Promise<EnrichmentResult | null> {
-  const [historyRaw, amountsRaw, backersRaw, profileRaw] = await Promise.all([
+  const [historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw] = await Promise.all([
     webSearch(`"${name}" complete funding history all rounds Seed "Series A" "Series B" site:crunchbase.com OR site:techcrunch.com OR site:pitchbook.com`),
     webSearch(`"${name}" funding raised USD million billion amount valuation announcement date 2019 2020 2021 2022 2023 2024 2025`),
     webSearch(`"${name}" lead investor venture capital backed participated investors funded round`),
     webSearch(`"${name}" company founder CEO CTO description industry headquarters country city employees headcount 2024 2025`),
+    webSearch(`"${name}" competitors alternatives vs rivals "compared to" market landscape`),
   ]);
 
-  if (![historyRaw, amountsRaw, backersRaw, profileRaw].some(Boolean)) return null;
+  if (![historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw].some(Boolean)) return null;
 
   const context = [
     `## Funding History (all rounds)\n${historyRaw  ?? "(search failed)"}`,
     `## Round Amounts & Valuations\n${amountsRaw    ?? "(search failed)"}`,
     `## Investors & Backers\n${backersRaw            ?? "(search failed)"}`,
     `## Company Profile & Headcount\n${profileRaw   ?? "(search failed)"}`,
+    `## Competitors & Alternatives\n${competitorsRaw ?? "(search failed)"}`,
   ].join("\n\n");
 
   const msg = await anthropic.messages.create({
@@ -494,6 +528,30 @@ async function researchCompany(name: string): Promise<EnrichmentResult | null> {
               },
             },
           },
+          competitors: {
+            type: "array",
+            description: [
+              "4-5 DIRECT competitors — companies that compete for the same customers or solve the",
+              "same core problem. For each, explain HOW and IN WHAT WAY they compete: overlapping",
+              "product/feature set, same target customer segment, same funding stage, positioned as",
+              "an alternative in comparison articles, etc. Prioritize competitors you can verify from",
+              "'alternatives to X' listicles, comparison articles, or industry analyses over guessing",
+              "same-sector companies from memory. Return [] if you cannot verify any real competitors —",
+              "never invent generic competitors based on sector alone.",
+            ].join(" "),
+            items: {
+              type: "object" as const,
+              properties: {
+                name: { type: "string", description: "Competitor company's name." },
+                website: { type: "string", description: "Competitor's root domain URL, if known. Omit if unknown." },
+                how_it_competes: {
+                  type: "string",
+                  description: "1-2 sentences: specifically how and in what way this company competes with the target company.",
+                },
+              },
+              required: ["name", "how_it_competes"],
+            },
+          },
           confidence_score: {
             type: "number",
             description: [
@@ -540,6 +598,10 @@ STRICT RULES:
 8. VERIFY BEFORE ADDING — omit anything unconfirmable. Return [] for rounds rather than guess.
 9. CONFIDENCE — score honestly and conservatively. Penalise for missing amounts, dates, investor names, or conflicting sources.
 10. PRIVACY — if this company has IPO'd or is publicly traded, set is_public_company: true.
+11. COMPETITORS — identify 4-5 DIRECT competitors in the competitors array. For each, state specifically
+    how and in what way they compete (shared product space, shared target customer, positioned as an
+    alternative, etc.) — not just that they're in the same broad sector. Verify from the research; return
+    [] rather than guess generic same-sector companies.
 
 Research data:
 ${context}`,
@@ -552,6 +614,7 @@ ${context}`,
   const i = tool.input as Partial<EnrichmentResult> & {
     profile?: Partial<ExtractedProfile>;
     metrics?: { headcount?: number; growth_trend?: string; headcount_history?: ExtractedHeadcountPoint[] };
+    competitors?: ExtractedCompetitor[];
   };
 
   return {
@@ -565,6 +628,7 @@ ${context}`,
       growth_trend:      i.metrics?.growth_trend      ?? null,
       headcount_history: (i.metrics?.headcount_history ?? []).filter((p) => p.date && p.employee_count != null),
     },
+    competitors:      (i.competitors ?? []).filter((c) => c.name && c.how_it_competes),
     confidence_score: typeof i.confidence_score === "number" ? i.confidence_score : 0,
     reasoning:        i.reasoning  ?? "",
     source_url:       i.source_url ?? "",
@@ -650,6 +714,11 @@ async function insertNewRounds(
   return { inserted, skipped };
 }
 
+// Domain → startup lookup, used to cross-link a found competitor to one of
+// our own tracked startups. Populated once in main() before the processing
+// loop starts.
+const startupByDomain = new Map<string, StartupRow>();
+
 // ── DB: patch startup profile — fill NULLs + always refresh time-varying fields
 async function patchStartupProfile(
   existing: StartupRow,
@@ -684,6 +753,22 @@ async function patchStartupProfile(
     patch.leadership = leadership;
   }
 
+  // Competitors: set only when currently empty — preserves any pre-existing
+  // manually-curated entries untouched. Cross-links to our own tracked
+  // startups by website domain when a match is found (never matches self).
+  if (result.competitors.length > 0 && (!existing.competitors || existing.competitors.length === 0)) {
+    patch.competitors = result.competitors.map((c): Competitor => {
+      const domain = websiteDomain(c.website);
+      const match  = domain ? startupByDomain.get(domain) : undefined;
+      return {
+        name: c.name,
+        website: c.website ?? null,
+        how_it_competes: c.how_it_competes,
+        startup_id: match && match.id !== existing.id ? match.id : null,
+      };
+    });
+  }
+
   // Headcount + growth_trend: always refresh (time-varying — valid for all tiers)
   if (metrics.headcount    != null) patch.employee_count = metrics.headcount;
   if (metrics.growth_trend != null) patch.growth_trend   = metrics.growth_trend;
@@ -705,6 +790,7 @@ async function patchStartupProfile(
   if (patch.employee_count) parts.push(`~${metrics.headcount?.toLocaleString()} employees`);
   if (patch.growth_trend)   parts.push(`trend: ${metrics.growth_trend}`);
   if (patch.leadership)     parts.push(`${leadership.length} leaders`);
+  if (patch.competitors)    parts.push(`${(patch.competitors as Competitor[]).length} competitors`);
   const profileKeys = ["website","description","industry","founded_year","country","city","founders"]
     .filter((k) => patch[k] !== undefined);
   if (profileKeys.length > 0) parts.push(`profile: ${profileKeys.join(", ")}`);
@@ -777,7 +863,7 @@ async function main() {
   const startups = await fetchAllPaginated<StartupRow>((from, to) =>
     supabase
       .from("startups")
-      .select("id, name, website, description, industry, founded_year, employee_count, growth_trend, country, city, founders, leadership, updated_at, last_enriched_at")
+      .select("id, name, website, description, industry, founded_year, employee_count, growth_trend, country, city, founders, leadership, competitors, updated_at, last_enriched_at")
       .order("name")
       .range(from, to),
   );
@@ -794,6 +880,13 @@ async function main() {
     const arr = roundsByStartup.get(r.startup_id) ?? [];
     arr.push(r);
     roundsByStartup.set(r.startup_id, arr);
+  }
+
+  // Domain → startup map for cross-linking found competitors to our own
+  // tracked startups (see patchStartupProfile).
+  for (const s of startups) {
+    const d = websiteDomain(s.website);
+    if (d && !startupByDomain.has(d)) startupByDomain.set(d, s);
   }
 
   // ── 2. Classify every startup ─────────────────────────────────────────────
@@ -851,7 +944,7 @@ async function main() {
     return;
   }
 
-  const tavilyCompanies = Math.floor(TAVILY_BUDGET / 4);
+  const tavilyCompanies = Math.floor(TAVILY_BUDGET / 5);
   const fallbackLabel   = process.env.SERP_KEY ? "Serper (Google)" : "no fallback";
   console.log(`\n  Processing range:       [${OFFSET + 1}–${queueEnd}] of ${fullQueue.length}` +
     (tier3Skipped > 0 ? ` (${tier3Skipped} Tier 3 skipped)` : ""));
@@ -889,6 +982,7 @@ async function main() {
       !row.employee_count && "employees",
       !row.country        && "country",
       !hasRealRounds(rounds) && "real rounds",
+      !hasCompetitors(row) && "competitors",
     ].filter(Boolean);
     if (missingFields.length > 0) {
       console.log(`    Missing: ${missingFields.join(", ")}`);

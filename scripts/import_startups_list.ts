@@ -49,7 +49,9 @@ const RESET_FIELDS = process.env.RESET_FIELDS !== "false"; // default: reset mat
 
 // Profile fields cleared on matched rows when RESET_FIELDS is on. The
 // current values are recorded in startup_changes before clearing.
-// `competitors` is deliberately excluded (manually curated per its comment).
+// `competitors` is deliberately excluded — bulk_enrich_all.ts fills it in
+// once (fill-null only) and never overwrites it, so leaving it out of the
+// reset preserves both bot-filled and any manually-curated entries as-is.
 const RESETTABLE_FIELDS = [
   "description", "industry", "founded_year", "employee_count",
   "country", "city", "founders", "leadership", "growth_trend",

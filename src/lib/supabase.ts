@@ -18,6 +18,16 @@ export interface Leader { name: string; role: string; linkedin_url?: string | nu
 
 export interface Founder { name: string; linkedin_url?: string | null }
 
+// startup_id is set when the competitor could be matched to another row in
+// this table by website domain (see scripts/bulk_enrich_all.ts), enabling a
+// clickable cross-reference; null when the competitor isn't one we track.
+export interface Competitor {
+  name: string;
+  website?: string | null;
+  how_it_competes: string;
+  startup_id?: string | null;
+}
+
 export interface FundingRound {
   id: string;
   startup_id: string;
@@ -48,9 +58,10 @@ export interface Startup {
   created_at: string;
   updated_at: string;
   funding_rounds: FundingRound[];
-  // Competitor names or URLs, manually curated by the research team — never
-  // inferred from sector/stage similarity (see CompetitorsMarketTab).
-  competitors?: string[] | null;
+  // Auto-populated by scripts/bulk_enrich_all.ts (fill-null only — never
+  // overwrites pre-existing curated data). Accepts the legacy plain-string
+  // shape too, for any rows written before the structured format landed.
+  competitors?: (Competitor | string)[] | null;
 }
 
 // PostgREST caps any single response at its configured max-rows (1000 by
@@ -98,7 +109,7 @@ export interface StartupListRow {
   founders: Founder[] | null;
   created_at: string;
   updated_at: string;
-  competitors?: string[] | null;
+  competitors?: (Competitor | string)[] | null;
   sector_parent: string;
   stage_group_val: "early" | "growth" | "late" | "unknown";
   latest_round_type: RoundType | null;
@@ -207,6 +218,18 @@ export async function fetchStartupDetail(id: string): Promise<Startup> {
     .single();
   if (error) throw error;
   return data as Startup;
+}
+
+// Fetches a single row from the search view — used to open the tearsheet for
+// a linked competitor that isn't in the currently-loaded page of results.
+export async function fetchStartupListRowById(id: string): Promise<StartupListRow | null> {
+  const { data, error } = await supabase
+    .from("startups_search")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as StartupListRow) ?? null;
 }
 
 export async function fetchSuggestedPeers(

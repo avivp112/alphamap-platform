@@ -19,9 +19,9 @@ import {
 import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
   fetchStartupsPage, fetchStartupsCount, fetchDistinctCountries, fetchStartupDetail,
-  fetchSuggestedPeers, STARTUPS_PAGE_SIZE,
+  fetchSuggestedPeers, fetchStartupListRowById, STARTUPS_PAGE_SIZE,
   type Startup, type FundingRound, type RoundType, type AlphaScore, type HeadcountPoint,
-  type StartupListRow, type StartupSearchFilters,
+  type StartupListRow, type StartupSearchFilters, type Competitor,
 } from "../../lib/supabase";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1203,26 +1203,57 @@ function TalentGrowthTab({
 }
 
 // ── Tab 5: Competitors & Market ────────────────────────────────────────────────
-// Strictly explicit: only renders data from startup.competitors (a real
-// competitor relationship pulled from the DB). Never falls back to
-// sector-based or similarity-based peer matching.
+// Renders startup.competitors — auto-populated by scripts/bulk_enrich_all.ts
+// with 4-5 direct competitors and an explanation of how each one competes.
+// Any pre-existing manually-curated entries are preserved as-is by the
+// pipeline's fill-null write policy. Handles both the structured object shape
+// and the legacy plain-string shape (rows written before the format landed).
 
-function CompetitorsMarketTab({ startup }: { startup: Startup }) {
-  const competitors = (startup.competitors ?? []).filter(Boolean);
+function normalizeCompetitor(c: Competitor | string): Competitor {
+  if (typeof c === "string") return { name: c, how_it_competes: "", website: null, startup_id: null };
+  return c;
+}
+
+function CompetitorsMarketTab({ startup, onNavigate }: { startup: Startup; onNavigate: (id: string) => void }) {
+  const competitors = (startup.competitors ?? []).filter(Boolean).map(normalizeCompetitor);
 
   if (competitors.length === 0) {
     return (
-      <MissingDataState message="No competitor relationships have been mapped for this company yet. This must be added by the research team — it is not inferred automatically from sector or stage." />
+      <MissingDataState message="No competitor relationships have been mapped for this company yet." />
     );
   }
 
   return (
-    <div className="flex flex-wrap gap-2">
-      {competitors.map((c) => (
-        <span key={c} className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-full px-3.5 py-2 text-sm font-semibold text-gray-900">
-          <Building2 className="w-3.5 h-3.5 text-gray-400 flex-none" />{c}
-        </span>
-      ))}
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {competitors.map((c, idx) => {
+        const linked = Boolean(c.startup_id);
+        return (
+          <div
+            key={`${c.name}-${idx}`}
+            className={`flex flex-col gap-1.5 bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3.5 ${linked ? "cursor-pointer hover:border-cyan-300 hover:bg-cyan-50/40 transition-colors" : ""}`}
+            onClick={linked ? () => onNavigate(c.startup_id as string) : undefined}
+          >
+            <div className="flex items-center gap-2">
+              <Building2 className="w-3.5 h-3.5 text-gray-400 flex-none" />
+              <span className="text-sm font-bold text-gray-900 truncate">{c.name}</span>
+              {linked && <span className="text-[10px] font-semibold text-cyan-700 bg-cyan-100 rounded-full px-2 py-0.5 flex-none">Tracked ↗</span>}
+            </div>
+            {c.how_it_competes && (
+              <p className="text-xs text-gray-600 leading-relaxed">{c.how_it_competes}</p>
+            )}
+            {c.website && !linked && (
+              <a
+                href={c.website.startsWith("http") ? c.website : `https://${c.website}`}
+                target="_blank" rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-center gap-1 text-[11px] font-medium text-gray-400 hover:text-cyan-700 transition-colors"
+              >
+                <Globe className="w-3 h-3 flex-none" />{c.website.replace(/^https?:\/\//, "").replace(/^www\./, "")}
+              </a>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1239,8 +1270,22 @@ const TEARSHEET_TABS: { id: TearsheetTab; label: string }[] = [
   { id: "competitors", label: "Competitors & Market" },
 ];
 
-function TearsheetModal({ startup, onClose }: { startup: StartupListRow; onClose: () => void }) {
+function TearsheetModal({ startup, onClose, onNavigate }: { startup: StartupListRow; onClose: () => void; onNavigate: (row: StartupListRow) => void }) {
   const [activeTab, setActiveTab] = useState<TearsheetTab>("overview");
+  const [navLoading, setNavLoading] = useState(false);
+
+  async function handleNavigateToCompetitor(id: string) {
+    if (navLoading) return;
+    setNavLoading(true);
+    try {
+      const row = await fetchStartupListRowById(id);
+      if (row) onNavigate(row);
+    } catch (err) {
+      console.error("Failed to load linked competitor:", err);
+    } finally {
+      setNavLoading(false);
+    }
+  }
 
   const roundType   = startup.latest_round_type ?? null;
   const roundStyle  = roundType ? (ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]) : null;
@@ -1403,7 +1448,7 @@ function TearsheetModal({ startup, onClose }: { startup: StartupListRow; onClose
               {activeTab === "talent" && (
                 <TalentGrowthTab startup={detail} alphaScore={alphaScore} alphaLoading={alphaLoading} />
               )}
-              {activeTab === "competitors" && <CompetitorsMarketTab startup={detail} />}
+              {activeTab === "competitors" && <CompetitorsMarketTab startup={detail} onNavigate={handleNavigateToCompetitor} />}
             </>
           )}
         </div>
@@ -2239,7 +2284,7 @@ export function Startups() {
         onSuccess={() => { setPage(1); setRefreshKey((k) => k + 1); }} />
 
       {tearsheetStartup && (
-        <TearsheetModal startup={tearsheetStartup} onClose={() => setSelected(null)} />
+        <TearsheetModal startup={tearsheetStartup} onClose={() => setSelected(null)} onNavigate={(row) => setSelected(row)} />
       )}
 
       {showCompare && selectedStartups.length >= 2 && (
