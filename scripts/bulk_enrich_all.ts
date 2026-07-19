@@ -1007,7 +1007,7 @@ const startupByDomain = new Map<string, StartupRow>();
 async function patchStartupProfile(
   existing: StartupRow,
   result: EnrichmentResult,
-): Promise<{ fieldsPatched: number }> {
+): Promise<{ fieldsPatched: number; patchedKeys: string[] }> {
   const { profile, metrics, leadership } = result;
   const patch: Record<string, unknown> = {};
 
@@ -1100,11 +1100,12 @@ async function patchStartupProfile(
   if (metrics.headcount    != null) patch.employee_count = metrics.headcount;
   if (metrics.growth_trend != null) patch.growth_trend   = metrics.growth_trend;
 
-  // fieldsPatched (the meaningful, user-facing count used to decide whether
-  // anything of substance was found) is captured BEFORE funding_history_complete
-  // is added below — that flag always gets written and would otherwise inflate
-  // the count for companies where nothing else was actually found.
-  const fieldsPatched = Object.keys(patch).length;
+  // fieldsPatched / patchedKeys (the meaningful, user-facing view of what was
+  // actually found) are captured BEFORE funding_history_complete is added
+  // below — that flag always gets written and would otherwise inflate the
+  // count for companies where nothing else was actually found.
+  const patchedKeys   = Object.keys(patch);
+  const fieldsPatched = patchedKeys.length;
 
   // Funding history completeness: always overwrite with the latest run's
   // assessment (not fill-null-only) — a later pass that finds the missing
@@ -1115,13 +1116,13 @@ async function patchStartupProfile(
 
   if (DRY_RUN) {
     console.log(`    [DRY] Would patch: ${Object.keys(patch).join(", ")}`);
-    return { fieldsPatched };
+    return { fieldsPatched, patchedKeys };
   }
 
   const { error } = await supabase.from("startups").update(patch).eq("id", existing.id);
   if (error) {
     console.warn(`    ⚠️  Profile patch failed: ${error.message}`);
-    return { fieldsPatched: 0 };
+    return { fieldsPatched: 0, patchedKeys: [] };
   }
 
   const parts: string[] = [];
@@ -1136,7 +1137,7 @@ async function patchStartupProfile(
   if (profileKeys.length > 0) parts.push(`profile: ${profileKeys.join(", ")}`);
   if (parts.length > 0) console.log(`    👤  Patched: ${parts.join(" | ")}`);
 
-  return { fieldsPatched };
+  return { fieldsPatched, patchedKeys };
 }
 
 // ── Headcount history snapshot ────────────────────────────────────────────────
@@ -1329,7 +1330,7 @@ async function main() {
       !hasCompetitors(row) && "competitors",
     ].filter(Boolean);
     if (missingFields.length > 0) {
-      console.log(`    Missing: ${missingFields.join(", ")}`);
+      console.log(`    Missing before this pass: ${missingFields.join(", ")}`);
     }
 
     let status: ProcessStatus = "error";
@@ -1412,6 +1413,24 @@ async function main() {
         }
 
         totalFieldsPatched += fieldsPatched;
+
+        // Honest after-state: which of the pre-run gaps are STILL open after
+        // this pass. The pre-run "Missing before this pass" line describes the
+        // row as it stood going in — without this counterpart it reads like a
+        // result and makes successful passes look like failures.
+        const patched = new Set(profileResult.patchedKeys);
+        const stillMissing = [
+          !row.description       && !patched.has("description")    && "description",
+          !row.employee_count    && !patched.has("employee_count") && "employees",
+          !row.country           && !patched.has("country")        && "country",
+          !hasRealRounds(rounds) && roundsInserted === 0           && "real rounds",
+          !hasCompetitors(row)   && !patched.has("competitors")    && "competitors",
+        ].filter(Boolean);
+        if (stillMissing.length > 0) {
+          console.log(`    ▫️  Still missing after this pass: ${stillMissing.join(", ")}`);
+        } else if (missingFields.length > 0) {
+          console.log(`    ✨  All pre-run gaps filled`);
+        }
 
         status = (fieldsPatched === 0 && roundsInserted === 0)
           ? "low_confidence"                 // nothing usable was found or written at all
