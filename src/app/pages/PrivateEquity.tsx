@@ -350,6 +350,13 @@ function PEOverviewTab({ firm }: { firm: PEFirmRow }) {
         <MissingDataState message="No firm description on file." />
       )}
 
+      {firm.thesis && (
+        <div className="bg-gray-50 border border-gray-100 rounded-[14px] px-4 py-3.5">
+          <div className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Investment Thesis</div>
+          <p className="text-sm text-gray-700 leading-relaxed italic">{firm.thesis}</p>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard icon={DollarSign} label="AUM / Fund Size" value={firm.fund_size ?? formatAUM(aum)} accent="#059669" />
         <StatCard icon={Calendar}   label="Founded"         value={firm.founded_year ? String(firm.founded_year) : "—"} accent="#F59E0B" />

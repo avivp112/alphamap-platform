@@ -414,6 +414,12 @@ export interface InvestorRow {
   website: string | null;
   tier: number | null;
   updated_at: string;
+  // Added by later migrations (pe_firms, investors_enrichment)
+  firm_type?: 'vc' | 'pe' | 'growth';
+  leadership?: Leader[] | null;
+  thesis?: string | null;
+  last_enriched_at?: string | null;
+  enrichment_confidence?: number | null;
 }
 
 // ── Private Equity ────────────────────────────────────────────────────────────
@@ -427,6 +433,7 @@ export interface PEFirmRow {
   investor_id: string | null;
   slug: string | null;
   description: string | null;
+  thesis: string | null;
   founded_year: number | null;
   headquarters: string | null;
   fund_size: string | null;
