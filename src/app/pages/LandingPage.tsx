@@ -829,8 +829,8 @@ function UseCasesSection() {
 export function LandingPage() {
   const navigate        = useNavigate();
   const [scrolled,      setScrolled]      = useState(false);
-  const [typedCount,    setTypedCount]    = useState(0);
-  const [subTypedCount, setSubTypedCount] = useState(0);
+  const [typedCount,     setTypedCount]     = useState(0);
+  const [subheadVisible, setSubheadVisible] = useState(false);
   const [activeTab,     setActiveTab]     = useState("sourcing"); // tab bar highlight (target)
   const [displayTab,    setDisplayTab]    = useState("sourcing"); // tab actually rendered
   const [tabLoading,    setTabLoading]    = useState(false);
@@ -838,8 +838,6 @@ export function LandingPage() {
   const tabSwitchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showcaseRef = useRef<HTMLDivElement>(null);
   const headlineDone  = typedCount >= HEADLINE.length;
-  const subheadStarted = subTypedCount > 0;
-  const subheadDone    = subTypedCount >= SUBHEAD.length;
 
   // Switching tabs shows a brief loading state before the new panel mounts
   function handleTabClick(key: string) {
@@ -893,19 +891,12 @@ export function LandingPage() {
     return () => { clearTimeout(startId); clearInterval(intervalId); };
   }, []);
 
-  // Typewriter reveal of the subheading, starting once the headline is fully typed
+  // Subheading simply fades in as a whole once the headline finishes typing
+  // (no typewriter effect on this one — it just appears after a brief pause).
   useEffect(() => {
     if (!headlineDone) return;
-    let charIndex = 0;
-    let intervalId: ReturnType<typeof setInterval>;
-    const startId = setTimeout(() => {
-      intervalId = setInterval(() => {
-        charIndex += 1;
-        setSubTypedCount(charIndex);
-        if (charIndex >= SUBHEAD.length) clearInterval(intervalId);
-      }, TYPE_SPEED_MS);
-    }, SUBHEAD_PAUSE_MS);
-    return () => { clearTimeout(startId); clearInterval(intervalId); };
+    const startId = setTimeout(() => setSubheadVisible(true), SUBHEAD_PAUSE_MS);
+    return () => clearTimeout(startId);
   }, [headlineDone]);
 
   // Fade-up for the scroll cue, once the subheading finishes typing
@@ -966,19 +957,19 @@ export function LandingPage() {
           style={{ fontFamily: "'Playfair Display', serif", lineHeight: "1.15" }}
         >
           {HEADLINE.slice(0, typedCount)}
-          {!subheadStarted && <span className="typewriter-cursor" aria-hidden="true" />}
+          {!subheadVisible && <span className="typewriter-cursor" aria-hidden="true" />}
         </h1>
 
         <p
           className="max-w-[720px] mt-6 text-xl md:text-2xl leading-relaxed font-normal text-[#374151]"
+          style={tx(subheadVisible, 0)}
         >
-          {SUBHEAD.slice(0, subTypedCount)}
-          {subheadStarted && <span className="typewriter-cursor" aria-hidden="true" />}
+          {SUBHEAD}
         </p>
 
         {/* Scroll indicator */}
         <div
-          style={tx(subheadDone, 500)}
+          style={tx(subheadVisible, 500)}
           className="absolute bottom-9 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 pointer-events-none"
         >
           <span className="text-[9px] font-semibold tracking-[0.32em] text-[#0F172A]/30 uppercase">Scroll</span>
