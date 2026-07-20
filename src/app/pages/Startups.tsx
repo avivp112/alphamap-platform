@@ -6,6 +6,7 @@ import {
   ResponsiveContainer, Cell,
 } from "recharts";
 import { Layout } from "../components/Layout";
+import { LinkedInBadge } from "../components/LinkedInBadge";
 import { CompanyLogo } from "../components/CompanyLogo";
 import {
   Plus, Globe, Loader2, Search, X, MapPin, Calendar, Users,
@@ -14,7 +15,7 @@ import {
   UserRound, LayoutGrid, List, ExternalLink,
   ChevronDown, ChevronLeft, ChevronRight, Building2, CheckSquare, Square,
   GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2, ChevronUp,
-  SlidersHorizontal, Award, Linkedin,
+  SlidersHorizontal, Award,
 } from "lucide-react";
 import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
@@ -854,26 +855,6 @@ function MissingDataState({ message }: { message: string }) {
         <p className="text-xs text-gray-500 mt-1 leading-relaxed">{message}</p>
       </div>
     </div>
-  );
-}
-
-// Small circular LinkedIn link shown next to a founder/leader's name when a
-// profile URL is on file. Renders nothing when absent — never a placeholder.
-function LinkedInBadge({ url, name }: { url?: string | null; name: string }) {
-  if (!url) return null;
-  const href = url.startsWith("http") ? url : `https://${url}`;
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      onClick={(e) => e.stopPropagation()}
-      title={`${name} on LinkedIn`}
-      aria-label={`${name} on LinkedIn`}
-      className="flex items-center justify-center w-5 h-5 rounded-full bg-[#0A66C2]/10 text-[#0A66C2] hover:bg-[#0A66C2]/20 transition-colors flex-none"
-    >
-      <Linkedin className="w-3 h-3" />
-    </a>
   );
 }
 

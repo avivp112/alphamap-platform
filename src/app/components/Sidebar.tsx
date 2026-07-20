@@ -19,12 +19,12 @@ const linkedItems = [
   { icon: Landmark,         label: 'Venture Capital', to: '/vcs',        end: false },
   { icon: Handshake,        label: 'Deals',           to: '/deals',      end: false },
   { icon: Globe2,           label: 'Market Map',      to: '/market-map', end: false },
+  { icon: Vault,            label: 'Private Equity',  to: '/private-equity', end: false },
 ];
 
 // Not built yet — shown dimmed and inert so the full nav is visible without
 // implying these pages already work.
 const staticItems = [
-  { icon: Vault,          label: 'Funds Private Equity' },
   { icon: ClipboardCheck, label: 'Valuations and Due Diligence' },
   { icon: Eye,            label: 'My Watchlist' },
 ];

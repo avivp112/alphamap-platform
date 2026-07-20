@@ -416,6 +416,77 @@ export interface InvestorRow {
   updated_at: string;
 }
 
+// ── Private Equity ────────────────────────────────────────────────────────────
+// The PE directory is DERIVED from real transaction data ('PE Buyout' /
+// 'Secondary' rounds carry firm names in lead_investor / investors[]),
+// enriched by the investors table (firm_type = 'pe') when a curated profile
+// exists for the same name. See supabase/migrations/20260720000000_pe_firms.sql.
+
+export interface PEFirmRow {
+  firm_name: string;
+  investor_id: string | null;
+  slug: string | null;
+  description: string | null;
+  founded_year: number | null;
+  headquarters: string | null;
+  fund_size: string | null;
+  website: string | null;
+  tier: number | null;
+  leadership: Leader[] | null;
+  buyout_count: number;
+  secondary_count: number;
+  portfolio_count: number;
+  latest_deal_date: string | null;
+  total_deal_value: number;
+}
+
+export interface PEPortfolioCompany {
+  startup_id: string;
+  name: string;
+  industry: string | null;
+  country: string | null;
+  city: string | null;
+  employee_count: number | null;
+  founded_year: number | null;
+  years_active: number | null;
+  growth_trend: GrowthTrend | null;
+  n_acquisitions: number;
+  archetype: CompanyArchetype | null;
+  first_deal_date: string | null;
+  deal_types: RoundType[];
+}
+
+export interface PETransaction {
+  round_id: string;
+  startup_id: string;
+  company_name: string;
+  industry: string | null;
+  round_type: RoundType;
+  amount_raised: number | null;
+  valuation: number | null;
+  announcement_date: string | null;
+  is_lead: boolean;
+  source_url: string | null;
+}
+
+export async function fetchPEFirms(): Promise<PEFirmRow[]> {
+  const { data, error } = await supabase.rpc("pe_firms_directory");
+  if (error) throw error;
+  return (data ?? []) as PEFirmRow[];
+}
+
+export async function fetchPEFirmPortfolio(firmName: string): Promise<PEPortfolioCompany[]> {
+  const { data, error } = await supabase.rpc("pe_firm_portfolio", { p_firm_name: firmName });
+  if (error) throw error;
+  return (data ?? []) as PEPortfolioCompany[];
+}
+
+export async function fetchPEFirmTransactions(firmName: string): Promise<PETransaction[]> {
+  const { data, error } = await supabase.rpc("pe_firm_transactions", { p_firm_name: firmName });
+  if (error) throw error;
+  return (data ?? []) as PETransaction[];
+}
+
 export async function fetchInvestors(): Promise<InvestorRow[]> {
   const { data, error } = await supabase
     .from("investors")
