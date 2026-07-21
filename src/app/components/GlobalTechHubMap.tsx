@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ComposableMap, Geographies, Geography, Marker } from 'react-simple-maps';
-import { fetchStartups, fetchInvestors, type Startup, type InvestorRow } from '../../lib/supabase';
+import type { Startup, InvestorRow } from '../../lib/supabase';
 
 // ── Projection constants (geoEquirectangular, scale=140, center=[10,15]) ──────
 // MAP_H=370 crops the empty polar ocean — inhabited world fills the frame.
@@ -11,9 +11,9 @@ const MAP_CENTER: [number, number] = [10, 15];
 
 // ── Hub registry ───────────────────────────────────────────────────────────────
 
-interface HubDef { id: string; name: string; lat: number; lng: number; region: string }
+export interface HubDef { id: string; name: string; lat: number; lng: number; region: string }
 
-const HUBS: HubDef[] = [
+export const HUBS: HubDef[] = [
   { id: 'silicon-valley', name: 'Silicon Valley', lat: 37.4,  lng: -122.0, region: 'North America' },
   { id: 'new-york',       name: 'New York',        lat: 40.7,  lng: -74.0,  region: 'North America' },
   { id: 'boston',         name: 'Boston',          lat: 42.4,  lng: -71.1,  region: 'North America' },
@@ -36,7 +36,7 @@ const HUBS: HubDef[] = [
   { id: 'sydney',         name: 'Sydney',          lat: -33.9, lng: 151.2,  region: 'Oceania'       },
 ];
 
-const HUB_BY_ID: Record<string, HubDef> = Object.fromEntries(HUBS.map(h => [h.id, h]));
+export const HUB_BY_ID: Record<string, HubDef> = Object.fromEntries(HUBS.map(h => [h.id, h]));
 
 // ── City / country → hub resolution ───────────────────────────────────────────
 
@@ -85,7 +85,7 @@ const COUNTRY_HUB: Record<string, string> = {
   'brazil': 'sao-paulo',
 };
 
-function resolveHub(city: string | null, country: string | null): string | null {
+export function resolveHub(city: string | null, country: string | null): string | null {
   if (city) { const h = CITY_HUB[city.toLowerCase().trim()]; if (h) return h; }
   if (country) { const h = COUNTRY_HUB[country.toLowerCase().trim()]; if (h) return h; }
   return null;
@@ -93,9 +93,9 @@ function resolveHub(city: string | null, country: string | null): string | null 
 
 // ── Sector ─────────────────────────────────────────────────────────────────────
 
-type SectorKey = 'all' | 'cybersecurity' | 'fintech' | 'ai-ml' | 'dev-tools';
+export type SectorKey = 'all' | 'cybersecurity' | 'fintech' | 'ai-ml' | 'dev-tools';
 
-const SECTOR_LABELS: Record<SectorKey, string> = {
+export const SECTOR_LABELS: Record<SectorKey, string> = {
   all: 'All Sectors', cybersecurity: 'Cybersecurity',
   fintech: 'FinTech', 'ai-ml': 'AI / ML', 'dev-tools': 'Dev Tools',
 };
@@ -107,7 +107,7 @@ const SECTOR_KW: Record<string, string[]> = {
   'dev-tools':   ['developer tool', 'devops', 'saas', 'platform', 'infrastructure', 'api ', 'cloud', 'kubernetes'],
 };
 
-function matchesSector(s: Startup, sector: SectorKey): boolean {
+export function matchesSector(s: Startup, sector: SectorKey): boolean {
   if (sector === 'all') return true;
   const kw = SECTOR_KW[sector] ?? [];
   const text = `${s.description ?? ''} ${s.industry ?? ''}`.toLowerCase();
@@ -243,20 +243,20 @@ function fmtTalent(n: number): string {
 
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
 
-export function GlobalTechHubMap() {
-  const [startups, setStartups]     = useState<Startup[]>([]);
-  const [investors, setInvestors]   = useState<InvestorRow[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [selectedHub, setSelectedHub] = useState<string | null>(null);
+export function GlobalTechHubMap({
+  startups, investors, loading,
+  selectedHub, onSelectHub,
+  sector, onSectorChange,
+}: {
+  startups: Startup[];
+  investors: InvestorRow[];
+  loading: boolean;
+  selectedHub: string | null;
+  onSelectHub: (hubId: string | null) => void;
+  sector: SectorKey;
+  onSectorChange: (sector: SectorKey) => void;
+}) {
   const [hoveredHub, setHoveredHub] = useState<string | null>(null);
-  const [sector, setSector]         = useState<SectorKey>('all');
-
-  useEffect(() => {
-    Promise.all([fetchStartups(), fetchInvestors()])
-      .then(([s, i]) => { setStartups(s); setInvestors(i); })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
 
   const hubCounts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -304,7 +304,7 @@ export function GlobalTechHubMap() {
           {(Object.keys(SECTOR_LABELS) as SectorKey[]).map(k => (
             <button
               key={k}
-              onClick={() => setSector(k)}
+              onClick={() => onSectorChange(k)}
               className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-200"
               style={sector === k
                 ? { background: '#F59E0B', color: '#fff', border: '1px solid #F59E0B' }
@@ -367,7 +367,7 @@ export function GlobalTechHubMap() {
                   coordinates={[hub.lng, hub.lat]}
                   onMouseEnter={() => setHoveredHub(hub.id)}
                   onMouseLeave={() => setHoveredHub(null)}
-                  onClick={() => setSelectedHub(prev => prev === hub.id ? null : hub.id)}
+                  onClick={() => onSelectHub(selectedHub === hub.id ? null : hub.id)}
                 >
                   <g className="cursor-pointer">
                     <circle r={18} fill="transparent" />
@@ -439,7 +439,7 @@ export function GlobalTechHubMap() {
                   <p className="text-xs text-slate-500 mt-0.5">{activeHub.region}</p>
                 </div>
                 <button
-                  onClick={() => setSelectedHub(null)}
+                  onClick={() => onSelectHub(null)}
                   className="text-slate-500 hover:text-slate-300 transition-colors mt-0.5 text-xl leading-none"
                 >
                   ×
