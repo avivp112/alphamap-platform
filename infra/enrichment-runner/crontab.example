@@ -1,0 +1,26 @@
+# Example schedule for the Tier 3 (previously auto-scheduled) jobs, run on the
+# VM's own cron — install with `crontab -e` on the VM, adjusting the repo path
+# and log destination to match your setup.
+#
+# Staggered deliberately so the three scraping jobs never overlap or fire back
+# to back — same spirit as the original GitHub Actions cron times, just moved
+# onto infrastructure you control instead of a shared CI vendor's scheduler.
+#
+# Format: minute hour day month weekday  command
+
+REPO=/home/deploy/finance-platform
+LOG=/var/log/enrichment
+
+# fetch_sec_deals.ts — weekdays 08:00 UTC (was fetch-sec-deals.yml)
+0 8 * * 1-5   cd $REPO && DRY_RUN=false npx tsx scripts/fetch_sec_deals.ts >> $LOG/sec-deals.log 2>&1
+
+# agent_vcs_scraper.ts — weekly, Monday 02:00 UTC (was vc_ingestion.yml)
+0 2 * * 1     cd $REPO && DRY_RUN=false npx tsx scripts/agent_vcs_scraper.ts >> $LOG/vc-ingestion.log 2>&1
+
+# autopilot.ts — weekly, Sunday 00:00 UTC (was weekly-market-intel.yml)
+0 0 * * 0     cd $REPO && DRY_RUN=false npx tsx scripts/autopilot.ts >> $LOG/autopilot.log 2>&1
+
+# Tier 2 jobs (bulk_enrich_all.ts, enrich_investors.ts, enrich_funding_rounds.ts)
+# are intentionally NOT scheduled here — run those by hand when you actually
+# want a fresh enrichment pass:
+#   cd $REPO && DRY_RUN=false BATCH_SIZE=300 npx tsx scripts/bulk_enrich_all.ts
