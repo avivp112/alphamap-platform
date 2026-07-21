@@ -7,6 +7,7 @@ import {
 } from "recharts";
 import { Layout } from "../components/Layout";
 import { LinkedInBadge } from "../components/LinkedInBadge";
+import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider } from "../components/SideFilterLayout";
 import { CompanyLogo } from "../components/CompanyLogo";
 import {
   Plus, Globe, Loader2, Search, X, MapPin, Calendar, Users,
@@ -247,61 +248,6 @@ function keywordsForSub(parent: string, sub: string): string[] {
     .map(([keyword]) => keyword);
 }
 
-// ── Step Slider ───────────────────────────────────────────────────────────────
-
-function StepSlider({
-  steps, value, onChange,
-}: {
-  steps: ReadonlyArray<{ value: string; label: string }>;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  const idx = Math.max(0, steps.findIndex((s) => s.value === value));
-  const pct = steps.length > 1 ? (idx / (steps.length - 1)) * 100 : 0;
-
-  return (
-    <div>
-      <div className="relative h-4 flex items-center mx-1">
-        <div className="absolute inset-x-0 h-[3px] rounded-full bg-gray-200" />
-        <div
-          className="absolute left-0 h-[3px] rounded-full bg-[#0F172A] transition-all duration-100"
-          style={{ width: `${pct}%` }}
-        />
-        {steps.map((_, i) => (
-          <div
-            key={i}
-            className={`absolute w-2.5 h-2.5 rounded-full border-[2px] -translate-x-1/2 transition-all duration-100 ${
-              i < idx   ? "bg-[#0F172A] border-[#0F172A]" :
-              i === idx ? "bg-white border-[#0F172A] scale-125" :
-                          "bg-white border-gray-300"
-            }`}
-            style={{ left: `${steps.length > 1 ? (i / (steps.length - 1)) * 100 : 0}%` }}
-          />
-        ))}
-        <input
-          type="range" min={0} max={steps.length - 1} step={1} value={idx}
-          onChange={(e) => onChange(steps[Number(e.target.value)].value)}
-          className="absolute inset-x-0 w-full h-full opacity-0 cursor-pointer z-10"
-        />
-      </div>
-      <div className="flex justify-between mt-2 px-0.5">
-        {steps.map((s, i) => (
-          <button
-            key={s.value}
-            onClick={() => onChange(s.value)}
-            className={`text-[9px] font-semibold leading-none transition-colors ${
-              i === idx ? "text-[#0F172A]" : "text-gray-400 hover:text-gray-600"
-            }`}
-            style={{ minWidth: 0 }}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ── Slider step definitions ───────────────────────────────────────────────────
 
 const STAGE_STEPS = [
@@ -333,34 +279,6 @@ const PROGRESS_MESSAGES = [
   "Validating entry conditions…",
   "Saving to AlphaMap…",
 ];
-
-// ── Sidebar Filter Accordion ──────────────────────────────────────────────────
-// Collapsible section shell used for every sidebar filter category.
-
-function FilterAccordion({
-  title, defaultOpen = true, badge, children,
-}: {
-  title: string; defaultOpen?: boolean; badge?: React.ReactNode; children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="border-b border-gray-100 py-4 first:pt-0 last:border-b-0">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between gap-2 text-left group"
-      >
-        <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider group-hover:text-[#0F172A] transition-colors">{title}</span>
-        <div className="flex items-center gap-2 flex-none">
-          {badge}
-          {open
-            ? <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
-            : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />}
-        </div>
-      </button>
-      {open && <div className="mt-3">{children}</div>}
-    </div>
-  );
-}
 
 // ── Hierarchical Sector Filter ────────────────────────────────────────────────
 // Tag/checkbox-style list for the sidebar: selecting a parent sector reveals
@@ -424,16 +342,6 @@ function HierarchicalSectorFilter({
         Uncategorized
       </button>
     </div>
-  );
-}
-
-// Small pill shown in a collapsed FilterAccordion header when a filter in
-// that section is active, so the current selection is visible even closed.
-function FilterBadge({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-[#0F172A] border border-gray-200 whitespace-nowrap max-w-[110px] truncate">
-      {children}
-    </span>
   );
 }
 
@@ -2243,37 +2151,16 @@ export function Startups() {
         </div>
       </div>
 
-      {/* ── Sidebar + main content ──────────────────────────────────────── */}
-      <div className={`mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 py-6 ${selected.size >= 1 ? "pb-28" : ""}`}>
-        <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 items-start">
-
-          {/* ── Left sidebar: faceted search ── */}
-          <aside className="w-full lg:w-[300px] lg:flex-none lg:sticky lg:top-6">
-            <div className="bg-white border border-gray-100 rounded-[20px] shadow-[0_1px_3px_rgba(15,23,42,0.04)] px-5 py-1 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto">
-              <div className="flex items-center justify-between py-3.5 border-b border-gray-100">
-                <div className="flex items-center gap-2">
-                  <SlidersHorizontal className="w-4 h-4 text-[#0F172A]/50" />
-                  <h2 className="text-sm font-bold text-[#0F172A]">Filters</h2>
-                </div>
-                {activeFilterCount > 0 && (
-                  <button onClick={clearAll} className="flex items-center gap-1 text-[11px] font-semibold text-gray-400 hover:text-rose-600 transition-colors">
-                    <X className="w-3 h-3" />Clear ({activeFilterCount})
-                  </button>
-                )}
-              </div>
-
-              {/* Search */}
-              <div className="py-4 border-b border-gray-100">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-300" />
-                  <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search companies…"
-                    className="w-full pl-8 pr-8 py-2 text-sm bg-gray-50 border border-gray-100 text-[#0F172A] placeholder-gray-400 rounded-[10px] focus:outline-none focus:border-gray-300 focus:ring-2 focus:ring-[#0F172A]/10 transition-all" />
-                  {search && (
-                    <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"><X className="w-3.5 h-3.5" /></button>
-                  )}
-                </div>
-              </div>
-
+      {/* ── Sidebar + main content (shared SideFilterLayout shell) ───────── */}
+      <SideFilterLayout
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search companies…"
+        activeFilterCount={activeFilterCount}
+        onClearAll={clearAll}
+        extraBottomPadding={selected.size >= 1}
+        filters={
+          <>
               <FilterAccordion title="Sectors" defaultOpen
                 badge={parentSector ? <FilterBadge>{subSector || parentSector}</FilterBadge> : undefined}>
                 <HierarchicalSectorFilter
@@ -2345,11 +2232,9 @@ export function Startups() {
                   </button>
                 </div>
               )}
-            </div>
-          </aside>
-
-          {/* ── Main content ── */}
-          <div className="flex-1 min-w-0 w-full">
+          </>
+        }
+      >
             {loadError && rows.length === 0 ? (
               <div className="flex flex-col items-center py-24 gap-3 text-center">
                 <AlertCircle className="w-8 h-8 text-red-400" />
@@ -2410,9 +2295,7 @@ export function Startups() {
                 <Pagination page={page} pageCount={pageCount} onChange={setPage} />
               </div>
             )}
-          </div>
-        </div>
-      </div>
+      </SideFilterLayout>
 
       <AddStartupDialog open={showAdd} onClose={() => setShowAdd(false)}
         onSuccess={() => { setPage(1); setRefreshKey((k) => k + 1); }} />

@@ -442,6 +442,7 @@ export interface PEFirmRow {
   leadership: Leader[] | null;
   buyout_count: number;
   secondary_count: number;
+  debt_count: number;
   portfolio_count: number;
   latest_deal_date: string | null;
   total_deal_value: number;
@@ -492,6 +493,29 @@ export async function fetchPEFirmTransactions(firmName: string): Promise<PETrans
   const { data, error } = await supabase.rpc("pe_firm_transactions", { p_firm_name: firmName });
   if (error) throw error;
   return (data ?? []) as PETransaction[];
+}
+
+// Names (lowercased) of investors that appear on a deal in the `deals` feed
+// within the last N months — powers the VC directory's "Active (24 mo)"
+// filter with real deal data, since investor profile rows carry no deal
+// recency of their own.
+export async function fetchRecentActiveInvestorNames(months = 24): Promise<Set<string>> {
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - months);
+  const { data, error } = await supabase
+    .from("deals")
+    .select("investors")
+    .gte("deal_date", cutoff.toISOString().slice(0, 10))
+    .not("investors", "is", null);
+  if (error) throw error;
+  const names = new Set<string>();
+  for (const row of (data ?? []) as Array<{ investors: string[] | null }>) {
+    for (const n of row.investors ?? []) {
+      const t = n?.trim().toLowerCase();
+      if (t) names.add(t);
+    }
+  }
+  return names;
 }
 
 export async function fetchInvestors(): Promise<InvestorRow[]> {

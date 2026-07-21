@@ -7,6 +7,7 @@ import {
 import { Layout } from "../components/Layout";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { LinkedInBadge } from "../components/LinkedInBadge";
+import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider } from "../components/SideFilterLayout";
 import {
   fetchPEFirms, fetchPEFirmPortfolio, fetchPEFirmTransactions,
   type PEFirmRow, type PEPortfolioCompany, type PETransaction,
@@ -60,6 +61,7 @@ function toggle<T>(arr: T[], val: T): T[] {
 const DEAL_STYLE: Record<string, string> = {
   "PE Buyout": "bg-slate-100 text-slate-700 border border-slate-200",
   "Secondary": "bg-stone-50 text-stone-600 border border-stone-200",
+  "Debt":      "bg-zinc-50 text-zinc-600 border border-zinc-200",
 };
 
 // Stability semantics for MATURE companies: holding steady is healthy — only
@@ -106,59 +108,6 @@ const AUM_STEPS = [
   { value: "mega",  label: "$50B+"      },
 ] as const;
 type AumStep = typeof AUM_STEPS[number]["value"];
-
-function StepSlider({
-  steps, value, onChange,
-}: {
-  steps:    ReadonlyArray<{ value: string; label: string }>;
-  value:    string;
-  onChange: (v: string) => void;
-}) {
-  const idx = Math.max(0, steps.findIndex(s => s.value === value));
-  const pct = steps.length > 1 ? (idx / (steps.length - 1)) * 100 : 0;
-
-  return (
-    <div>
-      <div className="relative h-4 flex items-center mx-1">
-        <div className="absolute inset-x-0 h-[3px] rounded-full bg-black/10" />
-        <div
-          className="absolute left-0 h-[3px] rounded-full bg-[#0F172A] transition-all duration-100"
-          style={{ width: `${pct}%` }}
-        />
-        {steps.map((_, i) => (
-          <div
-            key={i}
-            className={`absolute w-2.5 h-2.5 rounded-full border-[2px] -translate-x-1/2 transition-all duration-100 ${
-              i < idx   ? "bg-[#0F172A] border-[#0F172A]" :
-              i === idx ? "bg-white border-[#0F172A] scale-125" :
-                          "bg-white border-black/20"
-            }`}
-            style={{ left: `${steps.length > 1 ? (i / (steps.length - 1)) * 100 : 0}%` }}
-          />
-        ))}
-        <input
-          type="range" min={0} max={steps.length - 1} step={1} value={idx}
-          onChange={e => onChange(steps[Number(e.target.value)].value)}
-          className="absolute inset-x-0 w-full h-full opacity-0 cursor-pointer z-10"
-        />
-      </div>
-      <div className="flex justify-between mt-2 px-0.5">
-        {steps.map((s, i) => (
-          <button
-            key={s.value}
-            onClick={() => onChange(s.value)}
-            className={`text-[9px] font-semibold leading-none transition-colors ${
-              i === idx ? "text-[#0F172A]" : "text-[#0F172A]/45 hover:text-[#0F172A]/70"
-            }`}
-            style={{ minWidth: 0 }}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 // ─── Pagination (identical to the VC directory's) ─────────────────────────────
 
@@ -287,6 +236,11 @@ function PEFirmCard({ firm, onClick }: { firm: PEFirmRow; onClick: () => void })
           {firm.secondary_count > 0 && (
             <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${DEAL_STYLE["Secondary"]}`}>
               {firm.secondary_count} Secondar{firm.secondary_count === 1 ? "y" : "ies"}
+            </span>
+          )}
+          {firm.debt_count > 0 && (
+            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${DEAL_STYLE["Debt"]}`}>
+              {firm.debt_count} Debt
             </span>
           )}
           {firm.tier === 1 && (
@@ -666,7 +620,7 @@ function PETearsheetModal({ firm, onClose }: { firm: PEFirmRow; onClose: () => v
 
 // ─── Filters + sort ───────────────────────────────────────────────────────────
 
-type DealType = "PE Buyout" | "Secondary";
+type DealType = "PE Buyout" | "Secondary" | "Debt";
 
 interface Filters {
   dealTypes:  DealType[];
@@ -733,7 +687,8 @@ export function PrivateEquity() {
     if (filters.dealTypes.length > 0) {
       result = result.filter(f =>
         (filters.dealTypes.includes("PE Buyout") && f.buyout_count > 0) ||
-        (filters.dealTypes.includes("Secondary") && f.secondary_count > 0)
+        (filters.dealTypes.includes("Secondary") && f.secondary_count > 0) ||
+        (filters.dealTypes.includes("Debt")      && f.debt_count > 0)
       );
     }
 
@@ -756,7 +711,7 @@ export function PrivateEquity() {
     }
 
     result.sort((a, b) => {
-      if (sortKey === "deals")     return (b.buyout_count + b.secondary_count) - (a.buyout_count + a.secondary_count);
+      if (sortKey === "deals")     return (b.buyout_count + b.secondary_count + b.debt_count) - (a.buyout_count + a.secondary_count + a.debt_count);
       if (sortKey === "portfolio") return b.portfolio_count - a.portfolio_count;
       if (sortKey === "aum")       return (parseAumMillions(b.fund_size) ?? -1) - (parseAumMillions(a.fund_size) ?? -1);
       return (b.latest_deal_date ?? "").localeCompare(a.latest_deal_date ?? "");
@@ -773,16 +728,13 @@ export function PrivateEquity() {
   return (
     <Layout>
 
-      {/* ── Filter bar (blue-gray — matches the VC directory) ─────────────── */}
+      {/* ── Title bar (blue-gray — same band as Startups/VCs) ─────────────── */}
       <div style={{ background: "#B8C9D1", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
-        <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 pt-6 pb-6">
-
-          {/* Title row */}
+        <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 pt-6 pb-5">
           <div className="flex items-center justify-between gap-4 mb-1.5">
             <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">
               Private Equity
             </h1>
-
             <div className="flex items-center gap-2 flex-none">
               {/* View toggle — same control as the Startups hub */}
               <div className="flex items-center bg-white/60 border border-black/10 rounded-[10px] p-0.5 gap-0.5">
@@ -820,9 +772,7 @@ export function PrivateEquity() {
               </div>
             </div>
           </div>
-
-          {/* Subtitle + count */}
-          <div className="flex items-center gap-3 mb-5">
+          <div className="flex items-center gap-3">
             <p className="text-sm text-[#0F172A]/60 leading-snug">
               Buyout and secondary-market intelligence — firms derived from real transaction data, scored on mature-market fundamentals.
             </p>
@@ -832,101 +782,67 @@ export function PrivateEquity() {
               </span>
             )}
           </div>
-
-          {/* Screener */}
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2.5">
-
-              {/* Search */}
-              <div className="relative min-w-[180px] max-w-xs flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#0F172A]/40" />
-                <input
-                  type="text" value={search} onChange={e => setSearch(e.target.value)}
-                  placeholder="Search firms…"
-                  className="w-full pl-9 pr-4 py-2.5 text-sm bg-white border border-black/10 text-[#0F172A] placeholder-[#0F172A]/35 rounded-[12px] focus:outline-none focus:border-[#0F172A]/30 focus:ring-2 focus:ring-[#0F172A]/10 transition-all"
-                />
-                {search && (
-                  <button
-                    onClick={() => setSearch("")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#0F172A]/40 hover:text-[#0F172A]/70"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-
-              {/* Deal-type pills */}
-              {(["PE Buyout", "Secondary"] as DealType[]).map(d => (
-                <button
-                  key={d}
-                  onClick={() => setFilters(f => ({ ...f, dealTypes: toggle(f.dealTypes, d) }))}
-                  className={`px-2.5 py-1.5 rounded-full text-[11px] font-semibold border transition-all whitespace-nowrap ${
-                    filters.dealTypes.includes(d)
-                      ? "bg-[#0F172A] text-white border-[#0F172A] shadow-sm"
-                      : "bg-white/60 border-black/10 text-[#0F172A]/60 hover:border-black/25 hover:text-[#0F172A]"
-                  }`}
-                >
-                  {d === "PE Buyout" ? "Buyouts" : "Secondaries"}
-                </button>
-              ))}
-
-              <div className="w-px h-5 bg-black/10 flex-none hidden sm:block" />
-
-              {/* Recent activity toggle */}
-              <button
-                onClick={() => setFilters(f => ({ ...f, activeOnly: !f.activeOnly }))}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-[10px] text-xs font-semibold border transition-all ${
-                  filters.activeOnly
-                    ? "bg-emerald-50 border-emerald-400/60 text-emerald-700"
-                    : "bg-white/60 border-black/10 text-[#0F172A]/60 hover:border-black/25 hover:text-[#0F172A]"
-                }`}
-              >
-                <Activity className={`w-3.5 h-3.5 flex-none ${filters.activeOnly ? "text-emerald-600" : "text-[#0F172A]/40"}`} />
-                Active (24 mo)
-                {filters.activeOnly && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-none" />}
-              </button>
-
-              {activeFilterCount > 0 && (
-                <button
-                  onClick={clearAll}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-[#0F172A]/50 hover:text-rose-600 transition-colors"
-                >
-                  <X className="w-3.5 h-3.5" />Clear all ({activeFilterCount})
-                </button>
-              )}
-            </div>
-
-            {/* AUM slider */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 bg-white/50 border border-black/10 rounded-[14px] px-5 py-4">
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-[10px] font-bold text-[#0F172A]/55 uppercase tracking-wider">
-                    Assets Under Management
-                  </span>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-all ${
-                    filters.aumStep !== "all"
-                      ? "bg-amber-100 text-amber-700 border border-amber-300"
-                      : "text-[#0F172A]/40"
-                  }`}>
-                    {aumLabel}
-                  </span>
-                </div>
-                <StepSlider
-                  steps={AUM_STEPS}
-                  value={filters.aumStep}
-                  onChange={v => setFilters(f => ({ ...f, aumStep: v as AumStep }))}
-                />
-              </div>
-              <div className="hidden sm:flex items-center text-[11px] text-[#0F172A]/45 leading-relaxed">
-                AUM comes from curated firm profiles; firms known only from transaction data show "—" until a profile is added.
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
-      {/* ── Main content ─────────────────────────────────────────────────── */}
-      <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-6">
+      {/* ── Sidebar + main content (shared SideFilterLayout shell) ───────── */}
+      <SideFilterLayout
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search firms…"
+        activeFilterCount={activeFilterCount}
+        onClearAll={clearAll}
+        filters={
+          <>
+            <FilterAccordion title="Deal Types" defaultOpen
+              badge={filters.dealTypes.length > 0 ? <FilterBadge>{filters.dealTypes.length} selected</FilterBadge> : undefined}>
+              <div className="flex flex-wrap gap-1.5">
+                {(["PE Buyout", "Secondary", "Debt"] as DealType[]).map(d => (
+                  <button
+                    key={d}
+                    onClick={() => setFilters(f => ({ ...f, dealTypes: toggle(f.dealTypes, d) }))}
+                    className={`px-2.5 py-1.5 rounded-full text-[11px] font-semibold border transition-all whitespace-nowrap ${
+                      filters.dealTypes.includes(d)
+                        ? "bg-[#0F172A] text-white border-[#0F172A] shadow-sm"
+                        : "bg-gray-50 border-gray-100 text-gray-500 hover:border-gray-300 hover:text-[#0F172A]"
+                    }`}
+                  >
+                    {d === "PE Buyout" ? "Buyouts" : d === "Secondary" ? "Secondaries" : "Debt"}
+                  </button>
+                ))}
+              </div>
+            </FilterAccordion>
+
+            <FilterAccordion title="Assets Under Management" defaultOpen
+              badge={filters.aumStep !== "all" ? <FilterBadge>{aumLabel}</FilterBadge> : undefined}>
+              <StepSlider
+                steps={AUM_STEPS}
+                value={filters.aumStep}
+                onChange={v => setFilters(f => ({ ...f, aumStep: v as AumStep }))}
+              />
+              <p className="mt-3 text-[10px] text-gray-400 leading-relaxed">
+                AUM comes from curated firm profiles; firms known only from transaction data show "—" until a profile is added.
+              </p>
+            </FilterAccordion>
+
+            <FilterAccordion title="Recent Activity" defaultOpen
+              badge={filters.activeOnly ? <FilterBadge>On</FilterBadge> : undefined}>
+              <button
+                onClick={() => setFilters(f => ({ ...f, activeOnly: !f.activeOnly }))}
+                className={`w-full flex items-center gap-1.5 px-3 py-2 rounded-[10px] text-xs font-semibold border transition-all ${
+                  filters.activeOnly
+                    ? "bg-emerald-50 border-emerald-400/60 text-emerald-700"
+                    : "bg-gray-50 border-gray-100 text-gray-500 hover:border-gray-300 hover:text-[#0F172A]"
+                }`}
+              >
+                <Activity className={`w-3.5 h-3.5 flex-none ${filters.activeOnly ? "text-emerald-600" : "text-gray-400"}`} />
+                Active (24 mo)
+                {filters.activeOnly && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-none ml-auto" />}
+              </button>
+            </FilterAccordion>
+          </>
+        }
+      >
         <div ref={gridRef}>
           {fetchError ? (
             <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -971,7 +887,7 @@ export function PrivateEquity() {
                 <table className="w-full text-left" style={{ fontVariantNumeric: "tabular-nums" }}>
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-100">
-                      {["Firm", "HQ", "AUM", "Buyouts", "Secondaries", "Portfolio", "Latest Deal", ""].map(h => (
+                      {["Firm", "HQ", "AUM", "Buyouts", "Secondaries", "Debt", "Portfolio", "Latest Deal", ""].map(h => (
                         <th key={h} className="py-3 px-4 first:px-5 text-[9px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -993,6 +909,7 @@ export function PrivateEquity() {
                         <td className="py-3.5 px-4 text-sm font-bold text-[#0F172A]">{formatAUM(parseAumMillions(firm.fund_size))}</td>
                         <td className="py-3.5 px-4 text-xs font-semibold text-gray-700">{firm.buyout_count || "—"}</td>
                         <td className="py-3.5 px-4 text-xs font-semibold text-gray-700">{firm.secondary_count || "—"}</td>
+                        <td className="py-3.5 px-4 text-xs font-semibold text-gray-700">{firm.debt_count || "—"}</td>
                         <td className="py-3.5 px-4 text-xs font-semibold text-gray-700">{firm.portfolio_count || "—"}</td>
                         <td className="py-3.5 px-4 text-xs text-gray-500 whitespace-nowrap">{fmtDate(firm.latest_deal_date)}</td>
                         <td className="py-3.5 px-4 text-right text-gray-300 group-hover:text-[#0F172A] transition-colors text-sm">→</td>
@@ -1005,7 +922,7 @@ export function PrivateEquity() {
             </>
           )}
         </div>
-      </div>
+      </SideFilterLayout>
 
       {selected && (
         <PETearsheetModal firm={selected} onClose={() => setSelected(null)} />

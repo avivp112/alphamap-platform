@@ -1,0 +1,163 @@
+import React, { useState } from "react";
+import { Search, X, SlidersHorizontal, ChevronUp, ChevronDown } from "lucide-react";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SideFilterLayout — the shared faceted-search shell used by every directory
+// page (Startups, VCs, Private Equity). Extracted verbatim from the Startups
+// Hub so all three pages share one structural component: a sticky 300px
+// filter panel on the left (white card: Filters header + clear, search box,
+// then the page's FilterAccordion stack) and a fluid main content area that
+// resizes next to it. Any future layout change here applies globally.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function SideFilterLayout({
+  search, onSearchChange, searchPlaceholder,
+  activeFilterCount, onClearAll,
+  filters, extraBottomPadding = false, children,
+}: {
+  search: string;
+  onSearchChange: (v: string) => void;
+  searchPlaceholder: string;
+  activeFilterCount: number;
+  onClearAll: () => void;
+  filters: React.ReactNode;
+  /** e.g. the Startups compare bar needs extra room at the bottom */
+  extraBottomPadding?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 py-6 ${extraBottomPadding ? "pb-28" : ""}`}>
+      <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 items-start">
+
+        {/* ── Left sidebar: faceted search ── */}
+        <aside className="w-full lg:w-[300px] lg:flex-none lg:sticky lg:top-6">
+          <div className="bg-white border border-gray-100 rounded-[20px] shadow-[0_1px_3px_rgba(15,23,42,0.04)] px-5 py-1 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto">
+            <div className="flex items-center justify-between py-3.5 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal className="w-4 h-4 text-[#0F172A]/50" />
+                <h2 className="text-sm font-bold text-[#0F172A]">Filters</h2>
+              </div>
+              {activeFilterCount > 0 && (
+                <button onClick={onClearAll} className="flex items-center gap-1 text-[11px] font-semibold text-gray-400 hover:text-rose-600 transition-colors">
+                  <X className="w-3 h-3" />Clear ({activeFilterCount})
+                </button>
+              )}
+            </div>
+
+            {/* Search */}
+            <div className="py-4 border-b border-gray-100">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-300" />
+                <input type="text" value={search} onChange={(e) => onSearchChange(e.target.value)} placeholder={searchPlaceholder}
+                  className="w-full pl-8 pr-8 py-2 text-sm bg-gray-50 border border-gray-100 text-[#0F172A] placeholder-gray-400 rounded-[10px] focus:outline-none focus:border-gray-300 focus:ring-2 focus:ring-[#0F172A]/10 transition-all" />
+                {search && (
+                  <button onClick={() => onSearchChange("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"><X className="w-3.5 h-3.5" /></button>
+                )}
+              </div>
+            </div>
+
+            {filters}
+          </div>
+        </aside>
+
+        {/* ── Main content ── */}
+        <div className="flex-1 min-w-0 w-full">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Sidebar Filter Accordion ──────────────────────────────────────────────────
+// Collapsible section shell used for every sidebar filter category.
+
+export function FilterAccordion({
+  title, defaultOpen = true, badge, children,
+}: {
+  title: string; defaultOpen?: boolean; badge?: React.ReactNode; children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border-b border-gray-100 py-4 first:pt-0 last:border-b-0">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between gap-2 text-left group"
+      >
+        <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider group-hover:text-[#0F172A] transition-colors">{title}</span>
+        <div className="flex items-center gap-2 flex-none">
+          {badge}
+          {open
+            ? <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
+            : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />}
+        </div>
+      </button>
+      {open && <div className="mt-3">{children}</div>}
+    </div>
+  );
+}
+
+// Small pill shown in a collapsed FilterAccordion header when a filter in
+// that section is active, so the current selection is visible even closed.
+export function FilterBadge({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-[#0F172A] border border-gray-200 whitespace-nowrap max-w-[110px] truncate">
+      {children}
+    </span>
+  );
+}
+
+// ── Step Slider (light sidebar variant) ───────────────────────────────────────
+
+export function StepSlider({
+  steps, value, onChange,
+}: {
+  steps: ReadonlyArray<{ value: string; label: string }>;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const idx = Math.max(0, steps.findIndex((s) => s.value === value));
+  const pct = steps.length > 1 ? (idx / (steps.length - 1)) * 100 : 0;
+
+  return (
+    <div>
+      <div className="relative h-4 flex items-center mx-1">
+        <div className="absolute inset-x-0 h-[3px] rounded-full bg-gray-200" />
+        <div
+          className="absolute left-0 h-[3px] rounded-full bg-[#0F172A] transition-all duration-100"
+          style={{ width: `${pct}%` }}
+        />
+        {steps.map((_, i) => (
+          <div
+            key={i}
+            className={`absolute w-2.5 h-2.5 rounded-full border-[2px] -translate-x-1/2 transition-all duration-100 ${
+              i < idx   ? "bg-[#0F172A] border-[#0F172A]" :
+              i === idx ? "bg-white border-[#0F172A] scale-125" :
+                          "bg-white border-gray-300"
+            }`}
+            style={{ left: `${steps.length > 1 ? (i / (steps.length - 1)) * 100 : 0}%` }}
+          />
+        ))}
+        <input
+          type="range" min={0} max={steps.length - 1} step={1} value={idx}
+          onChange={(e) => onChange(steps[Number(e.target.value)].value)}
+          className="absolute inset-x-0 w-full h-full opacity-0 cursor-pointer z-10"
+        />
+      </div>
+      <div className="flex justify-between mt-2 px-0.5">
+        {steps.map((s, i) => (
+          <button
+            key={s.value}
+            onClick={() => onChange(s.value)}
+            className={`text-[9px] font-semibold leading-none transition-colors ${
+              i === idx ? "text-[#0F172A]" : "text-gray-400 hover:text-gray-600"
+            }`}
+            style={{ minWidth: 0 }}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}

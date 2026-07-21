@@ -4,7 +4,8 @@ import {
   ChevronLeft, ChevronRight, ChevronDown, Search, Zap,
 } from "lucide-react";
 import { Layout } from "../components/Layout";
-import { fetchInvestors, type InvestorRow } from "../../lib/supabase";
+import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider } from "../components/SideFilterLayout";
+import { fetchInvestors, fetchRecentActiveInvestorNames, type InvestorRow } from "../../lib/supabase";
 import { VCModal } from "../components/VCModal";
 import { DonutFocusChart } from "../components/DonutFocusChart";
 import { CompanyLogo } from "../components/CompanyLogo";
@@ -207,73 +208,20 @@ function toggle<T>(arr: T[], val: T): T[] {
 // ─── Filter state ─────────────────────────────────────────────────────────────
 
 interface Filters {
-  stages:    Stage[];
-  sectors:   string[];
-  geo:       Geography | "";
-  checkStep: CheckStep;
-  aumStep:   AumStep;
-  leadOnly:  boolean;
+  stages:     Stage[];
+  sectors:    string[];
+  geo:        Geography | "";
+  checkStep:  CheckStep;
+  aumStep:    AumStep;
+  // "Active (24 mo)" — firm appears on a deal in our deals feed within the
+  // last 24 months (real deal data; investor rows carry no recency of their own)
+  activeOnly: boolean;
 }
 
 const DEFAULT_FILTERS: Filters = {
   stages: [], sectors: [], geo: "",
-  checkStep: "all", aumStep: "all", leadOnly: false,
+  checkStep: "all", aumStep: "all", activeOnly: false,
 };
-
-// ─── StepSlider (dark variant — matches Startups screener) ───────────────────
-
-function StepSlider({
-  steps, value, onChange,
-}: {
-  steps:    ReadonlyArray<{ value: string; label: string }>;
-  value:    string;
-  onChange: (v: string) => void;
-}) {
-  const idx = Math.max(0, steps.findIndex(s => s.value === value));
-  const pct = steps.length > 1 ? (idx / (steps.length - 1)) * 100 : 0;
-
-  return (
-    <div>
-      <div className="relative h-4 flex items-center mx-1">
-        <div className="absolute inset-x-0 h-[3px] rounded-full bg-black/10" />
-        <div
-          className="absolute left-0 h-[3px] rounded-full bg-[#0F172A] transition-all duration-100"
-          style={{ width: `${pct}%` }}
-        />
-        {steps.map((_, i) => (
-          <div
-            key={i}
-            className={`absolute w-2.5 h-2.5 rounded-full border-[2px] -translate-x-1/2 transition-all duration-100 ${
-              i < idx   ? "bg-[#0F172A] border-[#0F172A]" :
-              i === idx ? "bg-white border-[#0F172A] scale-125" :
-                          "bg-white border-black/20"
-            }`}
-            style={{ left: `${steps.length > 1 ? (i / (steps.length - 1)) * 100 : 0}%` }}
-          />
-        ))}
-        <input
-          type="range" min={0} max={steps.length - 1} step={1} value={idx}
-          onChange={e => onChange(steps[Number(e.target.value)].value)}
-          className="absolute inset-x-0 w-full h-full opacity-0 cursor-pointer z-10"
-        />
-      </div>
-      <div className="flex justify-between mt-2 px-0.5">
-        {steps.map((s, i) => (
-          <button
-            key={s.value}
-            onClick={() => onChange(s.value)}
-            className={`text-[9px] font-semibold leading-none transition-colors ${
-              i === idx ? "text-[#0F172A]" : "text-[#0F172A]/45 hover:text-[#0F172A]/70"
-            }`}
-            style={{ minWidth: 0 }}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 // ─── VCCard ───────────────────────────────────────────────────────────────────
 
@@ -536,6 +484,7 @@ export function VCs() {
   const [sortDir, setSortDir]       = useState<SortDir>("desc");
   const [page, setPage]             = useState(1);
   const [selectedFirm, setSelectedFirm] = useState<VCFirm | null>(null);
+  const [activeNames, setActiveNames]   = useState<Set<string> | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -543,6 +492,8 @@ export function VCs() {
       .then(rows  => setFirms(rows.map(rowToFirm)))
       .catch(err  => setFetchError((err as Error).message))
       .finally(() => setLoading(false));
+    // Best-effort: powers the Active (24 mo) filter; failure just disables it
+    fetchRecentActiveInvestorNames(24).then(setActiveNames).catch(() => setActiveNames(new Set()));
   }, []);
 
   useEffect(() => { setPage(1); }, [search, filters, sortKey, sortDir]);
@@ -569,7 +520,7 @@ export function VCs() {
     filters.geo,
     filters.checkStep !== "all" ? "1" : "",
     filters.aumStep   !== "all" ? "1" : "",
-    filters.leadOnly ? "1" : "",
+    filters.activeOnly ? "1" : "",
   ].filter(Boolean).length;
 
   const filtered = useMemo<VCFirm[]>(() => {
@@ -623,10 +574,8 @@ export function VCs() {
       });
     }
 
-    if (filters.leadOnly) {
-      result = result.filter(v =>
-        v.stages.some(s => s === "Pre-Seed" || s === "Seed" || s === "Series A")
-      );
+    if (filters.activeOnly && activeNames) {
+      result = result.filter(v => activeNames.has(v.name.trim().toLowerCase()));
     }
 
     result.sort((a, b) => {
@@ -638,7 +587,7 @@ export function VCs() {
     });
 
     return result;
-  }, [firms, search, filters, sortKey, sortDir]);
+  }, [firms, search, filters, sortKey, sortDir, activeNames]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage  = Math.min(page, pageCount);
@@ -650,11 +599,9 @@ export function VCs() {
   return (
     <Layout>
 
-      {/* ── Filter bar (blue-gray — compare against Startups' sage) ─────── */}
+      {/* ── Title bar (blue-gray — same band as Startups/PE) ─────────────── */}
       <div style={{ background: "#B8C9D1", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
-        <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 pt-6 pb-6">
-
-          {/* Title row */}
+        <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 pt-6 pb-5">
           <div className="flex items-center justify-between gap-4 mb-1.5">
             <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">
               VC Directory
@@ -684,8 +631,7 @@ export function VCs() {
             </div>
           </div>
 
-          {/* Subtitle + count */}
-          <div className="flex items-center gap-3 mb-5">
+          <div className="flex items-center gap-3">
             <p className="text-sm text-[#0F172A]/60 leading-snug">
               Institutional-grade intelligence on leading VC firms — sector focus, portfolio activity, and fund size.
             </p>
@@ -695,156 +641,116 @@ export function VCs() {
               </span>
             )}
           </div>
-
-          {/* ── Screener ──────────────────────────────────────────────────── */}
-          <div className="space-y-3">
-
-            {/* Row 1: search + pill filters + dropdowns + toggles */}
-            <div className="flex flex-wrap items-center gap-2.5">
-
-              {/* Search */}
-              <div className="relative min-w-[180px] max-w-xs flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#0F172A]/40" />
-                <input
-                  type="text" value={search} onChange={e => setSearch(e.target.value)}
-                  placeholder="Search firms…"
-                  className="w-full pl-9 pr-4 py-2.5 text-sm bg-white border border-black/10 text-[#0F172A] placeholder-[#0F172A]/35 rounded-[12px] focus:outline-none focus:border-[#0F172A]/30 focus:ring-2 focus:ring-[#0F172A]/10 transition-all"
-                />
-                {search && (
-                  <button
-                    onClick={() => setSearch("")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#0F172A]/40 hover:text-[#0F172A]/70"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-
-              {/* Stage pills */}
-              {ALL_STAGES.map(s => (
-                <button
-                  key={s}
-                  onClick={() => setFilters(f => ({ ...f, stages: toggle(f.stages, s) }))}
-                  className={`px-2.5 py-1.5 rounded-full text-[11px] font-semibold border transition-all whitespace-nowrap ${
-                    filters.stages.includes(s)
-                      ? "bg-[#0F172A] text-white border-[#0F172A] shadow-sm"
-                      : "bg-white/60 border-black/10 text-[#0F172A]/60 hover:border-black/25 hover:text-[#0F172A]"
-                  }`}
-                >
-                  {s}
-                </button>
-              ))}
-
-              {/* Vertical divider */}
-              <div className="w-px h-5 bg-black/10 flex-none hidden sm:block" />
-
-              {/* Sector pills */}
-              {ALL_SECTORS.map(s => (
-                <button
-                  key={s}
-                  onClick={() => setFilters(f => ({ ...f, sectors: toggle(f.sectors, s) }))}
-                  className={`px-2.5 py-1.5 rounded-full text-[11px] font-semibold border transition-all whitespace-nowrap ${
-                    filters.sectors.includes(s)
-                      ? "bg-[#0F172A] text-white border-[#0F172A] shadow-sm"
-                      : "bg-white/60 border-black/10 text-[#0F172A]/60 hover:border-black/25 hover:text-[#0F172A]"
-                  }`}
-                >
-                  {s}
-                </button>
-              ))}
-
-              {/* Vertical divider */}
-              <div className="w-px h-5 bg-black/10 flex-none hidden sm:block" />
-
-              {/* Geography dropdown */}
-              <div className="relative">
-                <select
-                  value={filters.geo}
-                  onChange={e => setFilters(f => ({ ...f, geo: e.target.value as Geography | "" }))}
-                  style={{ colorScheme: "light" }}
-                  className={`appearance-none pl-3 pr-8 py-2 text-xs font-semibold border rounded-[10px] bg-white transition-all focus:outline-none focus:ring-2 focus:ring-[#0F172A]/15 cursor-pointer ${
-                    filters.geo ? "border-[#0F172A] text-[#0F172A]" : "border-black/10 text-[#0F172A]/60"
-                  }`}
-                >
-                  <option value="">All Regions</option>
-                  {GEO_OPTIONS.map(g => <option key={g} value={g}>{g}</option>)}
-                </select>
-                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#0F172A]/40 pointer-events-none" />
-              </div>
-
-              {/* Lead Investors toggle */}
-              <button
-                onClick={() => setFilters(f => ({ ...f, leadOnly: !f.leadOnly }))}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-[10px] text-xs font-semibold border transition-all ${
-                  filters.leadOnly
-                    ? "bg-emerald-50 border-emerald-400/60 text-emerald-700"
-                    : "bg-white/60 border-black/10 text-[#0F172A]/60 hover:border-black/25 hover:text-[#0F172A]"
-                }`}
-              >
-                <Zap className={`w-3.5 h-3.5 flex-none ${filters.leadOnly ? "text-emerald-600" : "text-[#0F172A]/40"}`} />
-                Lead Investors
-                {filters.leadOnly && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-none" />}
-              </button>
-
-              {/* Clear all */}
-              {activeFilterCount > 0 && (
-                <button
-                  onClick={clearAll}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-[#0F172A]/50 hover:text-rose-600 transition-colors"
-                >
-                  <X className="w-3.5 h-3.5" />Clear all ({activeFilterCount})
-                </button>
-              )}
-            </div>
-
-            {/* Row 2: range sliders for Check Size + AUM */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 bg-white/50 border border-black/10 rounded-[14px] px-5 py-4">
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-[10px] font-bold text-[#0F172A]/55 uppercase tracking-wider">
-                    Typical Check Size
-                  </span>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-all ${
-                    filters.checkStep !== "all"
-                      ? "bg-amber-100 text-amber-700 border border-amber-300"
-                      : "text-[#0F172A]/40"
-                  }`}>
-                    {checkLabel}
-                  </span>
-                </div>
-                <StepSlider
-                  steps={CHECK_SIZE_STEPS}
-                  value={filters.checkStep}
-                  onChange={v => setFilters(f => ({ ...f, checkStep: v as CheckStep }))}
-                />
-              </div>
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-[10px] font-bold text-[#0F172A]/55 uppercase tracking-wider">
-                    Fund Size / AUM
-                  </span>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-all ${
-                    filters.aumStep !== "all"
-                      ? "bg-amber-100 text-amber-700 border border-amber-300"
-                      : "text-[#0F172A]/40"
-                  }`}>
-                    {aumLabel}
-                  </span>
-                </div>
-                <StepSlider
-                  steps={AUM_STEPS}
-                  value={filters.aumStep}
-                  onChange={v => setFilters(f => ({ ...f, aumStep: v as AumStep }))}
-                />
-              </div>
-            </div>
-
-          </div>
         </div>
       </div>
 
-      {/* ── Main content ─────────────────────────────────────────────────── */}
-      <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-6">
+      {/* ── Sidebar + main content (shared SideFilterLayout shell) ───────── */}
+      <SideFilterLayout
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search firms…"
+        activeFilterCount={activeFilterCount}
+        onClearAll={clearAll}
+        filters={
+          <>
+            <FilterAccordion title="Investment Stages" defaultOpen
+              badge={filters.stages.length > 0 ? <FilterBadge>{filters.stages.length} selected</FilterBadge> : undefined}>
+              <div className="flex flex-wrap gap-1.5">
+                {ALL_STAGES.map(st => (
+                  <button
+                    key={st}
+                    onClick={() => setFilters(f => ({ ...f, stages: toggle(f.stages, st) }))}
+                    className={`px-2.5 py-1.5 rounded-full text-[11px] font-semibold border transition-all whitespace-nowrap ${
+                      filters.stages.includes(st)
+                        ? "bg-[#0F172A] text-white border-[#0F172A] shadow-sm"
+                        : "bg-gray-50 border-gray-100 text-gray-500 hover:border-gray-300 hover:text-[#0F172A]"
+                    }`}
+                  >
+                    {st}
+                  </button>
+                ))}
+              </div>
+            </FilterAccordion>
+
+            <FilterAccordion title="Sectors" defaultOpen
+              badge={filters.sectors.length > 0 ? <FilterBadge>{filters.sectors.length} selected</FilterBadge> : undefined}>
+              <div className="flex flex-wrap gap-1.5">
+                {ALL_SECTORS.map(sec => (
+                  <button
+                    key={sec}
+                    onClick={() => setFilters(f => ({ ...f, sectors: toggle(f.sectors, sec) }))}
+                    className={`px-2.5 py-1.5 rounded-full text-[11px] font-semibold border transition-all whitespace-nowrap ${
+                      filters.sectors.includes(sec)
+                        ? "bg-[#0F172A] text-white border-[#0F172A] shadow-sm"
+                        : "bg-gray-50 border-gray-100 text-gray-500 hover:border-gray-300 hover:text-[#0F172A]"
+                    }`}
+                  >
+                    {sec}
+                  </button>
+                ))}
+              </div>
+            </FilterAccordion>
+
+            <FilterAccordion title="Geography" defaultOpen={false}
+              badge={filters.geo ? <FilterBadge>{filters.geo}</FilterBadge> : undefined}>
+              <div className="space-y-0.5">
+                <button
+                  onClick={() => setFilters(f => ({ ...f, geo: "" }))}
+                  className={`w-full text-left px-2.5 py-1.5 rounded-[8px] text-xs font-semibold transition-colors ${!filters.geo ? "bg-[#0F172A] text-white" : "text-gray-600 hover:bg-gray-50"}`}
+                >
+                  All Regions
+                </button>
+                {GEO_OPTIONS.map(g => (
+                  <button
+                    key={g}
+                    onClick={() => setFilters(f => ({ ...f, geo: f.geo === g ? "" : g }))}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-[8px] text-xs font-semibold transition-colors ${filters.geo === g ? "bg-[#0F172A] text-white" : "text-gray-600 hover:bg-gray-50"}`}
+                  >
+                    {g}
+                  </button>
+                ))}
+              </div>
+            </FilterAccordion>
+
+            <FilterAccordion title="Fund Size / AUM" defaultOpen
+              badge={filters.aumStep !== "all" ? <FilterBadge>{aumLabel}</FilterBadge> : undefined}>
+              <StepSlider
+                steps={AUM_STEPS}
+                value={filters.aumStep}
+                onChange={v => setFilters(f => ({ ...f, aumStep: v as AumStep }))}
+              />
+            </FilterAccordion>
+
+            <FilterAccordion title="Typical Check Size" defaultOpen={false}
+              badge={filters.checkStep !== "all" ? <FilterBadge>{checkLabel}</FilterBadge> : undefined}>
+              <StepSlider
+                steps={CHECK_SIZE_STEPS}
+                value={filters.checkStep}
+                onChange={v => setFilters(f => ({ ...f, checkStep: v as CheckStep }))}
+              />
+            </FilterAccordion>
+
+            <FilterAccordion title="Recent Activity" defaultOpen
+              badge={filters.activeOnly ? <FilterBadge>On</FilterBadge> : undefined}>
+              <button
+                onClick={() => setFilters(f => ({ ...f, activeOnly: !f.activeOnly }))}
+                className={`w-full flex items-center gap-1.5 px-3 py-2 rounded-[10px] text-xs font-semibold border transition-all ${
+                  filters.activeOnly
+                    ? "bg-emerald-50 border-emerald-400/60 text-emerald-700"
+                    : "bg-gray-50 border-gray-100 text-gray-500 hover:border-gray-300 hover:text-[#0F172A]"
+                }`}
+              >
+                <Zap className={`w-3.5 h-3.5 flex-none ${filters.activeOnly ? "text-emerald-600" : "text-gray-400"}`} />
+                Active (24 mo)
+                {filters.activeOnly && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-none ml-auto" />}
+              </button>
+              <p className="mt-2 text-[10px] text-gray-400 leading-relaxed">
+                Firms named on at least one deal in our Deals feed within the last 24 months.
+              </p>
+            </FilterAccordion>
+          </>
+        }
+      >
         <div ref={gridRef}>
           {fetchError ? (
             <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -879,7 +785,7 @@ export function VCs() {
             </>
           )}
         </div>
-      </div>
+      </SideFilterLayout>
 
       {selectedFirm && (
         <VCModal firm={selectedFirm} onClose={() => setSelectedFirm(null)} />
