@@ -3,11 +3,17 @@ import { Layout } from '../components/Layout';
 import { MarketOverview } from '../components/MarketOverview';
 import { IntelligenceFeed } from '../components/IntelligenceFeed';
 import { AIMarketStory, CrossMarketSignalsBar, PortfolioInsight } from '../components/AIMarketInsights';
+import { AISearchWorkspace } from '../components/AISearchWorkspace';
 
 export function Dashboard() {
   return (
     <Layout>
       <div className="mx-auto max-w-[1400px] p-4 sm:p-6 lg:p-8">
+            {/* AI Search Engine — the intelligence workspace hero */}
+            <div className="mb-10">
+              <AISearchWorkspace />
+            </div>
+
             {/* Page Header */}
             <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
@@ -18,7 +24,7 @@ export function Dashboard() {
                   Top-down view of capital flow, VC, and public markets.
                 </p>
               </div>
-              
+
               <div className="flex items-center gap-3">
                 <button className="flex-1 sm:flex-none rounded-[16px] border border-gray-200 bg-white px-4 py-2.5 text-xs font-bold uppercase tracking-widest text-[#0F172A] shadow-[0_4px_20px_rgba(0,0,0,0.02)] hover:bg-gray-50 transition-colors">
                   Export Report
