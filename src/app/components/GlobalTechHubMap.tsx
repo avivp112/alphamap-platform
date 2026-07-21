@@ -123,13 +123,13 @@ const G_SCORE: Record<string, number> = {
 // ── Data derivation ────────────────────────────────────────────────────────────
 
 interface HubStats {
-  companies: number; capital: number; unicorns: number;
-  avgAlpha: number; velocity: number; talent: number;
+  companies: number; capital: number | null; unicorns: number | null;
+  avgAlpha: number | null; velocity: number | null; talent: number | null;
 }
 
 interface Insights {
-  capitalConcentration: number; marketRating: number; talentSignal: number;
-  localCapitalPct: number; hubMomentum: number; crossBorderIndex: number;
+  capitalConcentration: number | null; marketRating: number | null; talentSignal: number | null;
+  localCapitalPct: number | null; hubMomentum: number | null; crossBorderIndex: number | null;
 }
 
 function buildInvHub(investors: InvestorRow[]): Record<string, string> {
@@ -158,12 +158,18 @@ function computeHubStats(startups: Startup[], hubId: string, sector: SectorKey):
   }
 
   const count = hs.length;
-  const avgAlpha = count ? Math.round(alphaSum / count) : 0;
+  const avgAlpha = count ? Math.round(alphaSum / count) : null;
   const velocity = count
     ? Math.round(hs.filter(s => s.growth_trend === 'rapid growth' || s.growth_trend === 'moderate growth').length / count * 100)
-    : 0;
+    : null;
 
-  return { companies: count, capital: capital / 1e6, unicorns, avgAlpha, velocity, talent };
+  return {
+    companies: count,
+    capital: count ? capital / 1e6 : null,
+    unicorns: count ? unicorns : null,
+    avgAlpha, velocity,
+    talent: count ? talent : null,
+  };
 }
 
 function computeInsights(
@@ -175,13 +181,13 @@ function computeInsights(
   const invHub = buildInvHub(investors);
 
   const talentSignal = count
-    ? Math.round(hs.filter(s => s.growth_trend === 'rapid growth').length / count * 100) : 0;
+    ? Math.round(hs.filter(s => s.growth_trend === 'rapid growth').length / count * 100) : null;
 
   const invInHub = investors.filter(inv => {
     const city = inv.headquarters?.split(',')[0]?.trim().toLowerCase();
     return city ? CITY_HUB[city] === hubId : false;
   });
-  const marketRating = count ? Math.min(100, Math.round(invInHub.length / count * 200)) : 0;
+  const marketRating = count ? Math.min(100, Math.round(invInHub.length / count * 200)) : null;
 
   const invCapital: Record<string, number> = {};
   let totalRaised = 0, localLeads = 0, foreignLeads = 0;
@@ -200,12 +206,12 @@ function computeInsights(
   }
 
   const maxCap = Math.max(0, ...Object.values(invCapital));
-  const capitalConcentration = totalRaised > 0 ? Math.round(maxCap / totalRaised * 100) : 0;
+  const capitalConcentration = totalRaised > 0 ? Math.round(maxCap / totalRaised * 100) : null;
   const totalLeads = localLeads + foreignLeads;
-  const localCapitalPct = totalLeads > 0 ? Math.round(localLeads / totalLeads * 100) : 50;
-  const crossBorderIndex = totalLeads > 0 ? Math.round(foreignLeads / totalLeads * 100) : 50;
+  const localCapitalPct = totalLeads > 0 ? Math.round(localLeads / totalLeads * 100) : null;
+  const crossBorderIndex = totalLeads > 0 ? Math.round(foreignLeads / totalLeads * 100) : null;
   const alphaSum = hs.reduce((s, st) => s + (G_SCORE[st.growth_trend ?? 'unknown'] ?? 30), 0);
-  const hubMomentum = count ? Math.round(alphaSum / count) : 0;
+  const hubMomentum = count ? Math.round(alphaSum / count) : null;
 
   return { capitalConcentration, marketRating, talentSignal, localCapitalPct, hubMomentum, crossBorderIndex };
 }
@@ -229,13 +235,16 @@ function getTickerItems(startups: Startup[]): string[] {
 
 // ── Formatting ─────────────────────────────────────────────────────────────────
 
-function fmtCapital(m: number): string {
+function fmtCapital(m: number | null): string {
+  if (m == null) return '—';
   if (m >= 1000) return `$${(m / 1000).toFixed(1)}B`;
   if (m >= 1) return `$${m.toFixed(0)}M`;
-  return '<$1M';
+  if (m > 0) return '<$1M';
+  return '$0';
 }
 
-function fmtTalent(n: number): string {
+function fmtTalent(n: number | null): string {
+  if (n == null) return '—';
   return n >= 1000 ? `${(n / 1000).toFixed(1)}K` : `${n}`;
 }
 
@@ -273,7 +282,7 @@ export function GlobalTechHubMap({
   function dotR(hubId: string) { return Math.max(4, Math.min(10, 4 + (hubCounts[hubId] ?? 0) * 0.05)); }
 
   return (
-    <div style={{ background: '#060e1a', borderRadius: 24, overflow: 'hidden' }}>
+    <div className="bg-white border border-gray-100 rounded-[20px] shadow-[0_1px_3px_rgba(15,23,42,0.04)] overflow-hidden">
 
       {/* ── CSS ─────────────────────────────────────────────────────────────── */}
       <style>{`
@@ -292,23 +301,21 @@ export function GlobalTechHubMap({
       `}</style>
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div
-        className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 px-6 py-5"
-        style={{ borderBottom: '1px solid #1a2a3f' }}
-      >
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 px-6 py-5 border-b border-gray-100">
         <div>
-          <h2 className="text-xl font-bold text-white tracking-tight">Global Capital Flow</h2>
-          <p className="text-sm text-slate-400 mt-0.5">Cross-border investment activity across tech ecosystems</p>
+          <h2 className="text-xl font-bold text-[#0F172A] tracking-tight">Global Capital Flow</h2>
+          <p className="text-sm text-gray-500 mt-0.5">Cross-border investment activity across tech ecosystems</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {(Object.keys(SECTOR_LABELS) as SectorKey[]).map(k => (
             <button
               key={k}
               onClick={() => onSectorChange(k)}
-              className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-200"
-              style={sector === k
-                ? { background: '#F59E0B', color: '#fff', border: '1px solid #F59E0B' }
-                : { background: '#0d1f35', color: '#94a3b8', border: '1px solid #1a2a3f' }}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-200 whitespace-nowrap ${
+                sector === k
+                  ? 'bg-[#0F172A] text-white border-[#0F172A] shadow-sm'
+                  : 'bg-gray-50 border-gray-100 text-gray-500 hover:border-gray-300 hover:text-[#0F172A]'
+              }`}
             >
               {SECTOR_LABELS[k]}
             </button>
@@ -328,7 +335,7 @@ export function GlobalTechHubMap({
           aspect ratio — never taller, and never cropped. */}
       <div className="flex flex-col lg:flex-row lg:items-start">
 
-        <div className="flex-1 relative overflow-hidden">
+        <div className="flex-1 relative overflow-hidden bg-[#F8FAFB]">
           <ComposableMap
             projection="geoEquirectangular"
             projectionConfig={{ scale: MAP_SCALE, center: MAP_CENTER }}
@@ -342,12 +349,12 @@ export function GlobalTechHubMap({
                   <Geography
                     key={geo.rsmKey}
                     geography={geo}
-                    fill="#0d1e35"
-                    stroke="#1a2a3f"
+                    fill="#DCE6EA"
+                    stroke="#C7D3D8"
                     strokeWidth={0.5}
                     style={{
                       default: { outline: 'none' },
-                      hover:   { outline: 'none', fill: '#0d2347' },
+                      hover:   { outline: 'none', fill: '#C9D8DE' },
                       pressed: { outline: 'none' },
                     }}
                   />
@@ -372,19 +379,19 @@ export function GlobalTechHubMap({
                   <g className="cursor-pointer">
                     <circle r={18} fill="transparent" />
                     {isSelected && (
-                      <circle r={r + 7} fill="rgba(245,158,11,0.12)" stroke="rgba(245,158,11,0.35)" strokeWidth={1.5} />
+                      <circle r={r + 7} fill="rgba(124,137,103,0.14)" stroke="rgba(124,137,103,0.4)" strokeWidth={1.5} />
                     )}
                     {/* Continuous low-opacity "ping" ring — gentle, uninterrupted radar pulse */}
                     <circle
                       className="hub-ping-ring"
                       r={r}
-                      fill="rgba(245,158,11,0.35)"
+                      fill="rgba(124,137,103,0.4)"
                     />
                     <circle
                       r={isSelected || isHovered ? r + 2 : r}
-                      fill="#F59E0B"
-                      fillOpacity={isSelected ? 1 : isHovered ? 0.9 : 0.65}
-                      stroke={isSelected ? '#FCD34D' : '#060e1a'}
+                      fill="#7C8967"
+                      fillOpacity={isSelected ? 1 : isHovered ? 0.9 : 0.75}
+                      stroke={isSelected ? '#5C6A4C' : '#F8FAFB'}
                       strokeWidth={isSelected ? 2 : 1.5}
                       style={{ transition: 'r 0.2s ease, fill-opacity 0.2s ease' }}
                     />
@@ -394,10 +401,10 @@ export function GlobalTechHubMap({
                         y={-(r + 12)}
                         fontSize={8}
                         fontWeight={700}
-                        fill="white"
+                        fill="#0F172A"
                         letterSpacing="0.1em"
                         className="pointer-events-none uppercase"
-                        style={{ filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.9))' }}
+                        style={{ filter: 'drop-shadow(0 1px 2px rgba(255,255,255,0.8))' }}
                       >
                         {hub.name}
                       </text>
@@ -411,89 +418,88 @@ export function GlobalTechHubMap({
           {/* Legend */}
           <div className="absolute bottom-3 left-4 flex items-center gap-4 pointer-events-none">
             <div className="flex items-center gap-1.5">
-              <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#F59E0B', opacity: 0.7 }} />
-              <span className="text-[10px] text-slate-500">Tech Hub</span>
+              <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#7C8967' }} />
+              <span className="text-[10px] text-gray-500">Tech Hub</span>
             </div>
-            <span className="text-[10px] text-slate-600">Click a hub to explore</span>
+            <span className="text-[10px] text-gray-400">Click a hub to explore</span>
           </div>
 
           {loading && (
-            <div className="absolute top-4 right-4 flex items-center gap-2 text-xs text-amber-400 pointer-events-none">
-              <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+            <div className="absolute top-4 right-4 flex items-center gap-2 text-xs text-amber-600 pointer-events-none">
+              <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
               Loading data…
             </div>
           )}
         </div>
 
         {/* ── Side Panel ───────────────────────────────────────────────────── */}
-        <div
-          className="w-full lg:w-[340px] shrink-0 flex flex-col"
-          style={{ borderLeft: '1px solid #1a2a3f' }}
-        >
+        <div className="w-full lg:w-[340px] shrink-0 flex flex-col border-l border-gray-100">
           {activeHub && hubStats && insights ? (
             <>
               {/* Hub header */}
-              <div className="flex items-start justify-between px-6 py-5" style={{ borderBottom: '1px solid #1a2a3f' }}>
+              <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100">
                 <div>
-                  <h3 className="text-lg font-bold text-white">{activeHub.name}</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">{activeHub.region}</p>
+                  <h3 className="text-lg font-bold text-[#0F172A]">{activeHub.name}</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">{activeHub.region}</p>
                 </div>
                 <button
                   onClick={() => onSelectHub(null)}
-                  className="text-slate-500 hover:text-slate-300 transition-colors mt-0.5 text-xl leading-none"
+                  className="text-gray-400 hover:text-[#0F172A] transition-colors mt-0.5 text-xl leading-none"
                 >
                   ×
                 </button>
               </div>
 
               {/* Stats grid */}
-              <div className="grid grid-cols-2 gap-px" style={{ background: '#1a2a3f', borderBottom: '1px solid #1a2a3f' }}>
+              <div className="grid grid-cols-2 gap-px bg-gray-100 border-b border-gray-100">
                 {[
-                  { label: 'Companies',    value: hubStats.companies.toLocaleString() },
-                  { label: 'Unicorns',     value: String(hubStats.unicorns) },
-                  { label: 'Total Capital',value: fmtCapital(hubStats.capital) },
-                  { label: 'Avg Alpha',    value: String(hubStats.avgAlpha) },
-                  { label: 'Velocity',     value: `${hubStats.velocity}%` },
-                  { label: 'Talent Pool',  value: fmtTalent(hubStats.talent) },
+                  { label: 'Companies',    value: hubStats.companies.toLocaleString(), empty: false },
+                  { label: 'Unicorns',     value: hubStats.unicorns == null ? '—' : String(hubStats.unicorns), empty: hubStats.unicorns == null },
+                  { label: 'Total Capital',value: fmtCapital(hubStats.capital), empty: hubStats.capital == null },
+                  { label: 'Avg Alpha',    value: hubStats.avgAlpha == null ? '—' : String(hubStats.avgAlpha), empty: hubStats.avgAlpha == null },
+                  { label: 'Velocity',     value: hubStats.velocity == null ? '—' : `${hubStats.velocity}%`, empty: hubStats.velocity == null },
+                  { label: 'Talent Pool',  value: fmtTalent(hubStats.talent), empty: hubStats.talent == null },
                 ].map(stat => (
-                  <div key={stat.label} className="flex flex-col px-5 py-4" style={{ background: '#060e1a' }}>
-                    <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 mb-1">{stat.label}</span>
-                    <span className="text-xl font-bold text-white">{stat.value}</span>
+                  <div key={stat.label} className="flex flex-col px-5 py-4 bg-white">
+                    <span className="text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1">{stat.label}</span>
+                    <span className={`text-xl font-bold ${stat.empty ? 'text-gray-300' : 'text-[#0F172A]'}`}>{stat.value}</span>
                   </div>
                 ))}
               </div>
+              {hubStats.companies === 0 && (
+                <p className="px-6 py-3 text-[11px] text-gray-400 bg-gray-50 border-b border-gray-100">
+                  No companies on record for this hub in the current sector filter.
+                </p>
+              )}
             </>
           ) : (
             /* Empty state */
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-              <div
-                className="w-14 h-14 rounded-full flex items-center justify-center mb-5"
-                style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth={1.5} className="w-6 h-6">
+              <div className="w-14 h-14 rounded-full flex items-center justify-center mb-5 bg-[#7C8967]/[0.08] border border-[#7C8967]/25">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#7C8967" strokeWidth={1.5} className="w-6 h-6">
                   <circle cx="12" cy="12" r="10" />
                   <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
                 </svg>
               </div>
-              <p className="text-sm font-semibold text-slate-300 mb-2">Select a Hub</p>
-              <p className="text-xs text-slate-600 leading-relaxed">
+              <p className="text-sm font-semibold text-gray-700 mb-2">Select a Hub</p>
+              <p className="text-xs text-gray-400 leading-relaxed">
                 Click any pulsing dot on the map to explore hub analytics and ecosystem health metrics.
               </p>
               {loading && (
-                <div className="flex items-center gap-2 mt-5 text-xs text-amber-400">
-                  <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                <div className="flex items-center gap-2 mt-5 text-xs text-amber-600">
+                  <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
                   Fetching ecosystem data…
                 </div>
               )}
               {!loading && startups.length > 0 && (
                 <div className="mt-5 grid grid-cols-2 gap-3 w-full max-w-[220px]">
-                  <div className="rounded-xl p-3 text-center" style={{ background: '#0d1f35', border: '1px solid #1a2a3f' }}>
-                    <div className="text-base font-bold text-white">{startups.length}</div>
-                    <div className="text-[9px] text-slate-500 uppercase tracking-wider">Startups</div>
+                  <div className="rounded-xl p-3 text-center bg-gray-50 border border-gray-100">
+                    <div className="text-base font-bold text-[#0F172A]">{startups.length}</div>
+                    <div className="text-[9px] text-gray-400 uppercase tracking-wider">Startups</div>
                   </div>
-                  <div className="rounded-xl p-3 text-center" style={{ background: '#0d1f35', border: '1px solid #1a2a3f' }}>
-                    <div className="text-base font-bold text-white">{investors.length}</div>
-                    <div className="text-[9px] text-slate-500 uppercase tracking-wider">Investors</div>
+                  <div className="rounded-xl p-3 text-center bg-gray-50 border border-gray-100">
+                    <div className="text-base font-bold text-[#0F172A]">{investors.length}</div>
+                    <div className="text-[9px] text-gray-400 uppercase tracking-wider">Investors</div>
                   </div>
                 </div>
               )}
@@ -506,57 +512,55 @@ export function GlobalTechHubMap({
            underneath the map, keeping the side panel to just header + stats
            so it never dramatically outgrows the map's natural height ── */}
       {activeHub && insights && (
-        <div className="px-6 py-5" style={{ borderTop: '1px solid #1a2a3f', background: '#08111f' }}>
-          <h4 className="text-[9px] font-bold uppercase tracking-widest text-slate-500 mb-4">
-            Alpha Insights &amp; Ecosystem Health · <span className="text-slate-300">{activeHub.name}</span>
+        <div className="px-6 py-5 border-t border-gray-100 bg-gray-50">
+          <h4 className="text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-4">
+            Alpha Insights &amp; Ecosystem Health · <span className="text-gray-600">{activeHub.name}</span>
           </h4>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-6 gap-y-4">
             {[
-              { label: 'Capital Concentration', value: insights.capitalConcentration, suffix: '%', color: '#F59E0B' },
-              { label: 'Market Rating',          value: insights.marketRating,          suffix: '%', color: '#F59E0B' },
-              { label: 'Talent Signal',          value: insights.talentSignal,          suffix: '%', color: '#F59E0B' },
-              { label: 'Local Capital',          value: insights.localCapitalPct,       suffix: '%', color: '#10b981' },
-              { label: 'Hub Momentum',           value: insights.hubMomentum,           suffix: '',  color: '#10b981' },
-              { label: 'Cross-Border Index',     value: insights.crossBorderIndex,      suffix: '%', color: '#10b981' },
-            ].map(item => (
-              <div key={item.label}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] text-slate-400">{item.label}</span>
-                  <span className="text-xs font-bold text-white">{item.value}{item.suffix}</span>
+              { label: 'Capital Concentration', value: insights.capitalConcentration, suffix: '%', color: '#7C8967' },
+              { label: 'Market Rating',          value: insights.marketRating,          suffix: '%', color: '#7C8967' },
+              { label: 'Talent Signal',          value: insights.talentSignal,          suffix: '%', color: '#7C8967' },
+              { label: 'Local Capital',          value: insights.localCapitalPct,       suffix: '%', color: '#5B8CA6' },
+              { label: 'Hub Momentum',           value: insights.hubMomentum,           suffix: '',  color: '#5B8CA6' },
+              { label: 'Cross-Border Index',     value: insights.crossBorderIndex,      suffix: '%', color: '#5B8CA6' },
+            ].map(item => {
+              const hasVal = item.value != null;
+              return (
+                <div key={item.label}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] text-gray-400">{item.label}</span>
+                    <span className={`text-xs font-bold ${hasVal ? 'text-[#0F172A]' : 'text-gray-300'}`}>
+                      {hasVal ? `${item.value}${item.suffix}` : '—'}
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full overflow-hidden bg-gray-200">
+                    {hasVal && (
+                      <div
+                        className="h-full rounded-full"
+                        style={{ width: `${Math.min(100, item.value as number)}%`, background: item.color, transition: 'width .6s ease' }}
+                      />
+                    )}
+                  </div>
                 </div>
-                <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#1a2a3f' }}>
-                  <div
-                    className="h-full rounded-full"
-                    style={{ width: `${Math.min(100, item.value)}%`, background: item.color, transition: 'width .6s ease' }}
-                  />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
 
       {/* ── Ticker ──────────────────────────────────────────────────────────── */}
       {ticker.length > 0 && (
-        <div
-          className="flex items-center overflow-hidden backdrop-blur-sm"
-          style={{
-            borderTop: '1px solid rgba(51,65,85,0.6)',
-            background: 'rgba(15,23,42,0.75)',
-          }}
-        >
-          <div
-            className="shrink-0 px-4 py-2 flex items-center gap-1.5"
-            style={{ borderRight: '1px solid rgba(51,65,85,0.5)' }}
-          >
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-            <span className="text-[9px] font-bold uppercase tracking-widest text-amber-400">Live</span>
+        <div className="flex items-center overflow-hidden border-t border-gray-100 bg-gray-50">
+          <div className="shrink-0 px-4 py-2 flex items-center gap-1.5 border-r border-gray-100">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+            <span className="text-[9px] font-bold uppercase tracking-widest text-amber-600">Live</span>
           </div>
           <div className="overflow-hidden flex-1">
             <div className="ticker-track flex gap-16 py-2 whitespace-nowrap">
               {[...ticker, ...ticker].map((item, i) => (
-                <span key={i} className="text-[11px] text-slate-400 shrink-0">
-                  <span className="text-amber-500/70 mr-1.5">◆</span>{item}
+                <span key={i} className="text-[11px] text-gray-500 shrink-0">
+                  <span className="text-[#7C8967]/70 mr-1.5">◆</span>{item}
                 </span>
               ))}
             </div>
