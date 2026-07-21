@@ -1,0 +1,82 @@
+name: Backfill Semantic Embeddings
+
+# Manual trigger. Populates `embedding` vectors for startups + investors so the
+# AI Search & Q&A Engine can retrieve them. Incremental + idempotent: re-running
+# with the defaults only embeds new/changed rows (skip-unchanged via md5 hash),
+# so it's safe to run after every enrichment pass to keep the index fresh.
+#
+# Requires secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, OPENAI_API_KEY
+#
+# Recommended first run:
+#   dry_run=true  (see how many rows would be embedded, zero OpenAI spend)
+#   then dry_run=false to write. The queue self-advances via embedding_updated_at,
+#   so identical re-runs walk the whole DB with offset=0.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run — no writes, no OpenAI calls counted (try first)"
+        type: boolean
+        default: true
+      table:
+        description: "Which table(s) to embed"
+        type: choice
+        default: "both"
+        options:
+          - "both"
+          - "startups"
+          - "investors"
+      batch_size:
+        description: "DB rows fetched per page"
+        type: number
+        default: 1000
+      embed_batch:
+        description: "Inputs per OpenAI embeddings request"
+        type: number
+        default: 128
+      force:
+        description: "Re-embed every row, ignoring the skip-unchanged hash (use after a model change)"
+        type: boolean
+        default: false
+
+jobs:
+  backfill-embeddings:
+    name: "Embeddings — table=${{ github.event.inputs.table }} dry=${{ github.event.inputs.dry_run }} force=${{ github.event.inputs.force }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Show run parameters
+        run: |
+          echo "════════════════════════════════════════"
+          echo "  DRY_RUN     = ${{ github.event.inputs.dry_run }}"
+          echo "  TABLE       = ${{ github.event.inputs.table }}"
+          echo "  BATCH_SIZE  = ${{ github.event.inputs.batch_size }}"
+          echo "  EMBED_BATCH = ${{ github.event.inputs.embed_batch }}"
+          echo "  FORCE       = ${{ github.event.inputs.force }}"
+          echo "════════════════════════════════════════"
+
+      - name: Run embedding backfill
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OPENAI_API_KEY:            ${{ secrets.OPENAI_API_KEY }}
+          DRY_RUN:                   ${{ github.event.inputs.dry_run }}
+          TABLE:                     ${{ github.event.inputs.table }}
+          BATCH_SIZE:                ${{ github.event.inputs.batch_size }}
+          EMBED_BATCH:               ${{ github.event.inputs.embed_batch }}
+          FORCE:                     ${{ github.event.inputs.force }}
+        run: npx tsx scripts/backfill_embeddings.ts
