@@ -83,7 +83,7 @@ export function TopNav({ onMenuToggle }: TopNavProps) {
     }
   }
 
-  const displayName = user?.name || user?.email || (loadingUser ? "" : "Account");
+  const displayName = user?.name || user?.email || "";
   const initials = user ? getInitials(user) : null;
 
   return (
@@ -122,70 +122,90 @@ export function TopNav({ onMenuToggle }: TopNavProps) {
         <button className="md:hidden rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-[#111827] transition-colors">
           <Search className="h-5 w-5" />
         </button>
-        <button className="relative rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-[#111827] transition-colors">
-          <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-[#F59E0B] ring-2 ring-white" />
-          <Bell className="h-5 w-5" />
-        </button>
-        <div className="hidden sm:block h-8 w-px bg-gray-200 mx-1" />
 
-        <div className="relative" ref={menuRef}>
-          <button
-            onClick={() => setMenuOpen((o) => !o)}
-            aria-expanded={menuOpen}
-            aria-haspopup="menu"
-            className="flex items-center gap-2 rounded-full border border-gray-200 p-1 pr-2.5 hover:bg-gray-50 transition-colors"
-          >
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 flex-none">
-              {loadingUser ? (
-                <div className="h-3.5 w-3.5 rounded-full bg-gray-200 animate-pulse" />
-              ) : initials ? (
-                <span className="text-[11px] font-bold text-[#0F172A]">{initials}</span>
-              ) : (
-                <User className="h-4 w-4 text-gray-600" />
-              )}
-            </div>
-            <span className="hidden sm:block max-w-[140px] truncate text-sm font-medium text-[#111827]">
-              {loadingUser ? (
-                <span className="inline-block h-3.5 w-16 rounded bg-gray-100 animate-pulse" />
-              ) : (
-                displayName
-              )}
-            </span>
-            <ChevronDown className="hidden sm:block h-3.5 w-3.5 text-gray-400 flex-none" />
-          </button>
+        {loadingUser ? (
+          // Brief loading flash while the session is checked — neutral, no
+          // assumption either way about whether the visitor is signed in.
+          <div className="h-9 w-9 rounded-full bg-gray-100 animate-pulse" />
+        ) : user ? (
+          <>
+            <button className="relative rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-[#111827] transition-colors">
+              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-[#F59E0B] ring-2 ring-white" />
+              <Bell className="h-5 w-5" />
+            </button>
+            <div className="hidden sm:block h-8 w-px bg-gray-200 mx-1" />
 
-          {menuOpen && (
-            <div
-              role="menu"
-              className="absolute right-0 top-[calc(100%+8px)] w-56 rounded-xl border border-gray-100 bg-white py-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.12)]"
-            >
-              {(user?.name || user?.email) && (
-                <div className="px-3.5 py-2 mb-1 border-b border-gray-100">
-                  {user?.name && <p className="text-sm font-semibold text-[#111827] truncate">{user.name}</p>}
-                  {user?.email && <p className="text-xs text-gray-400 truncate">{user.email}</p>}
+            <div className="relative" ref={menuRef}>
+              <button
+                onClick={() => setMenuOpen((o) => !o)}
+                aria-expanded={menuOpen}
+                aria-haspopup="menu"
+                className="flex items-center gap-2 rounded-full border border-gray-200 p-1 pr-2.5 hover:bg-gray-50 transition-colors"
+              >
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 flex-none">
+                  {initials ? (
+                    <span className="text-[11px] font-bold text-[#0F172A]">{initials}</span>
+                  ) : (
+                    <User className="h-4 w-4 text-gray-600" />
+                  )}
+                </div>
+                <span className="hidden sm:block max-w-[140px] truncate text-sm font-medium text-[#111827]">
+                  {displayName}
+                </span>
+                <ChevronDown className="hidden sm:block h-3.5 w-3.5 text-gray-400 flex-none" />
+              </button>
+
+              {menuOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-[calc(100%+8px)] w-56 rounded-xl border border-gray-100 bg-white py-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.12)]"
+                >
+                  {(user?.name || user?.email) && (
+                    <div className="px-3.5 py-2 mb-1 border-b border-gray-100">
+                      {user?.name && <p className="text-sm font-semibold text-[#111827] truncate">{user.name}</p>}
+                      {user?.email && <p className="text-xs text-gray-400 truncate">{user.email}</p>}
+                    </div>
+                  )}
+                  <Link
+                    to="/profile"
+                    onClick={() => setMenuOpen(false)}
+                    role="menuitem"
+                    className="flex items-center gap-2.5 px-3.5 py-2 text-sm text-[#111827] hover:bg-gray-50 transition-colors"
+                  >
+                    <UserCircle className="h-4 w-4 text-gray-400" />
+                    Profile
+                  </Link>
+                  <button
+                    onClick={handleSignOut}
+                    disabled={signingOut}
+                    role="menuitem"
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2 text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-50 transition-colors"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    {signingOut ? "Signing out…" : "Sign Out"}
+                  </button>
                 </div>
               )}
-              <Link
-                to="/profile"
-                onClick={() => setMenuOpen(false)}
-                role="menuitem"
-                className="flex items-center gap-2.5 px-3.5 py-2 text-sm text-[#111827] hover:bg-gray-50 transition-colors"
-              >
-                <UserCircle className="h-4 w-4 text-gray-400" />
-                Profile
-              </Link>
-              <button
-                onClick={handleSignOut}
-                disabled={signingOut}
-                role="menuitem"
-                className="flex w-full items-center gap-2.5 px-3.5 py-2 text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-50 transition-colors"
-              >
-                <LogOut className="h-4 w-4" />
-                {signingOut ? "Signing out…" : "Sign Out"}
-              </button>
             </div>
-          )}
-        </div>
+          </>
+        ) : (
+          // Not signed in — no account menu, no notifications. Just the two
+          // real next steps for a visitor.
+          <div className="flex items-center gap-2">
+            <Link
+              to="/login"
+              className="rounded-full px-3.5 py-2 text-sm font-semibold text-[#111827] hover:bg-gray-50 transition-colors"
+            >
+              Log In
+            </Link>
+            <Link
+              to="/signup"
+              className="rounded-full bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-gray-900 transition-colors"
+            >
+              Sign Up
+            </Link>
+          </div>
+        )}
       </div>
     </header>
   );
