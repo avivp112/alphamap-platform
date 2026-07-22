@@ -92,6 +92,21 @@ export async function removeFromWatchlist(entityType: WatchlistEntityType, entit
   if (error) throw error;
 }
 
+// Postgrest errors (thrown as-is by addToWatchlist/removeFromWatchlist above)
+// aren't `Error` instances — they're plain `{ message, details, hint, code }`
+// objects — so a naive `err instanceof Error` check misses them and falls
+// back to a generic message. Surfacing the real text matters here: e.g. a
+// missing `watchlist_items` table (migration not yet run) reads as
+// `relation "public.watchlist_items" does not exist`, which is the kind of
+// thing that should show up in the UI, not get silently swallowed.
+export function watchlistErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === "object" && "message" in err && typeof (err as { message: unknown }).message === "string") {
+    return (err as { message: string }).message;
+  }
+  return "Couldn't update your watchlist. Please try again.";
+}
+
 // ── Membership hook — quick "is this already tracked?" lookups for UI ───────
 export interface WatchlistMembership {
   ids: Set<string>;

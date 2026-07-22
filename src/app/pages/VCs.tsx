@@ -3,7 +3,7 @@ import { useNavigate } from "react-router";
 import {
   TrendingUp, Globe, Star, ExternalLink, X, DollarSign, Briefcase, Activity,
   ChevronLeft, ChevronRight, ChevronDown, Search, Zap,
-  Square, CheckSquare, Eye, CheckCircle2, Loader2, GitCompare, MapPin, Calendar,
+  Square, CheckSquare, Eye, CheckCircle2, Loader2, GitCompare, MapPin, Calendar, AlertCircle,
 } from "lucide-react";
 import { Layout } from "../components/Layout";
 import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider } from "../components/SideFilterLayout";
@@ -11,7 +11,7 @@ import { fetchInvestors, fetchRecentActiveInvestorNames, type InvestorRow } from
 import { VCModal } from "../components/VCModal";
 import { DonutFocusChart } from "../components/DonutFocusChart";
 import { CompanyLogo } from "../components/CompanyLogo";
-import { useWatchlistMembership, addToWatchlist, removeFromWatchlist } from "../../lib/watchlist";
+import { useWatchlistMembership, addToWatchlist, removeFromWatchlist, watchlistErrorMessage } from "../../lib/watchlist";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -578,6 +578,7 @@ export function VCs() {
   const navigate = useNavigate();
   const watchlist = useWatchlistMembership();
   const [watchlistBusy, setWatchlistBusy] = useState(false);
+  const [watchlistError, setWatchlistError] = useState<string | null>(null);
   const [compareMap, setCompareMap] = useState<Map<string, VCFirm>>(new Map());
   const [showCompare, setShowCompare] = useState(false);
 
@@ -595,6 +596,7 @@ export function VCs() {
     const [only] = Array.from(compareMap.values());
     if (!only) return;
     setWatchlistBusy(true);
+    setWatchlistError(null);
     try {
       if (watchlist.has("investor", only.investorId)) await removeFromWatchlist("investor", only.investorId);
       else await addToWatchlist("investor", only.investorId);
@@ -602,6 +604,8 @@ export function VCs() {
     } catch (err) {
       if (err instanceof Error && err.message.includes("signed in")) {
         navigate(`/login?next=${encodeURIComponent("/vcs")}`);
+      } else {
+        setWatchlistError(watchlistErrorMessage(err));
       }
     } finally {
       setWatchlistBusy(false);
@@ -923,6 +927,12 @@ export function VCs() {
       {/* ── Floating Compare FAB (mirrors Startups.tsx) ────────────────────── */}
       {compareMap.size >= 1 && (
         <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2.5">
+          {watchlistError && (
+            <div className="flex items-center gap-1.5 max-w-[280px] px-3.5 py-2 rounded-[12px] text-[11px] font-semibold bg-rose-950/90 border border-rose-800/60 text-rose-300 backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.45)]">
+              <AlertCircle className="w-3.5 h-3.5 flex-none" />
+              {watchlistError}
+            </div>
+          )}
           {compareMap.size === 1 && (() => {
             const only = Array.from(compareMap.values())[0];
             const tracked = watchlist.has("investor", only.investorId);

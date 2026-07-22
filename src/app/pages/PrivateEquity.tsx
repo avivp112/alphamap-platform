@@ -14,7 +14,7 @@ import {
   fetchPEFirms, fetchPEFirmPortfolio, fetchPEFirmTransactions,
   type PEFirmRow, type PEPortfolioCompany, type PETransaction,
 } from "../../lib/supabase";
-import { useWatchlistMembership, addToWatchlist, removeFromWatchlist } from "../../lib/watchlist";
+import { useWatchlistMembership, addToWatchlist, removeFromWatchlist, watchlistErrorMessage } from "../../lib/watchlist";
 
 // ─── Helpers (same formatting conventions as Startups.tsx) ────────────────────
 
@@ -738,6 +738,7 @@ export function PrivateEquity() {
   const navigate = useNavigate();
   const watchlist = useWatchlistMembership();
   const [watchlistBusy, setWatchlistBusy] = useState(false);
+  const [watchlistError, setWatchlistError] = useState<string | null>(null);
   const [compareMap, setCompareMap] = useState<Map<string, PEFirmRow>>(new Map());
   const [showCompare, setShowCompare] = useState(false);
 
@@ -755,6 +756,7 @@ export function PrivateEquity() {
     const [only] = Array.from(compareMap.values());
     if (!only || !only.investor_id) return;
     setWatchlistBusy(true);
+    setWatchlistError(null);
     try {
       if (watchlist.has("investor", only.investor_id)) await removeFromWatchlist("investor", only.investor_id);
       else await addToWatchlist("investor", only.investor_id);
@@ -762,6 +764,8 @@ export function PrivateEquity() {
     } catch (err) {
       if (err instanceof Error && err.message.includes("signed in")) {
         navigate(`/login?next=${encodeURIComponent("/private-equity")}`);
+      } else {
+        setWatchlistError(watchlistErrorMessage(err));
       }
     } finally {
       setWatchlistBusy(false);
@@ -1055,25 +1059,35 @@ export function PrivateEquity() {
       {/* ── Floating Compare FAB (mirrors Startups.tsx / VCs.tsx) ──────────── */}
       {compareMap.size >= 1 && (
         <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2.5">
-          {/* Add/Remove Watchlist — only while exactly one item is selected AND
-              it has a real investor_id; firms known only from raw transaction
-              data (investor_id null) have nothing to add to the watchlist. */}
+          {watchlistError && (
+            <div className="flex items-center gap-1.5 max-w-[280px] px-3.5 py-2 rounded-[12px] text-[11px] font-semibold bg-rose-950/90 border border-rose-800/60 text-rose-300 backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.45)]">
+              <AlertCircle className="w-3.5 h-3.5 flex-none" />
+              {watchlistError}
+            </div>
+          )}
+          {/* Add/Remove Watchlist — only while exactly one item is selected. Firms
+              known only from raw transaction data (investor_id null) have no
+              curated investor row to track — the button still shows, disabled,
+              so the feature reads as unavailable-for-this-firm, not missing. */}
           {compareMap.size === 1 && (() => {
             const only = Array.from(compareMap.values())[0];
-            if (!only.investor_id) return null;
-            const tracked = watchlist.has("investor", only.investor_id);
+            const trackable = !!only.investor_id;
+            const tracked = trackable && watchlist.has("investor", only.investor_id!);
             return (
               <button
                 onClick={toggleWatchlistForSelected}
-                disabled={watchlistBusy}
+                disabled={watchlistBusy || !trackable}
+                title={trackable ? undefined : "This firm has no curated profile yet, so it can't be tracked."}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-[16px] text-xs font-bold transition-all duration-200 backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.45)] disabled:opacity-60 ${
-                  tracked
+                  !trackable
+                    ? "bg-[#0b1626]/70 border border-[#1a2a3f] text-slate-500 cursor-not-allowed"
+                    : tracked
                     ? "bg-emerald-950/80 border border-emerald-800/60 text-emerald-300 hover:border-emerald-600"
                     : "bg-[#0b1626]/90 border border-[#1a2a3f] text-slate-300 hover:text-white hover:border-slate-500"
                 }`}
               >
                 {watchlistBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : tracked ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                {tracked ? "In My Watchlist" : "Add to Watchlist"}
+                {!trackable ? "Not Trackable Yet" : tracked ? "In My Watchlist" : "Add to Watchlist"}
               </button>
             );
           })()}

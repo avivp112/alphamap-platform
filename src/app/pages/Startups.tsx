@@ -25,7 +25,7 @@ import {
   type Startup, type FundingRound, type RoundType, type AlphaScore, type HeadcountPoint,
   type StartupListRow, type StartupSearchFilters, type Competitor,
 } from "../../lib/supabase";
-import { useWatchlistMembership, addToWatchlist, removeFromWatchlist } from "../../lib/watchlist";
+import { useWatchlistMembership, addToWatchlist, removeFromWatchlist, watchlistErrorMessage } from "../../lib/watchlist";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -2020,6 +2020,7 @@ export function Startups() {
   const navigate = useNavigate();
   const watchlist = useWatchlistMembership();
   const [watchlistBusy, setWatchlistBusy] = useState(false);
+  const [watchlistError, setWatchlistError] = useState<string | null>(null);
 
   const cityParam = searchParams.get("city") ?? "";
   const [cityFilter, setCityFilter] = useState(cityParam);
@@ -2046,6 +2047,7 @@ export function Startups() {
     const [only] = Array.from(selected.values());
     if (!only) return;
     setWatchlistBusy(true);
+    setWatchlistError(null);
     try {
       if (watchlist.has("startup", only.id)) await removeFromWatchlist("startup", only.id);
       else await addToWatchlist("startup", only.id);
@@ -2053,6 +2055,8 @@ export function Startups() {
     } catch (err) {
       if (err instanceof Error && err.message.includes("signed in")) {
         navigate(`/login?next=${encodeURIComponent("/startups")}`);
+      } else {
+        setWatchlistError(watchlistErrorMessage(err));
       }
     } finally {
       setWatchlistBusy(false);
@@ -2333,6 +2337,12 @@ export function Startups() {
       {/* ── Floating Compare FAB ────────────────────────────────────────── */}
       {selected.size >= 1 && (
         <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2.5">
+          {watchlistError && (
+            <div className="flex items-center gap-1.5 max-w-[280px] px-3.5 py-2 rounded-[12px] text-[11px] font-semibold bg-rose-950/90 border border-rose-800/60 text-rose-300 backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.45)]">
+              <AlertCircle className="w-3.5 h-3.5 flex-none" />
+              {watchlistError}
+            </div>
+          )}
           {/* Add/Remove Watchlist — only while exactly one item is selected;
               with 2+ selected the intent shifts to comparing, not tracking. */}
           {selected.size === 1 && (() => {
