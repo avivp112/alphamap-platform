@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { useSearchParams } from "react-router";
+import { useSearchParams, useNavigate } from "react-router";
 import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip,
@@ -16,7 +16,7 @@ import {
   UserRound, LayoutGrid, List, ExternalLink,
   ChevronDown, ChevronLeft, ChevronRight, Building2, CheckSquare, Square,
   GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2, ChevronUp,
-  SlidersHorizontal, Award,
+  SlidersHorizontal, Award, Eye,
 } from "lucide-react";
 import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
@@ -25,6 +25,7 @@ import {
   type Startup, type FundingRound, type RoundType, type AlphaScore, type HeadcountPoint,
   type StartupListRow, type StartupSearchFilters, type Competitor,
 } from "../../lib/supabase";
+import { useWatchlistMembership, addToWatchlist, removeFromWatchlist } from "../../lib/watchlist";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -2016,6 +2017,9 @@ export function Startups() {
   const [selected, setSelectedMap]      = useState<Map<string, StartupListRow>>(new Map());
   const [showCompare, setShowCompare]   = useState(false);
   const [page, setPage]                 = useState(1);
+  const navigate = useNavigate();
+  const watchlist = useWatchlistMembership();
+  const [watchlistBusy, setWatchlistBusy] = useState(false);
 
   const cityParam = searchParams.get("city") ?? "";
   const [cityFilter, setCityFilter] = useState(cityParam);
@@ -2036,6 +2040,23 @@ export function Startups() {
       next.set(peer.id, peer);
       return next;
     });
+  }
+
+  async function toggleWatchlistForSelected() {
+    const [only] = Array.from(selected.values());
+    if (!only) return;
+    setWatchlistBusy(true);
+    try {
+      if (watchlist.has("startup", only.id)) await removeFromWatchlist("startup", only.id);
+      else await addToWatchlist("startup", only.id);
+      watchlist.refresh();
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("signed in")) {
+        navigate(`/login?next=${encodeURIComponent("/startups")}`);
+      }
+    } finally {
+      setWatchlistBusy(false);
+    }
   }
 
   // Debounce free-text search 300ms so filters don't refire on every keystroke.
@@ -2311,29 +2332,52 @@ export function Startups() {
 
       {/* ── Floating Compare FAB ────────────────────────────────────────── */}
       {selected.size >= 1 && (
-        <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2">
-          {/* Clear selection */}
-          <button
-            onClick={() => setSelectedMap(new Map())}
-            title="Clear selection"
-            className="w-9 h-9 flex items-center justify-center rounded-full bg-[#0b1626]/90 backdrop-blur-sm border border-[#1a2a3f] text-slate-500 hover:text-white hover:border-slate-500 transition-all shadow-[0_4px_20px_rgba(0,0,0,0.5)]"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-          {/* Compare button */}
-          <button
-            onClick={() => { if (selected.size >= 2) setShowCompare(true); }}
-            className={`flex items-center gap-2.5 px-5 py-3.5 rounded-[20px] text-sm font-bold transition-all duration-200 ${
-              selected.size >= 2
-                ? "bg-blue-600 text-white shadow-[0_8px_40px_rgba(37,99,235,0.45)] hover:bg-blue-500 hover:shadow-[0_12px_48px_rgba(37,99,235,0.5)] hover:scale-[1.02]"
-                : "bg-[#0b1626]/90 backdrop-blur-sm border border-[#1a2a3f] text-slate-400 shadow-[0_4px_24px_rgba(0,0,0,0.45)] cursor-default"
-            }`}
-          >
-            <GitCompare className="w-4 h-4 flex-none" />
-            {selected.size >= 2
-              ? `Compare (${selected.size})`
-              : `Select ${2 - selected.size} more…`}
-          </button>
+        <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2.5">
+          {/* Add/Remove Watchlist — only while exactly one item is selected;
+              with 2+ selected the intent shifts to comparing, not tracking. */}
+          {selected.size === 1 && (() => {
+            const only = Array.from(selected.values())[0];
+            const tracked = watchlist.has("startup", only.id);
+            return (
+              <button
+                onClick={toggleWatchlistForSelected}
+                disabled={watchlistBusy}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-[16px] text-xs font-bold transition-all duration-200 backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.45)] disabled:opacity-60 ${
+                  tracked
+                    ? "bg-emerald-950/80 border border-emerald-800/60 text-emerald-300 hover:border-emerald-600"
+                    : "bg-[#0b1626]/90 border border-[#1a2a3f] text-slate-300 hover:text-white hover:border-slate-500"
+                }`}
+              >
+                {watchlistBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : tracked ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                {tracked ? "In My Watchlist" : "Add to Watchlist"}
+              </button>
+            );
+          })()}
+
+          <div className="flex items-center gap-2">
+            {/* Clear selection */}
+            <button
+              onClick={() => setSelectedMap(new Map())}
+              title="Clear selection"
+              className="w-9 h-9 flex items-center justify-center rounded-full bg-[#0b1626]/90 backdrop-blur-sm border border-[#1a2a3f] text-slate-500 hover:text-white hover:border-slate-500 transition-all shadow-[0_4px_20px_rgba(0,0,0,0.5)]"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+            {/* Compare button */}
+            <button
+              onClick={() => { if (selected.size >= 2) setShowCompare(true); }}
+              className={`flex items-center gap-2.5 px-5 py-3.5 rounded-[20px] text-sm font-bold transition-all duration-200 ${
+                selected.size >= 2
+                  ? "bg-blue-600 text-white shadow-[0_8px_40px_rgba(37,99,235,0.45)] hover:bg-blue-500 hover:shadow-[0_12px_48px_rgba(37,99,235,0.5)] hover:scale-[1.02]"
+                  : "bg-[#0b1626]/90 backdrop-blur-sm border border-[#1a2a3f] text-slate-400 shadow-[0_4px_24px_rgba(0,0,0,0.45)] cursor-default"
+              }`}
+            >
+              <GitCompare className="w-4 h-4 flex-none" />
+              {selected.size >= 2
+                ? `Compare (${selected.size})`
+                : `Select ${2 - selected.size} more…`}
+            </button>
+          </div>
         </div>
       )}
 

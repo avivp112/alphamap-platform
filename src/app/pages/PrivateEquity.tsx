@@ -1,8 +1,10 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
+import { useNavigate } from "react-router";
 import {
   Globe, X, DollarSign, Briefcase, Activity, Building2, Landmark,
   ChevronLeft, ChevronRight, Search, Zap, MapPin, Calendar, Users,
   LayoutGrid, List, Clock, AlertCircle, Loader2, ExternalLink, TrendingUp,
+  Square, CheckSquare, Eye, CheckCircle2, GitCompare,
 } from "lucide-react";
 import { Layout } from "../components/Layout";
 import { CompanyLogo } from "../components/CompanyLogo";
@@ -12,6 +14,7 @@ import {
   fetchPEFirms, fetchPEFirmPortfolio, fetchPEFirmTransactions,
   type PEFirmRow, type PEPortfolioCompany, type PETransaction,
 } from "../../lib/supabase";
+import { useWatchlistMembership, addToWatchlist, removeFromWatchlist } from "../../lib/watchlist";
 
 // ─── Helpers (same formatting conventions as Startups.tsx) ────────────────────
 
@@ -167,7 +170,9 @@ function Pagination({ page, pageCount, onChange }: {
 
 // ─── PE firm card (grid view) ─────────────────────────────────────────────────
 
-function PEFirmCard({ firm, onClick }: { firm: PEFirmRow; onClick: () => void }) {
+function PEFirmCard({ firm, onClick, selected, onToggleSelect }: {
+  firm: PEFirmRow; onClick: () => void; selected: boolean; onToggleSelect: (e: React.MouseEvent) => void;
+}) {
   const aum = parseAumMillions(firm.fund_size);
   const tagline = (firm.description ?? "").split(/\.\s/)[0];
 
@@ -282,9 +287,20 @@ function PEFirmCard({ firm, onClick }: { firm: PEFirmRow; onClick: () => void })
           <Globe className="w-3 h-3 text-gray-400 flex-none" />
           <span className="text-[10px] text-gray-500 truncate">{firm.headquarters ?? "—"}</span>
         </div>
-        <span className="text-[10px] text-gray-400 font-medium flex-none">
-          {firm.latest_deal_date ? `Latest deal ${fmtDate(firm.latest_deal_date)}` : firm.founded_year ? `Est. ${firm.founded_year}` : ""}
-        </span>
+        <div className="flex items-center gap-2 flex-none">
+          <span className="text-[10px] text-gray-400 font-medium">
+            {firm.latest_deal_date ? `Latest deal ${fmtDate(firm.latest_deal_date)}` : firm.founded_year ? `Est. ${firm.founded_year}` : ""}
+          </span>
+          <button
+            onClick={onToggleSelect}
+            className="p-0.5 rounded text-gray-400 hover:text-[#0F172A] transition-colors"
+            aria-label={selected ? "Deselect" : "Select for comparison"}
+          >
+            {selected
+              ? <CheckSquare className="w-4 h-4 text-[#0F172A]" />
+              : <Square className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -638,6 +654,72 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: "latest",    label: "Latest Deal" },
 ];
 
+// ─── Compare modal ────────────────────────────────────────────────────────────
+
+function PECompareModal({ firms, onClose }: { firms: PEFirmRow[]; onClose: () => void }) {
+  const rows: { label: string; icon: React.ElementType; value: (f: PEFirmRow) => string }[] = [
+    { label: "Headquarters", icon: MapPin,     value: (f) => f.headquarters ?? "—" },
+    { label: "Founded",      icon: Calendar,   value: (f) => f.founded_year ? String(f.founded_year) : "—" },
+    { label: "AUM",          icon: DollarSign, value: (f) => formatAUM(parseAumMillions(f.fund_size)) },
+    { label: "Portfolio",    icon: Briefcase,  value: (f) => f.portfolio_count ? String(f.portfolio_count) : "—" },
+    { label: "Buyouts",      icon: Landmark,   value: (f) => String(f.buyout_count) },
+    { label: "Secondaries",  icon: Activity,   value: (f) => String(f.secondary_count) },
+    { label: "Deal Value",   icon: DollarSign, value: (f) => fmt(f.total_deal_value) },
+    { label: "Latest Deal",  icon: Clock,      value: (f) => fmtDate(f.latest_deal_date) },
+  ];
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+      style={{ background: "rgba(6,13,25,0.55)", backdropFilter: "blur(8px)" }}
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-3xl max-h-[85vh] overflow-hidden bg-white rounded-[24px] shadow-[0_32px_80px_rgba(15,23,42,0.35)] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex-none flex items-center justify-between px-6 py-5 border-b border-gray-100">
+          <h2 className="text-lg font-bold text-[#0F172A]">Compare Firms</h2>
+          <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-[#0F172A] transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-auto p-6">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr>
+                  <th className="text-left text-[10px] font-bold uppercase tracking-wider text-gray-400 pb-3 pr-4 w-32">Metric</th>
+                  {firms.map((f) => (
+                    <th key={f.firm_name} className="text-left pb-3 px-4 min-w-[160px]">
+                      <div className="flex items-center gap-2">
+                        <CompanyLogo name={f.firm_name} website={f.website} size={26} rounded="rounded-[8px]" />
+                        <span className="text-sm font-bold text-[#0F172A] truncate">{f.firm_name}</span>
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.label} className="border-t border-gray-100">
+                    <td className="py-3 pr-4 text-xs font-semibold text-gray-500 flex items-center gap-1.5">
+                      <row.icon className="w-3.5 h-3.5 text-gray-300" />{row.label}
+                    </td>
+                    {firms.map((f) => (
+                      <td key={f.firm_name} className="py-3 px-4 text-sm font-bold text-[#0F172A]">{row.value(f)}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export function PrivateEquity() {
@@ -651,6 +733,40 @@ export function PrivateEquity() {
   const [page, setPage]             = useState(1);
   const [selected, setSelected]     = useState<PEFirmRow | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+
+  // ── Compare selection + watchlist (mirrors Startups.tsx / VCs.tsx) ─────────
+  const navigate = useNavigate();
+  const watchlist = useWatchlistMembership();
+  const [watchlistBusy, setWatchlistBusy] = useState(false);
+  const [compareMap, setCompareMap] = useState<Map<string, PEFirmRow>>(new Map());
+  const [showCompare, setShowCompare] = useState(false);
+
+  function toggleCompareSelect(firm: PEFirmRow, e: React.MouseEvent) {
+    e.stopPropagation();
+    setCompareMap((prev) => {
+      const next = new Map(prev);
+      if (next.has(firm.firm_name)) { next.delete(firm.firm_name); }
+      else if (next.size < 3) { next.set(firm.firm_name, firm); }
+      return next;
+    });
+  }
+
+  async function toggleWatchlistForSelected() {
+    const [only] = Array.from(compareMap.values());
+    if (!only || !only.investor_id) return;
+    setWatchlistBusy(true);
+    try {
+      if (watchlist.has("investor", only.investor_id)) await removeFromWatchlist("investor", only.investor_id);
+      else await addToWatchlist("investor", only.investor_id);
+      watchlist.refresh();
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("signed in")) {
+        navigate(`/login?next=${encodeURIComponent("/private-equity")}`);
+      }
+    } finally {
+      setWatchlistBusy(false);
+    }
+  }
 
   useEffect(() => {
     fetchPEFirms()
@@ -876,7 +992,11 @@ export function PrivateEquity() {
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
                 {paginated.map(firm => (
-                  <PEFirmCard key={firm.firm_name} firm={firm} onClick={() => setSelected(firm)} />
+                  <PEFirmCard
+                    key={firm.firm_name} firm={firm} onClick={() => setSelected(firm)}
+                    selected={compareMap.has(firm.firm_name)}
+                    onToggleSelect={(e) => toggleCompareSelect(firm, e)}
+                  />
                 ))}
               </div>
               <Pagination page={safePage} pageCount={pageCount} onChange={p => { setPage(p); gridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }} />
@@ -926,6 +1046,61 @@ export function PrivateEquity() {
 
       {selected && (
         <PETearsheetModal firm={selected} onClose={() => setSelected(null)} />
+      )}
+
+      {showCompare && compareMap.size >= 2 && (
+        <PECompareModal firms={Array.from(compareMap.values())} onClose={() => setShowCompare(false)} />
+      )}
+
+      {/* ── Floating Compare FAB (mirrors Startups.tsx / VCs.tsx) ──────────── */}
+      {compareMap.size >= 1 && (
+        <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2.5">
+          {/* Add/Remove Watchlist — only while exactly one item is selected AND
+              it has a real investor_id; firms known only from raw transaction
+              data (investor_id null) have nothing to add to the watchlist. */}
+          {compareMap.size === 1 && (() => {
+            const only = Array.from(compareMap.values())[0];
+            if (!only.investor_id) return null;
+            const tracked = watchlist.has("investor", only.investor_id);
+            return (
+              <button
+                onClick={toggleWatchlistForSelected}
+                disabled={watchlistBusy}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-[16px] text-xs font-bold transition-all duration-200 backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.45)] disabled:opacity-60 ${
+                  tracked
+                    ? "bg-emerald-950/80 border border-emerald-800/60 text-emerald-300 hover:border-emerald-600"
+                    : "bg-[#0b1626]/90 border border-[#1a2a3f] text-slate-300 hover:text-white hover:border-slate-500"
+                }`}
+              >
+                {watchlistBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : tracked ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                {tracked ? "In My Watchlist" : "Add to Watchlist"}
+              </button>
+            );
+          })()}
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCompareMap(new Map())}
+              title="Clear selection"
+              className="w-9 h-9 flex items-center justify-center rounded-full bg-[#0b1626]/90 backdrop-blur-sm border border-[#1a2a3f] text-slate-500 hover:text-white hover:border-slate-500 transition-all shadow-[0_4px_20px_rgba(0,0,0,0.5)]"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => { if (compareMap.size >= 2) setShowCompare(true); }}
+              className={`flex items-center gap-2.5 px-5 py-3.5 rounded-[20px] text-sm font-bold transition-all duration-200 ${
+                compareMap.size >= 2
+                  ? "bg-blue-600 text-white shadow-[0_8px_40px_rgba(37,99,235,0.45)] hover:bg-blue-500 hover:shadow-[0_12px_48px_rgba(37,99,235,0.5)] hover:scale-[1.02]"
+                  : "bg-[#0b1626]/90 backdrop-blur-sm border border-[#1a2a3f] text-slate-400 shadow-[0_4px_24px_rgba(0,0,0,0.45)] cursor-default"
+              }`}
+            >
+              <GitCompare className="w-4 h-4 flex-none" />
+              {compareMap.size >= 2
+                ? `Compare (${compareMap.size})`
+                : `Select ${2 - compareMap.size} more…`}
+            </button>
+          </div>
+        </div>
       )}
     </Layout>
   );
