@@ -10,6 +10,8 @@ import { SignUp } from "./pages/SignUp";
 import { Login } from "./pages/Login";
 import { MarketMap } from "./pages/MarketMap";
 import { PrivateEquity } from "./pages/PrivateEquity";
+import { Pricing } from "./pages/Pricing";
+import { Checkout } from "./pages/Checkout";
 
 export const router = createBrowserRouter([
   { path: "/",           Component: LandingPage },
@@ -24,4 +26,6 @@ export const router = createBrowserRouter([
   { path: "/ipos",       Component: IPOs },
   { path: "/market-map", Component: MarketMap },
   { path: "/private-equity", Component: PrivateEquity },
+  { path: "/pricing",    Component: Pricing },
+  { path: "/checkout/:plan", Component: Checkout },
 ]);

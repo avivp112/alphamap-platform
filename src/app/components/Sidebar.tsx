@@ -1,11 +1,12 @@
 import React from 'react';
-import { NavLink } from 'react-router';
+import { NavLink, useNavigate } from 'react-router';
 import {
   LayoutDashboard, Rocket, CandlestickChart, Landmark, Vault, Handshake,
-  Globe2, ClipboardCheck, Eye, Settings, X,
+  Globe2, ClipboardCheck, Eye, Settings, X, CreditCard, Sparkles, ArrowRight,
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { useUserPlan, isPaidPlan } from '../../lib/plan';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -20,6 +21,7 @@ const linkedItems = [
   { icon: Handshake,        label: 'Deals',           to: '/deals',      end: false },
   { icon: Globe2,           label: 'Market Map',      to: '/market-map', end: false },
   { icon: Vault,            label: 'Private Equity',  to: '/private-equity', end: false },
+  { icon: CreditCard,       label: 'Pricing',         to: '/pricing',    end: false },
 ];
 
 // Not built yet — shown dimmed and inert so the full nav is visible without
@@ -35,6 +37,10 @@ interface SidebarProps {
 }
 
 export function Sidebar({ open, onClose }: SidebarProps) {
+  const navigate = useNavigate();
+  const { plan, loggedIn } = useUserPlan();
+  const showUpgradeBanner = loggedIn && !isPaidPlan(plan);
+
   return (
     <aside
       className={cn(
@@ -116,7 +122,29 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         </div>
       </nav>
 
-      <div className="p-4 border-t border-gray-100">
+      <div className="p-4 border-t border-gray-100 flex flex-col gap-3">
+        {showUpgradeBanner && (
+          <button
+            onClick={() => { onClose(); navigate('/pricing'); }}
+            className="relative overflow-hidden rounded-2xl p-4 text-left bg-[#0F172A] transition-transform hover:-translate-y-0.5"
+          >
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0"
+              style={{ background: "radial-gradient(80% 100% at 0% 0%, rgba(124,137,103,0.35) 0%, rgba(124,137,103,0) 60%)" }}
+            />
+            <div className="relative flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[#CBD1C2]">
+              <Sparkles className="h-3 w-3" />
+              Upgrade to Pro
+            </div>
+            <p className="relative mt-1.5 text-xs text-white/70 leading-relaxed">
+              Unlock full funding history, cap tables, and competitor intel.
+            </p>
+            <div className="relative mt-3 flex items-center gap-1 text-xs font-bold text-white">
+              See plans <ArrowRight className="h-3 w-3" />
+            </div>
+          </button>
+        )}
         <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-[#111827] transition-all duration-200 ease-in-out group">
           <Settings strokeWidth={1.5} className="h-5 w-5 text-gray-400 group-hover:text-[#111827]" />
           Settings

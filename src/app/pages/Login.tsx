@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate, Link } from "react-router";
+import { useNavigate, useSearchParams, Link } from "react-router";
 import { Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, Mail, ArrowRight } from "lucide-react";
 import { FcGoogle } from "react-icons/fc";
 import { FaLinkedin } from "react-icons/fa";
@@ -121,6 +121,8 @@ function BrandPanel() {
 
 function LoginForm() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const next = searchParams.get("next") || "/dashboard";
   const [values, setValues]           = useState<FormValues>({ email: "", password: "" });
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError]     = useState<string | null>(null);
@@ -165,7 +167,7 @@ function LoginForm() {
         password: values.password,
       });
       if (error) throw error;
-      navigate("/dashboard");
+      navigate(next);
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Couldn't log you in. Please check your credentials and try again.");
     } finally {
@@ -290,7 +292,12 @@ function LoginForm() {
 
       <p className="mt-7 text-center text-sm text-gray-500">
         Don't have an account?{" "}
-        <Link to="/signup" className="font-semibold text-[#0F172A] hover:underline">Sign up</Link>
+        <Link
+          to={next === "/dashboard" ? "/signup" : `/signup?next=${encodeURIComponent(next)}`}
+          className="font-semibold text-[#0F172A] hover:underline"
+        >
+          Sign up
+        </Link>
       </p>
     </div>
   );

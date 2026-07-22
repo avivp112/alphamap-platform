@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useNavigate, Link } from "react-router";
+import { useNavigate, useSearchParams, Link } from "react-router";
 import {
   Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, Mail, ArrowRight, ArrowLeft, ShieldCheck,
 } from "lucide-react";
@@ -255,6 +255,8 @@ function OtpView({
 // ── Main sign-up form view ───────────────────────────────────────────────────
 
 function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
+  const [searchParams] = useSearchParams();
+  const next = searchParams.get("next") || "/dashboard";
   const [values, setValues]           = useState<FormValues>({ fullName: "", email: "", password: "", confirmPassword: "" });
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError]     = useState<string | null>(null);
@@ -438,7 +440,12 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
       </p>
       <p className="mt-3 text-center text-sm text-gray-500">
         Already have an account?{" "}
-        <Link to="/login" className="font-semibold text-[#0F172A] hover:underline">Log in</Link>
+        <Link
+          to={next === "/dashboard" ? "/login" : `/login?next=${encodeURIComponent(next)}`}
+          className="font-semibold text-[#0F172A] hover:underline"
+        >
+          Log in
+        </Link>
       </p>
     </div>
   );
@@ -450,6 +457,11 @@ export function SignUp() {
   const [stage, setStage] = useState<"form" | "otp">("form");
   const [pendingEmail, setPendingEmail] = useState("");
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // ?next= carries the visitor onward to a paid-tier checkout after signing
+  // up (e.g. from a locked tearsheet tab or the Pricing page) — defaults to
+  // the normal post-signup destination when absent.
+  const next = searchParams.get("next") || "/dashboard";
 
   return (
     <div className="min-h-screen w-full grid lg:grid-cols-2 bg-white">
@@ -463,7 +475,7 @@ export function SignUp() {
           <OtpView
             email={pendingEmail}
             onBack={() => setStage("form")}
-            onVerified={() => navigate("/dashboard")}
+            onVerified={() => navigate(next)}
           />
         )}
       </div>
