@@ -23,13 +23,13 @@ const linkedItems = [
   { icon: Handshake,        label: 'Deals',           to: '/deals',      end: false },
   { icon: Globe2,           label: 'Market Map',      to: '/market-map', end: false },
   { icon: Vault,            label: 'Private Equity',  to: '/private-equity', end: false },
+  { icon: Eye,              label: 'My Watchlist',    to: '/watchlist',  end: false },
 ];
 
 // Not built yet — shown dimmed and inert so the full nav is visible without
 // implying these pages already work.
 const staticItems = [
   { icon: ClipboardCheck, label: 'Valuations and Due Diligence' },
-  { icon: Eye,            label: 'My Watchlist' },
 ];
 
 interface SidebarProps {

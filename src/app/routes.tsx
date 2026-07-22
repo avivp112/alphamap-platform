@@ -13,6 +13,7 @@ import { PrivateEquity } from "./pages/PrivateEquity";
 import { Pricing } from "./pages/Pricing";
 import { Checkout } from "./pages/Checkout";
 import { Profile } from "./pages/Profile";
+import { Watchlist } from "./pages/Watchlist";
 
 export const router = createBrowserRouter([
   { path: "/",           Component: LandingPage },
@@ -30,4 +31,5 @@ export const router = createBrowserRouter([
   { path: "/pricing",    Component: Pricing },
   { path: "/checkout/:plan", Component: Checkout },
   { path: "/profile",    Component: Profile },
+  { path: "/watchlist",  Component: Watchlist },
 ]);
