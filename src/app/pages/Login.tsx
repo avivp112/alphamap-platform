@@ -78,37 +78,49 @@ const FEATURES = [
 
 function BrandPanel() {
   return (
-    <div className="relative hidden lg:flex flex-col justify-between w-full h-full bg-[#0F172A] px-12 py-12 overflow-hidden">
+    <div
+      className="relative hidden lg:flex flex-col justify-between w-full h-full px-12 py-12 overflow-hidden"
+      style={{ background: "linear-gradient(155deg, #EEF0EB 0%, #E7ECEE 55%, #F7F9F9 100%)" }}
+    >
+      <style>{`
+        @keyframes rhino-blink { 0%, 100% { opacity: 0.07; } 50% { opacity: 0.16; } }
+        .rhino-watermark-login { animation: rhino-blink 5s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce) {
+          .rhino-watermark-login { animation: none; opacity: 0.1; }
+        }
+      `}</style>
       {/* subtle grid texture */}
       <div
-        className="absolute inset-0 opacity-[0.06] pointer-events-none"
+        className="absolute inset-0 opacity-[0.05] pointer-events-none"
         style={{
           backgroundImage:
-            "linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)",
+            "linear-gradient(#0F172A 1px, transparent 1px), linear-gradient(90deg, #0F172A 1px, transparent 1px)",
           backgroundSize: "42px 42px",
         }}
       />
       <div
-        className="absolute -top-32 -right-32 w-96 h-96 rounded-full pointer-events-none"
-        style={{ background: "radial-gradient(circle, rgba(184,201,209,0.16), transparent 70%)" }}
+        className="absolute -top-32 -left-24 w-96 h-96 rounded-full pointer-events-none"
+        style={{ background: "radial-gradient(circle, rgba(124,137,103,0.16), transparent 70%)" }}
       />
-      {/* subtle rhino watermark, same mark as the logo */}
-      <div aria-hidden className="pointer-events-none absolute -bottom-14 -right-16 opacity-[0.08] rotate-[6deg]">
+      {/* subtle rhino watermark, same mark as the logo — shifted toward the left, gently pulsing */}
+      <div aria-hidden className="rhino-watermark-login pointer-events-none absolute -bottom-16 -left-20 rotate-[-8deg]">
         <BrandMark size={320} />
       </div>
 
       <div className="relative z-10 flex items-center gap-2.5">
-        <BrandMark size={36} />
-        <BrandWordmark className="text-2xl tracking-tight text-white" />
+        <div className="rounded-xl bg-white/80 p-1.5 shadow-[0_2px_8px_rgba(15,23,42,0.08)]">
+          <BrandMark size={30} />
+        </div>
+        <BrandWordmark className="text-2xl tracking-tight text-[#0F172A]" />
       </div>
 
       <div className="relative z-10 max-w-md">
-        <h2 className="font-serif text-3xl leading-tight text-white mb-5 text-balance">
-          Bridging the gap between private innovation and <span className="text-[#B8C9D1]">public markets</span>.
+        <h2 className="font-serif text-3xl leading-tight text-[#0F172A] mb-5 text-balance">
+          Bridging the gap between private innovation and <span className="text-[#5C6A4C]">public markets</span>.
         </h2>
         <ul className="space-y-3.5">
           {FEATURES.map((f) => (
-            <li key={f} className="flex items-start gap-2.5 text-sm text-white/70 leading-relaxed">
+            <li key={f} className="flex items-start gap-2.5 text-sm text-[#0F172A]/65 leading-relaxed">
               <CheckCircle2 className="w-4 h-4 text-[#7C8967] flex-none mt-0.5" />
               {f}
             </li>
@@ -116,7 +128,7 @@ function BrandPanel() {
         </ul>
       </div>
 
-      <p className="relative z-10 text-xs text-white/40">© {new Date().getFullYear()} AlphaMap. All rights reserved.</p>
+      <p className="relative z-10 text-xs text-[#0F172A]/35">© {new Date().getFullYear()} AlphaMap. All rights reserved.</p>
     </div>
   );
 }
