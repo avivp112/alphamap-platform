@@ -9,11 +9,12 @@ import { useUserPlan, type Plan } from "../../lib/plan";
 // ─────────────────────────────────────────────────────────────────────────────
 // Pricing — the tier-selection page. Deliberately NOT in the app's persistent
 // nav during this controlled rollout; it's reached via the landing page's
-// sign-up CTAs ("View Dashboard" / "Request Early Access"). Routes each
-// tier's CTA to the right next step: free goes straight to sign-up, Pro goes
-// to sign-up (if not yet authenticated) then the placeholder checkout screen
-// — or straight to checkout if the visitor already has an account. Enterprise
-// stays locked ("Available Soon") — not open for signup yet.
+// sign-up CTAs ("View Dashboard" / "Request Early Access"). Only Explorer
+// (free) is open for signup right now — its CTA routes straight to sign-up.
+// Pro and Enterprise both show "Available Soon" and are inert; Pro's card
+// still previews the $15 beta price (struck-through full price + badge) so
+// visitors know what to expect once it opens up, without being able to click
+// into checkout yet.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PRO_MONTHLY = 39;
@@ -61,6 +62,7 @@ const TIERS: Tier[] = [
     ],
     cta: "Upgrade to Pro",
     highlight: true,
+    disabled: true,
   },
   {
     id: "enterprise",

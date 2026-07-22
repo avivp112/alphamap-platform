@@ -3,7 +3,21 @@ import { createClient } from "@supabase/supabase-js";
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// "Remember me" by default — the session (and its refresh token) is persisted
+// to localStorage and silently refreshed in the background, so a signed-in
+// visitor stays signed in across visits/restarts until they explicitly log
+// out (TopNav's handleSignOut is the only place that calls auth.signOut()).
+// These are already supabase-js's defaults; spelled out explicitly here so
+// the "stay logged in" behavior is a documented decision, not an accident of
+// defaults someone could silently change later.
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    storage: typeof window !== "undefined" ? window.localStorage : undefined,
+  },
+});
 
 export type RoundType =
   | "Pre-Seed" | "Seed"
