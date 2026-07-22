@@ -90,8 +90,12 @@ function BrandPanel() {
       />
       <div
         className="absolute -top-32 -right-32 w-96 h-96 rounded-full pointer-events-none"
-        style={{ background: "radial-gradient(circle, rgba(245,158,11,0.18), transparent 70%)" }}
+        style={{ background: "radial-gradient(circle, rgba(184,201,209,0.16), transparent 70%)" }}
       />
+      {/* subtle rhino watermark, same mark as the logo */}
+      <div aria-hidden className="pointer-events-none absolute -bottom-14 -right-16 opacity-[0.08] rotate-[6deg]">
+        <BrandMark size={320} />
+      </div>
 
       <div className="relative z-10 flex items-center gap-2.5">
         <BrandMark size={36} />
@@ -100,12 +104,12 @@ function BrandPanel() {
 
       <div className="relative z-10 max-w-md">
         <h2 className="font-serif text-3xl leading-tight text-white mb-5 text-balance">
-          Bridging the gap between private innovation and public markets.
+          Bridging the gap between private innovation and <span className="text-[#B8C9D1]">public markets</span>.
         </h2>
         <ul className="space-y-3.5">
           {FEATURES.map((f) => (
             <li key={f} className="flex items-start gap-2.5 text-sm text-white/70 leading-relaxed">
-              <CheckCircle2 className="w-4 h-4 text-[#F59E0B] flex-none mt-0.5" />
+              <CheckCircle2 className="w-4 h-4 text-[#7C8967] flex-none mt-0.5" />
               {f}
             </li>
           ))}

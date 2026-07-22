@@ -12,6 +12,7 @@ import { MarketMap } from "./pages/MarketMap";
 import { PrivateEquity } from "./pages/PrivateEquity";
 import { Pricing } from "./pages/Pricing";
 import { Checkout } from "./pages/Checkout";
+import { Profile } from "./pages/Profile";
 
 export const router = createBrowserRouter([
   { path: "/",           Component: LandingPage },
@@ -28,4 +29,5 @@ export const router = createBrowserRouter([
   { path: "/private-equity", Component: PrivateEquity },
   { path: "/pricing",    Component: Pricing },
   { path: "/checkout/:plan", Component: Checkout },
+  { path: "/profile",    Component: Profile },
 ]);
