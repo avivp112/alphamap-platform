@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { useSearchParams, useNavigate } from "react-router";
+import { useSearchParams } from "react-router";
 import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip,
@@ -9,7 +9,6 @@ import { Layout } from "../components/Layout";
 import { LinkedInBadge } from "../components/LinkedInBadge";
 import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider } from "../components/SideFilterLayout";
 import { CompanyLogo } from "../components/CompanyLogo";
-import { useUserPlan, isPaidPlan } from "../../lib/plan";
 import {
   Plus, Globe, Loader2, Search, X, MapPin, Calendar, Users,
   DollarSign, Rocket, AlertCircle, CheckCircle2,
@@ -17,7 +16,7 @@ import {
   UserRound, LayoutGrid, List, ExternalLink,
   ChevronDown, ChevronLeft, ChevronRight, Building2, CheckSquare, Square,
   GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2, ChevronUp,
-  SlidersHorizontal, Award, Lock, Sparkles,
+  SlidersHorizontal, Award,
 } from "lucide-react";
 import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
@@ -1312,50 +1311,9 @@ const TEARSHEET_TABS: { id: TearsheetTab; label: string }[] = [
   { id: "acquisitions", label: "Acquisitions & IP" },
 ];
 
-// ── Paywall gate for tearsheet tabs beyond Overview ──────────────────────────
-// Presentation-layer gate only (see src/lib/plan.ts for why) — renders the
-// real tab underneath a blur rather than hiding it outright, so a free user
-// can see there's real depth here, then prompts them straight to Pricing.
-const LOCKED_TAB_COPY: Record<Exclude<TearsheetTab, "overview">, string> = {
-  funding:      "Unlock the complete funding timeline — every round from Pre-Seed/Seed through Series A and beyond, with valuations and investor amounts.",
-  captable:     "See every investor on the cap table, lead vs. participating, and check sizes per round.",
-  talent:       "Track headcount history and hiring trend signals over time, not just a single current number.",
-  competitors:  "Explore mapped competitors and exactly how each one competes.",
-  acquisitions: "View this company's acquisitions history and IP/patent signals.",
-};
-
-function LockedTab({ tab, children }: { tab: Exclude<TearsheetTab, "overview">; children: React.ReactNode }) {
-  const navigate = useNavigate();
-  return (
-    <div className="relative">
-      <div className="pointer-events-none select-none max-h-[420px] overflow-hidden" style={{ filter: "blur(6px)" }} aria-hidden>
-        {children}
-      </div>
-      <div className="absolute inset-0 flex items-center justify-center px-6">
-        <div className="flex flex-col items-center text-center max-w-sm rounded-[20px] border border-gray-100 bg-white/95 backdrop-blur-sm shadow-[0_20px_50px_rgba(15,23,42,0.12)] p-6">
-          <div className="w-11 h-11 rounded-full bg-[#0F172A] flex items-center justify-center mb-4">
-            <Lock className="w-5 h-5 text-white" />
-          </div>
-          <p className="text-sm font-bold text-[#0F172A]">This is a Pro feature</p>
-          <p className="mt-1.5 text-xs text-gray-500 leading-relaxed">{LOCKED_TAB_COPY[tab]}</p>
-          <button
-            onClick={() => navigate("/pricing")}
-            className="mt-4 flex items-center gap-1.5 rounded-[12px] bg-[#0F172A] px-4 py-2.5 text-xs font-bold text-white hover:bg-gray-900 transition-colors"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            Upgrade to Pro
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function TearsheetModal({ startup, onClose, onNavigate }: { startup: StartupListRow; onClose: () => void; onNavigate: (row: StartupListRow) => void }) {
   const [activeTab, setActiveTab] = useState<TearsheetTab>("overview");
   const [navLoading, setNavLoading] = useState(false);
-  const { plan } = useUserPlan();
-  const hasFullAccess = isPaidPlan(plan);
 
   async function handleNavigateToLinked(id: string) {
     if (navLoading) return;
@@ -1485,17 +1443,15 @@ function TearsheetModal({ startup, onClose, onNavigate }: { startup: StartupList
           <div className="flex items-center overflow-x-auto px-4" style={{ scrollbarWidth: "none" }}>
             {TEARSHEET_TABS.map((tab) => {
               const active = activeTab === tab.id;
-              const locked = tab.id !== "overview" && !hasFullAccess;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className="relative flex-none flex items-center gap-1.5 px-4 py-3.5 text-[11.5px] font-semibold whitespace-nowrap transition-colors"
+                  className="relative flex-none px-4 py-3.5 text-[11.5px] font-semibold whitespace-nowrap transition-colors"
                   style={{ color: active ? "#0F172A" : "rgba(15,23,42,0.55)" }}
                   onMouseEnter={(e) => { if (!active) e.currentTarget.style.color = "rgba(15,23,42,0.8)"; }}
                   onMouseLeave={(e) => { if (!active) e.currentTarget.style.color = "rgba(15,23,42,0.55)"; }}
                 >
-                  {locked && <Lock className="w-3 h-3 flex-none opacity-60" />}
                   {tab.label}
                   {active && (
                     <span
@@ -1527,46 +1483,14 @@ function TearsheetModal({ startup, onClose, onNavigate }: { startup: StartupList
                 <OverviewTab startup={detail} alphaScore={alphaScore} alphaLoading={alphaLoading} alphaErr={alphaErr} />
               )}
               {activeTab === "funding" && (
-                hasFullAccess ? (
-                  <FundingValuationTab sortedRounds={sortedRounds} fundingHistoryComplete={detail.funding_history_complete} />
-                ) : (
-                  <LockedTab tab="funding">
-                    <FundingValuationTab sortedRounds={sortedRounds} fundingHistoryComplete={detail.funding_history_complete} />
-                  </LockedTab>
-                )
+                <FundingValuationTab sortedRounds={sortedRounds} fundingHistoryComplete={detail.funding_history_complete} />
               )}
-              {activeTab === "captable" && (
-                hasFullAccess ? <CapTableTab startup={detail} /> : (
-                  <LockedTab tab="captable"><CapTableTab startup={detail} /></LockedTab>
-                )
-              )}
+              {activeTab === "captable" && <CapTableTab startup={detail} />}
               {activeTab === "talent" && (
-                hasFullAccess ? (
-                  <TalentGrowthTab startup={detail} alphaScore={alphaScore} alphaLoading={alphaLoading} />
-                ) : (
-                  <LockedTab tab="talent">
-                    <TalentGrowthTab startup={detail} alphaScore={alphaScore} alphaLoading={alphaLoading} />
-                  </LockedTab>
-                )
+                <TalentGrowthTab startup={detail} alphaScore={alphaScore} alphaLoading={alphaLoading} />
               )}
-              {activeTab === "competitors" && (
-                hasFullAccess ? (
-                  <CompetitorsMarketTab startup={detail} onNavigate={handleNavigateToLinked} />
-                ) : (
-                  <LockedTab tab="competitors">
-                    <CompetitorsMarketTab startup={detail} onNavigate={handleNavigateToLinked} />
-                  </LockedTab>
-                )
-              )}
-              {activeTab === "acquisitions" && (
-                hasFullAccess ? (
-                  <AcquisitionsIPTab startup={detail} onNavigate={handleNavigateToLinked} />
-                ) : (
-                  <LockedTab tab="acquisitions">
-                    <AcquisitionsIPTab startup={detail} onNavigate={handleNavigateToLinked} />
-                  </LockedTab>
-                )
-              )}
+              {activeTab === "competitors" && <CompetitorsMarketTab startup={detail} onNavigate={handleNavigateToLinked} />}
+              {activeTab === "acquisitions" && <AcquisitionsIPTab startup={detail} onNavigate={handleNavigateToLinked} />}
             </>
           )}
         </div>

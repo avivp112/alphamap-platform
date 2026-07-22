@@ -27,6 +27,8 @@ interface Tier {
   features: string[];
   cta: string;
   highlight?: boolean;
+  /** Not open for signup yet — button is inert and reads "Available Soon". */
+  disabled?: boolean;
 }
 
 const TIERS: Tier[] = [
@@ -55,6 +57,7 @@ const TIERS: Tier[] = [
     ],
     cta: "Upgrade to Pro",
     highlight: true,
+    disabled: true,
   },
   {
     id: "enterprise",
@@ -68,6 +71,7 @@ const TIERS: Tier[] = [
       "Priority support and bulk data exports",
     ],
     cta: "Contact Sales",
+    disabled: true,
   },
 ];
 
@@ -152,10 +156,17 @@ export function Pricing() {
                   </span>
                 )}
 
-                <div className={`w-11 h-11 rounded-[13px] flex items-center justify-center mb-5 ${
-                  tier.highlight ? "bg-[#0F172A]" : "bg-gray-50 border border-gray-100"
-                }`}>
-                  <Icon className={`w-5 h-5 ${tier.highlight ? "text-white" : "text-[#0F172A]"}`} />
+                <div className="flex items-center justify-between mb-5">
+                  <div className={`w-11 h-11 rounded-[13px] flex items-center justify-center ${
+                    tier.highlight ? "bg-[#0F172A]" : "bg-gray-50 border border-gray-100"
+                  }`}>
+                    <Icon className={`w-5 h-5 ${tier.highlight ? "text-white" : "text-[#0F172A]"}`} />
+                  </div>
+                  {tier.disabled && (
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400 bg-white border border-gray-200 rounded-full px-2 py-0.5">
+                      Coming Soon
+                    </span>
+                  )}
                 </div>
 
                 <h3 className="text-lg font-bold text-[#0F172A]">{tier.name}</h3>
@@ -177,18 +188,18 @@ export function Pricing() {
                 </ul>
 
                 <button
-                  onClick={() => handleSelect(tier.id)}
-                  disabled={isCurrent}
+                  onClick={() => !tier.disabled && handleSelect(tier.id)}
+                  disabled={isCurrent || tier.disabled}
                   className={`mt-7 w-full flex items-center justify-center gap-1.5 rounded-[13px] px-4 py-3 text-sm font-bold transition-all ${
-                    isCurrent
-                      ? "bg-gray-50 border border-gray-100 text-gray-400 cursor-default"
+                    tier.disabled || isCurrent
+                      ? "bg-gray-50 border border-gray-100 text-gray-400 cursor-not-allowed"
                       : tier.highlight
                         ? "bg-[#0F172A] text-white hover:bg-gray-900"
                         : "bg-gray-50 border border-gray-200 text-[#0F172A] hover:bg-gray-100"
                   }`}
                 >
-                  {isCurrent ? "Your Current Plan" : tier.cta}
-                  {!isCurrent && <ArrowRight className="w-3.5 h-3.5" />}
+                  {tier.disabled ? "Available Soon" : isCurrent ? "Your Current Plan" : tier.cta}
+                  {!tier.disabled && !isCurrent && <ArrowRight className="w-3.5 h-3.5" />}
                 </button>
               </div>
             );
