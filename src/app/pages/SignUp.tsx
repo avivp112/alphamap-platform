@@ -235,11 +235,11 @@ function ErrorBanner({ message }: { message: string | null }) {
 }
 
 const inputCls =
-  "w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-[#0F172A] " +
+  "w-full rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm text-[#0F172A] " +
   "placeholder-gray-400 transition-all focus:outline-none focus:border-[#0F172A]/30 focus:ring-2 focus:ring-[#0F172A]/10";
 const inputErrCls =
   "border-rose-300 focus:border-rose-400 focus:ring-rose-100";
-const labelCls = "block text-xs font-semibold text-gray-600 mb-1.5";
+const labelCls = "block text-xs font-semibold text-gray-600 mb-1";
 
 // ── Left brand panel (desktop only) ──────────────────────────────────────────
 
@@ -502,20 +502,20 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
 
   return (
     <div className="w-full max-w-sm mx-auto">
-      <div className="lg:hidden flex items-center gap-2.5 mb-8">
+      <div className="lg:hidden flex items-center gap-2.5 mb-5">
         <BrandMark size={32} />
         <BrandWordmark className="text-xl tracking-tight text-[#0F172A]" />
       </div>
 
-      <h1 className="font-serif text-2xl font-bold text-[#0F172A] mb-1.5">Create your account</h1>
-      <p className="text-sm text-gray-500 mb-7">Start researching private markets in minutes.</p>
+      <h1 className="font-serif text-2xl font-bold text-[#0F172A] mb-1">Create your account</h1>
+      <p className="text-sm text-gray-500 mb-4">Start researching private markets in minutes.</p>
 
-      <div className="space-y-2.5 mb-5">
+      <div className="space-y-2 mb-4">
         <button
           type="button"
           onClick={() => handleOAuth("google")}
           disabled={loading !== "idle"}
-          className="w-full flex items-center justify-center gap-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60 text-sm font-semibold text-[#0F172A] py-2.5 transition-all"
+          className="w-full flex items-center justify-center gap-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60 text-sm font-semibold text-[#0F172A] py-2 transition-all"
         >
           {loading === "google" ? <Loader2 className="w-4 h-4 animate-spin" /> : <FcGoogle className="w-4.5 h-4.5" />}
           Sign up with Google
@@ -524,20 +524,20 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
           type="button"
           onClick={() => handleOAuth("linkedin_oidc")}
           disabled={loading !== "idle"}
-          className="w-full flex items-center justify-center gap-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60 text-sm font-semibold text-[#0F172A] py-2.5 transition-all"
+          className="w-full flex items-center justify-center gap-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60 text-sm font-semibold text-[#0F172A] py-2 transition-all"
         >
           {loading === "linkedin" ? <Loader2 className="w-4 h-4 animate-spin" /> : <FaLinkedin className="w-4 h-4 text-[#0A66C2]" />}
           Sign up with LinkedIn
         </button>
       </div>
 
-      <div className="flex items-center gap-3 mb-5">
+      <div className="flex items-center gap-3 mb-4">
         <div className="h-px flex-1 bg-gray-200" />
         <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Or</span>
         <div className="h-px flex-1 bg-gray-200" />
       </div>
 
-      <form onSubmit={handleSubmit} noValidate className="space-y-4">
+      <form onSubmit={handleSubmit} noValidate className="space-y-3">
         <div>
           <label className={labelCls} htmlFor="fullName">Full name</label>
           <input
@@ -601,7 +601,7 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
           <FieldError message={fieldErrors.confirmPassword} />
         </div>
 
-        <div className="space-y-3 pt-1">
+        <div className="space-y-2">
           <label className="flex items-start gap-2.5 cursor-pointer select-none">
             <input
               type="checkbox"
@@ -609,7 +609,7 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
               onChange={(e) => setMarketingOptIn(e.target.checked)}
               className="mt-0.5 h-4 w-4 flex-none rounded border-gray-300 text-[#0F172A] focus:ring-[#0F172A]/20"
             />
-            <span className="text-xs text-gray-500 leading-relaxed">
+            <span className="text-xs text-gray-500 leading-snug">
               I'd like to receive product updates, reports, and market analyses from AlphaMap.{" "}
               <span className="text-gray-400">(optional)</span>
             </span>
@@ -625,7 +625,7 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
               }}
               className={`mt-0.5 h-4 w-4 flex-none rounded border-gray-300 text-[#0F172A] focus:ring-[#0F172A]/20 ${fieldErrors.terms ? "border-rose-300" : ""}`}
             />
-            <span className="text-xs text-gray-500 leading-relaxed">
+            <span className="text-xs text-gray-500 leading-snug">
               I accept AlphaMap's{" "}
               <button
                 type="button"
@@ -644,7 +644,7 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
         <button
           type="submit"
           disabled={loading !== "idle"}
-          className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#0F172A] hover:bg-[#1e293b] disabled:opacity-60 text-white font-semibold text-sm py-3 transition-all"
+          className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#0F172A] hover:bg-[#1e293b] disabled:opacity-60 text-white font-semibold text-sm py-2.5 transition-all"
         >
           {loading === "submit" ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Create account<ArrowRight className="w-4 h-4" /></>}
         </button>
@@ -652,7 +652,7 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
 
       {showTerms && <TermsOfUseModal onClose={() => setShowTerms(false)} />}
 
-      <p className="mt-5 text-center text-sm text-gray-500">
+      <p className="mt-4 text-center text-sm text-gray-500">
         Already have an account?{" "}
         <Link
           to={next === "/dashboard" ? "/login" : `/login?next=${encodeURIComponent(next)}`}
@@ -680,7 +680,7 @@ export function SignUp() {
   return (
     <div className="min-h-screen w-full grid lg:grid-cols-2 bg-white">
       <BrandPanel />
-      <div className="flex items-center justify-center px-6 py-16">
+      <div className="flex items-center justify-center px-6 py-6">
         {stage === "form" ? (
           <SignUpForm
             onSignedUp={(email) => { setPendingEmail(email); setStage("otp"); }}
