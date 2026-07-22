@@ -7,17 +7,21 @@ import { Layout } from "../components/Layout";
 import { useUserPlan, type Plan } from "../../lib/plan";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Pricing — the freemium tier-selection page. Reachable from the sidebar/nav
-// at any time, and it's where every "locked" upgrade prompt in the app
-// ultimately points. Routes each tier's CTA to the right next step: free goes
-// straight to sign-up, paid tiers go to sign-up (if not yet authenticated)
-// then the placeholder checkout screen — or straight to checkout if the
-// visitor already has an account.
+// Pricing — the tier-selection page. Deliberately NOT in the app's persistent
+// nav during this controlled rollout; it's reached via the landing page's
+// sign-up CTAs ("View Dashboard" / "Request Early Access"). Routes each
+// tier's CTA to the right next step: free goes straight to sign-up, Pro goes
+// to sign-up (if not yet authenticated) then the placeholder checkout screen
+// — or straight to checkout if the visitor already has an account. Enterprise
+// stays locked ("Available Soon") — not open for signup yet.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PRO_MONTHLY = 39;
 const PRO_ANNUAL_MONTHLY = 31; // ~20% off, billed yearly
 const PRO_ANNUAL_TOTAL = PRO_ANNUAL_MONTHLY * 12;
+// Discounted while the product is still in beta — full price resumes once
+// the platform is out of beta. Shown struck through next to this instead.
+const PRO_BETA_PRICE = 15;
 
 interface Tier {
   id: Plan;
@@ -57,7 +61,6 @@ const TIERS: Tier[] = [
     ],
     cta: "Upgrade to Pro",
     highlight: true,
-    disabled: true,
   },
   {
     id: "enterprise",
@@ -172,10 +175,21 @@ export function Pricing() {
                 <h3 className="text-lg font-bold text-[#0F172A]">{tier.name}</h3>
                 <p className="mt-1 text-xs text-gray-500 leading-relaxed min-h-[32px]">{tier.tagline}</p>
 
-                <div className="mt-5 flex items-baseline gap-1.5">
-                  <span className="text-3xl font-bold tracking-tight text-[#0F172A]">{price.amount}</span>
-                  <span className="text-sm font-medium text-gray-400">{price.suffix}</span>
-                </div>
+                {tier.id === "pro" ? (
+                  <div className="mt-5 flex items-baseline gap-2 flex-wrap">
+                    <span className="text-lg font-semibold text-gray-300 line-through">{price.amount}</span>
+                    <span className="text-3xl font-bold tracking-tight text-[#7C8967]">${PRO_BETA_PRICE}</span>
+                    <span className="text-sm font-medium text-gray-400">{price.suffix}</span>
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-white bg-[#7C8967] rounded-full px-2 py-0.5 whitespace-nowrap">
+                      Beta Version
+                    </span>
+                  </div>
+                ) : (
+                  <div className="mt-5 flex items-baseline gap-1.5">
+                    <span className="text-3xl font-bold tracking-tight text-[#0F172A]">{price.amount}</span>
+                    <span className="text-sm font-medium text-gray-400">{price.suffix}</span>
+                  </div>
+                )}
                 {price.note && <p className="mt-1 text-[11px] text-gray-400">{price.note}</p>}
 
                 <ul className="mt-6 flex flex-col gap-2.5 flex-1">

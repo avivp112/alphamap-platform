@@ -18,6 +18,8 @@ import { useUserPlan, setPlanPlaceholder, type Plan } from "../../lib/plan";
 
 const PRO_MONTHLY = 39;
 const PRO_ANNUAL_MONTHLY = 31;
+// Discounted while the product is still in beta — matches the Pricing page.
+const PRO_BETA_PRICE = 15;
 
 const PLAN_INFO: Record<"pro" | "enterprise", { name: string; icon: React.ElementType }> = {
   pro:        { name: "Pro",              icon: Sparkles },
@@ -61,7 +63,7 @@ export function Checkout() {
 
   const info = PLAN_INFO[plan];
   const Icon = info.icon;
-  const priceLabel = plan === "pro"
+  const fullPriceLabel = plan === "pro"
     ? annual ? `$${PRO_ANNUAL_MONTHLY}/mo billed annually` : `$${PRO_MONTHLY}/mo`
     : "Custom pricing";
 
@@ -116,7 +118,15 @@ export function Checkout() {
               </div>
               <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Upgrading to</p>
               <h2 className="text-xl font-bold text-[#0F172A] mt-0.5">{info.name}</h2>
-              <p className="mt-1 text-sm font-semibold text-gray-500">{priceLabel}</p>
+              {plan === "pro" ? (
+                <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                  <span className="text-sm font-semibold text-gray-300 line-through">{fullPriceLabel}</span>
+                  <span className="text-sm font-bold text-[#7C8967]">${PRO_BETA_PRICE}/mo</span>
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-white bg-[#7C8967] rounded-full px-2 py-0.5">Beta Version</span>
+                </div>
+              ) : (
+                <p className="mt-1 text-sm font-semibold text-gray-500">{fullPriceLabel}</p>
+              )}
               <div className="mt-5 pt-5 border-t border-gray-200 text-xs text-gray-500 leading-relaxed">
                 Full data access, complete funding timelines, and everything currently locked on your account
                 unlocks immediately after this step.
