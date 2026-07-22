@@ -116,6 +116,18 @@ function needsEnrichment(rounds: Pick<FundingRoundRow, "round_type">[]): boolean
   return rounds.every((r) => !r.round_type || r.round_type === "Other");
 }
 
+// ── Early-stage deep-dive trigger ──────────────────────────────────────────────
+// A company with a confirmed Series A or later round but no Pre-Seed/Seed/
+// Convertible Note is treated as an unresolved gap, not a fact.
+const EARLY_STAGE_TYPES = new Set(["Pre-Seed", "Seed", "Convertible Note"]);
+const LATER_STAGE_TYPES = new Set(["Series A", "Series B", "Series C", "Series D", "Series E+", "Growth"]);
+
+function needsEarlyStageDeepDive(rounds: { round_type: string }[]): boolean {
+  const types = new Set(rounds.map((r) => normalizeRoundType(r.round_type)));
+  return [...types].some((t) => LATER_STAGE_TYPES.has(t)) &&
+         ![...types].some((t) => EARLY_STAGE_TYPES.has(t));
+}
+
 // ── Search stack (Tavily → DuckDuckGo) ───────────────────────────────────────
 let tavilyExhausted = !process.env.TAVILY_API_KEY;
 
@@ -185,19 +197,25 @@ async function webSearch(query: string): Promise<string | null> {
 
 // ── Claude: extract complete company profile (funding + leadership + HR) ──────
 async function researchCompanyProfile(name: string): Promise<EnrichmentResult> {
-  // Four parallel searches: funding history, round amounts/dates, investors, leadership/HR
-  const [history, recent, backers, people] = await Promise.all([
+  // Five parallel searches: early-stage-biased history, funding history, round
+  // amounts/dates, investors, leadership/HR. The first query is deliberately
+  // biased toward Seed/Pre-Seed coverage — a plain "complete funding history"
+  // search tends to surface whichever round has the most recent press, which
+  // is rarely the earliest one.
+  const [earliest, history, recent, backers, people] = await Promise.all([
+    webSearch(`"${name}" seed round "pre-seed" first funding earliest founding investors site:crunchbase.com OR site:techcrunch.com OR site:pitchbook.com`),
     webSearch(`"${name}" complete funding history all rounds Seed "Series A" "Series B" Crunchbase PitchBook`),
     webSearch(`"${name}" funding round amount raised USD million billion announcement date 2020 2021 2022 2023 2024 2025`),
     webSearch(`"${name}" lead investor venture capital investors participated backed funding round`),
     webSearch(`"${name}" CEO CTO founder leadership team executives employees headcount 2024 2025`),
   ]);
 
-  if (!history && !recent && !backers && !people) {
-    throw new Error("All four searches failed — skipping");
+  if (!earliest && !history && !recent && !backers && !people) {
+    throw new Error("All five searches failed — skipping");
   }
 
   const context = [
+    `## Earliest Rounds (Seed / Pre-Seed — search deliberately biased toward early-stage coverage)\n${earliest ?? "(search failed)"}`,
     `## Complete Funding History (all rounds)\n${history  ?? "(search failed)"}`,
     `## Round Amounts & Dates\n${recent                  ?? "(search failed)"}`,
     `## Investors & Backers\n${backers                   ?? "(search failed)"}`,
@@ -320,6 +338,12 @@ async function researchCompanyProfile(name: string): Promise<EnrichmentResult> {
 
 CRITICAL RULES:
 1. RETURN ALL ROUNDS — if the company raised Pre-Seed, Seed, Series A, and Series B, the array MUST contain 4 objects.
+1b. DIG FOR EARLY ROUNDS — if you find a Series A or later round, that is strong evidence an earlier Pre-Seed/Seed
+    round exists, since companies essentially never skip straight to an institutional round. Before concluding
+    there's no earlier round, actively re-scan EVERY research section (not just the one labeled "earliest rounds")
+    for any mention of a founding-era raise, an aggregate round count, or a "total raised since founding" figure
+    higher than what you can itemize. Only conclude a company genuinely skipped early rounds (bootstrapped to a
+    late raise) when a source says so explicitly.
 2. AMOUNT RAISED — record the USD raised in each individual round as a plain integer ($1.5B → 1500000000, $50M → 50000000).
 3. LEAD INVESTOR — identify the primary lead investor per round in lead_investor; put all others in other_investors.
 4. VALUATION — set is_valuation_estimated: true if the figure was inferred or not officially disclosed.
@@ -368,7 +392,7 @@ ${context}`,
   }
 
   const input = tool.input as Partial<EnrichmentResult> & { metrics?: Partial<ClaudeMetrics> };
-  return {
+  const result: EnrichmentResult = {
     funding_rounds: (input.funding_rounds ?? []).filter((r) => r.round_type),
     leadership:      input.leadership    ?? [],
     metrics: {
@@ -379,6 +403,107 @@ ${context}`,
     reasoning:        input.reasoning        ?? "(no reasoning provided)",
     source_url:       input.source_url       ?? "",
   };
+
+  // Series A+ confirmed but nothing earlier — actively investigate rather than
+  // accept the gap. Only fires for exactly this case.
+  if (needsEarlyStageDeepDive(result.funding_rounds)) {
+    const deepDive = await deepDiveEarlyRounds(name, result.funding_rounds);
+    if (deepDive) {
+      result.funding_rounds = [...deepDive.rounds, ...result.funding_rounds];
+      result.reasoning += ` [Early-stage deep dive: ${deepDive.note}]`;
+    }
+  }
+
+  return result;
+}
+
+// ── Early-stage deep dive ───────────────────────────────────────────────────────
+// Fires ONLY when researchCompanyProfile() confirms a Series A+ round with no
+// earlier Seed/Pre-Seed/Convertible Note. Two targeted expansions:
+//   1. Query expansion — search phrasing specific to early-stage coverage
+//      (seed/pre-seed/angel announcements), since the broad "funding history"
+//      query above tends to surface whichever round has the most recent press.
+//   2. Investor backtracking — the lead investor(s) behind the confirmed later
+//      round(s), searched by name alongside the company, since seed and Series A
+//      backers frequently overlap.
+// Returns null (no Claude call made) if every deep-dive query comes back empty.
+async function deepDiveEarlyRounds(
+  name: string,
+  firstPassRounds: ClaudeRound[],
+): Promise<{ rounds: ClaudeRound[]; note: string } | null> {
+  const investors = [...new Set(
+    firstPassRounds
+      .filter((r) => LATER_STAGE_TYPES.has(normalizeRoundType(r.round_type)))
+      .sort((a, b) => (a.date ?? "9999").localeCompare(b.date ?? "9999"))
+      .map((r) => r.lead_investor)
+      .filter((v): v is string => !!v),
+  )].slice(0, 2);
+
+  const results = await Promise.all([
+    webSearch(`"${name}" seed round investors announcement raised`),
+    webSearch(`"${name}" pre-seed round announced raised`),
+    webSearch(`"${name}" angel investors early backers friends and family funding`),
+    ...investors.map((inv) => webSearch(`"${inv}" "${name}" seed OR "pre-seed" OR angel investment portfolio`)),
+  ]);
+  if (!results.some(Boolean)) return null; // deep dive exhausted, genuinely nothing found
+
+  const context = results.filter(Boolean).join("\n---\n");
+  const knownRounds = firstPassRounds.map((r) => normalizeRoundType(r.round_type)).join(", ");
+
+  const msg = await anthropic.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 1024,
+    tools: [{
+      name: "save_early_rounds",
+      description: "Save any Pre-Seed, Seed, or Convertible Note round found for this company that is NOT already known.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          funding_rounds: {
+            type: "array",
+            description: "Newly-found early-stage rounds only. Return [] if this deep-dive research does not confirm one.",
+            items: {
+              type: "object" as const,
+              properties: {
+                round_type:      { type: "string", enum: ["Pre-Seed", "Seed", "Convertible Note"] },
+                amount_raised:   { type: "number", description: "USD plain integer. Omit if unknown." },
+                valuation:       { type: "number" },
+                is_valuation_estimated: { type: "boolean" },
+                date:            { type: "string", description: "YYYY-MM-DD, or YYYY-01-01 if only the year is known." },
+                lead_investor:   { type: "string" },
+                other_investors: { type: "array", items: { type: "string" } },
+                source_url:      { type: "string" },
+              },
+              required: ["round_type"],
+            },
+          },
+          reasoning: { type: "string", description: "1-2 sentences: what this deep dive found, or why nothing could be confirmed." },
+        },
+        required: ["funding_rounds", "reasoning"],
+      },
+    }],
+    tool_choice: { type: "tool", name: "save_early_rounds" },
+    messages: [{
+      role: "user",
+      content: `"${name}" is already confirmed to have raised: ${knownRounds}.
+
+This is a TARGETED deep dive to find an EARLIER Pre-Seed, Seed, or Convertible Note round that the initial research
+missed. Companies essentially never skip straight from founding to an institutional round — treat the absence of an
+earlier round as a gap to investigate, not a fact. Angel / friends-and-family rounds should be classified as
+Pre-Seed or Seed depending on timing and size (there is no separate "Angel" category). Only return a round you can
+verify from the research below; return [] if you genuinely cannot confirm one even after this deep dive.
+
+Deep-dive research:
+${context}`,
+    }],
+  });
+
+  const tool = msg.content.find((b) => b.type === "tool_use");
+  if (!tool || tool.type !== "tool_use") return null;
+  const out = tool.input as { funding_rounds?: ClaudeRound[]; reasoning?: string };
+  const rounds = (out.funding_rounds ?? []).filter((r) => r.round_type);
+  if (!rounds.length) return null;
+  return { rounds, note: out.reasoning ?? "" };
 }
 
 // ── Deduplicate + insert rounds for one startup ───────────────────────────────
