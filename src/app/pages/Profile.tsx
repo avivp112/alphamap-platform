@@ -4,7 +4,6 @@ import {
   Mail, Calendar, ShieldCheck, Sparkles, Bell, BellOff, KeyRound, ArrowRight,
 } from "lucide-react";
 import { Layout } from "../components/Layout";
-import { BrandMark } from "../components/BrandMark";
 import { supabase } from "../../lib/supabase";
 import { useUserPlan, PLAN_LABEL } from "../../lib/plan";
 
@@ -86,11 +85,19 @@ export function Profile() {
   return (
     <Layout>
       <div className="mx-auto max-w-[880px] px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
-        {/* ── Hero header — rhino watermark, subtle ── */}
+        {/* ── Hero header — full-figure rhino mascot, mid-charge ── */}
         <div className="relative overflow-hidden rounded-[24px] bg-[#0F172A] px-7 sm:px-9 py-9 sm:py-11">
-          <div aria-hidden className="pointer-events-none absolute -bottom-16 -right-10 opacity-[0.07] rotate-[8deg]">
-            <BrandMark size={340} />
-          </div>
+          <video
+            aria-hidden
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="pointer-events-none absolute -bottom-6 -right-8 w-[420px] max-w-none"
+          >
+            <source src="/media/rhino-charge-loop.webm" type="video/webm" />
+            <source src="/media/rhino-charge-loop.mp4" type="video/mp4" />
+          </video>
           <div
             aria-hidden
             className="pointer-events-none absolute inset-0"
