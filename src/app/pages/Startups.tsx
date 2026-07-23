@@ -2151,7 +2151,7 @@ export function Startups() {
         <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 pt-6 pb-5">
           <div className="flex items-center justify-between gap-4 mb-1.5">
             <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">
-              Startups Hub
+              Private Market
               {cityFilter && <span className="ml-3 text-lg font-medium text-[#0F172A]">in {cityFilter}</span>}
             </h1>
             <div className="flex items-center gap-2 flex-none">
@@ -2159,10 +2159,6 @@ export function Startups() {
                 <button onClick={() => setView("grid")} className={`p-1.5 rounded-[8px] transition-all ${viewMode === "grid" ? "bg-white text-[#0F172A] shadow-sm" : "text-[#0F172A]/50 hover:text-[#0F172A]"}`}><LayoutGrid className="w-4 h-4" /></button>
                 <button onClick={() => setView("list")} className={`p-1.5 rounded-[8px] transition-all ${viewMode === "list" ? "bg-white text-[#0F172A] shadow-sm" : "text-[#0F172A]/50 hover:text-[#0F172A]"}`}><List className="w-4 h-4" /></button>
               </div>
-              <button onClick={() => setShowAdd(true)}
-                className="flex items-center gap-2 rounded-[14px] bg-[#0F172A] px-4 py-2.5 text-sm font-bold text-white shadow-[0_4px_14px_rgba(15,23,42,0.25)] hover:bg-[#1e293b] transition-all">
-                <Plus className="w-4 h-4" />Add Startup
-              </button>
             </div>
           </div>
           <div className="flex items-center gap-3">

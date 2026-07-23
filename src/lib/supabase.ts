@@ -169,6 +169,10 @@ export interface StartupListRow {
   has_recent_round: boolean;
   peer_count: number;
   peer_count_valid: boolean;
+  // 0-15, one point per populated field (website, description, industry,
+  // funding data, etc.) — powers the Private Market page's default sort,
+  // best-documented companies first.
+  completeness_score: number;
 }
 
 export interface StartupSearchFilters {
@@ -234,6 +238,7 @@ export async function fetchStartupsPage(
   const to = from + STARTUPS_PAGE_SIZE - 1;
   const query = applyStartupSearchFilters(supabase.from("startups_search").select("*"), filters);
   const { data, error } = await query
+    .order("completeness_score", { ascending: false })
     .order("updated_at", { ascending: false })
     .range(from, to);
   if (error) throw error;
