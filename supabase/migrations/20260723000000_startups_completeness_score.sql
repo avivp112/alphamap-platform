@@ -21,6 +21,13 @@
 --              20260717000000: drop the view and its dependent function,
 --              then recreate both.
 --
+--              jsonb_array_length() throws (rather than returning null) when
+--              given a non-array JSONB value, and some rows have malformed
+--              scalars in founders/leadership/competitors instead of arrays
+--              — guarded with jsonb_typeof(...) = 'array' first, same
+--              pattern already used for startups.acquisitions elsewhere in
+--              this schema (20260720000000_pe_firms.sql).
+--
 -- Idempotent; safe to run more than once in the SQL Editor.
 -- =============================================================================
 
@@ -55,9 +62,9 @@ SELECT
     (CASE WHEN s.growth_trend   IS NOT NULL THEN 1 ELSE 0 END) +
     (CASE WHEN s.country IS NOT NULL AND trim(s.country) <> '' THEN 1 ELSE 0 END) +
     (CASE WHEN s.city    IS NOT NULL AND trim(s.city)    <> '' THEN 1 ELSE 0 END) +
-    (CASE WHEN s.founders    IS NOT NULL AND jsonb_array_length(s.founders)    > 0 THEN 1 ELSE 0 END) +
-    (CASE WHEN s.leadership  IS NOT NULL AND jsonb_array_length(s.leadership)  > 0 THEN 1 ELSE 0 END) +
-    (CASE WHEN s.competitors IS NOT NULL AND jsonb_array_length(s.competitors) > 0 THEN 1 ELSE 0 END) +
+    (CASE WHEN jsonb_typeof(s.founders)    = 'array' AND jsonb_array_length(s.founders)    > 0 THEN 1 ELSE 0 END) +
+    (CASE WHEN jsonb_typeof(s.leadership)  = 'array' AND jsonb_array_length(s.leadership)  > 0 THEN 1 ELSE 0 END) +
+    (CASE WHEN jsonb_typeof(s.competitors) = 'array' AND jsonb_array_length(s.competitors) > 0 THEN 1 ELSE 0 END) +
     (CASE WHEN latest.round_type          IS NOT NULL THEN 1 ELSE 0 END) +
     (CASE WHEN latest.valuation           IS NOT NULL THEN 1 ELSE 0 END) +
     (CASE WHEN latest.announcement_date   IS NOT NULL THEN 1 ELSE 0 END) +
