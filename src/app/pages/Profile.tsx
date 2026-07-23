@@ -85,14 +85,8 @@ export function Profile() {
   return (
     <Layout>
       <div className="mx-auto max-w-[880px] px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
-        {/* ── Hero header — rhino watermark, subtle ── */}
+        {/* ── Hero header — plain dark navy, no watermark ── */}
         <div className="relative overflow-hidden rounded-[24px] bg-[#0F172A] px-7 sm:px-9 py-9 sm:py-11">
-          <img
-            aria-hidden
-            src="/media/rhino-still.png"
-            alt=""
-            className="pointer-events-none absolute -bottom-8 -right-6 w-[360px] max-w-none opacity-[0.16] rotate-[3deg]"
-          />
           <div
             aria-hidden
             className="pointer-events-none absolute inset-0"
