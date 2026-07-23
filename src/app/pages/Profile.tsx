@@ -85,19 +85,14 @@ export function Profile() {
   return (
     <Layout>
       <div className="mx-auto max-w-[880px] px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
-        {/* ── Hero header — full-figure rhino mascot, mid-charge ── */}
+        {/* ── Hero header — rhino watermark, subtle ── */}
         <div className="relative overflow-hidden rounded-[24px] bg-[#0F172A] px-7 sm:px-9 py-9 sm:py-11">
-          <video
+          <img
             aria-hidden
-            autoPlay
-            loop
-            muted
-            playsInline
-            className="pointer-events-none absolute -bottom-6 -right-8 w-[420px] max-w-none"
-          >
-            <source src="/media/rhino-charge-loop.webm" type="video/webm" />
-            <source src="/media/rhino-charge-loop.mp4" type="video/mp4" />
-          </video>
+            src="/media/rhino-still.png"
+            alt=""
+            className="pointer-events-none absolute -bottom-8 -right-6 w-[360px] max-w-none opacity-[0.16] rotate-[3deg]"
+          />
           <div
             aria-hidden
             className="pointer-events-none absolute inset-0"
