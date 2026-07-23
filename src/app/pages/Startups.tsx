@@ -29,6 +29,18 @@ import { useWatchlistMembership, addToWatchlist, removeFromWatchlist, watchlistE
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// Supabase/PostgREST errors are plain { message, details, hint, code } objects,
+// not `Error` instances — a naive `instanceof Error` check misses them and
+// falls back to a useless "Unknown error", hiding exactly the detail (e.g. a
+// missing column/view) needed to diagnose a failed query.
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === "object" && "message" in err && typeof (err as { message: unknown }).message === "string") {
+    return (err as { message: string }).message;
+  }
+  return "Unknown error";
+}
+
 function fmt(usd: number | null | undefined): string {
   if (!usd) return "—";
   if (usd >= 1e9) return `$${(usd / 1e9).toFixed(1)}B`;
@@ -2123,7 +2135,7 @@ export function Startups() {
     setRowsLoading(true); setLoadError(null);
     fetchStartupsPage(filters, page)
       .then((data) => { if (!cancelled) setRows(data); })
-      .catch((e) => { if (!cancelled) setLoadError(e instanceof Error ? e.message : "Unknown error"); })
+      .catch((e) => { if (!cancelled) setLoadError(getErrorMessage(e)); })
       .finally(() => { if (!cancelled) setRowsLoading(false); });
     return () => { cancelled = true; };
   }, [filters, page, refreshKey]);
