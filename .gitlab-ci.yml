@@ -39,11 +39,21 @@ deploy-public-market-functions:
     # variable UI can silently introduce.
     - export SUPABASE_ACCESS_TOKEN=$(printf '%s' "$SUPABASE_ACCESS_TOKEN" | tr -d '[:space:]')
     - export SUPABASE_PROJECT_REF=$(printf '%s' "$SUPABASE_PROJECT_REF" | tr -d '[:space:]')
+    # Definitive, secret-safe shape check — never prints the token itself,
+    # only whether it matches Supabase's documented sbp_<40 lowercase-hex>
+    # format. A prior run showed a 47-char token starting "sbp_v0" (44 chars
+    # and pure hex expected) — this confirms whether that's really the shape
+    # reaching the job, rather than guessing from a 6-char prefix.
+    - |
+      if printf '%s' "$SUPABASE_ACCESS_TOKEN" | grep -Eq '^sbp_[0-9a-f]{40}$'; then
+        echo "Token shape check: MATCHES sbp_<40 hex> (looks like a valid personal access token)"
+      else
+        echo "Token shape check: DOES NOT MATCH sbp_<40 hex> — length $(printf '%s' "$SUPABASE_ACCESS_TOKEN" | wc -c) chars. This token is not in the expected format; regenerate it fresh from https://supabase.com/dashboard/account/tokens and re-paste into a NEW (deleted+recreated) GitLab variable rather than editing the existing one."
+      fi
   script:
-    # `supabase link`'s token-format check rejects newer versioned personal
-    # access tokens (sbp_v0_... — 47 chars, vs. the older sbp_<40 hex>) even
-    # though they're valid; skip link entirely and pass --project-ref straight
-    # to each deploy call instead (link isn't required for deploying, and this
-    # is the pattern Supabase's own CI/CD docs use).
+    # supabase link's token-format check has been reported to reject some
+    # otherwise-working tokens; skip link entirely and pass --project-ref
+    # straight to each deploy call instead (link isn't required for
+    # deploying — this is also the pattern Supabase's own CI/CD docs use).
     - supabase functions deploy sync-public-markets --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
     - supabase functions deploy search-tickers --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
