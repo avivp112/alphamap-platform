@@ -1,0 +1,40 @@
+# =============================================================================
+# GitLab CI — manual deploy job for the Public Market Hub's Supabase Edge
+# Functions (sync-public-markets, search-tickers).
+#
+# This pipeline does NOT run on ordinary pushes/merges — it only exists so you
+# can trigger it by hand from the GitLab UI (Build -> Pipelines -> "Run
+# pipeline"). Your normal git workflow is completely unaffected.
+#
+# ── One-time setup (do this in GitLab, never here in the repo) ──────────────
+# Go to this project -> Settings -> CI/CD -> Variables -> Add variable, and add:
+#
+#   SUPABASE_ACCESS_TOKEN
+#     A Supabase personal access token: https://supabase.com/dashboard/account/tokens
+#     -> "Generate new token". Check "Mask variable" AND "Protect variable".
+#
+#   SUPABASE_PROJECT_REF
+#     Your project's Reference ID: Supabase Dashboard -> Project Settings ->
+#     General -> "Reference ID". Check "Mask variable" too (keeps it out of
+#     job logs, even though it isn't itself a secret).
+#
+# The FMP_API_KEY is a separate Supabase secret (set once via
+# `supabase secrets set FMP_API_KEY=...`, see supabase/functions/sync-public-markets/README.md)
+# — this pipeline never touches it.
+#
+# ── To deploy ─────────────────────────────────────────────────────────────
+# GitLab -> Build -> Pipelines -> "Run pipeline" -> pick the branch -> Run.
+# Watch the job log for each function's deploy confirmation.
+# =============================================================================
+
+deploy-public-market-functions:
+  stage: deploy
+  image: node:20-slim
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+  before_script:
+    - npm install -g supabase
+  script:
+    - supabase link --project-ref "$SUPABASE_PROJECT_REF"
+    - supabase functions deploy sync-public-markets --no-verify-jwt
+    - supabase functions deploy search-tickers --no-verify-jwt
