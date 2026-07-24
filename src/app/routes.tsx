@@ -10,6 +10,7 @@ import { SignUp } from "./pages/SignUp";
 import { Login } from "./pages/Login";
 import { MarketMap } from "./pages/MarketMap";
 import { PrivateEquity } from "./pages/PrivateEquity";
+import { PublicMarket } from "./pages/PublicMarket";
 import { Pricing } from "./pages/Pricing";
 import { Checkout } from "./pages/Checkout";
 import { Profile } from "./pages/Profile";
@@ -25,6 +26,7 @@ export const router = createBrowserRouter([
   { path: "/startups",   Component: Startups },
   { path: "/deals",      Component: Deals },
   { path: "/stocks",     Component: Stocks },
+  { path: "/public-market", Component: PublicMarket },
   { path: "/ipos",       Component: IPOs },
   { path: "/market-map", Component: MarketMap },
   { path: "/private-equity", Component: PrivateEquity },

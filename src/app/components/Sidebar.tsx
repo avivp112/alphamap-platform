@@ -18,7 +18,7 @@ function cn(...inputs: ClassValue[]) {
 const linkedItems = [
   { icon: LayoutDashboard,  label: 'Home',            to: '/dashboard',  end: true  },
   { icon: Rocket,           label: 'Private Market',  to: '/startups',   end: false },
-  { icon: CandlestickChart, label: 'Public Market',   to: '/stocks',     end: false },
+  { icon: CandlestickChart, label: 'Public Market',   to: '/public-market', end: false },
   { icon: Landmark,         label: 'Venture Capital', to: '/vcs',        end: false },
   { icon: Handshake,        label: 'Deals',           to: '/deals',      end: false },
   { icon: Globe2,           label: 'Market Map',      to: '/market-map', end: false },
