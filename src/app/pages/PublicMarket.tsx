@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import {
   TrendingUp, TrendingDown, Minus, RefreshCw, Zap, Activity, Gauge,
   ArrowRight, ArrowLeftRight, Building2, Landmark, Sparkles, Info,
   CircleDollarSign, ExternalLink, Loader2, AlertCircle, Check,
+  Search, X, ChevronLeft, ChevronRight, LayoutList, PlusCircle, CheckCircle2,
 } from "lucide-react";
 import { Layout } from "../components/Layout";
 import { CompanyLogo } from "../components/CompanyLogo";
@@ -13,8 +14,9 @@ import {
   computeSectorMultiples, computeSentiment, impliedFairValue,
   fetchPrivateCohort, fetchStartupByName, fetchPublicCompanies, triggerSync,
   fetchPrivateLateStageActivity, sectorConfig, estimateArr,
-  type DerivedPublicCompany, type SectorMultiples, type PublicSectorKey,
-  type ImpliedValuation, type SentimentIndex, type PrivateLateStageActivity,
+  sectorLabel, sectorAccent, isCuratedSector, searchTickers, syncTickers, hasTicker,
+  type DerivedPublicCompany, type SectorMultiples, type PublicSectorKey, type AnySectorKey,
+  type ImpliedValuation, type SentimentIndex, type PrivateLateStageActivity, type TickerSearchResult,
 } from "../../lib/publicMarket";
 
 // ── Formatting helpers ──────────────────────────────────────────────────────
@@ -354,9 +356,11 @@ function SentimentBarometer({ sentiment, activity, activityLoading }: {
 // ═════════════════════════════════════════════════════════════════════════════
 
 function CompRow({ company, priv }: { company: DerivedPublicCompany; priv: StartupListRow | null | undefined }) {
-  const cfg = sectorConfig(company.sector);
-  // Private implied ARR multiple (last valuation / estimated ARR), when possible.
-  const arr = priv ? estimateArr(priv, cfg) : null;
+  const accent = sectorAccent(company.sector);
+  // Private implied ARR multiple (last valuation / estimated ARR) — only
+  // computable for the 4 curated sectors, which carry a revenue-per-employee
+  // estimate; ad-hoc "other" tickers have no such benchmark.
+  const arr = priv && isCuratedSector(company.sector) ? estimateArr(priv, sectorConfig(company.sector)) : null;
   const privMult = priv && arr && priv.latest_valuation ? priv.latest_valuation / arr : null;
   const spread = privMult != null ? company.evRevenue - privMult : null;
 
@@ -368,7 +372,7 @@ function CompRow({ company, priv }: { company: DerivedPublicCompany; priv: Start
         <div className="min-w-0">
           <div className="text-xs font-bold text-[#0F172A] truncate">{company.name}</div>
           <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-[10px] font-bold tabular-nums" style={{ color: cfg.accent }}>{fmtMult(company.evRevenue)} EV/Rev</span>
+            <span className="text-[10px] font-bold tabular-nums" style={{ color: accent }}>{fmtMult(company.evRevenue)} EV/Rev</span>
             <span className="text-[10px] text-gray-400 tabular-nums">·  {fmtPct(company.yoyGrowthPct)} gr</span>
           </div>
         </div>
@@ -467,6 +471,316 @@ function CompsExplorer({ companies }: { companies: DerivedPublicCompany[] }) {
         <div className="px-5 py-2.5 bg-[#F8FAFC] border-t border-gray-100 text-[10px] text-gray-400 leading-relaxed">
           Private ARR multiple is <span className="font-semibold">estimated</span> (last round valuation ÷ headcount-derived ARR). "Not tracked yet" means the private counterpart isn't in your AlphaMap database — add it from the Private Market page.
         </div>
+      </div>
+    </section>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 4) STOCK SEARCH + PAGINATED COMPANIES DIRECTORY
+// ═════════════════════════════════════════════════════════════════════════════
+
+function StockSearchBar({ companies, onCompanyAdded, onFocusTicker }: {
+  companies: DerivedPublicCompany[];
+  onCompanyAdded: () => Promise<void>;
+  onFocusTicker: (ticker: string) => void;
+}) {
+  const [query, setQuery]           = useState("");
+  const [results, setResults]       = useState<TickerSearchResult[]>([]);
+  const [searching, setSearching]   = useState(false);
+  const [open, setOpen]             = useState(false);
+  const [syncingTicker, setSyncingTicker] = useState<string | null>(null);
+  const [syncError, setSyncError]   = useState<string | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  // Debounced search-as-you-type against the search-tickers Edge Function.
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) { setResults([]); setSearching(false); return; }
+    setSearching(true);
+    const t = setTimeout(() => {
+      searchTickers(q).then((r) => { setResults(r); setSearching(false); setOpen(true); });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  async function handlePick(r: TickerSearchResult) {
+    setSyncError(null);
+    if (hasTicker(companies, r.symbol)) {
+      onFocusTicker(r.symbol);
+      setOpen(false); setQuery("");
+      return;
+    }
+    setSyncingTicker(r.symbol);
+    try {
+      const res = await syncTickers([r.symbol]);
+      if (!res.ok) { setSyncError(res.error ?? "Sync failed — is the Edge Function deployed?"); return; }
+      await onCompanyAdded();
+      onFocusTicker(r.symbol);
+      setOpen(false); setQuery("");
+    } finally {
+      setSyncingTicker(null);
+    }
+  }
+
+  return (
+    <div ref={boxRef} className="relative">
+      <div className="relative">
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300" />
+        <input
+          type="text" value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onFocus={() => query.trim() && setOpen(true)}
+          placeholder="Search any NASDAQ or NYSE company — e.g. Airbnb, ABNB…"
+          className="w-full pl-10 pr-9 py-3 text-sm bg-white border border-gray-200 rounded-[14px] focus:outline-none focus:border-[#0F172A]/30 focus:ring-2 focus:ring-[#0F172A]/10 transition-all"
+        />
+        {searching ? (
+          <Loader2 className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300 animate-spin" />
+        ) : query && (
+          <button onClick={() => { setQuery(""); setResults([]); }} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500">
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      {open && results.length > 0 && (
+        <div className="absolute z-20 mt-2 w-full bg-white rounded-[16px] border border-gray-100 shadow-[0_16px_40px_rgba(15,23,42,0.12)] overflow-hidden max-h-[340px] overflow-y-auto">
+          {results.map((r) => {
+            const tracked = hasTicker(companies, r.symbol);
+            const isSyncing = syncingTicker === r.symbol;
+            return (
+              <button
+                key={r.symbol}
+                onClick={() => handlePick(r)}
+                disabled={isSyncing}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left border-b border-gray-50 last:border-0 disabled:opacity-60"
+              >
+                <div className="flex h-8 w-8 flex-none items-center justify-center rounded-[9px] bg-[#0F172A] text-white text-[9px] font-black">{r.symbol.slice(0, 4)}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-bold text-[#0F172A] truncate">{r.symbol} <span className="font-medium text-gray-400">· {r.name}</span></div>
+                  <div className="text-[10px] text-gray-400">{r.exchange}</div>
+                </div>
+                {isSyncing ? (
+                  <span className="flex items-center gap-1 text-[10px] font-bold text-gray-400 flex-none"><Loader2 className="w-3.5 h-3.5 animate-spin" />Syncing…</span>
+                ) : tracked ? (
+                  <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 flex-none"><CheckCircle2 className="w-3.5 h-3.5" />Tracked</span>
+                ) : (
+                  <span className="flex items-center gap-1 text-[10px] font-bold text-[#0F172A]/60 flex-none"><PlusCircle className="w-3.5 h-3.5" />Add &amp; sync</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {open && !searching && query.trim() && results.length === 0 && (
+        <div className="absolute z-20 mt-2 w-full bg-white rounded-[16px] border border-gray-100 shadow-[0_16px_40px_rgba(15,23,42,0.12)] px-4 py-6 text-center text-xs text-gray-400">
+          No NASDAQ/NYSE tickers found for "{query}"
+        </div>
+      )}
+      {syncError && (
+        <p className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-rose-600"><AlertCircle className="w-3.5 h-3.5 flex-none" />{syncError}</p>
+      )}
+    </div>
+  );
+}
+
+const DIRECTORY_PAGE_SIZE = 15;
+
+function getDirectoryPageRange(current: number, total: number): Array<number | "…"> {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const range: Array<number | "…"> = [1];
+  if (current > 4) range.push("…");
+  for (let i = Math.max(2, current - 2); i <= Math.min(total - 1, current + 2); i++) range.push(i);
+  if (current < total - 3) range.push("…");
+  range.push(total);
+  return range;
+}
+
+function DirectoryPagination({ page, pageCount, onChange }: { page: number; pageCount: number; onChange: (p: number) => void }) {
+  if (pageCount <= 1) return null;
+  const pages = getDirectoryPageRange(page, pageCount);
+  return (
+    <div className="flex items-center justify-center gap-1 px-5 py-3.5 border-t border-gray-100 bg-[#F8FAFC]">
+      <button onClick={() => onChange(page - 1)} disabled={page === 1}
+        className="flex items-center gap-1 px-2.5 py-1.5 rounded-[8px] text-[11px] font-semibold text-gray-500 hover:text-[#0F172A] hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+        <ChevronLeft className="w-3.5 h-3.5" />Prev
+      </button>
+      <div className="flex items-center gap-1">
+        {pages.map((p, i) => p === "…" ? (
+          <span key={`gap-${i}`} className="px-1 text-[11px] text-gray-400 select-none">…</span>
+        ) : (
+          <button key={p} onClick={() => onChange(p as number)}
+            className={`min-w-[28px] h-7 px-1.5 rounded-[7px] text-[11px] font-semibold transition-all ${p === page ? "bg-[#0F172A] text-white" : "text-gray-500 hover:bg-white hover:text-[#0F172A]"}`}>
+            {p}
+          </button>
+        ))}
+      </div>
+      <button onClick={() => onChange(page + 1)} disabled={page === pageCount}
+        className="flex items-center gap-1 px-2.5 py-1.5 rounded-[8px] text-[11px] font-semibold text-gray-500 hover:text-[#0F172A] hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+        Next<ChevronRight className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+}
+
+function CompaniesDirectory({ companies, onCompanyAdded }: {
+  companies: DerivedPublicCompany[];
+  onCompanyAdded: () => Promise<void>;
+}) {
+  const [filter, setFilter]             = useState("");
+  const [sectorFilter, setSectorFilter] = useState<AnySectorKey | "all">("all");
+  const [page, setPage]                 = useState(1);
+  const [highlightTicker, setHighlightTicker] = useState<string | null>(null);
+  const [pendingHighlight, setPendingHighlight] = useState<string | null>(null);
+  const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
+
+  const filtered = useMemo(() => {
+    let rows = companies;
+    if (sectorFilter !== "all") rows = rows.filter((c) => c.sector === sectorFilter);
+    const q = filter.trim().toLowerCase();
+    if (q) rows = rows.filter((c) => c.name.toLowerCase().includes(q) || c.ticker.toLowerCase().includes(q));
+    return rows;
+  }, [companies, filter, sectorFilter]);
+
+  useEffect(() => { setPage(1); }, [filter, sectorFilter]);
+
+  // A ticker just got synced (or was already tracked) — once it's actually
+  // present in the `companies` prop, clear any filter hiding it, jump to its
+  // page, and flash-highlight the row. Runs as an effect (not synchronously
+  // on click) because `companies` only updates after the parent's reload
+  // resolves and re-renders — a plain function call would still see the
+  // pre-sync array.
+  useEffect(() => {
+    if (!pendingHighlight) return;
+    const idx = companies.findIndex((c) => c.ticker === pendingHighlight);
+    if (idx === -1) return; // not in the (possibly stale) companies prop yet
+    setFilter("");
+    setSectorFilter("all");
+    setPage(Math.floor(idx / DIRECTORY_PAGE_SIZE) + 1);
+    setHighlightTicker(pendingHighlight);
+    const el = pendingHighlight;
+    setPendingHighlight(null);
+    requestAnimationFrame(() => {
+      setTimeout(() => rowRefs.current.get(el)?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
+    });
+  }, [companies, pendingHighlight]);
+
+  useEffect(() => {
+    if (!highlightTicker) return;
+    const t = setTimeout(() => setHighlightTicker(null), 2500);
+    return () => clearTimeout(t);
+  }, [highlightTicker]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / DIRECTORY_PAGE_SIZE));
+  const safePage  = Math.min(page, pageCount);
+  const shown     = filtered.slice((safePage - 1) * DIRECTORY_PAGE_SIZE, safePage * DIRECTORY_PAGE_SIZE);
+
+  const sectorOptions: Array<{ key: AnySectorKey | "all"; label: string }> = [
+    { key: "all", label: "All" },
+    ...PUBLIC_SECTORS.map((s) => ({ key: s.key, label: s.label })),
+    { key: "other", label: "Other" },
+  ];
+
+  return (
+    <section>
+      <SectionHeading
+        icon={LayoutList}
+        title="Public Companies Directory"
+        subtitle="Every company synced into AlphaMap — the 4 curated sectors plus anything you've searched and added. Search any NASDAQ/NYSE ticker to add it."
+      />
+
+      <div className="mb-4 max-w-lg">
+        <StockSearchBar companies={companies} onCompanyAdded={onCompanyAdded} onFocusTicker={setPendingHighlight} />
+      </div>
+
+      <div className="rounded-[20px] border border-gray-100 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)] overflow-hidden">
+        {/* Filter row */}
+        <div className="flex flex-wrap items-center gap-2 px-4 sm:px-5 py-3 border-b border-gray-100">
+          <div className="flex items-center gap-1 overflow-x-auto">
+            {sectorOptions.map((s) => (
+              <button
+                key={s.key}
+                onClick={() => setSectorFilter(s.key)}
+                className={`px-2.5 py-1.5 rounded-[8px] text-[11px] font-bold whitespace-nowrap transition-all ${
+                  sectorFilter === s.key ? "bg-[#0F172A] text-white shadow-sm" : "text-gray-500 hover:text-[#0F172A] hover:bg-gray-50"
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+          <div className="relative ml-auto w-full sm:w-[220px]">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-300" />
+            <input
+              type="text" value={filter} onChange={(e) => setFilter(e.target.value)}
+              placeholder="Filter loaded companies…"
+              className="w-full pl-8 pr-3 py-1.5 text-xs bg-gray-50 border border-gray-100 rounded-[9px] focus:outline-none focus:border-gray-300 focus:ring-2 focus:ring-[#0F172A]/10 transition-all"
+            />
+          </div>
+          <span className="text-[10px] font-semibold text-gray-400 whitespace-nowrap">{filtered.length} {filtered.length === 1 ? "company" : "companies"}</span>
+        </div>
+
+        {shown.length === 0 ? (
+          <div className="px-5 py-16 text-center text-sm text-gray-400">No companies match — try the search bar above to add one.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full" style={{ fontVariantNumeric: "tabular-nums" }}>
+              <thead>
+                <tr className="bg-[#F8FAFC] border-b border-gray-100">
+                  {["Company", "Sector", "Exchange", "Market Cap", "EV/Rev", "EV/EBITDA", "Growth", "Momentum"].map((h, i) => (
+                    <th key={h} className={`py-2.5 px-4 text-[9px] font-bold uppercase tracking-wider text-gray-400 whitespace-nowrap ${i === 0 ? "text-left pl-5" : "text-right"}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((c) => (
+                  <tr
+                    key={c.ticker}
+                    ref={(el) => { if (el) rowRefs.current.set(c.ticker, el); else rowRefs.current.delete(c.ticker); }}
+                    className={`border-b border-gray-50 last:border-0 transition-colors duration-700 ${
+                      highlightTicker === c.ticker ? "bg-amber-50" : "hover:bg-gray-50/60"
+                    }`}
+                  >
+                    <td className="py-3 px-4 pl-5">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-8 w-8 flex-none items-center justify-center rounded-[9px] bg-[#0F172A] text-white text-[9px] font-black">{c.ticker.slice(0, 4)}</div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-[#0F172A] truncate">{c.name}</div>
+                          <div className="text-[10px] text-gray-400">{c.ticker}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap" style={{ color: sectorAccent(c.sector), background: `${sectorAccent(c.sector)}14` }}>
+                        {sectorLabel(c.sector)}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-right text-[11px] text-gray-400">{c.exchange ?? "—"}</td>
+                    <td className="py-3 px-4 text-right text-xs font-bold text-[#0F172A]">{fmtMoneyM(c.marketCap)}</td>
+                    <td className="py-3 px-4 text-right text-xs font-bold" style={{ color: sectorAccent(c.sector) }}>{fmtMult(c.evRevenue)}</td>
+                    <td className="py-3 px-4 text-right text-xs font-semibold text-gray-500">{fmtMult(c.evEbitda)}</td>
+                    <td className="py-3 px-4 text-right text-xs font-semibold text-emerald-600">{fmtPct(c.yoyGrowthPct)}</td>
+                    <td className="py-3 px-4 text-right">
+                      <span className={`inline-flex items-center gap-0.5 text-xs font-bold ${c.momentumPct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                        {c.momentumPct >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                        {fmtPct(c.momentumPct, true)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <DirectoryPagination page={safePage} pageCount={pageCount} onChange={setPage} />
       </div>
     </section>
   );
@@ -589,6 +903,7 @@ export function PublicMarket() {
             <SectorMatrix multiples={multiples} />
             {sentiment && <SentimentBarometer sentiment={sentiment} activity={activity} activityLoading={activityLoading} />}
             <CompsExplorer companies={companies} />
+            <CompaniesDirectory companies={companies} onCompanyAdded={loadCompanies} />
 
             <p className="text-[11px] text-gray-400 leading-relaxed flex items-start gap-1.5 max-w-3xl">
               <Info className="w-3.5 h-3.5 flex-none mt-0.5 text-gray-300" />

@@ -1,11 +1,19 @@
 // =============================================================================
 // Supabase Edge Function: sync-public-markets
 //
-// Pulls fresh market metrics for the tracked public-company universe from
-// Financial Modeling Prep (FMP) and upserts them into the `public_companies`
-// table on the unique `ticker` key. Meant to run once a day (see README for
-// pg_cron / GitLab schedule / dashboard-cron options) so the Public Market Hub
-// always reads up-to-date figures straight from the database.
+// Pulls fresh market metrics from Financial Modeling Prep (FMP) and upserts
+// them into the `public_companies` table on the unique `ticker` key. Serves
+// two modes from the same function:
+//
+//   1. Daily full sync (no body, or {}) — refreshes the curated 19-ticker
+//      universe (Cyber/SaaS/Fintech/AI). This is what the cron schedule calls.
+//   2. On-demand single/multi-ticker sync ({ "tickers": ["ABNB", ...] }) — the
+//      Public Market Hub's stock search bar calls this with exactly the ticker
+//      the user picked. Tickers outside the curated universe get their
+//      name/sector/exchange resolved from FMP's company profile endpoint (sector
+//      mapped to cyber/saas/fintech/ai/other via keywords — approximate, since
+//      there's no clean GICS→our-4-buckets mapping; "other" tickers still land
+//      in the companies directory, just outside the Sector Matrix/Sentiment).
 //
 // Secrets / env (set with `supabase secrets set`, NEVER committed):
 //   FMP_API_KEY                 — your Financial Modeling Prep key
@@ -14,40 +22,40 @@
 //
 // Deploy:  supabase functions deploy sync-public-markets --no-verify-jwt
 // Invoke:  POST https://<project-ref>.supabase.co/functions/v1/sync-public-markets
+//          POST .../sync-public-markets  body: {"tickers":["ABNB"]}
 // =============================================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const FMP = "https://financialmodelingprep.com/api/v3";
 
-// Curated universe — ticker → metadata. The sync fills in the market numbers;
-// name / sector / private_comp_hint are stable metadata written on every run so
-// a first-run insert is complete. Keep this in sync with PUBLIC_SECTORS on the
-// client (cyber | saas | fintech | ai).
-type Sector = "cyber" | "saas" | "fintech" | "ai";
-interface Meta { ticker: string; name: string; sector: Sector; hint: string | null }
+type Sector = "cyber" | "saas" | "fintech" | "ai" | "other";
+interface Meta { ticker: string; name: string; sector: Sector; hint: string | null; exchange: string | null }
 
+// Curated universe — the daily cron target. Keep sector values in sync with
+// PUBLIC_SECTORS on the client (cyber | saas | fintech | ai).
 const UNIVERSE: Meta[] = [
-  { ticker: "CRWD", name: "CrowdStrike",        sector: "cyber",   hint: "Wiz" },
-  { ticker: "PANW", name: "Palo Alto Networks", sector: "cyber",   hint: "Snyk" },
-  { ticker: "ZS",   name: "Zscaler",            sector: "cyber",   hint: "Netskope" },
-  { ticker: "FTNT", name: "Fortinet",           sector: "cyber",   hint: null },
-  { ticker: "S",    name: "SentinelOne",        sector: "cyber",   hint: "Abnormal Security" },
-  { ticker: "NOW",  name: "ServiceNow",         sector: "saas",    hint: null },
-  { ticker: "DDOG", name: "Datadog",            sector: "saas",    hint: "Grafana Labs" },
-  { ticker: "SNOW", name: "Snowflake",          sector: "saas",    hint: "Databricks" },
-  { ticker: "MDB",  name: "MongoDB",            sector: "saas",    hint: "Cockroach Labs" },
-  { ticker: "GTLB", name: "GitLab",             sector: "saas",    hint: null },
-  { ticker: "PYPL", name: "PayPal",             sector: "fintech", hint: "Stripe" },
-  { ticker: "COIN", name: "Coinbase",           sector: "fintech", hint: "Kraken" },
-  { ticker: "XYZ",  name: "Block",              sector: "fintech", hint: "Brex" },
-  { ticker: "AFRM", name: "Affirm",             sector: "fintech", hint: "Klarna" },
-  { ticker: "NU",   name: "Nu Holdings",        sector: "fintech", hint: null },
-  { ticker: "NVDA", name: "NVIDIA",             sector: "ai",      hint: "Cerebras" },
-  { ticker: "PLTR", name: "Palantir",           sector: "ai",      hint: "Scale AI" },
-  { ticker: "ARM",  name: "Arm Holdings",       sector: "ai",      hint: "SiFive" },
-  { ticker: "AI",   name: "C3.ai",              sector: "ai",      hint: "Anthropic" },
+  { ticker: "CRWD", name: "CrowdStrike",        sector: "cyber",   hint: "Wiz",                 exchange: "NASDAQ" },
+  { ticker: "PANW", name: "Palo Alto Networks", sector: "cyber",   hint: "Snyk",                 exchange: "NASDAQ" },
+  { ticker: "ZS",   name: "Zscaler",            sector: "cyber",   hint: "Netskope",             exchange: "NASDAQ" },
+  { ticker: "FTNT", name: "Fortinet",           sector: "cyber",   hint: null,                   exchange: "NASDAQ" },
+  { ticker: "S",    name: "SentinelOne",        sector: "cyber",   hint: "Abnormal Security",    exchange: "NYSE" },
+  { ticker: "NOW",  name: "ServiceNow",         sector: "saas",    hint: null,                   exchange: "NYSE" },
+  { ticker: "DDOG", name: "Datadog",            sector: "saas",    hint: "Grafana Labs",         exchange: "NASDAQ" },
+  { ticker: "SNOW", name: "Snowflake",          sector: "saas",    hint: "Databricks",           exchange: "NYSE" },
+  { ticker: "MDB",  name: "MongoDB",            sector: "saas",    hint: "Cockroach Labs",       exchange: "NASDAQ" },
+  { ticker: "GTLB", name: "GitLab",             sector: "saas",    hint: null,                   exchange: "NASDAQ" },
+  { ticker: "PYPL", name: "PayPal",             sector: "fintech", hint: "Stripe",               exchange: "NASDAQ" },
+  { ticker: "COIN", name: "Coinbase",           sector: "fintech", hint: "Kraken",               exchange: "NASDAQ" },
+  { ticker: "XYZ",  name: "Block",              sector: "fintech", hint: "Brex",                 exchange: "NYSE" },
+  { ticker: "AFRM", name: "Affirm",             sector: "fintech", hint: "Klarna",               exchange: "NASDAQ" },
+  { ticker: "NU",   name: "Nu Holdings",        sector: "fintech", hint: null,                   exchange: "NYSE" },
+  { ticker: "NVDA", name: "NVIDIA",             sector: "ai",      hint: "Cerebras",             exchange: "NASDAQ" },
+  { ticker: "PLTR", name: "Palantir",           sector: "ai",      hint: "Scale AI",             exchange: "NYSE" },
+  { ticker: "ARM",  name: "Arm Holdings",       sector: "ai",      hint: "SiFive",               exchange: "NASDAQ" },
+  { ticker: "AI",   name: "C3.ai",              sector: "ai",      hint: "Anthropic",            exchange: "NYSE" },
 ];
+const UNIVERSE_BY_TICKER = new Map(UNIVERSE.map((u) => [u.ticker, u]));
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -86,6 +94,34 @@ function momentumFrom(chg: any): number | null {
   return num(o["1Y"]) ?? num(o["6M"]) ?? num(o["ytd"]) ?? null;
 }
 
+// Approximate GICS sector/industry → our 4 curated buckets. No clean mapping
+// exists (there's no "AI" GICS sector), so this is intentionally a rough
+// keyword heuristic — good enough for bucketing an ad-hoc search result into
+// the companies directory; "other" is the honest fallback, not a bug.
+function mapSector(sector: string | null, industry: string | null): Sector {
+  const s = `${sector ?? ""} ${industry ?? ""}`.toLowerCase();
+  if (s.includes("security")) return "cyber";
+  if (s.includes("software") || s.includes("information technology services")) return "saas";
+  if (s.includes("semiconductor")) return "ai";
+  if (
+    s.includes("bank") || s.includes("insurance") || s.includes("credit") ||
+    s.includes("capital markets") || s.includes("asset management") ||
+    s.includes("financial data") || s.includes("financial services")
+  ) return "fintech";
+  return "other";
+}
+
+async function resolveAdHocMeta(ticker: string, fmpKey: string): Promise<Meta> {
+  const profile = (await fmtJson<any[]>(`${FMP}/profile/${ticker}?apikey=${fmpKey}`))?.[0] ?? null;
+  return {
+    ticker,
+    name: profile?.companyName ?? ticker,
+    sector: mapSector(profile?.sector ?? null, profile?.industry ?? null),
+    hint: null,
+    exchange: profile?.exchangeShortName ?? null,
+  };
+}
+
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
@@ -97,15 +133,31 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
-  // Batch quote (market cap) for the whole universe in one call.
-  const symbols = UNIVERSE.map((u) => u.ticker).join(",");
-  const quotes = (await fmtJson<any[]>(`${FMP}/quote/${symbols}?apikey=${FMP_KEY}`)) ?? [];
+  // Parse optional { tickers: string[] } body for on-demand mode. Any parse
+  // failure (including an empty/absent body) falls back to the full daily sync.
+  let requestedTickers: string[] | null = null;
+  try {
+    const body = await req.json();
+    if (Array.isArray(body?.tickers) && body.tickers.length > 0) {
+      requestedTickers = [...new Set(body.tickers.map((t: unknown) => String(t).toUpperCase().trim()).filter(Boolean))].slice(0, 10);
+    }
+  } catch {
+    /* no/invalid body → full daily sync */
+  }
+
+  const targets: Meta[] = requestedTickers
+    ? await Promise.all(requestedTickers.map((t) => UNIVERSE_BY_TICKER.get(t) ?? resolveAdHocMeta(t, FMP_KEY)))
+    : UNIVERSE;
+
+  // Batch quote (market cap) for every target ticker in one call.
+  const symbols = targets.map((t) => t.ticker).join(",");
+  const quotes = symbols ? (await fmtJson<any[]>(`${FMP}/quote/${symbols}?apikey=${FMP_KEY}`)) ?? [] : [];
   const quoteBy = new Map<string, any>(quotes.map((q) => [q.symbol, q]));
 
   const syncedAt = new Date().toISOString();
   const results: { ticker: string; ok: boolean; error?: string }[] = [];
 
-  for (const u of UNIVERSE) {
+  for (const u of targets) {
     try {
       const q = quoteBy.get(u.ticker);
       // Per-ticker fundamentals (each guarded — premium-gated endpoints just
@@ -146,7 +198,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
       // gap never overwrites a good prior value with NULL. Metadata is always
       // written so a first-run insert is complete.
       const row: Record<string, unknown> = {
-        ticker: u.ticker, name: u.name, sector: u.sector, private_comp_hint: u.hint, synced_at: syncedAt,
+        ticker: u.ticker, name: u.name, sector: u.sector, private_comp_hint: u.hint,
+        exchange: u.exchange, synced_at: syncedAt,
       };
       const set = (k: string, v: number | null) => { if (v != null) row[k] = v; };
       set("market_cap", toMillions(marketCap));
@@ -168,5 +221,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   const okCount = results.filter((r) => r.ok).length;
-  return json({ synced_at: syncedAt, total: UNIVERSE.length, ok: okCount, failed: UNIVERSE.length - okCount, results });
+  return json({
+    mode: requestedTickers ? "on-demand" : "full",
+    synced_at: syncedAt, total: targets.length, ok: okCount, failed: targets.length - okCount, results,
+  });
 });

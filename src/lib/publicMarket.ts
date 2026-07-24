@@ -21,6 +21,27 @@ export const PUBLIC_SNAPSHOT_AS_OF = "2026-06-30";
 export const ILLIQUIDITY_DISCOUNT = 0.25; // standard private-company haircut
 
 export type PublicSectorKey = "cyber" | "saas" | "fintech" | "ai";
+// A company synced via the search bar may not fall into one of the 4 curated
+// sectors — it's still stored and shown in the companies directory, just
+// excluded from the Sector Matrix / Sentiment Barometer (which stay scoped to
+// the curated 4, by design).
+export type AnySectorKey = PublicSectorKey | "other";
+
+export function sectorLabel(key: AnySectorKey): string {
+  if (key === "other") return "Other";
+  return sectorConfig(key).label;
+}
+
+export function isCuratedSector(key: AnySectorKey): key is PublicSectorKey {
+  return key !== "other";
+}
+
+const OTHER_SECTOR_ACCENT = "#64748b"; // neutral slate — no curated benchmark for ad-hoc tickers
+
+/** Accent color for any sector key, including the 'other' bucket (ad-hoc search results). */
+export function sectorAccent(key: AnySectorKey): string {
+  return isCuratedSector(key) ? sectorConfig(key).accent : OTHER_SECTOR_ACCENT;
+}
 
 export interface PublicSectorConfig {
   key: PublicSectorKey;
@@ -49,7 +70,8 @@ export function sectorConfig(key: PublicSectorKey): PublicSectorConfig {
 export interface PublicCompany {
   ticker: string;
   name: string;
-  sector: PublicSectorKey;
+  sector: AnySectorKey;
+  exchange: string | null; // NASDAQ | NYSE | ... (as reported by FMP)
   marketCap: number;   // USD millions
   netDebt: number;     // USD millions (negative = net cash)
   ttmRevenue: number;  // USD millions
@@ -66,31 +88,31 @@ export interface PublicCompany {
 // feed. Relative multiples land in credible ranges; live refresh overrides cap.
 export const PUBLIC_COMPANIES: PublicCompany[] = [
   // ── Cybersecurity ──
-  { ticker: "CRWD", name: "CrowdStrike",        sector: "cyber",   marketCap:  95_000, netDebt:  -3_500, ttmRevenue:  3_900, ttmEbitda:   850, yoyGrowthPct: 33, momentumPct:  45, privateCompHint: "Wiz" },
-  { ticker: "PANW", name: "Palo Alto Networks", sector: "cyber",   marketCap: 120_000, netDebt:  -1_000, ttmRevenue:  8_500, ttmEbitda: 1_900, yoyGrowthPct: 15, momentumPct:  30, privateCompHint: "Snyk" },
-  { ticker: "ZS",   name: "Zscaler",            sector: "cyber",   marketCap:  30_000, netDebt:  -1_500, ttmRevenue:  2_300, ttmEbitda:   250, yoyGrowthPct: 30, momentumPct:  20, privateCompHint: "Netskope" },
-  { ticker: "FTNT", name: "Fortinet",           sector: "cyber",   marketCap:  72_000, netDebt:  -2_000, ttmRevenue:  5_700, ttmEbitda: 1_700, yoyGrowthPct: 12, momentumPct:  25, privateCompHint: null },
-  { ticker: "S",    name: "SentinelOne",        sector: "cyber",   marketCap:   7_000, netDebt:  -1_000, ttmRevenue:    800, ttmEbitda:   -50, yoyGrowthPct: 30, momentumPct:   5, privateCompHint: "Abnormal Security" },
+  { ticker: "CRWD", name: "CrowdStrike",        sector: "cyber",   exchange: "NASDAQ", marketCap:  95_000, netDebt:  -3_500, ttmRevenue:  3_900, ttmEbitda:   850, yoyGrowthPct: 33, momentumPct:  45, privateCompHint: "Wiz" },
+  { ticker: "PANW", name: "Palo Alto Networks", sector: "cyber",   exchange: "NASDAQ", marketCap: 120_000, netDebt:  -1_000, ttmRevenue:  8_500, ttmEbitda: 1_900, yoyGrowthPct: 15, momentumPct:  30, privateCompHint: "Snyk" },
+  { ticker: "ZS",   name: "Zscaler",            sector: "cyber",   exchange: "NASDAQ", marketCap:  30_000, netDebt:  -1_500, ttmRevenue:  2_300, ttmEbitda:   250, yoyGrowthPct: 30, momentumPct:  20, privateCompHint: "Netskope" },
+  { ticker: "FTNT", name: "Fortinet",           sector: "cyber",   exchange: "NASDAQ", marketCap:  72_000, netDebt:  -2_000, ttmRevenue:  5_700, ttmEbitda: 1_700, yoyGrowthPct: 12, momentumPct:  25, privateCompHint: null },
+  { ticker: "S",    name: "SentinelOne",        sector: "cyber",   exchange: "NYSE",   marketCap:   7_000, netDebt:  -1_000, ttmRevenue:    800, ttmEbitda:   -50, yoyGrowthPct: 30, momentumPct:   5, privateCompHint: "Abnormal Security" },
 
   // ── B2B SaaS / Dev Tools ──
-  { ticker: "NOW",  name: "ServiceNow",         sector: "saas",    marketCap: 200_000, netDebt:  -3_000, ttmRevenue: 11_000, ttmEbitda: 2_600, yoyGrowthPct: 22, momentumPct:  30, privateCompHint: null },
-  { ticker: "DDOG", name: "Datadog",            sector: "saas",    marketCap:  48_000, netDebt:  -2_500, ttmRevenue:  2_700, ttmEbitda:   500, yoyGrowthPct: 25, momentumPct:  35, privateCompHint: "Grafana Labs" },
-  { ticker: "SNOW", name: "Snowflake",          sector: "saas",    marketCap:  55_000, netDebt:  -4_000, ttmRevenue:  3_600, ttmEbitda:   150, yoyGrowthPct: 28, momentumPct:  15, privateCompHint: "Databricks" },
-  { ticker: "MDB",  name: "MongoDB",            sector: "saas",    marketCap:  22_000, netDebt:  -2_000, ttmRevenue:  2_000, ttmEbitda:   120, yoyGrowthPct: 20, momentumPct:  -5, privateCompHint: "Cockroach Labs" },
-  { ticker: "GTLB", name: "GitLab",             sector: "saas",    marketCap:   9_000, netDebt:  -1_000, ttmRevenue:    750, ttmEbitda:    30, yoyGrowthPct: 30, momentumPct:  10, privateCompHint: null },
+  { ticker: "NOW",  name: "ServiceNow",         sector: "saas",    exchange: "NYSE",   marketCap: 200_000, netDebt:  -3_000, ttmRevenue: 11_000, ttmEbitda: 2_600, yoyGrowthPct: 22, momentumPct:  30, privateCompHint: null },
+  { ticker: "DDOG", name: "Datadog",            sector: "saas",    exchange: "NASDAQ", marketCap:  48_000, netDebt:  -2_500, ttmRevenue:  2_700, ttmEbitda:   500, yoyGrowthPct: 25, momentumPct:  35, privateCompHint: "Grafana Labs" },
+  { ticker: "SNOW", name: "Snowflake",          sector: "saas",    exchange: "NYSE",   marketCap:  55_000, netDebt:  -4_000, ttmRevenue:  3_600, ttmEbitda:   150, yoyGrowthPct: 28, momentumPct:  15, privateCompHint: "Databricks" },
+  { ticker: "MDB",  name: "MongoDB",            sector: "saas",    exchange: "NASDAQ", marketCap:  22_000, netDebt:  -2_000, ttmRevenue:  2_000, ttmEbitda:   120, yoyGrowthPct: 20, momentumPct:  -5, privateCompHint: "Cockroach Labs" },
+  { ticker: "GTLB", name: "GitLab",             sector: "saas",    exchange: "NASDAQ", marketCap:   9_000, netDebt:  -1_000, ttmRevenue:    750, ttmEbitda:    30, yoyGrowthPct: 30, momentumPct:  10, privateCompHint: null },
 
   // ── Fintech ──
-  { ticker: "PYPL", name: "PayPal",             sector: "fintech", marketCap:  75_000, netDebt:   2_000, ttmRevenue: 31_000, ttmEbitda: 6_500, yoyGrowthPct:  8, momentumPct:  12, privateCompHint: "Stripe" },
-  { ticker: "COIN", name: "Coinbase",           sector: "fintech", marketCap:  65_000, netDebt:  -4_000, ttmRevenue:  6_500, ttmEbitda: 2_500, yoyGrowthPct: 50, momentumPct:  60, privateCompHint: "Kraken" },
-  { ticker: "XYZ",  name: "Block",              sector: "fintech", marketCap:  45_000, netDebt:       0, ttmRevenue: 24_000, ttmEbitda: 3_000, yoyGrowthPct: 10, momentumPct:  18, privateCompHint: "Brex" },
-  { ticker: "AFRM", name: "Affirm",             sector: "fintech", marketCap:  20_000, netDebt:   3_000, ttmRevenue:  2_700, ttmEbitda:   200, yoyGrowthPct: 40, momentumPct:  55, privateCompHint: "Klarna" },
-  { ticker: "NU",   name: "Nu Holdings",        sector: "fintech", marketCap:  55_000, netDebt:       0, ttmRevenue: 11_000, ttmEbitda: 3_000, yoyGrowthPct: 40, momentumPct:  25, privateCompHint: null },
+  { ticker: "PYPL", name: "PayPal",             sector: "fintech", exchange: "NASDAQ", marketCap:  75_000, netDebt:   2_000, ttmRevenue: 31_000, ttmEbitda: 6_500, yoyGrowthPct:  8, momentumPct:  12, privateCompHint: "Stripe" },
+  { ticker: "COIN", name: "Coinbase",           sector: "fintech", exchange: "NASDAQ", marketCap:  65_000, netDebt:  -4_000, ttmRevenue:  6_500, ttmEbitda: 2_500, yoyGrowthPct: 50, momentumPct:  60, privateCompHint: "Kraken" },
+  { ticker: "XYZ",  name: "Block",              sector: "fintech", exchange: "NYSE",   marketCap:  45_000, netDebt:       0, ttmRevenue: 24_000, ttmEbitda: 3_000, yoyGrowthPct: 10, momentumPct:  18, privateCompHint: "Brex" },
+  { ticker: "AFRM", name: "Affirm",             sector: "fintech", exchange: "NASDAQ", marketCap:  20_000, netDebt:   3_000, ttmRevenue:  2_700, ttmEbitda:   200, yoyGrowthPct: 40, momentumPct:  55, privateCompHint: "Klarna" },
+  { ticker: "NU",   name: "Nu Holdings",        sector: "fintech", exchange: "NYSE",   marketCap:  55_000, netDebt:       0, ttmRevenue: 11_000, ttmEbitda: 3_000, yoyGrowthPct: 40, momentumPct:  25, privateCompHint: null },
 
   // ── AI ──
-  { ticker: "NVDA", name: "NVIDIA",             sector: "ai",      marketCap: 3_400_000, netDebt: -25_000, ttmRevenue: 130_000, ttmEbitda: 85_000, yoyGrowthPct: 90, momentumPct:  80, privateCompHint: "Cerebras" },
-  { ticker: "PLTR", name: "Palantir",           sector: "ai",      marketCap: 180_000, netDebt:  -5_000, ttmRevenue:  2_900, ttmEbitda:   800, yoyGrowthPct: 30, momentumPct: 150, privateCompHint: "Scale AI" },
-  { ticker: "ARM",  name: "Arm Holdings",       sector: "ai",      marketCap: 140_000, netDebt:  -2_000, ttmRevenue:  3_500, ttmEbitda:   900, yoyGrowthPct: 25, momentumPct:  40, privateCompHint: "SiFive" },
-  { ticker: "AI",   name: "C3.ai",              sector: "ai",      marketCap:   3_500, netDebt:    -700, ttmRevenue:    380, ttmEbitda:  -280, yoyGrowthPct: 25, momentumPct: -10, privateCompHint: "Anthropic" },
+  { ticker: "NVDA", name: "NVIDIA",             sector: "ai",      exchange: "NASDAQ", marketCap: 3_400_000, netDebt: -25_000, ttmRevenue: 130_000, ttmEbitda: 85_000, yoyGrowthPct: 90, momentumPct:  80, privateCompHint: "Cerebras" },
+  { ticker: "PLTR", name: "Palantir",           sector: "ai",      exchange: "NYSE",   marketCap: 180_000, netDebt:  -5_000, ttmRevenue:  2_900, ttmEbitda:   800, yoyGrowthPct: 30, momentumPct: 150, privateCompHint: "Scale AI" },
+  { ticker: "ARM",  name: "Arm Holdings",       sector: "ai",      exchange: "NASDAQ", marketCap: 140_000, netDebt:  -2_000, ttmRevenue:  3_500, ttmEbitda:   900, yoyGrowthPct: 25, momentumPct:  40, privateCompHint: "SiFive" },
+  { ticker: "AI",   name: "C3.ai",              sector: "ai",      exchange: "NYSE",   marketCap:   3_500, netDebt:    -700, ttmRevenue:    380, ttmEbitda:  -280, yoyGrowthPct: 25, momentumPct: -10, privateCompHint: "Anthropic" },
 ];
 
 // ── Per-company derived metrics ─────────────────────────────────────────────
@@ -302,7 +324,8 @@ export async function fetchPrivateLateStageActivity(nowMs: number): Promise<Priv
 export interface PublicCompanyRow {
   ticker: string;
   name: string;
-  sector: PublicSectorKey;
+  sector: AnySectorKey;
+  exchange: string | null;
   market_cap: number | null;
   enterprise_value: number | null;
   ttm_revenue: number | null;
@@ -315,7 +338,7 @@ export interface PublicCompanyRow {
   synced_at: string | null;
 }
 
-const SECTOR_ORDER: Record<PublicSectorKey, number> = { cyber: 0, saas: 1, fintech: 2, ai: 3 };
+const SECTOR_ORDER: Record<AnySectorKey, number> = { cyber: 0, saas: 1, fintech: 2, ai: 3, other: 4 };
 
 function rowToDerived(r: PublicCompanyRow): DerivedPublicCompany {
   const marketCap = r.market_cap ?? 0;
@@ -326,6 +349,7 @@ function rowToDerived(r: PublicCompanyRow): DerivedPublicCompany {
     ticker: r.ticker,
     name: r.name,
     sector: r.sector,
+    exchange: r.exchange,
     marketCap,
     netDebt: enterpriseValue - marketCap,
     ttmRevenue,
@@ -386,4 +410,58 @@ export async function triggerSync(): Promise<{ ok: boolean; error?: string }> {
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "invoke failed" };
   }
+}
+
+// ── On-demand ticker search + sync (the stock search bar) ──────────────────
+
+export interface TickerSearchResult {
+  symbol: string;
+  name: string;
+  exchange: string;
+}
+
+/**
+ * Search ANY NASDAQ/NYSE ticker via the search-tickers Edge Function (a thin
+ * proxy over FMP's /v3/search, so the FMP key never reaches the browser).
+ * Returns [] on any failure (not-yet-deployed function, network hiccup, empty
+ * query) so the search bar can just show "no results" rather than an error.
+ */
+export async function searchTickers(query: string): Promise<TickerSearchResult[]> {
+  const q = query.trim();
+  if (!q) return [];
+  try {
+    const { data, error } = await supabase.functions.invoke("search-tickers", {
+      method: "POST",
+      body: { query: q },
+    });
+    if (error) return [];
+    return Array.isArray(data?.results) ? data.results : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Sync one or more specific tickers on demand (the search bar calls this with
+ * exactly the ticker the user picked when it isn't already in public_companies).
+ * Same Edge Function as the daily cron, just scoped to these tickers.
+ */
+export async function syncTickers(tickers: string[]): Promise<{ ok: boolean; error?: string }> {
+  if (tickers.length === 0) return { ok: true };
+  try {
+    const { error } = await supabase.functions.invoke("sync-public-markets", {
+      method: "POST",
+      body: { tickers },
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "invoke failed" };
+  }
+}
+
+/** Is this ticker already present in the currently-loaded company set? */
+export function hasTicker(companies: DerivedPublicCompany[], ticker: string): boolean {
+  const t = ticker.toUpperCase();
+  return companies.some((c) => c.ticker.toUpperCase() === t);
 }
