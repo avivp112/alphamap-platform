@@ -294,35 +294,96 @@ export async function fetchPrivateLateStageActivity(nowMs: number): Promise<Priv
   return { recentCount, priorCount, trend, recentVolume };
 }
 
-// ── Live market-cap refresh (optional, reuses the Stocks page's FMP key) ─────
+// ── Database-backed data (the `public_companies` table, kept fresh daily by the
+//    sync-public-markets Edge Function) ─────────────────────────────────────
 
-const FMP_KEY = (import.meta as unknown as { env: Record<string, string> }).env.VITE_FMP_API_KEY ?? "";
+// One row of the public_companies table. All monetary fields are USD millions;
+// ev_revenue / ev_ebitda are ratios. Any field can be null on a fresh row.
+export interface PublicCompanyRow {
+  ticker: string;
+  name: string;
+  sector: PublicSectorKey;
+  market_cap: number | null;
+  enterprise_value: number | null;
+  ttm_revenue: number | null;
+  ttm_ebitda: number | null;
+  ev_revenue: number | null;
+  ev_ebitda: number | null;
+  yoy_growth_pct: number | null;
+  momentum_pct: number | null;
+  private_comp_hint: string | null;
+  synced_at: string | null;
+}
 
-export const hasLiveDataKey = Boolean(FMP_KEY);
+const SECTOR_ORDER: Record<PublicSectorKey, number> = { cyber: 0, saas: 1, fintech: 2, ai: 3 };
 
-interface FmpQuote { symbol: string; marketCap: number }
+function rowToDerived(r: PublicCompanyRow): DerivedPublicCompany {
+  const marketCap = r.market_cap ?? 0;
+  const enterpriseValue = r.enterprise_value ?? marketCap;
+  const ttmRevenue = r.ttm_revenue ?? 0;
+  const ttmEbitda = r.ttm_ebitda ?? 0;
+  return {
+    ticker: r.ticker,
+    name: r.name,
+    sector: r.sector,
+    marketCap,
+    netDebt: enterpriseValue - marketCap,
+    ttmRevenue,
+    ttmEbitda,
+    yoyGrowthPct: r.yoy_growth_pct ?? 0,
+    momentumPct: r.momentum_pct ?? 0,
+    privateCompHint: r.private_comp_hint,
+    enterpriseValue,
+    evRevenue: r.ev_revenue ?? (ttmRevenue > 0 ? enterpriseValue / ttmRevenue : 0),
+    evEbitda: r.ev_ebitda ?? (ttmEbitda > 0 ? enterpriseValue / ttmEbitda : null),
+    ebitdaMarginPct: ttmRevenue > 0 ? (ttmEbitda / ttmRevenue) * 100 : 0,
+  };
+}
+
+export interface PublicCompaniesResult {
+  companies: DerivedPublicCompany[];
+  source: "db" | "snapshot";  // "db" = live table; "snapshot" = static fallback
+  syncedAt: string | null;    // most-recent synced_at across the table
+}
 
 /**
- * Fetch fresh market caps (USD millions) keyed by ticker from Financial
- * Modeling Prep. Returns null when no key is configured or the call fails, so
- * the hub gracefully stays on the reference snapshot.
+ * Read the public-company set from the `public_companies` table (the source of
+ * truth, kept fresh by the daily Edge Function). Falls back to the in-repo
+ * static snapshot if the table is empty or unreachable, so the hub always
+ * renders something sensible.
  */
-export async function fetchLiveMarketCaps(): Promise<Map<string, number> | null> {
-  if (!FMP_KEY) return null;
+export async function fetchPublicCompanies(): Promise<PublicCompaniesResult> {
   try {
-    const symbols = PUBLIC_COMPANIES.map((c) => c.ticker).join(",");
-    const res = await fetch(`https://financialmodelingprep.com/api/v3/quote/${symbols}?apikey=${FMP_KEY}`);
-    if (!res.ok) return null;
-    const data = (await res.json()) as FmpQuote[];
-    if (!Array.isArray(data)) return null;
-    const map = new Map<string, number>();
-    for (const q of data) {
-      if (q.symbol && typeof q.marketCap === "number" && q.marketCap > 0) {
-        map.set(q.symbol, q.marketCap / 1e6); // FMP returns absolute USD → millions
-      }
+    const { data, error } = await supabase.from("public_companies").select("*");
+    if (error) throw error;
+    if (data && data.length) {
+      const companies = (data as PublicCompanyRow[])
+        .map(rowToDerived)
+        .sort((a, b) => SECTOR_ORDER[a.sector] - SECTOR_ORDER[b.sector] || b.marketCap - a.marketCap);
+      const syncedAt = (data as PublicCompanyRow[])
+        .map((r) => r.synced_at)
+        .filter((s): s is string => !!s)
+        .sort()
+        .pop() ?? null;
+      return { companies, source: "db", syncedAt };
     }
-    return map.size ? map : null;
   } catch {
-    return null;
+    /* fall through to the static snapshot */
+  }
+  return { companies: deriveAll(), source: "snapshot", syncedAt: null };
+}
+
+/**
+ * Kick the sync-public-markets Edge Function to pull fresh FMP data on demand.
+ * Returns ok:false (gracefully) if the function isn't deployed — the caller can
+ * still just re-read whatever is already in the table.
+ */
+export async function triggerSync(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { error } = await supabase.functions.invoke("sync-public-markets", { method: "POST" });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "invoke failed" };
   }
 }

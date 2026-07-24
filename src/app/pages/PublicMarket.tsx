@@ -10,8 +10,8 @@ import { CompanyLogo } from "../components/CompanyLogo";
 import type { StartupListRow } from "../../lib/supabase";
 import {
   PUBLIC_SECTORS, PUBLIC_SNAPSHOT_AS_OF, ILLIQUIDITY_DISCOUNT,
-  deriveAll, computeSectorMultiples, computeSentiment, impliedFairValue,
-  fetchPrivateCohort, fetchStartupByName, fetchLiveMarketCaps, hasLiveDataKey,
+  computeSectorMultiples, computeSentiment, impliedFairValue,
+  fetchPrivateCohort, fetchStartupByName, fetchPublicCompanies, triggerSync,
   fetchPrivateLateStageActivity, sectorConfig, estimateArr,
   type DerivedPublicCompany, type SectorMultiples, type PublicSectorKey,
   type ImpliedValuation, type SentimentIndex, type PrivateLateStageActivity,
@@ -491,15 +491,35 @@ function SectionHeading({ icon: Icon, title, subtitle }: { icon: React.ElementTy
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function PublicMarket() {
-  const [liveCaps, setLiveCaps]     = useState<Map<string, number> | null>(null);
-  const [liveLoading, setLiveLoading] = useState(false);
-  const [lastLive, setLastLive]     = useState<Date | null>(null);
-  const [activity, setActivity]     = useState<PrivateLateStageActivity | null>(null);
+  const [companies, setCompanies] = useState<DerivedPublicCompany[]>([]);
+  const [source, setSource]       = useState<"db" | "snapshot">("snapshot");
+  const [syncedAt, setSyncedAt]   = useState<string | null>(null);
+  const [loading, setLoading]     = useState(true);
+  const [syncing, setSyncing]     = useState(false);
+  const [activity, setActivity]   = useState<PrivateLateStageActivity | null>(null);
   const [activityLoading, setActivityLoading] = useState(true);
 
-  const companies = useMemo(() => deriveAll(liveCaps), [liveCaps]);
   const multiples = useMemo(() => computeSectorMultiples(companies), [companies]);
-  const sentiment = useMemo(() => computeSentiment(companies), [companies]);
+  const sentiment = useMemo<SentimentIndex | null>(
+    () => (companies.length ? computeSentiment(companies) : null),
+    [companies],
+  );
+
+  async function loadCompanies() {
+    const res = await fetchPublicCompanies();
+    setCompanies(res.companies);
+    setSource(res.source);
+    setSyncedAt(res.syncedAt);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetchPublicCompanies()
+      .then((res) => { if (!cancelled) { setCompanies(res.companies); setSource(res.source); setSyncedAt(res.syncedAt); } })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -511,14 +531,19 @@ export function PublicMarket() {
     return () => { cancelled = true; };
   }, []);
 
-  async function refreshLive() {
-    setLiveLoading(true);
-    const caps = await fetchLiveMarketCaps();
-    if (caps) { setLiveCaps(caps); setLastLive(new Date()); }
-    setLiveLoading(false);
+  // On-demand: kick the Edge Function to pull fresh FMP data, then re-read the
+  // table. Best-effort — if the function isn't deployed we still re-read.
+  async function handleSync() {
+    setSyncing(true);
+    await triggerSync();
+    await loadCompanies();
+    setSyncing(false);
   }
 
-  const isLive = liveCaps != null;
+  const badgeLive = !!syncedAt;
+  const badgeText = syncedAt
+    ? `Synced · ${new Date(syncedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`
+    : source === "db" ? "Seeded · not yet synced" : `Snapshot · ${PUBLIC_SNAPSHOT_AS_OF}`;
 
   return (
     <Layout>
@@ -534,19 +559,19 @@ export function PublicMarket() {
             </div>
             <div className="flex items-center gap-2.5 flex-none">
               <span className={`flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border ${
-                isLive ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-white/60 border-black/10 text-[#0F172A]/60"
+                badgeLive ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-white/60 border-black/10 text-[#0F172A]/60"
               }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${isLive ? "bg-emerald-500 animate-pulse" : "bg-[#0F172A]/30"}`} />
-                {isLive ? `Live · ${lastLive?.toLocaleTimeString()}` : `Snapshot · ${PUBLIC_SNAPSHOT_AS_OF}`}
+                <span className={`w-1.5 h-1.5 rounded-full ${badgeLive ? "bg-emerald-500 animate-pulse" : "bg-[#0F172A]/30"}`} />
+                {badgeText}
               </span>
               <button
-                onClick={refreshLive}
-                disabled={liveLoading || !hasLiveDataKey}
-                title={hasLiveDataKey ? "Refresh market caps from Financial Modeling Prep" : "Set VITE_FMP_API_KEY to enable live refresh"}
+                onClick={handleSync}
+                disabled={syncing}
+                title="Pull fresh market data via the sync-public-markets Edge Function, then reload from the database"
                 className="flex items-center gap-1.5 rounded-[12px] bg-[#0F172A] px-3.5 py-2 text-xs font-bold text-white hover:bg-[#1e293b] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${liveLoading ? "animate-spin" : ""}`} />
-                {liveLoading ? "Syncing…" : "Refresh live"}
+                <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} />
+                {syncing ? "Syncing…" : "Sync now"}
               </button>
               <Link to="/stocks" className="flex items-center gap-1.5 rounded-[12px] bg-white/70 border border-black/10 px-3.5 py-2 text-xs font-bold text-[#0F172A] hover:bg-white transition-all">
                 Live quotes <ExternalLink className="w-3.5 h-3.5" />
@@ -557,15 +582,19 @@ export function PublicMarket() {
       </div>
 
       <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-8 space-y-10">
-        <SectorMatrix multiples={multiples} />
-        <SentimentBarometer sentiment={sentiment} activity={activity} activityLoading={activityLoading} />
-        <CompsExplorer companies={companies} />
+        {loading ? (
+          <div className="flex items-center justify-center py-32"><Loader2 className="w-6 h-6 text-gray-300 animate-spin" /></div>
+        ) : (
+          <>
+            <SectorMatrix multiples={multiples} />
+            {sentiment && <SentimentBarometer sentiment={sentiment} activity={activity} activityLoading={activityLoading} />}
+            <CompsExplorer companies={companies} />
 
-        {!hasLiveDataKey && (
-          <p className="text-[11px] text-gray-400 leading-relaxed flex items-start gap-1.5 max-w-2xl">
-            <Info className="w-3.5 h-3.5 flex-none mt-0.5 text-gray-300" />
-            Figures are a labeled reference snapshot ({PUBLIC_SNAPSHOT_AS_OF}). Set a free <span className="font-mono text-gray-500">VITE_FMP_API_KEY</span> (same key the Stocks page uses) to enable one-click live market-cap refresh — enterprise value and every multiple recompute from the fresh caps.
-          </p>
+            <p className="text-[11px] text-gray-400 leading-relaxed flex items-start gap-1.5 max-w-3xl">
+              <Info className="w-3.5 h-3.5 flex-none mt-0.5 text-gray-300" />
+              Data is read from the <span className="font-mono text-gray-500">public_companies</span> table, refreshed daily in the background by the <span className="font-mono text-gray-500">sync-public-markets</span> Supabase Edge Function (Financial Modeling Prep). {syncedAt ? "Use " : "Until the first sync runs these are a labeled reference snapshot — use "}<span className="font-semibold">Sync now</span> to pull fresh figures on demand.
+            </p>
+          </>
         )}
       </div>
     </Layout>
