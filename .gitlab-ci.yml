@@ -34,17 +34,16 @@ deploy-public-market-functions:
     - if: '$CI_PIPELINE_SOURCE == "web"'
   before_script:
     - npm install -g supabase
+    - supabase --version
     # Defensively strip whitespace/newlines a copy-paste into the GitLab
-    # variable UI can silently introduce (the #1 cause of Supabase's
-    # "Invalid access token format" error even when the token looks right).
+    # variable UI can silently introduce.
     - export SUPABASE_ACCESS_TOKEN=$(printf '%s' "$SUPABASE_ACCESS_TOKEN" | tr -d '[:space:]')
     - export SUPABASE_PROJECT_REF=$(printf '%s' "$SUPABASE_PROJECT_REF" | tr -d '[:space:]')
-    # Safe diagnostic — prints only the token's length and first 6 chars
-    # (should read "sbp_XX"), never the full secret. Written in POSIX sh (no
-    # ${VAR:0:6}/${#VAR} bash-only expansions), since GitLab's docker executor
-    # runs job scripts via `sh`, not `bash`.
-    - echo "Token prefix -> $(printf '%s' "$SUPABASE_ACCESS_TOKEN" | cut -c1-6) | token length -> $(printf '%s' "$SUPABASE_ACCESS_TOKEN" | wc -c) chars | project ref length -> $(printf '%s' "$SUPABASE_PROJECT_REF" | wc -c) chars"
   script:
-    - supabase link --project-ref "$SUPABASE_PROJECT_REF"
-    - supabase functions deploy sync-public-markets --no-verify-jwt
-    - supabase functions deploy search-tickers --no-verify-jwt
+    # `supabase link`'s token-format check rejects newer versioned personal
+    # access tokens (sbp_v0_... — 47 chars, vs. the older sbp_<40 hex>) even
+    # though they're valid; skip link entirely and pass --project-ref straight
+    # to each deploy call instead (link isn't required for deploying, and this
+    # is the pattern Supabase's own CI/CD docs use).
+    - supabase functions deploy sync-public-markets --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
+    - supabase functions deploy search-tickers --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
