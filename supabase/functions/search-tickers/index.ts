@@ -10,7 +10,12 @@
 // Invoke:  POST { "query": "snow" } → [{ symbol, name, exchange }, ...]
 // =============================================================================
 
-const FMP = "https://financialmodelingprep.com/api/v3";
+// FMP retired the legacy /v3/search endpoint (it now 403s with a
+// "Legacy Endpoint" message even for otherwise-valid keys) in favor of two
+// separate stable endpoints — one for ticker-symbol matches, one for
+// company-name matches. We query both and merge, since a search bar needs to
+// match on either "AAPL" or "Apple".
+const FMP = "https://financialmodelingprep.com/stable";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -25,7 +30,8 @@ function json(body: unknown, status = 200): Response {
 interface FmpSearchResult {
   symbol: string;
   name: string;
-  exchangeShortName?: string;
+  exchange?: string;
+  exchangeFullName?: string;
   currency?: string;
 }
 
@@ -47,17 +53,32 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (query.length > 40) query = query.slice(0, 40);
 
   try {
-    const url = `${FMP}/search?query=${encodeURIComponent(query)}&exchange=NASDAQ,NYSE&limit=10&apikey=${FMP_KEY}`;
-    const res = await fetch(url);
-    if (!res.ok) return json({ error: `FMP responded ${res.status}` }, 502);
-    const data = (await res.json()) as FmpSearchResult[];
-    if (!Array.isArray(data)) return json({ results: [] });
+    const q = encodeURIComponent(query);
+    const [symbolRes, nameRes] = await Promise.all([
+      fetch(`${FMP}/search-symbol?query=${q}&limit=10&apikey=${FMP_KEY}`),
+      fetch(`${FMP}/search-name?query=${q}&limit=10&apikey=${FMP_KEY}`),
+    ]);
+    if (!symbolRes.ok && !nameRes.ok) {
+      return json({ error: `FMP responded ${symbolRes.status}` }, 502);
+    }
+    const [symbolData, nameData] = await Promise.all([
+      symbolRes.ok ? (symbolRes.json() as Promise<FmpSearchResult[]>) : Promise.resolve([]),
+      nameRes.ok ? (nameRes.json() as Promise<FmpSearchResult[]>) : Promise.resolve([]),
+    ]);
+    const merged = [...(Array.isArray(symbolData) ? symbolData : []), ...(Array.isArray(nameData) ? nameData : [])];
 
-    const results = data
+    const isNasdaqOrNyse = (r: FmpSearchResult) => {
+      const tag = `${r.exchange ?? ""} ${r.exchangeFullName ?? ""}`.toUpperCase();
+      return tag.includes("NASDAQ") || tag.includes("NYSE");
+    };
+
+    const seen = new Set<string>();
+    const results = merged
       .filter((r) => r.symbol && r.name)
-      .filter((r) => (r.exchangeShortName ?? "").toUpperCase() === "NASDAQ" || (r.exchangeShortName ?? "").toUpperCase() === "NYSE")
+      .filter(isNasdaqOrNyse)
+      .filter((r) => (seen.has(r.symbol) ? false : (seen.add(r.symbol), true)))
       .slice(0, 10)
-      .map((r) => ({ symbol: r.symbol, name: r.name, exchange: r.exchangeShortName ?? "" }));
+      .map((r) => ({ symbol: r.symbol, name: r.name, exchange: r.exchange || r.exchangeFullName || "" }));
 
     return json({ results });
   } catch (e) {

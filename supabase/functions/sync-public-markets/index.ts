@@ -111,14 +111,17 @@ function mapSector(sector: string | null, industry: string | null): Sector {
   return "other";
 }
 
+// Profile lookup uses the newer /stable surface — FMP has been retiring
+// legacy /v3 endpoints one at a time (this is what broke /v3/search, see
+// search-tickers/index.ts), and /stable/profile is the documented successor.
 async function resolveAdHocMeta(ticker: string, fmpKey: string): Promise<Meta> {
-  const profile = (await fmtJson<any[]>(`${FMP}/profile/${ticker}?apikey=${fmpKey}`))?.[0] ?? null;
+  const profile = (await fmtJson<any[]>(`https://financialmodelingprep.com/stable/profile?symbol=${ticker}&apikey=${fmpKey}`))?.[0] ?? null;
   return {
     ticker,
     name: profile?.companyName ?? ticker,
     sector: mapSector(profile?.sector ?? null, profile?.industry ?? null),
     hint: null,
-    exchange: profile?.exchangeShortName ?? null,
+    exchange: profile?.exchangeShortName ?? profile?.exchange ?? null,
   };
 }
 
