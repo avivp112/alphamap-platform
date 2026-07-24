@@ -491,15 +491,21 @@ function StockSearchBar({ companies, onCompanyAdded, onFocusTicker }: {
   const [open, setOpen]             = useState(false);
   const [syncingTicker, setSyncingTicker] = useState<string | null>(null);
   const [syncError, setSyncError]   = useState<string | null>(null);
+  const [searchFailure, setSearchFailure] = useState<string | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
   // Debounced search-as-you-type against the search-tickers Edge Function.
   useEffect(() => {
     const q = query.trim();
-    if (!q) { setResults([]); setSearching(false); return; }
+    if (!q) { setResults([]); setSearching(false); setSearchFailure(null); return; }
     setSearching(true);
     const t = setTimeout(() => {
-      searchTickers(q).then((r) => { setResults(r); setSearching(false); setOpen(true); });
+      searchTickers(q).then(({ results, error }) => {
+        setResults(results);
+        setSearchFailure(error ?? null);
+        setSearching(false);
+        setOpen(true);
+      });
     }, 300);
     return () => clearTimeout(t);
   }, [query]);
@@ -580,7 +586,12 @@ function StockSearchBar({ companies, onCompanyAdded, onFocusTicker }: {
           })}
         </div>
       )}
-      {open && !searching && query.trim() && results.length === 0 && (
+      {open && !searching && query.trim() && results.length === 0 && searchFailure && (
+        <div className="absolute z-20 mt-2 w-full bg-white rounded-[16px] border border-rose-100 shadow-[0_16px_40px_rgba(15,23,42,0.12)] px-4 py-4">
+          <p className="flex items-start gap-1.5 text-xs font-semibold text-rose-600"><AlertCircle className="w-3.5 h-3.5 flex-none mt-0.5" />{searchFailure}</p>
+        </div>
+      )}
+      {open && !searching && query.trim() && results.length === 0 && !searchFailure && (
         <div className="absolute z-20 mt-2 w-full bg-white rounded-[16px] border border-gray-100 shadow-[0_16px_40px_rgba(15,23,42,0.12)] px-4 py-6 text-center text-xs text-gray-400">
           No NASDAQ/NYSE tickers found for "{query}"
         </div>
@@ -810,6 +821,7 @@ export function PublicMarket() {
   const [syncedAt, setSyncedAt]   = useState<string | null>(null);
   const [loading, setLoading]     = useState(true);
   const [syncing, setSyncing]     = useState(false);
+  const [syncPageError, setSyncPageError] = useState<string | null>(null);
   const [activity, setActivity]   = useState<PrivateLateStageActivity | null>(null);
   const [activityLoading, setActivityLoading] = useState(true);
 
@@ -846,10 +858,13 @@ export function PublicMarket() {
   }, []);
 
   // On-demand: kick the Edge Function to pull fresh FMP data, then re-read the
-  // table. Best-effort — if the function isn't deployed we still re-read.
+  // table. Re-reads regardless of the sync outcome (best-effort), but now
+  // surfaces the actual failure reason instead of silently doing nothing.
   async function handleSync() {
     setSyncing(true);
-    await triggerSync();
+    setSyncPageError(null);
+    const res = await triggerSync();
+    if (!res.ok) setSyncPageError(res.error ?? "Sync failed");
     await loadCompanies();
     setSyncing(false);
   }
@@ -892,6 +907,11 @@ export function PublicMarket() {
               </Link>
             </div>
           </div>
+          {syncPageError && (
+            <div className="mt-3 flex items-start gap-1.5 rounded-[10px] bg-rose-50 border border-rose-200 px-3.5 py-2.5 text-xs font-semibold text-rose-700 max-w-2xl">
+              <AlertCircle className="w-3.5 h-3.5 flex-none mt-0.5" />{syncPageError}
+            </div>
+          )}
         </div>
       </div>
 

@@ -398,6 +398,26 @@ export async function fetchPublicCompanies(): Promise<PublicCompaniesResult> {
 }
 
 /**
+ * supabase-js's FunctionsHttpError only exposes a generic "non-2xx status
+ * code" message by default — the actual reason (e.g. "FMP_API_KEY is not
+ * set") is in the response body our Edge Functions return as {"error": "..."}.
+ * Dig it out so failures are actionable instead of generic.
+ */
+async function extractFunctionsError(error: unknown, fallback: string): Promise<string> {
+  try {
+    const ctx = (error as { context?: Response })?.context;
+    if (ctx && typeof ctx.json === "function") {
+      const body = await ctx.clone().json();
+      if (body && typeof body.error === "string") return body.error;
+    }
+  } catch {
+    /* fall through to the generic message below */
+  }
+  if (error instanceof Error) return error.message;
+  return fallback;
+}
+
+/**
  * Kick the sync-public-markets Edge Function to pull fresh FMP data on demand.
  * Returns ok:false (gracefully) if the function isn't deployed — the caller can
  * still just re-read whatever is already in the table.
@@ -405,7 +425,7 @@ export async function fetchPublicCompanies(): Promise<PublicCompaniesResult> {
 export async function triggerSync(): Promise<{ ok: boolean; error?: string }> {
   try {
     const { error } = await supabase.functions.invoke("sync-public-markets", { method: "POST" });
-    if (error) return { ok: false, error: error.message };
+    if (error) return { ok: false, error: await extractFunctionsError(error, "Sync failed") };
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "invoke failed" };
@@ -420,24 +440,30 @@ export interface TickerSearchResult {
   exchange: string;
 }
 
+export interface TickerSearchOutcome {
+  results: TickerSearchResult[];
+  error?: string; // set only on a real failure — a genuine zero-match search has no error
+}
+
 /**
  * Search ANY NASDAQ/NYSE ticker via the search-tickers Edge Function (a thin
  * proxy over FMP's /v3/search, so the FMP key never reaches the browser).
- * Returns [] on any failure (not-yet-deployed function, network hiccup, empty
- * query) so the search bar can just show "no results" rather than an error.
+ * Distinguishes "found nothing" from "the request actually failed" so the
+ * search bar can show a real error instead of a misleading "no results".
  */
-export async function searchTickers(query: string): Promise<TickerSearchResult[]> {
+export async function searchTickers(query: string): Promise<TickerSearchOutcome> {
   const q = query.trim();
-  if (!q) return [];
+  if (!q) return { results: [] };
   try {
     const { data, error } = await supabase.functions.invoke("search-tickers", {
       method: "POST",
       body: { query: q },
     });
-    if (error) return [];
-    return Array.isArray(data?.results) ? data.results : [];
-  } catch {
-    return [];
+    if (error) return { results: [], error: await extractFunctionsError(error, "Search failed") };
+    if (data && typeof data.error === "string") return { results: [], error: data.error };
+    return { results: Array.isArray(data?.results) ? data.results : [] };
+  } catch (e) {
+    return { results: [], error: e instanceof Error ? e.message : "invoke failed" };
   }
 }
 
@@ -453,7 +479,7 @@ export async function syncTickers(tickers: string[]): Promise<{ ok: boolean; err
       method: "POST",
       body: { tickers },
     });
-    if (error) return { ok: false, error: error.message };
+    if (error) return { ok: false, error: await extractFunctionsError(error, "Sync failed") };
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "invoke failed" };
