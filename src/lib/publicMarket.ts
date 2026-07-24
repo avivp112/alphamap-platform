@@ -491,3 +491,61 @@ export function hasTicker(companies: DerivedPublicCompany[], ticker: string): bo
   const t = ticker.toUpperCase();
   return companies.some((c) => c.ticker.toUpperCase() === t);
 }
+
+// ── Stock Profile Modal (the stock-profile Edge Function) ──────────────────
+
+export interface StockProfile {
+  ticker: string;
+  name: string;
+  exchange: string | null;
+  currency: string | null;
+  image: string | null;
+  website: string | null;
+
+  price: number | null;
+  change: number | null;
+  changesPercentage: number | null;
+
+  dayLow: number | null;
+  dayHigh: number | null;
+  yearLow: number | null;
+  yearHigh: number | null;
+
+  marketCap: number | null;
+  pe: number | null;
+  beta: number | null;
+  avgVolume: number | null;
+  volume: number | null;
+  lastDividend: number | null;
+  dividendYieldPct: number | null;
+
+  description: string | null;
+  sector: string | null;
+  industry: string | null;
+  ceo: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+}
+
+export interface StockProfileOutcome {
+  profile: StockProfile | null;
+  error?: string;
+}
+
+/** Fetch a single ticker's live quote + company profile for the Stock Profile Modal. */
+export async function fetchStockProfile(ticker: string): Promise<StockProfileOutcome> {
+  const t = ticker.trim().toUpperCase();
+  if (!t) return { profile: null, error: "Missing ticker" };
+  try {
+    const { data, error } = await supabase.functions.invoke("stock-profile", {
+      method: "POST",
+      body: { ticker: t },
+    });
+    if (error) return { profile: null, error: await extractFunctionsError(error, "Profile lookup failed") };
+    if (data && typeof data.error === "string") return { profile: null, error: data.error };
+    return { profile: (data?.profile as StockProfile) ?? null };
+  } catch (e) {
+    return { profile: null, error: e instanceof Error ? e.message : "invoke failed" };
+  }
+}

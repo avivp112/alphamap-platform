@@ -5,6 +5,7 @@ import {
   ArrowRight, ArrowLeftRight, Building2, Landmark, Sparkles, Info,
   CircleDollarSign, ExternalLink, Loader2, AlertCircle, Check,
   Search, X, ChevronLeft, ChevronRight, LayoutList, PlusCircle, CheckCircle2,
+  MapPin, User, Briefcase,
 } from "lucide-react";
 import { Layout } from "../components/Layout";
 import { CompanyLogo } from "../components/CompanyLogo";
@@ -15,8 +16,10 @@ import {
   fetchPrivateCohort, fetchStartupByName, fetchPublicCompanies, triggerSync,
   fetchPrivateLateStageActivity, sectorConfig, estimateArr,
   sectorLabel, sectorAccent, isCuratedSector, searchTickers, syncTickers, hasTicker,
+  fetchStockProfile,
   type DerivedPublicCompany, type SectorMultiples, type PublicSectorKey, type AnySectorKey,
   type ImpliedValuation, type SentimentIndex, type PrivateLateStageActivity, type TickerSearchResult,
+  type StockProfile,
 } from "../../lib/publicMarket";
 
 // ── Formatting helpers ──────────────────────────────────────────────────────
@@ -651,6 +654,7 @@ function CompaniesDirectory({ companies, onCompanyAdded }: {
   const [page, setPage]                 = useState(1);
   const [highlightTicker, setHighlightTicker] = useState<string | null>(null);
   const [pendingHighlight, setPendingHighlight] = useState<string | null>(null);
+  const [profileTicker, setProfileTicker] = useState<string | null>(null);
   const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
 
   const filtered = useMemo(() => {
@@ -756,7 +760,11 @@ function CompaniesDirectory({ companies, onCompanyAdded }: {
                   <tr
                     key={c.ticker}
                     ref={(el) => { if (el) rowRefs.current.set(c.ticker, el); else rowRefs.current.delete(c.ticker); }}
-                    className={`border-b border-gray-50 last:border-0 transition-colors duration-700 ${
+                    onClick={() => setProfileTicker(c.ticker)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setProfileTicker(c.ticker); } }}
+                    role="button"
+                    tabIndex={0}
+                    className={`cursor-pointer border-b border-gray-50 last:border-0 transition-colors duration-700 ${
                       highlightTicker === c.ticker ? "bg-amber-50" : "hover:bg-gray-50/60"
                     }`}
                   >
@@ -793,7 +801,252 @@ function CompaniesDirectory({ companies, onCompanyAdded }: {
         )}
         <DirectoryPagination page={safePage} pageCount={pageCount} onChange={setPage} />
       </div>
+
+      <StockProfileModal
+        ticker={profileTicker}
+        company={profileTicker ? companies.find((c) => c.ticker === profileTicker) ?? null : null}
+        onClose={() => setProfileTicker(null)}
+      />
     </section>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 5) STOCK PROFILE MODAL
+// ═════════════════════════════════════════════════════════════════════════════
+
+function fmtPrice(n: number | null | undefined): string {
+  if (n == null || isNaN(n)) return "—";
+  return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+function fmtVolume(n: number | null | undefined): string {
+  if (n == null || isNaN(n)) return "—";
+  if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
+  return `${n}`;
+}
+
+function MetricTile({ label, value, sub, accent }: { label: string; value: React.ReactNode; sub?: string; accent?: string }) {
+  return (
+    <div className="rounded-[12px] bg-gray-50 border border-gray-100 px-3.5 py-3">
+      <div className="text-[8.5px] font-bold uppercase tracking-wider text-gray-400 mb-1">{label}</div>
+      <div className="text-sm font-bold tabular-nums" style={accent ? { color: accent } : { color: "#0F172A" }}>{value}</div>
+      {sub && <div className="text-[9.5px] text-gray-400 mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+function RangeTile({ low, high, current }: { low: number | null; high: number | null; current: number | null }) {
+  const hasRange = low != null && high != null && high > low;
+  const pct = hasRange && current != null ? Math.max(0, Math.min(100, ((current - low!) / (high! - low!)) * 100)) : null;
+  return (
+    <div className="col-span-2 rounded-[12px] bg-gray-50 border border-gray-100 px-3.5 py-3">
+      <div className="text-[8.5px] font-bold uppercase tracking-wider text-gray-400 mb-2">52-Week Range</div>
+      {hasRange ? (
+        <>
+          <div className="relative h-1.5 rounded-full bg-gray-200/70">
+            {pct != null && (
+              <div
+                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-[#0F172A] border-2 border-white shadow"
+                style={{ left: `${pct}%` }}
+              />
+            )}
+          </div>
+          <div className="flex items-center justify-between mt-1.5">
+            <span className="text-[10px] font-bold text-gray-500 tabular-nums">{fmtPrice(low)}</span>
+            <span className="text-[10px] font-bold text-gray-500 tabular-nums">{fmtPrice(high)}</span>
+          </div>
+        </>
+      ) : (
+        <div className="text-sm font-bold text-gray-300">—</div>
+      )}
+    </div>
+  );
+}
+
+function ProfileSkeleton() {
+  return (
+    <div className="animate-pulse">
+      <div className="flex items-center gap-4 p-6 border-b border-gray-100">
+        <div className="w-16 h-16 rounded-[16px] bg-gray-100 flex-none" />
+        <div className="flex-1 space-y-2 min-w-0">
+          <div className="h-4 w-40 bg-gray-100 rounded" />
+          <div className="h-3 w-24 bg-gray-100 rounded" />
+        </div>
+        <div className="space-y-2 text-right flex-none">
+          <div className="h-5 w-20 bg-gray-100 rounded ml-auto" />
+          <div className="h-3 w-14 bg-gray-100 rounded ml-auto" />
+        </div>
+      </div>
+      <div className="p-6 space-y-2.5">
+        <div className="h-3 w-full bg-gray-100 rounded" />
+        <div className="h-3 w-5/6 bg-gray-100 rounded" />
+        <div className="h-3 w-3/4 bg-gray-100 rounded" />
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 px-6 pb-6">
+        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-[12px]" />)}
+      </div>
+    </div>
+  );
+}
+
+function StockProfileModal({ ticker, company, onClose }: {
+  ticker: string | null;
+  company: DerivedPublicCompany | null;
+  onClose: () => void;
+}) {
+  const [profile, setProfile]   = useState<StockProfile | null>(null);
+  const [error, setError]       = useState<string | null>(null);
+  const [fetching, setFetching] = useState(false);
+  const [visible, setVisible]   = useState(false); // drives the enter/exit transition
+  const open = !!ticker;
+
+  useEffect(() => {
+    if (!ticker) return;
+    setProfile(null); setError(null); setFetching(true);
+    setVisible(false);
+    const raf = requestAnimationFrame(() => setVisible(true));
+    fetchStockProfile(ticker).then(({ profile, error }) => {
+      setProfile(profile); setError(error ?? null); setFetching(false);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [ticker]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = prevOverflow; };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const changeUp = (profile?.changesPercentage ?? 0) >= 0;
+  const location = [profile?.city, profile?.state, profile?.country].filter(Boolean).join(", ");
+  const accent = company ? sectorAccent(company.sector) : "#0F172A";
+
+  return (
+    <div
+      className={`fixed inset-0 z-50 flex items-center justify-center p-4 transition-opacity duration-200 ${visible ? "opacity-100" : "opacity-0"}`}
+      style={{ background: "rgba(15,23,42,0.45)", backdropFilter: "blur(4px)" }}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        className={`relative w-full max-w-lg max-h-[88vh] rounded-[22px] bg-white shadow-[0_24px_64px_rgba(15,23,42,0.25)] overflow-hidden flex flex-col transition-all duration-200 ${
+          visible ? "opacity-100 scale-100 translate-y-0" : "opacity-0 scale-95 translate-y-2"
+        }`}
+      >
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute top-3.5 right-3.5 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 border border-gray-100 text-gray-400 hover:text-[#0F172A] hover:bg-gray-50 shadow-sm transition-colors"
+        >
+          <X className="w-4 h-4" />
+        </button>
+
+        <div className="overflow-y-auto">
+          {fetching ? (
+            <ProfileSkeleton />
+          ) : error ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-20 px-6 text-center">
+              <AlertCircle className="w-6 h-6 text-rose-400" />
+              <p className="text-sm font-semibold text-rose-600">{error}</p>
+              <p className="text-xs text-gray-400">{ticker}</p>
+            </div>
+          ) : profile ? (
+            <>
+              {/* Header */}
+              <div className="flex items-start gap-4 p-6 border-b border-gray-100">
+                <CompanyLogo name={profile.name} website={profile.website} size={56} rounded="rounded-[16px]" />
+                <div className="min-w-0 flex-1 pr-8">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-base font-bold text-[#0F172A] truncate">{profile.name}</h3>
+                    {company && (
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap" style={{ color: accent, background: `${accent}14` }}>
+                        {sectorLabel(company.sector)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-0.5 text-xs text-gray-400">
+                    <span className="font-bold text-gray-500">{profile.ticker}</span>
+                    {profile.exchange && <><span>·</span><span>{profile.exchange}</span></>}
+                  </div>
+                </div>
+                <div className="flex-none text-right">
+                  <div className="text-lg font-black text-[#0F172A] tabular-nums">{fmtPrice(profile.price)}</div>
+                  {profile.change != null && (
+                    <div className={`flex items-center justify-end gap-0.5 text-xs font-bold tabular-nums ${changeUp ? "text-emerald-600" : "text-rose-600"}`}>
+                      {changeUp ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                      {changeUp ? "+" : ""}{profile.change.toFixed(2)} ({changeUp ? "+" : ""}{(profile.changesPercentage ?? 0).toFixed(2)}%)
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Company Overview */}
+              <div className="p-6 border-b border-gray-100 space-y-3">
+                {profile.description && (
+                  <p className="text-xs text-gray-500 leading-relaxed line-clamp-4">{profile.description}</p>
+                )}
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-500">
+                  {profile.industry && (
+                    <span className="flex items-center gap-1.5"><Briefcase className="w-3.5 h-3.5 text-gray-300" />{profile.industry}</span>
+                  )}
+                  {profile.ceo && (
+                    <span className="flex items-center gap-1.5"><User className="w-3.5 h-3.5 text-gray-300" />{profile.ceo}</span>
+                  )}
+                  {location && (
+                    <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-gray-300" />{location}</span>
+                  )}
+                  {profile.website && (
+                    <a href={profile.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 font-semibold text-[#0F172A] hover:underline">
+                      <ExternalLink className="w-3.5 h-3.5 text-gray-300" />Website
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              {/* Key Metrics & Valuation */}
+              <div className="p-6">
+                <div className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mb-2.5">Key Metrics &amp; Valuation</div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <MetricTile label="Market Cap" value={fmtMoney(profile.marketCap)} />
+                  <MetricTile label="P / E Ratio" value={profile.pe != null ? profile.pe.toFixed(1) : "—"} />
+                  <MetricTile label="Beta" value={profile.beta != null ? profile.beta.toFixed(2) : "—"} />
+                  <MetricTile label="Avg Volume" value={fmtVolume(profile.avgVolume)} />
+                  <MetricTile label="Dividend Yield" value={profile.dividendYieldPct != null ? `${profile.dividendYieldPct.toFixed(2)}%` : "—"} sub={profile.dividendYieldPct != null ? "trailing, approx." : undefined} />
+                  <RangeTile low={profile.yearLow} high={profile.yearHigh} current={profile.price} />
+                </div>
+
+                {company && (
+                  <>
+                    <div className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mt-5 mb-2.5">From AlphaMap sync</div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <MetricTile label="EV / Revenue" value={fmtMult(company.evRevenue)} accent={accent} />
+                      <MetricTile label="EV / EBITDA" value={fmtMult(company.evEbitda)} />
+                      <MetricTile label="YoY Growth" value={fmtPct(company.yoyGrowthPct)} />
+                      <MetricTile
+                        label="Momentum"
+                        value={<span className={company.momentumPct >= 0 ? "text-emerald-600" : "text-rose-600"}>{fmtPct(company.momentumPct, true)}</span>}
+                      />
+                    </div>
+                    {company.privateCompHint && (
+                      <p className="mt-3 flex items-center gap-1.5 text-[11px] text-gray-400">
+                        <Landmark className="w-3.5 h-3.5 text-gray-300" />
+                        Tracked private counterpart: <span className="font-semibold text-gray-500">{company.privateCompHint}</span>
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            </>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 }
 
