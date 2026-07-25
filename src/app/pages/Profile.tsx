@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import {
   Mail, Calendar, ShieldCheck, Sparkles, Bell, BellOff, KeyRound, ArrowRight,
@@ -59,6 +60,7 @@ function DetailRow({ icon: Icon, label, value }: { icon: React.ElementType; labe
 }
 
 export function Profile() {
+  const { t } = useTranslation();
   const [user, setUser] = useState<ProfileUser | null>(null);
   const [loading, setLoading] = useState(true);
   const { plan } = useUserPlan();
@@ -101,7 +103,7 @@ export function Profile() {
               )}
             </div>
             <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-[#B8C9D1]">My Profile</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#B8C9D1]">{t("profile.title")}</p>
               <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-white truncate">
                 {loading ? "Loading…" : user?.name || "Your account"}
               </h1>
@@ -112,7 +114,7 @@ export function Profile() {
 
         {/* ── Personal details ── */}
         <div className="mt-8">
-          <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">Personal Details</h2>
+          <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">{t("profile.personalDetails")}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <DetailRow icon={Mail} label="Email" value={user?.email ?? "—"} />
             <DetailRow
@@ -134,21 +136,20 @@ export function Profile() {
           <div className="rounded-[20px] border border-gray-100 bg-white p-6 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
             <div className="flex items-center gap-2 mb-1">
               <Sparkles className="w-4 h-4 text-[#7C8967]" />
-              <h3 className="text-sm font-bold text-[#0F172A]">Current Plan</h3>
+              <h3 className="text-sm font-bold text-[#0F172A]">{t("profile.currentPlan")}</h3>
             </div>
             <p className="text-2xl font-bold text-[#0F172A] mt-2">{PLAN_LABEL[plan]}</p>
             <Link
               to="/pricing"
               className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-[#0F172A] hover:underline"
-            >
-              View plans <ArrowRight className="w-3 h-3" />
+            >{t("profile.viewPlans")}<ArrowRight className="w-3 h-3" />
             </Link>
           </div>
 
           <div className="rounded-[20px] border border-gray-100 bg-white p-6 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
             <div className="flex items-center gap-2 mb-1">
               <ShieldCheck className="w-4 h-4 text-[#7C8967]" />
-              <h3 className="text-sm font-bold text-[#0F172A]">Terms of Use</h3>
+              <h3 className="text-sm font-bold text-[#0F172A]">{t("profile.termsOfUse")}</h3>
             </div>
             <p className="text-xs text-gray-500 leading-relaxed mt-2">
               {user?.termsAcceptedAt

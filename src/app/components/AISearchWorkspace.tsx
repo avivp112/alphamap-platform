@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import {
   Search, Sparkles, ArrowRight, X, Building2, Landmark,
@@ -40,6 +41,7 @@ function str(v: unknown): string | null {
 const FIRM_TYPE_LABEL: Record<string, string> = { vc: "VC", pe: "Private Equity", growth: "Growth" };
 
 export function AISearchWorkspace() {
+  const { t } = useTranslation();
   const [query, setQuery]             = useState("");
   const [status, setStatus]           = useState<Status>("idle");
   const [result, setResult]           = useState<SemanticSearchResult | null>(null);
@@ -120,14 +122,10 @@ export function AISearchWorkspace() {
         {/* Eyebrow */}
         <div className="flex justify-center">
           <div className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white/70 px-3 py-1 text-[11px] font-semibold text-gray-500 backdrop-blur">
-            <Sparkles className="h-3.5 w-3.5 text-[#7C8967]" />
-            AlphaMap Intelligence
-          </div>
+            <Sparkles className="h-3.5 w-3.5 text-[#7C8967]" />{t("aiSearch.title")}</div>
         </div>
 
-        <h1 className="mx-auto mt-4 max-w-2xl text-center text-2xl font-bold tracking-tight text-[#0F172A] sm:text-[32px] sm:leading-[1.15]">
-          Ask anything about the private markets
-        </h1>
+        <h1 className="mx-auto mt-4 max-w-2xl text-center text-2xl font-bold tracking-tight text-[#0F172A] sm:text-[32px] sm:leading-[1.15]">{t("aiSearch.askAnything")}</h1>
         <p className="mx-auto mt-2 max-w-xl text-center text-sm text-gray-500">
           Search companies and investors in natural language — answered strictly from the AlphaMap database.
         </p>
@@ -144,7 +142,7 @@ export function AISearchWorkspace() {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Find me European Series A cybersecurity startups with stable headcount…"
+              placeholder={t("aiSearch.examplePrompt")}
               className="w-full bg-transparent px-3 py-4 text-[15px] text-[#0F172A] placeholder:text-gray-400 focus:outline-none"
               autoComplete="off"
               spellCheck={false}
@@ -154,7 +152,7 @@ export function AISearchWorkspace() {
                 type="button"
                 onClick={clear}
                 className="mr-1 flex-none rounded-full p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-                aria-label="Clear search"
+                aria-label={t("aiSearch.clearSearch")}
               >
                 <X className="h-4 w-4" />
               </button>
@@ -166,7 +164,7 @@ export function AISearchWorkspace() {
             >
               {status === "loading"
                 ? <Loader2 className="h-4 w-4 animate-spin" />
-                : <><span className="hidden sm:inline">Search</span><ArrowRight className="h-4 w-4" /></>}
+                : <><span className="hidden sm:inline">{t("header.search")}</span><ArrowRight className="h-4 w-4" /></>}
             </button>
           </div>
 
@@ -236,9 +234,7 @@ export function AISearchWorkspace() {
 
       {status === "idle" && (
         <div className="relative flex items-center justify-center gap-1.5 border-t border-gray-100 py-2.5 text-[11px] text-gray-400">
-          <CornerDownLeft className="h-3 w-3" />
-          Press Enter to search
-        </div>
+          <CornerDownLeft className="h-3 w-3" />{t("aiSearch.pressEnter")}</div>
       )}
 
       {/* Citation / result tearsheet modal */}
@@ -257,6 +253,7 @@ function AnswerBlock({
   citeMap: Map<string, SemanticMatch>;
   onCite: (m: SemanticMatch) => void;
 }) {
+  const { t } = useTranslation();
   const segments = useMemo(() => parseAnswerSegments(answer), [answer]);
 
   return (
@@ -265,7 +262,7 @@ function AnswerBlock({
         <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0F172A]">
           <Sparkles className="h-3.5 w-3.5 text-white" />
         </div>
-        <h3 className="text-sm font-bold text-[#0F172A]">AI Analysis</h3>
+        <h3 className="text-sm font-bold text-[#0F172A]">{t("aiSearch.aiAnalysis")}</h3>
         {streaming && (
           <span className="flex items-center gap-1 text-[11px] font-medium text-gray-400">
             <Loader2 className="h-3 w-3 animate-spin" /> synthesizing…
@@ -416,6 +413,7 @@ function ResultRow({ match, onOpen }: { match: SemanticMatch; onOpen: (m: Semant
 
 // ── Citation / result tearsheet modal ────────────────────────────────────────
 function CitationModal({ match, onClose }: { match: SemanticMatch; onClose: () => void }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const isCompany = match.entity_type === "startup";
   const website = str(match.metadata.website);
@@ -482,8 +480,7 @@ function CitationModal({ match, onClose }: { match: SemanticMatch; onClose: () =
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center justify-center gap-1.5 rounded-[13px] border border-gray-200 px-4 py-2.5 text-sm font-semibold text-[#0F172A] transition-colors hover:bg-gray-50"
-              >
-                Website <ExternalLink className="h-3.5 w-3.5" />
+              >{t("common.website")}<ExternalLink className="h-3.5 w-3.5" />
               </a>
             )}
           </div>

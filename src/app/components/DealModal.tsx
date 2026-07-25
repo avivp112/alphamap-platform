@@ -1,4 +1,5 @@
 import React, { useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import {
   X, Info, Users, Zap, Clock, TrendingUp, Shield,
   AlertTriangle, Layers, PieChart, Building2, CheckCircle,
@@ -120,6 +121,7 @@ function Widget({ title, icon: Icon, accent = "#22d3ee", children, titleExtra }:
 // ── 1. Comparable Deals ───────────────────────────────────────────────────────
 
 function CompsWidget({ deal, allDeals }: { deal: Deal; allDeals: Deal[] }) {
+  const { t } = useTranslation();
   const comps = allDeals
     .filter(d => d.id !== deal.id && d.sector === deal.sector)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -143,7 +145,7 @@ function CompsWidget({ deal, allDeals }: { deal: Deal; allDeals: Deal[] }) {
         <>
           <div className="grid pb-1.5 mb-1 gap-3 text-[9px] font-bold text-gray-400 uppercase tracking-[0.12em] border-b border-gray-100"
             style={{ gridTemplateColumns: "1fr 104px 68px 64px" }}>
-            <span>Company</span><span>Type</span><span>Size</span><span>Date</span>
+            <span>{t("common.company")}</span><span>{t("common.type")}</span><span>{t("common.size")}</span><span>{t("deals.date")}</span>
           </div>
           {comps.map((comp, i) => {
             const cfg = getDealTypeCfg(comp.deal_type);
@@ -196,6 +198,7 @@ function InvAvatar({ name }: { name: string }) {
 }
 
 function InvestorSyndicateWidget({ deal }: { deal: Deal }) {
+  const { t } = useTranslation();
   const hasInvestors = deal.lead_investors.length > 0;
   const isFormD      = deal.deal_type.startsWith("Form D");
 
@@ -230,7 +233,7 @@ function InvestorSyndicateWidget({ deal }: { deal: Deal }) {
       <div className="space-y-3.5">
         {/* Lead */}
         <div>
-          <div className="text-[9px] font-bold text-gray-400 uppercase tracking-[0.12em] mb-2">Lead</div>
+          <div className="text-[9px] font-bold text-gray-400 uppercase tracking-[0.12em] mb-2">{t("dealModal.lead")}</div>
           <div className="flex items-center gap-2 py-0.5">
             <InvAvatar name={lead} />
             <span className="text-xs font-bold text-gray-900 flex-1 truncate">{lead}</span>
@@ -255,7 +258,7 @@ function InvestorSyndicateWidget({ deal }: { deal: Deal }) {
 
         <div>
           <div className="flex items-center gap-1 mb-2">
-            <span className="text-[9px] font-bold text-gray-400 uppercase tracking-[0.12em]">Participating</span>
+            <span className="text-[9px] font-bold text-gray-400 uppercase tracking-[0.12em]">{t("dealModal.participating")}</span>
             <span className="text-[9px] text-gray-300">(est.)</span>
           </div>
           {mockParticipating.map(inv => (
@@ -309,6 +312,7 @@ function DonutChart({ pct, color }: { pct: number; color: string }) {
 }
 
 function DilutionWidget({ deal }: { deal: Deal }) {
+  const { t } = useTranslation();
   const isMA   = deal.deal_type === "M&A" || deal.deal_type === "Acquisition";
   const isDebt = deal.deal_type === "Form D (Debt)";
 
@@ -352,7 +356,7 @@ function DilutionWidget({ deal }: { deal: Deal }) {
         <div className="flex-1 space-y-2.5 min-w-0">
           <div>
             <div className="flex justify-between items-center mb-1">
-              <span className="text-[10px] text-gray-500">Investor equity</span>
+              <span className="text-[10px] text-gray-500">{t("dealModal.investorEquity")}</span>
               <span className="text-xs font-bold tabular-nums" style={{ color }}>{equityPct.toFixed(1)}%</span>
             </div>
             <div className="h-1.5 rounded-full overflow-hidden bg-gray-100">
@@ -362,7 +366,7 @@ function DilutionWidget({ deal }: { deal: Deal }) {
           {!isMA && !isDebt && (
             <div>
               <div className="flex justify-between items-center mb-1">
-                <span className="text-[10px] text-gray-500">Founders / employees</span>
+                <span className="text-[10px] text-gray-500">{t("dealModal.foundersEmployees")}</span>
                 <span className="text-xs font-bold text-emerald-600 tabular-nums">{foundersPct.toFixed(1)}%</span>
               </div>
               <div className="h-1.5 rounded-full overflow-hidden bg-gray-100">
@@ -589,6 +593,7 @@ function VelocityWidget({ deal }: { deal: Deal }) {
 // ── Main Export ───────────────────────────────────────────────────────────────
 
 export function DealModal({ deal, allDeals, onClose }: Props) {
+  const { t } = useTranslation();
   const handleKey = useCallback((e: KeyboardEvent) => {
     if (e.key === "Escape") onClose();
   }, [onClose]);
@@ -640,9 +645,7 @@ export function DealModal({ deal, allDeals, onClose }: Props) {
                   style={{ border: "1px solid rgba(15,23,42,0.12)" }}
                   title="SEC legal name automatically matched to a startup in the AlphaMap database via entity resolution"
                 >
-                  <CheckCircle className="w-3 h-3" />
-                  Verified Entity
-                </span>
+                  <CheckCircle className="w-3 h-3" />{t("dealModal.verifiedEntity")}</span>
               )}
             </div>
             <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-[#0F172A]/60">

@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { useTranslation } from "react-i18next";
 import {
   AlertCircle, DollarSign, TrendingUp, Activity, Landmark, Layers, Zap,
 } from 'lucide-react';
@@ -118,6 +119,7 @@ export function MarketIntelligenceHub({
   selectedHub: string | null;
   sector: SectorKey;
 }) {
+  const { t } = useTranslation();
   const filtered = useMemo(
     () => startups.filter(s =>
       (!selectedHub || resolveHub(s.city, s.country) === selectedHub) && matchesSector(s, sector)
@@ -241,7 +243,7 @@ export function MarketIntelligenceHub({
   return (
     <div>
       <div className="mb-5">
-        <h2 className="text-lg font-bold tracking-tight text-[#0F172A]">Market Intelligence Hub</h2>
+        <h2 className="text-lg font-bold tracking-tight text-[#0F172A]">{t("mih.title")}</h2>
         <p className="mt-0.5 text-sm text-gray-500">
           {SECTOR_LABELS[sector]} · {hubLabel} · {filtered.length.toLocaleString()} {filtered.length === 1 ? 'company' : 'companies'} in view
         </p>
@@ -324,7 +326,7 @@ export function MarketIntelligenceHub({
         </Card>
 
         <Card className="lg:col-span-7">
-          <CardHeader icon={Activity} title="Deal Momentum" subtitle="VC vs. PE Buyout / Secondary" />
+          <CardHeader icon={Activity} title="Deal Momentum" subtitle={t("mih.vcVsPe")} />
           {momentumData.length > 0 ? (
             <ResponsiveContainer width="100%" height={160}>
               <LineChart data={momentumData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -345,8 +347,8 @@ export function MarketIntelligenceHub({
                     );
                   }}
                 />
-                <Line type="monotone" dataKey="vc" name="VC rounds" stroke="#F59E0B" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="pe" name="PE Buyout / Secondary" stroke="#6366F1" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="vc" name={t("mih.vcRounds")} stroke="#F59E0B" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="pe" name={t("mih.peSecondary")} stroke="#6366F1" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           ) : (

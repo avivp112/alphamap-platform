@@ -13,6 +13,7 @@ import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { BrandMark, BrandWordmark } from "../components/BrandMark";
 import { LanguageSelector } from "../components/LanguageSelector";
+import { stageLabel, sectorLabel } from "../../lib/taxonomy";
 
 // ── Shared dark section (CTA + footer) ───────────────────────────────────────
 const DARK_SECTION_BG = "#242322";
@@ -321,7 +322,7 @@ function DealsShowcase(_props: { active: boolean }) {
                   </div>
                 </td>
                 <td className="py-2.5 px-1">
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${STAGE_STYLES[row.type]}`}>{row.type}</span>
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${STAGE_STYLES[row.type]}`}>{stageLabel(row.type, t)}</span>
                 </td>
                 <td className="py-2.5 px-1 font-medium text-[#111827] whitespace-nowrap">{row.size}</td>
                 <td className="py-2.5 px-1 text-gray-500 whitespace-nowrap">{row.leads}</td>
@@ -480,11 +481,11 @@ function SourcingShowcase({ active }: { active: boolean }) {
                       </span>
                     </td>
                     <td className="py-2.5 px-1">
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 mr-1 whitespace-nowrap">{row.sector}</span>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 mr-1 whitespace-nowrap">{sectorLabel(row.sector, t)}</span>
                       <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 hidden sm:inline-block whitespace-nowrap">{row.tag2}</span>
                     </td>
                     <td className="py-2.5 px-1 text-right">
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${STAGE_STYLES[row.stage]}`}>{row.stage}</span>
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${STAGE_STYLES[row.stage]}`}>{stageLabel(row.stage, t)}</span>
                     </td>
                   </tr>
                 ))}
@@ -577,7 +578,7 @@ function VCsShowcase({ active }: { active: boolean }) {
                     </div>
                   </td>
                   <td className="py-3 px-1">
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${STAGE_STYLES[inv.round] ?? "bg-gray-100 border-gray-200 text-gray-600"}`}>{inv.round}</span>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${STAGE_STYLES[inv.round] ?? "bg-gray-100 border-gray-200 text-gray-600"}`}>{stageLabel(inv.round, t)}</span>
                   </td>
                   <td className="py-3 px-1 text-right">
                     {inv.estimated ? (
@@ -620,7 +621,7 @@ function VCsShowcase({ active }: { active: boolean }) {
             </div>
             <div className="flex flex-wrap gap-1 mb-3">
               {vc.stages.map((s) => (
-                <span key={s} className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${STAGE_STYLES[s]}`}>{s}</span>
+                <span key={s} className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${STAGE_STYLES[s]}`}>{stageLabel(s, t)}</span>
               ))}
             </div>
             <div className="flex items-center justify-between text-xs">

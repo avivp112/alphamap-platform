@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { stageLabel, sectorLabel } from "../../lib/taxonomy";
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams, useNavigate } from "react-router";
 import {
@@ -328,7 +329,7 @@ function HierarchicalSectorFilter({
         return (
           <div key={p}>
             <button onClick={() => selectParent(p)} className={`${rowBase} ${isActive ? rowActive : rowPassive}`}>
-              <span>{p}</span>
+              <span>{sectorLabel(p, t)}</span>
               {isActive && subs.length > 0 && <ChevronDown className="w-3 h-3 flex-none" />}
             </button>
             {isActive && subs.length > 0 && (
@@ -337,7 +338,7 @@ function HierarchicalSectorFilter({
                   onClick={() => onSubChange("")}
                   className={`w-full text-left px-2 py-1 rounded-[6px] text-[11px] transition-colors ${!subSector ? "text-[#0F172A] font-bold bg-gray-50" : "text-gray-500 font-medium hover:text-gray-700"}`}
                 >
-                  All {p}
+                  {t("startups.allOf", { sector: sectorLabel(p, t) })}
                 </button>
                 {subs.map((s) => (
                   <button
@@ -345,7 +346,7 @@ function HierarchicalSectorFilter({
                     onClick={() => onSubChange(subSector === s ? "" : s)}
                     className={`w-full text-left px-2 py-1 rounded-[6px] text-[11px] transition-colors ${subSector === s ? "text-[#0F172A] font-bold bg-gray-50" : "text-gray-500 font-medium hover:text-gray-700"}`}
                   >
-                    {s}
+                    {sectorLabel(s, t)}
                   </button>
                 ))}
               </div>
@@ -2169,7 +2170,7 @@ export function Startups() {
 
   const pageCount = Math.max(1, Math.ceil(totalCount / STARTUPS_PAGE_SIZE));
 
-  const currentStageLabel = STAGE_STEPS.find((s) => s.value === stageStep)?.label ?? "All";
+  const currentStageLabel = stageLabel(STAGE_STEPS.find((s) => s.value === stageStep)?.label ?? "All", t);
   const currentHeadcountLabel = HEADCOUNT_STEPS.find((s) => s.value === headcountStep)?.label ?? "All";
 
   return (
@@ -2212,7 +2213,7 @@ export function Startups() {
         filters={
           <>
               <FilterAccordion title={t("startups.sectors")} defaultOpen
-                badge={parentSector ? <FilterBadge>{subSector || parentSector}</FilterBadge> : undefined}>
+                badge={parentSector ? <FilterBadge>{sectorLabel(subSector || parentSector, t)}</FilterBadge> : undefined}>
                 <HierarchicalSectorFilter
                   parentSector={parentSector} onParentChange={setParentSector}
                   subSector={subSector}       onSubChange={setSubSector}

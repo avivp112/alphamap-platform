@@ -1,4 +1,6 @@
 import React, { useEffect, useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { stageLabel, sectorLabel } from "../../lib/taxonomy";
 import {
   X, Globe, Calendar, Briefcase, DollarSign, TrendingUp, Users, Zap,
   Activity, ExternalLink, Info, BarChart2, Award, Layers, CheckCircle, MapPin,
@@ -195,6 +197,7 @@ function VelocityWidget({ firm }: { firm: VCFirm }) {
 // ── Dry powder widget ─────────────────────────────────────────────────────────
 
 function DryPowderWidget({ firm }: { firm: VCFirm }) {
+  const { t } = useTranslation();
   const aum = firm.aum_millions;
   const deployed = deploymentRate(firm.founded_year);
   const available = 100 - deployed;
@@ -210,7 +213,7 @@ function DryPowderWidget({ firm }: { firm: VCFirm }) {
       <div className="space-y-4">
         <div>
           <div className="flex justify-between text-[10px] mb-1.5">
-            <span className="text-gray-400">Capital deployed</span>
+            <span className="text-gray-400">{t("vcModal.capitalDeployed")}</span>
             <span className="font-bold text-gray-900">{deployed}%</span>
           </div>
           <div className="h-2.5 rounded-full overflow-hidden bg-gray-100">
@@ -243,6 +246,7 @@ function DryPowderWidget({ firm }: { firm: VCFirm }) {
 // ── Tab 1 — Overview ──────────────────────────────────────────────────────────
 
 function OverviewTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }) {
+  const { t } = useTranslation();
   const vitals: [React.ElementType, string, string, string][] = [
     [DollarSign, "Fund AUM",     fmtB(firm.aum_millions),            "#047857"],
     [MapPin,     "Headquarters", firm.headquarters,                   "#0e7490"],
@@ -261,7 +265,7 @@ function OverviewTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }) {
       )}
 
       <div>
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.18em] mb-3">Firm Vitals</p>
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.18em] mb-3">{t("vcModal.firmVitals")}</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
           {vitals.map(([Icon, label, value, color]) => (
             <div key={label} className="flex items-center gap-3 rounded-xl px-3.5 py-3 bg-gray-50 border border-gray-100">
@@ -280,7 +284,7 @@ function OverviewTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }) {
 
       {firm.stages.length > 0 && (
         <div>
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.18em] mb-2">Investment Stages</p>
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.18em] mb-2">{t("vcs.investmentStages")}</p>
           <div className="flex flex-wrap gap-2">
             {firm.stages.map(s => (
               <span key={s} className="text-[11px] font-semibold px-3 py-1.5 rounded-full bg-gray-50"
@@ -303,6 +307,7 @@ function OverviewTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }) {
 // ── Tab 2 — Investments & Portfolio ───────────────────────────────────────────
 
 function InvestmentsTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }) {
+  const { t } = useTranslation();
   const total = firm.sector_weights.reduce((s, d) => s + d.weight, 0);
 
   return (
@@ -321,7 +326,7 @@ function InvestmentsTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }
       )}
 
       <div>
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.18em] mb-3">Portfolio Snapshot</p>
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.18em] mb-3">{t("vcModal.portfolioSnapshot")}</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {([
             ["Total Companies",  String(firm.portfolio_count),         "#0e7490"],
@@ -343,7 +348,7 @@ function InvestmentsTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }
             {firm.stages.map((stage) => (
               <span key={stage} className="text-[11px] font-semibold px-3 py-1.5 rounded-full"
                 style={{ background: "rgba(34,211,238,0.07)", border: "1px solid rgba(34,211,238,0.20)", color: "#0e7490" }}>
-                {stage}
+                {stageLabel(stage, t)}
               </span>
             ))}
           </div>
@@ -379,6 +384,7 @@ function InvestmentsTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }
 // ── Tab 3 — Syndicate Intelligence ────────────────────────────────────────────
 
 function SyndicateTab({ firm }: { firm: VCFirm }) {
+  const { t } = useTranslation();
   const coInvestors = deterministicCoInvestors(firm.name, 6);
   const topTier = coInvestors.slice(0, 3);
   const frequent = coInvestors.slice(3);
@@ -449,7 +455,7 @@ function SyndicateTab({ firm }: { firm: VCFirm }) {
 
       <div className="rounded-2xl px-5 py-4 bg-white border border-gray-200"
         style={{ boxShadow: "0 1px 3px rgba(15,23,42,0.06)" }}>
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.18em] mb-3">Collaboration Score by Partner</p>
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.18em] mb-3">{t("vcModal.collaborationScore")}</p>
         <div className="space-y-2.5">
           {coInvestors.slice(0, 4).map((name, i) => {
             const barColor = PARTNER_COLORS[i % PARTNER_COLORS.length];
@@ -474,6 +480,7 @@ function SyndicateTab({ firm }: { firm: VCFirm }) {
 // ── Tab 4 — Exits ─────────────────────────────────────────────────────────────
 
 function ExitsTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }) {
+  const { t } = useTranslation();
   const exits = firm.notable_exits;
 
   if (exits.length === 0) {
@@ -482,7 +489,7 @@ function ExitsTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }) {
         <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 bg-gray-50 border border-gray-200">
           <CheckCircle className="w-7 h-7 text-gray-300" />
         </div>
-        <p className="text-sm font-semibold text-gray-500">No recorded exits yet</p>
+        <p className="text-sm font-semibold text-gray-500">{t("vcModal.noExits")}</p>
         <p className="text-xs text-gray-400 mt-1">Portfolio companies still in active growth phase</p>
       </div>
     );
@@ -519,15 +526,13 @@ function ExitsTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }) {
       <div className="rounded-2xl px-5 py-4 flex items-center justify-between"
         style={{ background: "linear-gradient(135deg, rgba(52,211,153,0.07) 0%, rgba(34,211,238,0.05) 100%)", border: "1px solid rgba(52,211,153,0.20)" }}>
         <div>
-          <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Est. Portfolio Return Multiple</p>
+          <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">{t("vcModal.returnMultiple")}</p>
           <p className="text-[28px] font-black text-gray-900 leading-none">
             {totalReturnX}x <span className="text-[14px] text-gray-400 font-medium">MOIC</span>
           </p>
         </div>
         <span className="text-[11px] font-bold px-3 py-1.5 rounded-full"
-          style={{ background: "rgba(52,211,153,0.14)", border: "1px solid rgba(52,211,153,0.30)", color: "#047857" }}>
-          Top Quartile
-        </span>
+          style={{ background: "rgba(52,211,153,0.14)", border: "1px solid rgba(52,211,153,0.30)", color: "#047857" }}>{t("vcModal.topQuartile")}</span>
       </div>
 
       <Widget title="Portfolio Exits & Liquidity Events" icon={CheckCircle} accent={accent.radarStroke}>
@@ -564,6 +569,7 @@ function ExitsTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }) {
 // ── Tab 5 — Fund Performance ──────────────────────────────────────────────────
 
 function PerformanceTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }) {
+  const { t } = useTranslation();
   const alphaScore = portfolioAlphaScore(firm);
   const GLOBAL_BASELINE = 71;
   const delta = alphaScore - GLOBAL_BASELINE;
@@ -586,7 +592,7 @@ function PerformanceTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }
       {/* AlphaScore benchmark */}
       <div className="rounded-2xl px-5 py-5 bg-white border border-gray-200"
         style={{ boxShadow: "0 1px 3px rgba(15,23,42,0.06)" }}>
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.18em] mb-4">Portfolio AlphaScore™ Benchmark</p>
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.18em] mb-4">{t("vcModal.benchmark")}</p>
         <div className="flex items-end gap-6 mb-5">
           <div>
             <div className="text-[52px] font-black leading-none tabular-nums" style={{ color: tierTextColor }}>
@@ -660,6 +666,7 @@ function PerformanceTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }
 // ── Main Export ───────────────────────────────────────────────────────────────
 
 export function VCModal({ firm, onClose }: Props) {
+  const { t } = useTranslation();
   const accent = getAccent(firm.id);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
 
@@ -716,8 +723,7 @@ export function VCModal({ firm, onClose }: Props) {
                 <a href={firm.website} target="_blank" rel="noopener noreferrer"
                   onClick={e => e.stopPropagation()}
                   className="flex items-center gap-1 hover:text-cyan-700 transition-colors">
-                  <ExternalLink className="w-3 h-3 flex-none" />Website
-                </a>
+                  <ExternalLink className="w-3 h-3 flex-none" />{t("common.website")}</a>
               </div>
             </div>
             <button onClick={onClose}

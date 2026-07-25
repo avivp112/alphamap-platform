@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from "react-i18next";
 import { Layout } from '../components/Layout';
 import { GlobalTechHubMap, type SectorKey } from '../components/GlobalTechHubMap';
 import { MarketIntelligenceHub } from '../components/MarketIntelligenceHub';
 import { fetchStartups, fetchInvestors, type Startup, type InvestorRow } from '../../lib/supabase';
 
 export function MarketMap() {
+  const { t } = useTranslation();
   const [startups, setStartups] = useState<Startup[]>([]);
   const [investors, setInvestors] = useState<InvestorRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,12 +24,8 @@ export function MarketMap() {
     <Layout>
       <div className="mx-auto max-w-[1400px] p-4 sm:p-6 lg:p-8">
         <div className="mb-8">
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">
-            Market Map
-          </h1>
-          <p className="mt-1 sm:mt-2 text-sm font-medium text-gray-500">
-            Cross-border capital flow across global tech ecosystems.
-          </p>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">{t("marketMap.title")}</h1>
+          <p className="mt-1 sm:mt-2 text-sm font-medium text-gray-500">{t("marketMap.subtitle")}</p>
         </div>
 
         <GlobalTechHubMap

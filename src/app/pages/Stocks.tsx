@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from "react-i18next";
 import { Layout } from '../components/Layout';
 import {
   TrendingUp, TrendingDown, Search, X, RefreshCw,
@@ -103,6 +104,7 @@ function StockRow({ stock, onClick }: { stock: StockQuote; onClick: () => void }
 // ─── Detail Modal ─────────────────────────────────────────────────────────────
 
 function StockDetail({ stock, onClose }: { stock: StockQuote; onClose: () => void }) {
+  const { t } = useTranslation();
   const up = stock.change >= 0;
   const yearRange = stock.yearHigh && stock.yearLow
     ? ((stock.price - stock.yearLow) / (stock.yearHigh - stock.yearLow)) * 100
@@ -181,7 +183,7 @@ function StockDetail({ stock, onClose }: { stock: StockQuote; onClose: () => voi
 
           {/* Day range */}
           <div className="flex items-center justify-between text-sm bg-[#F8FAFC] rounded-xl px-4 py-3">
-            <span className="text-gray-400 text-xs font-semibold uppercase tracking-wide">Today's Range</span>
+            <span className="text-gray-400 text-xs font-semibold uppercase tracking-wide">{t("stocks.todaysRange")}</span>
             <span className="font-bold text-[#0F172A] tabular-nums">
               ${stock.dayLow.toFixed(2)} – ${stock.dayHigh.toFixed(2)}
             </span>
@@ -195,6 +197,7 @@ function StockDetail({ stock, onClose }: { stock: StockQuote; onClose: () => voi
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export function Stocks() {
+  const { t } = useTranslation();
   const [quotes, setQuotes]       = useState<StockQuote[]>([]);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
@@ -247,7 +250,7 @@ export function Stocks() {
             {/* Header */}
             <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">Stocks</h1>
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">{t("stocks.title")}</h1>
                 <p className="mt-1 sm:mt-2 text-sm font-medium text-gray-500">
                   Live quotes for tracked tech equities.
                   {lastUpdated && (
@@ -262,24 +265,22 @@ export function Stocks() {
                 disabled={loading}
                 className="flex items-center gap-2 rounded-[16px] border border-gray-200 bg-white px-4 py-2.5 text-xs font-bold uppercase tracking-widest text-[#0F172A] hover:bg-gray-50 transition-colors disabled:opacity-50"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                Refresh
-              </button>
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />{t("stocks.refresh")}</button>
             </div>
 
             {/* Summary chips */}
             {quotes.length > 0 && (
               <div className="flex flex-wrap gap-3 mb-6">
                 <div className="bg-white rounded-[12px] border border-gray-100 px-4 py-2.5 shadow-sm">
-                  <span className="text-xs text-gray-400 font-semibold uppercase tracking-wide mr-2">Tracking</span>
+                  <span className="text-xs text-gray-400 font-semibold uppercase tracking-wide mr-2">{t("stocks.tracking")}</span>
                   <span className="text-sm font-bold text-[#0F172A]">{quotes.length} stocks</span>
                 </div>
                 <div className="bg-emerald-50 rounded-[12px] border border-emerald-100 px-4 py-2.5">
-                  <span className="text-xs text-emerald-600 font-semibold uppercase tracking-wide mr-2">Gaining</span>
+                  <span className="text-xs text-emerald-600 font-semibold uppercase tracking-wide mr-2">{t("stocks.gaining")}</span>
                   <span className="text-sm font-bold text-emerald-700">{gainers}</span>
                 </div>
                 <div className="bg-rose-50 rounded-[12px] border border-rose-100 px-4 py-2.5">
-                  <span className="text-xs text-rose-600 font-semibold uppercase tracking-wide mr-2">Declining</span>
+                  <span className="text-xs text-rose-600 font-semibold uppercase tracking-wide mr-2">{t("stocks.declining")}</span>
                   <span className="text-sm font-bold text-rose-700">{losers}</span>
                 </div>
               </div>
@@ -291,7 +292,7 @@ export function Stocks() {
                 <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mx-auto mb-4">
                   <BarChart2 className="w-6 h-6 text-[#F59E0B]" />
                 </div>
-                <h2 className="text-lg font-bold text-[#0F172A] mb-2">Add your FMP API key</h2>
+                <h2 className="text-lg font-bold text-[#0F172A] mb-2">{t("stocks.addApiKey")}</h2>
                 <p className="text-sm text-gray-500 max-w-sm mx-auto mb-5 leading-relaxed">
                   Get a free key at{' '}
                   <a href="https://financialmodelingprep.com/developer/docs" target="_blank" rel="noreferrer" className="text-[#F59E0B] font-semibold hover:underline inline-flex items-center gap-0.5">
@@ -307,7 +308,7 @@ export function Stocks() {
               <div className="flex flex-col items-center py-24 gap-3 text-center">
                 <AlertCircle className="w-8 h-8 text-red-400" />
                 <p className="text-sm font-semibold text-[#0F172A]">{error}</p>
-                <button onClick={fetchQuotes} className="text-xs text-[#F59E0B] font-medium hover:underline">Try again</button>
+                <button onClick={fetchQuotes} className="text-xs text-[#F59E0B] font-medium hover:underline">{t("stocks.tryAgain")}</button>
               </div>
             ) : loading ? (
               <div className="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-hidden">
@@ -332,7 +333,7 @@ export function Stocks() {
                     type="text"
                     value={search}
                     onChange={e => setSearch(e.target.value)}
-                    placeholder="Search symbol or company…"
+                    placeholder={t("stocks.search")}
                     className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-gray-200 rounded-[12px] focus:outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/10 transition-all"
                   />
                   {search && (

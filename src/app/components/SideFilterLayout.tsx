@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { stageLabel } from "../../lib/taxonomy";
 import React, { useState } from "react";
 import { Search, X, SlidersHorizontal, ChevronUp, ChevronDown } from "lucide-react";
 
@@ -41,7 +42,7 @@ export function SideFilterLayout({
               </div>
               {activeFilterCount > 0 && (
                 <button onClick={onClearAll} className="flex items-center gap-1 text-[11px] font-semibold text-gray-400 hover:text-rose-600 transition-colors">
-                  <X className="w-3 h-3" />Clear ({activeFilterCount})
+                  <X className="w-3 h-3" />{t("common.clearCount", { count: activeFilterCount })}
                 </button>
               )}
             </div>
@@ -118,6 +119,10 @@ export function StepSlider({
   value: string;
   onChange: (v: string) => void;
 }) {
+  const { t } = useTranslation();
+  // Stage sliders carry canonical stage names ("Series A", "Growth/Late") as
+  // their labels; headcount sliders carry plain numeric ranges. stageLabel
+  // localises the former and passes the latter straight through.
   const idx = Math.max(0, steps.findIndex((s) => s.value === value));
   const pct = steps.length > 1 ? (idx / (steps.length - 1)) * 100 : 0;
 
@@ -146,17 +151,20 @@ export function StepSlider({
           className="absolute inset-x-0 w-full h-full opacity-0 cursor-pointer z-10"
         />
       </div>
-      <div className="flex justify-between mt-2 px-0.5">
+      {/* items-start + a flex-basis cap lets a translated label wrap onto a
+          second line instead of colliding with its neighbour. Truncating
+          instead would render "シリーズA" and "シリーズB" identically. */}
+      <div className="flex justify-between items-start mt-2 px-0.5 gap-0.5">
         {steps.map((s, i) => (
           <button
             key={s.value}
             onClick={() => onChange(s.value)}
-            className={`text-[9px] font-semibold leading-none transition-colors ${
+            className={`flex-1 text-center text-[9px] font-semibold leading-[1.2] break-words transition-colors ${
               i === idx ? "text-[#0F172A]" : "text-gray-400 hover:text-gray-600"
             }`}
             style={{ minWidth: 0 }}
           >
-            {s.label}
+            {stageLabel(s.label, t)}
           </button>
         ))}
       </div>
