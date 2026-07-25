@@ -11,15 +11,25 @@
 //
 // range one of: 1D | 1M | 3M | 1Y | 5Y | ALL
 //
-// Endpoints used:
-//   /stable/historical-chart/5min?symbol=...            — intraday, for 1D.
-//   /stable/historical-price-eod/full?symbol=...&from=&to= — daily EOD bars,
-//     for every other range. Response shape has drifted between FMP's /v3
-//     (wrapped in {symbol, historical: [...]}) and /stable (often a bare
-//     array) before, so both shapes are handled defensively.
+// Endpoints tried (in order, first non-empty result wins):
+//   Daily (every range except 1D):
+//     /stable/historical-price-eod/full?symbol=...&from=&to=
+//     /api/v3/historical-price-full/{ticker}?from=&to=      (legacy fallback)
+//   Intraday (1D):
+//     /stable/historical-chart/5min?symbol=...
+//     /api/v3/historical-chart/5min/{ticker}                (legacy fallback)
+//
+// FMP has repeatedly changed endpoint availability and response shape
+// between /v3 and /stable (see stock-profile, search-tickers) without
+// notice, and response shape itself has drifted too — some surfaces wrap
+// bars in {symbol, historical: [...]}, others return a bare array — so both
+// are tried and both shapes are handled. Every attempt's HTTP status is
+// logged when nothing yields data, so a future drift shows up in the
+// function logs instead of another guess-and-redeploy round trip.
 // =============================================================================
 
 const FMP_STABLE = "https://financialmodelingprep.com/stable";
+const FMP_V3 = "https://financialmodelingprep.com/api/v3";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -34,14 +44,40 @@ function json(body: unknown, status = 200): Response {
 const num = (v: unknown): number | null =>
   typeof v === "number" && isFinite(v) ? v : (typeof v === "string" && v.trim() !== "" && isFinite(+v) ? +v : null);
 
-async function fetchJson<T = any>(url: string): Promise<T | null> {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    return (await res.json()) as T;
-  } catch {
-    return null;
+interface Attempt {
+  url: string;
+  status: number | null;
+  bars: number;
+}
+
+// FMP wraps daily-EOD history as {symbol, historical:[...]} on some surfaces
+// and returns a bare array on others — accept either.
+function extractBars(raw: any): any[] {
+  if (Array.isArray(raw)) return raw;
+  if (Array.isArray(raw?.historical)) return raw.historical;
+  return [];
+}
+
+// Tries each candidate URL in order (cheapest/most-likely first) and returns
+// the first one that actually yields bars, along with a log of every attempt
+// for diagnostics when all of them come up empty.
+async function fetchFirstNonEmpty(urls: string[]): Promise<{ bars: any[]; attempts: Attempt[] }> {
+  const attempts: Attempt[] = [];
+  for (const url of urls) {
+    try {
+      const res = await fetch(url);
+      let bars: any[] = [];
+      if (res.ok) {
+        const data = await res.json();
+        bars = extractBars(data);
+      }
+      attempts.push({ url: url.replace(/apikey=[^&]+/, "apikey=***"), status: res.status, bars: bars.length });
+      if (bars.length > 0) return { bars, attempts };
+    } catch (e) {
+      attempts.push({ url: url.replace(/apikey=[^&]+/, "apikey=***"), status: null, bars: 0 });
+    }
   }
+  return { bars: [], attempts };
 }
 
 type Range = "1D" | "1M" | "3M" | "1Y" | "5Y" | "ALL";
@@ -62,14 +98,6 @@ function fromDateFor(range: Range, to: Date): string {
     default: from.setDate(from.getDate() - 95);
   }
   return ymd(from);
-}
-
-// FMP wraps daily-EOD history as {symbol, historical:[...]} on some surfaces
-// and returns a bare array on others — accept either.
-function extractBars(raw: any): any[] {
-  if (Array.isArray(raw)) return raw;
-  if (Array.isArray(raw?.historical)) return raw.historical;
-  return [];
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -93,10 +121,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (!ticker) return json({ error: "Missing ticker" }, 400);
 
   try {
+    let bars: any[];
+    let attempts: Attempt[];
     let series: { t: number; c: number }[];
 
     if (range === "1D") {
-      const bars = (await fetchJson<any[]>(`${FMP_STABLE}/historical-chart/5min?symbol=${ticker}&apikey=${FMP_KEY}`)) ?? [];
+      ({ bars, attempts } = await fetchFirstNonEmpty([
+        `${FMP_STABLE}/historical-chart/5min?symbol=${ticker}&apikey=${FMP_KEY}`,
+        `${FMP_V3}/historical-chart/5min/${ticker}?apikey=${FMP_KEY}`,
+      ]));
       // FMP returns intraday bars newest-first across many trading days —
       // keep only the most recent trading day, then put them in chrono order.
       const latestDay = bars[0]?.date ? String(bars[0].date).slice(0, 10) : null;
@@ -108,17 +141,23 @@ Deno.serve(async (req: Request): Promise<Response> => {
     } else {
       const to = new Date();
       const from = fromDateFor(range, to);
-      const raw = await fetchJson<any>(
-        `${FMP_STABLE}/historical-price-eod/full?symbol=${ticker}&from=${from}&to=${ymd(to)}&apikey=${FMP_KEY}`
-      );
-      const bars = extractBars(raw);
+      ({ bars, attempts } = await fetchFirstNonEmpty([
+        `${FMP_STABLE}/historical-price-eod/full?symbol=${ticker}&from=${from}&to=${ymd(to)}&apikey=${FMP_KEY}`,
+        `${FMP_V3}/historical-price-full/${ticker}?from=${from}&to=${ymd(to)}&apikey=${FMP_KEY}`,
+      ]));
       series = bars
         .map((b) => ({ t: new Date(b.date).getTime(), c: num(b.close ?? b.adjClose) }))
         .filter((pt): pt is { t: number; c: number } => pt.c != null && isFinite(pt.t))
         .sort((a, b) => a.t - b.t);
     }
 
-    if (series.length === 0) return json({ error: `No historical data found for "${ticker}" (${range})` }, 404);
+    if (series.length === 0) {
+      console.error(
+        `[stock-history] ${ticker} (${range}): no bars from any source — ` +
+        attempts.map((a) => `${a.url} -> status=${a.status} bars=${a.bars}`).join(" | ")
+      );
+      return json({ error: `No historical data found for "${ticker}" (${range})` }, 404);
+    }
     return json({ series });
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : "history lookup failed" }, 500);
