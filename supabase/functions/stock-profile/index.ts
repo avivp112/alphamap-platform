@@ -11,15 +11,17 @@
 // Invoke:  POST { "ticker": "ABNB" } → StockProfile (see shape below)
 //
 // Endpoints used:
-//   /v3/quote/{ticker}          — legacy v3, confirmed still live (used by
-//                                 sync-public-markets already).
+//   /stable/quote?symbol=...    — the legacy single-ticker /v3/quote/{ticker}
+//                                 path is retired (empty response); the bulk
+//                                 /v3/quote/{symbols} sync-public-markets
+//                                 uses is a different route and still works,
+//                                 but the single-ticker one needs /stable too.
 //   /stable/profile?symbol=...  — profile is served from the newer /stable
 //                                 surface (same reason search-tickers moved
 //                                 off /v3/search: FMP retires legacy routes
 //                                 endpoint-by-endpoint, not all at once).
 // =============================================================================
 
-const FMP_V3 = "https://financialmodelingprep.com/api/v3";
 const FMP_STABLE = "https://financialmodelingprep.com/stable";
 
 const CORS = {
@@ -70,7 +72,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   try {
     const [quoteArr, profileArr] = await Promise.all([
-      fetchJson<any[]>(`${FMP_V3}/quote/${ticker}?apikey=${FMP_KEY}`),
+      fetchJson<any[]>(`${FMP_STABLE}/quote?symbol=${ticker}&apikey=${FMP_KEY}`),
       fetchJson<any[]>(`${FMP_STABLE}/profile?symbol=${ticker}&apikey=${FMP_KEY}`),
     ]);
     const q = quoteArr?.[0] ?? null;
