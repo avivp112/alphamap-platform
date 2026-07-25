@@ -7,6 +7,9 @@ import {
   Search, X, ChevronLeft, ChevronRight, LayoutList, PlusCircle, CheckCircle2,
   MapPin, User, Briefcase,
 } from "lucide-react";
+import {
+  AreaChart, Area, ResponsiveContainer, Tooltip as ReTooltip, XAxis, YAxis,
+} from "recharts";
 import { Layout } from "../components/Layout";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { TickerLogo } from "../components/TickerLogo";
@@ -17,10 +20,10 @@ import {
   fetchPrivateCohort, fetchStartupByName, fetchPublicCompanies, triggerSync,
   fetchPrivateLateStageActivity, sectorConfig, estimateArr,
   sectorLabel, sectorAccent, isCuratedSector, searchTickers, syncTickers, hasTicker,
-  fetchStockProfile,
+  fetchStockProfile, fetchStockHistory,
   type DerivedPublicCompany, type SectorMultiples, type PublicSectorKey, type AnySectorKey,
   type ImpliedValuation, type SentimentIndex, type PrivateLateStageActivity, type TickerSearchResult,
-  type StockProfile,
+  type StockProfile, type StockHistoryPoint, type StockHistoryRange,
 } from "../../lib/publicMarket";
 
 // ── Formatting helpers ──────────────────────────────────────────────────────
@@ -892,6 +895,126 @@ function ProfileSkeleton() {
   );
 }
 
+// ── Price Chart (the stock-history Edge Function) ───────────────────────────
+
+const HISTORY_RANGES: { key: StockHistoryRange; label: string }[] = [
+  { key: "1D", label: "1D" },
+  { key: "1M", label: "1M" },
+  { key: "3M", label: "3M" },
+  { key: "1Y", label: "1Y" },
+  { key: "5Y", label: "5Y" },
+  { key: "ALL", label: "ALL" },
+];
+
+function fmtChartTick(t: number, range: StockHistoryRange): string {
+  const d = new Date(t);
+  if (range === "1D") return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  if (range === "1M" || range === "3M") return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+}
+
+function StockPriceChart({ ticker }: { ticker: string }) {
+  const [range, setRange]   = useState<StockHistoryRange>("3M");
+  const [series, setSeries] = useState<StockHistoryPoint[] | null>(null);
+  const [error, setError]   = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetchStockHistory(ticker, range).then(({ series, error }) => {
+      if (cancelled) return;
+      setSeries(series);
+      setError(error ?? null);
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [ticker, range]);
+
+  const data = useMemo(() => (series ?? []).map((p) => ({ t: p.t, price: p.c })), [series]);
+  const up = data.length >= 2 ? data[data.length - 1].price >= data[0].price : true;
+  const lineColor = up ? "#059669" : "#E11D48";
+  const gradientId = `priceFill-${ticker}`;
+
+  return (
+    <div className="px-6 pb-6 pt-3 border-b border-gray-100">
+      <div className="flex items-center justify-end gap-1 mb-2.5">
+        {HISTORY_RANGES.map((r) => (
+          <button
+            key={r.key}
+            onClick={() => setRange(r.key)}
+            className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-colors ${
+              range === r.key ? "bg-[#0F172A] text-white" : "text-gray-400 hover:bg-gray-100 hover:text-[#0F172A]"
+            }`}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="h-[180px]">
+        {loading ? (
+          <div className="h-full w-full rounded-[12px] bg-gray-50 animate-pulse" />
+        ) : error || data.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center gap-1.5 text-center">
+            <AlertCircle className="w-4 h-4 text-gray-300" />
+            <p className="text-[11px] text-gray-400">{error ?? "No chart data available"}</p>
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+              <defs>
+                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={lineColor} stopOpacity={0.22} />
+                  <stop offset="100%" stopColor={lineColor} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis
+                dataKey="t"
+                type="number"
+                domain={["dataMin", "dataMax"]}
+                tickFormatter={(t) => fmtChartTick(t, range)}
+                tick={{ fill: "#9CA3AF", fontSize: 9, fontWeight: 600 }}
+                axisLine={false}
+                tickLine={false}
+                minTickGap={40}
+              />
+              <YAxis domain={["auto", "auto"]} hide />
+              <ReTooltip
+                cursor={{ stroke: "#E5E7EB", strokeWidth: 1 }}
+                content={({ active, payload }) => {
+                  if (!active || !payload?.length) return null;
+                  const pt = payload[0].payload as { t: number; price: number };
+                  return (
+                    <div className="bg-white border border-gray-100 rounded-[10px] shadow-lg px-3 py-2 text-xs">
+                      <p className="font-bold text-[#0F172A] tabular-nums">{fmtPrice(pt.price)}</p>
+                      <p className="text-gray-400 text-[10px] mt-0.5">
+                        {new Date(pt.t).toLocaleString(undefined, range === "1D"
+                          ? { hour: "numeric", minute: "2-digit" }
+                          : { month: "short", day: "numeric", year: "numeric" })}
+                      </p>
+                    </div>
+                  );
+                }}
+              />
+              <Area
+                type="monotone"
+                dataKey="price"
+                stroke={lineColor}
+                strokeWidth={2}
+                fill={`url(#${gradientId})`}
+                dot={false}
+                isAnimationActive={false}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function StockProfileModal({ ticker, company, onClose }: {
   ticker: string | null;
   company: DerivedPublicCompany | null;
@@ -986,6 +1109,8 @@ function StockProfileModal({ ticker, company, onClose }: {
                   )}
                 </div>
               </div>
+
+              <StockPriceChart ticker={profile.ticker} />
 
               {/* Company Overview */}
               <div className="p-6 border-b border-gray-100 space-y-3">

@@ -549,3 +549,35 @@ export async function fetchStockProfile(ticker: string): Promise<StockProfileOut
     return { profile: null, error: e instanceof Error ? e.message : "invoke failed" };
   }
 }
+
+// ── Stock Price Chart (the stock-history Edge Function) ────────────────────
+
+export type StockHistoryRange = "1D" | "1M" | "3M" | "1Y" | "5Y" | "ALL";
+
+export interface StockHistoryPoint {
+  t: number; // ms epoch
+  c: number; // close price
+}
+
+export interface StockHistoryOutcome {
+  series: StockHistoryPoint[] | null;
+  error?: string;
+}
+
+/** Fetch a single ticker's historical close-price series for a given range. */
+export async function fetchStockHistory(ticker: string, range: StockHistoryRange): Promise<StockHistoryOutcome> {
+  const t = ticker.trim().toUpperCase();
+  if (!t) return { series: null, error: "Missing ticker" };
+
+  try {
+    const { data, error } = await supabase.functions.invoke("stock-history", {
+      method: "POST",
+      body: { ticker: t, range },
+    });
+    if (error) return { series: null, error: await extractFunctionsError(error, "History lookup failed") };
+    if (data && typeof data.error === "string") return { series: null, error: data.error };
+    return { series: (data?.series as StockHistoryPoint[]) ?? null };
+  } catch (e) {
+    return { series: null, error: e instanceof Error ? e.message : "invoke failed" };
+  }
+}

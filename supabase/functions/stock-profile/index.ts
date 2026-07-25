@@ -11,15 +11,22 @@
 // Invoke:  POST { "ticker": "ABNB" } → StockProfile (see shape below)
 //
 // Endpoints used:
-//   /stable/quote?symbol=...    — the legacy single-ticker /v3/quote/{ticker}
-//                                 path is retired (empty response); the bulk
-//                                 /v3/quote/{symbols} sync-public-markets
-//                                 uses is a different route and still works,
-//                                 but the single-ticker one needs /stable too.
-//   /stable/profile?symbol=...  — profile is served from the newer /stable
-//                                 surface (same reason search-tickers moved
-//                                 off /v3/search: FMP retires legacy routes
-//                                 endpoint-by-endpoint, not all at once).
+//   /stable/quote?symbol=...       — the legacy single-ticker /v3/quote/{t}
+//                                    path is retired; this is its /stable
+//                                    replacement. Some fields (e.g. pe) only
+//                                    ever lived here, not in profile.
+//   /stable/profile?symbol=...     — FMP's /stable profile redesign folded
+//                                    several old quote-only fields straight
+//                                    into profile under NEW names (mktCap ->
+//                                    marketCap, volAvg -> averageVolume,
+//                                    lastDiv -> lastDividend, changesPercentage
+//                                    -> changePercentage). We read both the
+//                                    old and new names defensively since FMP's
+//                                    docs and actual responses have drifted
+//                                    before (see search-tickers, this file's
+//                                    own quote-endpoint history).
+//   /stable/ratios-ttm?symbol=...  — best-effort fallback for P/E and dividend
+//                                    yield when quote doesn't carry them.
 // =============================================================================
 
 const FMP_STABLE = "https://financialmodelingprep.com/stable";
@@ -36,6 +43,17 @@ function json(body: unknown, status = 200): Response {
 
 const num = (v: unknown): number | null =>
   typeof v === "number" && isFinite(v) ? v : (typeof v === "string" && v.trim() !== "" && isFinite(+v) ? +v : null);
+
+// Tries each candidate value in order (across both the quote and profile
+// objects, whichever field name FMP actually used) and returns the first
+// that parses as a number.
+function pick(...vals: unknown[]): number | null {
+  for (const v of vals) {
+    const n = num(v);
+    if (n != null) return n;
+  }
+  return null;
+}
 
 async function fetchJson<T = any>(url: string): Promise<T | null> {
   try {
@@ -71,41 +89,65 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (!ticker) return json({ error: "Missing ticker" }, 400);
 
   try {
-    const [quoteArr, profileArr] = await Promise.all([
+    const [quoteArr, profileArr, ratiosArr] = await Promise.all([
       fetchJson<any[]>(`${FMP_STABLE}/quote?symbol=${ticker}&apikey=${FMP_KEY}`),
       fetchJson<any[]>(`${FMP_STABLE}/profile?symbol=${ticker}&apikey=${FMP_KEY}`),
+      fetchJson<any[]>(`${FMP_STABLE}/ratios-ttm?symbol=${ticker}&apikey=${FMP_KEY}`),
     ]);
     const q = quoteArr?.[0] ?? null;
     const p = profileArr?.[0] ?? null;
+    const r = ratiosArr?.[0] ?? null;
     if (!q && !p) return json({ error: `No data found for "${ticker}"` }, 404);
 
-    const [rangeLow, rangeHigh] = parseRange(p?.range);
-    const price = num(q?.price) ?? num(p?.price);
-    const lastDiv = num(p?.lastDiv);
-    const dividendYieldPct = lastDiv && price && price > 0 ? Math.round((lastDiv / price) * 10000) / 100 : null;
+    const [rangeLow, rangeHigh] = parseRange(p?.range ?? p?.priceRange);
+    const price = pick(q?.price, p?.price);
+    const marketCap = pick(q?.marketCap, q?.mktCap, p?.marketCap, p?.mktCap);
+    const avgVolume = pick(q?.avgVolume, q?.averageVolume, p?.averageVolume, p?.volAvg, p?.avgVolume);
+    const pe = pick(q?.pe, q?.peRatio, q?.priceEarningsRatio, r?.priceToEarningsRatioTTM, r?.peRatioTTM);
+    const lastDiv = pick(p?.lastDividend, p?.lastDiv);
+    const dividendYieldPct =
+      pick(r?.dividendYieldTTM) != null
+        ? Math.round((r!.dividendYieldTTM as number) * 10000) / 100
+        : lastDiv && price && price > 0
+        ? Math.round((lastDiv / price) * 10000) / 100
+        : null;
+
+    // A quote/profile field-name drift has bitten this endpoint before
+    // (FMP renames fields between /v3 and /stable without notice) — logging
+    // the raw keys whenever a metric comes back empty means the next drift
+    // shows up in the function logs instead of another guess-and-redeploy
+    // round trip.
+    if (marketCap == null || pe == null || avgVolume == null) {
+      console.error(
+        `[stock-profile] ${ticker}: missing metric(s) — marketCap=${marketCap} pe=${pe} avgVolume=${avgVolume}. ` +
+        `quote keys: ${q ? Object.keys(q).join(",") : "(no quote)"} | ` +
+        `profile keys: ${p ? Object.keys(p).join(",") : "(no profile)"} | ` +
+        `ratios keys: ${r ? Object.keys(r).join(",") : "(no ratios)"}`
+      );
+    }
 
     const profile = {
       ticker,
       name: q?.name ?? p?.companyName ?? ticker,
-      exchange: q?.exchange ?? p?.exchangeShortName ?? null,
+      exchange: q?.exchange ?? p?.exchangeShortName ?? p?.exchange ?? null,
       currency: p?.currency ?? null,
       image: p?.image ?? null,
       website: p?.website ?? null,
 
       price,
-      change: num(q?.change),
-      changesPercentage: num(q?.changesPercentage),
+      change: pick(q?.change, p?.change),
+      changesPercentage: pick(q?.changesPercentage, q?.changePercentage, p?.changePercentage, p?.changesPercentage),
 
-      dayLow: num(q?.dayLow),
-      dayHigh: num(q?.dayHigh),
-      yearLow: num(q?.yearLow) ?? rangeLow,
-      yearHigh: num(q?.yearHigh) ?? rangeHigh,
+      dayLow: pick(q?.dayLow, p?.dayLow),
+      dayHigh: pick(q?.dayHigh, p?.dayHigh),
+      yearLow: pick(q?.yearLow, p?.yearLow) ?? rangeLow,
+      yearHigh: pick(q?.yearHigh, p?.yearHigh) ?? rangeHigh,
 
-      marketCap: num(q?.marketCap) ?? num(p?.mktCap),
-      pe: num(q?.pe),
+      marketCap,
+      pe,
       beta: num(p?.beta),
-      avgVolume: num(q?.avgVolume) ?? num(p?.volAvg),
-      volume: num(q?.volume),
+      avgVolume,
+      volume: pick(q?.volume, p?.volume),
       lastDividend: lastDiv,
       dividendYieldPct,
 

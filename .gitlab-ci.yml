@@ -1,6 +1,6 @@
 # =============================================================================
 # GitLab CI — manual deploy job for the Public Market Hub's Supabase Edge
-# Functions (sync-public-markets, search-tickers, stock-profile).
+# Functions (sync-public-markets, search-tickers, stock-profile, stock-history).
 #
 # This pipeline does NOT run on ordinary pushes/merges — it only exists so you
 # can trigger it by hand from the GitLab UI (Build -> Pipelines -> "Run
@@ -58,3 +58,4 @@ deploy-public-market-functions:
     - supabase functions deploy sync-public-markets --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
     - supabase functions deploy search-tickers --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
     - supabase functions deploy stock-profile --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
+    - supabase functions deploy stock-history --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
