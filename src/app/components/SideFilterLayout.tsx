@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import React, { useState } from "react";
 import { Search, X, SlidersHorizontal, ChevronUp, ChevronDown } from "lucide-react";
 
@@ -25,6 +26,7 @@ export function SideFilterLayout({
   extraBottomPadding?: boolean;
   children: React.ReactNode;
 }) {
+  const { t } = useTranslation();
   return (
     <div className={`mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 py-6 ${extraBottomPadding ? "pb-28" : ""}`}>
       <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 items-start">
@@ -35,7 +37,7 @@ export function SideFilterLayout({
             <div className="flex items-center justify-between py-3.5 border-b border-gray-100">
               <div className="flex items-center gap-2">
                 <SlidersHorizontal className="w-4 h-4 text-[#0F172A]/50" />
-                <h2 className="text-sm font-bold text-[#0F172A]">Filters</h2>
+                <h2 className="text-sm font-bold text-[#0F172A]">{t("startups.filters")}</h2>
               </div>
               {activeFilterCount > 0 && (
                 <button onClick={onClearAll} className="flex items-center gap-1 text-[11px] font-semibold text-gray-400 hover:text-rose-600 transition-colors">

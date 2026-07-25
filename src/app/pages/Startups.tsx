@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams, useNavigate } from "react-router";
 import {
@@ -304,6 +305,7 @@ function HierarchicalSectorFilter({
   parentSector: string; onParentChange: (v: string) => void;
   subSector:    string; onSubChange:    (v: string) => void;
 }) {
+  const { t } = useTranslation();
   const parents = Object.keys(SECTOR_TAXONOMY).filter((p) => p !== "Uncategorized");
 
   function selectParent(p: string) {
@@ -318,7 +320,7 @@ function HierarchicalSectorFilter({
   return (
     <div className="space-y-0.5 max-h-80 overflow-y-auto pr-1">
       <button onClick={() => selectParent("")} className={`${rowBase} ${!parentSector ? rowActive : rowPassive}`}>
-        All Sectors
+        {t("startups.allSectors")}
       </button>
       {parents.map((p) => {
         const subs = SECTOR_TAXONOMY[p] ?? [];
@@ -366,6 +368,7 @@ function CountryFilterList({
 }: {
   countries: string[]; value: string; onChange: (v: string) => void;
 }) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const filtered = useMemo(
     () => countries.filter((c) => c.toLowerCase().includes(query.toLowerCase())),
@@ -386,11 +389,11 @@ function CountryFilterList({
         />
       </div>
       <div className="space-y-0.5 max-h-56 overflow-y-auto pr-1">
-        <button onClick={() => onChange("")} className={`${rowBase} ${!value ? rowActive : rowPassive}`}>All Countries</button>
+        <button onClick={() => onChange("")} className={`${rowBase} ${!value ? rowActive : rowPassive}`}>{t("startups.allCountries")}</button>
         {filtered.map((c) => (
           <button key={c} onClick={() => onChange(value === c ? "" : c)} className={`${rowBase} ${value === c ? rowActive : rowPassive}`}>{c}</button>
         ))}
-        {filtered.length === 0 && <p className="text-[11px] text-gray-300 px-2 py-1">No matches</p>}
+        {filtered.length === 0 && <p className="text-[11px] text-gray-300 px-2 py-1">{t("startups.noMatches")}</p>}
       </div>
     </div>
   );
@@ -437,6 +440,7 @@ function TimelineTooltip({ active, payload }: {
 }
 
 function FundingTimeline({ rounds }: { rounds: FundingRound[] }) {
+  const { t } = useTranslation();
   const data = useMemo(() => buildTimelineData(rounds), [rounds]);
   if (data.length < 2) return null;
 
@@ -448,8 +452,8 @@ function FundingTimeline({ rounds }: { rounds: FundingRound[] }) {
     <div className="mb-7">
       <div className="flex items-center gap-2 mb-3">
         <Clock className="w-4 h-4 text-[#F59E0B]" />
-        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Funding Timeline</h4>
-        <span className="text-[9px] text-gray-300 ml-auto">Cumulative raised</span>
+        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("startups.fundingTimeline")}</h4>
+        <span className="text-[9px] text-gray-300 ml-auto">{t("startups.cumulativeRaised")}</span>
       </div>
       <div className="bg-gray-50 rounded-[16px] p-4 border border-gray-100">
         <ResponsiveContainer width="100%" height={160}>
@@ -546,6 +550,7 @@ function ScoreRing({ score, tier }: { score: number | null; tier: 'A' | 'B' | 'C
 function AlphaMapScorePanel({ data, loading, err }: {
   data: AlphaScore | null; loading: boolean; err: boolean;
 }) {
+  const { t } = useTranslation();
   if (loading) {
     return (
       <div className="bg-gray-50 border border-gray-100 rounded-[14px] p-4 flex items-center gap-3">
@@ -558,7 +563,7 @@ function AlphaMapScorePanel({ data, loading, err }: {
     return (
       <div className="bg-gray-50 border border-gray-100 rounded-[14px] p-4 flex items-center gap-3">
         <Activity className="w-4 h-4 text-gray-300" />
-        <span className="text-xs text-gray-400 italic">Score pending data enrichment</span>
+        <span className="text-xs text-gray-400 italic">{t("startups.scorePending")}</span>
       </div>
     );
   }
@@ -575,7 +580,7 @@ function AlphaMapScorePanel({ data, loading, err }: {
       {/* Header row */}
       <div className="flex items-center gap-2 mb-4">
         <Activity className="w-4 h-4 text-gray-500" />
-        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest">AlphaMap Score</h3>
+        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest">{t("startups.alphamapScore")}</h3>
         {data.archetype && (
           <span
             className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-white/70 text-gray-500 border border-black/5"
@@ -597,7 +602,7 @@ function AlphaMapScorePanel({ data, loading, err }: {
         {/* Ring */}
         <div className="flex flex-col items-center gap-1">
           <ScoreRing score={data.score} tier={data.tier} />
-          <span className="text-[9px] text-gray-400 uppercase tracking-wider">Score</span>
+          <span className="text-[9px] text-gray-400 uppercase tracking-wider">{t("startups.score")}</span>
         </div>
 
         {/* Pillar bars */}
@@ -648,7 +653,7 @@ function AlphaMapScorePanel({ data, loading, err }: {
         <div className="absolute bottom-6 left-0 z-50 w-72 bg-[#060f1c] border border-[#1a2a3f] rounded-xl p-4 shadow-2xl
                         opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto
                         transition-opacity duration-150">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">Pillar Details</p>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">{t("startups.pillarDetails")}</p>
           {pillars.map(({ pillar }) => (
             <div key={pillar.label} className="mb-3 last:mb-0">
               <div className="flex items-center justify-between mb-1">
@@ -659,28 +664,28 @@ function AlphaMapScorePanel({ data, loading, err }: {
               </div>
               <div className="text-[10px] text-slate-500 space-y-0.5">
                 {pillar.detail?.value_creation_x != null && (
-                  <div>Value creation: <span className="text-slate-300">{pillar.detail.value_creation_x.toFixed(2)}×</span></div>
+                  <div>{t("startups.valueCreation")} <span className="text-slate-300">{pillar.detail.value_creation_x.toFixed(2)}×</span></div>
                 )}
                 {pillar.detail?.burn_proxy_k != null && (
-                  <div>Burn proxy: <span className="text-slate-300">${pillar.detail.burn_proxy_k.toFixed(0)}k/hire</span></div>
+                  <div>{t("startups.burnProxy")} <span className="text-slate-300">${pillar.detail.burn_proxy_k.toFixed(0)}k/hire</span></div>
                 )}
                 {pillar.detail?.hc_growth_pct != null && (
-                  <div>HC growth: <span className="text-slate-300">{pillar.detail.hc_growth_pct.toFixed(1)}%</span></div>
+                  <div>{t("startups.hcGrowth")} <span className="text-slate-300">{pillar.detail.hc_growth_pct.toFixed(1)}%</span></div>
                 )}
                 {pillar.detail?.serial_founder != null && (
-                  <div>Serial founder: <span className="text-slate-300">{pillar.detail.serial_founder ? 'Yes +10' : 'No'}</span></div>
+                  <div>{t("startups.serialFounder")} <span className="text-slate-300">{pillar.detail.serial_founder ? 'Yes +10' : 'No'}</span></div>
                 )}
                 {pillar.detail?.investor_tier != null && (
-                  <div>Investor tier score: <span className="text-slate-300">{pillar.detail.investor_tier}</span></div>
+                  <div>{t("startups.investorTierScore")} <span className="text-slate-300">{pillar.detail.investor_tier}</span></div>
                 )}
                 {pillar.detail?.follow_on != null && (
-                  <div>Follow-on investors: <span className="text-slate-300">{pillar.detail.follow_on ? 'Yes +10' : 'No'}</span></div>
+                  <div>{t("startups.followOnInvestors")} <span className="text-slate-300">{pillar.detail.follow_on ? 'Yes +10' : 'No'}</span></div>
                 )}
                 {pillar.detail?.n_investors != null && (
-                  <div>Investors tracked: <span className="text-slate-300">{pillar.detail.n_investors} ({pillar.detail.n_matched ?? 0} ranked)</span></div>
+                  <div>{t("startups.investorsTracked")} <span className="text-slate-300">{pillar.detail.n_investors} ({pillar.detail.n_matched ?? 0} ranked)</span></div>
                 )}
                 {pillar.detail?.tier != null && (
-                  <div>Basis: <span className="text-slate-300 capitalize">{pillar.detail.tier.replace(/_/g, ' ')}</span></div>
+                  <div>{t("startups.basis")} <span className="text-slate-300 capitalize">{pillar.detail.tier.replace(/_/g, ' ')}</span></div>
                 )}
               </div>
             </div>
@@ -768,11 +773,12 @@ function StatCard({ icon: Icon, label, value, accent = "#F59E0B" }: {
 // guessed, or auto-filled — it's surfaced so the admin/data team can see the
 // gap and go fill it.
 function MissingDataState({ message }: { message: string }) {
+  const { t } = useTranslation();
   return (
     <div className="flex items-start gap-3 rounded-[14px] p-5 border border-dashed border-amber-400/60 bg-amber-50/60">
       <AlertCircle className="w-5 h-5 text-amber-600 flex-none mt-0.5" />
       <div>
-        <p className="text-sm font-bold text-amber-800">Data requires filling</p>
+        <p className="text-sm font-bold text-amber-800">{t("startups.dataRequiresFilling")}</p>
         <p className="text-xs text-gray-500 mt-1 leading-relaxed">{message}</p>
       </div>
     </div>
@@ -786,6 +792,7 @@ function OverviewTab({
 }: {
   startup: Startup; alphaScore: AlphaScore | null; alphaLoading: boolean; alphaErr: boolean;
 }) {
+  const { t } = useTranslation();
   const location = [startup.city, startup.country].filter(Boolean).join(", ") || "—";
   const sector = classifyIndustry(startup.industry);
 
@@ -810,7 +817,7 @@ function OverviewTab({
         <div>
           <div className="flex items-center gap-2 mb-3">
             <Briefcase className="w-4 h-4 text-gray-400" />
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Leadership</h3>
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("startups.leadership")}</h3>
           </div>
           <div className="flex flex-wrap gap-2">
             {startup.leadership.map((l, i) => (
@@ -857,6 +864,7 @@ function OverviewTab({
 // ── Tab 2: Funding & Valuation ────────────────────────────────────────────────
 
 function VerticalFundingTimeline({ rounds }: { rounds: FundingRound[] }) {
+  const { t } = useTranslation();
   const newestFirst = useMemo(
     () => [...rounds].sort((a, b) => (b.announcement_date ?? "").localeCompare(a.announcement_date ?? "")),
     [rounds],
@@ -912,7 +920,7 @@ function VerticalFundingTimeline({ rounds }: { rounds: FundingRound[] }) {
                         )}
                       </span>
                     ) : (
-                      <span className="text-[10px] text-gray-300 italic">Investor data requires filling</span>
+                      <span className="text-[10px] text-gray-300 italic">{t("startups.investorDataRequiresFilling")}</span>
                     )}
                   </div>
                   {r.source_url && (
@@ -932,6 +940,7 @@ function VerticalFundingTimeline({ rounds }: { rounds: FundingRound[] }) {
 }
 
 function FundingValuationTab({ sortedRounds, fundingHistoryComplete }: { sortedRounds: FundingRound[]; fundingHistoryComplete?: boolean | null }) {
+  const { t } = useTranslation();
   const latestRound = sortedRounds[sortedRounds.length - 1] ?? null;
   const raised = sortedRounds.reduce((sum, r) => sum + (r.amount_raised ?? 0), 0);
 
@@ -941,7 +950,7 @@ function FundingValuationTab({ sortedRounds, fundingHistoryComplete }: { sortedR
         <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-[12px] px-4 py-3">
           <AlertCircle className="w-4 h-4 text-amber-600 flex-none mt-0.5" />
           <p className="text-xs text-amber-800 leading-relaxed">
-            <span className="font-bold">Funding history may be incomplete.</span> Research found signs of earlier rounds (e.g. a later-stage round with no matching Seed/Series A, or a source citing more total rounds than could be verified) that couldn't be confirmed in detail — the rounds below may not be the full story.
+            <span className="font-bold">{t("startups.fundingIncomplete")}</span> Research found signs of earlier rounds (e.g. a later-stage round with no matching Seed/Series A, or a source citing more total rounds than could be verified) that couldn't be confirmed in detail — the rounds below may not be the full story.
           </p>
         </div>
       )}
@@ -956,7 +965,7 @@ function FundingValuationTab({ sortedRounds, fundingHistoryComplete }: { sortedR
       <div>
         <div className="flex items-center gap-2 mb-3">
           <Clock className="w-4 h-4 text-gray-400" />
-          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Funding Timeline</h3>
+          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("startups.fundingTimeline")}</h3>
         </div>
         {sortedRounds.length === 0 ? (
           <MissingDataState message="No funding rounds have been recorded for this company yet." />
@@ -1053,6 +1062,7 @@ function CapTableInvestorRow({ entry, tierMap }: { entry: InvestorScheduleEntry;
 }
 
 function CapTableTab({ startup }: { startup: Startup }) {
+  const { t } = useTranslation();
   const [tierMap, setTierMap] = useState<Map<string, number> | null>(null);
 
   useEffect(() => {
@@ -1075,13 +1085,13 @@ function CapTableTab({ startup }: { startup: Startup }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-[14px] px-4 py-3.5">
-        <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Total Raised</span>
+        <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("startups.totalRaised")}</span>
         <span className="text-lg font-black text-gray-900">{totalRaised > 0 ? fmt(totalRaised) : "—"}</span>
       </div>
       <div>
         <div className="flex items-center gap-2 mb-3">
           <Users className="w-4 h-4 text-gray-400" />
-          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Investor Schedule</h3>
+          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("startups.investorSchedule")}</h3>
         </div>
         <div className="space-y-2">
           {schedule.map((e) => <CapTableInvestorRow key={e.name} entry={e} tierMap={tierMap} />)}
@@ -1102,6 +1112,7 @@ function TalentGrowthTab({
 }: {
   startup: Startup; alphaScore: AlphaScore | null; alphaLoading: boolean;
 }) {
+  const { t } = useTranslation();
   const [realPts, setRealPts] = useState<HeadcountPoint[] | null>(null);
 
   useEffect(() => {
@@ -1119,7 +1130,7 @@ function TalentGrowthTab({
         <StatCard icon={Activity} label="Talent Velocity" accent="#6d28d7"
           value={talentPillar?.valid && talentPillar.score != null ? `${safeFixed(talentPillar.score, 0)} / 100` : "—"} />
         <div className="rounded-[14px] p-4 flex flex-col gap-2 border bg-gray-50 border-gray-100">
-          <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">Growth Trend</span>
+          <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">{t("startups.growthTrend")}</span>
           <GrowthTrendBadge trend={startup.growth_trend} light />
           {(!startup.growth_trend || startup.growth_trend === "unknown") && (
             <span className="text-sm font-bold text-gray-400">—</span>
@@ -1131,14 +1142,14 @@ function TalentGrowthTab({
         <div className="bg-gray-50 border border-gray-100 rounded-[14px] p-5">
           <div className="flex items-center gap-2 mb-3">
             <Activity className="w-4 h-4 text-[#6d28d7]" />
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Talent Velocity Breakdown</h3>
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("startups.talentVelocity")}</h3>
           </div>
           <div className="text-[11px] text-gray-500 space-y-1.5">
             {talentPillar.detail?.hc_growth_pct != null && (
-              <div>Headcount growth: <span className="text-gray-700 font-medium">{talentPillar.detail.hc_growth_pct.toFixed(1)}%</span></div>
+              <div>{t("startups.headcountGrowth")} <span className="text-gray-700 font-medium">{talentPillar.detail.hc_growth_pct.toFixed(1)}%</span></div>
             )}
             {talentPillar.detail?.serial_founder != null && (
-              <div>Serial founder bonus: <span className="text-gray-700 font-medium">{talentPillar.detail.serial_founder ? "Yes (+10)" : "No"}</span></div>
+              <div>{t("startups.serialFounderBonus")} <span className="text-gray-700 font-medium">{talentPillar.detail.serial_founder ? "Yes (+10)" : "No"}</span></div>
             )}
           </div>
         </div>
@@ -1147,7 +1158,7 @@ function TalentGrowthTab({
       <div>
         <div className="flex items-center gap-2 mb-3">
           <Users className="w-4 h-4 text-gray-400" />
-          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Headcount History</h3>
+          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("startups.headcountHistory")}</h3>
         </div>
         {chartData ? (
           <div className="bg-gray-50 border border-gray-100 rounded-[14px] p-4">
@@ -1248,6 +1259,7 @@ function CompetitorsMarketTab({ startup, onNavigate }: { startup: Startup; onNav
 // state here is the common, correct answer for most companies, not missing data.
 
 function AcquisitionsIPTab({ startup, onNavigate }: { startup: Startup; onNavigate: (id: string) => void }) {
+  const { t } = useTranslation();
   const acquisitions = (startup.acquisitions ?? []).filter(Boolean);
   const hasPatents = startup.patent_count != null;
 
@@ -1261,7 +1273,7 @@ function AcquisitionsIPTab({ startup, onNavigate }: { startup: Startup; onNaviga
         <div>
           <div className="flex items-center gap-2 mb-3">
             <Award className="w-4 h-4 text-[#6d28d7]" />
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Patent Portfolio</h3>
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("startups.patentPortfolio")}</h3>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
             <StatCard icon={Award} label="Patents Held" value={String(startup.patent_count)} accent="#6d28d7" />
@@ -1279,7 +1291,7 @@ function AcquisitionsIPTab({ startup, onNavigate }: { startup: Startup; onNaviga
         <div>
           <div className="flex items-center gap-2 mb-3">
             <Building2 className="w-4 h-4 text-gray-400" />
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Acquisitions</h3>
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("startups.acquisitions")}</h3>
           </div>
           <div className="space-y-2">
             {acquisitions.map((a, idx) => {
@@ -1325,6 +1337,7 @@ const TEARSHEET_TABS: { id: TearsheetTab; label: string }[] = [
 ];
 
 function TearsheetModal({ startup, onClose, onNavigate }: { startup: StartupListRow; onClose: () => void; onNavigate: (row: StartupListRow) => void }) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TearsheetTab>("overview");
   const [navLoading, setNavLoading] = useState(false);
 
@@ -1488,7 +1501,7 @@ function TearsheetModal({ startup, onClose, onNavigate }: { startup: StartupList
           ) : detailErr || !detail ? (
             <div className="flex flex-col items-center py-24 gap-3 text-center">
               <AlertCircle className="w-8 h-8 text-red-400" />
-              <p className="text-sm font-semibold text-[#0F172A]">Failed to load company details</p>
+              <p className="text-sm font-semibold text-[#0F172A]">{t("startups.failedToLoadCompany")}</p>
             </div>
           ) : (
             <>
@@ -1520,6 +1533,7 @@ function CompareModal({
   startups: StartupListRow[];
   onClose: () => void; onAddPeer: (s: StartupListRow) => void;
 }) {
+  const { t } = useTranslation();
   // Suggested peers are resolved server-side (same sector_parent + stage
   // bucket) instead of scanning the full in-memory dataset — required now
   // that only the current page of startups is ever held client-side.
@@ -1593,7 +1607,7 @@ function CompareModal({
           {/* Bar chart */}
           {chartData.some((d) => d.total > 0) && (
             <div>
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Total Capital Raised</h3>
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">{t("startups.totalCapitalRaised")}</h3>
               <div className="bg-[#091422] border border-[#1a2a3f] rounded-[16px] p-4">
                 <ResponsiveContainer width="100%" height={140}>
                   <BarChart data={chartData} margin={{ top: 8, right: 8, left: 4, bottom: 0 }} barCategoryGap="40%">
@@ -1635,7 +1649,7 @@ function CompareModal({
                 ))}
               </div>
               {startups.length >= 3 && (
-                <p className="text-xs text-slate-600 mt-2">Maximum 3 companies. Deselect one to add another.</p>
+                <p className="text-xs text-slate-600 mt-2">{t("startups.maxThree")}</p>
               )}
             </div>
           )}
@@ -1653,6 +1667,7 @@ function StartupCard({
   startup: StartupListRow; onSelect: () => void;
   selected: boolean; onToggleSelect: (e: React.MouseEvent) => void;
 }) {
+  const { t } = useTranslation();
   const roundType   = startup.latest_round_type ?? null;
   const location    = [startup.city, startup.country].filter(Boolean).join(", ") || null;
   const cardGlow    = roundType ? (ROUND_GLOW[roundType] ?? ROUND_GLOW.default) : ROUND_GLOW.default;
@@ -1708,11 +1723,11 @@ function StartupCard({
         )}
         <div className="grid grid-cols-2 gap-2 mb-4">
           <div className="rounded-[10px] px-3 py-2 bg-gray-50 border border-gray-100">
-            <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Valuation</div>
+            <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">{t("common.valuation")}</div>
             <div className="text-sm font-bold text-gray-900">{fmt(startup.latest_valuation)}</div>
           </div>
           <div className="rounded-[10px] px-3 py-2 bg-gray-50 border border-gray-100">
-            <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Raised</div>
+            <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">{t("startups.raised")}</div>
             <div className="text-sm font-bold text-gray-900">{fmt(startup.total_raised) || "—"}</div>
           </div>
         </div>
@@ -1805,6 +1820,7 @@ function StartupTableRow({ startup, onSelect }: { startup: StartupListRow; onSel
 function AddStartupDialog({ open, onClose, onSuccess }: {
   open: boolean; onClose: () => void; onSuccess: (s: Startup) => void;
 }) {
+  const { t } = useTranslation();
   const [name, setName]       = useState("");
   const [status, setStatus]   = useState<"idle" | "loading" | "error" | "success">("idle");
   const [errorMsg, setError]  = useState("");
@@ -1847,14 +1863,14 @@ function AddStartupDialog({ open, onClose, onSuccess }: {
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-2xl bg-amber-50 flex items-center justify-center"><Rocket className="w-5 h-5 text-[#F59E0B]" /></div>
           <div>
-            <h2 className="text-base font-bold text-[#0F172A]">Add a Startup</h2>
-            <p className="text-xs text-gray-400">The agent researches and validates it automatically</p>
+            <h2 className="text-base font-bold text-[#0F172A]">{t("startups.addStartup")}</h2>
+            <p className="text-xs text-gray-400">{t("startups.agentResearches")}</p>
           </div>
         </div>
         {status === "success" ? (
           <div className="flex flex-col items-center py-4 gap-3 text-center">
             <CheckCircle2 className="w-10 h-10 text-emerald-500" />
-            <p className="text-sm font-semibold text-[#0F172A]">Added successfully!</p>
+            <p className="text-sm font-semibold text-[#0F172A]">{t("startups.addedSuccessfully")}</p>
           </div>
         ) : status === "loading" ? (
           <div className="flex flex-col items-center py-6 gap-4 text-center">
@@ -1876,7 +1892,7 @@ function AddStartupDialog({ open, onClose, onSuccess }: {
                 <AlertCircle className="w-4 h-4 flex-none mt-0.5" /><span>{errorMsg}</span>
               </div>
             )}
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Company name</label>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{t("startups.companyName")}</label>
             <input ref={inputRef} type="text" value={name} onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Stripe, Wiz, Deel…"
               className="w-full border border-gray-200 rounded-[12px] px-4 py-3 text-sm text-[#0F172A] placeholder-gray-300 focus:outline-none focus:border-[#0F172A]/30 focus:ring-2 focus:ring-[#0F172A]/10 transition-all"
@@ -2001,6 +2017,7 @@ function headcountRange(step: HeadcountStep): { min?: number; max?: number } {
 }
 
 export function Startups() {
+  const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // ── Server-side rows for the CURRENT page only — never the full dataset ──
@@ -2163,8 +2180,8 @@ export function Startups() {
         <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 pt-6 pb-5">
           <div className="flex items-center justify-between gap-4 mb-1.5">
             <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">
-              Private Market
-              {cityFilter && <span className="ml-3 text-lg font-medium text-[#0F172A]">in {cityFilter}</span>}
+              {t("startups.pageTitle")}
+              {cityFilter && <span className="ml-3 text-lg font-medium text-[#0F172A]">{cityFilter}</span>}
             </h1>
             <div className="flex items-center gap-2 flex-none">
               <div className="flex items-center bg-white/60 border border-black/10 rounded-[12px] p-1">
@@ -2175,10 +2192,10 @@ export function Startups() {
           </div>
           <div className="flex items-center gap-3">
             <p className="text-sm text-[#0F172A]/60 leading-snug">
-              Research private tech companies with AI and other advanced tools
+              {t("startups.pageSubtitle")}
             </p>
             <span className="text-xs font-semibold text-[#0F172A]/60 bg-white/60 border border-black/10 px-2.5 py-1 rounded-full flex-none">
-              {totalCount.toLocaleString()} {totalCount === 1 ? "company" : "companies"}
+              {t("startups.companyCount", { count: totalCount })}
             </span>
           </div>
         </div>
@@ -2188,13 +2205,13 @@ export function Startups() {
       <SideFilterLayout
         search={search}
         onSearchChange={setSearch}
-        searchPlaceholder="Search companies…"
+        searchPlaceholder={t("startups.searchCompanies")}
         activeFilterCount={activeFilterCount}
         onClearAll={clearAll}
         extraBottomPadding={selected.size >= 1}
         filters={
           <>
-              <FilterAccordion title="Sectors" defaultOpen
+              <FilterAccordion title={t("startups.sectors")} defaultOpen
                 badge={parentSector ? <FilterBadge>{subSector || parentSector}</FilterBadge> : undefined}>
                 <HierarchicalSectorFilter
                   parentSector={parentSector} onParentChange={setParentSector}
@@ -2202,23 +2219,23 @@ export function Startups() {
                 />
               </FilterAccordion>
 
-              <FilterAccordion title="Countries" defaultOpen={false}
+              <FilterAccordion title={t("startups.countries")} defaultOpen={false}
                 badge={countryFilter ? <FilterBadge>{countryFilter}</FilterBadge> : undefined}>
                 <CountryFilterList countries={countries} value={countryFilter} onChange={setCountry} />
               </FilterAccordion>
 
-              <FilterAccordion title="Funding Stage" defaultOpen
+              <FilterAccordion title={t("startups.fundingStage")} defaultOpen
                 badge={stageStep !== "all" ? <FilterBadge>{currentStageLabel}</FilterBadge> : undefined}>
                 <StepSlider steps={STAGE_STEPS} value={stageStep} onChange={(v) => setStageStep(v as StageStep)} />
               </FilterAccordion>
 
-              <FilterAccordion title="Headcount" defaultOpen
+              <FilterAccordion title={t("startups.headcount")} defaultOpen
                 badge={headcountStep !== "all" ? <FilterBadge>{currentHeadcountLabel}</FilterBadge> : undefined}>
                 <StepSlider steps={HEADCOUNT_STEPS} value={headcountStep} onChange={(v) => setHeadcount(v as HeadcountStep)} />
               </FilterAccordion>
 
-              <FilterAccordion title="Financial Momentum" defaultOpen={false}
-                badge={momentumFilter ? <FilterBadge>On</FilterBadge> : undefined}>
+              <FilterAccordion title={t("startups.financialMomentum")} defaultOpen={false}
+                badge={momentumFilter ? <FilterBadge>{t("startups.on")}</FilterBadge> : undefined}>
                 <div className="flex items-center justify-between gap-2">
                   <button
                     onClick={() => setMomentum((v) => !v)}
@@ -2271,7 +2288,7 @@ export function Startups() {
             {loadError && rows.length === 0 ? (
               <div className="flex flex-col items-center py-24 gap-3 text-center">
                 <AlertCircle className="w-8 h-8 text-red-400" />
-                <p className="text-sm font-semibold text-[#0F172A]">Failed to load startups</p>
+                <p className="text-sm font-semibold text-[#0F172A]">{t("startups.failedToLoad")}</p>
                 <p className="text-xs text-gray-400 max-w-xs">{loadError}</p>
               </div>
             ) : rowsLoading && rows.length === 0 ? (
@@ -2279,7 +2296,7 @@ export function Startups() {
             ) : rows.length === 0 && activeFilterCount === 0 ? (
               <div className="flex flex-col items-center justify-center py-32 text-center">
                 <div className="w-16 h-16 rounded-3xl bg-amber-50 flex items-center justify-center mb-6"><Rocket className="w-7 h-7 text-[#F59E0B]" /></div>
-                <h2 className="text-xl font-bold text-[#0F172A] mb-3">No startups yet</h2>
+                <h2 className="text-xl font-bold text-[#0F172A] mb-3">{t("startups.noStartupsYet")}</h2>
                 <p className="text-sm text-gray-400 max-w-sm leading-relaxed mb-8">
                   Add your first startup — the AI agent will research, validate, and store it with full funding history.
                 </p>
@@ -2290,8 +2307,8 @@ export function Startups() {
             ) : rows.length === 0 ? (
               <div className="flex flex-col items-center py-20 gap-3 text-center">
                 <Building2 className="w-8 h-8 text-gray-300" />
-                <p className="text-sm font-semibold text-gray-400">No companies match these filters</p>
-                <button onClick={clearAll} className="text-xs text-gray-500 font-semibold hover:text-rose-600 transition-colors">Clear all filters</button>
+                <p className="text-sm font-semibold text-gray-400">{t("startups.noCompaniesMatch")}</p>
+                <button onClick={clearAll} className="text-xs text-gray-500 font-semibold hover:text-rose-600 transition-colors">{t("startups.clearAllFilters")}</button>
               </div>
             ) : (
               <div className="relative">

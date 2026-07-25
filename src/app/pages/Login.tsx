@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, Mail, ArrowRight } from "lucide-react";
 import { FcGoogle } from "react-icons/fc";
 import { FaLinkedin } from "react-icons/fa";
@@ -20,15 +22,17 @@ interface FieldErrors {
   password?: string;
 }
 
-function validate(values: FormValues): FieldErrors {
+// Takes t so the messages are produced in the active language at validation
+// time rather than being frozen at module load.
+function validate(values: FormValues, t: TFunction): FieldErrors {
   const errors: FieldErrors = {};
   if (!values.email.trim()) {
-    errors.email = "Enter your email address.";
+    errors.email = t("auth.validation.emailRequired");
   } else if (!EMAIL_RE.test(values.email.trim())) {
-    errors.email = "Enter a valid email address.";
+    errors.email = t("auth.validation.emailInvalid");
   }
   if (!values.password) {
-    errors.password = "Enter your password.";
+    errors.password = t("auth.validation.passwordRequired");
   }
   return errors;
 }
@@ -70,13 +74,10 @@ const labelCls = "block text-xs font-semibold text-gray-600 mb-1.5";
 
 // ── Left brand panel (desktop only) — identical to SignUp.tsx ────────────────
 
-const FEATURES = [
-  "AI-driven research across 10,000+ private companies",
-  "Real-time funding, cap table, and market intelligence",
-  "One workspace bridging private innovation and public markets",
-];
+const FEATURE_KEYS = ["auth.brand.f1", "auth.brand.f2", "auth.brand.f3"];
 
 function BrandPanel() {
+  const { t } = useTranslation();
   return (
     <div
       className="relative hidden lg:flex flex-col justify-between w-full h-full px-12 py-12 overflow-hidden"
@@ -116,19 +117,19 @@ function BrandPanel() {
 
       <div className="relative z-10 max-w-md">
         <h2 className="font-serif text-3xl leading-tight text-[#0F172A] mb-5 text-balance">
-          Bridging the gap between private innovation and <span className="text-[#5C6A4C]">public markets</span>.
+          {t("auth.brand.headlinePrefix")}<span className="text-[#5C6A4C]">{t("auth.brand.headlineAccent")}</span>.
         </h2>
         <ul className="space-y-3.5">
-          {FEATURES.map((f) => (
-            <li key={f} className="flex items-start gap-2.5 text-sm text-[#0F172A]/65 leading-relaxed">
+          {FEATURE_KEYS.map((k) => (
+            <li key={k} className="flex items-start gap-2.5 text-sm text-[#0F172A]/65 leading-relaxed">
               <CheckCircle2 className="w-4 h-4 text-[#7C8967] flex-none mt-0.5" />
-              {f}
+              {t(k)}
             </li>
           ))}
         </ul>
       </div>
 
-      <p className="relative z-10 text-xs text-[#0F172A]/35">© {new Date().getFullYear()} AlphaMap. All rights reserved.</p>
+      <p className="relative z-10 text-xs text-[#0F172A]/35">{t("common.allRightsReserved", { year: new Date().getFullYear() })}</p>
     </div>
   );
 }
@@ -136,6 +137,7 @@ function BrandPanel() {
 // ── Login form ────────────────────────────────────────────────────────────────
 
 function LoginForm() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const next = searchParams.get("next") || "/dashboard";
@@ -163,7 +165,7 @@ function LoginForm() {
       if (error) throw error;
       // On success the browser is redirected to the provider — no further action needed here.
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Couldn't start login. Please try again.");
+      setFormError(err instanceof Error ? err.message : t("auth.login.errStart"));
       setLoading("idle");
     }
   }
@@ -172,7 +174,7 @@ function LoginForm() {
     e.preventDefault();
     setFormError(null);
     setResetMessage(null);
-    const errors = validate(values);
+    const errors = validate(values, t);
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
 
@@ -185,7 +187,7 @@ function LoginForm() {
       if (error) throw error;
       navigate(next);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Couldn't log you in. Please check your credentials and try again.");
+      setFormError(err instanceof Error ? err.message : t("auth.login.errCredentials"));
     } finally {
       setLoading("idle");
     }
@@ -196,7 +198,7 @@ function LoginForm() {
     setResetMessage(null);
     const email = values.email.trim();
     if (!EMAIL_RE.test(email)) {
-      setFieldErrors((e) => ({ ...e, email: "Enter your email address above first." }));
+      setFieldErrors((e) => ({ ...e, email: t("auth.login.errEmailFirst") }));
       return;
     }
     setLoading("reset");
@@ -205,9 +207,9 @@ function LoginForm() {
         redirectTo: `${window.location.origin}/reset-password`,
       });
       if (error) throw error;
-      setResetMessage(`If an account exists for ${email}, a password reset link is on its way.`);
+      setResetMessage(t("auth.login.resetSent", { email }));
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Couldn't send a reset link. Please try again.");
+      setFormError(err instanceof Error ? err.message : t("auth.login.errReset"));
     } finally {
       setLoading("idle");
     }
@@ -220,8 +222,8 @@ function LoginForm() {
         <BrandWordmark className="text-xl tracking-tight text-[#0F172A]" />
       </div>
 
-      <h1 className="font-serif text-2xl font-bold text-[#0F172A] mb-1.5">Welcome back</h1>
-      <p className="text-sm text-gray-500 mb-7">Log in to keep researching private markets.</p>
+      <h1 className="font-serif text-2xl font-bold text-[#0F172A] mb-1.5">{t("auth.login.title")}</h1>
+      <p className="text-sm text-gray-500 mb-7">{t("auth.login.subtitle")}</p>
 
       <div className="space-y-2.5 mb-5">
         <button
@@ -231,7 +233,7 @@ function LoginForm() {
           className="w-full flex items-center justify-center gap-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60 text-sm font-semibold text-[#0F172A] py-2.5 transition-all"
         >
           {loading === "google" ? <Loader2 className="w-4 h-4 animate-spin" /> : <FcGoogle className="w-4.5 h-4.5" />}
-          Log in with Google
+          {t("auth.login.google")}
         </button>
         <button
           type="button"
@@ -240,23 +242,23 @@ function LoginForm() {
           className="w-full flex items-center justify-center gap-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60 text-sm font-semibold text-[#0F172A] py-2.5 transition-all"
         >
           {loading === "linkedin" ? <Loader2 className="w-4 h-4 animate-spin" /> : <FaLinkedin className="w-4 h-4 text-[#0A66C2]" />}
-          Log in with LinkedIn
+          {t("auth.login.linkedin")}
         </button>
       </div>
 
       <div className="flex items-center gap-3 mb-5">
         <div className="h-px flex-1 bg-gray-200" />
-        <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Or</span>
+        <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">{t("common.or")}</span>
         <div className="h-px flex-1 bg-gray-200" />
       </div>
 
       <form onSubmit={handleSubmit} noValidate className="space-y-4">
         <div>
-          <label className={labelCls} htmlFor="email">Email address</label>
+          <label className={labelCls} htmlFor="email">{t("auth.fields.email")}</label>
           <div className="relative">
             <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300" />
             <input
-              id="email" type="email" autoComplete="email" placeholder="jane@company.com"
+              id="email" type="email" autoComplete="email" placeholder={t("auth.fields.emailPlaceholder")}
               value={values.email} onChange={(e) => setField("email", e.target.value)}
               className={`${inputCls} pl-10 ${fieldErrors.email ? inputErrCls : ""}`}
             />
@@ -266,27 +268,27 @@ function LoginForm() {
 
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <label className="block text-xs font-semibold text-gray-600" htmlFor="password">Password</label>
+            <label className="block text-xs font-semibold text-gray-600" htmlFor="password">{t("auth.fields.password")}</label>
             <button
               type="button"
               onClick={handleForgotPassword}
               disabled={loading !== "idle"}
               className="text-xs font-semibold text-[#0F172A] hover:underline disabled:text-gray-300 disabled:no-underline"
             >
-              {loading === "reset" ? "Sending…" : "Forgot password?"}
+              {loading === "reset" ? t("auth.login.sending") : t("auth.login.forgot")}
             </button>
           </div>
           <div className="relative">
             <input
               id="password" type={showPassword ? "text" : "password"} autoComplete="current-password"
-              placeholder="Enter your password"
+              placeholder={t("auth.login.passwordPlaceholder")}
               value={values.password} onChange={(e) => setField("password", e.target.value)}
               className={`${inputCls} pr-10 ${fieldErrors.password ? inputErrCls : ""}`}
             />
             <button
               type="button" onClick={() => setShowPassword((s) => !s)}
               className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"
-              aria-label={showPassword ? "Hide password" : "Show password"}
+              aria-label={showPassword ? t("auth.fields.hidePassword") : t("auth.fields.showPassword")}
             >
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
@@ -302,17 +304,17 @@ function LoginForm() {
           disabled={loading !== "idle"}
           className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#0F172A] hover:bg-[#1e293b] disabled:opacity-60 text-white font-semibold text-sm py-3 transition-all"
         >
-          {loading === "submit" ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Sign In<ArrowRight className="w-4 h-4" /></>}
+          {loading === "submit" ? <Loader2 className="w-4 h-4 animate-spin" /> : <>{t("auth.login.signIn")}<ArrowRight className="w-4 h-4" /></>}
         </button>
       </form>
 
       <p className="mt-7 text-center text-sm text-gray-500">
-        Don't have an account?{" "}
+        {t("auth.login.noAccount")}{" "}
         <Link
           to={next === "/dashboard" ? "/signup" : `/signup?next=${encodeURIComponent(next)}`}
           className="font-semibold text-[#0F172A] hover:underline"
         >
-          Sign up
+          {t("auth.login.signUpLink")}
         </Link>
       </p>
     </div>

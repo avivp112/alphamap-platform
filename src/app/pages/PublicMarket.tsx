@@ -50,6 +50,7 @@ const fmtPct  = (n: number, sign = false) => `${sign && n > 0 ? "+" : ""}${n.toF
 function SectorCard({ m, applied, onApply }: {
   m: SectorMultiples; applied: boolean; onApply: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       className="relative flex flex-col rounded-[20px] border bg-white p-5 transition-all duration-200 hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)]"
@@ -64,7 +65,7 @@ function SectorCard({ m, applied, onApply }: {
       </div>
 
       <div className="mb-4">
-        <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">Median EV / Revenue</div>
+        <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">{t("publicMarket.medianEvRevenue")}</div>
         <div className="text-4xl font-black tracking-tight tabular-nums" style={{ color: m.accent }}>
           {fmtMult(m.medianEvRevenue)}
         </div>
@@ -94,7 +95,7 @@ function SectorCard({ m, applied, onApply }: {
         }`}
         style={applied ? { background: m.accent } : undefined}
       >
-        {applied ? <><Check className="w-3.5 h-3.5" />Applied to private</> : <><Zap className="w-3.5 h-3.5" />Apply to private startups</>}
+        {applied ? <><Check className="w-3.5 h-3.5" />{t("publicMarket.appliedToPrivate")}</> : <><Zap className="w-3.5 h-3.5" />{t("publicMarket.applyToStartups")}</>}
       </button>
     </div>
   );
@@ -189,6 +190,7 @@ function AppliedPrivatePanel({ sectorKey, medianEvRevenue }: {
 }
 
 function SectorMatrix({ multiples }: { multiples: SectorMultiples[] }) {
+  const { t } = useTranslation();
   const [applied, setApplied] = useState<PublicSectorKey | null>(null);
   const appliedM = multiples.find((m) => m.key === applied) ?? null;
 
@@ -196,8 +198,8 @@ function SectorMatrix({ multiples }: { multiples: SectorMultiples[] }) {
     <section>
       <SectionHeading
         icon={CircleDollarSign}
-        title="Sector Multiples Matrix"
-        subtitle="Public median valuation multiples per core software sector — the benchmark you price private companies against."
+        title={t("publicMarket.sectorMatrixTitle")}
+        subtitle={t("publicMarket.sectorMatrixSubtitle")}
       />
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {multiples.map((m) => (
@@ -268,6 +270,7 @@ function TrendPill({ trend }: { trend: PrivateLateStageActivity["trend"] }) {
 function SentimentBarometer({ sentiment, activity, activityLoading }: {
   sentiment: SentimentIndex; activity: PrivateLateStageActivity | null; activityLoading: boolean;
 }) {
+  const { t } = useTranslation();
   const color = BAND_COLOR[sentiment.band] ?? "#0F172A";
   const coMovement = (() => {
     if (!activity) return null;
@@ -283,8 +286,8 @@ function SentimentBarometer({ sentiment, activity, activityLoading }: {
     <section>
       <SectionHeading
         icon={Gauge}
-        title="IPO & Market Sentiment Barometer"
-        subtitle="A public-tech momentum read on whether the IPO / late-stage funding window is open — and how private late-stage activity is co-moving."
+        title={t("publicMarket.barometerTitle")}
+        subtitle={t("publicMarket.barometerSubtitle")}
       />
       <div className="rounded-[20px] border border-gray-100 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)] overflow-hidden">
         <div className="grid grid-cols-1 lg:grid-cols-2">
@@ -312,12 +315,12 @@ function SentimentBarometer({ sentiment, activity, activityLoading }: {
           <div className="p-6 sm:p-8 flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-[12px] bg-emerald-50/60 border border-emerald-100 px-3.5 py-3">
-                <div className="flex items-center gap-1.5 mb-1"><TrendingUp className="w-3.5 h-3.5 text-emerald-600" /><span className="text-[9px] font-bold uppercase tracking-wider text-emerald-700/70">Leading sector</span></div>
+                <div className="flex items-center gap-1.5 mb-1"><TrendingUp className="w-3.5 h-3.5 text-emerald-600" /><span className="text-[9px] font-bold uppercase tracking-wider text-emerald-700/70">{t("publicMarket.leadingSector")}</span></div>
                 <div className="text-sm font-bold text-[#0F172A]">{sentiment.bestSector.label}</div>
                 <div className="text-xs font-semibold text-emerald-600 tabular-nums">{fmtPct(sentiment.bestSector.momentum, true)}</div>
               </div>
               <div className="rounded-[12px] bg-rose-50/50 border border-rose-100 px-3.5 py-3">
-                <div className="flex items-center gap-1.5 mb-1"><TrendingDown className="w-3.5 h-3.5 text-rose-500" /><span className="text-[9px] font-bold uppercase tracking-wider text-rose-700/70">Lagging sector</span></div>
+                <div className="flex items-center gap-1.5 mb-1"><TrendingDown className="w-3.5 h-3.5 text-rose-500" /><span className="text-[9px] font-bold uppercase tracking-wider text-rose-700/70">{t("publicMarket.laggingSector")}</span></div>
                 <div className="text-sm font-bold text-[#0F172A]">{sentiment.worstSector.label}</div>
                 <div className="text-xs font-semibold text-rose-600 tabular-nums">{fmtPct(sentiment.worstSector.momentum, true)}</div>
               </div>
@@ -655,6 +658,7 @@ function CompaniesDirectory({ companies, onCompanyAdded }: {
   companies: DerivedPublicCompany[];
   onCompanyAdded: () => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [filter, setFilter]             = useState("");
   const [sectorFilter, setSectorFilter] = useState<AnySectorKey | "all">("all");
   const [page, setPage]                 = useState(1);
@@ -714,7 +718,7 @@ function CompaniesDirectory({ companies, onCompanyAdded }: {
     <section>
       <SectionHeading
         icon={LayoutList}
-        title="Public Companies Directory"
+        title={t("publicMarket.directoryTitle")}
         subtitle="Every company synced into AlphaMap — the 4 curated sectors plus anything you've searched and added. Search any NASDAQ/NYSE ticker to add it."
       />
 
@@ -1198,6 +1202,7 @@ function SectionHeading({ icon: Icon, title, subtitle }: { icon: React.ElementTy
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function PublicMarket() {
+  const { t } = useTranslation();
   const [companies, setCompanies] = useState<DerivedPublicCompany[]>([]);
   const [source, setSource]       = useState<"db" | "snapshot">("snapshot");
   const [syncedAt, setSyncedAt]   = useState<string | null>(null);
@@ -1263,9 +1268,9 @@ export function PublicMarket() {
         <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 pt-6 pb-5">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">Public Market Hub</h1>
+              <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">{t("publicMarket.hubTitle")}</h1>
               <p className="mt-1.5 text-sm text-[#0F172A]/60 leading-snug max-w-2xl">
-                Public benchmarks wired to private valuations — sector multiples, an IPO-window barometer, and public-vs-private comps.
+                {t("publicMarket.hubSubtitle")}
               </p>
             </div>
             <div className="flex items-center gap-2.5 flex-none">
@@ -1282,10 +1287,10 @@ export function PublicMarket() {
                 className="flex items-center gap-1.5 rounded-[12px] bg-[#0F172A] px-3.5 py-2 text-xs font-bold text-white hover:bg-[#1e293b] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} />
-                {syncing ? "Syncing…" : "Sync now"}
+                {syncing ? t("publicMarket.syncing") : t("publicMarket.syncNow")}
               </button>
               <Link to="/stocks" className="flex items-center gap-1.5 rounded-[12px] bg-white/70 border border-black/10 px-3.5 py-2 text-xs font-bold text-[#0F172A] hover:bg-white transition-all">
-                Live quotes <ExternalLink className="w-3.5 h-3.5" />
+                {t("publicMarket.liveQuotes")} <ExternalLink className="w-3.5 h-3.5" />
               </Link>
             </div>
           </div>

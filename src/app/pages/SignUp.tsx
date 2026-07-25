@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
+import { localeFor } from "../../lib/i18n";
 import {
   Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, Mail, ArrowRight, ArrowLeft, ShieldCheck, X,
 } from "lucide-react";
@@ -9,7 +12,15 @@ import { supabase } from "../../lib/supabase";
 import { BrandMark, BrandWordmark } from "../components/BrandMark";
 
 // ── Terms of Use content ─────────────────────────────────────────────────────
-
+//
+// DELIBERATELY NOT LOCALISED. The modal's chrome (title, date, close button)
+// is translated, but the clauses below are left in English on purpose: this is
+// a binding contract, and terms like "as is"/"as available", "merchantability"
+// and "indemnify and hold harmless" carry statutory meanings that differ by
+// jurisdiction — several have no clean civil-law equivalent. Translating them
+// without counsel review would change what users are agreeing to. Localised
+// terms should be produced by a legal translator and reviewed per jurisdiction
+// before being shown as the binding version.
 const TERMS_SECTIONS: { heading: string; body: string[] }[] = [
   {
     heading: "1. Acceptance of Terms",
@@ -117,6 +128,7 @@ const TERMS_SECTIONS: { heading: string; body: string[] }[] = [
 ];
 
 function TermsOfUseModal({ onClose }: { onClose: () => void }) {
+  const { t, i18n } = useTranslation();
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6"
@@ -130,13 +142,17 @@ function TermsOfUseModal({ onClose }: { onClose: () => void }) {
       >
         <div className="flex-none flex items-start justify-between px-7 pt-6 pb-4 border-b border-gray-100">
           <div>
-            <h2 className="text-lg font-bold text-[#0F172A]">Terms of Use</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Last updated {new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })}</p>
+            <h2 className="text-lg font-bold text-[#0F172A]">{t("auth.signup.termsTitle")}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {t("auth.signup.lastUpdated", {
+                date: new Date().toLocaleDateString(localeFor(i18n.resolvedLanguage ?? "en"), { month: "long", year: "numeric" }),
+              })}
+            </p>
           </div>
           <button
             onClick={onClose}
             className="flex-none w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-[#0F172A] transition-colors"
-            aria-label="Close"
+            aria-label={t("common.close")}
           >
             <X className="w-4 h-4" />
           </button>
@@ -158,7 +174,7 @@ function TermsOfUseModal({ onClose }: { onClose: () => void }) {
             onClick={onClose}
             className="w-full rounded-xl bg-[#0F172A] hover:bg-gray-900 text-white font-semibold text-sm py-2.5 transition-colors"
           >
-            Close
+            {t("common.close")}
           </button>
         </div>
       </div>
@@ -186,30 +202,31 @@ interface FieldErrors {
   terms?: string;
 }
 
-function validate(values: FormValues): FieldErrors {
+// Takes t so messages resolve in the active language at validation time.
+function validate(values: FormValues, t: TFunction): FieldErrors {
   const errors: FieldErrors = {};
   if (!values.fullName.trim()) {
-    errors.fullName = "Enter your full name.";
+    errors.fullName = t("auth.validation.nameRequired");
   } else if (values.fullName.trim().length < 2) {
-    errors.fullName = "Full name looks too short.";
+    errors.fullName = t("auth.validation.nameShort");
   }
 
   if (!values.email.trim()) {
-    errors.email = "Enter your email address.";
+    errors.email = t("auth.validation.emailRequired");
   } else if (!EMAIL_RE.test(values.email.trim())) {
-    errors.email = "Enter a valid email address.";
+    errors.email = t("auth.validation.emailInvalid");
   }
 
   if (!values.password) {
-    errors.password = "Create a password.";
+    errors.password = t("auth.validation.passwordCreate");
   } else if (values.password.length < MIN_PASSWORD_LENGTH) {
-    errors.password = `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
+    errors.password = t("auth.validation.passwordMin", { count: MIN_PASSWORD_LENGTH });
   }
 
   if (!values.confirmPassword) {
-    errors.confirmPassword = "Confirm your password.";
+    errors.confirmPassword = t("auth.validation.confirmRequired");
   } else if (values.password !== values.confirmPassword) {
-    errors.confirmPassword = "Passwords do not match.";
+    errors.confirmPassword = t("auth.validation.passwordMismatch");
   }
 
   return errors;
@@ -243,13 +260,10 @@ const labelCls = "block text-xs font-semibold text-gray-600 mb-1";
 
 // ── Left brand panel (desktop only) ──────────────────────────────────────────
 
-const FEATURES = [
-  "AI-driven research across 10,000+ private companies",
-  "Real-time funding, cap table, and market intelligence",
-  "One workspace bridging private innovation and public markets",
-];
+const FEATURE_KEYS = ["auth.brand.f1", "auth.brand.f2", "auth.brand.f3"];
 
 function BrandPanel() {
+  const { t } = useTranslation();
   return (
     <div
       className="relative hidden lg:flex flex-col justify-between w-full h-full px-12 py-12 overflow-hidden"
@@ -289,25 +303,25 @@ function BrandPanel() {
 
       <div className="relative z-10 max-w-md">
         <span className="inline-block mb-4 text-[10px] font-bold uppercase tracking-widest text-[#5C6A4C]">
-          Welcome to AlphaMap
+          {t("auth.brand.welcomeTo")}
         </span>
         <h2 className="font-serif text-3xl leading-tight text-[#0F172A] mb-5 text-balance">
-          Your <span className="text-[#5C6A4C]">edge</span> in private markets starts here.
+          {t("auth.brand.edgePrefix")}<span className="text-[#5C6A4C]">{t("auth.brand.edgeAccent")}</span>{t("auth.brand.edgeSuffix")}
         </h2>
         <p className="text-sm text-[#0F172A]/60 leading-relaxed mb-6">
-          Join the analysts, investors, and operators using AlphaMap to see the full picture — before the rest of the market catches up.
+          {t("auth.brand.joinBlurb")}
         </p>
         <ul className="space-y-3.5">
-          {FEATURES.map((f) => (
-            <li key={f} className="flex items-start gap-2.5 text-sm text-[#0F172A]/65 leading-relaxed">
+          {FEATURE_KEYS.map((k) => (
+            <li key={k} className="flex items-start gap-2.5 text-sm text-[#0F172A]/65 leading-relaxed">
               <CheckCircle2 className="w-4 h-4 text-[#7C8967] flex-none mt-0.5" />
-              {f}
+              {t(k)}
             </li>
           ))}
         </ul>
       </div>
 
-      <p className="relative z-10 text-xs text-[#0F172A]/35">© {new Date().getFullYear()} AlphaMap. All rights reserved.</p>
+      <p className="relative z-10 text-xs text-[#0F172A]/35">{t("common.allRightsReserved", { year: new Date().getFullYear() })}</p>
     </div>
   );
 }
@@ -322,6 +336,7 @@ function OtpView({
 }: {
   email: string; onVerified: () => void; onBack: () => void;
 }) {
+  const { t } = useTranslation();
   const [otp, setOtp]           = useState("");
   const [error, setError]       = useState<string | null>(null);
   const [loading, setLoading]   = useState<Loading>("idle");
@@ -341,7 +356,7 @@ function OtpView({
     setError(null);
     const code = otp.trim();
     if (code.length !== OTP_LENGTH) {
-      setError(`Enter the ${OTP_LENGTH}-digit code from your email.`);
+      setError(t("auth.otp.errLength", { length: OTP_LENGTH }));
       return;
     }
     setLoading("verify");
@@ -352,7 +367,7 @@ function OtpView({
       if (verifyErr) throw verifyErr;
       onVerified();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "That code is invalid or has expired. Please try again.");
+      setError(err instanceof Error ? err.message : t("auth.otp.errInvalid"));
     } finally {
       setLoading("idle");
     }
@@ -367,7 +382,7 @@ function OtpView({
       if (resendErr) throw resendErr;
       setCooldown(RESEND_COOLDOWN_S);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't resend the code — please try again shortly.");
+      setError(err instanceof Error ? err.message : t("auth.otp.errResend"));
     } finally {
       setLoading("idle");
     }
@@ -379,20 +394,19 @@ function OtpView({
         onClick={onBack}
         className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 hover:text-[#0F172A] transition-colors mb-6"
       >
-        <ArrowLeft className="w-3.5 h-3.5" />Back
+        <ArrowLeft className="w-3.5 h-3.5" />{t("common.back")}
       </button>
 
       <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mb-5">
         <ShieldCheck className="w-6 h-6 text-[#F59E0B]" />
       </div>
-      <h1 className="font-serif text-2xl font-bold text-[#0F172A] mb-2">Check your inbox</h1>
+      <h1 className="font-serif text-2xl font-bold text-[#0F172A] mb-2">{t("auth.otp.title")}</h1>
       <p className="text-sm text-gray-500 mb-7 leading-relaxed">
-        We sent a {OTP_LENGTH}-digit verification code to <span className="font-semibold text-[#0F172A]">{email}</span>.
-        Enter it below to finish setting up your account.
+        {t("auth.otp.blurb", { length: OTP_LENGTH })} <span className="font-semibold text-[#0F172A]">{email}</span>{t("auth.otp.blurbAfter")}
       </p>
 
       <form onSubmit={handleVerify} noValidate>
-        <label className={labelCls} htmlFor="otp">Verification code</label>
+        <label className={labelCls} htmlFor="otp">{t("auth.otp.label")}</label>
         <input
           ref={inputRef}
           id="otp"
@@ -415,18 +429,18 @@ function OtpView({
           disabled={loading === "verify" || otp.length !== OTP_LENGTH}
           className="mt-5 w-full flex items-center justify-center gap-2 rounded-xl bg-[#0F172A] hover:bg-[#1e293b] disabled:bg-gray-200 disabled:text-gray-400 text-white font-semibold text-sm py-3 transition-all"
         >
-          {loading === "verify" ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Verify &amp; continue<ArrowRight className="w-4 h-4" /></>}
+          {loading === "verify" ? <Loader2 className="w-4 h-4 animate-spin" /> : <>{t("auth.otp.verify")}<ArrowRight className="w-4 h-4" /></>}
         </button>
       </form>
 
       <p className="mt-6 text-center text-xs text-gray-400">
-        Didn't get a code?{" "}
+        {t("auth.otp.didntGet")}{" "}
         <button
           onClick={handleResend}
           disabled={cooldown > 0 || loading === "resend"}
           className="font-semibold text-[#0F172A] hover:underline disabled:text-gray-300 disabled:no-underline disabled:cursor-not-allowed"
         >
-          {loading === "resend" ? "Sending…" : cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
+          {loading === "resend" ? t("auth.login.sending") : cooldown > 0 ? t("auth.otp.resendIn", { seconds: cooldown }) : t("auth.otp.resend")}
         </button>
       </p>
     </div>
@@ -436,6 +450,7 @@ function OtpView({
 // ── Main sign-up form view ───────────────────────────────────────────────────
 
 function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const next = searchParams.get("next") || "/dashboard";
   const [values, setValues]           = useState<FormValues>({ fullName: "", email: "", password: "", confirmPassword: "" });
@@ -464,7 +479,7 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
       if (error) throw error;
       // On success the browser is redirected to the provider — no further action needed here.
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Couldn't start sign-up. Please try again.");
+      setFormError(err instanceof Error ? err.message : t("auth.signup.errStart"));
       setLoading("idle");
     }
   }
@@ -472,8 +487,8 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
-    const errors = validate(values);
-    if (!termsAccepted) errors.terms = "You must accept the Terms of Use to create an account.";
+    const errors = validate(values, t);
+    if (!termsAccepted) errors.terms = t("auth.validation.termsRequired");
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
 
@@ -501,12 +516,12 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
       // empty identities array, so surface it explicitly instead of silently
       // advancing to an OTP screen for a code that will never arrive.
       if (data.user && data.user.identities && data.user.identities.length === 0) {
-        throw new Error("An account with this email already exists. Try logging in instead.");
+        throw new Error(t("auth.signup.errExists"));
       }
 
       onSignedUp(values.email.trim());
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Something went wrong creating your account. Please try again.");
+      setFormError(err instanceof Error ? err.message : t("auth.signup.errGeneric"));
     } finally {
       setLoading("idle");
     }
@@ -519,8 +534,8 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
         <BrandWordmark className="text-xl tracking-tight text-[#0F172A]" />
       </div>
 
-      <h1 className="font-serif text-2xl font-bold text-[#0F172A] mb-1">Create your account</h1>
-      <p className="text-sm text-gray-500 mb-4">Start researching private markets in minutes.</p>
+      <h1 className="font-serif text-2xl font-bold text-[#0F172A] mb-1">{t("auth.signup.title")}</h1>
+      <p className="text-sm text-gray-500 mb-4">{t("auth.signup.subtitle")}</p>
 
       <div className="space-y-2 mb-4">
         <button
@@ -530,7 +545,7 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
           className="w-full flex items-center justify-center gap-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60 text-sm font-semibold text-[#0F172A] py-2 transition-all"
         >
           {loading === "google" ? <Loader2 className="w-4 h-4 animate-spin" /> : <FcGoogle className="w-4.5 h-4.5" />}
-          Sign up with Google
+          {t("auth.signup.google")}
         </button>
         <button
           type="button"
@@ -539,21 +554,21 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
           className="w-full flex items-center justify-center gap-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60 text-sm font-semibold text-[#0F172A] py-2 transition-all"
         >
           {loading === "linkedin" ? <Loader2 className="w-4 h-4 animate-spin" /> : <FaLinkedin className="w-4 h-4 text-[#0A66C2]" />}
-          Sign up with LinkedIn
+          {t("auth.signup.linkedin")}
         </button>
       </div>
 
       <div className="flex items-center gap-3 mb-4">
         <div className="h-px flex-1 bg-gray-200" />
-        <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Or</span>
+        <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">{t("common.or")}</span>
         <div className="h-px flex-1 bg-gray-200" />
       </div>
 
       <form onSubmit={handleSubmit} noValidate className="space-y-3">
         <div>
-          <label className={labelCls} htmlFor="fullName">Full name</label>
+          <label className={labelCls} htmlFor="fullName">{t("auth.signup.fullName")}</label>
           <input
-            id="fullName" type="text" autoComplete="name" placeholder="Jane Doe"
+            id="fullName" type="text" autoComplete="name" placeholder={t("auth.signup.fullNamePlaceholder")}
             value={values.fullName} onChange={(e) => setField("fullName", e.target.value)}
             className={`${inputCls} ${fieldErrors.fullName ? inputErrCls : ""}`}
           />
@@ -561,11 +576,11 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
         </div>
 
         <div>
-          <label className={labelCls} htmlFor="email">Email address</label>
+          <label className={labelCls} htmlFor="email">{t("auth.fields.email")}</label>
           <div className="relative">
             <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300" />
             <input
-              id="email" type="email" autoComplete="email" placeholder="jane@company.com"
+              id="email" type="email" autoComplete="email" placeholder={t("auth.fields.emailPlaceholder")}
               value={values.email} onChange={(e) => setField("email", e.target.value)}
               className={`${inputCls} pl-10 ${fieldErrors.email ? inputErrCls : ""}`}
             />
@@ -574,11 +589,11 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
         </div>
 
         <div>
-          <label className={labelCls} htmlFor="password">Password</label>
+          <label className={labelCls} htmlFor="password">{t("auth.fields.password")}</label>
           <div className="relative">
             <input
               id="password" type={showPassword ? "text" : "password"} autoComplete="new-password"
-              placeholder="At least 8 characters"
+              placeholder={t("auth.signup.passwordPlaceholder")}
               value={values.password} onChange={(e) => setField("password", e.target.value)}
               className={`${inputCls} pr-10 ${fieldErrors.password ? inputErrCls : ""}`}
             />
@@ -594,11 +609,11 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
         </div>
 
         <div>
-          <label className={labelCls} htmlFor="confirmPassword">Confirm password</label>
+          <label className={labelCls} htmlFor="confirmPassword">{t("auth.signup.confirmPassword")}</label>
           <div className="relative">
             <input
               id="confirmPassword" type={showConfirm ? "text" : "password"} autoComplete="new-password"
-              placeholder="Re-enter your password"
+              placeholder={t("auth.signup.confirmPlaceholder")}
               value={values.confirmPassword} onChange={(e) => setField("confirmPassword", e.target.value)}
               className={`${inputCls} pr-10 ${fieldErrors.confirmPassword ? inputErrCls : ""}`}
             />
@@ -622,8 +637,8 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
               className="mt-0.5 h-4 w-4 flex-none rounded border-gray-300 text-[#0F172A] focus:ring-[#0F172A]/20"
             />
             <span className="text-xs text-gray-500 leading-snug">
-              I'd like to receive product updates, reports, and market analyses from AlphaMap.{" "}
-              <span className="text-gray-400">(optional)</span>
+              {t("auth.signup.marketingOptIn")}{" "}
+              <span className="text-gray-400">{t("common.optional")}</span>
             </span>
           </label>
 
@@ -638,14 +653,14 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
               className={`mt-0.5 h-4 w-4 flex-none rounded border-gray-300 text-[#0F172A] focus:ring-[#0F172A]/20 ${fieldErrors.terms ? "border-rose-300" : ""}`}
             />
             <span className="text-xs text-gray-500 leading-snug">
-              I accept AlphaMap's{" "}
+              {t("auth.signup.acceptPrefix")}
               <button
                 type="button"
                 onClick={() => setShowTerms(true)}
                 className="font-semibold text-[#0F172A] underline underline-offset-2 hover:text-gray-700"
               >
-                Terms of Use
-              </button>.
+                {t("auth.signup.termsOfUse")}
+              </button>{t("auth.signup.acceptSuffix")}
             </span>
           </label>
           <FieldError message={fieldErrors.terms} />
@@ -658,19 +673,19 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
           disabled={loading !== "idle"}
           className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#0F172A] hover:bg-[#1e293b] disabled:opacity-60 text-white font-semibold text-sm py-2.5 transition-all"
         >
-          {loading === "submit" ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Create account<ArrowRight className="w-4 h-4" /></>}
+          {loading === "submit" ? <Loader2 className="w-4 h-4 animate-spin" /> : <>{t("auth.signup.createAccount")}<ArrowRight className="w-4 h-4" /></>}
         </button>
       </form>
 
       {showTerms && <TermsOfUseModal onClose={() => setShowTerms(false)} />}
 
       <p className="mt-4 text-center text-sm text-gray-500">
-        Already have an account?{" "}
+        {t("auth.signup.haveAccount")}{" "}
         <Link
           to={next === "/dashboard" ? "/login" : `/login?next=${encodeURIComponent(next)}`}
           className="font-semibold text-[#0F172A] hover:underline"
         >
-          Log in
+          {t("auth.signup.logInLink")}
         </Link>
       </p>
     </div>

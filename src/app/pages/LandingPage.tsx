@@ -10,15 +10,17 @@ import {
 } from "react-icons/si";
 import type { IconType } from "react-icons";
 import { useNavigate } from "react-router";
+import { useTranslation } from "react-i18next";
 import { BrandMark, BrandWordmark } from "../components/BrandMark";
 
 // ── Shared dark section (CTA + footer) ───────────────────────────────────────
 const DARK_SECTION_BG = "#242322";
-const FOOTER_LINKS = ["About Us", "Privacy Policy", "Terms of Use", "Contact Us"];
+const FOOTER_LINK_KEYS = ["about", "privacy", "terms", "contact"] as const;
 
 // ── Hero typewriter copy ─────────────────────────────────────────────────────
-const HEADLINE = "Bridging the Gap between Private Innovation and Public Markets.";
-const SUBHEAD  = "An AI-driven investment research platform that transforms global market data into a clear strategy.";
+// The headline text itself now comes from the active dictionary — the
+// typewriter measures whatever string that resolves to, so CJK reveals one
+// character at a time exactly as the Latin copy does.
 const TYPE_START_DELAY_MS = 400;
 const TYPE_SPEED_MS       = 85;
 const SUBHEAD_PAUSE_MS    = 350; // pause after the headline finishes, before the subheading starts typing
@@ -39,11 +41,11 @@ const STAGE_STYLES: Record<string, string> = {
   "Tender":   "bg-gray-100 border-gray-200 text-gray-600",
 };
 
-const SHOWCASE_TABS: { key: string; label: string }[] = [
-  { key: "sourcing", label: "AI Sourcing" },
-  { key: "startups", label: "Startups" },
-  { key: "vcs",      label: "VC Directory" },
-  { key: "deals",    label: "Deal Flow" },
+const SHOWCASE_TABS: { key: string; labelKey: string }[] = [
+  { key: "sourcing", labelKey: "landing.tabs.sourcing" },
+  { key: "startups", labelKey: "landing.tabs.startups" },
+  { key: "vcs",      labelKey: "landing.tabs.vcs" },
+  { key: "deals",    labelKey: "landing.tabs.deals" },
 ];
 
 // Shared brand mark per real company — official Simple Icons logo + brand color.
@@ -110,7 +112,6 @@ const DEAL_ROWS = [
   { company: "Hugging Face", type: "Series D", size: "$235M", leads: "Salesforce Ventures",    valuation: "$4.5B",  estimated: false, pulse: true  },
 ];
 
-const SOURCING_QUERY = "High-growth B2B SaaS companies";
 const SOURCING_ROWS = [
   { company: "Linear",  match: 96, momentum: 92, sector: "Dev Tools",   tag2: "Project Mgmt", stage: "Series B" },
   { company: "Vercel",  match: 93, momentum: 88, sector: "Dev Tools",   tag2: "Infra",         stage: "Series D" },
@@ -189,6 +190,7 @@ const STARTUP_GAIN_TARGET = 24.3;
 const STARTUP_ANIM_MS = 1600;
 
 function StartupsShowcase({ active }: { active: boolean }) {
+  const { t } = useTranslation();
   const [progress, setProgress] = useState(0);
 
   // Wait until the showcase has actually scrolled into view before animating
@@ -224,11 +226,11 @@ function StartupsShowcase({ active }: { active: boolean }) {
             <span className="text-base font-bold text-[#111827]">Anthropic</span>
             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700">AI / ML</span>
           </div>
-          <p className="text-xs text-gray-400 mt-0.5">Private · Last round Mar 2026</p>
+          <p className="text-xs text-gray-400 mt-0.5">{t("landing.startups.privateLastRound", { date: "Mar 2026" })}</p>
         </div>
       </div>
 
-      <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase flex-none">AlphaMap Valuation Estimate</span>
+      <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase flex-none">{t("landing.startups.valuationEstimate")}</span>
       <div className="flex items-baseline gap-3 mt-1.5 flex-wrap flex-none">
         <span className="text-4xl sm:text-5xl font-normal text-[#111827] tracking-tight tabular-nums">
           ${value.toFixed(1)}<span className="text-xl sm:text-2xl ml-1">B</span>
@@ -237,10 +239,10 @@ function StartupsShowcase({ active }: { active: boolean }) {
           <TrendingUp className="w-3 h-3" /> {gain.toFixed(1)}% · 90d
         </span>
       </div>
-      <p className="text-xs text-gray-400 mt-2 max-w-md flex-none">Modeled from funding velocity, hiring signals &amp; sector multiples across 40+ comparable rounds.</p>
+      <p className="text-xs text-gray-400 mt-2 max-w-md flex-none">{t("landing.startups.modeledFrom")}</p>
 
       <div className="mt-4 flex-1 min-h-0 flex flex-col">
-        <span className="text-[11px] font-bold tracking-[0.1em] text-gray-400 uppercase flex-none">Valuation trend · 12 mo</span>
+        <span className="text-[11px] font-bold tracking-[0.1em] text-gray-400 uppercase flex-none">{t("landing.startups.valuationTrend")}</span>
         <div className="relative flex-1 min-h-0 mt-2">
           <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} preserveAspectRatio="none" className="w-full h-full">
             <defs>
@@ -279,9 +281,9 @@ function StartupsShowcase({ active }: { active: boolean }) {
 }
 
 // ── Deal Flow tab ─────────────────────────────────────────────────────────────
-function LivePulseDot() {
+function LivePulseDot({ title }: { title?: string }) {
   return (
-    <span className="relative flex h-2 w-2 flex-none" title="Live activity">
+    <span className="relative flex h-2 w-2 flex-none" title={title}>
       <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
       <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
     </span>
@@ -289,21 +291,22 @@ function LivePulseDot() {
 }
 
 function DealsShowcase(_props: { active: boolean }) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col h-full">
-      <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase flex-none">Deal Flow</span>
-      <h3 className="text-2xl font-bold text-[#111827] mt-2 mb-1 flex-none">Every private round, tracked in real time</h3>
-      <p className="text-sm text-gray-400 mb-4 max-w-lg flex-none">From seed checks to late-stage megarounds — sourced, verified, and structured the moment they close.</p>
+      <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase flex-none">{t("landing.deals.eyebrow")}</span>
+      <h3 className="text-2xl font-bold text-[#111827] mt-2 mb-1 flex-none">{t("landing.deals.title")}</h3>
+      <p className="text-sm text-gray-400 mb-4 max-w-lg flex-none">{t("landing.deals.subtitle")}</p>
 
       <div className="overflow-auto -mx-1 flex-1 min-h-0">
         <table className="w-full text-sm min-w-[560px]">
           <thead className="sticky top-0 bg-white">
             <tr className="text-[10px] font-bold tracking-wider text-gray-400 uppercase border-b border-gray-100">
-              <th className="text-left py-2 px-1">Company</th>
-              <th className="text-left py-2 px-1">Type</th>
-              <th className="text-left py-2 px-1">Size</th>
-              <th className="text-left py-2 px-1">Lead Investors</th>
-              <th className="text-right py-2 px-1">Valuation</th>
+              <th className="text-left py-2 px-1">{t("common.company")}</th>
+              <th className="text-left py-2 px-1">{t("landing.deals.type")}</th>
+              <th className="text-left py-2 px-1">{t("landing.deals.size")}</th>
+              <th className="text-left py-2 px-1">{t("landing.deals.leadInvestors")}</th>
+              <th className="text-right py-2 px-1">{t("common.valuation")}</th>
             </tr>
           </thead>
           <tbody>
@@ -313,7 +316,7 @@ function DealsShowcase(_props: { active: boolean }) {
                   <div className="flex items-center gap-2.5">
                     <CompanyLogo company={row.company} size={28} />
                     <span className="font-semibold text-[#111827] whitespace-nowrap">{row.company}</span>
-                    {row.pulse && <LivePulseDot />}
+                    {row.pulse && <LivePulseDot title={t("landing.deals.liveActivity")} />}
                   </div>
                 </td>
                 <td className="py-2.5 px-1">
@@ -373,6 +376,7 @@ function SimulatedCursor({ stage }: { stage: CursorStage }) {
 }
 
 function SourcingShowcase({ active }: { active: boolean }) {
+  const { t } = useTranslation();
   const [asked,  setAsked]  = useState(false);
   const [asking, setAsking] = useState(false);
   const [cursorStage, setCursorStage] = useState<CursorStage>("hidden");
@@ -405,14 +409,14 @@ function SourcingShowcase({ active }: { active: boolean }) {
 
   return (
     <div className="flex flex-col h-full">
-      <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase flex-none">Company Sourcing</span>
-      <h3 className="text-2xl font-bold text-[#111827] mt-2 mb-1 flex-none">Find your next investment</h3>
-      <p className="text-sm text-gray-400 mb-6 flex-none">Search across startups, VCs, and deals in plain English.</p>
+      <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase flex-none">{t("landing.sourcing.eyebrow")}</span>
+      <h3 className="text-2xl font-bold text-[#111827] mt-2 mb-1 flex-none">{t("landing.sourcing.title")}</h3>
+      <p className="text-sm text-gray-400 mb-6 flex-none">{t("landing.sourcing.subtitle")}</p>
 
       <div className="relative flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-3 mb-6 flex-none">
         <Sparkles className="w-4 h-4 text-[#0F172A]/40 flex-none" />
         <span className="text-sm text-[#111827] font-medium">
-          {SOURCING_QUERY}
+          {t("landing.sourcing.query")}
           {!asked && !asking && <span className="typewriter-cursor" aria-hidden="true" />}
         </span>
         <button
@@ -421,7 +425,7 @@ function SourcingShowcase({ active }: { active: boolean }) {
           className="ml-auto flex-none flex items-center gap-1.5 rounded-full bg-[#0F172A] px-4 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[#1e293b] disabled:opacity-70"
         >
           {asking && <Loader2 className="w-3 h-3 animate-spin" />}
-          {asking ? "Searching…" : asked ? "Asked ✓" : "Ask"}
+          {asking ? t("landing.sourcing.searching") : asked ? t("landing.sourcing.asked") : t("landing.sourcing.ask")}
         </button>
         <SimulatedCursor stage={cursorStage} />
       </div>
@@ -430,13 +434,13 @@ function SourcingShowcase({ active }: { active: boolean }) {
         {!asked && !asking && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-gray-300">
             <Search className="w-5 h-5" />
-            <span className="text-xs font-medium text-gray-400">AlphaMap is about to search…</span>
+            <span className="text-xs font-medium text-gray-400">{t("landing.sourcing.aboutToSearch")}</span>
           </div>
         )}
         {asking && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
             <Loader2 className="w-6 h-6 animate-spin" style={{ color: "#0F172A" }} />
-            <span className="text-xs font-semibold tracking-wide text-gray-400">Searching 60,000+ companies…</span>
+            <span className="text-xs font-semibold tracking-wide text-gray-400">{t("landing.sourcing.searchingCompanies")}</span>
           </div>
         )}
         {asked && (
@@ -444,11 +448,11 @@ function SourcingShowcase({ active }: { active: boolean }) {
             <table className="w-full text-sm min-w-[560px]">
               <thead>
                 <tr className="text-[10px] font-bold tracking-wider text-gray-400 uppercase border-b border-gray-100">
-                  <th className="text-left py-2 px-1">Company</th>
-                  <th className="text-left py-2 px-1">Match</th>
-                  <th className="text-left py-2 px-1">Momentum</th>
-                  <th className="text-left py-2 px-1">Sector</th>
-                  <th className="text-right py-2 px-1">Stage</th>
+                  <th className="text-left py-2 px-1">{t("common.company")}</th>
+                  <th className="text-left py-2 px-1">{t("landing.sourcing.match")}</th>
+                  <th className="text-left py-2 px-1">{t("metrics.momentum")}</th>
+                  <th className="text-left py-2 px-1">{t("common.sector")}</th>
+                  <th className="text-right py-2 px-1">{t("common.stage")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -497,6 +501,7 @@ const FUND_FLASH_MS = 1050;
 const VC_AUTOPLAY_DELAY_MS = 700;
 
 function VCsShowcase({ active }: { active: boolean }) {
+  const { t } = useTranslation();
   const [selectedKey,  setSelectedKey]  = useState<string | null>(null);
   const [flashingKey,  setFlashingKey]  = useState<string | null>(null);
   const flashTimeout    = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -539,22 +544,22 @@ function VCsShowcase({ active }: { active: boolean }) {
           onClick={() => setSelectedKey(null)}
           className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 hover:text-[#0F172A] transition-colors mb-4 flex-none"
         >
-          <ArrowLeft className="w-3.5 h-3.5" /> All funds
+          <ArrowLeft className="w-3.5 h-3.5" /> {t("landing.vcs.allFunds")}
         </button>
 
         <div className="flex items-center justify-between flex-wrap gap-2 mb-1 flex-none">
           <h3 className="text-2xl font-bold text-[#111827]">{selected.name}</h3>
-          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{selected.portfolio} portfolio cos. · {selected.aum} AUM</span>
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{t("landing.vcs.portfolioMeta", { count: selected.portfolio, aum: selected.aum })}</span>
         </div>
-        <p className="text-sm text-gray-400 mb-6 flex-none">Portfolio investments AlphaMap tracks for this fund.</p>
+        <p className="text-sm text-gray-400 mb-6 flex-none">{t("landing.vcs.portfolioSubtitle")}</p>
 
         <div className="overflow-auto -mx-1 flex-1 min-h-0">
           <table className="w-full text-sm min-w-[420px]">
             <thead>
               <tr className="text-[10px] font-bold tracking-wider text-gray-400 uppercase border-b border-gray-100">
-                <th className="text-left py-2 px-1">Company</th>
-                <th className="text-left py-2 px-1">Round</th>
-                <th className="text-right py-2 px-1">Invested</th>
+                <th className="text-left py-2 px-1">{t("common.company")}</th>
+                <th className="text-left py-2 px-1">{t("common.round")}</th>
+                <th className="text-right py-2 px-1">{t("landing.vcs.invested")}</th>
               </tr>
             </thead>
             <tbody>
@@ -594,9 +599,9 @@ function VCsShowcase({ active }: { active: boolean }) {
 
   return (
     <div className="flex flex-col h-full">
-      <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase flex-none">VC Directory</span>
-      <h3 className="text-2xl font-bold text-[#111827] mt-2 mb-1 flex-none">Every fund that matters, in one view</h3>
-      <p className="text-sm text-gray-400 mb-6 max-w-lg flex-none">Stage focus, sector concentration, and portfolio activity — normalized across 5,000+ firms.</p>
+      <span className="text-[11px] font-bold tracking-[0.14em] text-[#0F172A]/45 uppercase flex-none">{t("landing.vcs.eyebrow")}</span>
+      <h3 className="text-2xl font-bold text-[#111827] mt-2 mb-1 flex-none">{t("landing.vcs.title")}</h3>
+      <p className="text-sm text-gray-400 mb-6 max-w-lg flex-none">{t("landing.vcs.subtitle")}</p>
 
       <div className="grid sm:grid-cols-3 gap-4 flex-1 min-h-0">
         {VC_FUNDS.map((vc) => (
@@ -610,7 +615,7 @@ function VCsShowcase({ active }: { active: boolean }) {
           >
             <div className="flex items-center gap-2 mb-2">
               <p className="font-bold text-[#111827]">{vc.name}</p>
-              {vc.pulse && <LivePulseDot />}
+              {vc.pulse && <LivePulseDot title={t("landing.deals.liveActivity")} />}
             </div>
             <div className="flex flex-wrap gap-1 mb-3">
               {vc.stages.map((s) => (
@@ -618,15 +623,15 @@ function VCsShowcase({ active }: { active: boolean }) {
               ))}
             </div>
             <div className="flex items-center justify-between text-xs">
-              <span className="text-gray-400">AUM</span>
+              <span className="text-gray-400">{t("metrics.aum")}</span>
               <span className="font-semibold text-[#111827]">{vc.aum}</span>
             </div>
             <div className="flex items-center justify-between text-xs mt-1">
-              <span className="text-gray-400">Portfolio</span>
-              <span className="font-semibold text-[#111827]">{vc.portfolio} cos.</span>
+              <span className="text-gray-400">{t("metrics.portfolio")}</span>
+              <span className="font-semibold text-[#111827]">{t("landing.vcs.companiesShort", { count: vc.portfolio })}</span>
             </div>
             <span className={`mt-3 inline-block text-[10px] font-semibold ${vc.pulse ? "text-emerald-600" : "text-gray-400"}`}>
-              View portfolio →
+              {t("landing.vcs.viewPortfolio")}
             </span>
           </button>
         ))}
@@ -643,28 +648,12 @@ const SHOWCASE_CONTENT: Record<string, React.ComponentType<{ active: boolean }>>
 };
 
 // ── Scroll-linked use cases: left list scrolls, right panel stays pinned ─────
-const USE_CASES_HEADLINE =
-  "Beyond the data, you can access trading history, company growth signals, investor insights, and key analyses—";
-
+// The slash commands stay untranslated — they are literal command tokens, not
+// prose. Everything else resolves through the active dictionary.
 const USE_CASES = [
-  {
-    heading: "Cross-Market Correlation",
-    command: "/correlate",
-    body:    "Discover hidden links between private funding rounds and public stock movements.",
-    status:  ["Reading sources…", "Cross-referencing filings…", "Correlation found"],
-  },
-  {
-    heading: "AI-Powered Narratives",
-    command: "/narrate",
-    body:    "Translate raw data into clear, actionable intelligence and business stories.",
-    status:  ["Reading sources…", "Synthesizing narrative…", "Story ready"],
-  },
-  {
-    heading: "Capital Flow Visualization",
-    command: "/flow",
-    body:    "Track where leading investors are moving their money across private and public sectors.",
-    status:  ["Reading sources…", "Mapping capital flows…", "Flow mapped"],
-  },
+  { id: "correlate", command: "/correlate" },
+  { id: "narrate",   command: "/narrate" },
+  { id: "flow",      command: "/flow" },
 ];
 
 const USE_CASES_BG = "#CDD1C3"; // sage wash the section transitions into
@@ -687,8 +676,16 @@ function QueryStatusDot() {
 }
 
 function UseCaseQueryPanel({ item }: { item: (typeof USE_CASES)[number] }) {
+  const { t } = useTranslation();
   const [typedCount, setTypedCount] = useState(0);
   const [statusStep, setStatusStep] = useState(0); // 0 = hidden, 1..n = status[i-1]
+
+  const body   = t(`landing.useCases.${item.id}.body`);
+  const status = [
+    t(`landing.useCases.${item.id}.s1`),
+    t(`landing.useCases.${item.id}.s2`),
+    t(`landing.useCases.${item.id}.s3`),
+  ];
 
   useEffect(() => {
     setTypedCount(0);
@@ -698,11 +695,14 @@ function UseCaseQueryPanel({ item }: { item: (typeof USE_CASES)[number] }) {
     const typeInterval = setInterval(() => {
       charIndex += 1;
       setTypedCount(charIndex);
-      if (charIndex >= item.body.length) clearInterval(typeInterval);
+      if (charIndex >= body.length) clearInterval(typeInterval);
     }, QUERY_TYPE_SPEED_MS);
 
-    const typingDurationMs = item.body.length * QUERY_TYPE_SPEED_MS;
-    const statusTimeouts = item.status.map((_, i) =>
+    // CJK copy is far shorter in characters than the English original, so the
+    // status timings are derived from the translated length rather than a
+    // fixed duration — otherwise the status lines would lag a finished line.
+    const typingDurationMs = body.length * QUERY_TYPE_SPEED_MS;
+    const statusTimeouts = status.map((_, i) =>
       setTimeout(() => setStatusStep(i + 1), typingDurationMs + QUERY_STATUS_GAP_MS + i * QUERY_STATUS_STEP_MS)
     );
 
@@ -710,18 +710,18 @@ function UseCaseQueryPanel({ item }: { item: (typeof USE_CASES)[number] }) {
       clearInterval(typeInterval);
       statusTimeouts.forEach(clearTimeout);
     };
-  }, [item]);
+  }, [item, body]);
 
-  const typedText   = item.body.slice(0, typedCount);
-  const doneTyping  = typedCount >= item.body.length;
-  const statusIndex = Math.min(statusStep, item.status.length) - 1;
+  const typedText   = body.slice(0, typedCount);
+  const doneTyping  = typedCount >= body.length;
+  const statusIndex = Math.min(statusStep, status.length) - 1;
 
   return (
     <div className="rounded-[28px] p-3 sm:p-4 overflow-hidden" style={{ background: QUERY_PANEL_BG }}>
       <span className="block text-[11px] font-mono text-gray-500 px-3 pt-2 pb-3">{item.command}</span>
 
       <div className="rounded-2xl bg-white p-6 shadow-[0_8px_20px_rgba(0,0,0,0.08)]">
-        <span className="block text-[10px] font-bold tracking-[0.14em] text-gray-400 uppercase mb-2">Query</span>
+        <span className="block text-[10px] font-bold tracking-[0.14em] text-gray-400 uppercase mb-2">{t("landing.useCases.query")}</span>
         <p className="text-base sm:text-lg font-medium text-[#111827] leading-snug min-h-[3.6em]">
           {typedText}
           {!doneTyping && <span className="typewriter-cursor" aria-hidden="true" />}
@@ -729,7 +729,7 @@ function UseCaseQueryPanel({ item }: { item: (typeof USE_CASES)[number] }) {
 
         <div className="flex items-center gap-2 mt-4 pt-4 border-t border-gray-100">
           <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-500 bg-gray-50 border border-gray-200 rounded-full px-2.5 py-1">
-            <AtSign className="w-3 h-3" />Sources
+            <AtSign className="w-3 h-3" />{t("landing.useCases.sources")}
           </span>
           <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-gray-50 border border-gray-200 text-gray-500">
             <Code2 className="w-3.5 h-3.5" />
@@ -747,7 +747,7 @@ function UseCaseQueryPanel({ item }: { item: (typeof USE_CASES)[number] }) {
         {statusStep > 0 && (
           <div key={statusStep} className="flex items-center gap-2" style={{ animation: "showcaseFadeInUp 400ms ease-out both" }}>
             <QueryStatusDot />
-            <span className="text-xs font-medium text-gray-500">{item.status[statusIndex]}</span>
+            <span className="text-xs font-medium text-gray-500">{status[statusIndex]}</span>
           </div>
         )}
       </div>
@@ -756,6 +756,7 @@ function UseCaseQueryPanel({ item }: { item: (typeof USE_CASES)[number] }) {
 }
 
 function UseCasesSection() {
+  const { t } = useTranslation();
   const [activeIndex, setActiveIndex] = useState(0);
   const stepRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -785,13 +786,13 @@ function UseCasesSection() {
             className="text-2xl sm:text-3xl md:text-[2.25rem] font-normal text-[#111827] tracking-tight mb-6 lg:mb-8 max-w-lg"
             style={{ fontFamily: "'Playfair Display', serif", lineHeight: 1.25 }}
           >
-            {USE_CASES_HEADLINE}
+            {t("landing.useCases.headline")}
           </h2>
 
           <div className="flex flex-col">
             {USE_CASES.map((item, i) => (
               <div
-                key={item.heading}
+                key={item.id}
                 className="py-4 sm:py-5 border-t first:border-t-0"
                 style={{ borderColor: "rgba(17,24,39,0.12)" }}
               >
@@ -799,7 +800,7 @@ function UseCasesSection() {
                   className="text-base sm:text-lg font-semibold tracking-tight transition-colors duration-300"
                   style={{ color: i === activeIndex ? "#111827" : "rgba(17,24,39,0.35)" }}
                 >
-                  <span className="mr-2">&amp;</span>{item.heading}
+                  <span className="mr-2">&amp;</span>{t(`landing.useCases.${item.id}.heading`)}
                 </h3>
               </div>
             ))}
@@ -827,6 +828,7 @@ function UseCasesSection() {
 }
 
 export function LandingPage() {
+  const { t } = useTranslation();
   const navigate        = useNavigate();
   const [scrolled,      setScrolled]      = useState(false);
   const [typedCount,     setTypedCount]     = useState(0);
@@ -837,7 +839,8 @@ export function LandingPage() {
   const [showcaseInView, setShowcaseInView] = useState(false);
   const tabSwitchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showcaseRef = useRef<HTMLDivElement>(null);
-  const headlineDone  = typedCount >= HEADLINE.length;
+  const headline = t("landing.headline");
+  const headlineDone  = typedCount >= headline.length;
 
   // Switching tabs shows a brief loading state before the new panel mounts
   function handleTabClick(key: string) {
@@ -878,18 +881,22 @@ export function LandingPage() {
   }, []);
 
   // Typewriter reveal of the headline, left to right, one character at a time
+  // Re-runs when the language changes so the headline retypes in the newly
+  // selected language rather than freezing mid-way through the old string.
   useEffect(() => {
+    setTypedCount(0);
+    setSubheadVisible(false);
     let charIndex = 0;
     let intervalId: ReturnType<typeof setInterval>;
     const startId = setTimeout(() => {
       intervalId = setInterval(() => {
         charIndex += 1;
         setTypedCount(charIndex);
-        if (charIndex >= HEADLINE.length) clearInterval(intervalId);
+        if (charIndex >= headline.length) clearInterval(intervalId);
       }, TYPE_SPEED_MS);
     }, TYPE_START_DELAY_MS);
     return () => { clearTimeout(startId); clearInterval(intervalId); };
-  }, []);
+  }, [headline]);
 
   // Subheading simply fades in as a whole once the headline finishes typing
   // (no typewriter effect on this one — it just appears after a brief pause).
@@ -934,13 +941,13 @@ export function LandingPage() {
             onClick={() => navigate("/login")}
             className="text-sm font-medium text-gray-500 transition-colors duration-300 hover:text-[#111827]"
           >
-            Log In
+            {t("header.logIn")}
           </button>
           <button
             onClick={() => navigate("/pricing")}
             className="rounded-full px-5 py-2.5 text-sm font-semibold transition-all duration-300 bg-white border border-black/10 text-[#111827] shadow-[0_1px_4px_rgba(0,0,0,0.08)] hover:bg-gray-50"
           >
-            View Dashboard
+            {t("landing.viewDashboard")}
           </button>
         </div>
       </header>
@@ -956,7 +963,7 @@ export function LandingPage() {
           className="max-w-[1100px] text-[2.4rem] sm:text-5xl md:text-[3.8rem] lg:text-[4.6rem] font-normal text-[#111827] tracking-tight"
           style={{ fontFamily: "'Playfair Display', serif", lineHeight: "1.15" }}
         >
-          {HEADLINE.slice(0, typedCount)}
+          {headline.slice(0, typedCount)}
           {!subheadVisible && <span className="typewriter-cursor" aria-hidden="true" />}
         </h1>
 
@@ -964,7 +971,7 @@ export function LandingPage() {
           className="max-w-[720px] mt-6 text-xl md:text-2xl leading-relaxed font-normal text-[#374151]"
           style={tx(subheadVisible, 0)}
         >
-          {SUBHEAD}
+          {t("landing.subhead")}
         </p>
 
         {/* Scroll indicator */}
@@ -972,7 +979,7 @@ export function LandingPage() {
           style={tx(subheadVisible, 500)}
           className="absolute bottom-9 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 pointer-events-none"
         >
-          <span className="text-[9px] font-semibold tracking-[0.32em] text-[#0F172A]/30 uppercase">Scroll</span>
+          <span className="text-[9px] font-semibold tracking-[0.32em] text-[#0F172A]/30 uppercase">{t("landing.scroll")}</span>
           <ChevronDown className="w-4 h-4 text-[#0F172A]/25 animate-bounce" />
         </div>
       </section>
@@ -980,12 +987,12 @@ export function LandingPage() {
       {/* ── Interactive product showcase ─────────────────────────────────────── */}
       <section ref={showcaseRef} className="w-full max-w-[1040px] mx-auto px-6 lg:px-12 mb-32">
         <div className="text-center max-w-2xl mx-auto mb-10">
-          <span className="text-xs font-bold tracking-[0.22em] text-[#0F172A]/40 uppercase">Inside AlphaMap</span>
+          <span className="text-xs font-bold tracking-[0.22em] text-[#0F172A]/40 uppercase">{t("landing.insideEyebrow")}</span>
           <h2
             className="mt-3 text-3xl md:text-4xl font-normal text-[#111827] tracking-tight"
             style={{ fontFamily: "'Playfair Display', serif" }}
           >
-            One workspace for every side of the market
+            {t("landing.insideTitle")}
           </h2>
         </div>
 
@@ -1005,7 +1012,7 @@ export function LandingPage() {
                     active ? "bg-white text-[#0F172A] shadow-sm" : "text-gray-400 hover:text-gray-600"
                   }`}
                 >
-                  {tab.label}
+                  {t(tab.labelKey)}
                   {active && <span className="absolute left-4 right-4 -bottom-[1px] h-[2px] rounded-full bg-[#0F172A]" />}
                 </button>
               );
@@ -1025,7 +1032,9 @@ export function LandingPage() {
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
                   <Loader2 className="w-6 h-6 animate-spin" style={{ color: "#0F172A" }} />
                   <span className="text-xs font-semibold tracking-wide text-gray-400">
-                    Loading {SHOWCASE_TABS.find((t) => t.key === activeTab)?.label}…
+                    {t("landing.loadingTab", {
+                      tab: t(SHOWCASE_TABS.find((tab) => tab.key === activeTab)?.labelKey ?? ""),
+                    })}
                   </span>
                 </div>
               ) : (
@@ -1050,23 +1059,23 @@ export function LandingPage() {
           className="text-4xl md:text-5xl text-white font-medium tracking-tight mb-4"
           style={{ fontFamily: "'Playfair Display', serif", lineHeight: "1.2" }}
         >
-          Are you ready to see the full picture?
+          {t("landing.ctaTitle")}
         </h2>
         <button
           onClick={() => navigate("/pricing")}
           className="rounded-full bg-white px-10 py-4 text-base font-semibold text-[#111827] shadow-[0_4px_14px_0_rgba(0,0,0,0.25)] transition-all hover:bg-gray-100 hover:-translate-y-0.5"
         >
-          Request Early Access
+          {t("landing.ctaButton")}
         </button>
       </section>
 
       <footer className="w-full" style={{ background: DARK_SECTION_BG }}>
         <div className="max-w-[1200px] mx-auto px-6 lg:px-12 pt-8 pb-16">
-          <span className="block text-xs font-semibold tracking-[0.14em] text-gray-500 uppercase mb-6">Explore</span>
+          <span className="block text-xs font-semibold tracking-[0.14em] text-gray-500 uppercase mb-6">{t("landing.explore")}</span>
           <nav className="flex flex-col gap-4 mb-10">
-            {FOOTER_LINKS.map((label) => (
-              <a key={label} href="#" className="text-sm text-white hover:text-gray-300 transition-colors w-fit">
-                {label}
+            {FOOTER_LINK_KEYS.map((key) => (
+              <a key={key} href="#" className="text-sm text-white hover:text-gray-300 transition-colors w-fit">
+                {t(`landing.footer.${key}`)}
               </a>
             ))}
           </nav>
