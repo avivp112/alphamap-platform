@@ -957,9 +957,9 @@ function StockPriceChart({ ticker }: { ticker: string }) {
         {loading ? (
           <div className="h-full w-full rounded-[12px] bg-gray-50 animate-pulse" />
         ) : error || data.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center gap-1.5 text-center">
-            <AlertCircle className="w-4 h-4 text-gray-300" />
-            <p className="text-[11px] text-gray-400">{error ?? "No chart data available"}</p>
+          <div className="h-full flex flex-col items-center justify-center gap-1.5 text-center px-4 overflow-y-auto">
+            <AlertCircle className="w-4 h-4 text-gray-300 flex-none" />
+            <p className="text-[11px] text-gray-400 leading-snug">{error ?? "No chart data available"}</p>
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">

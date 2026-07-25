@@ -11,21 +11,20 @@
 //
 // range one of: 1D | 1M | 3M | 1Y | 5Y | ALL
 //
-// Endpoints tried (in order, first non-empty result wins):
-//   Daily (every range except 1D):
-//     /stable/historical-price-eod/full?symbol=...&from=&to=
-//     /api/v3/historical-price-full/{ticker}?from=&to=      (legacy fallback)
-//   Intraday (1D):
-//     /stable/historical-chart/5min?symbol=...
-//     /api/v3/historical-chart/5min/{ticker}                (legacy fallback)
+// ── Why this file tries so many endpoints ───────────────────────────────────
+// FMP gates endpoints by plan AND has migrated /api/v3 -> /stable piecemeal.
+// Two failure modes matter and neither is an HTTP error:
 //
-// FMP has repeatedly changed endpoint availability and response shape
-// between /v3 and /stable (see stock-profile, search-tickers) without
-// notice, and response shape itself has drifted too — some surfaces wrap
-// bars in {symbol, historical: [...]}, others return a bare array — so both
-// are tried and both shapes are handled. Every attempt's HTTP status is
-// logged when nothing yields data, so a future drift shows up in the
-// function logs instead of another guess-and-redeploy round trip.
+//   1. A plan-gated endpoint returns HTTP 200 with a JSON *object* body like
+//      {"Error Message": "..."} or {"Information": "..."} instead of an array.
+//      Treating that as "no data" hides the real cause, so we detect it and
+//      surface FMP's own wording to the caller.
+//   2. historical-price-eod/full and the intraday historical-chart routes are
+//      premium on lower tiers, while historical-price-eod/light is not — so
+//      /light is tried FIRST for daily data.
+//
+// Field names differ per variant: /light uses `price`, /full uses `close`,
+// v3's historical-price-full nests bars under `historical`. All are handled.
 // =============================================================================
 
 const FMP_STABLE = "https://financialmodelingprep.com/stable";
@@ -44,37 +43,62 @@ function json(body: unknown, status = 200): Response {
 const num = (v: unknown): number | null =>
   typeof v === "number" && isFinite(v) ? v : (typeof v === "string" && v.trim() !== "" && isFinite(+v) ? +v : null);
 
+const redact = (url: string) => url.replace(/apikey=[^&]*/i, "apikey=***");
+
 interface Attempt {
   url: string;
   status: number | null;
   bars: number;
+  note?: string; // FMP's own error wording, or a parse problem
 }
 
 // FMP wraps daily-EOD history as {symbol, historical:[...]} on some surfaces
 // and returns a bare array on others — accept either.
-function extractBars(raw: any): any[] {
+function extractBars(raw: unknown): any[] {
   if (Array.isArray(raw)) return raw;
-  if (Array.isArray(raw?.historical)) return raw.historical;
+  const o = raw as Record<string, unknown> | null;
+  if (o && Array.isArray(o.historical)) return o.historical as any[];
   return [];
 }
 
-// Tries each candidate URL in order (cheapest/most-likely first) and returns
-// the first one that actually yields bars, along with a log of every attempt
-// for diagnostics when all of them come up empty.
+// FMP signals plan/auth problems in a 200 JSON object rather than an HTTP
+// status. Pull out whatever human-readable message it used.
+function fmpMessage(raw: unknown): string | null {
+  if (!raw || Array.isArray(raw) || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  for (const k of ["Error Message", "error message", "errorMessage", "error", "Information", "message"]) {
+    const v = o[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return null;
+}
+
+// Tries each candidate URL in order and returns the first that actually yields
+// bars, plus a log of every attempt for diagnostics when all come up empty.
 async function fetchFirstNonEmpty(urls: string[]): Promise<{ bars: any[]; attempts: Attempt[] }> {
   const attempts: Attempt[] = [];
   for (const url of urls) {
     try {
       const res = await fetch(url);
       let bars: any[] = [];
-      if (res.ok) {
-        const data = await res.json();
+      let note: string | undefined;
+      const text = await res.text();
+      try {
+        const data = JSON.parse(text);
         bars = extractBars(data);
+        note = fmpMessage(data) ?? undefined;
+      } catch {
+        note = `non-JSON response: ${text.slice(0, 120)}`;
       }
-      attempts.push({ url: url.replace(/apikey=[^&]+/, "apikey=***"), status: res.status, bars: bars.length });
+      attempts.push({ url: redact(url), status: res.status, bars: bars.length, note });
       if (bars.length > 0) return { bars, attempts };
     } catch (e) {
-      attempts.push({ url: url.replace(/apikey=[^&]+/, "apikey=***"), status: null, bars: 0 });
+      attempts.push({
+        url: redact(url),
+        status: null,
+        bars: 0,
+        note: e instanceof Error ? e.message : "fetch threw",
+      });
     }
   }
   return { bars: [], attempts };
@@ -100,6 +124,17 @@ function fromDateFor(range: Range, to: Date): string {
   return ymd(from);
 }
 
+// A 45-year ALL series is ~11k daily bars; the chart can't resolve more than
+// roughly a point per pixel, so thin it out evenly to keep the payload and
+// the client-side render small. Always keeps the first and last bar.
+function downsample<T>(arr: T[], max = 800): T[] {
+  if (arr.length <= max) return arr;
+  const step = (arr.length - 1) / (max - 1);
+  const out: T[] = [];
+  for (let i = 0; i < max; i++) out.push(arr[Math.round(i * step)]);
+  return out;
+}
+
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
@@ -121,44 +156,63 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (!ticker) return json({ error: "Missing ticker" }, 400);
 
   try {
-    let bars: any[];
-    let attempts: Attempt[];
-    let series: { t: number; c: number }[];
+    const to = new Date();
+    const from = fromDateFor(range, to);
 
-    if (range === "1D") {
-      ({ bars, attempts } = await fetchFirstNonEmpty([
-        `${FMP_STABLE}/historical-chart/5min?symbol=${ticker}&apikey=${FMP_KEY}`,
-        `${FMP_V3}/historical-chart/5min/${ticker}?apikey=${FMP_KEY}`,
-      ]));
-      // FMP returns intraday bars newest-first across many trading days —
-      // keep only the most recent trading day, then put them in chrono order.
-      const latestDay = bars[0]?.date ? String(bars[0].date).slice(0, 10) : null;
-      const todaysBars = latestDay ? bars.filter((b) => String(b.date).startsWith(latestDay)) : bars;
-      series = todaysBars
-        .map((b) => ({ t: new Date(b.date).getTime(), c: num(b.close) }))
-        .filter((pt): pt is { t: number; c: number } => pt.c != null && isFinite(pt.t))
-        .reverse();
-    } else {
-      const to = new Date();
-      const from = fromDateFor(range, to);
-      ({ bars, attempts } = await fetchFirstNonEmpty([
-        `${FMP_STABLE}/historical-price-eod/full?symbol=${ticker}&from=${from}&to=${ymd(to)}&apikey=${FMP_KEY}`,
-        `${FMP_V3}/historical-price-full/${ticker}?from=${from}&to=${ymd(to)}&apikey=${FMP_KEY}`,
-      ]));
-      series = bars
-        .map((b) => ({ t: new Date(b.date).getTime(), c: num(b.close ?? b.adjClose) }))
-        .filter((pt): pt is { t: number; c: number } => pt.c != null && isFinite(pt.t))
-        .sort((a, b) => a.t - b.t);
+    // /light is listed first deliberately: it is the variant available on the
+    // lowest FMP tiers, and it carries everything the chart needs (date+price).
+    const dailyUrls = [
+      `${FMP_STABLE}/historical-price-eod/light?symbol=${ticker}&from=${from}&to=${ymd(to)}&apikey=${FMP_KEY}`,
+      `${FMP_STABLE}/historical-price-eod/full?symbol=${ticker}&from=${from}&to=${ymd(to)}&apikey=${FMP_KEY}`,
+      `${FMP_V3}/historical-price-full/${ticker}?from=${from}&to=${ymd(to)}&serietype=line&apikey=${FMP_KEY}`,
+      `${FMP_V3}/historical-price-full/${ticker}?from=${from}&to=${ymd(to)}&apikey=${FMP_KEY}`,
+    ];
+    const intradayUrls = [
+      `${FMP_STABLE}/historical-chart/5min?symbol=${ticker}&apikey=${FMP_KEY}`,
+      `${FMP_STABLE}/historical-chart/1hour?symbol=${ticker}&apikey=${FMP_KEY}`,
+      `${FMP_V3}/historical-chart/5min/${ticker}?apikey=${FMP_KEY}`,
+    ];
+
+    // Intraday is the most heavily plan-gated surface, so 1D degrades to the
+    // daily series rather than showing an error when it isn't available.
+    const { bars, attempts } = await fetchFirstNonEmpty(
+      range === "1D" ? [...intradayUrls, ...dailyUrls] : dailyUrls,
+    );
+
+    // Every variant labels the close differently (see header comment).
+    let series = bars
+      .map((b) => ({ t: new Date(b.date).getTime(), c: num(b.close ?? b.price ?? b.adjClose) }))
+      .filter((pt): pt is { t: number; c: number } => pt.c != null && isFinite(pt.t))
+      .sort((a, b) => a.t - b.t);
+
+    // For 1D, narrow an intraday feed to just the latest trading day. If we
+    // fell through to daily bars there is nothing to narrow — leave as is.
+    if (range === "1D" && series.length > 0) {
+      const lastDay = new Date(series[series.length - 1].t).toISOString().slice(0, 10);
+      const sameDay = series.filter((pt) => new Date(pt.t).toISOString().slice(0, 10) === lastDay);
+      if (sameDay.length > 1) series = sameDay;
     }
 
     if (series.length === 0) {
-      console.error(
-        `[stock-history] ${ticker} (${range}): no bars from any source — ` +
-        attempts.map((a) => `${a.url} -> status=${a.status} bars=${a.bars}`).join(" | ")
+      const diagnostic = attempts
+        .map((a) => `${a.url} -> status=${a.status} bars=${a.bars}${a.note ? ` note="${a.note}"` : ""}`)
+        .join(" | ");
+      console.error(`[stock-history] ${ticker} (${range}): no bars from any source — ${diagnostic}`);
+      // Surface FMP's own wording (e.g. a plan restriction) instead of a
+      // generic miss — otherwise the cause is invisible from the browser.
+      const fmpNote = attempts.find((a) => a.note)?.note;
+      return json(
+        {
+          error: fmpNote
+            ? `FMP: ${fmpNote}`
+            : `No historical data found for "${ticker}" (${range})`,
+          attempts,
+        },
+        404,
       );
-      return json({ error: `No historical data found for "${ticker}" (${range})` }, 404);
     }
-    return json({ series });
+
+    return json({ series: downsample(series) });
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : "history lookup failed" }, 500);
   }
