@@ -1,0 +1,78 @@
+{
+  "language": {
+    "label": "语言",
+    "select": "选择语言"
+  },
+  "nav": {
+    "home": "首页",
+    "privateMarket": "一级市场",
+    "publicMarket": "二级市场",
+    "ventureCapital": "风险投资",
+    "deals": "交易",
+    "marketMap": "市场地图",
+    "privateEquity": "私募股权",
+    "watchlist": "我的自选",
+    "valuationsDueDiligence": "估值与尽职调查",
+    "settings": "设置",
+    "soon": "即将推出",
+    "toggleNavigation": "展开或收起导航",
+    "closeNavigation": "关闭导航"
+  },
+  "header": {
+    "searchPlaceholder": "搜索股票、风投、初创公司",
+    "search": "搜索",
+    "notifications": "通知",
+    "profile": "个人资料",
+    "signOut": "退出登录",
+    "signingOut": "正在退出…",
+    "logIn": "登录",
+    "signUp": "注册",
+    "accountMenu": "账户菜单"
+  },
+  "common": {
+    "close": "关闭",
+    "loading": "加载中…",
+    "noData": "暂无数据",
+    "retry": "重试",
+    "website": "官网",
+    "notAvailable": "—"
+  },
+  "metrics": {
+    "marketCap": "市值",
+    "peRatio": "市盈率",
+    "beta": "Beta",
+    "avgVolume": "平均成交量",
+    "dividendYield": "股息率",
+    "volume": "成交量",
+    "yearRange": "52周价格区间",
+    "enterpriseValue": "企业价值",
+    "evRevenue": "EV / 营收",
+    "evEbitda": "EV / EBITDA",
+    "ttmRevenue": "TTM 营收",
+    "ttmEbitda": "TTM EBITDA",
+    "yoyGrowth": "同比增长",
+    "momentum": "动量",
+    "price": "价格",
+    "trailingApprox": "近12个月，约"
+  },
+  "publicMarket": {
+    "directoryTitle": "上市公司目录",
+    "keyMetrics": "关键指标与估值",
+    "fromSync": "来自 AlphaMap 同步",
+    "trackedCounterpart": "对标的未上市公司：",
+    "tracked": "已跟踪",
+    "addAndSync": "添加并同步",
+    "syncing": "同步中…",
+    "filterPlaceholder": "筛选已跟踪公司",
+    "companyCount_other": "{{count}} 家公司",
+    "chart": {
+      "1D": "1日",
+      "1M": "1月",
+      "3M": "3月",
+      "1Y": "1年",
+      "5Y": "5年",
+      "ALL": "全部",
+      "noData": "暂无图表数据"
+    }
+  }
+}

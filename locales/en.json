@@ -1,0 +1,79 @@
+{
+  "language": {
+    "label": "Language",
+    "select": "Select language"
+  },
+  "nav": {
+    "home": "Home",
+    "privateMarket": "Private Market",
+    "publicMarket": "Public Market",
+    "ventureCapital": "Venture Capital",
+    "deals": "Deals",
+    "marketMap": "Market Map",
+    "privateEquity": "Private Equity",
+    "watchlist": "My Watchlist",
+    "valuationsDueDiligence": "Valuations and Due Diligence",
+    "settings": "Settings",
+    "soon": "Soon",
+    "toggleNavigation": "Toggle navigation",
+    "closeNavigation": "Close navigation"
+  },
+  "header": {
+    "searchPlaceholder": "Search Stocks, VCs, Startups",
+    "search": "Search",
+    "notifications": "Notifications",
+    "profile": "Profile",
+    "signOut": "Sign Out",
+    "signingOut": "Signing out…",
+    "logIn": "Log In",
+    "signUp": "Sign Up",
+    "accountMenu": "Account menu"
+  },
+  "common": {
+    "close": "Close",
+    "loading": "Loading…",
+    "noData": "No data available",
+    "retry": "Retry",
+    "website": "Website",
+    "notAvailable": "—"
+  },
+  "metrics": {
+    "marketCap": "Market Cap",
+    "peRatio": "P / E Ratio",
+    "beta": "Beta",
+    "avgVolume": "Avg Volume",
+    "dividendYield": "Dividend Yield",
+    "volume": "Volume",
+    "yearRange": "52-Week Range",
+    "enterpriseValue": "Enterprise Value",
+    "evRevenue": "EV / Revenue",
+    "evEbitda": "EV / EBITDA",
+    "ttmRevenue": "TTM Revenue",
+    "ttmEbitda": "TTM EBITDA",
+    "yoyGrowth": "YoY Growth",
+    "momentum": "Momentum",
+    "price": "Price",
+    "trailingApprox": "trailing, approx."
+  },
+  "publicMarket": {
+    "directoryTitle": "Public Companies Directory",
+    "keyMetrics": "Key Metrics & Valuation",
+    "fromSync": "From AlphaMap sync",
+    "trackedCounterpart": "Tracked private counterpart:",
+    "tracked": "Tracked",
+    "addAndSync": "Add & sync",
+    "syncing": "Syncing…",
+    "filterPlaceholder": "Filter tracked companies",
+    "companyCount_one": "{{count}} company",
+    "companyCount_other": "{{count}} companies",
+    "chart": {
+      "1D": "1D",
+      "1M": "1M",
+      "3M": "3M",
+      "1Y": "1Y",
+      "5Y": "5Y",
+      "ALL": "ALL",
+      "noData": "No chart data available"
+    }
+  }
+}

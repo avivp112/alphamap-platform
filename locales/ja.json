@@ -1,0 +1,78 @@
+{
+  "language": {
+    "label": "言語",
+    "select": "言語を選択"
+  },
+  "nav": {
+    "home": "ホーム",
+    "privateMarket": "未公開市場",
+    "publicMarket": "公開市場",
+    "ventureCapital": "ベンチャーキャピタル",
+    "deals": "案件",
+    "marketMap": "マーケットマップ",
+    "privateEquity": "プライベートエクイティ",
+    "watchlist": "ウォッチリスト",
+    "valuationsDueDiligence": "バリュエーションとデューデリジェンス",
+    "settings": "設定",
+    "soon": "近日公開",
+    "toggleNavigation": "ナビゲーションの表示切替",
+    "closeNavigation": "ナビゲーションを閉じる"
+  },
+  "header": {
+    "searchPlaceholder": "銘柄・VC・スタートアップを検索",
+    "search": "検索",
+    "notifications": "通知",
+    "profile": "プロフィール",
+    "signOut": "ログアウト",
+    "signingOut": "ログアウトしています…",
+    "logIn": "ログイン",
+    "signUp": "新規登録",
+    "accountMenu": "アカウントメニュー"
+  },
+  "common": {
+    "close": "閉じる",
+    "loading": "読み込み中…",
+    "noData": "データがありません",
+    "retry": "再試行",
+    "website": "ウェブサイト",
+    "notAvailable": "—"
+  },
+  "metrics": {
+    "marketCap": "時価総額",
+    "peRatio": "PER",
+    "beta": "ベータ",
+    "avgVolume": "平均出来高",
+    "dividendYield": "配当利回り",
+    "volume": "出来高",
+    "yearRange": "52週レンジ",
+    "enterpriseValue": "企業価値",
+    "evRevenue": "EV / 売上高",
+    "evEbitda": "EV / EBITDA",
+    "ttmRevenue": "TTM 売上高",
+    "ttmEbitda": "TTM EBITDA",
+    "yoyGrowth": "前年比成長率",
+    "momentum": "モメンタム",
+    "price": "株価",
+    "trailingApprox": "過去12カ月、概算"
+  },
+  "publicMarket": {
+    "directoryTitle": "上場企業ディレクトリ",
+    "keyMetrics": "主要指標とバリュエーション",
+    "fromSync": "AlphaMap の同期データ",
+    "trackedCounterpart": "対応する未公開企業：",
+    "tracked": "追跡中",
+    "addAndSync": "追加して同期",
+    "syncing": "同期中…",
+    "filterPlaceholder": "追跡中の企業を絞り込む",
+    "companyCount_other": "{{count}} 社",
+    "chart": {
+      "1D": "1日",
+      "1M": "1カ月",
+      "3M": "3カ月",
+      "1Y": "1年",
+      "5Y": "5年",
+      "ALL": "全期間",
+      "noData": "チャートデータがありません"
+    }
+  }
+}

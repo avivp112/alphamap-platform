@@ -1,5 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import {
   LayoutDashboard, Rocket, CandlestickChart, Landmark, Vault, Handshake,
   Globe2, ClipboardCheck, Eye, Settings, X,
@@ -15,21 +16,23 @@ function cn(...inputs: ClassValue[]) {
 // the sign-up CTAs on the landing page (View Dashboard / Request Early
 // Access), not persistent nav, since it's not meant to be a standing menu item
 // during this controlled rollout.
+// labelKey is resolved at render time so switching language re-labels the nav
+// without any of these module-level definitions going stale.
 const linkedItems = [
-  { icon: LayoutDashboard,  label: 'Home',            to: '/dashboard',  end: true  },
-  { icon: Rocket,           label: 'Private Market',  to: '/startups',   end: false },
-  { icon: CandlestickChart, label: 'Public Market',   to: '/public-market', end: false },
-  { icon: Landmark,         label: 'Venture Capital', to: '/vcs',        end: false },
-  { icon: Handshake,        label: 'Deals',           to: '/deals',      end: false },
-  { icon: Globe2,           label: 'Market Map',      to: '/market-map', end: false },
-  { icon: Vault,            label: 'Private Equity',  to: '/private-equity', end: false },
-  { icon: Eye,              label: 'My Watchlist',    to: '/watchlist',  end: false },
+  { icon: LayoutDashboard,  labelKey: 'nav.home',            to: '/dashboard',  end: true  },
+  { icon: Rocket,           labelKey: 'nav.privateMarket',   to: '/startups',   end: false },
+  { icon: CandlestickChart, labelKey: 'nav.publicMarket',    to: '/public-market', end: false },
+  { icon: Landmark,         labelKey: 'nav.ventureCapital',  to: '/vcs',        end: false },
+  { icon: Handshake,        labelKey: 'nav.deals',           to: '/deals',      end: false },
+  { icon: Globe2,           labelKey: 'nav.marketMap',       to: '/market-map', end: false },
+  { icon: Vault,            labelKey: 'nav.privateEquity',   to: '/private-equity', end: false },
+  { icon: Eye,              labelKey: 'nav.watchlist',       to: '/watchlist',  end: false },
 ];
 
 // Not built yet — shown dimmed and inert so the full nav is visible without
 // implying these pages already work.
 const staticItems = [
-  { icon: ClipboardCheck, label: 'Valuations and Due Diligence' },
+  { icon: ClipboardCheck, labelKey: 'nav.valuationsDueDiligence' },
 ];
 
 interface SidebarProps {
@@ -38,6 +41,8 @@ interface SidebarProps {
 }
 
 export function Sidebar({ open, onClose }: SidebarProps) {
+  const { t } = useTranslation();
+
   return (
     <aside
       className={cn(
@@ -51,7 +56,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       <button
         onClick={onClose}
         className="absolute top-3 right-3 p-1.5 rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
-        aria-label="Close navigation"
+        aria-label={t('nav.closeNavigation')}
       >
         <X className="h-4 w-4" />
       </button>
@@ -86,7 +91,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                       "text-[11px] font-semibold tracking-tight leading-tight transition-colors duration-200",
                       isActive ? "text-[#111827]" : "text-gray-600",
                     )}>
-                      {item.label}
+                      {t(item.labelKey)}
                     </span>
                   </>
                 )}
@@ -102,16 +107,16 @@ export function Sidebar({ open, onClose }: SidebarProps) {
             const Icon = item.icon;
             return (
               <div
-                key={item.label}
+                key={item.labelKey}
                 aria-disabled="true"
                 className="relative flex flex-col items-center justify-center gap-2 aspect-square rounded-2xl border border-gray-100 bg-gray-50/60 cursor-default select-none text-center px-1.5"
               >
                 <span className="absolute top-2 right-2 text-[8px] font-bold uppercase tracking-wider text-gray-300 bg-white border border-gray-100 rounded-full px-1.5 py-0.5">
-                  Soon
+                  {t('nav.soon')}
                 </span>
                 <Icon strokeWidth={1.5} className="h-6 w-6 text-gray-300" />
                 <span className="text-[11px] font-semibold tracking-tight leading-tight text-gray-400">
-                  {item.label}
+                  {t(item.labelKey)}
                 </span>
               </div>
             );
@@ -122,7 +127,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       <div className="p-4 border-t border-gray-100 flex flex-col gap-3">
         <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-[#111827] transition-all duration-200 ease-in-out group">
           <Settings strokeWidth={1.5} className="h-5 w-5 text-gray-400 group-hover:text-[#111827]" />
-          Settings
+          {t('nav.settings')}
         </button>
       </div>
     </aside>

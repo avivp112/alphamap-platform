@@ -1,0 +1,79 @@
+{
+  "language": {
+    "label": "Idioma",
+    "select": "Seleccionar idioma"
+  },
+  "nav": {
+    "home": "Inicio",
+    "privateMarket": "Mercado privado",
+    "publicMarket": "Mercado cotizado",
+    "ventureCapital": "Capital de riesgo",
+    "deals": "Operaciones",
+    "marketMap": "Mapa de mercado",
+    "privateEquity": "Capital privado",
+    "watchlist": "Lista de seguimiento",
+    "valuationsDueDiligence": "Valoraciones y due diligence",
+    "settings": "Configuración",
+    "soon": "Pronto",
+    "toggleNavigation": "Mostrar u ocultar la navegación",
+    "closeNavigation": "Cerrar la navegación"
+  },
+  "header": {
+    "searchPlaceholder": "Buscar acciones, VC y startups",
+    "search": "Buscar",
+    "notifications": "Notificaciones",
+    "profile": "Perfil",
+    "signOut": "Cerrar sesión",
+    "signingOut": "Cerrando sesión…",
+    "logIn": "Iniciar sesión",
+    "signUp": "Registrarse",
+    "accountMenu": "Menú de la cuenta"
+  },
+  "common": {
+    "close": "Cerrar",
+    "loading": "Cargando…",
+    "noData": "No hay datos disponibles",
+    "retry": "Reintentar",
+    "website": "Sitio web",
+    "notAvailable": "—"
+  },
+  "metrics": {
+    "marketCap": "Cap. bursátil",
+    "peRatio": "Ratio P/E",
+    "beta": "Beta",
+    "avgVolume": "Volumen promedio",
+    "dividendYield": "Rent. por dividendo",
+    "volume": "Volumen",
+    "yearRange": "Rango 52 semanas",
+    "enterpriseValue": "Valor de empresa",
+    "evRevenue": "EV / Ingresos",
+    "evEbitda": "EV / EBITDA",
+    "ttmRevenue": "Ingresos TTM",
+    "ttmEbitda": "EBITDA TTM",
+    "yoyGrowth": "Crec. interanual",
+    "momentum": "Momentum",
+    "price": "Precio",
+    "trailingApprox": "últimos 12 m, aprox."
+  },
+  "publicMarket": {
+    "directoryTitle": "Directorio de empresas cotizadas",
+    "keyMetrics": "Métricas clave y valoración",
+    "fromSync": "Sincronizado desde AlphaMap",
+    "trackedCounterpart": "Homóloga privada en seguimiento:",
+    "tracked": "En seguimiento",
+    "addAndSync": "Añadir y sincronizar",
+    "syncing": "Sincronizando…",
+    "filterPlaceholder": "Filtrar empresas en seguimiento",
+    "companyCount_one": "{{count}} empresa",
+    "companyCount_other": "{{count}} empresas",
+    "chart": {
+      "1D": "1D",
+      "1M": "1M",
+      "3M": "3M",
+      "1Y": "1A",
+      "5Y": "5A",
+      "ALL": "TODO",
+      "noData": "No hay datos disponibles para el gráfico"
+    }
+  }
+}

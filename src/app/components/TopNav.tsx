@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import { Search, Bell, User, Menu, ChevronDown, UserCircle, LogOut } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { BrandMark, BrandWordmark } from './BrandMark';
+import { LanguageSelector } from './LanguageSelector';
 
 interface TopNavProps {
   onMenuToggle?: () => void;
@@ -25,6 +27,7 @@ function getInitials({ name, email }: AuthedUser): string {
 }
 
 export function TopNav({ onMenuToggle }: TopNavProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [user, setUser]           = useState<AuthedUser | null>(null);
   const [loadingUser, setLoading] = useState(true);
@@ -93,7 +96,7 @@ export function TopNav({ onMenuToggle }: TopNavProps) {
         <button
           onClick={onMenuToggle}
           className="p-2 text-gray-500 hover:bg-gray-100 rounded-md transition-colors"
-          aria-label="Toggle navigation"
+          aria-label={t('nav.toggleNavigation')}
         >
           <Menu className="h-6 w-6" />
         </button>
@@ -112,16 +115,24 @@ export function TopNav({ onMenuToggle }: TopNavProps) {
           <input
             type="text"
             className="block w-full rounded-full border-0 bg-[#F3F4F6] py-2 pl-10 pr-4 text-sm text-[#111827] placeholder:text-gray-500 focus:bg-white focus:ring-2 focus:ring-[#0F172A]/20 sm:text-sm sm:leading-6 transition-all duration-200 ease-in-out"
-            placeholder="Search Stocks, VCs, Startups"
+            placeholder={t('header.searchPlaceholder')}
+            aria-label={t('header.search')}
           />
         </div>
       </div>
 
       {/* Profile & Notifications */}
       <div className="flex items-center gap-2 sm:gap-4">
-        <button className="md:hidden rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-[#111827] transition-colors">
+        <button
+          aria-label={t('header.search')}
+          className="md:hidden rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-[#111827] transition-colors"
+        >
           <Search className="h-5 w-5" />
         </button>
+
+        {/* Available signed in or out — a visitor reading the marketing copy
+            needs the switcher just as much as an account holder. */}
+        <LanguageSelector />
 
         {loadingUser ? (
           // Brief loading flash while the session is checked — neutral, no
@@ -129,7 +140,10 @@ export function TopNav({ onMenuToggle }: TopNavProps) {
           <div className="h-9 w-9 rounded-full bg-gray-100 animate-pulse" />
         ) : user ? (
           <>
-            <button className="relative rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-[#111827] transition-colors">
+            <button
+              aria-label={t('header.notifications')}
+              className="relative rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-[#111827] transition-colors"
+            >
               <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-[#F59E0B] ring-2 ring-white" />
               <Bell className="h-5 w-5" />
             </button>
@@ -140,6 +154,7 @@ export function TopNav({ onMenuToggle }: TopNavProps) {
                 onClick={() => setMenuOpen((o) => !o)}
                 aria-expanded={menuOpen}
                 aria-haspopup="menu"
+                aria-label={t('header.accountMenu')}
                 className="flex items-center gap-2 rounded-full border border-gray-200 p-1 pr-2.5 hover:bg-gray-50 transition-colors"
               >
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 flex-none">
@@ -173,7 +188,7 @@ export function TopNav({ onMenuToggle }: TopNavProps) {
                     className="flex items-center gap-2.5 px-3.5 py-2 text-sm text-[#111827] hover:bg-gray-50 transition-colors"
                   >
                     <UserCircle className="h-4 w-4 text-gray-400" />
-                    Profile
+                    {t('header.profile')}
                   </Link>
                   <button
                     onClick={handleSignOut}
@@ -182,7 +197,7 @@ export function TopNav({ onMenuToggle }: TopNavProps) {
                     className="flex w-full items-center gap-2.5 px-3.5 py-2 text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-50 transition-colors"
                   >
                     <LogOut className="h-4 w-4" />
-                    {signingOut ? "Signing out…" : "Sign Out"}
+                    {signingOut ? t('header.signingOut') : t('header.signOut')}
                   </button>
                 </div>
               )}
@@ -196,13 +211,13 @@ export function TopNav({ onMenuToggle }: TopNavProps) {
               to="/login"
               className="rounded-full px-3.5 py-2 text-sm font-semibold text-[#111827] hover:bg-gray-50 transition-colors"
             >
-              Log In
+              {t('header.logIn')}
             </Link>
             <Link
               to="/signup"
               className="rounded-full bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-gray-900 transition-colors"
             >
-              Sign Up
+              {t('header.signUp')}
             </Link>
           </div>
         )}

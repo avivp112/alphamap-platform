@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
+import { useTranslation } from "react-i18next";
+import { localeFor } from "../../lib/i18n";
 import {
   TrendingUp, TrendingDown, Minus, RefreshCw, Zap, Activity, Gauge,
   ArrowRight, ArrowLeftRight, Building2, Landmark, Sparkles, Info,
@@ -842,11 +844,12 @@ function MetricTile({ label, value, sub, accent }: { label: string; value: React
 }
 
 function RangeTile({ low, high, current }: { low: number | null; high: number | null; current: number | null }) {
+  const { t } = useTranslation();
   const hasRange = low != null && high != null && high > low;
   const pct = hasRange && current != null ? Math.max(0, Math.min(100, ((current - low!) / (high! - low!)) * 100)) : null;
   return (
     <div className="col-span-2 rounded-[12px] bg-gray-50 border border-gray-100 px-3.5 py-3">
-      <div className="text-[8.5px] font-bold uppercase tracking-wider text-gray-400 mb-2">52-Week Range</div>
+      <div className="text-[8.5px] font-bold uppercase tracking-wider text-gray-400 mb-2">{t("metrics.yearRange")}</div>
       {hasRange ? (
         <>
           <div className="relative h-1.5 rounded-full bg-gray-200/70">
@@ -897,23 +900,21 @@ function ProfileSkeleton() {
 
 // ── Price Chart (the stock-history Edge Function) ───────────────────────────
 
-const HISTORY_RANGES: { key: StockHistoryRange; label: string }[] = [
-  { key: "1D", label: "1D" },
-  { key: "1M", label: "1M" },
-  { key: "3M", label: "3M" },
-  { key: "1Y", label: "1Y" },
-  { key: "5Y", label: "5Y" },
-  { key: "ALL", label: "ALL" },
-];
+// Timeframe labels are translated too: "ALL" reads as TODO / 全部 / 全期間, and
+// the year/month suffixes differ per language (1Y -> 1A in Spanish).
+const HISTORY_RANGES: StockHistoryRange[] = ["1D", "1M", "3M", "1Y", "5Y", "ALL"];
 
-function fmtChartTick(t: number, range: StockHistoryRange): string {
+// Axis ticks follow the active UI language, not the browser default, so a
+// Japanese reader gets 1月 rather than "Jan" while the app is in Japanese.
+function fmtChartTick(t: number, range: StockHistoryRange, locale: string): string {
   const d = new Date(t);
-  if (range === "1D") return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  if (range === "1M" || range === "3M") return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+  if (range === "1D") return d.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
+  if (range === "1M" || range === "3M") return d.toLocaleDateString(locale, { month: "short", day: "numeric" });
+  return d.toLocaleDateString(locale, { month: "short", year: "2-digit" });
 }
 
 function StockPriceChart({ ticker }: { ticker: string }) {
+  const { t, i18n } = useTranslation();
   const [range, setRange]   = useState<StockHistoryRange>("3M");
   const [series, setSeries] = useState<StockHistoryPoint[] | null>(null);
   const [error, setError]   = useState<string | null>(null);
@@ -932,6 +933,7 @@ function StockPriceChart({ ticker }: { ticker: string }) {
     return () => { cancelled = true; };
   }, [ticker, range]);
 
+  const chartLocale = localeFor(i18n.resolvedLanguage ?? "en");
   const data = useMemo(() => (series ?? []).map((p) => ({ t: p.t, price: p.c })), [series]);
   const up = data.length >= 2 ? data[data.length - 1].price >= data[0].price : true;
   const lineColor = up ? "#059669" : "#E11D48";
@@ -942,13 +944,13 @@ function StockPriceChart({ ticker }: { ticker: string }) {
       <div className="flex items-center justify-end gap-1 mb-2.5">
         {HISTORY_RANGES.map((r) => (
           <button
-            key={r.key}
-            onClick={() => setRange(r.key)}
+            key={r}
+            onClick={() => setRange(r)}
             className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-colors ${
-              range === r.key ? "bg-[#0F172A] text-white" : "text-gray-400 hover:bg-gray-100 hover:text-[#0F172A]"
+              range === r ? "bg-[#0F172A] text-white" : "text-gray-400 hover:bg-gray-100 hover:text-[#0F172A]"
             }`}
           >
-            {r.label}
+            {t(`publicMarket.chart.${r}`)}
           </button>
         ))}
       </div>
@@ -959,7 +961,7 @@ function StockPriceChart({ ticker }: { ticker: string }) {
         ) : error || data.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center gap-1.5 text-center px-4 overflow-y-auto">
             <AlertCircle className="w-4 h-4 text-gray-300 flex-none" />
-            <p className="text-[11px] text-gray-400 leading-snug">{error ?? "No chart data available"}</p>
+            <p className="text-[11px] text-gray-400 leading-snug">{error ?? t("publicMarket.chart.noData")}</p>
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
@@ -974,7 +976,7 @@ function StockPriceChart({ ticker }: { ticker: string }) {
                 dataKey="t"
                 type="number"
                 domain={["dataMin", "dataMax"]}
-                tickFormatter={(t) => fmtChartTick(t, range)}
+                tickFormatter={(tick) => fmtChartTick(tick, range, chartLocale)}
                 tick={{ fill: "#9CA3AF", fontSize: 9, fontWeight: 600 }}
                 axisLine={false}
                 tickLine={false}
@@ -990,7 +992,7 @@ function StockPriceChart({ ticker }: { ticker: string }) {
                     <div className="bg-white border border-gray-100 rounded-[10px] shadow-lg px-3 py-2 text-xs">
                       <p className="font-bold text-[#0F172A] tabular-nums">{fmtPrice(pt.price)}</p>
                       <p className="text-gray-400 text-[10px] mt-0.5">
-                        {new Date(pt.t).toLocaleString(undefined, range === "1D"
+                        {new Date(pt.t).toLocaleString(chartLocale, range === "1D"
                           ? { hour: "numeric", minute: "2-digit" }
                           : { month: "short", day: "numeric", year: "numeric" })}
                       </p>
@@ -1020,6 +1022,7 @@ function StockProfileModal({ ticker, company, onClose }: {
   company: DerivedPublicCompany | null;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const [profile, setProfile]   = useState<StockProfile | null>(null);
   const [error, setError]       = useState<string | null>(null);
   const [fetching, setFetching] = useState(false);
@@ -1129,7 +1132,7 @@ function StockProfileModal({ ticker, company, onClose }: {
                   )}
                   {profile.website && (
                     <a href={profile.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 font-semibold text-[#0F172A] hover:underline">
-                      <ExternalLink className="w-3.5 h-3.5 text-gray-300" />Website
+                      <ExternalLink className="w-3.5 h-3.5 text-gray-300" />{t("common.website")}
                     </a>
                   )}
                 </div>
@@ -1137,32 +1140,32 @@ function StockProfileModal({ ticker, company, onClose }: {
 
               {/* Key Metrics & Valuation */}
               <div className="p-6">
-                <div className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mb-2.5">Key Metrics &amp; Valuation</div>
+                <div className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mb-2.5">{t("publicMarket.keyMetrics")}</div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <MetricTile label="Market Cap" value={fmtMoney(profile.marketCap)} />
-                  <MetricTile label="P / E Ratio" value={profile.pe != null ? profile.pe.toFixed(1) : "—"} />
-                  <MetricTile label="Beta" value={profile.beta != null ? profile.beta.toFixed(2) : "—"} />
-                  <MetricTile label="Avg Volume" value={fmtVolume(profile.avgVolume)} />
-                  <MetricTile label="Dividend Yield" value={profile.dividendYieldPct != null ? `${profile.dividendYieldPct.toFixed(2)}%` : "—"} sub={profile.dividendYieldPct != null ? "trailing, approx." : undefined} />
+                  <MetricTile label={t("metrics.marketCap")} value={fmtMoney(profile.marketCap)} />
+                  <MetricTile label={t("metrics.peRatio")} value={profile.pe != null ? profile.pe.toFixed(1) : "—"} />
+                  <MetricTile label={t("metrics.beta")} value={profile.beta != null ? profile.beta.toFixed(2) : "—"} />
+                  <MetricTile label={t("metrics.avgVolume")} value={fmtVolume(profile.avgVolume)} />
+                  <MetricTile label={t("metrics.dividendYield")} value={profile.dividendYieldPct != null ? `${profile.dividendYieldPct.toFixed(2)}%` : "—"} sub={profile.dividendYieldPct != null ? t("metrics.trailingApprox") : undefined} />
                   <RangeTile low={profile.yearLow} high={profile.yearHigh} current={profile.price} />
                 </div>
 
                 {company && (
                   <>
-                    <div className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mt-5 mb-2.5">From AlphaMap sync</div>
+                    <div className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mt-5 mb-2.5">{t("publicMarket.fromSync")}</div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <MetricTile label="EV / Revenue" value={fmtMult(company.evRevenue)} accent={accent} />
-                      <MetricTile label="EV / EBITDA" value={fmtMult(company.evEbitda)} />
-                      <MetricTile label="YoY Growth" value={fmtPct(company.yoyGrowthPct)} />
+                      <MetricTile label={t("metrics.evRevenue")} value={fmtMult(company.evRevenue)} accent={accent} />
+                      <MetricTile label={t("metrics.evEbitda")} value={fmtMult(company.evEbitda)} />
+                      <MetricTile label={t("metrics.yoyGrowth")} value={fmtPct(company.yoyGrowthPct)} />
                       <MetricTile
-                        label="Momentum"
+                        label={t("metrics.momentum")}
                         value={<span className={company.momentumPct >= 0 ? "text-emerald-600" : "text-rose-600"}>{fmtPct(company.momentumPct, true)}</span>}
                       />
                     </div>
                     {company.privateCompHint && (
                       <p className="mt-3 flex items-center gap-1.5 text-[11px] text-gray-400">
                         <Landmark className="w-3.5 h-3.5 text-gray-300" />
-                        Tracked private counterpart: <span className="font-semibold text-gray-500">{company.privateCompHint}</span>
+                        {t("publicMarket.trackedCounterpart")} <span className="font-semibold text-gray-500">{company.privateCompHint}</span>
                       </p>
                     )}
                   </>
