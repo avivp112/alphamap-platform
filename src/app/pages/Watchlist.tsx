@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import {
   Search, Plus, X, Check, Square, CheckSquare, Eye, Building2, Landmark,
@@ -75,6 +76,7 @@ function toCardItem(type: WatchlistEntityType, row: StartupListRow | InvestorRow
 }
 
 export function Watchlist() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { loggedIn, loading: authLoading } = useUserPlan();
 
@@ -208,14 +210,12 @@ export function Watchlist() {
           <div className="w-14 h-14 rounded-full bg-gray-50 border border-gray-100 flex items-center justify-center mb-5">
             <Eye className="w-6 h-6 text-gray-400" />
           </div>
-          <h1 className="text-xl font-bold text-[#0F172A]">Sign in to use My Watchlist</h1>
-          <p className="mt-2 text-sm text-gray-500">Track companies and funds across sessions and devices.</p>
+          <h1 className="text-xl font-bold text-[#0F172A]">{t("watchlist.signInTitle")}</h1>
+          <p className="mt-2 text-sm text-gray-500">{t("watchlist.signInBlurb")}</p>
           <button
             onClick={() => navigate("/login?next=" + encodeURIComponent("/watchlist"))}
             className="mt-6 rounded-[13px] bg-[#0F172A] px-5 py-2.5 text-sm font-bold text-white hover:bg-gray-900 transition-colors"
-          >
-            Log In
-          </button>
+          >{t("header.logIn")}</button>
         </div>
       </Layout>
     );
@@ -225,10 +225,8 @@ export function Watchlist() {
     <Layout>
       <div className={`mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 py-8 sm:py-12 ${selected.size > 0 ? "pb-28" : ""}`}>
         <div className="mb-8">
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">My Watchlist</h1>
-          <p className="mt-1 sm:mt-2 text-sm font-medium text-gray-500">
-            Track the companies and funds you care about, and compare them side by side.
-          </p>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">{t("watchlist.title")}</h1>
+          <p className="mt-1 sm:mt-2 text-sm font-medium text-gray-500">{t("watchlist.trackBlurb")}</p>
         </div>
 
         {/* ── Search to add ── */}
@@ -242,7 +240,7 @@ export function Watchlist() {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search companies or funds to add…"
+              placeholder={t("watchlist.searchPlaceholder")}
               className="w-full pl-11 pr-24 py-3 text-sm bg-white border border-gray-200 rounded-[14px] text-[#0F172A] placeholder-gray-400 focus:outline-none focus:border-gray-300 focus:ring-2 focus:ring-[#0F172A]/10 transition-all"
             />
             <button
@@ -288,8 +286,7 @@ export function Watchlist() {
         <div className="border-t border-gray-100 pt-8">
           {loadingList ? (
             <div className="flex items-center gap-2 text-sm text-gray-400 py-10">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading your watchlist…
-            </div>
+              <Loader2 className="w-4 h-4 animate-spin" />{t("watchlist.loading")}</div>
           ) : listError ? (
             <div className="flex items-start gap-2.5 bg-rose-50 border border-rose-200/60 rounded-[12px] px-4 py-3.5">
               <AlertCircle className="w-4 h-4 text-rose-500 flex-none mt-0.5" />
@@ -298,7 +295,7 @@ export function Watchlist() {
           ) : watchlist.startups.length === 0 && watchlist.investors.length === 0 ? (
             <div className="flex flex-col items-center text-center py-16 px-6 rounded-[20px] border border-dashed border-gray-200">
               <Eye className="w-8 h-8 text-gray-300 mb-3" />
-              <p className="text-sm font-semibold text-[#0F172A]">Nothing tracked yet</p>
+              <p className="text-sm font-semibold text-[#0F172A]">{t("watchlist.nothingTracked")}</p>
               <p className="mt-1 text-xs text-gray-400 max-w-xs">
                 Search above to find a company or fund, then click it and hit “Add to Watchlist.”
               </p>
@@ -331,20 +328,16 @@ export function Watchlist() {
             <div className="flex items-center gap-3">
               <span className="text-sm font-semibold text-[#0F172A]">{selected.size} selected</span>
               {!canCompare && (
-                <span className="text-xs text-gray-400">Select 2+ companies or 2+ funds (of the same type) to compare.</span>
+                <span className="text-xs text-gray-400">{t("watchlist.compareHint")}</span>
               )}
-              <button onClick={() => setSelected(new Set())} className="text-xs font-semibold text-gray-400 hover:text-rose-600 transition-colors">
-                Clear
-              </button>
+              <button onClick={() => setSelected(new Set())} className="text-xs font-semibold text-gray-400 hover:text-rose-600 transition-colors">{t("common.clear")}</button>
             </div>
             <button
               onClick={() => setCompareOpen(true)}
               disabled={!canCompare}
               className="flex items-center gap-1.5 rounded-[12px] bg-[#0F172A] px-4 py-2.5 text-sm font-bold text-white hover:bg-gray-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              <GitCompare className="w-4 h-4" />
-              Compare
-            </button>
+              <GitCompare className="w-4 h-4" />{t("common.compare")}</button>
           </div>
         </div>
       )}
@@ -406,6 +399,7 @@ function TrackableCard({
   item: CardItem; tracked: boolean; selected: boolean; focused: boolean; isPending: boolean;
   onToggleSelect: () => void; onToggleFocus: () => void; onAdd: () => void; onRemove: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       onClick={onToggleFocus}
@@ -465,7 +459,7 @@ function TrackableCard({
               tracked ? "bg-rose-50 text-rose-600 hover:bg-rose-100" : "bg-[#0F172A] text-white hover:bg-gray-900"
             }`}
           >
-            {tracked ? <><X className="w-3.5 h-3.5" />Remove from Watchlist</> : <><Plus className="w-3.5 h-3.5" />Add to Watchlist</>}
+            {tracked ? <><X className="w-3.5 h-3.5" />{t("watchlist.removeFrom")}</> : <><Plus className="w-3.5 h-3.5" />{t("watchlist.addTo")}</>}
           </button>
         )}
       </div>
@@ -475,6 +469,7 @@ function TrackableCard({
 
 // ── Compare modal ─────────────────────────────────────────────────────────────
 function CompareModal({ items, onClose }: { items: CardItem[]; onClose: () => void }) {
+  const { t } = useTranslation();
   const type = items[0]?.type;
   const rows: { label: string; icon: React.ElementType; value: (item: CardItem) => string }[] = type === "startup"
     ? [
@@ -513,7 +508,7 @@ function CompareModal({ items, onClose }: { items: CardItem[]; onClose: () => vo
             <table className="w-full border-collapse">
               <thead>
                 <tr>
-                  <th className="text-left text-[10px] font-bold uppercase tracking-wider text-gray-400 pb-3 pr-4 w-32">Metric</th>
+                  <th className="text-left text-[10px] font-bold uppercase tracking-wider text-gray-400 pb-3 pr-4 w-32">{t("common.metric")}</th>
                   {items.map((it) => (
                     <th key={key(it.type, it.id)} className="text-left pb-3 px-4 min-w-[160px]">
                       <div className="flex items-center gap-2">

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import {
   Globe, X, DollarSign, Briefcase, Activity, Building2, Landmark,
@@ -129,6 +130,7 @@ function getPageRange(current: number, total: number): Array<number | "…"> {
 function Pagination({ page, pageCount, onChange }: {
   page: number; pageCount: number; onChange: (p: number) => void;
 }) {
+  const { t } = useTranslation();
   if (pageCount <= 1) return null;
   const pages = getPageRange(page, pageCount);
   return (
@@ -137,8 +139,7 @@ function Pagination({ page, pageCount, onChange }: {
         onClick={() => onChange(page - 1)} disabled={page === 1}
         className="flex items-center gap-1 px-3 py-2 rounded-[10px] text-xs font-semibold text-gray-500 hover:text-[#0F172A] hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-all border border-transparent hover:border-gray-200"
       >
-        <ChevronLeft className="w-3.5 h-3.5" />Prev
-      </button>
+        <ChevronLeft className="w-3.5 h-3.5" />{t("common.prev")}</button>
       <div className="flex items-center gap-1">
         {pages.map((p, i) =>
           p === "…" ? (
@@ -161,8 +162,7 @@ function Pagination({ page, pageCount, onChange }: {
       <button
         onClick={() => onChange(page + 1)} disabled={page === pageCount}
         className="flex items-center gap-1 px-3 py-2 rounded-[10px] text-xs font-semibold text-gray-500 hover:text-[#0F172A] hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-all border border-transparent hover:border-gray-200"
-      >
-        Next<ChevronRight className="w-3.5 h-3.5" />
+      >{t("common.next")}<ChevronRight className="w-3.5 h-3.5" />
       </button>
     </div>
   );
@@ -173,6 +173,7 @@ function Pagination({ page, pageCount, onChange }: {
 function PEFirmCard({ firm, onClick, selected, onToggleSelect }: {
   firm: PEFirmRow; onClick: () => void; selected: boolean; onToggleSelect: (e: React.MouseEvent) => void;
 }) {
+  const { t } = useTranslation();
   const aum = parseAumMillions(firm.fund_size);
   const tagline = (firm.description ?? "").split(/\.\s/)[0];
 
@@ -214,7 +215,7 @@ function PEFirmCard({ firm, onClick, selected, onToggleSelect }: {
                 {firm.firm_name}
               </h3>
               <p className="text-xs text-gray-500 mt-0.5 line-clamp-1 leading-tight">
-                {tagline || (firm.headquarters ?? "Private equity firm")}
+                {tagline || (firm.headquarters ?? t("pe.privateEquityFirm"))}
               </p>
             </div>
           </div>
@@ -268,14 +269,14 @@ function PEFirmCard({ firm, onClick, selected, onToggleSelect }: {
         <div className="rounded-[10px] px-2.5 py-2.5 bg-gray-50 border border-gray-100">
           <div className="flex items-center gap-1 mb-1">
             <Briefcase className="w-2.5 h-2.5 text-cyan-600 flex-none" />
-            <span className="text-[8.5px] font-bold text-gray-400 uppercase tracking-wider">Portfolio</span>
+            <span className="text-[8.5px] font-bold text-gray-400 uppercase tracking-wider">{t("common.portfolio")}</span>
           </div>
           <div className="text-sm font-bold text-cyan-600 leading-none">{firm.portfolio_count || "—"}</div>
         </div>
         <div className="rounded-[10px] px-2.5 py-2.5 bg-gray-50 border border-gray-100">
           <div className="flex items-center gap-1 mb-1">
             <Activity className="w-2.5 h-2.5 text-amber-600 flex-none" />
-            <span className="text-[8.5px] font-bold text-gray-400 uppercase tracking-wider">Deal Value</span>
+            <span className="text-[8.5px] font-bold text-gray-400 uppercase tracking-wider">{t("pe.dealValue")}</span>
           </div>
           <div className="text-sm font-bold text-amber-600 leading-none">{fmt(firm.total_deal_value)}</div>
         </div>
@@ -309,6 +310,7 @@ function PEFirmCard({ firm, onClick, selected, onToggleSelect }: {
 // ─── Tearsheet: Overview tab ──────────────────────────────────────────────────
 
 function PEOverviewTab({ firm }: { firm: PEFirmRow }) {
+  const { t } = useTranslation();
   const aum = parseAumMillions(firm.fund_size);
   const leadership = firm.leadership ?? [];
 
@@ -317,32 +319,32 @@ function PEOverviewTab({ firm }: { firm: PEFirmRow }) {
       {firm.description ? (
         <p className="text-sm text-gray-700 leading-relaxed">{firm.description}</p>
       ) : (
-        <MissingDataState message="No firm description on file." />
+        <MissingDataState message={t("pe.noDescription")} />
       )}
 
       {firm.thesis && (
         <div className="bg-gray-50 border border-gray-100 rounded-[14px] px-4 py-3.5">
-          <div className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Investment Thesis</div>
+          <div className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">{t("pe.investmentThesis")}</div>
           <p className="text-sm text-gray-700 leading-relaxed italic">{firm.thesis}</p>
         </div>
       )}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard icon={DollarSign} label="AUM / Fund Size" value={firm.fund_size ?? formatAUM(aum)} accent="#059669" />
-        <StatCard icon={Calendar}   label="Founded"         value={firm.founded_year ? String(firm.founded_year) : "—"} accent="#F59E0B" />
-        <StatCard icon={MapPin}     label="Headquarters"    value={firm.headquarters ?? "—"} accent="#0e7490" />
-        <StatCard icon={Briefcase}  label="Portfolio"       value={firm.portfolio_count ? String(firm.portfolio_count) : "—"} accent="#6d28d7" />
+        <StatCard icon={DollarSign} label={t("pe.aumFundSize")} value={firm.fund_size ?? formatAUM(aum)} accent="#059669" />
+        <StatCard icon={Calendar}   label={t("vcs.founded")}         value={firm.founded_year ? String(firm.founded_year) : "—"} accent="#F59E0B" />
+        <StatCard icon={MapPin}     label={t("vcs.headquarters")}    value={firm.headquarters ?? "—"} accent="#0e7490" />
+        <StatCard icon={Briefcase}  label={t("common.portfolio")}       value={firm.portfolio_count ? String(firm.portfolio_count) : "—"} accent="#6d28d7" />
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <StatCard icon={Landmark} label="Buyouts on Record"     value={String(firm.buyout_count)} accent="#475569" />
-        <StatCard icon={Activity} label="Total Disclosed Value" value={fmt(firm.total_deal_value)} accent="#be185d" />
+        <StatCard icon={Landmark} label={t("pe.buyoutsOnRecord")}     value={String(firm.buyout_count)} accent="#475569" />
+        <StatCard icon={Activity} label={t("pe.totalDisclosed")} value={fmt(firm.total_deal_value)} accent="#be185d" />
       </div>
 
       <div>
         <div className="flex items-center gap-2 mb-3">
           <Briefcase className="w-4 h-4 text-gray-400" />
-          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Leadership</h3>
+          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("common.leadership")}</h3>
         </div>
         {leadership.length > 0 ? (
           <div className="flex flex-wrap gap-2">
@@ -360,7 +362,7 @@ function PEOverviewTab({ firm }: { firm: PEFirmRow }) {
             ))}
           </div>
         ) : (
-          <MissingDataState message="No leadership team has been recorded for this firm yet." />
+          <MissingDataState message={t("pe.noLeadership")} />
         )}
       </div>
     </div>
@@ -370,6 +372,7 @@ function PEOverviewTab({ firm }: { firm: PEFirmRow }) {
 // ─── Tearsheet: Portfolio tab (mature-market metrics, not VC hyper-growth) ────
 
 function PEPortfolioTab({ firmName }: { firmName: string }) {
+  const { t } = useTranslation();
   const [rows, setRows]       = useState<PEPortfolioCompany[] | null>(null);
   const [err, setErr]         = useState(false);
 
@@ -378,12 +381,12 @@ function PEPortfolioTab({ firmName }: { firmName: string }) {
     fetchPEFirmPortfolio(firmName).then(setRows).catch(() => setErr(true));
   }, [firmName]);
 
-  if (err) return <MissingDataState message="Failed to load this firm's portfolio." />;
+  if (err) return <MissingDataState message={t("pe.failedPortfolio")} />;
   if (rows === null) {
     return <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 text-[#F59E0B] animate-spin" /></div>;
   }
   if (rows.length === 0) {
-    return <MissingDataState message="No portfolio companies are linked to this firm's PE Buyout or Secondary transactions yet." />;
+    return <MissingDataState message={t("pe.noPortfolio")} />;
   }
 
   const mature  = rows.filter(r => r.archetype === "mature_private");
@@ -394,7 +397,7 @@ function PEPortfolioTab({ firmName }: { firmName: string }) {
       <div>
         <div className="flex items-center gap-2 mb-1.5">
           <Building2 className="w-4 h-4 text-gray-400" />
-          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Holdings — Mature Private</h3>
+          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("pe.holdingsMature")}</h3>
         </div>
         <p className="text-[11px] text-gray-400 mb-3 leading-relaxed">
           Scored on the mature-company track: absolute scale, longevity, and headcount stability
@@ -427,7 +430,7 @@ function PEPortfolioTab({ firmName }: { firmName: string }) {
                       <td className="py-3 px-4 text-xs font-semibold text-gray-700">{c.years_active != null ? `${c.years_active} yrs` : "—"}</td>
                       <td className="py-3 px-4">
                         {stab
-                          ? <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${stab.cls}`}>{stab.label}</span>
+                          ? <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${stab.cls}`}>{t(stab.labelKey)}</span>
                           : <span className="text-xs text-gray-300">—</span>}
                       </td>
                       <td className="py-3 px-4 text-xs font-semibold text-gray-700">{c.n_acquisitions > 0 ? c.n_acquisitions : "—"}</td>
@@ -445,7 +448,7 @@ function PEPortfolioTab({ firmName }: { firmName: string }) {
         <div>
           <div className="flex items-center gap-2 mb-2">
             <TrendingUp className="w-4 h-4 text-gray-400" />
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Growth Equity Positions</h3>
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("pe.growthEquity")}</h3>
           </div>
           <div className="flex flex-wrap gap-2">
             {growth.map(c => (
@@ -464,6 +467,7 @@ function PEPortfolioTab({ firmName }: { firmName: string }) {
 // ─── Tearsheet: Transactions tab ──────────────────────────────────────────────
 
 function PETransactionsTab({ firmName }: { firmName: string }) {
+  const { t } = useTranslation();
   const [rows, setRows] = useState<PETransaction[] | null>(null);
   const [err, setErr]   = useState(false);
 
@@ -472,12 +476,12 @@ function PETransactionsTab({ firmName }: { firmName: string }) {
     fetchPEFirmTransactions(firmName).then(setRows).catch(() => setErr(true));
   }, [firmName]);
 
-  if (err) return <MissingDataState message="Failed to load this firm's transactions." />;
+  if (err) return <MissingDataState message={t("pe.failedTransactions")} />;
   if (rows === null) {
     return <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 text-[#F59E0B] animate-spin" /></div>;
   }
   if (rows.length === 0) {
-    return <MissingDataState message="No PE Buyout or Secondary transactions are on record for this firm yet." />;
+    return <MissingDataState message={t("pe.noTransactions")} />;
   }
 
   return (
@@ -494,8 +498,7 @@ function PETransactionsTab({ firmName }: { firmName: string }) {
             </div>
             {t.is_lead && (
               <span className="flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 flex-none">
-                <Zap className="w-2.5 h-2.5" />Lead
-              </span>
+                <Zap className="w-2.5 h-2.5" />{t("pe.lead")}</span>
             )}
           </div>
           <div className="flex items-center gap-4 flex-none">
@@ -514,13 +517,14 @@ function PETransactionsTab({ firmName }: { firmName: string }) {
 
 type PETab = "overview" | "portfolio" | "transactions";
 
-const PE_TABS: { id: PETab; label: string }[] = [
-  { id: "overview",     label: "Overview" },
-  { id: "portfolio",    label: "Portfolio" },
-  { id: "transactions", label: "Transactions" },
+const PE_TABS: { id: PETab; labelKey: string }[] = [
+  { id: "overview",     labelKey: "pe.overview" },
+  { id: "portfolio",    labelKey: "common.portfolio" },
+  { id: "transactions", labelKey: "pe.transactions" },
 ];
 
 function PETearsheetModal({ firm, onClose }: { firm: PEFirmRow; onClose: () => void }) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<PETab>("overview");
 
   useEffect(() => { setActiveTab("overview"); }, [firm.firm_name]);
@@ -570,16 +574,13 @@ function PETearsheetModal({ firm, onClose }: { firm: PEFirmRow; onClose: () => v
                     <a href={firm.website} target="_blank" rel="noopener noreferrer"
                       onClick={(e) => e.stopPropagation()}
                       className="flex items-center gap-1 hover:text-cyan-700 transition-colors">
-                      <Globe className="w-3 h-3 flex-none" />Website
-                    </a>
+                      <Globe className="w-3 h-3 flex-none" />{t("common.website")}</a>
                   </>
                 )}
               </div>
             </div>
             <div className="flex items-center gap-2 flex-none">
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap bg-white/70" style={{ border: "1px solid rgba(15,23,42,0.12)" }}>
-                Private Equity
-              </span>
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap bg-white/70" style={{ border: "1px solid rgba(15,23,42,0.12)" }}>{t("pe.title")}</span>
               <button
                 onClick={onClose}
                 className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-[#0F172A]/50 hover:text-[#0F172A] transition-all"
@@ -607,7 +608,7 @@ function PETearsheetModal({ firm, onClose }: { firm: PEFirmRow; onClose: () => v
                   onMouseEnter={(e) => { if (!active) e.currentTarget.style.color = "rgba(15,23,42,0.8)"; }}
                   onMouseLeave={(e) => { if (!active) e.currentTarget.style.color = "rgba(15,23,42,0.55)"; }}
                 >
-                  {tab.label}
+                  {t(tab.labelKey)}
                   {active && (
                     <span
                       className="absolute bottom-0 inset-x-2 h-[2px] rounded-full"
@@ -657,6 +658,7 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
 // ─── Compare modal ────────────────────────────────────────────────────────────
 
 function PECompareModal({ firms, onClose }: { firms: PEFirmRow[]; onClose: () => void }) {
+  const { t } = useTranslation();
   const rows: { label: string; icon: React.ElementType; value: (f: PEFirmRow) => string }[] = [
     { label: "Headquarters", icon: MapPin,     value: (f) => f.headquarters ?? "—" },
     { label: "Founded",      icon: Calendar,   value: (f) => f.founded_year ? String(f.founded_year) : "—" },
@@ -679,7 +681,7 @@ function PECompareModal({ firms, onClose }: { firms: PEFirmRow[]; onClose: () =>
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex-none flex items-center justify-between px-6 py-5 border-b border-gray-100">
-          <h2 className="text-lg font-bold text-[#0F172A]">Compare Firms</h2>
+          <h2 className="text-lg font-bold text-[#0F172A]">{t("common.compareFirms")}</h2>
           <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-[#0F172A] transition-colors">
             <X className="w-4 h-4" />
           </button>
@@ -689,7 +691,7 @@ function PECompareModal({ firms, onClose }: { firms: PEFirmRow[]; onClose: () =>
             <table className="w-full border-collapse">
               <thead>
                 <tr>
-                  <th className="text-left text-[10px] font-bold uppercase tracking-wider text-gray-400 pb-3 pr-4 w-32">Metric</th>
+                  <th className="text-left text-[10px] font-bold uppercase tracking-wider text-gray-400 pb-3 pr-4 w-32">{t("common.metric")}</th>
                   {firms.map((f) => (
                     <th key={f.firm_name} className="text-left pb-3 px-4 min-w-[160px]">
                       <div className="flex items-center gap-2">
@@ -704,7 +706,7 @@ function PECompareModal({ firms, onClose }: { firms: PEFirmRow[]; onClose: () =>
                 {rows.map((row) => (
                   <tr key={row.label} className="border-t border-gray-100">
                     <td className="py-3 pr-4 text-xs font-semibold text-gray-500 flex items-center gap-1.5">
-                      <row.icon className="w-3.5 h-3.5 text-gray-300" />{row.label}
+                      <row.icon className="w-3.5 h-3.5 text-gray-300" />{t(row.labelKey)}
                     </td>
                     {firms.map((f) => (
                       <td key={f.firm_name} className="py-3 px-4 text-sm font-bold text-[#0F172A]">{row.value(f)}</td>
@@ -723,6 +725,7 @@ function PECompareModal({ firms, onClose }: { firms: PEFirmRow[]; onClose: () =>
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export function PrivateEquity() {
+  const { t } = useTranslation();
   const [firms, setFirms]           = useState<PEFirmRow[]>([]);
   const [loading, setLoading]       = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -852,29 +855,27 @@ export function PrivateEquity() {
       <div style={{ background: "#B8C9D1", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
         <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 pt-6 pb-5">
           <div className="flex items-center justify-between gap-4 mb-1.5">
-            <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">
-              Private Equity
-            </h1>
+            <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">{t("pe.title")}</h1>
             <div className="flex items-center gap-2 flex-none">
               {/* View toggle — same control as the Startups hub */}
               <div className="flex items-center bg-white/60 border border-black/10 rounded-[10px] p-0.5 gap-0.5">
                 <button
                   onClick={() => setViewMode("grid")}
                   className={`p-1.5 rounded-[7px] transition-all ${viewMode === "grid" ? "bg-[#0F172A] text-white shadow-sm" : "text-[#0F172A]/60 hover:text-[#0F172A]"}`}
-                  aria-label="Grid view"
+                  aria-label={t("common.gridView")}
                 >
                   <LayoutGrid className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={() => setViewMode("list")}
                   className={`p-1.5 rounded-[7px] transition-all ${viewMode === "list" ? "bg-[#0F172A] text-white shadow-sm" : "text-[#0F172A]/60 hover:text-[#0F172A]"}`}
-                  aria-label="List view"
+                  aria-label={t("common.listView")}
                 >
                   <List className="w-3.5 h-3.5" />
                 </button>
               </div>
 
-              <span className="text-[10px] font-bold text-[#0F172A]/50 uppercase tracking-wider hidden sm:block">Sort</span>
+              <span className="text-[10px] font-bold text-[#0F172A]/50 uppercase tracking-wider hidden sm:block">{t("common.sort")}</span>
               <div className="flex items-center bg-white/60 border border-black/10 rounded-[10px] p-0.5 gap-0.5">
                 {SORT_OPTIONS.map(o => (
                   <button
@@ -886,7 +887,7 @@ export function PrivateEquity() {
                         : "text-[#0F172A]/60 hover:text-[#0F172A]"
                     }`}
                   >
-                    {o.label}
+                    {t(o.labelKey)}
                   </button>
                 ))}
               </div>
@@ -894,7 +895,7 @@ export function PrivateEquity() {
           </div>
           <div className="flex items-center gap-3">
             <p className="text-sm text-[#0F172A]/60 leading-snug">
-              Buyout and secondary-market intelligence — firms derived from real transaction data, scored on mature-market fundamentals.
+              {t("pe.pageSubtitle")}
             </p>
             {!loading && (
               <span className="text-xs font-semibold text-[#0F172A]/60 bg-white/60 border border-black/10 px-2.5 py-1 rounded-full flex-none">
@@ -909,12 +910,12 @@ export function PrivateEquity() {
       <SideFilterLayout
         search={search}
         onSearchChange={setSearch}
-        searchPlaceholder="Search firms…"
+        searchPlaceholder={t("vcs.searchFirms")}
         activeFilterCount={activeFilterCount}
         onClearAll={clearAll}
         filters={
           <>
-            <FilterAccordion title="Deal Types" defaultOpen
+            <FilterAccordion title={t("pe.dealTypes")} defaultOpen
               badge={filters.dealTypes.length > 0 ? <FilterBadge>{filters.dealTypes.length} selected</FilterBadge> : undefined}>
               <div className="flex flex-wrap gap-1.5">
                 {(["PE Buyout", "Secondary", "Debt"] as DealType[]).map(d => (
@@ -945,7 +946,7 @@ export function PrivateEquity() {
               </p>
             </FilterAccordion>
 
-            <FilterAccordion title="Recent Activity" defaultOpen
+            <FilterAccordion title={t("vcs.recentActivity")} defaultOpen
               badge={filters.activeOnly ? <FilterBadge>On</FilterBadge> : undefined}>
               <button
                 onClick={() => setFilters(f => ({ ...f, activeOnly: !f.activeOnly }))}
@@ -966,7 +967,7 @@ export function PrivateEquity() {
         <div ref={gridRef}>
           {fetchError ? (
             <div className="flex flex-col items-center justify-center py-24 text-center">
-              <p className="text-sm font-semibold text-rose-500">Failed to load PE firms</p>
+              <p className="text-sm font-semibold text-rose-500">{t("pe.failedToLoad")}</p>
               <p className="mt-1 text-xs text-gray-400">{fetchError}</p>
             </div>
           ) : loading ? (
@@ -987,9 +988,7 @@ export function PrivateEquity() {
                 <button
                   onClick={clearAll}
                   className="mt-3 text-xs font-semibold text-gray-500 hover:text-rose-600 transition-colors"
-                >
-                  Clear all filters
-                </button>
+                >{t("common.clearAllFilters")}</button>
               )}
             </div>
           ) : viewMode === "grid" ? (
@@ -1077,7 +1076,7 @@ export function PrivateEquity() {
               <button
                 onClick={toggleWatchlistForSelected}
                 disabled={watchlistBusy || !trackable}
-                title={trackable ? undefined : "This firm has no curated profile yet, so it can't be tracked."}
+                title={trackable ? undefined : t("pe.notTrackableHint")}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-[16px] text-xs font-bold transition-all duration-200 backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.45)] disabled:opacity-60 ${
                   !trackable
                     ? "bg-[#0b1626]/70 border border-[#1a2a3f] text-slate-500 cursor-not-allowed"

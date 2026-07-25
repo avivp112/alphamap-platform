@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams, Link } from "react-router";
+import { useTranslation } from "react-i18next";
 import {
   CreditCard, Lock, CheckCircle2, ArrowRight, Loader2, ShieldCheck, Sparkles, Building2,
 } from "lucide-react";
@@ -11,7 +12,7 @@ import { useUserPlan, setPlanPlaceholder, type Plan } from "../../lib/plan";
 // upgrade flows. No payment is actually processed here: there is no Stripe or
 // payment-provider integration wired up yet, so submitting this form simply
 // flips the user's plan flag (see src/lib/plan.ts) to unlock the app's gated
-// content, so the freemium flow can be demoed end-to-end. The "Demo mode"
+// content, so the freemium flow can be demoed end-to-end. The t("checkout.demoMode")
 // notice below is a deliberate, honest disclosure — this must never be
 // mistaken for a real payment collector.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -27,6 +28,7 @@ const PLAN_INFO: Record<"pro" | "enterprise", { name: string; icon: React.Elemen
 };
 
 export function Checkout() {
+  const { t } = useTranslation();
   const { plan: rawPlan } = useParams<{ plan: string }>();
   const [searchParams] = useSearchParams();
   const annual = searchParams.get("annual") === "1";
@@ -53,8 +55,7 @@ export function Checkout() {
       <Layout>
         <div className="mx-auto max-w-md px-4 py-24 text-center">
           <p className="text-sm font-semibold text-[#0F172A]">Unknown plan</p>
-          <Link to="/pricing" className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[#0F172A] hover:underline">
-            Back to pricing <ArrowRight className="w-3.5 h-3.5" />
+          <Link to="/pricing" className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[#0F172A] hover:underline">{t("checkout.backToPricing")}<ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
       </Layout>
@@ -71,7 +72,7 @@ export function Checkout() {
     e.preventDefault();
     setError(null);
     if (!form.name.trim() || !form.number.trim() || !form.expiry.trim() || !form.cvc.trim()) {
-      setError("Fill in every field to continue.");
+      setError(t("checkout.fillEveryField"));
       return;
     }
     setSubmitting(true);
@@ -79,7 +80,7 @@ export function Checkout() {
       await setPlanPlaceholder(plan as Plan);
       setDone(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong — please try again.");
+      setError(err instanceof Error ? err.message : t("checkout.somethingWrong"));
     } finally {
       setSubmitting(false);
     }
@@ -93,12 +94,11 @@ export function Checkout() {
             <CheckCircle2 className="w-7 h-7 text-emerald-600" />
           </div>
           <h1 className="text-xl font-bold text-[#0F172A]">You're on {info.name} now</h1>
-          <p className="mt-2 text-sm text-gray-500">Every locked section across the platform is unlocked.</p>
+          <p className="mt-2 text-sm text-gray-500">{t("checkout.unlockedBlurb")}</p>
           <button
             onClick={() => navigate("/dashboard")}
             className="mt-7 flex items-center gap-1.5 rounded-[13px] bg-[#0F172A] px-5 py-3 text-sm font-bold text-white hover:bg-gray-900 transition-colors"
-          >
-            Go to Dashboard <ArrowRight className="w-3.5 h-3.5" />
+          >{t("checkout.goToDashboard")}<ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
       </Layout>
@@ -116,13 +116,13 @@ export function Checkout() {
               <div className="w-10 h-10 rounded-[11px] bg-[#0F172A] flex items-center justify-center mb-4">
                 <Icon className="w-5 h-5 text-white" />
               </div>
-              <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Upgrading to</p>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">{t("checkout.upgradingTo")}</p>
               <h2 className="text-xl font-bold text-[#0F172A] mt-0.5">{info.name}</h2>
               {plan === "pro" ? (
                 <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                   <span className="text-sm font-semibold text-gray-300 line-through">{fullPriceLabel}</span>
                   <span className="text-sm font-bold text-[#7C8967]">${PRO_BETA_PRICE}/mo</span>
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-white bg-[#7C8967] rounded-full px-2 py-0.5">Beta Version</span>
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-white bg-[#7C8967] rounded-full px-2 py-0.5">{t("pricing.betaVersion")}</span>
                 </div>
               ) : (
                 <p className="mt-1 text-sm font-semibold text-gray-500">{fullPriceLabel}</p>
@@ -138,19 +138,17 @@ export function Checkout() {
           <div className="md:col-span-3">
             <div className="flex items-center gap-2 mb-1">
               <CreditCard className="w-4 h-4 text-gray-400" />
-              <h1 className="text-lg font-bold text-[#0F172A]">Billing details</h1>
+              <h1 className="text-lg font-bold text-[#0F172A]">{t("checkout.billingDetails")}</h1>
             </div>
             <div className="flex items-center gap-1.5 mb-6 text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200/70 rounded-full px-2.5 py-1 w-fit">
-              <Lock className="w-3 h-3" />
-              Demo mode — no card is charged, no real payment is processed
-            </div>
+              <Lock className="w-3 h-3" />{t("checkout.demoModeNote")}</div>
 
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <Field label="Name on card">
                 <input
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="Jane Doe"
+                  placeholder={t("auth.signup.fullNamePlaceholder")}
                   className={inputCls}
                 />
               </Field>
@@ -203,9 +201,7 @@ export function Checkout() {
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
                 {submitting ? "Confirming…" : `Confirm & Start ${info.name}`}
               </button>
-              <p className="text-center text-[11px] text-gray-400">
-                By continuing you agree to a simulated subscription — this build has no live billing yet.
-              </p>
+              <p className="text-center text-[11px] text-gray-400">{t("checkout.disclaimer")}</p>
             </form>
           </div>
         </div>

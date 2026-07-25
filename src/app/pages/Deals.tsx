@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import {
   DollarSign, TrendingUp, Zap, Search, X,
   ChevronUp, ChevronDown, Activity, Calendar,
@@ -336,6 +337,7 @@ const FILTER_TYPES: Array<DealType | "All"> = [
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export function Deals() {
+  const { t } = useTranslation();
   const [search,          setSearch]          = useState("");
   const [dealTypeFilter,  setDealTypeFilter]  = useState<DealType | null>(null);
   const [sortCol,         setSortCol]         = useState<SortCol>("date");
@@ -410,9 +412,7 @@ export function Deals() {
       <div style={{ background: "#B8C9D1", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
         <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 pt-7 pb-6">
           <div className="flex items-center justify-between gap-4 mb-1.5">
-            <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">
-              Deal Flow
-            </h1>
+            <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">{t("deals.title")}</h1>
             <div className="flex items-center gap-2 flex-none">
               <span
                 className="text-[10px] font-semibold px-2.5 py-1 rounded-full bg-amber-100 border border-amber-300 text-amber-800"
@@ -443,7 +443,7 @@ export function Deals() {
             >
               <Database className="w-3.5 h-3.5 text-amber-500 flex-none" />
               <p className="text-[11px] text-amber-400/80">
-                <span className="font-bold text-amber-400">Demo data</span> — run{" "}
+                <span className="font-bold text-amber-400">{t("deals.demoData")}</span> — run{" "}
                 <code className="text-amber-300 bg-amber-500/10 px-1 rounded text-[10px]">DRY_RUN=false npx tsx scripts/fetch_sec_deals.ts</code>{" "}
                 to populate the <code className="text-amber-300 bg-amber-500/10 px-1 rounded text-[10px]">deals</code> table with live SEC Form D filings.
                 {dbError && <span className="ml-2 text-rose-400">({dbError})</span>}
@@ -515,7 +515,7 @@ export function Deals() {
               {/* Title + count */}
               <div className="flex items-center gap-3">
                 <Activity className="w-4 h-4 text-amber-500 flex-none" />
-                <span className="text-xs font-bold text-gray-900 uppercase tracking-widest">Ledger</span>
+                <span className="text-xs font-bold text-gray-900 uppercase tracking-widest">{t("deals.ledger")}</span>
                 <span
                   className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500"
                 >
@@ -526,8 +526,7 @@ export function Deals() {
                     onClick={() => { setSearch(""); setDealTypeFilter(null); }}
                     className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-rose-600 transition-colors"
                   >
-                    <X className="w-3 h-3" />Clear
-                  </button>
+                    <X className="w-3 h-3" />{t("common.clear")}</button>
                 )}
               </div>
 
@@ -539,7 +538,7 @@ export function Deals() {
                   <input
                     value={search}
                     onChange={e => setSearch(e.target.value)}
-                    placeholder="Search company…"
+                    placeholder={t("deals.searchCompany")}
                     className="w-full sm:w-44 pl-8 pr-8 py-1.5 text-xs text-gray-900 placeholder:text-gray-400 rounded-[10px] bg-gray-50 border border-gray-200 focus:outline-none focus:ring-1 focus:ring-cyan-500/30"
                   />
                   {search && (
@@ -664,7 +663,7 @@ export function Deals() {
                         {deal.is_valuation_estimated && (
                           <Info
                             className="w-3 h-3 text-amber-600/50 flex-none cursor-help"
-                            title="Valuation estimated by AlphaMap proprietary model"
+                            title={t("deals.estimatedTooltip")}
                           />
                         )}
                       </div>
@@ -673,13 +672,11 @@ export function Deals() {
                 }) : (
                   <div className="py-16 flex flex-col items-center gap-3 text-center">
                     <Building2 className="w-8 h-8 text-gray-300" />
-                    <p className="text-sm text-gray-400 font-medium">No deals match your filters</p>
+                    <p className="text-sm text-gray-400 font-medium">{t("deals.noDealsMatch")}</p>
                     <button
                       onClick={() => { setSearch(""); setDealTypeFilter(null); }}
                       className="text-xs text-cyan-600 hover:text-cyan-700 transition-colors"
-                    >
-                      Clear all filters
-                    </button>
+                    >{t("common.clearAllFilters")}</button>
                   </div>
                 )}
               </div>
@@ -690,8 +687,7 @@ export function Deals() {
               className="px-5 py-3 flex items-center justify-between border-t border-gray-100"
             >
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-gray-400">
-                  Showing <span className="text-gray-600 font-semibold">{filtered.length}</span> of{" "}
+                <span className="text-[10px] text-gray-400">{t("deals.showing")}<span className="text-gray-600 font-semibold">{filtered.length}</span> of{" "}
                   <span className="text-gray-600 font-semibold">{allDeals.length}</span> deals
                 </span>
                 <span className="text-[9px] text-gray-300">· Click any row to open Deal Intelligence</span>
@@ -699,9 +695,7 @@ export function Deals() {
               <div className="flex items-center gap-2">
                 <span
                   className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-700"
-                >
-                  AlphaMap Est.
-                </span>
+                >{t("deals.alphamapEst")}</span>
                 <span className="text-[9px] text-gray-300 font-medium">= proprietary model valuation</span>
               </div>
             </div>
@@ -714,7 +708,7 @@ export function Deals() {
           >
             <Zap className="w-3.5 h-3.5 text-amber-500 mt-0.5 flex-none" />
             <p className="text-[11px] text-gray-500 leading-relaxed">
-              <span className="text-amber-700 font-bold">AlphaMap Estimated Valuation</span> — When a deal&apos;s
+              <span className="text-amber-700 font-bold">{t("deals.estimatedValuation")}</span> — When a deal&apos;s
               official valuation is undisclosed, AlphaMap uses a proprietary model (sector multiples ×
               capital efficiency × talent velocity) to produce a best-estimate mark. These are highlighted
               in <span className="italic text-amber-700">amber italic</span> with a ⚡ indicator.

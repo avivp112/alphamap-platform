@@ -32,27 +32,28 @@ function isSupported(value: string | null | undefined): value is SupportedLangua
   return !!value && (SUPPORTED as string[]).includes(value);
 }
 
+export const DEFAULT_LANGUAGE: SupportedLanguage = "en";
+
 /**
- * Resolve the startup language: an explicit previous choice wins, otherwise
- * fall back to the browser's preference, otherwise English. Reading
- * localStorage is wrapped because it throws in private-mode Safari and when
- * the page is embedded in a sandboxed iframe.
+ * Resolve the startup language.
+ *
+ * English is the product default and is what every first-time visitor sees,
+ * deliberately: the browser's Accept-Language is NOT consulted. Only an
+ * explicit choice the user made through the selector (persisted here) can
+ * change it, so a visitor on, say, a Spanish-locale browser still lands on
+ * the English site until they pick otherwise.
+ *
+ * Reading localStorage is wrapped because it throws in private-mode Safari
+ * and inside sandboxed iframes.
  */
 function detectLanguage(): SupportedLanguage {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (isSupported(stored)) return stored;
   } catch {
-    /* storage unavailable — fall through to browser preference */
+    /* storage unavailable — fall through to the English default */
   }
-
-  for (const tag of navigator.languages ?? [navigator.language]) {
-    // Match on the primary subtag so "es-419", "zh-Hans-CN" and "ja-JP" all
-    // resolve to the dictionary we actually ship.
-    const primary = tag?.split("-")[0]?.toLowerCase();
-    if (isSupported(primary)) return primary;
-  }
-  return "en";
+  return DEFAULT_LANGUAGE;
 }
 
 export function persistLanguage(code: SupportedLanguage): void {

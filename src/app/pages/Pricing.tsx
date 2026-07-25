@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router";
+import { useTranslation } from "react-i18next";
 import {
   Check, Sparkles, Building2, Compass, ArrowRight, ShieldCheck,
 } from "lucide-react";
@@ -26,11 +27,12 @@ const PRO_BETA_PRICE = 15;
 
 interface Tier {
   id: Plan;
-  name: string;
+  name?: string;
+  nameKey?: string;
   icon: React.ElementType;
-  tagline: string;
-  features: string[];
-  cta: string;
+  taglineKey: string;
+  featureKeys: string[];
+  ctaKey: string;
   highlight?: boolean;
   /** Not open for signup yet — button is inert and reads "Available Soon". */
   disabled?: boolean;
@@ -41,54 +43,41 @@ const TIERS: Tier[] = [
     id: "free",
     name: "Explorer",
     icon: Compass,
-    tagline: "Get a feel for the platform.",
-    features: [
-      "Basic company overview for every listing",
-      "Limited public directory view",
-      "Read-only access — no deep financials",
-    ],
-    cta: "Get Started Free",
+    taglineKey: "pricing.freeName",
+    featureKeys: ["pricing.f2", "pricing.f1", "pricing.f3"],
+    ctaKey: "pricing.getStartedFree",
   },
   {
     id: "pro",
     name: "Pro",
     icon: Sparkles,
-    tagline: "Full-depth intelligence for individual investors and analysts.",
-    features: [
-      "Full data access across every company",
-      "Complete funding timelines — Pre-Seed/Seed through Series A+",
-      "Cap tables, headcount history, and competitor mapping",
-      "Advanced filtering and unlimited searches",
-    ],
-    cta: "Upgrade to Pro",
+    taglineKey: "pricing.proName",
+    featureKeys: ["pricing.f4", "pricing.f5", "pricing.f6", "pricing.f7"],
+    ctaKey: "pricing.upgradeToPro",
     highlight: true,
     disabled: true,
   },
   {
     id: "enterprise",
-    name: "Enterprise & VCs",
+    nameKey: "pricing.enterpriseVcs",
     icon: Building2,
-    tagline: "Built for teams and firms operating at scale.",
-    features: [
-      "Multi-seat access for your whole team",
-      "Direct CRM API integration",
-      "Custom scoring models",
-      "Priority support and bulk data exports",
-    ],
-    cta: "Contact Sales",
+    taglineKey: "pricing.entName",
+    featureKeys: ["pricing.f8", "pricing.f9", "pricing.f10", "pricing.f11"],
+    ctaKey: "pricing.contactSales",
     disabled: true,
   },
 ];
 
-function priceFor(tier: Tier["id"], annual: boolean): { amount: string; suffix: string; note?: string } {
-  if (tier === "free") return { amount: "$0", suffix: "/ forever" };
-  if (tier === "enterprise") return { amount: "Custom", suffix: "/ team" };
+function priceFor(tier: Tier["id"], annual: boolean, t: (k: string, o?: Record<string, unknown>) => string): { amount: string; suffix: string; note?: string } {
+  if (tier === "free") return { amount: "$0", suffix: t("pricing.forever") };
+  if (tier === "enterprise") return { amount: t("pricing.custom"), suffix: t("pricing.perTeam") };
   return annual
-    ? { amount: `$${PRO_ANNUAL_MONTHLY}`, suffix: "/ month", note: `billed annually · $${PRO_ANNUAL_TOTAL}/yr` }
-    : { amount: `$${PRO_MONTHLY}`, suffix: "/ month" };
+    ? { amount: `$${PRO_ANNUAL_MONTHLY}`, suffix: t("pricing.perMonth"), note: t("pricing.billedAnnually", { total: PRO_ANNUAL_TOTAL }) }
+    : { amount: `$${PRO_MONTHLY}`, suffix: t("pricing.perMonth") };
 }
 
 export function Pricing() {
+  const { t } = useTranslation();
   const [annual, setAnnual] = useState(true);
   const navigate = useNavigate();
   const { plan, loggedIn } = useUserPlan();
@@ -110,24 +99,23 @@ export function Pricing() {
         <div className="text-center max-w-2xl mx-auto mb-10">
           <div className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1 text-[11px] font-semibold text-gray-500 mb-4">
             <Sparkles className="w-3.5 h-3.5 text-[#7C8967]" />
-            Simple, transparent pricing
+            {t("pricing.title")}
           </div>
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-[#0F172A]">
-            Find your edge in private markets
+            {t("pricing.subtitle")}
           </h1>
           <p className="mt-3 text-sm sm:text-base text-gray-500">
-            Start free with the overview every company gets. Upgrade whenever you need the full picture —
-            funding history, cap tables, and competitive intelligence.
+            {t("pricing.headerBlurb")}
           </p>
         </div>
 
         {/* ── Monthly / Annual toggle ── */}
         <div className="flex items-center justify-center gap-3 mb-10">
-          <span className={`text-sm font-semibold transition-colors ${!annual ? "text-[#0F172A]" : "text-gray-400"}`}>Monthly</span>
+          <span className={`text-sm font-semibold transition-colors ${!annual ? "text-[#0F172A]" : "text-gray-400"}`}>{t("pricing.monthly")}</span>
           <button
             onClick={() => setAnnual((a) => !a)}
             className="relative w-12 h-7 rounded-full bg-[#0F172A] transition-colors flex-none"
-            aria-label="Toggle annual billing"
+            aria-label={t("pricing.toggleAnnual")}
           >
             <span
               className="absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform duration-200"
@@ -135,14 +123,14 @@ export function Pricing() {
             />
           </button>
           <span className={`text-sm font-semibold transition-colors ${annual ? "text-[#0F172A]" : "text-gray-400"}`}>
-            Annual <span className="text-emerald-600">· save 20%</span>
+            {t("pricing.annual")} <span className="text-emerald-600">{t("pricing.saveTwenty")}</span>
           </span>
         </div>
 
         {/* ── Tier cards ── */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
           {TIERS.map((tier) => {
-            const price = priceFor(tier.id, annual);
+            const price = priceFor(tier.id, annual, t);
             const Icon = tier.icon;
             const isCurrent = loggedIn && plan === tier.id;
 
@@ -157,7 +145,7 @@ export function Pricing() {
               >
                 {tier.highlight && (
                   <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-[#0F172A] text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1 whitespace-nowrap">
-                    Most Popular
+                    {t("pricing.mostPopular")}
                   </span>
                 )}
 
@@ -169,13 +157,13 @@ export function Pricing() {
                   </div>
                   {tier.disabled && (
                     <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400 bg-white border border-gray-200 rounded-full px-2 py-0.5">
-                      Coming Soon
+                      {t("pricing.comingSoon")}
                     </span>
                   )}
                 </div>
 
-                <h3 className="text-lg font-bold text-[#0F172A]">{tier.name}</h3>
-                <p className="mt-1 text-xs text-gray-500 leading-relaxed min-h-[32px]">{tier.tagline}</p>
+                <h3 className="text-lg font-bold text-[#0F172A]">{tier.nameKey ? t(tier.nameKey) : tier.name}</h3>
+                <p className="mt-1 text-xs text-gray-500 leading-relaxed min-h-[32px]">{t(tier.taglineKey)}</p>
 
                 {tier.id === "pro" ? (
                   <div className="mt-5 flex items-baseline gap-2 flex-wrap">
@@ -183,7 +171,7 @@ export function Pricing() {
                     <span className="text-3xl font-bold tracking-tight text-[#7C8967]">${PRO_BETA_PRICE}</span>
                     <span className="text-sm font-medium text-gray-400">{price.suffix}</span>
                     <span className="text-[9px] font-bold uppercase tracking-wider text-white bg-[#7C8967] rounded-full px-2 py-0.5 whitespace-nowrap">
-                      Beta Version
+                      {t("pricing.betaVersion")}
                     </span>
                   </div>
                 ) : (
@@ -195,10 +183,10 @@ export function Pricing() {
                 {price.note && <p className="mt-1 text-[11px] text-gray-400">{price.note}</p>}
 
                 <ul className="mt-6 flex flex-col gap-2.5 flex-1">
-                  {tier.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2 text-[13px] text-gray-600 leading-snug">
+                  {tier.featureKeys.map((k) => (
+                    <li key={k} className="flex items-start gap-2 text-[13px] text-gray-600 leading-snug">
                       <Check className="w-3.5 h-3.5 text-[#7C8967] mt-0.5 flex-none" />
-                      {f}
+                      {t(k)}
                     </li>
                   ))}
                 </ul>
@@ -214,7 +202,7 @@ export function Pricing() {
                         : "bg-gray-50 border border-gray-200 text-[#0F172A] hover:bg-gray-100"
                   }`}
                 >
-                  {tier.disabled ? "Available Soon" : isCurrent ? "Your Current Plan" : tier.cta}
+                  {tier.disabled ? t("pricing.availableSoon") : isCurrent ? t("pricing.currentPlan") : t(tier.ctaKey)}
                   {!tier.disabled && !isCurrent && <ArrowRight className="w-3.5 h-3.5" />}
                 </button>
               </div>
@@ -224,7 +212,7 @@ export function Pricing() {
 
         <div className="flex items-center justify-center gap-1.5 mt-10 text-xs text-gray-400">
           <ShieldCheck className="w-3.5 h-3.5" />
-          No commitment — cancel anytime. Prices in USD.
+          {t("pricing.noCommitment")}
         </div>
       </div>
     </Layout>

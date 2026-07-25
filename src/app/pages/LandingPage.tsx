@@ -12,6 +12,7 @@ import type { IconType } from "react-icons";
 import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { BrandMark, BrandWordmark } from "../components/BrandMark";
+import { LanguageSelector } from "../components/LanguageSelector";
 
 // ── Shared dark section (CTA + footer) ───────────────────────────────────────
 const DARK_SECTION_BG = "#242322";
@@ -936,7 +937,11 @@ export function LandingPage() {
         </div>
 
         {/* Nav */}
-        <div className="flex items-center gap-5">
+        <div className="flex items-center gap-3 sm:gap-5">
+          {/* The landing page has its own header rather than the app's TopNav,
+              so the switcher is mounted here too — this is where a first-time
+              visitor (who always starts in English) changes language. */}
+          <LanguageSelector />
           <button
             onClick={() => navigate("/login")}
             className="text-sm font-medium text-gray-500 transition-colors duration-300 hover:text-[#111827]"
