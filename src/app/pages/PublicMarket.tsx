@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { Layout } from "../components/Layout";
 import { CompanyLogo } from "../components/CompanyLogo";
+import { TickerLogo } from "../components/TickerLogo";
 import type { StartupListRow } from "../../lib/supabase";
 import {
   PUBLIC_SECTORS, PUBLIC_SNAPSHOT_AS_OF, ILLIQUIDITY_DISCOUNT,
@@ -371,7 +372,7 @@ function CompRow({ company, priv }: { company: DerivedPublicCompany; priv: Start
     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 sm:gap-5 px-4 sm:px-5 py-4 border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors">
       {/* Public side */}
       <div className="flex items-center gap-3 min-w-0">
-        <div className="flex h-9 w-9 flex-none items-center justify-center rounded-[10px] bg-[#0F172A] text-white text-[10px] font-black">{company.ticker.slice(0, 4)}</div>
+        <TickerLogo ticker={company.ticker} className="h-9 w-9 rounded-[10px] text-[10px]" />
         <div className="min-w-0">
           <div className="text-xs font-bold text-[#0F172A] truncate">{company.name}</div>
           <div className="flex items-center gap-2 mt-0.5">
@@ -572,7 +573,7 @@ function StockSearchBar({ companies, onCompanyAdded, onFocusTicker }: {
                 disabled={isSyncing}
                 className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left border-b border-gray-50 last:border-0 disabled:opacity-60"
               >
-                <div className="flex h-8 w-8 flex-none items-center justify-center rounded-[9px] bg-[#0F172A] text-white text-[9px] font-black">{r.symbol.slice(0, 4)}</div>
+                <TickerLogo ticker={r.symbol} className="h-8 w-8 rounded-[9px] text-[9px]" />
                 <div className="min-w-0 flex-1">
                   <div className="text-xs font-bold text-[#0F172A] truncate">{r.symbol} <span className="font-medium text-gray-400">· {r.name}</span></div>
                   <div className="text-[10px] text-gray-400">{r.exchange}</div>
@@ -770,7 +771,7 @@ function CompaniesDirectory({ companies, onCompanyAdded }: {
                   >
                     <td className="py-3 px-4 pl-5">
                       <div className="flex items-center gap-2.5">
-                        <div className="flex h-8 w-8 flex-none items-center justify-center rounded-[9px] bg-[#0F172A] text-white text-[9px] font-black">{c.ticker.slice(0, 4)}</div>
+                        <TickerLogo ticker={c.ticker} className="h-8 w-8 rounded-[9px] text-[9px]" />
                         <div className="min-w-0">
                           <div className="text-xs font-bold text-[#0F172A] truncate">{c.name}</div>
                           <div className="text-[10px] text-gray-400">{c.ticker}</div>
