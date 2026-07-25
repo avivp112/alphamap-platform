@@ -55,7 +55,27 @@ deploy-public-market-functions:
     # otherwise-working tokens; skip link entirely and pass --project-ref
     # straight to each deploy call instead (link isn't required for
     # deploying — this is also the pattern Supabase's own CI/CD docs use).
-    - supabase functions deploy sync-public-markets --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
-    - supabase functions deploy search-tickers --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
-    - supabase functions deploy stock-profile --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
-    - supabase functions deploy stock-history --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
+    #
+    # deploy_fn retries: the CLI has been observed to complete a deploy
+    # successfully ("Deployed Functions...") and then still exit non-zero
+    # because its own telemetry shutdown ("Timeout while shutting down
+    # PostHog") times out — which otherwise aborts the whole job before
+    # later functions get deployed. Deploys are idempotent, so retrying is
+    # always safe.
+    - |
+      deploy_fn() {
+        local name="$1"
+        for attempt in 1 2 3; do
+          if supabase functions deploy "$name" --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"; then
+            return 0
+          fi
+          echo "deploy of $name failed (attempt $attempt/3) — retrying in 5s..."
+          sleep 5
+        done
+        echo "deploy of $name failed after 3 attempts"
+        return 1
+      }
+    - deploy_fn sync-public-markets
+    - deploy_fn search-tickers
+    - deploy_fn stock-profile
+    - deploy_fn stock-history
