@@ -1,6 +1,7 @@
 # =============================================================================
 # GitLab CI — manual deploy job for the Public Market Hub's Supabase Edge
-# Functions (sync-public-markets, search-tickers, stock-profile, stock-history).
+# Functions (sync-public-markets, search-tickers, stock-profile, stock-history,
+# sourcing-crawl) plus the database migrations they depend on.
 #
 # This pipeline does NOT run on ordinary pushes/merges — it only exists so you
 # can trigger it by hand from the GitLab UI (Build -> Pipelines -> "Run
@@ -18,17 +19,125 @@
 #     General -> "Reference ID". Check "Mask variable" too (keeps it out of
 #     job logs, even though it isn't itself a secret).
 #
+#   SUPABASE_DB_URL   (required by the migrate job only)
+#     The full Postgres connection string: Supabase Dashboard -> Project
+#     Settings -> Database -> Connection string -> URI. Check "Mask variable"
+#     AND "Protect variable" — this grants full DDL access to your database.
+#     The password must be percent-encoded if it contains URL-reserved
+#     characters (@ : / ? # [ ] are the ones that bite).
+#
 # The FMP_API_KEY is a separate Supabase secret (set once via
 # `supabase secrets set FMP_API_KEY=...`, see supabase/functions/sync-public-markets/README.md)
 # — this pipeline never touches it.
+#
+# ── Job order ─────────────────────────────────────────────────────────────
+# migrate-database runs FIRST and the function deploy depends on it, because a
+# function that reads a new table must not go live before that table exists.
+# If the migration fails the deploy is skipped rather than shipping code
+# against a schema that was never applied.
 #
 # ── To deploy ─────────────────────────────────────────────────────────────
 # GitLab -> Build -> Pipelines -> "Run pipeline" -> pick the branch -> Run.
 # Watch the job log for each function's deploy confirmation.
 # =============================================================================
 
+stages:
+  - migrate
+  - deploy
+
+# ── Database migrations ─────────────────────────────────────────────────────
+# `supabase db push` records what it applied in supabase_migrations.schema_
+# migrations on the remote, so re-running the pipeline replays only genuinely
+# new files — unlike piping every .sql through psql, which would re-execute
+# the lot each time.
+migrate-database:
+  stage: migrate
+  image: node:20-slim
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends postgresql-client >/dev/null
+    - npm install -g supabase
+    - supabase --version
+    - export SUPABASE_DB_URL=$(printf '%s' "$SUPABASE_DB_URL" | tr -d '[:space:]')
+  script:
+    # ── Opt-in ──────────────────────────────────────────────────────────────
+    # Until SUPABASE_DB_URL is configured this job no-ops instead of failing,
+    # so adding it to the pipeline cannot break the function deploy that was
+    # already working.
+    - |
+      if [ -z "$SUPABASE_DB_URL" ]; then
+        echo "SUPABASE_DB_URL is not set — SKIPPING migrations."
+        echo "To enable: Settings -> CI/CD -> Variables -> add SUPABASE_DB_URL"
+        echo "(masked + protected), from Project Settings -> Database ->"
+        echo "Connection string -> URI. Percent-encode the password if it"
+        echo "contains @ : / ? # [ or ]."
+        exit 0
+      fi
+
+    # ── Baseline guard ──────────────────────────────────────────────────────
+    # These migrations predate this pipeline and were applied by hand, and
+    # four of them use bare CREATE TABLE. If the remote has no migration
+    # history, `db push` would treat all of them as pending and abort on
+    # "relation already exists". Detect that and stop with instructions rather
+    # than firing 30+ historical migrations at a live database.
+    - |
+      set -e
+      APPLIED=$(psql "$SUPABASE_DB_URL" -tAc "
+        SELECT count(*) FROM information_schema.tables
+         WHERE table_schema='supabase_migrations' AND table_name='schema_migrations';
+      ")
+      if [ "$APPLIED" = "0" ]; then
+        HAS_DATA=$(psql "$SUPABASE_DB_URL" -tAc "
+          SELECT count(*) FROM information_schema.tables
+           WHERE table_schema='public' AND table_name='startups';
+        ")
+        if [ "$HAS_DATA" != "0" ]; then
+          echo "ERROR: this database has application tables but no migration history."
+          echo "Pushing now would replay every historical migration and fail on"
+          echo "the un-guarded CREATE TABLEs. Baseline it once, then re-run:"
+          echo ""
+          echo "  psql \"\$SUPABASE_DB_URL\" -f supabase/scripts/baseline_migration_history.sql"
+          echo ""
+          echo "That marks the already-applied files as applied without re-running them."
+          exit 1
+        fi
+      fi
+
+    # Print the plan before acting on it, so the log shows the intent even if
+    # the apply then fails.
+    - supabase db push --db-url "$SUPABASE_DB_URL" --dry-run
+    - supabase db push --db-url "$SUPABASE_DB_URL" --yes
+
+    # `db push` exits 0 on an empty migration set, which is indistinguishable
+    # from a real apply — so assert the end state instead of trusting the code.
+    - |
+      set -e
+      TABLES=$(psql "$SUPABASE_DB_URL" -tAc "
+        SELECT string_agg(tablename, ',' ORDER BY tablename)
+          FROM pg_tables
+         WHERE schemaname='public'
+           AND tablename IN ('sourcing_companies','early_job_postings','job_signals');
+      ")
+      echo "sourcing tables present: $TABLES"
+      if [ "$TABLES" != "early_job_postings,job_signals,sourcing_companies" ]; then
+        echo "Sourcing tables missing after push — migration did not apply cleanly."
+        exit 1
+      fi
+      COLS=$(psql "$SUPABASE_DB_URL" -tAc "
+        SELECT count(*) FROM information_schema.columns
+         WHERE table_name='sourcing_companies' AND column_name='last_crawled_at';
+      ")
+      if [ "$COLS" != "1" ]; then
+        echo "sourcing_companies.last_crawled_at missing — crawler scheduling would break."
+        exit 1
+      fi
+      echo "Schema verified."
+
 deploy-public-market-functions:
   stage: deploy
+  # Never ship functions against a schema that failed to migrate.
+  needs: ["migrate-database"]
   image: node:20-slim
   rules:
     - if: '$CI_PIPELINE_SOURCE == "web"'
@@ -79,3 +188,4 @@ deploy-public-market-functions:
     - deploy_fn search-tickers
     - deploy_fn stock-profile
     - deploy_fn stock-history
+    - deploy_fn sourcing-crawl
