@@ -9,6 +9,12 @@
 // Invoke:  POST { "limit": 25 }   -> crawls the 25 stalest boards
 //          POST { "board": { "ats_provider": "ashby", "ats_board_token": "x" } }
 //                                 -> crawl one board on demand
+//          POST { "probe": "oak" }
+//                                 -> try that slug against EVERY provider and
+//                                    report which one actually hosts a board.
+//                                    Writes nothing. Answers "which ATS is
+//                                    this company on?", which is otherwise a
+//                                    manual guess-and-404 loop.
 //
 // ── Endpoints ───────────────────────────────────────────────────────────────
 //   Greenhouse  https://boards-api.greenhouse.io/v1/boards/{token}/jobs
@@ -402,6 +408,45 @@ async function crawlBoard(supabase: SupabaseClient, company: BoardRef & { id: st
   };
 }
 
+// ── Probe ───────────────────────────────────────────────────────────────────
+
+export interface ProbeResult {
+  ats_provider: AtsProvider;
+  found: boolean;
+  jobs: number;
+  detail: string;
+}
+
+/**
+ * Try a slug against every provider and report where it lives.
+ *
+ * Read-only on purpose: probing is a discovery step, and writing a
+ * sourcing_companies row for each guess would litter the table with four
+ * rows per company, three of which are wrong.
+ */
+async function probeSlug(token: string): Promise<ProbeResult[]> {
+  const out: ProbeResult[] = [];
+  for (const provider of ATS_PROVIDERS) {
+    const url = PROVIDERS[provider].urls(encodeURIComponent(token))[0];
+    const r = await getJson(url);
+    if (!r.ok) {
+      out.push({ ats_provider: provider, found: false, jobs: 0, detail: r.reason.slice(0, 140) });
+      continue;
+    }
+    const jobs = parseJobs(provider, r.data, token);
+    // A 200 that parses to zero jobs is ambiguous: an empty-but-real board
+    // looks the same as a wrong slug on a provider that answers 200 for
+    // anything. Reported as found-but-empty rather than silently as a hit.
+    out.push({
+      ats_provider: provider,
+      found: true,
+      jobs: jobs.length,
+      detail: jobs.length > 0 ? `board found, ${jobs.length} jobs` : "responded 200 but no jobs parsed",
+    });
+  }
+  return out;
+}
+
 // ── Handler ─────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -419,8 +464,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // an error rather than being swallowed by that same catch and silently
   // turning into a full batch crawl the caller never asked for.
   let badProvider: string | null = null;
+  let probe: string | null = null;
   try {
     const body = await req.json();
+    if (typeof body?.probe === "string" && body.probe.trim()) probe = body.probe.trim();
     const n = Number(body?.limit);
     if (Number.isFinite(n) && n > 0) limit = Math.min(Math.floor(n), MAX_LIMIT);
     if (body?.board?.ats_provider && body?.board?.ats_board_token) {
@@ -439,6 +486,20 @@ Deno.serve(async (req: Request): Promise<Response> => {
       { error: `unsupported ats_provider "${badProvider}" (expected one of ${ATS_PROVIDERS.join(", ")})` },
       400,
     );
+  }
+
+  if (probe) {
+    const results = await probeSlug(probe);
+    const hits = results.filter((r) => r.found && r.jobs > 0);
+    return json({
+      probe,
+      // The actionable line: which provider to register this slug under.
+      match: hits.length > 0 ? hits[0].ats_provider : null,
+      hint: hits.length > 0
+        ? `register as ats_provider "${hits[0].ats_provider}"`
+        : "no provider returned a board for this slug — check the company's careers page for the real slug",
+      results,
+    });
   }
 
   try {
