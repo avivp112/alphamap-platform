@@ -1,7 +1,31 @@
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const rawUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+
+/**
+ * Which of the two required build-time variables are missing, if any.
+ *
+ * Vite inlines import.meta.env.VITE_* at BUILD time, so a deploy built without
+ * these is permanently broken no matter what the runtime environment holds —
+ * and createClient(undefined, undefined) throws "supabaseUrl is required"
+ * while this module is still being imported. That throw happens before React
+ * ever mounts, so nothing catches it and the user gets a silent white screen
+ * with the real cause buried in the console.
+ *
+ * So: report the problem instead of throwing. main.tsx checks this and renders
+ * a readable message naming the missing variables.
+ */
+export const missingSupabaseEnv: string[] = [
+  ...(rawUrl?.trim() ? [] : ["VITE_SUPABASE_URL"]),
+  ...(rawKey?.trim() ? [] : ["VITE_SUPABASE_ANON_KEY"]),
+];
+
+// Syntactically valid placeholders so createClient cannot throw at import
+// time. They are never reached: main.tsx refuses to mount the app when
+// missingSupabaseEnv is non-empty.
+const supabaseUrl = rawUrl?.trim() || "https://missing-config.invalid";
+const supabaseAnonKey = rawKey?.trim() || "missing-config";
 
 // "Remember me" by default — the session (and its refresh token) is persisted
 // to localStorage and silently refreshed in the background, so a signed-in
