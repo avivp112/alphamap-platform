@@ -116,14 +116,41 @@ const TECH: Rule[] = [
 
 // ── Stage / nature keywords ─────────────────────────────────────────────────
 // These are the ones that actually move the FOMO score. ALL matches emitted.
+//
+// Two opposing groups:
+//
+//   POSITIVE — early-stage tells. A company writing these is at the moment
+//   worth catching.
+//
+//   SCALED-ORG — the inverse. Derived from the real unmatched-title dump off
+//   the first Stripe crawl, where 367 of 536 titles matched nothing and were
+//   overwhelmingly Account Executive / Customer Success Manager / Accounts
+//   Receivable Manager / Risk Operations Analyst.
+//
+//   Those are not noise to be mopped up by widening the seniority list —
+//   tagging them "Manager" would have lifted coverage from 31% to ~70% while
+//   changing precisely zero FOMO scores. They are worth far more as evidence
+//   AGAINST a company being early: a dedicated sales org, a support org, a
+//   finance function and a compliance function are things a three-person
+//   startup does not have. The FOMO view subtracts on the count of DISTINCT
+//   functions present, so one early "first AE" hire is harmless while four
+//   separate corporate functions are damning.
 const KEYWORD: Rule[] = [
+  // Positive — early stage
   { value: "Stealth",       re: /\bstealth\b/i },
   { value: "Founding Team", re: /\bfounding\s+team\b/i },
   { value: "Zero to One",   re: /\b0\s*(to|-|→)\s*1\b|\bzero\s+to\s+one\b/i },
   { value: "Greenfield",    re: /\bgreenfield\b/i },
   { value: "Early Stage",   re: /\bearly[-\s]stage\b|\bpre[-\s]?seed\b|\bseed[-\s]stage\b/i },
+  // Neutral — useful filters, not scored
   { value: "Remote",        re: /\bremote\b/i },
   { value: "Contract",      re: /\bcontract(or)?\b|\bfreelance\b/i },
+  // Negative — evidence of a scaled organisation
+  { value: "Sales Org",     re: /\baccount\s+executive\b|\bsales\s+development\b|\b(sdr|bdr)\b|\bbusiness\s+development\s+rep/i },
+  { value: "Customer Org",  re: /\bcustomer\s+(success|support|experience)\b|\btechnical\s+support\b|\baccount\s+manager\b/i },
+  { value: "Finance Org",   re: /\baccounts?\s+(receivable|payable)\b|\bcontroller\b|\bpayroll\b|\bfinancial\s+analyst\b|\btreasury\s+analyst\b/i },
+  { value: "People Org",    re: /\brecruiter\b|\btalent\s+acquisition\b|\bpeople\s+(partner|consultant|operations)\b|\bhr\s+business\s+partner\b/i },
+  { value: "Compliance Org", re: /\bcompliance\b|\bsanctions\b|\bfinancial\s+crimes?\b|\bfraud\s+(investigator|analyst)\b|\brisk\s+operations\b|\b(aml|kyc)\b/i },
 ];
 
 /**
