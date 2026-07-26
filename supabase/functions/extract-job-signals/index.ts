@@ -151,6 +151,20 @@ const KEYWORD: Rule[] = [
   { value: "Finance Org",   re: /\baccounts?\s+(receivable|payable)\b|\bcontroller\b|\bpayroll\b|\bfinancial\s+analyst\b|\btreasury\s+analyst\b/i },
   { value: "People Org",    re: /\brecruiter\b|\btalent\s+acquisition\b|\bpeople\s+(partner|consultant|operations)\b|\bhr\s+business\s+partner\b/i },
   { value: "Compliance Org", re: /\bcompliance\b|\bsanctions\b|\bfinancial\s+crimes?\b|\bfraud\s+(investigator|analyst)\b|\brisk\s+operations\b|\b(aml|kyc)\b/i },
+  // Added after the first real early-stage crawl. oak looked early on raw job
+  // count (13 openings) but its titles were "Enterprise Account Executive -
+  // Central", "Enterprise Solutions Engineer - East/West", "Cloud & Tech
+  // Alliances Lead". Slicing sales into geographic territories, running a
+  // pre-sales Solutions Engineering function, and staffing partnerships are
+  // all Series-B-and-later go-to-market machinery. A four-person company does
+  // not hire an Enterprise AE for the East Coast.
+  //
+  // These are much stronger stage evidence than open-role count, which is a
+  // weak proxy: a funded company in a hiring freeze and a stealth startup both
+  // show ~13 openings.
+  { value: "Enterprise GTM",  re: /\benterprise\s+(account\s+executive|solutions?\s+(engineer|architect)|sales|architect)\b|\bsolutions?\s+engineer\b|\bsales\s+engineer\b/i },
+  { value: "Territory Org",   re: /\b(emea|apac|anz|latam|dach|benelux|nordics|iberia)\b|\b(east|west)\s+coast\b|[-–—,]\s*(central|east|west|north|south|northeast|southeast|midwest)(\s+coast)?\s*$/i },
+  { value: "Partnerships Org", re: /\balliances?\b|\bpartnerships?\b|\bchannel\s+sales\b|\bpartner\s+(manager|development)\b/i },
 ];
 
 /**
