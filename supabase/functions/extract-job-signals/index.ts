@@ -27,6 +27,11 @@
 //
 // Idempotent: job_signals is UNIQUE(job_id, signal_type, signal_value) and we
 // insert with ignoreDuplicates, so re-running never duplicates.
+//
+// reextract additionally DELETES each posting's existing signals first, so it
+// replaces rather than accumulates. That is what makes it usable after a rule
+// is tightened: the additive insert path can add a signal the taxonomy now
+// finds, but can never retract one it no longer does.
 // =============================================================================
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -58,8 +63,12 @@ const SENIORITY: Rule[] = [
   { value: "Co-Founder",  re: /\b(co[-\s]?founder|cofounder)\b/i },
   // "Founding Engineer", "Founding Designer", "Founding AE".
   { value: "Founding",    re: /\bfounding\b/i },
-  // "First Product Manager", "First Sales Hire" — the same stage tell.
-  { value: "First Hire",  re: /\bfirst\s+(\w+\s+){0,2}(hire|engineer|designer|manager|marketer|seller|rep)\b/i },
+  // "First Product Manager", "First Sales Hire" — the same stage tell. The
+  // lookahead blocks corporate qualifiers that turn "first" into an ordinal
+  // rank rather than a headcount: "First Line Manager", "First Level Support
+  // Rep" and "First Party Data Engineer" are scaled-org titles, and matching
+  // them would award founding points to exactly the wrong companies.
+  { value: "First Hire",  re: /\bfirst\s+(?!line|level|party|tier|class|shift|aid|response)(\w+\s+){0,2}(hire|engineer|designer|manager|marketer|seller|rep)\b/i },
   { value: "C-Level",     re: /\b(c[teoifprsm]o|chief\s+\w+\s+officer)\b/i },
   { value: "VP",          re: /\b(vp|vice\s+president)\b/i },
   { value: "Head of",     re: /\bhead\s+of\b/i },
@@ -137,7 +146,14 @@ const TECH: Rule[] = [
 //   separate corporate functions are damning.
 const KEYWORD: Rule[] = [
   // Positive — early stage
-  { value: "Stealth",       re: /\bstealth\b/i },
+  //
+  // "Stealth" requires the startup sense explicitly. Bare /\bstealth\b/ was
+  // wrong on 2 of 2 real matches, both OpenAI: "Secure Manufacturing & Stealth
+  // Investigator" and "Secure Manufacturing & Stealth Partner, Marketing" —
+  // that is stealth as in anti-counterfeiting TECHNOLOGY, an industrial
+  // security function, and about as far from a stealth-mode startup as a title
+  // gets. On title-only data the bare word is not evidence of anything.
+  { value: "Stealth",       re: /\bstealth\s*[-\s]?mode\b|\bin\s+stealth\b|\bstealth\s+startup\b/i },
   { value: "Founding Team", re: /\bfounding\s+team\b/i },
   { value: "Zero to One",   re: /\b0\s*(to|-|→)\s*1\b|\bzero\s+to\s+one\b/i },
   { value: "Greenfield",    re: /\bgreenfield\b/i },
@@ -167,11 +183,20 @@ const KEYWORD: Rule[] = [
   { value: "Partnerships Org", re: /\balliances?\b|\bpartnerships?\b|\bchannel\s+sales\b|\bpartner\s+(manager|development)\b/i },
 ];
 
+// The two opposing groups from KEYWORD, named so the suppression rule below
+// can reason about them. Kept in step with sourcing_fomo_scores, which scores
+// exactly these values.
+const EARLY_STAGE = new Set(["Stealth", "Founding Team", "Zero to One", "Greenfield", "Early Stage"]);
+const SCALED_ORG = new Set([
+  "Sales Org", "Customer Org", "Finance Org", "People Org",
+  "Compliance Org", "Enterprise GTM", "Territory Org", "Partnerships Org",
+]);
+
 /**
  * Extract every signal a title supports.
  *
  * Pure and exported so the taxonomy can be regression-tested against real
- * titles without a database or network.
+ * titles without a database or network — see taxonomy.test.mjs.
  */
 export function extractSignals(title: string): Signal[] {
   const out: Signal[] = [];
@@ -182,8 +207,36 @@ export function extractSignals(title: string): Signal[] {
   const sen = SENIORITY.find((r) => r.re.test(t));
   if (sen) out.push({ signal_type: "seniority", signal_value: sen.value });
 
-  for (const r of TECH)    if (r.re.test(t)) out.push({ signal_type: "tech_stack", signal_value: r.value });
-  for (const r of KEYWORD) if (r.re.test(t)) out.push({ signal_type: "keyword",    signal_value: r.value });
+  for (const r of TECH) if (r.re.test(t)) out.push({ signal_type: "tech_stack", signal_value: r.value });
+
+  // ── Keywords, with early-stage positives suppressed by scaled-org evidence ─
+  //
+  // A single title cannot be evidence BOTH that a company is a founding team
+  // and that it runs an enterprise sales organisation. When it appears to be,
+  // the scaled-org reading is the reliable one: those patterns match whole job
+  // functions ("Account Executive"), while the early-stage patterns match
+  // single adjectives that plenty of other trades also use.
+  //
+  // This is not hypothetical. Vercel scored +30 stealth points from three
+  // titles — "Account Executive- Startups, Greenfield", "Account
+  // Executive-Startups, Greenfield (EMEA)" and "Commercial Account Executive,
+  // Greenfield" — where greenfield means an untouched sales TERRITORY. The
+  // engine read the strongest scaled-org evidence in the corpus, an enterprise
+  // AE with an EMEA patch, and paid it an early-stage bonus. A sign error, not
+  // a near miss.
+  //
+  // Suppressing generalises where patching /greenfield/ would not: it also
+  // catches the false positives of this shape we have not seen yet.
+  //
+  // Deliberately NOT applied to seniority. "Founding Account Executive" is a
+  // genuine early-stage tell — the first commercial hire at a startup really
+  // is titled that — so dropping it would discard signal, not noise.
+  const matched = KEYWORD.filter((r) => r.re.test(t)).map((r) => r.value);
+  const hasScaledOrg = matched.some((v) => SCALED_ORG.has(v));
+  for (const value of matched) {
+    if (hasScaledOrg && EARLY_STAGE.has(value)) continue;
+    out.push({ signal_type: "keyword", signal_value: value });
+  }
 
   return out;
 }
@@ -200,7 +253,7 @@ interface PostingRow { id: string; title: string; }
 //
 // Note this affects filters ONLY. The job_signals upsert above sends its rows
 // as a POST body, which has a much larger ceiling, so it is left as one call.
-const STAMP_CHUNK = 100;
+const ID_CHUNK = 100;
 
 /**
  * Stamp signals_extracted_at across arbitrarily many ids, a chunk at a time.
@@ -216,8 +269,8 @@ const STAMP_CHUNK = 100;
  */
 async function stampExtracted(supabase: SupabaseClient, ids: string[]): Promise<void> {
   const now = new Date().toISOString();
-  for (let i = 0; i < ids.length; i += STAMP_CHUNK) {
-    const chunk = ids.slice(i, i + STAMP_CHUNK);
+  for (let i = 0; i < ids.length; i += ID_CHUNK) {
+    const chunk = ids.slice(i, i + ID_CHUNK);
     const { error } = await supabase
       .from("early_job_postings")
       .update({ signals_extracted_at: now })
@@ -230,7 +283,37 @@ async function stampExtracted(supabase: SupabaseClient, ids: string[]): Promise<
   }
 }
 
-async function processBatch(supabase: SupabaseClient, rows: PostingRow[]) {
+/**
+ * Delete every existing signal for these postings, so a reextract REPLACES
+ * rather than accumulates.
+ *
+ * Without this, reextract is close to useless for the case that motivates it.
+ * The insert path uses ignoreDuplicates against UNIQUE(job_id, signal_type,
+ * signal_value), which makes re-running safe but also purely additive — it can
+ * add a signal the taxonomy now finds and can never retract one it no longer
+ * does. When a rule is TIGHTENED, the stale rows simply survive: Vercel's three
+ * "Greenfield" rows and OpenAI's two "Stealth" rows would have sat in
+ * job_signals scoring points forever, and the leaderboard would not have moved
+ * an inch after the fix.
+ *
+ * Not transactional with the insert that follows. A failure between the two
+ * leaves those postings with no signals — recoverable by re-running, since they
+ * keep their signals_extracted_at only if stamping succeeded, which happens
+ * last of all.
+ */
+async function clearSignals(supabase: SupabaseClient, ids: string[]): Promise<void> {
+  for (let i = 0; i < ids.length; i += ID_CHUNK) {
+    const chunk = ids.slice(i, i + ID_CHUNK);
+    const { error } = await supabase.from("job_signals").delete().in("job_id", chunk);
+    if (error) {
+      throw new Error(
+        `clear signals (ids ${i}–${i + chunk.length - 1} of ${ids.length}): ${error.message}`,
+      );
+    }
+  }
+}
+
+async function processBatch(supabase: SupabaseClient, rows: PostingRow[], reextract: boolean) {
   const signalRows: { job_id: string; signal_type: string; signal_value: string }[] = [];
   let withSignals = 0;
 
@@ -241,6 +324,10 @@ async function processBatch(supabase: SupabaseClient, rows: PostingRow[]) {
       signalRows.push({ job_id: r.id, signal_type: s.signal_type, signal_value: s.signal_value });
     }
   }
+
+  // Only on reextract. The default pass touches postings that have never been
+  // processed, so there is nothing to clear and a delete would be wasted calls.
+  if (reextract) await clearSignals(supabase, rows.map((r) => r.id));
 
   if (signalRows.length > 0) {
     // ignoreDuplicates leans on UNIQUE(job_id, signal_type, signal_value), so
@@ -293,7 +380,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const rows = (data ?? []) as PostingRow[];
     if (rows.length === 0) return json({ processed: 0, signals: 0, note: "nothing pending" });
 
-    const { signals, withSignals } = await processBatch(supabase, rows);
+    const { signals, withSignals } = await processBatch(supabase, rows, reextract);
 
     return json({
       processed: rows.length,
