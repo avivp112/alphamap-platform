@@ -1,0 +1,234 @@
+// =============================================================================
+// Supabase Edge Function: extract-job-signals
+//
+// Turns raw job titles into categorised signals in job_signals, which is what
+// the FOMO scoring view ranks on.
+//
+// Secrets: SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (auto-injected).
+// Deploy:  supabase functions deploy extract-job-signals --no-verify-jwt
+// Invoke:  POST { "limit": 500 }   -> process the oldest pending postings
+//          POST { "reextract": true, "limit": 500 }
+//                                  -> also revisit already-processed rows
+//
+// ── Scope, stated plainly ───────────────────────────────────────────────────
+// This extracts from the TITLE ONLY. The crawler stores title and url, not the
+// job description, because neither ATS returns descriptions on the list
+// endpoint — fetching them means one extra HTTP request per posting, which for
+// Stripe alone would be 536 requests.
+//
+// Consequences worth knowing before trusting the output:
+//   * seniority and stage keywords land well — they are almost always in the
+//     title ("Founding Engineer", "Head of Growth").
+//   * tech_stack is SPARSE. "Senior Rust Engineer" hits; "Backend Engineer"
+//     tells you nothing about the stack. Absence of a tech signal is not
+//     evidence the company does not use that technology.
+// If tech coverage matters later, the fix is a description-fetching pass, not
+// a longer keyword list.
+//
+// Idempotent: job_signals is UNIQUE(job_id, signal_type, signal_value) and we
+// insert with ignoreDuplicates, so re-running never duplicates.
+// =============================================================================
+
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
+}
+
+const DEFAULT_LIMIT = 500;
+const MAX_LIMIT = 2000;
+
+export type SignalType = "seniority" | "tech_stack" | "keyword";
+export interface Signal { signal_type: SignalType; signal_value: string; }
+
+interface Rule { value: string; re: RegExp; }
+
+// ── Seniority ───────────────────────────────────────────────────────────────
+// ORDER MATTERS: the first match wins, so the most specific/most senior
+// patterns come first. A title only ever yields ONE seniority signal —
+// "Founding Senior Engineer" is a founding role, not a senior one, and
+// emitting both would double-count in the FOMO score.
+const SENIORITY: Rule[] = [
+  { value: "Co-Founder",  re: /\b(co[-\s]?founder|cofounder)\b/i },
+  // "Founding Engineer", "Founding Designer", "Founding AE".
+  { value: "Founding",    re: /\bfounding\b/i },
+  // "First Product Manager", "First Sales Hire" — the same stage tell.
+  { value: "First Hire",  re: /\bfirst\s+(\w+\s+){0,2}(hire|engineer|designer|manager|marketer|seller|rep)\b/i },
+  { value: "C-Level",     re: /\b(c[teoifprsm]o|chief\s+\w+\s+officer)\b/i },
+  { value: "VP",          re: /\b(vp|vice\s+president)\b/i },
+  { value: "Head of",     re: /\bhead\s+of\b/i },
+  { value: "Director",    re: /\bdirector\b/i },
+  { value: "Principal",   re: /\bprincipal\b/i },
+  { value: "Staff",       re: /\bstaff\b/i },
+  // "Lead Engineer" / "Tech Lead", but NOT "Lead Generation" (a sales term).
+  { value: "Lead",        re: /\blead\b(?!\s+(generation|gen)\b)/i },
+  { value: "Senior",      re: /\b(senior|sr\.?)\b/i },
+  { value: "Junior",      re: /\b(junior|jr\.?|entry[-\s]level|new\s+grad|graduate)\b/i },
+  { value: "Intern",      re: /\b(intern|internship|co[-\s]?op)\b/i },
+];
+
+// ── Tech stack ──────────────────────────────────────────────────────────────
+// Concrete technologies plus the broad engineering disciplines, since both are
+// useful filters. ALL matches are emitted, unlike seniority.
+const TECH: Rule[] = [
+  { value: "Rust",        re: /\brust\b/i },
+  // "Go" is the worst offender for false positives — Google, Django, going.
+  // Require a standalone word or the unambiguous "Golang".
+  { value: "Go",          re: /\bgolang\b|\bgo\b(?!\s*(to|live|lang\w))/i },
+  { value: "Python",      re: /\bpython\b/i },
+  { value: "TypeScript",  re: /\btype\s?script\b|\bts\b/i },
+  { value: "JavaScript",  re: /\bjava\s?script\b/i },
+  // Negative lookahead so "JavaScript" never registers as "Java".
+  { value: "Java",        re: /\bjava\b(?!\s?script)/i },
+  { value: "Kotlin",      re: /\bkotlin\b/i },
+  { value: "Swift",       re: /\bswift\b/i },
+  { value: "Ruby",        re: /\bruby\b|\brails\b/i },
+  { value: "Scala",       re: /\bscala\b/i },
+  { value: "Elixir",      re: /\belixir\b/i },
+  { value: "C++",         re: /c\+\+/i },
+  { value: "React",       re: /\breact\b/i },
+  { value: "Node.js",     re: /\bnode(\.js)?\b/i },
+  { value: "Kubernetes",  re: /\bkubernetes\b|\bk8s\b/i },
+  { value: "Terraform",   re: /\bterraform\b/i },
+  { value: "AWS",         re: /\baws\b/i },
+  { value: "Solidity",    re: /\bsolidity\b/i },
+  { value: "Machine Learning", re: /\bmachine\s+learning\b|\bml\b(?!\s*ops)/i },
+  { value: "MLOps",       re: /\bml\s?ops\b/i },
+  { value: "LLM",         re: /\bllms?\b|\bgen(erative)?\s?ai\b/i },
+  { value: "AI",          re: /\bai\b/i },
+  { value: "Data",        re: /\bdata\s+(engineer|scientist|analyst|platform)\b/i },
+  { value: "iOS",         re: /\bios\b/i },
+  { value: "Android",     re: /\bandroid\b/i },
+  { value: "Backend",     re: /\bback[-\s]?end\b/i },
+  { value: "Frontend",    re: /\bfront[-\s]?end\b/i },
+  { value: "Full Stack",  re: /\bfull[-\s]?stack\b/i },
+  { value: "DevOps",      re: /\bdev\s?ops\b/i },
+  { value: "SRE",         re: /\bsre\b|\bsite\s+reliability\b/i },
+  { value: "Infrastructure", re: /\binfra(structure)?\b/i },
+  { value: "Security",    re: /\bsecurity\b|\bappsec\b|\binfosec\b/i },
+];
+
+// ── Stage / nature keywords ─────────────────────────────────────────────────
+// These are the ones that actually move the FOMO score. ALL matches emitted.
+const KEYWORD: Rule[] = [
+  { value: "Stealth",       re: /\bstealth\b/i },
+  { value: "Founding Team", re: /\bfounding\s+team\b/i },
+  { value: "Zero to One",   re: /\b0\s*(to|-|→)\s*1\b|\bzero\s+to\s+one\b/i },
+  { value: "Greenfield",    re: /\bgreenfield\b/i },
+  { value: "Early Stage",   re: /\bearly[-\s]stage\b|\bpre[-\s]?seed\b|\bseed[-\s]stage\b/i },
+  { value: "Remote",        re: /\bremote\b/i },
+  { value: "Contract",      re: /\bcontract(or)?\b|\bfreelance\b/i },
+];
+
+/**
+ * Extract every signal a title supports.
+ *
+ * Pure and exported so the taxonomy can be regression-tested against real
+ * titles without a database or network.
+ */
+export function extractSignals(title: string): Signal[] {
+  const out: Signal[] = [];
+  if (!title || !title.trim()) return out;
+  const t = title.trim();
+
+  // Seniority: first match only — see the ORDER MATTERS note above.
+  const sen = SENIORITY.find((r) => r.re.test(t));
+  if (sen) out.push({ signal_type: "seniority", signal_value: sen.value });
+
+  for (const r of TECH)    if (r.re.test(t)) out.push({ signal_type: "tech_stack", signal_value: r.value });
+  for (const r of KEYWORD) if (r.re.test(t)) out.push({ signal_type: "keyword",    signal_value: r.value });
+
+  return out;
+}
+
+// ── Handler ─────────────────────────────────────────────────────────────────
+
+interface PostingRow { id: string; title: string; }
+
+async function processBatch(supabase: SupabaseClient, rows: PostingRow[]) {
+  const signalRows: { job_id: string; signal_type: string; signal_value: string }[] = [];
+  let withSignals = 0;
+
+  for (const r of rows) {
+    const sigs = extractSignals(r.title);
+    if (sigs.length > 0) withSignals++;
+    for (const s of sigs) {
+      signalRows.push({ job_id: r.id, signal_type: s.signal_type, signal_value: s.signal_value });
+    }
+  }
+
+  if (signalRows.length > 0) {
+    // ignoreDuplicates leans on UNIQUE(job_id, signal_type, signal_value), so
+    // a re-run is a no-op rather than a constraint violation.
+    const { error } = await supabase
+      .from("job_signals")
+      .upsert(signalRows, { onConflict: "job_id,signal_type,signal_value", ignoreDuplicates: true });
+    if (error) throw new Error(`insert signals: ${error.message}`);
+  }
+
+  // Stamp even the titles that produced nothing — "we looked and there was
+  // nothing here" is a completed unit of work, not a pending one.
+  const { error: stampErr } = await supabase
+    .from("early_job_postings")
+    .update({ signals_extracted_at: new Date().toISOString() })
+    .in("id", rows.map((r) => r.id));
+  if (stampErr) throw new Error(`stamp signals_extracted_at: ${stampErr.message}`);
+
+  return { signals: signalRows.length, withSignals };
+}
+
+Deno.serve(async (req: Request): Promise<Response> => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+  const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!SUPABASE_URL || !SERVICE_KEY) return json({ error: "Supabase env not available" }, 500);
+  const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
+
+  let limit = DEFAULT_LIMIT;
+  let reextract = false;
+  try {
+    const body = await req.json();
+    const n = Number(body?.limit);
+    if (Number.isFinite(n) && n > 0) limit = Math.min(Math.floor(n), MAX_LIMIT);
+    reextract = body?.reextract === true;
+  } catch {
+    /* no body — defaults */
+  }
+
+  try {
+    let q = supabase
+      .from("early_job_postings")
+      .select("id, title")
+      .order("first_seen_at", { ascending: true })
+      .limit(limit);
+    // Default pass only touches postings never processed. reextract revisits
+    // everything, which is what you want after changing the taxonomy above.
+    if (!reextract) q = q.is("signals_extracted_at", null);
+
+    const { data, error } = await q;
+    if (error) return json({ error: `select postings: ${error.message}` }, 500);
+
+    const rows = (data ?? []) as PostingRow[];
+    if (rows.length === 0) return json({ processed: 0, signals: 0, note: "nothing pending" });
+
+    const { signals, withSignals } = await processBatch(supabase, rows);
+
+    return json({
+      processed: rows.length,
+      withSignals,
+      // Titles that yielded nothing at all — a useful health metric. If this
+      // is most of the batch the taxonomy is missing this board's vocabulary.
+      withoutSignals: rows.length - withSignals,
+      signals,
+    });
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : "extraction failed" }, 500);
+  }
+});
