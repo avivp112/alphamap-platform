@@ -1,0 +1,26 @@
+-- =============================================================================
+-- DOWN migration for 20260726110000_raw_gov_filings.sql
+--
+-- RUN 20260726120000_form_d_pipeline_down.sql FIRST. Both views created by that
+-- migration reference raw_gov_filings, and this DROP will fail while they do.
+-- There is no CASCADE here on purpose: silently dropping the candidate queue
+-- and the scoring view as collateral is exactly the kind of thing a rollback
+-- should refuse to do quietly.
+--
+-- THIS DESTROYS DATA. raw_gov_filings is the only record of which filing
+-- justified which startups row, and re-ingesting means re-fetching from SEC at
+-- ~8 requests/second — days of traffic for a year of filings. Take a copy first
+-- if the filings might be wanted:
+--
+--   CREATE TABLE raw_gov_filings_backup AS SELECT * FROM raw_gov_filings;
+--
+-- startups rows created by the ingester are left in place. They are real
+-- companies whether or not this table exists, and cascading them away would
+-- delete entities that other layers may since have enriched, linked to boards,
+-- or scored.
+--
+-- Deliberately NOT in supabase/migrations/ — the CLI would run it as a forward
+-- migration.
+-- =============================================================================
+
+DROP TABLE IF EXISTS raw_gov_filings;

@@ -1,7 +1,8 @@
 # =============================================================================
 # GitLab CI — manual deploy job for the Public Market Hub's Supabase Edge
 # Functions (sync-public-markets, search-tickers, stock-profile, stock-history,
-# sourcing-crawl, extract-job-signals, discover-boards) plus their migrations.
+# sourcing-crawl, extract-job-signals, discover-boards, ingest-sec-form-d) plus
+# their migrations.
 #
 # This pipeline does NOT run on ordinary pushes/merges — it only exists so you
 # can trigger it by hand from the GitLab UI (Build -> Pipelines -> "Run
@@ -29,6 +30,12 @@
 # The FMP_API_KEY is a separate Supabase secret (set once via
 # `supabase secrets set FMP_API_KEY=...`, see supabase/functions/sync-public-markets/README.md)
 # — this pipeline never touches it.
+#
+# SEC_USER_AGENT is likewise a Supabase secret, not a CI variable, and
+# ingest-sec-form-d refuses to run without it. SEC's access policy requires a
+# User-Agent carrying a contact address and serves 403 to anything generic:
+#
+#   supabase secrets set SEC_USER_AGENT="AlphaMap sourcing you@yourdomain.com"
 #
 # ── Job order ─────────────────────────────────────────────────────────────
 # migrate-database runs FIRST and the function deploy depends on it, because a
@@ -191,3 +198,4 @@ deploy-public-market-functions:
     - deploy_fn sourcing-crawl
     - deploy_fn extract-job-signals
     - deploy_fn discover-boards
+    - deploy_fn ingest-sec-form-d
