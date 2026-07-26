@@ -82,15 +82,50 @@ BEGIN
       p_name;
   END IF;
 
-  -- Reject un-substituted placeholders. Pasting the setup snippet verbatim
-  -- stores the literal '<YOUR-PROJECT-REF>' text, which is non-empty and so
-  -- would sail past the check above — leaving the cron to POST at a nonsense
-  -- URL every week and fail in a way that looks like a network problem rather
-  -- than a configuration one.
-  IF v LIKE '%<%' OR v LIKE '%YOUR-%' OR v LIKE '%your-%' THEN
+  -- Reject un-substituted placeholders. Pasting a setup snippet verbatim
+  -- stores literal text like '<YOUR-PROJECT-REF>' or 'eyJhbGci...', which is
+  -- non-empty and so sails past the check above — leaving the cron to POST at
+  -- a nonsense URL every week and fail in a way that looks like a network
+  -- problem rather than a configuration one.
+  --
+  -- Angle brackets and a literal ellipsis are safe to reject for BOTH secrets:
+  -- a URL contains neither, and a JWT cannot contain '...' because its three
+  -- segments are non-empty by construction.
+  IF v LIKE '%<%' OR v LIKE '%...%' THEN
     RAISE EXCEPTION
-      'sourcing cron: vault secret "%" still contains a placeholder. Replace it with the real value using vault.update_secret((select id from vault.secrets where name = %L), ''<real value>'', %L)',
+      'sourcing cron: vault secret "%" still contains a placeholder (found angle brackets or an ellipsis). Replace it with the real value: select vault.update_secret((select id from vault.secrets where name = %L), ''<real value>'', %L)',
       p_name, p_name, p_name;
+  END IF;
+
+  -- Shape checks, per secret. Substring sniffing alone is not enough — the
+  -- placeholder 'YOUR_REAL_REF' has no angle brackets and no ellipsis, yet is
+  -- obviously not a project ref. Validating the SHAPE catches the whole class
+  -- rather than the specific spellings we happened to think of.
+  IF p_name = 'project_url' THEN
+    -- Hostnames are lowercase and have no underscores, so every SHOUTY
+    -- placeholder fails here regardless of how it is spelled.
+    IF v !~ '^https://[a-z0-9]([a-z0-9.-]*[a-z0-9])?$' THEN
+      RAISE EXCEPTION
+        'sourcing cron: vault secret "project_url" is % — that is not a URL. Expected https://<ref>.supabase.co with your real Reference ID (Dashboard > Settings > General), no path and no trailing slash.',
+        quote_literal(v);
+    END IF;
+    -- A lowercased placeholder like 'your-project-ref' is a perfectly legal
+    -- hostname, so shape alone lets it through. Match the placeholder WORDS,
+    -- narrowly: a real customer domain such as 'yourbrand.io' must still pass,
+    -- which rules out simply rejecting anything containing "your".
+    IF v ~* 'your[-_]?(project|real|ref)|(project|real)[-_]?ref' THEN
+      RAISE EXCEPTION
+        'sourcing cron: vault secret "project_url" is % — that host is still the placeholder wording, not a project ref. Use your real Reference ID from Dashboard > Settings > General (20 lowercase letters, e.g. https://qwertyuiopasdfghjklz.supabase.co).',
+        quote_literal(v);
+    END IF;
+  ELSIF p_name = 'service_role_key' THEN
+    -- Real credentials are long: a JWT service role key runs 200+ characters
+    -- and an sb_secret_ key ~40. Anything shorter is a truncated paste.
+    IF length(v) < 40 THEN
+      RAISE EXCEPTION
+        'sourcing cron: vault secret "service_role_key" is only % characters, far too short for a real key. Copy the full service_role value from Dashboard > Settings > API.',
+        length(v);
+    END IF;
   END IF;
 
   RETURN v;
