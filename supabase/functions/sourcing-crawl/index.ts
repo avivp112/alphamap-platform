@@ -213,6 +213,19 @@ export const PROVIDERS: Record<AtsProvider, {
       `https://api.ashbyhq.com/posting-api/job-board/${t}?includeCompensation=false`,
     ],
     parse: (p) => parseAshby(p),
+    // Ashby has no dedicated name endpoint, but some job-board payloads carry
+    // the organisation name inline under one of these keys. Checked
+    // defensively: if none is present we return null and inferred_name simply
+    // stays NULL, exactly as before — no worse, occasionally better.
+    nameFrom: (p) => {
+      const o = p as Record<string, unknown> | null;
+      return (
+        str(o?.organizationName) ??
+        str(o?.name) ??
+        str((o?.organization as Record<string, unknown> | undefined)?.name) ??
+        null
+      );
+    },
   },
   workable: {
     urls: (t) => [
