@@ -7,18 +7,26 @@
 // Secrets: SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (auto-injected).
 // Deploy:  supabase functions deploy sourcing-crawl --no-verify-jwt
 // Invoke:  POST { "limit": 25 }   -> crawls the 25 stalest boards
-//          POST { "board": { "ats_provider": "greenhouse", "ats_board_token": "x" } }
+//          POST { "board": { "ats_provider": "ashby", "ats_board_token": "x" } }
 //                                 -> crawl one board on demand
 //
 // ── Endpoints ───────────────────────────────────────────────────────────────
 //   Greenhouse  https://boards-api.greenhouse.io/v1/boards/{token}/jobs
 //               -> { jobs: [ { id, title, absolute_url }, ... ] }
 //               https://boards-api.greenhouse.io/v1/boards/{token}
-//               -> { name }   (used once, to fill inferred_name)
+//               -> { name }   (separate call, used once for inferred_name)
 //   Lever       https://api.lever.co/v0/postings/{token}?mode=json
 //               -> [ { id, text, hostedUrl }, ... ]
-// Both are public, keyless, JSON, and intended for exactly this use — far more
+//   Ashby       https://api.ashbyhq.com/posting-api/job-board/{token}
+//               -> { jobs: [ { id, title, jobUrl, isListed }, ... ] }
+//   Workable    https://apply.workable.com/api/v1/widget/accounts/{token}?details=true
+//               -> { name, jobs: [ { id, shortcode, title, url }, ... ] }
+// All public, keyless, JSON, and intended for exactly this use — far more
 // stable than scraping the rendered board HTML.
+//
+// Providers live in the PROVIDERS registry below: URL chain, parser, and
+// optional same-payload name extraction per provider. Adding a fifth is a
+// data change there, not new branching through the crawl path.
 //
 // ── Lifecycle rules (the part that has to be right) ─────────────────────────
 //  * A job present in the payload is upserted on (company_id, external_job_id).
@@ -53,9 +61,13 @@ const FETCH_TIMEOUT_MS = 15_000;
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
+export type AtsProvider = "greenhouse" | "lever" | "ashby" | "workable";
+
+export const ATS_PROVIDERS: AtsProvider[] = ["greenhouse", "lever", "ashby", "workable"];
+
 export interface BoardRef {
   id?: string;
-  ats_provider: "greenhouse" | "lever";
+  ats_provider: AtsProvider;
   ats_board_token: string;
   inferred_name?: string | null;
 }
@@ -115,8 +127,101 @@ export function parseLever(payload: unknown): NormalisedJob[] {
   return out;
 }
 
-export function parseJobs(provider: BoardRef["ats_provider"], payload: unknown): NormalisedJob[] {
-  return provider === "greenhouse" ? parseGreenhouse(payload) : parseLever(payload);
+/**
+ * Ashby: { jobs: [ { id, title, jobUrl, applyUrl, isListed } ] }
+ *
+ * isListed is respected when present: Ashby uses it to mark a posting that
+ * exists but is not shown on the public board. Treating an unlisted posting as
+ * live would report roles the company is not actually advertising. Absent
+ * field = listed, since older payloads omit it entirely.
+ */
+export function parseAshby(payload: unknown): NormalisedJob[] {
+  const jobs = (payload as { jobs?: unknown })?.jobs;
+  if (!Array.isArray(jobs)) return [];
+  const out: NormalisedJob[] = [];
+  for (const j of jobs) {
+    const o = j as Record<string, unknown>;
+    if (o?.isListed === false) continue;
+    const id = str(o?.id);
+    const title = str(o?.title);
+    const url = str(o?.jobUrl) ?? str(o?.applyUrl);
+    if (!id || !title || !url) continue;
+    out.push({ external_job_id: id, title, url });
+  }
+  return out;
+}
+
+/**
+ * Workable: { name, jobs: [ { id, shortcode, title, url, application_url } ] }
+ *
+ * Identity prefers `shortcode` over `id`: the shortcode is the stable public
+ * handle that appears in the posting URL, while `id` has been observed to be
+ * an internal numeric that is not guaranteed stable across payload versions.
+ * Getting this wrong would break idempotency and duplicate every posting on
+ * the next crawl, so the more durable key wins.
+ *
+ * Some payloads omit `url` and give only a shortcode, so the canonical link is
+ * reconstructed from the board token when needed.
+ */
+export function parseWorkable(payload: unknown, token = ""): NormalisedJob[] {
+  const jobs = (payload as { jobs?: unknown })?.jobs;
+  if (!Array.isArray(jobs)) return [];
+  const out: NormalisedJob[] = [];
+  for (const j of jobs) {
+    const o = j as Record<string, unknown>;
+    const shortcode = str(o?.shortcode);
+    const id = shortcode ?? str(o?.id);
+    const title = str(o?.title);
+    const url =
+      str(o?.url) ??
+      str(o?.application_url) ??
+      (shortcode && token ? `https://apply.workable.com/${token}/j/${shortcode}/` : null);
+    if (!id || !title || !url) continue;
+    out.push({ external_job_id: id, title, url });
+  }
+  return out;
+}
+
+// ── Provider registry ───────────────────────────────────────────────────────
+// One entry per ATS. `urls` is a fallback chain tried in order until one
+// yields jobs; `parse` normalises that provider's payload; `nameFrom` pulls
+// the company name out of the SAME payload where the provider exposes it, so
+// no extra request is needed (Greenhouse is the exception and is handled with
+// a dedicated call, since its name lives on a different endpoint).
+export const PROVIDERS: Record<AtsProvider, {
+  urls: (token: string) => string[];
+  parse: (payload: unknown, token: string) => NormalisedJob[];
+  nameFrom?: (payload: unknown) => string | null;
+}> = {
+  greenhouse: {
+    urls: (t) => [`https://boards-api.greenhouse.io/v1/boards/${t}/jobs`],
+    parse: (p) => parseGreenhouse(p),
+  },
+  lever: {
+    urls: (t) => [`https://api.lever.co/v0/postings/${t}?mode=json`],
+    parse: (p) => parseLever(p),
+  },
+  ashby: {
+    urls: (t) => [
+      `https://api.ashbyhq.com/posting-api/job-board/${t}`,
+      `https://api.ashbyhq.com/posting-api/job-board/${t}?includeCompensation=false`,
+    ],
+    parse: (p) => parseAshby(p),
+  },
+  workable: {
+    urls: (t) => [
+      `https://apply.workable.com/api/v1/widget/accounts/${t}?details=true`,
+      `https://apply.workable.com/api/v1/widget/accounts/${t}`,
+    ],
+    parse: (p, t) => parseWorkable(p, t),
+    // Workable returns the display name alongside the jobs — free enrichment.
+    nameFrom: (p) => str((p as Record<string, unknown>)?.name),
+  },
+};
+
+export function parseJobs(provider: AtsProvider, payload: unknown, token = ""): NormalisedJob[] {
+  const cfg = PROVIDERS[provider];
+  return cfg ? cfg.parse(payload, token) : [];
 }
 
 /**
@@ -137,11 +242,10 @@ export function idsToClose(
 
 // ── Fetching ────────────────────────────────────────────────────────────────
 
-function boardUrl(b: BoardRef): string {
-  const token = encodeURIComponent(b.ats_board_token);
-  return b.ats_provider === "greenhouse"
-    ? `https://boards-api.greenhouse.io/v1/boards/${token}/jobs`
-    : `https://api.lever.co/v0/postings/${token}?mode=json`;
+function boardUrls(b: BoardRef): string[] {
+  const cfg = PROVIDERS[b.ats_provider];
+  if (!cfg) return [];
+  return cfg.urls(encodeURIComponent(b.ats_board_token));
 }
 
 async function getJson(url: string): Promise<{ ok: true; data: unknown } | { ok: false; reason: string }> {
@@ -184,20 +288,38 @@ export interface BoardResult {
 
 async function crawlBoard(supabase: SupabaseClient, company: BoardRef & { id: string }): Promise<BoardResult> {
   const label = `${company.ats_provider}/${company.ats_board_token}`;
-  const res = await getJson(boardUrl(company));
+  const urls = boardUrls(company);
+  if (urls.length === 0) {
+    return { board: label, ok: false, fetched: 0, upserted: 0, closed: 0, reopened: 0,
+             reason: `unknown ats_provider "${company.ats_provider}"` };
+  }
+
+  // Walk the provider's URL chain, stopping at the first that returns jobs.
+  // A 200 carrying an empty board is a legitimate answer, so only a genuinely
+  // failed fetch moves on to the next candidate.
+  let payload: unknown = null;
+  let fetched: NormalisedJob[] = [];
+  let lastReason = "";
+  let gotOk = false;
+  for (const url of urls) {
+    const r = await getJson(url);
+    if (!r.ok) { lastReason = r.reason; continue; }
+    gotOk = true;
+    payload = r.data;
+    fetched = parseJobs(company.ats_provider, r.data, company.ats_board_token);
+    if (fetched.length > 0) break;
+  }
 
   // Hard rule: a failed fetch closes nothing. Stamp last_crawled_at anyway so
   // a dead board rotates to the back of the queue instead of being retried on
   // every single invocation.
-  if (!res.ok) {
+  if (!gotOk) {
     await supabase.from("sourcing_companies")
       .update({ last_crawled_at: new Date().toISOString() })
       .eq("id", company.id);
-    console.error(`[sourcing-crawl] ${label}: fetch failed — ${res.reason}`);
-    return { board: label, ok: false, fetched: 0, upserted: 0, closed: 0, reopened: 0, reason: res.reason };
+    console.error(`[sourcing-crawl] ${label}: fetch failed — ${lastReason}`);
+    return { board: label, ok: false, fetched: 0, upserted: 0, closed: 0, reopened: 0, reason: lastReason };
   }
-
-  const fetched = parseJobs(company.ats_provider, res.data);
 
   // What we currently hold as open, needed to compute the closures.
   const { data: heldActive, error: heldErr } = await supabase
@@ -246,8 +368,14 @@ async function crawlBoard(supabase: SupabaseClient, company: BoardRef & { id: st
 
   // 3. Fill inferred_name once, if we can and it is still blank.
   let named: string | undefined;
-  if (!company.inferred_name && company.ats_provider === "greenhouse") {
-    const name = await fetchGreenhouseName(company.ats_board_token);
+  if (!company.inferred_name) {
+    // Prefer a name already present in the payload we just fetched (Workable);
+    // fall back to Greenhouse's separate board endpoint. Providers exposing
+    // neither simply stay NULL until another enrichment pass fills them.
+    const cfg = PROVIDERS[company.ats_provider];
+    const name =
+      (cfg?.nameFrom ? cfg.nameFrom(payload) : null) ??
+      (company.ats_provider === "greenhouse" ? await fetchGreenhouseName(company.ats_board_token) : null);
     if (name) {
       await supabase.from("sourcing_companies").update({ inferred_name: name }).eq("id", company.id);
       named = name;
@@ -286,13 +414,31 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   let limit = DEFAULT_LIMIT;
   let board: BoardRef | null = null;
+  // Held separately from the parse: a malformed/absent body legitimately means
+  // "crawl the default batch", but an explicitly BAD provider must surface as
+  // an error rather than being swallowed by that same catch and silently
+  // turning into a full batch crawl the caller never asked for.
+  let badProvider: string | null = null;
   try {
     const body = await req.json();
     const n = Number(body?.limit);
     if (Number.isFinite(n) && n > 0) limit = Math.min(Math.floor(n), MAX_LIMIT);
-    if (body?.board?.ats_provider && body?.board?.ats_board_token) board = body.board as BoardRef;
+    if (body?.board?.ats_provider && body?.board?.ats_board_token) {
+      if (ATS_PROVIDERS.includes(body.board.ats_provider)) {
+        board = body.board as BoardRef;
+      } else {
+        badProvider = String(body.board.ats_provider);
+      }
+    }
   } catch {
     /* no body — crawl the default batch */
+  }
+
+  if (badProvider) {
+    return json(
+      { error: `unsupported ats_provider "${badProvider}" (expected one of ${ATS_PROVIDERS.join(", ")})` },
+      400,
+    );
   }
 
   try {
