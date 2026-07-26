@@ -22,8 +22,19 @@
 --       '<service-role-key>', 'service_role_key',
 --       'Service role key used by the weekly sourcing cron');
 --
---   Verify (shows names only, not values):
---     select name from vault.secrets order by name;
+--   ALREADY CREATED ONE? create_secret refuses duplicates. Update in place:
+--
+--     select vault.update_secret(
+--       (select id from vault.secrets where name = 'project_url'),
+--       'https://<project-ref>.supabase.co', 'project_url',
+--       'Base URL for Edge Function calls from pg_cron');
+--
+--   Verify without printing the key itself:
+--     select name,
+--            decrypted_secret LIKE '%<%' AS still_a_placeholder,
+--            length(decrypted_secret)    AS len
+--       FROM vault.decrypted_secrets
+--      WHERE name IN ('project_url', 'service_role_key');
 --
 --   If either secret is missing the job will error in cron.job_run_details
 --   rather than silently posting to a null URL — see the guard below.
@@ -70,6 +81,18 @@ BEGIN
       'sourcing cron: vault secret "%" is missing. Create it with select vault.create_secret(...) — see 20260726080000_sourcing_weekly_cron.sql',
       p_name;
   END IF;
+
+  -- Reject un-substituted placeholders. Pasting the setup snippet verbatim
+  -- stores the literal '<YOUR-PROJECT-REF>' text, which is non-empty and so
+  -- would sail past the check above — leaving the cron to POST at a nonsense
+  -- URL every week and fail in a way that looks like a network problem rather
+  -- than a configuration one.
+  IF v LIKE '%<%' OR v LIKE '%YOUR-%' OR v LIKE '%your-%' THEN
+    RAISE EXCEPTION
+      'sourcing cron: vault secret "%" still contains a placeholder. Replace it with the real value using vault.update_secret((select id from vault.secrets where name = %L), ''<real value>'', %L)',
+      p_name, p_name, p_name;
+  END IF;
+
   RETURN v;
 END;
 $$;
