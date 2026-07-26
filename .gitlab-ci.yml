@@ -1,7 +1,7 @@
 # =============================================================================
 # GitLab CI — manual deploy job for the Public Market Hub's Supabase Edge
 # Functions (sync-public-markets, search-tickers, stock-profile, stock-history,
-# sourcing-crawl, extract-job-signals) plus the migrations they depend on.
+# sourcing-crawl, extract-job-signals, discover-boards) plus their migrations.
 #
 # This pipeline does NOT run on ordinary pushes/merges — it only exists so you
 # can trigger it by hand from the GitLab UI (Build -> Pipelines -> "Run
@@ -190,3 +190,4 @@ deploy-public-market-functions:
     - deploy_fn stock-history
     - deploy_fn sourcing-crawl
     - deploy_fn extract-job-signals
+    - deploy_fn discover-boards
