@@ -64,6 +64,8 @@ function json(body: unknown, status = 200): Response {
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 200;
 const FETCH_TIMEOUT_MS = 15_000;
+// Max ids per PostgREST .in() filter — see the closure loop for why.
+const CLOSE_CHUNK = 100;
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -374,15 +376,31 @@ async function crawlBoard(supabase: SupabaseClient, company: BoardRef & { id: st
   }
 
   // 2. Close what the board dropped.
+  //
+  //    Chunked, because PostgREST puts FILTERS in the URI: .in(...) becomes
+  //    ?external_job_id=in.(a,b,c...). Ashby and Workable use UUID-shaped ids,
+  //    so a board that drops several hundred roles at once — a reorganisation,
+  //    or a hiring freeze on a Databricks-sized board — would build a request
+  //    line past the ~8 KB header buffer and get a 400 back from the gateway
+  //    before Postgres saw it. One timestamp for the whole closure, computed
+  //    once, so a batch shares a closed_at instead of drifting across chunks.
   const closing = idsToClose(fetched, heldActive ?? []);
   if (closing.length > 0) {
-    const { error } = await supabase
-      .from("early_job_postings")
-      .update({ is_active: false, closed_at: new Date().toISOString() })
-      .eq("company_id", company.id)
-      .eq("is_active", true)
-      .in("external_job_id", closing);
-    if (error) throw new Error(`close postings for ${label}: ${error.message}`);
+    const closedAt = new Date().toISOString();
+    for (let i = 0; i < closing.length; i += CLOSE_CHUNK) {
+      const chunk = closing.slice(i, i + CLOSE_CHUNK);
+      const { error } = await supabase
+        .from("early_job_postings")
+        .update({ is_active: false, closed_at: closedAt })
+        .eq("company_id", company.id)
+        .eq("is_active", true)
+        .in("external_job_id", chunk);
+      if (error) {
+        throw new Error(
+          `close postings for ${label} (ids ${i}–${i + chunk.length - 1} of ${closing.length}): ${error.message}`,
+        );
+      }
+    }
   }
 
   // 3. Fill inferred_name once, if we can and it is still blank.

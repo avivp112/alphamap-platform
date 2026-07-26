@@ -192,6 +192,44 @@ export function extractSignals(title: string): Signal[] {
 
 interface PostingRow { id: string; title: string; }
 
+// PostgREST puts FILTERS in the URI, not the body: .in("id", ids) becomes
+// ?id=in.(uuid,uuid,...). At 37 characters per UUID, 1000 ids is a ~37 KB
+// request line — far past the usual 8 KB header buffer — so the gateway
+// answers 400 Bad Request before Postgres ever sees the statement. 100 ids is
+// ~3.7 KB and sits comfortably inside it.
+//
+// Note this affects filters ONLY. The job_signals upsert above sends its rows
+// as a POST body, which has a much larger ceiling, so it is left as one call.
+const STAMP_CHUNK = 100;
+
+/**
+ * Stamp signals_extracted_at across arbitrarily many ids, a chunk at a time.
+ *
+ * One timestamp for the whole batch, computed once: rows processed in the same
+ * run should share a stamp rather than drift by however long the loop took.
+ *
+ * A mid-loop failure leaves earlier chunks stamped and later ones pending.
+ * That is safe rather than merely tolerable — signals are inserted BEFORE any
+ * stamping and the insert is idempotent, so re-running re-processes the
+ * unstamped remainder and writes no duplicates. The error names the chunk so a
+ * partial failure is legible instead of looking like total loss.
+ */
+async function stampExtracted(supabase: SupabaseClient, ids: string[]): Promise<void> {
+  const now = new Date().toISOString();
+  for (let i = 0; i < ids.length; i += STAMP_CHUNK) {
+    const chunk = ids.slice(i, i + STAMP_CHUNK);
+    const { error } = await supabase
+      .from("early_job_postings")
+      .update({ signals_extracted_at: now })
+      .in("id", chunk);
+    if (error) {
+      throw new Error(
+        `stamp signals_extracted_at (ids ${i}–${i + chunk.length - 1} of ${ids.length}): ${error.message}`,
+      );
+    }
+  }
+}
+
 async function processBatch(supabase: SupabaseClient, rows: PostingRow[]) {
   const signalRows: { job_id: string; signal_type: string; signal_value: string }[] = [];
   let withSignals = 0;
@@ -215,11 +253,7 @@ async function processBatch(supabase: SupabaseClient, rows: PostingRow[]) {
 
   // Stamp even the titles that produced nothing — "we looked and there was
   // nothing here" is a completed unit of work, not a pending one.
-  const { error: stampErr } = await supabase
-    .from("early_job_postings")
-    .update({ signals_extracted_at: new Date().toISOString() })
-    .in("id", rows.map((r) => r.id));
-  if (stampErr) throw new Error(`stamp signals_extracted_at: ${stampErr.message}`);
+  await stampExtracted(supabase, rows.map((r) => r.id));
 
   return { signals: signalRows.length, withSignals };
 }
