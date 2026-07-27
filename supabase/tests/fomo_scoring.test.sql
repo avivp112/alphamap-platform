@@ -9,11 +9,19 @@
 --
 -- This exists because the scoring view has been revised five times — scaled-org
 -- penalty, company age, inception, and now the IP split — each time by DROP and
--- CREATE, each time with the arithmetic checked by hand. The bug that prompted
--- this file was invisible to inspection: pts_inception took min(filing_date)
--- across ALL government sources, so a company with an old patent and a fresh
--- Form D scored zero for inception. Nothing errored. The leaderboard was just
--- quietly wrong.
+-- CREATE, each time with the arithmetic checked by hand.
+--
+-- The bug that prompted this file was invisible to inspection: pts_inception
+-- took min(filing_date) across ALL government sources, so a company with an old
+-- patent and a fresh Form D was scored on the PATENT date. Measured against the
+-- old view with a Form D 90 days old, correct answer 25:
+--
+--     patent  200d -> 15      patent  700d -> 5
+--     patent  400d ->  5      patent 1200d -> 0
+--
+-- Graded, not all-or-nothing — 10 to 25 points lost depending on the patent's
+-- age. Nothing errored. The leaderboard was just quietly wrong, which is the
+-- entire argument for this file existing.
 -- =============================================================================
 
 \set ON_ERROR_STOP on
@@ -58,8 +66,9 @@ BEGIN
   END LOOP;
 END $$;
 
--- A company that raised three months ago and published a patent two years ago.
--- Before the split this scored pts_inception = 0: min() took the patent date.
+-- A company that raised three months ago and published a patent ~two years ago.
+-- Before the split this scored pts_inception = 5 rather than 25: min() took the
+-- 700-day-old patent date, which landed in the old view's <=730d tier.
 INSERT INTO raw_gov_filings (source, accession_number, entity_name, filing_date, startup_id, classification_codes)
 SELECT 'sec_form_d', 'ZZ-FD-1', 'ZZ Test formd_fresh_patent_old', current_date - 90, startup_id, NULL
   FROM t_ids WHERE label = 'formd_fresh_patent_old';
