@@ -35,6 +35,11 @@
 // excluded on SEC's own industryGroupType and on the presence of
 // investmentFundInfo.
 //
+// Funds are no longer discarded: they are routed to vc_fund_filings, where a
+// firm's successive vehicles form its raising history and the related-persons
+// list is the closest thing to a public GP roster that exists. Rejected as
+// companies, kept as intelligence.
+//
 // Tech filtering also uses SEC's taxonomy rather than keyword-matching company
 // names. It is a classification the filer selected under penalty of perjury,
 // which beats guessing "AI" from a name — and unlike our classify_sector_parent
@@ -174,6 +179,8 @@ export interface FormD {
   yetToBeFormed: boolean;
   industryGroup: string | null;
   isFund: boolean;
+  /** SEC investmentFundType: 'Venture Capital Fund', 'Private Equity Fund', ... */
+  fundType: string | null;
   officers: FormDOfficer[];
   totalOffering: number | null;
   totalSold: number | null;
@@ -206,9 +213,11 @@ export function parseFormD(xml: string): FormD | null {
   // Two independent tells for a fund, because either alone has been seen to
   // miss: the declared industry group, and the presence of the fund-specific
   // sub-block that only a pooled vehicle fills in.
+  const fundInfo = tagBlock(industryBlock, "investmentFundInfo");
   const isFund =
     FUND_INDUSTRY_GROUPS.has((industryGroup ?? "").toLowerCase()) ||
-    tagBlock(industryBlock, "investmentFundInfo") !== null;
+    fundInfo !== null;
+  const fundType = fundInfo ? tagText(fundInfo, "investmentFundType") : null;
 
   const officers: FormDOfficer[] = [];
   for (const person of tagBlocks(tagBlock(xml, "relatedPersonsList") ?? "", "relatedPersonInfo")) {
@@ -240,6 +249,7 @@ export function parseFormD(xml: string): FormD | null {
     yetToBeFormed: tagBool(yearBlock, "yetToBeFormed"),
     industryGroup,
     isFund,
+    fundType,
     officers,
     totalOffering: tagNumber(amounts, "totalOfferingAmount"),
     totalSold: tagNumber(amounts, "totalAmountSold"),
@@ -419,6 +429,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const rejected: Record<string, number> = {};
     let ingested = 0;
     let createdStartups = 0;
+    let fundsSeen = 0;
+    let fundsRecorded = 0;
+    const fundErrors: string[] = [];
 
     for (const row of rows) {
       await sleep(REQUEST_DELAY_MS);
@@ -443,6 +456,34 @@ Deno.serve(async (req: Request): Promise<Response> => {
       const verdict = classifyFiling(parsed);
       if (!verdict.eligible) {
         rejected[verdict.reason ?? "unknown"] = (rejected[verdict.reason ?? "unknown"] ?? 0) + 1;
+
+        // Funds are rejected as COMPANIES but kept as INTELLIGENCE. On the
+        // live 24 July run they were 150 of 200 documents — the largest single
+        // category, and the raising history of the firms that fund everything
+        // else this pipeline looks for. They go to vc_fund_filings, which has
+        // no startups FK and cannot leak into the ATS probe queue.
+        if (verdict.reason === "fund" && parsed) {
+          fundsSeen++;
+          if (!dryRun) {
+            const { error: fundErr } = await supabase.rpc("record_fund_filing", {
+              p_accession: row.accession,
+              p_cik: parsed.cik ?? row.cik,
+              p_form_type: row.formType,
+              p_fund_name: parsed.entityName,
+              p_filing_date: isoDate(row.dateFiled),
+              p_fund_type: parsed.fundType,
+              p_industry_group: parsed.industryGroup,
+              p_year_of_inc: parsed.yearOfInc,
+              p_jurisdiction: parsed.jurisdiction,
+              p_total_offering: parsed.totalOffering,
+              p_total_sold: parsed.totalSold,
+              p_managers: parsed.officers,
+              p_raw: parsed,
+            });
+            if (fundErr) fundErrors.push(`${parsed.entityName}: ${fundErr.message}`);
+            else fundsRecorded++;
+          }
+        }
         continue;
       }
       const f = parsed as FormD;
@@ -495,6 +536,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
       examined: rows.length,
       ingested,
       createdStartups,
+      // Funds are not companies, but they are not noise either.
+      fundsSeen,
+      fundsRecorded,
+      ...(fundErrors.length ? { fundErrors } : {}),
       // The interesting number: on a normal day most filings are funds.
       rejected,
       results,

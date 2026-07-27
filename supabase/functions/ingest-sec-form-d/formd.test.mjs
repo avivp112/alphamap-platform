@@ -198,6 +198,19 @@ check("entity not yet formed is eligible — earlier than early", verdict(notYet
 check("restaurant rejected as non-tech", verdict(restaurant), { eligible: false, reason: "not_tech" });
 check("unparseable rejected", M.classifyFiling(null), { eligible: false, reason: "no_name" });
 
+// ── Fund metadata ───────────────────────────────────────────────────────────
+// Funds are rejected as companies but kept as intelligence, so detecting one is
+// no longer enough — the fields the VC directory reads have to survive too.
+
+console.log("\n── fund metadata is captured, not just detected ──");
+check("declared VC fund keeps its type", M.parseFormD(ventureFund).fundType, "Venture Capital Fund");
+check("PE fund hiding under a tech group", M.parseFormD(sneakyFund).fundType, "Private Equity Fund");
+check("operating company has no fund type", M.parseFormD(operatingCo).fundType, null);
+check("fund offering amounts survive for the raising history",
+  [M.parseFormD(ventureFund).totalOffering, M.parseFormD(ventureFund).totalSold], [250000000, 180000000]);
+check("GP roster comes through relatedPersonsList",
+  M.parseFormD(operatingCo).officers.map((o) => o.name), ["Dana R Okonkwo", "Sam Iyer"]);
+
 // ── Daily index ─────────────────────────────────────────────────────────────
 
 console.log("\n── parseDailyIndex ──");

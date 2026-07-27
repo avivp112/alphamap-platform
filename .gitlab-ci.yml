@@ -1,8 +1,8 @@
 # =============================================================================
 # GitLab CI — manual deploy job for the Public Market Hub's Supabase Edge
 # Functions (sync-public-markets, search-tickers, stock-profile, stock-history,
-# sourcing-crawl, extract-job-signals, discover-boards, ingest-sec-form-d) plus
-# their migrations.
+# sourcing-crawl, extract-job-signals, discover-boards, ingest-sec-form-d,
+# ingest-uk-companies-house, ingest-uspto-patents) plus their migrations.
 #
 # This pipeline does NOT run on ordinary pushes/merges — it only exists so you
 # can trigger it by hand from the GitLab UI (Build -> Pipelines -> "Run
@@ -36,6 +36,12 @@
 # User-Agent carrying a contact address and serves 403 to anything generic:
 #
 #   supabase secrets set SEC_USER_AGENT="AlphaMap sourcing you@yourdomain.com"
+#
+# The other two government ingesters need their own Supabase secrets and both
+# refuse to run without them:
+#
+#   supabase secrets set COMPANIES_HOUSE_API_KEY="..."   # developer.company-information.service.gov.uk
+#   supabase secrets set PATENTSVIEW_API_KEY="..."       # patentsview.org/apis/keyrequest
 #
 # ── Job order ─────────────────────────────────────────────────────────────
 # migrate-database runs FIRST and the function deploy depends on it, because a
@@ -199,3 +205,5 @@ deploy-public-market-functions:
     - deploy_fn extract-job-signals
     - deploy_fn discover-boards
     - deploy_fn ingest-sec-form-d
+    - deploy_fn ingest-uk-companies-house
+    - deploy_fn ingest-uspto-patents
