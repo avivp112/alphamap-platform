@@ -2,7 +2,8 @@
 # GitLab CI — manual deploy job for the Public Market Hub's Supabase Edge
 # Functions (sync-public-markets, search-tickers, stock-profile, stock-history,
 # sourcing-crawl, extract-job-signals, discover-boards, ingest-sec-form-d,
-# ingest-uk-companies-house, ingest-uspto-patents) plus their migrations.
+# ingest-uk-companies-house, ingest-uspto-patents, ingest-huggingface,
+# ingest-github-velocity) plus their migrations.
 #
 # This pipeline does NOT run on ordinary pushes/merges — it only exists so you
 # can trigger it by hand from the GitLab UI (Build -> Pipelines -> "Run
@@ -42,6 +43,10 @@
 #
 #   supabase secrets set COMPANIES_HOUSE_API_KEY="..."   # developer.company-information.service.gov.uk
 #   supabase secrets set PATENTSVIEW_API_KEY="..."       # patentsview.org/apis/keyrequest
+#   supabase secrets set GITHUB_TOKEN="ghp_..."          # classic token, NO scopes needed
+#
+# ingest-huggingface needs no secret at all — public listings are
+# unauthenticated. HUGGINGFACE_TOKEN is optional and only raises rate limits.
 #
 # ── Job order ─────────────────────────────────────────────────────────────
 # migrate-database runs FIRST and the function deploy depends on it, because a
@@ -207,3 +212,5 @@ deploy-public-market-functions:
     - deploy_fn ingest-sec-form-d
     - deploy_fn ingest-uk-companies-house
     - deploy_fn ingest-uspto-patents
+    - deploy_fn ingest-huggingface
+    - deploy_fn ingest-github-velocity

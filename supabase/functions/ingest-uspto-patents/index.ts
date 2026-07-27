@@ -232,9 +232,38 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   const apiKey = Deno.env.get("PATENTSVIEW_API_KEY")?.trim();
   if (!apiKey) {
+    // rawSample without a key runs the mapping over a SYNTHETIC record. That
+    // separates "the function is broken" from "the key is missing" — you can
+    // confirm the deploy landed and the mapping executes — but it is explicitly
+    // NOT evidence about PatentsView's real response shape, which is the only
+    // thing rawSample exists to discover. PatentsView has no unauthenticated
+    // endpoint, so there is no honest way to answer that question without a key.
+    let wantsSample = false;
+    try { wantsSample = (await req.clone().json())?.rawSample === true; } catch { /* no body */ }
+    if (wantsSample) {
+      const synthetic = {
+        publication_number: "US20260123456A1",
+        application_number: "18/123456",
+        patent_title: "Sparse attention routing for transformer inference",
+        patent_abstract: "A method for reducing inference cost in transformer models...",
+        publication_date: "2026-07-16",
+        assignees: [{ assignee_organization: "Synthorai Technology Inc" }],
+        inventors: [{ inventor_name_first: "Rin", inventor_name_last: "Sato" }],
+        cpc_current: [{ cpc_group_id: "G06N3/08" }],
+      };
+      return json({
+        synthetic: true,
+        warning: "PATENTSVIEW_API_KEY is not set, so this is a FIXTURE, not a live record. It proves the deploy and the mapping code run. It proves nothing about PatentsView's actual field names — which is the whole reason to use rawSample. Re-run with a key before trusting the mapping.",
+        fix: 'Request a free key at https://patentsview.org/apis/keyrequest then: supabase secrets set PATENTSVIEW_API_KEY="..."',
+        firstRecord: synthetic,
+        mappedAs: mapPublication(synthetic),
+        deepTechMatch: isDeepTechCpc(mapPublication(synthetic)!.cpcCodes),
+      });
+    }
     return json({
       error: "PATENTSVIEW_API_KEY is not set.",
       fix: 'Request one at https://patentsview.org/apis/keyrequest then: supabase secrets set PATENTSVIEW_API_KEY="..."',
+      note: 'POST { "rawSample": true } without a key to at least confirm the deploy and mapping code run against a fixture.',
     }, 500);
   }
 
