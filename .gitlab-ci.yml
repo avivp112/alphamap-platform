@@ -153,6 +153,52 @@ migrate-database:
       fi
       echo "Schema verified."
 
+    # ── Scoring regression tests ────────────────────────────────────────────
+    # Runs AFTER the migrations, so it tests the schema that was just applied.
+    # migrate-database is a `needs:` of the deploy job, so a failure here blocks
+    # the deploy — which is the point. A wrong scoring view does not crash
+    # anything; it silently ranks the wrong companies, and shipping functions
+    # on top of that makes it harder to notice, not easier.
+    #
+    # The script is transactional (BEGIN ... ROLLBACK) and leaves no rows.
+    - |
+      echo "Running supabase/tests/fomo_scoring.test.sql"
+
+      # NOT `set -e` around the capture. Under set -e a failing psql aborts the
+      # assignment before the output is ever echoed, so a connection error or a
+      # syntax error produces a red pipeline with NO diagnostic — the single
+      # most annoying way for CI to fail. Capture status separately and print
+      # the output either way.
+      OUT=$(psql "$SUPABASE_DB_URL" -f supabase/tests/fomo_scoring.test.sql 2>&1) && RC=0 || RC=$?
+      echo "$OUT"
+      if [ "$RC" != "0" ]; then
+        echo "psql exited $RC — the test could not run (see output above)."
+        exit 1
+      fi
+
+      # psql exits 0 even when an assertion prints FAIL: the script reports
+      # through RAISE NOTICE, which is not an error condition as far as the
+      # client is concerned. So the text has to be checked.
+      FAILED=$(printf '%s' "$OUT" | grep -c 'FAIL  ' || true)
+      PASSED=$(printf '%s' "$OUT" | grep -c 'PASS  ' || true)
+      echo "fomo_scoring: $PASSED passed, $FAILED failed"
+
+      if [ "$FAILED" != "0" ]; then
+        echo "Scoring assertions FAILED. The leaderboard would rank companies"
+        echo "incorrectly and nothing would error at runtime. Blocking the deploy."
+        exit 1
+      fi
+
+      # Zero failures is not the same as having run. An empty output would also
+      # report zero failures, so assert the assertion COUNT as well — this is
+      # the guard against the test silently not executing.
+      if [ "$PASSED" -lt 24 ]; then
+        echo "Expected at least 24 assertions, saw $PASSED."
+        echo "The test did not run to completion — treating that as a failure."
+        exit 1
+      fi
+      echo "Scoring verified."
+
 deploy-public-market-functions:
   stage: deploy
   # Never ship functions against a schema that failed to migrate.
