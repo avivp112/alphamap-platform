@@ -15,10 +15,21 @@
 --
 -- ── THE min() WAS WORSE THAN THE LAG ────────────────────────────────────────
 --   Because the term took min(filing_date) across ALL sources, a company with
---   an old patent AND a recent Form D took the PATENT date and scored ZERO. The
---   newer, stronger signal lost to the older, weaker one — precisely backwards,
---   and silent. Companies that had just raised were ranked as though nothing
---   had happened.
+--   an old patent AND a recent Form D was scored on the PATENT date. The newer,
+--   stronger signal lost to the older, weaker one — backwards, and silent.
+--
+--   Measured on PostgreSQL 16 against the old view, with a Form D 90 days old
+--   where the correct answer is 25:
+--
+--     patent  200 days old -> pts_inception 15
+--     patent  400 days old -> pts_inception  5
+--     patent  700 days old -> pts_inception  5
+--     patent 1200 days old -> pts_inception  0
+--
+--   So the suppression is GRADED, not all-or-nothing: an unrelated publication
+--   cost a fresh raise between 10 and 25 points depending on its age, and zero
+--   only in the worst case. Worth stating precisely, because "it scored zero"
+--   was the first thing I assumed and it was wrong.
 --
 -- ── WHY A SEPARATE TERM RATHER THAN A CORRECTION FACTOR ─────────────────────
 --   Shifting patent dates forward 18 months to "undo" the lag would make the
