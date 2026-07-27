@@ -31,6 +31,7 @@
 //          POST { "from":"2026-07-01", "to":"2026-07-26" }
 //          POST { "countries": ["US","GB"] }
 //          POST { "cpc": ["G06N","B25J"] }  -> narrow the CPC sweep
+//          POST { "maxPublicationsPer30d": 8 }  -> tighten/loosen the scale cap
 //          POST { "rawSample": true }       -> dump one untouched record
 //          POST { "dryRun": true }
 //
@@ -280,6 +281,61 @@ export function searchUrl(cql: string, start: number, size = PAGE_SIZE): string 
   return `${SEARCH_URL}?${p.toString()}&Range=${start}-${start + size - 1}`;
 }
 
+// ── The private-market boundary ─────────────────────────────────────────────
+//
+// Patents are the only source here that skews CORPORATE: two weeks of deep-tech
+// CPC across US+GB returns ~3,000 publications led by IBM, Samsung, Qualcomm
+// and universities. Nothing downstream catches them — classify_company_archetype
+// fails open (no funding rows means venture_backed, and Samsung has no funding
+// rows in this database), and startups.industry is NULL for patent rows so the
+// sector escape hatch passes them too. Without a filter here, Samsung enters
+// board_discovery_candidates and spends ATS probe budget.
+//
+// Two filters, because neither is sufficient:
+//
+//   NAME DENYLIST (patent_excluded_applicants) — high precision, and zero
+//   recall for the incumbent nobody thought to list.
+//
+//   FREQUENCY CAP (below) — lower precision, excellent recall, and it maintains
+//   itself. An applicant filing forty publications a fortnight is not a startup
+//   whether or not anyone added them to a list, and that stays true as new
+//   incumbents appear. This is the half that keeps working.
+
+/** Publications per applicant per 30 days above which a filer is not a startup. */
+export const DEFAULT_MAX_PUBS_PER_30D = 8;
+
+/**
+ * Scale the cap to the window actually queried.
+ *
+ * A flat "10 per run" would mean something different for a fortnight than for a
+ * year. Normalising to a rate keeps the threshold meaningful whatever `from`
+ * and `to` are, and the floor of 3 stops a one-day window from excluding a
+ * company for filing twice on a Tuesday.
+ */
+export function allowedPublications(from: string, to: string, per30d = DEFAULT_MAX_PUBS_PER_30D): number {
+  const days = Math.max(1, (Date.parse(to) - Date.parse(from)) / 86_400_000);
+  return Math.max(3, Math.ceil((days / 30) * per30d));
+}
+
+/** Match the SQL side of normalisation so counts group the same way. */
+export const normalizeApplicant = (name: string): string =>
+  name.toLowerCase()
+    .replace(/\[[a-z]{2}\]/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+
+/** Count publications per normalised applicant within a batch. */
+export function countByApplicant(pubs: { applicant: string | null }[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const p of pubs) {
+    if (!p.applicant) continue;   // inventor-held rows are never capped
+    const k = normalizeApplicant(p.applicant);
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  return counts;
+}
+
 export function techSummary(p: OpsPublication): string {
   const parts: string[] = [];
   if (p.cpcCodes.length) parts.push(`CPC ${p.cpcCodes.slice(0, 4).join(", ")}`);
@@ -344,6 +400,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   let rawSample = false;
   let cpc = DEEPTECH_CPC_PREFIXES;
   let countries = ["US", "GB"];
+  let maxPubsPer30d = DEFAULT_MAX_PUBS_PER_30D;
   let to = ymd(new Date());
   let from = ymd(new Date(Date.now() - DEFAULT_WINDOW_DAYS * 86_400_000));
   try {
@@ -354,6 +411,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
     rawSample = b?.rawSample === true;
     if (Array.isArray(b?.cpc) && b.cpc.length) cpc = b.cpc.map(String);
     if (Array.isArray(b?.countries)) countries = b.countries.map(String);
+    const mp = Number(b?.maxPublicationsPer30d);
+    if (Number.isFinite(mp) && mp > 0) maxPubsPer30d = Math.floor(mp);
     const iso = /^\d{4}-\d{2}-\d{2}$/;
     if (typeof b?.from === "string" && iso.test(b.from)) from = b.from;
     if (typeof b?.to === "string" && iso.test(b.to)) to = b.to;
@@ -437,13 +496,84 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return json({ cql, totalHits, scanned, offTopic, ingested: 0, note: "no deep-tech publications in range" });
     }
 
+    // ── Private-market boundary ─────────────────────────────────────────────
+    // Applied AFTER fetching, because both filters need the whole batch: the
+    // denylist is one round trip for every distinct applicant rather than one
+    // per publication, and the frequency cap is meaningless per-record.
+    const distinctApplicants = [...new Set(
+      kept.map((p) => p.applicant).filter((a): a is string => Boolean(a)),
+    )];
+
+    const denied = new Set<string>();
+    if (distinctApplicants.length > 0) {
+      // One RPC per distinct applicant would be hundreds of round trips. Ask
+      // the database which of these names it considers out of scope in a
+      // single call instead.
+      const { data: verdicts, error: denyErr } = await supabase
+        .rpc("filter_excluded_applicants", { p_names: distinctApplicants });
+      if (denyErr) {
+        return json({
+          error: `denylist lookup failed: ${denyErr.message}`,
+          hint: "migration 20260726160000 (patent_excluded_applicants) may not be applied",
+        }, 500);
+      }
+      for (const row of (verdicts ?? []) as { name: string }[]) denied.add(row.name);
+    }
+
+    // Historical counts, so an incumbent already over the cap is dropped
+    // without having to re-observe them from scratch every run.
+    const historical = new Map<string, number>();
+    if (distinctApplicants.length > 0) {
+      const { data: hist } = await supabase
+        .rpc("count_patent_publications", { p_names: distinctApplicants, p_since: from });
+      for (const row of (hist ?? []) as { normalized: string; publications: number }[]) {
+        historical.set(row.normalized, Number(row.publications) || 0);
+      }
+    }
+
+    const cap = allowedPublications(from, to, maxPubsPer30d);
+    const inBatch = countByApplicant(kept);
+    const overCap = new Set<string>();
+    for (const [norm, n] of inBatch) {
+      if (n + (historical.get(norm) ?? 0) > cap) overCap.add(norm);
+    }
+
+    const excluded = { denylisted: 0, overCap: 0 };
+    const excludedNames = new Set<string>();
+    const inScope = kept.filter((p) => {
+      // Inventor-held publications bypass both filters by construction: there
+      // is no applicant to deny, and an individual cannot be a conglomerate.
+      // These are the highest-value rows in this layer and must never be lost
+      // to a corporate filter.
+      if (!p.applicant) return true;
+      if (denied.has(p.applicant)) {
+        excluded.denylisted++; excludedNames.add(p.applicant); return false;
+      }
+      if (overCap.has(normalizeApplicant(p.applicant))) {
+        excluded.overCap++; excludedNames.add(p.applicant); return false;
+      }
+      return true;
+    });
+
     if (dryRun) {
       return json({
-        cql, totalHits, dryRun: true, scanned, offTopic, wouldIngest: kept.length,
-        sample: kept.slice(0, 25).map((p) => ({
+        cql, totalHits, dryRun: true, scanned, offTopic,
+        cap, capWindowDays: Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000),
+        excluded,
+        excludedApplicants: [...excludedNames].slice(0, 40),
+        wouldIngest: inScope.length,
+        inventorHeld: inScope.filter((p) => !p.applicant).length,
+        sample: inScope.slice(0, 25).map((p) => ({
           publication: p.publicationNumber, applicant: p.applicant,
           inventors: p.inventors.length, cpc: p.cpcCodes.slice(0, 3), title: p.title,
         })),
+      });
+    }
+
+    if (inScope.length === 0) {
+      return json({
+        cql, totalHits, scanned, offTopic, cap, excluded, ingested: 0,
+        note: "every publication in range was out of the private-market boundary",
       });
     }
 
@@ -452,7 +582,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     let created = 0;
     let inventorHeld = 0;
 
-    for (const p of kept) {
+    for (const p of inScope) {
       // No corporate applicant means an inventor-held filing — the earliest
       // signal in this whole pipeline. Stored unlinked, with the inventors, as
       // a founder watchlist. Deliberately NOT given a startups row: there is no
@@ -501,6 +631,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     return json({
       cql, totalHits, from, to, scanned, offTopic, unmappable,
+      // The private-market boundary, reported rather than silent: a run that
+      // drops 90% of what it fetched should say so on the face of the result.
+      cap, excluded,
       ingested, createdStartups: created,
       inventorHeld,
       results,

@@ -194,6 +194,58 @@ check("unmappable document -> null", M.parseExchangeDocument({ "bibliographic-da
 check("inventors map to the officers shape",
   M.inventorsAsOfficers(s), [{ name: "BYRON, Ada", relationships: ["Inventor"] }]);
 
+// ── Private-market boundary ─────────────────────────────────────────────────
+
+console.log("\n── allowedPublications: the cap scales to the window queried ──");
+check("14-day window at 8/30d -> 4", M.allowedPublications("2026-07-12", "2026-07-26", 8), 4);
+check("30-day window -> 8", M.allowedPublications("2026-06-26", "2026-07-26", 8), 8);
+check("365-day window -> 98", M.allowedPublications("2025-07-26", "2026-07-26", 8), 98);
+check("a one-day window floors at 3, not 1 — filing twice on a Tuesday is not scale",
+  M.allowedPublications("2026-07-26", "2026-07-26", 8), 3);
+check("tighter setting is honoured", M.allowedPublications("2026-06-26", "2026-07-26", 3), 3);
+
+console.log("\n── normalizeApplicant matches the SQL side ──");
+check("EPO country tag", M.normalizeApplicant("RO5 INC [US]"), "ro5 inc");
+check("punctuation and case", M.normalizeApplicant("SAMSUNG ELECTRONICS CO., LTD."), "samsung electronics co ltd");
+check("variants converge, so counts group as one filer",
+  M.normalizeApplicant("Samsung Electronics Co Ltd") === M.normalizeApplicant("SAMSUNG ELECTRONICS CO., LTD. [KR]"),
+  true);
+check("ampersand collapses like the SQL form",
+  M.normalizeApplicant("Johnson & Johnson"), "johnson johnson");
+
+console.log("\n── countByApplicant ──");
+const batch = [
+  { applicant: "Samsung Electronics Co Ltd" },
+  { applicant: "SAMSUNG ELECTRONICS CO., LTD." },
+  { applicant: "SAMSUNG ELECTRONICS CO LTD [KR]" },
+  { applicant: "Ro5 Inc." },
+  { applicant: null },              // inventor-held
+  { applicant: null },
+];
+const counts = M.countByApplicant(batch);
+check("name variants counted together", counts.get("samsung electronics co ltd"), 3);
+check("the startup counted once", counts.get("ro5 inc"), 1);
+check("inventor-held rows are never counted — they have no applicant to cap",
+  counts.has("") || counts.size, 2);
+
+console.log("\n── the boundary must never eat an inventor-held row ──");
+// The filter predicate reproduced: no applicant means no denylist entry and no
+// frequency to cap, so it passes by construction. This is the highest-value row
+// in the layer and the one a corporate filter would most easily lose.
+const denied = new Set(["Samsung Electronics Co Ltd"]);
+const overCap = new Set(["samsung electronics co ltd"]);
+const survives = (p) => {
+  if (!p.applicant) return true;
+  if (denied.has(p.applicant)) return false;
+  if (overCap.has(M.normalizeApplicant(p.applicant))) return false;
+  return true;
+};
+check("inventor-held survives both filters", survives({ applicant: null }), true);
+check("denylisted applicant dropped", survives({ applicant: "Samsung Electronics Co Ltd" }), false);
+check("over-cap variant dropped by normalised match",
+  survives({ applicant: "SAMSUNG ELECTRONICS CO., LTD. [KR]" }), false);
+check("the startup survives", survives({ applicant: "Ro5 Inc." }), true);
+
 rmSync(dir, { recursive: true, force: true });
 console.log(failed === 0 ? "\nALL PASS" : `\n${failed} FAILURE(S)`);
 process.exit(failed === 0 ? 0 : 1);
