@@ -303,10 +303,12 @@ BEGIN
        AND a.attnum > 0
        AND NOT a.attisdropped
        AND a.attgenerated = ''
-       -- search_tsv is derived from other columns by trigger and regenerates
-       -- itself on the updated_at write at the end of this function. Copying a
-       -- stale one in would make the survivor briefly searchable under the
-       -- merged company's terms and is pure noise.
+       -- attgenerated = '' above already excludes search_tsv, which is
+       -- GENERATED ALWAYS AS (...) STORED and recomputes itself from name,
+       -- industry and description. Naming it here is belt-and-braces: if it
+       -- were ever redefined as a plain trigger-maintained column, copying a
+       -- stale value in would make the survivor briefly searchable under the
+       -- merged company's terms.
        AND a.attname NOT IN ('id', 'created_at', 'updated_at', 'search_tsv')
      ORDER BY a.attnum
   LOOP
@@ -478,6 +480,19 @@ BEGIN
   -- Restore only columns that still exist, so a snapshot taken before a schema
   -- change can still be restored.
   -- format_type() again, for the same reason as merge_companies().
+  --
+  -- GENERATED and IDENTITY columns are excluded, and that exclusion is load-
+  -- bearing rather than tidiness. to_jsonb(s) captures every column including
+  -- computed ones, so the snapshot contains search_tsv — a
+  -- GENERATED ALWAYS AS (...) STORED tsvector. Naming it in an INSERT is a hard
+  -- error: 'cannot insert a non-DEFAULT value into column "search_tsv"'.
+  -- Without these two filters unmerge_company() cannot restore ANY row on a
+  -- schema that has a generated column, which is to say it never worked at all.
+  -- Nothing is lost by skipping them: a generated column is recomputed from the
+  -- columns that ARE restored, and an identity value is reissued.
+  --
+  -- merge_companies() gets this right via the same attgenerated test, which is
+  -- why merging worked while reversing did not.
   SELECT string_agg(quote_ident(k.key), ', '),
          string_agg(format('($1->>%L)::%s', k.key, format_type(a.atttypid, a.atttypmod)), ', ')
     INTO cols, vals
@@ -486,6 +501,8 @@ BEGIN
       ON a.attrelid = 'public.startups'::regclass
      AND a.attname = k.key
      AND a.attnum > 0 AND NOT a.attisdropped
+     AND a.attgenerated = ''      -- GENERATED ALWAYS AS ... STORED
+     AND a.attidentity <> 'a'     -- GENERATED ALWAYS AS IDENTITY
    WHERE m.merged_snapshot->>k.key IS NOT NULL;
 
   EXECUTE format('INSERT INTO startups (%s) VALUES (%s) RETURNING id', cols, vals)
