@@ -168,8 +168,9 @@ BEGIN
   END IF;
 
   -- ── Column-by-column gap fill ─────────────────────────────────────────────
-  -- Driven off information_schema so a new column is handled without touching
-  -- this function.
+  -- Driven off the catalogue, so a new column is handled without touching this
+  -- function.
+  --
   -- pg_attribute + format_type(), NOT information_schema.data_type. For a
   -- user-defined type like vector(1536) data_type returns the literal string
   -- 'USER-DEFINED', and for text[] it returns 'ARRAY' — casting to either is a
