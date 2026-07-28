@@ -150,6 +150,24 @@ COMMENT ON FUNCTION company_richness(uuid) IS
  * So the bulk path is tried first (fast, and the common case), and only on a
  * collision does it fall back to per-row: update what can move, delete only
  * what genuinely conflicts.
+ *
+ * ── WHY check_violation IS TREATED THE SAME AS unique_violation ────────────
+ * entity_match_candidates has CHECK (NOT (left_kind='startup' AND left_id =
+ * right_startup_id)) — a pair cannot be a pair with itself. Repointing the
+ * candidate that DESCRIBES the merge being performed makes both columns equal
+ * and trips exactly that check.
+ *
+ * Which is not an error condition; it is the correct outcome arriving as one.
+ * Once the two rows are one row, a candidate proposing to link them is
+ * meaningless. Letting it abort would mean the review queue could never
+ * confirm anything — the one operation it exists for. So a row that cannot be
+ * repointed is dropped and counted, the same policy already applied to unique
+ * collisions.
+ *
+ * The decision itself is not lost: merge_companies() records the merge in
+ * company_merges with the candidate id and tier in its evidence, which is the
+ * durable audit. The candidate row was going to disappear regardless —
+ * right_startup_id is ON DELETE CASCADE.
  */
 CREATE OR REPLACE FUNCTION repoint_startup_refs(
   p_table     text,
@@ -183,7 +201,7 @@ BEGIN
     EXECUTE format('UPDATE %I SET %I = %L WHERE %s', p_table, p_id_column, p_survivor, v_where);
     GET DIAGNOSTICS v_moved = ROW_COUNT;
     RETURN jsonb_build_object('moved', v_moved, 'dropped', 0);
-  EXCEPTION WHEN unique_violation THEN
+  EXCEPTION WHEN unique_violation OR check_violation THEN
     NULL;  -- fall through
   END;
 
@@ -209,8 +227,10 @@ BEGIN
       EXECUTE format('UPDATE %I SET %I = %L WHERE %I = %L',
                      p_table, p_id_column, p_survivor, v_pk, r.pk);
       v_moved := v_moved + 1;
-    EXCEPTION WHEN unique_violation THEN
-      -- This specific row would duplicate one the survivor already has.
+    EXCEPTION WHEN unique_violation OR check_violation THEN
+      -- This specific row would either duplicate one the survivor already has,
+      -- or become self-referential (a candidate proposing to link the survivor
+      -- to itself). Both mean the row has no meaning after the merge.
       EXECUTE format('DELETE FROM %I WHERE %I = %L', p_table, v_pk, r.pk);
       v_drop := v_drop + 1;
     END;

@@ -225,6 +225,36 @@ migrate-database:
       fi
       echo "Entity resolution verified."
 
+    # ── Entity resolver tests ───────────────────────────────────────────────
+    # The resolvers decide WHICH rows are the same company, and tier 1 merges
+    # without asking anyone. A false positive there is invisible and
+    # self-reinforcing, so this runs on every deployment like the rest.
+    #
+    # NOTE the different grep: this test reports as a RESULT TABLE, not through
+    # RAISE NOTICE, so the 'PASS  ' pattern used above matches nothing here.
+    # Anchoring to '^ PASS' matches psql's aligned output.
+    - |
+      echo "Running supabase/tests/entity_resolvers.test.sql"
+      OUT=$(psql "$SUPABASE_DB_URL" -f supabase/tests/entity_resolvers.test.sql 2>&1) && RC=0 || RC=$?
+      echo "$OUT"
+      if [ "$RC" != "0" ]; then
+        echo "psql exited $RC — the test could not run (see output above)."
+        exit 1
+      fi
+      FAILED=$(printf '%s' "$OUT" | grep -cE '^ FAIL' || true)
+      PASSED=$(printf '%s' "$OUT" | grep -cE '^ PASS' || true)
+      echo "entity_resolvers: $PASSED passed, $FAILED failed"
+      if [ "$FAILED" != "0" ]; then
+        echo "Resolver assertions FAILED. A wrong auto-merge is not visible in"
+        echo "the product and cannot be undone from the audit alone."
+        exit 1
+      fi
+      if [ "$PASSED" -lt 40 ]; then
+        echo "Expected at least 40 assertions, saw $PASSED — the test did not run fully."
+        exit 1
+      fi
+      echo "Entity resolvers verified."
+
 deploy-public-market-functions:
   stage: deploy
   # Never ship functions against a schema that failed to migrate.
