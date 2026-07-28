@@ -123,10 +123,27 @@ END $$;
 -- ── Foreign keys, discovered rather than listed ─────────────────────────────
 
 DO $$
-DECLARE a uuid; b uuid; mid uuid; m record; u1 uuid := gen_random_uuid(); u2 uuid := gen_random_uuid();
+DECLARE a uuid; b uuid; mid uuid; m record; u1 uuid; u2 uuid; have_users boolean := false;
 BEGIN
 RAISE NOTICE '';
 RAISE NOTICE '── merge_companies: dependents repointed, collisions survived ──';
+
+-- watchlist_items.user_id is a FOREIGN KEY to auth.users, so gen_random_uuid()
+-- is rejected outright. Synthetic auth.users rows are inserted instead, which is
+-- safe only because this whole file runs inside BEGIN ... ROLLBACK — they never
+-- commit. If that INSERT is not permitted, fall back to two existing accounts;
+-- if there are not two, the watchlist assertions are SKIPPED and say so, rather
+-- than silently vanishing from the count.
+BEGIN
+  u1 := gen_random_uuid();
+  u2 := gen_random_uuid();
+  INSERT INTO auth.users (id) VALUES (u1), (u2);
+  have_users := true;
+EXCEPTION WHEN OTHERS THEN
+  SELECT id INTO u1 FROM auth.users ORDER BY id LIMIT 1;
+  SELECT id INTO u2 FROM auth.users WHERE id IS DISTINCT FROM u1 ORDER BY id LIMIT 1;
+  have_users := u1 IS NOT NULL AND u2 IS NOT NULL;
+END;
 INSERT INTO startups (name, website) VALUES ('ZZ Nova Labs','https://zz-nova.example') RETURNING id INTO a;
 INSERT INTO startups (name) VALUES ('ZZ NOVA LABS INC') RETURNING id INTO b;
 
@@ -140,9 +157,11 @@ VALUES ('sec_form_d','ZZ-ER-1','ZZ NOVA LABS INC', current_date, b);
 -- u1 watchlisted BOTH, so repointing collides on UNIQUE(user_id, entity_type,
 -- entity_id). u2 watchlisted ONLY the duplicate and must NOT be collateral
 -- damage — a blanket delete on collision loses their entry entirely.
-INSERT INTO watchlist_items (user_id, entity_type, entity_id) VALUES (u1,'startup',a), (u1,'startup',b);
-INSERT INTO watchlist_items (user_id, entity_type, entity_id) VALUES (u2,'startup',b);
-INSERT INTO watchlist_items (user_id, entity_type, entity_id) VALUES (u2,'investor',b);
+IF have_users THEN
+  INSERT INTO watchlist_items (user_id, entity_type, entity_id) VALUES (u1,'startup',a), (u1,'startup',b);
+  INSERT INTO watchlist_items (user_id, entity_type, entity_id) VALUES (u2,'startup',b);
+  INSERT INTO watchlist_items (user_id, entity_type, entity_id) VALUES (u2,'investor',b);
+END IF;
 
 mid := merge_companies(a, b, a, '{"tier":2}'::jsonb, 'test');
 SELECT * INTO m FROM company_merges WHERE id = mid;
@@ -153,18 +172,23 @@ PERFORM pg_temp.ck('raw_gov_filings repointed',
   (SELECT count(*)::text FROM raw_gov_filings WHERE startup_id = a), '1');
 PERFORM pg_temp.ck('unique collision did NOT abort the merge',
   (SELECT count(*)::text FROM startups WHERE id = b), '0');
-PERFORM pg_temp.ck('polymorphic watchlist repointed, not orphaned',
-  (SELECT count(*)::text FROM watchlist_items WHERE entity_type='startup' AND entity_id = b), '0');
-PERFORM pg_temp.ck('the NON-colliding user keeps their entry',
-  (SELECT (entity_id = a)::text FROM watchlist_items WHERE user_id = u2 AND entity_type='startup'), 'true');
-PERFORM pg_temp.ck('an investor watchlist row is untouched',
-  (SELECT (entity_id = b)::text FROM watchlist_items WHERE user_id = u2 AND entity_type='investor'), 'true');
-PERFORM pg_temp.ck('colliding user ends with one row, not two',
-  (SELECT count(*)::text FROM watchlist_items WHERE user_id = u1), '1');
-PERFORM pg_temp.ck('the collision is recorded, not hidden',
-  (m.repointed::text LIKE '%dropped%')::text, 'true');
-PERFORM pg_temp.ck('  and so is what MOVED, separately',
-  (m.repointed::text LIKE '%moved%')::text, 'true');
+IF have_users THEN
+  PERFORM pg_temp.ck('polymorphic watchlist repointed, not orphaned',
+    (SELECT count(*)::text FROM watchlist_items WHERE entity_type='startup' AND entity_id = b), '0');
+  PERFORM pg_temp.ck('the NON-colliding user keeps their entry',
+    (SELECT (entity_id = a)::text FROM watchlist_items WHERE user_id = u2 AND entity_type='startup'), 'true');
+  PERFORM pg_temp.ck('an investor watchlist row is untouched',
+    (SELECT (entity_id = b)::text FROM watchlist_items WHERE user_id = u2 AND entity_type='investor'), 'true');
+  PERFORM pg_temp.ck('colliding user ends with one row, not two',
+    (SELECT count(*)::text FROM watchlist_items WHERE user_id = u1), '1');
+  PERFORM pg_temp.ck('the collision is recorded, not hidden',
+    (m.repointed::text LIKE '%dropped%')::text, 'true');
+  PERFORM pg_temp.ck('  and so is what MOVED, separately',
+    (m.repointed::text LIKE '%moved%')::text, 'true');
+ELSE
+  -- Loudly, so the CI threshold catches a run that quietly tested less.
+  RAISE NOTICE 'SKIP  6 watchlist assertions — fewer than two auth.users available';
+END IF;
 PERFORM pg_temp.ck('repoint counts recorded', (m.repointed ? 'funding_rounds.startup_id')::text, 'true');
 END $$;
 
