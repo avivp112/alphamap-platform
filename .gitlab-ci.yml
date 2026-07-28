@@ -219,8 +219,8 @@ migrate-database:
         echo "enriched data and is not recoverable from the audit alone."
         exit 1
       fi
-      if [ "$PASSED" -lt 47 ]; then
-        echo "Expected at least 47 assertions, saw $PASSED — the test did not run fully."
+      if [ "$PASSED" -lt 51 ]; then
+        echo "Expected at least 51 assertions, saw $PASSED — the test did not run fully."
         exit 1
       fi
       echo "Entity resolution verified."

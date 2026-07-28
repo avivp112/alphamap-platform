@@ -150,7 +150,7 @@ END $$;
 -- ── Foreign keys, discovered rather than listed ─────────────────────────────
 
 DO $$
-DECLARE a uuid; b uuid; mid uuid; m record; u1 uuid := gen_random_uuid();
+DECLARE a uuid; b uuid; mid uuid; m record; u1 uuid := gen_random_uuid(); u2 uuid := gen_random_uuid();
 BEGIN
 INSERT INTO startups (name, website) VALUES ('ZZ Nova Labs','https://zz-nova.example') RETURNING id INTO a;
 INSERT INTO startups (name) VALUES ('ZZ NOVA LABS INC') RETURNING id INTO b;
@@ -158,10 +158,16 @@ INSERT INTO startups (name) VALUES ('ZZ NOVA LABS INC') RETURNING id INTO b;
 INSERT INTO funding_rounds (startup_id, round_type) VALUES (b,'Pre-Seed');
 INSERT INTO raw_gov_filings (source, accession_number, entity_name, filing_date, startup_id)
 VALUES ('sec_form_d','ZZ-ER-1','ZZ NOVA LABS INC', current_date, b);
--- The same user watchlisted BOTH rows. Repointing violates UNIQUE(user_id,
--- startup_id) — aborting the merge over a duplicate watchlist entry would be
--- absurd, so the collision is resolved and counted.
-INSERT INTO watchlist_items (user_id, startup_id) VALUES (u1, a), (u1, b);
+-- watchlist_items is POLYMORPHIC — entity_id holds a startup or investor id
+-- with no foreign key, so pg_constraint cannot find it. Without explicit
+-- handling a merge leaves these pointing at a deleted row and nothing errors.
+--
+-- u1 watchlisted BOTH, so repointing collides on UNIQUE(user_id, entity_type,
+-- entity_id). u2 watchlisted ONLY the duplicate and must NOT be collateral
+-- damage — a blanket delete on collision loses their entry entirely.
+INSERT INTO watchlist_items (user_id, entity_type, entity_id) VALUES (u1,'startup',a), (u1,'startup',b);
+INSERT INTO watchlist_items (user_id, entity_type, entity_id) VALUES (u2,'startup',b);
+INSERT INTO watchlist_items (user_id, entity_type, entity_id) VALUES (u2,'investor',b);
 
 mid := merge_companies(a, b, a, '{"tier":2}'::jsonb, 'test');
 SELECT * INTO m FROM company_merges WHERE id = mid;
@@ -172,10 +178,18 @@ PERFORM pg_temp.ck('raw_gov_filings repointed',
   (SELECT count(*)::text FROM raw_gov_filings WHERE startup_id = a), '1');
 PERFORM pg_temp.ck('unique collision did NOT abort the merge',
   (SELECT count(*)::text FROM startups WHERE id = b), '0');
-PERFORM pg_temp.ck('one watchlist row survives, not two',
+PERFORM pg_temp.ck('polymorphic watchlist repointed, not orphaned',
+  (SELECT count(*)::text FROM watchlist_items WHERE entity_type='startup' AND entity_id = b), '0');
+PERFORM pg_temp.ck('the NON-colliding user keeps their entry',
+  (SELECT (entity_id = a)::text FROM watchlist_items WHERE user_id = u2 AND entity_type='startup'), 'true');
+PERFORM pg_temp.ck('an investor watchlist row is untouched',
+  (SELECT (entity_id = b)::text FROM watchlist_items WHERE user_id = u2 AND entity_type='investor'), 'true');
+PERFORM pg_temp.ck('colliding user ends with one row, not two',
   (SELECT count(*)::text FROM watchlist_items WHERE user_id = u1), '1');
 PERFORM pg_temp.ck('the collision is recorded, not hidden',
-  (m.repointed::text LIKE '%collided%')::text, 'true');
+  (m.repointed::text LIKE '%dropped%')::text, 'true');
+PERFORM pg_temp.ck('  and so is what MOVED, separately',
+  (m.repointed::text LIKE '%moved%')::text, 'true');
 PERFORM pg_temp.ck('repoint counts recorded', (m.repointed ? 'funding_rounds.startup_id')::text, 'true');
 END $$;
 
@@ -241,6 +255,8 @@ END $$;
 DELETE FROM company_merges
  WHERE surviving_id IN (SELECT id FROM startups WHERE name LIKE 'ZZ %');
 DELETE FROM raw_gov_filings   WHERE accession_number LIKE 'ZZ-%';
+DELETE FROM watchlist_items
+ WHERE entity_id IN (SELECT id FROM startups WHERE name LIKE 'ZZ %');
 DELETE FROM company_identifiers
  WHERE startup_id IN (SELECT id FROM startups WHERE name LIKE 'ZZ %');
 DELETE FROM startups          WHERE name LIKE 'ZZ %';

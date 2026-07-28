@@ -50,6 +50,18 @@
 --   user, one per duplicate company). Those collisions are resolved by deleting
 --   the losing row and counting it, never by aborting the merge.
 --
+--   BUT DISCOVERY HAS A BLIND SPOT, and it is not a small one. A POLYMORPHIC
+--   reference — watchlist_items holds either a startup or an investor id in one
+--   entity_id column — cannot have a foreign key at all, because Postgres
+--   cannot reference two tables from one constraint. pg_constraint therefore
+--   knows nothing about it.
+--
+--   Without explicit handling, merging a company leaves every user's watchlist
+--   entry pointing at a deleted row. Nothing errors; the watchlist just shows a
+--   company that will not open. Those references are listed by hand in the
+--   second repoint loop, and that list has to be maintained — there is nothing
+--   to discover.
+--
 -- ── REVERSIBILITY ───────────────────────────────────────────────────────────
 --   company_merges stores the complete pre-merge row as jsonb. unmerge_company()
 --   restores it. What it CANNOT restore is which dependent rows originally
@@ -120,6 +132,98 @@ COMMENT ON FUNCTION company_richness(uuid) IS
   'Weighted count of populated fields and attached records, weighted by cost-to-reacquire. Decides which row survives a merge, so that gap-fill-only never strands good data in the row being deleted.';
 
 /**
+ * Repoint every row in one table from the merged company to the survivor.
+ *
+ * Returns {"moved": n, "dropped": n}.
+ *
+ * ── WHY THIS IS ROW-AT-A-TIME ON COLLISION ─────────────────────────────────
+ * The obvious implementation is one UPDATE, and on unique_violation delete the
+ * loser's rows. That is wrong, and wrong in a way that quietly loses user data:
+ * a single colliding row aborts the whole statement, and the blanket DELETE
+ * then removes every row for the merged company — including the ones that had
+ * no conflict at all and would have repointed cleanly.
+ *
+ * Observed before the fix: a user who had watchlisted ONLY the duplicate lost
+ * their entry entirely, because a DIFFERENT user happened to have watchlisted
+ * both.
+ *
+ * So the bulk path is tried first (fast, and the common case), and only on a
+ * collision does it fall back to per-row: update what can move, delete only
+ * what genuinely conflicts.
+ */
+CREATE OR REPLACE FUNCTION repoint_startup_refs(
+  p_table     text,
+  p_id_column text,
+  p_survivor  uuid,
+  p_loser     uuid,
+  p_extra_col text DEFAULT NULL,
+  p_extra_val text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_where text;
+  v_pk    text;
+  v_moved bigint := 0;
+  v_drop  bigint := 0;
+  r       record;
+BEGIN
+  IF to_regclass('public.' || p_table) IS NULL THEN
+    RETURN jsonb_build_object('moved', 0, 'dropped', 0);
+  END IF;
+
+  v_where := format('%I = %L', p_id_column, p_loser);
+  IF p_extra_col IS NOT NULL THEN
+    v_where := v_where || format(' AND %I = %L', p_extra_col, p_extra_val);
+  END IF;
+
+  -- Fast path.
+  BEGIN
+    EXECUTE format('UPDATE %I SET %I = %L WHERE %s', p_table, p_id_column, p_survivor, v_where);
+    GET DIAGNOSTICS v_moved = ROW_COUNT;
+    RETURN jsonb_build_object('moved', v_moved, 'dropped', 0);
+  EXCEPTION WHEN unique_violation THEN
+    NULL;  -- fall through
+  END;
+
+  -- Precise path. Needs a single-column primary key to address rows
+  -- individually; without one there is no safe way to be surgical, so the
+  -- blanket behaviour is kept and reported honestly as such.
+  SELECT a.attname INTO v_pk
+    FROM pg_index i
+    JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+   WHERE i.indrelid = ('public.' || p_table)::regclass
+     AND i.indisprimary
+     AND array_length(i.indkey::int[], 1) = 1;
+
+  IF v_pk IS NULL THEN
+    EXECUTE format('DELETE FROM %I WHERE %s', p_table, v_where);
+    GET DIAGNOSTICS v_drop = ROW_COUNT;
+    RETURN jsonb_build_object('moved', 0, 'dropped', v_drop, 'note', 'no single-column PK; blanket delete');
+  END IF;
+
+  FOR r IN EXECUTE format('SELECT %I AS pk FROM %I WHERE %s', v_pk, p_table, v_where)
+  LOOP
+    BEGIN
+      EXECUTE format('UPDATE %I SET %I = %L WHERE %I = %L',
+                     p_table, p_id_column, p_survivor, v_pk, r.pk);
+      v_moved := v_moved + 1;
+    EXCEPTION WHEN unique_violation THEN
+      -- This specific row would duplicate one the survivor already has.
+      EXECUTE format('DELETE FROM %I WHERE %I = %L', p_table, v_pk, r.pk);
+      v_drop := v_drop + 1;
+    END;
+  END LOOP;
+
+  RETURN jsonb_build_object('moved', v_moved, 'dropped', v_drop);
+END;
+$$;
+
+COMMENT ON FUNCTION repoint_startup_refs(text,text,uuid,uuid,text,text) IS
+  'Moves one table''s rows from a merged company to the survivor. Falls back from a bulk UPDATE to per-row on a unique collision, so rows that do NOT conflict are never collateral damage — the failure mode a blanket delete produces silently.';
+
+/**
  * Merge p_merged_id into p_surviving_id. Returns the audit row id.
  *
  * Pass NULL for p_surviving_id to let company_richness() choose — which is the
@@ -151,6 +255,7 @@ DECLARE
   col         text;
   coltype     text;
   n           bigint;
+  v_res       jsonb;
 BEGIN
   IF p_a IS NULL OR p_b IS NULL OR p_a = p_b THEN
     RAISE EXCEPTION 'merge_companies: need two distinct startup ids (got %, %)', p_a, p_b;
@@ -277,21 +382,42 @@ BEGIN
        AND con.confrelid = 'startups'::regclass
        AND con.conrelid <> 'startups'::regclass
   LOOP
-    BEGIN
-      EXECUTE format('UPDATE %s SET %I = $1 WHERE %I = $2', rec.tbl, rec.col, rec.col)
-        USING v_survivor, v_loser;
-      GET DIAGNOSTICS n = ROW_COUNT;
-    EXCEPTION WHEN unique_violation THEN
-      -- Both companies had a row that would collide once repointed — the same
-      -- user watchlisting both, say. Drop the loser's and count it. Aborting
-      -- the whole merge over a duplicate watchlist entry would be absurd.
-      EXECUTE format('DELETE FROM %s WHERE %I = $1', rec.tbl, rec.col) USING v_loser;
-      GET DIAGNOSTICS n = ROW_COUNT;
-      v_repointed := v_repointed || jsonb_build_object(rec.tbl || '.' || rec.col || ' (collided, deleted)', n);
-      CONTINUE;
-    END;
-    IF n > 0 THEN
-      v_repointed := v_repointed || jsonb_build_object(rec.tbl || '.' || rec.col, n);
+    v_res := repoint_startup_refs(
+      regexp_replace(rec.tbl, '^public\.', ''), rec.col, v_survivor, v_loser);
+    IF (v_res->>'moved')::bigint > 0 OR (v_res->>'dropped')::bigint > 0 THEN
+      v_repointed := v_repointed || jsonb_build_object(rec.tbl || '.' || rec.col, v_res);
+    END IF;
+  END LOOP;
+
+  -- ── Polymorphic references, which pg_constraint CANNOT find ───────────────
+  -- The FK sweep above is blind to a column that points at startups without a
+  -- foreign key. That is not an oversight in those tables — watchlist_items
+  -- holds either a startup or an investor id in one column, and Postgres has no
+  -- way to reference two tables from one constraint. The table's own comment
+  -- says as much.
+  --
+  -- The consequence if this loop did not exist: merging a company leaves every
+  -- user's watchlist entry pointing at a row that no longer exists. Nothing
+  -- errors. The watchlist simply shows a company that cannot be opened.
+  --
+  -- This list therefore MUST be maintained by hand — there is nothing in the
+  -- catalogue to discover. A new polymorphic reference to startups has to be
+  -- added here, and the cost of forgetting is silent breakage.
+  FOR rec IN
+    SELECT * FROM (VALUES
+      -- table,                    id column,   discriminator, value for a company
+      ('watchlist_items',          'entity_id', 'entity_type', 'startup'),
+      ('entity_match_candidates',  'left_id',   'left_kind',   'startup')
+      -- company_merges.merged_id is deliberately NOT here: it points at a row
+      -- that has been deleted on purpose, and repointing it would destroy the
+      -- audit trail this whole function depends on.
+    ) AS t(tbl, idcol, typecol, typeval)
+  LOOP
+    v_res := repoint_startup_refs(rec.tbl, rec.idcol, v_survivor, v_loser,
+                                  rec.typecol, rec.typeval);
+    IF (v_res->>'moved')::bigint > 0 OR (v_res->>'dropped')::bigint > 0 THEN
+      v_repointed := v_repointed
+        || jsonb_build_object(rec.tbl || '.' || rec.idcol || ' (polymorphic)', v_res);
     END IF;
   END LOOP;
 
