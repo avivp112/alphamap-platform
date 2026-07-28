@@ -86,16 +86,23 @@ DECLARE rich uuid; thin uuid; mid uuid; m record;
 BEGIN
 
 -- The survivor: enriched by earlier pipelines, at real cost.
-INSERT INTO startups (name, website, description, industry, founded_year, country, founders)
+-- founders is JSONB, not text[] — it was migrated (founders text[] ->
+-- founders_jsonb jsonb -> renamed back). leadership is a jsonb OBJECT, which
+-- must behave differently from the array.
+INSERT INTO startups (name, website, description, industry, founded_year, country,
+                      founders, patent_fields, leadership)
 VALUES ('ZZ Acme Robotics', 'https://zz-acme-robotics.example',
         'Hand-curated description written by an analyst.', 'Robotics', 2024, 'United States',
-        ARRAY['Dana Okonkwo'])
+        '[{"name":"Dana Okonkwo"}]'::jsonb, ARRAY['robotics'], '{"ceo":"Dana Okonkwo"}'::jsonb)
 RETURNING id INTO rich;
 INSERT INTO funding_rounds (startup_id, round_type) VALUES (rich, 'Seed');
 
 -- The duplicate: thin registry stub, but holds two facts the survivor lacks.
-INSERT INTO startups (name, description, founded_year, city, employee_count, founders)
-VALUES ('ZZ ACME ROBOTICS, INC.', 'Registry stub.', 2019, 'Boston', 12, ARRAY['Sam Iyer'])
+INSERT INTO startups (name, description, founded_year, city, employee_count,
+                      founders, patent_fields, leadership)
+VALUES ('ZZ ACME ROBOTICS, INC.', 'Registry stub.', 2019, 'Boston', 12,
+        '[{"name":"Sam Iyer"},{"name":"Dana Okonkwo"}]'::jsonb, ARRAY['control systems'],
+        '{"ceo":"Somebody Else"}'::jsonb)
 RETURNING id INTO thin;
 
 PERFORM pg_temp.ck('richer row scores higher',
@@ -118,12 +125,22 @@ PERFORM pg_temp.ck('empty employee_count WAS filled',
   (SELECT employee_count::text FROM startups WHERE id = rich), '12');
 PERFORM pg_temp.ck('city recorded as FILLED', ('city' = ANY(m.filled_columns))::text, 'true');
 
-PERFORM pg_temp.ck('text arrays UNIONed, nothing lost',
-  (SELECT array_length(founders,1)::text FROM startups WHERE id = rich), '2');
+PERFORM pg_temp.ck('jsonb founders array UNIONed and deduped',
+  (SELECT jsonb_array_length(founders)::text FROM startups WHERE id = rich), '2');
 PERFORM pg_temp.ck('  survivor''s founder retained',
-  (SELECT ('Dana Okonkwo' = ANY(founders))::text FROM startups WHERE id = rich), 'true');
+  (SELECT (founders @> '[{"name":"Dana Okonkwo"}]'::jsonb)::text FROM startups WHERE id = rich), 'true');
 PERFORM pg_temp.ck('  merged founder gained',
-  (SELECT ('Sam Iyer' = ANY(founders))::text FROM startups WHERE id = rich), 'true');
+  (SELECT (founders @> '[{"name":"Sam Iyer"}]'::jsonb)::text FROM startups WHERE id = rich), 'true');
+-- The duplicate entry present in BOTH must not appear twice.
+PERFORM pg_temp.ck('  duplicate founder not doubled',
+  (SELECT count(*)::text FROM startups s, jsonb_array_elements(s.founders) e
+    WHERE s.id = rich AND e->>'name' = 'Dana Okonkwo'), '1');
+PERFORM pg_temp.ck('text[] patent_fields also unioned',
+  (SELECT array_length(patent_fields,1)::text FROM startups WHERE id = rich), '2');
+-- A jsonb OBJECT is not an array: merging two key-by-key would be an overwrite
+-- wearing a different hat, so the survivor's is left alone.
+PERFORM pg_temp.ck('jsonb OBJECT leadership NOT merged',
+  (SELECT leadership->>'ceo' FROM startups WHERE id = rich), 'Dana Okonkwo');
 
 PERFORM pg_temp.ck('duplicate row is gone', (SELECT count(*)::text FROM startups WHERE id = thin), '0');
 PERFORM pg_temp.ck('snapshot captured for reversal',

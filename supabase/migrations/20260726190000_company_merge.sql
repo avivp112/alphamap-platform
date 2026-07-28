@@ -17,9 +17,20 @@
 --   registry's blank-ish one destroys work that cost real money, and does it
 --   silently. Filling a gap can only add.
 --
---   Text arrays are the one exception, and they are still additive: founders,
---   patent_fields and similar are UNIONed rather than replaced, because a union
---   is strictly richer and cannot lose anything the survivor had.
+--   ARRAYS are the exception, and they are still additive: text[] and jsonb
+--   arrays are UNIONed rather than replaced, because a union is strictly richer
+--   and cannot lose anything the survivor had. jsonb OBJECTS are not merged —
+--   combining two objects key-by-key means picking a winner per key, which is
+--   an overwrite wearing a different hat.
+--
+--   KNOWN LIMITATION of gap-fill-only, worth stating rather than discovering:
+--   a column with a NOT NULL default is never "empty", so it never fills. If
+--   the survivor has is_serial_founder = false (the default, meaning nobody
+--   looked) and the merged row has true (meaning somebody did), the false wins
+--   and the finding is lost. Distinguishing "checked and false" from "never
+--   checked" is impossible without a third state, and inferring one would
+--   violate the never-overwrite rule outright. Such columns appear in
+--   skipped_columns, so the loss is at least visible in the audit.
 --
 -- ── WHICH ROW SURVIVES IS COMPUTED, NOT CHOSEN ──────────────────────────────
 --   company_richness() counts populated fields, weighting the expensive ones —
@@ -187,7 +198,11 @@ BEGIN
        AND a.attnum > 0
        AND NOT a.attisdropped
        AND a.attgenerated = ''
-       AND a.attname NOT IN ('id', 'created_at', 'updated_at')
+       -- search_tsv is derived from other columns by trigger and regenerates
+       -- itself on the updated_at write at the end of this function. Copying a
+       -- stale one in would make the survivor briefly searchable under the
+       -- merged company's terms and is pure noise.
+       AND a.attname NOT IN ('id', 'created_at', 'updated_at', 'search_tsv')
      ORDER BY a.attnum
   LOOP
     col     := rec.column_name;
@@ -210,6 +225,33 @@ BEGIN
          ) WHERE id = $1', col, col, col)
         USING v_survivor, v_snapshot;
       v_filled := v_filled || (col || ' (union)');
+
+    ELSIF coltype = 'jsonb'
+      AND jsonb_typeof(v_snapshot->col) = 'array'
+      AND jsonb_typeof(v_survivor_row->col) = 'array' THEN
+      -- jsonb ARRAYS union too, for the same reason text arrays do.
+      --
+      -- This branch exists because `founders` is jsonb, not text[] — it was
+      -- migrated (founders text[] -> founders_jsonb jsonb -> renamed back).
+      -- Without it, founders fell through to gap-fill-only and a merge silently
+      -- discarded every founder the survivor did not already list. Which is
+      -- precisely the data loss the gap-fill rule exists to prevent, arriving
+      -- through the one column most likely to matter.
+      --
+      -- Deliberately array-only, checked at RUN TIME rather than by column
+      -- type: `leadership`, `data_sources` and `investor_amounts` are jsonb
+      -- OBJECTS, and merging two objects key-by-key means choosing a winner per
+      -- key — an overwrite by another name. Objects stay gap-fill-only.
+      EXECUTE format(
+        'UPDATE startups SET %I = (
+           SELECT jsonb_agg(DISTINCT e) FROM (
+             SELECT jsonb_array_elements(%I) AS e FROM startups WHERE id = $1
+             UNION
+             SELECT jsonb_array_elements($2->%L)
+           ) u
+         ) WHERE id = $1', col, col, col)
+        USING v_survivor, v_snapshot;
+      v_filled := v_filled || (col || ' (jsonb union)');
 
     ELSIF v_survivor_row->>col IS NULL OR btrim(coalesce(v_survivor_row->>col, '')) = '' THEN
       -- THE GAP FILL. Only ever writes into a hole.
