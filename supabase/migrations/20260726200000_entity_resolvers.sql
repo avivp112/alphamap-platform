@@ -391,7 +391,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION decide_match_candidate(uuid, text, text, uuid) IS
-  'Reviewer decision on a queued pair. Confirm merges it; reject records the refusal so the resolver never proposes that pair again. The candidate row is marked BEFORE the merge, because the merge can cascade-delete the candidate itself.';
+  'Reviewer decision on a queued pair. Confirm merges it; reject records the refusal so the resolver never proposes that pair again. A confirmed candidate row does NOT survive its own merge (right_startup_id cascades) — the durable record is the company_merges row, whose evidence carries the candidate id and tier.';
 
 REVOKE ALL ON FUNCTION strong_identity_groups()                     FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION resolve_tier1(integer, boolean, text)        FROM PUBLIC, anon, authenticated;
