@@ -249,8 +249,8 @@ migrate-database:
         echo "the product and cannot be undone from the audit alone."
         exit 1
       fi
-      if [ "$PASSED" -lt 40 ]; then
-        echo "Expected at least 40 assertions, saw $PASSED — the test did not run fully."
+      if [ "$PASSED" -lt 41 ]; then
+        echo "Expected at least 41 assertions, saw $PASSED — the test did not run fully."
         exit 1
       fi
       echo "Entity resolvers verified."

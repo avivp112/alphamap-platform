@@ -62,17 +62,33 @@ BEGIN
         WHERE value = 'zr-helio.example'), 'false'));
 
     -- Dry run must change nothing.
-    dry := resolve_tier1(50, true, 'test');
-    res := array_append(res, pg_temp.mk('dry run reports the merges', (dry->>'merges'), '2'));
+    --
+    -- NOTE the scoping. resolve_tier1() operates on the WHOLE database, so on a
+    -- populated one its totals include the real backlog — the first run of this
+    -- test against production reported 18 merges, being 16 genuine redundant
+    -- rows plus these 2. Asserting on the global count tests the data, not the
+    -- code, and fails differently every week. Every count below is therefore
+    -- filtered to this section's own fixtures.
+    dry := resolve_tier1(500, true, 'test');
+    res := array_append(res, pg_temp.mk('dry run reports THIS fixture''s merges',
+      (SELECT count(*)::text FROM jsonb_array_elements(dry->'detail') e
+        WHERE e->>'survivor' = a::text), '2'));
+    res := array_append(res, pg_temp.mk('  and names the absorbed rows',
+      (SELECT count(*)::text FROM jsonb_array_elements(dry->'detail') e
+        WHERE e->>'survivor' = a::text AND e->>'merged' IN (b::text, c::text)), '2'));
     res := array_append(res, pg_temp.mk('dry run flagged as such', (dry->>'dry_run'), 'true'));
     res := array_append(res, pg_temp.mk('DRY RUN CHANGED NOTHING',
       (SELECT count(*)::text FROM startups WHERE id IN (a,b,c)), '3'));
     res := array_append(res, pg_temp.mk('  and wrote no audit rows',
       (SELECT count(*)::text FROM entity_match_candidates WHERE right_startup_id IN (a,b,c)), '0'));
 
-    -- For real.
-    wet := resolve_tier1(50, false, 'test');
-    res := array_append(res, pg_temp.mk('executed the merges', (wet->>'merges'), '2'));
+    -- For real. On a populated database this genuinely merges the real backlog
+    -- too — and the enclosing subtransaction rolls all of it back, which is the
+    -- entire reason this test can be run against production at all.
+    wet := resolve_tier1(500, false, 'test');
+    res := array_append(res, pg_temp.mk('executed THIS fixture''s merges',
+      (SELECT count(*)::text FROM jsonb_array_elements(wet->'detail') e
+        WHERE e->>'survivor' = a::text), '2'));
     res := array_append(res, pg_temp.mk('three rows collapsed to one',
       (SELECT count(*)::text FROM startups WHERE id IN (a,b,c)), '1'));
     -- The enriched row had a description, industry and founded_year; the others
