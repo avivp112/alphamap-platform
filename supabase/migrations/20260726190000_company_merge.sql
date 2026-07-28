@@ -504,6 +504,12 @@ COMMENT ON FUNCTION unmerge_company(uuid, text) IS
   'Restores a merged-away company from its snapshot. Does NOT restore repointed dependent rows — a foreign key holds one value and the old one is gone — nor un-fill columns, since later enrichment may have refined them. A safety net for a wrong pairing, not a transaction rollback.';
 
 REVOKE ALL ON FUNCTION company_richness(uuid) FROM PUBLIC, anon;
+-- SECURITY INVOKER, so it cannot exceed the caller's own rights — but it is a
+-- dynamic-SQL surface that exists only to serve merge_companies(), and inside
+-- that SECURITY DEFINER function it runs as the definer regardless of grants.
+-- Nothing outside should be able to reach it.
+REVOKE ALL ON FUNCTION repoint_startup_refs(text,text,uuid,uuid,text,text)
+  FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION merge_companies(uuid, uuid, uuid, jsonb, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION unmerge_company(uuid, text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION company_richness(uuid) TO service_role, authenticated;

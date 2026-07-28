@@ -13,4 +13,5 @@
 
 DROP FUNCTION IF EXISTS unmerge_company(uuid, text);
 DROP FUNCTION IF EXISTS merge_companies(uuid, uuid, uuid, jsonb, text);
+DROP FUNCTION IF EXISTS repoint_startup_refs(text, text, uuid, uuid, text, text);
 DROP FUNCTION IF EXISTS company_richness(uuid);

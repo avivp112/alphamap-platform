@@ -24,7 +24,13 @@
 --     DELETE FROM company_merges
 --      WHERE surviving_id IN (SELECT id FROM startups WHERE name LIKE 'ZZ %');
 --     DELETE FROM raw_gov_filings WHERE accession_number LIKE 'ZZ-%';
+--     DELETE FROM watchlist_items WHERE user_id IN (
+--       SELECT user_id FROM watchlist_items
+--        WHERE entity_id IN (SELECT id FROM startups WHERE name LIKE 'ZZ %'));
 --     DELETE FROM startups        WHERE name LIKE 'ZZ %';
+--
+--   Run them in that order — startups last, since deleting it first strands the
+--   watchlist rows the third statement finds by joining against it.
 --
 --   Prefer the psql version, or the CI job that already runs it on every
 --   deploy. This exists for when neither is available.
@@ -255,8 +261,16 @@ END $$;
 DELETE FROM company_merges
  WHERE surviving_id IN (SELECT id FROM startups WHERE name LIKE 'ZZ %');
 DELETE FROM raw_gov_filings   WHERE accession_number LIKE 'ZZ-%';
+-- Scoped by USER, not by entity_id. One fixture row is entity_type='investor'
+-- pointing at a startup id that the merge has already deleted, so matching on
+-- 'entity_id IN (SELECT id FROM startups ...)' misses it and leaves a stray row
+-- in a user-facing table. Matching on the users who watchlisted a 'ZZ ' company
+-- catches every row they own. It cannot touch a real user: no real account has a
+-- watchlist entry pointing at a 'ZZ ' fixture.
 DELETE FROM watchlist_items
- WHERE entity_id IN (SELECT id FROM startups WHERE name LIKE 'ZZ %');
+ WHERE user_id IN (
+   SELECT user_id FROM watchlist_items
+    WHERE entity_id IN (SELECT id FROM startups WHERE name LIKE 'ZZ %'));
 DELETE FROM company_identifiers
  WHERE startup_id IN (SELECT id FROM startups WHERE name LIKE 'ZZ %');
 DELETE FROM startups          WHERE name LIKE 'ZZ %';
