@@ -199,6 +199,32 @@ migrate-database:
       fi
       echo "Scoring verified."
 
+    # ── Entity resolution tests ─────────────────────────────────────────────
+    # merge_companies() deletes rows and rewrites foreign keys. The gap-fill
+    # contract — enrichment is never overwritten — is invisible in review and
+    # only observable by running it. Same failure handling as above.
+    - |
+      echo "Running supabase/tests/entity_resolution.test.sql"
+      OUT=$(psql "$SUPABASE_DB_URL" -f supabase/tests/entity_resolution.test.sql 2>&1) && RC=0 || RC=$?
+      echo "$OUT"
+      if [ "$RC" != "0" ]; then
+        echo "psql exited $RC — the test could not run (see output above)."
+        exit 1
+      fi
+      FAILED=$(printf '%s' "$OUT" | grep -c 'FAIL  ' || true)
+      PASSED=$(printf '%s' "$OUT" | grep -c 'PASS  ' || true)
+      echo "entity_resolution: $PASSED passed, $FAILED failed"
+      if [ "$FAILED" != "0" ]; then
+        echo "Merge/resolution assertions FAILED. A bad merge silently destroys"
+        echo "enriched data and is not recoverable from the audit alone."
+        exit 1
+      fi
+      if [ "$PASSED" -lt 44 ]; then
+        echo "Expected at least 44 assertions, saw $PASSED — the test did not run fully."
+        exit 1
+      fi
+      echo "Entity resolution verified."
+
 deploy-public-market-functions:
   stage: deploy
   # Never ship functions against a schema that failed to migrate.
@@ -262,3 +288,57 @@ deploy-public-market-functions:
     - deploy_fn ingest-huggingface
     - deploy_fn ingest-github-velocity
     - deploy_fn ingest-epo-ops
+
+# ── Embedding backfill ────────────────────────────────────────────────────────
+# Runs on a SCHEDULE, never on the manual deploy pipeline. Two reasons: it costs
+# real OpenAI money per row, and it walks the whole corpus — attaching that to
+# every deploy would make shipping a code change slow and expensive for no
+# reason.
+#
+# Set up once: GitLab -> Build -> Pipeline schedules -> New schedule, daily,
+# with a variable SCHEDULED_TASK = embeddings.
+#
+# Needs OPENAI_API_KEY, SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY as masked
+# CI/CD variables (the script reads them from the environment).
+#
+# The script is incremental by design: rows are ordered embedding_updated_at
+# NULLS FIRST so never-embedded rows go first, and each row's source text is
+# hashed so unchanged rows are skipped without an API call. Re-running is cheap;
+# missing a day is harmless.
+#
+# This exists because backfill_embeddings.ts was written, committed, and never
+# wired to anything — so `startups.embedding` was only as current as the last
+# time somebody ran it by hand. The semantic tier of entity resolution has no
+# input without it.
+backfill-embeddings:
+  stage: migrate
+  image: node:20-slim
+  rules:
+    - if: '$SCHEDULED_TASK == "embeddings"'
+  before_script:
+    - npm ci --prefer-offline --no-audit --no-fund || npm install
+  script:
+    - |
+      for v in OPENAI_API_KEY SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY; do
+        eval "val=\$$v"
+        if [ -z "$val" ]; then
+          echo "$v is not set — cannot embed. Add it under Settings -> CI/CD -> Variables (masked)."
+          exit 1
+        fi
+      done
+    # DRY_RUN defaults to true in the script, which is the right default for a
+    # human running it by hand and the wrong one for a scheduled job.
+    - DRY_RUN=false TABLE=both npx tsx scripts/backfill_embeddings.ts
+    - |
+      echo "Embedding coverage after the run:"
+      apt-get update -qq && apt-get install -y -qq --no-install-recommends postgresql-client >/dev/null
+      if [ -n "$SUPABASE_DB_URL" ]; then
+        psql "$SUPABASE_DB_URL" -c "
+          SELECT 'startups' AS t, count(*) AS rows, count(embedding) AS embedded,
+                 round(100.0 * count(embedding) / nullif(count(*),0), 1) AS pct
+            FROM startups
+          UNION ALL
+          SELECT 'investors', count(*), count(embedding),
+                 round(100.0 * count(embedding) / nullif(count(*),0), 1)
+            FROM investors;"
+      fi
