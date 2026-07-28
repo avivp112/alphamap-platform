@@ -28,22 +28,15 @@
 --
 --   Prefer the psql version, or the CI job that already runs it on every
 --   deploy. This exists for when neither is available.
--- =============================================================================
-
--- =============================================================================
--- Tests for the entity resolution layer.
+-- ── WHAT IS BEING TESTED ────────────────────────────────────────────────────
+--   merge_companies() is the most destructive operation in this codebase: it
+--   deletes a company row and rewrites foreign keys across every dependent
+--   table. The contract it must never break is GAP-FILL ONLY — enrichment that
+--   cost real money survives a merge untouched. That contract is invisible when
+--   reading the function and only observable by running it.
 --
--- Run:  psql "$SUPABASE_DB_URL" -f supabase/tests/entity_resolution.test.sql
---
--- SAFE ON A LIVE DATABASE. Wrapped in BEGIN ... ROLLBACK; nothing persists.
---
--- merge_companies() is the most destructive operation in this codebase: it
--- deletes a company row and rewrites foreign keys across every dependent table.
--- The contract it must never break is GAP-FILL ONLY — enrichment that cost real
--- money survives a merge untouched. That contract is invisible when reading the
--- function and only observable by running it, which is what this file does.
+--   Requires migrations 20260726180000 and 20260726190000.
 -- =============================================================================
-
 
 DROP TABLE IF EXISTS er_test_results;
 CREATE TEMP TABLE er_test_results (seq serial, check_name text, got text, want text, ok boolean);
