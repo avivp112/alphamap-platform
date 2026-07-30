@@ -111,6 +111,27 @@ res := array_append(res, pg_temp.mk('port stripped', registrable_domain('http://
 res := array_append(res, pg_temp.mk('no dot -> null', registrable_domain('localhost'), NULL));
 res := array_append(res, pg_temp.mk('domain: empty -> null', registrable_domain(''), NULL));
 
+-- ── The public-suffix regression ────────────────────────────────────────────
+-- These four exist because this file passed 51/51 while registrable_domain()
+-- was reducing deepbio.co.kr to 'co.kr'. The tier-1 dry run then proposed
+-- merging DeepBio, Spacebit and Timely AI into one company, and Inventchip,
+-- Flagchip, Innoscience and Tinychip into another — seven unrelated companies,
+-- caught only because resolve_tier1() defaults to a dry run.
+--
+-- The old suffix list covered co.uk and com.br but not co.kr or com.cn, and
+-- anything unlisted fell through to "last two labels". Test the suffixes the
+-- corpus actually contains, not the ones that were easy to think of.
+res := array_append(res, pg_temp.mk('KR: co.kr is a suffix, not a domain',
+  registrable_domain('https://deepbio.co.kr'), 'deepbio.co.kr'));
+res := array_append(res, pg_temp.mk('CN: com.cn likewise',
+  registrable_domain('http://inventchip.com.cn:8443/x'), 'inventchip.com.cn'));
+res := array_append(res, pg_temp.mk('a bare public suffix -> null',
+  registrable_domain('co.kr'), NULL));
+-- The list can only ever be incomplete, so the unlisted case must fail CLOSED.
+-- NULL loses a match; a bare suffix loses a company.
+res := array_append(res, pg_temp.mk('UNKNOWN suffix fails closed, not open',
+  registrable_domain('https://foo.co.zz'), NULL));
+
 PERFORM pg_temp.flush(res);
 END $$;
 
