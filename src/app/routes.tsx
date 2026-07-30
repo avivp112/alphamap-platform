@@ -13,6 +13,9 @@ import { PrivateEquity } from "./pages/PrivateEquity";
 import { PublicMarket } from "./pages/PublicMarket";
 import { Pricing } from "./pages/Pricing";
 import { AboutUs } from "./pages/AboutUs";
+import { ContactUs } from "./pages/ContactUs";
+import { TermsOfUse } from "./pages/TermsOfUse";
+import { PrivacyPolicy } from "./pages/PrivacyPolicy";
 import { Checkout } from "./pages/Checkout";
 import { Profile } from "./pages/Profile";
 import { Watchlist } from "./pages/Watchlist";
@@ -55,6 +58,9 @@ export const router = createBrowserRouter([
   { path: "/private-equity", Component: PrivateEquity, loader: requireAuth },
   { path: "/pricing",    Component: Pricing },
   { path: "/about",      Component: AboutUs },
+  { path: "/contact",    Component: ContactUs },
+  { path: "/terms",      Component: TermsOfUse },
+  { path: "/privacy",    Component: PrivacyPolicy },
   { path: "/checkout/:plan", Component: Checkout },
   { path: "/profile",    Component: Profile, loader: requireAuth },
   { path: "/watchlist",  Component: Watchlist, loader: requireAuth },

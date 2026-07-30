@@ -737,5 +737,39 @@
       "AlphaMap was built upon deep expertise in business analysis, strategic planning, and advanced financial modeling. Grounded in a practical understanding of the challenges inherent in high-level strategy, complex analytics, and growth identification, the system was engineered to replace manual, fragmented processes with sharp, precise analytical logic.",
       "Integrating core capabilities tailored specifically for decision-makers, the platform equips investors and enterprises with the robust data infrastructure, transparency, and confidence required to drive successful business operations in a dynamic global environment."
     ]
+  },
+  "contact": {
+    "title": "Get in Touch",
+    "subtitle": "Have a question, a partnership idea, or feedback? Tell us what's on your mind — a real person reads every message.",
+    "topics": {
+      "general": "General Inquiry",
+      "partnership": "Partnership",
+      "press": "Press & Media",
+      "support": "Support",
+      "enterprise": "Enterprise Sales"
+    },
+    "reasons": {
+      "general": "Questions about AlphaMap, feedback, or anything else on your mind.",
+      "partnership": "Explore integrations, data partnerships, or ways to work together.",
+      "press": "Media inquiries, interview requests, or press materials.",
+      "support": "Need help with your account or ran into an issue? We're on it.",
+      "enterprise": "Looking for team seats or a custom plan? Let's talk."
+    },
+    "form": {
+      "name": "Name",
+      "namePlaceholder": "Jane Doe",
+      "email": "Email",
+      "emailPlaceholder": "jane@company.com",
+      "topic": "What's this about?",
+      "message": "Message",
+      "messagePlaceholder": "Tell us a bit more…",
+      "messageRequired": "Please enter a message",
+      "submit": "Send Message",
+      "sending": "Sending…",
+      "successTitle": "Message sent",
+      "successBody": "Thanks for reaching out — we'll get back to you soon.",
+      "sendAnother": "Send another message",
+      "errorGeneric": "Something went wrong. Please try again."
+    }
   }
 }

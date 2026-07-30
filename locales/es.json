@@ -737,5 +737,39 @@
       "AlphaMap se construyó sobre una profunda experiencia en análisis de negocio, planificación estratégica y modelado financiero avanzado. Basado en una comprensión práctica de los desafíos inherentes a la estrategia de alto nivel, la analítica compleja y la identificación de crecimiento, el sistema fue diseñado para sustituir procesos manuales y fragmentados por una lógica analítica precisa y rigurosa.",
       "Integrando capacidades clave diseñadas específicamente para quienes toman decisiones, la plataforma dota a inversores y empresas de la infraestructura de datos robusta, la transparencia y la confianza necesarias para impulsar operaciones de negocio exitosas en un entorno global dinámico."
     ]
+  },
+  "contact": {
+    "title": "Ponte en contacto",
+    "subtitle": "¿Tienes una pregunta, una idea de colaboración o comentarios? Cuéntanos qué necesitas: una persona real lee cada mensaje.",
+    "topics": {
+      "general": "Consulta general",
+      "partnership": "Colaboraciones",
+      "press": "Prensa y medios",
+      "support": "Soporte",
+      "enterprise": "Ventas empresariales"
+    },
+    "reasons": {
+      "general": "Preguntas sobre AlphaMap, comentarios o cualquier otra cosa.",
+      "partnership": "Explora integraciones, colaboraciones de datos o formas de trabajar juntos.",
+      "press": "Consultas de prensa, solicitudes de entrevistas o materiales de prensa.",
+      "support": "¿Necesitas ayuda con tu cuenta o tuviste un problema? Estamos en ello.",
+      "enterprise": "¿Buscas puestos para tu equipo o un plan personalizado? Hablemos."
+    },
+    "form": {
+      "name": "Nombre",
+      "namePlaceholder": "Jane Doe",
+      "email": "Correo electrónico",
+      "emailPlaceholder": "jane@empresa.com",
+      "topic": "¿Sobre qué es esto?",
+      "message": "Mensaje",
+      "messagePlaceholder": "Cuéntanos un poco más…",
+      "messageRequired": "Por favor, escribe un mensaje",
+      "submit": "Enviar mensaje",
+      "sending": "Enviando…",
+      "successTitle": "Mensaje enviado",
+      "successBody": "Gracias por escribirnos. Te responderemos pronto.",
+      "sendAnother": "Enviar otro mensaje",
+      "errorGeneric": "Algo salió mal. Inténtalo de nuevo."
+    }
   }
 }

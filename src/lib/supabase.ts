@@ -603,3 +603,28 @@ export async function ingestStartup(companyName: string): Promise<{ startup: Sta
     funding_round: json.funding_round ?? null,
   };
 }
+
+export type ContactTopic = "general" | "partnership" | "press" | "support" | "enterprise";
+
+export interface ContactMessageInput {
+  name: string;
+  email: string;
+  topic: ContactTopic;
+  message: string;
+}
+
+export async function submitContactMessage(input: ContactMessageInput): Promise<void> {
+  const res = await fetch(
+    `${supabaseUrl}/functions/v1/send-contact-message`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${supabaseAnonKey}`,
+      },
+      body: JSON.stringify(input),
+    },
+  );
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? `Request failed (${res.status})`);
+}

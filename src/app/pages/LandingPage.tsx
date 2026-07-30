@@ -19,10 +19,11 @@ import { homePathNow } from "../../lib/navHome";
 // ── Shared dark section (CTA + footer) ───────────────────────────────────────
 const DARK_SECTION_BG = "#242322";
 const FOOTER_LINK_KEYS = ["about", "privacy", "terms", "contact"] as const;
-// Only "about" points at a real page so far — the rest stay inert (href="#")
-// until those pages exist.
-const FOOTER_LINK_PATHS: Partial<Record<(typeof FOOTER_LINK_KEYS)[number], string>> = {
+const FOOTER_LINK_PATHS: Record<(typeof FOOTER_LINK_KEYS)[number], string> = {
   about: "/about",
+  privacy: "/privacy",
+  terms: "/terms",
+  contact: "/contact",
 };
 
 // ── Hero typewriter copy ─────────────────────────────────────────────────────

@@ -735,5 +735,39 @@
       "AlphaMap 建立在深厚的商业分析、战略规划和高级财务建模专业知识之上。基于对高层次战略、复杂分析和增长识别中固有挑战的深刻理解，该系统旨在以精准严密的分析逻辑取代手动、零散的流程。",
       "通过整合专为决策者量身定制的核心能力，该平台为投资者和企业提供强大的数据基础设施、透明度和信心，助力其在动态的全球环境中开展成功的业务运营。"
     ]
+  },
+  "contact": {
+    "title": "联系我们",
+    "subtitle": "有疑问、合作想法或反馈吗？告诉我们您的想法——每一条消息都会有专人查看。",
+    "topics": {
+      "general": "一般咨询",
+      "partnership": "合作洽谈",
+      "press": "媒体与新闻",
+      "support": "支持",
+      "enterprise": "企业销售"
+    },
+    "reasons": {
+      "general": "有关 AlphaMap 的问题、反馈或其他任何想法。",
+      "partnership": "探讨集成、数据合作或其他合作方式。",
+      "press": "媒体咨询、采访请求或新闻资料索取。",
+      "support": "账户遇到问题或需要帮助？我们随时为您解决。",
+      "enterprise": "需要团队席位或定制方案？欢迎联系我们。"
+    },
+    "form": {
+      "name": "姓名",
+      "namePlaceholder": "张三",
+      "email": "电子邮箱",
+      "emailPlaceholder": "zhangsan@company.com",
+      "topic": "咨询主题",
+      "message": "留言内容",
+      "messagePlaceholder": "请详细描述您的需求……",
+      "messageRequired": "请输入留言内容",
+      "submit": "发送消息",
+      "sending": "发送中…",
+      "successTitle": "消息已发送",
+      "successBody": "感谢您的联系，我们会尽快回复您。",
+      "sendAnother": "发送另一条消息",
+      "errorGeneric": "出现问题，请重试。"
+    }
   }
 }
