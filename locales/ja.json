@@ -16,6 +16,7 @@
     "settings": "設定",
     "soon": "近日公開",
     "toggleNavigation": "ナビゲーションの表示切替",
+    "goHome": "ホームページへ移動",
     "closeNavigation": "ナビゲーションを閉じる"
   },
   "header": {
@@ -717,5 +718,13 @@
     "bubbleSize": "バブルの大きさ = 従業員数",
     "capitalPerEmployee": "従業員あたり資本",
     "proxyMultiple": "代理倍率"
+  },
+  "errors": {
+    "notFoundTitle": "ページが見つかりません",
+    "notFoundBody": "そのアドレスに該当するものはありません。移動したか、リンクが不完全な可能性があります。",
+    "crashTitle": "問題が発生しました",
+    "crashBody": "このページを読み込めませんでした。再試行すると解決することが多いですが、繰り返す場合はお知らせください。",
+    "goHome": "ホームへ",
+    "goBack": "戻る"
   }
 }

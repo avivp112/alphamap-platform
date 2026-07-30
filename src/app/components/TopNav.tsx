@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Search, Bell, User, Menu, ChevronDown, UserCircle, LogOut } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { homePathNow } from '../../lib/navHome';
 import { BrandMark, BrandWordmark } from './BrandMark';
 import { LanguageSelector } from './LanguageSelector';
 
@@ -100,10 +101,17 @@ export function TopNav({ onMenuToggle }: TopNavProps) {
         >
           <Menu className="h-6 w-6" />
         </button>
-        <div className="flex items-center gap-2">
+        {/* Was a plain <div>, so clicking it did nothing — the one thing every
+            visitor tries when they want to get back. */}
+        <button
+          type="button"
+          onClick={async () => navigate(await homePathNow("/"))}
+          aria-label={t('nav.goHome')}
+          className="flex items-center gap-2 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/30"
+        >
           <BrandMark size={32} />
           <BrandWordmark className="text-xl tracking-tight text-[#111827] hidden sm:block" />
-        </div>
+        </button>
       </div>
 
       {/* Search Bar */}

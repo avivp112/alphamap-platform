@@ -14,6 +14,7 @@ import { useTranslation } from "react-i18next";
 import { BrandMark, BrandWordmark } from "../components/BrandMark";
 import { LanguageSelector } from "../components/LanguageSelector";
 import { stageLabel, sectorLabel } from "../../lib/taxonomy";
+import { homePathNow } from "../../lib/navHome";
 
 // ── Shared dark section (CTA + footer) ───────────────────────────────────────
 const DARK_SECTION_BG = "#242322";
@@ -931,11 +932,17 @@ export function LandingPage() {
           transition:    "background 400ms ease, border-color 400ms ease, box-shadow 400ms ease",
         }}
       >
-        {/* Logo */}
-        <div className="flex items-center gap-2.5">
+        {/* Logo — clickable, like every other site's logo. A signed-out
+            visitor is already home, so this just returns them to the top. */}
+        <button
+          type="button"
+          onClick={async () => navigate(await homePathNow("/"))}
+          aria-label={t("nav.goHome")}
+          className="flex items-center gap-2.5 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/30"
+        >
           <BrandMark size={32} />
           <BrandWordmark className="text-xl tracking-tight text-[#0F172A]" />
-        </div>
+        </button>
 
         {/* Nav */}
         <div className="flex items-center gap-3 sm:gap-5">
@@ -949,8 +956,12 @@ export function LandingPage() {
           >
             {t("header.logIn")}
           </button>
+          {/* Signed in -> the dashboard they already have. Signed out ->
+              /pricing to choose a plan. Previously this always went to
+              /pricing, so an existing customer clicking "View Dashboard" was
+              shown a plan picker instead of their dashboard. */}
           <button
-            onClick={() => navigate("/pricing")}
+            onClick={async () => navigate(await homePathNow("/pricing"))}
             className="rounded-full px-5 py-2.5 text-sm font-semibold transition-all duration-300 bg-white border border-black/10 text-[#111827] shadow-[0_1px_4px_rgba(0,0,0,0.08)] hover:bg-gray-50"
           >
             {t("landing.viewDashboard")}

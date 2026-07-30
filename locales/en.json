@@ -16,6 +16,7 @@
     "settings": "Settings",
     "soon": "Soon",
     "toggleNavigation": "Toggle navigation",
+    "goHome": "Go to home page",
     "closeNavigation": "Close navigation"
   },
   "header": {
@@ -719,5 +720,13 @@
     "bubbleSize": "Bubble size = headcount",
     "capitalPerEmployee": "Capital / Employee",
     "proxyMultiple": "Proxy multiple"
+  },
+  "errors": {
+    "notFoundTitle": "Page not found",
+    "notFoundBody": "That address doesn't match anything here. It may have moved, or the link may be incomplete.",
+    "crashTitle": "Something went wrong",
+    "crashBody": "This page failed to load. Trying again often works; if it keeps happening, let us know.",
+    "goHome": "Go home",
+    "goBack": "Go back"
   }
 }

@@ -16,6 +16,7 @@
     "settings": "设置",
     "soon": "即将推出",
     "toggleNavigation": "展开或收起导航",
+    "goHome": "前往主页",
     "closeNavigation": "关闭导航"
   },
   "header": {
@@ -717,5 +718,13 @@
     "bubbleSize": "气泡大小 = 员工人数",
     "capitalPerEmployee": "人均资本",
     "proxyMultiple": "代理倍数"
+  },
+  "errors": {
+    "notFoundTitle": "未找到页面",
+    "notFoundBody": "该地址在此没有对应内容。页面可能已移动，或链接不完整。",
+    "crashTitle": "出现问题",
+    "crashBody": "此页面加载失败。重试通常可以解决；若持续出现，请告知我们。",
+    "goHome": "返回主页",
+    "goBack": "返回"
   }
 }
