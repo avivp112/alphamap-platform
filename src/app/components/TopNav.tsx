@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { Search, Bell, User, Menu, ChevronDown, UserCircle, LogOut } from 'lucide-react';
+import { Bell, User, Menu, ChevronDown, UserCircle, LogOut } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { homePathNow } from '../../lib/navHome';
 import { BrandMark, BrandWordmark } from './BrandMark';
@@ -92,7 +92,7 @@ export function TopNav({ onMenuToggle, showMenuToggle = true }: TopNavProps) {
   const initials = user ? getInitials(user) : null;
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-gray-200 bg-white px-4 lg:px-6 shadow-sm">
+    <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-white bg-white px-4 lg:px-6 shadow-sm">
       {/* Hamburger & Logo */}
       <div className="flex items-center gap-3">
         {showMenuToggle && (
@@ -117,30 +117,8 @@ export function TopNav({ onMenuToggle, showMenuToggle = true }: TopNavProps) {
         </button>
       </div>
 
-      {/* Search Bar */}
-      <div className="hidden md:flex flex-1 items-center justify-center px-8">
-        <div className="relative w-full max-w-2xl">
-          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-            <Search className="h-4 w-4 text-gray-400" />
-          </div>
-          <input
-            type="text"
-            className="block w-full rounded-full border-0 bg-[#F3F4F6] py-2 pl-10 pr-4 text-sm text-[#111827] placeholder:text-gray-500 focus:bg-white focus:ring-2 focus:ring-[#0F172A]/20 sm:text-sm sm:leading-6 transition-all duration-200 ease-in-out"
-            placeholder={t('header.searchPlaceholder')}
-            aria-label={t('header.search')}
-          />
-        </div>
-      </div>
-
       {/* Profile & Notifications */}
       <div className="flex items-center gap-2 sm:gap-4">
-        <button
-          aria-label={t('header.search')}
-          className="md:hidden rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-[#111827] transition-colors"
-        >
-          <Search className="h-5 w-5" />
-        </button>
-
         {/* Available signed in or out — a visitor reading the marketing copy
             needs the switcher just as much as an account holder. */}
         <LanguageSelector />
