@@ -1,4 +1,4 @@
-import { createBrowserRouter, Outlet } from "react-router";
+import { createBrowserRouter, Outlet, ScrollRestoration } from "react-router";
 import { LandingPage } from "./pages/LandingPage";
 import { Dashboard } from "./pages/Dashboard";
 import { Startups } from "./pages/Startups";
@@ -38,9 +38,24 @@ import { requireAuth } from "./routeGuards";
 // Sidebar menu and click straight into the full app. /checkout/:plan is
 // deliberately excluded — it already redirects an anonymous visitor through
 // /signup?next=... on its own.
+
+// Without ScrollRestoration, react-router leaves the scroll position exactly
+// where it was on the previous page — so a link clicked in the landing
+// page's footer (at the bottom of a long page) opened the new page already
+// scrolled to the bottom. This resets to the top on every new navigation,
+// while still restoring the right position on browser back/forward.
+function RootLayout() {
+  return (
+    <>
+      <Outlet />
+      <ScrollRestoration />
+    </>
+  );
+}
+
 export const router = createBrowserRouter([
   {
-    element: <Outlet />,
+    element: <RootLayout />,
     ErrorBoundary: RouteError,
     children: [
   { path: "/",           Component: LandingPage },
