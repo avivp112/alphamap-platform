@@ -16,6 +16,7 @@ import { Checkout } from "./pages/Checkout";
 import { Profile } from "./pages/Profile";
 import { Watchlist } from "./pages/Watchlist";
 import { NotFound, RouteError } from "./pages/RouteFallback";
+import { requireAuth } from "./routeGuards";
 
 // Everything hangs off one pathless parent so a single ErrorBoundary covers
 // every route. Without it, any render error — or any URL that matches nothing —
@@ -26,6 +27,13 @@ import { NotFound, RouteError } from "./pages/RouteFallback";
 // side: a hard refresh on /dashboard is a request for a file that does not
 // exist, and never reaches React unless the host rewrites unknown paths to
 // index.html. See the "rewrites" block in vercel.json.
+//
+// Every page that requires a signed-in user carries a requireAuth loader.
+// Without it, these routes rendered unconditionally: a signed-out visitor
+// who reached /pricing (itself a legitimate destination) could open the
+// Sidebar menu and click straight into the full app. /checkout/:plan is
+// deliberately excluded — it already redirects an anonymous visitor through
+// /signup?next=... on its own.
 export const router = createBrowserRouter([
   {
     element: <Outlet />,
@@ -34,20 +42,20 @@ export const router = createBrowserRouter([
   { path: "/",           Component: LandingPage },
   { path: "/signup",     Component: SignUp },
   { path: "/login",      Component: Login },
-  { path: "/dashboard",  Component: Dashboard },
-  { path: "/markets",    Component: Dashboard },  // legacy alias
-  { path: "/vcs",        Component: VCs },
-  { path: "/startups",   Component: Startups },
-  { path: "/deals",      Component: Deals },
-  { path: "/stocks",     Component: Stocks },
-  { path: "/public-market", Component: PublicMarket },
-  { path: "/ipos",       Component: IPOs },
-  { path: "/market-map", Component: MarketMap },
-  { path: "/private-equity", Component: PrivateEquity },
+  { path: "/dashboard",  Component: Dashboard, loader: requireAuth },
+  { path: "/markets",    Component: Dashboard, loader: requireAuth },  // legacy alias
+  { path: "/vcs",        Component: VCs, loader: requireAuth },
+  { path: "/startups",   Component: Startups, loader: requireAuth },
+  { path: "/deals",      Component: Deals, loader: requireAuth },
+  { path: "/stocks",     Component: Stocks, loader: requireAuth },
+  { path: "/public-market", Component: PublicMarket, loader: requireAuth },
+  { path: "/ipos",       Component: IPOs, loader: requireAuth },
+  { path: "/market-map", Component: MarketMap, loader: requireAuth },
+  { path: "/private-equity", Component: PrivateEquity, loader: requireAuth },
   { path: "/pricing",    Component: Pricing },
   { path: "/checkout/:plan", Component: Checkout },
-  { path: "/profile",    Component: Profile },
-  { path: "/watchlist",  Component: Watchlist },
+  { path: "/profile",    Component: Profile, loader: requireAuth },
+  { path: "/watchlist",  Component: Watchlist, loader: requireAuth },
 
       // Must stay last. Anything unmatched lands here instead of throwing.
       { path: "*",       Component: NotFound },

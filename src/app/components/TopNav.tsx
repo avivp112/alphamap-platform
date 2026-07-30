@@ -9,6 +9,7 @@ import { LanguageSelector } from './LanguageSelector';
 
 interface TopNavProps {
   onMenuToggle?: () => void;
+  showMenuToggle?: boolean;
 }
 
 interface AuthedUser {
@@ -27,7 +28,7 @@ function getInitials({ name, email }: AuthedUser): string {
   return "?";
 }
 
-export function TopNav({ onMenuToggle }: TopNavProps) {
+export function TopNav({ onMenuToggle, showMenuToggle = true }: TopNavProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [user, setUser]           = useState<AuthedUser | null>(null);
@@ -94,13 +95,15 @@ export function TopNav({ onMenuToggle }: TopNavProps) {
     <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-gray-200 bg-white px-4 lg:px-6 shadow-sm">
       {/* Hamburger & Logo */}
       <div className="flex items-center gap-3">
-        <button
-          onClick={onMenuToggle}
-          className="p-2 text-gray-500 hover:bg-gray-100 rounded-md transition-colors"
-          aria-label={t('nav.toggleNavigation')}
-        >
-          <Menu className="h-6 w-6" />
-        </button>
+        {showMenuToggle && (
+          <button
+            onClick={onMenuToggle}
+            className="p-2 text-gray-500 hover:bg-gray-100 rounded-md transition-colors"
+            aria-label={t('nav.toggleNavigation')}
+          >
+            <Menu className="h-6 w-6" />
+          </button>
+        )}
         {/* Was a plain <div>, so clicking it did nothing — the one thing every
             visitor tries when they want to get back. */}
         <button
