@@ -1,16 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { Bell, User, Menu, ChevronDown, UserCircle, LogOut } from 'lucide-react';
+import { Bell, User, ChevronDown, UserCircle, LogOut } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { homePathNow } from '../../lib/navHome';
 import { BrandMark, BrandWordmark } from './BrandMark';
 import { LanguageSelector } from './LanguageSelector';
-
-interface TopNavProps {
-  onMenuToggle?: () => void;
-  showMenuToggle?: boolean;
-}
 
 interface AuthedUser {
   name: string | null;
@@ -28,7 +23,7 @@ function getInitials({ name, email }: AuthedUser): string {
   return "?";
 }
 
-export function TopNav({ onMenuToggle, showMenuToggle = true }: TopNavProps) {
+export function TopNav() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [user, setUser]           = useState<AuthedUser | null>(null);
@@ -95,15 +90,6 @@ export function TopNav({ onMenuToggle, showMenuToggle = true }: TopNavProps) {
     <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-white bg-white px-4 lg:px-6 shadow-sm">
       {/* Hamburger & Logo */}
       <div className="flex items-center gap-3">
-        {showMenuToggle && (
-          <button
-            onClick={onMenuToggle}
-            className="p-2 text-gray-500 hover:bg-gray-100 rounded-md transition-colors"
-            aria-label={t('nav.toggleNavigation')}
-          >
-            <Menu className="h-6 w-6" />
-          </button>
-        )}
         {/* Was a plain <div>, so clicking it did nothing — the one thing every
             visitor tries when they want to get back. */}
         <button

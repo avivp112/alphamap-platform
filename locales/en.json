@@ -5,6 +5,7 @@
   },
   "nav": {
     "home": "Home",
+    "data": "Data",
     "privateMarket": "Private Market",
     "publicMarket": "Public Market",
     "ventureCapital": "Venture Capital",

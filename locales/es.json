@@ -5,6 +5,7 @@
   },
   "nav": {
     "home": "Inicio",
+    "data": "Datos",
     "privateMarket": "Mercado privado",
     "publicMarket": "Mercado cotizado",
     "ventureCapital": "Capital de riesgo",
