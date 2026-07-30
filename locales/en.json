@@ -728,5 +728,14 @@
     "crashBody": "This page failed to load. Trying again often works; if it keeps happening, let us know.",
     "goHome": "Go home",
     "goBack": "Go back"
+  },
+  "about": {
+    "title": "About Us",
+    "body": [
+      "Welcome to AlphaMap, an advanced market intelligence and financial data platform designed to redefine how organizations, investors, and financial professionals analyze markets and drive strategic decisions.",
+      "The platform bridges the gap between complex financial data and actionable insights, delivering leading tools for company metric analysis, valuations, and VC sourcing workflows within a single, unified environment.",
+      "AlphaMap was built upon deep expertise in business analysis, strategic planning, and advanced financial modeling. Grounded in a practical understanding of the challenges inherent in high-level strategy, complex analytics, and growth identification, the system was engineered to replace manual, fragmented processes with sharp, precise analytical logic.",
+      "Integrating core capabilities tailored specifically for decision-makers, the platform equips investors and enterprises with the robust data infrastructure, transparency, and confidence required to drive successful business operations in a dynamic global environment."
+    ]
   }
 }

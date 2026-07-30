@@ -19,6 +19,11 @@ import { homePathNow } from "../../lib/navHome";
 // ── Shared dark section (CTA + footer) ───────────────────────────────────────
 const DARK_SECTION_BG = "#242322";
 const FOOTER_LINK_KEYS = ["about", "privacy", "terms", "contact"] as const;
+// Only "about" points at a real page so far — the rest stay inert (href="#")
+// until those pages exist.
+const FOOTER_LINK_PATHS: Partial<Record<(typeof FOOTER_LINK_KEYS)[number], string>> = {
+  about: "/about",
+};
 
 // ── Hero typewriter copy ─────────────────────────────────────────────────────
 // The headline text itself now comes from the active dictionary — the
@@ -1090,11 +1095,19 @@ export function LandingPage() {
         <div className="max-w-[1200px] mx-auto px-6 lg:px-12 pt-8 pb-16">
           <span className="block text-xs font-semibold tracking-[0.14em] text-gray-500 uppercase mb-6">{t("landing.explore")}</span>
           <nav className="flex flex-col gap-4 mb-10">
-            {FOOTER_LINK_KEYS.map((key) => (
-              <a key={key} href="#" className="text-sm text-white hover:text-gray-300 transition-colors w-fit">
-                {t(`landing.footer.${key}`)}
-              </a>
-            ))}
+            {FOOTER_LINK_KEYS.map((key) => {
+              const path = FOOTER_LINK_PATHS[key];
+              return (
+                <a
+                  key={key}
+                  href={path ?? "#"}
+                  onClick={path ? (e) => { e.preventDefault(); navigate(path); } : undefined}
+                  className="text-sm text-white hover:text-gray-300 transition-colors w-fit"
+                >
+                  {t(`landing.footer.${key}`)}
+                </a>
+              );
+            })}
           </nav>
           <div className="flex items-center gap-4 pt-8 border-t border-white/10">
             <a href="#" aria-label="LinkedIn" className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 text-white hover:bg-white/10 transition-colors">

@@ -12,6 +12,7 @@ import { MarketMap } from "./pages/MarketMap";
 import { PrivateEquity } from "./pages/PrivateEquity";
 import { PublicMarket } from "./pages/PublicMarket";
 import { Pricing } from "./pages/Pricing";
+import { AboutUs } from "./pages/AboutUs";
 import { Checkout } from "./pages/Checkout";
 import { Profile } from "./pages/Profile";
 import { Watchlist } from "./pages/Watchlist";
@@ -53,6 +54,7 @@ export const router = createBrowserRouter([
   { path: "/market-map", Component: MarketMap, loader: requireAuth },
   { path: "/private-equity", Component: PrivateEquity, loader: requireAuth },
   { path: "/pricing",    Component: Pricing },
+  { path: "/about",      Component: AboutUs },
   { path: "/checkout/:plan", Component: Checkout },
   { path: "/profile",    Component: Profile, loader: requireAuth },
   { path: "/watchlist",  Component: Watchlist, loader: requireAuth },
