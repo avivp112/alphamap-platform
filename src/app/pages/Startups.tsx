@@ -1780,14 +1780,34 @@ function StartupCard({
 
 // ── List Row ──────────────────────────────────────────────────────────────────
 
-function StartupTableRow({ startup, onSelect }: { startup: StartupListRow; onSelect: () => void }) {
+function StartupTableRow({
+  startup, onSelect, selected, onToggleSelect,
+}: {
+  startup: StartupListRow; onSelect: () => void;
+  selected: boolean; onToggleSelect: (e: React.MouseEvent) => void;
+}) {
   const roundType   = startup.latest_round_type ?? null;
   const roundStyle  = roundType ? (ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]) : null;
   return (
-    <tr onClick={onSelect} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors group">
-      <td className="py-3.5 px-5">
+    <tr
+      onClick={onSelect}
+      className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors group"
+      style={selected ? { background: "rgba(15,23,42,0.03)" } : undefined}
+    >
+      <td className="py-3.5 pl-5 pr-1 w-8">
+        <button
+          onClick={onToggleSelect}
+          className="flex items-center justify-center p-0.5 rounded text-gray-400 hover:text-[#0F172A] transition-colors"
+          aria-label={selected ? "Deselect" : "Select for comparison"}
+        >
+          {selected
+            ? <CheckSquare className="w-4 h-4 text-[#0F172A]" />
+            : <Square className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />}
+        </button>
+      </td>
+      <td className="py-3.5 px-4">
         <div className="flex items-center gap-3">
-          <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-black flex-none ${avatarColor(startup.name)}`}>{startup.name[0].toUpperCase()}</div>
+          <CompanyLogo name={startup.name} website={startup.website} size={32} rounded="rounded-lg" />
           <div>
             <div className="text-sm font-bold text-[#0F172A] leading-tight">{startup.name}</div>
             {startup.industry && <div className="text-[10px] text-gray-400 font-medium">{startup.industry}</div>}
@@ -2331,13 +2351,16 @@ export function Startups() {
                       <table className="w-full">
                         <thead>
                           <tr className="border-b border-gray-100 bg-[#F8FAFC]">
-                            {["Company", "Stage", "Location", "Valuation", "Raised", "Employees", "Founders", ""].map((h) => (
-                              <th key={h} className="text-left text-[9px] font-black text-gray-400 uppercase tracking-widest py-3 px-4 first:px-5 whitespace-nowrap">{h}</th>
+                            {["", "Company", "Stage", "Location", "Valuation", "Raised", "Employees", "Founders", ""].map((h, i) => (
+                              <th key={i} className="text-left text-[9px] font-black text-gray-400 uppercase tracking-widest py-3 px-4 first:pl-5 first:pr-1 whitespace-nowrap">{h}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
-                          {rows.map((s) => <StartupTableRow key={s.id} startup={s} onSelect={() => setSelected(s)} />)}
+                          {rows.map((s) => (
+                            <StartupTableRow key={s.id} startup={s} onSelect={() => setSelected(s)}
+                              selected={selected.has(s.id)} onToggleSelect={(e) => toggleSelect(s, e)} />
+                          ))}
                         </tbody>
                       </table>
                     </div>
