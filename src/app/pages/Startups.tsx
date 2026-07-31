@@ -1666,10 +1666,11 @@ function CompareModal({
 // ── Grid Card ─────────────────────────────────────────────────────────────────
 
 function StartupCard({
-  startup, onSelect, selected, onToggleSelect,
+  startup, onSelect, selected, onToggleSelect, dataTour,
 }: {
   startup: StartupListRow; onSelect: () => void;
   selected: boolean; onToggleSelect: (e: React.MouseEvent) => void;
+  dataTour?: string;
 }) {
   const { t } = useTranslation();
   const roundType   = startup.latest_round_type ?? null;
@@ -1678,6 +1679,7 @@ function StartupCard({
 
   return (
     <div
+      data-tour={dataTour}
       onClick={onSelect}
       className="relative flex flex-col overflow-hidden cursor-pointer group rounded-[22px] border transition-all duration-300 bg-white"
       style={{
@@ -1784,15 +1786,17 @@ function StartupCard({
 // ── List Row ──────────────────────────────────────────────────────────────────
 
 function StartupTableRow({
-  startup, onSelect, selected, onToggleSelect,
+  startup, onSelect, selected, onToggleSelect, dataTour,
 }: {
   startup: StartupListRow; onSelect: () => void;
   selected: boolean; onToggleSelect: (e: React.MouseEvent) => void;
+  dataTour?: string;
 }) {
   const roundType   = startup.latest_round_type ?? null;
   const roundStyle  = roundType ? (ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]) : null;
   return (
     <tr
+      data-tour={dataTour}
       onClick={onSelect}
       className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors group"
       style={selected ? { background: "rgba(15,23,42,0.03)" } : undefined}
@@ -2365,7 +2369,7 @@ export function Startups() {
                 <button onClick={clearAll} className="text-xs text-gray-500 font-semibold hover:text-rose-600 transition-colors">{t("startups.clearAllFilters")}</button>
               </div>
             ) : (
-              <div data-tour="company-results" className="relative">
+              <div className="relative">
                 {rowsLoading && (
                   <div className="absolute inset-0 z-10 flex items-start justify-center pt-16 bg-white/50 backdrop-blur-[1px] rounded-[20px] transition-opacity">
                     <Loader2 className="w-5 h-5 text-[#F59E0B] animate-spin" />
@@ -2373,9 +2377,10 @@ export function Startups() {
                 )}
                 {viewMode === "grid" ? (
                   <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 transition-opacity duration-150 ${rowsLoading ? "opacity-40" : "opacity-100"}`}>
-                    {rows.map((s) => (
+                    {rows.map((s, i) => (
                       <StartupCard key={s.id} startup={s} onSelect={() => setSelected(s)}
-                        selected={selected.has(s.id)} onToggleSelect={(e) => toggleSelect(s, e)} />
+                        selected={selected.has(s.id)} onToggleSelect={(e) => toggleSelect(s, e)}
+                        dataTour={i === 0 ? "company-results" : undefined} />
                     ))}
                   </div>
                 ) : (
@@ -2390,9 +2395,10 @@ export function Startups() {
                           </tr>
                         </thead>
                         <tbody>
-                          {rows.map((s) => (
+                          {rows.map((s, i) => (
                             <StartupTableRow key={s.id} startup={s} onSelect={() => setSelected(s)}
-                              selected={selected.has(s.id)} onToggleSelect={(e) => toggleSelect(s, e)} />
+                              selected={selected.has(s.id)} onToggleSelect={(e) => toggleSelect(s, e)}
+                              dataTour={i === 0 ? "company-results" : undefined} />
                           ))}
                         </tbody>
                       </table>
