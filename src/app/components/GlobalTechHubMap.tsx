@@ -306,7 +306,7 @@ export function GlobalTechHubMap({
           <h2 className="text-xl font-bold text-[#0F172A] tracking-tight">Global Capital Flow</h2>
           <p className="text-sm text-gray-500 mt-0.5">Cross-border investment activity across tech ecosystems</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div data-tour="sector-filter" className="flex flex-wrap gap-2">
           {(Object.keys(SECTOR_LABELS) as SectorKey[]).map(k => (
             <button
               key={k}
@@ -335,7 +335,7 @@ export function GlobalTechHubMap({
           aspect ratio — never taller, and never cropped. */}
       <div className="flex flex-col lg:flex-row lg:items-start">
 
-        <div className="flex-1 relative overflow-hidden bg-[#F8FAFB]">
+        <div data-tour="hub-map" className="flex-1 relative overflow-hidden bg-[#F8FAFB]">
           <ComposableMap
             projection="geoEquirectangular"
             projectionConfig={{ scale: MAP_SCALE, center: MAP_CENTER }}
@@ -433,7 +433,7 @@ export function GlobalTechHubMap({
         </div>
 
         {/* ── Side Panel ───────────────────────────────────────────────────── */}
-        <div className="w-full lg:w-[340px] shrink-0 flex flex-col border-l border-gray-100">
+        <div data-tour="hub-panel" className="w-full lg:w-[340px] shrink-0 flex flex-col border-l border-gray-100">
           {activeHub && hubStats && insights ? (
             <>
               {/* Hub header */}

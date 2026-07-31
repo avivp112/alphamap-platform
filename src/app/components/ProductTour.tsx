@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 
@@ -12,16 +12,8 @@ export interface TourStep {
 
 interface Rect { top: number; left: number; width: number; height: number }
 
-// Padding around the real element so the spotlight ring doesn't hug it too
-// tightly, and the gap the tooltip card keeps from that ring.
+// Padding around the real element so the spotlight ring doesn't hug it too tightly.
 const SPOTLIGHT_PAD = 8;
-const CARD_GAP = 16;
-const CARD_WIDTH = 340;
-const VIEWPORT_MARGIN = 16;
-// Best-effort guess for the very first paint of each step, before the card
-// has actually been measured — close to a typical step's real height, so
-// there's rarely a visible correction once the real measurement lands.
-const ASSUMED_CARD_HEIGHT = 200;
 
 function measure(selector: string): Rect | null {
   const el = document.querySelector(selector);
@@ -38,10 +30,13 @@ function measure(selector: string): Rect | null {
 
 /**
  * A guided, step-by-step spotlight tour: dims the page except the current
- * target element and shows an explanatory card next to it. Meant for a
- * one-time first-visit walkthrough plus an on-demand replay trigger — the
- * host page owns `open` state and persistence (e.g. a localStorage "seen"
- * flag), this component only handles the spotlight/positioning/navigation.
+ * target element and shows an explanatory card in a fixed spot near the top
+ * of the viewport — the card never moves or resizes-around content, only
+ * the spotlight does, so it can never end up off-screen or unreachable no
+ * matter how the page is laid out. Meant for a one-time first-visit
+ * walkthrough plus an on-demand replay trigger — the host page owns `open`
+ * state and persistence (e.g. a localStorage "seen" flag), this component
+ * only handles the spotlight/navigation.
  */
 export function ProductTour({
   steps, open, onClose,
@@ -53,8 +48,6 @@ export function ProductTour({
   const { t } = useTranslation();
   const [index, setIndex] = useState(0);
   const [rect, setRect] = useState<Rect | null>(null);
-  const [cardHeight, setCardHeight] = useState(ASSUMED_CARD_HEIGHT);
-  const cardRef = useRef<HTMLDivElement>(null);
   const step = steps[index];
 
   const reposition = useCallback(() => {
@@ -81,14 +74,6 @@ export function ProductTour({
     };
   }, [open, step, reposition]);
 
-  // Measures the tooltip's real rendered height so its position can be
-  // clamped to the viewport below, however tall the spotlighted element is —
-  // a target that spans a whole scrollable list (e.g. every result on the
-  // page) must never be able to push the card's buttons off-screen.
-  useLayoutEffect(() => {
-    if (cardRef.current) setCardHeight(cardRef.current.getBoundingClientRect().height);
-  }, [step, rect]);
-
   function next() {
     if (index < steps.length - 1) setIndex((i) => i + 1);
     else onClose();
@@ -113,22 +98,6 @@ export function ProductTour({
 
   const Icon = step.icon;
 
-  // Default below the spotlight; flip above when there isn't room below but
-  // there is above. Both axes are then clamped against the card's actual
-  // measured height/width so it always lands fully inside the viewport —
-  // regardless of how tall or oddly-placed the spotlighted element is.
-  const spaceBelow = rect ? window.innerHeight - (rect.top + rect.height) : 0;
-  const placement: "top" | "bottom" =
-    rect && spaceBelow < cardHeight + CARD_GAP + VIEWPORT_MARGIN && rect.top > cardHeight + CARD_GAP + VIEWPORT_MARGIN
-      ? "top" : "bottom";
-  let cardTop = rect
-    ? (placement === "bottom" ? rect.top + rect.height + CARD_GAP : rect.top - cardHeight - CARD_GAP)
-    : window.innerHeight / 2 - cardHeight / 2;
-  cardTop = Math.min(Math.max(cardTop, VIEWPORT_MARGIN), window.innerHeight - cardHeight - VIEWPORT_MARGIN);
-
-  let cardLeft = rect ? rect.left : window.innerWidth / 2 - CARD_WIDTH / 2;
-  cardLeft = Math.min(Math.max(cardLeft, VIEWPORT_MARGIN), window.innerWidth - CARD_WIDTH - VIEWPORT_MARGIN);
-
   return (
     <div className="fixed inset-0 z-[100]" role="dialog" aria-modal="true" aria-label="Product tour">
       {/* Spotlight: a box-shadow with a huge spread paints the whole screen
@@ -147,10 +116,11 @@ export function ProductTour({
       {/* Blocks interaction with the rest of the page while the tour runs. */}
       <div className="fixed inset-0" />
 
+      {/* Explanation card: always fixed near the top of the viewport, same
+          spot for every step — only the spotlight above moves. */}
       <div
-        ref={cardRef}
-        className="fixed rounded-[20px] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.22)] border border-gray-100 p-5 transition-all duration-300 ease-out"
-        style={{ top: cardTop, left: cardLeft, width: CARD_WIDTH }}
+        className="fixed top-5 left-1/2 -translate-x-1/2 z-[101] rounded-[20px] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.22)] border border-gray-100 p-5"
+        style={{ width: "min(440px, calc(100vw - 32px))" }}
       >
         <button
           onClick={onClose}
@@ -160,13 +130,17 @@ export function ProductTour({
           <X className="w-4 h-4" />
         </button>
 
-        <div className="w-10 h-10 rounded-[12px] bg-gray-50 border border-gray-100 flex items-center justify-center mb-3.5">
-          <Icon className="w-5 h-5 text-[#0F172A]" />
+        <div className="flex items-start gap-3.5">
+          <div className="flex-none w-10 h-10 rounded-[12px] bg-gray-50 border border-gray-100 flex items-center justify-center">
+            <Icon className="w-5 h-5 text-[#0F172A]" />
+          </div>
+          <div className="flex-1 min-w-0 pr-5">
+            <h3 className="text-[15px] font-bold text-[#0F172A] mb-1">{step.title}</h3>
+            <p className="text-sm text-gray-500 leading-relaxed">{step.description}</p>
+          </div>
         </div>
-        <h3 className="text-[15px] font-bold text-[#0F172A] mb-1.5 pr-5">{step.title}</h3>
-        <p className="text-sm text-gray-500 leading-relaxed mb-5">{step.description}</p>
 
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mt-4">
           <div className="flex items-center gap-1.5">
             {steps.map((_, i) => (
               <span

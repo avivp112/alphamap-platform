@@ -785,6 +785,43 @@
       "smart": { "title": "Filtros inteligentes", "body": "Despliega estos filtros para encontrar empresas de rápido crecimiento (Momentum Financiero) o mercados con menos competidores (Densidad Competitiva)." },
       "view": { "title": "Cuadrícula o lista", "body": "Cambia entre una cuadrícula visual de tarjetas y una tabla densa y ordenable, según prefieras explorar." },
       "results": { "title": "Selecciona, compara, sigue", "body": "Haz clic en una empresa para ver su perfil completo. Usa la casilla para añadir una empresa a tu lista de seguimiento, o selecciona hasta tres para compararlas entre sí." }
+    },
+    "marketMap": {
+      "steps": {
+        "sector": { "title": "Filtrar por sector", "body": "Reduce el mapa y las analíticas a un solo sector, o visualízalos todos juntos." },
+        "map": { "title": "Explora el mapa mundial", "body": "Haz clic en cualquier polo pulsante para profundizar en las empresas, el capital y la salud del ecosistema de esa región." },
+        "panel": { "title": "Detalles del polo", "body": "Al seleccionar un polo, aquí aparecen sus estadísticas clave: número de empresas, capital captado, talento disponible y más." },
+        "insights": { "title": "Inteligencia de mercado", "body": "Análisis más profundo del polo y sector seleccionados: eficiencia de capital, velocidad de financiación, ritmo de operaciones y los principales actores." }
+      }
+    },
+    "deals": {
+      "steps": {
+        "search": { "title": "Busca por empresa", "body": "Escribe el nombre de una empresa para ir directo a sus operaciones." },
+        "type": { "title": "Filtra por tipo de operación", "body": "Reduce el registro a un tipo de ronda concreto: Seed, Serie A, fusiones y adquisiciones, y más." },
+        "hud": { "title": "Métricas clave de un vistazo", "body": "Capital total registrado, la operación más grande, el sector más activo y las novedades del mes." },
+        "sort": { "title": "Ordena cualquier columna", "body": "Haz clic en el encabezado de una columna para ordenar por fecha, tamaño de la operación o valoración." },
+        "row": { "title": "Abre cualquier operación", "body": "Haz clic en una fila para ver todos los detalles de la operación, incluidos los inversores e informantes declarados." }
+      }
+    },
+    "vcs": {
+      "steps": {
+        "search": { "title": "Busca cualquier firma", "body": "Escribe el nombre de una firma de VC o PE para ir directo a ella." },
+        "stages": { "title": "Filtra por etapa de inversión", "body": "Reduce el directorio a firmas que invierten en una etapa concreta, desde Pre-Seed hasta Growth." },
+        "sectors": { "title": "Filtra por sector", "body": "Muestra solo las firmas centradas en los sectores que te interesan." },
+        "geography": { "title": "Filtra por geografía", "body": "Reduce la lista a firmas de una región concreta." },
+        "smart": { "title": "Tamaño de fondo, cheque y actividad", "body": "Despliega estos filtros para filtrar por AUM, tamaño de cheque habitual o firmas activas en los últimos 24 meses." },
+        "sort": { "title": "Ordena el directorio", "body": "Ordena las firmas por inversiones recientes, tamaño de portafolio, AUM o año de fundación." },
+        "results": { "title": "Selecciona, compara, sigue", "body": "Haz clic en una firma para ver su perfil completo. Usa la casilla para añadir una firma a tu lista de seguimiento, o selecciona hasta tres para compararlas entre sí." }
+      }
+    },
+    "publicMarket": {
+      "steps": {
+        "sectorMatrix": { "title": "Múltiplos de valoración por sector", "body": "Consulta los múltiplos medianos del mercado público por sector, y aplica uno a startups comparables del Mercado Privado para una valoración relativa rápida." },
+        "comps": { "title": "Comparables públicos y privados", "body": "Explora grandes empresas públicas comparadas con sus equivalentes privados registrados en AlphaMap, con la brecha de valoración de un vistazo." },
+        "search": { "title": "Añade cualquier ticker", "body": "Busca cualquier ticker de NASDAQ o NYSE y sincronízalo con las empresas rastreadas de la plataforma." },
+        "directory": { "title": "Explora las empresas registradas", "body": "Filtra por sector o nombre, y haz clic en cualquier fila para ver el perfil completo." },
+        "sync": { "title": "Mantén los datos actualizados", "body": "Actualiza manualmente los datos de mercado en cualquier momento, o accede a las cotizaciones intradía en vivo." }
+      }
     }
   }
 }

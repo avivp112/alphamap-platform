@@ -7,7 +7,7 @@ import {
   ArrowRight, ArrowLeftRight, Building2, Landmark, Sparkles, Info,
   CircleDollarSign, ExternalLink, Loader2, AlertCircle, Check,
   Search, X, ChevronLeft, ChevronRight, LayoutList, PlusCircle, CheckCircle2,
-  MapPin, User, Briefcase,
+  MapPin, User, Briefcase, HelpCircle,
 } from "lucide-react";
 import {
   AreaChart, Area, ResponsiveContainer, Tooltip as ReTooltip, XAxis, YAxis,
@@ -15,7 +15,10 @@ import {
 import { Layout } from "../components/Layout";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { TickerLogo } from "../components/TickerLogo";
+import { ProductTour, type TourStep } from "../components/ProductTour";
 import type { StartupListRow } from "../../lib/supabase";
+
+const TOUR_SEEN_KEY = "alphamap_tour_publicmarket_seen";
 import {
   PUBLIC_SECTORS, PUBLIC_SNAPSHOT_AS_OF, ILLIQUIDITY_DISCOUNT,
   computeSectorMultiples, computeSentiment, impliedFairValue,
@@ -195,7 +198,7 @@ function SectorMatrix({ multiples }: { multiples: SectorMultiples[] }) {
   const appliedM = multiples.find((m) => m.key === applied) ?? null;
 
   return (
-    <section>
+    <section data-tour="sector-matrix">
       <SectionHeading
         icon={CircleDollarSign}
         title={t("publicMarket.sectorMatrixTitle")}
@@ -448,7 +451,7 @@ function CompsExplorer({ companies }: { companies: DerivedPublicCompany[] }) {
   const shown = tab === "all" ? companies : companies.filter((c) => c.sector === tab);
 
   return (
-    <section>
+    <section data-tour="comps-explorer">
       <SectionHeading
         icon={ArrowLeftRight}
         title="Public vs Private Comps Explorer"
@@ -722,13 +725,13 @@ function CompaniesDirectory({ companies, onCompanyAdded }: {
         subtitle="Every company synced into AlphaMap — the 4 curated sectors plus anything you've searched and added. Search any NASDAQ/NYSE ticker to add it."
       />
 
-      <div className="mb-4 max-w-lg">
+      <div data-tour="stock-search" className="mb-4 max-w-lg">
         <StockSearchBar companies={companies} onCompanyAdded={onCompanyAdded} onFocusTicker={setPendingHighlight} />
       </div>
 
       <div className="rounded-[20px] border border-gray-100 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)] overflow-hidden">
         {/* Filter row */}
-        <div className="flex flex-wrap items-center gap-2 px-4 sm:px-5 py-3 border-b border-gray-100">
+        <div data-tour="companies-directory-filter" className="flex flex-wrap items-center gap-2 px-4 sm:px-5 py-3 border-b border-gray-100">
           <div className="flex items-center gap-1 overflow-x-auto">
             {sectorOptions.map((s) => (
               <button
@@ -1212,6 +1215,24 @@ export function PublicMarket() {
   const [activity, setActivity]   = useState<PrivateLateStageActivity | null>(null);
   const [activityLoading, setActivityLoading] = useState(true);
 
+  // First-time visitors get the walkthrough automatically, once; anyone else
+  // can replay it from the "?" button in the title bar.
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    if (!localStorage.getItem(TOUR_SEEN_KEY)) setTourOpen(true);
+  }, []);
+  function closeTour() {
+    localStorage.setItem(TOUR_SEEN_KEY, "1");
+    setTourOpen(false);
+  }
+  const tourSteps: TourStep[] = [
+    { target: '[data-tour="sector-matrix"]',              icon: CircleDollarSign, title: t("tour.publicMarket.steps.sectorMatrix.title"), description: t("tour.publicMarket.steps.sectorMatrix.body") },
+    { target: '[data-tour="comps-explorer"]',             icon: ArrowLeftRight,   title: t("tour.publicMarket.steps.comps.title"),        description: t("tour.publicMarket.steps.comps.body") },
+    { target: '[data-tour="stock-search"]',               icon: Search,           title: t("tour.publicMarket.steps.search.title"),       description: t("tour.publicMarket.steps.search.body") },
+    { target: '[data-tour="companies-directory-filter"]', icon: LayoutList,       title: t("tour.publicMarket.steps.directory.title"),    description: t("tour.publicMarket.steps.directory.body") },
+    { target: '[data-tour="sync-controls"]',              icon: RefreshCw,        title: t("tour.publicMarket.steps.sync.title"),         description: t("tour.publicMarket.steps.sync.body") },
+  ];
+
   const multiples = useMemo(() => computeSectorMultiples(companies), [companies]);
   const sentiment = useMemo<SentimentIndex | null>(
     () => (companies.length ? computeSentiment(companies) : null),
@@ -1273,7 +1294,15 @@ export function PublicMarket() {
                 {t("publicMarket.hubSubtitle")}
               </p>
             </div>
-            <div className="flex items-center gap-2.5 flex-none">
+            <div data-tour="sync-controls" className="flex items-center gap-2.5 flex-none">
+              <button
+                onClick={() => setTourOpen(true)}
+                title={t("tour.takeTour")}
+                aria-label={t("tour.takeTour")}
+                className="p-2 rounded-[12px] bg-white/60 border border-black/10 text-[#0F172A]/60 hover:text-[#0F172A] hover:bg-white transition-all"
+              >
+                <HelpCircle className="w-4 h-4" />
+              </button>
               <span className={`flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border ${
                 badgeLive ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-white/60 border-black/10 text-[#0F172A]/60"
               }`}>
@@ -1319,6 +1348,8 @@ export function PublicMarket() {
           </>
         )}
       </div>
+
+      <ProductTour steps={tourSteps} open={tourOpen} onClose={closeTour} />
     </Layout>
   );
 }

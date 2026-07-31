@@ -785,6 +785,43 @@
       "smart": { "title": "Smart filters", "body": "Expand these to surface fast-growing companies (Financial Momentum) or markets with fewer competitors (Competitive Density)." },
       "view": { "title": "Grid or list", "body": "Switch between a visual card grid and a dense, sortable table — whichever suits how you like to scan." },
       "results": { "title": "Select, compare, track", "body": "Click a company to open its full profile. Use the checkbox to add one company to your Watchlist, or select up to three to compare them side by side." }
+    },
+    "marketMap": {
+      "steps": {
+        "sector": { "title": "Filter by sector", "body": "Narrow the map and analytics to a single sector, or view all of them together." },
+        "map": { "title": "Explore the world map", "body": "Click any pulsing hub to drill into that region's companies, capital, and ecosystem health." },
+        "panel": { "title": "Hub details", "body": "Once you select a hub, its key stats appear here — company count, capital raised, talent pool, and more." },
+        "insights": { "title": "Market intelligence", "body": "Deeper analytics for the selected hub and sector: capital efficiency, funding velocity, deal momentum, and the top players." }
+      }
+    },
+    "deals": {
+      "steps": {
+        "search": { "title": "Search by company", "body": "Type a company name to jump straight to its deals." },
+        "type": { "title": "Filter by deal type", "body": "Narrow the ledger to a specific round type — Seed, Series A, M&A, and more." },
+        "hud": { "title": "Key metrics at a glance", "body": "Total capital tracked, the largest deal, the most active sector, and what's new this month." },
+        "sort": { "title": "Sort any column", "body": "Click a column header to sort by date, deal size, or valuation." },
+        "row": { "title": "Open any deal", "body": "Click a row to see full deal details, including all disclosed investors and sources." }
+      }
+    },
+    "vcs": {
+      "steps": {
+        "search": { "title": "Search any firm", "body": "Type a VC or PE firm's name to jump straight to it." },
+        "stages": { "title": "Filter by investment stage", "body": "Narrow the directory to firms that invest at a specific stage, from Pre-Seed to Growth." },
+        "sectors": { "title": "Filter by sector", "body": "Show only firms focused on the sectors you care about." },
+        "geography": { "title": "Filter by geography", "body": "Narrow the list to firms based in a specific region." },
+        "smart": { "title": "Fund size, check size, activity", "body": "Expand these to filter by AUM, typical check size, or firms that have been active in the last 24 months." },
+        "sort": { "title": "Sort the directory", "body": "Order firms by recent investments, portfolio size, AUM, or founding year." },
+        "results": { "title": "Select, compare, track", "body": "Click a firm to open its full profile. Use the checkbox to add one firm to your Watchlist, or select up to three to compare them side by side." }
+      }
+    },
+    "publicMarket": {
+      "steps": {
+        "sectorMatrix": { "title": "Sector valuation multiples", "body": "See median public-market multiples by sector, and apply one to comparable Private Market startups for a quick relative valuation." },
+        "comps": { "title": "Public vs. private comps", "body": "Browse public giants mapped to their private counterparts tracked in AlphaMap, with the valuation gap at a glance." },
+        "search": { "title": "Add any ticker", "body": "Search any NASDAQ or NYSE ticker and sync it into the platform's tracked companies." },
+        "directory": { "title": "Browse tracked companies", "body": "Filter by sector or name, then click any row to open a full profile." },
+        "sync": { "title": "Keep data fresh", "body": "Manually pull the latest market data anytime, or jump to live intraday quotes." }
+      }
     }
   }
 }

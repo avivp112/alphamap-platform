@@ -5,6 +5,7 @@ import {
   TrendingUp, Globe, Star, ExternalLink, X, DollarSign, Briefcase, Activity,
   ChevronLeft, ChevronRight, ChevronDown, Search, Zap,
   Square, CheckSquare, Eye, CheckCircle2, Loader2, GitCompare, MapPin, Calendar, AlertCircle,
+  HelpCircle, Building2, ArrowUpDown,
 } from "lucide-react";
 import { Layout } from "../components/Layout";
 import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider } from "../components/SideFilterLayout";
@@ -13,6 +14,9 @@ import { VCModal } from "../components/VCModal";
 import { DonutFocusChart } from "../components/DonutFocusChart";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { useWatchlistMembership, addToWatchlist, removeFromWatchlist, watchlistErrorMessage } from "../../lib/watchlist";
+import { ProductTour, type TourStep } from "../components/ProductTour";
+
+const TOUR_SEEN_KEY = "alphamap_tour_vcs_seen";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -234,14 +238,16 @@ const DEFAULT_FILTERS: Filters = {
 
 // ─── VCCard ───────────────────────────────────────────────────────────────────
 
-function VCCard({ firm, onClick, selected, onToggleSelect }: {
+function VCCard({ firm, onClick, selected, onToggleSelect, dataTour }: {
   firm: VCFirm; onClick: () => void; selected: boolean; onToggleSelect: (e: React.MouseEvent) => void;
+  dataTour?: string;
 }) {
   const { t } = useTranslation();
   const accent = getAccent(firm.id);
 
   return (
     <div
+      data-tour={dataTour}
       className="relative group flex flex-col overflow-hidden rounded-[22px] border transition-all duration-300 cursor-pointer select-none"
       onClick={onClick}
       style={{
@@ -583,6 +589,26 @@ export function VCs() {
   const [compareMap, setCompareMap] = useState<Map<string, VCFirm>>(new Map());
   const [showCompare, setShowCompare] = useState(false);
 
+  // First-time visitors get the walkthrough automatically, once; anyone else
+  // can replay it from the "?" button in the title bar.
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    if (!localStorage.getItem(TOUR_SEEN_KEY)) setTourOpen(true);
+  }, []);
+  function closeTour() {
+    localStorage.setItem(TOUR_SEEN_KEY, "1");
+    setTourOpen(false);
+  }
+  const tourSteps: TourStep[] = [
+    { target: '[data-tour="search-input"]',      icon: Search,           title: t("tour.vcs.steps.search.title"),   description: t("tour.vcs.steps.search.body") },
+    { target: '[data-tour="filter-stages"]',      icon: TrendingUp,       title: t("tour.vcs.steps.stages.title"),   description: t("tour.vcs.steps.stages.body") },
+    { target: '[data-tour="filter-sectors"]',     icon: Building2,        title: t("tour.vcs.steps.sectors.title"),  description: t("tour.vcs.steps.sectors.body") },
+    { target: '[data-tour="filter-geography"]',   icon: Globe,            title: t("tour.vcs.steps.geography.title"), description: t("tour.vcs.steps.geography.body") },
+    { target: '[data-tour="filter-smart"]',       icon: Zap,              title: t("tour.vcs.steps.smart.title"),    description: t("tour.vcs.steps.smart.body") },
+    { target: '[data-tour="sort-control"]',       icon: ArrowUpDown,      title: t("tour.vcs.steps.sort.title"),     description: t("tour.vcs.steps.sort.body") },
+    { target: '[data-tour="vc-results"]',         icon: GitCompare,       title: t("tour.vcs.steps.results.title"),  description: t("tour.vcs.steps.results.body") },
+  ];
+
   function toggleCompareSelect(firm: VCFirm, e: React.MouseEvent) {
     e.stopPropagation();
     setCompareMap((prev) => {
@@ -733,8 +759,16 @@ export function VCs() {
 
             {/* Sort segmented control */}
             <div className="flex items-center gap-2 flex-none">
+              <button
+                onClick={() => setTourOpen(true)}
+                title={t("tour.takeTour")}
+                aria-label={t("tour.takeTour")}
+                className="p-2 rounded-[10px] bg-white/60 border border-black/10 text-[#0F172A]/60 hover:text-[#0F172A] hover:bg-white transition-all"
+              >
+                <HelpCircle className="w-4 h-4" />
+              </button>
               <span className="text-[10px] font-bold text-[#0F172A]/50 uppercase tracking-wider hidden sm:block">{t("common.sort")}</span>
-              <div className="flex items-center bg-white/60 border border-black/10 rounded-[10px] p-0.5 gap-0.5">
+              <div data-tour="sort-control" className="flex items-center bg-white/60 border border-black/10 rounded-[10px] p-0.5 gap-0.5">
                 {SORT_OPTIONS.map(o => (
                   <button
                     key={o.key}
@@ -777,7 +811,7 @@ export function VCs() {
         onClearAll={clearAll}
         filters={
           <>
-            <FilterAccordion title={t("vcs.investmentStages")} defaultOpen
+            <FilterAccordion dataTour="filter-stages" title={t("vcs.investmentStages")} defaultOpen
               badge={filters.stages.length > 0 ? <FilterBadge>{filters.stages.length} selected</FilterBadge> : undefined}>
               <div className="flex flex-wrap gap-1.5">
                 {ALL_STAGES.map(st => (
@@ -796,7 +830,7 @@ export function VCs() {
               </div>
             </FilterAccordion>
 
-            <FilterAccordion title={t("common.sectors")} defaultOpen
+            <FilterAccordion dataTour="filter-sectors" title={t("common.sectors")} defaultOpen
               badge={filters.sectors.length > 0 ? <FilterBadge>{filters.sectors.length} selected</FilterBadge> : undefined}>
               <div className="flex flex-wrap gap-1.5">
                 {ALL_SECTORS.map(sec => (
@@ -815,7 +849,7 @@ export function VCs() {
               </div>
             </FilterAccordion>
 
-            <FilterAccordion title={t("vcs.geography")} defaultOpen={false}
+            <FilterAccordion dataTour="filter-geography" title={t("vcs.geography")} defaultOpen={false}
               badge={filters.geo ? <FilterBadge>{filters.geo}</FilterBadge> : undefined}>
               <div className="space-y-0.5">
                 <button
@@ -834,6 +868,7 @@ export function VCs() {
               </div>
             </FilterAccordion>
 
+            <div data-tour="filter-smart">
             <FilterAccordion title={t("vcs.fundSizeAum")} defaultOpen
               badge={filters.aumStep !== "all" ? <FilterBadge>{aumLabel}</FilterBadge> : undefined}>
               <StepSlider
@@ -870,6 +905,7 @@ export function VCs() {
                 {t("vcs.activeTooltip")}
               </p>
             </FilterAccordion>
+            </div>
           </>
         }
       >
@@ -897,11 +933,12 @@ export function VCs() {
           ) : (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-                {paginated.map(firm => (
+                {paginated.map((firm, i) => (
                   <VCCard
                     key={firm.id} firm={firm} onClick={() => setSelectedFirm(firm)}
                     selected={compareMap.has(firm.id)}
                     onToggleSelect={(e) => toggleCompareSelect(firm, e)}
+                    dataTour={i === 0 ? "vc-results" : undefined}
                   />
                 ))}
               </div>
@@ -971,6 +1008,8 @@ export function VCs() {
           </div>
         </div>
       )}
+
+      <ProductTour steps={tourSteps} open={tourOpen} onClose={closeTour} />
     </Layout>
   );
 }

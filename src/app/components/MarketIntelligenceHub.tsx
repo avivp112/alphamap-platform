@@ -241,7 +241,7 @@ export function MarketIntelligenceHub({
   }
 
   return (
-    <div>
+    <div data-tour="market-intelligence">
       <div className="mb-5">
         <h2 className="text-lg font-bold tracking-tight text-[#0F172A]">{t("mih.title")}</h2>
         <p className="mt-0.5 text-sm text-gray-500">

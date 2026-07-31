@@ -3,11 +3,14 @@ import { useTranslation } from "react-i18next";
 import {
   DollarSign, TrendingUp, Zap, Search, X,
   ChevronUp, ChevronDown, Activity, Calendar,
-  SlidersHorizontal, Layers, Building2, Info, Database,
+  SlidersHorizontal, Layers, Building2, Info, Database, HelpCircle,
 } from "lucide-react";
 import { Layout } from "../components/Layout";
 import { fetchDeals, type DealRow } from "../../lib/supabase";
 import { DealModal } from "../components/DealModal";
+import { ProductTour, type TourStep } from "../components/ProductTour";
+
+const TOUR_SEEN_KEY = "alphamap_tour_deals_seen";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 // Supabase-ready: swap DUMMY_DEALS for a fetchDeals() call against the `deals`
@@ -344,6 +347,24 @@ export function Deals() {
   const [sortDir,         setSortDir]         = useState<SortDir>("desc");
   const [selectedDeal,    setSelectedDeal]    = useState<Deal | null>(null);
 
+  // First-time visitors get the walkthrough automatically, once; anyone else
+  // can replay it from the "?" button in the title bar.
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    if (!localStorage.getItem(TOUR_SEEN_KEY)) setTourOpen(true);
+  }, []);
+  function closeTour() {
+    localStorage.setItem(TOUR_SEEN_KEY, "1");
+    setTourOpen(false);
+  }
+  const tourSteps: TourStep[] = [
+    { target: '[data-tour="deals-search"]',       icon: Search,           title: t("tour.deals.steps.search.title"),  description: t("tour.deals.steps.search.body") },
+    { target: '[data-tour="deals-type-filter"]',  icon: SlidersHorizontal, title: t("tour.deals.steps.type.title"),   description: t("tour.deals.steps.type.body") },
+    { target: '[data-tour="deals-hud"]',          icon: Activity,        title: t("tour.deals.steps.hud.title"),     description: t("tour.deals.steps.hud.body") },
+    { target: '[data-tour="deals-sort-headers"]', icon: ChevronDown,     title: t("tour.deals.steps.sort.title"),    description: t("tour.deals.steps.sort.body") },
+    { target: '[data-tour="deals-first-row"]',    icon: Building2,       title: t("tour.deals.steps.row.title"),     description: t("tour.deals.steps.row.body") },
+  ];
+
   // ── Real data from Supabase ────────────────────────────────────────────────
   const [dbRows,   setDbRows]   = useState<DealRow[] | null>(null); // null = loading
   const [dbError,  setDbError]  = useState<string | null>(null);
@@ -414,6 +435,14 @@ export function Deals() {
           <div className="flex items-center justify-between gap-4 mb-1.5">
             <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">{t("deals.title")}</h1>
             <div className="flex items-center gap-2 flex-none">
+              <button
+                onClick={() => setTourOpen(true)}
+                title={t("tour.takeTour")}
+                aria-label={t("tour.takeTour")}
+                className="p-2 rounded-[12px] bg-white/60 border border-black/10 text-[#0F172A]/60 hover:text-[#0F172A] hover:bg-white transition-all"
+              >
+                <HelpCircle className="w-4 h-4" />
+              </button>
               <span
                 className="text-[10px] font-semibold px-2.5 py-1 rounded-full bg-amber-100 border border-amber-300 text-amber-800"
               >
@@ -463,7 +492,7 @@ export function Deals() {
           )}
 
           {/* ── HUD Metrics ── */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div data-tour="deals-hud" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <HudCard
               accent="#22d3ee"
               icon={DollarSign}
@@ -533,7 +562,7 @@ export function Deals() {
               {/* Search + type filter ── */}
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full sm:w-auto">
                 {/* Search */}
-                <div className="relative">
+                <div data-tour="deals-search" className="relative">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
                   <input
                     value={search}
@@ -553,6 +582,7 @@ export function Deals() {
 
                 {/* Deal type chips */}
                 <div
+                  data-tour="deals-type-filter"
                   className="flex items-center gap-0.5 rounded-[10px] p-0.5 bg-gray-50 border border-gray-200"
                 >
                   {FILTER_TYPES.map(t => {
@@ -582,6 +612,7 @@ export function Deals() {
 
                 {/* Column headers */}
                 <div
+                  data-tour="deals-sort-headers"
                   className="grid px-5 py-3 gap-4 bg-gray-50 border-b border-gray-100"
                   style={{
                     gridTemplateColumns: '88px 1fr 124px 108px 1fr 160px',
@@ -602,6 +633,7 @@ export function Deals() {
                   return (
                     <div
                       key={deal.id}
+                      data-tour={idx === 0 ? "deals-first-row" : undefined}
                       className="grid px-5 py-3.5 gap-4 cursor-pointer transition-colors duration-100"
                       style={{
                         gridTemplateColumns: '88px 1fr 124px 108px 1fr 160px',
@@ -726,6 +758,8 @@ export function Deals() {
           onClose={() => setSelectedDeal(null)}
         />
       )}
+
+      <ProductTour steps={tourSteps} open={tourOpen} onClose={closeTour} />
     </Layout>
   );
 }
