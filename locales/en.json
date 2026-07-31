@@ -772,5 +772,19 @@
       "sendAnother": "Send another message",
       "errorGeneric": "Something went wrong. Please try again."
     }
+  },
+  "tour": {
+    "takeTour": "Take a tour",
+    "closeTour": "Close tour",
+    "done": "Done",
+    "steps": {
+      "search": { "title": "Search any company", "body": "Type a company name, industry, or keyword to jump straight to what you're looking for." },
+      "sectors": { "title": "Browse by sector", "body": "Narrow the list to a sector — or drill into a specific sub-sector for a tighter view." },
+      "stage": { "title": "Filter by funding stage", "body": "Slide from Pre-Seed through Growth/Late to focus on companies at a specific stage." },
+      "headcount": { "title": "Filter by team size", "body": "Slide to focus on companies within a particular headcount range." },
+      "smart": { "title": "Smart filters", "body": "Expand these to surface fast-growing companies (Financial Momentum) or markets with fewer competitors (Competitive Density)." },
+      "view": { "title": "Grid or list", "body": "Switch between a visual card grid and a dense, sortable table — whichever suits how you like to scan." },
+      "results": { "title": "Select, compare, track", "body": "Click a company to open its full profile. Use the checkbox to add one company to your Watchlist, or select up to three to compare them side by side." }
+    }
   }
 }

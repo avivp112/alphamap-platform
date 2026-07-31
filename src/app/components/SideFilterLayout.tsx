@@ -52,6 +52,7 @@ export function SideFilterLayout({
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-300" />
                 <input type="text" value={search} onChange={(e) => onSearchChange(e.target.value)} placeholder={searchPlaceholder}
+                  data-tour="search-input"
                   className="w-full pl-8 pr-8 py-2 text-sm bg-gray-50 border border-gray-100 text-[#0F172A] placeholder-gray-400 rounded-[10px] focus:outline-none focus:border-gray-300 focus:ring-2 focus:ring-[#0F172A]/10 transition-all" />
                 {search && (
                   <button onClick={() => onSearchChange("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"><X className="w-3.5 h-3.5" /></button>
@@ -76,13 +77,15 @@ export function SideFilterLayout({
 // Collapsible section shell used for every sidebar filter category.
 
 export function FilterAccordion({
-  title, defaultOpen = true, badge, children,
+  title, defaultOpen = true, badge, children, dataTour,
 }: {
   title: string; defaultOpen?: boolean; badge?: React.ReactNode; children: React.ReactNode;
+  /** Opt-in hook for ProductTour to spotlight this section — unused unless a page runs a tour. */
+  dataTour?: string;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border-b border-gray-100 py-4 first:pt-0 last:border-b-0">
+    <div data-tour={dataTour} className="border-b border-gray-100 py-4 first:pt-0 last:border-b-0">
       <button
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center justify-between gap-2 text-left group"

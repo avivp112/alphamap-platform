@@ -772,5 +772,19 @@
       "sendAnother": "Enviar otro mensaje",
       "errorGeneric": "Algo salió mal. Inténtalo de nuevo."
     }
+  },
+  "tour": {
+    "takeTour": "Hacer un recorrido",
+    "closeTour": "Cerrar recorrido",
+    "done": "Listo",
+    "steps": {
+      "search": { "title": "Busca cualquier empresa", "body": "Escribe el nombre de una empresa, un sector o una palabra clave para ir directo a lo que buscas." },
+      "sectors": { "title": "Explora por sector", "body": "Filtra la lista por sector, o profundiza en un subsector para una vista más específica." },
+      "stage": { "title": "Filtra por etapa de financiación", "body": "Desliza desde Pre-Seed hasta Growth/Late para centrarte en empresas de una etapa concreta." },
+      "headcount": { "title": "Filtra por tamaño de equipo", "body": "Desliza para centrarte en empresas dentro de un rango de plantilla determinado." },
+      "smart": { "title": "Filtros inteligentes", "body": "Despliega estos filtros para encontrar empresas de rápido crecimiento (Momentum Financiero) o mercados con menos competidores (Densidad Competitiva)." },
+      "view": { "title": "Cuadrícula o lista", "body": "Cambia entre una cuadrícula visual de tarjetas y una tabla densa y ordenable, según prefieras explorar." },
+      "results": { "title": "Selecciona, compara, sigue", "body": "Haz clic en una empresa para ver su perfil completo. Usa la casilla para añadir una empresa a tu lista de seguimiento, o selecciona hasta tres para compararlas entre sí." }
+    }
   }
 }

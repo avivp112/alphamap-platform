@@ -11,6 +11,7 @@ import { Layout } from "../components/Layout";
 import { LinkedInBadge } from "../components/LinkedInBadge";
 import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider } from "../components/SideFilterLayout";
 import { CompanyLogo } from "../components/CompanyLogo";
+import { ProductTour, type TourStep } from "../components/ProductTour";
 import {
   Plus, Globe, Loader2, Search, X, MapPin, Calendar, Users,
   DollarSign, Rocket, AlertCircle, CheckCircle2,
@@ -18,7 +19,7 @@ import {
   UserRound, LayoutGrid, List, ExternalLink,
   ChevronDown, ChevronLeft, ChevronRight, Building2, CheckSquare, Square,
   GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2, ChevronUp,
-  SlidersHorizontal, Award, Eye,
+  SlidersHorizontal, Award, Eye, HelpCircle,
 } from "lucide-react";
 import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
@@ -284,6 +285,8 @@ const HEADCOUNT_STEPS = [
   { value: "500+",     label: "500+" },
 ] as const;
 type HeadcountStep = (typeof HEADCOUNT_STEPS)[number]["value"];
+
+const TOUR_SEEN_KEY = "alphamap_tour_startups_seen";
 type DensityFilter = "all" | "crowded" | "blue-ocean";
 
 const PROGRESS_MESSAGES = [
@@ -2072,6 +2075,26 @@ export function Startups() {
   const [watchlistBusy, setWatchlistBusy] = useState(false);
   const [watchlistError, setWatchlistError] = useState<string | null>(null);
 
+  // First-time visitors get the walkthrough automatically, once; anyone else
+  // can replay it from the "?" button in the title bar.
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    if (!localStorage.getItem(TOUR_SEEN_KEY)) setTourOpen(true);
+  }, []);
+  function closeTour() {
+    localStorage.setItem(TOUR_SEEN_KEY, "1");
+    setTourOpen(false);
+  }
+  const tourSteps: TourStep[] = [
+    { target: '[data-tour="search-input"]',    icon: Search,           title: t("tour.steps.search.title"),    description: t("tour.steps.search.body") },
+    { target: '[data-tour="filter-sectors"]',  icon: Building2,        title: t("tour.steps.sectors.title"),   description: t("tour.steps.sectors.body") },
+    { target: '[data-tour="filter-stage"]',    icon: TrendingUp,       title: t("tour.steps.stage.title"),     description: t("tour.steps.stage.body") },
+    { target: '[data-tour="filter-headcount"]', icon: Users,           title: t("tour.steps.headcount.title"), description: t("tour.steps.headcount.body") },
+    { target: '[data-tour="filter-smart"]',    icon: Zap,              title: t("tour.steps.smart.title"),     description: t("tour.steps.smart.body") },
+    { target: '[data-tour="view-toggle"]',     icon: LayoutGrid,       title: t("tour.steps.view.title"),      description: t("tour.steps.view.body") },
+    { target: '[data-tour="company-results"]', icon: GitCompare,       title: t("tour.steps.results.title"),   description: t("tour.steps.results.body") },
+  ];
+
   const cityParam = searchParams.get("city") ?? "";
   const [cityFilter, setCityFilter] = useState(cityParam);
 
@@ -2205,7 +2228,15 @@ export function Startups() {
               {cityFilter && <span className="ml-3 text-lg font-medium text-[#0F172A]">{cityFilter}</span>}
             </h1>
             <div className="flex items-center gap-2 flex-none">
-              <div className="flex items-center bg-white/60 border border-black/10 rounded-[12px] p-1">
+              <button
+                onClick={() => setTourOpen(true)}
+                title={t("tour.takeTour")}
+                aria-label={t("tour.takeTour")}
+                className="p-2 rounded-[12px] bg-white/60 border border-black/10 text-[#0F172A]/60 hover:text-[#0F172A] hover:bg-white transition-all"
+              >
+                <HelpCircle className="w-4 h-4" />
+              </button>
+              <div data-tour="view-toggle" className="flex items-center bg-white/60 border border-black/10 rounded-[12px] p-1">
                 <button onClick={() => setView("grid")} className={`p-1.5 rounded-[8px] transition-all ${viewMode === "grid" ? "bg-white text-[#0F172A] shadow-sm" : "text-[#0F172A]/50 hover:text-[#0F172A]"}`}><LayoutGrid className="w-4 h-4" /></button>
                 <button onClick={() => setView("list")} className={`p-1.5 rounded-[8px] transition-all ${viewMode === "list" ? "bg-white text-[#0F172A] shadow-sm" : "text-[#0F172A]/50 hover:text-[#0F172A]"}`}><List className="w-4 h-4" /></button>
               </div>
@@ -2232,7 +2263,7 @@ export function Startups() {
         extraBottomPadding={selected.size >= 1}
         filters={
           <>
-              <FilterAccordion title={t("startups.sectors")} defaultOpen
+              <FilterAccordion dataTour="filter-sectors" title={t("startups.sectors")} defaultOpen
                 badge={parentSector ? <FilterBadge>{sectorLabel(subSector || parentSector, t)}</FilterBadge> : undefined}>
                 <HierarchicalSectorFilter
                   parentSector={parentSector} onParentChange={setParentSector}
@@ -2245,16 +2276,17 @@ export function Startups() {
                 <CountryFilterList countries={countries} value={countryFilter} onChange={setCountry} />
               </FilterAccordion>
 
-              <FilterAccordion title={t("startups.fundingStage")} defaultOpen
+              <FilterAccordion dataTour="filter-stage" title={t("startups.fundingStage")} defaultOpen
                 badge={stageStep !== "all" ? <FilterBadge>{currentStageLabel}</FilterBadge> : undefined}>
                 <StepSlider steps={STAGE_STEPS} value={stageStep} onChange={(v) => setStageStep(v as StageStep)} />
               </FilterAccordion>
 
-              <FilterAccordion title={t("startups.headcount")} defaultOpen
+              <FilterAccordion dataTour="filter-headcount" title={t("startups.headcount")} defaultOpen
                 badge={headcountStep !== "all" ? <FilterBadge>{currentHeadcountLabel}</FilterBadge> : undefined}>
                 <StepSlider steps={HEADCOUNT_STEPS} value={headcountStep} onChange={(v) => setHeadcount(v as HeadcountStep)} />
               </FilterAccordion>
 
+              <div data-tour="filter-smart">
               <FilterAccordion title={t("startups.financialMomentum")} defaultOpen={false}
                 badge={momentumFilter ? <FilterBadge>{t("startups.on")}</FilterBadge> : undefined}>
                 <div className="flex items-center justify-between gap-2">
@@ -2295,6 +2327,7 @@ export function Startups() {
                   <InfoTooltip content="Categorizes market space by peer density: 'Crowded' identifies companies with several peers in the same sector and funding stage. 'Blue Ocean' identifies highly differentiated companies with few or no peers." align="right" />
                 </div>
               </FilterAccordion>
+              </div>
 
               {cityFilter && (
                 <div className="py-4">
@@ -2332,7 +2365,7 @@ export function Startups() {
                 <button onClick={clearAll} className="text-xs text-gray-500 font-semibold hover:text-rose-600 transition-colors">{t("startups.clearAllFilters")}</button>
               </div>
             ) : (
-              <div className="relative">
+              <div data-tour="company-results" className="relative">
                 {rowsLoading && (
                   <div className="absolute inset-0 z-10 flex items-start justify-center pt-16 bg-white/50 backdrop-blur-[1px] rounded-[20px] transition-opacity">
                     <Loader2 className="w-5 h-5 text-[#F59E0B] animate-spin" />
@@ -2373,6 +2406,8 @@ export function Startups() {
 
       <AddStartupDialog open={showAdd} onClose={() => setShowAdd(false)}
         onSuccess={() => { setPage(1); setRefreshKey((k) => k + 1); }} />
+
+      <ProductTour steps={tourSteps} open={tourOpen} onClose={closeTour} />
 
       {tearsheetStartup && (
         <TearsheetModal startup={tearsheetStartup} onClose={() => setSelected(null)} onNavigate={(row) => setSelected(row)} />
