@@ -322,8 +322,8 @@ export function TopNav() {
 
   return (
     <header className="sticky top-0 z-30 relative flex h-16 w-full items-center justify-between border-b border-white bg-white px-4 lg:px-6 shadow-sm">
-      {/* Logo + primary nav */}
-      <div className="flex items-center gap-1 lg:gap-2 min-w-0">
+      {/* Logo (+ mobile nav trigger) */}
+      <div className="flex items-center gap-1 flex-none min-w-0">
         {/* Was a plain <div>, so clicking it did nothing — the one thing every
             visitor tries when they want to get back. */}
         <button
@@ -337,102 +337,102 @@ export function TopNav() {
         </button>
 
         {showAppNav && (
-          <div ref={navItemsRef} className="flex items-center">
-            {/* Desktop */}
-            <div className="hidden md:flex items-center gap-0.5 ml-2 lg:ml-4">
-              <NavLink
-                to="/dashboard"
-                end
-                className={({ isActive }) => cn(topLinkCls, isActive ? topLinkActive : topLinkInactive)}
-              >
-                {({ isActive }) => (
-                  <>
-                    {t('nav.home')}
-                    <ActiveIndicator show={isActive} />
-                  </>
-                )}
-              </NavLink>
-
-              <NavDropdown
-                id="data"
-                label={t('nav.data')}
-                items={DATA_ITEMS}
-                openMenu={openMenu}
-                onOpen={openNow}
-                onCloseSoon={closeSoon}
-                onSelect={() => setOpenMenu(null)}
-              />
-
-              <NavDropdown
-                id="marketMap"
-                label={t('nav.marketMap')}
-                items={MARKET_MAP_ITEMS}
-                openMenu={openMenu}
-                onOpen={openNow}
-                onCloseSoon={closeSoon}
-                onSelect={() => setOpenMenu(null)}
-              />
-
-              <NavLink
-                to="/watchlist"
-                className={({ isActive }) => cn(topLinkCls, isActive ? topLinkActive : topLinkInactive)}
-              >
-                {({ isActive }) => (
-                  <>
-                    {t('nav.watchlist')}
-                    <ActiveIndicator show={isActive} />
-                  </>
-                )}
-              </NavLink>
-            </div>
-
-            {/* Mobile trigger */}
-            <button
-              type="button"
-              onClick={() => setMobileOpen((o) => !o)}
-              aria-expanded={mobileOpen}
-              aria-label={t('nav.toggleNavigation')}
-              className="flex md:hidden items-center p-2 ml-1 text-[#0F172A]"
-            >
-              {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-            </button>
-
-            {/* Mobile panel */}
-            {mobileOpen && (
-              <div className="md:hidden absolute left-0 right-0 top-full border-t border-b border-gray-100 bg-white px-4 py-1 shadow-[0_12px_32px_rgba(15,23,42,0.08)] z-40">
-                <Link
-                  to="/dashboard"
-                  onClick={() => setMobileOpen(false)}
-                  className="block border-b border-gray-100 py-3 text-sm font-semibold text-[#0F172A]"
-                >
-                  {t('nav.home')}
-                </Link>
-                <MobileAccordion
-                  label={t('nav.data')}
-                  items={DATA_ITEMS}
-                  expanded={mobileExpanded === 'data'}
-                  onToggle={() => setMobileExpanded((cur) => (cur === 'data' ? null : 'data'))}
-                  onSelect={() => setMobileOpen(false)}
-                />
-                <MobileAccordion
-                  label={t('nav.marketMap')}
-                  items={MARKET_MAP_ITEMS}
-                  expanded={mobileExpanded === 'marketMap'}
-                  onToggle={() => setMobileExpanded((cur) => (cur === 'marketMap' ? null : 'marketMap'))}
-                  onSelect={() => setMobileOpen(false)}
-                />
-                <Link
-                  to="/watchlist"
-                  onClick={() => setMobileOpen(false)}
-                  className="block py-3 text-sm font-semibold text-[#0F172A]"
-                >
-                  {t('nav.watchlist')}
-                </Link>
-              </div>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={() => setMobileOpen((o) => !o)}
+            aria-expanded={mobileOpen}
+            aria-label={t('nav.toggleNavigation')}
+            className="flex md:hidden items-center p-2 ml-1 text-[#0F172A]"
+          >
+            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
         )}
       </div>
+
+      {/* Primary nav — centered in the space between the logo and the
+          right-side controls, rather than crowded against either. */}
+      {showAppNav && (
+        <div ref={navItemsRef} className="hidden md:flex flex-1 items-center justify-center gap-0.5">
+          <NavLink
+            to="/dashboard"
+            end
+            className={({ isActive }) => cn(topLinkCls, isActive ? topLinkActive : topLinkInactive)}
+          >
+            {({ isActive }) => (
+              <>
+                {t('nav.home')}
+                <ActiveIndicator show={isActive} />
+              </>
+            )}
+          </NavLink>
+
+          <NavDropdown
+            id="data"
+            label={t('nav.data')}
+            items={DATA_ITEMS}
+            openMenu={openMenu}
+            onOpen={openNow}
+            onCloseSoon={closeSoon}
+            onSelect={() => setOpenMenu(null)}
+          />
+
+          <NavDropdown
+            id="marketMap"
+            label={t('nav.marketMap')}
+            items={MARKET_MAP_ITEMS}
+            openMenu={openMenu}
+            onOpen={openNow}
+            onCloseSoon={closeSoon}
+            onSelect={() => setOpenMenu(null)}
+          />
+
+          <NavLink
+            to="/watchlist"
+            className={({ isActive }) => cn(topLinkCls, isActive ? topLinkActive : topLinkInactive)}
+          >
+            {({ isActive }) => (
+              <>
+                {t('nav.watchlist')}
+                <ActiveIndicator show={isActive} />
+              </>
+            )}
+          </NavLink>
+        </div>
+      )}
+
+      {/* Mobile panel */}
+      {showAppNav && mobileOpen && (
+        <div className="md:hidden absolute left-0 right-0 top-full border-t border-b border-gray-100 bg-white px-4 py-1 shadow-[0_12px_32px_rgba(15,23,42,0.08)] z-40">
+          <Link
+            to="/dashboard"
+            onClick={() => setMobileOpen(false)}
+            className="block border-b border-gray-100 py-3 text-sm font-semibold text-[#0F172A]"
+          >
+            {t('nav.home')}
+          </Link>
+          <MobileAccordion
+            label={t('nav.data')}
+            items={DATA_ITEMS}
+            expanded={mobileExpanded === 'data'}
+            onToggle={() => setMobileExpanded((cur) => (cur === 'data' ? null : 'data'))}
+            onSelect={() => setMobileOpen(false)}
+          />
+          <MobileAccordion
+            label={t('nav.marketMap')}
+            items={MARKET_MAP_ITEMS}
+            expanded={mobileExpanded === 'marketMap'}
+            onToggle={() => setMobileExpanded((cur) => (cur === 'marketMap' ? null : 'marketMap'))}
+            onSelect={() => setMobileOpen(false)}
+          />
+          <Link
+            to="/watchlist"
+            onClick={() => setMobileOpen(false)}
+            className="block py-3 text-sm font-semibold text-[#0F172A]"
+          >
+            {t('nav.watchlist')}
+          </Link>
+        </div>
+      )}
 
       {/* Profile & Notifications */}
       <div className="flex items-center gap-2 sm:gap-4 flex-none">
