@@ -16,7 +16,7 @@ import {
   Plus, Globe, Loader2, Search, X, MapPin, Calendar, Users,
   DollarSign, Rocket, AlertCircle, CheckCircle2,
   TrendingUp, TrendingDown, Minus,
-  UserRound, LayoutGrid, List, ExternalLink,
+  UserRound, LayoutGrid, List,
   ChevronDown, ChevronLeft, ChevronRight, Building2, CheckSquare, Square,
   GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2, ChevronUp,
   SlidersHorizontal, Award, Eye, HelpCircle,
@@ -927,12 +927,6 @@ function VerticalFundingTimeline({ rounds }: { rounds: FundingRound[] }) {
                       <span className="text-[10px] text-gray-300 italic">{t("startups.investorDataRequiresFilling")}</span>
                     )}
                   </div>
-                  {r.source_url && (
-                    <a href={r.source_url} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-xs text-[#F59E0B] hover:underline font-medium flex-none">
-                      Source <ExternalLink className="w-3 h-3" />
-                    </a>
-                  )}
                 </div>
               </div>
             </div>

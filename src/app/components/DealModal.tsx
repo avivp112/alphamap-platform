@@ -713,17 +713,6 @@ export function DealModal({ deal, allDeals, onClose }: Props) {
             <VelocityWidget deal={deal} />
           </div>
         </div>
-
-        {/* ── Source footer ── */}
-        {deal.source_url && (
-          <div className="px-5 pb-5 flex items-center gap-1.5 border-t border-gray-100" style={{ paddingTop: "12px" }}>
-            <Info className="w-3 h-3 text-gray-300 flex-none" />
-            <a href={deal.source_url} target="_blank" rel="noopener noreferrer"
-              className="text-[10px] text-gray-400 hover:text-cyan-600 transition-colors truncate">
-              {deal.source_url}
-            </a>
-          </div>
-        )}
       </div>
     </div>
   );
