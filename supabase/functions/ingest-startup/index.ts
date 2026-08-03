@@ -52,6 +52,22 @@ function normalizeRoundType(raw: string): string {
   return "Other";
 }
 
+// Domain matcher used to anchor searches when a website hint is supplied
+// (e.g. by scripts/discover_competitors.ts, to disambiguate generic company
+// names) and as a fallback for the final website field. Matches the same
+// helper in scripts/bulk_enrich_all.ts / import_startups_list.ts.
+function websiteDomain(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const raw = url.trim();
+  if (!raw) return null;
+  try {
+    const u = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
+    return u.hostname.replace(/^www\./, "").toLowerCase() || null;
+  } catch {
+    return null;
+  }
+}
+
 async function tavilySearch(query: string, apiKey: string): Promise<string> {
   try {
     const res = await fetch("https://api.tavily.com/search", {
@@ -84,7 +100,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { company_name } = await req.json();
+    const { company_name, website: websiteHint } = await req.json();
     const name = (company_name || "").trim();
 
     if (!name) {
@@ -93,6 +109,13 @@ Deno.serve(async (req: Request) => {
         { status: 400, headers: corsHeaders },
       );
     }
+
+    // Optional caller-supplied website hint (e.g. from the competitor-discovery
+    // script) — anchors the searches below to avoid wrong-company collisions
+    // on generic names, and backstops the final website field if Claude's own
+    // extraction doesn't return one.
+    const hintDomain = websiteDomain(websiteHint);
+    const searchAnchor = hintDomain ? ` "${hintDomain}"` : "";
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -104,13 +127,13 @@ Deno.serve(async (req: Request) => {
     // ── Phase 1: Parallel web research ──────────────────────────────────────
     console.log(`[ingest] Researching: ${name}`);
     const [funding, founders, market, status, hiringNews] = await Promise.all([
-      tavilySearch(`"${name}" startup funding round amount raised valuation 2024 2025`, tavilyKey),
+      tavilySearch(`"${name}"${searchAnchor} startup funding round amount raised valuation 2024 2025`, tavilyKey),
       // Dedicated founders search — full names are required
-      tavilySearch(`"${name}" founder co-founder "founded by" CEO CTO full name crunchbase linkedin`, tavilyKey),
-      tavilySearch(`"${name}" company website headquarters country city industry sector description what does`, tavilyKey),
+      tavilySearch(`"${name}"${searchAnchor} founder co-founder "founded by" CEO CTO full name crunchbase linkedin`, tavilyKey),
+      tavilySearch(`"${name}"${searchAnchor} company website headquarters country city industry sector description what does`, tavilyKey),
       // Explicit public/private status search to help Claude assess the privacy rule
-      tavilySearch(`"${name}" IPO "went public" NASDAQ NYSE "publicly traded" OR "private company" OR "privately held"`, tavilyKey),
-      tavilySearch(`"${name}" employees headcount team size layoffs hiring growth 2024 2025`, tavilyKey),
+      tavilySearch(`"${name}"${searchAnchor} IPO "went public" NASDAQ NYSE "publicly traded" OR "private company" OR "privately held"`, tavilyKey),
+      tavilySearch(`"${name}"${searchAnchor} employees headcount team size layoffs hiring growth 2024 2025`, tavilyKey),
     ]);
 
     const researchContext = [
@@ -257,7 +280,7 @@ Additional rules:
 - Only include website if you are confident the URL is correct
 - Omit any field you cannot verify rather than guessing
 
-Company to research: "${name}"
+Company to research: "${name}"${hintDomain ? ` (known website domain: ${hintDomain} — use this to confirm you are researching the correct company, especially if the name is generic or shared by multiple businesses)` : ""}
 
 Research data:
 ${researchContext}`,
@@ -326,8 +349,9 @@ ${researchContext}`,
       );
     }
 
-    // 5. Website uniqueness check
-    const website = extracted.website ? String(extracted.website).trim() : null;
+    // 5. Website uniqueness check — fall back to the caller-supplied hint if
+    // Claude's own extraction didn't return a website.
+    const website = extracted.website ? String(extracted.website).trim() : (websiteHint ? String(websiteHint).trim() : null);
     if (website) {
       const { data: dup } = await supabase
         .from("startups")
