@@ -318,6 +318,7 @@ deploy-public-market-functions:
     - deploy_fn ingest-huggingface
     - deploy_fn ingest-github-velocity
     - deploy_fn ingest-epo-ops
+    - deploy_fn ingest-startup
 
 # ── Embedding backfill ────────────────────────────────────────────────────────
 # Runs on a SCHEDULE, never on the manual deploy pipeline. Two reasons: it costs
