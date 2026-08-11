@@ -332,7 +332,17 @@ async function main() {
     console.log(`🗑️   Deleted ${deleted} rows not present in the master list`);
   }
 
-  // ── 7. Summary ─────────────────────────────────────────────────────────────
+  // ── 7. Refresh the Startups Hub's materialized search view ─────────────────
+  // startups_search (used by the Private Market page) is refreshed on a
+  // 15-min pg_cron schedule; this call makes today's writes visible there
+  // immediately instead of waiting for the next tick.
+  if (updated + inserted + deleted > 0) {
+    const { error: refreshErr } = await supabase.rpc("refresh_startups_search");
+    if (refreshErr) console.warn(`  ⚠️  startups_search refresh failed: ${refreshErr.message}`);
+    else console.log("🔄  startups_search refreshed");
+  }
+
+  // ── 8. Summary ─────────────────────────────────────────────────────────────
   console.log("\n" + "═".repeat(58));
   console.log(`Matched/updated: ${updated}   Inserted: ${inserted}   Deleted: ${deleted}   Failed: ${failed}`);
   console.log("Next step: run the Bulk Enrich All Startups workflow to fill the empty fields.");

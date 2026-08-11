@@ -351,7 +351,17 @@ async function main() {
     }
   }
 
-  // ── 6. Final summary ──────────────────────────────────────────────────────
+  // ── 6. Refresh the Startups Hub's materialized search view ─────────────────
+  // startups_search (used by the Private Market page) is refreshed on a
+  // 15-min pg_cron schedule; this call makes today's writes visible there
+  // immediately instead of waiting for the next tick.
+  if (!DRY_RUN && (tally.inserted > 0 || freeLinksMade > 0 || tally.crossLinked > 0)) {
+    const { error: refreshErr } = await supabase.rpc("refresh_startups_search");
+    if (refreshErr) console.warn(`⚠️  startups_search refresh failed: ${refreshErr.message}`);
+    else console.log("🔄  startups_search refreshed");
+  }
+
+  // ── 7. Final summary ──────────────────────────────────────────────────────
   const elapsedMs = Date.now() - new Date(startedAt).getTime();
   const mm = Math.floor(elapsedMs / 60_000);
   const ss = Math.floor((elapsedMs % 60_000) / 1000);
