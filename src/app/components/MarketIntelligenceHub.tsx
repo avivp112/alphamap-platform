@@ -245,7 +245,7 @@ export function MarketIntelligenceHub({
       <div className="mb-5">
         <h2 className="text-lg font-bold tracking-tight text-[#0F172A]">{t("mih.title")}</h2>
         <p className="mt-0.5 text-sm text-gray-500">
-          {SECTOR_LABELS[sector]} · {hubLabel} · {filtered.length.toLocaleString()} {filtered.length === 1 ? 'company' : 'companies'} in view
+          {SECTOR_LABELS[sector]} · {hubLabel}
         </p>
       </div>
 

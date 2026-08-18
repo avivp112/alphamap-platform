@@ -101,7 +101,6 @@
     "addAndSync": "添加并同步",
     "syncing": "同步中…",
     "filterPlaceholder": "筛选已跟踪公司",
-    "companyCount_other": "{{count}} 家公司",
     "hubTitle": "二级市场中心",
     "hubSubtitle": "将公开市场基准与一级市场估值打通：行业倍数、IPO 窗口晴雨表，以及上市与未上市公司的可比分析。",
     "syncNow": "立即同步",
@@ -350,7 +349,6 @@
     "all": "全部",
     "gridView": "网格视图",
     "listView": "列表视图",
-    "companyCount_other": "{{count}} 家公司",
     "allOf": "全部{{sector}}"
   },
   "vcs": {

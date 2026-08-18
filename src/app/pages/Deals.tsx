@@ -443,11 +443,6 @@ export function Deals() {
               >
                 <HelpCircle className="w-4 h-4" />
               </button>
-              <span
-                className="text-[10px] font-semibold px-2.5 py-1 rounded-full bg-amber-100 border border-amber-300 text-amber-800"
-              >
-                {allDeals.length} deals tracked
-              </span>
               <span className="flex items-center gap-1.5 text-[10px] font-semibold text-[#0F172A]/55">
                 <span className={`w-1.5 h-1.5 rounded-full ${isLive ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`} />
                 {isLoading ? "Loading…" : isLive ? "Live" : "Demo"}
@@ -541,15 +536,10 @@ export function Deals() {
             <div
               className="px-5 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-gray-100"
             >
-              {/* Title + count */}
+              {/* Title */}
               <div className="flex items-center gap-3">
                 <Activity className="w-4 h-4 text-amber-500 flex-none" />
                 <span className="text-xs font-bold text-gray-900 uppercase tracking-widest">{t("deals.ledger")}</span>
-                <span
-                  className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500"
-                >
-                  {filtered.length} / {allDeals.length}
-                </span>
                 {activeFilters > 0 && (
                   <button
                     onClick={() => { setSearch(""); setDealTypeFilter(null); }}
@@ -719,8 +709,7 @@ export function Deals() {
               className="px-5 py-3 flex items-center justify-between border-t border-gray-100"
             >
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-gray-400">{t("deals.showing")}<span className="text-gray-600 font-semibold">{filtered.length}</span> of{" "}
-                  <span className="text-gray-600 font-semibold">{allDeals.length}</span> deals
+                <span className="text-[10px] text-gray-400">{t("deals.showing")}<span className="text-gray-600 font-semibold">{filtered.length}</span> deals
                 </span>
                 <span className="text-[9px] text-gray-300">· Click any row to open Deal Intelligence</span>
               </div>

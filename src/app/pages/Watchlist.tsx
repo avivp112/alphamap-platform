@@ -367,7 +367,6 @@ function CardGroup({
       <div className="flex items-center gap-2 mb-3">
         <Icon className="w-4 h-4 text-[#0F172A]/50" />
         <h3 className="text-xs font-bold uppercase tracking-widest text-gray-400">{title}</h3>
-        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold text-gray-500">{items.length}</span>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {items.map((item) => {

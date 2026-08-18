@@ -221,10 +221,10 @@ export function AISearchWorkspace() {
                 </p>
 
                 {companies.length > 0 && (
-                  <ResultGroup icon={Building2} title="Companies" count={companies.length} items={companies} onOpen={setCiteTarget} />
+                  <ResultGroup icon={Building2} title="Companies" items={companies} onOpen={setCiteTarget} />
                 )}
                 {investors.length > 0 && (
-                  <ResultGroup icon={Landmark} title="Investors" count={investors.length} items={investors} onOpen={setCiteTarget} />
+                  <ResultGroup icon={Landmark} title="Investors" items={investors} onOpen={setCiteTarget} />
                 )}
               </div>
             )}
@@ -335,16 +335,15 @@ function CitationChip({
 
 // ── Result group (Companies / Investors) ─────────────────────────────────────
 function ResultGroup({
-  icon: Icon, title, count, items, onOpen,
+  icon: Icon, title, items, onOpen,
 }: {
-  icon: React.ElementType; title: string; count: number; items: SemanticMatch[]; onOpen: (m: SemanticMatch) => void;
+  icon: React.ElementType; title: string; items: SemanticMatch[]; onOpen: (m: SemanticMatch) => void;
 }) {
   return (
     <div>
       <div className="mb-2.5 flex items-center gap-2">
         <Icon className="h-4 w-4 text-[#0F172A]/60" />
         <h3 className="text-sm font-bold text-[#0F172A]">{title}</h3>
-        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold text-gray-500">{count}</span>
       </div>
       <div className="space-y-2">
         {items.map((m) => <ResultRow key={`${m.entity_type}-${m.id}`} match={m} onOpen={onOpen} />)}

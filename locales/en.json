@@ -101,8 +101,6 @@
     "addAndSync": "Add & sync",
     "syncing": "Syncing…",
     "filterPlaceholder": "Filter tracked companies",
-    "companyCount_one": "{{count}} company",
-    "companyCount_other": "{{count}} companies",
     "hubTitle": "Public Market Hub",
     "hubSubtitle": "Public benchmarks wired to private valuations — sector multiples, an IPO-window barometer, and public-vs-private comps.",
     "syncNow": "Sync now",
@@ -351,8 +349,6 @@
     "all": "All",
     "gridView": "Grid view",
     "listView": "List view",
-    "companyCount_one": "{{count}} company",
-    "companyCount_other": "{{count}} companies",
     "allOf": "All {{sector}}"
   },
   "vcs": {

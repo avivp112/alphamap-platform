@@ -101,7 +101,6 @@
     "addAndSync": "追加して同期",
     "syncing": "同期中…",
     "filterPlaceholder": "追跡中の企業を絞り込む",
-    "companyCount_other": "{{count}} 社",
     "hubTitle": "公開市場ハブ",
     "hubSubtitle": "上場企業のベンチマークを未公開企業のバリュエーションに接続。セクター別倍率、IPO ウィンドウの体感指標、上場・未公開の比較分析を提供します。",
     "syncNow": "今すぐ同期",
@@ -350,7 +349,6 @@
     "all": "すべて",
     "gridView": "グリッド表示",
     "listView": "リスト表示",
-    "companyCount_other": "{{count}} 社",
     "allOf": "{{sector}} すべて"
   },
   "vcs": {

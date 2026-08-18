@@ -753,7 +753,6 @@ function CompaniesDirectory({ companies, onCompanyAdded }: {
               className="w-full pl-8 pr-3 py-1.5 text-xs bg-gray-50 border border-gray-100 rounded-[9px] focus:outline-none focus:border-gray-300 focus:ring-2 focus:ring-[#0F172A]/10 transition-all"
             />
           </div>
-          <span className="text-[10px] font-semibold text-gray-400 whitespace-nowrap">{filtered.length} {filtered.length === 1 ? "company" : "companies"}</span>
         </div>
 
         {shown.length === 0 ? (

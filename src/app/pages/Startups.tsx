@@ -2244,9 +2244,6 @@ export function Startups() {
             <p className="text-sm text-[#0F172A]/60 leading-snug">
               {t("startups.pageSubtitle")}
             </p>
-            <span className="text-xs font-semibold text-[#0F172A]/60 bg-white/60 border border-black/10 px-2.5 py-1 rounded-full flex-none">
-              {t("startups.companyCount", { count: totalCount })}
-            </span>
           </div>
         </div>
       </div>
