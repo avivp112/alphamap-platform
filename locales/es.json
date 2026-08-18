@@ -179,30 +179,23 @@
       "modeledFrom": "Modelada a partir de la velocidad de financiación, señales de contratación y múltiplos sectoriales de más de 40 rondas comparables.",
       "valuationTrend": "Evolución de la valoración · 12 m"
     },
-    "useCases": {
-      "headline": "Más allá de los datos, accede al histórico de cotización, señales de crecimiento, información de inversores y análisis clave—",
-      "query": "Consulta",
-      "sources": "Fuentes",
-      "correlate": {
-        "heading": "Correlación entre mercados",
-        "body": "Descubre vínculos ocultos entre rondas de financiación privadas y movimientos bursátiles.",
-        "s1": "Leyendo fuentes…",
-        "s2": "Cruzando informes regulatorios…",
-        "s3": "Correlación encontrada"
+    "personas": {
+      "eyebrow": "Para quién está pensado AlphaMap",
+      "counterOf": "de",
+      "investors": {
+        "label": "Para inversores",
+        "heading": "Inversores",
+        "body": "Invierta con ventaja. Adelántese al mercado con capacidades de IA que le ayudan a identificar oportunidades de alto rendimiento a tiempo, reducir riesgos y detectar en silencio las startups exitosas antes que nadie, con previsiones, financiación, crecimiento, adquisiciones y salidas a bolsa. Deje que sustituyamos la investigación manual por un análisis automatizado que ofrece información más rápida y de mayor calidad para guiar su evaluación."
       },
-      "narrate": {
-        "heading": "Narrativas impulsadas por IA",
-        "body": "Convierte datos en bruto en inteligencia clara y accionable, y en relatos de negocio.",
-        "s1": "Leyendo fuentes…",
-        "s2": "Sintetizando la narrativa…",
-        "s3": "Relato listo"
+      "bizdev": {
+        "label": "Para desarrollo de negocio y analistas",
+        "heading": "Desarrollo de Negocio y Analistas",
+        "body": "Obtenga nuevas perspectivas sobre la empresa y el mercado en el que opera —el impulso del sector y la dinámica competitiva— para aumentar el valor del producto, identificar competidores, crear nuevas fuentes de ingresos y desarrollar su estrategia de negocio accediendo a datos exclusivos."
       },
-      "flow": {
-        "heading": "Visualización de flujos de capital",
-        "body": "Sigue hacia dónde mueven su capital los principales inversores en mercados privados y cotizados.",
-        "s1": "Leyendo fuentes…",
-        "s2": "Mapeando flujos de capital…",
-        "s3": "Flujo mapeado"
+      "entrepreneurs": {
+        "label": "Para emprendedores",
+        "heading": "Emprendedores",
+        "body": "Acceda a datos e información sobre los inversores adecuados para su etapa, sector y geografía con inteligencia líder sobre fondos e inversores. Profundice en la dinámica del mercado y en las conexiones entre los principales fondos y las empresas competidoras con datos de mercado propios y análisis competitivo."
       }
     },
     "ctaTitle": "¿Listo para ver el panorama completo?",

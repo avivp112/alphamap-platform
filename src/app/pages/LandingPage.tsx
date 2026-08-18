@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
-  ChevronDown, Sparkles, TrendingUp, Loader2, Search, ArrowLeft,
-  Building2, MousePointer2, MousePointerClick, AtSign, Code2, Lightbulb, ArrowRight,
+  ChevronDown, ChevronLeft, ChevronRight, Sparkles, TrendingUp, Loader2, Search, ArrowLeft,
+  Building2, MousePointer2, MousePointerClick,
   Linkedin, Instagram,
 } from "lucide-react";
 import {
@@ -656,180 +656,188 @@ const SHOWCASE_CONTENT: Record<string, React.ComponentType<{ active: boolean }>>
   vcs:      VCsShowcase,
 };
 
-// ── Scroll-linked use cases: left list scrolls, right panel stays pinned ─────
-// The slash commands stay untranslated — they are literal command tokens, not
-// prose. Everything else resolves through the active dictionary.
-const USE_CASES = [
-  { id: "correlate", command: "/correlate" },
-  { id: "narrate",   command: "/narrate" },
-  { id: "flow",      command: "/flow" },
-];
+// ── Persona carousel: three audience-specific slides, arrow-navigated ───────
+const PERSONAS_BG = "#CDD1C3"; // sage wash the section transitions into — unchanged from before
+const PERSONA_FRAME_BG = "#E4E6E1"; // neutral gray frame around the illustration, matches the page's light-gray background
 
-const USE_CASES_BG = "#CDD1C3"; // sage wash the section transitions into
+const PERSONAS = ["investors", "bizdev", "entrepreneurs"] as const;
+type PersonaId = (typeof PERSONAS)[number];
 
-// ── Right-side "AI query" panel: gray frame + a white card that types out
-// the kept description text like a live query, then a status line beneath it.
-const QUERY_PANEL_BG = "#E4E6E1"; // neutral gray frame, matches the page's light-gray background
+// Hand-drawn line-art per persona, built from the app's own accent colors
+// (the sage used for the hero chart / Market Map hubs, plus navy ink and a
+// single amber highlight) rather than photography — so the illustrations
+// read as part of the same product, not stock art bolted onto the landing
+// page.
+const ILLUSTRATION_SAGE  = "#7C8967";
+const ILLUSTRATION_NAVY  = "#111827";
+const ILLUSTRATION_AMBER = "#D97706";
 
-const QUERY_TYPE_SPEED_MS   = 20;
-const QUERY_STATUS_GAP_MS   = 450;  // pause after typing before the first status line
-const QUERY_STATUS_STEP_MS  = 1300; // how long each status line is shown
-
-function QueryStatusDot() {
+function InvestorsIllustration() {
   return (
-    <span className="relative flex h-2 w-2 flex-none">
-      <span className="absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75 animate-ping" />
-      <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-400" />
-    </span>
+    <svg viewBox="0 0 220 220" fill="none" className="w-full h-full max-w-[340px]" aria-hidden="true">
+      {[60, 100, 140, 180].map((y) => (
+        <line key={y} x1="20" y1={y} x2="200" y2={y} stroke={ILLUSTRATION_NAVY} strokeOpacity="0.08" strokeWidth="1" />
+      ))}
+      <path
+        d="M20 170 L60 150 L90 158 L120 110 L150 120 L180 55"
+        stroke={ILLUSTRATION_SAGE}
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {[[20, 170], [60, 150], [90, 158], [120, 110], [150, 120]].map(([cx, cy]) => (
+        <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="3" fill={ILLUSTRATION_NAVY} fillOpacity="0.5" />
+      ))}
+      <circle cx="180" cy="55" r="9" fill={ILLUSTRATION_AMBER} fillOpacity="0.16" />
+      <circle cx="180" cy="55" r="5" fill={ILLUSTRATION_AMBER} />
+      <path d="M168 45 L178 33 M178 33 L178 41 M178 33 L170 33" stroke={ILLUSTRATION_AMBER} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
-function UseCaseQueryPanel({ item }: { item: (typeof USE_CASES)[number] }) {
-  const { t } = useTranslation();
-  const [typedCount, setTypedCount] = useState(0);
-  const [statusStep, setStatusStep] = useState(0); // 0 = hidden, 1..n = status[i-1]
-
-  const body   = t(`landing.useCases.${item.id}.body`);
-  const status = [
-    t(`landing.useCases.${item.id}.s1`),
-    t(`landing.useCases.${item.id}.s2`),
-    t(`landing.useCases.${item.id}.s3`),
+function BizDevIllustration() {
+  const satellites = [
+    { angle: -70, r: 74 }, { angle: -20, r: 88 }, { angle: 35, r: 70 },
+    { angle: 100, r: 82 }, { angle: 155, r: 68 }, { angle: -135, r: 78 },
   ];
-
-  useEffect(() => {
-    setTypedCount(0);
-    setStatusStep(0);
-
-    let charIndex = 0;
-    const typeInterval = setInterval(() => {
-      charIndex += 1;
-      setTypedCount(charIndex);
-      if (charIndex >= body.length) clearInterval(typeInterval);
-    }, QUERY_TYPE_SPEED_MS);
-
-    // CJK copy is far shorter in characters than the English original, so the
-    // status timings are derived from the translated length rather than a
-    // fixed duration — otherwise the status lines would lag a finished line.
-    const typingDurationMs = body.length * QUERY_TYPE_SPEED_MS;
-    const statusTimeouts = status.map((_, i) =>
-      setTimeout(() => setStatusStep(i + 1), typingDurationMs + QUERY_STATUS_GAP_MS + i * QUERY_STATUS_STEP_MS)
-    );
-
-    return () => {
-      clearInterval(typeInterval);
-      statusTimeouts.forEach(clearTimeout);
-    };
-  }, [item, body]);
-
-  const typedText   = body.slice(0, typedCount);
-  const doneTyping  = typedCount >= body.length;
-  const statusIndex = Math.min(statusStep, status.length) - 1;
-
+  const center = { x: 110, y: 110 };
   return (
-    <div className="rounded-[28px] p-3 sm:p-4 overflow-hidden" style={{ background: QUERY_PANEL_BG }}>
-      <span className="block text-[11px] font-mono text-gray-500 px-3 pt-2 pb-3">{item.command}</span>
-
-      <div className="rounded-2xl bg-white p-6 shadow-[0_8px_20px_rgba(0,0,0,0.08)]">
-        <span className="block text-[10px] font-bold tracking-[0.14em] text-gray-400 uppercase mb-2">{t("landing.useCases.query")}</span>
-        <p className="text-base sm:text-lg font-medium text-[#111827] leading-snug min-h-[3.6em]">
-          {typedText}
-          {!doneTyping && <span className="typewriter-cursor" aria-hidden="true" />}
-        </p>
-
-        <div className="flex items-center gap-2 mt-4 pt-4 border-t border-gray-100">
-          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-500 bg-gray-50 border border-gray-200 rounded-full px-2.5 py-1">
-            <AtSign className="w-3 h-3" />{t("landing.useCases.sources")}
-          </span>
-          <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-gray-50 border border-gray-200 text-gray-500">
-            <Code2 className="w-3.5 h-3.5" />
-          </span>
-          <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-gray-50 border border-gray-200 text-gray-500">
-            <Lightbulb className="w-3.5 h-3.5" />
-          </span>
-          <span className="ml-auto inline-flex items-center justify-center w-8 h-8 rounded-full bg-[#0F172A] text-white flex-none">
-            <ArrowRight className="w-4 h-4" />
-          </span>
-        </div>
-      </div>
-
-      <div className="h-10 flex items-center px-3">
-        {statusStep > 0 && (
-          <div key={statusStep} className="flex items-center gap-2" style={{ animation: "showcaseFadeInUp 400ms ease-out both" }}>
-            <QueryStatusDot />
-            <span className="text-xs font-medium text-gray-500">{status[statusIndex]}</span>
-          </div>
-        )}
-      </div>
-    </div>
+    <svg viewBox="0 0 220 220" fill="none" className="w-full h-full max-w-[340px]" aria-hidden="true">
+      <circle cx={center.x} cy={center.y} r="88" stroke={ILLUSTRATION_NAVY} strokeOpacity="0.08" strokeDasharray="3 5" />
+      {satellites.map(({ angle, r }, i) => {
+        const rad = (angle * Math.PI) / 180;
+        const x = center.x + r * Math.cos(rad);
+        const y = center.y + r * Math.sin(rad);
+        const highlighted = i === 1;
+        return (
+          <g key={angle}>
+            <line x1={center.x} y1={center.y} x2={x} y2={y} stroke={highlighted ? ILLUSTRATION_AMBER : ILLUSTRATION_SAGE} strokeOpacity={highlighted ? 0.6 : 0.35} strokeWidth={highlighted ? 2 : 1.5} />
+            <circle cx={x} cy={y} r={highlighted ? 7 : 5} fill={highlighted ? ILLUSTRATION_AMBER : "#fff"} stroke={highlighted ? ILLUSTRATION_AMBER : ILLUSTRATION_NAVY} strokeOpacity={highlighted ? 1 : 0.4} strokeWidth="1.5" />
+          </g>
+        );
+      })}
+      <circle cx={center.x} cy={center.y} r="11" fill={ILLUSTRATION_NAVY} />
+    </svg>
   );
 }
 
-function UseCasesSection() {
+function EntrepreneursIllustration() {
+  const center = { x: 110, y: 110 };
+  const targetAngle = -35;
+  const targetR = 62;
+  const rad = (targetAngle * Math.PI) / 180;
+  const tx = center.x + targetR * Math.cos(rad);
+  const ty = center.y + targetR * Math.sin(rad);
+  return (
+    <svg viewBox="0 0 220 220" fill="none" className="w-full h-full max-w-[340px]" aria-hidden="true">
+      {[38, 62, 86].map((r) => (
+        <circle key={r} cx={center.x} cy={center.y} r={r} stroke={ILLUSTRATION_NAVY} strokeOpacity="0.1" />
+      ))}
+      <line x1={center.x} y1="14" x2={center.x} y2="30" stroke={ILLUSTRATION_NAVY} strokeOpacity="0.2" strokeWidth="1.5" />
+      <line x1={center.x} y1="190" x2={center.x} y2="206" stroke={ILLUSTRATION_NAVY} strokeOpacity="0.2" strokeWidth="1.5" />
+      <line x1="14" y1={center.y} x2="30" y2={center.y} stroke={ILLUSTRATION_NAVY} strokeOpacity="0.2" strokeWidth="1.5" />
+      <line x1="190" y1={center.y} x2="206" y2={center.y} stroke={ILLUSTRATION_NAVY} strokeOpacity="0.2" strokeWidth="1.5" />
+      <line x1={center.x} y1={center.y} x2={tx} y2={ty} stroke={ILLUSTRATION_SAGE} strokeWidth="1.5" strokeDasharray="2 4" />
+      <circle cx={tx} cy={ty} r="14" stroke={ILLUSTRATION_AMBER} strokeOpacity="0.35" strokeWidth="1.5" />
+      <circle cx={tx} cy={ty} r="5" fill={ILLUSTRATION_AMBER} />
+      <circle cx={center.x} cy={center.y} r="4" fill={ILLUSTRATION_NAVY} />
+    </svg>
+  );
+}
+
+const PERSONA_ILLUSTRATIONS: Record<PersonaId, React.ComponentType> = {
+  investors: InvestorsIllustration,
+  bizdev: BizDevIllustration,
+  entrepreneurs: EntrepreneursIllustration,
+};
+
+function PersonaNavButton({
+  direction, onClick, disabled,
+}: { direction: "prev" | "next"; onClick: () => void; disabled: boolean }) {
+  const Icon = direction === "prev" ? ChevronLeft : ChevronRight;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={direction === "prev" ? "Previous" : "Next"}
+      className={`flex-none inline-flex items-center justify-center w-11 h-11 rounded-full border transition-all duration-200 ${
+        disabled
+          ? "border-[#111827]/15 text-[#111827]/25 cursor-default"
+          : "border-[#111827] bg-[#111827] text-white hover:scale-105 hover:shadow-[0_6px_16px_rgba(17,24,39,0.25)]"
+      }`}
+    >
+      <Icon className="w-4 h-4" />
+    </button>
+  );
+}
+
+function PersonaCarouselSection() {
   const { t } = useTranslation();
   const [activeIndex, setActiveIndex] = useState(0);
-  const stepRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const persona = PERSONAS[activeIndex];
+  const Illustration = PERSONA_ILLUSTRATIONS[persona];
 
-  useEffect(() => {
-    const observers: IntersectionObserver[] = [];
-    stepRefs.current.forEach((el, i) => {
-      if (!el) return;
-      const observer = new IntersectionObserver(
-        ([entry]) => { if (entry.isIntersecting) setActiveIndex(i); },
-        { rootMargin: "-45% 0px -45% 0px", threshold: 0 }
-      );
-      observer.observe(el);
-      observers.push(observer);
-    });
-    return () => observers.forEach((o) => o.disconnect());
-  }, []);
-
-  const active = USE_CASES[activeIndex];
+  function go(delta: number) {
+    setActiveIndex((i) => Math.max(0, Math.min(PERSONAS.length - 1, i + delta)));
+  }
 
   return (
-    <section className="w-full" style={{ background: USE_CASES_BG }}>
-      <div className="max-w-[1200px] mx-auto px-6 lg:px-12 py-24 lg:py-32 grid lg:grid-cols-2 gap-12 lg:gap-20">
-        {/* Left: headline + compact list, pinned in place (stays put right next
-            to the panel — only the active-item highlight changes as you scroll). */}
-        <div className="lg:sticky lg:top-32 lg:self-start">
-          <h2
-            className="text-2xl sm:text-3xl md:text-[2.25rem] font-normal text-[#111827] tracking-tight mb-6 lg:mb-8 max-w-lg"
-            style={{ fontFamily: "'Playfair Display', serif", lineHeight: 1.25 }}
-          >
-            {t("landing.useCases.headline")}
-          </h2>
+    <section
+      className="w-full"
+      style={{ background: PERSONAS_BG }}
+      onKeyDown={(e) => {
+        if (e.key === "ArrowLeft") go(-1);
+        if (e.key === "ArrowRight") go(1);
+      }}
+    >
+      <div className="max-w-[1200px] mx-auto px-6 lg:px-12 py-24 lg:py-32">
+        <div className="flex items-center gap-3 mb-10 lg:mb-14">
+          <span className="h-px w-8" style={{ background: "rgba(17,24,39,0.3)" }} />
+          <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#111827]/60">
+            {t("landing.personas.eyebrow")}
+          </span>
+        </div>
 
-          <div className="flex flex-col">
-            {USE_CASES.map((item, i) => (
-              <div
-                key={item.id}
-                className="py-4 sm:py-5 border-t first:border-t-0"
-                style={{ borderColor: "rgba(17,24,39,0.12)" }}
-              >
-                <h3
-                  className="text-base sm:text-lg font-semibold tracking-tight transition-colors duration-300"
-                  style={{ color: i === activeIndex ? "#111827" : "rgba(17,24,39,0.35)" }}
-                >
-                  <span className="mr-2">&amp;</span>{t(`landing.useCases.${item.id}.heading`)}
-                </h3>
-              </div>
-            ))}
+        <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+          <div key={`text-${persona}`} style={{ animation: "showcaseFadeInUp 450ms ease-out both" }}>
+            <span className="block text-[11px] font-bold uppercase tracking-[0.16em] mb-4" style={{ color: ILLUSTRATION_SAGE }}>
+              {t(`landing.personas.${persona}.label`)}
+            </span>
+            <h2
+              className="text-3xl sm:text-4xl md:text-[2.75rem] font-normal text-[#111827] tracking-tight mb-6"
+              style={{ fontFamily: "'Playfair Display', serif", lineHeight: 1.15 }}
+            >
+              {t(`landing.personas.${persona}.heading`)}
+            </h2>
+            <p className="text-base sm:text-lg text-[#111827]/70 leading-relaxed max-w-xl">
+              {t(`landing.personas.${persona}.body`)}
+            </p>
+          </div>
+
+          <div
+            key={`illus-${persona}`}
+            className="rounded-[28px] p-4 sm:p-6"
+            style={{ background: PERSONA_FRAME_BG, animation: "showcaseFadeInUp 450ms ease-out both" }}
+          >
+            <div className="rounded-2xl bg-white shadow-[0_8px_20px_rgba(0,0,0,0.08)] aspect-square flex items-center justify-center p-6">
+              <Illustration />
+            </div>
           </div>
         </div>
 
-        {/* Right: pinned panel, plus an invisible scroll track stacked beneath it.
-            The track (one tall step per use case) is what gives this row real
-            scroll distance and drives activeIndex via IntersectionObserver — the
-            visible list and panel both just stay pinned side by side the whole
-            time, and only unstick together once the track scrolls past. */}
-        <div>
-          <div className="lg:sticky lg:top-32">
-            <UseCaseQueryPanel key={activeIndex} item={active} />
+        <div className="flex items-center gap-5 mt-14 lg:mt-16">
+          <PersonaNavButton direction="prev" onClick={() => go(-1)} disabled={activeIndex === 0} />
+          <PersonaNavButton direction="next" onClick={() => go(1)} disabled={activeIndex === PERSONAS.length - 1} />
+          <div className="flex-1 h-px relative overflow-hidden rounded-full" style={{ background: "rgba(17,24,39,0.12)" }}>
+            <div
+              className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
+              style={{ width: `${((activeIndex + 1) / PERSONAS.length) * 100}%`, background: "#111827" }}
+            />
           </div>
-          <div aria-hidden="true" className="flex flex-col">
-            {USE_CASES.map((_, i) => (
-              <div key={i} ref={(el) => { stepRefs.current[i] = el; }} className="lg:min-h-[60vh]" />
-            ))}
-          </div>
+          <span className="text-xs font-semibold tabular-nums text-[#111827]/60 flex-none">
+            0{activeIndex + 1} <span className="text-[#111827]/30 mx-0.5">{t("landing.personas.counterOf")}</span> 0{PERSONAS.length}
+          </span>
         </div>
       </div>
     </section>
@@ -1072,7 +1080,7 @@ export function LandingPage() {
       </section>
 
       {/* ── Use cases: scroll-linked list with a pinned right panel ──────────── */}
-      <UseCasesSection />
+      <PersonaCarouselSection />
 
       {/* ── Final CTA + Footer: one continuous dark block, hard-edged on every
           side — no gray gap and no rounded corners, same sharp cut used for

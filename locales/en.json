@@ -179,30 +179,23 @@
       "modeledFrom": "Modeled from funding velocity, hiring signals & sector multiples across 40+ comparable rounds.",
       "valuationTrend": "Valuation trend · 12 mo"
     },
-    "useCases": {
-      "headline": "Beyond the data, you can access trading history, company growth signals, investor insights, and key analyses—",
-      "query": "Query",
-      "sources": "Sources",
-      "correlate": {
-        "heading": "Cross-Market Correlation",
-        "body": "Discover hidden links between private funding rounds and public stock movements.",
-        "s1": "Reading sources…",
-        "s2": "Cross-referencing filings…",
-        "s3": "Correlation found"
+    "personas": {
+      "eyebrow": "Who AlphaMap is built for",
+      "counterOf": "of",
+      "investors": {
+        "label": "For Investors",
+        "heading": "Investors",
+        "body": "Invest with an edge. Outpace the market with AI capabilities that help you identify high-return opportunities early, reduce risks, and quietly flag successful startups before anyone else, with forecasts, funding, growth, acquisitions, and IPOs. Let us help you replace manual research with automated analysis that provides faster, higher-quality insights to guide your evaluation."
       },
-      "narrate": {
-        "heading": "AI-Powered Narratives",
-        "body": "Translate raw data into clear, actionable intelligence and business stories.",
-        "s1": "Reading sources…",
-        "s2": "Synthesizing narrative…",
-        "s3": "Story ready"
+      "bizdev": {
+        "label": "For Business Development & Analysts",
+        "heading": "Business Development & Analysts",
+        "body": "Gain new insights about the company and the market in which it operates — sector momentum and competitive dynamics — to increase product value, identify competitors, create new revenue streams, and develop your business strategy while accessing unique data."
       },
-      "flow": {
-        "heading": "Capital Flow Visualization",
-        "body": "Track where leading investors are moving their money across private and public sectors.",
-        "s1": "Reading sources…",
-        "s2": "Mapping capital flows…",
-        "s3": "Flow mapped"
+      "entrepreneurs": {
+        "label": "For Entrepreneurs",
+        "heading": "Entrepreneurs",
+        "body": "Access data and insights on the right investors for your stage, sector and geography with leading fund and investor intelligence. Delve into market dynamics and the connections between leading funds and competing companies with proprietary market data and competitive analysis."
       }
     },
     "ctaTitle": "Are you ready to see the full picture?",
