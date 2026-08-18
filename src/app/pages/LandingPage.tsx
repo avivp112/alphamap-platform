@@ -663,84 +663,88 @@ const PERSONA_FRAME_BG = "#E4E6E1"; // neutral gray frame around the illustratio
 const PERSONAS = ["investors", "bizdev", "entrepreneurs"] as const;
 type PersonaId = (typeof PERSONAS)[number];
 
-// Hand-drawn line-art per persona, built from the app's own accent colors
-// (the sage used for the hero chart / Market Map hubs, plus navy ink and a
-// single amber highlight) rather than photography — so the illustrations
-// read as part of the same product, not stock art bolted onto the landing
-// page.
-const ILLUSTRATION_SAGE  = "#7C8967";
+// Flat layered-terrain illustrations, one per persona, all sharing the same
+// visual grammar: three tonal layers of the app's own sage accent (the same
+// green used for the hero chart / Market Map hubs) forming a landscape,
+// plus a navy data-line overlay with one highlighted accent moment. Same
+// family, different motif per audience — not photography, since this app
+// has no real product photography to draw from.
+const TERRAIN_LIGHT  = "#D9DDCE"; // back layer, nearest the card's white
+const TERRAIN_MID    = "#ABB496"; // mid layer
+const TERRAIN_DARK    = "#7C8967"; // front layer — the established brand sage
 const ILLUSTRATION_NAVY  = "#111827";
 const ILLUSTRATION_AMBER = "#D97706";
 
 function InvestorsIllustration() {
   return (
-    <svg viewBox="0 0 220 220" fill="none" className="w-full h-full max-w-[340px]" aria-hidden="true">
-      {[60, 100, 140, 180].map((y) => (
-        <line key={y} x1="20" y1={y} x2="200" y2={y} stroke={ILLUSTRATION_NAVY} strokeOpacity="0.08" strokeWidth="1" />
-      ))}
+    <svg viewBox="0 0 280 200" fill="none" className="w-full h-full" aria-hidden="true">
+      <polygon points="0,180 45,120 90,155 135,95 185,145 235,105 280,150 280,180" fill={TERRAIN_LIGHT} />
+      <polygon points="15,180 90,75 165,180" fill={TERRAIN_MID} />
+      <polygon points="140,180 212,52 280,180" fill={TERRAIN_DARK} />
       <path
-        d="M20 170 L60 150 L90 158 L120 110 L150 120 L180 55"
-        stroke={ILLUSTRATION_SAGE}
+        d="M28 163 L68 142 L108 118 L148 98 L188 72 L224 42"
+        stroke={ILLUSTRATION_NAVY}
         strokeWidth="2.5"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      {[[20, 170], [60, 150], [90, 158], [120, 110], [150, 120]].map(([cx, cy]) => (
-        <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="3" fill={ILLUSTRATION_NAVY} fillOpacity="0.5" />
+      {[[28, 163], [68, 142], [108, 118], [148, 98], [188, 72]].map(([cx, cy]) => (
+        <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="3.5" fill={ILLUSTRATION_NAVY} />
       ))}
-      <circle cx="180" cy="55" r="9" fill={ILLUSTRATION_AMBER} fillOpacity="0.16" />
-      <circle cx="180" cy="55" r="5" fill={ILLUSTRATION_AMBER} />
-      <path d="M168 45 L178 33 M178 33 L178 41 M178 33 L170 33" stroke={ILLUSTRATION_AMBER} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="224" cy="42" r="10" fill={TERRAIN_DARK} fillOpacity="0.22" />
+      <circle cx="224" cy="42" r="6" fill={TERRAIN_DARK} stroke="#fff" strokeWidth="1.5" />
+      <path d="M236 32 L250 20 M250 20 L250 29 M250 20 L241 20" stroke={ILLUSTRATION_AMBER} strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
 
 function BizDevIllustration() {
-  const satellites = [
-    { angle: -70, r: 74 }, { angle: -20, r: 88 }, { angle: 35, r: 70 },
-    { angle: 100, r: 82 }, { angle: 155, r: 68 }, { angle: -135, r: 78 },
-  ];
-  const center = { x: 110, y: 110 };
+  const nodes: [number, number][] = [[62, 108], [128, 78], [196, 96], [238, 128]];
+  const highlighted = 2;
   return (
-    <svg viewBox="0 0 220 220" fill="none" className="w-full h-full max-w-[340px]" aria-hidden="true">
-      <circle cx={center.x} cy={center.y} r="88" stroke={ILLUSTRATION_NAVY} strokeOpacity="0.08" strokeDasharray="3 5" />
-      {satellites.map(({ angle, r }, i) => {
-        const rad = (angle * Math.PI) / 180;
-        const x = center.x + r * Math.cos(rad);
-        const y = center.y + r * Math.sin(rad);
-        const highlighted = i === 1;
-        return (
-          <g key={angle}>
-            <line x1={center.x} y1={center.y} x2={x} y2={y} stroke={highlighted ? ILLUSTRATION_AMBER : ILLUSTRATION_SAGE} strokeOpacity={highlighted ? 0.6 : 0.35} strokeWidth={highlighted ? 2 : 1.5} />
-            <circle cx={x} cy={y} r={highlighted ? 7 : 5} fill={highlighted ? ILLUSTRATION_AMBER : "#fff"} stroke={highlighted ? ILLUSTRATION_AMBER : ILLUSTRATION_NAVY} strokeOpacity={highlighted ? 1 : 0.4} strokeWidth="1.5" />
-          </g>
-        );
+    <svg viewBox="0 0 280 200" fill="none" className="w-full h-full" aria-hidden="true">
+      <path d="M0,180 L0,142 Q70,104 140,132 Q210,156 280,122 L280,180 Z" fill={TERRAIN_LIGHT} />
+      <path d="M18,180 L18,124 Q82,86 152,114 Q170,122 170,140 L170,180 Z" fill={TERRAIN_MID} />
+      <path d="M128,180 L128,132 Q190,92 258,120 Q274,127 280,138 L280,180 Z" fill={TERRAIN_DARK} />
+      {nodes.slice(0, -1).map(([x1, y1], i) => {
+        const [x2, y2] = nodes[i + 1];
+        return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={ILLUSTRATION_NAVY} strokeOpacity="0.55" strokeWidth="1.75" />;
       })}
-      <circle cx={center.x} cy={center.y} r="11" fill={ILLUSTRATION_NAVY} />
+      <line x1={nodes[0][0]} y1={nodes[0][1]} x2={nodes[2][0]} y2={nodes[2][1]} stroke={ILLUSTRATION_NAVY} strokeOpacity="0.25" strokeWidth="1.5" strokeDasharray="2 4" />
+      {nodes.map(([cx, cy], i) => (
+        <circle
+          key={`${cx}-${cy}`}
+          cx={cx} cy={cy}
+          r={i === highlighted ? 8 : 4.5}
+          fill={i === highlighted ? ILLUSTRATION_AMBER : "#fff"}
+          stroke={i === highlighted ? ILLUSTRATION_AMBER : ILLUSTRATION_NAVY}
+          strokeWidth="1.75"
+        />
+      ))}
     </svg>
   );
 }
 
 function EntrepreneursIllustration() {
-  const center = { x: 110, y: 110 };
-  const targetAngle = -35;
-  const targetR = 62;
-  const rad = (targetAngle * Math.PI) / 180;
-  const tx = center.x + targetR * Math.cos(rad);
-  const ty = center.y + targetR * Math.sin(rad);
   return (
-    <svg viewBox="0 0 220 220" fill="none" className="w-full h-full max-w-[340px]" aria-hidden="true">
-      {[38, 62, 86].map((r) => (
-        <circle key={r} cx={center.x} cy={center.y} r={r} stroke={ILLUSTRATION_NAVY} strokeOpacity="0.1" />
-      ))}
-      <line x1={center.x} y1="14" x2={center.x} y2="30" stroke={ILLUSTRATION_NAVY} strokeOpacity="0.2" strokeWidth="1.5" />
-      <line x1={center.x} y1="190" x2={center.x} y2="206" stroke={ILLUSTRATION_NAVY} strokeOpacity="0.2" strokeWidth="1.5" />
-      <line x1="14" y1={center.y} x2="30" y2={center.y} stroke={ILLUSTRATION_NAVY} strokeOpacity="0.2" strokeWidth="1.5" />
-      <line x1="190" y1={center.y} x2="206" y2={center.y} stroke={ILLUSTRATION_NAVY} strokeOpacity="0.2" strokeWidth="1.5" />
-      <line x1={center.x} y1={center.y} x2={tx} y2={ty} stroke={ILLUSTRATION_SAGE} strokeWidth="1.5" strokeDasharray="2 4" />
-      <circle cx={tx} cy={ty} r="14" stroke={ILLUSTRATION_AMBER} strokeOpacity="0.35" strokeWidth="1.5" />
-      <circle cx={tx} cy={ty} r="5" fill={ILLUSTRATION_AMBER} />
-      <circle cx={center.x} cy={center.y} r="4" fill={ILLUSTRATION_NAVY} />
+    <svg viewBox="0 0 280 200" fill="none" className="w-full h-full" aria-hidden="true">
+      <polygon points="0,180 50,132 100,160 150,102 200,150 250,122 280,142 280,180" fill={TERRAIN_LIGHT} />
+      <polygon points="8,180 70,92 142,180" fill={TERRAIN_MID} />
+      <polygon points="150,180 206,112 262,180" fill={TERRAIN_DARK} />
+      <path
+        d="M16 172 Q55 154 88 160 Q120 166 150 142 Q178 120 206 114"
+        stroke={ILLUSTRATION_NAVY}
+        strokeOpacity="0.65"
+        strokeWidth="2"
+        strokeDasharray="1 7"
+        strokeLinecap="round"
+        fill="none"
+      />
+      <circle cx="16" cy="172" r="3.5" fill={ILLUSTRATION_NAVY} />
+      <line x1="206" y1="114" x2="206" y2="82" stroke={ILLUSTRATION_NAVY} strokeWidth="2.5" strokeLinecap="round" />
+      <path d="M206 82 L230 90 L206 99 Z" fill={ILLUSTRATION_AMBER} />
+      <circle cx="206" cy="114" r="9" fill={TERRAIN_DARK} fillOpacity="0.22" />
+      <circle cx="206" cy="114" r="5" fill={TERRAIN_DARK} stroke="#fff" strokeWidth="1.5" />
     </svg>
   );
 }
@@ -791,42 +795,42 @@ function PersonaCarouselSection() {
         if (e.key === "ArrowRight") go(1);
       }}
     >
-      <div className="max-w-[1200px] mx-auto px-6 lg:px-12 py-24 lg:py-32">
-        <div className="flex items-center gap-3 mb-10 lg:mb-14">
+      <div className="max-w-[1200px] mx-auto px-6 lg:px-12 py-12 lg:py-16">
+        <div className="flex items-center gap-3 mb-6 lg:mb-8">
           <span className="h-px w-8" style={{ background: "rgba(17,24,39,0.3)" }} />
           <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#111827]/60">
             {t("landing.personas.eyebrow")}
           </span>
         </div>
 
-        <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+        <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
           <div key={`text-${persona}`} style={{ animation: "showcaseFadeInUp 450ms ease-out both" }}>
-            <span className="block text-[11px] font-bold uppercase tracking-[0.16em] mb-4" style={{ color: ILLUSTRATION_SAGE }}>
+            <span className="block text-[11px] font-bold uppercase tracking-[0.16em] mb-3" style={{ color: TERRAIN_DARK }}>
               {t(`landing.personas.${persona}.label`)}
             </span>
             <h2
-              className="text-3xl sm:text-4xl md:text-[2.75rem] font-normal text-[#111827] tracking-tight mb-6"
+              className="text-2xl sm:text-3xl md:text-[2.25rem] font-normal text-[#111827] tracking-tight mb-4"
               style={{ fontFamily: "'Playfair Display', serif", lineHeight: 1.15 }}
             >
               {t(`landing.personas.${persona}.heading`)}
             </h2>
-            <p className="text-base sm:text-lg text-[#111827]/70 leading-relaxed max-w-xl">
+            <p className="text-sm sm:text-base text-[#111827]/70 leading-relaxed max-w-xl">
               {t(`landing.personas.${persona}.body`)}
             </p>
           </div>
 
           <div
             key={`illus-${persona}`}
-            className="rounded-[28px] p-4 sm:p-6"
+            className="rounded-[24px] p-3 sm:p-4 lg:max-w-[380px] lg:ml-auto lg:w-full"
             style={{ background: PERSONA_FRAME_BG, animation: "showcaseFadeInUp 450ms ease-out both" }}
           >
-            <div className="rounded-2xl bg-white shadow-[0_8px_20px_rgba(0,0,0,0.08)] aspect-square flex items-center justify-center p-6">
+            <div className="rounded-2xl bg-white shadow-[0_8px_20px_rgba(0,0,0,0.08)] aspect-[4/3] flex items-center justify-center p-4">
               <Illustration />
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-5 mt-14 lg:mt-16">
+        <div className="flex items-center gap-5 mt-8 lg:mt-10">
           <PersonaNavButton direction="prev" onClick={() => go(-1)} disabled={activeIndex === 0} />
           <PersonaNavButton direction="next" onClick={() => go(1)} disabled={activeIndex === PERSONAS.length - 1} />
           <div className="flex-1 h-px relative overflow-hidden rounded-full" style={{ background: "rgba(17,24,39,0.12)" }}>
