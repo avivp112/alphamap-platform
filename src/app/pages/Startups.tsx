@@ -3,7 +3,7 @@ import { stageLabel, sectorLabel } from "../../lib/taxonomy";
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams, useNavigate } from "react-router";
 import {
-  AreaChart, Area, BarChart, Bar,
+  AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip,
   ResponsiveContainer, Cell,
 } from "recharts";
@@ -20,13 +20,15 @@ import {
   ChevronDown, ChevronLeft, ChevronRight, Building2, CheckSquare, Square,
   GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2, ChevronUp,
   SlidersHorizontal, Award, Eye, HelpCircle,
+  Linkedin, Facebook, Instagram, Newspaper, Layers,
 } from "lucide-react";
 import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
   fetchStartupsPage, fetchStartupsCount, fetchDistinctCountries, fetchStartupDetail,
-  fetchSuggestedPeers, fetchStartupListRowById, STARTUPS_PAGE_SIZE,
+  fetchSuggestedPeers, fetchStartupListRowById, fetchScoreHistory, STARTUPS_PAGE_SIZE,
   type Startup, type FundingRound, type RoundType, type AlphaScore, type HeadcountPoint,
-  type StartupListRow, type StartupSearchFilters, type Competitor,
+  type StartupListRow, type StartupSearchFilters, type Competitor, type ScoreHistoryPoint,
+  type NewsItem,
 } from "../../lib/supabase";
 import { useWatchlistMembership, addToWatchlist, removeFromWatchlist, watchlistErrorMessage } from "../../lib/watchlist";
 
@@ -756,6 +758,91 @@ function realHistoryToChartPoints(
   });
 }
 
+// Maps real ScoreHistoryPoint rows → chart-friendly shape, plus a per-point
+// delta vs. the previous snapshot so the chart can flag exactly where the
+// score moved up or down rather than just showing a plain trend line.
+function scoreHistoryToChartPoints(
+  points: ScoreHistoryPoint[],
+): Array<{ label: string; score: number; delta: number }> {
+  if (points.length === 0) return [];
+  const first = new Date(points[0].recorded_date);
+  const last  = new Date(points[points.length - 1].recorded_date);
+  const spanYears = (last.getTime() - first.getTime()) / (1000 * 60 * 60 * 24 * 365);
+  return points.map((p, i) => {
+    const d = new Date(p.recorded_date);
+    const label = spanYears >= 2
+      ? String(d.getFullYear())
+      : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const delta = i === 0 ? 0 : p.score - points[i - 1].score;
+    return { label, score: p.score, delta };
+  });
+}
+
+// Colors a score-history point green (score rose since the prior snapshot),
+// red (fell), or the default ink (first point / unchanged) — this is what
+// lets the chart visually flag exactly when the score moved.
+function ScoreHistoryDot(props: any) {
+  const { cx, cy, payload } = props;
+  if (cx == null || cy == null) return null;
+  const color = payload.delta > 0 ? "#059669" : payload.delta < 0 ? "#dc2626" : "#6d28d7";
+  return <circle cx={cx} cy={cy} r={3.5} fill={color} stroke="#fff" strokeWidth={1.5} />;
+}
+
+// "2 months ago", "21 days ago", etc. — used by the News tab timeline.
+function relativeTime(dateStr: string | null | undefined): string {
+  if (!dateStr) return "";
+  const then = new Date(dateStr).getTime();
+  if (Number.isNaN(then)) return "";
+  const diffMs = Date.now() - then;
+  const days = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+  if (days === 0) return "Today";
+  if (days === 1) return "1 day ago";
+  if (days < 30) return `${days} days ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return months === 1 ? "1 month ago" : `${months} months ago`;
+  const years = Math.floor(months / 12);
+  return years === 1 ? "1 year ago" : `${years} years ago`;
+}
+
+// ── Company social links (LinkedIn / Facebook / Instagram company pages —
+// distinct from a person's own profile, which is rendered via LinkedInBadge
+// next to their name). Renders nothing at all when none are on file, same
+// "never a placeholder" rule as the rest of the tearsheet. ─────────────────
+function socialHref(url: string): string {
+  return url.startsWith("http") ? url : `https://${url}`;
+}
+
+function CompanySocialRow({ startup }: { startup: Startup }) {
+  const links: Array<{ key: string; url: string; icon: React.ElementType; label: string; color: string }> = [];
+  if (startup.linkedin_url)  links.push({ key: "linkedin",  url: startup.linkedin_url,  icon: Linkedin,  label: "LinkedIn",  color: "#0A66C2" });
+  if (startup.facebook_url)  links.push({ key: "facebook",  url: startup.facebook_url,  icon: Facebook,  label: "Facebook",  color: "#1877F2" });
+  if (startup.instagram_url) links.push({ key: "instagram", url: startup.instagram_url, icon: Instagram, label: "Instagram", color: "#E1306C" });
+
+  if (links.length === 0) return null;
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mr-1">Social</span>
+      {links.map(({ key, url, icon: Icon, label, color }) => (
+        <a
+          key={key}
+          href={socialHref(url)}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`${startup.name} on ${label}`}
+          aria-label={`${startup.name} on ${label}`}
+          className="flex items-center justify-center w-8 h-8 rounded-full transition-colors flex-none"
+          style={{ background: `${color}1A`, color }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = `${color}33`; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = `${color}1A`; }}
+        >
+          <Icon className="w-4 h-4" />
+        </a>
+      ))}
+    </div>
+  );
+}
+
 // ── Shared tab primitives ─────────────────────────────────────────────────────
 
 function StatCard({ icon: Icon, label, value, accent = "#F59E0B" }: {
@@ -791,6 +878,56 @@ function MissingDataState({ message }: { message: string }) {
 
 // ── Tab 1: Overview ───────────────────────────────────────────────────────────
 
+function ScoreHistoryChart({ startupId }: { startupId: string }) {
+  const [pts, setPts] = useState<ScoreHistoryPoint[] | null>(null);
+
+  useEffect(() => {
+    setPts(null);
+    fetchScoreHistory(startupId).then(setPts).catch(() => setPts([]));
+  }, [startupId]);
+
+  const chartData = pts && pts.length >= 2 ? scoreHistoryToChartPoints(pts) : null;
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-3">
+        <Activity className="w-4 h-4 text-gray-400" />
+        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Score Over Time</h3>
+      </div>
+      {chartData ? (
+        <div className="bg-gray-50 border border-gray-100 rounded-[14px] p-4">
+          <div className="h-32">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
+                <XAxis dataKey="label" tick={{ fill: "#9CA3AF", fontSize: 9 }} axisLine={false} tickLine={false} />
+                <YAxis domain={[0, 100]} tick={{ fill: "#9CA3AF", fontSize: 9 }} axisLine={false} tickLine={false} />
+                <ReTooltip
+                  contentStyle={{ background: "#0b1626", border: "1px solid #1a2a3f", borderRadius: 8, fontSize: 11 }}
+                  labelStyle={{ color: "#94a3b8" }}
+                  itemStyle={{ color: "#22d3ee" }}
+                  formatter={(value: number, _name, props) => {
+                    const delta = props?.payload?.delta ?? 0;
+                    const deltaLabel = delta > 0 ? ` (+${delta})` : delta < 0 ? ` (${delta})` : "";
+                    return [`${value}${deltaLabel}`, "Score"];
+                  }}
+                />
+                <Line type="monotone" dataKey="score" stroke="#6d28d7" strokeWidth={1.5} dot={<ScoreHistoryDot />} activeDot={{ r: 5 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="flex items-center gap-3 mt-2 text-[9px] text-gray-400">
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-600 inline-block" />Up</span>
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-rose-600 inline-block" />Down</span>
+          </div>
+        </div>
+      ) : (
+        <MissingDataState message="No historical score snapshots have been recorded for this company yet — at least 2 data points are needed to plot a trend." />
+      )}
+    </div>
+  );
+}
+
 function OverviewTab({
   startup, alphaScore, alphaLoading, alphaErr,
 }: {
@@ -799,6 +936,8 @@ function OverviewTab({
   const { t } = useTranslation();
   const location = [startup.city, startup.country].filter(Boolean).join(", ") || "—";
   const sector = classifyIndustry(startup.industry);
+  const sectorName = startup.sector?.name ?? sector.parent;
+  const subSectorName = startup.sub_sector?.name ?? sector.sub;
 
   return (
     <div className="space-y-6">
@@ -808,14 +947,19 @@ function OverviewTab({
         <MissingDataState message="No company description on file." />
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard icon={Calendar}  label="Founded"   value={startup.founded_year ? String(startup.founded_year) : "—"} accent="#F59E0B" />
-        <StatCard icon={MapPin}    label="Location"  value={location} accent="#0e7490" />
-        <StatCard icon={Users}     label="Employees" value={fmtEmp(startup.employee_count)} accent="#6d28d7" />
-        <StatCard icon={Briefcase} label="Sector"    value={sector.parent} accent="#be185d" />
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <StatCard icon={Calendar}  label="Founded"     value={startup.founded_year ? String(startup.founded_year) : "—"} accent="#F59E0B" />
+        <StatCard icon={MapPin}    label="Location"    value={location} accent="#0e7490" />
+        <StatCard icon={Users}     label="Employees"   value={fmtEmp(startup.employee_count)} accent="#6d28d7" />
+        <StatCard icon={Briefcase} label="Sector"      value={sectorName} accent="#be185d" />
+        <StatCard icon={Layers}    label="Sub-Sector"  value={subSectorName} accent="#7c3aed" />
       </div>
 
+      <CompanySocialRow startup={startup} />
+
       <AlphaMapScorePanel data={alphaScore} loading={alphaLoading} err={alphaErr} />
+
+      <ScoreHistoryChart startupId={startup.id} />
 
       {startup.leadership && startup.leadership.length > 0 && (
         <div>
@@ -1191,6 +1335,31 @@ function TalentGrowthTab({
           <MissingDataState message="No historical headcount snapshots have been recorded for this company yet — at least 2 data points are needed to plot a trend." />
         )}
       </div>
+
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <UserRound className="w-4 h-4 text-gray-400" />
+          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Team</h3>
+        </div>
+        {startup.leadership && startup.leadership.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {startup.leadership.map((l, i) => (
+              <div key={i} className="flex items-center gap-3 bg-gray-50 border border-gray-100 rounded-[12px] px-3.5 py-2.5">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black flex-none ${avatarColor(l.name)}`}>
+                  {l.name[0]}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-bold text-gray-900 leading-tight truncate">{l.name}</div>
+                  <div className="text-[11px] text-gray-500 truncate">{l.role}</div>
+                </div>
+                <LinkedInBadge url={l.linkedin_url} name={l.name} />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <MissingDataState message="No individual team members have been identified for this company yet." />
+        )}
+      </div>
     </div>
   );
 }
@@ -1227,7 +1396,7 @@ function CompetitorsMarketTab({ startup, onNavigate }: { startup: Startup; onNav
             onClick={linked ? () => onNavigate(c.startup_id as string) : undefined}
           >
             <div className="flex items-center gap-2">
-              <Building2 className="w-3.5 h-3.5 text-gray-400 flex-none" />
+              <CompanyLogo name={c.name} website={c.website} size={22} rounded="rounded-md" />
               <span className="text-sm font-bold text-gray-900 truncate">{c.name}</span>
               {linked && <span className="text-[10px] font-semibold text-cyan-700 bg-cyan-100 rounded-full px-2 py-0.5 flex-none">Tracked ↗</span>}
             </div>
@@ -1321,9 +1490,55 @@ function AcquisitionsIPTab({ startup, onNavigate }: { startup: Startup; onNaviga
   );
 }
 
+// ── Tab 7: News ─────────────────────────────────────────────────────────────
+// Renders startup.news — auto-populated by scripts/bulk_enrich_all.ts,
+// fill-null-when-empty (never overwrites a curated list). Sorted newest
+// first; each article shows a relative-time badge computed at render time
+// so it stays accurate without a re-enrichment ("2 months ago" today reads
+// "3 months ago" a month from now, with no data change needed).
+
+function NewsTab({ startup }: { startup: Startup }) {
+  const items = (startup.news ?? []).filter((n) => n && n.url && n.title);
+
+  if (items.length === 0) {
+    return <MissingDataState message="No news coverage has been found for this company yet." />;
+  }
+
+  const sorted = [...items].sort((a, b) => (b.published_date ?? "").localeCompare(a.published_date ?? ""));
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      {sorted.map((n, idx) => (
+        <a
+          key={`${n.url}-${idx}`}
+          href={n.url.startsWith("http") ? n.url : `https://${n.url}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-start gap-3 bg-gray-50 border border-gray-100 rounded-[14px] px-4 py-3.5 hover:border-cyan-300 hover:bg-cyan-50/40 transition-colors"
+        >
+          <Newspaper className="w-4 h-4 text-gray-400 flex-none mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold text-gray-900 leading-snug">{n.title}</p>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              {n.source && (
+                <span className="text-[10px] font-semibold text-gray-500">{n.source}</span>
+              )}
+              {n.published_date && (
+                <span className="text-[10px] font-semibold text-cyan-700 bg-cyan-100 rounded-full px-2 py-0.5">
+                  {relativeTime(n.published_date)}
+                </span>
+              )}
+            </div>
+          </div>
+        </a>
+      ))}
+    </div>
+  );
+}
+
 // ── Tearsheet Modal ───────────────────────────────────────────────────────────
 
-type TearsheetTab = "overview" | "funding" | "captable" | "talent" | "competitors" | "acquisitions";
+type TearsheetTab = "overview" | "funding" | "captable" | "talent" | "competitors" | "acquisitions" | "news";
 
 const TEARSHEET_TABS: { id: TearsheetTab; label: string }[] = [
   { id: "overview",    label: "Overview" },
@@ -1332,6 +1547,7 @@ const TEARSHEET_TABS: { id: TearsheetTab; label: string }[] = [
   { id: "talent",      label: "Talent & Growth" },
   { id: "competitors", label: "Competitors & Market" },
   { id: "acquisitions", label: "Acquisitions & IP" },
+  { id: "news",        label: "News" },
 ];
 
 function TearsheetModal({ startup, onClose, onNavigate }: { startup: StartupListRow; onClose: () => void; onNavigate: (row: StartupListRow) => void }) {
@@ -1515,6 +1731,7 @@ function TearsheetModal({ startup, onClose, onNavigate }: { startup: StartupList
               )}
               {activeTab === "competitors" && <CompetitorsMarketTab startup={detail} onNavigate={handleNavigateToLinked} />}
               {activeTab === "acquisitions" && <AcquisitionsIPTab startup={detail} onNavigate={handleNavigateToLinked} />}
+              {activeTab === "news" && <NewsTab startup={detail} />}
             </>
           )}
         </div>

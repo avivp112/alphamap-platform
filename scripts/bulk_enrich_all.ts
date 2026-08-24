@@ -117,6 +117,21 @@ const supabase  = createClient(
 );
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// Sector taxonomy for Claude's sector_name/sub_sector_name classification —
+// fetched once at startup (loadSectorTaxonomy, called from main()) rather
+// than hardcoded, so it can never drift from the real `sectors` table that
+// sector_id_by_name() resolves against.
+let SECTOR_PARENT_NAMES: string[] = [];
+let SUB_SECTOR_NAMES: string[] = [];
+
+async function loadSectorTaxonomy(): Promise<void> {
+  const { data, error } = await supabase.from("sectors").select("name, parent_id");
+  if (error) { console.warn(`⚠️  Failed to load sector taxonomy: ${error.message} — sector_name/sub_sector_name classification will be skipped this run.`); return; }
+  const rows = (data ?? []) as Array<{ name: string; parent_id: string | null }>;
+  SECTOR_PARENT_NAMES = rows.filter((r) => r.parent_id === null).map((r) => r.name).sort();
+  SUB_SECTOR_NAMES    = rows.filter((r) => r.parent_id !== null).map((r) => r.name).sort();
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface StartupRow {
   id: string;
@@ -138,6 +153,19 @@ interface StartupRow {
   funding_history_complete: boolean | null;
   updated_at: string;
   last_enriched_at: string | null;
+  sector_id: string | null;
+  sub_sector_id: string | null;
+  linkedin_url: string | null;
+  facebook_url: string | null;
+  instagram_url: string | null;
+  news: NewsItem[] | null;
+}
+
+interface NewsItem {
+  title: string;
+  url: string;
+  source: string | null;
+  published_date: string | null;
 }
 
 interface Competitor {
@@ -194,6 +222,18 @@ interface ExtractedProfile {
   country?: string;
   city?: string;
   founders?: ExtractedFounder[];
+  sector_name?: string;
+  sub_sector_name?: string;
+  linkedin_url?: string;
+  facebook_url?: string;
+  instagram_url?: string;
+}
+
+interface ExtractedNewsItem {
+  title: string;
+  url: string;
+  source?: string;
+  published_date?: string;
 }
 
 interface ExtractedLeader { name: string; role: string; linkedin_url?: string }
@@ -224,6 +264,7 @@ interface EnrichmentResult {
   };
   competitors: ExtractedCompetitor[];
   acquisitions: ExtractedAcquisition[];
+  news: ExtractedNewsItem[];
   patents: { patent_count: number | null; patent_fields: string[] };
   confidence_score: number;
   reasoning: string;
@@ -519,16 +560,19 @@ async function fetchCompanyWebsite(website: string | null | undefined): Promise<
 async function researchCompany(name: string, website?: string | null): Promise<EnrichmentResult | null> {
   const domain = websiteDomain(website);
   const anchor = domain ? ` "${domain}"` : "";
-  const [historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw, ownSiteRaw] = await Promise.all([
+  const [historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw, newsRaw, ownSiteRaw] = await Promise.all([
     webSearch(`"${name}"${anchor} seed round "Series A" first funding earliest founding investors site:crunchbase.com OR site:techcrunch.com OR site:pitchbook.com`),
     webSearch(`"${name}"${anchor} total funding raised since founding all rounds USD million billion valuation announcement history`),
     webSearch(`"${name}"${anchor} lead investor venture capital backed participated investors funded round investment amount check size`),
-    webSearch(`"${name}"${anchor} company founder CEO CTO description industry headquarters country city employees headcount acquired acquisition patents intellectual property linkedin.com/in profile 2024 2025`),
+    webSearch(`"${name}"${anchor} company founder CEO CTO description industry headquarters country city employees headcount acquired acquisition patents intellectual property linkedin.com/in profile linkedin.com/company facebook.com instagram.com 2024 2025`),
     webSearch(`"${name}"${anchor} competitors alternatives vs rivals "compared to" market landscape`),
+    // Recency-biased, distinct from the other searches (which skew toward
+    // funding history / profile facts, not "what's been published lately").
+    webSearch(`"${name}"${anchor} news 2025 2026 site:techcrunch.com OR site:venturebeat.com OR site:prnewswire.com OR site:businesswire.com OR site:forbes.com OR site:sifted.eu launch funding announcement`),
     fetchCompanyWebsite(website),
   ]);
 
-  if (![historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw, ownSiteRaw].some(Boolean)) return null;
+  if (![historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw, newsRaw, ownSiteRaw].some(Boolean)) return null;
 
   const context = [
     `## Company's Own Website (HIGHEST TRUST for description, industry, and HQ location — this is the company describing itself, not a third party)\n${ownSiteRaw ?? "(not fetched — no known website, fetch failed, or bot-blocked)"}`,
@@ -537,6 +581,7 @@ async function researchCompany(name: string, website?: string | null): Promise<E
     `## Investors & Backers\n${backersRaw            ?? "(search failed)"}`,
     `## Company Profile & Headcount\n${profileRaw   ?? "(search failed)"}`,
     `## Competitors & Alternatives\n${competitorsRaw ?? "(search failed)"}`,
+    `## Recent News & Press Coverage (for the news[] field — only use articles with a real, findable publication date)\n${newsRaw ?? "(search failed)"}`,
   ].join("\n\n");
 
   const msg = await anthropic.messages.create({
@@ -598,6 +643,19 @@ async function researchCompany(name: string, website?: string | null): Promise<E
                   required: ["name"],
                 },
               },
+              sector_name: {
+                type: "string",
+                enum: SECTOR_PARENT_NAMES.length > 0 ? SECTOR_PARENT_NAMES : undefined,
+                description: "The single best-fit sector from the enumerated list. Omit if genuinely uncertain — never guess.",
+              },
+              sub_sector_name: {
+                type: "string",
+                enum: SUB_SECTOR_NAMES.length > 0 ? SUB_SECTOR_NAMES : undefined,
+                description: "The single best-fit sub-sector from the enumerated list, one level more specific than sector_name (e.g. under \"AI & ML\": \"LLMs\", \"Computer Vision\"). Omit if genuinely uncertain — never guess.",
+              },
+              linkedin_url:  { type: "string", description: "The COMPANY's own LinkedIn page (linkedin.com/company/...) — not a person's profile. Omit if not found." },
+              facebook_url:  { type: "string", description: "The company's Facebook page. Omit if not found." },
+              instagram_url: { type: "string", description: "The company's Instagram profile. Omit if not found." },
             },
           },
           funding_history_complete: {
@@ -680,12 +738,18 @@ async function researchCompany(name: string, website?: string | null): Promise<E
           },
           leadership: {
             type: "array",
-            description: "Current C-level executives and founders. Named, verifiable individuals only.",
+            description: [
+              "Every named, verifiable individual you can identify at this company — not just the",
+              "C-suite. Include executives, founders, and any other employee you can attribute a real",
+              "name, a current title/role, and ideally a LinkedIn profile to (e.g. from the company's",
+              "team/about page, a LinkedIn company-page employee list, or a press mention naming a",
+              "specific engineer/PM/etc.). Up to 15 people. Never invent a name or role you can't verify.",
+            ].join(" "),
             items: {
               type: "object" as const,
               properties: {
                 name:         { type: "string", description: "Full name." },
-                role:         { type: "string", description: "Current title (CEO, CTO, Co-Founder, etc.)." },
+                role:         { type: "string", description: "Current title (CEO, CTO, Co-Founder, Senior Engineer, etc.)." },
                 linkedin_url: { type: "string", description: "Their personal linkedin.com/in/... profile URL, if found. Omit if not found — never guess or construct one from a name." },
               },
               required: ["name", "role"],
@@ -780,6 +844,25 @@ async function researchCompany(name: string, website?: string | null): Promise<E
                 description: { type: "string", description: "One sentence: why this acquisition happened (talent, technology, market expansion, etc.)." },
               },
               required: ["company_name"],
+            },
+          },
+          news: {
+            type: "array",
+            description: [
+              "Up to 5 recent news articles/press mentions ABOUT this company (funding announcements,",
+              "product launches, press coverage) — from real, verifiable sources found in the research,",
+              "with a real publication date. Never fabricate an article or guess a date. Return [] if you",
+              "found no dateable news coverage.",
+            ].join(" "),
+            items: {
+              type: "object" as const,
+              properties: {
+                title:          { type: "string", description: "The article's headline." },
+                url:            { type: "string", description: "Direct URL to the article." },
+                source:         { type: "string", description: "Publication name (e.g. 'TechCrunch', 'VentureBeat'). Omit if unknown." },
+                published_date: { type: "string", description: "Publication date YYYY-MM-DD. Use YYYY-MM-01 if only month+year is known. Omit if genuinely undated." },
+              },
+              required: ["title", "url"],
             },
           },
           patents: {
@@ -905,6 +988,7 @@ ${context}`,
     metrics?: { headcount?: number; growth_trend?: string; headcount_history?: ExtractedHeadcountPoint[] };
     competitors?: ExtractedCompetitor[];
     acquisitions?: ExtractedAcquisition[];
+    news?: ExtractedNewsItem[];
     patents?: { patent_count?: number; patent_fields?: string[] };
   };
 
@@ -922,6 +1006,7 @@ ${context}`,
     },
     competitors:      (i.competitors  ?? []).filter((c) => c.name && c.how_it_competes),
     acquisitions:     (i.acquisitions ?? []).filter((a) => a.company_name),
+    news:             (i.news ?? []).filter((n) => n.title && n.url),
     patents: {
       patent_count:  typeof i.patents?.patent_count === "number" ? i.patents.patent_count : null,
       patent_fields: (i.patents?.patent_fields ?? []).filter(Boolean),
@@ -1163,6 +1248,25 @@ async function patchStartupProfile(
   if (!existing.country      && profile.country)      patch.country      = profile.country;
   if (!existing.city         && profile.city)         patch.city         = profile.city;
 
+  // Company social links: fill-null only, same as website.
+  if (!existing.linkedin_url  && profile.linkedin_url)  patch.linkedin_url  = profile.linkedin_url;
+  if (!existing.facebook_url  && profile.facebook_url)  patch.facebook_url  = profile.facebook_url;
+  if (!existing.instagram_url && profile.instagram_url) patch.instagram_url = profile.instagram_url;
+
+  // Sector / sub-sector: fill-null only. sector_name/sub_sector_name is
+  // constrained to the real sectors table via the tool schema's enum, then
+  // resolved to a uuid through sector_id_by_name() (defined alongside the
+  // sectors table) — never written from arbitrary free text, so this can
+  // never point at a sector that doesn't actually exist.
+  if (!existing.sector_id && profile.sector_name) {
+    const { data: sid } = await supabase.rpc("sector_id_by_name", { p_name: profile.sector_name });
+    if (sid) patch.sector_id = sid;
+  }
+  if (!existing.sub_sector_id && profile.sub_sector_name) {
+    const { data: subId } = await supabase.rpc("sector_id_by_name", { p_name: profile.sub_sector_name });
+    if (subId) patch.sub_sector_id = subId;
+  }
+
   // Founders: merge as union (additive, never destructive), deduped by name.
   // Also backfills linkedin_url onto an already-recorded founder if this pass
   // found one and a prior pass didn't — never overwrites an existing URL.
@@ -1232,6 +1336,18 @@ async function patchStartupProfile(
     });
   }
 
+  // News: set only when currently empty — same fill-null-when-empty policy
+  // as competitors/acquisitions, so a manually-curated news list is never
+  // overwritten by the pipeline.
+  if (result.news.length > 0 && (!existing.news || existing.news.length === 0)) {
+    patch.news = result.news.map((n): NewsItem => ({
+      title: n.title,
+      url: n.url,
+      source: n.source ?? null,
+      published_date: n.published_date ?? null,
+    }));
+  }
+
   // Patents: fill-null only, same as the rest of the profile block.
   if (existing.patent_count == null && result.patents.patent_count != null) {
     patch.patent_count = result.patents.patent_count;
@@ -1272,12 +1388,17 @@ async function patchStartupProfile(
   const parts: string[] = [];
   if (patch.employee_count) parts.push(`~${metrics.headcount?.toLocaleString()} employees`);
   if (patch.growth_trend)   parts.push(`trend: ${metrics.growth_trend}`);
-  if (patch.leadership)     parts.push(`${leadership.length} leaders`);
+  if (patch.leadership)     parts.push(`${leadership.length} team members`);
   if (patch.competitors)    parts.push(`${(patch.competitors as Competitor[]).length} competitors`);
   if (patch.acquisitions)   parts.push(`${(patch.acquisitions as Acquisition[]).length} acquisitions`);
+  if (patch.news)           parts.push(`${(patch.news as NewsItem[]).length} news articles`);
   if (patch.patent_count != null) parts.push(`${patch.patent_count} patents`);
-  const profileKeys = ["website","description","industry","founded_year","country","city","founders"]
-    .filter((k) => patch[k] !== undefined);
+  if (patch.sector_id)      parts.push(`sector: ${profile.sector_name}`);
+  if (patch.sub_sector_id)  parts.push(`sub-sector: ${profile.sub_sector_name}`);
+  const profileKeys = [
+    "website","description","industry","founded_year","country","city","founders",
+    "linkedin_url","facebook_url","instagram_url",
+  ].filter((k) => patch[k] !== undefined);
   if (profileKeys.length > 0) parts.push(`profile: ${profileKeys.join(", ")}`);
   if (parts.length > 0) console.log(`    👤  Patched: ${parts.join(" | ")}`);
 
@@ -1312,6 +1433,41 @@ async function recordHeadcountSnapshot(
     console.log(`    📈  headcount_history: ${employeeCount.toLocaleString()} recorded for ${date}`);
   }
 }
+
+// ── AlphaMap Score history snapshot ───────────────────────────────────────────
+// calculate_alphamap_score() is a live, memoryless RPC — it has no concept of
+// "yesterday's score" on its own. This is what gives the Overview tab's
+// score-over-time chart something to plot: called once per company per run
+// (after the profile/funding/headcount patches above, so the score reflects
+// today's freshly-enriched data), upserted one row per company per calendar
+// day exactly like recordHeadcountSnapshot.
+async function recordScoreSnapshot(startupId: string): Promise<void> {
+  if (DRY_RUN) {
+    console.log(`    [DRY] Would compute + upsert alphamap_score_history`);
+    return;
+  }
+  const { data, error: rpcError } = await supabase.rpc("calculate_alphamap_score", { p_startup_id: startupId });
+  if (rpcError) {
+    console.warn(`    ⚠️  calculate_alphamap_score RPC failed: ${rpcError.message}`);
+    return;
+  }
+  const score = data as { score?: number; tier?: string; error?: string } | null;
+  if (!score || score.error || score.score == null) return; // not enough data to score yet — not an error
+
+  const date = new Date().toISOString().slice(0, 10);
+  const { error } = await supabase
+    .from("alphamap_score_history")
+    .upsert(
+      { startup_id: startupId, score: Math.round(score.score), tier: score.tier ?? null, snapshot_date: date },
+      { onConflict: "startup_id,snapshot_date" },
+    );
+  if (error) {
+    console.warn(`    ⚠️  alphamap_score_history snapshot failed: ${error.message}`);
+  } else {
+    console.log(`    🧭  alphamap_score_history: ${Math.round(score.score)} (${score.tier ?? "—"}) recorded for ${date}`);
+  }
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
   const startedAt = new Date().toISOString();
@@ -1326,6 +1482,9 @@ async function main() {
   console.log(`╚${"═".repeat(62)}╝\n`);
 
   if (DRY_RUN) console.log("ℹ️  DRY RUN — set DRY_RUN=false to apply writes to the database.\n");
+
+  await loadSectorTaxonomy();
+  console.log(`🗂️   Sector taxonomy: ${SECTOR_PARENT_NAMES.length} sectors, ${SUB_SECTOR_NAMES.length} sub-sectors loaded\n`);
 
   // ── 1. Fetch all startups + all rounds ────────────────────────────────────
   // Paginated: PostgREST caps any single response at its max-rows setting
@@ -1349,7 +1508,7 @@ async function main() {
   const startups = await fetchAllPaginated<StartupRow>((from, to) =>
     supabase
       .from("startups")
-      .select("id, name, website, description, industry, founded_year, employee_count, growth_trend, country, city, founders, leadership, competitors, acquisitions, patent_count, patent_fields, funding_history_complete, updated_at, last_enriched_at")
+      .select("id, name, website, description, industry, founded_year, employee_count, growth_trend, country, city, founders, leadership, competitors, acquisitions, patent_count, patent_fields, funding_history_complete, updated_at, last_enriched_at, sector_id, sub_sector_id, linkedin_url, facebook_url, instagram_url, news")
       .order("name")
       .range(from, to),
   );
@@ -1555,6 +1714,11 @@ async function main() {
         } else if (result.funding_rounds.length > 0) {
           console.log(`    🟠  ${result.funding_rounds.length} funding round(s) found but confidence ${result.confidence_score} < ${MIN_CONFIDENCE} — not inserted`);
         }
+
+        // Snapshot the AlphaMap Score now that this pass's profile/funding/
+        // headcount writes have landed, so the score-over-time chart reflects
+        // today's freshly-enriched data rather than yesterday's.
+        await recordScoreSnapshot(row.id);
 
         totalFieldsPatched += fieldsPatched;
 

@@ -102,7 +102,24 @@ export interface Acquisition {
   acquired_startup_id?: string | null;
 }
 
-export interface Startup {
+// Company social profiles — distinct from a person's own linkedin_url
+// inside founders/leadership. Fill-null only, same as website.
+export interface CompanySocialLinks {
+  linkedin_url?: string | null;
+  facebook_url?: string | null;
+  instagram_url?: string | null;
+}
+
+// Auto-populated by scripts/bulk_enrich_all.ts — same fill-null-when-empty
+// write policy as competitors/acquisitions.
+export interface NewsItem {
+  title: string;
+  url: string;
+  source?: string | null;
+  published_date?: string | null;
+}
+
+export interface Startup extends CompanySocialLinks {
   id: string;
   name: string;
   website: string | null;
@@ -117,6 +134,13 @@ export interface Startup {
   founders: Founder[] | null;
   created_at: string;
   updated_at: string;
+  news?: NewsItem[] | null;
+  // Resolved via PostgREST FK embedding in fetchStartupDetail — the stored
+  // sector_id/sub_sector_id names, when set. Falls back to the client-side
+  // keyword classifier (classifyIndustry) when either is null, same
+  // COALESCE precedence the startups_search view already uses server-side.
+  sector?: { name: string } | null;
+  sub_sector?: { name: string } | null;
   funding_rounds: FundingRound[];
   // Auto-populated by scripts/bulk_enrich_all.ts (fill-null only — never
   // overwrites pre-existing curated data). Accepts the legacy plain-string
@@ -291,7 +315,11 @@ export async function fetchDistinctCountries(): Promise<string[]> {
 export async function fetchStartupDetail(id: string): Promise<Startup> {
   const { data, error } = await supabase
     .from("startups")
-    .select("*, funding_rounds(*)")
+    .select(`
+      *, funding_rounds(*),
+      sector:sectors!startups_sector_id_fkey(name),
+      sub_sector:sectors!startups_sub_sector_id_fkey(name)
+    `)
     .eq("id", id)
     .single();
   if (error) throw error;
@@ -386,6 +414,26 @@ export async function fetchHeadcountHistory(startupId: string): Promise<Headcoun
     .order("recorded_date", { ascending: true });
   if (error) throw error;
   return (data ?? []) as HeadcountPoint[];
+}
+
+// One AlphaMap Score snapshot per startup per calendar day, written by
+// scripts/bulk_enrich_all.ts after each enrichment pass (calculate_
+// alphamap_score is a live, memoryless RPC — this table is what gives it a
+// timeline). Same shape/query pattern as fetchHeadcountHistory.
+export interface ScoreHistoryPoint {
+  recorded_date: string;
+  score: number;
+  tier: string | null;
+}
+
+export async function fetchScoreHistory(startupId: string): Promise<ScoreHistoryPoint[]> {
+  const { data, error } = await supabase
+    .from("alphamap_score_history")
+    .select("recorded_date, score, tier")
+    .eq("startup_id", startupId)
+    .order("recorded_date", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as ScoreHistoryPoint[];
 }
 
 export async function fetchAlphaScore(startupId: string): Promise<AlphaScore | null> {
