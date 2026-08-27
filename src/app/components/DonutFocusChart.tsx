@@ -1,11 +1,9 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   PieChart,
   Pie,
   Cell,
-  Tooltip,
   ResponsiveContainer,
-  type TooltipProps,
 } from "recharts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -45,15 +43,21 @@ function topSector(entries: SectorWeight[]): SectorWeight | null {
 }
 
 // ── Custom tooltip ────────────────────────────────────────────────────────────
+// Anchored to a fixed corner of the chart box (rather than following the
+// cursor, which is how Recharts' built-in Tooltip works by default) so it
+// never lands on top of the ring or the center "Top Focus" label — the donut
+// is too small for a cursor-following tooltip to have anywhere to go.
 
 type PieDatum = { sector: string; pct: number; color: string };
 
-function DarkTooltip({ active, payload }: TooltipProps<number, string>) {
-  if (!active || !payload?.length) return null;
-  const d = payload[0].payload as PieDatum;
+function DarkTooltip({ d }: { d: PieDatum }) {
   return (
     <div
+      className="absolute z-20 pointer-events-none"
       style={{
+        top: 6,
+        right: 6,
+        maxWidth: 130,
         background:   "#06101e",
         border:       `1px solid ${d.color}50`,
         borderRadius: 10,
@@ -71,6 +75,7 @@ function DarkTooltip({ active, payload }: TooltipProps<number, string>) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function DonutFocusChart({ data, accentColor, height = 190 }: Props) {
+  const [hovered, setHovered] = useState<PieDatum | null>(null);
   const total = data.reduce((s, d) => s + (d.weight ?? 0), 0);
 
   // Normalise weights → whole-number percentages; suppress micro-slivers < 4%
@@ -127,16 +132,15 @@ export function DonutFocusChart({ data, accentColor, height = 190 }: Props) {
                   outline: "none",
                   cursor:  "default",
                 }}
+                onMouseEnter={() => setHovered(entry)}
+                onMouseLeave={() => setHovered(null)}
               />
             ))}
           </Pie>
-
-          <Tooltip
-            content={<DarkTooltip />}
-            isAnimationActive={false}
-          />
         </PieChart>
       </ResponsiveContainer>
+
+      {hovered && <DarkTooltip d={hovered} />}
 
       {/* ── Center metric ──────────────────────────────────────────────────── */}
       {/* Occupies the empty real-estate inside the donut ring to surface the   */}
