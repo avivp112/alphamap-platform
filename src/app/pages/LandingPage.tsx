@@ -980,7 +980,7 @@ export function LandingPage() {
               shown a plan picker instead of their dashboard. */}
           <button
             onClick={async () => navigate(await homePathNow("/pricing"))}
-            className="rounded-lg px-5 py-2.5 text-sm font-semibold transition-all duration-300 bg-white border border-black/10 text-[#111827] shadow-[0_1px_4px_rgba(0,0,0,0.08)] hover:bg-gray-50"
+            className="rounded-lg px-5 py-2.5 text-sm font-semibold transition-all duration-300 bg-[#111827] border border-black/10 text-white shadow-[0_1px_4px_rgba(0,0,0,0.08)] hover:bg-gray-900"
           >
             {t("landing.viewDashboard")}
           </button>
