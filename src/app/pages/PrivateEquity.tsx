@@ -10,7 +10,7 @@ import {
 import { Layout } from "../components/Layout";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { LinkedInBadge } from "../components/LinkedInBadge";
-import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider } from "../components/SideFilterLayout";
+import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider, QuickQuestionsMenu } from "../components/SideFilterLayout";
 import {
   fetchPEFirms, fetchPEFirmPortfolio, fetchPEFirmTransactions,
   type PEFirmRow, type PEPortfolioCompany, type PETransaction,
@@ -430,7 +430,7 @@ function PEPortfolioTab({ firmName }: { firmName: string }) {
                       <td className="py-3 px-4 text-xs font-semibold text-gray-700">{c.years_active != null ? `${c.years_active} yrs` : "—"}</td>
                       <td className="py-3 px-4">
                         {stab
-                          ? <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${stab.cls}`}>{t(stab.labelKey)}</span>
+                          ? <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${stab.cls}`}>{stab.label}</span>
                           : <span className="text-xs text-gray-300">—</span>}
                       </td>
                       <td className="py-3 px-4 text-xs font-semibold text-gray-700">{c.n_acquisitions > 0 ? c.n_acquisitions : "—"}</td>
@@ -486,25 +486,25 @@ function PETransactionsTab({ firmName }: { firmName: string }) {
 
   return (
     <div className="space-y-2">
-      {rows.map(t => (
-        <div key={t.round_id} className="flex items-center justify-between gap-3 bg-gray-50 border border-gray-100 rounded-[8px] px-4 py-3">
+      {rows.map(tx => (
+        <div key={tx.round_id} className="flex items-center justify-between gap-3 bg-gray-50 border border-gray-100 rounded-[8px] px-4 py-3">
           <div className="flex items-center gap-3 min-w-0">
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap flex-none ${DEAL_STYLE[t.round_type] ?? "bg-gray-50 text-gray-500 border border-gray-100"}`}>
-              {t.round_type}
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap flex-none ${DEAL_STYLE[tx.round_type] ?? "bg-gray-50 text-gray-500 border border-gray-100"}`}>
+              {tx.round_type}
             </span>
             <div className="min-w-0">
-              <div className="text-xs font-bold text-gray-900 leading-tight truncate">{t.company_name}</div>
-              <div className="text-[10px] text-gray-400 truncate">{t.industry ?? "—"}</div>
+              <div className="text-xs font-bold text-gray-900 leading-tight truncate">{tx.company_name}</div>
+              <div className="text-[10px] text-gray-400 truncate">{tx.industry ?? "—"}</div>
             </div>
-            {t.is_lead && (
+            {tx.is_lead && (
               <span className="flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 flex-none">
                 <Zap className="w-2.5 h-2.5" />{t("pe.lead")}</span>
             )}
           </div>
           <div className="flex items-center gap-4 flex-none">
-            <span className="text-xs font-bold text-gray-900 whitespace-nowrap">{fmt(t.amount_raised)}</span>
+            <span className="text-xs font-bold text-gray-900 whitespace-nowrap">{fmt(tx.amount_raised)}</span>
             <span className="text-[10px] text-gray-400 whitespace-nowrap flex items-center gap-1">
-              <Clock className="w-3 h-3" />{fmtDate(t.announcement_date)}
+              <Clock className="w-3 h-3" />{fmtDate(tx.announcement_date)}
             </span>
           </div>
         </div>
@@ -656,6 +656,28 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: "latest",    label: "Latest Deal" },
 ];
 
+// ── Quick Questions ──────────────────────────────────────────────────────────
+// Canned questions over PE firm data — each maps to a combination of the
+// same sidebar filters (deal type, AUM, recent-activity) a person could set
+// by hand, plus optionally a sort order.
+interface PEQuickQuestion {
+  label: string;
+  dealTypes?: DealType[];
+  aumStep?: AumStep;
+  activeOnly?: boolean;
+  sortKey?: SortKey;
+}
+
+const PE_QUICK_QUESTIONS: PEQuickQuestion[] = [
+  { label: "Most active PE funds in the last 24 months", activeOnly: true, sortKey: "deals" },
+  { label: "Mega funds with $50B+ AUM",                    aumStep: "mega", sortKey: "aum" },
+  { label: "Buyout-focused firms",                         dealTypes: ["PE Buyout"] },
+  { label: "Secondary-market specialists",                 dealTypes: ["Secondary"] },
+  { label: "Private credit / debt funds",                  dealTypes: ["Debt"] },
+  { label: "Mid-size funds ($1B–$10B AUM)",                aumStep: "mid" },
+  { label: "Funds with the largest portfolios",            sortKey: "portfolio" },
+];
+
 // ─── Compare modal ────────────────────────────────────────────────────────────
 
 function PECompareModal({ firms, onClose }: { firms: PEFirmRow[]; onClose: () => void }) {
@@ -707,7 +729,7 @@ function PECompareModal({ firms, onClose }: { firms: PEFirmRow[]; onClose: () =>
                 {rows.map((row) => (
                   <tr key={row.label} className="border-t border-gray-100">
                     <td className="py-3 pr-4 text-xs font-semibold text-gray-500 flex items-center gap-1.5">
-                      <row.icon className="w-3.5 h-3.5 text-gray-300" />{t(row.labelKey)}
+                      <row.icon className="w-3.5 h-3.5 text-gray-300" />{row.label}
                     </td>
                     {firms.map((f) => (
                       <td key={f.firm_name} className="py-3 px-4 text-sm font-bold text-[#0F172A]">{row.value(f)}</td>
@@ -797,6 +819,16 @@ export function PrivateEquity() {
     setFilters(DEFAULT_FILTERS);
   }
 
+  function applyQuickQuestion(q: PEQuickQuestion) {
+    setSearch("");
+    setFilters({
+      dealTypes: q.dealTypes ?? [],
+      aumStep: q.aumStep ?? "all",
+      activeOnly: q.activeOnly ?? false,
+    });
+    if (q.sortKey) setSortKey(q.sortKey);
+  }
+
   const filtered = useMemo<PEFirmRow[]>(() => {
     let result = [...firms];
 
@@ -852,52 +884,58 @@ export function PrivateEquity() {
   return (
     <Layout>
 
-      {/* ── Title bar (blue-gray — same band as Startups/VCs) ─────────────── */}
-      <div style={{ background: "#B8C9D1", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
-        <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 pt-6 pb-5">
-          <div className="flex items-center justify-between gap-4 mb-1.5">
-            <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">{t("pe.title")}</h1>
-            <div className="flex items-center gap-2 flex-none">
-              {/* View toggle — same control as the Startups hub */}
-              <div className="flex items-center bg-white/60 border border-black/10 rounded-[10px] p-0.5 gap-0.5">
-                <button
-                  onClick={() => setViewMode("grid")}
-                  className={`p-1.5 rounded-[7px] transition-all ${viewMode === "grid" ? "bg-[#0F172A] text-white shadow-sm" : "text-[#0F172A]/60 hover:text-[#0F172A]"}`}
-                  aria-label={t("common.gridView")}
-                >
-                  <LayoutGrid className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => setViewMode("list")}
-                  className={`p-1.5 rounded-[7px] transition-all ${viewMode === "list" ? "bg-[#0F172A] text-white shadow-sm" : "text-[#0F172A]/60 hover:text-[#0F172A]"}`}
-                  aria-label={t("common.listView")}
-                >
-                  <List className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              <span className="text-[10px] font-bold text-[#0F172A]/50 uppercase tracking-wider hidden sm:block">{t("common.sort")}</span>
-              <div className="flex items-center bg-white/60 border border-black/10 rounded-[10px] p-0.5 gap-0.5">
-                {SORT_OPTIONS.map(o => (
-                  <button
-                    key={o.key}
-                    onClick={() => setSortKey(o.key)}
-                    className={`px-2.5 py-1.5 rounded-[7px] text-[10px] font-semibold transition-all whitespace-nowrap ${
-                      sortKey === o.key
-                        ? "bg-[#0F172A] text-white shadow-sm"
-                        : "text-[#0F172A]/60 hover:text-[#0F172A]"
-                    }`}
-                  >
-                    {t(o.labelKey)}
-                  </button>
-                ))}
-              </div>
-            </div>
+      {/* ── Top bar: search + quick questions + view toggle + sort ───────── */}
+      <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 pt-6 pb-2">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="relative flex-1 min-w-[200px] max-w-xl">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-300" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t("vcs.searchFirms")}
+              data-tour="search-input"
+              className="w-full pl-8 pr-8 py-2 text-sm bg-white border border-gray-200 text-[#0F172A] placeholder-gray-400 rounded-lg focus:outline-none focus:border-gray-300 focus:ring-2 focus:ring-[#0F172A]/10 transition-all"
+            />
+            {search && (
+              <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"><X className="w-3.5 h-3.5" /></button>
+            )}
           </div>
-          <div className="flex items-center gap-3">
-            <p className="text-sm text-[#0F172A]/60 leading-snug">
-              {t("pe.pageSubtitle")}
-            </p>
+
+          <QuickQuestionsMenu questions={PE_QUICK_QUESTIONS} onSelect={applyQuickQuestion} />
+
+          <div className="flex items-center bg-gray-100 border border-gray-200 rounded-lg p-0.5 gap-0.5 flex-none">
+            <button
+              onClick={() => setViewMode("grid")}
+              className={`p-1.5 rounded-lg transition-all ${viewMode === "grid" ? "bg-white text-[#0F172A] shadow-sm" : "text-gray-400 hover:text-[#0F172A]"}`}
+              aria-label={t("common.gridView")}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setViewMode("list")}
+              className={`p-1.5 rounded-lg transition-all ${viewMode === "list" ? "bg-white text-[#0F172A] shadow-sm" : "text-gray-400 hover:text-[#0F172A]"}`}
+              aria-label={t("common.listView")}
+            >
+              <List className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider hidden sm:block">{t("common.sort")}</span>
+          <div className="flex items-center bg-gray-100 border border-gray-200 rounded-lg p-0.5 gap-0.5 flex-none">
+            {SORT_OPTIONS.map(o => (
+              <button
+                key={o.key}
+                onClick={() => setSortKey(o.key)}
+                className={`px-2.5 py-1.5 rounded-lg text-[10px] font-semibold transition-all whitespace-nowrap ${
+                  sortKey === o.key
+                    ? "bg-white text-[#0F172A] shadow-sm"
+                    : "text-gray-400 hover:text-[#0F172A]"
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -907,6 +945,7 @@ export function PrivateEquity() {
         search={search}
         onSearchChange={setSearch}
         searchPlaceholder={t("vcs.searchFirms")}
+        hideSearchBox
         activeFilterCount={activeFilterCount}
         onClearAll={clearAll}
         filters={

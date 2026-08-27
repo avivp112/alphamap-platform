@@ -8,7 +8,7 @@ import {
   HelpCircle, Building2, ArrowUpDown,
 } from "lucide-react";
 import { Layout } from "../components/Layout";
-import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider } from "../components/SideFilterLayout";
+import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider, QuickQuestionsMenu } from "../components/SideFilterLayout";
 import { fetchInvestors, fetchRecentActiveInvestorNames, type InvestorRow } from "../../lib/supabase";
 import { VCModal } from "../components/VCModal";
 import { DonutFocusChart } from "../components/DonutFocusChart";
@@ -146,6 +146,31 @@ const SORT_OPTIONS: { key: SortKey; labelKey: string }[] = [
   { key: "portfolio_count",    labelKey: "common.portfolio" },
   { key: "aum_millions",       labelKey: "metrics.aum" },
   { key: "founded_year",       labelKey: "vcs.founded" },
+];
+
+// ── Quick Questions ──────────────────────────────────────────────────────────
+// Canned questions over VC firm data — each maps to a combination of the
+// same sidebar filters (stage, sector, geography, check size, AUM,
+// recent-activity) a person could set by hand, plus optionally a sort order.
+interface VCQuickQuestion {
+  label: string;
+  stages?: Stage[];
+  sectors?: string[];
+  geo?: Geography | "";
+  checkStep?: CheckStep;
+  aumStep?: AumStep;
+  activeOnly?: boolean;
+  sortKey?: SortKey;
+}
+
+const VC_QUICK_QUESTIONS: VCQuickQuestion[] = [
+  { label: "Most active investors in the last 24 months",     activeOnly: true, sortKey: "recent_investments" },
+  { label: "Largest funds by AUM ($2B+)",                      aumStep: "large", sortKey: "aum_millions" },
+  { label: "Seed-stage investors in Israel",                   stages: ["Seed"], geo: "Israel" },
+  { label: "Active AI-focused investors",                      sectors: ["AI"], activeOnly: true },
+  { label: "Fintech-focused VCs",                               sectors: ["Fintech"] },
+  { label: "Growth-stage firms writing $10M+ checks",           checkStep: "growth" },
+  { label: "Firms with the largest portfolios",                 sortKey: "portfolio_count" },
 ];
 
 // ─── Accent palette ───────────────────────────────────────────────────────────
@@ -665,6 +690,19 @@ export function VCs() {
     setFilters(DEFAULT_FILTERS);
   }
 
+  function applyQuickQuestion(q: VCQuickQuestion) {
+    setSearch("");
+    setFilters({
+      stages: q.stages ?? [],
+      sectors: q.sectors ?? [],
+      geo: q.geo ?? "",
+      checkStep: q.checkStep ?? "all",
+      aumStep: q.aumStep ?? "all",
+      activeOnly: q.activeOnly ?? false,
+    });
+    if (q.sortKey) { setSortKey(q.sortKey); setSortDir("desc"); }
+  }
+
   const activeFilterCount = [
     search,
     filters.stages.length  > 0 ? "1" : "",
@@ -751,48 +789,53 @@ export function VCs() {
   return (
     <Layout>
 
-      {/* ── Title bar (blue-gray — same band as Startups/PE) ─────────────── */}
-      <div style={{ background: "#B8C9D1", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
-        <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 pt-6 pb-5">
-          <div className="flex items-center justify-between gap-4 mb-1.5">
-            <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">{t("vcs.directoryTitle")}</h1>
-
-            {/* Sort segmented control */}
-            <div className="flex items-center gap-2 flex-none">
-              <button
-                onClick={() => setTourOpen(true)}
-                title={t("tour.takeTour")}
-                aria-label={t("tour.takeTour")}
-                className="p-2 rounded-[10px] bg-white/60 border border-black/10 text-[#0F172A]/60 hover:text-[#0F172A] hover:bg-white transition-all"
-              >
-                <HelpCircle className="w-4 h-4" />
-              </button>
-              <span className="text-[10px] font-bold text-[#0F172A]/50 uppercase tracking-wider hidden sm:block">{t("common.sort")}</span>
-              <div data-tour="sort-control" className="flex items-center bg-white/60 border border-black/10 rounded-[10px] p-0.5 gap-0.5">
-                {SORT_OPTIONS.map(o => (
-                  <button
-                    key={o.key}
-                    onClick={() => handleSort(o.key)}
-                    className={`px-2.5 py-1.5 rounded-[7px] text-[10px] font-semibold transition-all whitespace-nowrap ${
-                      sortKey === o.key
-                        ? "bg-[#0F172A] text-white shadow-sm"
-                        : "text-[#0F172A]/60 hover:text-[#0F172A]"
-                    }`}
-                  >
-                    {t(o.labelKey)}
-                    {sortKey === o.key && (
-                      <span className="ml-0.5 opacity-70">{sortDir === "desc" ? "↓" : "↑"}</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
+      {/* ── Top bar: search + quick questions + help + sort ──────────────── */}
+      <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 pt-6 pb-2">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="relative flex-1 min-w-[200px] max-w-xl">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-300" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t("vcs.searchFirms")}
+              data-tour="search-input"
+              className="w-full pl-8 pr-8 py-2 text-sm bg-white border border-gray-200 text-[#0F172A] placeholder-gray-400 rounded-lg focus:outline-none focus:border-gray-300 focus:ring-2 focus:ring-[#0F172A]/10 transition-all"
+            />
+            {search && (
+              <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"><X className="w-3.5 h-3.5" /></button>
+            )}
           </div>
 
-          <div className="flex items-center gap-3">
-            <p className="text-sm text-[#0F172A]/60 leading-snug">
-              {t("vcs.pageSubtitle")}
-            </p>
+          <QuickQuestionsMenu questions={VC_QUICK_QUESTIONS} onSelect={applyQuickQuestion} />
+
+          <button
+            onClick={() => setTourOpen(true)}
+            title={t("tour.takeTour")}
+            aria-label={t("tour.takeTour")}
+            className="p-2 rounded-lg bg-white border border-gray-200 text-gray-500 hover:text-[#0F172A] hover:bg-gray-50 transition-all flex-none"
+          >
+            <HelpCircle className="w-4 h-4" />
+          </button>
+
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider hidden sm:block">{t("common.sort")}</span>
+          <div data-tour="sort-control" className="flex items-center bg-gray-100 border border-gray-200 rounded-lg p-0.5 gap-0.5 flex-none">
+            {SORT_OPTIONS.map(o => (
+              <button
+                key={o.key}
+                onClick={() => handleSort(o.key)}
+                className={`px-2.5 py-1.5 rounded-lg text-[10px] font-semibold transition-all whitespace-nowrap ${
+                  sortKey === o.key
+                    ? "bg-white text-[#0F172A] shadow-sm"
+                    : "text-gray-400 hover:text-[#0F172A]"
+                }`}
+              >
+                {t(o.labelKey)}
+                {sortKey === o.key && (
+                  <span className="ml-0.5 opacity-70">{sortDir === "desc" ? "↓" : "↑"}</span>
+                )}
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -802,6 +845,7 @@ export function VCs() {
         search={search}
         onSearchChange={setSearch}
         searchPlaceholder={t("vcs.searchFirms")}
+        hideSearchBox
         activeFilterCount={activeFilterCount}
         onClearAll={clearAll}
         filters={

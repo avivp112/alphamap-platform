@@ -16,6 +16,7 @@ import { Layout } from "../components/Layout";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { TickerLogo } from "../components/TickerLogo";
 import { ProductTour, type TourStep } from "../components/ProductTour";
+import { QuickQuestionsMenu } from "../components/SideFilterLayout";
 import type { StartupListRow } from "../../lib/supabase";
 
 const TOUR_SEEN_KEY = "alphamap_tour_publicmarket_seen";
@@ -657,6 +658,35 @@ function DirectoryPagination({ page, pageCount, onChange }: { page: number; page
   );
 }
 
+// ── Quick Questions ──────────────────────────────────────────────────────────
+// Canned questions over the loaded public-company set — each maps to a
+// sector filter plus optionally a sort (and, for a couple, a threshold
+// predicate) over the same columns the directory table already shows.
+type SortMetric = "marketCap" | "evRevenue" | "evEbitda" | "yoyGrowthPct" | "momentumPct";
+
+interface PublicQuickQuestion {
+  label: string;
+  sector?: AnySectorKey | "all";
+  predicate?: (c: DerivedPublicCompany) => boolean;
+  sortKey?: SortMetric;
+  sortDir?: "asc" | "desc";
+}
+
+const SORT_METRIC_LABEL: Record<SortMetric, string> = {
+  marketCap: "Market Cap", evRevenue: "EV/Rev", evEbitda: "EV/EBITDA",
+  yoyGrowthPct: "Growth", momentumPct: "Momentum",
+};
+
+const PUBLIC_QUICK_QUESTIONS: PublicQuickQuestion[] = [
+  { label: "Fastest-growing public companies (YoY revenue)", sortKey: "yoyGrowthPct", sortDir: "desc" },
+  { label: "Cheapest SaaS stocks by revenue multiple",       sector: "saas", sortKey: "evRevenue", sortDir: "asc" },
+  { label: "AI companies leading in growth",                  sector: "ai",   sortKey: "yoyGrowthPct", sortDir: "desc" },
+  { label: "Companies with strong positive momentum",         predicate: (c) => c.momentumPct > 0, sortKey: "momentumPct", sortDir: "desc" },
+  { label: "Underperforming stocks (negative momentum)",      predicate: (c) => c.momentumPct < 0, sortKey: "momentumPct", sortDir: "asc" },
+  { label: "Largest companies by market cap",                 sortKey: "marketCap", sortDir: "desc" },
+  { label: "Lowest EV/EBITDA (potentially undervalued)",      predicate: (c) => c.evEbitda != null, sortKey: "evEbitda", sortDir: "asc" },
+];
+
 function CompaniesDirectory({ companies, onCompanyAdded }: {
   companies: DerivedPublicCompany[];
   onCompanyAdded: () => Promise<void>;
@@ -664,21 +694,44 @@ function CompaniesDirectory({ companies, onCompanyAdded }: {
   const { t } = useTranslation();
   const [filter, setFilter]             = useState("");
   const [sectorFilter, setSectorFilter] = useState<AnySectorKey | "all">("all");
+  const [quickPredicate, setQuickPredicate] = useState<((c: DerivedPublicCompany) => boolean) | null>(null);
+  const [sortSpec, setSortSpec]         = useState<{ key: SortMetric; dir: "asc" | "desc" } | null>(null);
   const [page, setPage]                 = useState(1);
   const [highlightTicker, setHighlightTicker] = useState<string | null>(null);
   const [pendingHighlight, setPendingHighlight] = useState<string | null>(null);
   const [profileTicker, setProfileTicker] = useState<string | null>(null);
   const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
 
+  function applyQuickQuestion(q: PublicQuickQuestion) {
+    setFilter("");
+    setSectorFilter(q.sector ?? "all");
+    setQuickPredicate(() => q.predicate ?? null);
+    setSortSpec(q.sortKey ? { key: q.sortKey, dir: q.sortDir ?? "desc" } : null);
+  }
+
+  function clearQuickFilter() {
+    setQuickPredicate(null);
+    setSortSpec(null);
+  }
+
   const filtered = useMemo(() => {
     let rows = companies;
     if (sectorFilter !== "all") rows = rows.filter((c) => c.sector === sectorFilter);
     const q = filter.trim().toLowerCase();
     if (q) rows = rows.filter((c) => c.name.toLowerCase().includes(q) || c.ticker.toLowerCase().includes(q));
+    if (quickPredicate) rows = rows.filter(quickPredicate);
+    if (sortSpec) {
+      const { key, dir } = sortSpec;
+      rows = [...rows].sort((a, b) => {
+        const av = a[key] ?? (dir === "asc" ? Infinity : -Infinity);
+        const bv = b[key] ?? (dir === "asc" ? Infinity : -Infinity);
+        return dir === "asc" ? av - bv : bv - av;
+      });
+    }
     return rows;
-  }, [companies, filter, sectorFilter]);
+  }, [companies, filter, sectorFilter, quickPredicate, sortSpec]);
 
-  useEffect(() => { setPage(1); }, [filter, sectorFilter]);
+  useEffect(() => { setPage(1); }, [filter, sectorFilter, quickPredicate, sortSpec]);
 
   // A ticker just got synced (or was already tracked) — once it's actually
   // present in the `companies` prop, clear any filter hiding it, jump to its
@@ -745,6 +798,18 @@ function CompaniesDirectory({ companies, onCompanyAdded }: {
               </button>
             ))}
           </div>
+
+          <QuickQuestionsMenu questions={PUBLIC_QUICK_QUESTIONS} onSelect={applyQuickQuestion} />
+
+          {sortSpec && (
+            <button
+              onClick={clearQuickFilter}
+              className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 whitespace-nowrap"
+            >
+              Sorted: {SORT_METRIC_LABEL[sortSpec.key]} {sortSpec.dir === "asc" ? "↑" : "↓"}<X className="w-3 h-3 ml-0.5" />
+            </button>
+          )}
+
           <div className="relative ml-auto w-full sm:w-[220px]">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-300" />
             <input
@@ -1283,13 +1348,13 @@ export function PublicMarket() {
 
   return (
     <Layout>
-      {/* Title band — same blue-gray as the other hub pages */}
-      <div style={{ background: "#B8C9D1", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
-        <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 pt-6 pb-5">
+      {/* Title band — plain page background, no colored band */}
+      <div>
+        <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 pt-6 pb-3">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
               <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">{t("publicMarket.hubTitle")}</h1>
-              <p className="mt-1.5 text-sm text-[#0F172A]/60 leading-snug max-w-2xl">
+              <p className="mt-1.5 text-sm text-gray-500 leading-snug max-w-2xl">
                 {t("publicMarket.hubSubtitle")}
               </p>
             </div>
@@ -1298,26 +1363,26 @@ export function PublicMarket() {
                 onClick={() => setTourOpen(true)}
                 title={t("tour.takeTour")}
                 aria-label={t("tour.takeTour")}
-                className="p-2 rounded-[8px] bg-white/60 border border-black/10 text-[#0F172A]/60 hover:text-[#0F172A] hover:bg-white transition-all"
+                className="p-2 rounded-lg bg-white border border-gray-200 text-gray-500 hover:text-[#0F172A] hover:bg-gray-50 transition-all"
               >
                 <HelpCircle className="w-4 h-4" />
               </button>
               <span className={`flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border ${
-                badgeLive ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-white/60 border-black/10 text-[#0F172A]/60"
+                badgeLive ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-gray-100 border-gray-200 text-gray-500"
               }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${badgeLive ? "bg-emerald-500 animate-pulse" : "bg-[#0F172A]/30"}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${badgeLive ? "bg-emerald-500 animate-pulse" : "bg-gray-400"}`} />
                 {badgeText}
               </span>
               <button
                 onClick={handleSync}
                 disabled={syncing}
                 title="Pull fresh market data via the sync-public-markets Edge Function, then reload from the database"
-                className="flex items-center gap-1.5 rounded-[8px] bg-[#0F172A] px-3.5 py-2 text-xs font-bold text-white hover:bg-[#1e293b] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                className="flex items-center gap-1.5 rounded-lg bg-[#0F172A] px-3.5 py-2 text-xs font-bold text-white hover:bg-[#1e293b] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} />
                 {syncing ? t("publicMarket.syncing") : t("publicMarket.syncNow")}
               </button>
-              <Link to="/stocks" className="flex items-center gap-1.5 rounded-[8px] bg-white/70 border border-black/10 px-3.5 py-2 text-xs font-bold text-[#0F172A] hover:bg-white transition-all">
+              <Link to="/stocks" className="flex items-center gap-1.5 rounded-lg bg-white border border-gray-200 px-3.5 py-2 text-xs font-bold text-[#0F172A] hover:bg-gray-50 transition-all">
                 {t("publicMarket.liveQuotes")} <ExternalLink className="w-3.5 h-3.5" />
               </Link>
             </div>

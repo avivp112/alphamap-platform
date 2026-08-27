@@ -48,7 +48,7 @@ function topSector(entries: SectorWeight[]): SectorWeight | null {
 // never lands on top of the ring or the center "Top Focus" label — the donut
 // is too small for a cursor-following tooltip to have anywhere to go.
 
-type PieDatum = { sector: string; pct: number; color: string };
+type PieDatum = { sector: string; weight: number; pct: number; color: string };
 
 function DarkTooltip({ d }: { d: PieDatum }) {
   return (

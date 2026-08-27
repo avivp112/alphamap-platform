@@ -9,7 +9,7 @@ import {
 } from "recharts";
 import { Layout } from "../components/Layout";
 import { LinkedInBadge } from "../components/LinkedInBadge";
-import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider } from "../components/SideFilterLayout";
+import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider, QuickQuestionsMenu } from "../components/SideFilterLayout";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { ProductTour, type TourStep } from "../components/ProductTour";
 import {
@@ -20,7 +20,7 @@ import {
   ChevronDown, ChevronLeft, ChevronRight, Building2, CheckSquare, Square,
   GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2, ChevronUp,
   SlidersHorizontal, Award, Eye, HelpCircle,
-  Linkedin, Facebook, Instagram, Newspaper, Layers, Sparkles,
+  Linkedin, Facebook, Instagram, Newspaper, Layers,
 } from "lucide-react";
 import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
@@ -316,61 +316,6 @@ const QUICK_QUESTIONS: QuickQuestion[] = [
   { label: "Under-the-radar companies with little competition",   density: "blue-ocean" },
 ];
 
-function QuickQuestionsMenu({ onSelect }: { onSelect: (q: QuickQuestion) => void }) {
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function handleClick(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    }
-    function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", handleClick);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("mousedown", handleClick);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [open]);
-
-  return (
-    <div className="relative" ref={wrapRef}>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        aria-haspopup="menu"
-        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-[#0F172A] bg-white border border-gray-200 hover:bg-gray-50 transition-colors"
-      >
-        <Sparkles className="w-4 h-4 text-amber-500 flex-none" />
-        <span className="hidden sm:inline">Quick Questions</span>
-        <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-150 ${open ? "rotate-180" : ""}`} />
-      </button>
-
-      <div
-        role="menu"
-        className={`absolute right-0 sm:left-0 top-full mt-1.5 w-80 max-w-[90vw] rounded-lg border border-gray-100 bg-white py-2 shadow-[0_12px_32px_rgba(15,23,42,0.10)] transition-all duration-150 ease-out z-40 ${
-          open ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 -translate-y-1 pointer-events-none"
-        }`}
-      >
-        <p className="px-4 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Try asking</p>
-        {QUICK_QUESTIONS.map((q) => (
-          <button
-            key={q.label}
-            role="menuitem"
-            onClick={() => { onSelect(q); setOpen(false); }}
-            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-[#0F172A] transition-colors"
-          >
-            {q.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 const PROGRESS_MESSAGES = [
   "Searching the web for funding data…",
@@ -2570,7 +2515,7 @@ export function Startups() {
             )}
           </div>
 
-          <QuickQuestionsMenu onSelect={applyQuickQuestion} />
+          <QuickQuestionsMenu questions={QUICK_QUESTIONS} onSelect={applyQuickQuestion} />
 
           <button
             onClick={() => setTourOpen(true)}
