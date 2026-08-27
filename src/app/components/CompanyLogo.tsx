@@ -95,15 +95,16 @@ export function CompanyLogo({
   const advance = () => setSrcIdx(i => i + 1);
 
   // ── Logo image ─────────────────────────────────────────────────────────────
+  // No background/border box — a framed logo reads muddier and less sharp
+  // than the logo itself, especially on white or transparent source images.
+  // The rounded clip (via `base`) is kept for a consistent shape across the
+  // app; the image just sits directly on whatever the card's own background is.
   if (domain && srcIdx < sources.length) {
     const src = sources[srcIdx];
     const isGoogle = srcIdx === 0;
 
     return (
-      <div
-        className={base}
-        style={{ ...containerStyle, background: '#0d1f35', border: '1px solid #1a2a3f' }}
-      >
+      <div className={base} style={containerStyle}>
         <img
           key={src}
           src={src}
@@ -117,7 +118,7 @@ export function CompanyLogo({
             if (img.naturalWidth <= 16 || img.naturalHeight <= 16) advance();
           } : undefined}
           onError={advance}
-          className="w-full h-full object-contain p-1"
+          className="w-full h-full object-contain"
         />
       </div>
     );

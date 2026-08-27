@@ -725,10 +725,14 @@ function AlphaMapScorePanel({ data, loading, err }: {
   );
 }
 
+// Same pill convention as ROUND_STYLE (rounded-full, -50 bg / -700 text /
+// -100 border) so this badge reads as part of the same design language as
+// its neighbors, e.g. the funding-stage badge in the same card — rather
+// than a visibly different, slightly heavier box.
 const SCORE_BADGE_STYLE: Record<'A'|'B'|'C', string> = {
-  A: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  B: 'bg-blue-50 text-blue-700 border-blue-200',
-  C: 'bg-rose-50 text-rose-700 border-rose-200',
+  A: 'bg-emerald-50 text-emerald-700 border border-emerald-100',
+  B: 'bg-blue-50 text-blue-700 border border-blue-100',
+  C: 'bg-rose-50 text-rose-700 border border-rose-100',
 };
 
 function ScoreBadge({ startupId }: { startupId: string }) {
@@ -743,12 +747,12 @@ function ScoreBadge({ startupId }: { startupId: string }) {
   }, [startupId]);
 
   if (loading) {
-    return <div className="h-4 w-12 rounded bg-gray-100 animate-pulse" />;
+    return <div className="h-4 w-12 rounded-full bg-gray-100 animate-pulse" />;
   }
   if (!data || data.error || data.score == null || !(data.tier in SCORE_BADGE_STYLE)) return null;
 
   return (
-    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border ${SCORE_BADGE_STYLE[data.tier as 'A'|'B'|'C']}`}>
+    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${SCORE_BADGE_STYLE[data.tier as 'A'|'B'|'C']}`}>
       <Activity className="w-2.5 h-2.5 opacity-70" />
       {data.tier}&nbsp;{safeFixed(data.score, 0, 'N/A')}
     </span>
