@@ -20,7 +20,7 @@ import {
   ChevronDown, ChevronLeft, ChevronRight, Building2, CheckSquare, Square,
   GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2, ChevronUp,
   SlidersHorizontal, Award, Eye, HelpCircle,
-  Linkedin, Facebook, Instagram, Newspaper, Layers,
+  Linkedin, Facebook, Instagram, Newspaper, Layers, Sparkles,
 } from "lucide-react";
 import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
@@ -290,6 +290,87 @@ type HeadcountStep = (typeof HEADCOUNT_STEPS)[number]["value"];
 
 const TOUR_SEEN_KEY = "alphamap_tour_startups_seen";
 type DensityFilter = "all" | "crowded" | "blue-ocean";
+
+// ── Quick Questions ──────────────────────────────────────────────────────────
+// Canned natural-language questions over the data we can actually answer with
+// the existing filter set — each one just maps to a combination of the same
+// sidebar filters a person could set by hand, so the results are exactly as
+// trustworthy as the sidebar itself (no separate NL parsing/AI layer).
+interface QuickQuestion {
+  label: string;
+  parentSector?: string;
+  headcountStep?: HeadcountStep;
+  stageStep?: StageStep;
+  momentum?: boolean;
+  density?: DensityFilter;
+  fundedWithinDays?: number;
+}
+
+const QUICK_QUESTIONS: QuickQuestion[] = [
+  { label: "AI companies that raised funds in the last month", parentSector: "AI & ML", fundedWithinDays: 30 },
+  { label: "Companies that raised a round in the last 90 days", fundedWithinDays: 90 },
+  { label: "Fast-growing companies right now",                  momentum: true },
+  { label: "Fintech companies with 500+ employees",              parentSector: "Fintech", headcountStep: "500+" },
+  { label: "Seed-stage companies",                                stageStep: "seed" },
+  { label: "Cybersecurity startups",                              parentSector: "Cybersecurity" },
+  { label: "Under-the-radar companies with little competition",   density: "blue-ocean" },
+];
+
+function QuickQuestionsMenu({ onSelect }: { onSelect: (q: QuickQuestion) => void }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-[#0F172A] bg-white border border-gray-200 hover:bg-gray-50 transition-colors"
+      >
+        <Sparkles className="w-4 h-4 text-amber-500 flex-none" />
+        <span className="hidden sm:inline">Quick Questions</span>
+        <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-150 ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      <div
+        role="menu"
+        className={`absolute right-0 sm:left-0 top-full mt-1.5 w-80 max-w-[90vw] rounded-lg border border-gray-100 bg-white py-2 shadow-[0_12px_32px_rgba(15,23,42,0.10)] transition-all duration-150 ease-out z-40 ${
+          open ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 -translate-y-1 pointer-events-none"
+        }`}
+      >
+        <p className="px-4 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Try asking</p>
+        {QUICK_QUESTIONS.map((q) => (
+          <button
+            key={q.label}
+            role="menuitem"
+            onClick={() => { onSelect(q); setOpen(false); }}
+            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-[#0F172A] transition-colors"
+          >
+            {q.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const PROGRESS_MESSAGES = [
   "Searching the web for funding data…",
@@ -2302,6 +2383,7 @@ export function Startups() {
   const [headcountStep, setHeadcount]   = useState<HeadcountStep>("all");
   const [momentumFilter, setMomentum]   = useState(false);
   const [densityFilter, setDensity]     = useState<DensityFilter>("all");
+  const [fundedWithinDays, setFundedWithinDays] = useState<number | null>(null);
   const [viewMode, setView]             = useState<"grid" | "list">("grid");
   const [tearsheetStartup, setSelected] = useState<StartupListRow | null>(null);
   // Map (not Set) so a selection made on one page survives navigating to
@@ -2393,6 +2475,15 @@ export function Startups() {
   function clearAll() {
     setSearch(""); setParentSector(""); setSubSector(""); setCountry("");
     setStageStep("all"); setHeadcount("all"); setMomentum(false); setDensity("all");
+    setFundedWithinDays(null);
+    clearCityFilter();
+  }
+
+  function applyQuickQuestion(q: QuickQuestion) {
+    setSearch(""); setParentSector(q.parentSector ?? ""); setSubSector(""); setCountry("");
+    setStageStep(q.stageStep ?? "all"); setHeadcount(q.headcountStep ?? "all");
+    setMomentum(q.momentum ?? false); setDensity(q.density ?? "all");
+    setFundedWithinDays(q.fundedWithinDays ?? null);
     clearCityFilter();
   }
 
@@ -2402,6 +2493,7 @@ export function Startups() {
     headcountStep !== "all" ? "1" : "",
     momentumFilter ? "1" : "",
     densityFilter !== "all" ? "1" : "",
+    fundedWithinDays != null ? "1" : "",
   ].filter(Boolean).length;
 
   // Everything the sidebar controls collapses into one filters object, which
@@ -2425,8 +2517,9 @@ export function Startups() {
     }
     if (momentumFilter) f.momentum = true;
     if (densityFilter !== "all") f.density = densityFilter;
+    if (fundedWithinDays != null) f.fundedWithinDays = fundedWithinDays;
     return f;
-  }, [debouncedSearch, parentSector, subSector, countryFilter, cityFilter, stageStep, headcountStep, momentumFilter, densityFilter]);
+  }, [debouncedSearch, parentSector, subSector, countryFilter, cityFilter, stageStep, headcountStep, momentumFilter, densityFilter, fundedWithinDays]);
 
   // Any filter change starts the user back on page 1.
   useEffect(() => { setPage(1); }, [filters]);
@@ -2459,33 +2552,37 @@ export function Startups() {
   return (
     <Layout>
 
-      {/* ── Title bar ────────────────────────────────────────────────────── */}
-      <div style={{ background: "#B8C9D1", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
-        <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 pt-6 pb-5">
-          <div className="flex items-center justify-between gap-4 mb-1.5">
-            <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">
-              {t("startups.pageTitle")}
-              {cityFilter && <span className="ml-3 text-lg font-medium text-[#0F172A]">{cityFilter}</span>}
-            </h1>
-            <div className="flex items-center gap-2 flex-none">
-              <button
-                onClick={() => setTourOpen(true)}
-                title={t("tour.takeTour")}
-                aria-label={t("tour.takeTour")}
-                className="p-2 rounded-[8px] bg-white/60 border border-black/10 text-[#0F172A]/60 hover:text-[#0F172A] hover:bg-white transition-all"
-              >
-                <HelpCircle className="w-4 h-4" />
-              </button>
-              <div data-tour="view-toggle" className="flex items-center bg-white/60 border border-black/10 rounded-[8px] p-1">
-                <button onClick={() => setView("grid")} className={`p-1.5 rounded-[8px] transition-all ${viewMode === "grid" ? "bg-white text-[#0F172A] shadow-sm" : "text-[#0F172A]/50 hover:text-[#0F172A]"}`}><LayoutGrid className="w-4 h-4" /></button>
-                <button onClick={() => setView("list")} className={`p-1.5 rounded-[8px] transition-all ${viewMode === "list" ? "bg-white text-[#0F172A] shadow-sm" : "text-[#0F172A]/50 hover:text-[#0F172A]"}`}><List className="w-4 h-4" /></button>
-              </div>
-            </div>
+      {/* ── Top bar: search + quick questions + help + view toggle ───────── */}
+      <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 pt-6 pb-2">
+        <div className="flex items-center gap-2.5">
+          <div className="relative flex-1 max-w-xl">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-300" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t("startups.searchCompanies")}
+              data-tour="search-input"
+              className="w-full pl-8 pr-8 py-2 text-sm bg-white border border-gray-200 text-[#0F172A] placeholder-gray-400 rounded-lg focus:outline-none focus:border-gray-300 focus:ring-2 focus:ring-[#0F172A]/10 transition-all"
+            />
+            {search && (
+              <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"><X className="w-3.5 h-3.5" /></button>
+            )}
           </div>
-          <div className="flex items-center gap-3">
-            <p className="text-sm text-[#0F172A]/60 leading-snug">
-              {t("startups.pageSubtitle")}
-            </p>
+
+          <QuickQuestionsMenu onSelect={applyQuickQuestion} />
+
+          <button
+            onClick={() => setTourOpen(true)}
+            title={t("tour.takeTour")}
+            aria-label={t("tour.takeTour")}
+            className="p-2 rounded-lg bg-white border border-gray-200 text-gray-500 hover:text-[#0F172A] hover:bg-gray-50 transition-all flex-none"
+          >
+            <HelpCircle className="w-4 h-4" />
+          </button>
+          <div data-tour="view-toggle" className="flex items-center bg-gray-100 border border-gray-200 rounded-lg p-1 flex-none">
+            <button onClick={() => setView("grid")} className={`p-1.5 rounded-lg transition-all ${viewMode === "grid" ? "bg-white text-[#0F172A] shadow-sm" : "text-gray-400 hover:text-[#0F172A]"}`}><LayoutGrid className="w-4 h-4" /></button>
+            <button onClick={() => setView("list")} className={`p-1.5 rounded-lg transition-all ${viewMode === "list" ? "bg-white text-[#0F172A] shadow-sm" : "text-gray-400 hover:text-[#0F172A]"}`}><List className="w-4 h-4" /></button>
           </div>
         </div>
       </div>
@@ -2495,6 +2592,7 @@ export function Startups() {
         search={search}
         onSearchChange={setSearch}
         searchPlaceholder={t("startups.searchCompanies")}
+        hideSearchBox
         activeFilterCount={activeFilterCount}
         onClearAll={clearAll}
         extraBottomPadding={selected.size >= 1}

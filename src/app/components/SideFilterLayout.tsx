@@ -16,6 +16,7 @@ export function SideFilterLayout({
   search, onSearchChange, searchPlaceholder,
   activeFilterCount, onClearAll,
   filters, extraBottomPadding = false, children,
+  hideSearchBox = false,
 }: {
   search: string;
   onSearchChange: (v: string) => void;
@@ -26,6 +27,9 @@ export function SideFilterLayout({
   /** e.g. the Startups compare bar needs extra room at the bottom */
   extraBottomPadding?: boolean;
   children: React.ReactNode;
+  /** Opt out of the sidebar's own search box — for a page that surfaces
+   *  search elsewhere (e.g. Startups' top bar) and would otherwise show it twice. */
+  hideSearchBox?: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -48,17 +52,19 @@ export function SideFilterLayout({
             </div>
 
             {/* Search */}
-            <div className="py-4 border-b border-gray-100">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-300" />
-                <input type="text" value={search} onChange={(e) => onSearchChange(e.target.value)} placeholder={searchPlaceholder}
-                  data-tour="search-input"
-                  className="w-full pl-8 pr-8 py-2 text-sm bg-gray-50 border border-gray-100 text-[#0F172A] placeholder-gray-400 rounded-[10px] focus:outline-none focus:border-gray-300 focus:ring-2 focus:ring-[#0F172A]/10 transition-all" />
-                {search && (
-                  <button onClick={() => onSearchChange("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"><X className="w-3.5 h-3.5" /></button>
-                )}
+            {!hideSearchBox && (
+              <div className="py-4 border-b border-gray-100">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-300" />
+                  <input type="text" value={search} onChange={(e) => onSearchChange(e.target.value)} placeholder={searchPlaceholder}
+                    data-tour="search-input"
+                    className="w-full pl-8 pr-8 py-2 text-sm bg-gray-50 border border-gray-100 text-[#0F172A] placeholder-gray-400 rounded-[10px] focus:outline-none focus:border-gray-300 focus:ring-2 focus:ring-[#0F172A]/10 transition-all" />
+                  {search && (
+                    <button onClick={() => onSearchChange("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"><X className="w-3.5 h-3.5" /></button>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             {filters}
           </div>

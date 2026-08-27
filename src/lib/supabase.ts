@@ -259,6 +259,8 @@ export interface StartupSearchFilters {
   headcountMax?: number;
   momentum?: boolean;
   density?: "crowded" | "blue-ocean";
+  /** Latest funding round announced within this many days of today. */
+  fundedWithinDays?: number;
 }
 
 export const STARTUPS_PAGE_SIZE = 40;
@@ -297,6 +299,10 @@ function applyStartupSearchFilters(
   }
   if (filters.density === "crowded")    q = q.eq("peer_count_valid", true).gte("peer_count", 4);
   if (filters.density === "blue-ocean") q = q.eq("peer_count_valid", true).lte("peer_count", 2);
+  if (filters.fundedWithinDays != null) {
+    const cutoff = new Date(Date.now() - filters.fundedWithinDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    q = q.gte("latest_round_date", cutoff);
+  }
   return q;
 }
 
