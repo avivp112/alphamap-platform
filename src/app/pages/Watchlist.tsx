@@ -214,7 +214,7 @@ export function Watchlist() {
           <p className="mt-2 text-sm text-gray-500">{t("watchlist.signInBlurb")}</p>
           <button
             onClick={() => navigate("/login?next=" + encodeURIComponent("/watchlist"))}
-            className="mt-6 rounded-[13px] bg-[#0F172A] px-5 py-2.5 text-sm font-bold text-white hover:bg-gray-900 transition-colors"
+            className="mt-6 rounded-[8px] bg-[#0F172A] px-5 py-2.5 text-sm font-bold text-white hover:bg-gray-900 transition-colors"
           >{t("header.logIn")}</button>
         </div>
       </Layout>
@@ -241,7 +241,7 @@ export function Watchlist() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t("watchlist.searchPlaceholder")}
-              className="w-full pl-11 pr-24 py-3 text-sm bg-white border border-gray-200 rounded-[14px] text-[#0F172A] placeholder-gray-400 focus:outline-none focus:border-gray-300 focus:ring-2 focus:ring-[#0F172A]/10 transition-all"
+              className="w-full pl-11 pr-24 py-3 text-sm bg-white border border-gray-200 rounded-[8px] text-[#0F172A] placeholder-gray-400 focus:outline-none focus:border-gray-300 focus:ring-2 focus:ring-[#0F172A]/10 transition-all"
             />
             <button
               type="submit"
@@ -288,12 +288,12 @@ export function Watchlist() {
             <div className="flex items-center gap-2 text-sm text-gray-400 py-10">
               <Loader2 className="w-4 h-4 animate-spin" />{t("watchlist.loading")}</div>
           ) : listError ? (
-            <div className="flex items-start gap-2.5 bg-rose-50 border border-rose-200/60 rounded-[12px] px-4 py-3.5">
+            <div className="flex items-start gap-2.5 bg-rose-50 border border-rose-200/60 rounded-[8px] px-4 py-3.5">
               <AlertCircle className="w-4 h-4 text-rose-500 flex-none mt-0.5" />
               <p className="text-xs text-rose-700 leading-relaxed">{listError}</p>
             </div>
           ) : watchlist.startups.length === 0 && watchlist.investors.length === 0 ? (
-            <div className="flex flex-col items-center text-center py-16 px-6 rounded-[20px] border border-dashed border-gray-200">
+            <div className="flex flex-col items-center text-center py-16 px-6 rounded-[10px] border border-dashed border-gray-200">
               <Eye className="w-8 h-8 text-gray-300 mb-3" />
               <p className="text-sm font-semibold text-[#0F172A]">{t("watchlist.nothingTracked")}</p>
               <p className="mt-1 text-xs text-gray-400 max-w-xs">
@@ -335,7 +335,7 @@ export function Watchlist() {
             <button
               onClick={() => setCompareOpen(true)}
               disabled={!canCompare}
-              className="flex items-center gap-1.5 rounded-[12px] bg-[#0F172A] px-4 py-2.5 text-sm font-bold text-white hover:bg-gray-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center gap-1.5 rounded-[8px] bg-[#0F172A] px-4 py-2.5 text-sm font-bold text-white hover:bg-gray-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <GitCompare className="w-4 h-4" />{t("common.compare")}</button>
           </div>
@@ -402,7 +402,7 @@ function TrackableCard({
   return (
     <div
       onClick={onToggleFocus}
-      className={`group relative flex gap-3 rounded-[16px] border bg-white p-4 cursor-pointer transition-all ${
+      className={`group relative flex gap-3 rounded-[8px] border bg-white p-4 cursor-pointer transition-all ${
         selected ? "border-[#0F172A] shadow-[0_4px_16px_rgba(15,23,42,0.08)]" : "border-gray-100 hover:border-gray-300 hover:shadow-[0_4px_16px_rgba(15,23,42,0.05)]"
       }`}
     >
@@ -493,7 +493,7 @@ function CompareModal({ items, onClose }: { items: CardItem[]; onClose: () => vo
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-3xl max-h-[85vh] overflow-hidden bg-white rounded-[24px] shadow-[0_32px_80px_rgba(15,23,42,0.35)] flex flex-col"
+        className="relative w-full max-w-3xl max-h-[85vh] overflow-hidden bg-white rounded-[10px] shadow-[0_32px_80px_rgba(15,23,42,0.35)] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex-none flex items-center justify-between px-6 py-5 border-b border-gray-100">

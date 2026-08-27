@@ -34,7 +34,7 @@ export function SideFilterLayout({
 
         {/* ── Left sidebar: faceted search ── */}
         <aside className="w-full lg:w-[300px] lg:flex-none lg:sticky lg:top-6">
-          <div className="bg-white border border-gray-100 rounded-[20px] shadow-[0_1px_3px_rgba(15,23,42,0.04)] px-5 py-1 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto">
+          <div className="bg-white border border-gray-100 rounded-[10px] shadow-[0_1px_3px_rgba(15,23,42,0.04)] px-5 py-1 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto">
             <div className="flex items-center justify-between py-3.5 border-b border-gray-100">
               <div className="flex items-center gap-2">
                 <SlidersHorizontal className="w-4 h-4 text-[#0F172A]/50" />

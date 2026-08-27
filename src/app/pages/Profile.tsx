@@ -49,7 +49,7 @@ const PROVIDER_LABEL: Record<string, string> = {
 
 function DetailRow({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string }) {
   return (
-    <div className="rounded-[14px] p-4 flex flex-col gap-2 border bg-gray-50 border-gray-100">
+    <div className="rounded-[8px] p-4 flex flex-col gap-2 border bg-gray-50 border-gray-100">
       <div className="flex items-center gap-1.5">
         <Icon className="w-3.5 h-3.5 flex-none text-[#0F172A]/50" />
         <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">{label}</span>
@@ -88,7 +88,7 @@ export function Profile() {
     <Layout>
       <div className="mx-auto max-w-[880px] px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
         {/* ── Hero header — plain dark navy, no watermark ── */}
-        <div className="relative overflow-hidden rounded-[24px] bg-[#0F172A] px-7 sm:px-9 py-9 sm:py-11">
+        <div className="relative overflow-hidden rounded-[10px] bg-[#0F172A] px-7 sm:px-9 py-9 sm:py-11">
           <div
             aria-hidden
             className="pointer-events-none absolute inset-0"
@@ -133,7 +133,7 @@ export function Profile() {
 
         {/* ── Plan & agreements ── */}
         <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-5">
-          <div className="rounded-[20px] border border-gray-100 bg-white p-6 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+          <div className="rounded-[10px] border border-gray-100 bg-white p-6 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
             <div className="flex items-center gap-2 mb-1">
               <Sparkles className="w-4 h-4 text-[#7C8967]" />
               <h3 className="text-sm font-bold text-[#0F172A]">{t("profile.currentPlan")}</h3>
@@ -146,7 +146,7 @@ export function Profile() {
             </Link>
           </div>
 
-          <div className="rounded-[20px] border border-gray-100 bg-white p-6 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+          <div className="rounded-[10px] border border-gray-100 bg-white p-6 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
             <div className="flex items-center gap-2 mb-1">
               <ShieldCheck className="w-4 h-4 text-[#7C8967]" />
               <h3 className="text-sm font-bold text-[#0F172A]">{t("profile.termsOfUse")}</h3>

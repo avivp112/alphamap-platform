@@ -7,7 +7,7 @@ import { Layout } from "../components/Layout";
 // instead of pulling in an external stock photo.
 function AboutGraphic() {
   return (
-    <div className="rounded-[28px] border border-gray-100 bg-[#F8F9FA] p-8 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+    <div className="rounded-[10px] border border-gray-100 bg-[#F8F9FA] p-8 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
       <svg viewBox="0 0 320 260" className="w-full h-auto" aria-hidden="true">
         <polygon points="20,220 100,180 160,210 240,140 300,175 300,240 20,240" fill="#CBD1C2" />
         <polygon points="100,180 160,210 160,240 100,240" fill="#B7BEA8" />

@@ -45,14 +45,14 @@ function Shell({ title, detail }: { title: string; detail: string }) {
         <button
           type="button"
           onClick={async () => navigate(await homePathNow("/"))}
-          className="rounded-full bg-[#0F172A] px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1E293B]"
+          className="rounded-lg bg-[#0F172A] px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1E293B]"
         >
           {t("errors.goHome")}
         </button>
         <button
           type="button"
           onClick={() => navigate(-1)}
-          className="rounded-full border border-black/10 bg-white px-6 py-2.5 text-sm font-semibold text-[#111827] transition-colors hover:bg-gray-50"
+          className="rounded-lg border border-black/10 bg-white px-6 py-2.5 text-sm font-semibold text-[#111827] transition-colors hover:bg-gray-50"
         >
           {t("errors.goBack")}
         </button>

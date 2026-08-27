@@ -248,7 +248,7 @@ function VCCard({ firm, onClick, selected, onToggleSelect, dataTour }: {
   return (
     <div
       data-tour={dataTour}
-      className="relative group flex flex-col overflow-hidden rounded-[22px] border transition-all duration-300 cursor-pointer select-none"
+      className="relative group flex flex-col overflow-hidden rounded-[10px] border transition-all duration-300 cursor-pointer select-none"
       onClick={onClick}
       style={{
         background: "#FFFFFF",
@@ -279,7 +279,7 @@ function VCCard({ firm, onClick, selected, onToggleSelect, dataTour }: {
       <div className="px-5 pt-5 pb-4 relative z-10">
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-3 min-w-0">
-            <CompanyLogo name={firm.name} website={firm.website} size={44} rounded="rounded-xl" />
+            <CompanyLogo name={firm.name} website={firm.website} size={44} rounded="rounded-lg" />
             <div className="min-w-0">
               <h3 className="text-[15px] font-bold text-gray-900 truncate leading-tight tracking-tight">
                 {firm.name}
@@ -314,7 +314,7 @@ function VCCard({ firm, onClick, selected, onToggleSelect, dataTour }: {
       {/* Donut focus chart */}
       <div className="px-4 pb-1 relative z-10">
         <div
-          className="relative overflow-hidden rounded-[14px]"
+          className="relative overflow-hidden rounded-[8px]"
           style={{ background: "#F8F9FA", border: "1px solid #EEF0F2" }}
         >
           {(["top-2 left-2 border-t border-l", "top-2 right-2 border-t border-r",
@@ -418,12 +418,12 @@ function VCCard({ firm, onClick, selected, onToggleSelect, dataTour }: {
 function SkeletonCard() {
   return (
     <div
-      className="rounded-[22px] border overflow-hidden animate-pulse bg-white"
+      className="rounded-[10px] border overflow-hidden animate-pulse bg-white"
       style={{ borderColor: "#E5E7EB", height: 420 }}
     >
       <div className="px-5 pt-5 pb-4">
         <div className="flex items-center gap-3 mb-3">
-          <div className="w-11 h-11 rounded-xl flex-none bg-gray-100" />
+          <div className="w-11 h-11 rounded-lg flex-none bg-gray-100" />
           <div className="flex-1 space-y-2">
             <div className="h-3.5 rounded-full w-2/3 bg-gray-100" />
             <div className="h-2.5 rounded-full w-1/2 bg-gray-100" />
@@ -435,7 +435,7 @@ function SkeletonCard() {
           ))}
         </div>
       </div>
-      <div className="mx-4 rounded-[14px] h-[200px] bg-gray-50 border border-gray-100" />
+      <div className="mx-4 rounded-[8px] h-[200px] bg-gray-50 border border-gray-100" />
       <div className="grid grid-cols-3 gap-1.5 px-4 py-3">
         {[0, 1, 2].map(i => (
           <div key={i} className="h-14 rounded-[10px] bg-gray-50 border border-gray-100" />
@@ -520,7 +520,7 @@ function VCCompareModal({ firms, onClose }: { firms: VCFirm[]; onClose: () => vo
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-3xl max-h-[85vh] overflow-hidden bg-white rounded-[24px] shadow-[0_32px_80px_rgba(15,23,42,0.35)] flex flex-col"
+        className="relative w-full max-w-3xl max-h-[85vh] overflow-hidden bg-white rounded-[10px] shadow-[0_32px_80px_rgba(15,23,42,0.35)] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex-none flex items-center justify-between px-6 py-5 border-b border-gray-100">
@@ -916,7 +916,7 @@ export function VCs() {
             </div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 text-center">
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4 bg-gray-100 border border-gray-200">
+              <div className="w-14 h-14 rounded-lg flex items-center justify-center mb-4 bg-gray-100 border border-gray-200">
                 <X className="w-6 h-6 text-gray-400" />
               </div>
               <p className="text-sm font-semibold text-gray-500">{t("vcs.noFirmsMatch")}</p>
@@ -955,7 +955,7 @@ export function VCs() {
       {compareMap.size >= 1 && (
         <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2.5">
           {watchlistError && (
-            <div className="flex items-center gap-1.5 max-w-[280px] px-3.5 py-2 rounded-[12px] text-[11px] font-semibold bg-rose-950/90 border border-rose-800/60 text-rose-300 backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.45)]">
+            <div className="flex items-center gap-1.5 max-w-[280px] px-3.5 py-2 rounded-[8px] text-[11px] font-semibold bg-rose-950/90 border border-rose-800/60 text-rose-300 backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.45)]">
               <AlertCircle className="w-3.5 h-3.5 flex-none" />
               {watchlistError}
             </div>
@@ -967,7 +967,7 @@ export function VCs() {
               <button
                 onClick={toggleWatchlistForSelected}
                 disabled={watchlistBusy}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-[16px] text-xs font-bold transition-all duration-200 backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.45)] disabled:opacity-60 ${
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-[8px] text-xs font-bold transition-all duration-200 backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.45)] disabled:opacity-60 ${
                   tracked
                     ? "bg-emerald-950/80 border border-emerald-800/60 text-emerald-300 hover:border-emerald-600"
                     : "bg-[#0b1626]/90 border border-[#1a2a3f] text-slate-300 hover:text-white hover:border-slate-500"
@@ -989,7 +989,7 @@ export function VCs() {
             </button>
             <button
               onClick={() => { if (compareMap.size >= 2) setShowCompare(true); }}
-              className={`flex items-center gap-2.5 px-5 py-3.5 rounded-[20px] text-sm font-bold transition-all duration-200 ${
+              className={`flex items-center gap-2.5 px-5 py-3.5 rounded-[10px] text-sm font-bold transition-all duration-200 ${
                 compareMap.size >= 2
                   ? "bg-blue-600 text-white shadow-[0_8px_40px_rgba(37,99,235,0.45)] hover:bg-blue-500 hover:shadow-[0_12px_48px_rgba(37,99,235,0.5)] hover:scale-[1.02]"
                   : "bg-[#0b1626]/90 backdrop-blur-sm border border-[#1a2a3f] text-slate-400 shadow-[0_4px_24px_rgba(0,0,0,0.45)] cursor-default"

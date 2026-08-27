@@ -24,7 +24,7 @@ import {
 
 function MissingDataState({ message }: { message: string }) {
   return (
-    <div className="flex items-start gap-2.5 bg-amber-50/60 border border-amber-200/60 rounded-[12px] px-4 py-3.5">
+    <div className="flex items-start gap-2.5 bg-amber-50/60 border border-amber-200/60 rounded-[8px] px-4 py-3.5">
       <AlertCircle className="w-4 h-4 text-amber-500 flex-none mt-0.5" />
       <p className="text-xs text-amber-800/80 leading-relaxed">{message}</p>
     </div>
@@ -33,7 +33,7 @@ function MissingDataState({ message }: { message: string }) {
 
 function Card({ className = '', children }: { className?: string; children: React.ReactNode }) {
   return (
-    <div className={`bg-white border border-gray-100 rounded-[20px] shadow-[0_1px_3px_rgba(15,23,42,0.04)] p-5 ${className}`}>
+    <div className={`bg-white border border-gray-100 rounded-[10px] shadow-[0_1px_3px_rgba(15,23,42,0.04)] p-5 ${className}`}>
       {children}
     </div>
   );

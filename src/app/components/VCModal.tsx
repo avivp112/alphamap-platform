@@ -131,7 +131,7 @@ function Widget({ title, icon: Icon, accent = "#22d3ee", children, hint }: {
   children: React.ReactNode; hint?: string;
 }) {
   return (
-    <div className="rounded-2xl overflow-hidden bg-white"
+    <div className="rounded-lg overflow-hidden bg-white"
       style={{ border: "1px solid #E5E7EB", boxShadow: "0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)" }}>
       <div className="h-px" style={{ background: `linear-gradient(90deg, transparent, ${accent}55, transparent)` }} />
       <div className="px-4 py-3.5">
@@ -232,7 +232,7 @@ function DryPowderWidget({ firm }: { firm: VCFirm }) {
             ["Deployed",   fmtB(deployedAmt),  "#0e7490"],
             ["Dry Powder", fmtB(availableAmt), barTextColor ],
           ] as [string, string, string][]).map(([label, value, color]) => (
-            <div key={label} className="rounded-xl py-2.5 px-2 text-center bg-gray-50 border border-gray-100">
+            <div key={label} className="rounded-lg py-2.5 px-2 text-center bg-gray-50 border border-gray-100">
               <div className="text-[12px] font-black tabular-nums" style={{ color }}>{value}</div>
               <div className="text-[9px] text-gray-400 mt-0.5">{label}</div>
             </div>
@@ -259,7 +259,7 @@ function OverviewTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }) {
   return (
     <div className="space-y-5">
       {firm.description && (
-        <div className="rounded-2xl px-5 py-4 bg-gray-50 border border-gray-100">
+        <div className="rounded-lg px-5 py-4 bg-gray-50 border border-gray-100">
           <p className="text-[13px] text-gray-700 leading-relaxed">{firm.description}</p>
         </div>
       )}
@@ -268,7 +268,7 @@ function OverviewTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }) {
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.18em] mb-3">{t("vcModal.firmVitals")}</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
           {vitals.map(([Icon, label, value, color]) => (
-            <div key={label} className="flex items-center gap-3 rounded-xl px-3.5 py-3 bg-gray-50 border border-gray-100">
+            <div key={label} className="flex items-center gap-3 rounded-lg px-3.5 py-3 bg-gray-50 border border-gray-100">
               <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-none"
                 style={{ background: `${color}12`, border: `1px solid ${color}25` }}>
                 <Icon className="w-3.5 h-3.5" style={{ color }} />
@@ -334,7 +334,7 @@ function InvestmentsTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }
             ["Fund Size",        firm.fund_size ?? "—",                "#b45309"],
             ["Typical Check",   firm.typical_check_size ?? "—",       "#6d28d9"],
           ] as [string, string, string][]).map(([label, value, color]) => (
-            <div key={label} className="rounded-xl py-3.5 px-3 text-center bg-gray-50 border border-gray-100">
+            <div key={label} className="rounded-lg py-3.5 px-3 text-center bg-gray-50 border border-gray-100">
               <div className="text-[18px] font-black tabular-nums mb-1" style={{ color }}>{value}</div>
               <div className="text-[9px] text-gray-400 uppercase tracking-wider">{label}</div>
             </div>
@@ -400,7 +400,7 @@ function SyndicateTab({ firm }: { firm: VCFirm }) {
 
   return (
     <div className="space-y-5">
-      <div className="rounded-2xl px-5 py-5 grid grid-cols-3 gap-4 bg-white border border-gray-200"
+      <div className="rounded-lg px-5 py-5 grid grid-cols-3 gap-4 bg-white border border-gray-200"
         style={{ boxShadow: "0 1px 3px rgba(15,23,42,0.06)" }}>
         {([
           ["Network Density",   `${densityScore}/100`, "#0e7490"],
@@ -419,7 +419,7 @@ function SyndicateTab({ firm }: { firm: VCFirm }) {
         <div className="space-y-3">
           {topTier.map((name, i) => (
             <div key={name} className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center text-[11px] font-black flex-none"
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[11px] font-black flex-none"
                 style={{ background: "rgba(34,211,238,0.10)", border: "1px solid rgba(34,211,238,0.25)", color: "#0e7490" }}>
                 {name[0]}
               </div>
@@ -453,7 +453,7 @@ function SyndicateTab({ firm }: { firm: VCFirm }) {
         </p>
       </Widget>
 
-      <div className="rounded-2xl px-5 py-4 bg-white border border-gray-200"
+      <div className="rounded-lg px-5 py-4 bg-white border border-gray-200"
         style={{ boxShadow: "0 1px 3px rgba(15,23,42,0.06)" }}>
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.18em] mb-3">{t("vcModal.collaborationScore")}</p>
         <div className="space-y-2.5">
@@ -486,7 +486,7 @@ function ExitsTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }) {
   if (exits.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
-        <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 bg-gray-50 border border-gray-200">
+        <div className="w-16 h-16 rounded-lg flex items-center justify-center mb-4 bg-gray-50 border border-gray-200">
           <CheckCircle className="w-7 h-7 text-gray-300" />
         </div>
         <p className="text-sm font-semibold text-gray-500">{t("vcModal.noExits")}</p>
@@ -516,14 +516,14 @@ function ExitsTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }) {
           ["IPOs",          String(ipoCount),      "#047857"],
           ["Acquisitions",  String(acqCount),      "#6d28d9"],
         ] as [string, string, string][]).map(([label, value, color]) => (
-          <div key={label} className="rounded-xl py-3.5 px-3 text-center bg-gray-50 border border-gray-100">
+          <div key={label} className="rounded-lg py-3.5 px-3 text-center bg-gray-50 border border-gray-100">
             <div className="text-[24px] font-black tabular-nums mb-1" style={{ color }}>{value}</div>
             <div className="text-[9px] text-gray-400 uppercase tracking-wider">{label}</div>
           </div>
         ))}
       </div>
 
-      <div className="rounded-2xl px-5 py-4 flex items-center justify-between"
+      <div className="rounded-lg px-5 py-4 flex items-center justify-between"
         style={{ background: "linear-gradient(135deg, rgba(52,211,153,0.07) 0%, rgba(34,211,238,0.05) 100%)", border: "1px solid rgba(52,211,153,0.20)" }}>
         <div>
           <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">{t("vcModal.returnMultiple")}</p>
@@ -542,7 +542,7 @@ function ExitsTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }) {
             const year = exitYear(name, firm.founded_year);
             const { color: c, bg } = OUTCOME_STYLES[outcome];
             return (
-              <div key={name} className="flex items-center justify-between gap-3 rounded-xl px-3.5 py-2.5 bg-gray-50 border border-gray-100">
+              <div key={name} className="flex items-center justify-between gap-3 rounded-lg px-3.5 py-2.5 bg-gray-50 border border-gray-100">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black flex-none"
                     style={{ background: bg, border: `1px solid ${c}30`, color: c }}>
@@ -590,7 +590,7 @@ function PerformanceTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }
   return (
     <div className="space-y-5">
       {/* AlphaScore benchmark */}
-      <div className="rounded-2xl px-5 py-5 bg-white border border-gray-200"
+      <div className="rounded-lg px-5 py-5 bg-white border border-gray-200"
         style={{ boxShadow: "0 1px 3px rgba(15,23,42,0.06)" }}>
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.18em] mb-4">{t("vcModal.benchmark")}</p>
         <div className="flex items-end gap-6 mb-5">
@@ -705,10 +705,10 @@ export function VCModal({ firm, onClose }: Props) {
         onClick={e => e.stopPropagation()}
       >
         {/* ── Fixed header (blue-gray) ── */}
-        <div className="flex-none px-6 pt-5 pb-4 rounded-t-[24px]"
+        <div className="flex-none px-6 pt-5 pb-4 rounded-t-[10px]"
           style={{ background: "#B8C9D1", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
           <div className="flex items-center gap-4">
-            <CompanyLogo name={firm.name} website={firm.website} size={52} rounded="rounded-2xl" />
+            <CompanyLogo name={firm.name} website={firm.website} size={52} rounded="rounded-lg" />
             <div className="flex-1 min-w-0">
               <h2 className="text-xl font-black text-[#0F172A] tracking-tight leading-none mb-1.5">{firm.name}</h2>
               <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[11px] text-[#0F172A]/60">

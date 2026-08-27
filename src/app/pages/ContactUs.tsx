@@ -46,7 +46,7 @@ function validate(values: FormValues, t: TFunction): FieldErrors {
 }
 
 const inputCls =
-  "w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-[#0F172A] " +
+  "w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm text-[#0F172A] " +
   "placeholder-gray-400 transition-all focus:outline-none focus:border-[#0F172A]/30 focus:ring-2 focus:ring-[#0F172A]/10";
 const inputErrCls = "border-rose-300 focus:border-rose-400 focus:ring-rose-100";
 const labelCls = "block text-xs font-semibold text-gray-600 mb-1.5";
@@ -107,8 +107,8 @@ export function ContactUs() {
 
             <div className="space-y-4">
               {TOPICS.map(({ id, icon: Icon, labelKey, reasonKey }) => (
-                <div key={id} className="flex items-start gap-3.5 rounded-2xl border border-gray-100 bg-white p-4 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
-                  <div className="flex-none w-10 h-10 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center">
+                <div key={id} className="flex items-start gap-3.5 rounded-lg border border-gray-100 bg-white p-4 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+                  <div className="flex-none w-10 h-10 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center">
                     <Icon className="w-4.5 h-4.5 text-[#0F172A]" />
                   </div>
                   <div>
@@ -121,7 +121,7 @@ export function ContactUs() {
           </div>
 
           {/* ── Right: the form itself ── */}
-          <div className="rounded-[28px] border border-gray-100 bg-white p-7 sm:p-9 shadow-[0_24px_60px_rgba(15,23,42,0.06)]">
+          <div className="rounded-[10px] border border-gray-100 bg-white p-7 sm:p-9 shadow-[0_24px_60px_rgba(15,23,42,0.06)]">
             {sentOk ? (
               <div className="flex flex-col items-center justify-center text-center py-10">
                 <div className="w-14 h-14 rounded-full bg-[#7C8967]/10 flex items-center justify-center mb-5">
@@ -132,7 +132,7 @@ export function ContactUs() {
                 <button
                   type="button"
                   onClick={reset}
-                  className="rounded-xl border border-gray-200 px-5 py-2.5 text-sm font-semibold text-[#0F172A] hover:bg-gray-50 transition-colors"
+                  className="rounded-lg border border-gray-200 px-5 py-2.5 text-sm font-semibold text-[#0F172A] hover:bg-gray-50 transition-colors"
                 >
                   {t("contact.form.sendAnother")}
                 </button>
@@ -206,7 +206,7 @@ export function ContactUs() {
                 </div>
 
                 {submitError && (
-                  <div className="flex items-start gap-2 rounded-xl border border-rose-100 bg-rose-50 px-3.5 py-3 text-sm text-rose-700 mt-4">
+                  <div className="flex items-start gap-2 rounded-lg border border-rose-100 bg-rose-50 px-3.5 py-3 text-sm text-rose-700 mt-4">
                     <AlertCircle className="w-4 h-4 flex-none mt-0.5" />
                     <span>{submitError}</span>
                   </div>
@@ -215,7 +215,7 @@ export function ContactUs() {
                 <button
                   type="submit"
                   disabled={sending}
-                  className="mt-6 w-full flex items-center justify-center gap-2 rounded-xl bg-[#0F172A] hover:bg-gray-900 disabled:opacity-60 text-white font-semibold text-sm py-3 transition-colors"
+                  className="mt-6 w-full flex items-center justify-center gap-2 rounded-lg bg-[#0F172A] hover:bg-gray-900 disabled:opacity-60 text-white font-semibold text-sm py-3 transition-colors"
                 >
                   {sending ? (
                     <>

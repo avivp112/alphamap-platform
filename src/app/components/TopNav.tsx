@@ -114,7 +114,7 @@ function NavDropdown({
       <div
         role="menu"
         className={cn(
-          "absolute left-0 top-full mt-1.5 w-64 rounded-2xl border border-gray-100 bg-white py-2 shadow-[0_12px_32px_rgba(15,23,42,0.10)] transition-all duration-150 ease-out z-40",
+          "absolute left-0 top-full mt-1.5 w-64 rounded-lg border border-gray-100 bg-white py-2 shadow-[0_12px_32px_rgba(15,23,42,0.10)] transition-all duration-150 ease-out z-40",
           open ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 -translate-y-1 pointer-events-none",
         )}
       >
@@ -479,7 +479,7 @@ export function TopNav() {
               {menuOpen && (
                 <div
                   role="menu"
-                  className="absolute right-0 top-[calc(100%+8px)] w-56 rounded-xl border border-gray-100 bg-white py-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.12)]"
+                  className="absolute right-0 top-[calc(100%+8px)] w-56 rounded-lg border border-gray-100 bg-white py-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.12)]"
                 >
                   {(user?.name || user?.email) && (
                     <div className="px-3.5 py-2 mb-1 border-b border-gray-100">
@@ -515,13 +515,13 @@ export function TopNav() {
           <div className="flex items-center gap-2">
             <Link
               to="/login"
-              className="rounded-full px-3.5 py-2 text-sm font-semibold text-[#111827] hover:bg-gray-50 transition-colors"
+              className="rounded-lg px-3.5 py-2 text-sm font-semibold text-[#111827] hover:bg-gray-50 transition-colors"
             >
               {t('header.logIn')}
             </Link>
             <Link
               to="/signup"
-              className="rounded-full bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-gray-900 transition-colors"
+              className="rounded-lg bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-gray-900 transition-colors"
             >
               {t('header.signUp')}
             </Link>

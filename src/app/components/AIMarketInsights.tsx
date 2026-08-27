@@ -9,7 +9,7 @@ function cn(...inputs: ClassValue[]) {
 
 export function AIMarketStory() {
   return (
-    <div className="relative overflow-hidden rounded-[24px] bg-[#0F172A] p-6 sm:p-8 md:p-10 shadow-[0_8px_30px_rgba(0,0,0,0.12)] border border-[#1E293B]">
+    <div className="relative overflow-hidden rounded-[10px] bg-[#0F172A] p-6 sm:p-8 md:p-10 shadow-[0_8px_30px_rgba(0,0,0,0.12)] border border-[#1E293B]">
       {/* Background Decor */}
       <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-[80px] -translate-y-1/2 translate-x-1/2" />
       <div className="absolute bottom-0 left-0 w-48 h-48 bg-amber-500/10 rounded-full blur-[60px] translate-y-1/2 -translate-x-1/2" />
@@ -45,7 +45,7 @@ export function AIMarketStory() {
             </ul>
           </div>
           
-          <div className="flex flex-col justify-between rounded-xl bg-white/5 border border-white/10 p-5 backdrop-blur-sm">
+          <div className="flex flex-col justify-between rounded-lg bg-white/5 border border-white/10 p-5 backdrop-blur-sm">
             <div>
               <h3 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">What it means for you</h3>
               <p className="text-sm font-medium text-gray-200 leading-relaxed">
@@ -81,7 +81,7 @@ export function CrossMarketSignalsBar() {
         return (
           <button 
             key={idx}
-            className="group flex items-center gap-3 rounded-[16px] border border-gray-100 bg-white px-4 py-3 shadow-[0_4px_20px_rgba(0,0,0,0.02)] hover:shadow-md hover:border-gray-200 transition-all duration-200 flex-1 sm:flex-none"
+            className="group flex items-center gap-3 rounded-[8px] border border-gray-100 bg-white px-4 py-3 shadow-[0_4px_20px_rgba(0,0,0,0.02)] hover:shadow-md hover:border-gray-200 transition-all duration-200 flex-1 sm:flex-none"
           >
             <div className={cn("flex h-8 w-8 items-center justify-center rounded-lg", signal.bg)}>
               <Icon className={cn("h-4 w-4", signal.color)} />
@@ -99,9 +99,9 @@ export function CrossMarketSignalsBar() {
 
 export function PortfolioInsight() {
   return (
-    <div className="rounded-[24px] border border-gray-100 bg-white p-6 shadow-[0_8px_30px_rgba(0,0,0,0.02)]">
+    <div className="rounded-[10px] border border-gray-100 bg-white p-6 shadow-[0_8px_30px_rgba(0,0,0,0.02)]">
       <div className="flex items-center gap-3 mb-6">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#F59E0B]/10">
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#F59E0B]/10">
           <Lightbulb className="h-5 w-5 text-[#F59E0B]" />
         </div>
         <div>
@@ -111,7 +111,7 @@ export function PortfolioInsight() {
       </div>
 
       <div className="space-y-4">
-        <div className="rounded-[16px] border border-gray-100 p-4 bg-gray-50/50 hover:bg-white hover:shadow-sm transition-all duration-200">
+        <div className="rounded-[8px] border border-gray-100 p-4 bg-gray-50/50 hover:bg-white hover:shadow-sm transition-all duration-200">
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle className="h-4 w-4 text-[#F59E0B]" />
             <span className="text-xs font-bold uppercase tracking-wider text-[#0F172A]">High AI Exposure</span>
@@ -121,7 +121,7 @@ export function PortfolioInsight() {
           </p>
         </div>
         
-        <div className="rounded-[16px] border border-gray-100 p-4 bg-gray-50/50 hover:bg-white hover:shadow-sm transition-all duration-200">
+        <div className="rounded-[8px] border border-gray-100 p-4 bg-gray-50/50 hover:bg-white hover:shadow-sm transition-all duration-200">
           <div className="flex items-center gap-2 mb-2">
             <Compass className="h-4 w-4 text-rose-500" />
             <span className="text-xs font-bold uppercase tracking-wider text-[#0F172A]">Risk Dependency</span>

@@ -65,7 +65,7 @@ function StockRow({ stock, onClick }: { stock: StockQuote; onClick: () => void }
     >
       <td className="py-4 pl-6 pr-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#0F172A] text-white text-xs font-bold flex-shrink-0">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#0F172A] text-white text-xs font-bold flex-shrink-0">
             {stock.symbol.slice(0, 2)}
           </div>
           <div>
@@ -113,7 +113,7 @@ function StockDetail({ stock, onClose }: { stock: StockQuote; onClose: () => voi
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-[28px] shadow-[0_24px_60px_rgba(0,0,0,0.15)] w-full max-w-lg overflow-hidden">
+      <div className="relative bg-white rounded-[10px] shadow-[0_24px_60px_rgba(0,0,0,0.15)] w-full max-w-lg overflow-hidden">
         {/* Header */}
         <div className="bg-[#0F172A] p-8 pb-6">
           <button onClick={onClose} className="absolute top-5 right-5 text-white/40 hover:text-white transition-colors">
@@ -122,7 +122,7 @@ function StockDetail({ stock, onClose }: { stock: StockQuote; onClose: () => voi
           <div className="flex items-start justify-between">
             <div>
               <div className="flex items-center gap-3 mb-1">
-                <div className="h-10 w-10 rounded-xl bg-white/10 flex items-center justify-center text-white text-sm font-bold">
+                <div className="h-10 w-10 rounded-lg bg-white/10 flex items-center justify-center text-white text-sm font-bold">
                   {stock.symbol.slice(0, 2)}
                 </div>
                 <div>
@@ -154,7 +154,7 @@ function StockDetail({ stock, onClose }: { stock: StockQuote; onClose: () => voi
               { label: 'Open',         value: `$${stock.open.toFixed(2)}`,      icon: TrendingUp },
               { label: 'Prev. Close',  value: `$${stock.previousClose.toFixed(2)}`, icon: TrendingDown },
             ].map(({ label, value, icon: Icon }) => (
-              <div key={label} className="bg-[#F8FAFC] rounded-xl p-3.5">
+              <div key={label} className="bg-[#F8FAFC] rounded-lg p-3.5">
                 <div className="flex items-center gap-1.5 mb-1">
                   <Icon className="w-3.5 h-3.5 text-[#F59E0B]" />
                   <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{label}</span>
@@ -182,7 +182,7 @@ function StockDetail({ stock, onClose }: { stock: StockQuote; onClose: () => voi
           </div>
 
           {/* Day range */}
-          <div className="flex items-center justify-between text-sm bg-[#F8FAFC] rounded-xl px-4 py-3">
+          <div className="flex items-center justify-between text-sm bg-[#F8FAFC] rounded-lg px-4 py-3">
             <span className="text-gray-400 text-xs font-semibold uppercase tracking-wide">{t("stocks.todaysRange")}</span>
             <span className="font-bold text-[#0F172A] tabular-nums">
               ${stock.dayLow.toFixed(2)} – ${stock.dayHigh.toFixed(2)}
@@ -263,7 +263,7 @@ export function Stocks() {
               <button
                 onClick={fetchQuotes}
                 disabled={loading}
-                className="flex items-center gap-2 rounded-[16px] border border-gray-200 bg-white px-4 py-2.5 text-xs font-bold uppercase tracking-widest text-[#0F172A] hover:bg-gray-50 transition-colors disabled:opacity-50"
+                className="flex items-center gap-2 rounded-[8px] border border-gray-200 bg-white px-4 py-2.5 text-xs font-bold uppercase tracking-widest text-[#0F172A] hover:bg-gray-50 transition-colors disabled:opacity-50"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />{t("stocks.refresh")}</button>
             </div>
@@ -271,15 +271,15 @@ export function Stocks() {
             {/* Summary chips */}
             {quotes.length > 0 && (
               <div className="flex flex-wrap gap-3 mb-6">
-                <div className="bg-white rounded-[12px] border border-gray-100 px-4 py-2.5 shadow-sm">
+                <div className="bg-white rounded-[8px] border border-gray-100 px-4 py-2.5 shadow-sm">
                   <span className="text-xs text-gray-400 font-semibold uppercase tracking-wide mr-2">{t("stocks.tracking")}</span>
                   <span className="text-sm font-bold text-[#0F172A]">{quotes.length} stocks</span>
                 </div>
-                <div className="bg-emerald-50 rounded-[12px] border border-emerald-100 px-4 py-2.5">
+                <div className="bg-emerald-50 rounded-[8px] border border-emerald-100 px-4 py-2.5">
                   <span className="text-xs text-emerald-600 font-semibold uppercase tracking-wide mr-2">{t("stocks.gaining")}</span>
                   <span className="text-sm font-bold text-emerald-700">{gainers}</span>
                 </div>
-                <div className="bg-rose-50 rounded-[12px] border border-rose-100 px-4 py-2.5">
+                <div className="bg-rose-50 rounded-[8px] border border-rose-100 px-4 py-2.5">
                   <span className="text-xs text-rose-600 font-semibold uppercase tracking-wide mr-2">{t("stocks.declining")}</span>
                   <span className="text-sm font-bold text-rose-700">{losers}</span>
                 </div>
@@ -288,8 +288,8 @@ export function Stocks() {
 
             {/* No API key state */}
             {error === 'no_key' ? (
-              <div className="bg-white rounded-[24px] border border-amber-100 p-10 text-center shadow-sm">
-                <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mx-auto mb-4">
+              <div className="bg-white rounded-[10px] border border-amber-100 p-10 text-center shadow-sm">
+                <div className="w-12 h-12 rounded-lg bg-amber-50 flex items-center justify-center mx-auto mb-4">
                   <BarChart2 className="w-6 h-6 text-[#F59E0B]" />
                 </div>
                 <h2 className="text-lg font-bold text-[#0F172A] mb-2">{t("stocks.addApiKey")}</h2>
@@ -300,7 +300,7 @@ export function Stocks() {
                   </a>
                   , then add it to your Netlify environment variables:
                 </p>
-                <div className="inline-block bg-[#F3F4F6] rounded-xl px-5 py-3 font-mono text-sm text-[#0F172A] select-all">
+                <div className="inline-block bg-[#F3F4F6] rounded-lg px-5 py-3 font-mono text-sm text-[#0F172A] select-all">
                   VITE_FMP_API_KEY=your_key_here
                 </div>
               </div>
@@ -311,10 +311,10 @@ export function Stocks() {
                 <button onClick={fetchQuotes} className="text-xs text-[#F59E0B] font-medium hover:underline">{t("stocks.tryAgain")}</button>
               </div>
             ) : loading ? (
-              <div className="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-hidden">
+              <div className="bg-white rounded-[10px] border border-gray-100 shadow-sm overflow-hidden">
                 {TRACKED_SYMBOLS.map(sym => (
                   <div key={sym} className="flex items-center gap-4 px-6 py-4 border-b border-gray-50 animate-pulse">
-                    <div className="h-9 w-9 rounded-xl bg-gray-100" />
+                    <div className="h-9 w-9 rounded-lg bg-gray-100" />
                     <div className="flex-1 space-y-2">
                       <div className="h-3 w-16 bg-gray-100 rounded" />
                       <div className="h-2.5 w-32 bg-gray-50 rounded" />
@@ -334,7 +334,7 @@ export function Stocks() {
                     value={search}
                     onChange={e => setSearch(e.target.value)}
                     placeholder={t("stocks.search")}
-                    className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-gray-200 rounded-[12px] focus:outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/10 transition-all"
+                    className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-gray-200 rounded-[8px] focus:outline-none focus:border-[#F59E0B] focus:ring-2 focus:ring-[#F59E0B]/10 transition-all"
                   />
                   {search && (
                     <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500">
@@ -344,7 +344,7 @@ export function Stocks() {
                 </div>
 
                 {/* Table */}
-                <div className="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-x-auto">
+                <div className="bg-white rounded-[10px] border border-gray-100 shadow-sm overflow-x-auto">
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-gray-100">

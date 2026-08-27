@@ -26,7 +26,7 @@ export function MarketMap() {
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
 
   return (
-    <div className="relative h-80 w-full overflow-hidden rounded-[24px] border border-gray-100 bg-white mb-6 flex items-center justify-center shadow-sm">
+    <div className="relative h-80 w-full overflow-hidden rounded-[10px] border border-gray-100 bg-white mb-6 flex items-center justify-center shadow-sm">
       <div className="absolute inset-0 z-0">
         <svg className="h-full w-full" preserveAspectRatio="xMidYMid slice" viewBox="0 0 100 100">
           <defs>
@@ -121,7 +121,7 @@ export function MarketMap() {
             style={{ left: `${node.x}%`, top: `${node.y}%`, transform: `translate(-50%, -50%) ${isHovered ? 'scale(1.1)' : 'scale(1)'}` }}
           >
             <div className={cn(
-              "flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-[0_4px_20px_rgba(0,0,0,0.06)] border transition-colors duration-300",
+              "flex h-12 w-12 items-center justify-center rounded-lg bg-white shadow-[0_4px_20px_rgba(0,0,0,0.06)] border transition-colors duration-300",
               isHovered ? "border-[#0F172A]" : "border-gray-100"
             )}>
               <Icon className={cn("h-5 w-5 transition-colors duration-300", isHovered ? "text-[#0F172A]" : "text-gray-400")} />
@@ -164,10 +164,10 @@ export function MarketPulse() {
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
       {movers.map((mover) => (
-        <div key={mover.symbol} className="flex flex-col rounded-[20px] border border-gray-100 bg-white p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.04)] transition-all duration-300">
+        <div key={mover.symbol} className="flex flex-col rounded-[10px] border border-gray-100 bg-white p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.04)] transition-all duration-300">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#F3F4F6] text-[#0F172A] font-bold text-sm">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#F3F4F6] text-[#0F172A] font-bold text-sm">
                 {mover.symbol[0]}
               </div>
               <div>
@@ -204,7 +204,7 @@ export function MarketPulse() {
 
 export function MarketOverview() {
   return (
-    <div className="flex flex-col gap-4 bg-white rounded-[24px] p-6 sm:p-8 shadow-[0_8px_30px_rgba(0,0,0,0.02)] border border-gray-100">
+    <div className="flex flex-col gap-4 bg-white rounded-[10px] p-6 sm:p-8 shadow-[0_8px_30px_rgba(0,0,0,0.02)] border border-gray-100">
       <div className="flex items-center justify-between mb-2">
         <div>
           <h2 className="text-xl font-bold text-[#0F172A] flex items-center gap-2">

@@ -52,10 +52,10 @@ export function IntelligenceFeed() {
   ];
 
   return (
-    <div className="flex h-full flex-col rounded-[24px] border border-gray-100 bg-white shadow-[0_8px_30px_rgba(0,0,0,0.02)] p-6 md:p-8">
+    <div className="flex h-full flex-col rounded-[10px] border border-gray-100 bg-white shadow-[0_8px_30px_rgba(0,0,0,0.02)] p-6 md:p-8">
       <div className="mb-8 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0F172A] shadow-sm">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#0F172A] shadow-sm">
             <Sparkles className="h-5 w-5 text-[#FDFD01]" />
           </div>
           <div>
@@ -71,7 +71,7 @@ export function IntelligenceFeed() {
           return (
             <div 
               key={index} 
-              className="group relative flex flex-col gap-3 rounded-[20px] border border-gray-100 bg-white p-5 transition-all duration-300 hover:border-gray-300 hover:shadow-[0_8px_30px_rgba(0,0,0,0.04)]"
+              className="group relative flex flex-col gap-3 rounded-[10px] border border-gray-100 bg-white p-5 transition-all duration-300 hover:border-gray-300 hover:shadow-[0_8px_30px_rgba(0,0,0,0.04)]"
             >
               <div className="flex items-center justify-between">
                 <span className={cn("flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider", item.color, item.bg)}>
@@ -102,7 +102,7 @@ export function IntelligenceFeed() {
         })}
       </div>
       
-      <button className="mt-8 flex w-full items-center justify-center gap-2 rounded-xl bg-[#F3F4F6] py-3.5 text-sm font-bold tracking-wide text-[#0F172A] transition-colors hover:bg-gray-200">
+      <button className="mt-8 flex w-full items-center justify-center gap-2 rounded-lg bg-[#F3F4F6] py-3.5 text-sm font-bold tracking-wide text-[#0F172A] transition-colors hover:bg-gray-200">
         Load More Signals
       </button>
     </div>

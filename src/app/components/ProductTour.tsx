@@ -103,7 +103,7 @@ export function ProductTour({
       {/* Spotlight: a box-shadow with a huge spread paints the whole screen
           except this element's own box, which is transparent — the "hole". */}
       <div
-        className="fixed rounded-2xl transition-all duration-300 ease-out"
+        className="fixed rounded-lg transition-all duration-300 ease-out"
         style={{
           top: rect?.top ?? 0, left: rect?.left ?? 0,
           width: rect?.width ?? 0, height: rect?.height ?? 0,
@@ -119,7 +119,7 @@ export function ProductTour({
       {/* Explanation card: always fixed near the top of the viewport, same
           spot for every step — only the spotlight above moves. */}
       <div
-        className="fixed top-5 left-1/2 -translate-x-1/2 z-[101] rounded-[20px] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.22)] border border-gray-100 p-5"
+        className="fixed top-5 left-1/2 -translate-x-1/2 z-[101] rounded-[10px] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.22)] border border-gray-100 p-5"
         style={{ width: "min(440px, calc(100vw - 32px))" }}
       >
         <button
@@ -131,7 +131,7 @@ export function ProductTour({
         </button>
 
         <div className="flex items-start gap-3.5">
-          <div className="flex-none w-10 h-10 rounded-[12px] bg-gray-50 border border-gray-100 flex items-center justify-center">
+          <div className="flex-none w-10 h-10 rounded-[8px] bg-gray-50 border border-gray-100 flex items-center justify-center">
             <Icon className="w-5 h-5 text-[#0F172A]" />
           </div>
           <div className="flex-1 min-w-0 pr-5">
@@ -157,7 +157,7 @@ export function ProductTour({
             )}
             <button
               onClick={next}
-              className="rounded-full bg-[#0F172A] hover:bg-gray-900 px-4 py-2 text-xs font-bold text-white transition-colors"
+              className="rounded-lg bg-[#0F172A] hover:bg-gray-900 px-4 py-2 text-xs font-bold text-white transition-colors"
             >
               {index === steps.length - 1 ? t("tour.done") : t("common.next")}
             </button>

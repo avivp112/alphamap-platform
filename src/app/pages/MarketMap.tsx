@@ -53,7 +53,7 @@ export function MarketMap() {
             onClick={() => setTourOpen(true)}
             title={t("tour.takeTour")}
             aria-label={t("tour.takeTour")}
-            className="flex-none p-2 rounded-[12px] bg-gray-50 border border-gray-100 text-gray-400 hover:text-[#0F172A] hover:bg-white transition-all"
+            className="flex-none p-2 rounded-[8px] bg-gray-50 border border-gray-100 text-gray-400 hover:text-[#0F172A] hover:bg-white transition-all"
           >
             <HelpCircle className="w-4 h-4" />
           </button>

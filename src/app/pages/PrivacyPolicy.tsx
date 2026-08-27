@@ -120,7 +120,7 @@ export function PrivacyPolicy() {
           })}
         </p>
 
-        <div className="rounded-[28px] border border-gray-100 bg-white p-7 sm:p-9 shadow-[0_4px_20px_rgba(0,0,0,0.02)] space-y-7">
+        <div className="rounded-[10px] border border-gray-100 bg-white p-7 sm:p-9 shadow-[0_4px_20px_rgba(0,0,0,0.02)] space-y-7">
           {PRIVACY_SECTIONS.map((s) => (
             <div key={s.heading}>
               <h2 className="text-base font-bold text-[#0F172A] mb-2">{s.heading}</h2>

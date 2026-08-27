@@ -81,7 +81,7 @@ const STABILITY_BADGE: Record<string, { label: string; cls: string }> = {
 // as the Startups tearsheet: missing data is never mocked.
 function MissingDataState({ message }: { message: string }) {
   return (
-    <div className="flex items-start gap-2.5 bg-amber-50/60 border border-amber-200/60 rounded-[12px] px-4 py-3.5">
+    <div className="flex items-start gap-2.5 bg-amber-50/60 border border-amber-200/60 rounded-[8px] px-4 py-3.5">
       <AlertCircle className="w-4 h-4 text-amber-500 flex-none mt-0.5" />
       <p className="text-xs text-amber-800/80 leading-relaxed">{message}</p>
     </div>
@@ -92,7 +92,7 @@ function StatCard({ icon: Icon, label, value, accent = "#F59E0B" }: {
   icon: React.ElementType; label: string; value: string; accent?: string;
 }) {
   return (
-    <div className="rounded-[14px] p-4 flex flex-col gap-2 border bg-gray-50 border-gray-100">
+    <div className="rounded-[8px] p-4 flex flex-col gap-2 border bg-gray-50 border-gray-100">
       <div className="flex items-center gap-1.5">
         <Icon className="w-3.5 h-3.5 flex-none" style={{ color: accent }} />
         <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">{label}</span>
@@ -179,7 +179,7 @@ function PEFirmCard({ firm, onClick, selected, onToggleSelect }: {
 
   return (
     <div
-      className="relative group flex flex-col overflow-hidden rounded-[22px] border transition-all duration-300 cursor-pointer select-none"
+      className="relative group flex flex-col overflow-hidden rounded-[10px] border transition-all duration-300 cursor-pointer select-none"
       onClick={onClick}
       style={{
         background: "#FFFFFF",
@@ -209,7 +209,7 @@ function PEFirmCard({ firm, onClick, selected, onToggleSelect }: {
       <div className="px-5 pt-5 pb-3 relative z-10">
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-3 min-w-0">
-            <CompanyLogo name={firm.firm_name} website={firm.website} size={44} rounded="rounded-xl" />
+            <CompanyLogo name={firm.firm_name} website={firm.website} size={44} rounded="rounded-lg" />
             <div className="min-w-0">
               <h3 className="text-[15px] font-bold text-gray-900 truncate leading-tight tracking-tight">
                 {firm.firm_name}
@@ -323,7 +323,7 @@ function PEOverviewTab({ firm }: { firm: PEFirmRow }) {
       )}
 
       {firm.thesis && (
-        <div className="bg-gray-50 border border-gray-100 rounded-[14px] px-4 py-3.5">
+        <div className="bg-gray-50 border border-gray-100 rounded-[8px] px-4 py-3.5">
           <div className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">{t("pe.investmentThesis")}</div>
           <p className="text-sm text-gray-700 leading-relaxed italic">{firm.thesis}</p>
         </div>
@@ -349,7 +349,7 @@ function PEOverviewTab({ firm }: { firm: PEFirmRow }) {
         {leadership.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {leadership.map((l, i) => (
-              <div key={i} className="flex items-center gap-2.5 bg-gray-50 border border-gray-100 rounded-[12px] px-3 py-2">
+              <div key={i} className="flex items-center gap-2.5 bg-gray-50 border border-gray-100 rounded-[8px] px-3 py-2">
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black flex-none ${avatarColor(l.name)}`}>
                   {l.name[0]}
                 </div>
@@ -406,7 +406,7 @@ function PEPortfolioTab({ firmName }: { firmName: string }) {
         {mature.length === 0 ? (
           <MissingDataState message="None of this firm's linked holdings are classified Mature Private yet — classification updates as enrichment data lands." />
         ) : (
-          <div className="overflow-x-auto rounded-[14px] border border-gray-100">
+          <div className="overflow-x-auto rounded-[8px] border border-gray-100">
             <table className="w-full text-left" style={{ fontVariantNumeric: "tabular-nums" }}>
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
@@ -487,7 +487,7 @@ function PETransactionsTab({ firmName }: { firmName: string }) {
   return (
     <div className="space-y-2">
       {rows.map(t => (
-        <div key={t.round_id} className="flex items-center justify-between gap-3 bg-gray-50 border border-gray-100 rounded-[12px] px-4 py-3">
+        <div key={t.round_id} className="flex items-center justify-between gap-3 bg-gray-50 border border-gray-100 rounded-[8px] px-4 py-3">
           <div className="flex items-center gap-3 min-w-0">
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap flex-none ${DEAL_STYLE[t.round_type] ?? "bg-gray-50 text-gray-500 border border-gray-100"}`}>
               {t.round_type}
@@ -552,10 +552,10 @@ function PETearsheetModal({ firm, onClose }: { firm: PEFirmRow; onClose: () => v
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── Fixed header (blue-gray — same as the Startups tearsheet) ── */}
-        <div className="flex-none px-6 pt-5 pb-4 rounded-t-[24px]"
+        <div className="flex-none px-6 pt-5 pb-4 rounded-t-[10px]"
           style={{ background: "#B8C9D1", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
           <div className="flex items-start gap-4">
-            <CompanyLogo name={firm.firm_name} website={firm.website} size={52} rounded="rounded-2xl" />
+            <CompanyLogo name={firm.firm_name} website={firm.website} size={52} rounded="rounded-lg" />
             <div className="flex-1 min-w-0">
               <h2 className="text-xl font-black text-[#0F172A] tracking-tight leading-none mb-1.5 truncate">{firm.firm_name}</h2>
               <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[11px] text-[#0F172A]/60">
@@ -677,7 +677,7 @@ function PECompareModal({ firms, onClose }: { firms: PEFirmRow[]; onClose: () =>
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-3xl max-h-[85vh] overflow-hidden bg-white rounded-[24px] shadow-[0_32px_80px_rgba(15,23,42,0.35)] flex flex-col"
+        className="relative w-full max-w-3xl max-h-[85vh] overflow-hidden bg-white rounded-[10px] shadow-[0_32px_80px_rgba(15,23,42,0.35)] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex-none flex items-center justify-between px-6 py-5 border-b border-gray-100">
@@ -971,7 +971,7 @@ export function PrivateEquity() {
             </div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 text-center">
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4 bg-gray-100 border border-gray-200">
+              <div className="w-14 h-14 rounded-lg flex items-center justify-center mb-4 bg-gray-100 border border-gray-200">
                 <Landmark className="w-6 h-6 text-gray-400" />
               </div>
               <p className="text-sm font-semibold text-gray-500">
@@ -1001,7 +1001,7 @@ export function PrivateEquity() {
             </>
           ) : (
             <>
-              <div className="overflow-x-auto rounded-[16px] border border-gray-200 bg-white">
+              <div className="overflow-x-auto rounded-[8px] border border-gray-200 bg-white">
                 <table className="w-full text-left" style={{ fontVariantNumeric: "tabular-nums" }}>
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-100">
@@ -1054,7 +1054,7 @@ export function PrivateEquity() {
       {compareMap.size >= 1 && (
         <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2.5">
           {watchlistError && (
-            <div className="flex items-center gap-1.5 max-w-[280px] px-3.5 py-2 rounded-[12px] text-[11px] font-semibold bg-rose-950/90 border border-rose-800/60 text-rose-300 backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.45)]">
+            <div className="flex items-center gap-1.5 max-w-[280px] px-3.5 py-2 rounded-[8px] text-[11px] font-semibold bg-rose-950/90 border border-rose-800/60 text-rose-300 backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.45)]">
               <AlertCircle className="w-3.5 h-3.5 flex-none" />
               {watchlistError}
             </div>
@@ -1072,7 +1072,7 @@ export function PrivateEquity() {
                 onClick={toggleWatchlistForSelected}
                 disabled={watchlistBusy || !trackable}
                 title={trackable ? undefined : t("pe.notTrackableHint")}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-[16px] text-xs font-bold transition-all duration-200 backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.45)] disabled:opacity-60 ${
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-[8px] text-xs font-bold transition-all duration-200 backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.45)] disabled:opacity-60 ${
                   !trackable
                     ? "bg-[#0b1626]/70 border border-[#1a2a3f] text-slate-500 cursor-not-allowed"
                     : tracked
@@ -1096,7 +1096,7 @@ export function PrivateEquity() {
             </button>
             <button
               onClick={() => { if (compareMap.size >= 2) setShowCompare(true); }}
-              className={`flex items-center gap-2.5 px-5 py-3.5 rounded-[20px] text-sm font-bold transition-all duration-200 ${
+              className={`flex items-center gap-2.5 px-5 py-3.5 rounded-[10px] text-sm font-bold transition-all duration-200 ${
                 compareMap.size >= 2
                   ? "bg-blue-600 text-white shadow-[0_8px_40px_rgba(37,99,235,0.45)] hover:bg-blue-500 hover:shadow-[0_12px_48px_rgba(37,99,235,0.5)] hover:scale-[1.02]"
                   : "bg-[#0b1626]/90 backdrop-blur-sm border border-[#1a2a3f] text-slate-400 shadow-[0_4px_24px_rgba(0,0,0,0.45)] cursor-default"

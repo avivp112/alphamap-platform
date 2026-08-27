@@ -99,7 +99,7 @@ function Widget({ title, icon: Icon, accent = "#22d3ee", children, titleExtra }:
 }) {
   return (
     <div
-      className="rounded-2xl overflow-hidden bg-white"
+      className="rounded-lg overflow-hidden bg-white"
       style={{
         border: "1px solid #E5E7EB",
         boxShadow: "0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)",
@@ -447,7 +447,7 @@ function RunwayWidget({ deal }: { deal: Deal }) {
             </div>
             <div className="text-[10px] text-gray-400 mt-0.5">estimated runway</div>
           </div>
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl"
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg"
             style={{ background: `${color}12`, border: `1px solid ${color}30` }}>
             <RunwayIcon className="w-3.5 h-3.5" style={{ color }} />
             <span className="text-[10px] font-bold" style={{ color }}>{label}</span>
@@ -469,7 +469,7 @@ function RunwayWidget({ deal }: { deal: Deal }) {
         </div>
 
         {/* Assumptions breakdown */}
-        <div className="rounded-xl p-2.5 space-y-1.5 bg-gray-50 border border-gray-100">
+        <div className="rounded-lg p-2.5 space-y-1.5 bg-gray-50 border border-gray-100">
           {[
             ["Est. headcount",       `${headcount.toLocaleString()} employees`],
             ["Blended monthly burn", `${fmtAmount(monthlyBurn)}/mo`],
@@ -569,7 +569,7 @@ function VelocityWidget({ deal }: { deal: Deal }) {
         )}
 
         {/* Context note */}
-        <div className="rounded-xl p-2.5 bg-gray-50 border border-gray-100">
+        <div className="rounded-lg p-2.5 bg-gray-50 border border-gray-100">
           <p className="text-[9px] text-gray-500 leading-relaxed">
             {isFormD
               ? "ℹ SEC Form D often precedes a Seed or Series A within 6–18 months."
@@ -618,7 +618,7 @@ export function DealModal({ deal, allDeals, onClose }: Props) {
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-2xl max-h-[92vh] overflow-y-auto rounded-[24px] bg-white"
+        className="relative w-full max-w-2xl max-h-[92vh] overflow-y-auto rounded-[10px] bg-white"
         style={{
           border: "1px solid rgba(15,23,42,0.08)",
           boxShadow: "0 32px 80px rgba(15,23,42,0.30), 0 0 0 1px rgba(15,23,42,0.02)",
@@ -626,9 +626,9 @@ export function DealModal({ deal, allDeals, onClose }: Props) {
         onClick={e => e.stopPropagation()}
       >
         {/* ── Header (blue-gray, matches VC/Startup detail modals) ── */}
-        <div className="px-6 pt-6 pb-4 flex items-start gap-4 rounded-t-[24px]"
+        <div className="px-6 pt-6 pb-4 flex items-start gap-4 rounded-t-[10px]"
           style={{ background: "#B8C9D1", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
-          <div className="w-12 h-12 rounded-xl flex items-center justify-center text-lg font-black flex-none shrink-0"
+          <div className="w-12 h-12 rounded-lg flex items-center justify-center text-lg font-black flex-none shrink-0"
             style={{ background: av.bg, color: av.fg }}>
             {initials(deal.company_name)}
           </div>

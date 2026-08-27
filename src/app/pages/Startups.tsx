@@ -461,7 +461,7 @@ function FundingTimeline({ rounds }: { rounds: FundingRound[] }) {
         <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("startups.fundingTimeline")}</h4>
         <span className="text-[9px] text-gray-300 ml-auto">{t("startups.cumulativeRaised")}</span>
       </div>
-      <div className="bg-gray-50 rounded-[16px] p-4 border border-gray-100">
+      <div className="bg-gray-50 rounded-[8px] p-4 border border-gray-100">
         <ResponsiveContainer width="100%" height={160}>
           <AreaChart data={data} margin={{ top: 12, right: 8, left: 4, bottom: 0 }}>
             <defs>
@@ -559,7 +559,7 @@ function AlphaMapScorePanel({ data, loading, err }: {
   const { t } = useTranslation();
   if (loading) {
     return (
-      <div className="bg-gray-50 border border-gray-100 rounded-[14px] p-4 flex items-center gap-3">
+      <div className="bg-gray-50 border border-gray-100 rounded-[8px] p-4 flex items-center gap-3">
         <Activity className="w-4 h-4 text-gray-400 animate-pulse" />
         <span className="text-xs text-gray-400">Calculating AlphaMap Score…</span>
       </div>
@@ -567,7 +567,7 @@ function AlphaMapScorePanel({ data, loading, err }: {
   }
   if (err || !data || data.error || !data.pillars) {
     return (
-      <div className="bg-gray-50 border border-gray-100 rounded-[14px] p-4 flex items-center gap-3">
+      <div className="bg-gray-50 border border-gray-100 rounded-[8px] p-4 flex items-center gap-3">
         <Activity className="w-4 h-4 text-gray-300" />
         <span className="text-xs text-gray-400 italic">{t("startups.scorePending")}</span>
       </div>
@@ -584,7 +584,7 @@ function AlphaMapScorePanel({ data, loading, err }: {
   ].filter((p): p is { key: string; pillar: NonNullable<typeof p.pillar> } => p.pillar != null);
 
   return (
-    <div className={`rounded-[14px] border p-5 ${cfg.bg} ${cfg.border}`}>
+    <div className={`rounded-[8px] border p-5 ${cfg.bg} ${cfg.border}`}>
       {/* Header row */}
       <div className="flex items-center gap-2 mb-4">
         <Activity className="w-4 h-4 text-gray-500" />
@@ -662,7 +662,7 @@ function AlphaMapScorePanel({ data, loading, err }: {
         <button className="text-[10px] text-gray-500 hover:text-gray-700 transition-colors flex items-center gap-1">
           <Info className="w-3 h-3" /> Pillar breakdown
         </button>
-        <div className="absolute bottom-6 left-0 z-50 w-72 bg-[#060f1c] border border-[#1a2a3f] rounded-xl p-4 shadow-2xl
+        <div className="absolute bottom-6 left-0 z-50 w-72 bg-[#060f1c] border border-[#1a2a3f] rounded-lg p-4 shadow-2xl
                         opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto
                         transition-opacity duration-150">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">{t("startups.pillarDetails")}</p>
@@ -873,7 +873,7 @@ function StatCard({ icon: Icon, label, value, accent = "#F59E0B" }: {
   icon: React.ElementType; label: string; value: string; accent?: string;
 }) {
   return (
-    <div className="rounded-[14px] p-4 flex flex-col gap-2 border bg-gray-50 border-gray-100">
+    <div className="rounded-[8px] p-4 flex flex-col gap-2 border bg-gray-50 border-gray-100">
       <div className="flex items-center gap-1.5">
         <Icon className="w-3.5 h-3.5 flex-none" style={{ color: accent }} />
         <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">{label}</span>
@@ -890,7 +890,7 @@ function StatCard({ icon: Icon, label, value, accent = "#F59E0B" }: {
 function MissingDataState({ message }: { message: string }) {
   const { t } = useTranslation();
   return (
-    <div className="flex items-start gap-3 rounded-[14px] p-5 border border-dashed border-amber-400/60 bg-amber-50/60">
+    <div className="flex items-start gap-3 rounded-[8px] p-5 border border-dashed border-amber-400/60 bg-amber-50/60">
       <AlertCircle className="w-5 h-5 text-amber-600 flex-none mt-0.5" />
       <div>
         <p className="text-sm font-bold text-amber-800">{t("startups.dataRequiresFilling")}</p>
@@ -919,7 +919,7 @@ function ScoreHistoryChart({ startupId }: { startupId: string }) {
         <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Score Over Time</h3>
       </div>
       {chartData ? (
-        <div className="bg-gray-50 border border-gray-100 rounded-[14px] p-4">
+        <div className="bg-gray-50 border border-gray-100 rounded-[8px] p-4">
           <div className="h-32">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
@@ -993,7 +993,7 @@ function OverviewTab({
           </div>
           <div className="flex flex-wrap gap-2">
             {startup.leadership.map((l, i) => (
-              <div key={i} className="flex items-center gap-2.5 bg-gray-50 border border-gray-100 rounded-[12px] px-3 py-2">
+              <div key={i} className="flex items-center gap-2.5 bg-gray-50 border border-gray-100 rounded-[8px] px-3 py-2">
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black flex-none ${avatarColor(l.name)}`}>
                   {l.name[0]}
                 </div>
@@ -1056,7 +1056,7 @@ function VerticalFundingTimeline({ rounds }: { rounds: FundingRound[] }) {
               >
                 <div className="w-2 h-2 rounded-full" style={{ background: color }} />
               </div>
-              <div className="bg-gray-50 border border-gray-100 rounded-[14px] p-4">
+              <div className="bg-gray-50 border border-gray-100 rounded-[8px] p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex flex-col gap-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -1113,7 +1113,7 @@ function FundingValuationTab({ sortedRounds, fundingHistoryComplete }: { sortedR
   return (
     <div className="space-y-6">
       {fundingHistoryComplete === false && (
-        <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-[12px] px-4 py-3">
+        <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-[8px] px-4 py-3">
           <AlertCircle className="w-4 h-4 text-amber-600 flex-none mt-0.5" />
           <p className="text-xs text-amber-800 leading-relaxed">
             <span className="font-bold">{t("startups.fundingIncomplete")}</span> Research found signs of earlier rounds (e.g. a later-stage round with no matching Seed/Series A, or a source citing more total rounds than could be verified) that couldn't be confirmed in detail — the rounds below may not be the full story.
@@ -1203,7 +1203,7 @@ function CapTableInvestorRow({ entry, tierMap }: { entry: InvestorScheduleEntry;
   const tier = tierMap?.get(entry.name.toLowerCase()) ?? null;
   const style = tier != null ? CAP_TABLE_TIER_STYLE[tier] : CAP_TABLE_UNRANKED;
   return (
-    <div className="flex items-center justify-between gap-3 bg-gray-50 border border-gray-100 rounded-[12px] px-4 py-3">
+    <div className="flex items-center justify-between gap-3 bg-gray-50 border border-gray-100 rounded-[8px] px-4 py-3">
       <div className="flex items-center gap-2.5 min-w-0">
         <div
           className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black flex-none"
@@ -1250,7 +1250,7 @@ function CapTableTab({ startup }: { startup: Startup }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-[14px] px-4 py-3.5">
+      <div className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-[8px] px-4 py-3.5">
         <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("startups.totalRaised")}</span>
         <span className="text-lg font-black text-gray-900">{totalRaised > 0 ? fmt(totalRaised) : "—"}</span>
       </div>
@@ -1295,7 +1295,7 @@ function TalentGrowthTab({
         <StatCard icon={Users}    label="Employees"      value={fmtEmp(startup.employee_count)} accent="#0e7490" />
         <StatCard icon={Activity} label="Growth Velocity" accent="#6d28d7"
           value={growthPillar?.valid && growthPillar.score != null ? `${safeFixed(growthPillar.score, 0)} / 100` : "—"} />
-        <div className="rounded-[14px] p-4 flex flex-col gap-2 border bg-gray-50 border-gray-100">
+        <div className="rounded-[8px] p-4 flex flex-col gap-2 border bg-gray-50 border-gray-100">
           <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">{t("startups.growthTrend")}</span>
           <GrowthTrendBadge trend={startup.growth_trend} light />
           {(!startup.growth_trend || startup.growth_trend === "unknown") && (
@@ -1305,7 +1305,7 @@ function TalentGrowthTab({
       </div>
 
       {!alphaLoading && growthPillar?.valid && (
-        <div className="bg-gray-50 border border-gray-100 rounded-[14px] p-5">
+        <div className="bg-gray-50 border border-gray-100 rounded-[8px] p-5">
           <div className="flex items-center gap-2 mb-3">
             <Activity className="w-4 h-4 text-[#6d28d7]" />
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Growth Velocity</h3>
@@ -1327,7 +1327,7 @@ function TalentGrowthTab({
           <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("startups.headcountHistory")}</h3>
         </div>
         {chartData ? (
-          <div className="bg-gray-50 border border-gray-100 rounded-[14px] p-4">
+          <div className="bg-gray-50 border border-gray-100 rounded-[8px] p-4">
             <div className="flex justify-end mb-2">
               <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full border text-emerald-700 bg-emerald-50 border-emerald-200">
                 Live data
@@ -1368,7 +1368,7 @@ function TalentGrowthTab({
         {startup.leadership && startup.leadership.length > 0 ? (
           <div className="flex flex-col gap-2">
             {startup.leadership.map((l, i) => (
-              <div key={i} className="flex items-center gap-3 bg-gray-50 border border-gray-100 rounded-[12px] px-3.5 py-2.5">
+              <div key={i} className="flex items-center gap-3 bg-gray-50 border border-gray-100 rounded-[8px] px-3.5 py-2.5">
                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black flex-none ${avatarColor(l.name)}`}>
                   {l.name[0]}
                 </div>
@@ -1416,7 +1416,7 @@ function CompetitorsMarketTab({ startup, onNavigate }: { startup: Startup; onNav
         return (
           <div
             key={`${c.name}-${idx}`}
-            className={`flex flex-col gap-1.5 bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3.5 ${linked ? "cursor-pointer hover:border-cyan-300 hover:bg-cyan-50/40 transition-colors" : ""}`}
+            className={`flex flex-col gap-1.5 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3.5 ${linked ? "cursor-pointer hover:border-cyan-300 hover:bg-cyan-50/40 transition-colors" : ""}`}
             onClick={linked ? () => onNavigate(c.startup_id as string) : undefined}
           >
             <div className="flex items-center gap-2">
@@ -1490,7 +1490,7 @@ function AcquisitionsIPTab({ startup, onNavigate }: { startup: Startup; onNaviga
               return (
                 <div
                   key={`${a.company_name}-${idx}`}
-                  className={`flex flex-col gap-1.5 bg-gray-50 border border-gray-100 rounded-[14px] px-4 py-3.5 ${linked ? "cursor-pointer hover:border-cyan-300 hover:bg-cyan-50/40 transition-colors" : ""}`}
+                  className={`flex flex-col gap-1.5 bg-gray-50 border border-gray-100 rounded-[8px] px-4 py-3.5 ${linked ? "cursor-pointer hover:border-cyan-300 hover:bg-cyan-50/40 transition-colors" : ""}`}
                   onClick={linked ? () => onNavigate(a.acquired_startup_id as string) : undefined}
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -1538,7 +1538,7 @@ function NewsTab({ startup }: { startup: Startup }) {
           href={n.url.startsWith("http") ? n.url : `https://${n.url}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-start gap-3 bg-gray-50 border border-gray-100 rounded-[14px] px-4 py-3.5 hover:border-cyan-300 hover:bg-cyan-50/40 transition-colors"
+          className="flex items-start gap-3 bg-gray-50 border border-gray-100 rounded-[8px] px-4 py-3.5 hover:border-cyan-300 hover:bg-cyan-50/40 transition-colors"
         >
           <Newspaper className="w-4 h-4 text-gray-400 flex-none mt-0.5" />
           <div className="min-w-0 flex-1">
@@ -1657,10 +1657,10 @@ function TearsheetModal({ startup, onClose, onNavigate }: { startup: StartupList
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── Fixed header (blue-gray) ── */}
-        <div className="flex-none px-6 pt-5 pb-4 rounded-t-[24px]"
+        <div className="flex-none px-6 pt-5 pb-4 rounded-t-[10px]"
           style={{ background: "#B8C9D1", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
           <div className="flex items-start gap-4">
-            <CompanyLogo name={startup.name} website={startup.website} size={52} rounded="rounded-2xl" />
+            <CompanyLogo name={startup.name} website={startup.website} size={52} rounded="rounded-lg" />
             <div className="flex-1 min-w-0">
               <h2 className="text-xl font-black text-[#0F172A] tracking-tight leading-none mb-1.5 truncate">{startup.name}</h2>
               <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[11px] text-[#0F172A]/60">
@@ -1812,8 +1812,8 @@ function CompareModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-[#0b1626] rounded-[24px] shadow-[0_32px_80px_rgba(0,0,0,0.7)] w-full max-w-3xl max-h-[92vh] overflow-y-auto border border-[#1a2a3f]">
-        <div className="sticky top-0 z-10 bg-[#060e1a] rounded-t-[24px] px-7 py-5 border-b border-[#1a2a3f] flex items-center justify-between">
+      <div className="relative bg-[#0b1626] rounded-[10px] shadow-[0_32px_80px_rgba(0,0,0,0.7)] w-full max-w-3xl max-h-[92vh] overflow-y-auto border border-[#1a2a3f]">
+        <div className="sticky top-0 z-10 bg-[#060e1a] rounded-t-[10px] px-7 py-5 border-b border-[#1a2a3f] flex items-center justify-between">
           <div className="flex items-center gap-3">
             <GitCompare className="w-5 h-5 text-[#F59E0B]" />
             <h2 className="text-base font-bold text-white">Comparing {startups.length} Companies</h2>
@@ -1828,13 +1828,13 @@ function CompareModal({
             <div />
             {startups.map((s) => (
               <div key={s.id} className="flex flex-col items-center gap-2 text-center">
-                <CompanyLogo name={s.name} website={s.website} size={40} rounded="rounded-xl" />
+                <CompanyLogo name={s.name} website={s.website} size={40} rounded="rounded-lg" />
                 <span className="text-sm font-bold text-white leading-tight">{s.name}</span>
               </div>
             ))}
           </div>
           {/* Metrics table */}
-          <div className="bg-[#091422] border border-[#1a2a3f] rounded-[16px] overflow-hidden">
+          <div className="bg-[#091422] border border-[#1a2a3f] rounded-[8px] overflow-hidden">
             {rows.map((row, i) => (
               <div key={row.label} className={`grid items-center gap-3 px-4 py-3.5 ${i > 0 ? "border-t border-[#1a2a3f]" : ""}`}
                 style={{ gridTemplateColumns: `140px repeat(${startups.length}, 1fr)` }}>
@@ -1847,7 +1847,7 @@ function CompareModal({
           {chartData.some((d) => d.total > 0) && (
             <div>
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">{t("startups.totalCapitalRaised")}</h3>
-              <div className="bg-[#091422] border border-[#1a2a3f] rounded-[16px] p-4">
+              <div className="bg-[#091422] border border-[#1a2a3f] rounded-[8px] p-4">
                 <ResponsiveContainer width="100%" height={140}>
                   <BarChart data={chartData} margin={{ top: 8, right: 8, left: 4, bottom: 0 }} barCategoryGap="40%">
                     <CartesianGrid strokeDasharray="3 3" stroke="#1a2a3f" vertical={false} />
@@ -1877,7 +1877,7 @@ function CompareModal({
               <div className="flex flex-wrap gap-2">
                 {peers.map((peer) => (
                   <button key={peer.id} onClick={() => onAddPeer(peer)} disabled={startups.length >= 3}
-                    className="flex items-center gap-2 bg-[#091422] border border-[#1a2a3f] hover:border-[#243858] disabled:opacity-40 disabled:cursor-not-allowed rounded-[12px] px-3 py-2 transition-colors">
+                    className="flex items-center gap-2 bg-[#091422] border border-[#1a2a3f] hover:border-[#243858] disabled:opacity-40 disabled:cursor-not-allowed rounded-[8px] px-3 py-2 transition-colors">
                     <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-black flex-none ${avatarColor(peer.name)}`}>{peer.name[0]}</div>
                     <div className="text-left">
                       <div className="text-xs font-bold text-white">{peer.name}</div>
@@ -1916,7 +1916,7 @@ function StartupCard({
     <div
       data-tour={dataTour}
       onClick={onSelect}
-      className="relative flex flex-col overflow-hidden cursor-pointer group rounded-[22px] border transition-all duration-300 bg-white"
+      className="relative flex flex-col overflow-hidden cursor-pointer group rounded-[10px] border transition-all duration-300 bg-white"
       style={{
         borderColor: selected ? '#0F172A' : '#E5E7EB',
         boxShadow: selected
@@ -1946,7 +1946,7 @@ function StartupCard({
       />
       <div className="p-5 pb-4 flex-1 relative z-10">
         <div className="flex items-start gap-3 mb-3">
-          <CompanyLogo name={startup.name} website={startup.website} size={40} rounded="rounded-xl" />
+          <CompanyLogo name={startup.name} website={startup.website} size={40} rounded="rounded-lg" />
           <div className="flex-1 min-w-0">
             <h3 className="text-[15px] font-bold text-gray-900 truncate leading-tight">
               {startup.name}
@@ -2121,10 +2121,10 @@ function AddStartupDialog({ open, onClose, onSuccess }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={status !== "loading" ? onClose : undefined} />
-      <div className="relative bg-white rounded-[24px] shadow-[0_24px_60px_rgba(0,0,0,0.12)] w-full max-w-md p-8 border border-gray-100">
+      <div className="relative bg-white rounded-[10px] shadow-[0_24px_60px_rgba(0,0,0,0.12)] w-full max-w-md p-8 border border-gray-100">
         <button onClick={onClose} disabled={status === "loading"} className="absolute top-5 right-5 text-gray-300 hover:text-gray-600 transition-colors disabled:opacity-30"><X className="w-5 h-5" /></button>
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-2xl bg-amber-50 flex items-center justify-center"><Rocket className="w-5 h-5 text-[#F59E0B]" /></div>
+          <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center"><Rocket className="w-5 h-5 text-[#F59E0B]" /></div>
           <div>
             <h2 className="text-base font-bold text-[#0F172A]">{t("startups.addStartup")}</h2>
             <p className="text-xs text-gray-400">{t("startups.agentResearches")}</p>
@@ -2151,17 +2151,17 @@ function AddStartupDialog({ open, onClose, onSuccess }: {
         ) : (
           <form onSubmit={handleSubmit}>
             {status === "error" && (
-              <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-xl p-3 mb-4 text-sm text-red-600">
+              <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-lg p-3 mb-4 text-sm text-red-600">
                 <AlertCircle className="w-4 h-4 flex-none mt-0.5" /><span>{errorMsg}</span>
               </div>
             )}
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{t("startups.companyName")}</label>
             <input ref={inputRef} type="text" value={name} onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Stripe, Wiz, Deel…"
-              className="w-full border border-gray-200 rounded-[12px] px-4 py-3 text-sm text-[#0F172A] placeholder-gray-300 focus:outline-none focus:border-[#0F172A]/30 focus:ring-2 focus:ring-[#0F172A]/10 transition-all"
+              className="w-full border border-gray-200 rounded-[8px] px-4 py-3 text-sm text-[#0F172A] placeholder-gray-300 focus:outline-none focus:border-[#0F172A]/30 focus:ring-2 focus:ring-[#0F172A]/10 transition-all"
             />
             <p className="text-[11px] text-gray-400 mt-2 mb-5">The agent searches the web, validates the data, and saves — takes ~15 seconds.</p>
-            <button type="submit" disabled={!name.trim()} className="w-full rounded-[12px] bg-[#0F172A] hover:bg-gray-800 disabled:bg-gray-100 disabled:text-gray-300 text-white font-semibold text-sm py-3 transition-all duration-200">
+            <button type="submit" disabled={!name.trim()} className="w-full rounded-[8px] bg-[#0F172A] hover:bg-gray-800 disabled:bg-gray-100 disabled:text-gray-300 text-white font-semibold text-sm py-3 transition-all duration-200">
               Research & Add
             </button>
           </form>
@@ -2200,7 +2200,7 @@ function InfoTooltip({
       <div
         className={`absolute bottom-[calc(100%+10px)] ${boxAlign} w-60 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50`}
       >
-        <div className="bg-[#060e1a] border border-[#243858] rounded-[14px] px-3.5 py-3 text-[11px] text-slate-300 shadow-[0_12px_40px_rgba(0,0,0,0.8)] leading-relaxed">
+        <div className="bg-[#060e1a] border border-[#243858] rounded-[8px] px-3.5 py-3 text-[11px] text-slate-300 shadow-[0_12px_40px_rgba(0,0,0,0.8)] leading-relaxed">
           {content}
         </div>
         {/* Arrow */}
@@ -2471,11 +2471,11 @@ export function Startups() {
                 onClick={() => setTourOpen(true)}
                 title={t("tour.takeTour")}
                 aria-label={t("tour.takeTour")}
-                className="p-2 rounded-[12px] bg-white/60 border border-black/10 text-[#0F172A]/60 hover:text-[#0F172A] hover:bg-white transition-all"
+                className="p-2 rounded-[8px] bg-white/60 border border-black/10 text-[#0F172A]/60 hover:text-[#0F172A] hover:bg-white transition-all"
               >
                 <HelpCircle className="w-4 h-4" />
               </button>
-              <div data-tour="view-toggle" className="flex items-center bg-white/60 border border-black/10 rounded-[12px] p-1">
+              <div data-tour="view-toggle" className="flex items-center bg-white/60 border border-black/10 rounded-[8px] p-1">
                 <button onClick={() => setView("grid")} className={`p-1.5 rounded-[8px] transition-all ${viewMode === "grid" ? "bg-white text-[#0F172A] shadow-sm" : "text-[#0F172A]/50 hover:text-[#0F172A]"}`}><LayoutGrid className="w-4 h-4" /></button>
                 <button onClick={() => setView("list")} className={`p-1.5 rounded-[8px] transition-all ${viewMode === "list" ? "bg-white text-[#0F172A] shadow-sm" : "text-[#0F172A]/50 hover:text-[#0F172A]"}`}><List className="w-4 h-4" /></button>
               </div>
@@ -2585,12 +2585,12 @@ export function Startups() {
               <div className="flex items-center justify-center py-32"><Loader2 className="w-6 h-6 text-[#F59E0B] animate-spin" /></div>
             ) : rows.length === 0 && activeFilterCount === 0 ? (
               <div className="flex flex-col items-center justify-center py-32 text-center">
-                <div className="w-16 h-16 rounded-3xl bg-amber-50 flex items-center justify-center mb-6"><Rocket className="w-7 h-7 text-[#F59E0B]" /></div>
+                <div className="w-16 h-16 rounded-lg bg-amber-50 flex items-center justify-center mb-6"><Rocket className="w-7 h-7 text-[#F59E0B]" /></div>
                 <h2 className="text-xl font-bold text-[#0F172A] mb-3">{t("startups.noStartupsYet")}</h2>
                 <p className="text-sm text-gray-400 max-w-sm leading-relaxed mb-8">
                   Add your first startup — the AI agent will research, validate, and store it with full funding history.
                 </p>
-                <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 rounded-[16px] bg-[#0F172A] px-6 py-3 text-sm font-bold text-white shadow-[0_4px_14px_rgba(15,23,42,0.25)] hover:bg-[#1e293b] transition-all">
+                <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 rounded-[8px] bg-[#0F172A] px-6 py-3 text-sm font-bold text-white shadow-[0_4px_14px_rgba(15,23,42,0.25)] hover:bg-[#1e293b] transition-all">
                   <Plus className="w-4 h-4" />Add First Startup
                 </button>
               </div>
@@ -2603,7 +2603,7 @@ export function Startups() {
             ) : (
               <div className="relative">
                 {rowsLoading && (
-                  <div className="absolute inset-0 z-10 flex items-start justify-center pt-16 bg-white/50 backdrop-blur-[1px] rounded-[20px] transition-opacity">
+                  <div className="absolute inset-0 z-10 flex items-start justify-center pt-16 bg-white/50 backdrop-blur-[1px] rounded-[10px] transition-opacity">
                     <Loader2 className="w-5 h-5 text-[#F59E0B] animate-spin" />
                   </div>
                 )}
@@ -2616,7 +2616,7 @@ export function Startups() {
                     ))}
                   </div>
                 ) : (
-                  <div className={`bg-white rounded-[20px] border border-gray-100 shadow-[0_4px_20px_rgba(0,0,0,0.04)] overflow-hidden transition-opacity duration-150 ${rowsLoading ? "opacity-40" : "opacity-100"}`}>
+                  <div className={`bg-white rounded-[10px] border border-gray-100 shadow-[0_4px_20px_rgba(0,0,0,0.04)] overflow-hidden transition-opacity duration-150 ${rowsLoading ? "opacity-40" : "opacity-100"}`}>
                     <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead>
@@ -2660,7 +2660,7 @@ export function Startups() {
       {selected.size >= 1 && (
         <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2.5">
           {watchlistError && (
-            <div className="flex items-center gap-1.5 max-w-[280px] px-3.5 py-2 rounded-[12px] text-[11px] font-semibold bg-rose-950/90 border border-rose-800/60 text-rose-300 backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.45)]">
+            <div className="flex items-center gap-1.5 max-w-[280px] px-3.5 py-2 rounded-[8px] text-[11px] font-semibold bg-rose-950/90 border border-rose-800/60 text-rose-300 backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.45)]">
               <AlertCircle className="w-3.5 h-3.5 flex-none" />
               {watchlistError}
             </div>
@@ -2674,7 +2674,7 @@ export function Startups() {
               <button
                 onClick={toggleWatchlistForSelected}
                 disabled={watchlistBusy}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-[16px] text-xs font-bold transition-all duration-200 backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.45)] disabled:opacity-60 ${
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-[8px] text-xs font-bold transition-all duration-200 backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.45)] disabled:opacity-60 ${
                   tracked
                     ? "bg-emerald-950/80 border border-emerald-800/60 text-emerald-300 hover:border-emerald-600"
                     : "bg-[#0b1626]/90 border border-[#1a2a3f] text-slate-300 hover:text-white hover:border-slate-500"
@@ -2698,7 +2698,7 @@ export function Startups() {
             {/* Compare button */}
             <button
               onClick={() => { if (selected.size >= 2) setShowCompare(true); }}
-              className={`flex items-center gap-2.5 px-5 py-3.5 rounded-[20px] text-sm font-bold transition-all duration-200 ${
+              className={`flex items-center gap-2.5 px-5 py-3.5 rounded-[10px] text-sm font-bold transition-all duration-200 ${
                 selected.size >= 2
                   ? "bg-blue-600 text-white shadow-[0_8px_40px_rgba(37,99,235,0.45)] hover:bg-blue-500 hover:shadow-[0_12px_48px_rgba(37,99,235,0.5)] hover:scale-[1.02]"
                   : "bg-[#0b1626]/90 backdrop-blur-sm border border-[#1a2a3f] text-slate-400 shadow-[0_4px_24px_rgba(0,0,0,0.45)] cursor-default"

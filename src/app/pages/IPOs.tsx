@@ -14,7 +14,7 @@ export function IPOs() {
         </div>
 
         <div className="flex flex-col items-center justify-center py-32 text-center">
-          <div className="w-16 h-16 rounded-3xl bg-amber-50 flex items-center justify-center mb-6">
+          <div className="w-16 h-16 rounded-lg bg-amber-50 flex items-center justify-center mb-6">
             <TrendingUp className="w-7 h-7 text-[#F59E0B]" />
           </div>
           <h2 className="text-xl font-bold text-[#0F172A] mb-3">{t("ipos.comingSoon")}</h2>

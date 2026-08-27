@@ -108,7 +108,7 @@ export function AISearchWorkspace() {
   const showPanel = status !== "idle";
 
   return (
-    <section className="relative overflow-hidden rounded-[28px] border border-gray-100 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+    <section className="relative overflow-hidden rounded-[10px] border border-gray-100 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
@@ -135,7 +135,7 @@ export function AISearchWorkspace() {
           onSubmit={(e) => { e.preventDefault(); runSearch(query); }}
           className="mx-auto mt-7 max-w-2xl"
         >
-          <div className="group relative flex items-center rounded-[18px] border border-gray-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] transition-all focus-within:border-[#0F172A]/30 focus-within:shadow-[0_12px_40px_rgba(15,23,42,0.10)] focus-within:ring-4 focus-within:ring-[#0F172A]/[0.06]">
+          <div className="group relative flex items-center rounded-[9px] border border-gray-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] transition-all focus-within:border-[#0F172A]/30 focus-within:shadow-[0_12px_40px_rgba(15,23,42,0.10)] focus-within:ring-4 focus-within:ring-[#0F172A]/[0.06]">
             <Search className="ml-4 h-5 w-5 flex-none text-gray-400" />
             <input
               ref={inputRef}
@@ -160,7 +160,7 @@ export function AISearchWorkspace() {
             <button
               type="submit"
               disabled={!query.trim() || status === "loading"}
-              className="m-1.5 flex flex-none items-center gap-1.5 rounded-[13px] bg-[#0F172A] px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-gray-900 disabled:cursor-not-allowed disabled:opacity-40"
+              className="m-1.5 flex flex-none items-center gap-1.5 rounded-[8px] bg-[#0F172A] px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-gray-900 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {status === "loading"
                 ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -257,7 +257,7 @@ function AnswerBlock({
   const segments = useMemo(() => parseAnswerSegments(answer), [answer]);
 
   return (
-    <div className="relative overflow-hidden rounded-[20px] border border-gray-100 bg-gradient-to-b from-[#7C8967]/[0.04] to-white p-5">
+    <div className="relative overflow-hidden rounded-[10px] border border-gray-100 bg-gradient-to-b from-[#7C8967]/[0.04] to-white p-5">
       <div className="mb-3 flex items-center gap-2">
         <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0F172A]">
           <Sparkles className="h-3.5 w-3.5 text-white" />
@@ -382,9 +382,9 @@ function ResultRow({ match, onOpen }: { match: SemanticMatch; onOpen: (m: Semant
     <button
       type="button"
       onClick={() => onOpen(match)}
-      className="group flex w-full items-start gap-3 rounded-[16px] border border-gray-100 bg-white p-3.5 text-left transition-all hover:border-gray-300 hover:shadow-[0_8px_30px_rgba(15,23,42,0.05)]"
+      className="group flex w-full items-start gap-3 rounded-[8px] border border-gray-100 bg-white p-3.5 text-left transition-all hover:border-gray-300 hover:shadow-[0_8px_30px_rgba(15,23,42,0.05)]"
     >
-      <CompanyLogo name={match.name ?? "—"} website={website} size={40} rounded="rounded-[11px]" />
+      <CompanyLogo name={match.name ?? "—"} website={website} size={40} rounded="rounded-[8px]" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <h4 className="truncate text-sm font-bold text-[#0F172A]">{match.name ?? "—"}</h4>
@@ -432,12 +432,12 @@ function CitationModal({ match, onClose }: { match: SemanticMatch; onClose: () =
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-md overflow-hidden rounded-[24px] border border-gray-100 bg-white shadow-[0_32px_80px_rgba(15,23,42,0.35)]"
+        className="relative w-full max-w-md overflow-hidden rounded-[10px] border border-gray-100 bg-white shadow-[0_32px_80px_rgba(15,23,42,0.35)]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-4 px-6 pt-6" style={{ background: "#B8C9D1" }}>
           <div className="pb-5">
-            <CompanyLogo name={match.name ?? "—"} website={website} size={52} rounded="rounded-2xl" />
+            <CompanyLogo name={match.name ?? "—"} website={website} size={52} rounded="rounded-lg" />
           </div>
           <div className="min-w-0 flex-1 pb-5 pt-0.5">
             <div className="flex items-center gap-2">
@@ -468,7 +468,7 @@ function CitationModal({ match, onClose }: { match: SemanticMatch; onClose: () =
           <div className="mt-5 flex items-center gap-2.5">
             <button
               onClick={() => { onClose(); navigate(dir.path); }}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-[13px] bg-[#0F172A] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gray-900"
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-[8px] bg-[#0F172A] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gray-900"
             >
               View in {dir.label}
               <ArrowRight className="h-4 w-4" />
@@ -478,7 +478,7 @@ function CitationModal({ match, onClose }: { match: SemanticMatch; onClose: () =
                 href={website.startsWith("http") ? website : `https://${website}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center justify-center gap-1.5 rounded-[13px] border border-gray-200 px-4 py-2.5 text-sm font-semibold text-[#0F172A] transition-colors hover:bg-gray-50"
+                className="flex items-center justify-center gap-1.5 rounded-[8px] border border-gray-200 px-4 py-2.5 text-sm font-semibold text-[#0F172A] transition-colors hover:bg-gray-50"
               >{t("common.website")}<ExternalLink className="h-3.5 w-3.5" />
               </a>
             )}
@@ -498,8 +498,8 @@ function ResultsSkeleton() {
           <div className="mb-2.5 h-4 w-28 animate-pulse rounded bg-gray-100" />
           <div className="space-y-2">
             {[0, 1, 2].map((r) => (
-              <div key={r} className="flex items-start gap-3 rounded-[16px] border border-gray-100 bg-white p-3.5">
-                <div className="h-10 w-10 flex-none animate-pulse rounded-[11px] bg-gray-100" />
+              <div key={r} className="flex items-start gap-3 rounded-[8px] border border-gray-100 bg-white p-3.5">
+                <div className="h-10 w-10 flex-none animate-pulse rounded-[8px] bg-gray-100" />
                 <div className="min-w-0 flex-1 space-y-2 py-0.5">
                   <div className="h-3.5 w-1/3 animate-pulse rounded bg-gray-100" />
                   <div className="h-3 w-4/5 animate-pulse rounded bg-gray-50" />
@@ -517,7 +517,7 @@ function ResultsSkeleton() {
 // ── Empty / error state ──────────────────────────────────────────────────────
 function StatePanel({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
   return (
-    <div className="flex flex-col items-center rounded-[20px] border border-gray-100 bg-gray-50/60 px-6 py-10 text-center">
+    <div className="flex flex-col items-center rounded-[10px] border border-gray-100 bg-gray-50/60 px-6 py-10 text-center">
       <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white">
         {icon}
       </div>

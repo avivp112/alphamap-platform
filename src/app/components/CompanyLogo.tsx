@@ -72,7 +72,7 @@ export function CompanyLogo({
   name,
   website,
   size = 40,
-  rounded = 'rounded-xl',
+  rounded = 'rounded-lg',
   className = '',
 }: CompanyLogoProps) {
   const domain = extractDomain(website);

@@ -137,7 +137,7 @@ export function Pricing() {
             return (
               <div
                 key={tier.id}
-                className={`relative flex flex-col rounded-[24px] p-7 bg-white transition-all duration-300 ${
+                className={`relative flex flex-col rounded-[10px] p-7 bg-white transition-all duration-300 ${
                   tier.highlight
                     ? "border-2 border-[#0F172A] shadow-[0_24px_60px_rgba(15,23,42,0.12)] md:-translate-y-3"
                     : "border border-gray-100 shadow-[0_4px_20px_rgba(0,0,0,0.02)]"
@@ -150,7 +150,7 @@ export function Pricing() {
                 )}
 
                 <div className="flex items-center justify-between mb-5">
-                  <div className={`w-11 h-11 rounded-[13px] flex items-center justify-center ${
+                  <div className={`w-11 h-11 rounded-[8px] flex items-center justify-center ${
                     tier.highlight ? "bg-[#0F172A]" : "bg-gray-50 border border-gray-100"
                   }`}>
                     <Icon className={`w-5 h-5 ${tier.highlight ? "text-white" : "text-[#0F172A]"}`} />
@@ -194,7 +194,7 @@ export function Pricing() {
                 <button
                   onClick={() => !tier.disabled && handleSelect(tier.id)}
                   disabled={isCurrent || tier.disabled}
-                  className={`mt-7 w-full flex items-center justify-center gap-1.5 rounded-[13px] px-4 py-3 text-sm font-bold transition-all ${
+                  className={`mt-7 w-full flex items-center justify-center gap-1.5 rounded-[8px] px-4 py-3 text-sm font-bold transition-all ${
                     tier.disabled || isCurrent
                       ? "bg-gray-50 border border-gray-100 text-gray-400 cursor-not-allowed"
                       : tier.highlight

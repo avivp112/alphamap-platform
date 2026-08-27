@@ -21,7 +21,7 @@ function TermsOfUseModal({ onClose }: { onClose: () => void }) {
       onClick={onClose}
     >
       <div
-        className="relative flex flex-col w-full max-w-2xl bg-white rounded-[24px] shadow-[0_32px_80px_rgba(15,23,42,0.35)]"
+        className="relative flex flex-col w-full max-w-2xl bg-white rounded-[10px] shadow-[0_32px_80px_rgba(15,23,42,0.35)]"
         style={{ maxHeight: "85vh" }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -57,7 +57,7 @@ function TermsOfUseModal({ onClose }: { onClose: () => void }) {
         <div className="flex-none px-7 py-4 border-t border-gray-100">
           <button
             onClick={onClose}
-            className="w-full rounded-xl bg-[#0F172A] hover:bg-gray-900 text-white font-semibold text-sm py-2.5 transition-colors"
+            className="w-full rounded-lg bg-[#0F172A] hover:bg-gray-900 text-white font-semibold text-sm py-2.5 transition-colors"
           >
             {t("common.close")}
           </button>
@@ -129,7 +129,7 @@ function FieldError({ message }: { message?: string }) {
 function ErrorBanner({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <div className="flex items-start gap-2 rounded-xl border border-rose-100 bg-rose-50 px-3.5 py-3 text-sm text-rose-700">
+    <div className="flex items-start gap-2 rounded-lg border border-rose-100 bg-rose-50 px-3.5 py-3 text-sm text-rose-700">
       <AlertCircle className="w-4 h-4 flex-none mt-0.5" />
       <span>{message}</span>
     </div>
@@ -137,7 +137,7 @@ function ErrorBanner({ message }: { message: string | null }) {
 }
 
 const inputCls =
-  "w-full rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm text-[#0F172A] " +
+  "w-full rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-[#0F172A] " +
   "placeholder-gray-400 transition-all focus:outline-none focus:border-[#0F172A]/30 focus:ring-2 focus:ring-[#0F172A]/10";
 const inputErrCls =
   "border-rose-300 focus:border-rose-400 focus:ring-rose-100";
@@ -180,7 +180,7 @@ function BrandPanel() {
       </div>
 
       <div className="relative z-10 flex items-center gap-2.5">
-        <div className="rounded-xl bg-white/80 p-1.5 shadow-[0_2px_8px_rgba(15,23,42,0.08)]">
+        <div className="rounded-lg bg-white/80 p-1.5 shadow-[0_2px_8px_rgba(15,23,42,0.08)]">
           <BrandMark size={30} />
         </div>
         <BrandWordmark className="text-2xl tracking-tight text-[#0F172A]" />
@@ -282,7 +282,7 @@ function OtpView({
         <ArrowLeft className="w-3.5 h-3.5" />{t("common.back")}
       </button>
 
-      <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mb-5">
+      <div className="w-12 h-12 rounded-lg bg-amber-50 flex items-center justify-center mb-5">
         <ShieldCheck className="w-6 h-6 text-[#F59E0B]" />
       </div>
       <h1 className="font-serif text-2xl font-bold text-[#0F172A] mb-2">{t("auth.otp.title")}</h1>
@@ -312,7 +312,7 @@ function OtpView({
         <button
           type="submit"
           disabled={loading === "verify" || otp.length !== OTP_LENGTH}
-          className="mt-5 w-full flex items-center justify-center gap-2 rounded-xl bg-[#0F172A] hover:bg-[#1e293b] disabled:bg-gray-200 disabled:text-gray-400 text-white font-semibold text-sm py-3 transition-all"
+          className="mt-5 w-full flex items-center justify-center gap-2 rounded-lg bg-[#0F172A] hover:bg-[#1e293b] disabled:bg-gray-200 disabled:text-gray-400 text-white font-semibold text-sm py-3 transition-all"
         >
           {loading === "verify" ? <Loader2 className="w-4 h-4 animate-spin" /> : <>{t("auth.otp.verify")}<ArrowRight className="w-4 h-4" /></>}
         </button>
@@ -427,7 +427,7 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
           type="button"
           onClick={() => handleOAuth("google")}
           disabled={loading !== "idle"}
-          className="w-full flex items-center justify-center gap-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60 text-sm font-semibold text-[#0F172A] py-2 transition-all"
+          className="w-full flex items-center justify-center gap-2.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60 text-sm font-semibold text-[#0F172A] py-2 transition-all"
         >
           {loading === "google" ? <Loader2 className="w-4 h-4 animate-spin" /> : <FcGoogle className="w-4.5 h-4.5" />}
           {t("auth.signup.google")}
@@ -436,7 +436,7 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
           type="button"
           onClick={() => handleOAuth("linkedin_oidc")}
           disabled={loading !== "idle"}
-          className="w-full flex items-center justify-center gap-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60 text-sm font-semibold text-[#0F172A] py-2 transition-all"
+          className="w-full flex items-center justify-center gap-2.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60 text-sm font-semibold text-[#0F172A] py-2 transition-all"
         >
           {loading === "linkedin" ? <Loader2 className="w-4 h-4 animate-spin" /> : <FaLinkedin className="w-4 h-4 text-[#0A66C2]" />}
           {t("auth.signup.linkedin")}
@@ -556,7 +556,7 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
         <button
           type="submit"
           disabled={loading !== "idle"}
-          className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#0F172A] hover:bg-[#1e293b] disabled:opacity-60 text-white font-semibold text-sm py-2.5 transition-all"
+          className="w-full flex items-center justify-center gap-2 rounded-lg bg-[#0F172A] hover:bg-[#1e293b] disabled:opacity-60 text-white font-semibold text-sm py-2.5 transition-all"
         >
           {loading === "submit" ? <Loader2 className="w-4 h-4 animate-spin" /> : <>{t("auth.signup.createAccount")}<ArrowRight className="w-4 h-4" /></>}
         </button>

@@ -56,10 +56,10 @@ function SectorCard({ m, applied, onApply }: {
   const { t } = useTranslation();
   return (
     <div
-      className="relative flex flex-col rounded-[20px] border bg-white p-5 transition-all duration-200 hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)]"
+      className="relative flex flex-col rounded-[10px] border bg-white p-5 transition-all duration-200 hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)]"
       style={{ borderColor: applied ? m.accent : "#E5E7EB" }}
     >
-      <div className="absolute inset-x-0 top-0 h-[3px] rounded-t-[20px]" style={{ background: m.accent, opacity: 0.85 }} />
+      <div className="absolute inset-x-0 top-0 h-[3px] rounded-t-[10px]" style={{ background: m.accent, opacity: 0.85 }} />
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-bold text-[#0F172A]">{m.label}</h3>
         <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 bg-gray-50 border border-gray-100 rounded-full px-2 py-0.5">
@@ -91,7 +91,7 @@ function SectorCard({ m, applied, onApply }: {
 
       <button
         onClick={onApply}
-        className={`mt-auto flex items-center justify-center gap-1.5 rounded-[12px] px-3 py-2.5 text-xs font-bold transition-all ${
+        className={`mt-auto flex items-center justify-center gap-1.5 rounded-[8px] px-3 py-2.5 text-xs font-bold transition-all ${
           applied
             ? "text-white"
             : "bg-[#0F172A] text-white hover:bg-[#1e293b]"
@@ -124,7 +124,7 @@ function AppliedPrivatePanel({ sectorKey, medianEvRevenue }: {
   }, [sectorKey, medianEvRevenue, cfg]);
 
   return (
-    <div className="rounded-[20px] border border-gray-100 bg-white overflow-hidden shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+    <div className="rounded-[10px] border border-gray-100 bg-white overflow-hidden shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100" style={{ background: `${cfg.accent}0d` }}>
         <Sparkles className="w-4 h-4" style={{ color: cfg.accent }} />
         <h3 className="text-sm font-bold text-[#0F172A]">
@@ -292,7 +292,7 @@ function SentimentBarometer({ sentiment, activity, activityLoading }: {
         title={t("publicMarket.barometerTitle")}
         subtitle={t("publicMarket.barometerSubtitle")}
       />
-      <div className="rounded-[20px] border border-gray-100 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)] overflow-hidden">
+      <div className="rounded-[10px] border border-gray-100 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)] overflow-hidden">
         <div className="grid grid-cols-1 lg:grid-cols-2">
           {/* Gauge side */}
           <div className="flex flex-col items-center justify-center p-6 sm:p-8 border-b lg:border-b-0 lg:border-r border-gray-100">
@@ -317,19 +317,19 @@ function SentimentBarometer({ sentiment, activity, activityLoading }: {
           {/* Drivers side */}
           <div className="p-6 sm:p-8 flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-[12px] bg-emerald-50/60 border border-emerald-100 px-3.5 py-3">
+              <div className="rounded-[8px] bg-emerald-50/60 border border-emerald-100 px-3.5 py-3">
                 <div className="flex items-center gap-1.5 mb-1"><TrendingUp className="w-3.5 h-3.5 text-emerald-600" /><span className="text-[9px] font-bold uppercase tracking-wider text-emerald-700/70">{t("publicMarket.leadingSector")}</span></div>
                 <div className="text-sm font-bold text-[#0F172A]">{sentiment.bestSector.label}</div>
                 <div className="text-xs font-semibold text-emerald-600 tabular-nums">{fmtPct(sentiment.bestSector.momentum, true)}</div>
               </div>
-              <div className="rounded-[12px] bg-rose-50/50 border border-rose-100 px-3.5 py-3">
+              <div className="rounded-[8px] bg-rose-50/50 border border-rose-100 px-3.5 py-3">
                 <div className="flex items-center gap-1.5 mb-1"><TrendingDown className="w-3.5 h-3.5 text-rose-500" /><span className="text-[9px] font-bold uppercase tracking-wider text-rose-700/70">{t("publicMarket.laggingSector")}</span></div>
                 <div className="text-sm font-bold text-[#0F172A]">{sentiment.worstSector.label}</div>
                 <div className="text-xs font-semibold text-rose-600 tabular-nums">{fmtPct(sentiment.worstSector.momentum, true)}</div>
               </div>
             </div>
 
-            <div className="rounded-[12px] border border-gray-100 bg-gray-50/60 px-4 py-3.5">
+            <div className="rounded-[8px] border border-gray-100 bg-gray-50/60 px-4 py-3.5">
               <div className="flex items-center justify-between mb-2">
                 <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400"><Activity className="w-3.5 h-3.5" />Private late-stage activity</span>
                 {activityLoading ? <Loader2 className="w-3.5 h-3.5 text-gray-300 animate-spin" /> : activity && <TrendPill trend={activity.trend} />}
@@ -457,7 +457,7 @@ function CompsExplorer({ companies }: { companies: DerivedPublicCompany[] }) {
         title="Public vs Private Comps Explorer"
         subtitle="Public giants mapped to their private counterparts tracked in AlphaMap — the valuation gap and multiple spread at a glance."
       />
-      <div className="rounded-[20px] border border-gray-100 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)] overflow-hidden">
+      <div className="rounded-[10px] border border-gray-100 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)] overflow-hidden">
         {/* Tabs */}
         <div className="flex items-center gap-1 px-4 sm:px-5 py-3 border-b border-gray-100 overflow-x-auto">
           {([["all", "All"], ...PUBLIC_SECTORS.map((s) => [s.key, s.label] as const)] as const).map(([key, label]) => (
@@ -561,7 +561,7 @@ function StockSearchBar({ companies, onCompanyAdded, onFocusTicker }: {
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => query.trim() && setOpen(true)}
           placeholder="Search any NASDAQ or NYSE company — e.g. Airbnb, ABNB…"
-          className="w-full pl-10 pr-9 py-3 text-sm bg-white border border-gray-200 rounded-[14px] focus:outline-none focus:border-[#0F172A]/30 focus:ring-2 focus:ring-[#0F172A]/10 transition-all"
+          className="w-full pl-10 pr-9 py-3 text-sm bg-white border border-gray-200 rounded-[8px] focus:outline-none focus:border-[#0F172A]/30 focus:ring-2 focus:ring-[#0F172A]/10 transition-all"
         />
         {searching ? (
           <Loader2 className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300 animate-spin" />
@@ -573,7 +573,7 @@ function StockSearchBar({ companies, onCompanyAdded, onFocusTicker }: {
       </div>
 
       {open && results.length > 0 && (
-        <div className="absolute z-20 mt-2 w-full bg-white rounded-[16px] border border-gray-100 shadow-[0_16px_40px_rgba(15,23,42,0.12)] overflow-hidden max-h-[340px] overflow-y-auto">
+        <div className="absolute z-20 mt-2 w-full bg-white rounded-[8px] border border-gray-100 shadow-[0_16px_40px_rgba(15,23,42,0.12)] overflow-hidden max-h-[340px] overflow-y-auto">
           {results.map((r) => {
             const tracked = hasTicker(companies, r.symbol);
             const isSyncing = syncingTicker === r.symbol;
@@ -602,12 +602,12 @@ function StockSearchBar({ companies, onCompanyAdded, onFocusTicker }: {
         </div>
       )}
       {open && !searching && query.trim() && results.length === 0 && searchFailure && (
-        <div className="absolute z-20 mt-2 w-full bg-white rounded-[16px] border border-rose-100 shadow-[0_16px_40px_rgba(15,23,42,0.12)] px-4 py-4">
+        <div className="absolute z-20 mt-2 w-full bg-white rounded-[8px] border border-rose-100 shadow-[0_16px_40px_rgba(15,23,42,0.12)] px-4 py-4">
           <p className="flex items-start gap-1.5 text-xs font-semibold text-rose-600"><AlertCircle className="w-3.5 h-3.5 flex-none mt-0.5" />{searchFailure}</p>
         </div>
       )}
       {open && !searching && query.trim() && results.length === 0 && !searchFailure && (
-        <div className="absolute z-20 mt-2 w-full bg-white rounded-[16px] border border-gray-100 shadow-[0_16px_40px_rgba(15,23,42,0.12)] px-4 py-6 text-center text-xs text-gray-400">
+        <div className="absolute z-20 mt-2 w-full bg-white rounded-[8px] border border-gray-100 shadow-[0_16px_40px_rgba(15,23,42,0.12)] px-4 py-6 text-center text-xs text-gray-400">
           No NASDAQ/NYSE tickers found for "{query}"
         </div>
       )}
@@ -729,7 +729,7 @@ function CompaniesDirectory({ companies, onCompanyAdded }: {
         <StockSearchBar companies={companies} onCompanyAdded={onCompanyAdded} onFocusTicker={setPendingHighlight} />
       </div>
 
-      <div className="rounded-[20px] border border-gray-100 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)] overflow-hidden">
+      <div className="rounded-[10px] border border-gray-100 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)] overflow-hidden">
         {/* Filter row */}
         <div data-tour="companies-directory-filter" className="flex flex-wrap items-center gap-2 px-4 sm:px-5 py-3 border-b border-gray-100">
           <div className="flex items-center gap-1 overflow-x-auto">
@@ -841,7 +841,7 @@ function fmtVolume(n: number | null | undefined): string {
 
 function MetricTile({ label, value, sub, accent }: { label: string; value: React.ReactNode; sub?: string; accent?: string }) {
   return (
-    <div className="rounded-[12px] bg-gray-50 border border-gray-100 px-3.5 py-3">
+    <div className="rounded-[8px] bg-gray-50 border border-gray-100 px-3.5 py-3">
       <div className="text-[8.5px] font-bold uppercase tracking-wider text-gray-400 mb-1">{label}</div>
       <div className="text-sm font-bold tabular-nums" style={accent ? { color: accent } : { color: "#0F172A" }}>{value}</div>
       {sub && <div className="text-[9.5px] text-gray-400 mt-0.5">{sub}</div>}
@@ -854,7 +854,7 @@ function RangeTile({ low, high, current }: { low: number | null; high: number | 
   const hasRange = low != null && high != null && high > low;
   const pct = hasRange && current != null ? Math.max(0, Math.min(100, ((current - low!) / (high! - low!)) * 100)) : null;
   return (
-    <div className="col-span-2 rounded-[12px] bg-gray-50 border border-gray-100 px-3.5 py-3">
+    <div className="col-span-2 rounded-[8px] bg-gray-50 border border-gray-100 px-3.5 py-3">
       <div className="text-[8.5px] font-bold uppercase tracking-wider text-gray-400 mb-2">{t("metrics.yearRange")}</div>
       {hasRange ? (
         <>
@@ -882,7 +882,7 @@ function ProfileSkeleton() {
   return (
     <div className="animate-pulse">
       <div className="flex items-center gap-4 p-6 border-b border-gray-100">
-        <div className="w-16 h-16 rounded-[16px] bg-gray-100 flex-none" />
+        <div className="w-16 h-16 rounded-[8px] bg-gray-100 flex-none" />
         <div className="flex-1 space-y-2 min-w-0">
           <div className="h-4 w-40 bg-gray-100 rounded" />
           <div className="h-3 w-24 bg-gray-100 rounded" />
@@ -898,7 +898,7 @@ function ProfileSkeleton() {
         <div className="h-3 w-3/4 bg-gray-100 rounded" />
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 px-6 pb-6">
-        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-[12px]" />)}
+        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-[8px]" />)}
       </div>
     </div>
   );
@@ -963,7 +963,7 @@ function StockPriceChart({ ticker }: { ticker: string }) {
 
       <div className="h-[180px]">
         {loading ? (
-          <div className="h-full w-full rounded-[12px] bg-gray-50 animate-pulse" />
+          <div className="h-full w-full rounded-[8px] bg-gray-50 animate-pulse" />
         ) : error || data.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center gap-1.5 text-center px-4 overflow-y-auto">
             <AlertCircle className="w-4 h-4 text-gray-300 flex-none" />
@@ -1068,7 +1068,7 @@ function StockProfileModal({ ticker, company, onClose }: {
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className={`relative w-full max-w-lg max-h-[88vh] rounded-[22px] bg-white shadow-[0_24px_64px_rgba(15,23,42,0.25)] overflow-hidden flex flex-col transition-all duration-200 ${
+        className={`relative w-full max-w-lg max-h-[88vh] rounded-[10px] bg-white shadow-[0_24px_64px_rgba(15,23,42,0.25)] overflow-hidden flex flex-col transition-all duration-200 ${
           visible ? "opacity-100 scale-100 translate-y-0" : "opacity-0 scale-95 translate-y-2"
         }`}
       >
@@ -1093,7 +1093,7 @@ function StockProfileModal({ ticker, company, onClose }: {
             <>
               {/* Header */}
               <div className="flex items-start gap-4 p-6 border-b border-gray-100">
-                <CompanyLogo name={profile.name} website={profile.website} size={56} rounded="rounded-[16px]" />
+                <CompanyLogo name={profile.name} website={profile.website} size={56} rounded="rounded-[8px]" />
                 <div className="min-w-0 flex-1 pr-8">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="text-base font-bold text-[#0F172A] truncate">{profile.name}</h3>
@@ -1298,7 +1298,7 @@ export function PublicMarket() {
                 onClick={() => setTourOpen(true)}
                 title={t("tour.takeTour")}
                 aria-label={t("tour.takeTour")}
-                className="p-2 rounded-[12px] bg-white/60 border border-black/10 text-[#0F172A]/60 hover:text-[#0F172A] hover:bg-white transition-all"
+                className="p-2 rounded-[8px] bg-white/60 border border-black/10 text-[#0F172A]/60 hover:text-[#0F172A] hover:bg-white transition-all"
               >
                 <HelpCircle className="w-4 h-4" />
               </button>
@@ -1312,12 +1312,12 @@ export function PublicMarket() {
                 onClick={handleSync}
                 disabled={syncing}
                 title="Pull fresh market data via the sync-public-markets Edge Function, then reload from the database"
-                className="flex items-center gap-1.5 rounded-[12px] bg-[#0F172A] px-3.5 py-2 text-xs font-bold text-white hover:bg-[#1e293b] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                className="flex items-center gap-1.5 rounded-[8px] bg-[#0F172A] px-3.5 py-2 text-xs font-bold text-white hover:bg-[#1e293b] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} />
                 {syncing ? t("publicMarket.syncing") : t("publicMarket.syncNow")}
               </button>
-              <Link to="/stocks" className="flex items-center gap-1.5 rounded-[12px] bg-white/70 border border-black/10 px-3.5 py-2 text-xs font-bold text-[#0F172A] hover:bg-white transition-all">
+              <Link to="/stocks" className="flex items-center gap-1.5 rounded-[8px] bg-white/70 border border-black/10 px-3.5 py-2 text-xs font-bold text-[#0F172A] hover:bg-white transition-all">
                 {t("publicMarket.liveQuotes")} <ExternalLink className="w-3.5 h-3.5" />
               </Link>
             </div>

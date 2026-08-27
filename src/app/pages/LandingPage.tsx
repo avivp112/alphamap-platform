@@ -422,7 +422,7 @@ function SourcingShowcase({ active }: { active: boolean }) {
       <h3 className="text-2xl font-bold text-[#111827] mt-2 mb-1 flex-none">{t("landing.sourcing.title")}</h3>
       <p className="text-sm text-gray-400 mb-6 flex-none">{t("landing.sourcing.subtitle")}</p>
 
-      <div className="relative flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-3 mb-6 flex-none">
+      <div className="relative flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50/70 px-4 py-3 mb-6 flex-none">
         <Sparkles className="w-4 h-4 text-[#0F172A]/40 flex-none" />
         <span className="text-sm text-[#111827] font-medium">
           {t("landing.sourcing.query")}
@@ -431,7 +431,7 @@ function SourcingShowcase({ active }: { active: boolean }) {
         <button
           onClick={handleAsk}
           disabled={asking || asked}
-          className="ml-auto flex-none flex items-center gap-1.5 rounded-full bg-[#0F172A] px-4 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[#1e293b] disabled:opacity-70"
+          className="ml-auto flex-none flex items-center gap-1.5 rounded-lg bg-[#0F172A] px-4 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[#1e293b] disabled:opacity-70"
         >
           {asking && <Loader2 className="w-3 h-3 animate-spin" />}
           {asking ? t("landing.sourcing.searching") : asked ? t("landing.sourcing.asked") : t("landing.sourcing.ask")}
@@ -618,7 +618,7 @@ function VCsShowcase({ active }: { active: boolean }) {
             key={vc.key}
             onClick={() => handleFundClick(vc)}
             style={flashingKey === vc.key ? { animation: `showcaseTripleFlash ${FUND_FLASH_MS}ms ease-in-out` } : undefined}
-            className={`relative text-left rounded-2xl border p-5 transition-all hover:-translate-y-0.5 ${
+            className={`relative text-left rounded-lg border p-5 transition-all hover:-translate-y-0.5 ${
               vc.pulse ? "border-emerald-300 bg-emerald-50/40 shadow-[0_0_0_1px_rgba(16,185,129,0.15)]" : "border-gray-100 bg-gray-50/60 hover:border-gray-200"
             }`}
           >
@@ -821,10 +821,10 @@ function PersonaCarouselSection() {
 
           <div
             key={`illus-${persona}`}
-            className="rounded-[24px] p-3 sm:p-4 lg:max-w-[380px] lg:ml-auto lg:w-full"
+            className="rounded-[10px] p-3 sm:p-4 lg:max-w-[380px] lg:ml-auto lg:w-full"
             style={{ background: PERSONA_FRAME_BG, animation: "showcaseFadeInUp 450ms ease-out both" }}
           >
-            <div className="rounded-2xl bg-white shadow-[0_8px_20px_rgba(0,0,0,0.08)] aspect-[4/3] flex items-center justify-center p-4">
+            <div className="rounded-lg bg-white shadow-[0_8px_20px_rgba(0,0,0,0.08)] aspect-[4/3] flex items-center justify-center p-4">
               <Illustration />
             </div>
           </div>
@@ -980,7 +980,7 @@ export function LandingPage() {
               shown a plan picker instead of their dashboard. */}
           <button
             onClick={async () => navigate(await homePathNow("/pricing"))}
-            className="rounded-full px-5 py-2.5 text-sm font-semibold transition-all duration-300 bg-white border border-black/10 text-[#111827] shadow-[0_1px_4px_rgba(0,0,0,0.08)] hover:bg-gray-50"
+            className="rounded-lg px-5 py-2.5 text-sm font-semibold transition-all duration-300 bg-white border border-black/10 text-[#111827] shadow-[0_1px_4px_rgba(0,0,0,0.08)] hover:bg-gray-50"
           >
             {t("landing.viewDashboard")}
           </button>
@@ -1032,7 +1032,7 @@ export function LandingPage() {
         </div>
 
         <div
-          className="rounded-[28px] border border-gray-200/80 p-2 sm:p-3 shadow-[0_20px_60px_rgba(15,23,42,0.08)]"
+          className="rounded-[10px] border border-gray-200/80 p-2 sm:p-3 shadow-[0_20px_60px_rgba(15,23,42,0.08)]"
           style={{ background: "linear-gradient(180deg, #EEF1F4 0%, #E4E9ED 100%)" }}
         >
           {/* Tab bar */}
@@ -1043,7 +1043,7 @@ export function LandingPage() {
                 <button
                   key={tab.key}
                   onClick={() => handleTabClick(tab.key)}
-                  className={`relative flex-1 flex items-center justify-center px-4 py-2.5 text-sm font-semibold text-center rounded-xl transition-all whitespace-nowrap ${
+                  className={`relative flex-1 flex items-center justify-center px-4 py-2.5 text-sm font-semibold text-center rounded-lg transition-all whitespace-nowrap ${
                     active ? "bg-white text-[#0F172A] shadow-sm" : "text-gray-400 hover:text-gray-600"
                   }`}
                 >
@@ -1055,7 +1055,7 @@ export function LandingPage() {
           </div>
 
           {/* Window — fixed size so switching tabs never resizes the card */}
-          <div className="rounded-[22px] bg-white border border-gray-100 p-6 sm:p-10 h-[600px] sm:h-[520px] flex flex-col overflow-hidden">
+          <div className="rounded-[10px] bg-white border border-gray-100 p-6 sm:p-10 h-[600px] sm:h-[520px] flex flex-col overflow-hidden">
             <div className="flex items-center gap-1.5 mb-6 flex-none">
               <span className="h-2.5 w-2.5 rounded-full bg-gray-200" />
               <span className="h-2.5 w-2.5 rounded-full bg-gray-200" />

@@ -49,7 +49,7 @@ function FieldError({ message }: { message?: string }) {
 function ErrorBanner({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <div className="flex items-start gap-2 rounded-xl border border-rose-100 bg-rose-50 px-3.5 py-3 text-sm text-rose-700">
+    <div className="flex items-start gap-2 rounded-lg border border-rose-100 bg-rose-50 px-3.5 py-3 text-sm text-rose-700">
       <AlertCircle className="w-4 h-4 flex-none mt-0.5" />
       <span>{message}</span>
     </div>
@@ -59,7 +59,7 @@ function ErrorBanner({ message }: { message: string | null }) {
 function InfoBanner({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <div className="flex items-start gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3.5 py-3 text-sm text-emerald-700">
+    <div className="flex items-start gap-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3.5 py-3 text-sm text-emerald-700">
       <CheckCircle2 className="w-4 h-4 flex-none mt-0.5" />
       <span>{message}</span>
     </div>
@@ -67,7 +67,7 @@ function InfoBanner({ message }: { message: string | null }) {
 }
 
 const inputCls =
-  "w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-[#0F172A] " +
+  "w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm text-[#0F172A] " +
   "placeholder-gray-400 transition-all focus:outline-none focus:border-[#0F172A]/30 focus:ring-2 focus:ring-[#0F172A]/10";
 const inputErrCls = "border-rose-300 focus:border-rose-400 focus:ring-rose-100";
 const labelCls = "block text-xs font-semibold text-gray-600 mb-1.5";
@@ -109,7 +109,7 @@ function BrandPanel() {
       </div>
 
       <div className="relative z-10 flex items-center gap-2.5">
-        <div className="rounded-xl bg-white/80 p-1.5 shadow-[0_2px_8px_rgba(15,23,42,0.08)]">
+        <div className="rounded-lg bg-white/80 p-1.5 shadow-[0_2px_8px_rgba(15,23,42,0.08)]">
           <BrandMark size={30} />
         </div>
         <BrandWordmark className="text-2xl tracking-tight text-[#0F172A]" />
@@ -230,7 +230,7 @@ function LoginForm() {
           type="button"
           onClick={() => handleOAuth("google")}
           disabled={loading !== "idle"}
-          className="w-full flex items-center justify-center gap-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60 text-sm font-semibold text-[#0F172A] py-2.5 transition-all"
+          className="w-full flex items-center justify-center gap-2.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60 text-sm font-semibold text-[#0F172A] py-2.5 transition-all"
         >
           {loading === "google" ? <Loader2 className="w-4 h-4 animate-spin" /> : <FcGoogle className="w-4.5 h-4.5" />}
           {t("auth.login.google")}
@@ -239,7 +239,7 @@ function LoginForm() {
           type="button"
           onClick={() => handleOAuth("linkedin_oidc")}
           disabled={loading !== "idle"}
-          className="w-full flex items-center justify-center gap-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60 text-sm font-semibold text-[#0F172A] py-2.5 transition-all"
+          className="w-full flex items-center justify-center gap-2.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60 text-sm font-semibold text-[#0F172A] py-2.5 transition-all"
         >
           {loading === "linkedin" ? <Loader2 className="w-4 h-4 animate-spin" /> : <FaLinkedin className="w-4 h-4 text-[#0A66C2]" />}
           {t("auth.login.linkedin")}
@@ -302,7 +302,7 @@ function LoginForm() {
         <button
           type="submit"
           disabled={loading !== "idle"}
-          className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#0F172A] hover:bg-[#1e293b] disabled:opacity-60 text-white font-semibold text-sm py-3 transition-all"
+          className="w-full flex items-center justify-center gap-2 rounded-lg bg-[#0F172A] hover:bg-[#1e293b] disabled:opacity-60 text-white font-semibold text-sm py-3 transition-all"
         >
           {loading === "submit" ? <Loader2 className="w-4 h-4 animate-spin" /> : <>{t("auth.login.signIn")}<ArrowRight className="w-4 h-4" /></>}
         </button>

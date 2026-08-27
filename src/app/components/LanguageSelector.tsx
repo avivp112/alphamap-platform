@@ -53,7 +53,7 @@ export function LanguageSelector() {
         <div
           role="listbox"
           aria-label={t("language.label")}
-          className="absolute right-0 top-[calc(100%+8px)] z-40 w-44 rounded-xl border border-gray-100 bg-white py-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.12)]"
+          className="absolute right-0 top-[calc(100%+8px)] z-40 w-44 rounded-lg border border-gray-100 bg-white py-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.12)]"
         >
           {LANGUAGES.map((lang) => {
             const selected = lang.code === active.code;

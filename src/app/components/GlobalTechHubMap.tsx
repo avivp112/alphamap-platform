@@ -282,7 +282,7 @@ export function GlobalTechHubMap({
   function dotR(hubId: string) { return Math.max(4, Math.min(10, 4 + (hubCounts[hubId] ?? 0) * 0.05)); }
 
   return (
-    <div className="bg-white border border-gray-100 rounded-[20px] shadow-[0_1px_3px_rgba(15,23,42,0.04)] overflow-hidden">
+    <div className="bg-white border border-gray-100 rounded-[10px] shadow-[0_1px_3px_rgba(15,23,42,0.04)] overflow-hidden">
 
       {/* ── CSS ─────────────────────────────────────────────────────────────── */}
       <style>{`
@@ -493,11 +493,11 @@ export function GlobalTechHubMap({
               )}
               {!loading && startups.length > 0 && (
                 <div className="mt-5 grid grid-cols-2 gap-3 w-full max-w-[220px]">
-                  <div className="rounded-xl p-3 text-center bg-gray-50 border border-gray-100">
+                  <div className="rounded-lg p-3 text-center bg-gray-50 border border-gray-100">
                     <div className="text-base font-bold text-[#0F172A]">{startups.length}</div>
                     <div className="text-[9px] text-gray-400 uppercase tracking-wider">Startups</div>
                   </div>
-                  <div className="rounded-xl p-3 text-center bg-gray-50 border border-gray-100">
+                  <div className="rounded-lg p-3 text-center bg-gray-50 border border-gray-100">
                     <div className="text-base font-bold text-[#0F172A]">{investors.length}</div>
                     <div className="text-[9px] text-gray-400 uppercase tracking-wider">Investors</div>
                   </div>

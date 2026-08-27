@@ -97,7 +97,7 @@ export function Checkout() {
           <p className="mt-2 text-sm text-gray-500">{t("checkout.unlockedBlurb")}</p>
           <button
             onClick={() => navigate("/dashboard")}
-            className="mt-7 flex items-center gap-1.5 rounded-[13px] bg-[#0F172A] px-5 py-3 text-sm font-bold text-white hover:bg-gray-900 transition-colors"
+            className="mt-7 flex items-center gap-1.5 rounded-[8px] bg-[#0F172A] px-5 py-3 text-sm font-bold text-white hover:bg-gray-900 transition-colors"
           >{t("checkout.goToDashboard")}<ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -112,8 +112,8 @@ export function Checkout() {
 
           {/* ── Order summary ── */}
           <div className="md:col-span-2">
-            <div className="rounded-[20px] border border-gray-100 bg-gray-50/60 p-6 sticky top-6">
-              <div className="w-10 h-10 rounded-[11px] bg-[#0F172A] flex items-center justify-center mb-4">
+            <div className="rounded-[10px] border border-gray-100 bg-gray-50/60 p-6 sticky top-6">
+              <div className="w-10 h-10 rounded-[8px] bg-[#0F172A] flex items-center justify-center mb-4">
                 <Icon className="w-5 h-5 text-white" />
               </div>
               <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">{t("checkout.upgradingTo")}</p>
@@ -196,7 +196,7 @@ export function Checkout() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="mt-2 flex items-center justify-center gap-1.5 rounded-[13px] bg-[#0F172A] px-5 py-3.5 text-sm font-bold text-white hover:bg-gray-900 transition-colors disabled:opacity-60"
+                className="mt-2 flex items-center justify-center gap-1.5 rounded-[8px] bg-[#0F172A] px-5 py-3.5 text-sm font-bold text-white hover:bg-gray-900 transition-colors disabled:opacity-60"
               >
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
                 {submitting ? "Confirming…" : `Confirm & Start ${info.name}`}

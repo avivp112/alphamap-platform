@@ -275,7 +275,7 @@ interface HudCardProps {
 function HudCard({ accent, icon: Icon, label, value, sub }: HudCardProps) {
   return (
     <div
-      className="relative rounded-[18px] px-5 py-4 overflow-hidden bg-white"
+      className="relative rounded-[9px] px-5 py-4 overflow-hidden bg-white"
       style={{
         border: '1px solid #E5E7EB',
         boxShadow: '0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)',
@@ -439,7 +439,7 @@ export function Deals() {
                 onClick={() => setTourOpen(true)}
                 title={t("tour.takeTour")}
                 aria-label={t("tour.takeTour")}
-                className="p-2 rounded-[12px] bg-white/60 border border-black/10 text-[#0F172A]/60 hover:text-[#0F172A] hover:bg-white transition-all"
+                className="p-2 rounded-[8px] bg-white/60 border border-black/10 text-[#0F172A]/60 hover:text-[#0F172A] hover:bg-white transition-all"
               >
                 <HelpCircle className="w-4 h-4" />
               </button>
@@ -462,7 +462,7 @@ export function Deals() {
           {/* ── Data source banner ── */}
           {!isLoading && !isLive && (
             <div
-              className="flex items-center gap-2.5 px-4 py-2.5 rounded-[12px]"
+              className="flex items-center gap-2.5 px-4 py-2.5 rounded-[8px]"
               style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.14)' }}
             >
               <Database className="w-3.5 h-3.5 text-amber-500 flex-none" />
@@ -520,7 +520,7 @@ export function Deals() {
 
           {/* ── Table card ── */}
           <div
-            className="relative rounded-[22px] overflow-hidden bg-white"
+            className="relative rounded-[10px] overflow-hidden bg-white"
             style={{
               border: '1px solid #E5E7EB',
               boxShadow: '0 1px 3px rgba(15,23,42,0.06), 0 4px 16px rgba(15,23,42,0.05)',
@@ -724,7 +724,7 @@ export function Deals() {
 
           {/* AlphaMap Est. legend note */}
           <div
-            className="flex items-start gap-2.5 rounded-[12px] px-4 py-3"
+            className="flex items-start gap-2.5 rounded-[8px] px-4 py-3"
             style={{ background: 'rgba(245,158,11,0.04)', border: '1px solid rgba(245,158,11,0.10)' }}
           >
             <Zap className="w-3.5 h-3.5 text-amber-500 mt-0.5 flex-none" />
