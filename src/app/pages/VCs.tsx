@@ -549,7 +549,7 @@ function VCCompareModal({ firms, onClose }: { firms: VCFirm[]; onClose: () => vo
                 {rows.map((row) => (
                   <tr key={row.label} className="border-t border-gray-100">
                     <td className="py-3 pr-4 text-xs font-semibold text-gray-500 flex items-center gap-1.5">
-                      <row.icon className="w-3.5 h-3.5 text-gray-300" />{t(row.labelKey)}
+                      <row.icon className="w-3.5 h-3.5 text-gray-300" />{row.label}
                     </td>
                     {firms.map((f) => (
                       <td key={f.id} className="py-3 px-4 text-sm font-bold text-[#0F172A]">{row.value(f)}</td>

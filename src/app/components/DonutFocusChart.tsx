@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   PieChart,
   Pie,
@@ -76,23 +76,34 @@ function DarkTooltip({ d }: { d: PieDatum }) {
 
 export function DonutFocusChart({ data, accentColor, height = 190 }: Props) {
   const [hovered, setHovered] = useState<PieDatum | null>(null);
-  const total = data.reduce((s, d) => s + (d.weight ?? 0), 0);
 
-  // Normalise weights → whole-number percentages; suppress micro-slivers < 4%
-  // so the chart never looks cluttered when a firm has 5-6 narrow slivers.
-  const pieData: PieDatum[] = data
-    .map(d => ({
-      sector: d.sector,
-      weight: d.weight,
-      pct:    total > 0 ? Math.round((d.weight / total) * 100) : 0,
-      color:  sectorColor(d.sector, accentColor),
-    }))
-    .filter(d => d.pct >= 4)
-    .sort((a, b) => b.weight - a.weight);
+  // Memoized so hover state (which re-renders this component on every slice
+  // mouseenter/mouseleave) doesn't hand Recharts a new pieData array
+  // reference each time — that read as changed data and replayed the 600ms
+  // entrance animation on every hover, which across a grid of cards was
+  // heavy enough to drop frames and leave stale UI elsewhere on the page
+  // (e.g. the nav dropdown) stuck mid-transition.
+  const { pieData, top, topColor, topPct } = useMemo(() => {
+    const total = data.reduce((s, d) => s + (d.weight ?? 0), 0);
 
-  const top        = topSector(pieData.map(d => ({ sector: d.sector, weight: d.weight })));
-  const topColor   = top ? sectorColor(top.sector, accentColor) : accentColor;
-  const topPct     = top && total > 0 ? Math.round((top.weight / total) * 100) : null;
+    // Normalise weights → whole-number percentages; suppress micro-slivers < 4%
+    // so the chart never looks cluttered when a firm has 5-6 narrow slivers.
+    const pieData: PieDatum[] = data
+      .map(d => ({
+        sector: d.sector,
+        weight: d.weight,
+        pct:    total > 0 ? Math.round((d.weight / total) * 100) : 0,
+        color:  sectorColor(d.sector, accentColor),
+      }))
+      .filter(d => d.pct >= 4)
+      .sort((a, b) => b.weight - a.weight);
+
+    const top      = topSector(pieData.map(d => ({ sector: d.sector, weight: d.weight })));
+    const topColor = top ? sectorColor(top.sector, accentColor) : accentColor;
+    const topPct   = top && total > 0 ? Math.round((top.weight / total) * 100) : null;
+
+    return { pieData, top, topColor, topPct };
+  }, [data, accentColor]);
 
   // Edge-case: all sectors are below the 4% threshold → show full ring in accent
   if (pieData.length === 0) {
