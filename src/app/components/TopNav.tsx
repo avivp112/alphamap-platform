@@ -461,7 +461,7 @@ export function TopNav() {
                 aria-expanded={menuOpen}
                 aria-haspopup="menu"
                 aria-label={t('header.accountMenu')}
-                className="flex items-center gap-2 rounded-full border border-gray-200 p-1 pr-2.5 hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-2 rounded-lg border border-gray-200 p-1 pr-2.5 hover:bg-gray-50 transition-colors"
               >
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 flex-none">
                   {initials ? (

@@ -952,7 +952,7 @@ function StockPriceChart({ ticker }: { ticker: string }) {
           <button
             key={r}
             onClick={() => setRange(r)}
-            className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-colors ${
+            className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors ${
               range === r ? "bg-[#0F172A] text-white" : "text-gray-400 hover:bg-gray-100 hover:text-[#0F172A]"
             }`}
           >

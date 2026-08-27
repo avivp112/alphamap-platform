@@ -1098,7 +1098,7 @@ export function LandingPage() {
         </h2>
         <button
           onClick={() => navigate("/pricing")}
-          className="rounded-full bg-white px-10 py-4 text-base font-semibold text-[#111827] shadow-[0_4px_14px_0_rgba(0,0,0,0.25)] transition-all hover:bg-gray-100 hover:-translate-y-0.5"
+          className="rounded-lg bg-white px-10 py-4 text-base font-semibold text-[#111827] shadow-[0_4px_14px_0_rgba(0,0,0,0.25)] transition-all hover:bg-gray-100 hover:-translate-y-0.5"
         >
           {t("landing.ctaButton")}
         </button>

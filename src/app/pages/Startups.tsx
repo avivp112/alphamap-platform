@@ -1651,7 +1651,8 @@ function TearsheetModal({ startup, onClose, onNavigate }: { startup: StartupList
         style={{
           height: "85vh",
           border: "1px solid rgba(15,23,42,0.08)",
-          borderRadius: 24,
+          borderRadius: 10,
+          overflow: "hidden",
           boxShadow: "0 32px 80px rgba(15,23,42,0.35), 0 0 0 1px rgba(15,23,42,0.02)",
         }}
         onClick={(e) => e.stopPropagation()}
