@@ -144,8 +144,8 @@ interface StartupRow {
   growth_trend: string | null;
   country: string | null;
   city: string | null;
-  founders: Array<{ name: string; linkedin_url: string | null }> | null;
-  leadership: Array<{ name: string; role: string; linkedin_url?: string | null }> | null;
+  founders: Array<PersonQualityTags & { name: string; linkedin_url: string | null }> | null;
+  leadership: Array<PersonQualityTags & { name: string; role: string; linkedin_url?: string | null; joined_date?: string | null }> | null;
   competitors: Competitor[] | null;
   acquisitions: Acquisition[] | null;
   patent_count: number | null;
@@ -212,7 +212,16 @@ interface ExtractedRound {
   source_url?: string | null;
 }
 
-interface ExtractedFounder { name: string; linkedin_url?: string }
+// Background signals feeding calculate_alphamap_score's Founder & Team
+// Quality pillar — any ONE person on the team carrying a flag counts for
+// the whole company. Only ever set when genuinely verified, never guessed.
+interface PersonQualityTags {
+  had_prior_exit?: boolean;
+  elite_background?: boolean;
+  notable_pedigree?: boolean;
+}
+
+interface ExtractedFounder extends PersonQualityTags { name: string; linkedin_url?: string }
 
 interface ExtractedProfile {
   website?: string;
@@ -236,7 +245,14 @@ interface ExtractedNewsItem {
   published_date?: string;
 }
 
-interface ExtractedLeader { name: string; role: string; linkedin_url?: string }
+interface ExtractedLeader extends PersonQualityTags {
+  name: string;
+  role: string;
+  linkedin_url?: string;
+  // When this person joined, if known — feeds the Recency & Activity
+  // pillar. Best-effort; far more often omitted than known.
+  joined_date?: string;
+}
 
 interface ExtractedHeadcountPoint { date: string; employee_count: number; source?: string }
 
@@ -551,6 +567,26 @@ async function fetchCompanyWebsite(website: string | null | undefined): Promise<
 }
 
 // ── Claude: extract complete company profile in one call ──────────────────────
+// Shared tool-schema properties for a person (founder or leadership entry)
+// — feeds calculate_alphamap_score's Founder & Team Quality pillar. Kept
+// deliberately conservative in the descriptions: these are strong,
+// specific signals that must be genuinely verifiable in the research, not
+// inferred from a title or company reputation alone.
+const PERSON_QUALITY_TAG_PROPERTIES = {
+  had_prior_exit: {
+    type: "boolean" as const,
+    description: "TRUE only if you find clear evidence this person previously FOUNDED a company that was later acquired or went public (IPO). Being an early employee or executive at a company that exited does NOT count — must have been a founder/co-founder of the exited company. Omit if unknown rather than guessing false.",
+  },
+  elite_background: {
+    type: "boolean" as const,
+    description: "TRUE only if you find clear evidence of an elite technical/military background — e.g. an elite intelligence or technology military unit (such as Unit 8200, Talpiot, or an equivalent unit in another country), or a leadership role at a top-tier R&D lab/research institution. A generic engineering degree or a normal corporate job does NOT qualify. Omit if unknown rather than guessing false.",
+  },
+  notable_pedigree: {
+    type: "boolean" as const,
+    description: "TRUE only if you find clear evidence of EITHER a key leadership/senior role (not junior) at a company that was a unicorn ($1B+ valuation) AT THE TIME they worked there, OR a degree from a widely-recognized elite university (e.g. MIT, Stanford, Harvard, Technion, or similarly ranked institutions). Omit if unknown rather than guessing false.",
+  },
+} as const;
+
 // `website` (already known for most rows from the master CSV import, which
 // deliberately never resets it) disambiguates generic/ambiguous company names
 // — e.g. a one-word name like "Actuality" collides with unrelated Instagram
@@ -639,6 +675,7 @@ async function researchCompany(name: string, website?: string | null): Promise<E
                   properties: {
                     name:         { type: "string", description: "Full legal name." },
                     linkedin_url: { type: "string", description: "Their personal linkedin.com/in/... profile URL, if found. Omit if not found — never guess or construct one from a name." },
+                    ...PERSON_QUALITY_TAG_PROPERTIES,
                   },
                   required: ["name"],
                 },
@@ -751,6 +788,8 @@ async function researchCompany(name: string, website?: string | null): Promise<E
                 name:         { type: "string", description: "Full name." },
                 role:         { type: "string", description: "Current title (CEO, CTO, Co-Founder, Senior Engineer, etc.)." },
                 linkedin_url: { type: "string", description: "Their personal linkedin.com/in/... profile URL, if found. Omit if not found — never guess or construct one from a name." },
+                joined_date:  { type: "string", description: "Date they joined this company in this role, YYYY-MM-DD (YYYY-MM-01 if only month+year known). Only for a genuinely dateable hire (e.g. a hiring announcement or press mention) — omit for anyone whose start date isn't stated anywhere, which is most people." },
+                ...PERSON_QUALITY_TAG_PROPERTIES,
               },
               required: ["name", "role"],
             },
@@ -1268,11 +1307,18 @@ async function patchStartupProfile(
   }
 
   // Founders: merge as union (additive, never destructive), deduped by name.
-  // Also backfills linkedin_url onto an already-recorded founder if this pass
-  // found one and a prior pass didn't — never overwrites an existing URL.
+  // Also backfills linkedin_url and the quality tags onto an already-
+  // recorded founder if this pass found one and a prior pass didn't —
+  // never overwrites an existing (already-true) value.
   const cleanFounders = (profile.founders ?? [])
     .filter((f) => f && f.name && String(f.name).trim())
-    .map((f) => ({ name: String(f.name).trim(), linkedin_url: f.linkedin_url?.trim() || null }));
+    .map((f) => ({
+      name: String(f.name).trim(),
+      linkedin_url: f.linkedin_url?.trim() || null,
+      had_prior_exit: f.had_prior_exit,
+      elite_background: f.elite_background,
+      notable_pedigree: f.notable_pedigree,
+    }));
 
   if (cleanFounders.length > 0) {
     const existingFounders = existing.founders ?? [];
@@ -1281,11 +1327,15 @@ async function patchStartupProfile(
 
     const updatedExisting = existingFounders.map((ef) => {
       const match = byName.get(ef.name.toLowerCase());
-      if (match?.linkedin_url && !ef.linkedin_url) {
-        foundersChanged = true;
-        return { ...ef, linkedin_url: match.linkedin_url };
+      if (!match) return ef;
+      const personPatch: Record<string, unknown> = {};
+      if (match.linkedin_url && !ef.linkedin_url) personPatch.linkedin_url = match.linkedin_url;
+      for (const tag of ["had_prior_exit", "elite_background", "notable_pedigree"] as const) {
+        if (match[tag] === true && ef[tag] !== true) personPatch[tag] = true;
       }
-      return ef;
+      if (Object.keys(personPatch).length === 0) return ef;
+      foundersChanged = true;
+      return { ...ef, ...personPatch };
     });
 
     const existingNames = new Set(existingFounders.map((f) => f.name.toLowerCase()));

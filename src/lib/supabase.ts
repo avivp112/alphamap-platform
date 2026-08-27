@@ -58,9 +58,31 @@ export type RoundType =
 export type GrowthTrend =
   | "rapid growth" | "moderate growth" | "stable" | "reduction" | "unknown";
 
-export interface Leader { name: string; role: string; linkedin_url?: string | null }
+// Background signals feeding the AlphaMap Score's Founder & Team Quality
+// pillar (see calculate_alphamap_score / scripts/bulk_enrich_all.ts) — any
+// ONE person on the team carrying a flag counts for the whole company.
+// Absent/undefined reads as false, never a penalty by itself; these are
+// only ever set when genuinely verified, never guessed.
+export interface PersonQualityTags {
+  had_prior_exit?: boolean | null;    // founded a company that was acquired or IPO'd
+  elite_background?: boolean | null;  // elite technical/military unit, top R&D lab
+  notable_pedigree?: boolean | null;  // key role at a unicorn, or an elite university degree
+}
 
-export interface Founder { name: string; linkedin_url?: string | null }
+export interface Leader extends PersonQualityTags {
+  name: string;
+  role: string;
+  linkedin_url?: string | null;
+  // When this person joined, if known — feeds the Recency & Activity pillar
+  // ("a C-level hire in the last 30-90 days"). Best-effort; omitted far
+  // more often than it's known.
+  joined_date?: string | null;
+}
+
+export interface Founder extends PersonQualityTags {
+  name: string;
+  linkedin_url?: string | null;
+}
 
 // startup_id is set when the competitor could be matched to another row in
 // this table by website domain (see scripts/bulk_enrich_all.ts), enabling a
@@ -364,25 +386,35 @@ export interface AlphaScorePillar {
   score: number | null;
   valid: boolean;
   detail: {
-    value_creation_x?: number;
-    burn_proxy_k?: number;
-    tier?: string;
-    hc_growth_pct?: number;
-    serial_founder?: boolean;
-    investor_tier?: number | null;
-    follow_on?: boolean;
-    source?: string;
+    // investor_quality
+    best_tier?: number | null;
     n_investors?: number;
     n_matched?: number;
-    // mature_private track only
-    headcount?: number;
-    years_active?: number | null;
-    stability?: string;
-    scale_score?: number;
-    n_acquisitions?: number | null;
+    source?: string;
+    // team_quality
+    prior_exit?: boolean;
+    elite_background?: boolean;
+    notable_pedigree?: boolean;
+    n_people?: number;
+    // growth_velocity
+    growth_pct?: number;
+    earliest_date?: string | null;
+    latest_date?: string | null;
+    // recency_activity
+    days_since?: number | null;
+    signal?: 'funding_round' | 'leadership_hire' | 'news' | null;
+    most_recent_date?: string | null;
+    // media_coverage
+    n_recent_articles?: number;
+    window_days?: number;
   };
 }
 
+// 5-pillar AlphaMap Score model (see supabase/migrations/
+// 20260827000000_update_alphamap_score_formula.sql for the full formula).
+// archetype/archetype_reasons are informational only — classify_company_
+// archetype() no longer drives pillar weights, it's just surfaced as
+// context (and is still used independently by PrivateEquity.tsx).
 export interface AlphaScore {
   score: number;
   tier: 'A' | 'B' | 'C';
@@ -392,10 +424,15 @@ export interface AlphaScore {
   base_score: number;
   macro_adj_pct: number;
   sector_id?: string;
+  // true when Investor Quality + Founder & Team Quality were both >= 85 and
+  // the safety floor had to raise the final score up to 70.
+  safety_floor_applied?: boolean;
   pillars: {
-    capital_efficiency: AlphaScorePillar;
-    talent_velocity: AlphaScorePillar;
-    ecosystem_signal: AlphaScorePillar;
+    investor_quality: AlphaScorePillar;
+    team_quality: AlphaScorePillar;
+    growth_velocity: AlphaScorePillar;
+    recency_activity: AlphaScorePillar;
+    media_coverage: AlphaScorePillar;
   };
   error?: string;
   reason?: string;
@@ -447,9 +484,11 @@ export async function fetchAlphaScore(startupId: string): Promise<AlphaScore | n
     console.warn(`[AlphaMapEngine] startup ${startupId} returned no score:`, score.error ?? score.reason);
   } else if (score?.pillars) {
     console.log(`[AlphaMapEngine] startup ${startupId} → score=${score.score} tier=${score.tier} confidence=${score.confidence}`, {
-      capital_efficiency: score.pillars.capital_efficiency,
-      talent_velocity:    score.pillars.talent_velocity,
-      ecosystem_signal:   score.pillars.ecosystem_signal,
+      investor_quality:  score.pillars.investor_quality,
+      team_quality:      score.pillars.team_quality,
+      growth_velocity:   score.pillars.growth_velocity,
+      recency_activity:  score.pillars.recency_activity,
+      media_coverage:    score.pillars.media_coverage,
     });
   }
   return score;

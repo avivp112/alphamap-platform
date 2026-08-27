@@ -576,9 +576,11 @@ function AlphaMapScorePanel({ data, loading, err }: {
 
   const cfg = TIER_CONFIG[data.tier] ?? TIER_CONFIG['C'];
   const pillars = [
-    { key: 'capital_efficiency', pillar: data.pillars?.capital_efficiency },
-    { key: 'talent_velocity',    pillar: data.pillars?.talent_velocity },
-    { key: 'ecosystem_signal',   pillar: data.pillars?.ecosystem_signal },
+    { key: 'investor_quality',  pillar: data.pillars?.investor_quality },
+    { key: 'team_quality',      pillar: data.pillars?.team_quality },
+    { key: 'growth_velocity',   pillar: data.pillars?.growth_velocity },
+    { key: 'recency_activity',  pillar: data.pillars?.recency_activity },
+    { key: 'media_coverage',    pillar: data.pillars?.media_coverage },
   ].filter((p): p is { key: string; pillar: NonNullable<typeof p.pillar> } => p.pillar != null);
 
   return (
@@ -590,13 +592,17 @@ function AlphaMapScorePanel({ data, loading, err }: {
         {data.archetype && (
           <span
             className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-white/70 text-gray-500 border border-black/5"
-            title={
-              data.archetype === 'mature_private'
-                ? 'Scored on the mature-company track: absolute scale, longevity, headcount stability, and M&A activity — not funding velocity.'
-                : 'Scored on the venture track: capital efficiency, headcount growth rate, and investor quality.'
-            }
+            title="Company maturity classification — informational only, does not change how the score is weighted."
           >
             {data.archetype === 'mature_private' ? 'Mature Private' : 'Venture-Backed'}
+          </span>
+        )}
+        {data.safety_floor_applied && (
+          <span
+            className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200"
+            title="Investor Quality and Founder & Team Quality both scored 85+, so the safety floor raised this score to at least Tier B — protects strong stealth/deep-tech companies whose public visibility (growth, press) is naturally thin."
+          >
+            Floor applied
           </span>
         )}
         <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${cfg.badge}`}>{cfg.label}</span>
@@ -669,29 +675,43 @@ function AlphaMapScorePanel({ data, loading, err }: {
                 </span>
               </div>
               <div className="text-[10px] text-slate-500 space-y-0.5">
-                {pillar.detail?.value_creation_x != null && (
-                  <div>{t("startups.valueCreation")} <span className="text-slate-300">{pillar.detail.value_creation_x.toFixed(2)}×</span></div>
-                )}
-                {pillar.detail?.burn_proxy_k != null && (
-                  <div>{t("startups.burnProxy")} <span className="text-slate-300">${pillar.detail.burn_proxy_k.toFixed(0)}k/hire</span></div>
-                )}
-                {pillar.detail?.hc_growth_pct != null && (
-                  <div>{t("startups.hcGrowth")} <span className="text-slate-300">{pillar.detail.hc_growth_pct.toFixed(1)}%</span></div>
-                )}
-                {pillar.detail?.serial_founder != null && (
-                  <div>{t("startups.serialFounder")} <span className="text-slate-300">{pillar.detail.serial_founder ? 'Yes +10' : 'No'}</span></div>
-                )}
-                {pillar.detail?.investor_tier != null && (
-                  <div>{t("startups.investorTierScore")} <span className="text-slate-300">{pillar.detail.investor_tier}</span></div>
-                )}
-                {pillar.detail?.follow_on != null && (
-                  <div>{t("startups.followOnInvestors")} <span className="text-slate-300">{pillar.detail.follow_on ? 'Yes +10' : 'No'}</span></div>
+                {/* Investor Quality */}
+                {pillar.detail?.best_tier != null && (
+                  <div>Best investor tier <span className="text-slate-300">Tier {pillar.detail.best_tier}</span></div>
                 )}
                 {pillar.detail?.n_investors != null && (
-                  <div>{t("startups.investorsTracked")} <span className="text-slate-300">{pillar.detail.n_investors} ({pillar.detail.n_matched ?? 0} ranked)</span></div>
+                  <div>Investors on record <span className="text-slate-300">{pillar.detail.n_investors} ({pillar.detail.n_matched ?? 0} ranked)</span></div>
                 )}
-                {pillar.detail?.tier != null && (
-                  <div>{t("startups.basis")} <span className="text-slate-300 capitalize">{pillar.detail.tier.replace(/_/g, ' ')}</span></div>
+                {/* Founder & Team Quality */}
+                {pillar.detail?.prior_exit != null && (
+                  <div>Prior exit <span className="text-slate-300">{pillar.detail.prior_exit ? 'Yes +40' : 'No'}</span></div>
+                )}
+                {pillar.detail?.elite_background != null && (
+                  <div>Elite background <span className="text-slate-300">{pillar.detail.elite_background ? 'Yes +35' : 'No'}</span></div>
+                )}
+                {pillar.detail?.notable_pedigree != null && (
+                  <div>Notable pedigree <span className="text-slate-300">{pillar.detail.notable_pedigree ? 'Yes +25' : 'No'}</span></div>
+                )}
+                {pillar.detail?.n_people != null && (
+                  <div>Team members checked <span className="text-slate-300">{pillar.detail.n_people}</span></div>
+                )}
+                {/* Growth Velocity */}
+                {pillar.detail?.growth_pct != null && (
+                  <div>Headcount growth <span className="text-slate-300">{pillar.detail.growth_pct.toFixed(1)}%</span></div>
+                )}
+                {/* Recency & Activity */}
+                {pillar.detail?.days_since != null && (
+                  <div>Days since last activity <span className="text-slate-300">{pillar.detail.days_since}</span></div>
+                )}
+                {pillar.detail?.signal != null && (
+                  <div>Most recent signal <span className="text-slate-300 capitalize">{pillar.detail.signal.replace(/_/g, ' ')}</span></div>
+                )}
+                {/* Media Coverage & Mentions */}
+                {pillar.detail?.n_recent_articles != null && (
+                  <div>Articles (last {pillar.detail.window_days ?? 90}d) <span className="text-slate-300">{pillar.detail.n_recent_articles}</span></div>
+                )}
+                {pillar.detail?.source != null && (
+                  <div>{t("startups.basis")} <span className="text-slate-300 capitalize">{pillar.detail.source.replace(/_/g, ' ')}</span></div>
                 )}
               </div>
             </div>
@@ -1263,14 +1283,14 @@ function TalentGrowthTab({
   }, [startup.id]);
 
   const chartData = realPts && realPts.length >= 2 ? realHistoryToChartPoints(realPts) : null;
-  const talentPillar = alphaScore?.pillars?.talent_velocity ?? null;
+  const growthPillar = alphaScore?.pillars?.growth_velocity ?? null;
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <StatCard icon={Users}    label="Employees"      value={fmtEmp(startup.employee_count)} accent="#0e7490" />
-        <StatCard icon={Activity} label="Talent Velocity" accent="#6d28d7"
-          value={talentPillar?.valid && talentPillar.score != null ? `${safeFixed(talentPillar.score, 0)} / 100` : "—"} />
+        <StatCard icon={Activity} label="Growth Velocity" accent="#6d28d7"
+          value={growthPillar?.valid && growthPillar.score != null ? `${safeFixed(growthPillar.score, 0)} / 100` : "—"} />
         <div className="rounded-[14px] p-4 flex flex-col gap-2 border bg-gray-50 border-gray-100">
           <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">{t("startups.growthTrend")}</span>
           <GrowthTrendBadge trend={startup.growth_trend} light />
@@ -1280,18 +1300,18 @@ function TalentGrowthTab({
         </div>
       </div>
 
-      {!alphaLoading && talentPillar && (
+      {!alphaLoading && growthPillar?.valid && (
         <div className="bg-gray-50 border border-gray-100 rounded-[14px] p-5">
           <div className="flex items-center gap-2 mb-3">
             <Activity className="w-4 h-4 text-[#6d28d7]" />
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("startups.talentVelocity")}</h3>
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Growth Velocity</h3>
           </div>
           <div className="text-[11px] text-gray-500 space-y-1.5">
-            {talentPillar.detail?.hc_growth_pct != null && (
-              <div>{t("startups.headcountGrowth")} <span className="text-gray-700 font-medium">{talentPillar.detail.hc_growth_pct.toFixed(1)}%</span></div>
+            {growthPillar.detail?.growth_pct != null && (
+              <div>{t("startups.headcountGrowth")} <span className="text-gray-700 font-medium">{growthPillar.detail.growth_pct.toFixed(1)}%</span></div>
             )}
-            {talentPillar.detail?.serial_founder != null && (
-              <div>{t("startups.serialFounderBonus")} <span className="text-gray-700 font-medium">{talentPillar.detail.serial_founder ? "Yes (+10)" : "No"}</span></div>
+            {growthPillar.detail?.earliest_date && growthPillar.detail?.latest_date && (
+              <div>Measured <span className="text-gray-700 font-medium">{growthPillar.detail.earliest_date} → {growthPillar.detail.latest_date}</span></div>
             )}
           </div>
         </div>
