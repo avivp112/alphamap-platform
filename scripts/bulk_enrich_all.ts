@@ -185,6 +185,8 @@ interface NewsItem {
   url: string;
   source: string | null;
   published_date: string | null;
+  summary: string | null;
+  image_url: string | null;
 }
 
 interface Competitor {
@@ -262,6 +264,8 @@ interface ExtractedNewsItem {
   url: string;
   source?: string;
   published_date?: string;
+  summary?: string;
+  image_url?: string;
 }
 
 interface ExtractedLeader extends PersonQualityTags {
@@ -516,6 +520,70 @@ async function tavilyExtractUrls(urls: string[]): Promise<string | null> {
   }
 }
 
+// Tavily search with images included — used ONLY for the recent-news query,
+// so the news[] field can carry a real article image instead of always
+// omitting it. Tavily-only (no Serper equivalent used here): when Tavily is
+// unavailable/exhausted this simply returns no images, same as any other
+// best-effort source in this script. Images returned are a flat list for
+// the whole query, not attributed to a specific result — the prompt is
+// instructed to only use one on a news item when it can confidently match
+// it to that specific article, never as a generic filler.
+async function tavilyNewsSearch(query: string): Promise<{ text: string | null; images: string[] }> {
+  if (tavilyExhausted) return { text: null, images: [] };
+  try {
+    const res = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_key: process.env.TAVILY_API_KEY,
+        query,
+        search_depth: "advanced",
+        max_results: 6,
+        include_answer: true,
+        include_images: true,
+        include_image_descriptions: true,
+      }),
+    });
+
+    if (res.status === 401 || res.status === 402 || res.status === 432) {
+      tavilyExhausted = true;
+      return { text: null, images: [] };
+    }
+    if (res.status === 429) {
+      await sleep(15_000);
+      return tavilyNewsSearch(query);
+    }
+    if (!res.ok) return { text: null, images: [] };
+
+    const data = await res.json() as {
+      answer?: string;
+      results?: Array<{ title: string; url: string; content?: string }>;
+      images?: Array<string | { url: string; description?: string }>;
+    };
+    const parts: string[] = [];
+    if (data.answer) parts.push(`Summary: ${data.answer}`);
+    for (const r of data.results ?? []) {
+      parts.push(`[${r.title}]\n${r.url}\n${String(r.content ?? "").slice(0, 600)}`);
+    }
+
+    const images = (data.images ?? [])
+      .map((img) => typeof img === "string" ? { url: img, description: "" } : { url: img.url, description: img.description ?? "" })
+      .filter((img) => img.url)
+      .slice(0, 8);
+
+    tavilyCallCount++;
+    if (tavilyCallCount >= TAVILY_BUDGET) tavilyExhausted = true;
+
+    if (!parts.length && images.length === 0) return { text: null, images: [] };
+    return {
+      text: parts.length ? parts.join("\n---\n") : null,
+      images: images.map((img) => img.description ? `${img.url} — ${img.description}` : img.url),
+    };
+  } catch {
+    return { text: null, images: [] };
+  }
+}
+
 // ── Serper (Google Search API) fallback ───────────────────────────────────────
 // No serialisation lock needed — Serper is a proper REST API with no
 // scraping-style rate limits. All 4 per-company searches fire in parallel.
@@ -580,6 +648,18 @@ async function webSearch(query: string): Promise<string | null> {
     // tavilyExhausted may now be true; fall through to Serper
   }
   return serperSearch(query);
+}
+
+// Same fallback shape as webSearch, but via tavilyNewsSearch so the news
+// query specifically can come back with images. Serper has no equivalent
+// used here, so the Serper-fallback path simply carries no images — same
+// best-effort posture as every other Tavily-only enhancement in this script.
+async function newsSearchWithImages(query: string): Promise<{ text: string | null; images: string[] }> {
+  if (!tavilyExhausted) {
+    const r = await tavilyNewsSearch(query);
+    if (r.text !== null || r.images.length > 0) return r;
+  }
+  return { text: await serperSearch(query), images: [] };
 }
 
 // ── Company's own website ──────────────────────────────────────────────────
@@ -691,7 +771,7 @@ async function researchCompany(
     : country
       ? ` ${country} (startup OR tech company)`
       : "";
-  const [historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw, newsRaw, ownSiteRaw] = await Promise.all([
+  const [historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw, newsResult, ownSiteRaw] = await Promise.all([
     webSearch(`"${name}"${anchor} seed round "Series A" first funding earliest founding investors site:crunchbase.com OR site:techcrunch.com OR site:pitchbook.com`),
     webSearch(`"${name}"${anchor} total funding raised since founding all rounds USD million billion valuation announcement history`),
     webSearch(`"${name}"${anchor} lead investor venture capital backed participated investors funded round investment amount check size`),
@@ -699,9 +779,13 @@ async function researchCompany(
     webSearch(`"${name}"${anchor} competitors alternatives vs rivals "compared to" market landscape`),
     // Recency-biased, distinct from the other searches (which skew toward
     // funding history / profile facts, not "what's been published lately").
-    webSearch(`"${name}"${anchor} news 2025 2026 site:techcrunch.com OR site:venturebeat.com OR site:prnewswire.com OR site:businesswire.com OR site:forbes.com OR site:sifted.eu launch funding announcement`),
+    // Requests images alongside the search (Tavily only) so news[] can
+    // carry a real article image instead of always omitting one.
+    newsSearchWithImages(`"${name}"${anchor} news 2025 2026 site:techcrunch.com OR site:venturebeat.com OR site:prnewswire.com OR site:businesswire.com OR site:forbes.com OR site:sifted.eu launch funding announcement`),
     fetchCompanyWebsite(website),
   ]);
+  const newsRaw    = newsResult.text;
+  const newsImages = newsResult.images;
 
   if (![historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw, newsRaw, ownSiteRaw].some(Boolean)) return null;
 
@@ -713,7 +797,10 @@ async function researchCompany(
     `## Company Profile & Headcount\n${profileRaw   ?? "(search failed)"}`,
     `## Competitors & Alternatives\n${competitorsRaw ?? "(search failed)"}`,
     `## Recent News & Press Coverage (for the news[] field — only use articles with a real, findable publication date)\n${newsRaw ?? "(search failed)"}`,
-  ].join("\n\n");
+    newsImages.length > 0
+      ? `## Images Found Alongside The News Search (each is "url" or "url — description"; NOT pre-matched to any specific article above — for news[].image_url, only use one if its URL or description clearly corresponds to a SPECIFIC article by subject/company; never attach a generic, unrelated, or best-guess image, and never invent an image URL not listed here)\n${newsImages.join("\n")}`
+      : "",
+  ].filter(Boolean).join("\n\n");
 
   const msg = await anthropic.messages.create({
     model: MODEL,
@@ -995,6 +1082,8 @@ async function researchCompany(
                 url:            { type: "string", description: "Direct URL to the article." },
                 source:         { type: "string", description: "Publication name (e.g. 'TechCrunch', 'VentureBeat'). Omit if unknown." },
                 published_date: { type: "string", description: "Publication date YYYY-MM-DD. Use YYYY-MM-01 if only month+year is known. Omit if genuinely undated." },
+                summary:        { type: "string", description: "1-2 sentence summary of what the article actually says, based on its content in the research below — not a restatement of the headline. Omit if the research only gave you the headline/URL with no real content to summarize." },
+                image_url:      { type: "string", description: "Only fill this from the 'Images Found Alongside The News Search' section, and only when you can confidently match a specific image to THIS article by subject/company/context. Omit whenever there's no images section, no confident match, or you'd otherwise be guessing — never reuse a generic or unrelated image, and never invent a URL." },
               },
               required: ["title", "url"],
             },
@@ -1577,6 +1666,8 @@ async function patchStartupProfile(
       url: n.url,
       source: n.source ?? null,
       published_date: n.published_date ?? null,
+      summary: n.summary ?? null,
+      image_url: n.image_url ?? null,
     }));
   }
 

@@ -72,11 +72,30 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return tag.includes("NASDAQ") || tag.includes("NYSE");
     };
 
+    // FMP returns each endpoint's own results in ITS relevance order, but
+    // merging the two lists (symbol matches, then name matches) with no
+    // re-ranking meant a search for a full company name could put an
+    // unrelated ticker ahead of the actual company — e.g. searching
+    // "Snowflake" wasn't guaranteed to put SNOW first. Rank by how well
+    // EITHER the symbol or the name matches what was typed: exact match
+    // first, then starts-with, then contains — so the obvious answer is
+    // always at the top regardless of which endpoint or order it came back in.
+    const qLower = query.toLowerCase();
+    function matchRank(r: FmpSearchResult): number {
+      const sym  = r.symbol.toLowerCase();
+      const name = r.name.toLowerCase();
+      if (sym === qLower || name === qLower) return 0;
+      if (sym.startsWith(qLower) || name.startsWith(qLower)) return 1;
+      if (name.includes(qLower)) return 2;
+      return 3;
+    }
+
     const seen = new Set<string>();
     const results = merged
       .filter((r) => r.symbol && r.name)
       .filter(isNasdaqOrNyse)
       .filter((r) => (seen.has(r.symbol) ? false : (seen.add(r.symbol), true)))
+      .sort((a, b) => matchRank(a) - matchRank(b))
       .slice(0, 10)
       .map((r) => ({ symbol: r.symbol, name: r.name, exchange: r.exchange || r.exchangeFullName || "" }));
 

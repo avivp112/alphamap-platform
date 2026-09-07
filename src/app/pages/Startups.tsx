@@ -20,7 +20,7 @@ import {
   ChevronDown, ChevronLeft, ChevronRight, Building2, CheckSquare, Square,
   GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2, ChevronUp,
   SlidersHorizontal, Award, Eye, HelpCircle,
-  Linkedin, Facebook, Instagram, Newspaper, Layers,
+  Linkedin, Facebook, Instagram, Newspaper, Layers, ExternalLink,
 } from "lucide-react";
 import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
@@ -1557,32 +1557,66 @@ function NewsTab({ startup }: { startup: Startup }) {
   const sorted = [...items].sort((a, b) => (b.published_date ?? "").localeCompare(a.published_date ?? ""));
 
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       {sorted.map((n, idx) => (
-        <a
-          key={`${n.url}-${idx}`}
-          href={n.url.startsWith("http") ? n.url : `https://${n.url}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-start gap-3 bg-gray-50 border border-gray-100 rounded-[8px] px-4 py-3.5 hover:border-cyan-300 hover:bg-cyan-50/40 transition-colors"
-        >
-          <Newspaper className="w-4 h-4 text-gray-400 flex-none mt-0.5" />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-bold text-gray-900 leading-snug">{n.title}</p>
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
-              {n.source && (
-                <span className="text-[10px] font-semibold text-gray-500">{n.source}</span>
-              )}
-              {n.published_date && (
-                <span className="text-[10px] font-semibold text-cyan-700 bg-cyan-100 rounded-full px-2 py-0.5">
-                  {relativeTime(n.published_date)}
-                </span>
-              )}
-            </div>
-          </div>
-        </a>
+        <NewsCard key={`${n.url}-${idx}`} item={n} />
       ))}
     </div>
+  );
+}
+
+// Rectangular card: article image on top (falls back to a neutral
+// placeholder — never a stock/generic photo — when no image_url was found
+// or it fails to load), then headline, summary, and a source/timeline
+// footer. image_url and summary are best-effort fields from the enrichment
+// pipeline — most older articles will only have title/url/source/date, so
+// both sections degrade gracefully rather than leaving obvious gaps.
+function NewsCard({ item: n }: { item: NewsItem }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const showImage = !!n.image_url && !imgFailed;
+
+  return (
+    <a
+      href={n.url.startsWith("http") ? n.url : `https://${n.url}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="group flex flex-col bg-white border border-gray-100 rounded-lg overflow-hidden shadow-[0_1px_3px_rgba(15,23,42,0.04)] hover:border-cyan-300 hover:shadow-[0_4px_16px_rgba(15,23,42,0.08)] transition-all"
+    >
+      <div className="relative w-full aspect-[16/9] bg-gray-100 flex-none overflow-hidden">
+        {showImage ? (
+          <img
+            src={n.image_url!}
+            alt=""
+            loading="lazy"
+            onError={() => setImgFailed(true)}
+            className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+            <Newspaper className="w-7 h-7 text-gray-300" />
+          </div>
+        )}
+        <ExternalLink className="absolute top-2.5 right-2.5 w-3.5 h-3.5 text-white drop-shadow opacity-0 group-hover:opacity-100 transition-opacity" />
+      </div>
+
+      <div className="flex flex-col flex-1 p-4">
+        <p className="text-sm font-bold text-gray-900 leading-snug line-clamp-2">{n.title}</p>
+        {n.summary && (
+          <p className="text-xs text-gray-500 leading-relaxed mt-1.5 line-clamp-3">{n.summary}</p>
+        )}
+        <div className="flex items-center gap-2 mt-auto pt-3 flex-wrap">
+          {n.source && (
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{n.source}</span>
+          )}
+          {n.source && n.published_date && <span className="text-gray-300">·</span>}
+          {n.published_date && (
+            <span className="text-[10px] font-semibold text-cyan-700 bg-cyan-100 rounded-full px-2 py-0.5">
+              {relativeTime(n.published_date)}
+            </span>
+          )}
+        </div>
+      </div>
+    </a>
   );
 }
 

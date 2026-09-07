@@ -10,6 +10,7 @@ import {
 import { Layout } from "../components/Layout";
 import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider, QuickQuestionsMenu } from "../components/SideFilterLayout";
 import { fetchInvestors, fetchRecentActiveInvestorNames, type InvestorRow } from "../../lib/supabase";
+import { textMatchRank } from "../../lib/searchRank";
 import { VCModal } from "../components/VCModal";
 import { DonutFocusChart } from "../components/DonutFocusChart";
 import { CompanyLogo } from "../components/CompanyLogo";
@@ -768,13 +769,21 @@ export function VCs() {
       result = result.filter(v => activeNames.has(v.name.trim().toLowerCase()));
     }
 
-    result.sort((a, b) => {
-      const raw = (v: VCFirm) => {
-        const n = v[sortKey] as number | null | undefined;
-        return n == null || isNaN(n as number) ? 0 : n;
-      };
-      return sortDir === "desc" ? raw(b) - raw(a) : raw(a) - raw(b);
-    });
+    if (search) {
+      // A typed search should surface the best-matching firm first — an
+      // exact/prefix name match ahead of one that only matched on
+      // headquarters or sector — rather than being reshuffled by whatever
+      // sort control happens to be selected.
+      result.sort((a, b) => textMatchRank(a.name, search) - textMatchRank(b.name, search));
+    } else {
+      result.sort((a, b) => {
+        const raw = (v: VCFirm) => {
+          const n = v[sortKey] as number | null | undefined;
+          return n == null || isNaN(n as number) ? 0 : n;
+        };
+        return sortDir === "desc" ? raw(b) - raw(a) : raw(a) - raw(b);
+      });
+    }
 
     return result;
   }, [firms, search, filters, sortKey, sortDir, activeNames]);

@@ -139,6 +139,10 @@ export interface NewsItem {
   url: string;
   source?: string | null;
   published_date?: string | null;
+  // Best-effort — omitted by the enrichment pipeline when the article's own
+  // page doesn't expose them (e.g. no og:image, or a paywalled summary).
+  summary?: string | null;
+  image_url?: string | null;
 }
 
 export interface Startup extends CompanySocialLinks {
@@ -272,16 +276,13 @@ function applyStartupSearchFilters(
 ) {
   let q = query;
   if (filters.search) {
+    // Name only — country/city/sector already have their own dedicated
+    // filters, and matching them here too (plus a loose description
+    // substring match) let searches for one company surface a page full of
+    // unrelated companies whose description happened to share a word.
+    // Typing a real company name should reliably surface that company.
     const term = filters.search.replace(/[%,]/g, "");
-    q = q.or(
-      [
-        `name.ilike.%${term}%`,
-        `industry.ilike.%${term}%`,
-        `country.ilike.%${term}%`,
-        `city.ilike.%${term}%`,
-        `description.ilike.%${term}%`,
-      ].join(","),
-    );
+    q = q.ilike("name", `%${term}%`);
   }
   if (filters.sectorParent) q = q.eq("sector_parent", filters.sectorParent);
   if (filters.sectorSubKeywords && filters.sectorSubKeywords.length > 0) {

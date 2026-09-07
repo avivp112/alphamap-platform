@@ -16,6 +16,7 @@ import {
   type PEFirmRow, type PEPortfolioCompany, type PETransaction,
 } from "../../lib/supabase";
 import { useWatchlistMembership, addToWatchlist, removeFromWatchlist, watchlistErrorMessage } from "../../lib/watchlist";
+import { textMatchRank } from "../../lib/searchRank";
 
 // ─── Helpers (same formatting conventions as Startups.tsx) ────────────────────
 
@@ -866,12 +867,20 @@ export function PrivateEquity() {
       result = result.filter(f => f.latest_deal_date != null && new Date(f.latest_deal_date) >= cutoff);
     }
 
-    result.sort((a, b) => {
-      if (sortKey === "deals")     return (b.buyout_count + b.secondary_count + b.debt_count) - (a.buyout_count + a.secondary_count + a.debt_count);
-      if (sortKey === "portfolio") return b.portfolio_count - a.portfolio_count;
-      if (sortKey === "aum")       return (parseAumMillions(b.fund_size) ?? -1) - (parseAumMillions(a.fund_size) ?? -1);
-      return (b.latest_deal_date ?? "").localeCompare(a.latest_deal_date ?? "");
-    });
+    if (search) {
+      // A typed search should surface the best-matching firm first — an
+      // exact/prefix name match ahead of one that only matched on
+      // headquarters — rather than being reshuffled by whatever sort
+      // control happens to be selected.
+      result.sort((a, b) => textMatchRank(a.firm_name, search) - textMatchRank(b.firm_name, search));
+    } else {
+      result.sort((a, b) => {
+        if (sortKey === "deals")     return (b.buyout_count + b.secondary_count + b.debt_count) - (a.buyout_count + a.secondary_count + a.debt_count);
+        if (sortKey === "portfolio") return b.portfolio_count - a.portfolio_count;
+        if (sortKey === "aum")       return (parseAumMillions(b.fund_size) ?? -1) - (parseAumMillions(a.fund_size) ?? -1);
+        return (b.latest_deal_date ?? "").localeCompare(a.latest_deal_date ?? "");
+      });
+    }
 
     return result;
   }, [firms, search, filters, sortKey]);
