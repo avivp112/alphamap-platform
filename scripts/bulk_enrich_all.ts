@@ -169,6 +169,7 @@ interface StartupRow {
   acquisitions: Acquisition[] | null;
   patent_count: number | null;
   patent_fields: string[] | null;
+  patents: PatentRecord[] | null;
   funding_history_complete: boolean | null;
   updated_at: string;
   last_enriched_at: string | null;
@@ -178,6 +179,17 @@ interface StartupRow {
   facebook_url: string | null;
   instagram_url: string | null;
   news: NewsItem[] | null;
+}
+
+// Individual patent/patent-application records — richer than the older
+// patent_count/patent_fields summary scalars (which stay as-is; patents[]
+// is additive, not a replacement).
+interface PatentRecord {
+  title: string;
+  patent_number: string | null;
+  filing_date: string | null;
+  url: string | null;
+  summary: string | null;
 }
 
 interface NewsItem {
@@ -268,6 +280,14 @@ interface ExtractedNewsItem {
   image_url?: string;
 }
 
+interface ExtractedPatentRecord {
+  title: string;
+  patent_number?: string;
+  filing_date?: string;
+  url?: string;
+  summary?: string;
+}
+
 interface ExtractedLeader extends PersonQualityTags {
   name: string;
   role: string;
@@ -304,7 +324,8 @@ interface EnrichmentResult {
   competitors: ExtractedCompetitor[];
   acquisitions: ExtractedAcquisition[];
   news: ExtractedNewsItem[];
-  patents: { patent_count: number | null; patent_fields: string[] };
+  patent_summary: { patent_count: number | null; patent_fields: string[] };
+  patents: ExtractedPatentRecord[];
   confidence_score: number;
   reasoning: string;
   source_url: string;
@@ -375,6 +396,10 @@ function needsProfileDeepDive(profile: Partial<ExtractedProfile>): boolean {
 
 function hasCompetitors(row: Pick<StartupRow, "competitors">): boolean {
   return Array.isArray(row.competitors) && row.competitors.length > 0;
+}
+
+function hasPatents(row: Pick<StartupRow, "patents">): boolean {
+  return Array.isArray(row.patents) && row.patents.length > 0;
 }
 
 function classifyTier(row: StartupRow, rounds: FundingRoundRow[]): 1 | 2 | 3 {
@@ -771,7 +796,7 @@ async function researchCompany(
     : country
       ? ` ${country} (startup OR tech company)`
       : "";
-  const [historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw, newsResult, ownSiteRaw] = await Promise.all([
+  const [historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw, newsResult, patentsRaw, ownSiteRaw] = await Promise.all([
     webSearch(`"${name}"${anchor} seed round "Series A" first funding earliest founding investors site:crunchbase.com OR site:techcrunch.com OR site:pitchbook.com`),
     webSearch(`"${name}"${anchor} total funding raised since founding all rounds USD million billion valuation announcement history`),
     webSearch(`"${name}"${anchor} lead investor venture capital backed participated investors funded round investment amount check size`),
@@ -782,12 +807,16 @@ async function researchCompany(
     // Requests images alongside the search (Tavily only) so news[] can
     // carry a real article image instead of always omitting one.
     newsSearchWithImages(`"${name}"${anchor} news 2025 2026 site:techcrunch.com OR site:venturebeat.com OR site:prnewswire.com OR site:businesswire.com OR site:forbes.com OR site:sifted.eu launch funding announcement`),
+    // Dedicated patent search — the profile query above mentions "patents"
+    // as one keyword among many and rarely surfaces an actual patent
+    // record; searching Google Patents specifically finds real filings.
+    webSearch(`"${name}"${anchor} patent OR patents OR site:patents.google.com`),
     fetchCompanyWebsite(website),
   ]);
   const newsRaw    = newsResult.text;
   const newsImages = newsResult.images;
 
-  if (![historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw, newsRaw, ownSiteRaw].some(Boolean)) return null;
+  if (![historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw, newsRaw, patentsRaw, ownSiteRaw].some(Boolean)) return null;
 
   const context = [
     `## Company's Own Website (HIGHEST TRUST for description, industry, and HQ location — this is the company describing itself, not a third party)\n${ownSiteRaw ?? "(not fetched — no known website, fetch failed, or bot-blocked)"}`,
@@ -795,6 +824,7 @@ async function researchCompany(
     `## Full Funding History & Total Raised (all rounds, not year-restricted)\n${amountsRaw    ?? "(search failed)"}`,
     `## Investors & Backers\n${backersRaw            ?? "(search failed)"}`,
     `## Company Profile & Headcount\n${profileRaw   ?? "(search failed)"}`,
+    `## Patents (for the patents[] field — only include a real, verifiable patent or published application; return [] if this search found nothing)\n${patentsRaw ?? "(search failed)"}`,
     `## Competitors & Alternatives\n${competitorsRaw ?? "(search failed)"}`,
     `## Recent News & Press Coverage (for the news[] field — only use articles with a real, findable publication date)\n${newsRaw ?? "(search failed)"}`,
     newsImages.length > 0
@@ -1088,7 +1118,7 @@ async function researchCompany(
               required: ["title", "url"],
             },
           },
-          patents: {
+          patent_summary: {
             type: "object" as const,
             description: [
               "Best-effort patent signal — general web search often can't surface real patent data, so",
@@ -1105,6 +1135,29 @@ async function researchCompany(
                 items: { type: "string" },
                 description: "2-5 technology/subject areas the company's patents cover (e.g. 'Natural Language Processing', 'Battery Chemistry'). Omit if unknown.",
               },
+            },
+          },
+          patents: {
+            type: "array",
+            description: [
+              "Individual registered patents or published patent applications belonging to this company,",
+              "found in the 'Patents' research section below (Google Patents results, an IP/patents page,",
+              "a news article citing a specific patent). This is real structured evidence, distinct from",
+              "patent_summary above which is just a rough count/subject-area guess — every entry here must",
+              "be a genuine, identifiable patent, not an inference from 'this company probably has patents'.",
+              "Return [] if the Patents research section found nothing verifiable — that is the normal,",
+              "expected answer for most early-stage companies.",
+            ].join(" "),
+            items: {
+              type: "object" as const,
+              properties: {
+                title:         { type: "string", description: "The patent's title, as filed/granted." },
+                patent_number: { type: "string", description: "Publication or grant number (e.g. 'US11234567B2'). Omit if not found." },
+                filing_date:   { type: "string", description: "Filing or publication date YYYY-MM-DD. Use YYYY-01-01 if only the year is known. Omit if unknown." },
+                url:           { type: "string", description: "Direct URL (e.g. a patents.google.com page). Omit if unknown." },
+                summary:       { type: "string", description: "One sentence on what the patent actually covers, based on the research below. Omit if only the title is known." },
+              },
+              required: ["title"],
             },
           },
           confidence_score: {
@@ -1180,8 +1233,13 @@ STRICT RULES:
 13. ACQUISITIONS — acquisitions is for companies THIS company bought (outbound only). If this company was
     itself acquired, that goes in funding_rounds as round_type 'Acquired', NOT here. [] is the normal,
     correct answer for most companies — do not force an entry.
-14. PATENTS — best-effort only. Omit patent_count/patent_fields entirely unless you find real evidence
-    (an IP page, a news article, Google Patents). Never default patent_count to 0.
+14. PATENTS — patent_summary (patent_count/patent_fields) is best-effort only; omit entirely unless you
+    find real evidence, and never default patent_count to 0. patents[] is different: it holds actual
+    individual patent records found in the "Patents" research section — only include a genuine,
+    identifiable patent (a title you can point to in the research, ideally with a patent number or URL),
+    never an inference. Return [] for patents[] when that section found nothing verifiable — most
+    companies, especially early-stage ones, genuinely have no findable patents, and [] is the correct,
+    expected answer, not a failure.
 15. TECH CLASSIFICATION — is_tech_company is a BROAD category: any company whose core product or
     competitive edge is its own technology/software/R&D, including fintech, biotech, healthtech, agtech,
     proptech, insurtech, cleantech, deep tech, hardware, and traditional industries with a genuine
@@ -1212,7 +1270,8 @@ ${context}`,
     competitors?: ExtractedCompetitor[];
     acquisitions?: ExtractedAcquisition[];
     news?: ExtractedNewsItem[];
-    patents?: { patent_count?: number; patent_fields?: string[] };
+    patent_summary?: { patent_count?: number; patent_fields?: string[] };
+    patents?: ExtractedPatentRecord[];
   };
 
   const result: EnrichmentResult = {
@@ -1230,10 +1289,11 @@ ${context}`,
     competitors:      (i.competitors  ?? []).filter((c) => c.name && c.how_it_competes),
     acquisitions:     (i.acquisitions ?? []).filter((a) => a.company_name),
     news:             (i.news ?? []).filter((n) => n.title && n.url),
-    patents: {
-      patent_count:  typeof i.patents?.patent_count === "number" ? i.patents.patent_count : null,
-      patent_fields: (i.patents?.patent_fields ?? []).filter(Boolean),
+    patent_summary: {
+      patent_count:  typeof i.patent_summary?.patent_count === "number" ? i.patent_summary.patent_count : null,
+      patent_fields: (i.patent_summary?.patent_fields ?? []).filter(Boolean),
     },
+    patents:          (i.patents ?? []).filter((p) => p.title),
     confidence_score: typeof i.confidence_score === "number" ? i.confidence_score : 0,
     reasoning:        i.reasoning  ?? "",
     source_url:       i.source_url ?? "",
@@ -1671,12 +1731,25 @@ async function patchStartupProfile(
     }));
   }
 
-  // Patents: fill-null only, same as the rest of the profile block.
-  if (existing.patent_count == null && result.patents.patent_count != null) {
-    patch.patent_count = result.patents.patent_count;
+  // Patent summary (count/fields): fill-null only, same as the rest of the profile block.
+  if (existing.patent_count == null && result.patent_summary.patent_count != null) {
+    patch.patent_count = result.patent_summary.patent_count;
   }
-  if ((!existing.patent_fields || existing.patent_fields.length === 0) && result.patents.patent_fields.length > 0) {
-    patch.patent_fields = result.patents.patent_fields;
+  if ((!existing.patent_fields || existing.patent_fields.length === 0) && result.patent_summary.patent_fields.length > 0) {
+    patch.patent_fields = result.patent_summary.patent_fields;
+  }
+
+  // Individual patent records: set only when currently empty — same
+  // fill-null-when-empty policy as competitors/acquisitions/news, so a
+  // manually-curated patent list is never overwritten by the pipeline.
+  if (result.patents.length > 0 && (!existing.patents || existing.patents.length === 0)) {
+    patch.patents = result.patents.map((p): PatentRecord => ({
+      title: p.title,
+      patent_number: p.patent_number ?? null,
+      filing_date: p.filing_date ?? null,
+      url: p.url ?? null,
+      summary: p.summary ?? null,
+    }));
   }
 
   // Headcount + growth_trend: always refresh (time-varying — valid for all tiers)
@@ -1715,7 +1788,8 @@ async function patchStartupProfile(
   if (patch.competitors)    parts.push(`${(patch.competitors as Competitor[]).length} competitors`);
   if (patch.acquisitions)   parts.push(`${(patch.acquisitions as Acquisition[]).length} acquisitions`);
   if (patch.news)           parts.push(`${(patch.news as NewsItem[]).length} news articles`);
-  if (patch.patent_count != null) parts.push(`${patch.patent_count} patents`);
+  if (patch.patents)        parts.push(`${(patch.patents as PatentRecord[]).length} patents`);
+  else if (patch.patent_count != null) parts.push(`${patch.patent_count} patents (count only)`);
   if (patch.sector_id)      parts.push(`sector: ${profile.sector_name}`);
   if (patch.sub_sector_id)  parts.push(`sub-sector: ${profile.sub_sector_name}`);
   const profileKeys = [
@@ -1831,7 +1905,7 @@ async function main() {
   const startups = await fetchAllPaginated<StartupRow>((from, to) =>
     supabase
       .from("startups")
-      .select("id, name, website, description, industry, founded_year, employee_count, growth_trend, country, city, founders, leadership, competitors, acquisitions, patent_count, patent_fields, funding_history_complete, updated_at, last_enriched_at, sector_id, sub_sector_id, linkedin_url, facebook_url, instagram_url, news")
+      .select("id, name, website, description, industry, founded_year, employee_count, growth_trend, country, city, founders, leadership, competitors, acquisitions, patent_count, patent_fields, patents, funding_history_complete, updated_at, last_enriched_at, sector_id, sub_sector_id, linkedin_url, facebook_url, instagram_url, news")
       .order("name")
       .range(from, to),
   );
@@ -1961,6 +2035,7 @@ async function main() {
       !row.facebook_url   && "Facebook",
       !row.instagram_url  && "Instagram",
       !row.sector_id      && "sector",
+      !hasPatents(row)    && "patents",
     ].filter(Boolean);
     if (missingFields.length > 0) {
       console.log(`    Missing before this pass: ${missingFields.join(", ")}`);
@@ -2068,6 +2143,7 @@ async function main() {
           !row.facebook_url      && !patched.has("facebook_url")   && "Facebook",
           !row.instagram_url     && !patched.has("instagram_url")  && "Instagram",
           !row.sector_id         && !patched.has("sector_id")      && "sector",
+          !hasPatents(row)       && !patched.has("patents")        && "patents",
         ].filter(Boolean);
         if (stillMissing.length > 0) {
           console.log(`    ▫️  Still missing after this pass: ${stillMissing.join(", ")}`);
