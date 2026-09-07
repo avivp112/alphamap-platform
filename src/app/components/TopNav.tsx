@@ -38,22 +38,44 @@ interface NavItem {
   labelKey: string;
   to: string | null;
   icon: React.ElementType;
+  // Plain English, not routed through i18n — same call as the Quick
+  // Questions dropdown's copy: a short one-liner doesn't carry enough
+  // weight on its own to justify a translation key in every locale file.
+  description: string;
+  // Tint for the card's image block — a distinct color per item so the
+  // grid is easy to scan at a glance, same idea as the sector/stage accent
+  // colors used throughout the app.
+  accent: { bg: string; icon: string };
 }
 
 const DATA_ITEMS: NavItem[] = [
-  { labelKey: 'nav.privateMarket',  to: '/startups',       icon: Rocket },
-  { labelKey: 'nav.publicMarket',   to: '/public-market',  icon: CandlestickChart },
-  { labelKey: 'nav.privateEquity',  to: '/private-equity', icon: Vault },
-  { labelKey: 'nav.ventureCapital', to: '/vcs',            icon: Landmark },
+  { labelKey: 'nav.privateMarket',  to: '/startups',       icon: Rocket,
+    description: 'Startups, funding rounds, and cap tables in one place.',
+    accent: { bg: 'linear-gradient(135deg, #FEF3C7, #FDE68A)', icon: '#B45309' } },
+  { labelKey: 'nav.publicMarket',   to: '/public-market',  icon: CandlestickChart,
+    description: 'Live comps, multiples, and sector benchmarks.',
+    accent: { bg: 'linear-gradient(135deg, #D1FAE5, #A7F3D0)', icon: '#047857' } },
+  { labelKey: 'nav.privateEquity',  to: '/private-equity', icon: Vault,
+    description: 'PE fund profiles, portfolios, and deal activity.',
+    accent: { bg: 'linear-gradient(135deg, #EDE9FE, #DDD6FE)', icon: '#6D28D9' } },
+  { labelKey: 'nav.ventureCapital', to: '/vcs',            icon: Landmark,
+    description: 'VC firm profiles, check sizes, and investment focus.',
+    accent: { bg: 'linear-gradient(135deg, #CFFAFE, #A5F3FC)', icon: '#0E7490' } },
 ];
 
 // Valuations and Due Diligence has no `to` — not built yet. Rendered as an
-// inert row with a "Soon" badge rather than omitted, so the menu's shape
+// inert card with a "Soon" badge rather than omitted, so the menu's shape
 // doesn't shift once it ships.
 const MARKET_MAP_ITEMS: NavItem[] = [
-  { labelKey: 'nav.marketMap', to: '/market-map', icon: Globe2 },
-  { labelKey: 'nav.deals',     to: '/deals',       icon: Handshake },
-  { labelKey: 'nav.valuationsDueDiligence', to: null, icon: ClipboardCheck },
+  { labelKey: 'nav.marketMap', to: '/market-map', icon: Globe2,
+    description: 'Visualize the global tech ecosystem by sector and geography.',
+    accent: { bg: 'linear-gradient(135deg, #DBEAFE, #BFDBFE)', icon: '#1D4ED8' } },
+  { labelKey: 'nav.deals',     to: '/deals',       icon: Handshake,
+    description: 'Track recent funding rounds and M&A activity.',
+    accent: { bg: 'linear-gradient(135deg, #FFE4E6, #FECDD3)', icon: '#BE123C' } },
+  { labelKey: 'nav.valuationsDueDiligence', to: null, icon: ClipboardCheck,
+    description: 'Comparable analysis and diligence checklists.',
+    accent: { bg: 'linear-gradient(135deg, #F1F5F9, #E2E8F0)', icon: '#64748B' } },
 ];
 
 type MenuId = 'data' | 'marketMap';
@@ -114,43 +136,59 @@ function NavDropdown({
       <div
         role="menu"
         className={cn(
-          "absolute left-0 top-full mt-1.5 w-64 rounded-lg border border-gray-100 bg-white py-2 shadow-[0_12px_32px_rgba(15,23,42,0.10)] transition-all duration-150 ease-out z-40",
+          "absolute left-0 top-full mt-1.5 w-[420px] rounded-lg border border-gray-100 bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.10)] transition-all duration-150 ease-out z-40",
           open ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 -translate-y-1 pointer-events-none",
         )}
       >
-        {items.map(({ labelKey, to, icon: Icon }) => {
-          if (!to) {
+        <div className="grid grid-cols-2 gap-2.5">
+          {items.map(({ labelKey, to, icon: Icon, description, accent }) => {
+            if (!to) {
+              return (
+                <div
+                  key={labelKey}
+                  className="relative flex flex-col rounded-lg border border-gray-100 cursor-default opacity-60"
+                >
+                  <span className="absolute top-2 right-2 text-[9px] font-bold uppercase tracking-wider text-gray-400 bg-white/90 border border-gray-100 rounded-full px-2 py-0.5 z-10">
+                    {t('nav.soon')}
+                  </span>
+                  <div
+                    className="flex items-center justify-center h-20 rounded-t-lg flex-none"
+                    style={{ background: accent.bg }}
+                  >
+                    <Icon className="h-7 w-7" style={{ color: accent.icon }} />
+                  </div>
+                  <div className="p-3">
+                    <p className="text-sm font-bold text-gray-500 leading-snug">{t(labelKey)}</p>
+                    <p className="text-[11px] text-gray-400 leading-relaxed mt-1">{description}</p>
+                  </div>
+                </div>
+              );
+            }
             return (
-              <div
-                key={labelKey}
-                className="flex items-center justify-between gap-2.5 px-4 py-2.5 text-sm text-gray-400 cursor-default"
+              <NavLink
+                key={to}
+                to={to}
+                role="menuitem"
+                onClick={onSelect}
+                className={({ isActive: linkActive }) => cn(
+                  "group flex flex-col rounded-lg border transition-all",
+                  linkActive ? "border-[#0F172A]/15 bg-gray-50" : "border-gray-100 hover:border-gray-200 hover:shadow-[0_4px_16px_rgba(15,23,42,0.08)]",
+                )}
               >
-                <span className="flex items-center gap-2.5">
-                  <Icon className="h-4 w-4 text-gray-300" />
-                  {t(labelKey)}
-                </span>
-                <span className="text-[9px] font-bold uppercase tracking-wider text-gray-300 bg-gray-50 border border-gray-100 rounded-full px-2 py-0.5">
-                  {t('nav.soon')}
-                </span>
-              </div>
+                <div
+                  className="flex items-center justify-center h-20 rounded-t-lg flex-none transition-transform duration-200 group-hover:scale-[1.02]"
+                  style={{ background: accent.bg }}
+                >
+                  <Icon className="h-7 w-7" style={{ color: accent.icon }} />
+                </div>
+                <div className="p-3">
+                  <p className="text-sm font-bold text-[#0F172A] leading-snug">{t(labelKey)}</p>
+                  <p className="text-[11px] text-gray-500 leading-relaxed mt-1">{description}</p>
+                </div>
+              </NavLink>
             );
-          }
-          return (
-            <NavLink
-              key={to}
-              to={to}
-              role="menuitem"
-              onClick={onSelect}
-              className={({ isActive: linkActive }) => cn(
-                "flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors",
-                linkActive ? "bg-gray-50 font-semibold text-[#0F172A]" : "text-[#111827] hover:bg-gray-50",
-              )}
-            >
-              <Icon className="h-4 w-4 text-gray-400" />
-              {t(labelKey)}
-            </NavLink>
-          );
-        })}
+          })}
+        </div>
       </div>
     </div>
   );
