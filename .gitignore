@@ -3,3 +3,6 @@ dist/
 .env
 .env.local
 .env*.local
+
+# Supabase CLI's own local cache — not project content
+supabase/.temp/
