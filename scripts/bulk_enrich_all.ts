@@ -1681,6 +1681,11 @@ async function main() {
       !row.country        && "country",
       !hasRealRounds(rounds) && "real rounds",
       !hasCompetitors(row) && "competitors",
+      !row.news?.length   && "news",
+      !row.linkedin_url   && "LinkedIn",
+      !row.facebook_url   && "Facebook",
+      !row.instagram_url  && "Instagram",
+      !row.sector_id      && "sector",
     ].filter(Boolean);
     if (missingFields.length > 0) {
       console.log(`    Missing before this pass: ${missingFields.join(", ")}`);
@@ -1783,6 +1788,11 @@ async function main() {
           !row.country           && !patched.has("country")        && "country",
           !hasRealRounds(rounds) && roundsInserted === 0           && "real rounds",
           !hasCompetitors(row)   && !patched.has("competitors")    && "competitors",
+          !row.news?.length      && !patched.has("news")           && "news",
+          !row.linkedin_url      && !patched.has("linkedin_url")   && "LinkedIn",
+          !row.facebook_url      && !patched.has("facebook_url")   && "Facebook",
+          !row.instagram_url     && !patched.has("instagram_url")  && "Instagram",
+          !row.sector_id         && !patched.has("sector_id")      && "sector",
         ].filter(Boolean);
         if (stillMissing.length > 0) {
           console.log(`    ▫️  Still missing after this pass: ${stillMissing.join(", ")}`);
