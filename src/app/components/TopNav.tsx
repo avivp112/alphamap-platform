@@ -42,25 +42,29 @@ interface NavItem {
   // Questions dropdown's copy: a short one-liner doesn't carry enough
   // weight on its own to justify a translation key in every locale file.
   description: string;
-  // Tint for the card's image block — a distinct color per item so the
-  // grid is easy to scan at a glance, same idea as the sector/stage accent
-  // colors used throughout the app.
-  accent: { bg: string; icon: string };
+  // Backdrop tint for the card's image block. One cohesive family — warm
+  // sage/stone neutrals, the same green already used as a secondary brand
+  // accent elsewhere (ContactUs, GlobalTechHubMap: #7C8967) — with light
+  // shade variation per card rather than a different hue each, so the grid
+  // reads as one set instead of a rainbow. Icon always sits on a small white
+  // chip in the center, navy icon — mirrors a card-on-backdrop illustration
+  // rather than a flat color block.
+  accent: { bg: string };
 }
 
 const DATA_ITEMS: NavItem[] = [
   { labelKey: 'nav.privateMarket',  to: '/startups',       icon: Rocket,
     description: 'Startups, funding rounds, and cap tables in one place.',
-    accent: { bg: 'linear-gradient(135deg, #FEF3C7, #FDE68A)', icon: '#B45309' } },
+    accent: { bg: 'linear-gradient(135deg, #EEF1E7, #DCE3D0)' } },
   { labelKey: 'nav.publicMarket',   to: '/public-market',  icon: CandlestickChart,
     description: 'Live comps, multiples, and sector benchmarks.',
-    accent: { bg: 'linear-gradient(135deg, #D1FAE5, #A7F3D0)', icon: '#047857' } },
+    accent: { bg: 'linear-gradient(135deg, #F0EFE7, #E3DFCF)' } },
   { labelKey: 'nav.privateEquity',  to: '/private-equity', icon: Vault,
     description: 'PE fund profiles, portfolios, and deal activity.',
-    accent: { bg: 'linear-gradient(135deg, #EDE9FE, #DDD6FE)', icon: '#6D28D9' } },
+    accent: { bg: 'linear-gradient(135deg, #ECEFEB, #DBE1D6)' } },
   { labelKey: 'nav.ventureCapital', to: '/vcs',            icon: Landmark,
     description: 'VC firm profiles, check sizes, and investment focus.',
-    accent: { bg: 'linear-gradient(135deg, #CFFAFE, #A5F3FC)', icon: '#0E7490' } },
+    accent: { bg: 'linear-gradient(135deg, #EFF0E9, #E0E5D6)' } },
 ];
 
 // Valuations and Due Diligence has no `to` — not built yet. Rendered as an
@@ -69,13 +73,13 @@ const DATA_ITEMS: NavItem[] = [
 const MARKET_MAP_ITEMS: NavItem[] = [
   { labelKey: 'nav.marketMap', to: '/market-map', icon: Globe2,
     description: 'Visualize the global tech ecosystem by sector and geography.',
-    accent: { bg: 'linear-gradient(135deg, #DBEAFE, #BFDBFE)', icon: '#1D4ED8' } },
+    accent: { bg: 'linear-gradient(135deg, #EEF1E7, #DCE3D0)' } },
   { labelKey: 'nav.deals',     to: '/deals',       icon: Handshake,
     description: 'Track recent funding rounds and M&A activity.',
-    accent: { bg: 'linear-gradient(135deg, #FFE4E6, #FECDD3)', icon: '#BE123C' } },
+    accent: { bg: 'linear-gradient(135deg, #F0EFE7, #E3DFCF)' } },
   { labelKey: 'nav.valuationsDueDiligence', to: null, icon: ClipboardCheck,
     description: 'Comparable analysis and diligence checklists.',
-    accent: { bg: 'linear-gradient(135deg, #F1F5F9, #E2E8F0)', icon: '#64748B' } },
+    accent: { bg: 'linear-gradient(135deg, #ECEFEB, #DBE1D6)' } },
 ];
 
 type MenuId = 'data' | 'marketMap';
@@ -155,10 +159,12 @@ function NavDropdown({
                     className="flex items-center justify-center h-20 rounded-t-lg flex-none"
                     style={{ background: accent.bg }}
                   >
-                    <Icon className="h-7 w-7" style={{ color: accent.icon }} />
+                    <div className="flex items-center justify-center w-11 h-11 rounded-lg bg-white shadow-sm">
+                      <Icon className="h-5 w-5 text-[#0F172A]/50" />
+                    </div>
                   </div>
                   <div className="p-3">
-                    <p className="text-sm font-bold text-gray-500 leading-snug">{t(labelKey)}</p>
+                    <p className="text-[15px] font-bold text-gray-500 leading-snug" style={{ fontFamily: "'Playfair Display', serif" }}>{t(labelKey)}</p>
                     <p className="text-[11px] text-gray-400 leading-relaxed mt-1">{description}</p>
                   </div>
                 </div>
@@ -176,13 +182,15 @@ function NavDropdown({
                 )}
               >
                 <div
-                  className="flex items-center justify-center h-20 rounded-t-lg flex-none transition-transform duration-200 group-hover:scale-[1.02]"
+                  className="flex items-center justify-center h-20 rounded-t-lg flex-none"
                   style={{ background: accent.bg }}
                 >
-                  <Icon className="h-7 w-7" style={{ color: accent.icon }} />
+                  <div className="flex items-center justify-center w-11 h-11 rounded-lg bg-white shadow-sm transition-transform duration-200 group-hover:scale-105">
+                    <Icon className="h-5 w-5 text-[#0F172A]" />
+                  </div>
                 </div>
                 <div className="p-3">
-                  <p className="text-sm font-bold text-[#0F172A] leading-snug">{t(labelKey)}</p>
+                  <p className="text-[15px] font-bold text-[#0F172A] leading-snug" style={{ fontFamily: "'Playfair Display', serif" }}>{t(labelKey)}</p>
                   <p className="text-[11px] text-gray-500 leading-relaxed mt-1">{description}</p>
                 </div>
               </NavLink>
