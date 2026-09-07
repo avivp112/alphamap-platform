@@ -1,28 +1,32 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import {
   Search, Sparkles, ArrowRight, X, Building2, Landmark,
-  MapPin, TrendingUp, Loader2, CornerDownLeft, ExternalLink,
+  MapPin, TrendingUp, Loader2, CornerDownLeft, ExternalLink, RotateCcw,
 } from "lucide-react";
 import { CompanyLogo } from "./CompanyLogo";
-import { semanticSearch, type SemanticMatch, type SemanticSearchResult } from "../../lib/semanticSearch";
-import { streamGroundedAnswer, parseAnswerSegments } from "../../lib/answerQuery";
+import type { SemanticMatch } from "../../lib/semanticSearch";
+import { streamChatAnalyst, parseAnswerSegments, type ChatHistoryTurn } from "../../lib/chatAnalyst";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AISearchWorkspace — the AI Search & Q&A hero for the Market Intelligence home.
+// AISearchWorkspace — the multi-turn AlphaMap AI Analyst on the Market
+// Intelligence home ("Ask anything about the private markets").
 //
-// Phase 1: a prominent semantic-search input wired to `semanticSearch`; results
-// render inline, split into Companies and Investors using the platform's card
-// language.
-// Phase 2: on submit, a GROUNDED AI ANSWER streams into a block above the cards
-// (via `streamGroundedAnswer`). The answer cites entities with [Name](cite:ID)
-// tokens, which render as clickable chips that open a tearsheet-style modal.
+// Backed by the `chat-analyst` Edge Function's Hybrid retrieval loop: Claude
+// picks between fuzzy semantic search and precise structured filter tools
+// (sector/stage/headcount/funding-recency, funding rounds, news, patents,
+// investors) turn by turn, chaining calls as needed, before writing its
+// answer. Every turn keeps the same anti-hallucination/citation guarantees as
+// the original single-shot version: the model can only state a fact a tool
+// call actually returned, and every named entity carries a [Name](cite:ID)
+// token that resolves to a real row via `citeMap` below.
 //
-// Fails gracefully at every layer: retrieval errors show "Service initializing",
-// empty retrieval shows "No results found", and an answer-stream failure simply
-// hides the synthesis while still showing the matching cards. The page never
-// crashes on a search.
+// State is one conversation thread (`turns`) — each user question and its
+// assistant reply (streamed text + a running "tool status" line while a tool
+// is executing + any entities that tool run retrieved) — kept client-side
+// only for this version; refreshing the page starts a new conversation, same
+// as clicking "New conversation".
 // ─────────────────────────────────────────────────────────────────────────────
 
 const EXAMPLE_QUERIES = [
@@ -32,80 +36,109 @@ const EXAMPLE_QUERIES = [
   "Climate hardware startups founded after 2020",
 ];
 
-type Status       = "idle" | "loading" | "done" | "error";
-type AnswerStatus = "idle" | "streaming" | "done" | "error";
+type TurnStatus = "streaming" | "done" | "error";
+
+interface Turn {
+  role: "user" | "assistant";
+  content: string;
+  matches: SemanticMatch[];
+  toolStatus: string | null;
+  status: TurnStatus;
+}
 
 function str(v: unknown): string | null {
   return typeof v === "string" && v.trim() ? v.trim() : null;
 }
 const FIRM_TYPE_LABEL: Record<string, string> = { vc: "VC", pe: "Private Equity", growth: "Growth" };
 
+function dedupeMatches(items: SemanticMatch[]): SemanticMatch[] {
+  const seen = new Set<string>();
+  const out: SemanticMatch[] = [];
+  for (const m of items) {
+    const key = `${m.entity_type}-${m.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(m);
+  }
+  return out;
+}
+
 export function AISearchWorkspace() {
   const { t } = useTranslation();
-  const [query, setQuery]             = useState("");
-  const [status, setStatus]           = useState<Status>("idle");
-  const [result, setResult]           = useState<SemanticSearchResult | null>(null);
-  const [ranQuery, setRanQuery]       = useState("");
-  const [answer, setAnswer]           = useState("");
-  const [answerStatus, setAnswerStatus] = useState<AnswerStatus>("idle");
-  const [citeTarget, setCiteTarget]   = useState<SemanticMatch | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const [input, setInput]           = useState("");
+  const [turns, setTurns]           = useState<Turn[]>([]);
+  const [citeTarget, setCiteTarget] = useState<SemanticMatch | null>(null);
+  const inputRef  = useRef<HTMLInputElement>(null);
+  const threadRef = useRef<HTMLDivElement>(null);
+  const abortRef  = useRef<AbortController | null>(null);
 
-  // id → match, so citation tokens in the answer resolve to a full record.
+  // id → match across the WHOLE conversation, so a citation in turn 3 still
+  // resolves even if the entity was only retrieved back in turn 1.
   const citeMap = useMemo(() => {
     const m = new Map<string, SemanticMatch>();
-    for (const r of result?.matches ?? []) m.set(r.id, r);
+    for (const turn of turns) for (const match of turn.matches) m.set(match.id, match);
     return m;
-  }, [result]);
+  }, [turns]);
 
-  const startAnswer = useCallback((q: string, matches: SemanticMatch[]) => {
+  // Keep the newest turn in view as it streams in.
+  useEffect(() => {
+    threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: "smooth" });
+  }, [turns]);
+
+  const updateLastTurn = useCallback((patch: Partial<Turn> | ((t: Turn) => Partial<Turn>)) => {
+    setTurns((prev) => {
+      if (prev.length === 0) return prev;
+      const next = [...prev];
+      const last = next[next.length - 1];
+      next[next.length - 1] = { ...last, ...(typeof patch === "function" ? patch(last) : patch) };
+      return next;
+    });
+  }, []);
+
+  const sendMessage = useCallback((raw: string) => {
+    const text = raw.trim();
+    if (!text) return;
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
-    setAnswer("");
-    setAnswerStatus("streaming");
-    streamGroundedAnswer(q, matches, {
+
+    const history: ChatHistoryTurn[] = [
+      ...turns.map((t) => ({ role: t.role, content: t.content })),
+      { role: "user" as const, content: text },
+    ];
+
+    setTurns((prev) => [
+      ...prev,
+      { role: "user", content: text, matches: [], toolStatus: null, status: "done" },
+      { role: "assistant", content: "", matches: [], toolStatus: null, status: "streaming" },
+    ]);
+    setInput("");
+
+    streamChatAnalyst(history, {
       signal: ac.signal,
-      onDelta: (_chunk, full) => setAnswer(full),
-    })
-      .then(() => setAnswerStatus("done"))
-      .catch((err) => { if (err?.name !== "AbortError") setAnswerStatus("error"); });
-  }, []);
+      onEvent: (evt) => {
+        if (evt.type === "tool_start") updateLastTurn({ toolStatus: evt.label });
+        else if (evt.type === "tool_done") updateLastTurn({ toolStatus: null });
+        else if (evt.type === "matches") updateLastTurn((t) => ({ matches: dedupeMatches([...t.matches, ...evt.items]) }));
+        else if (evt.type === "text") updateLastTurn((t) => ({ content: t.content + evt.delta }));
+        else if (evt.type === "done") updateLastTurn({ status: "done", toolStatus: null });
+        else if (evt.type === "error") updateLastTurn({ status: "error", toolStatus: null });
+      },
+    }).catch((err) => {
+      if ((err as Error)?.name !== "AbortError") updateLastTurn({ status: "error", toolStatus: null });
+    });
+  }, [turns, updateLastTurn]);
 
-  const runSearch = useCallback(async (raw: string) => {
-    const q = raw.trim();
-    if (!q) return;
+  const newConversation = () => {
     abortRef.current?.abort();
-    setStatus("loading");
-    setRanQuery(q);
-    setResult(null);
-    setAnswer("");
-    setAnswerStatus("idle");
-    try {
-      const res = await semanticSearch(q, { matchCount: 12, matchThreshold: 0.2 });
-      setResult(res);
-      setStatus("done");
-      if (res.matches.length > 0) startAnswer(q, res.matches);
-    } catch {
-      setStatus("error");
-    }
-  }, [startAnswer]);
-
-  const clear = () => {
-    abortRef.current?.abort();
-    setQuery("");
-    setStatus("idle");
-    setResult(null);
-    setRanQuery("");
-    setAnswer("");
-    setAnswerStatus("idle");
+    setTurns([]);
+    setInput("");
+    setCiteTarget(null);
     inputRef.current?.focus();
   };
 
-  const companies = result?.matches.filter(m => m.entity_type === "startup") ?? [];
-  const investors = result?.matches.filter(m => m.entity_type === "investor") ?? [];
-  const showPanel = status !== "idle";
+  const isSending = turns.length > 0 && turns[turns.length - 1].status === "streaming";
+  const hasConversation = turns.length > 0;
 
   return (
     <section className="relative overflow-hidden rounded-[10px] border border-gray-100 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
@@ -119,38 +152,98 @@ export function AISearchWorkspace() {
       />
 
       <div className="relative px-5 py-10 sm:px-8 sm:py-12 lg:py-14">
-        {/* Eyebrow */}
-        <div className="flex justify-center">
-          <div className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white/70 px-3 py-1 text-[11px] font-semibold text-gray-500 backdrop-blur">
-            <Sparkles className="h-3.5 w-3.5 text-[#7C8967]" />{t("aiSearch.title")}</div>
-        </div>
+        {!hasConversation ? (
+          <>
+            {/* Eyebrow */}
+            <div className="flex justify-center">
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white/70 px-3 py-1 text-[11px] font-semibold text-gray-500 backdrop-blur">
+                <Sparkles className="h-3.5 w-3.5 text-[#7C8967]" />{t("aiSearch.title")}</div>
+            </div>
 
-        <h1 className="mx-auto mt-4 max-w-2xl text-center text-2xl font-bold tracking-tight text-[#0F172A] sm:text-[32px] sm:leading-[1.15]">{t("aiSearch.askAnything")}</h1>
-        <p className="mx-auto mt-2 max-w-xl text-center text-sm text-gray-500">
-          Search companies and investors in natural language — answered strictly from the AlphaMap database.
-        </p>
+            <h1 className="mx-auto mt-4 max-w-2xl text-center text-2xl font-bold tracking-tight text-[#0F172A] sm:text-[32px] sm:leading-[1.15]">{t("aiSearch.askAnything")}</h1>
+            <p className="mx-auto mt-2 max-w-xl text-center text-sm text-gray-500">
+              Ask about companies, funds, and market trends in natural language — answered strictly from the AlphaMap database, with follow-ups.
+            </p>
+          </>
+        ) : (
+          <div className="mx-auto flex max-w-2xl items-center justify-between">
+            <div className="flex items-center gap-1.5 text-sm font-bold text-[#0F172A]">
+              <Sparkles className="h-4 w-4 text-[#7C8967]" />{t("aiSearch.aiAnalysis")}
+            </div>
+            <button
+              type="button"
+              onClick={newConversation}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-500 transition-colors hover:border-gray-300 hover:text-[#0F172A]"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />New conversation
+            </button>
+          </div>
+        )}
 
-        {/* Search input */}
+        {/* Conversation thread */}
+        {hasConversation && (
+          <div ref={threadRef} className="mx-auto mt-6 max-h-[560px] max-w-2xl space-y-5 overflow-y-auto pr-1 text-left">
+            {turns.map((turn, i) =>
+              turn.role === "user" ? (
+                <div key={i} className="flex justify-end">
+                  <div className="max-w-[85%] rounded-[10px] bg-[#0F172A] px-4 py-2.5 text-sm leading-relaxed text-white">
+                    {turn.content}
+                  </div>
+                </div>
+              ) : (
+                <div key={i} className="space-y-4">
+                  <AnswerBlock
+                    answer={turn.content}
+                    streaming={turn.status === "streaming"}
+                    toolStatus={turn.toolStatus}
+                    sourceCount={turn.matches.length}
+                    citeMap={citeMap}
+                    onCite={setCiteTarget}
+                  />
+                  {turn.status === "error" && (
+                    <StatePanel
+                      icon={<Loader2 className="h-5 w-5 text-amber-500" />}
+                      title="Something went wrong"
+                      body="The AI Analyst couldn't complete that request. Please try again — your question is still in the input box's history above."
+                    />
+                  )}
+                  {(() => {
+                    const companies = turn.matches.filter((m) => m.entity_type === "startup");
+                    const investors = turn.matches.filter((m) => m.entity_type === "investor");
+                    return (
+                      <>
+                        {companies.length > 0 && <ResultGroup icon={Building2} title="Companies" items={companies} onOpen={setCiteTarget} />}
+                        {investors.length > 0 && <ResultGroup icon={Landmark} title="Investors" items={investors} onOpen={setCiteTarget} />}
+                      </>
+                    );
+                  })()}
+                </div>
+              ),
+            )}
+          </div>
+        )}
+
+        {/* Composer */}
         <form
-          onSubmit={(e) => { e.preventDefault(); runSearch(query); }}
-          className="mx-auto mt-7 max-w-2xl"
+          onSubmit={(e) => { e.preventDefault(); sendMessage(input); }}
+          className={hasConversation ? "mx-auto mt-5 max-w-2xl" : "mx-auto mt-7 max-w-2xl"}
         >
           <div className="group relative flex items-center rounded-[9px] border border-gray-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] transition-all focus-within:border-[#0F172A]/30 focus-within:shadow-[0_12px_40px_rgba(15,23,42,0.10)] focus-within:ring-4 focus-within:ring-[#0F172A]/[0.06]">
             <Search className="ml-4 h-5 w-5 flex-none text-gray-400" />
             <input
               ref={inputRef}
               type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t("aiSearch.examplePrompt")}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={hasConversation ? "Ask a follow-up…" : t("aiSearch.examplePrompt")}
               className="w-full bg-transparent px-3 py-4 text-[15px] text-[#0F172A] placeholder:text-gray-400 focus:outline-none"
               autoComplete="off"
               spellCheck={false}
             />
-            {query && (
+            {input && (
               <button
                 type="button"
-                onClick={clear}
+                onClick={() => { setInput(""); inputRef.current?.focus(); }}
                 className="mr-1 flex-none rounded-full p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
                 aria-label={t("aiSearch.clearSearch")}
               >
@@ -159,80 +252,33 @@ export function AISearchWorkspace() {
             )}
             <button
               type="submit"
-              disabled={!query.trim() || status === "loading"}
+              disabled={!input.trim() || isSending}
               className="m-1.5 flex flex-none items-center gap-1.5 rounded-[8px] bg-[#0F172A] px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-gray-900 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {status === "loading"
+              {isSending
                 ? <Loader2 className="h-4 w-4 animate-spin" />
                 : <><span className="hidden sm:inline">{t("header.search")}</span><ArrowRight className="h-4 w-4" /></>}
             </button>
           </div>
 
-          <div className="mt-4 flex flex-wrap justify-center gap-2">
-            {EXAMPLE_QUERIES.map((ex) => (
-              <button
-                key={ex}
-                type="button"
-                onClick={() => { setQuery(ex); runSearch(ex); }}
-                className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-500 transition-all hover:border-gray-300 hover:text-[#0F172A]"
-              >
-                {ex}
-              </button>
-            ))}
-          </div>
+          {!hasConversation && (
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              {EXAMPLE_QUERIES.map((ex) => (
+                <button
+                  key={ex}
+                  type="button"
+                  onClick={() => sendMessage(ex)}
+                  className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-500 transition-all hover:border-gray-300 hover:text-[#0F172A]"
+                >
+                  {ex}
+                </button>
+              ))}
+            </div>
+          )}
         </form>
-
-        {/* Panel: answer + results / states */}
-        {showPanel && (
-          <div className="mx-auto mt-8 max-w-3xl">
-            {status === "loading" && <ResultsSkeleton />}
-
-            {status === "error" && (
-              <StatePanel
-                icon={<Loader2 className="h-5 w-5 text-amber-500" />}
-                title="Service initializing"
-                body="The AI search engine is still coming online (embeddings backfill and API keys are being configured). Please try again shortly."
-              />
-            )}
-
-            {status === "done" && result && result.matches.length === 0 && (
-              <StatePanel
-                icon={<Search className="h-5 w-5 text-gray-400" />}
-                title="No results found"
-                body={`We couldn't find companies or investors matching “${ranQuery}”. Try broadening the query or different terms.`}
-              />
-            )}
-
-            {status === "done" && result && result.matches.length > 0 && (
-              <div className="space-y-6 text-left">
-                {/* Grounded AI answer (streams above the cards) */}
-                {answerStatus !== "idle" && answerStatus !== "error" && (
-                  <AnswerBlock
-                    answer={answer}
-                    streaming={answerStatus === "streaming"}
-                    sourceCount={result.matches.length}
-                    citeMap={citeMap}
-                    onCite={setCiteTarget}
-                  />
-                )}
-
-                <p className="text-center text-xs text-gray-400">
-                  {result.matches.length} {result.matches.length === 1 ? "source" : "sources"} for “{ranQuery}”
-                </p>
-
-                {companies.length > 0 && (
-                  <ResultGroup icon={Building2} title="Companies" items={companies} onOpen={setCiteTarget} />
-                )}
-                {investors.length > 0 && (
-                  <ResultGroup icon={Landmark} title="Investors" items={investors} onOpen={setCiteTarget} />
-                )}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
-      {status === "idle" && (
+      {!hasConversation && (
         <div className="relative flex items-center justify-center gap-1.5 border-t border-gray-100 py-2.5 text-[11px] text-gray-400">
           <CornerDownLeft className="h-3 w-3" />{t("aiSearch.pressEnter")}</div>
       )}
@@ -245,10 +291,11 @@ export function AISearchWorkspace() {
 
 // ── Grounded answer block ────────────────────────────────────────────────────
 function AnswerBlock({
-  answer, streaming, sourceCount, citeMap, onCite,
+  answer, streaming, toolStatus, sourceCount, citeMap, onCite,
 }: {
   answer: string;
   streaming: boolean;
+  toolStatus?: string | null;
   sourceCount: number;
   citeMap: Map<string, SemanticMatch>;
   onCite: (m: SemanticMatch) => void;
@@ -265,7 +312,7 @@ function AnswerBlock({
         <h3 className="text-sm font-bold text-[#0F172A]">{t("aiSearch.aiAnalysis")}</h3>
         {streaming && (
           <span className="flex items-center gap-1 text-[11px] font-medium text-gray-400">
-            <Loader2 className="h-3 w-3 animate-spin" /> synthesizing…
+            <Loader2 className="h-3 w-3 animate-spin" /> {toolStatus ?? "synthesizing…"}
           </span>
         )}
       </div>
@@ -287,7 +334,7 @@ function AnswerBlock({
         </div>
       )}
 
-      {!streaming && answer.length > 0 && (
+      {!streaming && answer.length > 0 && sourceCount > 0 && (
         <div className="mt-3 flex items-center gap-1.5 border-t border-gray-100 pt-3 text-[11px] text-gray-400">
           <Sparkles className="h-3 w-3 text-[#7C8967]" />
           Grounded in {sourceCount} AlphaMap {sourceCount === 1 ? "record" : "records"} · always verify before acting
@@ -485,31 +532,6 @@ function CitationModal({ match, onClose }: { match: SemanticMatch; onClose: () =
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-// ── Skeleton loader ──────────────────────────────────────────────────────────
-function ResultsSkeleton() {
-  return (
-    <div className="space-y-6 text-left" aria-hidden>
-      {[0, 1].map((g) => (
-        <div key={g}>
-          <div className="mb-2.5 h-4 w-28 animate-pulse rounded bg-gray-100" />
-          <div className="space-y-2">
-            {[0, 1, 2].map((r) => (
-              <div key={r} className="flex items-start gap-3 rounded-[8px] border border-gray-100 bg-white p-3.5">
-                <div className="h-10 w-10 flex-none animate-pulse rounded-[8px] bg-gray-100" />
-                <div className="min-w-0 flex-1 space-y-2 py-0.5">
-                  <div className="h-3.5 w-1/3 animate-pulse rounded bg-gray-100" />
-                  <div className="h-3 w-4/5 animate-pulse rounded bg-gray-50" />
-                  <div className="h-3 w-1/2 animate-pulse rounded bg-gray-50" />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
     </div>
   );
 }
