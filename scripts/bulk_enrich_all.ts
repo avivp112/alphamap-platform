@@ -9,20 +9,32 @@
  *
  * Search engine stack: Tavily (primary, budget-tracked) → Serper.dev (Google Search fallback)
  *   Serper replaces DuckDuckGo — it is a proper REST API with no rate-limit serialisation
- *   needed, so both primary and fallback can fire 5 searches in parallel per company
- *   (funding history, amounts, investors, profile/headcount, competitors). Every query is
- *   anchored on the company's known website domain when one exists (preserved from the CSV
- *   import, not reset) — this disambiguates generic/ambiguous company names (e.g. "Actuality")
- *   from unrelated same-named entities and noise in plain name-only search.
+ *   needed, so both primary and fallback can fire in parallel per company (funding history,
+ *   amounts, investors, profile/headcount, competitors, news). Every query is anchored on the
+ *   company's known website domain when one exists (preserved from the CSV import, not reset)
+ *   — this disambiguates generic/ambiguous company names (e.g. "Actuality") from unrelated
+ *   same-named entities and noise in plain name-only search. When no website is on file — the
+ *   stealth/early-stage case most prone to this exact collision — the query falls back to the
+ *   row's known country + a light category qualifier instead of searching the bare name alone.
  *   Set SERP_KEY (Serper API key). TAVILY_API_KEY is optional; if absent, Serper is used
  *   for everything.
  *
- *   A 6th context source runs alongside the 5 searches: a direct fetch of the company's own
- *   website (when known), parsed with cheerio for its title/meta description/body text — the
- *   single most reliable source for description/industry/HQ location, since it costs zero
- *   Tavily/Serper budget (no search API call) and is the company describing itself rather than
- *   a third party. Best-effort: sites that block bots, are JS-only SPAs, or time out just fail
- *   silently, same as a failed search — this never blocks or slows down a company's processing.
+ *   A context source runs alongside the searches: the company's own website (when known),
+ *   fetched via Tavily Extract (root + /about, JS-rendered, budget-tracked like a search call)
+ *   when Tavily is available, falling back to a plain fetch + cheerio scrape of the root page's
+ *   title/meta description/body text otherwise or if Extract comes back empty — the single most
+ *   reliable source for description/industry/HQ location, since it's the company describing
+ *   itself rather than a third party. Best-effort throughout: sites that block bots, are JS-only
+ *   SPAs, or time out just fail silently, same as a failed search — never blocks a company.
+ *
+ *   Two conditional, targeted second-pass deep dives run after the general-purpose pass, each
+ *   only firing for the specific gap it exists to close (so the added search/API cost is
+ *   targeted, not blanket): deepDiveEarlyRounds() when a Series A+ round is confirmed with no
+ *   earlier Pre-Seed/Seed (searches seed/pre-seed/angel coverage + backtracks the later round's
+ *   lead investors), and deepDiveProfile() when the profile comes back essentially empty — no
+ *   description, no location, no socials — targeting LinkedIn/Crunchbase company profile pages
+ *   specifically. Both skip the Claude call entirely (and cost nothing beyond the searches
+ *   already spent) when every deep-dive query also comes back empty.
  *
  * Resume / skip logic:
  *   MAX_TIER (default 3) — set to 2 to skip Tier 3 (fully-complete) companies and focus
@@ -63,6 +75,13 @@
  *                 is_manually_verified=true row) — public companies aren't tracked here, so an
  *                 empty dead row isn't useful; removing it also means it won't keep being
  *                 re-researched every time the queue cycles back around.
+ *   Stealth     — a Tier 1/2 row (still genuinely missing core data) that comes back
+ *                 "no_data"/"low_confidence" is reclassified "stealth_suspected" when
+ *                 last_enriched_at shows this isn't the first attempt — i.e. a repeat miss
+ *                 across runs, not just a first pass turning up empty. Purely a reporting
+ *                 signal (no separate write path): keeps the summary's "no_data"/
+ *                 "low_confidence" counts meaning "still worth another pass" rather than mixing
+ *                 in the tail of companies unlikely to ever resolve via search.
  *
  * Usage:
  *   npx tsx scripts/bulk_enrich_all.ts                            # dry run (default)
@@ -287,7 +306,9 @@ interface EnrichmentResult {
   source_url: string;
 }
 
-type ProcessStatus = "success" | "partial" | "low_confidence" | "rejected" | "removed_public" | "no_data" | "error";
+type ProcessStatus =
+  | "success" | "partial" | "low_confidence" | "rejected" | "removed_public"
+  | "no_data" | "stealth_suspected" | "error";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -333,6 +354,19 @@ function needsEarlyStageDeepDive(rounds: { round_type: string }[]): boolean {
   const types = new Set(rounds.map((r) => normalizeRoundType(r.round_type)));
   return [...types].some((t) => LATER_STAGE_TYPES.has(t)) &&
          ![...types].some((t) => EARLY_STAGE_TYPES.has(t));
+}
+
+// ── Profile deep-dive trigger ────────────────────────────────────────────────
+// A company that came back with essentially no profile at all — no
+// description, no location, no social presence — after the general-purpose
+// pass is the pattern most common for stealth/very-early-stage companies,
+// whose only real web presence is often a LinkedIn/Crunchbase stub that the
+// broad news/funding-oriented queries in researchCompany() don't specifically
+// target. All must be missing (not just one) so this stays targeted at
+// genuinely thin profiles, not a blanket second pass on every company.
+function needsProfileDeepDive(profile: Partial<ExtractedProfile>): boolean {
+  return !profile.description && !profile.country && !profile.city &&
+         !profile.linkedin_url && !profile.facebook_url && !profile.instagram_url;
 }
 
 function hasCompetitors(row: Pick<StartupRow, "competitors">): boolean {
@@ -444,6 +478,44 @@ async function tavilySearch(query: string, attempt = 0): Promise<string | null> 
   }
 }
 
+// Tavily Extract — fetches + renders (JS included) one or more URLs and
+// returns their cleaned main text, far more reliably than a raw HTML fetch
+// on bot-blocked pages or JS-only SPAs (common for early-stage startup
+// sites built on Webflow/Framer/Next.js client rendering). Used by
+// fetchCompanyWebsite() below as the preferred path when Tavily is
+// available; counts against the same budget as a search call, since it's
+// the same API/quota.
+async function tavilyExtractUrls(urls: string[]): Promise<string | null> {
+  if (tavilyExhausted) return null;
+  try {
+    const res = await fetch("https://api.tavily.com/extract", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: process.env.TAVILY_API_KEY, urls }),
+    });
+
+    if (res.status === 401 || res.status === 402 || res.status === 432) {
+      tavilyExhausted = true;
+      return null;
+    }
+    if (!res.ok) return null;
+
+    const data = await res.json() as {
+      results?: Array<{ url: string; raw_content?: string }>;
+    };
+    const parts = (data.results ?? [])
+      .filter((r) => r.raw_content)
+      .map((r) => `[${r.url}]\n${r.raw_content!.replace(/\s+/g, " ").trim().slice(0, MAX_WEBSITE_CHARS)}`);
+    if (!parts.length) return null;
+
+    tavilyCallCount++;
+    if (tavilyCallCount >= TAVILY_BUDGET) tavilyExhausted = true;
+    return parts.join("\n---\n");
+  } catch {
+    return null;
+  }
+}
+
 // ── Serper (Google Search API) fallback ───────────────────────────────────────
 // No serialisation lock needed — Serper is a proper REST API with no
 // scraping-style rate limits. All 4 per-company searches fire in parallel.
@@ -510,21 +582,32 @@ async function webSearch(query: string): Promise<string | null> {
   return serperSearch(query);
 }
 
-// ── Company's own website — direct fetch, no search API involved ──────────────
+// ── Company's own website ──────────────────────────────────────────────────
 // The single most reliable source for description/industry/HQ location is the
 // company's own site, but search-engine snippets rarely capture it in full
-// (they show a fragment of whatever page ranked, not the "About" copy). This
-// costs zero Tavily/Serper budget — it's a plain HTTP fetch of a URL we
-// already know — so it doesn't touch the cost tradeoffs already made on
-// search engine choice. Best-effort: many sites block bots, are JS-rendered
-// SPAs with no server-rendered text, or simply time out — any failure here
-// just means one fewer context section, same as a failed search.
+// (they show a fragment of whatever page ranked, not the "About" copy).
+// Prefers Tavily Extract (root + /about, one call, JS-rendered) when Tavily
+// is available — it handles bot-blocked pages and JS-only SPAs (common for
+// early-stage startup sites on Webflow/Framer/Next.js client rendering) far
+// more reliably than a raw HTML fetch. Falls back to a plain fetch + cheerio
+// scrape of the root page when Tavily is unavailable/exhausted, or when
+// Extract itself comes back empty. Either way, failure here just means one
+// fewer context section, same as a failed search — never blocks a company.
 const FETCH_TIMEOUT_MS = 8_000;
 const MAX_WEBSITE_CHARS = 3_000;
 
 async function fetchCompanyWebsite(website: string | null | undefined): Promise<string | null> {
   if (!website) return null;
   const url = website.startsWith("http") ? website : `https://${website}`;
+
+  if (!tavilyExhausted) {
+    const aboutUrl  = url.replace(/\/+$/, "") + "/about";
+    const extracted = await tavilyExtractUrls([url, aboutUrl]);
+    if (extracted) return extracted;
+    // Extract came back empty (or Tavily just went exhausted) — fall through
+    // to the cheerio scrape below rather than give up on this company's
+    // website entirely.
+  }
 
   try {
     const controller = new AbortController();
@@ -593,9 +676,21 @@ const PERSON_QUALITY_TAG_PROPERTIES = {
 // posts and other companies in plain name search. When known, it's added to
 // every query as a second anchor so results have to match BOTH the name and
 // the known domain, not just the name alone.
-async function researchCompany(name: string, website?: string | null): Promise<EnrichmentResult | null> {
+async function researchCompany(
+  name: string,
+  website?: string | null,
+  country?: string | null,
+): Promise<EnrichmentResult | null> {
   const domain = websiteDomain(website);
-  const anchor = domain ? ` "${domain}"` : "";
+  // The known domain is the strongest disambiguator, so prefer it. When no
+  // website is on file — exactly the stealth/early-stage case most prone to
+  // name collisions (e.g. "1001 Fonts" vs "1001 AI") — fall back to country
+  // + a light category qualifier instead of searching the bare name alone.
+  const anchor = domain
+    ? ` "${domain}"`
+    : country
+      ? ` ${country} (startup OR tech company)`
+      : "";
   const [historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw, newsRaw, ownSiteRaw] = await Promise.all([
     webSearch(`"${name}"${anchor} seed round "Series A" first funding earliest founding investors site:crunchbase.com OR site:techcrunch.com OR site:pitchbook.com`),
     webSearch(`"${name}"${anchor} total funding raised since founding all rounds USD million billion valuation announcement history`),
@@ -1067,6 +1162,22 @@ ${context}`,
     }
   }
 
+  // Profile still essentially empty after the general-purpose pass — most
+  // common for stealth/very-early-stage companies whose only web presence
+  // is a LinkedIn/Crunchbase stub. Only fires for exactly this case, so the
+  // added search/API cost is targeted, not blanket.
+  if (needsProfileDeepDive(result.profile)) {
+    const deepDive = await deepDiveProfile(name, website, country);
+    if (deepDive) {
+      const profile = result.profile as Record<string, unknown>;
+      const found   = deepDive.profile as Record<string, unknown>;
+      for (const key of ["description", "industry", "country", "city", "linkedin_url", "facebook_url", "instagram_url"]) {
+        if (!profile[key] && found[key]) profile[key] = found[key];
+      }
+      result.reasoning += ` [Profile deep dive: ${deepDive.note}]`;
+    }
+  }
+
   return result;
 }
 
@@ -1171,6 +1282,77 @@ ${context}`,
   const rounds = (out.funding_rounds ?? []).filter((r) => r.round_type);
   if (!rounds.length) return null;
   return { rounds, note: out.reasoning ?? "" };
+}
+
+// ── Profile deep dive ───────────────────────────────────────────────────────
+// Fires ONLY when needsProfileDeepDive() finds pass 1 came back with
+// essentially no profile at all — the pattern most common for stealth/
+// very-early-stage companies. Targets company-profile-specific sources
+// (LinkedIn company page, Crunchbase organization page) that the general
+// news/funding-oriented queries in researchCompany() don't specifically
+// search for. Same shape as deepDiveEarlyRounds: targeted queries, a small
+// tool schema, fill-null merge into whatever pass 1 already found. Returns
+// null (no Claude call made) if every deep-dive query comes back empty.
+async function deepDiveProfile(
+  name: string,
+  website: string | null | undefined,
+  country: string | null | undefined,
+): Promise<{ profile: Partial<ExtractedProfile>; note: string } | null> {
+  const domain = websiteDomain(website);
+  const anchor = domain ? ` "${domain}"` : country ? ` ${country}` : "";
+
+  const results = await Promise.all([
+    webSearch(`site:linkedin.com/company "${name}"${anchor}`),
+    webSearch(`site:crunchbase.com/organization "${name}"${anchor}`),
+    webSearch(`"${name}"${anchor} about company profile headquarters`),
+  ]);
+  if (!results.some(Boolean)) return null; // deep dive exhausted, genuinely nothing found
+
+  const context = results.filter(Boolean).join("\n---\n");
+
+  const msg = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 1024,
+    tools: [{
+      name: "save_profile_deep_dive",
+      description: "Save any basic company profile facts found for this company that were not already known.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          description:   { type: "string", description: "2-4 sentences on what the company does. Omit if unverifiable." },
+          industry:       { type: "string", description: "Primary tech sector (e.g. 'AI & ML', 'Cybersecurity', 'FinTech')." },
+          country:        { type: "string", description: "HQ country full name. Omit if unverifiable." },
+          city:           { type: "string", description: "HQ city. Omit if unverifiable." },
+          linkedin_url:   { type: "string", description: "The COMPANY's own LinkedIn page (linkedin.com/company/...) — not a person's profile. Omit if not found." },
+          facebook_url:   { type: "string", description: "The company's Facebook page. Omit if not found." },
+          instagram_url:  { type: "string", description: "The company's Instagram profile. Omit if not found." },
+          reasoning:      { type: "string", description: "1-2 sentences: what this deep dive found, or why nothing could be confirmed." },
+        },
+        required: ["reasoning"],
+      },
+    }],
+    tool_choice: { type: "tool", name: "save_profile_deep_dive" },
+    messages: [{
+      role: "user",
+      content: `"${name}" is a private tech company with almost no profile data on file yet. This is a TARGETED deep dive
+using company-profile-specific sources (LinkedIn company page, Crunchbase organization page) rather than general news
+search, since stealth/very-early-stage companies are more likely to have a profile stub on these platforms than press
+coverage. Only return a fact you can verify from the research below — omit anything you cannot confirm, never guess.
+
+Deep-dive research:
+${context}`,
+    }],
+  });
+
+  totalInputTokens  += msg.usage.input_tokens;
+  totalOutputTokens += msg.usage.output_tokens;
+
+  const tool = msg.content.find((b) => b.type === "tool_use");
+  if (!tool || tool.type !== "tool_use") return null;
+  const out = tool.input as Partial<ExtractedProfile> & { reasoning?: string };
+  const { reasoning, ...profile } = out;
+  if (Object.keys(profile).length === 0) return null;
+  return { profile, note: reasoning ?? "" };
 }
 
 // ── DB: insert new funding rounds (dedup: same type + date ±6 months) ─────────
@@ -1649,20 +1831,22 @@ async function main() {
 
   // ── 4. Tally ──────────────────────────────────────────────────────────────
   const tally: Record<ProcessStatus, number> = {
-    success: 0, partial: 0, low_confidence: 0, rejected: 0, removed_public: 0, no_data: 0, error: 0,
+    success: 0, partial: 0, low_confidence: 0, rejected: 0, removed_public: 0,
+    no_data: 0, stealth_suspected: 0, error: 0,
   };
   let totalRoundsInserted = 0;
   let totalFieldsPatched  = 0;
   let totalRemovedPublic  = 0;
 
   const STATUS_ICON: Record<ProcessStatus, string> = {
-    success:        "✅",
-    partial:        "🟠",
-    low_confidence: "⚠️ ",
-    rejected:       "🚫",
-    removed_public: "🗑️ ",
-    no_data:        "🔍",
-    error:          "❌",
+    success:           "✅",
+    partial:           "🟠",
+    low_confidence:    "⚠️ ",
+    rejected:          "🚫",
+    removed_public:    "🗑️ ",
+    no_data:           "🔍",
+    stealth_suspected: "👻",
+    error:             "❌",
   };
 
   // ── 5. Sequential processing loop ─────────────────────────────────────────
@@ -1698,7 +1882,7 @@ async function main() {
     let rowDeleted = false;
 
     try {
-      const result = await researchCompany(row.name, row.website);
+      const result = await researchCompany(row.name, row.website, row.country);
       if (result) confidenceSeen = result.confidence_score;
 
       if (!result) {
@@ -1809,6 +1993,20 @@ async function main() {
       status = "error";
     }
 
+    // Reclassify a repeat miss: this is a Tier 1/2 row (genuinely still
+    // missing core data, not a Tier 3 company just undergoing routine
+    // re-verification) that already went through at least one prior full
+    // pass (last_enriched_at is set) and STILL came back with nothing
+    // usable. That's a different signal than a first attempt turning up
+    // empty — it's the tail of companies unlikely to resolve on a plain
+    // re-run (deep, truly stealth, or misnamed/mismatched in a way search
+    // can't recover from) rather than ones that just haven't been searched
+    // hard enough yet. Keeps "low_confidence"/"no_data" honest as "still
+    // worth trying again" buckets.
+    if ((status === "no_data" || status === "low_confidence") && tier !== 3 && row.last_enriched_at) {
+      status = "stealth_suspected";
+    }
+
     tally[status]++;
 
     // Stamp every processed company so the queue advances across runs.
@@ -1864,6 +2062,7 @@ async function main() {
   console.log(`  🚫  Rejected:            ${tally.rejected}  (not a tech company)`);
   console.log(`  🗑️   Removed (public):   ${tally.removed_public}  (${totalRemovedPublic} row(s) actually deleted)`);
   console.log(`  🔍  No data:             ${tally.no_data}`);
+  console.log(`  👻  Stealth suspected:   ${tally.stealth_suspected}  (repeat miss — already enriched once before, still nothing usable)`);
   console.log(`  ❌  Errors:              ${tally.error}`);
   console.log(`  💰  Rounds inserted:     ${totalRoundsInserted}`);
   console.log(`  📝  Profile fields set:  ${totalFieldsPatched}`);
@@ -1895,7 +2094,7 @@ async function main() {
 
   console.log(bar + "\n");
 
-  if (tally.error > 0 && tally.success === 0 && tally.low_confidence === 0) process.exit(1);
+  if (tally.error > 0 && tally.success === 0 && tally.low_confidence === 0 && tally.stealth_suspected === 0) process.exit(1);
 }
 
 main().catch((e) => {
