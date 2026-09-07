@@ -145,6 +145,27 @@ export interface NewsItem {
   image_url?: string | null;
 }
 
+// News articles enriched before image_url existed (most of them, at least
+// until the next bulk_enrich_all.ts pass touches each company again) don't
+// carry one. Rather than wait on a full re-enrichment, fetch it on demand
+// client-side via the fetch-article-image Edge Function, which fetches the
+// article's own page server-side (the browser can't — CORS) and reads its
+// og:image/twitter:image share-preview tag. In-memory cache (not persisted
+// to the DB — the anon client has no write access to startups.news) so the
+// same article shown twice in one session only triggers one fetch.
+const articleImageCache = new Map<string, Promise<string | null>>();
+
+export async function fetchArticleImage(url: string): Promise<string | null> {
+  const cached = articleImageCache.get(url);
+  if (cached) return cached;
+  const promise = supabase.functions
+    .invoke("fetch-article-image", { method: "POST", body: { url } })
+    .then(({ data, error }) => (error ? null : (data?.image_url ?? null)))
+    .catch(() => null);
+  articleImageCache.set(url, promise);
+  return promise;
+}
+
 export interface Startup extends CompanySocialLinks {
   id: string;
   name: string;

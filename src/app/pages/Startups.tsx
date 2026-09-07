@@ -25,7 +25,7 @@ import {
 import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
   fetchStartupsPage, fetchStartupsCount, fetchDistinctCountries, fetchStartupDetail,
-  fetchSuggestedPeers, fetchStartupListRowById, fetchScoreHistory, STARTUPS_PAGE_SIZE,
+  fetchSuggestedPeers, fetchStartupListRowById, fetchScoreHistory, fetchArticleImage, STARTUPS_PAGE_SIZE,
   type Startup, type FundingRound, type RoundType, type AlphaScore, type HeadcountPoint,
   type StartupListRow, type StartupSearchFilters, type Competitor, type ScoreHistoryPoint,
   type NewsItem,
@@ -1572,8 +1572,21 @@ function NewsTab({ startup }: { startup: Startup }) {
 // pipeline — most older articles will only have title/url/source/date, so
 // both sections degrade gracefully rather than leaving obvious gaps.
 function NewsCard({ item: n }: { item: NewsItem }) {
-  const [imgFailed, setImgFailed] = useState(false);
-  const showImage = !!n.image_url && !imgFailed;
+  const [imgFailed, setImgFailed]     = useState(false);
+  // Most articles were enriched before image_url existed, so it's usually
+  // absent on what's actually in the DB — fall back to fetching the
+  // article's own share-preview image on demand (see fetchArticleImage).
+  const [fetchedImage, setFetchedImage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (n.image_url) return;
+    let cancelled = false;
+    fetchArticleImage(n.url).then((url) => { if (!cancelled) setFetchedImage(url); });
+    return () => { cancelled = true; };
+  }, [n.url, n.image_url]);
+
+  const resolvedImage = n.image_url || fetchedImage;
+  const showImage = !!resolvedImage && !imgFailed;
 
   return (
     <a
@@ -1585,7 +1598,7 @@ function NewsCard({ item: n }: { item: NewsItem }) {
       <div className="relative w-full aspect-[16/9] bg-gray-100 flex-none overflow-hidden">
         {showImage ? (
           <img
-            src={n.image_url!}
+            src={resolvedImage!}
             alt=""
             loading="lazy"
             onError={() => setImgFailed(true)}
