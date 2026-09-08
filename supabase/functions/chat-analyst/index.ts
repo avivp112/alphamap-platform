@@ -372,7 +372,13 @@ CITATIONS — required:
 STYLE:
 - Lead with a direct 1–2 sentence answer, then supporting detail.
 - Be analytical and specific; group by theme where useful. Short paragraphs, no fluff.
-- Plain prose (short markdown like ** for emphasis and - for lists is fine). Keep it tight.`;
+- Plain prose (short markdown like ** for emphasis and - for lists is fine). Keep it tight.
+- When your answer is grounded in a list of companies/investors (filter_startups, semantic_search,
+  search_investors), don't just hand back a bare list — open with 1-2 sentences of real market context:
+  what the segment/theme actually is, then call out what's notable about the leading result(s) (why
+  they're a strong match, what differentiates them) before or alongside naming the rest. The UI already
+  renders the full list as cards below your answer, so you don't need to enumerate every result — write
+  the analysis a person can't get from the cards alone.`;
 
 // ── Streaming agent loop ────────────────────────────────────────────────────
 
@@ -419,11 +425,19 @@ async function runAgentTurn(
     }
   }
 
-  const finalBlocks: Anthropic.ContentBlockParam[] = blocks.map((b) =>
-    b.type === "tool_use"
-      ? { type: "tool_use", id: b.id, name: b.name, input: b.input ? JSON.parse(b.input) : {} }
-      : { type: "text", text: b.text },
-  );
+  // A tool-calling turn frequently streams an empty (or whitespace-only)
+  // leading text block ahead of the tool_use block — normal from the model,
+  // but the Messages API REJECTS an assistant turn that's replayed back
+  // with an empty text content block, which is exactly what the next
+  // iteration's messages.create call does. Drop empty text blocks here so
+  // the reconstructed turn is always valid to send back.
+  const finalBlocks: Anthropic.ContentBlockParam[] = blocks
+    .filter((b) => b.type === "tool_use" || b.text.trim().length > 0)
+    .map((b) =>
+      b.type === "tool_use"
+        ? { type: "tool_use", id: b.id, name: b.name, input: b.input ? JSON.parse(b.input) : {} }
+        : { type: "text", text: b.text },
+    );
   return { blocks: finalBlocks, stopReason };
 }
 
