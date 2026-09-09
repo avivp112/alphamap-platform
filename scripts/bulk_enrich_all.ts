@@ -623,7 +623,7 @@ async function serperSearch(query: string, attempt = 0): Promise<string | null> 
         "X-API-KEY": process.env.SERP_KEY,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ q: query, num: 10 }),
+      body: JSON.stringify({ q: query, num: 10, autocorrect: false }),
     });
 
     if (res.status === 429 && attempt < 3) {
@@ -661,6 +661,70 @@ async function serperSearch(query: string, attempt = 0): Promise<string | null> 
   }
 }
 
+// Serper's dedicated News endpoint — used ONLY for the news search's Serper
+// fallback (general company/funding/competitor searches stay on /search,
+// unchanged). Unlike /search, /news pairs each result with its own
+// publisher, date, and imageUrl directly — real per-article attribution,
+// not a flat "here are some images, guess which one" list like the Tavily
+// path has to work with. That pairing is written straight into the context
+// text below (an "Image: <url>" line right under its own article) so the
+// prompt can tell Claude to copy it across with confidence instead of
+// fuzzy-matching. autocorrect is explicitly disabled — Serper's spelling
+// "correction" can silently rewrite an unusual startup name into a common
+// dictionary word or a different company's name entirely.
+async function serperNewsSearch(query: string, attempt = 0): Promise<{ text: string | null; images: string[] }> {
+  if (!process.env.SERP_KEY) return { text: null, images: [] };
+  try {
+    const res = await fetch("https://google.serper.dev/news", {
+      method: "POST",
+      headers: {
+        "X-API-KEY": process.env.SERP_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ q: query, num: 10, autocorrect: false }),
+    });
+
+    if (res.status === 429 && attempt < 3) {
+      const wait = 10_000 * 2 ** attempt;
+      console.warn(`    ⚠️  Serper News 429 — waiting ${wait / 1000}s (retry ${attempt + 1}/3)…`);
+      await sleep(wait);
+      return serperNewsSearch(query, attempt + 1);
+    }
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.warn(`    ⚠️  Serper News HTTP ${res.status}` + (body ? ` — ${body.slice(0, 200)}` : ""));
+      return { text: null, images: [] };
+    }
+
+    const data = await res.json() as {
+      news?: Array<{ title: string; link: string; snippet?: string; date?: string; source?: string; imageUrl?: string }>;
+    };
+    const items = data.news ?? [];
+    if (!items.length) return { text: null, images: [] };
+
+    const parts = items.slice(0, 8).map((n) =>
+      [
+        `[${n.title}]`,
+        n.link,
+        n.source ? `Source: ${n.source}` : "",
+        n.date ? `Date: ${n.date}` : "",
+        n.imageUrl ? `Image: ${n.imageUrl}` : "",
+        n.snippet ? n.snippet.slice(0, 400) : "",
+      ].filter(Boolean).join("\n"),
+    );
+
+    serperCallCount++;
+    // images stays [] on purpose — every image this endpoint found is
+    // already inline in `text`, correctly paired with its own article, so
+    // there's no separate flat list to build here.
+    return { text: parts.join("\n---\n"), images: [] };
+  } catch (err) {
+    console.warn(`    ⚠️  Serper News threw: ${String(err)}`);
+    return { text: null, images: [] };
+  }
+}
+
 function engineLabel(): string {
   if (!tavilyExhausted) return `Tavily (${tavilyCallCount}/${TAVILY_BUDGET})`;
   return process.env.SERP_KEY ? `Serper (${serperCallCount})` : "no-fallback";
@@ -675,16 +739,27 @@ async function webSearch(query: string): Promise<string | null> {
   return serperSearch(query);
 }
 
-// Same fallback shape as webSearch, but via tavilyNewsSearch so the news
-// query specifically can come back with images. Serper has no equivalent
-// used here, so the Serper-fallback path simply carries no images — same
-// best-effort posture as every other Tavily-only enhancement in this script.
-async function newsSearchWithImages(query: string): Promise<{ text: string | null; images: string[] }> {
+// Same fallback shape as webSearch, but the news query specifically can
+// come back with images from EITHER engine now: tavilyNewsSearch's flat
+// "images found alongside the search" list on the Tavily path (unchanged),
+// or serperNewsSearch's per-article inline "Image:" pairing on the
+// fallback path. `tavilyQuery` is untouched (still the site:-heavy,
+// year-stuffed query built for general web search) — Serper's News
+// endpoint is already recency/news-scoped by nature and doesn't need
+// that; it gets a clean `"name" + anchor` query instead, which is both
+// simpler and, since `anchor` already carries the domain/country
+// disambiguator used everywhere else in this script, still targeted
+// enough to avoid generic-name collisions.
+async function newsSearchWithImages(
+  tavilyQuery: string,
+  name: string,
+  anchor: string,
+): Promise<{ text: string | null; images: string[] }> {
   if (!tavilyExhausted) {
-    const r = await tavilyNewsSearch(query);
+    const r = await tavilyNewsSearch(tavilyQuery);
     if (r.text !== null || r.images.length > 0) return r;
   }
-  return { text: await serperSearch(query), images: [] };
+  return serperNewsSearch(`"${name}"${anchor} news`);
 }
 
 // ── Company's own website ──────────────────────────────────────────────────
@@ -851,9 +926,13 @@ async function researchCompany(
     webSearch(`"${name}"${anchor} competitors alternatives vs rivals "compared to" market landscape`),
     // Recency-biased, distinct from the other searches (which skew toward
     // funding history / profile facts, not "what's been published lately").
-    // Requests images alongside the search (Tavily only) so news[] can
+    // Requests images alongside the search on either engine so news[] can
     // carry a real article image instead of always omitting one.
-    newsSearchWithImages(`"${name}"${anchor} news 2025 2026 site:techcrunch.com OR site:venturebeat.com OR site:prnewswire.com OR site:businesswire.com OR site:forbes.com OR site:sifted.eu launch funding announcement`),
+    newsSearchWithImages(
+      `"${name}"${anchor} news 2025 2026 site:techcrunch.com OR site:venturebeat.com OR site:prnewswire.com OR site:businesswire.com OR site:forbes.com OR site:sifted.eu launch funding announcement`,
+      name,
+      anchor,
+    ),
     // Dedicated patent search — the profile query above mentions "patents"
     // as one keyword among many and rarely surfaces an actual patent
     // record; searching Google Patents specifically finds real filings.
@@ -1160,7 +1239,7 @@ async function researchCompany(
                 source:         { type: "string", description: "Publication name (e.g. 'TechCrunch', 'VentureBeat'). Omit if unknown." },
                 published_date: { type: "string", description: "Publication date YYYY-MM-DD. Use YYYY-MM-01 if only month+year is known. Omit if genuinely undated." },
                 summary:        { type: "string", description: "1-2 sentence summary of what the article actually says, based on its content in the research below — not a restatement of the headline. Omit if the research only gave you the headline/URL with no real content to summarize." },
-                image_url:      { type: "string", description: "Only fill this from the 'Images Found Alongside The News Search' section, and only when you can confidently match a specific image to THIS article by subject/company/context. Omit whenever there's no images section, no confident match, or you'd otherwise be guessing — never reuse a generic or unrelated image, and never invent a URL." },
+                image_url:      { type: "string", description: "Fill this from either: an 'Image:' line given directly under this specific article in the news research (use it as-is, it's already correctly paired), or — only with a confident match — the separate 'Images Found Alongside The News Search' list. Omit if neither applies or you'd be guessing — never reuse a generic or unrelated image, and never invent a URL. See rule 17 below." },
               },
               required: ["title", "url"],
             },
@@ -1299,12 +1378,16 @@ STRICT RULES:
     reaches the company — never report a secondary as capital raised. 'Debt' = venture debt, credit
     facilities, term loans; report the amount but never conflate it with an equity round. When a company
     is majority-owned by a PE firm, it is still PRIVATE — do not set is_public_company for buyouts.
-17. NEWS IMAGES — actively try to fill news[].image_url, don't default to omitting it. The "Images Found
-    Alongside The News Search" section lists real image URLs (each with a short description) pulled from
-    the same search — for every article in news[], check that list for an image whose URL or description
-    clearly corresponds to that specific article (matching company name, headline topic, or publication).
-    When you find one, use it. Only leave image_url unset when there genuinely is no images section, or
-    none of the listed images plausibly matches that article — never invent a URL, and never attach an
+17. NEWS IMAGES — actively try to fill news[].image_url, don't default to omitting it. Two different
+    sources may supply it, depending on which search engine ran:
+    (a) An "Image: <url>" line directly under a specific article's own entry in the "Recent News & Press
+        Coverage" section — this IS that article's image, already correctly paired. Use it directly, no
+        matching judgment needed.
+    (b) A separate "Images Found Alongside The News Search" section, listing real image URLs (each with a
+        short description) that are NOT pre-matched to any article — for these, only use one on a news
+        item when its URL or description clearly corresponds to that specific article (company name,
+        headline topic, or publication). Skip it if nothing plausibly matches.
+    Only leave image_url unset when neither source applies — never invent a URL, and never attach an
     image just because it's the only one available if it doesn't actually match.
 
 Research data:
