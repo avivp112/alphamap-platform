@@ -754,6 +754,53 @@ async function fetchCompanyWebsite(website: string | null | undefined): Promise<
   }
 }
 
+// ── News article image fallback (OpenGraph) ──────────────────────────────────
+// Claude only fills news[].image_url when it can confidently match one of
+// the images Tavily returned alongside the news search to a specific
+// article (see the save_enrichment schema + rule 17 in the prompt below) —
+// deliberately conservative, so most articles still come back with none.
+// This fills the gap: fetch the article's own page directly and read its
+// og:image/twitter:image share-preview tag, the same technique
+// scripts/backfill_news_images.ts uses to backfill already-enriched
+// articles. Costs zero Tavily/Serper budget — it's a plain HTTP fetch of a
+// URL Claude already gave us. Best-effort: bot-blocked pages, JS-only SPAs,
+// or a genuinely missing og:image just mean image_url stays null, same as
+// any other unfound field.
+async function fetchArticleOgImage(articleUrl: string): Promise<string | null> {
+  if (!articleUrl) return null;
+  const url = articleUrl.startsWith("http") ? articleUrl : `https://${articleUrl}`;
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    const res = await fetch(url, {
+      signal: controller.signal,
+      redirect: "follow",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; AlphaMapEnrichmentBot/1.0; +https://alphamap.app)",
+        "Accept": "text/html",
+      },
+    }).finally(() => clearTimeout(timer));
+
+    if (!res.ok) return null;
+    const contentType = res.headers.get("content-type") ?? "";
+    if (!contentType.includes("text/html")) return null;
+
+    const html = await res.text();
+    const $ = cheerio.load(html);
+    const raw = $('meta[property="og:image"]').attr("content")
+      ?? $('meta[name="twitter:image"]').attr("content")
+      ?? $('meta[property="twitter:image"]').attr("content");
+    if (!raw) return null;
+
+    // og:image is sometimes a protocol-relative or site-relative URL —
+    // resolve it against the article's own (post-redirect) URL.
+    return new URL(raw, res.url || url).toString();
+  } catch {
+    return null;
+  }
+}
+
 // ── Claude: extract complete company profile in one call ──────────────────────
 // Shared tool-schema properties for a person (founder or leadership entry)
 // — feeds calculate_alphamap_score's Founder & Team Quality pillar. Kept
@@ -1252,6 +1299,13 @@ STRICT RULES:
     reaches the company — never report a secondary as capital raised. 'Debt' = venture debt, credit
     facilities, term loans; report the amount but never conflate it with an equity round. When a company
     is majority-owned by a PE firm, it is still PRIVATE — do not set is_public_company for buyouts.
+17. NEWS IMAGES — actively try to fill news[].image_url, don't default to omitting it. The "Images Found
+    Alongside The News Search" section lists real image URLs (each with a short description) pulled from
+    the same search — for every article in news[], check that list for an image whose URL or description
+    clearly corresponds to that specific article (matching company name, headline topic, or publication).
+    When you find one, use it. Only leave image_url unset when there genuinely is no images section, or
+    none of the listed images plausibly matches that article — never invent a URL, and never attach an
+    image just because it's the only one available if it doesn't actually match.
 
 Research data:
 ${context}`,
@@ -1719,15 +1773,20 @@ async function patchStartupProfile(
 
   // News: set only when currently empty — same fill-null-when-empty policy
   // as competitors/acquisitions, so a manually-curated news list is never
-  // overwritten by the pipeline.
+  // overwritten by the pipeline. Any article Claude left without an
+  // image_url gets one more shot via the OpenGraph fallback below before
+  // being written — costs nothing when it doesn't find one.
   if (result.news.length > 0 && (!existing.news || existing.news.length === 0)) {
-    patch.news = result.news.map((n): NewsItem => ({
-      title: n.title,
-      url: n.url,
-      source: n.source ?? null,
-      published_date: n.published_date ?? null,
-      summary: n.summary ?? null,
-      image_url: n.image_url ?? null,
+    patch.news = await Promise.all(result.news.map(async (n): Promise<NewsItem> => {
+      const imageUrl = n.image_url ?? (n.url ? await fetchArticleOgImage(n.url) : null);
+      return {
+        title: n.title,
+        url: n.url,
+        source: n.source ?? null,
+        published_date: n.published_date ?? null,
+        summary: n.summary ?? null,
+        image_url: imageUrl,
+      };
     }));
   }
 
