@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import {
-  Mail, Calendar, ShieldCheck, Sparkles, Bell, BellOff, KeyRound, ArrowRight,
+  Mail, Calendar, ShieldCheck, Sparkles, Bell, BellOff, KeyRound, ArrowRight, Globe,
 } from "lucide-react";
 import { Layout } from "../components/Layout";
 import { supabase } from "../../lib/supabase";
@@ -23,6 +23,7 @@ interface ProfileUser {
   provider: string | null;
   marketingOptIn: boolean;
   termsAcceptedAt: string | null;
+  country: string | null;
 }
 
 function getInitials({ name, email }: { name: string | null; email: string | null }): string {
@@ -78,6 +79,7 @@ export function Profile() {
         provider: u.app_metadata?.provider ?? null,
         marketingOptIn: Boolean(u.user_metadata?.marketing_opt_in),
         termsAcceptedAt: (u.user_metadata?.terms_accepted_at as string | undefined) ?? null,
+        country: (u.user_metadata?.country as string | undefined) ?? null,
       });
       setLoading(false);
     });
@@ -123,6 +125,7 @@ export function Profile() {
               value={user?.provider ? (PROVIDER_LABEL[user.provider] ?? user.provider) : "—"}
             />
             <DetailRow icon={Calendar} label="Member Since" value={fmtDate(user?.createdAt ?? null)} />
+            <DetailRow icon={Globe} label="Country" value={user?.country ?? "—"} />
             <DetailRow
               icon={user?.marketingOptIn ? Bell : BellOff}
               label="Marketing Updates"

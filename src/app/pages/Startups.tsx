@@ -895,17 +895,26 @@ function CompanySocialRow({ startup }: { startup: Startup }) {
 
 // ── Shared tab primitives ─────────────────────────────────────────────────────
 
-function StatCard({ icon: Icon, label, value, accent = "#F59E0B" }: {
-  icon: React.ElementType; label: string; value: string; accent?: string;
+function StatCard({ icon: Icon, label, value, accent = "#F59E0B", onClick }: {
+  icon: React.ElementType; label: string; value: string; accent?: string; onClick?: () => void;
 }) {
+  const Tag = onClick ? "button" : "div";
   return (
-    <div className="rounded-[8px] p-4 flex flex-col gap-2 border bg-gray-50 border-gray-100">
+    <Tag
+      type={onClick ? "button" : undefined}
+      onClick={onClick}
+      className={`rounded-[8px] p-4 flex flex-col gap-2 border bg-gray-50 border-gray-100 text-left w-full ${
+        onClick ? "transition-colors hover:border-gray-300 hover:bg-white cursor-pointer" : ""
+      }`}
+    >
       <div className="flex items-center gap-1.5">
         <Icon className="w-3.5 h-3.5 flex-none" style={{ color: accent }} />
         <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">{label}</span>
       </div>
-      <span className="text-sm font-bold text-gray-900 truncate">{value}</span>
-    </div>
+      <span className={`text-sm font-bold truncate ${onClick ? "text-[#0F172A] underline decoration-gray-300 underline-offset-2" : "text-gray-900"}`}>
+        {value}
+      </span>
+    </Tag>
   );
 }
 
@@ -979,9 +988,10 @@ function ScoreHistoryChart({ startupId }: { startupId: string }) {
 }
 
 function OverviewTab({
-  startup, alphaScore, alphaLoading, alphaErr,
+  startup, alphaScore, alphaLoading, alphaErr, onFilterBySector,
 }: {
   startup: Startup; alphaScore: AlphaScore | null; alphaLoading: boolean; alphaErr: boolean;
+  onFilterBySector: (parent: string, sub: string) => void;
 }) {
   const { t } = useTranslation();
   const location = [startup.city, startup.country].filter(Boolean).join(", ") || "—";
@@ -1002,7 +1012,10 @@ function OverviewTab({
         <StatCard icon={MapPin}    label="Location"    value={location} accent="#0e7490" />
         <StatCard icon={Users}     label="Employees"   value={fmtEmp(startup.employee_count)} accent="#6d28d7" />
         <StatCard icon={Briefcase} label="Sector"      value={sectorName} accent="#be185d" />
-        <StatCard icon={Layers}    label="Sub-Sector"  value={subSectorName} accent="#7c3aed" />
+        <StatCard
+          icon={Layers} label="Sub-Sector" value={subSectorName} accent="#7c3aed"
+          onClick={sectorName && subSectorName ? () => onFilterBySector(sectorName, subSectorName) : undefined}
+        />
       </div>
 
       <CompanySocialRow startup={startup} />
@@ -1647,7 +1660,12 @@ const TEARSHEET_TABS: { id: TearsheetTab; label: string }[] = [
   { id: "news",        label: "News" },
 ];
 
-function TearsheetModal({ startup, onClose, onNavigate }: { startup: StartupListRow; onClose: () => void; onNavigate: (row: StartupListRow) => void }) {
+function TearsheetModal({ startup, onClose, onNavigate, onFilterBySector }: {
+  startup: StartupListRow;
+  onClose: () => void;
+  onNavigate: (row: StartupListRow) => void;
+  onFilterBySector: (parent: string, sub: string) => void;
+}) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TearsheetTab>("overview");
   const [navLoading, setNavLoading] = useState(false);
@@ -1818,7 +1836,7 @@ function TearsheetModal({ startup, onClose, onNavigate }: { startup: StartupList
           ) : (
             <>
               {activeTab === "overview" && (
-                <OverviewTab startup={detail} alphaScore={alphaScore} alphaLoading={alphaLoading} alphaErr={alphaErr} />
+                <OverviewTab startup={detail} alphaScore={alphaScore} alphaLoading={alphaLoading} alphaErr={alphaErr} onFilterBySector={onFilterBySector} />
               )}
               {activeTab === "funding" && (
                 <FundingValuationTab sortedRounds={sortedRounds} fundingHistoryComplete={detail.funding_history_complete} />
@@ -2471,6 +2489,17 @@ export function Startups() {
     clearCityFilter();
   }
 
+  // Clicking a company's Sub-Sector stat in its tearsheet closes the
+  // tearsheet and filters the grid down to every company in that same
+  // sub-sector — the sidebar's own hierarchical filter, just triggered
+  // from inside a company's own detail view instead of the sidebar.
+  function handleFilterBySector(parent: string, sub: string) {
+    setSelected(null);
+    setSearch("");
+    setParentSector(parent);
+    setSubSector(sub);
+  }
+
   function applyQuickQuestion(q: QuickQuestion) {
     setSearch(""); setParentSector(q.parentSector ?? ""); setSubSector(""); setCountry("");
     setStageStep(q.stageStep ?? "all"); setHeadcount(q.headcountStep ?? "all");
@@ -2739,7 +2768,12 @@ export function Startups() {
       <ProductTour steps={tourSteps} open={tourOpen} onClose={closeTour} />
 
       {tearsheetStartup && (
-        <TearsheetModal startup={tearsheetStartup} onClose={() => setSelected(null)} onNavigate={(row) => setSelected(row)} />
+        <TearsheetModal
+          startup={tearsheetStartup}
+          onClose={() => setSelected(null)}
+          onNavigate={(row) => setSelected(row)}
+          onFilterBySector={handleFilterBySector}
+        />
       )}
 
       {showCompare && selectedStartups.length >= 2 && (

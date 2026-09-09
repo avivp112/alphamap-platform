@@ -10,6 +10,7 @@ import { FcGoogle } from "react-icons/fc";
 import { FaLinkedin } from "react-icons/fa";
 import { supabase } from "../../lib/supabase";
 import { TERMS_SECTIONS } from "../../lib/legal";
+import { COUNTRIES } from "../../lib/countries";
 import { BrandMark, BrandWordmark } from "../components/BrandMark";
 
 function TermsOfUseModal({ onClose }: { onClose: () => void }) {
@@ -74,6 +75,7 @@ const MIN_PASSWORD_LENGTH = 8;
 
 interface FormValues {
   fullName: string;
+  country: string;
   email: string;
   password: string;
   confirmPassword: string;
@@ -81,6 +83,7 @@ interface FormValues {
 
 interface FieldErrors {
   fullName?: string;
+  country?: string;
   email?: string;
   password?: string;
   confirmPassword?: string;
@@ -94,6 +97,10 @@ function validate(values: FormValues, t: TFunction): FieldErrors {
     errors.fullName = t("auth.validation.nameRequired");
   } else if (values.fullName.trim().length < 2) {
     errors.fullName = t("auth.validation.nameShort");
+  }
+
+  if (!values.country.trim()) {
+    errors.country = t("auth.validation.countryRequired");
   }
 
   if (!values.email.trim()) {
@@ -338,7 +345,7 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const next = searchParams.get("next") || "/dashboard";
-  const [values, setValues]           = useState<FormValues>({ fullName: "", email: "", password: "", confirmPassword: "" });
+  const [values, setValues]           = useState<FormValues>({ fullName: "", country: "", email: "", password: "", confirmPassword: "" });
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError]     = useState<string | null>(null);
   const [loading, setLoading]         = useState<Loading>("idle");
@@ -385,6 +392,7 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
         options: {
           data: {
             full_name: values.fullName.trim(),
+            country: values.country,
             marketing_opt_in: marketingOptIn,
             terms_accepted_at: new Date().toISOString(),
           },
@@ -458,6 +466,23 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
             className={`${inputCls} ${fieldErrors.fullName ? inputErrCls : ""}`}
           />
           <FieldError message={fieldErrors.fullName} />
+        </div>
+
+        <div>
+          <label className={labelCls} htmlFor="country">{t("auth.signup.country")}</label>
+          <select
+            id="country"
+            autoComplete="country-name"
+            value={values.country}
+            onChange={(e) => setField("country", e.target.value)}
+            className={`${inputCls} ${fieldErrors.country ? inputErrCls : ""} ${values.country ? "" : "text-gray-400"}`}
+          >
+            <option value="" disabled>{t("auth.signup.countryPlaceholder")}</option>
+            {COUNTRIES.map((c) => (
+              <option key={c} value={c} className="text-[#0F172A]">{c}</option>
+            ))}
+          </select>
+          <FieldError message={fieldErrors.country} />
         </div>
 
         <div>
