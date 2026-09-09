@@ -1660,7 +1660,7 @@ const startupByDomain = new Map<string, StartupRow>();
 async function patchStartupProfile(
   existing: StartupRow,
   result: EnrichmentResult,
-): Promise<{ fieldsPatched: number; patchedKeys: string[] }> {
+): Promise<{ fieldsPatched: number; patchedKeys: string[]; newsCount: number; newsWithImage: number }> {
   const { profile, metrics, leadership } = result;
   const patch: Record<string, unknown> = {};
 
@@ -1822,6 +1822,12 @@ async function patchStartupProfile(
   const patchedKeys   = Object.keys(patch);
   const fieldsPatched = patchedKeys.length;
 
+  // News/image counts — computed once, reused in every log line and return
+  // path below so DRY_RUN, a failed write, and a successful write all agree.
+  const newsItems     = (patch.news as NewsItem[] | undefined) ?? [];
+  const newsCount      = newsItems.length;
+  const newsWithImage  = newsItems.filter((n) => n.image_url).length;
+
   // Funding history completeness: always overwrite with the latest run's
   // assessment (not fill-null-only) — a later pass that finds the missing
   // early round should be able to flip false -> true, and vice versa if new
@@ -1831,13 +1837,14 @@ async function patchStartupProfile(
 
   if (DRY_RUN) {
     console.log(`    [DRY] Would patch: ${Object.keys(patch).join(", ")}`);
-    return { fieldsPatched, patchedKeys };
+    if (newsCount > 0) console.log(`    [DRY] news images: ${newsWithImage}/${newsCount} filled`);
+    return { fieldsPatched, patchedKeys, newsCount, newsWithImage };
   }
 
   const { error } = await supabase.from("startups").update(patch).eq("id", existing.id);
   if (error) {
     console.warn(`    ⚠️  Profile patch failed: ${error.message}`);
-    return { fieldsPatched: 0, patchedKeys: [] };
+    return { fieldsPatched: 0, patchedKeys: [], newsCount: 0, newsWithImage: 0 };
   }
 
   const parts: string[] = [];
@@ -1846,7 +1853,7 @@ async function patchStartupProfile(
   if (patch.leadership)     parts.push(`${leadership.length} team members`);
   if (patch.competitors)    parts.push(`${(patch.competitors as Competitor[]).length} competitors`);
   if (patch.acquisitions)   parts.push(`${(patch.acquisitions as Acquisition[]).length} acquisitions`);
-  if (patch.news)           parts.push(`${(patch.news as NewsItem[]).length} news articles`);
+  if (newsCount > 0)        parts.push(`${newsCount} news articles (${newsWithImage}/${newsCount} w/ image)`);
   if (patch.patents)        parts.push(`${(patch.patents as PatentRecord[]).length} patents`);
   else if (patch.patent_count != null) parts.push(`${patch.patent_count} patents (count only)`);
   if (patch.sector_id)      parts.push(`sector: ${profile.sector_name}`);
@@ -1858,7 +1865,7 @@ async function patchStartupProfile(
   if (profileKeys.length > 0) parts.push(`profile: ${profileKeys.join(", ")}`);
   if (parts.length > 0) console.log(`    👤  Patched: ${parts.join(" | ")}`);
 
-  return { fieldsPatched, patchedKeys };
+  return { fieldsPatched, patchedKeys, newsCount, newsWithImage };
 }
 
 // ── Headcount history snapshot ────────────────────────────────────────────────
@@ -2061,6 +2068,8 @@ async function main() {
   let totalRoundsInserted = 0;
   let totalFieldsPatched  = 0;
   let totalRemovedPublic  = 0;
+  let totalNewsArticles   = 0;
+  let totalNewsWithImage  = 0;
 
   const STATUS_ICON: Record<ProcessStatus, string> = {
     success:           "✅",
@@ -2185,6 +2194,8 @@ async function main() {
         await recordScoreSnapshot(row.id);
 
         totalFieldsPatched += fieldsPatched;
+        totalNewsArticles  += profileResult.newsCount;
+        totalNewsWithImage += profileResult.newsWithImage;
 
         // Honest after-state: which of the pre-run gaps are STILL open after
         // this pass. The pre-run "Missing before this pass" line describes the
@@ -2292,6 +2303,10 @@ async function main() {
   console.log(`  ❌  Errors:              ${tally.error}`);
   console.log(`  💰  Rounds inserted:     ${totalRoundsInserted}`);
   console.log(`  📝  Profile fields set:  ${totalFieldsPatched}`);
+  if (totalNewsArticles > 0) {
+    const pct = Math.round((totalNewsWithImage / totalNewsArticles) * 100);
+    console.log(`  🖼️   News w/ image:       ${totalNewsWithImage} / ${totalNewsArticles} (${pct}%)`);
+  }
   console.log(`  🔌  Tavily calls used:   ${tavilyCallCount} / ${TAVILY_BUDGET}`);
   if (serperCallCount > 0) {
     console.log(`  🔍  Serper calls used:   ${serperCallCount}`);
