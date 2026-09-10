@@ -67,7 +67,14 @@
     "listView": "List view",
     "totalRaised": "Total Raised",
     "leadership": "Leadership",
-    "clearCount": "Clear ({{count}})"
+    "clearCount": "Clear ({{count}})",
+    "export": "Export",
+    "exportCsv": "Export as CSV",
+    "exportJson": "Export as JSON",
+    "exportRowCount": "{{count}} results",
+    "exportEmpty": "No results to export.",
+    "exportFailed": "Export failed. Please try again.",
+    "exportCapped": "Limited to the first {{cap}} results."
   },
   "metrics": {
     "marketCap": "Market Cap",

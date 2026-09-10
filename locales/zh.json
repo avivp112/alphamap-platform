@@ -67,7 +67,14 @@
     "listView": "列表视图",
     "totalRaised": "累计融资额",
     "leadership": "管理团队",
-    "clearCount": "清除（{{count}}）"
+    "clearCount": "清除（{{count}}）",
+    "export": "导出",
+    "exportCsv": "导出为 CSV",
+    "exportJson": "导出为 JSON",
+    "exportRowCount": "{{count}} 条结果",
+    "exportEmpty": "没有可导出的结果。",
+    "exportFailed": "导出失败，请重试。",
+    "exportCapped": "仅限前 {{cap}} 条结果。"
   },
   "metrics": {
     "marketCap": "市值",

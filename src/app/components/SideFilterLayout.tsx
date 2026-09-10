@@ -1,7 +1,8 @@
 import { useTranslation } from "react-i18next";
 import { stageLabel } from "../../lib/taxonomy";
 import React, { useEffect, useRef, useState } from "react";
-import { Search, X, SlidersHorizontal, ChevronUp, ChevronDown, Sparkles } from "lucide-react";
+import { Search, X, SlidersHorizontal, ChevronUp, ChevronDown, Sparkles, Download, FileText, FileJson, Loader2 } from "lucide-react";
+import type { ExportFormat } from "../../lib/exportData";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SideFilterLayout — the shared faceted-search shell used by every directory
@@ -145,6 +146,103 @@ export function QuickQuestionsMenu<T extends { label: string }>({
             {q.label}
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Export Menu ────────────────────────────────────────────────────────────────
+// Small "Export ▾" dropdown for the directory pages' top search bar — lets
+// the current filtered result set be downloaded as CSV or JSON. The page
+// owns what "current result set" means (already-fetched rows, or a fresh
+// fetch of everything matching the active filters) and just hands this a
+// row count plus an onExport callback; this component is pure UI chrome.
+
+export function ExportMenu({
+  onExport, rowCount, exporting = false, error, note, label,
+}: {
+  onExport: (format: ExportFormat) => void;
+  /** Shown next to each format option, e.g. "248 companies". Omit while unknown. */
+  rowCount?: number;
+  /** True while a fetch for the export is in flight — disables the trigger and shows a spinner. */
+  exporting?: boolean;
+  /** Set by the page after a failed export fetch; shown under the trigger until the next attempt. */
+  error?: string | null;
+  /** Small caveat line under the row count, e.g. a result-cap notice. */
+  note?: string;
+  label?: string;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const empty = rowCount === 0;
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [open]);
+
+  function pick(format: ExportFormat) {
+    if (empty) return;
+    setOpen(false);
+    onExport(format);
+  }
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        disabled={exporting}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-[#0F172A] bg-white border border-gray-200 hover:bg-gray-50 transition-colors flex-none disabled:opacity-60 disabled:cursor-wait"
+      >
+        {exporting ? <Loader2 className="w-4 h-4 text-gray-400 animate-spin flex-none" /> : <Download className="w-4 h-4 text-gray-400 flex-none" />}
+        <span className="hidden sm:inline">{label ?? t("common.export")}</span>
+        <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-150 ${open ? "rotate-180" : ""}`} />
+      </button>
+      {error && <p className="absolute right-0 top-full mt-1 w-56 text-[11px] font-semibold text-rose-600">{error}</p>}
+
+      <div
+        role="menu"
+        className={`absolute right-0 top-full mt-1.5 w-56 rounded-lg border border-gray-100 bg-white py-2 shadow-[0_12px_32px_rgba(15,23,42,0.10)] transition-all duration-150 ease-out z-40 ${
+          open ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 -translate-y-1 pointer-events-none"
+        }`}
+      >
+        <p className="px-4 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+          {empty ? t("common.exportEmpty") : rowCount != null ? t("common.exportRowCount", { count: rowCount }) : t("common.export")}
+        </p>
+        {!empty && note && <p className="px-4 pb-1.5 text-[10px] text-gray-400">{note}</p>}
+        <button
+          role="menuitem"
+          onClick={() => pick("csv")}
+          disabled={empty}
+          className="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-[#0F172A] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+        >
+          <FileText className="w-3.5 h-3.5 text-gray-400 flex-none" />
+          {t("common.exportCsv")}
+        </button>
+        <button
+          role="menuitem"
+          onClick={() => pick("json")}
+          disabled={empty}
+          className="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-[#0F172A] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+        >
+          <FileJson className="w-3.5 h-3.5 text-gray-400 flex-none" />
+          {t("common.exportJson")}
+        </button>
       </div>
     </div>
   );

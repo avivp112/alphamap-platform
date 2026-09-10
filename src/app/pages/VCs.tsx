@@ -8,8 +8,9 @@ import {
   HelpCircle, Building2, ArrowUpDown,
 } from "lucide-react";
 import { Layout } from "../components/Layout";
-import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider, QuickQuestionsMenu } from "../components/SideFilterLayout";
+import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider, QuickQuestionsMenu, ExportMenu } from "../components/SideFilterLayout";
 import { fetchInvestors, fetchRecentActiveInvestorNames, type InvestorRow } from "../../lib/supabase";
+import { exportRows, type ExportColumn } from "../../lib/exportData";
 import { textMatchRank } from "../../lib/searchRank";
 import { VCModal } from "../components/VCModal";
 import { DonutFocusChart } from "../components/DonutFocusChart";
@@ -121,6 +122,24 @@ const AUM_STEPS = [
   { value: "large", label: "$2B+"        },
 ] as const;
 type AumStep = typeof AUM_STEPS[number]["value"];
+
+// ─── Export ───────────────────────────────────────────────────────────────────
+
+const VC_EXPORT_COLUMNS: ExportColumn<VCFirm>[] = [
+  { label: "Name",                value: (v) => v.name },
+  { label: "Headquarters",        value: (v) => v.headquarters },
+  { label: "Geography",           value: (v) => v.geography.join("; ") },
+  { label: "Founded Year",        value: (v) => v.founded_year || "" },
+  { label: "Fund Size",           value: (v) => v.fund_size ?? "" },
+  { label: "AUM (millions USD)",  value: (v) => v.aum_millions ?? "" },
+  { label: "Typical Check Size",  value: (v) => v.typical_check_size ?? "" },
+  { label: "Stages",              value: (v) => v.stages.join("; ") },
+  { label: "Sectors",             value: (v) => v.sectors.join("; ") },
+  { label: "Portfolio Count",     value: (v) => v.portfolio_count },
+  { label: "Recent Investments",  value: (v) => v.recent_investments },
+  { label: "Notable Exits",       value: (v) => v.notable_exits.join("; ") },
+  { label: "Website",             value: (v) => v.website },
+];
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -795,6 +814,10 @@ export function VCs() {
   const checkLabel = CHECK_SIZE_STEPS.find(s => s.value === filters.checkStep)?.label ?? "All";
   const aumLabel   = AUM_STEPS.find(s => s.value === filters.aumStep)?.label ?? "All";
 
+  function handleExport(format: "csv" | "json") {
+    exportRows(filtered, VC_EXPORT_COLUMNS, "alphamap-vc-directory", format);
+  }
+
   return (
     <Layout>
 
@@ -817,6 +840,8 @@ export function VCs() {
           </div>
 
           <QuickQuestionsMenu questions={VC_QUICK_QUESTIONS} onSelect={applyQuickQuestion} />
+
+          <ExportMenu onExport={handleExport} rowCount={filtered.length} />
 
           <button
             onClick={() => setTourOpen(true)}

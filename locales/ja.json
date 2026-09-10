@@ -67,7 +67,14 @@
     "listView": "リスト表示",
     "totalRaised": "累計調達額",
     "leadership": "経営陣",
-    "clearCount": "解除（{{count}}）"
+    "clearCount": "解除（{{count}}）",
+    "export": "エクスポート",
+    "exportCsv": "CSVとしてエクスポート",
+    "exportJson": "JSONとしてエクスポート",
+    "exportRowCount": "{{count}} 件の結果",
+    "exportEmpty": "エクスポートできる結果がありません。",
+    "exportFailed": "エクスポートに失敗しました。もう一度お試しください。",
+    "exportCapped": "最初の{{cap}}件までに制限されます。"
   },
   "metrics": {
     "marketCap": "時価総額",

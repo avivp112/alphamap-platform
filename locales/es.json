@@ -67,7 +67,14 @@
     "listView": "Vista de lista",
     "totalRaised": "Capital total captado",
     "leadership": "Equipo directivo",
-    "clearCount": "Borrar ({{count}})"
+    "clearCount": "Borrar ({{count}})",
+    "export": "Exportar",
+    "exportCsv": "Exportar como CSV",
+    "exportJson": "Exportar como JSON",
+    "exportRowCount": "{{count}} resultados",
+    "exportEmpty": "No hay resultados para exportar.",
+    "exportFailed": "La exportación falló. Inténtalo de nuevo.",
+    "exportCapped": "Limitado a los primeros {{cap}} resultados."
   },
   "metrics": {
     "marketCap": "Cap. bursátil",

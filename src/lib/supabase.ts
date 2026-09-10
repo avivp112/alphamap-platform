@@ -343,6 +343,29 @@ export async function fetchStartupsPage(
   return (data ?? []) as StartupListRow[];
 }
 
+// Export cap — large enough to cover any realistic filtered slice of the
+// database, small enough that the browser isn't asked to hold/serialize an
+// unbounded CSV. Fetched in PostgREST's max page size (1000) per request.
+export const EXPORT_ROW_CAP = 5000;
+
+export async function fetchStartupsForExport(filters: StartupSearchFilters): Promise<StartupListRow[]> {
+  const batchSize = 1000;
+  const out: StartupListRow[] = [];
+  for (let from = 0; from < EXPORT_ROW_CAP; from += batchSize) {
+    const to = Math.min(from + batchSize, EXPORT_ROW_CAP) - 1;
+    const query = applyStartupSearchFilters(supabase.from("startups_search").select("*"), filters);
+    const { data, error } = await query
+      .order("completeness_score", { ascending: false })
+      .order("updated_at", { ascending: false })
+      .range(from, to);
+    if (error) throw error;
+    const batch = (data ?? []) as StartupListRow[];
+    out.push(...batch);
+    if (batch.length < batchSize) break;
+  }
+  return out;
+}
+
 export async function fetchStartupsCount(filters: StartupSearchFilters): Promise<number> {
   const query = applyStartupSearchFilters(
     supabase.from("startups_search").select("id", { count: "exact", head: true }),

@@ -9,7 +9,7 @@ import {
 } from "recharts";
 import { Layout } from "../components/Layout";
 import { LinkedInBadge } from "../components/LinkedInBadge";
-import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider, QuickQuestionsMenu } from "../components/SideFilterLayout";
+import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider, QuickQuestionsMenu, ExportMenu } from "../components/SideFilterLayout";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { ProductTour, type TourStep } from "../components/ProductTour";
 import {
@@ -24,13 +24,14 @@ import {
 } from "lucide-react";
 import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
-  fetchStartupsPage, fetchStartupsCount, fetchDistinctCountries, fetchStartupDetail,
+  fetchStartupsPage, fetchStartupsCount, fetchStartupsForExport, EXPORT_ROW_CAP, fetchDistinctCountries, fetchStartupDetail,
   fetchSuggestedPeers, fetchStartupListRowById, fetchScoreHistory, fetchArticleImage, STARTUPS_PAGE_SIZE,
   type Startup, type FundingRound, type RoundType, type AlphaScore, type HeadcountPoint,
   type StartupListRow, type StartupSearchFilters, type Competitor, type ScoreHistoryPoint,
   type NewsItem,
 } from "../../lib/supabase";
 import { useWatchlistMembership, addToWatchlist, removeFromWatchlist, watchlistErrorMessage } from "../../lib/watchlist";
+import { exportRows, type ExportColumn, type ExportFormat } from "../../lib/exportData";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -45,6 +46,23 @@ function getErrorMessage(err: unknown): string {
   }
   return "Unknown error";
 }
+
+const STARTUP_EXPORT_COLUMNS: ExportColumn<StartupListRow>[] = [
+  { label: "Name",              value: (s) => s.name },
+  { label: "Website",           value: (s) => s.website ?? "" },
+  { label: "Sector",            value: (s) => s.sector_parent ?? "" },
+  { label: "Industry",          value: (s) => s.industry ?? "" },
+  { label: "Country",           value: (s) => s.country ?? "" },
+  { label: "City",              value: (s) => s.city ?? "" },
+  { label: "Founded Year",      value: (s) => s.founded_year ?? "" },
+  { label: "Employees",         value: (s) => s.employee_count ?? "" },
+  { label: "Growth Trend",      value: (s) => s.growth_trend ?? "" },
+  { label: "Latest Round Type", value: (s) => s.latest_round_type ?? "" },
+  { label: "Latest Valuation",  value: (s) => s.latest_valuation ?? "" },
+  { label: "Latest Round Date", value: (s) => s.latest_round_date ?? "" },
+  { label: "Total Raised",      value: (s) => s.total_raised },
+  { label: "Completeness Score", value: (s) => s.completeness_score },
+];
 
 function fmt(usd: number | null | undefined): string {
   if (!usd) return "—";
@@ -2382,6 +2400,8 @@ export function Startups() {
   const [totalCount, setTotalCount]     = useState(0);
   const [countries, setCountries]       = useState<string[]>([]);
   const [refreshKey, setRefreshKey]     = useState(0);
+  const [exporting, setExporting]       = useState(false);
+  const [exportError, setExportError]   = useState<string | null>(null);
 
   const [showAdd, setShowAdd]           = useState(false);
   const [search, setSearch]             = useState("");
@@ -2570,6 +2590,22 @@ export function Startups() {
   const currentStageLabel = stageLabel(STAGE_STEPS.find((s) => s.value === stageStep)?.label ?? "All", t);
   const currentHeadcountLabel = HEADCOUNT_STEPS.find((s) => s.value === headcountStep)?.label ?? "All";
 
+  // Export pulls every row matching the current filters (not just the
+  // visible page) with a dedicated fetch — `rows` only ever holds one
+  // server-paginated page.
+  async function handleExport(format: ExportFormat) {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const allRows = await fetchStartupsForExport(filters);
+      exportRows(allRows, STARTUP_EXPORT_COLUMNS, "alphamap-private-market", format);
+    } catch (e) {
+      setExportError(getErrorMessage(e));
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <Layout>
 
@@ -2592,6 +2628,14 @@ export function Startups() {
           </div>
 
           <QuickQuestionsMenu questions={QUICK_QUESTIONS} onSelect={applyQuickQuestion} />
+
+          <ExportMenu
+            onExport={handleExport}
+            rowCount={totalCount}
+            exporting={exporting}
+            error={exportError}
+            note={totalCount > EXPORT_ROW_CAP ? t("common.exportCapped", { cap: EXPORT_ROW_CAP }) : undefined}
+          />
 
           <button
             onClick={() => setTourOpen(true)}
