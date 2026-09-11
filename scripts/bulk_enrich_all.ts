@@ -829,18 +829,17 @@ async function fetchCompanyWebsite(website: string | null | undefined): Promise<
   }
 }
 
-// ── News article image fallback (OpenGraph) ──────────────────────────────────
-// Claude only fills news[].image_url when it can confidently match one of
-// the images Tavily returned alongside the news search to a specific
-// article (see the save_enrichment schema + rule 17 in the prompt below) —
-// deliberately conservative, so most articles still come back with none.
-// This fills the gap: fetch the article's own page directly and read its
-// og:image/twitter:image share-preview tag, the same technique
-// scripts/backfill_news_images.ts uses to backfill already-enriched
-// articles. Costs zero Tavily/Serper budget — it's a plain HTTP fetch of a
-// URL Claude already gave us. Best-effort: bot-blocked pages, JS-only SPAs,
-// or a genuinely missing og:image just mean image_url stays null, same as
-// any other unfound field.
+// ── News article image (OpenGraph) ────────────────────────────────────────────
+// Fetches the article's own page and reads its og:image/twitter:image
+// share-preview tag — the same technique scripts/backfill_news_images.ts
+// uses to backfill already-enriched articles. This is the PRIMARY image
+// source (see the call site below): it's the article's real full-size hero
+// image, versus Serper News' small search-result thumbnail or a Tavily
+// image fuzzy-matched by Claude, either of which look visibly blurry once
+// stretched to card width. Costs zero Tavily/Serper budget — it's a plain
+// HTTP fetch of a URL already in hand. Best-effort: bot-blocked pages,
+// JS-only SPAs, or a genuinely missing og:image just mean this returns
+// null and the caller falls back to Claude's Serper/Tavily pick.
 async function fetchArticleOgImage(articleUrl: string): Promise<string | null> {
   if (!articleUrl) return null;
   const url = articleUrl.startsWith("http") ? articleUrl : `https://${articleUrl}`;
@@ -1856,12 +1855,18 @@ async function patchStartupProfile(
 
   // News: set only when currently empty — same fill-null-when-empty policy
   // as competitors/acquisitions, so a manually-curated news list is never
-  // overwritten by the pipeline. Any article Claude left without an
-  // image_url gets one more shot via the OpenGraph fallback below before
-  // being written — costs nothing when it doesn't find one.
+  // overwritten by the pipeline. Every article gets one shot at the
+  // OpenGraph fallback FIRST, ahead of whatever Claude matched from the
+  // Serper/Tavily search results: og:image is the article's own full-size
+  // hero/share-preview image (usually 1200x630+), while Serper News'
+  // imageUrl is a small crawled search-result thumbnail (often well under
+  // 300px wide) — using it directly at full card width upscales it into a
+  // visibly blurry image. og:image wins whenever it's found; Serper/Tavily's
+  // pick is only kept as the fallback for pages that block the fetch or
+  // genuinely have no og:image (paywalled sites, SPAs, etc).
   if (result.news.length > 0 && (!existing.news || existing.news.length === 0)) {
     patch.news = await Promise.all(result.news.map(async (n): Promise<NewsItem> => {
-      const imageUrl = n.image_url ?? (n.url ? await fetchArticleOgImage(n.url) : null);
+      const imageUrl = (n.url ? await fetchArticleOgImage(n.url) : null) ?? n.image_url ?? null;
       return {
         title: n.title,
         url: n.url,

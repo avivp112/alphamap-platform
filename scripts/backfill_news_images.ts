@@ -12,15 +12,26 @@
  * CORS restriction (unlike a browser) and follows redirects natively, so
  * this reaches articles a browser-side or sandboxed-SQL fetch can't.
  *
- * Write strategy: fill-null only — an article that already has an
+ * Write strategy: fill-null by default — an article that already has an
  * image_url is left untouched; only articles missing one are attempted,
  * and only ones where a real image was actually found get written.
+ *
+ * Set REPLACE_EXISTING=true to also re-check articles that already have an
+ * image_url — useful after bulk_enrich_all.ts (before its OpenGraph-first
+ * fix) saved a Serper News search-result thumbnail as image_url, which
+ * looks visibly blurry once stretched to card width in the News tab. In
+ * this mode every article with a url is re-fetched and its image_url is
+ * REPLACED with the freshly-fetched og:image/twitter:image — but only when
+ * one is actually found; a failed fetch (bot-blocked, no og:image, etc.)
+ * leaves the existing image_url untouched rather than blanking it out.
  *
  * Usage:
  *   npx tsx scripts/backfill_news_images.ts                    # dry run (default)
  *   DRY_RUN=false npx tsx scripts/backfill_news_images.ts
+ *   REPLACE_EXISTING=true DRY_RUN=false npx tsx scripts/backfill_news_images.ts
  *   …re-run the same command as many times as you like — already-filled
- *   articles are skipped, so it's always safe to stop and resume.
+ *   articles are skipped (unless REPLACE_EXISTING=true), so it's always
+ *   safe to stop and resume.
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -63,6 +74,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ── Configuration ─────────────────────────────────────────────────────────────
 const DRY_RUN          = process.env.DRY_RUN !== "false"; // safe default: dry run
+const REPLACE_EXISTING = process.env.REPLACE_EXISTING === "true"; // safe default: fill-null only
 const BATCH_SIZE        = Number(process.env.BATCH_SIZE        ?? 25);
 const FETCH_TIMEOUT_MS  = Number(process.env.FETCH_TIMEOUT_MS  ?? 5_000);
 const COMPANY_DELAY_MS  = Number(process.env.COMPANY_DELAY_MS  ?? 200); // politeness gap between companies
@@ -178,16 +190,19 @@ async function fetchAllStartupsWithNews(): Promise<StartupRow[]> {
 async function main() {
   console.log("═".repeat(62));
   console.log("  News Image Backfill");
-  console.log(`  DRY_RUN=${DRY_RUN} | BATCH_SIZE=${BATCH_SIZE} | FETCH_TIMEOUT_MS=${FETCH_TIMEOUT_MS}`);
+  console.log(`  DRY_RUN=${DRY_RUN} | REPLACE_EXISTING=${REPLACE_EXISTING} | BATCH_SIZE=${BATCH_SIZE} | FETCH_TIMEOUT_MS=${FETCH_TIMEOUT_MS}`);
   console.log("═".repeat(62) + "\n");
   if (DRY_RUN) console.log("ℹ️  DRY RUN — set DRY_RUN=false to write changes to the database.\n");
+  if (REPLACE_EXISTING) console.log("⚠️  REPLACE_EXISTING=true — articles that already have an image_url will be re-fetched and overwritten when a new one is found.\n");
 
   const all = await fetchAllStartupsWithNews();
   const needsWork = all.filter(
-    (row) => Array.isArray(row.news) && row.news.some((n) => n?.url && !n.image_url),
+    (row) => Array.isArray(row.news) && row.news.some((n) => n?.url && (REPLACE_EXISTING || !n.image_url)),
   );
 
-  console.log(`Found ${needsWork.length} companies with at least one news article missing an image (of ${all.length} total with news).\n`);
+  console.log(REPLACE_EXISTING
+    ? `Found ${needsWork.length} companies with at least one news article to re-check (of ${all.length} total with news).\n`
+    : `Found ${needsWork.length} companies with at least one news article missing an image (of ${all.length} total with news).\n`);
   if (needsWork.length === 0) {
     console.log("Nothing to do — every article already has an image_url (or none have a url at all).");
     return;
@@ -210,10 +225,13 @@ async function main() {
 
       const updatedItems = await Promise.all(
         items.map(async (item) => {
-          if (item.image_url || !item.url) return item;
+          if (!item.url) return item;
+          if (item.image_url && !REPLACE_EXISTING) return item;
           articlesAttempted++;
           const img = await fetchArticleImage(item.url);
-          if (img) {
+          // A failed/empty fetch never blanks an existing image_url — it
+          // just means this article keeps whatever it already had.
+          if (img && img !== item.image_url) {
             changed = true;
             foundThisCompany++;
             articlesImageFound++;
