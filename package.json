@@ -15,6 +15,7 @@
     "@capacitor/android": "^8.5.2",
     "@capacitor/core": "^8.5.2",
     "@capacitor/ios": "^8.5.2",
+    "@capgo/capacitor-updater": "^8.51.16",
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.1",
     "@fontsource-variable/inter": "^5.2.8",
@@ -48,6 +49,7 @@
     "@radix-ui/react-toggle-group": "1.1.2",
     "@radix-ui/react-tooltip": "1.1.8",
     "@supabase/supabase-js": "2.49.4",
+    "archiver": "^8.0.0",
     "canvas-confetti": "1.9.4",
     "cheerio": "^1.2.0",
     "class-variance-authority": "0.7.1",
@@ -84,6 +86,7 @@
   "devDependencies": {
     "@capacitor/cli": "^8.5.2",
     "@tailwindcss/vite": "4.1.12",
+    "@types/archiver": "^8.0.0",
     "@types/needle": "^3.3.0",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",

@@ -7,6 +7,8 @@
   // already active on the very first paint (avoids a flash of English).
   import "./lib/i18n";
   import { missingSupabaseEnv } from "./lib/supabase";
+  import { Capacitor } from "@capacitor/core";
+  import { CapacitorUpdater } from "@capgo/capacitor-updater";
 
   const root = createRoot(document.getElementById("root")!);
 
@@ -43,4 +45,19 @@
     );
   } else {
     root.render(<App />);
+  }
+
+  // Tells @capgo/capacitor-updater "the bundle that was just applied booted
+  // successfully" — if this is never called within CapacitorUpdater's
+  // appReadyTimeout (default 10s), it assumes the update is broken and
+  // auto-rolls back to the previous bundle. Called unconditionally (not
+  // just the App branch above): a config-missing render is still a
+  // successful boot of this JS bundle, just a deploy-configuration problem
+  // the plugin has no business treating as "this update crashed". No-op on
+  // plain web (see the package's web.ts fallback) and outside a
+  // Capacitor-native shell.
+  if (Capacitor.isNativePlatform()) {
+    CapacitorUpdater.notifyAppReady().catch((err) => {
+      console.error("CapacitorUpdater.notifyAppReady failed:", err);
+    });
   }
