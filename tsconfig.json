@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "strict": false,
+    "types": ["node", "vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  // Scoped to the web app itself — matches the "Web Build & Typecheck" CI
+  // job. Deliberately excludes supabase/functions/** (Deno runtime, npm:/
+  // jsr: specifiers a Node tsconfig can't resolve) and scripts/** (plain
+  // Node/tsx scripts, verified ad hoc rather than through this config) so
+  // this stays a check of the deployed app, not the whole repo.
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "capacitor.config.ts"]
+}

@@ -685,7 +685,7 @@ export function Deals() {
                         {deal.is_valuation_estimated && (
                           <Info
                             className="w-3 h-3 text-amber-600/50 flex-none cursor-help"
-                            title={t("deals.estimatedTooltip")}
+                            {...({ title: t("deals.estimatedTooltip") } as React.SVGProps<SVGSVGElement>)}
                           />
                         )}
                       </div>

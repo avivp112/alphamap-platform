@@ -61,8 +61,116 @@
 # =============================================================================
 
 stages:
+  - build
   - migrate
   - deploy
+
+# =============================================================================
+# Build & typecheck — web (Vite/React) + mobile (Capacitor: Android, iOS)
+#
+# Unlike the migrate/deploy jobs below (which only run when you trigger them
+# by hand from the GitLab UI), these run automatically on every ordinary
+# pipeline — branch pushes and merge requests — no `rules:` gate needed. The
+# whole point is to catch a broken build/typecheck before it lands. None of
+# them deploy anything or touch a secret CI/CD variable.
+# =============================================================================
+
+# ── Web: typecheck + production build ───────────────────────────────────────
+# Runs the exact two commands used to verify every change in this repo:
+# a project-wide `tsc --noEmit` (see tsconfig.json — scoped to src/**, so it
+# checks the shipped app without tripping over the Deno-runtime Supabase Edge
+# Functions or the plain Node scripts, which use incompatible module/runtime
+# assumptions and are verified separately, ad hoc) and the real `vite build`.
+web-build:
+  stage: build
+  image: node:20
+  script:
+    - npm ci
+    - npx tsc --noEmit
+    - npm run build
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
+
+# ── Android: sync the web build into the native project, compile a debug
+# APK with Gradle ───────────────────────────────────────────────────────────
+# Proves the native android/ project actually still builds — the thing most
+# likely to silently break as the web app, capacitor.config.ts, or a
+# Capacitor plugin changes — without needing an emulator (see
+# capacitor.config.ts's comment: `npm run cap:build` is the same
+# build + sync this job runs, just also compiled all the way to an APK).
+android-build:
+  stage: build
+  image: mobiledevops/android-sdk-image:latest
+  before_script:
+    # mobiledevops/android-sdk-image ships Java + the Android SDK (with
+    # ANDROID_HOME already configured) but no Node.js — install it so
+    # npm/npx are available for the web build + `cap sync` steps below.
+    - curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    - apt-get install -y -qq --no-install-recommends nodejs
+    - node --version && npm --version
+  script:
+    - npm ci
+    - npm run build
+    - npx cap sync android
+    - cd android
+    - chmod +x ./gradlew
+    - ./gradlew assembleDebug --no-daemon
+  artifacts:
+    paths:
+      - android/app/build/outputs/apk/debug/*.apk
+    expire_in: 1 week
+
+# ── iOS: TEMPLATE — inert until a macOS runner is attached ─────────────────
+# GitLab.com's default shared runners are Linux-only; building an iOS app
+# needs Xcode, which only runs on macOS. This job is real config (not just
+# YAML comments) so it's ready to go, but it can never run — and so can
+# never hang or fail a pipeline — until BOTH of these are true:
+#
+#   1. A macOS runner (self-hosted, or a GitLab SaaS macOS runner on a plan
+#      that includes them) is registered to this project with the tag
+#      "macos" — Settings -> CI/CD -> Runners -> "New project runner".
+#   2. That runner's image has Xcode + the iOS platform + CocoaPods
+#      installed (`sudo gem install cocoapods` if it's missing).
+#
+# Even once both are true it stays `when: manual` on purpose — an iOS build
+# isn't something you want firing automatically on every push against a
+# macOS runner's (often paid/limited) minutes; trigger it by hand from the
+# pipeline's job list when you actually want one.
+ios-build:
+  stage: build
+  tags:
+    - macos
+  when: manual
+  allow_failure: true
+  before_script:
+    - npm ci
+    - npm run build
+    - npx cap sync ios
+    - cd ios/App
+    - pod install --repo-update
+  script:
+    # -sdk iphonesimulator + CODE_SIGNING_ALLOWED=NO builds without any
+    # signing identity/provisioning profile — enough to prove the native
+    # project compiles and to hand the resulting .app to a Simulator for a
+    # real visual test. A device/App Store build additionally needs a
+    # signing certificate + provisioning profile configured on the runner
+    # (requires an Apple Developer Program membership) — out of scope for
+    # this template; fill that in once you're ready to distribute a build.
+    - >
+      xcodebuild
+      -workspace App.xcworkspace
+      -scheme App
+      -sdk iphonesimulator
+      -configuration Debug
+      -derivedDataPath build
+      CODE_SIGNING_ALLOWED=NO
+      build
+  artifacts:
+    paths:
+      - ios/App/build/Build/Products/Debug-iphonesimulator/*.app
+    expire_in: 1 week
 
 # ── Database migrations ─────────────────────────────────────────────────────
 # `supabase db push` records what it applied in supabase_migrations.schema_
