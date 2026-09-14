@@ -107,7 +107,12 @@ android-build:
     # mobiledevops/android-sdk-image ships Java + the Android SDK (with
     # ANDROID_HOME already configured) but no Node.js — install it so
     # npm/npx are available for the web build + `cap sync` steps below.
-    - curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    # Must be Node >=22: the Capacitor 8 CLI refuses to run on Node 20
+    # ("The Capacitor CLI requires NodeJS >=22.0.0") and fails `cap sync`
+    # right after the web build succeeds — web-build's `node:20` image is
+    # fine for that job (it never touches the Capacitor CLI), but this job
+    # does, so it needs the newer runtime.
+    - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
     - apt-get install -y -qq --no-install-recommends nodejs
     - node --version && npm --version
   script:
