@@ -1101,7 +1101,7 @@ export function PrivateEquity() {
 
       {/* ── Floating Compare FAB (mirrors Startups.tsx / VCs.tsx) ──────────── */}
       {compareMap.size >= 1 && (
-        <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2.5">
+        <div className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] right-6 z-40 flex flex-col items-end gap-2.5">
           {watchlistError && (
             <div className="flex items-center gap-1.5 max-w-[280px] px-3.5 py-2 rounded-[8px] text-[11px] font-semibold bg-rose-950/90 border border-rose-800/60 text-rose-300 backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.45)]">
               <AlertCircle className="w-3.5 h-3.5 flex-none" />

@@ -323,7 +323,7 @@ export function Watchlist() {
 
       {/* ── Sticky compare bar ── */}
       {selected.size > 0 && (
-        <div className="fixed bottom-0 inset-x-0 z-40 border-t border-gray-200 bg-white/95 backdrop-blur-sm shadow-[0_-8px_30px_rgba(15,23,42,0.06)]">
+        <div className="fixed bottom-0 inset-x-0 z-40 border-t border-gray-200 bg-white/95 backdrop-blur-sm pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_30px_rgba(15,23,42,0.06)]">
           <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <span className="text-sm font-semibold text-[#0F172A]">{selected.size} selected</span>

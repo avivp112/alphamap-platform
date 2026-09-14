@@ -367,7 +367,7 @@ export function TopNav() {
   const initials = user ? getInitials(user) : null;
 
   return (
-    <header className="sticky top-0 z-30 relative flex h-16 w-full items-center justify-between border-b border-white bg-white px-4 lg:px-6 shadow-sm">
+    <header className="sticky top-0 z-30 relative flex min-h-16 w-full items-center justify-between border-b border-white bg-white px-4 lg:px-6 pt-[env(safe-area-inset-top)] shadow-sm">
       {/* Logo (+ mobile nav trigger) */}
       <div className="flex items-center gap-1 flex-none min-w-0">
         {/* Was a plain <div>, so clicking it did nothing — the one thing every

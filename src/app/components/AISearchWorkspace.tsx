@@ -63,6 +63,38 @@ function dedupeMatches(items: SemanticMatch[]): SemanticMatch[] {
   return out;
 }
 
+// Tracks how much of the viewport the on-screen keyboard currently covers,
+// via the visualViewport API. A normal mobile browser tab usually shrinks
+// and auto-scrolls around a focused input on its own, but a Capacitor
+// WebView (especially iOS's WKWebView) doesn't reliably do the same — the
+// keyboard can just overlay the page, covering the composer. Feeding this
+// back as bottom padding keeps the composer above the keyboard on both.
+// Returns 0 whenever no keyboard is open or the API isn't supported (SSR,
+// older WebViews) — never throws, never breaks the plain web layout.
+function useKeyboardInset(): number {
+  const [inset, setInset] = useState(0);
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    function update() {
+      const covered = window.innerHeight - vv!.height - vv!.offsetTop;
+      setInset(Math.max(0, Math.round(covered)));
+    }
+
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
+
+  return inset;
+}
+
 export function AISearchWorkspace() {
   const { t } = useTranslation();
   const [input, setInput]           = useState("");
@@ -71,6 +103,7 @@ export function AISearchWorkspace() {
   const inputRef  = useRef<HTMLInputElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const abortRef  = useRef<AbortController | null>(null);
+  const keyboardInset = useKeyboardInset();
 
   // id → match across the WHOLE conversation, so a citation in turn 3 still
   // resolves even if the entity was only retrieved back in turn 1.
@@ -151,7 +184,10 @@ export function AISearchWorkspace() {
         }}
       />
 
-      <div className="relative px-5 py-10 sm:px-8 sm:py-12 lg:py-14">
+      <div
+        className="relative px-5 py-10 sm:px-8 sm:py-12 lg:py-14 transition-[padding-bottom] duration-150 ease-out"
+        style={{ paddingBottom: keyboardInset > 0 ? keyboardInset : undefined }}
+      >
         {!hasConversation ? (
           <>
             {/* Eyebrow */}
@@ -235,6 +271,15 @@ export function AISearchWorkspace() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onFocus={() => {
+                // Give the native keyboard a moment to finish opening (and
+                // useKeyboardInset a moment to react) before scrolling —
+                // scrolling immediately can undershoot on WebViews that
+                // resize the viewport asynchronously.
+                window.setTimeout(() => {
+                  inputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                }, 100);
+              }}
               placeholder={hasConversation ? "Ask a follow-up…" : t("aiSearch.examplePrompt")}
               className="w-full bg-transparent px-3 py-4 text-[15px] text-[#0F172A] placeholder:text-gray-400 focus:outline-none"
               autoComplete="off"
