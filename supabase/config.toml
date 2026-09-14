@@ -1,0 +1,17 @@
+# Per-function Supabase CLI settings. Only app-update-check is declared here
+# today — every other function in this project is deployed via the
+# deploy-public-market-functions GitLab CI job, which passes
+# --no-verify-jwt directly on the command line instead (see .gitlab-ci.yml).
+#
+# app-update-check has no equivalent CI deploy step yet (it's deployed by
+# hand via the Supabase Dashboard), so this file is what keeps
+# `npx supabase functions deploy app-update-check` from silently
+# reintroducing the "Missing authorization header" 401 below if it's ever
+# redeployed from the CLI without remembering the flag.
+[functions.app-update-check]
+# Called directly by the native app with no user session and no API key —
+# there is nothing to verify a JWT against. Without this (or the Dashboard's
+# equivalent "Enforce JWT Verification" toggle switched off), Supabase's own
+# gateway rejects every request with 401 UNAUTHORIZED_NO_AUTH_HEADER before
+# this function's code ever runs.
+verify_jwt = false
