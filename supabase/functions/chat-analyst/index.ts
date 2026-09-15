@@ -33,13 +33,303 @@
 //   server-side session state for this first version.
 //
 // Deploy:  supabase functions deploy chat-analyst --no-verify-jwt
-// Secrets: ANTHROPIC_API_KEY, OPENAI_API_KEY (semantic_search tool's embedding
-//          step — same key semantic-search/index.ts already uses).
+// Secrets: SELF_HOSTED_LLM_URL, SELF_HOSTED_LLM_KEY (our self-hosted,
+//          fine-tuned LLM behind vLLM's OpenAI-compatible server — see
+//          supabase/functions/.env.example), OPENAI_API_KEY (semantic_search
+//          tool's embedding step only — same key semantic-search/index.ts
+//          already uses; embeddings aren't served by the self-hosted LLM).
 //          SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are platform-injected.
 // =============================================================================
 
-import Anthropic from "npm:@anthropic-ai/sdk";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+
+// ── Self-hosted LLM client ───────────────────────────────────────────────────
+// Inlined rather than imported from supabase/functions/_shared/llm-client.ts
+// (the canonical, more-documented copy — keep the two in sync if this ever
+// changes): this function is deployed by pasting a single file into the
+// Supabase Dashboard's function editor, not via the CLI, so it can't
+// reference a sibling module the way ingest-startup (CI-deployed) does.
+//
+// Talks to SELF_HOSTED_LLM_URL + "/v1/chat/completions" — vLLM's
+// OpenAI-compatible server for our self-hosted, fine-tuned model —
+// authenticated with "Authorization: Bearer <SELF_HOSTED_LLM_KEY>". Shaped
+// to be a near-drop-in replacement for the subset of the Anthropic Messages
+// API this function used previously (system prompt, JSON-schema tools,
+// streaming), so the tool-loop / response-shape code below it didn't need
+// to change — only the client construction + a rename of a couple of local
+// variables did. See supabase/functions/.env.example for the full list of
+// required variables.
+
+interface ToolDef {
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+}
+
+type ContentBlock =
+  | { type: "text"; text: string }
+  | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> };
+
+type ToolUseBlock = Extract<ContentBlock, { type: "tool_use" }>;
+
+interface ToolResultBlock {
+  type: "tool_result";
+  tool_use_id: string;
+  content: string;
+  is_error?: boolean;
+}
+
+type MessageParam =
+  | { role: "user" | "assistant"; content: string }
+  | { role: "assistant"; content: ContentBlock[] }
+  | { role: "user"; content: ToolResultBlock[] };
+
+interface CreateParams {
+  model: string;
+  max_tokens: number;
+  system?: string;
+  tools?: ToolDef[];
+  tool_choice?: { type: "tool"; name: string };
+  messages: MessageParam[];
+  stream?: boolean;
+}
+
+interface CreateResult {
+  content: ContentBlock[];
+  stop_reason: string | null;
+}
+
+// Mirrors the subset of Anthropic's streaming Messages API event shape the
+// tool-loop code below already consumes (content_block_start/delta,
+// message_delta) — OpenAI's own streaming format has no notion of discrete
+// "content blocks", just a running text delta plus a separately-indexed
+// tool_calls array, so this is where that gets reassembled into the same
+// block-indexed shape.
+type StreamEvent =
+  | { type: "content_block_start"; index: number; content_block: { type: "text" } | { type: "tool_use"; id: string; name: string } }
+  | { type: "content_block_delta"; index: number; delta: { type: "text_delta"; text: string } | { type: "input_json_delta"; partial_json: string } }
+  | { type: "message_delta"; delta: { stop_reason: string | null } };
+
+// OpenAI/vLLM finish_reason -> the Anthropic-style stop_reason strings this
+// function already branches on.
+function mapFinishReason(reason: string | null | undefined): string | null {
+  switch (reason) {
+    case "tool_calls": return "tool_use";
+    case "length": return "max_tokens";
+    case "stop": return "end_turn";
+    case null:
+    case undefined: return null;
+    default: return reason;
+  }
+}
+
+function toOpenAIMessages(system: string | undefined, messages: MessageParam[]): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  if (system) out.push({ role: "system", content: system });
+
+  for (const m of messages) {
+    if (typeof m.content === "string") {
+      out.push({ role: m.role, content: m.content });
+      continue;
+    }
+    if (m.role === "assistant") {
+      const blocks = m.content as ContentBlock[];
+      const text = blocks.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("");
+      const toolCalls = blocks
+        .filter((b): b is Extract<ContentBlock, { type: "tool_use" }> => b.type === "tool_use")
+        .map((b) => ({
+          id: b.id,
+          type: "function",
+          function: { name: b.name, arguments: JSON.stringify(b.input) },
+        }));
+      out.push({
+        role: "assistant",
+        content: text || null,
+        ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+      });
+      continue;
+    }
+    // role === "user" with ToolResultBlock[] — OpenAI wants one separate
+    // "tool" message per result, immediately after the assistant turn that
+    // requested them, not bundled into one user turn the way Anthropic
+    // does.
+    for (const block of m.content as ToolResultBlock[]) {
+      out.push({
+        role: "tool",
+        tool_call_id: block.tool_use_id,
+        content: block.is_error ? `Error: ${block.content}` : block.content,
+      });
+    }
+  }
+  return out;
+}
+
+function toOpenAITools(tools: ToolDef[] | undefined): Record<string, unknown>[] | undefined {
+  if (!tools || tools.length === 0) return undefined;
+  return tools.map((t) => ({
+    type: "function",
+    function: { name: t.name, description: t.description, parameters: t.input_schema },
+  }));
+}
+
+function toOpenAIToolChoice(toolChoice: CreateParams["tool_choice"]): unknown {
+  if (!toolChoice) return undefined;
+  return { type: "function", function: { name: toolChoice.name } };
+}
+
+interface OpenAIToolCall { id: string; function: { name: string; arguments: string } }
+interface OpenAIChatCompletion {
+  choices: Array<{
+    message: { content: string | null; tool_calls?: OpenAIToolCall[] };
+    finish_reason: string | null;
+  }>;
+}
+interface OpenAIStreamToolCallDelta { index: number; id?: string; function?: { name?: string; arguments?: string } }
+interface OpenAIStreamChunk {
+  choices: Array<{
+    delta: { content?: string; tool_calls?: OpenAIStreamToolCallDelta[] };
+    finish_reason?: string | null;
+  }>;
+}
+
+class SelfHostedLLM {
+  private baseUrl: string;
+  private apiKey: string;
+
+  constructor(opts: { baseUrl: string; apiKey: string }) {
+    // Trim a trailing slash so `${baseUrl}/v1/chat/completions` never ends
+    // up with a doubled "//".
+    this.baseUrl = opts.baseUrl.replace(/\/$/, "");
+    this.apiKey = opts.apiKey;
+  }
+
+  private async post(body: Record<string, unknown>): Promise<Response> {
+    const res = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Self-hosted LLM ${res.status}: ${text.slice(0, 2000)}`);
+    }
+    return res;
+  }
+
+  async create(params: CreateParams & { stream?: false }): Promise<CreateResult>;
+  async create(params: CreateParams & { stream: true }): Promise<AsyncIterable<StreamEvent>>;
+  async create(params: CreateParams): Promise<CreateResult | AsyncIterable<StreamEvent>> {
+    const body: Record<string, unknown> = {
+      model: params.model,
+      max_tokens: params.max_tokens,
+      messages: toOpenAIMessages(params.system, params.messages),
+      stream: !!params.stream,
+    };
+    const tools = toOpenAITools(params.tools);
+    if (tools) body.tools = tools;
+    const toolChoice = toOpenAIToolChoice(params.tool_choice);
+    if (toolChoice) body.tool_choice = toolChoice;
+
+    if (!params.stream) {
+      const res = await this.post(body);
+      const json = await res.json() as OpenAIChatCompletion;
+      const choice = json.choices[0];
+      const content: ContentBlock[] = [];
+      if (choice.message.content) content.push({ type: "text", text: choice.message.content });
+      for (const tc of choice.message.tool_calls ?? []) {
+        content.push({
+          type: "tool_use",
+          id: tc.id,
+          name: tc.function.name,
+          input: tc.function.arguments ? JSON.parse(tc.function.arguments) : {},
+        });
+      }
+      return { content, stop_reason: mapFinishReason(choice.finish_reason) };
+    }
+
+    const res = await this.post(body);
+    return streamEvents(res);
+  }
+}
+
+// Parses vLLM/OpenAI's SSE stream ("data: {...}\n\n", terminated by
+// "data: [DONE]\n\n") into the Anthropic-style block-indexed events above.
+// Block 0 is always the text block (started lazily, on first text delta, to
+// mirror how a tool-only turn never gets a text block at all); each
+// tool_call's own OpenAI-reported `index` is offset by +1 so it never
+// collides with the text block's index 0.
+async function* streamEvents(res: Response): AsyncGenerator<StreamEvent> {
+  const reader = res.body?.getReader();
+  if (!reader) return;
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let textBlockStarted = false;
+  const toolBlockStarted = new Set<number>();
+
+  function* handleLine(line: string): Generator<StreamEvent> {
+    if (!line.startsWith("data:")) return;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === "[DONE]") return;
+    let chunk: OpenAIStreamChunk;
+    try {
+      chunk = JSON.parse(payload);
+    } catch {
+      return; // a malformed/partial line — best-effort, same as a dropped token elsewhere
+    }
+    const choice = chunk.choices?.[0];
+    if (!choice) return;
+
+    if (choice.delta?.content) {
+      if (!textBlockStarted) {
+        textBlockStarted = true;
+        yield { type: "content_block_start", index: 0, content_block: { type: "text" } };
+      }
+      yield { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: choice.delta.content } };
+    }
+
+    for (const tc of choice.delta?.tool_calls ?? []) {
+      const blockIndex = tc.index + 1;
+      if (!toolBlockStarted.has(blockIndex)) {
+        toolBlockStarted.add(blockIndex);
+        yield {
+          type: "content_block_start",
+          index: blockIndex,
+          content_block: { type: "tool_use", id: tc.id ?? "", name: tc.function?.name ?? "" },
+        };
+      }
+      if (tc.function?.arguments) {
+        yield {
+          type: "content_block_delta",
+          index: blockIndex,
+          delta: { type: "input_json_delta", partial_json: tc.function.arguments },
+        };
+      }
+    }
+
+    if (choice.finish_reason) {
+      yield { type: "message_delta", delta: { stop_reason: mapFinishReason(choice.finish_reason) } };
+    }
+  }
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? ""; // last (possibly incomplete) line stays in the buffer
+      for (const line of lines) {
+        yield* handleLine(line.trim());
+      }
+    }
+    if (buffer.trim()) yield* handleLine(buffer.trim());
+  } finally {
+    reader.releaseLock();
+  }
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -47,7 +337,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const MODEL           = Deno.env.get("CHAT_ANALYST_MODEL") ?? "claude-sonnet-5";
+const MODEL           = Deno.env.get("CHAT_ANALYST_MODEL") ?? Deno.env.get("SELF_HOSTED_LLM_MODEL") ?? "";
 const MAX_TOKENS       = Number(Deno.env.get("CHAT_ANALYST_MAX_TOKENS") ?? 1500);
 const MAX_ITERATIONS   = Number(Deno.env.get("CHAT_ANALYST_MAX_ITERATIONS") ?? 4);
 const EMBED_MODEL       = "text-embedding-3-small";
@@ -72,7 +362,7 @@ const s = (v: unknown): string | null =>
 
 // ── Tool schemas ──────────────────────────────────────────────────────────────
 
-const TOOLS: Anthropic.Tool[] = [
+const TOOLS: ToolDef[] = [
   {
     name: "semantic_search",
     description:
@@ -387,11 +677,11 @@ function ndjson(obj: Record<string, unknown>): string {
 }
 
 async function runAgentTurn(
-  anthropic: Anthropic,
-  messages: Anthropic.MessageParam[],
+  llm: SelfHostedLLM,
+  messages: MessageParam[],
   onTextDelta: (delta: string) => void,
-): Promise<{ blocks: Anthropic.ContentBlockParam[]; stopReason: string | null }> {
-  const stream = await anthropic.messages.create({
+): Promise<{ blocks: ContentBlock[]; stopReason: string | null }> {
+  const stream = await llm.create({
     model: MODEL,
     max_tokens: MAX_TOKENS,
     system: SYSTEM_PROMPT,
@@ -431,7 +721,7 @@ async function runAgentTurn(
   // with an empty text content block, which is exactly what the next
   // iteration's messages.create call does. Drop empty text blocks here so
   // the reconstructed turn is always valid to send back.
-  const finalBlocks: Anthropic.ContentBlockParam[] = blocks
+  const finalBlocks: ContentBlock[] = blocks
     .filter((b) => b.type === "tool_use" || b.text.trim().length > 0)
     .map((b) =>
       b.type === "tool_use"
@@ -464,14 +754,15 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-  if (!apiKey) {
-    return new Response(JSON.stringify({ error: "ANTHROPIC_API_KEY is not configured" }), {
+  const llmBaseUrl = Deno.env.get("SELF_HOSTED_LLM_URL");
+  const llmApiKey = Deno.env.get("SELF_HOSTED_LLM_KEY");
+  if (!llmBaseUrl || !llmApiKey) {
+    return new Response(JSON.stringify({ error: "SELF_HOSTED_LLM_URL / SELF_HOSTED_LLM_KEY are not configured" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
   const openaiKey = Deno.env.get("OPENAI_API_KEY"); // semantic_search tool only — degrades gracefully without it
-  const anthropic = new Anthropic({ apiKey });
+  const llm = new SelfHostedLLM({ baseUrl: llmBaseUrl, apiKey: llmApiKey });
   const supa = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -483,20 +774,20 @@ Deno.serve(async (req: Request) => {
     async start(controller) {
       const emit = (obj: Record<string, unknown>) => controller.enqueue(encoder.encode(ndjson(obj)));
       try {
-        const messages: Anthropic.MessageParam[] = history.map((h) => ({ role: h.role, content: h.content }));
+        const messages: MessageParam[] = history.map((h) => ({ role: h.role, content: h.content }));
 
         for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
-          const { blocks, stopReason } = await runAgentTurn(anthropic, messages, (delta) => emit({ type: "text", delta }));
+          const { blocks, stopReason } = await runAgentTurn(llm, messages, (delta) => emit({ type: "text", delta }));
           messages.push({ role: "assistant", content: blocks });
 
-          const toolUses = blocks.filter((b): b is Anthropic.ToolUseBlockParam => b.type === "tool_use");
+          const toolUses = blocks.filter((b): b is ToolUseBlock => b.type === "tool_use");
           if (toolUses.length === 0 || stopReason !== "tool_use") {
             emit({ type: "done" });
             controller.close();
             return;
           }
 
-          const toolResults: Anthropic.ToolResultBlockParam[] = [];
+          const toolResults: ToolResultBlock[] = [];
           for (const t of toolUses) {
             const label = TOOL_LABELS[t.name] ?? `Running ${t.name}…`;
             emit({ type: "tool_start", tool: t.name, label });
@@ -524,7 +815,7 @@ Deno.serve(async (req: Request) => {
         // Iteration cap hit — ask once more, tools disabled, to force a
         // synthesis from whatever's already been gathered rather than
         // leaving the user with nothing.
-        const stream2 = await anthropic.messages.create({
+        const stream2 = await llm.create({
           model: MODEL, max_tokens: MAX_TOKENS, system: SYSTEM_PROMPT, messages, stream: true,
         });
         for await (const event of stream2) {

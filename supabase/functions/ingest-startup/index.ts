@@ -1,5 +1,19 @@
+// =============================================================================
+// Edge Function: ingest-startup
+// Researches one named company (Tavily web search) and extracts a structured
+// profile via a forced single tool call, subject to AlphaMap's eligibility
+// gate (private + tech companies only) before writing to startups/
+// funding_rounds.
+//
+// Deploy:  supabase functions deploy ingest-startup --no-verify-jwt
+// Secrets: SELF_HOSTED_LLM_URL, SELF_HOSTED_LLM_KEY (our self-hosted,
+//          fine-tuned LLM behind vLLM's OpenAI-compatible server — see
+//          supabase/functions/.env.example), TAVILY_API_KEY.
+//          SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are platform-injected.
+// =============================================================================
+
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import Anthropic from "npm:@anthropic-ai/sdk";
+import { SelfHostedLLM } from "../_shared/llm-client.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -121,7 +135,15 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-    const anthropic = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
+    const llmBaseUrl = Deno.env.get("SELF_HOSTED_LLM_URL");
+    const llmApiKey = Deno.env.get("SELF_HOSTED_LLM_KEY");
+    if (!llmBaseUrl || !llmApiKey) {
+      return Response.json(
+        { error: "SELF_HOSTED_LLM_URL / SELF_HOSTED_LLM_KEY are not configured" },
+        { status: 500, headers: corsHeaders },
+      );
+    }
+    const llm = new SelfHostedLLM({ baseUrl: llmBaseUrl, apiKey: llmApiKey });
     const tavilyKey = Deno.env.get("TAVILY_API_KEY")!;
 
     // ── Phase 1: Parallel web research ──────────────────────────────────────
@@ -146,8 +168,8 @@ Deno.serve(async (req: Request) => {
 
     // ── Phase 2: Claude extraction ───────────────────────────────────────────
     console.log(`[ingest] Extracting via Claude`);
-    const msg = await anthropic.messages.create({
-      model: "claude-opus-4-7",
+    const msg = await llm.create({
+      model: Deno.env.get("INGEST_STARTUP_MODEL") ?? Deno.env.get("SELF_HOSTED_LLM_MODEL") ?? "",
       max_tokens: 2048,
       tools: [
         {
