@@ -41,7 +41,7 @@ export function LanguageSelector() {
         aria-haspopup="listbox"
         aria-label={t("language.select")}
         title={t("language.select")}
-        className="flex items-center gap-1.5 rounded-lg border border-gray-200 py-1.5 pl-2.5 pr-2 hover:bg-gray-50 transition-colors"
+        className="flex items-center gap-1.5 rounded-lg native:rounded-full border border-gray-200 py-1.5 pl-2.5 pr-2 native:h-10 native:px-3 native:py-0 hover:bg-gray-50 transition-colors"
       >
         {/* The emoji carries no meaning for assistive tech — the label above does. */}
         <span className="text-base leading-none" aria-hidden="true">{active.flag}</span>

@@ -367,7 +367,7 @@ export function TopNav() {
   const initials = user ? getInitials(user) : null;
 
   return (
-    <header className="sticky top-0 z-30 relative flex min-h-[72px] sm:min-h-16 w-full items-center justify-between border-b border-white bg-white px-4 lg:px-6 pt-[env(safe-area-inset-top)] shadow-sm">
+    <header className="sticky top-0 z-30 relative flex min-h-[72px] sm:min-h-16 w-full items-center justify-between border-b border-white native:border-gray-100 bg-white px-4 lg:px-6 native:pl-5 native:pr-4 pt-[env(safe-area-inset-top)] shadow-sm">
       {/* Logo (+ mobile nav trigger) */}
       <div className="flex items-center gap-1 flex-none min-w-0">
         {/* Was a plain <div>, so clicking it did nothing — the one thing every
@@ -480,8 +480,10 @@ export function TopNav() {
         </div>
       )}
 
-      {/* Profile & Notifications */}
-      <div className="flex items-center gap-2.5 sm:gap-4 flex-none">
+      {/* Profile & Notifications — the three items below (language, bell,
+          avatar) share a uniform native:h-10 circular/pill treatment so
+          they read as one consistent group in the app; unchanged on web. */}
+      <div className="flex items-center gap-2.5 sm:gap-4 native:gap-2 flex-none">
         {/* Available signed in or out — a visitor reading the marketing copy
             needs the switcher just as much as an account holder. */}
         <LanguageSelector />
@@ -494,12 +496,15 @@ export function TopNav() {
           <>
             <button
               aria-label={t('header.notifications')}
-              className="relative rounded-full p-2.5 text-gray-500 hover:bg-gray-100 hover:text-[#111827] transition-colors"
+              className="relative rounded-full p-2.5 text-gray-500 hover:bg-gray-100 hover:text-[#111827] transition-colors native:h-10 native:w-10 native:flex native:items-center native:justify-center"
             >
-              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-[#F59E0B] ring-2 ring-white" />
+              {/* -right-0.5 -top-0.5 (vs. the old right-2 top-2, which sat
+                  well inside the button) puts the dot's center right on the
+                  circle's rim instead of floating inside it. */}
+              <span className="absolute right-2 top-2 h-2 w-2 native:h-2.5 native:w-2.5 native:-right-0.5 native:-top-0.5 rounded-full bg-[#F59E0B] ring-2 ring-white" />
               <Bell className="h-5 w-5" />
             </button>
-            <div className="hidden sm:block h-8 w-px bg-gray-200 mx-1" />
+            <div className="hidden sm:block native:!hidden h-8 w-px bg-gray-200 mx-1" />
 
             <div className="relative" ref={menuRef}>
               <button
@@ -507,7 +512,7 @@ export function TopNav() {
                 aria-expanded={menuOpen}
                 aria-haspopup="menu"
                 aria-label={t('header.accountMenu')}
-                className="flex items-center gap-2 rounded-lg border border-gray-200 p-1 sm:pr-2.5 hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-2 rounded-lg native:rounded-full border border-gray-200 p-1 sm:pr-2.5 native:h-10 native:w-10 native:p-0 native:justify-center hover:bg-gray-50 transition-colors"
               >
                 {/* p-1 is uniform on every side on its own — sm:pr-2.5 only
                     adds the extra right-hand room the name+chevron need once
