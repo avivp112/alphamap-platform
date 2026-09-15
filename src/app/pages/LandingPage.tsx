@@ -11,7 +11,6 @@ import {
 import type { IconType } from "react-icons";
 import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
-import { Capacitor } from "@capacitor/core";
 import { BrandMark, BrandWordmark } from "../components/BrandMark";
 import { LanguageSelector } from "../components/LanguageSelector";
 import { stageLabel, sectorLabel } from "../../lib/taxonomy";
@@ -902,18 +901,24 @@ export function LandingPage() {
   // Header gains a light glass border/shadow once the page scrolls past the
   // hero. On native the page itself doesn't scroll — an inner snap
   // container does (see the scroll-snap section below) — so window.scrollY
-  // would just stay 0 forever there; track that container's own scrollTop
-  // instead whenever it's present.
+  // stays 0 forever there. Rather than branching on Capacitor.isNativePlatform()
+  // (which only reflects the real native bridge, not e.g. a browser dev tool
+  // simulating the .native-app class), listen on both window and the
+  // container and take whichever actually moved — on web the container
+  // never scrolls (no native: overflow-y-auto applied) so its listener is a
+  // permanent no-op; on native window.scrollY never moves instead. Either
+  // way this always tracks whichever one is real.
   useEffect(() => {
-    const container = Capacitor.isNativePlatform() ? scrollContainerRef.current : null;
-    if (container) {
-      const onScroll = () => setScrolled(container.scrollTop > window.innerHeight * 0.6);
-      container.addEventListener("scroll", onScroll, { passive: true });
-      return () => container.removeEventListener("scroll", onScroll);
-    }
-    const onScroll = () => setScrolled(window.scrollY > window.innerHeight * 0.6);
+    const container = scrollContainerRef.current;
+    const scrolledNow = () =>
+      Math.max(window.scrollY, container?.scrollTop ?? 0) > window.innerHeight * 0.6;
+    const onScroll = () => setScrolled(scrolledNow());
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    container?.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      container?.removeEventListener("scroll", onScroll);
+    };
   }, []);
 
   // Typewriter reveal of the headline, left to right, one character at a time
@@ -1058,9 +1063,17 @@ export function LandingPage() {
       </section>
 
       {/* ── Interactive product showcase ─────────────────────────────────────── */}
+      {/* native:bg matches the hero's own gradient end / the page's base
+          tone — without it, the justify-center letterboxing above/below
+          the (shorter-than-one-screen) content was transparent, so the
+          section's fixed min-h-svh box showed whatever sits behind it
+          instead of a clean, self-contained slide. Same fix applies below
+          to the personas and CTA+footer wrappers, which needed the color
+          on the WRAPPER specifically since their actual colored content
+          doesn't itself stretch to fill the full slide height. */}
       <section
         ref={showcaseRef}
-        className="w-full max-w-[1040px] mx-auto px-6 lg:px-12 mb-32 native:mb-0 native:min-h-svh native:flex native:flex-col native:justify-center native:snap-start native:[scroll-snap-stop:always] native:pt-24"
+        className="w-full max-w-[1040px] mx-auto px-6 lg:px-12 mb-32 native:mb-0 native:min-h-svh native:flex native:flex-col native:justify-center native:snap-start native:[scroll-snap-stop:always] native:pt-24 native:bg-[#F3F4F6]"
       >
         <div className="text-center max-w-2xl mx-auto mb-10">
           <span className="text-xs font-bold tracking-[0.22em] text-[#0F172A]/40 uppercase">{t("landing.insideEyebrow")}</span>
@@ -1124,16 +1137,28 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* ── Use cases: scroll-linked list with a pinned right panel ──────────── */}
-      <div className="native:min-h-svh native:flex native:flex-col native:justify-center native:snap-start native:[scroll-snap-stop:always] native:pt-24">
+      {/* ── Use cases: scroll-linked list with a pinned right panel ────────────
+          The wrapper's own background must match PersonaCarouselSection's
+          inner <section> (PERSONAS_BG) — the inner section doesn't itself
+          stretch to fill a full-viewport slide, so without this the
+          letterboxing above/below it was transparent. */}
+      <div
+        className="native:min-h-svh native:flex native:flex-col native:justify-center native:snap-start native:[scroll-snap-stop:always] native:pt-24"
+        style={{ background: PERSONAS_BG }}
+      >
         <PersonaCarouselSection />
       </div>
 
       {/* ── Final CTA + Footer: one continuous dark block, hard-edged on every
           side — no gray gap and no rounded corners, same sharp cut used for
           the sage section's own top/bottom edges. One snap slide together —
-          same background, meant to read as a single "part" when snapped. */}
-      <div className="native:min-h-svh native:flex native:flex-col native:justify-center native:snap-start native:[scroll-snap-stop:always]">
+          same background, meant to read as a single "part" when snapped.
+          Wrapper's own background matches DARK_SECTION_BG for the same
+          letterboxing reason as the personas wrapper above. */}
+      <div
+        className="native:min-h-svh native:flex native:flex-col native:justify-center native:snap-start native:[scroll-snap-stop:always]"
+        style={{ background: DARK_SECTION_BG }}
+      >
       <section className="w-full px-6 lg:px-12 py-16 md:py-20 flex flex-col items-center text-center native:pt-24" style={{ background: DARK_SECTION_BG }}>
         <h2
           className="text-4xl md:text-5xl text-white font-medium tracking-tight mb-4"
