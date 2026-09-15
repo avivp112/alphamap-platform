@@ -941,7 +941,7 @@ export function LandingPage() {
 
       {/* ── Fixed header ─────────────────────────────────────────────────────── */}
       <header
-        className="fixed top-0 left-0 right-0 z-50 flex h-20 w-full items-center justify-between px-6 lg:px-12"
+        className="fixed top-0 left-0 right-0 z-50 flex min-h-20 w-full items-center justify-between px-6 lg:px-12 pt-[env(safe-area-inset-top)]"
         style={{
           background:    scrolled ? "rgba(255,255,255,0.94)" : "rgba(255,255,255,0.7)",
           backdropFilter:"blur(14px)",
@@ -1043,7 +1043,7 @@ export function LandingPage() {
                 <button
                   key={tab.key}
                   onClick={() => handleTabClick(tab.key)}
-                  className={`relative flex-1 flex items-center justify-center px-4 py-2.5 text-sm font-semibold text-center rounded-lg transition-all whitespace-nowrap ${
+                  className={`relative flex-1 min-w-0 flex items-center justify-center px-2 sm:px-4 py-2.5 text-sm font-semibold text-center rounded-lg transition-all overflow-hidden whitespace-nowrap text-ellipsis ${
                     active ? "bg-white text-[#0F172A] shadow-sm" : "text-gray-400 hover:text-gray-600"
                   }`}
                 >
