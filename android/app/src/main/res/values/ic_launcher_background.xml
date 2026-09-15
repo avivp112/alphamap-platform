@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FFFFFF</color>
+    <!-- Adaptive icons only support a flat color background layer (no
+         gradient) — this is the lighter stop of the gradient baked into the
+         composited legacy icons (see BrandMark.tsx / icon.html generator),
+         which is close enough that the flat vs. gradient difference isn't
+         noticeable in practice. -->
+    <color name="ic_launcher_background">#F8F9FA</color>
 </resources>
