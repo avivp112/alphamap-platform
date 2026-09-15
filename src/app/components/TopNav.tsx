@@ -367,7 +367,7 @@ export function TopNav() {
   const initials = user ? getInitials(user) : null;
 
   return (
-    <header className="sticky top-0 z-30 relative flex min-h-16 w-full items-center justify-between border-b border-white bg-white px-4 lg:px-6 pt-[env(safe-area-inset-top)] shadow-sm">
+    <header className="sticky top-0 z-30 relative flex min-h-[72px] sm:min-h-16 w-full items-center justify-between border-b border-white bg-white px-4 lg:px-6 pt-[env(safe-area-inset-top)] shadow-sm">
       {/* Logo (+ mobile nav trigger) */}
       <div className="flex items-center gap-1 flex-none min-w-0">
         {/* Was a plain <div>, so clicking it did nothing — the one thing every
@@ -481,7 +481,7 @@ export function TopNav() {
       )}
 
       {/* Profile & Notifications */}
-      <div className="flex items-center gap-2 sm:gap-4 flex-none">
+      <div className="flex items-center gap-2.5 sm:gap-4 flex-none">
         {/* Available signed in or out — a visitor reading the marketing copy
             needs the switcher just as much as an account holder. */}
         <LanguageSelector />
@@ -494,7 +494,7 @@ export function TopNav() {
           <>
             <button
               aria-label={t('header.notifications')}
-              className="relative rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-[#111827] transition-colors"
+              className="relative rounded-full p-2.5 text-gray-500 hover:bg-gray-100 hover:text-[#111827] transition-colors"
             >
               <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-[#F59E0B] ring-2 ring-white" />
               <Bell className="h-5 w-5" />
@@ -507,9 +507,15 @@ export function TopNav() {
                 aria-expanded={menuOpen}
                 aria-haspopup="menu"
                 aria-label={t('header.accountMenu')}
-                className="flex items-center gap-2 rounded-lg border border-gray-200 p-1 pr-2.5 hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-2 rounded-lg border border-gray-200 p-1 sm:pr-2.5 hover:bg-gray-50 transition-colors"
               >
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 flex-none">
+                {/* p-1 is uniform on every side on its own — sm:pr-2.5 only
+                    adds the extra right-hand room the name+chevron need once
+                    they're actually visible (sm: and up). Unconditional
+                    pr-2.5 left the circle looking off-center on mobile,
+                    where the name/chevron are hidden and that padding had
+                    nothing to balance against. */}
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 flex-none">
                   {initials ? (
                     <span className="text-[11px] font-bold text-[#0F172A]">{initials}</span>
                   ) : (

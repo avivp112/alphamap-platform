@@ -11,6 +11,7 @@ import {
 import type { IconType } from "react-icons";
 import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
+import { Capacitor } from "@capacitor/core";
 import { BrandMark, BrandWordmark } from "../components/BrandMark";
 import { LanguageSelector } from "../components/LanguageSelector";
 import { stageLabel, sectorLabel } from "../../lib/taxonomy";
@@ -860,6 +861,10 @@ export function LandingPage() {
   const [showcaseInView, setShowcaseInView] = useState(false);
   const tabSwitchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showcaseRef = useRef<HTMLDivElement>(null);
+  // Only actually scrolls on native (see the wrapping div below) — on web
+  // this ref is attached to a plain non-scrolling div and the effect below
+  // ignores it, falling back to window scroll same as always.
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const headline = t("landing.headline");
   const headlineDone  = typedCount >= headline.length;
 
@@ -894,8 +899,18 @@ export function LandingPage() {
     return () => observer.disconnect();
   }, []);
 
-  // Header gains a light glass border/shadow once the page scrolls past the hero
+  // Header gains a light glass border/shadow once the page scrolls past the
+  // hero. On native the page itself doesn't scroll — an inner snap
+  // container does (see the scroll-snap section below) — so window.scrollY
+  // would just stay 0 forever there; track that container's own scrollTop
+  // instead whenever it's present.
   useEffect(() => {
+    const container = Capacitor.isNativePlatform() ? scrollContainerRef.current : null;
+    if (container) {
+      const onScroll = () => setScrolled(container.scrollTop > window.innerHeight * 0.6);
+      container.addEventListener("scroll", onScroll, { passive: true });
+      return () => container.removeEventListener("scroll", onScroll);
+    }
     const onScroll = () => setScrolled(window.scrollY > window.innerHeight * 0.6);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -941,7 +956,7 @@ export function LandingPage() {
 
       {/* ── Fixed header ─────────────────────────────────────────────────────── */}
       <header
-        className="fixed top-0 left-0 right-0 z-50 flex min-h-20 w-full items-center justify-between px-6 lg:px-12 pt-[env(safe-area-inset-top)]"
+        className="fixed top-0 left-0 right-0 z-50 flex min-h-20 w-full items-center justify-between gap-2 px-4 sm:px-6 lg:px-12 pt-[env(safe-area-inset-top)]"
         style={{
           background:    scrolled ? "rgba(255,255,255,0.94)" : "rgba(255,255,255,0.7)",
           backdropFilter:"blur(14px)",
@@ -951,26 +966,34 @@ export function LandingPage() {
         }}
       >
         {/* Logo — clickable, like every other site's logo. A signed-out
-            visitor is already home, so this just returns them to the top. */}
+            visitor is already home, so this just returns them to the top.
+            The wordmark drops below sm: — on a phone-width screen there
+            isn't room for "AlphaMap" plus the language switcher, Log In,
+            and View Dashboard all on one line without wrapping; the rhino
+            mark alone still reads as the logo. */}
         <button
           type="button"
           onClick={async () => navigate(await homePathNow("/"))}
           aria-label={t("nav.goHome")}
-          className="flex items-center gap-2.5 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/30"
+          className="flex flex-none items-center gap-2.5 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/30"
         >
           <BrandMark size={32} />
-          <BrandWordmark className="text-xl tracking-tight text-[#0F172A]" />
+          <BrandWordmark className="hidden sm:block text-xl tracking-tight text-[#0F172A]" />
         </button>
 
-        {/* Nav */}
-        <div className="flex items-center gap-3 sm:gap-5">
+        {/* Nav — whitespace-nowrap + flex-none on every item is the actual
+            fix for the wrapping/"crooked" look this replaces: previously
+            each item could wrap its own text onto two lines under a
+            width squeeze, instead of the row just running out of room
+            visibly (which is what a squeeze SHOULD look like). */}
+        <div className="flex flex-none items-center gap-1.5 sm:gap-3 lg:gap-5">
           {/* The landing page has its own header rather than the app's TopNav,
               so the switcher is mounted here too — this is where a first-time
               visitor (who always starts in English) changes language. */}
           <LanguageSelector />
           <button
             onClick={() => navigate("/login")}
-            className="text-sm font-medium text-gray-500 transition-colors duration-300 hover:text-[#111827]"
+            className="flex-none whitespace-nowrap text-xs sm:text-sm font-medium text-gray-500 transition-colors duration-300 hover:text-[#111827]"
           >
             {t("header.logIn")}
           </button>
@@ -980,16 +1003,31 @@ export function LandingPage() {
               shown a plan picker instead of their dashboard. */}
           <button
             onClick={async () => navigate(await homePathNow("/pricing"))}
-            className="rounded-lg px-5 py-2.5 text-sm font-semibold transition-all duration-300 bg-[#111827] border border-black/10 text-white shadow-[0_1px_4px_rgba(0,0,0,0.08)] hover:bg-gray-900"
+            className="flex-none whitespace-nowrap rounded-lg px-3 py-2 sm:px-5 sm:py-2.5 text-xs sm:text-sm font-semibold transition-all duration-300 bg-[#111827] border border-black/10 text-white shadow-[0_1px_4px_rgba(0,0,0,0.08)] hover:bg-gray-900"
           >
             {t("landing.viewDashboard")}
           </button>
         </div>
       </header>
 
+      {/* ── Scroll-snap container — APP ONLY ────────────────────────────────────
+          On the web this is inert (no native: classes apply, so it's a plain
+          div and the page scrolls exactly as it always has). Inside the app,
+          it becomes the actual scrolling element (h-dvh + overflow-y-auto),
+          snap-y mandatory so you land on exactly one section at a time
+          rather than resting halfway between two — each direct section
+          below carries native:snap-start. This is a deliberate app-only
+          choice (see the native: variant in theme.css): a full-viewport
+          "slide deck" feel suits a native app; the marketing site keeps its
+          normal, continuously-scrollable page for sharing/SEO/scanning. */}
+      <div
+        ref={scrollContainerRef}
+        className="native:h-dvh native:overflow-y-auto native:overflow-x-hidden native:snap-y native:snap-mandatory"
+      >
+
       {/* ── Hero: typewriter headline over a light backdrop ───────────────────── */}
       <section
-        className="relative w-full flex flex-col items-start justify-center text-left px-6 lg:px-12"
+        className="relative w-full flex flex-col items-start justify-center text-left px-6 lg:px-12 native:snap-start native:[scroll-snap-stop:always]"
         style={{ minHeight: "100svh", background: "linear-gradient(180deg, #FAFAF9 0%, #F3F4F6 100%)" }}
       >
         <div className="h-px w-16 mb-10" style={{ background: "linear-gradient(90deg, #F59E0B, transparent)" }} />
@@ -1020,7 +1058,10 @@ export function LandingPage() {
       </section>
 
       {/* ── Interactive product showcase ─────────────────────────────────────── */}
-      <section ref={showcaseRef} className="w-full max-w-[1040px] mx-auto px-6 lg:px-12 mb-32">
+      <section
+        ref={showcaseRef}
+        className="w-full max-w-[1040px] mx-auto px-6 lg:px-12 mb-32 native:mb-0 native:min-h-svh native:flex native:flex-col native:justify-center native:snap-start native:[scroll-snap-stop:always] native:pt-24"
+      >
         <div className="text-center max-w-2xl mx-auto mb-10">
           <span className="text-xs font-bold tracking-[0.22em] text-[#0F172A]/40 uppercase">{t("landing.insideEyebrow")}</span>
           <h2
@@ -1084,12 +1125,16 @@ export function LandingPage() {
       </section>
 
       {/* ── Use cases: scroll-linked list with a pinned right panel ──────────── */}
-      <PersonaCarouselSection />
+      <div className="native:min-h-svh native:flex native:flex-col native:justify-center native:snap-start native:[scroll-snap-stop:always] native:pt-24">
+        <PersonaCarouselSection />
+      </div>
 
       {/* ── Final CTA + Footer: one continuous dark block, hard-edged on every
           side — no gray gap and no rounded corners, same sharp cut used for
-          the sage section's own top/bottom edges. ─────────────────────────── */}
-      <section className="w-full px-6 lg:px-12 py-16 md:py-20 flex flex-col items-center text-center" style={{ background: DARK_SECTION_BG }}>
+          the sage section's own top/bottom edges. One snap slide together —
+          same background, meant to read as a single "part" when snapped. */}
+      <div className="native:min-h-svh native:flex native:flex-col native:justify-center native:snap-start native:[scroll-snap-stop:always]">
+      <section className="w-full px-6 lg:px-12 py-16 md:py-20 flex flex-col items-center text-center native:pt-24" style={{ background: DARK_SECTION_BG }}>
         <h2
           className="text-4xl md:text-5xl text-white font-medium tracking-tight mb-4"
           style={{ fontFamily: "'Playfair Display', serif", lineHeight: "1.2" }}
@@ -1104,7 +1149,13 @@ export function LandingPage() {
         </button>
       </section>
 
-      <footer className="w-full" style={{ background: DARK_SECTION_BG }}>
+      {/* pb-[safe-area-inset-bottom] on the footer specifically (not the
+          page's own outer wrapper, which is a lighter color) — this is the
+          actual bottom-most, full-bleed element, so it's what needs to
+          extend its own (dark) background color behind the Android system
+          nav bar/gesture area, instead of that strip showing a mismatched
+          lighter color underneath it. */}
+      <footer className="w-full native:pb-[env(safe-area-inset-bottom)]" style={{ background: DARK_SECTION_BG }}>
         <div className="max-w-[1200px] mx-auto px-6 lg:px-12 pt-8 pb-16">
           <span className="block text-xs font-semibold tracking-[0.14em] text-gray-500 uppercase mb-6">{t("landing.explore")}</span>
           <nav className="flex flex-col gap-4 mb-10">
@@ -1132,7 +1183,9 @@ export function LandingPage() {
           </div>
         </div>
       </footer>
+      </div>
 
+      </div>
     </div>
   );
 }
