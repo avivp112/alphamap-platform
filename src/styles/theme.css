@@ -1,5 +1,12 @@
 @custom-variant dark (&:is(.dark *));
 
+/* App-only styling — mirrors the `dark` variant above. main.tsx adds
+   .native-app to <html> exactly when Capacitor.isNativePlatform() is
+   true, so any element can opt into an app-specific look with e.g.
+   `native:bg-[#0F172A]` alongside its normal (web) classes, with zero
+   effect on the plain web build. */
+@custom-variant native (&:is(.native-app *));
+
 /* Blinking vertical caret for the landing-page typewriter headline */
 @keyframes caretBlink {
   0%, 49%   { opacity: 1; }

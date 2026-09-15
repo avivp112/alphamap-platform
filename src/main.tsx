@@ -10,6 +10,13 @@
   import { Capacitor } from "@capacitor/core";
   import { CapacitorUpdater } from "@capgo/capacitor-updater";
 
+  // Marks every element `native:`-variant-styleable (see theme.css) for the
+  // rest of the app's lifetime. Set before the first render, synchronously —
+  // not in a useEffect — so there's no flash of web styling on native.
+  if (Capacitor.isNativePlatform()) {
+    document.documentElement.classList.add("native-app");
+  }
+
   const root = createRoot(document.getElementById("root")!);
 
   // A build made without the Supabase variables cannot work — Vite inlines
