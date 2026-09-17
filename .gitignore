@@ -6,3 +6,9 @@ dist/
 
 # Supabase CLI's own local cache — not project content
 supabase/.temp/
+
+# scripts/generate_training_schema.ts's build artifact — regenerated from
+# dataset/seed_examples.jsonl (which IS committed, as the actual source of
+# truth) plus the live schema on every `generate` run, so it doesn't need
+# its own history the way the seed examples do.
+dataset/schema_training.jsonl
