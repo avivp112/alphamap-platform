@@ -226,7 +226,7 @@ const STARTER_SEED_EXAMPLES: SeedExample[] = [
 // tables — the system prompt below explicitly steers the model toward them.
 async function extractSchema(client: Client): Promise<TableInfo[]> {
   const tablesRes = await client.query<{ table_name: string; relkind: string; table_comment: string | null }>(`
-    SELECT c.relname AS table_name, c.relkind, obj_description(c.oid) AS table_comment
+    SELECT c.relname AS table_name, c.relkind, obj_description(c.oid, 'pg_class') AS table_comment
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public'
