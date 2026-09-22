@@ -7,6 +7,7 @@ import { FcGoogle } from "react-icons/fc";
 import { FaLinkedin } from "react-icons/fa";
 import { supabase } from "../../lib/supabase";
 import { BrandMark, BrandWordmark } from "../components/BrandMark";
+import { AppStoreBadges } from "../components/AppStoreBadges";
 
 // ── Validation ────────────────────────────────────────────────────────────────
 
@@ -317,6 +318,12 @@ function LoginForm() {
           {t("auth.login.signUpLink")}
         </Link>
       </p>
+
+      {/* Store badges are web-only — the packaged app has nothing to
+          "download" from within itself. */}
+      <div className="native:hidden mt-8 pt-6 border-t border-gray-100 flex justify-center">
+        <AppStoreBadges variant="onLight" />
+      </div>
     </div>
   );
 }

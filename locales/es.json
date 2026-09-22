@@ -74,7 +74,11 @@
     "exportRowCount": "{{count}} resultados",
     "exportEmpty": "No hay resultados para exportar.",
     "exportFailed": "La exportación falló. Inténtalo de nuevo.",
-    "exportCapped": "Limitado a los primeros {{cap}} resultados."
+    "exportCapped": "Limitado a los primeros {{cap}} resultados.",
+    "downloadOnThe": "Disponible en",
+    "appStore": "App Store",
+    "getItOn": "Disponible en",
+    "googlePlay": "Google Play"
   },
   "metrics": {
     "marketCap": "Cap. bursátil",
@@ -206,6 +210,7 @@
     "ctaTitle": "¿Listo para ver el panorama completo?",
     "ctaButton": "Solicitar acceso anticipado",
     "explore": "Explorar",
+    "getTheApp": "Obtén la App",
     "footer": {
       "about": "Sobre nosotros",
       "privacy": "Política de privacidad",

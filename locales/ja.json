@@ -74,7 +74,11 @@
     "exportRowCount": "{{count}} 件の結果",
     "exportEmpty": "エクスポートできる結果がありません。",
     "exportFailed": "エクスポートに失敗しました。もう一度お試しください。",
-    "exportCapped": "最初の{{cap}}件までに制限されます。"
+    "exportCapped": "最初の{{cap}}件までに制限されます。",
+    "downloadOnThe": "ダウンロードは",
+    "appStore": "App Store",
+    "getItOn": "入手方法",
+    "googlePlay": "Google Play"
   },
   "metrics": {
     "marketCap": "時価総額",
@@ -206,6 +210,7 @@
     "ctaTitle": "全体像を見る準備はできていますか？",
     "ctaButton": "先行アクセスを申し込む",
     "explore": "探索",
+    "getTheApp": "アプリを入手",
     "footer": {
       "about": "会社概要",
       "privacy": "プライバシーポリシー",

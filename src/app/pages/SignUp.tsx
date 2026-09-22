@@ -12,6 +12,7 @@ import { supabase } from "../../lib/supabase";
 import { TERMS_SECTIONS } from "../../lib/legal";
 import { COUNTRIES } from "../../lib/countries";
 import { BrandMark, BrandWordmark } from "../components/BrandMark";
+import { AppStoreBadges } from "../components/AppStoreBadges";
 
 function TermsOfUseModal({ onClose }: { onClose: () => void }) {
   const { t, i18n } = useTranslation();
@@ -598,6 +599,12 @@ function SignUpForm({ onSignedUp }: { onSignedUp: (email: string) => void }) {
           {t("auth.signup.logInLink")}
         </Link>
       </p>
+
+      {/* Store badges are web-only — the packaged app has nothing to
+          "download" from within itself. */}
+      <div className="native:hidden mt-6 pt-5 border-t border-gray-100 flex justify-center">
+        <AppStoreBadges variant="onLight" />
+      </div>
     </div>
   );
 }

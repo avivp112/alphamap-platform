@@ -74,7 +74,11 @@
     "exportRowCount": "{{count}} 条结果",
     "exportEmpty": "没有可导出的结果。",
     "exportFailed": "导出失败，请重试。",
-    "exportCapped": "仅限前 {{cap}} 条结果。"
+    "exportCapped": "仅限前 {{cap}} 条结果。",
+    "downloadOnThe": "前往",
+    "appStore": "App Store",
+    "getItOn": "前往",
+    "googlePlay": "Google Play"
   },
   "metrics": {
     "marketCap": "市值",
@@ -206,6 +210,7 @@
     "ctaTitle": "准备好看清全貌了吗？",
     "ctaButton": "申请抢先体验",
     "explore": "探索",
+    "getTheApp": "获取应用",
     "footer": {
       "about": "关于我们",
       "privacy": "隐私政策",

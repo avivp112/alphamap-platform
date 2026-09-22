@@ -13,6 +13,7 @@ import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { BrandMark, BrandWordmark } from "../components/BrandMark";
 import { LanguageSelector } from "../components/LanguageSelector";
+import { AppStoreBadges } from "../components/AppStoreBadges";
 import { stageLabel, sectorLabel } from "../../lib/taxonomy";
 import { homePathNow } from "../../lib/navHome";
 
@@ -1198,6 +1199,14 @@ export function LandingPage() {
               );
             })}
           </nav>
+
+          {/* Store badges are web-only — inside the packaged app there's
+              nothing to "download", so this whole block is hidden there. */}
+          <div className="native:hidden mb-10">
+            <span className="block text-xs font-semibold tracking-[0.14em] text-gray-500 uppercase mb-4">{t("landing.getTheApp")}</span>
+            <AppStoreBadges variant="onDark" />
+          </div>
+
           <div className="flex items-center gap-4 pt-8 border-t border-white/10">
             <a href="#" aria-label="LinkedIn" className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 text-white hover:bg-white/10 transition-colors">
               <Linkedin className="w-4 h-4" />
