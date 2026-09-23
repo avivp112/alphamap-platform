@@ -25,7 +25,7 @@ import {
 import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
   fetchStartupsPage, fetchStartupsCount, fetchStartupsForExport, EXPORT_ROW_CAP, fetchDistinctCountries, fetchStartupDetail,
-  fetchSuggestedPeers, fetchStartupListRowById, fetchScoreHistory, fetchArticleImage, STARTUPS_PAGE_SIZE,
+  fetchSuggestedPeers, fetchStartupListRowById, fetchScoreHistory, fetchArticleImage, STARTUPS_PAGE_SIZE, subSectorNames,
   type Startup, type FundingRound, type RoundType, type AlphaScore, type HeadcountPoint,
   type StartupListRow, type StartupSearchFilters, type Competitor, type ScoreHistoryPoint,
   type NewsItem,
@@ -51,6 +51,7 @@ const STARTUP_EXPORT_COLUMNS: ExportColumn<StartupListRow>[] = [
   { label: "Name",              value: (s) => s.name },
   { label: "Website",           value: (s) => s.website ?? "" },
   { label: "Sector",            value: (s) => s.sector_parent ?? "" },
+  { label: "Sub-Sectors",       value: (s) => (s.sub_sector_names ?? []).join("; ") },
   { label: "Industry",          value: (s) => s.industry ?? "" },
   { label: "Country",           value: (s) => s.country ?? "" },
   { label: "City",              value: (s) => s.city ?? "" },
@@ -156,6 +157,15 @@ const SECTOR_TAXONOMY: Record<string, string[]> = {
   "DeepTech":              ["DeepTech / General", "Quantum Computing", "Robotics", "Space Tech", "Semiconductors"],
   "Uncategorized":         [],
 };
+
+// Reverse lookup: which parent a given sub-sector name belongs to. A
+// company's OTHER tags (startup_sub_sectors) are free to come from any
+// parent tree — e.g. a biotech company also tagged "AI Agents" — so this is
+// how a clicked tag's own badge label resolves without needing another
+// round trip to the DB.
+const PARENT_BY_SUB_SECTOR: Record<string, string> = Object.fromEntries(
+  Object.entries(SECTOR_TAXONOMY).flatMap(([parent, subs]) => subs.map((sub) => [sub, parent])),
+);
 
 // Longest/most-specific keywords must come first to avoid partial false matches.
 const INDUSTRY_KEYWORD_MAP: Array<[string, { parent: string; sub: string }]> = [
@@ -1006,16 +1016,21 @@ function ScoreHistoryChart({ startupId }: { startupId: string }) {
 }
 
 function OverviewTab({
-  startup, alphaScore, alphaLoading, alphaErr, onFilterBySector,
+  startup, alphaScore, alphaLoading, alphaErr, onFilterByMainSector, onFilterBySubSectorTag,
 }: {
   startup: Startup; alphaScore: AlphaScore | null; alphaLoading: boolean; alphaErr: boolean;
-  onFilterBySector: (parent: string, sub: string) => void;
+  onFilterByMainSector: (parent: string) => void;
+  onFilterBySubSectorTag: (tag: string) => void;
 }) {
   const { t } = useTranslation();
   const location = [startup.city, startup.country].filter(Boolean).join(", ") || "—";
   const sector = classifyIndustry(startup.industry);
   const sectorName = startup.sector?.name ?? sector.parent;
-  const subSectorName = startup.sub_sector?.name ?? sector.sub;
+  // A company's stored tags (startup_sub_sectors) can be several, from any
+  // parent tree — falls back to the keyword classifier's single guess only
+  // when nothing has been stored yet, same precedence as sectorName above.
+  const dbSubSectorTags = subSectorNames(startup);
+  const subSectorTags = dbSubSectorTags.length > 0 ? dbSubSectorTags : (sector.sub ? [sector.sub] : []);
 
   return (
     <div className="space-y-6">
@@ -1025,16 +1040,39 @@ function OverviewTab({
         <MissingDataState message="No company description on file." />
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard icon={Calendar}  label="Founded"     value={startup.founded_year ? String(startup.founded_year) : "—"} accent="#F59E0B" />
         <StatCard icon={MapPin}    label="Location"    value={location} accent="#0e7490" />
         <StatCard icon={Users}     label="Employees"   value={fmtEmp(startup.employee_count)} accent="#6d28d7" />
-        <StatCard icon={Briefcase} label="Sector"      value={sectorName} accent="#be185d" />
         <StatCard
-          icon={Layers} label="Sub-Sector" value={subSectorName} accent="#7c3aed"
-          onClick={sectorName && subSectorName ? () => onFilterBySector(sectorName, subSectorName) : undefined}
+          icon={Briefcase} label="Sector" value={sectorName} accent="#be185d"
+          onClick={sectorName ? () => onFilterByMainSector(sectorName) : undefined}
         />
       </div>
+
+      {subSectorTags.length > 0 && (
+        <div>
+          <div className="flex items-center gap-1.5 mb-2">
+            <Layers className="w-3.5 h-3.5 flex-none text-[#7c3aed]" />
+            <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">
+              {subSectorTags.length > 1 ? "Sub-Sectors" : "Sub-Sector"}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {subSectorTags.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => onFilterBySubSectorTag(tag)}
+                title={PARENT_BY_SUB_SECTOR[tag] ? `Under ${PARENT_BY_SUB_SECTOR[tag]}` : undefined}
+                className="text-xs font-semibold px-2.5 py-1.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200 underline decoration-violet-300 underline-offset-2 hover:border-violet-400 hover:bg-violet-100 transition-colors"
+              >
+                {sectorLabel(tag, t)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <CompanySocialRow startup={startup} />
 
@@ -1678,11 +1716,12 @@ const TEARSHEET_TABS: { id: TearsheetTab; label: string }[] = [
   { id: "news",        label: "News" },
 ];
 
-function TearsheetModal({ startup, onClose, onNavigate, onFilterBySector }: {
+function TearsheetModal({ startup, onClose, onNavigate, onFilterByMainSector, onFilterBySubSectorTag }: {
   startup: StartupListRow;
   onClose: () => void;
   onNavigate: (row: StartupListRow) => void;
-  onFilterBySector: (parent: string, sub: string) => void;
+  onFilterByMainSector: (parent: string) => void;
+  onFilterBySubSectorTag: (tag: string) => void;
 }) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TearsheetTab>("overview");
@@ -1854,7 +1893,10 @@ function TearsheetModal({ startup, onClose, onNavigate, onFilterBySector }: {
           ) : (
             <>
               {activeTab === "overview" && (
-                <OverviewTab startup={detail} alphaScore={alphaScore} alphaLoading={alphaLoading} alphaErr={alphaErr} onFilterBySector={onFilterBySector} />
+                <OverviewTab
+                  startup={detail} alphaScore={alphaScore} alphaLoading={alphaLoading} alphaErr={alphaErr}
+                  onFilterByMainSector={onFilterByMainSector} onFilterBySubSectorTag={onFilterBySubSectorTag}
+                />
               )}
               {activeTab === "funding" && (
                 <FundingValuationTab sortedRounds={sortedRounds} fundingHistoryComplete={detail.funding_history_complete} />
@@ -2408,6 +2450,14 @@ export function Startups() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [parentSector, setParentSector] = useState("");
   const [subSector, setSubSector]       = useState("");
+  // Set exclusively by clicking a sub-sector tag chip on a company's own
+  // tearsheet (see handleFilterBySubSectorTag) — a distinct axis from
+  // parentSector/subSector above: it matches the exact stored tag
+  // (sub_sector_names) regardless of the matching companies' own main
+  // sector, whereas parentSector/subSector browse the taxonomy hierarchy
+  // via the existing keyword-based drill-down. Mutually exclusive with that
+  // pair so the two never silently AND together into an empty result.
+  const [subSectorTag, setSubSectorTag] = useState("");
   const [countryFilter, setCountry]     = useState("");
   const [stageStep, setStageStep]       = useState<StageStep>("all");
   const [headcountStep, setHeadcount]   = useState<HeadcountStep>("all");
@@ -2503,25 +2553,42 @@ export function Startups() {
     setSearchParams((p) => { p.delete("city"); return p; });
   }
   function clearAll() {
-    setSearch(""); setParentSector(""); setSubSector(""); setCountry("");
+    setSearch(""); setParentSector(""); setSubSector(""); setSubSectorTag(""); setCountry("");
     setStageStep("all"); setHeadcount("all"); setMomentum(false); setDensity("all");
     setFundedWithinDays(null);
     clearCityFilter();
   }
 
-  // Clicking a company's Sub-Sector stat in its tearsheet closes the
-  // tearsheet and filters the grid down to every company in that same
-  // sub-sector — the sidebar's own hierarchical filter, just triggered
-  // from inside a company's own detail view instead of the sidebar.
-  function handleFilterBySector(parent: string, sub: string) {
+  // Clicking a company's (single, main) Sector stat in its tearsheet closes
+  // the tearsheet and filters the grid to every other company with that
+  // same main sector — the sidebar's own parent-level filter, just
+  // triggered from inside a company's own detail view. Clears
+  // subSectorTag: the two axes are mutually exclusive (see its declaration).
+  function handleFilterByMainSector(parent: string) {
     setSelected(null);
     setSearch("");
+    setSubSectorTag("");
     setParentSector(parent);
-    setSubSector(sub);
+    setSubSector("");
+  }
+
+  // Clicking one of a company's (possibly several) Sub-Sector tag chips
+  // filters the grid to every OTHER company sharing that exact tag,
+  // regardless of what either company's own main sector is — an exact
+  // match against the stored tag (sub_sector_names), not the sidebar's
+  // keyword-based parent+child drill-down, so it stays correct even when
+  // the tag belongs to a different parent tree than the viewed company's
+  // own main sector (e.g. a biotech company also tagged "AI Agents").
+  function handleFilterBySubSectorTag(tag: string) {
+    setSelected(null);
+    setSearch("");
+    setParentSector("");
+    setSubSector("");
+    setSubSectorTag(tag);
   }
 
   function applyQuickQuestion(q: QuickQuestion) {
-    setSearch(""); setParentSector(q.parentSector ?? ""); setSubSector(""); setCountry("");
+    setSearch(""); setParentSector(q.parentSector ?? ""); setSubSector(""); setSubSectorTag(""); setCountry("");
     setStageStep(q.stageStep ?? "all"); setHeadcount(q.headcountStep ?? "all");
     setMomentum(q.momentum ?? false); setDensity(q.density ?? "all");
     setFundedWithinDays(q.fundedWithinDays ?? null);
@@ -2529,7 +2596,7 @@ export function Startups() {
   }
 
   const activeFilterCount = [
-    search, parentSector, subSector, countryFilter, cityFilter,
+    search, parentSector, subSector, subSectorTag, countryFilter, cityFilter,
     stageStep !== "all" ? "1" : "",
     headcountStep !== "all" ? "1" : "",
     momentumFilter ? "1" : "",
@@ -2543,8 +2610,12 @@ export function Startups() {
   const filters: StartupSearchFilters = useMemo(() => {
     const f: StartupSearchFilters = {};
     if (debouncedSearch) f.search = debouncedSearch;
-    if (parentSector) f.sectorParent = parentSector;
-    if (parentSector && subSector) f.sectorSubKeywords = keywordsForSub(parentSector, subSector);
+    if (subSectorTag) {
+      f.subSectorTag = subSectorTag;
+    } else {
+      if (parentSector) f.sectorParent = parentSector;
+      if (parentSector && subSector) f.sectorSubKeywords = keywordsForSub(parentSector, subSector);
+    }
     if (countryFilter) f.country = countryFilter;
     if (cityFilter) f.city = cityFilter;
     if (stageStep !== "all") {
@@ -2560,7 +2631,7 @@ export function Startups() {
     if (densityFilter !== "all") f.density = densityFilter;
     if (fundedWithinDays != null) f.fundedWithinDays = fundedWithinDays;
     return f;
-  }, [debouncedSearch, parentSector, subSector, countryFilter, cityFilter, stageStep, headcountStep, momentumFilter, densityFilter, fundedWithinDays]);
+  }, [debouncedSearch, parentSector, subSector, subSectorTag, countryFilter, cityFilter, stageStep, headcountStep, momentumFilter, densityFilter, fundedWithinDays]);
 
   // Any filter change starts the user back on page 1.
   useEffect(() => { setPage(1); }, [filters]);
@@ -2666,10 +2737,28 @@ export function Startups() {
               <FilterAccordion dataTour="filter-sectors" title={t("startups.sectors")} defaultOpen
                 badge={parentSector ? <FilterBadge>{sectorLabel(subSector || parentSector, t)}</FilterBadge> : undefined}>
                 <HierarchicalSectorFilter
-                  parentSector={parentSector} onParentChange={setParentSector}
-                  subSector={subSector}       onSubChange={setSubSector}
+                  parentSector={parentSector} onParentChange={(p) => { setSubSectorTag(""); setParentSector(p); }}
+                  subSector={subSector}       onSubChange={(s) => { setSubSectorTag(""); setSubSector(s); }}
                 />
               </FilterAccordion>
+
+              {subSectorTag && (
+                <FilterAccordion title="Also Tagged" defaultOpen
+                  badge={<FilterBadge>{sectorLabel(subSectorTag, t)}</FilterBadge>}>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-xs text-gray-500 leading-relaxed">
+                      Showing every company also tagged <strong className="text-[#0F172A]">{sectorLabel(subSectorTag, t)}</strong>
+                      {PARENT_BY_SUB_SECTOR[subSectorTag] ? ` (under ${sectorLabel(PARENT_BY_SUB_SECTOR[subSectorTag], t)})` : ""}.
+                    </p>
+                    <button
+                      onClick={() => setSubSectorTag("")}
+                      className="flex-none text-[11px] font-semibold text-gray-400 hover:text-rose-600 transition-colors"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </FilterAccordion>
+              )}
 
               <FilterAccordion title={t("startups.countries")} defaultOpen={false}
                 badge={countryFilter ? <FilterBadge>{countryFilter}</FilterBadge> : undefined}>
@@ -2816,7 +2905,8 @@ export function Startups() {
           startup={tearsheetStartup}
           onClose={() => setSelected(null)}
           onNavigate={(row) => setSelected(row)}
-          onFilterBySector={handleFilterBySector}
+          onFilterByMainSector={handleFilterByMainSector}
+          onFilterBySubSectorTag={handleFilterBySubSectorTag}
         />
       )}
 

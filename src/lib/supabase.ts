@@ -182,12 +182,18 @@ export interface Startup extends CompanySocialLinks {
   created_at: string;
   updated_at: string;
   news?: NewsItem[] | null;
-  // Resolved via PostgREST FK embedding in fetchStartupDetail — the stored
-  // sector_id/sub_sector_id names, when set. Falls back to the client-side
-  // keyword classifier (classifyIndustry) when either is null, same
-  // COALESCE precedence the startups_search view already uses server-side.
+  // Resolved via PostgREST FK embedding in fetchStartupDetail — the single
+  // stored sector_id name (this company's main/primary field), when set.
+  // Falls back to the client-side keyword classifier (classifyIndustry)
+  // when null, same COALESCE precedence the startups_search view already
+  // uses server-side.
   sector?: { name: string } | null;
-  sub_sector?: { name: string } | null;
+  // Every OTHER field this company meaningfully operates in (typically
+  // 1-4), from the startup_sub_sectors join table — see
+  // supabase/migrations/20260915000000_startup_sub_sector_tags.sql. Free to
+  // include sectors from a different parent tree than `sector` above (e.g.
+  // a biotech company also tagged "AI Agents").
+  sub_sectors?: { sector: { name: string } | null }[] | null;
   funding_rounds: FundingRound[];
   // Auto-populated by scripts/bulk_enrich_all.ts (fill-null only — never
   // overwrites pre-existing curated data). Accepts the legacy plain-string
@@ -255,6 +261,9 @@ export interface StartupListRow {
   updated_at: string;
   competitors?: (Competitor | string)[] | null;
   sector_parent: string;
+  // Every OTHER field this company is tagged with, beyond sector_parent —
+  // see startup_sub_sectors / supabase/migrations/20260915000000.
+  sub_sector_names: string[];
   stage_group_val: "early" | "growth" | "late" | "unknown";
   latest_round_type: RoundType | null;
   latest_valuation: number | null;
@@ -275,8 +284,14 @@ export interface StartupSearchFilters {
   sectorParent?: string;
   // Dynamic ILIKE-OR patterns for sub-sector drill-down, built client-side
   // from the same INDUSTRY_KEYWORD_MAP used for display classification —
-  // avoids duplicating ~90 keyword→sub mappings as SQL.
+  // avoids duplicating ~90 keyword→sub mappings as SQL. Used by the
+  // sidebar's hierarchical (parent-then-child) filter.
   sectorSubKeywords?: string[];
+  // Exact match against a single stored sub-sector TAG (startup_sub_sectors
+  // / sub_sector_names) — used when a user clicks a sub-sector chip on a
+  // company's tearsheet to see every other company sharing that tag,
+  // independent of what either company's own main sector is.
+  subSectorTag?: string;
   country?: string;
   city?: string;
   stageRoundTypes?: RoundType[];
@@ -309,6 +324,7 @@ function applyStartupSearchFilters(
   if (filters.sectorSubKeywords && filters.sectorSubKeywords.length > 0) {
     q = q.or(filters.sectorSubKeywords.map((k) => `industry.ilike.%${k.replace(/[%,]/g, "")}%`).join(","));
   }
+  if (filters.subSectorTag) q = q.contains("sub_sector_names", [filters.subSectorTag]);
   if (filters.country) q = q.eq("country", filters.country);
   if (filters.city) q = q.or(`city.ilike.%${filters.city}%,country.ilike.%${filters.city}%`);
   if (filters.stageRoundTypes && filters.stageRoundTypes.length > 0) {
@@ -391,12 +407,19 @@ export async function fetchStartupDetail(id: string): Promise<Startup> {
     .select(`
       *, funding_rounds(*),
       sector:sectors!startups_sector_id_fkey(name),
-      sub_sector:sectors!startups_sub_sector_id_fkey(name)
+      sub_sectors:startup_sub_sectors(sector:sectors(name))
     `)
     .eq("id", id)
     .single();
   if (error) throw error;
   return data as Startup;
+}
+
+/** Flattens Startup.sub_sectors (the raw FK-embed shape) into plain names. */
+export function subSectorNames(startup: Pick<Startup, "sub_sectors">): string[] {
+  return (startup.sub_sectors ?? [])
+    .map((t) => t.sector?.name)
+    .filter((name): name is string => Boolean(name));
 }
 
 // Fetches a single row from the search view — used to open the tearsheet for

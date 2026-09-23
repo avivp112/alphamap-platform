@@ -174,7 +174,6 @@ interface StartupRow {
   updated_at: string;
   last_enriched_at: string | null;
   sector_id: string | null;
-  sub_sector_id: string | null;
   linkedin_url: string | null;
   facebook_url: string | null;
   instagram_url: string | null;
@@ -266,6 +265,11 @@ interface ExtractedProfile {
   founders?: ExtractedFounder[];
   sector_name?: string;
   sub_sector_name?: string;
+  // OTHER fields this company meaningfully operates in, beyond sector_name/
+  // sub_sector_name above — e.g. a biotech company that also builds an AI
+  // agent. Additive across runs (see patchStartupProfile), unlike the
+  // fill-null-once sector_name/sub_sector_name pair.
+  sub_sector_names?: string[];
   linkedin_url?: string;
   facebook_url?: string;
   instagram_url?: string;
@@ -1027,6 +1031,15 @@ async function researchCompany(
                 enum: SUB_SECTOR_NAMES.length > 0 ? SUB_SECTOR_NAMES : undefined,
                 description: "The single best-fit sub-sector from the enumerated list, one level more specific than sector_name (e.g. under \"AI & ML\": \"LLMs\", \"Computer Vision\"). Omit if genuinely uncertain — never guess.",
               },
+              sub_sector_names: {
+                type: "array",
+                items: {
+                  type: "string",
+                  enum: [...SECTOR_PARENT_NAMES, ...SUB_SECTOR_NAMES].length > 0
+                    ? [...SECTOR_PARENT_NAMES, ...SUB_SECTOR_NAMES] : undefined,
+                },
+                description: "1-4 OTHER fields this company meaningfully operates in, beyond sector_name/sub_sector_name above — e.g. a biotech company that ALSO builds an AI diagnostic agent would list \"AI Agents\" here. Can come from any parent tree in the enumerated list, not just sector_name's own children. Omit entirely if the company genuinely operates in only the one field already captured above — never pad this out to look thorough.",
+              },
               linkedin_url:  { type: "string", description: "The COMPANY's own LinkedIn page (linkedin.com/company/...) — not a person's profile. Omit if not found." },
               facebook_url:  { type: "string", description: "The company's Facebook page. Omit if not found." },
               instagram_url: { type: "string", description: "The company's Instagram profile. Omit if not found." },
@@ -1759,18 +1772,31 @@ async function patchStartupProfile(
   if (!existing.facebook_url  && profile.facebook_url)  patch.facebook_url  = profile.facebook_url;
   if (!existing.instagram_url && profile.instagram_url) patch.instagram_url = profile.instagram_url;
 
-  // Sector / sub-sector: fill-null only. sector_name/sub_sector_name is
-  // constrained to the real sectors table via the tool schema's enum, then
-  // resolved to a uuid through sector_id_by_name() (defined alongside the
-  // sectors table) — never written from arbitrary free text, so this can
-  // never point at a sector that doesn't actually exist.
+  // Sector: fill-null only. Constrained to the real sectors table via the
+  // tool schema's enum, then resolved to a uuid through sector_id_by_name()
+  // (defined alongside the sectors table) — never written from arbitrary
+  // free text, so this can never point at a sector that doesn't exist.
   if (!existing.sector_id && profile.sector_name) {
     const { data: sid } = await supabase.rpc("sector_id_by_name", { p_name: profile.sector_name });
     if (sid) patch.sector_id = sid;
   }
-  if (!existing.sub_sector_id && profile.sub_sector_name) {
-    const { data: subId } = await supabase.rpc("sector_id_by_name", { p_name: profile.sub_sector_name });
-    if (subId) patch.sub_sector_id = subId;
+
+  // OTHER fields (startup_sub_sectors): additive across runs, unlike the
+  // fill-null-once sector_name above — a later pass discovering a new field
+  // the company has expanded into should be able to add it regardless of
+  // what's already stored. sub_sector_name (the single most-specific
+  // classification of the PRIMARY field, e.g. "LLMs" under "AI & ML") folds
+  // in here too now that there's no separate scalar column for it — it's
+  // just as valid a tag as a genuinely different field like "Payments".
+  // Deduped since the model could plausibly repeat one in both.
+  const tagNames = [...new Set([
+    ...(profile.sub_sector_name ? [profile.sub_sector_name] : []),
+    ...(profile.sub_sector_names ?? []),
+  ])];
+  const tagSectorIds: string[] = [];
+  for (const tagName of tagNames) {
+    const { data: tagId } = await supabase.rpc("sector_id_by_name", { p_name: tagName });
+    if (tagId) tagSectorIds.push(tagId);
   }
 
   // Founders: merge as union (additive, never destructive), deduped by name.
@@ -1926,6 +1952,7 @@ async function patchStartupProfile(
   if (DRY_RUN) {
     console.log(`    [DRY] Would patch: ${Object.keys(patch).join(", ")}`);
     if (newsCount > 0) console.log(`    [DRY] news images: ${newsWithImage}/${newsCount} filled`);
+    if (tagSectorIds.length > 0) console.log(`    [DRY] Would tag sub-sectors: ${tagNames.join(", ")}`);
     return { fieldsPatched, patchedKeys, newsCount, newsWithImage };
   }
 
@@ -1933,6 +1960,17 @@ async function patchStartupProfile(
   if (error) {
     console.warn(`    ⚠️  Profile patch failed: ${error.message}`);
     return { fieldsPatched: 0, patchedKeys: [], newsCount: 0, newsWithImage: 0 };
+  }
+
+  if (tagSectorIds.length > 0) {
+    const { error: tagErr } = await supabase
+      .from("startup_sub_sectors")
+      .upsert(
+        tagSectorIds.map((sector_id) => ({ startup_id: existing.id, sector_id })),
+        { onConflict: "startup_id,sector_id", ignoreDuplicates: true },
+      );
+    if (tagErr) console.warn(`    ⚠️  Sub-sector tag write failed: ${tagErr.message}`);
+    else console.log(`    🏷️  Tagged: ${tagNames.join(", ")}`);
   }
 
   const parts: string[] = [];
@@ -1944,8 +1982,8 @@ async function patchStartupProfile(
   if (newsCount > 0)        parts.push(`${newsCount} news articles (${newsWithImage}/${newsCount} w/ image)`);
   if (patch.patents)        parts.push(`${(patch.patents as PatentRecord[]).length} patents`);
   else if (patch.patent_count != null) parts.push(`${patch.patent_count} patents (count only)`);
-  if (patch.sector_id)      parts.push(`sector: ${profile.sector_name}`);
-  if (patch.sub_sector_id)  parts.push(`sub-sector: ${profile.sub_sector_name}`);
+  if (patch.sector_id)          parts.push(`sector: ${profile.sector_name}`);
+  if (tagSectorIds.length > 0)  parts.push(`tags: ${tagNames.join(", ")}`);
   const profileKeys = [
     "website","description","industry","founded_year","country","city","founders",
     "linkedin_url","facebook_url","instagram_url",
@@ -2059,7 +2097,7 @@ async function main() {
   const startups = await fetchAllPaginated<StartupRow>((from, to) =>
     supabase
       .from("startups")
-      .select("id, name, website, description, industry, founded_year, employee_count, growth_trend, country, city, founders, leadership, competitors, acquisitions, patent_count, patent_fields, patents, funding_history_complete, updated_at, last_enriched_at, sector_id, sub_sector_id, linkedin_url, facebook_url, instagram_url, news")
+      .select("id, name, website, description, industry, founded_year, employee_count, growth_trend, country, city, founders, leadership, competitors, acquisitions, patent_count, patent_fields, patents, funding_history_complete, updated_at, last_enriched_at, sector_id, linkedin_url, facebook_url, instagram_url, news")
       .order("name")
       .range(from, to),
   );
