@@ -962,7 +962,7 @@ export function LandingPage() {
 
       {/* ── Fixed header ─────────────────────────────────────────────────────── */}
       <header
-        className="fixed top-0 left-0 right-0 z-50 flex min-h-20 w-full items-center justify-between gap-2 px-4 sm:px-6 lg:px-12 native:px-5 pt-[env(safe-area-inset-top)]"
+        className="fixed top-0 left-0 right-0 z-50 flex min-h-20 w-full items-center justify-between native:justify-end gap-2 px-4 sm:px-6 lg:px-12 native:px-5 pt-[env(safe-area-inset-top)]"
         style={{
           background:    scrolled ? "rgba(255,255,255,0.94)" : "rgba(255,255,255,0.7)",
           backdropFilter:"blur(14px)",
@@ -976,12 +976,14 @@ export function LandingPage() {
             The wordmark drops below sm: — on a phone-width screen there
             isn't room for "AlphaMap" plus the language switcher, Log In,
             and View Dashboard all on one line without wrapping; the rhino
-            mark alone still reads as the logo. */}
+            mark alone still reads as the logo. Hidden entirely on native —
+            the app's header carries only the language switcher, with the
+            mark and both actions moved into the hero itself below. */}
         <button
           type="button"
           onClick={async () => navigate(await homePathNow("/"))}
           aria-label={t("nav.goHome")}
-          className="flex flex-none items-center gap-2.5 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/30"
+          className="flex flex-none items-center gap-2.5 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/30 native:hidden"
         >
           <BrandMark size={32} />
           <BrandWordmark className="hidden sm:block text-xl tracking-tight text-[#0F172A]" />
@@ -991,7 +993,9 @@ export function LandingPage() {
             fix for the wrapping/"crooked" look this replaces: previously
             each item could wrap its own text onto two lines under a
             width squeeze, instead of the row just running out of room
-            visibly (which is what a squeeze SHOULD look like). */}
+            visibly (which is what a squeeze SHOULD look like). On native
+            only the language switcher survives here — native:justify-end
+            above keeps it pinned to the far right once its siblings hide. */}
         <div className="flex flex-none items-center gap-1.5 sm:gap-3 lg:gap-5 native:gap-3">
           {/* The landing page has its own header rather than the app's TopNav,
               so the switcher is mounted here too — this is where a first-time
@@ -999,7 +1003,7 @@ export function LandingPage() {
           <LanguageSelector />
           <button
             onClick={() => navigate("/login")}
-            className="flex-none whitespace-nowrap text-xs sm:text-sm font-medium text-gray-500 transition-colors duration-300 hover:text-[#111827] native:px-1"
+            className="flex-none whitespace-nowrap text-xs sm:text-sm font-medium text-gray-500 transition-colors duration-300 hover:text-[#111827] native:hidden"
           >
             {t("header.logIn")}
           </button>
@@ -1009,7 +1013,7 @@ export function LandingPage() {
               shown a plan picker instead of their dashboard. */}
           <button
             onClick={async () => navigate(await homePathNow("/pricing"))}
-            className="flex-none whitespace-nowrap rounded-lg px-3 py-2 sm:px-5 sm:py-2.5 native:px-4 native:py-2.5 text-xs sm:text-sm font-semibold transition-all duration-300 bg-[#111827] border border-black/10 text-white shadow-[0_1px_4px_rgba(0,0,0,0.08)] hover:bg-gray-900"
+            className="flex-none whitespace-nowrap rounded-lg px-3 py-2 sm:px-5 sm:py-2.5 text-xs sm:text-sm font-semibold transition-all duration-300 bg-[#111827] border border-black/10 text-white shadow-[0_1px_4px_rgba(0,0,0,0.08)] hover:bg-gray-900 native:hidden"
           >
             {t("landing.viewDashboard")}
           </button>
@@ -1033,13 +1037,13 @@ export function LandingPage() {
 
       {/* ── Hero: typewriter headline over a light backdrop ───────────────────── */}
       <section
-        className="relative w-full flex flex-col items-start justify-center text-left px-6 lg:px-12 native:snap-start native:[scroll-snap-stop:always]"
+        className="relative w-full flex flex-col items-start justify-center text-left px-6 lg:px-12 native:items-center native:text-center native:justify-start native:pt-28 native:snap-start native:[scroll-snap-stop:always]"
         style={{ minHeight: "100svh", background: "linear-gradient(180deg, #FAFAF9 0%, #F3F4F6 100%)" }}
       >
-        <div className="h-px w-16 mb-10" style={{ background: "linear-gradient(90deg, #F59E0B, transparent)" }} />
+        <div className="h-px w-16 mb-10 native:mb-6" style={{ background: "linear-gradient(90deg, #F59E0B, transparent)" }} />
 
         <h1
-          className="max-w-[1100px] text-[2.4rem] sm:text-5xl md:text-[3.8rem] lg:text-[4.6rem] font-normal text-[#111827] tracking-tight"
+          className="max-w-[1100px] text-[2.4rem] sm:text-5xl md:text-[3.8rem] lg:text-[4.6rem] native:text-[2rem] font-normal text-[#111827] tracking-tight"
           style={{ fontFamily: "'Playfair Display', serif", lineHeight: "1.15" }}
         >
           {headline.slice(0, typedCount)}
@@ -1047,11 +1051,40 @@ export function LandingPage() {
         </h1>
 
         <p
-          className="max-w-[720px] mt-6 text-xl md:text-2xl leading-relaxed font-normal text-[#374151]"
+          className="max-w-[720px] mt-6 native:mt-4 text-xl md:text-2xl native:text-lg leading-relaxed font-normal text-[#374151]"
           style={tx(subheadVisible, 0)}
         >
           {t("landing.subhead")}
         </p>
+
+        {/* App-only: once the caption has finished writing itself out, the
+            brand mark + both primary actions appear beneath it — the header
+            above carries neither Log In nor View Dashboard on native
+            anymore, so this is where a visitor actually gets to them. */}
+        <div
+          className="hidden native:flex native:flex-col native:items-center native:gap-6 native:mt-10 native:w-full"
+          style={tx(subheadVisible, 300)}
+        >
+          <div className="flex items-center gap-3">
+            <BrandMark size={44} />
+            <BrandWordmark className="text-2xl tracking-tight text-[#0F172A]" />
+          </div>
+
+          <div className="flex flex-col items-stretch gap-3">
+            <button
+              onClick={async () => navigate(await homePathNow("/pricing"))}
+              className="rounded-lg px-8 py-3.5 text-base font-semibold transition-all duration-300 bg-[#111827] border border-black/10 text-white shadow-[0_1px_4px_rgba(0,0,0,0.08)] hover:bg-gray-900"
+            >
+              {t("landing.viewDashboard")}
+            </button>
+            <button
+              onClick={() => navigate("/login")}
+              className="rounded-lg px-8 py-3.5 text-base font-semibold text-[#111827] border border-gray-300 transition-colors duration-300 hover:bg-gray-50"
+            >
+              {t("header.logIn")}
+            </button>
+          </div>
+        </div>
 
         {/* Scroll indicator */}
         <div
