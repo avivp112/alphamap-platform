@@ -962,7 +962,7 @@ export function LandingPage() {
 
       {/* ── Fixed header ─────────────────────────────────────────────────────── */}
       <header
-        className="fixed top-0 left-0 right-0 z-50 flex min-h-20 w-full items-center justify-between gap-2 px-4 sm:px-6 lg:px-12 pt-[env(safe-area-inset-top)]"
+        className="fixed top-0 left-0 right-0 z-50 flex min-h-20 w-full items-center justify-between gap-2 px-4 sm:px-6 lg:px-12 native:px-5 pt-[env(safe-area-inset-top)]"
         style={{
           background:    scrolled ? "rgba(255,255,255,0.94)" : "rgba(255,255,255,0.7)",
           backdropFilter:"blur(14px)",
@@ -992,14 +992,14 @@ export function LandingPage() {
             each item could wrap its own text onto two lines under a
             width squeeze, instead of the row just running out of room
             visibly (which is what a squeeze SHOULD look like). */}
-        <div className="flex flex-none items-center gap-1.5 sm:gap-3 lg:gap-5">
+        <div className="flex flex-none items-center gap-1.5 sm:gap-3 lg:gap-5 native:gap-3">
           {/* The landing page has its own header rather than the app's TopNav,
               so the switcher is mounted here too — this is where a first-time
               visitor (who always starts in English) changes language. */}
           <LanguageSelector />
           <button
             onClick={() => navigate("/login")}
-            className="flex-none whitespace-nowrap text-xs sm:text-sm font-medium text-gray-500 transition-colors duration-300 hover:text-[#111827]"
+            className="flex-none whitespace-nowrap text-xs sm:text-sm font-medium text-gray-500 transition-colors duration-300 hover:text-[#111827] native:px-1"
           >
             {t("header.logIn")}
           </button>
@@ -1009,7 +1009,7 @@ export function LandingPage() {
               shown a plan picker instead of their dashboard. */}
           <button
             onClick={async () => navigate(await homePathNow("/pricing"))}
-            className="flex-none whitespace-nowrap rounded-lg px-3 py-2 sm:px-5 sm:py-2.5 text-xs sm:text-sm font-semibold transition-all duration-300 bg-[#111827] border border-black/10 text-white shadow-[0_1px_4px_rgba(0,0,0,0.08)] hover:bg-gray-900"
+            className="flex-none whitespace-nowrap rounded-lg px-3 py-2 sm:px-5 sm:py-2.5 native:px-4 native:py-2.5 text-xs sm:text-sm font-semibold transition-all duration-300 bg-[#111827] border border-black/10 text-white shadow-[0_1px_4px_rgba(0,0,0,0.08)] hover:bg-gray-900"
           >
             {t("landing.viewDashboard")}
           </button>

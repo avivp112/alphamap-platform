@@ -369,7 +369,7 @@ export function TopNav() {
   return (
     <header className="sticky top-0 z-30 relative flex min-h-[72px] sm:min-h-16 w-full items-center justify-between border-b border-white native:border-gray-100 bg-white px-4 lg:px-6 native:pl-5 native:pr-4 pt-[env(safe-area-inset-top)] shadow-sm">
       {/* Logo (+ mobile nav trigger) */}
-      <div className="flex items-center gap-1 flex-none min-w-0">
+      <div className="flex items-center gap-1 native:gap-2 flex-none min-w-0">
         {/* Was a plain <div>, so clicking it did nothing — the one thing every
             visitor tries when they want to get back. */}
         <button
@@ -482,8 +482,10 @@ export function TopNav() {
 
       {/* Profile & Notifications — the three items below (language, bell,
           avatar) share a uniform native:h-10 circular/pill treatment so
-          they read as one consistent group in the app; unchanged on web. */}
-      <div className="flex items-center gap-2.5 sm:gap-4 native:gap-2 flex-none">
+          they read as one consistent group in the app; unchanged on web.
+          native:gap-3 (wider than the sm:gap-4 desktop default collapses
+          to on a narrow phone) keeps them from crowding each other. */}
+      <div className="flex items-center gap-2.5 sm:gap-4 native:gap-3 flex-none">
         {/* Available signed in or out — a visitor reading the marketing copy
             needs the switcher just as much as an account holder. */}
         <LanguageSelector />
