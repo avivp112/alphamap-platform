@@ -365,26 +365,42 @@ Deno.serve(async (req: Request): Promise<Response> => {
       // No organisation assignee means an inventor-held filing — the earliest
       // signal there is. It is stored with entity_name set to the publication's
       // own title-holder placeholder ONLY when an organisation exists; without
-      // one we cannot create a startups row, so the RPC is skipped and the
-      // publication is written unlinked for the founder watchlist.
+      // one we cannot create a startups row, so entity resolution is skipped
+      // via p_unlinked and the publication is written unlinked for the
+      // founder watchlist.
+      //
+      // Routed through the RPC rather than a raw upsert (as this used to be):
+      // a raw upsert's ON CONFLICT would blindly overwrite officers/title/
+      // abstract on every re-ingest, so a later re-parse that came back with
+      // zero inventors would silently wipe a previously-captured inventor
+      // list. ingest_gov_entity_filing's ON CONFLICT never lets an empty
+      // officers array overwrite a populated one — see
+      // 20260726220000_gov_entity_resolution_and_unlinked_fix.sql.
       if (!p.assignee) {
         inventorHeld++;
-        const { error } = await supabase.from("raw_gov_filings").upsert({
-          source: "uspto_patent",
-          accession_number: p.publicationNumber,
-          entity_number: p.applicationNumber,
-          entity_name: p.inventors[0] ? `${p.inventors[0]} (inventor-held)` : "Unassigned publication",
-          filing_date: p.publicationDate ?? to,
-          country: "United States",
-          classification_codes: p.cpcCodes,
-          title: p.title,
-          abstract: p.abstract,
-          officers: inventorsAsOfficers(p),
-          tech_summary: techSummary(p),
-          raw_payload: p,
-        }, { onConflict: "source,accession_number" });
+        const { data, error } = await supabase.rpc("ingest_gov_entity_filing", {
+          p_source: "uspto_patent",
+          p_accession: p.publicationNumber,
+          p_entity_name: p.inventors[0] ? `${p.inventors[0]} (inventor-held)` : "Unassigned publication",
+          p_filing_date: p.publicationDate ?? to,
+          p_entity_number: p.applicationNumber,
+          p_country: "United States",
+          p_codes: p.cpcCodes,
+          p_title: p.title,
+          p_abstract: p.abstract,
+          p_officers: inventorsAsOfficers(p),
+          p_tech_summary: techSummary(p),
+          p_raw: p,
+          p_unlinked: true,
+        });
         if (error) results.push({ publication: p.publicationNumber, ok: false, reason: error.message });
-        else { ingested++; results.push({ publication: p.publicationNumber, ok: true, assignee: null, inventors: p.inventors.length, title: p.title }); }
+        else {
+          ingested++;
+          results.push({
+            publication: p.publicationNumber, ok: true, assignee: null,
+            inventors: p.inventors.length, title: p.title, ...(data as Record<string, unknown>),
+          });
+        }
         continue;
       }
 

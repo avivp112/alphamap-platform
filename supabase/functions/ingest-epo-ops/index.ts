@@ -588,24 +588,39 @@ Deno.serve(async (req: Request): Promise<Response> => {
       // a founder watchlist. Deliberately NOT given a startups row: there is no
       // company to create yet, and inventing one named after a person would
       // corrupt the entity table and send the ATS prober after a human.
+      //
+      // Routed through the RPC rather than a raw upsert (as this used to be):
+      // a raw upsert's ON CONFLICT would blindly overwrite officers/title/
+      // abstract on every re-ingest, so a later re-parse that came back with
+      // zero inventors would silently wipe a previously-captured inventor
+      // list. ingest_gov_entity_filing's ON CONFLICT never lets an empty
+      // officers array overwrite a populated one — see
+      // 20260726220000_gov_entity_resolution_and_unlinked_fix.sql.
       if (!p.applicant) {
         inventorHeld++;
-        const { error } = await supabase.from("raw_gov_filings").upsert({
-          source: "epo_ops",
-          accession_number: p.publicationNumber,
-          entity_number: p.applicationNumber,
-          entity_name: p.inventors[0] ? `${p.inventors[0]} (inventor-held)` : "Unassigned publication",
-          filing_date: p.publicationDate ?? to,
-          country: p.country === "GB" ? "United Kingdom" : "United States",
-          classification_codes: p.cpcCodes,
-          title: p.title,
-          abstract: p.abstract,
-          officers: inventorsAsOfficers(p),
-          tech_summary: techSummary(p),
-          raw_payload: p,
-        }, { onConflict: "source,accession_number" });
+        const { data, error } = await supabase.rpc("ingest_gov_entity_filing", {
+          p_source: "epo_ops",
+          p_accession: p.publicationNumber,
+          p_entity_name: p.inventors[0] ? `${p.inventors[0]} (inventor-held)` : "Unassigned publication",
+          p_filing_date: p.publicationDate ?? to,
+          p_entity_number: p.applicationNumber,
+          p_country: p.country === "GB" ? "United Kingdom" : "United States",
+          p_codes: p.cpcCodes,
+          p_title: p.title,
+          p_abstract: p.abstract,
+          p_officers: inventorsAsOfficers(p),
+          p_tech_summary: techSummary(p),
+          p_raw: p,
+          p_unlinked: true,
+        });
         if (error) results.push({ publication: p.publicationNumber, ok: false, reason: error.message });
-        else { ingested++; results.push({ publication: p.publicationNumber, ok: true, applicant: null, inventors: p.inventors.length }); }
+        else {
+          ingested++;
+          results.push({
+            publication: p.publicationNumber, ok: true, applicant: null,
+            inventors: p.inventors.length, ...(data as Record<string, unknown>),
+          });
+        }
         continue;
       }
 
