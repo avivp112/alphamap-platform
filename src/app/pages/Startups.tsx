@@ -21,15 +21,16 @@ import {
   GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2, ChevronUp,
   SlidersHorizontal, Award, Eye, HelpCircle,
   Linkedin, Facebook, Instagram, Newspaper, Layers, ExternalLink,
+  Star, XCircle,
 } from "lucide-react";
 import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
   fetchStartupsPage, fetchStartupsCount, fetchStartupsForExport, EXPORT_ROW_CAP, fetchDistinctCountries, fetchStartupDetail,
   fetchSuggestedPeers, fetchStartupListRowById, fetchScoreHistory, fetchArticleImage, STARTUPS_PAGE_SIZE, subSectorNames,
-  fetchUserMandate,
+  fetchUserMandate, logInteraction, fetchPassedStartupIds,
   type Startup, type FundingRound, type RoundType, type AlphaScore, type HeadcountPoint,
   type StartupListRow, type StartupSearchFilters, type Competitor, type ScoreHistoryPoint,
-  type NewsItem,
+  type NewsItem, type PassReason,
 } from "../../lib/supabase";
 import { useWatchlistMembership, addToWatchlist, removeFromWatchlist, watchlistErrorMessage } from "../../lib/watchlist";
 import { exportRows, type ExportColumn, type ExportFormat } from "../../lib/exportData";
@@ -1687,12 +1688,17 @@ const TEARSHEET_TABS: { id: TearsheetTab; label: string }[] = [
   { id: "news",        label: "News" },
 ];
 
-function TearsheetModal({ startup, onClose, onNavigate, onFilterByMainSector, onFilterBySubSectorTag }: {
+function TearsheetModal({
+  startup, onClose, onNavigate, onFilterByMainSector, onFilterBySubSectorTag, saved, onSave, onOpenPass,
+}: {
   startup: StartupListRow;
   onClose: () => void;
   onNavigate: (row: StartupListRow) => void;
   onFilterByMainSector: (parent: string) => void;
   onFilterBySubSectorTag: (tag: string) => void;
+  saved: boolean;
+  onSave: () => void;
+  onOpenPass: () => void;
 }) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TearsheetTab>("overview");
@@ -1806,6 +1812,26 @@ function TearsheetModal({ startup, onClose, onNavigate, onFilterByMainSector, on
               </div>
             </div>
             <div className="flex items-center gap-2 flex-none">
+              <button
+                onClick={onSave}
+                title={saved ? "Saved" : "Save"}
+                aria-label={saved ? "Saved" : "Save"}
+                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full whitespace-nowrap bg-white/70 hover:bg-white transition-colors"
+                style={{ border: "1px solid rgba(15,23,42,0.12)" }}
+              >
+                <Star className={`w-3.5 h-3.5 ${saved ? "fill-amber-400 text-amber-500" : "text-[#0F172A]/50"}`} />
+                {saved ? "Saved" : "Save"}
+              </button>
+              <button
+                onClick={onOpenPass}
+                title="Pass"
+                aria-label="Pass"
+                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full whitespace-nowrap bg-white/70 hover:bg-white text-[#0F172A]/50 hover:text-rose-600 transition-colors"
+                style={{ border: "1px solid rgba(15,23,42,0.12)" }}
+              >
+                <XCircle className="w-3.5 h-3.5" />
+                Pass
+              </button>
               {roundType && roundStyle && (
                 <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap bg-white/70`} style={{ border: "1px solid rgba(15,23,42,0.12)" }}>{roundType}</span>
               )}
@@ -2021,14 +2047,93 @@ function CompareModal({
   );
 }
 
+// ── Pass reason modal ────────────────────────────────────────────────────────
+// Passing permanently excludes a company from the feed (see
+// fetchPassedStartupIds/excludeStartupIds) — capturing why is a cheap,
+// high-signal negative weight for the preference vector (a later phase),
+// not just a confirmation dialog.
+
+const PASS_REASONS: { value: PassReason; label: string }[] = [
+  { value: "sector",    label: "Sector" },
+  { value: "stage",     label: "Stage" },
+  { value: "valuation", label: "Valuation" },
+  { value: "team",      label: "Team" },
+];
+
+function PassReasonModal({
+  startup, onClose, onConfirm, submitting,
+}: {
+  startup: StartupListRow;
+  onClose: () => void;
+  onConfirm: (reason: PassReason) => void;
+  submitting: boolean;
+}) {
+  const [reason, setReason] = useState<PassReason | null>(null);
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      style={{ background: "rgba(6,13,25,0.55)", backdropFilter: "blur(10px)" }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm bg-white rounded-[10px] border border-gray-100 p-5"
+        style={{ boxShadow: "0 32px 80px rgba(15,23,42,0.35)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-base font-bold text-[#0F172A] mb-1">Pass on {startup.name}?</h3>
+        <p className="text-xs text-gray-500 mb-4">This hides it from your feed for good. What's the main reason?</p>
+        <div className="grid grid-cols-2 gap-2 mb-5">
+          {PASS_REASONS.map((r) => (
+            <button
+              key={r.value}
+              type="button"
+              onClick={() => setReason(r.value)}
+              aria-pressed={reason === r.value}
+              className={`text-sm font-semibold px-3 py-2.5 rounded-[8px] border transition-colors ${
+                reason === r.value ? "bg-[#0F172A] border-[#0F172A] text-white" : "bg-white border-gray-200 text-gray-600 hover:border-gray-300"
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center justify-end gap-3">
+          <button type="button" onClick={onClose} className="text-sm font-semibold text-gray-500 hover:text-[#0F172A] transition-colors">
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!reason || submitting}
+            onClick={() => reason && onConfirm(reason)}
+            className="flex items-center gap-1.5 rounded-[8px] bg-[#0F172A] px-4 py-2 text-sm font-bold text-white hover:bg-gray-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            Pass
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Grid Card ─────────────────────────────────────────────────────────────────
 
 function StartupCard({
-  startup, onSelect, selected, onToggleSelect, dataTour,
+  startup, onSelect, selected, onToggleSelect, dataTour, saved, onSave, onOpenPass,
 }: {
   startup: StartupListRow; onSelect: () => void;
   selected: boolean; onToggleSelect: (e: React.MouseEvent) => void;
   dataTour?: string;
+  saved: boolean;
+  onSave: (e: React.MouseEvent) => void;
+  onOpenPass: (e: React.MouseEvent) => void;
 }) {
   const { t } = useTranslation();
   const roundType   = startup.latest_round_type ?? null;
@@ -2067,6 +2172,26 @@ function StartupCard({
         className="absolute inset-x-0 top-0 h-px pointer-events-none z-10"
         style={{ background: `linear-gradient(90deg, transparent, ${cardGlow.shimmer}, transparent)` }}
       />
+      {/* Save / Pass — always visible once saved (so the state reads at a
+          glance), otherwise hover-revealed like the compare checkbox below. */}
+      <div className={`absolute top-3 right-3 z-20 flex items-center gap-1 transition-opacity ${saved ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+        <button
+          onClick={onSave}
+          title={saved ? "Saved" : "Save"}
+          aria-label={saved ? "Saved" : "Save"}
+          className="w-7 h-7 rounded-full bg-white/90 shadow-sm border border-gray-100 flex items-center justify-center hover:border-amber-300 transition-colors"
+        >
+          <Star className={`w-3.5 h-3.5 ${saved ? "fill-amber-400 text-amber-500" : "text-gray-400"}`} />
+        </button>
+        <button
+          onClick={onOpenPass}
+          title="Pass"
+          aria-label="Pass"
+          className="w-7 h-7 rounded-full bg-white/90 shadow-sm border border-gray-100 flex items-center justify-center hover:border-rose-300 hover:text-rose-500 text-gray-400 transition-colors"
+        >
+          <XCircle className="w-3.5 h-3.5" />
+        </button>
+      </div>
       <div className="p-5 pb-4 flex-1 relative z-10">
         <div className="flex items-start gap-3 mb-3">
           <CompanyLogo name={startup.name} website={startup.website} size={40} rounded="rounded-lg" />
@@ -2144,11 +2269,14 @@ function StartupCard({
 // ── List Row ──────────────────────────────────────────────────────────────────
 
 function StartupTableRow({
-  startup, onSelect, selected, onToggleSelect, dataTour,
+  startup, onSelect, selected, onToggleSelect, dataTour, saved, onSave, onOpenPass,
 }: {
   startup: StartupListRow; onSelect: () => void;
   selected: boolean; onToggleSelect: (e: React.MouseEvent) => void;
   dataTour?: string;
+  saved: boolean;
+  onSave: (e: React.MouseEvent) => void;
+  onOpenPass: (e: React.MouseEvent) => void;
 }) {
   const roundType   = startup.latest_round_type ?? null;
   const roundStyle  = roundType ? (ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]) : null;
@@ -2196,7 +2324,26 @@ function StartupTableRow({
           </div>
         ) : <span className="text-xs text-gray-300">—</span>}
       </td>
-      <td className="py-3.5 px-4 text-right text-gray-300 group-hover:text-[#0F172A] transition-colors text-sm">→</td>
+      <td className="py-3.5 px-4">
+        <div className={`flex items-center justify-end gap-1.5 transition-opacity ${saved ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+          <button
+            onClick={onSave}
+            title={saved ? "Saved" : "Save"}
+            aria-label={saved ? "Saved" : "Save"}
+            className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-amber-50 transition-colors"
+          >
+            <Star className={`w-3.5 h-3.5 ${saved ? "fill-amber-400 text-amber-500" : "text-gray-400"}`} />
+          </button>
+          <button
+            onClick={onOpenPass}
+            title="Pass"
+            aria-label="Pass"
+            className="w-7 h-7 rounded-full flex items-center justify-center text-gray-400 hover:bg-rose-50 hover:text-rose-500 transition-colors"
+          >
+            <XCircle className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </td>
     </tr>
   );
 }
@@ -2448,6 +2595,13 @@ export function Startups() {
   const [watchlistBusy, setWatchlistBusy] = useState(false);
   const [watchlistError, setWatchlistError] = useState<string | null>(null);
 
+  // Every startup the user has ever passed on — permanently excluded from
+  // every future query (see the filters useMemo below), not just hidden from
+  // the current `rows` array.
+  const [passedIds, setPassedIds] = useState<Set<string>>(new Set());
+  const [passReasonTarget, setPassReasonTarget] = useState<StartupListRow | null>(null);
+  const [passSubmitting, setPassSubmitting] = useState(false);
+
   // First-time visitors get the walkthrough automatically, once; anyone else
   // can replay it from the "?" button in the title bar.
   const [tourOpen, setTourOpen] = useState(false);
@@ -2509,6 +2663,53 @@ export function Startups() {
     }
   }
 
+  // Per-card/per-tearsheet Save toggle. Only the ADD direction logs a
+  // 'save' interaction (a positive signal) — un-saving is "never mind", not
+  // a negative one, so it stays a plain watchlist removal. Best-effort on
+  // the interaction log itself: a logging failure shouldn't block or error
+  // out a save the user can already see succeeded in the UI.
+  async function handleSaveToggle(row: StartupListRow) {
+    setWatchlistError(null);
+    try {
+      if (watchlist.has("startup", row.id)) {
+        await removeFromWatchlist("startup", row.id);
+      } else {
+        await addToWatchlist("startup", row.id);
+        logInteraction({ startup_id: row.id, action_type: "save" }).catch(() => {});
+      }
+      watchlist.refresh();
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("signed in")) {
+        navigate(`/login?next=${encodeURIComponent("/startups")}`);
+      } else {
+        setWatchlistError(watchlistErrorMessage(err));
+      }
+    }
+  }
+
+  // Confirms a Pass from the reason modal: logs the interaction, then
+  // permanently hides the company — both by adding it to passedIds (so the
+  // server-side filter excludes it from now on) and by optimistically
+  // dropping it from the current page's rows and closing its tearsheet if
+  // it happened to be open, so the removal is instant rather than waiting
+  // for the next fetch.
+  async function handlePassConfirm(reason: PassReason) {
+    const target = passReasonTarget;
+    if (!target) return;
+    setPassSubmitting(true);
+    try {
+      await logInteraction({ startup_id: target.id, action_type: "pass", pass_reason: reason });
+      setPassedIds((prev) => new Set(prev).add(target.id));
+      setRows((prev) => prev.filter((r) => r.id !== target.id));
+      setSelected((cur) => (cur?.id === target.id ? null : cur));
+      setPassReasonTarget(null);
+    } catch (err) {
+      setWatchlistError(watchlistErrorMessage(err));
+    } finally {
+      setPassSubmitting(false);
+    }
+  }
+
   // Debounce free-text search 300ms so filters don't refire on every keystroke.
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300);
@@ -2548,6 +2749,12 @@ export function Startups() {
         const firstGeo = mandate.geographies[0];
         if (firstGeo) setCountry(firstGeo);
       })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetchPassedStartupIds()
+      .then((ids) => setPassedIds(new Set(ids)))
       .catch(() => {});
   }, []);
 
@@ -2633,8 +2840,9 @@ export function Startups() {
     if (momentumFilter) f.momentum = true;
     if (densityFilter !== "all") f.density = densityFilter;
     if (fundedWithinDays != null) f.fundedWithinDays = fundedWithinDays;
+    if (passedIds.size > 0) f.excludeStartupIds = Array.from(passedIds);
     return f;
-  }, [debouncedSearch, parentSector, subSector, subSectorTag, countryFilter, cityFilter, stageStep, headcountStep, momentumFilter, densityFilter, fundedWithinDays]);
+  }, [debouncedSearch, parentSector, subSector, subSectorTag, countryFilter, cityFilter, stageStep, headcountStep, momentumFilter, densityFilter, fundedWithinDays, passedIds]);
 
   // Any filter change starts the user back on page 1.
   useEffect(() => { setPage(1); }, [filters]);
@@ -2868,6 +3076,9 @@ export function Startups() {
                     {rows.map((s, i) => (
                       <StartupCard key={s.id} startup={s} onSelect={() => setSelected(s)}
                         selected={selected.has(s.id)} onToggleSelect={(e) => toggleSelect(s, e)}
+                        saved={watchlist.has("startup", s.id)}
+                        onSave={(e) => { e.stopPropagation(); handleSaveToggle(s); }}
+                        onOpenPass={(e) => { e.stopPropagation(); setPassReasonTarget(s); }}
                         dataTour={i === 0 ? "company-results" : undefined} />
                     ))}
                   </div>
@@ -2886,6 +3097,9 @@ export function Startups() {
                           {rows.map((s, i) => (
                             <StartupTableRow key={s.id} startup={s} onSelect={() => setSelected(s)}
                               selected={selected.has(s.id)} onToggleSelect={(e) => toggleSelect(s, e)}
+                              saved={watchlist.has("startup", s.id)}
+                              onSave={(e) => { e.stopPropagation(); handleSaveToggle(s); }}
+                              onOpenPass={(e) => { e.stopPropagation(); setPassReasonTarget(s); }}
                               dataTour={i === 0 ? "company-results" : undefined} />
                           ))}
                         </tbody>
@@ -2910,12 +3124,24 @@ export function Startups() {
           onNavigate={(row) => setSelected(row)}
           onFilterByMainSector={handleFilterByMainSector}
           onFilterBySubSectorTag={handleFilterBySubSectorTag}
+          saved={watchlist.has("startup", tearsheetStartup.id)}
+          onSave={() => handleSaveToggle(tearsheetStartup)}
+          onOpenPass={() => setPassReasonTarget(tearsheetStartup)}
         />
       )}
 
       {showCompare && selectedStartups.length >= 2 && (
         <CompareModal startups={selectedStartups}
           onClose={() => setShowCompare(false)} onAddPeer={addPeer} />
+      )}
+
+      {passReasonTarget && (
+        <PassReasonModal
+          startup={passReasonTarget}
+          onClose={() => setPassReasonTarget(null)}
+          onConfirm={handlePassConfirm}
+          submitting={passSubmitting}
+        />
       )}
 
       {/* ── Floating Compare FAB ────────────────────────────────────────── */}

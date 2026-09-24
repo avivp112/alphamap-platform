@@ -301,6 +301,9 @@ export interface StartupSearchFilters {
   density?: "crowded" | "blue-ocean";
   /** Latest funding round announced within this many days of today. */
   fundedWithinDays?: number;
+  /** Startups the signed-in user has explicitly passed on — permanently
+   * excluded, not just hidden for the session (see fetchPassedStartupIds). */
+  excludeStartupIds?: string[];
 }
 
 export const STARTUPS_PAGE_SIZE = 40;
@@ -340,6 +343,9 @@ function applyStartupSearchFilters(
   if (filters.fundedWithinDays != null) {
     const cutoff = new Date(Date.now() - filters.fundedWithinDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     q = q.gte("latest_round_date", cutoff);
+  }
+  if (filters.excludeStartupIds && filters.excludeStartupIds.length > 0) {
+    q = q.not("id", "in", `(${filters.excludeStartupIds.join(",")})`);
   }
   return q;
 }
@@ -919,4 +925,53 @@ export async function upsertUserMandate(
     delivery_prefs: input.delivery_prefs ?? {},
   });
   if (error) throw error;
+}
+
+// ── Phase 3: explicit interaction logging (Pass/Save) ────────────────────────
+
+export interface LogInteractionInput {
+  startup_id: string;
+  action_type: InteractionActionType;
+  /** Only meaningful for action_type === "pass". */
+  pass_reason?: PassReason;
+  /** Only meaningful for action_type === "tearsheet_summary" (a later phase). */
+  tabs_visited?: TearsheetTabId[];
+  total_active_seconds?: number;
+}
+
+/** Writes one row to the append-only user_interactions log. Never updated or
+ * deleted afterward — see supabase/migrations/20260924000000. */
+export async function logInteraction(input: LogInteractionInput): Promise<void> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const userId = sessionData.session?.user?.id;
+  if (!userId) throw new Error("Not signed in");
+
+  const { error } = await supabase.from("user_interactions").insert({
+    user_id: userId,
+    startup_id: input.startup_id,
+    action_type: input.action_type,
+    pass_reason: input.pass_reason ?? null,
+    tabs_visited: input.tabs_visited ?? null,
+    total_active_seconds: input.total_active_seconds ?? null,
+  });
+  if (error) throw error;
+}
+
+/** Every startup_id the signed-in user has ever passed on — used to
+ * permanently exclude them from the Private Market page's results (a pass is
+ * "never show me this again", not "hide for this session"). Returns an empty
+ * array for a signed-out caller rather than throwing, matching
+ * fetchUserMandate's behavior. */
+export async function fetchPassedStartupIds(): Promise<string[]> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const userId = sessionData.session?.user?.id;
+  if (!userId) return [];
+
+  const { data, error } = await supabase
+    .from("user_interactions")
+    .select("startup_id")
+    .eq("user_id", userId)
+    .eq("action_type", "pass");
+  if (error) throw error;
+  return Array.from(new Set((data ?? []).map((r) => r.startup_id as string)));
 }
