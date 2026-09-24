@@ -24,6 +24,8 @@
     "searchPlaceholder": "Search Stocks, VCs, Startups",
     "search": "Search",
     "notifications": "Notifications",
+    "markAllRead": "Mark all read",
+    "noNotifications": "No notifications yet",
     "profile": "Profile",
     "signOut": "Sign Out",
     "signingOut": "Signing out…",

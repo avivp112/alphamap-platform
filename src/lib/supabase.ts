@@ -1034,6 +1034,48 @@ export interface Notification {
   created_at: string;
 }
 
+// ── Phase 10: Notification Bell ──────────────────────────────────────────────
+// Client can only ever read/mark-read its own rows (notifications_select_own /
+// notifications_update_own) -- creation is service-role/trigger-only (see
+// 20260930000000_notification_bell_wiring.sql for the one thing that writes
+// a row today: a welcome notification on onboarding completion).
+
+export async function fetchNotifications(limit = 20): Promise<Notification[]> {
+  const { data, error } = await supabase
+    .from("notifications")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as Notification[];
+}
+
+// head:true -- a count only, no rows fetched -- cheap enough to poll.
+export async function fetchUnreadNotificationCount(): Promise<number> {
+  const { count, error } = await supabase
+    .from("notifications")
+    .select("id", { count: "exact", head: true })
+    .is("read_at", null);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+export async function markNotificationRead(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("notifications")
+    .update({ read_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function markAllNotificationsRead(): Promise<void> {
+  const { error } = await supabase
+    .from("notifications")
+    .update({ read_at: new Date().toISOString() })
+    .is("read_at", null);
+  if (error) throw error;
+}
+
 /** The signed-in user's onboarding mandate, or null if they haven't
  * completed (or skipped) onboarding yet. */
 export async function fetchUserMandate(): Promise<UserMandate | null> {

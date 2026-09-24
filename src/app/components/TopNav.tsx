@@ -4,10 +4,14 @@ import { useTranslation } from 'react-i18next';
 import {
   Bell, User, ChevronDown, UserCircle, LogOut, Menu, X,
   Rocket, CandlestickChart, Landmark, Vault, Handshake, Globe2, ClipboardCheck,
+  CheckCheck, Loader2,
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { supabase } from '../../lib/supabase';
+import {
+  supabase, fetchNotifications, fetchUnreadNotificationCount, markNotificationRead, markAllNotificationsRead,
+  type Notification,
+} from '../../lib/supabase';
 import { homePathNow } from '../../lib/navHome';
 import { BrandMark, BrandWordmark } from './BrandMark';
 import { LanguageSelector } from './LanguageSelector';
@@ -30,6 +34,23 @@ function getInitials({ name, email }: AuthedUser): string {
   }
   if (email) return email.slice(0, 2).toUpperCase();
   return "?";
+}
+
+// Minute/hour granularity (unlike Startups.tsx's own relativeTime, which
+// only goes down to whole days) -- a notification feed's freshest items are
+// often minutes old, and "Today" would flatten all of those together.
+function timeAgo(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const diffSec = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (diffSec < 60) return "Just now";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 30) return `${diffDay}d ago`;
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 // ── Primary nav (Home / Data / Market Map / My Watchlist) ───────────────────
@@ -266,6 +287,13 @@ export function TopNav() {
   const [signingOut, setSigningOut] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
+  // Phase 10: notification bell state.
+  const [notifOpen, setNotifOpen]         = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifLoading, setNotifLoading]   = useState(false);
+  const [unreadCount, setUnreadCount]     = useState(0);
+  const notifRef = useRef<HTMLDivElement>(null);
+
   // Primary nav (Data / Market Map dropdowns + mobile menu) state.
   const [openMenu, setOpenMenu] = useState<MenuId | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -314,6 +342,73 @@ export function TopNav() {
       document.removeEventListener("keydown", handleKey);
     };
   }, [menuOpen]);
+
+  // Same close-on-outside-click/Escape pattern as the account dropdown above.
+  useEffect(() => {
+    if (!notifOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false);
+    }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setNotifOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [notifOpen]);
+
+  // Phase 10: poll the unread count every 60s, gated by tab visibility (same
+  // philosophy as the dwell tracking in Startups.tsx's TearsheetModal — a
+  // backgrounded tab shouldn't keep burning requests). No Realtime channel:
+  // this is the only place in the app that would use one, so a simple poll
+  // matches the codebase's existing "simple beats clever" bias better than
+  // introducing that infrastructure for a single feature.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    function poll() {
+      if (document.visibilityState !== "visible") return;
+      fetchUnreadNotificationCount().then((n) => { if (!cancelled) setUnreadCount(n); }).catch(() => {});
+    }
+    poll();
+    const interval = setInterval(poll, 60_000);
+    document.addEventListener("visibilitychange", poll);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", poll);
+    };
+  }, [user]);
+
+  // The item list itself is only fetched when the dropdown actually opens —
+  // no point keeping 20 rows fresh in the background for a closed dropdown.
+  useEffect(() => {
+    if (!notifOpen) return;
+    setNotifLoading(true);
+    fetchNotifications()
+      .then(setNotifications)
+      .catch(() => setNotifications([]))
+      .finally(() => setNotifLoading(false));
+  }, [notifOpen]);
+
+  async function handleNotificationClick(n: Notification) {
+    if (!n.read_at) {
+      setNotifications((prev) => prev.map((x) => (x.id === n.id ? { ...x, read_at: new Date().toISOString() } : x)));
+      setUnreadCount((c) => Math.max(0, c - 1));
+      markNotificationRead(n.id).catch(() => {});
+    }
+    setNotifOpen(false);
+    if (n.link) navigate(n.link);
+  }
+
+  async function handleMarkAllRead() {
+    setNotifications((prev) => prev.map((x) => (x.read_at ? x : { ...x, read_at: new Date().toISOString() })));
+    setUnreadCount(0);
+    markAllNotificationsRead().catch(() => {});
+  }
 
   // Every link in the primary nav points at a route that requires a session
   // (see routes.tsx's requireAuth loaders), so for a confirmed signed-out
@@ -496,16 +591,81 @@ export function TopNav() {
           <div className="h-9 w-9 rounded-full bg-gray-100 animate-pulse" />
         ) : user ? (
           <>
-            <button
-              aria-label={t('header.notifications')}
-              className="relative rounded-full p-2.5 text-gray-500 hover:bg-gray-100 hover:text-[#111827] transition-colors native:h-10 native:w-10 native:flex native:items-center native:justify-center"
-            >
-              {/* -right-0.5 -top-0.5 (vs. the old right-2 top-2, which sat
-                  well inside the button) puts the dot's center right on the
-                  circle's rim instead of floating inside it. */}
-              <span className="absolute right-2 top-2 h-2 w-2 native:h-2.5 native:w-2.5 native:-right-0.5 native:-top-0.5 rounded-full bg-[#F59E0B] ring-2 ring-white" />
-              <Bell className="h-5 w-5" />
-            </button>
+            <div className="relative" ref={notifRef}>
+              <button
+                onClick={() => setNotifOpen((o) => !o)}
+                aria-expanded={notifOpen}
+                aria-haspopup="menu"
+                aria-label={t('header.notifications')}
+                className="relative rounded-full p-2.5 text-gray-500 hover:bg-gray-100 hover:text-[#111827] transition-colors native:h-10 native:w-10 native:flex native:items-center native:justify-center"
+              >
+                {/* Phase 10: was a permanent decorative dot -- now only
+                    renders when there's something real to show, and carries
+                    the actual count instead of a bare dot. */}
+                {unreadCount > 0 && (
+                  <span className="absolute right-1 top-1 native:-right-0.5 native:-top-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-[#F59E0B] ring-2 ring-white text-[9px] font-bold text-white leading-none">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+                <Bell className="h-5 w-5" />
+              </button>
+
+              {notifOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-[calc(100%+8px)] w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-gray-100 bg-white shadow-[0_12px_32px_rgba(15,23,42,0.12)] overflow-hidden"
+                >
+                  <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-gray-100">
+                    <span className="text-xs font-bold text-[#111827]">{t('header.notifications')}</span>
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={handleMarkAllRead}
+                        className="flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-[#111827] transition-colors"
+                      >
+                        <CheckCheck className="h-3 w-3" /> {t('header.markAllRead')}
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="max-h-[360px] overflow-y-auto">
+                    {notifLoading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="h-4 w-4 animate-spin text-gray-300" />
+                      </div>
+                    ) : notifications.length === 0 ? (
+                      <div className="flex flex-col items-center gap-2 py-8 text-center px-4">
+                        <Bell className="h-6 w-6 text-gray-200" />
+                        <p className="text-xs text-gray-400">{t('header.noNotifications')}</p>
+                      </div>
+                    ) : (
+                      notifications.map((n) => (
+                        <button
+                          key={n.id}
+                          role="menuitem"
+                          onClick={() => handleNotificationClick(n)}
+                          className={cn(
+                            "w-full text-left px-3.5 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors flex items-start gap-2.5",
+                            !n.read_at && "bg-amber-50/40",
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "mt-1.5 h-1.5 w-1.5 rounded-full flex-none",
+                              n.read_at ? "bg-transparent" : "bg-[#F59E0B]",
+                            )}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold text-[#111827] truncate">{n.title}</p>
+                            <p className="text-[11px] text-gray-500 leading-snug line-clamp-2 mt-0.5">{n.body}</p>
+                            <p className="text-[10px] text-gray-400 mt-1">{timeAgo(n.created_at)}</p>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="hidden sm:block native:!hidden h-8 w-px bg-gray-200 mx-1" />
 
             <div className="relative" ref={menuRef}>
