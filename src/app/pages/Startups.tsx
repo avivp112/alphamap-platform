@@ -21,16 +21,16 @@ import {
   GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2, ChevronUp,
   SlidersHorizontal, Award, Eye, HelpCircle,
   Linkedin, Facebook, Instagram, Newspaper, Layers, ExternalLink,
-  Star, XCircle,
+  Star, XCircle, Sparkles,
 } from "lucide-react";
 import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
   fetchStartupsPage, fetchStartupsCount, fetchStartupsForExport, EXPORT_ROW_CAP, fetchDistinctCountries, fetchStartupDetail,
   fetchSuggestedPeers, fetchStartupListRowById, fetchScoreHistory, fetchArticleImage, STARTUPS_PAGE_SIZE, subSectorNames,
-  fetchUserMandate, logInteraction, fetchPassedStartupIds,
+  fetchUserMandate, logInteraction, fetchPassedStartupIds, fetchMatchScores,
   type Startup, type FundingRound, type RoundType, type AlphaScore, type HeadcountPoint,
   type StartupListRow, type StartupSearchFilters, type Competitor, type ScoreHistoryPoint,
-  type NewsItem, type PassReason,
+  type NewsItem, type PassReason, type MatchScoreResult,
 } from "../../lib/supabase";
 import { useWatchlistMembership, addToWatchlist, removeFromWatchlist, watchlistErrorMessage } from "../../lib/watchlist";
 import { exportRows, type ExportColumn, type ExportFormat } from "../../lib/exportData";
@@ -579,6 +579,79 @@ function ScoreRing({ score, tier }: { score: number | null; tier: 'A' | 'B' | 'C
   );
 }
 
+// Phase 5: the personalized panel, placed above AlphaMapScorePanel in the
+// Overview tab (the user's own fit leads the objective score). Same card
+// shell (rounded-[8px] border p-5) and the same pending/loading treatment as
+// AlphaMapScorePanel below, just in indigo instead of tier color, so the two
+// read as siblings rather than two different UI languages.
+//
+// The "why" is deliberately limited to two facts that are already true and
+// cheaply available client-side — signal_count and a plain mandate/sector
+// overlap check — never a fabricated per-company similarity explanation
+// ("3 things in common with X"). Same honesty bar as the Portfolio
+// Velocity / Dry Powder widgets in VCModal.tsx, which this panel's hover
+// disclosure copies verbatim.
+function MatchScorePanel({ result, loading, mandateSectors, startup }: {
+  result: MatchScoreResult | undefined;
+  loading: boolean;
+  mandateSectors: string[];
+  startup: Startup;
+}) {
+  const { t } = useTranslation();
+
+  if (loading) {
+    return (
+      <div className="bg-gray-50 border border-gray-100 rounded-[8px] p-4 flex items-center gap-3">
+        <Sparkles className="w-4 h-4 text-gray-400 animate-pulse" />
+        <span className="text-xs text-gray-400">{t("startups.matchCalculating")}</span>
+      </div>
+    );
+  }
+
+  if (!result) {
+    return (
+      <div className="bg-gray-50 border border-gray-100 rounded-[8px] p-4 flex items-center gap-3">
+        <Sparkles className="w-4 h-4 text-gray-300" />
+        <span className="text-xs text-gray-400 italic">{t("startups.matchCalibrating")}</span>
+      </div>
+    );
+  }
+
+  const startupSectors = [startup.sector?.name, ...subSectorNames(startup)].filter((s): s is string => Boolean(s));
+  const overlapSector = mandateSectors.find((sec) => startupSectors.includes(sec));
+
+  return (
+    <div className="rounded-[8px] border p-5 bg-indigo-50/40 border-indigo-100">
+      <div className="flex items-center gap-2 mb-4">
+        <Sparkles className="w-4 h-4 text-indigo-500" />
+        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest">{t("startups.yourMatch")}</h3>
+        <div className="ml-auto group relative">
+          <Info className="w-3 h-3 text-gray-300 cursor-help" />
+          <div className="absolute bottom-full right-0 mb-2 w-56 text-[10px] leading-relaxed text-slate-300
+            invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[70]"
+            style={{ background: "#1a2840", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 10, padding: "8px 10px", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+            {t("startups.matchHint")}
+            <div className="absolute top-full right-3 w-0 h-0 border-4 border-transparent" style={{ borderTopColor: "#1a2840" }} />
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-4">
+        <div className="text-4xl font-black leading-none text-indigo-700 tabular-nums">{result.match_pct}%</div>
+        <div className="flex-1 space-y-1.5">
+          <p className="text-[11px] text-gray-500">
+            {t("startups.matchPersonalizedTo", { count: result.signal_count })}
+          </p>
+          {overlapSector && (
+            <span className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white/70 text-indigo-700 border border-indigo-100">
+              {t("startups.matchesFocusOn", { sector: overlapSector })}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AlphaMapScorePanel({ data, loading, err }: {
   data: AlphaScore | null; loading: boolean; err: boolean;
 }) {
@@ -781,6 +854,32 @@ function ScoreBadge({ startupId }: { startupId: string }) {
     <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${SCORE_BADGE_STYLE[data.tier as 'A'|'B'|'C']}`}>
       <Activity className="w-2.5 h-2.5 opacity-70" />
       {data.tier}&nbsp;{safeFixed(data.score, 0, 'N/A')}
+    </span>
+  );
+}
+
+// Phase 5: the personalized counterpart to ScoreBadge above. A distinct
+// indigo family (never emerald/blue/rose — those already mean AlphaMap Score
+// tier, and round-type badges use their own palette) keeps the two badges
+// from reading as the same metric at a glance. `result` is undefined for a
+// startup the caller isn't calibrated for yet — rendered as a muted
+// "Calibrating" pill, same pending-state coloring as AlphaMapScorePanel's own
+// gray/italic state, rather than a percentage that would misrepresent
+// confidence.
+function MatchBadge({ result }: { result: MatchScoreResult | undefined }) {
+  const { t } = useTranslation();
+  if (!result) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap bg-gray-50 text-gray-400 border border-gray-100">
+        <Sparkles className="w-2.5 h-2.5 opacity-50" />
+        {t("startups.calibrating")}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap bg-indigo-50 text-indigo-700 border border-indigo-100">
+      <Sparkles className="w-2.5 h-2.5 opacity-70" />
+      {result.match_pct}% {t("startups.match")}
     </span>
   );
 }
@@ -988,9 +1087,11 @@ function ScoreHistoryChart({ startupId }: { startupId: string }) {
 }
 
 function OverviewTab({
-  startup, alphaScore, alphaLoading, alphaErr, onFilterByMainSector, onFilterBySubSectorTag,
+  startup, alphaScore, alphaLoading, alphaErr, matchResult, matchLoading, mandateSectors,
+  onFilterByMainSector, onFilterBySubSectorTag,
 }: {
   startup: Startup; alphaScore: AlphaScore | null; alphaLoading: boolean; alphaErr: boolean;
+  matchResult: MatchScoreResult | undefined; matchLoading: boolean; mandateSectors: string[];
   onFilterByMainSector: (parent: string) => void;
   onFilterBySubSectorTag: (tag: string) => void;
 }) {
@@ -1047,6 +1148,8 @@ function OverviewTab({
       )}
 
       <CompanySocialRow startup={startup} />
+
+      <MatchScorePanel result={matchResult} loading={matchLoading} mandateSectors={mandateSectors} startup={startup} />
 
       <AlphaMapScorePanel data={alphaScore} loading={alphaLoading} err={alphaErr} />
 
@@ -1690,6 +1793,7 @@ const TEARSHEET_TABS: { id: TearsheetTab; label: string }[] = [
 
 function TearsheetModal({
   startup, onClose, onNavigate, onFilterByMainSector, onFilterBySubSectorTag, saved, onSave, onOpenPass,
+  mandateSectors,
 }: {
   startup: StartupListRow;
   onClose: () => void;
@@ -1699,6 +1803,7 @@ function TearsheetModal({
   saved: boolean;
   onSave: () => void;
   onOpenPass: () => void;
+  mandateSectors: string[];
 }) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TearsheetTab>("overview");
@@ -1755,6 +1860,21 @@ function TearsheetModal({
       .then(setAlphaScore)
       .catch(() => setAlphaErr(true))
       .finally(() => setAlphaLoading(false));
+  }, [startup.id]);
+
+  // Phase 5: same one-fetch-per-open pattern as AlphaMap Score above, reusing
+  // the batch RPC with a single-id array — a second RPC just for the modal
+  // is simpler than threading the grid's already-fetched page-level map
+  // through to whichever row the user happens to click open.
+  const [matchResult, setMatchResult]   = useState<MatchScoreResult | undefined>(undefined);
+  const [matchLoading, setMatchLoading] = useState(true);
+
+  useEffect(() => {
+    setMatchLoading(true); setMatchResult(undefined);
+    fetchMatchScores([startup.id])
+      .then((map) => setMatchResult(map.get(startup.id)))
+      .catch(() => {})
+      .finally(() => setMatchLoading(false));
   }, [startup.id]);
 
   useEffect(() => { setActiveTab("overview"); }, [startup.id]);
@@ -1892,6 +2012,7 @@ function TearsheetModal({
               {activeTab === "overview" && (
                 <OverviewTab
                   startup={detail} alphaScore={alphaScore} alphaLoading={alphaLoading} alphaErr={alphaErr}
+                  matchResult={matchResult} matchLoading={matchLoading} mandateSectors={mandateSectors}
                   onFilterByMainSector={onFilterByMainSector} onFilterBySubSectorTag={onFilterBySubSectorTag}
                 />
               )}
@@ -2126,7 +2247,7 @@ function PassReasonModal({
 // ── Grid Card ─────────────────────────────────────────────────────────────────
 
 function StartupCard({
-  startup, onSelect, selected, onToggleSelect, dataTour, saved, onSave, onOpenPass,
+  startup, onSelect, selected, onToggleSelect, dataTour, saved, onSave, onOpenPass, matchResult,
 }: {
   startup: StartupListRow; onSelect: () => void;
   selected: boolean; onToggleSelect: (e: React.MouseEvent) => void;
@@ -2134,6 +2255,7 @@ function StartupCard({
   saved: boolean;
   onSave: (e: React.MouseEvent) => void;
   onOpenPass: (e: React.MouseEvent) => void;
+  matchResult: MatchScoreResult | undefined;
 }) {
   const { t } = useTranslation();
   const roundType   = startup.latest_round_type ?? null;
@@ -2251,6 +2373,7 @@ function StartupCard({
             </span>
           </div>
         ) : <div />}
+        <MatchBadge result={matchResult} />
         <ScoreBadge startupId={startup.id} />
         <button
           onClick={onToggleSelect}
@@ -2269,7 +2392,7 @@ function StartupCard({
 // ── List Row ──────────────────────────────────────────────────────────────────
 
 function StartupTableRow({
-  startup, onSelect, selected, onToggleSelect, dataTour, saved, onSave, onOpenPass,
+  startup, onSelect, selected, onToggleSelect, dataTour, saved, onSave, onOpenPass, matchResult,
 }: {
   startup: StartupListRow; onSelect: () => void;
   selected: boolean; onToggleSelect: (e: React.MouseEvent) => void;
@@ -2277,6 +2400,7 @@ function StartupTableRow({
   saved: boolean;
   onSave: (e: React.MouseEvent) => void;
   onOpenPass: (e: React.MouseEvent) => void;
+  matchResult: MatchScoreResult | undefined;
 }) {
   const roundType   = startup.latest_round_type ?? null;
   const roundStyle  = roundType ? (ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]) : null;
@@ -2323,6 +2447,9 @@ function StartupTableRow({
             {startup.founders.length > 2 && <span className="text-[10px] text-gray-400">+{startup.founders.length - 2}</span>}
           </div>
         ) : <span className="text-xs text-gray-300">—</span>}
+      </td>
+      <td className="py-3.5 px-4">
+        <MatchBadge result={matchResult} />
       </td>
       <td className="py-3.5 px-4">
         <div className={`flex items-center justify-end gap-1.5 transition-opacity ${saved ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
@@ -2602,6 +2729,15 @@ export function Startups() {
   const [passReasonTarget, setPassReasonTarget] = useState<StartupListRow | null>(null);
   const [passSubmitting, setPassSubmitting] = useState(false);
 
+  // Phase 5: personalized match scores for whatever page of `rows` is
+  // currently on screen, fetched in one batch RPC call rather than per card
+  // (see fetchMatchScores). Absent from the map = still calibrating.
+  const [matchScores, setMatchScores] = useState<Map<string, MatchScoreResult>>(new Map());
+  // The user's onboarding sector picks, kept around (beyond the one-time
+  // filter-seeding effect below) so the tearsheet's Match panel can flag a
+  // sector overlap without a second fetch.
+  const [mandateSectors, setMandateSectors] = useState<string[]>([]);
+
   // First-time visitors get the walkthrough automatically, once; anyone else
   // can replay it from the "?" button in the title bar.
   const [tourOpen, setTourOpen] = useState(false);
@@ -2730,6 +2866,7 @@ export function Startups() {
     fetchUserMandate()
       .then((mandate) => {
         if (!mandate) return;
+        setMandateSectors(mandate.sectors);
         const firstSector = mandate.sectors[0];
         if (firstSector) {
           if (SECTOR_TAXONOMY[firstSector]) {
@@ -2751,6 +2888,21 @@ export function Startups() {
       })
       .catch(() => {});
   }, []);
+
+  // One batch call per page of results (grid or table share `rows`), instead
+  // of a per-card RPC — see fetchMatchScores. Stale results from the
+  // previous page are cleared immediately so a fast filter change never
+  // shows last page's scores against this page's companies.
+  useEffect(() => {
+    let cancelled = false;
+    setMatchScores(new Map());
+    const ids = rows.map((r) => r.id);
+    if (ids.length === 0) return;
+    fetchMatchScores(ids)
+      .then((map) => { if (!cancelled) setMatchScores(map); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [rows]);
 
   useEffect(() => {
     fetchPassedStartupIds()
@@ -3079,6 +3231,7 @@ export function Startups() {
                         saved={watchlist.has("startup", s.id)}
                         onSave={(e) => { e.stopPropagation(); handleSaveToggle(s); }}
                         onOpenPass={(e) => { e.stopPropagation(); setPassReasonTarget(s); }}
+                        matchResult={matchScores.get(s.id)}
                         dataTour={i === 0 ? "company-results" : undefined} />
                     ))}
                   </div>
@@ -3088,7 +3241,7 @@ export function Startups() {
                       <table className="w-full">
                         <thead>
                           <tr className="border-b border-gray-100 bg-[#F8FAFC]">
-                            {["", "Company", "Stage", "Location", "Valuation", "Raised", "Employees", "Founders", ""].map((h, i) => (
+                            {["", "Company", "Stage", "Location", "Valuation", "Raised", "Employees", "Founders", "Match", ""].map((h, i) => (
                               <th key={i} className="text-left text-[9px] font-black text-gray-400 uppercase tracking-widest py-3 px-4 first:pl-5 first:pr-1 whitespace-nowrap">{h}</th>
                             ))}
                           </tr>
@@ -3100,6 +3253,7 @@ export function Startups() {
                               saved={watchlist.has("startup", s.id)}
                               onSave={(e) => { e.stopPropagation(); handleSaveToggle(s); }}
                               onOpenPass={(e) => { e.stopPropagation(); setPassReasonTarget(s); }}
+                              matchResult={matchScores.get(s.id)}
                               dataTour={i === 0 ? "company-results" : undefined} />
                           ))}
                         </tbody>
@@ -3127,6 +3281,7 @@ export function Startups() {
           saved={watchlist.has("startup", tearsheetStartup.id)}
           onSave={() => handleSaveToggle(tearsheetStartup)}
           onOpenPass={() => setPassReasonTarget(tearsheetStartup)}
+          mandateSectors={mandateSectors}
         />
       )}
 

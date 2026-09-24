@@ -574,6 +574,25 @@ export async function fetchAlphaScore(startupId: string): Promise<AlphaScore | n
   return score;
 }
 
+// Phase 5: one batch call for a whole page of results (grid or table),
+// instead of the per-card RPC pattern fetchAlphaScore uses above. Ids the
+// current user isn't calibrated for (or that have no embedding) simply don't
+// come back — callers key results by startup_id and treat a missing entry
+// as "still calibrating".
+export async function fetchMatchScores(startupIds: string[]): Promise<Map<string, MatchScoreResult>> {
+  const map = new Map<string, MatchScoreResult>();
+  if (startupIds.length === 0) return map;
+  const { data, error } = await supabase.rpc('match_scores_for_startups', { p_startup_ids: startupIds });
+  if (error) {
+    console.error('[MatchScore] RPC error:', error);
+    throw error;
+  }
+  for (const row of (data ?? []) as MatchScoreResult[]) {
+    map.set(row.startup_id, row);
+  }
+  return map;
+}
+
 // ── Deals ─────────────────────────────────────────────────────────────────────
 // Maps 1-to-1 with the `deals` table schema.
 // deal_type examples: 'Series A', 'Form D (Equity)', 'M&A'
@@ -863,6 +882,16 @@ export interface UserPreferenceVectorMeta {
    * a misleadingly confident match percentage. */
   signal_count: number;
   updated_at: string;
+}
+
+/** Phase 5: one startup's personalized match score, as returned by
+ * match_scores_for_startups(). The RPC itself withholds rows below its
+ * signal_count threshold — a startup id with no corresponding result should
+ * be rendered as "still calibrating", never as a 0% match. */
+export interface MatchScoreResult {
+  startup_id: string;
+  match_pct: number;
+  signal_count: number;
 }
 
 /** Per-user generic outbound webhook target (v1 CRM sync). */
