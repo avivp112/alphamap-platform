@@ -21,7 +21,7 @@ import {
   GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2, ChevronUp,
   SlidersHorizontal, Award, Eye, HelpCircle,
   Linkedin, Facebook, Instagram, Newspaper, Layers, ExternalLink,
-  Star, XCircle, Sparkles,
+  Star, XCircle, Sparkles, Download,
 } from "lucide-react";
 import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
@@ -1958,6 +1958,44 @@ function TearsheetModal({
       .finally(() => setLookalikesLoading(false));
   }
 
+  // Phase 8: "Generate Tear Sheet" — a client-side PDF, no server round trip,
+  // so the download starts the instant it's ready (see TearsheetPdfDocument).
+  const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [pdfDone, setPdfDone]             = useState(false);
+
+  async function handleGenerateTearSheet() {
+    if (!detail || pdfGenerating) return;
+    setPdfGenerating(true);
+    try {
+      // Dynamically imported: @react-pdf/renderer is a large library (its own
+      // layout engine, font subsetting, etc.) that most visitors never need —
+      // loading it only on first click keeps it out of the main bundle
+      // everyone downloads on every page load.
+      const [{ pdf }, { TearsheetPdfDocument }] = await Promise.all([
+        import("@react-pdf/renderer"),
+        import("../components/TearsheetPdfDocument"),
+      ]);
+      const blob = await pdf(
+        <TearsheetPdfDocument startup={detail} alphaScore={alphaScore} matchResult={matchResult} />,
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `AlphaMap-Tearsheet-${detail.name.replace(/[^a-z0-9]+/gi, "-")}-${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      logInteraction({ startup_id: startup.id, action_type: "tearsheet_pdf" }).catch(() => {});
+      setPdfDone(true);
+      setTimeout(() => setPdfDone(false), 2000);
+    } catch (err) {
+      console.error("Failed to generate tear sheet:", err);
+    } finally {
+      setPdfGenerating(false);
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
@@ -2034,6 +2072,23 @@ function TearsheetModal({
               >
                 <Layers className="w-3.5 h-3.5" />
                 {t("startups.lookalikes")}
+              </button>
+              <button
+                onClick={handleGenerateTearSheet}
+                disabled={pdfGenerating || detailLoading}
+                title={t("startups.generateTearSheet")}
+                aria-label={t("startups.generateTearSheet")}
+                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full whitespace-nowrap bg-white/70 hover:bg-white text-[#0F172A]/50 hover:text-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ border: "1px solid rgba(15,23,42,0.12)" }}
+              >
+                {pdfGenerating ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : pdfDone ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                ) : (
+                  <Download className="w-3.5 h-3.5" />
+                )}
+                {pdfDone ? t("startups.downloaded") : t("startups.tearSheet")}
               </button>
               {roundType && roundStyle && (
                 <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap bg-white/70`} style={{ border: "1px solid rgba(15,23,42,0.12)" }}>{roundType}</span>

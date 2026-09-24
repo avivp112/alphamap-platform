@@ -874,7 +874,7 @@ export interface UserMandate {
 
 /** Append-only explicit + implicit signal log — source data for the (later)
  * user_preference_vectors batch recompute. Never updated or deleted. */
-export type InteractionActionType = "pass" | "save" | "tearsheet_summary" | "crm_sync" | "lookalikes_view";
+export type InteractionActionType = "pass" | "save" | "tearsheet_summary" | "crm_sync" | "lookalikes_view" | "tearsheet_pdf";
 export type PassReason = "sector" | "stage" | "valuation" | "team";
 export type TearsheetTabId = "overview" | "funding" | "captable" | "talent" | "competitors" | "acquisitions" | "news";
 
