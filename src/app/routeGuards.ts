@@ -14,3 +14,24 @@ export async function requireAuth() {
   if (!data.session?.user) throw redirect("/pricing");
   return null;
 }
+
+// Same as requireAuth, plus a one-time onboarding gate — used ONLY on
+// /dashboard (the one canonical post-signup landing spot for all three auth
+// methods), not on every protected route, so this doesn't add a DB round
+// trip to every page load for the lifetime of the account. A missing
+// user_mandates row means the user has never completed (or skipped)
+// onboarding; "Skip for now" writes an empty row via upsertUserMandate so
+// this never redirects them again.
+export async function requireOnboarding() {
+  const { data } = await supabase.auth.getSession();
+  if (!data.session?.user) throw redirect("/pricing");
+
+  const { data: mandate } = await supabase
+    .from("user_mandates")
+    .select("user_id")
+    .eq("user_id", data.session.user.id)
+    .maybeSingle();
+  if (!mandate) throw redirect("/onboarding?next=/dashboard");
+
+  return null;
+}

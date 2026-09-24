@@ -882,3 +882,41 @@ export interface Notification {
   read_at: string | null;
   created_at: string;
 }
+
+/** The signed-in user's onboarding mandate, or null if they haven't
+ * completed (or skipped) onboarding yet. */
+export async function fetchUserMandate(): Promise<UserMandate | null> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const userId = sessionData.session?.user?.id;
+  if (!userId) return null;
+
+  const { data, error } = await supabase
+    .from("user_mandates")
+    .select("*")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as UserMandate | null;
+}
+
+/** Creates or updates the signed-in user's mandate row (one row per user —
+ * "Skip for now" calls this with all-empty defaults so requireOnboarding
+ * never asks again, same as a fully completed questionnaire would). */
+export async function upsertUserMandate(
+  input: Partial<Omit<UserMandate, "user_id" | "updated_at">>,
+): Promise<void> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const userId = sessionData.session?.user?.id;
+  if (!userId) throw new Error("Not signed in");
+
+  const { error } = await supabase.from("user_mandates").upsert({
+    user_id: userId,
+    stages: input.stages ?? [],
+    sectors: input.sectors ?? [],
+    geographies: input.geographies ?? [],
+    pain_point_focus: input.pain_point_focus ?? null,
+    signal_triggers: input.signal_triggers ?? [],
+    delivery_prefs: input.delivery_prefs ?? {},
+  });
+  if (error) throw error;
+}

@@ -13,6 +13,49 @@
 // =============================================================================
 
 import type { TFunction } from "i18next";
+import type { RoundType } from "./supabase";
+
+// ── Sector taxonomy (canonical data) ─────────────────────────────────────────
+// Two-tier hierarchy: parent -> subcategories. Moved here from Startups.tsx
+// (2026-09) so Onboarding.tsx's mandate step can share the exact same tree
+// instead of declaring its own copy — this codebase already has three
+// independent, hand-duplicated sector classifiers (Startups.tsx's own
+// keyword map, GlobalTechHubMap's SECTOR_KW, and the SQL-side
+// classify_sector_parent()); a fourth copy for onboarding is exactly how
+// that number becomes four.
+export const SECTOR_TAXONOMY: Record<string, string[]> = {
+  "AI & ML":               ["AI / General", "LLMs", "Generative AI", "Computer Vision", "NLP / Speech", "AI Agents", "MLOps", "AI Infrastructure"],
+  "Fintech":               ["Fintech / General", "Payments", "Banking / Neobanking", "Insurance / Insurtech", "Lending", "Crypto / Web3", "WealthTech", "RegTech"],
+  "Cybersecurity":         ["Cybersecurity / General", "Identity & Access", "Endpoint Security", "Cloud Security", "Threat Intelligence", "Zero Trust", "Data Security"],
+  "SaaS & Dev Tools":      ["SaaS / General", "Developer Tools", "DevOps / CI-CD", "API Platforms", "Low-Code / No-Code", "Data Infrastructure"],
+  "E-commerce & Retail":   ["E-commerce / General", "D2C", "Marketplaces", "Logistics / Supply Chain", "Retail Tech"],
+  "Health & Life Sciences": ["Digital Health", "MedTech", "Biotech / Genomics", "Mental Health", "Healthcare SaaS"],
+  "Climate & Energy":      ["CleanTech", "EnergyTech", "Carbon Markets", "Sustainability"],
+  "Enterprise Software":   ["Enterprise / General", "CRM", "HR Tech", "ERP / Finance", "Analytics / BI"],
+  "Consumer & Media":      ["Consumer / General", "Social Media", "Gaming", "EdTech", "Travel & Hospitality", "Media / Content"],
+  "DeepTech":              ["DeepTech / General", "Quantum Computing", "Robotics", "Space Tech", "Semiconductors"],
+  "Uncategorized":         [],
+};
+
+/** Which parent a given sub-sector name belongs to. */
+export const PARENT_BY_SUB_SECTOR: Record<string, string> = Object.fromEntries(
+  Object.entries(SECTOR_TAXONOMY).flatMap(([parent, subs]) => subs.map((sub) => [sub, parent])),
+);
+
+// ── Funding-stage buckets (canonical data) ───────────────────────────────────
+// Moved here alongside SECTOR_TAXONOMY for the same reason: Onboarding's
+// stage picker and the Startups.tsx sidebar's StepSlider must agree on the
+// exact same bucket values, since onboarding seeds the sidebar's filter
+// state directly with one of these.
+export const STAGE_STEPS = [
+  { value: "all",       label: "All",        rounds: [] as RoundType[] },
+  { value: "pre-seed",  label: "Pre-Seed",   rounds: ["Pre-Seed", "Convertible Note"] as RoundType[] },
+  { value: "seed",      label: "Seed",       rounds: ["Seed", "Bridge"] as RoundType[] },
+  { value: "series-a",  label: "Series A",   rounds: ["Series A"] as RoundType[] },
+  { value: "series-b",  label: "Series B",   rounds: ["Series B"] as RoundType[] },
+  { value: "growth",    label: "Growth/Late", rounds: ["Series C", "Series D", "Series E+", "Growth", "Acquired", "PE Buyout", "Secondary"] as RoundType[] },
+] as const;
+export type StageStep = (typeof STAGE_STEPS)[number]["value"];
 
 /** Canonical English stage -> translation-key suffix. */
 const STAGE_SLUGS: Record<string, string> = {

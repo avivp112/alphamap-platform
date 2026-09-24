@@ -827,5 +827,58 @@
         "sync": { "title": "Keep data fresh", "body": "Manually pull the latest market data anytime, or jump to live intraday quotes." }
       }
     }
+  },
+  "onboarding": {
+    "eyebrow": "Getting Started",
+    "stepLabel": "Step {{current}} of {{total}}",
+    "skipForNow": "Skip for now",
+    "finishButton": "Finish setup",
+    "savingError": "Something went wrong saving your preferences. Please try again.",
+    "sidePanel": {
+      "title": "Let's calibrate your feed.",
+      "body": "A few quick questions so AlphaMap can start surfacing the companies that actually matter to you — not everyone else's.",
+      "f1": "Your mandate drives smarter default filters",
+      "f2": "Pass/save signals sharpen your matches over time",
+      "f3": "Change any of this later from your profile"
+    },
+    "mandate": {
+      "title": "What's your investment mandate?",
+      "description": "Pick every stage and sector you're active in — you can select as many as apply.",
+      "stagesLabel": "Stages",
+      "sectorsLabel": "Sectors",
+      "sectorsHint": "Select a sector to reveal its sub-sectors.",
+      "geographiesLabel": "Geographies",
+      "geographiesHint": "Optional — leave blank to see companies everywhere."
+    },
+    "painPoint": {
+      "title": "Where do you feel the most friction today?",
+      "description": "This shapes what AlphaMap leads with.",
+      "options": {
+        "origination": { "title": "Origination", "description": "Finding the right companies before everyone else does." },
+        "deckProcessing": { "title": "Deck Processing", "description": "Turning inbound decks into structured, comparable data." },
+        "compsDd": { "title": "Comps & DD", "description": "Benchmarking against the market and digging into diligence." },
+        "icPrep": { "title": "IC Preparation", "description": "Getting a company investment-committee-ready, fast." }
+      }
+    },
+    "signalTriggers": {
+      "title": "What should catch your attention?",
+      "description": "AlphaMap will prioritize alerts around these signals.",
+      "options": {
+        "founder_pedigree": { "title": "Founder Pedigree", "description": "Repeat founders, elite backgrounds, notable exits." },
+        "traction_spikes": { "title": "Traction Spikes", "description": "Sudden headcount, revenue, or usage growth." },
+        "company_registrations": { "title": "Company Registrations", "description": "Brand-new entities before they're publicly known." },
+        "pre_public_funding": { "title": "Pre-Public Funding", "description": "Early rounds not yet widely reported." }
+      }
+    },
+    "delivery": {
+      "title": "How should we reach you?",
+      "description": "Pick as many delivery channels as you'd like.",
+      "options": {
+        "push": { "title": "Real-Time Push", "description": "Slack or WhatsApp alerts the moment something matches." },
+        "digest": { "title": "Weekly Digest", "description": "One curated email summary every week." },
+        "tearsheet_1click": { "title": "1-Click Tear Sheet", "description": "Generate an IC-ready report from any company." },
+        "crm_sync": { "title": "CRM Auto-Sync", "description": "Push saved companies straight to your CRM." }
+      }
+    }
   }
 }

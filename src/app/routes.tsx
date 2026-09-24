@@ -19,8 +19,9 @@ import { PrivacyPolicy } from "./pages/PrivacyPolicy";
 import { Checkout } from "./pages/Checkout";
 import { Profile } from "./pages/Profile";
 import { Watchlist } from "./pages/Watchlist";
+import { Onboarding } from "./pages/Onboarding";
 import { NotFound, RouteError } from "./pages/RouteFallback";
-import { requireAuth } from "./routeGuards";
+import { requireAuth, requireOnboarding } from "./routeGuards";
 
 // Everything hangs off one pathless parent so a single ErrorBoundary covers
 // every route. Without it, any render error — or any URL that matches nothing —
@@ -61,8 +62,9 @@ export const router = createBrowserRouter([
   { path: "/",           Component: LandingPage },
   { path: "/signup",     Component: SignUp },
   { path: "/login",      Component: Login },
-  { path: "/dashboard",  Component: Dashboard, loader: requireAuth },
-  { path: "/markets",    Component: Dashboard, loader: requireAuth },  // legacy alias
+  { path: "/onboarding", Component: Onboarding, loader: requireAuth },
+  { path: "/dashboard",  Component: Dashboard, loader: requireOnboarding },
+  { path: "/markets",    Component: Dashboard, loader: requireOnboarding },  // legacy alias
   { path: "/vcs",        Component: VCs, loader: requireAuth },
   { path: "/startups",   Component: Startups, loader: requireAuth },
   { path: "/deals",      Component: Deals, loader: requireAuth },

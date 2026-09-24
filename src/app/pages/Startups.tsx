@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { stageLabel, sectorLabel } from "../../lib/taxonomy";
+import { stageLabel, sectorLabel, SECTOR_TAXONOMY, PARENT_BY_SUB_SECTOR, STAGE_STEPS, type StageStep } from "../../lib/taxonomy";
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams, useNavigate } from "react-router";
 import {
@@ -26,6 +26,7 @@ import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
   fetchStartupsPage, fetchStartupsCount, fetchStartupsForExport, EXPORT_ROW_CAP, fetchDistinctCountries, fetchStartupDetail,
   fetchSuggestedPeers, fetchStartupListRowById, fetchScoreHistory, fetchArticleImage, STARTUPS_PAGE_SIZE, subSectorNames,
+  fetchUserMandate,
   type Startup, type FundingRound, type RoundType, type AlphaScore, type HeadcountPoint,
   type StartupListRow, type StartupSearchFilters, type Competitor, type ScoreHistoryPoint,
   type NewsItem,
@@ -141,31 +142,9 @@ const ROUND_GLOW: Record<string, { border: string; glow: string; shimmer: string
 };
 
 // ── Sector Taxonomy ───────────────────────────────────────────────────────────
-// Two-tier hierarchy: parent → subcategories.
-// classifyIndustry() maps any free-text industry string into this tree.
-
-const SECTOR_TAXONOMY: Record<string, string[]> = {
-  "AI & ML":               ["AI / General", "LLMs", "Generative AI", "Computer Vision", "NLP / Speech", "AI Agents", "MLOps", "AI Infrastructure"],
-  "Fintech":               ["Fintech / General", "Payments", "Banking / Neobanking", "Insurance / Insurtech", "Lending", "Crypto / Web3", "WealthTech", "RegTech"],
-  "Cybersecurity":         ["Cybersecurity / General", "Identity & Access", "Endpoint Security", "Cloud Security", "Threat Intelligence", "Zero Trust", "Data Security"],
-  "SaaS & Dev Tools":      ["SaaS / General", "Developer Tools", "DevOps / CI-CD", "API Platforms", "Low-Code / No-Code", "Data Infrastructure"],
-  "E-commerce & Retail":   ["E-commerce / General", "D2C", "Marketplaces", "Logistics / Supply Chain", "Retail Tech"],
-  "Health & Life Sciences": ["Digital Health", "MedTech", "Biotech / Genomics", "Mental Health", "Healthcare SaaS"],
-  "Climate & Energy":      ["CleanTech", "EnergyTech", "Carbon Markets", "Sustainability"],
-  "Enterprise Software":   ["Enterprise / General", "CRM", "HR Tech", "ERP / Finance", "Analytics / BI"],
-  "Consumer & Media":      ["Consumer / General", "Social Media", "Gaming", "EdTech", "Travel & Hospitality", "Media / Content"],
-  "DeepTech":              ["DeepTech / General", "Quantum Computing", "Robotics", "Space Tech", "Semiconductors"],
-  "Uncategorized":         [],
-};
-
-// Reverse lookup: which parent a given sub-sector name belongs to. A
-// company's OTHER tags (startup_sub_sectors) are free to come from any
-// parent tree — e.g. a biotech company also tagged "AI Agents" — so this is
-// how a clicked tag's own badge label resolves without needing another
-// round trip to the DB.
-const PARENT_BY_SUB_SECTOR: Record<string, string> = Object.fromEntries(
-  Object.entries(SECTOR_TAXONOMY).flatMap(([parent, subs]) => subs.map((sub) => [sub, parent])),
-);
+// SECTOR_TAXONOMY and PARENT_BY_SUB_SECTOR now live in ../../lib/taxonomy
+// (shared with Onboarding.tsx's mandate step). classifyIndustry() below still
+// maps any free-text industry string into that same tree.
 
 // Longest/most-specific keywords must come first to avoid partial false matches.
 const INDUSTRY_KEYWORD_MAP: Array<[string, { parent: string; sub: string }]> = [
@@ -295,16 +274,8 @@ function keywordsForSub(parent: string, sub: string): string[] {
 }
 
 // ── Slider step definitions ───────────────────────────────────────────────────
-
-const STAGE_STEPS = [
-  { value: "all",       label: "All",        rounds: [] as RoundType[] },
-  { value: "pre-seed",  label: "Pre-Seed",   rounds: ["Pre-Seed", "Convertible Note"] as RoundType[] },
-  { value: "seed",      label: "Seed",       rounds: ["Seed", "Bridge"] as RoundType[] },
-  { value: "series-a",  label: "Series A",   rounds: ["Series A"] as RoundType[] },
-  { value: "series-b",  label: "Series B",   rounds: ["Series B"] as RoundType[] },
-  { value: "growth",    label: "Growth/Late", rounds: ["Series C", "Series D", "Series E+", "Growth", "Acquired", "PE Buyout", "Secondary"] as RoundType[] },
-] as const;
-type StageStep = (typeof STAGE_STEPS)[number]["value"];
+// STAGE_STEPS/StageStep now live in ../../lib/taxonomy (shared with
+// Onboarding.tsx's mandate step, which seeds this page's stageStep directly).
 
 const HEADCOUNT_STEPS = [
   { value: "all",      label: "All" },
@@ -2546,6 +2517,38 @@ export function Startups() {
 
   useEffect(() => {
     fetchDistinctCountries().then(setCountries).catch(() => {});
+  }, []);
+
+  // Seed the sidebar's filters from the user's onboarding mandate, once, on
+  // first mount. First-value-only for v1: a mandate with several sectors/
+  // stages only pre-selects the first of each — the sidebar is still
+  // single-select today, so this is a starting point, not a hard rule, and
+  // the user can change or add to it from the sidebar immediately after.
+  // Never touches the city filter, which comes from the URL (?city=) instead.
+  useEffect(() => {
+    fetchUserMandate()
+      .then((mandate) => {
+        if (!mandate) return;
+        const firstSector = mandate.sectors[0];
+        if (firstSector) {
+          if (SECTOR_TAXONOMY[firstSector]) {
+            setParentSector(firstSector);
+          } else {
+            const parent = PARENT_BY_SUB_SECTOR[firstSector];
+            if (parent) {
+              setParentSector(parent);
+              setSubSector(firstSector);
+            }
+          }
+        }
+        const firstStage = mandate.stages[0];
+        if (firstStage && STAGE_STEPS.some((s) => s.value === firstStage)) {
+          setStageStep(firstStage as StageStep);
+        }
+        const firstGeo = mandate.geographies[0];
+        if (firstGeo) setCountry(firstGeo);
+      })
+      .catch(() => {});
   }, []);
 
   function clearCityFilter() {
