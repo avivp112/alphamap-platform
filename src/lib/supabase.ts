@@ -789,3 +789,96 @@ export async function submitContactMessage(input: ContactMessageInput): Promise<
   const json = await res.json();
   if (!res.ok) throw new Error(json.error ?? `Request failed (${res.status})`);
 }
+
+// =============================================================================
+// Preference engine — Phase 1 (schema + types only; see
+// supabase/migrations/20260924000000_preference_engine_phase1.sql)
+//
+// Read/write helper functions are deliberately not added yet — they land in
+// the phase that actually calls them (onboarding UI, Pass/Save wiring, the
+// vector batch job), so nothing here sits unused in the meantime.
+// =============================================================================
+
+/** One current row per user — their onboarding cold-start answers. The
+ * deterministic hard-filter side of personalization (kept separate from
+ * UserPreferenceVector, which is the soft/continuous side). */
+export type PainPointFocus = "origination" | "deck_processing" | "comps_dd" | "ic_prep";
+export type SignalTrigger = "founder_pedigree" | "traction_spikes" | "company_registrations" | "pre_public_funding";
+
+export interface UserMandateDeliveryPrefs {
+  push?: boolean;
+  digest?: boolean;
+  tearsheet_1click?: boolean;
+  crm_sync?: boolean;
+}
+
+export interface UserMandate {
+  user_id: string;
+  // Free text, validated app-side against the same vocabularies Startups.tsx
+  // already filters on (stage steps, the `sectors` table, country list) —
+  // not DB-enforced, same convention as startups.tags.
+  stages: string[];
+  sectors: string[];
+  geographies: string[];
+  pain_point_focus: PainPointFocus | null;
+  signal_triggers: SignalTrigger[];
+  delivery_prefs: UserMandateDeliveryPrefs;
+  updated_at: string;
+}
+
+/** Append-only explicit + implicit signal log — source data for the (later)
+ * user_preference_vectors batch recompute. Never updated or deleted. */
+export type InteractionActionType = "pass" | "save" | "tearsheet_summary" | "crm_sync" | "lookalikes_view";
+export type PassReason = "sector" | "stage" | "valuation" | "team";
+export type TearsheetTabId = "overview" | "funding" | "captable" | "talent" | "competitors" | "acquisitions" | "news";
+
+export interface UserInteraction {
+  id: string;
+  user_id: string;
+  startup_id: string;
+  action_type: InteractionActionType;
+  /** Only set when action_type === "pass". */
+  pass_reason: PassReason | null;
+  /** Only set when action_type === "tearsheet_summary" — one row per
+   * tearsheet close, flushed client-side, never one row per hover/section. */
+  tabs_visited: TearsheetTabId[] | null;
+  total_active_seconds: number | null;
+  created_at: string;
+}
+
+/** The derived preference-embedding artifact: one row per user, recomputed
+ * periodically by a batch job (later phase) from user_interactions +
+ * watchlist_items. Never written directly by the client — the embedding
+ * itself isn't exposed here since there's no client use case for the raw
+ * 1536-dim vector yet, only the metadata needed to gate the UI. */
+export interface UserPreferenceVectorMeta {
+  user_id: string;
+  /** Gates the UI: below some minimum, show "still calibrating" rather than
+   * a misleadingly confident match percentage. */
+  signal_count: number;
+  updated_at: string;
+}
+
+/** Per-user generic outbound webhook target (v1 CRM sync). */
+export interface UserWebhook {
+  id: string;
+  user_id: string;
+  target_url: string;
+  secret: string;
+  enabled: boolean;
+  created_at: string;
+}
+
+/** In-app alert backing TopNav's bell — currently a decorative static dot
+ * with no data behind it. Client can read its own and mark read; rows are
+ * otherwise only ever created by a service-role alert-matching job. */
+export interface Notification {
+  id: string;
+  user_id: string;
+  type: string;
+  title: string;
+  body: string;
+  link: string | null;
+  read_at: string | null;
+  created_at: string;
+}
