@@ -1879,6 +1879,62 @@ function TearsheetModal({
 
   useEffect(() => { setActiveTab("overview"); }, [startup.id]);
 
+  // Phase 6: implicit signal. Per the product spec, this deliberately does
+  // NOT write per-hover/per-second events — it accumulates locally and
+  // flushes exactly one "tearsheet_summary" row per company, the moment the
+  // user closes the modal or navigates to a different company (a linked
+  // competitor via handleNavigateToLinked counts as leaving this company's
+  // view, same as closing it).
+  //
+  // total_active_seconds only counts time the tab was actually in the
+  // foreground (document.visibilityState === "visible") — walking away with
+  // the tab open in the background must not look like high engagement.
+  //
+  // tabsVisited lives on a ref, not state: a Set that's mutated in place by
+  // the tab-tracking effect below and read back by this effect's cleanup —
+  // it must never trigger a re-render on its own.
+  const dwellRef = useRef<{ tabsVisited: Set<TearsheetTab> } | null>(null);
+
+  useEffect(() => {
+    const startupId = startup.id;
+    const tabsVisited = new Set<TearsheetTab>(["overview"]);
+    dwellRef.current = { tabsVisited };
+
+    let activeSeconds = 0;
+    let visibleSince = document.visibilityState === "visible" ? Date.now() : null;
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        visibleSince = Date.now();
+      } else if (visibleSince != null) {
+        activeSeconds += (Date.now() - visibleSince) / 1000;
+        visibleSince = null;
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (visibleSince != null) activeSeconds += (Date.now() - visibleSince) / 1000;
+
+      const seconds = Math.round(activeSeconds);
+      // Skip the rare near-zero case (e.g. an instant misclick-close) rather
+      // than writing an empty-signal row to the append-only log.
+      if (seconds >= 1 || tabsVisited.size > 1) {
+        logInteraction({
+          startup_id: startupId,
+          action_type: "tearsheet_summary",
+          tabs_visited: Array.from(tabsVisited),
+          total_active_seconds: seconds,
+        }).catch(() => {});
+      }
+    };
+  }, [startup.id]);
+
+  useEffect(() => {
+    dwellRef.current?.tabsVisited.add(activeTab);
+  }, [activeTab]);
+
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", h);
