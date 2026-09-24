@@ -14,6 +14,19 @@ import {
   type PainPointFocus, type SignalTrigger, type UserMandateDeliveryPrefs,
 } from "../../lib/supabase";
 
+// Supabase/PostgREST errors are plain { message, details, hint, code }
+// objects, not Error instances -- `err instanceof Error` is always false for
+// them, so a naive check here silently swallows the real failure reason and
+// always shows the generic fallback text. Same pattern as getErrorMessage in
+// src/app/pages/Startups.tsx.
+function getErrorMessage(err: unknown): string | null {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === "object" && "message" in err && typeof (err as { message: unknown }).message === "string") {
+    return (err as { message: string }).message;
+  }
+  return null;
+}
+
 // ── Shared step shape ────────────────────────────────────────────────────────
 // Carried between steps in local state, then written once (upsertUserMandate)
 // when the flow finishes or is skipped — no partial writes mid-flow.
@@ -498,7 +511,8 @@ export function Onboarding() {
       await upsertUserMandate(finalAnswers);
       navigate(next);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("onboarding.savingError"));
+      console.error("[Onboarding] Failed to save mandate:", err);
+      setError(getErrorMessage(err) ?? t("onboarding.savingError"));
       setSaving(false);
     }
   }
@@ -510,7 +524,8 @@ export function Onboarding() {
       await upsertUserMandate(EMPTY_ANSWERS);
       navigate(next);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("onboarding.savingError"));
+      console.error("[Onboarding] Failed to save mandate:", err);
+      setError(getErrorMessage(err) ?? t("onboarding.savingError"));
       setSaving(false);
     }
   }
