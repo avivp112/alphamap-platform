@@ -925,6 +925,101 @@ export interface UserWebhook {
   created_at: string;
 }
 
+// ── Phase 9: CRM Webhook Engine ──────────────────────────────────────────────
+// user_webhooks is fully owner-CRUD via RLS (see
+// supabase/migrations/20260924000000_preference_engine_phase1.sql), so these
+// are thin wrappers, not RPCs -- the actual HMAC signing and delivery happen
+// server-side in the crm-webhook-sync Edge Function, never in the browser
+// (a client-computed signature could be forged by anyone with devtools, and
+// an arbitrary third-party CRM URL won't have CORS headers for a direct
+// browser fetch anyway).
+
+export async function fetchUserWebhook(): Promise<UserWebhook | null> {
+  const { data, error } = await supabase.from("user_webhooks").select("*").maybeSingle();
+  if (error) throw error;
+  return (data as UserWebhook) ?? null;
+}
+
+export interface UpsertWebhookInput {
+  target_url: string;
+  secret: string;
+  enabled: boolean;
+}
+
+// onConflict: "user_id" relies on the UNIQUE constraint added in
+// 20260929000000_user_webhooks_unique_per_user.sql -- without it, two
+// quick Save clicks could otherwise create two rows for the same user.
+export async function upsertUserWebhook(input: UpsertWebhookInput): Promise<void> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const userId = sessionData.session?.user?.id;
+  if (!userId) throw new Error("Not signed in");
+
+  const { error } = await supabase
+    .from("user_webhooks")
+    .upsert(
+      { user_id: userId, target_url: input.target_url, secret: input.secret, enabled: input.enabled },
+      { onConflict: "user_id" },
+    );
+  if (error) throw error;
+}
+
+// Cryptographically random signing secret (crypto.getRandomValues, never
+// Math.random()) -- this is what the user pastes into their receiving
+// endpoint to verify the HMAC signature on every synced payload.
+export function generateWebhookSecret(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// supabase-js surfaces a non-2xx Edge Function response as a generic
+// FunctionsHttpError -- the actual { error: "..." } JSON body the function
+// sent has to be read back off error.context. Same pattern as
+// extractFunctionsError in src/lib/publicMarket.ts (not shared/exported
+// there either -- small enough not to be worth a cross-file utility).
+async function extractCrmSyncError(error: unknown, fallback: string): Promise<string> {
+  try {
+    const ctx = (error as { context?: Response })?.context;
+    if (ctx && typeof ctx.json === "function") {
+      const body = await ctx.clone().json();
+      if (body && typeof body.error === "string") return body.error;
+    }
+  } catch {
+    /* fall through to the generic message below */
+  }
+  if (error instanceof Error) return error.message;
+  return fallback;
+}
+
+// `error` is always present (null on success) rather than a discriminated
+// `{ ok: true } | { ok: false; error }` union -- this project runs with
+// `strict: false` (see tsconfig.json), and TypeScript's control-flow
+// narrowing for a boolean-only discriminant doesn't fully apply without
+// strictNullChecks, so `if (result.ok) {} else { result.error }` would
+// otherwise fail to type-check on the else branch.
+export interface CrmSyncOutcome {
+  ok: boolean;
+  error: string | null;
+}
+
+export async function syncStartupToCrm(startupId: string): Promise<CrmSyncOutcome> {
+  const { error } = await supabase.functions.invoke("crm-webhook-sync", {
+    method: "POST",
+    body: { startup_id: startupId },
+  });
+  if (error) return { ok: false, error: await extractCrmSyncError(error, "Sync failed") };
+  return { ok: true, error: null };
+}
+
+export async function sendCrmTestEvent(): Promise<CrmSyncOutcome> {
+  const { error } = await supabase.functions.invoke("crm-webhook-sync", {
+    method: "POST",
+    body: { test: true },
+  });
+  if (error) return { ok: false, error: await extractCrmSyncError(error, "Test event failed") };
+  return { ok: true, error: null };
+}
+
 /** In-app alert backing TopNav's bell — currently a decorative static dot
  * with no data behind it. Client can read its own and mark read; rows are
  * otherwise only ever created by a service-role alert-matching job. */

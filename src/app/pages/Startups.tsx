@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { stageLabel, sectorLabel, SECTOR_TAXONOMY, PARENT_BY_SUB_SECTOR, STAGE_STEPS, type StageStep } from "../../lib/taxonomy";
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { useSearchParams, useNavigate } from "react-router";
+import { useSearchParams, useNavigate, Link } from "react-router";
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip,
@@ -21,13 +21,14 @@ import {
   GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2, ChevronUp,
   SlidersHorizontal, Award, Eye, HelpCircle,
   Linkedin, Facebook, Instagram, Newspaper, Layers, ExternalLink,
-  Star, XCircle, Sparkles, Download,
+  Star, XCircle, Sparkles, Download, Webhook,
 } from "lucide-react";
 import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
   fetchStartupsPage, fetchStartupsCount, fetchStartupsForExport, EXPORT_ROW_CAP, fetchDistinctCountries, fetchStartupDetail,
   fetchSuggestedPeers, fetchStartupListRowById, fetchScoreHistory, fetchArticleImage, STARTUPS_PAGE_SIZE, subSectorNames,
   fetchUserMandate, logInteraction, fetchPassedStartupIds, fetchMatchScores, fetchLookalikes,
+  fetchUserWebhook, syncStartupToCrm,
   type Startup, type FundingRound, type RoundType, type AlphaScore, type HeadcountPoint,
   type StartupListRow, type StartupSearchFilters, type Competitor, type ScoreHistoryPoint,
   type NewsItem, type PassReason, type MatchScoreResult, type LookalikeResult,
@@ -1793,7 +1794,7 @@ const TEARSHEET_TABS: { id: TearsheetTab; label: string }[] = [
 
 function TearsheetModal({
   startup, onClose, onNavigate, onFilterByMainSector, onFilterBySubSectorTag, saved, onSave, onOpenPass,
-  mandateSectors,
+  mandateSectors, hasCrmWebhook,
 }: {
   startup: StartupListRow;
   onClose: () => void;
@@ -1804,6 +1805,7 @@ function TearsheetModal({
   onSave: () => void;
   onOpenPass: () => void;
   mandateSectors: string[];
+  hasCrmWebhook: boolean;
 }) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TearsheetTab>("overview");
@@ -1996,6 +1998,38 @@ function TearsheetModal({
     }
   }
 
+  // Phase 9: "Sync to CRM" — the actual HMAC signing + delivery happens
+  // server-side in the crm-webhook-sync Edge Function (see its header
+  // comment for why); this just triggers it and reports the outcome.
+  const [crmSyncing, setCrmSyncing] = useState(false);
+  const [crmDone, setCrmDone]       = useState(false);
+  const [crmError, setCrmError]     = useState<string | null>(null);
+  const [crmPromptVisible, setCrmPromptVisible] = useState(false);
+
+  async function handleSyncToCrm() {
+    if (crmSyncing) return;
+    if (!hasCrmWebhook) {
+      setCrmPromptVisible(true);
+      setTimeout(() => setCrmPromptVisible(false), 4000);
+      return;
+    }
+    setCrmSyncing(true);
+    setCrmError(null);
+    try {
+      const result = await syncStartupToCrm(startup.id);
+      if (result.ok) {
+        logInteraction({ startup_id: startup.id, action_type: "crm_sync" }).catch(() => {});
+        setCrmDone(true);
+        setTimeout(() => setCrmDone(false), 2000);
+      } else {
+        setCrmError(result.error ?? "Sync failed.");
+        setTimeout(() => setCrmError(null), 4000);
+      }
+    } finally {
+      setCrmSyncing(false);
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
@@ -2090,6 +2124,35 @@ function TearsheetModal({
                 )}
                 {pdfDone ? t("startups.downloaded") : t("startups.tearSheet")}
               </button>
+              <div className="relative">
+                <button
+                  onClick={handleSyncToCrm}
+                  disabled={crmSyncing}
+                  title={t("startups.syncToCrm")}
+                  aria-label={t("startups.syncToCrm")}
+                  className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full whitespace-nowrap bg-white/70 hover:bg-white text-[#0F172A]/50 hover:text-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ border: "1px solid rgba(15,23,42,0.12)" }}
+                >
+                  {crmSyncing ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : crmDone ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  ) : (
+                    <Webhook className="w-3.5 h-3.5" />
+                  )}
+                  {crmDone ? t("startups.synced") : t("startups.syncToCrm")}
+                </button>
+                {(crmPromptVisible || crmError) && (
+                  <div
+                    className="absolute top-full right-0 mt-2 w-60 text-[10px] leading-relaxed text-slate-300 z-[70]"
+                    style={{ background: "#1a2840", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 10, padding: "8px 10px", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}
+                  >
+                    {crmPromptVisible
+                      ? <>{t("startups.crmNotConfigured")} <Link to="/profile" className="underline text-white">{t("startups.crmSetUpLink")}</Link></>
+                      : crmError}
+                  </div>
+                )}
+              </div>
               {roundType && roundStyle && (
                 <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap bg-white/70`} style={{ border: "1px solid rgba(15,23,42,0.12)" }}>{roundType}</span>
               )}
@@ -2973,6 +3036,11 @@ export function Startups() {
   // filter-seeding effect below) so the tearsheet's Match panel can flag a
   // sector overlap without a second fetch.
   const [mandateSectors, setMandateSectors] = useState<string[]>([]);
+  // Phase 9: whether the user has a CRM webhook configured at all, fetched
+  // once here (not per tearsheet open) so the "Sync to CRM" button knows
+  // whether to prompt "set one up first" without an extra round trip every
+  // time a company is opened.
+  const [hasCrmWebhook, setHasCrmWebhook] = useState(false);
 
   // First-time visitors get the walkthrough automatically, once; anyone else
   // can replay it from the "?" button in the title bar.
@@ -3122,6 +3190,12 @@ export function Startups() {
         const firstGeo = mandate.geographies[0];
         if (firstGeo) setCountry(firstGeo);
       })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetchUserWebhook()
+      .then((w) => setHasCrmWebhook(Boolean(w?.enabled)))
       .catch(() => {});
   }, []);
 
@@ -3518,6 +3592,7 @@ export function Startups() {
           onSave={() => handleSaveToggle(tearsheetStartup)}
           onOpenPass={() => setPassReasonTarget(tearsheetStartup)}
           mandateSectors={mandateSectors}
+          hasCrmWebhook={hasCrmWebhook}
         />
       )}
 
