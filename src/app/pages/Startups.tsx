@@ -27,10 +27,10 @@ import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
   fetchStartupsPage, fetchStartupsCount, fetchStartupsForExport, EXPORT_ROW_CAP, fetchDistinctCountries, fetchStartupDetail,
   fetchSuggestedPeers, fetchStartupListRowById, fetchScoreHistory, fetchArticleImage, STARTUPS_PAGE_SIZE, subSectorNames,
-  fetchUserMandate, logInteraction, fetchPassedStartupIds, fetchMatchScores,
+  fetchUserMandate, logInteraction, fetchPassedStartupIds, fetchMatchScores, fetchLookalikes,
   type Startup, type FundingRound, type RoundType, type AlphaScore, type HeadcountPoint,
   type StartupListRow, type StartupSearchFilters, type Competitor, type ScoreHistoryPoint,
-  type NewsItem, type PassReason, type MatchScoreResult,
+  type NewsItem, type PassReason, type MatchScoreResult, type LookalikeResult,
 } from "../../lib/supabase";
 import { useWatchlistMembership, addToWatchlist, removeFromWatchlist, watchlistErrorMessage } from "../../lib/watchlist";
 import { exportRows, type ExportColumn, type ExportFormat } from "../../lib/exportData";
@@ -1941,6 +1941,23 @@ function TearsheetModal({
     return () => window.removeEventListener("keydown", h);
   }, [onClose]);
 
+  // Phase 7: Lookalikes Drawer state. Fetched on demand when the drawer
+  // opens (not preloaded with the rest of the tearsheet) since most opens of
+  // a company's tearsheet never ask for its lookalikes.
+  const [lookalikesOpen, setLookalikesOpen]       = useState(false);
+  const [lookalikes, setLookalikes]               = useState<LookalikeResult[]>([]);
+  const [lookalikesLoading, setLookalikesLoading] = useState(false);
+
+  function handleOpenLookalikes() {
+    setLookalikesOpen(true);
+    setLookalikesLoading(true);
+    logInteraction({ startup_id: startup.id, action_type: "lookalikes_view" }).catch(() => {});
+    fetchLookalikes(startup.id)
+      .then(setLookalikes)
+      .catch(() => setLookalikes([]))
+      .finally(() => setLookalikesLoading(false));
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
@@ -2007,6 +2024,16 @@ function TearsheetModal({
               >
                 <XCircle className="w-3.5 h-3.5" />
                 Pass
+              </button>
+              <button
+                onClick={handleOpenLookalikes}
+                title="Find similar companies"
+                aria-label="Find similar companies"
+                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full whitespace-nowrap bg-white/70 hover:bg-white text-[#0F172A]/50 hover:text-cyan-700 transition-colors"
+                style={{ border: "1px solid rgba(15,23,42,0.12)" }}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                {t("startups.lookalikes")}
               </button>
               {roundType && roundStyle && (
                 <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap bg-white/70`} style={{ border: "1px solid rgba(15,23,42,0.12)" }}>{roundType}</span>
@@ -2083,6 +2110,104 @@ function TearsheetModal({
               {activeTab === "acquisitions" && <AcquisitionsIPTab startup={detail} onNavigate={handleNavigateToLinked} />}
               {activeTab === "news" && <NewsTab startup={detail} />}
             </>
+          )}
+        </div>
+      </div>
+
+      {lookalikesOpen && (
+        <LookalikesDrawer
+          sourceName={startup.name}
+          results={lookalikes}
+          loading={lookalikesLoading}
+          onClose={(e) => { e.stopPropagation(); setLookalikesOpen(false); }}
+          onSelect={(row) => { setLookalikesOpen(false); handleNavigateToLinked(row.id); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Lookalikes Drawer ────────────────────────────────────────────────────────
+// Phase 7: a hand-built slide-in panel, not the unused shadcn ui/drawer.tsx
+// scaffold — every other overlay in this file (TearsheetModal, CompareModal,
+// PassReasonModal) is custom Tailwind, and reusing that exact backdrop
+// convention (rgba(6,13,25,0.55) + blur) is what keeps this reading as the
+// same product rather than a bolted-on component-library widget.
+function LookalikesDrawer({
+  sourceName, results, loading, onClose, onSelect,
+}: {
+  sourceName: string;
+  results: LookalikeResult[];
+  loading: boolean;
+  onClose: (e: React.MouseEvent) => void;
+  onSelect: (row: LookalikeResult) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex justify-end"
+      style={{ background: "rgba(6,13,25,0.55)", backdropFilter: "blur(10px)" }}
+      onClick={onClose}
+    >
+      <div
+        className="relative flex flex-col w-full sm:w-[420px] h-full bg-white"
+        style={{
+          borderLeft: "1px solid rgba(15,23,42,0.08)",
+          boxShadow: "-32px 0 80px rgba(15,23,42,0.35)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex-none px-5 py-4 border-b border-gray-100 flex items-center gap-2.5">
+          <Layers className="w-4 h-4 text-cyan-600 flex-none" />
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-[#0F172A] leading-tight">{t("startups.lookalikes")}</h3>
+            <p className="text-[11px] text-gray-400 truncate">{t("startups.lookalikesSubtitle", { name: sourceName })}</p>
+          </div>
+          <button
+            onClick={(e) => onClose(e)}
+            className="ml-auto shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-[#0F172A] hover:bg-gray-100 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 py-4"
+          style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(15,23,42,0.15) transparent" }}>
+          {loading ? (
+            <div className="flex items-center justify-center py-20"><Loader2 className="w-5 h-5 text-[#F59E0B] animate-spin" /></div>
+          ) : results.length === 0 ? (
+            <div className="flex flex-col items-center py-20 gap-3 text-center px-4">
+              <Layers className="w-7 h-7 text-gray-300" />
+              <p className="text-xs text-gray-400">{t("startups.noLookalikes")}</p>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {results.map((r) => {
+                const location = [r.city, r.country].filter(Boolean).join(", ") || null;
+                return (
+                  <button
+                    key={r.id}
+                    onClick={() => onSelect(r)}
+                    className="w-full text-left flex items-start gap-3 rounded-lg border border-gray-100 bg-gray-50 hover:bg-cyan-50/40 hover:border-cyan-200 transition-colors px-3.5 py-3"
+                  >
+                    <CompanyLogo name={r.name} website={r.website} size={34} rounded="rounded-lg" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-gray-900 truncate">{r.name}</span>
+                        <span className="ml-auto flex-none inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap bg-cyan-50 text-cyan-700 border border-cyan-100">
+                          <Layers className="w-2.5 h-2.5 opacity-70" />
+                          {r.similarity_pct}% {t("startups.similar")}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-gray-500 mt-0.5">
+                        {r.industry && <span>{r.industry}</span>}
+                        {location && <span className="flex items-center gap-1"><MapPin className="w-2.5 h-2.5" />{location}</span>}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           )}
         </div>
       </div>

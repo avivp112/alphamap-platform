@@ -454,6 +454,27 @@ export async function fetchSuggestedPeers(
   return (data ?? []) as StartupListRow[];
 }
 
+// Phase 7: "companies like this one" for the Lookalikes Drawer. Distinct
+// from fetchSuggestedPeers above (which is exact sector+stage match, ranked
+// by total_raised, for the Compare modal's "add a peer" suggestions) --
+// this is a hybrid pre-filter + real cosine-similarity re-rank against
+// startups.embedding. See supabase/migrations/20260927000000.
+export interface LookalikeResult extends StartupListRow {
+  similarity_pct: number;
+}
+
+export async function fetchLookalikes(startupId: string, limit = 6): Promise<LookalikeResult[]> {
+  const { data, error } = await supabase.rpc("hybrid_lookalikes", {
+    p_startup_id: startupId,
+    p_limit: limit,
+  });
+  if (error) throw error;
+  return ((data ?? []) as { peer: StartupListRow; similarity_pct: number }[]).map((row) => ({
+    ...row.peer,
+    similarity_pct: row.similarity_pct,
+  }));
+}
+
 // Dual-track scoring: the engine classifies each company's archetype before
 // scoring and re-weights the pillars accordingly (see the
 // dual_track_scoring migration). Pillar labels come from the response, so
