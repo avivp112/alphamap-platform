@@ -56,6 +56,19 @@ check("since date", GH.sinceDate(90, NOW), "2026-04-27");
 check("search url pages",
   new URL(GH.searchUrl("x", 2)).searchParams.get("page"), "2");
 
+console.log("\n── GitHub: topic chunking (422 fix — GitHub caps search at 5 boolean operators / 256 chars) ──");
+check("chunks of size 5", GH.chunk([1, 2, 3, 4, 5, 6, 7], 5), [[1, 2, 3, 4, 5], [6, 7]]);
+check("empty array -> no chunks", GH.chunk([], 5), []);
+check("exact multiple -> no trailing empty chunk", GH.chunk([1, 2, 3, 4], 2), [[1, 2], [3, 4]]);
+for (const c of GH.chunk(GH.DEFAULT_TOPICS, 5)) {
+  const q = GH.buildQuery({ topics: c, minStars: 25, maxAgeDays: 180, now: NOW });
+  const orCount = (q.match(/ OR /g) ?? []).length;
+  check(`chunk [${c.join(",")}] has <=5 OR operators`, orCount <= 5, true);
+  check(`chunk [${c.join(",")}] query is <=256 chars`, q.length <= 256, true);
+}
+check("13 default topics need 3 chunks of <=5",
+  GH.chunk(GH.DEFAULT_TOPICS, 5).map((c) => c.length), [5, 5, 3]);
+
 console.log("\n── GitHub: repo mapping ──");
 const repo = {
   full_name: "tinyco/agentkit",
