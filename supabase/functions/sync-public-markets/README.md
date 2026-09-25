@@ -71,7 +71,13 @@ should return live results.
 ## Schedule it daily (pick one)
 
 ### Option A — pg_cron + pg_net (recommended; runs inside Supabase)
-Paste into the Dashboard SQL Editor once:
+This project already defines `sourcing_required_secret()` (see
+`supabase/migrations/20260726080000_sourcing_weekly_cron.sql`), which reads the
+`project_url` / `service_role_key` Vault secrets rather than a literal
+`<PROJECT_REF>` pasted into a migration — a hardcoded placeholder here is
+exactly how `sync-public-markets-daily` ended up scheduled against a URL that
+was never a real hostname. Use the same helper every other scheduled job in
+this repo uses:
 ```sql
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
@@ -81,13 +87,21 @@ select cron.schedule(
   '0 6 * * *',                       -- every day at 06:00 UTC
   $$
   select net.http_post(
-    url     := 'https://<PROJECT_REF>.supabase.co/functions/v1/sync-public-markets',
-    headers := jsonb_build_object('Content-Type', 'application/json'),
+    url     := sourcing_required_secret('project_url') || '/functions/v1/sync-public-markets',
+    headers := jsonb_build_object(
+                 'Content-Type', 'application/json',
+                 'Authorization', 'Bearer ' || sourcing_required_secret('service_role_key')
+               ),
     body    := '{}'::jsonb
   );
   $$
 );
 ```
+`sourcing_required_secret()` only exists once `20260726080000` has been
+applied to this database. If it hasn't, either apply that migration first or
+fall back to the literal Vault secret names it wraps
+(`project_url`/`service_role_key`, created via `vault.create_secret(...)` —
+see that migration's header for the exact commands).
 Change the cadence any time:
 ```sql
 select cron.unschedule('sync-public-markets-daily');

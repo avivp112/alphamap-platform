@@ -1,0 +1,15 @@
+-- Rollback for 20260930010000_cron_job_audit_fixes.sql
+--
+-- Deliberately does NOT restore process-enrichment-queue: it called a
+-- function this repo never defines and failed on every single run (every 2
+-- minutes) against a table that doesn't exist. Re-scheduling it would just
+-- reintroduce the exact failure loop this migration removed -- there is no
+-- meaningful "before" state worth restoring for a job that never worked.
+--
+-- Also does NOT revert sync-public-markets-daily to its old hardcoded
+-- <PROJECT_REF>/no-auth form, for the same reason: that version never
+-- successfully reached a real host. If you want the job gone entirely rather
+-- than fixed, uncomment the unschedule below; otherwise this rollback is a
+-- no-op by design.
+
+-- SELECT cron.unschedule('sync-public-markets-daily');
