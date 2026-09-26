@@ -18,7 +18,7 @@ import { TermsOfUse } from "./pages/TermsOfUse";
 import { PrivacyPolicy } from "./pages/PrivacyPolicy";
 import { Checkout } from "./pages/Checkout";
 import { Profile } from "./pages/Profile";
-import { Watchlist } from "./pages/Watchlist";
+import { MyArea } from "./pages/MyArea";
 import { Onboarding } from "./pages/Onboarding";
 import { NotFound, RouteError } from "./pages/RouteFallback";
 import { requireAuth, requireOnboarding } from "./routeGuards";
@@ -80,7 +80,8 @@ export const router = createBrowserRouter([
   { path: "/privacy",    Component: PrivacyPolicy },
   { path: "/checkout/:plan", Component: Checkout },
   { path: "/profile",    Component: Profile, loader: requireAuth },
-  { path: "/watchlist",  Component: Watchlist, loader: requireAuth },
+  { path: "/my-area",    Component: MyArea, loader: requireAuth },
+  { path: "/watchlist",  Component: MyArea, loader: requireAuth },  // legacy alias — old bookmarks/links keep working
 
       // Must stay last. Anything unmatched lands here instead of throwing.
       { path: "*",       Component: NotFound },

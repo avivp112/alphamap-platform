@@ -3160,36 +3160,14 @@ export function Startups() {
     fetchDistinctCountries().then(setCountries).catch(() => {});
   }, []);
 
-  // Seed the sidebar's filters from the user's onboarding mandate, once, on
-  // first mount. First-value-only for v1: a mandate with several sectors/
-  // stages only pre-selects the first of each — the sidebar is still
-  // single-select today, so this is a starting point, not a hard rule, and
-  // the user can change or add to it from the sidebar immediately after.
-  // Never touches the city filter, which comes from the URL (?city=) instead.
+  // Private Market is an unfiltered global discovery view by design — the
+  // user's onboarding mandate is NOT applied as a default filter here (that
+  // now happens exclusively in My Area's Thesis Matches section). This still
+  // fetches mandate.sectors alone, for MatchScorePanel's "overlaps with your
+  // mandate sector" context line on the (opt-in, non-filtering) match badge.
   useEffect(() => {
     fetchUserMandate()
-      .then((mandate) => {
-        if (!mandate) return;
-        setMandateSectors(mandate.sectors);
-        const firstSector = mandate.sectors[0];
-        if (firstSector) {
-          if (SECTOR_TAXONOMY[firstSector]) {
-            setParentSector(firstSector);
-          } else {
-            const parent = PARENT_BY_SUB_SECTOR[firstSector];
-            if (parent) {
-              setParentSector(parent);
-              setSubSector(firstSector);
-            }
-          }
-        }
-        const firstStage = mandate.stages[0];
-        if (firstStage && STAGE_STEPS.some((s) => s.value === firstStage)) {
-          setStageStep(firstStage as StageStep);
-        }
-        const firstGeo = mandate.geographies[0];
-        if (firstGeo) setCountry(firstGeo);
-      })
+      .then((mandate) => { if (mandate) setMandateSectors(mandate.sectors); })
       .catch(() => {});
   }, []);
 

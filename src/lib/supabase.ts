@@ -915,6 +915,58 @@ export interface MatchScoreResult {
   signal_count: number;
 }
 
+/** My Area recommendations feed row — see top_thesis_matches RPC. */
+export interface ThesisMatch {
+  startup_id: string;
+  match_pct: number;
+  signal_count: number;
+  is_new: boolean;
+}
+
+/**
+ * My Area / Thesis Matches: the signed-in user's top-N startups by fit to
+ * their preference vector, excluding anything already watchlisted or passed
+ * on (see 20261001000000_top_thesis_matches_rpc.sql). An EMPTY array here
+ * means "still calibrating" whenever the caller has fewer than 3 signals —
+ * same convention as fetchMatchScores, never render it as "no matches".
+ */
+export async function fetchTopThesisMatches(limit = 20, newWithinDays = 14): Promise<ThesisMatch[]> {
+  const { data, error } = await supabase.rpc('top_thesis_matches', {
+    p_limit: limit,
+    p_new_within_days: newWithinDays,
+  });
+  if (error) throw error;
+  return (data ?? []) as ThesisMatch[];
+}
+
+/**
+ * The signed-in user's own preference-vector signal_count, or 0 if the row
+ * doesn't exist yet (never saved anything). RLS scopes this to exactly one
+ * possible row (the caller's own), so no user_id filter is needed here.
+ *
+ * Needed because top_thesis_matches returns an EMPTY array in two genuinely
+ * different situations — "still calibrating" (signal_count < 3) and
+ * "calibrated, but truly nothing matches right now" — which the client must
+ * render differently. This is the only way to tell them apart from a LIST
+ * endpoint (fetchMatchScores' per-id convention doesn't apply: there are no
+ * ids to check here).
+ */
+export async function fetchPreferenceSignalCount(): Promise<number> {
+  const { data, error } = await supabase.from("user_preference_vectors").select("signal_count").maybeSingle();
+  if (error) throw error;
+  return data?.signal_count ?? 0;
+}
+
+/** Resolves a list of startup ids to full display rows, same shape as the
+ * Private Market grid. Used wherever a feature only has ids to start from
+ * (My Area's Thesis Matches, the Watchlist's own id list). */
+export async function fetchStartupsByIds(ids: string[]): Promise<StartupListRow[]> {
+  if (ids.length === 0) return [];
+  const { data, error } = await supabase.from("startups_search").select("*").in("id", ids);
+  if (error) throw error;
+  return (data ?? []) as StartupListRow[];
+}
+
 /** Per-user generic outbound webhook target (v1 CRM sync). */
 export interface UserWebhook {
   id: string;

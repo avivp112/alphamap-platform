@@ -528,12 +528,12 @@ export function TopNav() {
           />
 
           <NavLink
-            to="/watchlist"
+            to="/my-area"
             className={({ isActive }) => cn(topLinkCls, isActive ? topLinkActive : topLinkInactive)}
           >
             {({ isActive }) => (
               <>
-                {t('nav.watchlist')}
+                {t('nav.myArea')}
                 <ActiveIndicator show={isActive} />
               </>
             )}
@@ -566,11 +566,11 @@ export function TopNav() {
             onSelect={() => setMobileOpen(false)}
           />
           <Link
-            to="/watchlist"
+            to="/my-area"
             onClick={() => setMobileOpen(false)}
             className="block py-3 text-sm font-semibold text-[#0F172A]"
           >
-            {t('nav.watchlist')}
+            {t('nav.myArea')}
           </Link>
         </div>
       )}

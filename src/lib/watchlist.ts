@@ -20,9 +20,13 @@ export interface WatchlistRef {
   entityId: string;
 }
 
+/** A tracked row plus the user's own personal annotations on that entry
+ * (My Area / Curated Watchlist "quick actions": notes + tags). */
+export type WithWatchlistMeta<T> = T & { watchlistNotes: string | null; watchlistTags: string[] };
+
 export interface WatchlistData {
-  startups: StartupListRow[];
-  investors: InvestorRow[];
+  startups: WithWatchlistMeta<StartupListRow>[];
+  investors: WithWatchlistMeta<InvestorRow>[];
 }
 
 function watchlistKey(entityType: WatchlistEntityType, entityId: string): string {
@@ -41,13 +45,16 @@ export async function fetchWatchlist(): Promise<WatchlistData> {
 
   const { data: items, error } = await supabase
     .from("watchlist_items")
-    .select("entity_type, entity_id")
+    .select("entity_type, entity_id, notes, tags")
     .eq("user_id", userData.user.id)
     .order("created_at", { ascending: false });
   if (error) throw error;
 
-  const startupIds  = (items ?? []).filter((i) => i.entity_type === "startup").map((i) => i.entity_id);
-  const investorIds = (items ?? []).filter((i) => i.entity_type === "investor").map((i) => i.entity_id);
+  const all = items ?? [];
+  const startupItems  = all.filter((i) => i.entity_type === "startup");
+  const investorItems = all.filter((i) => i.entity_type === "investor");
+  const startupIds  = startupItems.map((i) => i.entity_id);
+  const investorIds = investorItems.map((i) => i.entity_id);
 
   const [startupsRes, investorsRes] = await Promise.all([
     startupIds.length
@@ -64,11 +71,39 @@ export async function fetchWatchlist(): Promise<WatchlistData> {
   // whatever order the IN-list queries happen to return.
   const startupById  = new Map((startupsRes.data as StartupListRow[]).map((s) => [s.id, s]));
   const investorById = new Map((investorsRes.data as InvestorRow[]).map((i) => [i.id, i]));
+  const metaByStartup  = new Map(startupItems.map((i) => [i.entity_id, { notes: i.notes as string | null, tags: (i.tags ?? []) as string[] }]));
+  const metaByInvestor = new Map(investorItems.map((i) => [i.entity_id, { notes: i.notes as string | null, tags: (i.tags ?? []) as string[] }]));
 
   return {
-    startups:  startupIds.map((id) => startupById.get(id)).filter((s): s is StartupListRow => !!s),
-    investors: investorIds.map((id) => investorById.get(id)).filter((i): i is InvestorRow => !!i),
+    startups: startupIds
+      .map((id) => startupById.get(id))
+      .filter((s): s is StartupListRow => !!s)
+      .map((s) => ({ ...s, watchlistNotes: metaByStartup.get(s.id)?.notes ?? null, watchlistTags: metaByStartup.get(s.id)?.tags ?? [] })),
+    investors: investorIds
+      .map((id) => investorById.get(id))
+      .filter((i): i is InvestorRow => !!i)
+      .map((i) => ({ ...i, watchlistNotes: metaByInvestor.get(i.id)?.notes ?? null, watchlistTags: metaByInvestor.get(i.id)?.tags ?? [] })),
   };
+}
+
+/** Updates the personal notes/tags on an existing watchlist entry. Only
+ * these two columns can ever be written this way — the DB grants UPDATE on
+ * notes/tags alone (20261001010000_watchlist_notes_and_tags.sql), so an
+ * entry's identity (entity_type/entity_id/user_id) can never be changed in
+ * place; removing and re-adding is the correct way to do that. */
+export async function updateWatchlistItem(
+  entityType: WatchlistEntityType,
+  entityId: string,
+  patch: { notes?: string | null; tags?: string[] },
+): Promise<void> {
+  const userId = await requireUserId();
+  const { error } = await supabase
+    .from("watchlist_items")
+    .update(patch)
+    .eq("user_id", userId)
+    .eq("entity_type", entityType)
+    .eq("entity_id", entityId);
+  if (error) throw error;
 }
 
 export async function addToWatchlist(entityType: WatchlistEntityType, entityId: string): Promise<void> {

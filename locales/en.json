@@ -12,7 +12,7 @@
     "deals": "Deals",
     "marketMap": "Market Map",
     "privateEquity": "Private Equity",
-    "watchlist": "My Watchlist",
+    "myArea": "My Area",
     "valuationsDueDiligence": "Valuations and Due Diligence",
     "settings": "Settings",
     "soon": "Soon",
@@ -480,7 +480,34 @@
     "trackBlurb": "Track the companies and funds you care about, and compare them side by side.",
     "searchPlaceholder": "Search companies or funds to add…",
     "compareHint": "Select 2+ companies or 2+ funds (of the same type) to compare.",
-    "fundSize": "Fund Size"
+    "fundSize": "Fund Size",
+    "addTag": "Add tag",
+    "notesPlaceholder": "Add a note…"
+  },
+  "myArea": {
+    "title": "My Area",
+    "subtitle": "Your personal radar — curated companies, thesis matches, and live signals in one place.",
+    "signInTitle": "Sign in to use My Area",
+    "signInBlurb": "Your watchlist, thesis matches, and alerts, synced across sessions and devices.",
+    "tabs": {
+      "watchlist": "Watchlist",
+      "matches": "Thesis Matches",
+      "alerts": "Live Alerts"
+    },
+    "matches": {
+      "blurb": "Companies scored against your investment mandate — the questionnaire answers from onboarding only take effect here, never as a filter on Private Market.",
+      "newBadge": "New",
+      "calibratingTitle": "Still calibrating",
+      "calibratingBlurb": "Save a few companies to your watchlist and we'll start surfacing startups that fit your mandate here.",
+      "emptyTitle": "No matches right now",
+      "emptyBlurb": "Nothing new fits your mandate at the moment — check back as new companies are added."
+    },
+    "alerts": {
+      "blurb": "Updates on your watchlist and thesis matches.",
+      "markAllRead": "Mark all read",
+      "emptyTitle": "No alerts yet",
+      "emptyBlurb": "You'll see updates here as new signals come in for your watchlist and thesis matches."
+    }
   },
   "pricing": {
     "title": "Simple, transparent pricing",
