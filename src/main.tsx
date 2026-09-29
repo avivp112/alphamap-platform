@@ -8,13 +8,41 @@
   import "./lib/i18n";
   import { missingSupabaseEnv } from "./lib/supabase";
   import { Capacitor } from "@capacitor/core";
+  import { App as CapacitorApp } from "@capacitor/app";
   import { CapacitorUpdater } from "@capgo/capacitor-updater";
+  import { consumeBackHandler } from "./lib/hardwareBack";
 
   // Marks every element `native:`-variant-styleable (see theme.css) for the
   // rest of the app's lifetime. Set before the first render, synchronously —
   // not in a useEffect — so there's no flash of web styling on native.
   if (Capacitor.isNativePlatform()) {
     document.documentElement.classList.add("native-app");
+  }
+
+  // The Android hardware/gesture back button. Without this listener,
+  // Capacitor's default behavior on a single-page app is effectively "exit
+  // the activity" — the WebView's own back/forward stack doesn't reliably
+  // track client-side (pushState) route changes the way a normal multi-page
+  // site's would, so every back press looked like there was nowhere to go
+  // and closed the app outright, even mid-navigation.
+  //
+  // `canGoBack` (from Capacitor, based on window.history.length) tells us
+  // whether there's an actual previous entry in this session's history.
+  // consumeBackHandler() first gives any open overlay — the company
+  // tearsheet, a dropdown, TopNav's mobile menu — first refusal, so back
+  // closes those before it ever touches route navigation (see
+  // lib/hardwareBack.ts for why). Only once both are exhausted does back
+  // fall through to actually exiting, matching normal Android app behavior
+  // at the true root of the navigation stack.
+  if (Capacitor.isNativePlatform()) {
+    CapacitorApp.addListener("backButton", ({ canGoBack }) => {
+      if (consumeBackHandler()) return;
+      if (canGoBack) {
+        window.history.back();
+      } else {
+        CapacitorApp.exitApp();
+      }
+    });
   }
 
   const root = createRoot(document.getElementById("root")!);

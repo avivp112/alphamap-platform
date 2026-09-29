@@ -11,6 +11,7 @@ import { Layout } from "../components/Layout";
 import { LinkedInBadge } from "../components/LinkedInBadge";
 import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider, QuickQuestionsMenu, ExportMenu } from "../components/SideFilterLayout";
 import { CompanyLogo } from "../components/CompanyLogo";
+import { useBackClose } from "../../lib/hardwareBack";
 import { ProductTour, type TourStep } from "../components/ProductTour";
 import {
   Plus, Globe, Loader2, Search, X, MapPin, Calendar, Users,
@@ -685,13 +686,19 @@ function AlphaMapScorePanel({ data, loading, err }: {
 
   return (
     <div className={`rounded-[8px] border p-5 ${cfg.bg} ${cfg.border}`}>
-      {/* Header row */}
-      <div className="flex items-center gap-2 mb-4">
-        <Activity className="w-4 h-4 text-gray-500" />
-        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest">{t("startups.alphamapScore")}</h3>
+      {/* Header row — wraps onto multiple lines on a narrow screen instead
+          of squeezing the uppercase, letter-spaced title against the badges
+          (which is what previously split "ALPHAMAP SCORE" mid-word). The
+          tier badge stays pinned to the right on wider screens (sm:ml-auto)
+          but flows inline with everything else on mobile, where trying to
+          auto-margin it to the far right of a wrapped line looked worse
+          than just letting it wrap in sequence. */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 mb-4">
+        <Activity className="w-4 h-4 text-gray-500 flex-none" />
+        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest whitespace-nowrap">{t("startups.alphamapScore")}</h3>
         {data.archetype && (
           <span
-            className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-white/70 text-gray-500 border border-black/5"
+            className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-white/70 text-gray-500 border border-black/5 whitespace-nowrap"
             title="Company maturity classification — informational only, does not change how the score is weighted."
           >
             {data.archetype === 'mature_private' ? 'Mature Private' : 'Venture-Backed'}
@@ -699,14 +706,14 @@ function AlphaMapScorePanel({ data, loading, err }: {
         )}
         {data.safety_floor_applied && (
           <span
-            className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200"
+            className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200 whitespace-nowrap"
             title="Investor Quality and Founder & Team Quality both scored 85+, so the safety floor raised this score to at least Tier B — protects strong stealth/deep-tech companies whose public visibility (growth, press) is naturally thin."
           >
             Floor applied
           </span>
         )}
-        <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${cfg.badge}`}>{cfg.label}</span>
-        <span className="text-[10px] text-gray-400 capitalize">{data.confidence} confidence</span>
+        <span className={`sm:ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${cfg.badge}`}>{cfg.label}</span>
+        <span className="text-[10px] text-gray-400 capitalize whitespace-nowrap">{data.confidence} confidence</span>
       </div>
 
       {/* Score ring + right-side breakdown */}
@@ -751,7 +758,7 @@ function AlphaMapScorePanel({ data, loading, err }: {
             {(data.macro_adj_pct ?? 0) >= 0 ? '+' : ''}{safeFixed(data.macro_adj_pct, 1, '0')}%
           </span>
         </span>
-        {data.sector_id && data.sector_id !== 'unknown' && (
+        {data.sector_id && data.sector_id !== 'unknown' && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.sector_id) && (
           <span className="text-gray-400 capitalize">{data.sector_id.replace(/-/g, ' ')}</span>
         )}
       </div>
@@ -1811,6 +1818,11 @@ function TearsheetModal({
   const [activeTab, setActiveTab] = useState<TearsheetTab>("overview");
   const [navLoading, setNavLoading] = useState(false);
 
+  // This component only ever mounts while the tearsheet is open (see its
+  // caller), so the hardware back button should always close it first,
+  // ahead of navigating whatever page is underneath.
+  useBackClose(true, onClose);
+
   async function handleNavigateToLinked(id: string) {
     if (navLoading) return;
     setNavLoading(true);
@@ -2032,28 +2044,48 @@ function TearsheetModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+      className="fixed inset-0 z-50 flex items-stretch sm:items-center justify-center p-0 sm:p-6"
       style={{ background: "rgba(6,13,25,0.55)", backdropFilter: "blur(10px)" }}
       onClick={onClose}
     >
       <div
-        className="relative flex flex-col w-[90vw] max-w-6xl bg-white"
+        className="relative flex flex-col w-full h-full sm:w-[90vw] sm:h-[85vh] sm:max-w-6xl sm:rounded-[10px] bg-white"
         style={{
-          height: "85vh",
           border: "1px solid rgba(15,23,42,0.08)",
-          borderRadius: 10,
           overflow: "hidden",
           boxShadow: "0 32px 80px rgba(15,23,42,0.35), 0 0 0 1px rgba(15,23,42,0.02)",
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* ── Fixed header (blue-gray) ── */}
-        <div className="flex-none px-6 pt-5 pb-4 rounded-t-[10px]"
+        {/* ── Fixed header (blue-gray) ──
+            Three stacked rows on every width: (1) logo + name + close button,
+            always reachable regardless of how many action buttons exist;
+            (2) location/est/website meta, free to wrap on its own line now
+            that it isn't sharing a row with the action buttons; (3) actions,
+            in a wrapping row so a narrow (phone) width wraps them onto a
+            second line instead of overflowing or overlapping the meta row
+            above. Previously all of this — logo, name, meta, five buttons,
+            the round-type badge, and the close button — sat in one single
+            unwrapping flex row, which is what produced the overlapping,
+            cut-off buttons on a phone-width screen. */}
+        <div className="flex-none px-4 sm:px-6 pt-4 sm:pt-5 pb-4 sm:rounded-t-[10px]"
           style={{ background: "#B8C9D1", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
-          <div className="flex items-start gap-4">
+          <div className="flex items-start gap-3 sm:gap-4">
             <CompanyLogo name={startup.name} website={startup.website} size={52} rounded="rounded-lg" />
             <div className="flex-1 min-w-0">
-              <h2 className="text-xl font-black text-[#0F172A] tracking-tight leading-none mb-1.5 truncate">{startup.name}</h2>
+              <div className="flex items-start justify-between gap-2">
+                <h2 className="text-lg sm:text-xl font-black text-[#0F172A] tracking-tight leading-tight sm:leading-none mb-1.5 truncate">{startup.name}</h2>
+                <button
+                  onClick={onClose}
+                  aria-label={t("common.close")}
+                  className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-[#0F172A]/50 hover:text-[#0F172A] transition-all"
+                  style={{ background: "rgba(255,255,255,0)" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.35)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0)")}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
               <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[11px] text-[#0F172A]/60">
                 {location && (
                   <span className="flex items-center gap-1"><MapPin className="w-3 h-3 flex-none" />{location}</span>
@@ -2076,95 +2108,90 @@ function TearsheetModal({
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-2 flex-none">
+          </div>
+
+          {/* Actions — its own wrapping row, separate from the identity row
+              above, so a narrow viewport wraps buttons onto a second line
+              instead of squeezing or overlapping anything. */}
+          <div className="flex items-center flex-wrap gap-2 mt-3">
+            {roundType && roundStyle && (
+              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap bg-white/70`} style={{ border: "1px solid rgba(15,23,42,0.12)" }}>{roundType}</span>
+            )}
+            <button
+              onClick={onSave}
+              title={saved ? "Saved" : "Save"}
+              aria-label={saved ? "Saved" : "Save"}
+              className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full whitespace-nowrap bg-white/70 hover:bg-white transition-colors"
+              style={{ border: "1px solid rgba(15,23,42,0.12)" }}
+            >
+              <Star className={`w-3.5 h-3.5 ${saved ? "fill-amber-400 text-amber-500" : "text-[#0F172A]/50"}`} />
+              {saved ? "Saved" : "Save"}
+            </button>
+            <button
+              onClick={onOpenPass}
+              title="Pass"
+              aria-label="Pass"
+              className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full whitespace-nowrap bg-white/70 hover:bg-white text-[#0F172A]/50 hover:text-rose-600 transition-colors"
+              style={{ border: "1px solid rgba(15,23,42,0.12)" }}
+            >
+              <XCircle className="w-3.5 h-3.5" />
+              Pass
+            </button>
+            <button
+              onClick={handleOpenLookalikes}
+              title="Find similar companies"
+              aria-label="Find similar companies"
+              className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full whitespace-nowrap bg-white/70 hover:bg-white text-[#0F172A]/50 hover:text-cyan-700 transition-colors"
+              style={{ border: "1px solid rgba(15,23,42,0.12)" }}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              {t("startups.lookalikes")}
+            </button>
+            <button
+              onClick={handleGenerateTearSheet}
+              disabled={pdfGenerating || detailLoading}
+              title={t("startups.generateTearSheet")}
+              aria-label={t("startups.generateTearSheet")}
+              className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full whitespace-nowrap bg-white/70 hover:bg-white text-[#0F172A]/50 hover:text-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ border: "1px solid rgba(15,23,42,0.12)" }}
+            >
+              {pdfGenerating ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : pdfDone ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              ) : (
+                <Download className="w-3.5 h-3.5" />
+              )}
+              {pdfDone ? t("startups.downloaded") : t("startups.tearSheet")}
+            </button>
+            <div className="relative">
               <button
-                onClick={onSave}
-                title={saved ? "Saved" : "Save"}
-                aria-label={saved ? "Saved" : "Save"}
-                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full whitespace-nowrap bg-white/70 hover:bg-white transition-colors"
+                onClick={handleSyncToCrm}
+                disabled={crmSyncing}
+                title={t("startups.syncToCrm")}
+                aria-label={t("startups.syncToCrm")}
+                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full whitespace-nowrap bg-white/70 hover:bg-white text-[#0F172A]/50 hover:text-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ border: "1px solid rgba(15,23,42,0.12)" }}
               >
-                <Star className={`w-3.5 h-3.5 ${saved ? "fill-amber-400 text-amber-500" : "text-[#0F172A]/50"}`} />
-                {saved ? "Saved" : "Save"}
-              </button>
-              <button
-                onClick={onOpenPass}
-                title="Pass"
-                aria-label="Pass"
-                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full whitespace-nowrap bg-white/70 hover:bg-white text-[#0F172A]/50 hover:text-rose-600 transition-colors"
-                style={{ border: "1px solid rgba(15,23,42,0.12)" }}
-              >
-                <XCircle className="w-3.5 h-3.5" />
-                Pass
-              </button>
-              <button
-                onClick={handleOpenLookalikes}
-                title="Find similar companies"
-                aria-label="Find similar companies"
-                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full whitespace-nowrap bg-white/70 hover:bg-white text-[#0F172A]/50 hover:text-cyan-700 transition-colors"
-                style={{ border: "1px solid rgba(15,23,42,0.12)" }}
-              >
-                <Layers className="w-3.5 h-3.5" />
-                {t("startups.lookalikes")}
-              </button>
-              <button
-                onClick={handleGenerateTearSheet}
-                disabled={pdfGenerating || detailLoading}
-                title={t("startups.generateTearSheet")}
-                aria-label={t("startups.generateTearSheet")}
-                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full whitespace-nowrap bg-white/70 hover:bg-white text-[#0F172A]/50 hover:text-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ border: "1px solid rgba(15,23,42,0.12)" }}
-              >
-                {pdfGenerating ? (
+                {crmSyncing ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : pdfDone ? (
+                ) : crmDone ? (
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                 ) : (
-                  <Download className="w-3.5 h-3.5" />
+                  <Webhook className="w-3.5 h-3.5" />
                 )}
-                {pdfDone ? t("startups.downloaded") : t("startups.tearSheet")}
+                {crmDone ? t("startups.synced") : t("startups.syncToCrm")}
               </button>
-              <div className="relative">
-                <button
-                  onClick={handleSyncToCrm}
-                  disabled={crmSyncing}
-                  title={t("startups.syncToCrm")}
-                  aria-label={t("startups.syncToCrm")}
-                  className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full whitespace-nowrap bg-white/70 hover:bg-white text-[#0F172A]/50 hover:text-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ border: "1px solid rgba(15,23,42,0.12)" }}
+              {(crmPromptVisible || crmError) && (
+                <div
+                  className="absolute top-full right-0 mt-2 w-60 text-[10px] leading-relaxed text-slate-300 z-[70]"
+                  style={{ background: "#1a2840", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 10, padding: "8px 10px", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}
                 >
-                  {crmSyncing ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : crmDone ? (
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  ) : (
-                    <Webhook className="w-3.5 h-3.5" />
-                  )}
-                  {crmDone ? t("startups.synced") : t("startups.syncToCrm")}
-                </button>
-                {(crmPromptVisible || crmError) && (
-                  <div
-                    className="absolute top-full right-0 mt-2 w-60 text-[10px] leading-relaxed text-slate-300 z-[70]"
-                    style={{ background: "#1a2840", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 10, padding: "8px 10px", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}
-                  >
-                    {crmPromptVisible
-                      ? <>{t("startups.crmNotConfigured")} <Link to="/profile" className="underline text-white">{t("startups.crmSetUpLink")}</Link></>
-                      : crmError}
-                  </div>
-                )}
-              </div>
-              {roundType && roundStyle && (
-                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap bg-white/70`} style={{ border: "1px solid rgba(15,23,42,0.12)" }}>{roundType}</span>
+                  {crmPromptVisible
+                    ? <>{t("startups.crmNotConfigured")} <Link to="/profile" className="underline text-white">{t("startups.crmSetUpLink")}</Link></>
+                    : crmError}
+                </div>
               )}
-              <button
-                onClick={onClose}
-                className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-[#0F172A]/50 hover:text-[#0F172A] transition-all"
-                style={{ background: "rgba(255,255,255,0)" }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.35)")}
-                onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0)")}
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
           </div>
         </div>
@@ -2237,7 +2264,7 @@ function TearsheetModal({
           sourceName={startup.name}
           results={lookalikes}
           loading={lookalikesLoading}
-          onClose={(e) => { e.stopPropagation(); setLookalikesOpen(false); }}
+          onClose={(e) => { e?.stopPropagation(); setLookalikesOpen(false); }}
           onSelect={(row) => { setLookalikesOpen(false); handleNavigateToLinked(row.id); }}
         />
       )}
@@ -2257,10 +2284,16 @@ function LookalikesDrawer({
   sourceName: string;
   results: LookalikeResult[];
   loading: boolean;
-  onClose: (e: React.MouseEvent) => void;
+  onClose: (e?: React.MouseEvent) => void;
   onSelect: (row: LookalikeResult) => void;
 }) {
   const { t } = useTranslation();
+
+  // Nested inside TearsheetModal, so this registers its own close handler
+  // after (and thus above) the tearsheet's — the hardware back button
+  // closes this drawer first, leaving the tearsheet itself open underneath.
+  useBackClose(true, () => onClose());
+
   return (
     <div
       className="fixed inset-0 z-[60] flex justify-end"
@@ -2495,6 +2528,11 @@ function PassReasonModal({
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, [onClose]);
+
+  // Also mounts only while open, same as TearsheetModal above — hardware
+  // back closes this confirmation first rather than the tearsheet or page
+  // underneath it.
+  useBackClose(true, onClose);
 
   return (
     <div

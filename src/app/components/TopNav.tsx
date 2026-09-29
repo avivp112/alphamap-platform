@@ -13,6 +13,7 @@ import {
   type Notification,
 } from '../../lib/supabase';
 import { homePathNow } from '../../lib/navHome';
+import { useBackClose } from '../../lib/hardwareBack';
 import { BrandMark, BrandWordmark } from './BrandMark';
 import { LanguageSelector } from './LanguageSelector';
 
@@ -301,6 +302,14 @@ export function TopNav() {
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navItemsRef = useRef<HTMLDivElement>(null);
 
+  // Hardware back button (Android) closes whichever of these is open —
+  // mobile nav, account menu, notification bell — before it ever falls
+  // through to navigating the page underneath or exiting the app. See
+  // lib/hardwareBack.ts.
+  useBackClose(mobileOpen, () => setMobileOpen(false));
+  useBackClose(menuOpen, () => setMenuOpen(false));
+  useBackClose(notifOpen, () => setNotifOpen(false));
+
   useEffect(() => {
     let cancelled = false;
 
@@ -462,7 +471,7 @@ export function TopNav() {
   const initials = user ? getInitials(user) : null;
 
   return (
-    <header className="sticky top-0 z-30 relative flex min-h-[72px] sm:min-h-16 w-full items-center justify-between border-b border-white native:border-gray-100 bg-white px-4 lg:px-6 native:pl-5 native:pr-4 pt-[env(safe-area-inset-top)] shadow-sm">
+    <header className="sticky top-0 z-30 relative flex min-h-[84px] sm:min-h-20 w-full items-center justify-between border-b border-white native:border-gray-100 bg-white px-4 lg:px-6 native:pl-5 native:pr-4 pt-[env(safe-area-inset-top)] shadow-sm">
       {/* Logo (+ mobile nav trigger) */}
       <div className="flex items-center gap-1 native:gap-2 flex-none min-w-0">
         {/* Was a plain <div>, so clicking it did nothing — the one thing every

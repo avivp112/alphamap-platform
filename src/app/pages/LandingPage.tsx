@@ -962,7 +962,7 @@ export function LandingPage() {
 
       {/* ── Fixed header ─────────────────────────────────────────────────────── */}
       <header
-        className="fixed top-0 left-0 right-0 z-50 flex min-h-20 w-full items-center justify-between native:justify-end gap-2 px-4 sm:px-6 lg:px-12 native:px-5 pt-[env(safe-area-inset-top)]"
+        className="fixed top-0 left-0 right-0 z-50 flex min-h-24 w-full items-center justify-between native:justify-end gap-2 px-4 sm:px-6 lg:px-12 native:px-5 pt-[env(safe-area-inset-top)]"
         style={{
           background:    scrolled ? "rgba(255,255,255,0.94)" : "rgba(255,255,255,0.7)",
           backdropFilter:"blur(14px)",
