@@ -434,6 +434,19 @@ deploy-public-market-functions:
     - deploy_fn ingest-startup
 
 # ── Embedding backfill ────────────────────────────────────────────────────────
+# SUPERSEDED as the production automation path by supabase/functions/
+# backfill-embeddings + its pg_cron schedule (20261004000000_schedule_
+# embedding_backfill.sql), which runs daily at 04:00 inside the same database
+# every other sourcing-pipeline step (ingesters, link_oss_projects,
+# resolve_tier1, generate_live_alerts) already schedules itself with — no
+# GitLab Pipeline Schedule object to remember to create, which is exactly the
+# setup step this job sat behind, unconfigured, since it was written (a live
+# check via the GitLab API found zero pipeline schedules ever existed for
+# this project). This job is kept only as a manual/local escape hatch (e.g. a
+# one-off FORCE=true re-embed after a model change) — the line below is still
+# accurate background for THAT use, not for how production keeps
+# `startups.embedding` current day to day anymore.
+#
 # Runs on a SCHEDULE, never on the manual deploy pipeline. Two reasons: it costs
 # real OpenAI money per row, and it walks the whole corpus — attaching that to
 # every deploy would make shipping a code change slow and expensive for no
