@@ -35,9 +35,11 @@
 // Deploy:  supabase functions deploy chat-analyst --no-verify-jwt
 // Secrets: SELF_HOSTED_LLM_URL, SELF_HOSTED_LLM_KEY (our self-hosted,
 //          fine-tuned LLM behind vLLM's OpenAI-compatible server — see
-//          supabase/functions/.env.example), OPENAI_API_KEY (semantic_search
-//          tool's embedding step only — same key semantic-search/index.ts
-//          already uses; embeddings aren't served by the self-hosted LLM).
+//          supabase/functions/.env.example), RUNPOD_TEI_URL (semantic_search
+//          tool's embedding step only — same self-hosted Text Embeddings
+//          Inference server semantic-search/index.ts already uses; the chat
+//          LLM above doesn't serve embeddings). RUNPOD_TEI_KEY optional, only
+//          if that TEI instance has its own auth.
 //          SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are platform-injected.
 // =============================================================================
 
@@ -340,8 +342,7 @@ const corsHeaders = {
 const MODEL           = Deno.env.get("CHAT_ANALYST_MODEL") ?? Deno.env.get("SELF_HOSTED_LLM_MODEL") ?? "";
 const MAX_TOKENS       = Number(Deno.env.get("CHAT_ANALYST_MAX_TOKENS") ?? 1500);
 const MAX_ITERATIONS   = Number(Deno.env.get("CHAT_ANALYST_MAX_ITERATIONS") ?? 4);
-const EMBED_MODEL       = "text-embedding-3-small";
-const EMBED_DIMS         = 1536; // must match startups/investors.embedding + the backfill script
+const EMBED_MODEL       = "nomic-ai/nomic-embed-text-v1.5"; // must match startups/investors.embedding's vector(768) + the backfill function
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -453,17 +454,52 @@ const TOOL_LABELS: Record<string, string> = {
   search_investors: "Searching investors…",
 };
 
-// ── Embeddings (same model/approach as semantic-search/index.ts) ──────────────
+// ── Embeddings (same TEI server/model as semantic-search/index.ts) ────────────
+// Inlined for the same reason SelfHostedLLM above is: this function is
+// deployed by pasting a single file into the Supabase Dashboard's function
+// editor, so it can't import the canonical, more-documented copy at
+// supabase/functions/_shared/tei-client.ts — keep the two in sync if this
+// ever changes. Talks to RUNPOD_TEI_URL + "/v1/embeddings" (TEI's
+// OpenAI-compatible route). nomic-embed-text-v1.5 requires the "search_query: "
+// task prefix on query text for correct retrieval quality (see
+// _shared/tei-client.ts's header comment for why) — still applied here even
+// though batching and embedDocuments' corpus-side prefix aren't needed, since
+// this call site only ever embeds one user query at a time.
 
-async function embedQuery(text: string, apiKey: string): Promise<number[]> {
-  const res = await fetch("https://api.openai.com/v1/embeddings", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: EMBED_MODEL, input: text, dimensions: EMBED_DIMS }),
-  });
-  if (!res.ok) throw new Error(`OpenAI ${res.status}: ${await res.text()}`);
-  const json = await res.json() as { data: { embedding: number[] }[] };
-  return json.data[0].embedding;
+const TEI_MAX_RETRIES = 5;
+
+async function embedQuery(text: string, teiUrl: string, teiKey: string | undefined): Promise<number[]> {
+  const url = `${teiUrl.replace(/\/$/, "")}/v1/embeddings`;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (teiKey) headers.Authorization = `Bearer ${teiKey}`;
+
+  let attempt = 0;
+  for (;;) {
+    attempt++;
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model: EMBED_MODEL, input: [`search_query: ${text}`] }),
+        signal: AbortSignal.timeout(60_000),
+      });
+    } catch (err) {
+      if (attempt > TEI_MAX_RETRIES) throw new Error(`TEI request failed (network): ${(err as Error).message}`);
+      await new Promise((r) => setTimeout(r, Math.min(2 ** attempt * 1000, 32_000)));
+      continue;
+    }
+
+    if (res.status === 429 || res.status >= 500) {
+      if (attempt > TEI_MAX_RETRIES) throw new Error(`TEI ${res.status} after ${TEI_MAX_RETRIES} retries`);
+      await new Promise((r) => setTimeout(r, Math.min(2 ** attempt * 1000, 32_000)));
+      continue;
+    }
+    if (!res.ok) throw new Error(`TEI ${res.status}: ${(await res.text()).slice(0, 2000)}`);
+
+    const body = await res.json() as { data: { index: number; embedding: number[] }[] };
+    return body.data[0].embedding;
+  }
 }
 
 // ── Match-row builders (same shape match_companies_and_funds returns, so the
@@ -531,14 +567,15 @@ async function runTool(
   name: string,
   input: Record<string, unknown>,
   supa: SupabaseClient,
-  openaiKey: string | undefined,
+  teiUrl: string | undefined,
+  teiKey: string | undefined,
 ): Promise<ToolOutcome> {
   switch (name) {
     case "semantic_search": {
-      if (!openaiKey) throw new Error("OPENAI_API_KEY is not configured");
+      if (!teiUrl) throw new Error("RUNPOD_TEI_URL is not configured");
       const query = s(input.query);
       if (!query) return { rows: [], matches: [] };
-      const embedding = await embedQuery(query, openaiKey);
+      const embedding = await embedQuery(query, teiUrl, teiKey);
       const entityFilter = ["all", "startup", "investor"].includes(input.entity_filter as string)
         ? input.entity_filter : "all";
       const { data, error } = await supa.rpc("match_companies_and_funds", {
@@ -761,7 +798,8 @@ Deno.serve(async (req: Request) => {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-  const openaiKey = Deno.env.get("OPENAI_API_KEY"); // semantic_search tool only — degrades gracefully without it
+  const teiUrl = Deno.env.get("RUNPOD_TEI_URL"); // semantic_search tool only — degrades gracefully without it
+  const teiKey = Deno.env.get("RUNPOD_TEI_KEY") || undefined;
   const llm = new SelfHostedLLM({ baseUrl: llmBaseUrl, apiKey: llmApiKey });
   const supa = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -792,7 +830,7 @@ Deno.serve(async (req: Request) => {
             const label = TOOL_LABELS[t.name] ?? `Running ${t.name}…`;
             emit({ type: "tool_start", tool: t.name, label });
             try {
-              const { rows, matches } = await runTool(t.name, t.input as Record<string, unknown>, supa, openaiKey);
+              const { rows, matches } = await runTool(t.name, t.input as Record<string, unknown>, supa, teiUrl, teiKey);
               if (matches.length > 0) emit({ type: "matches", items: matches });
               toolResults.push({
                 type: "tool_result",

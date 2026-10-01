@@ -18,7 +18,10 @@
 // feeds).
 //
 // Secrets: SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (auto-injected)
-//          OPENAI_API_KEY (REQUIRED — supabase secrets set OPENAI_API_KEY="sk-...")
+//          RUNPOD_TEI_URL (REQUIRED — supabase secrets set
+//          RUNPOD_TEI_URL="https://<POD_ID>-8080.proxy.runpod.net")
+//          RUNPOD_TEI_KEY (optional — only if the TEI instance sits behind
+//          its own auth, which a private RunPod proxy URL doesn't by default)
 //
 // Deploy:  supabase functions deploy backfill-embeddings --no-verify-jwt
 // Invoke:  POST {}                                  -> dry run, startups+investors
@@ -32,10 +35,10 @@
 //      invoked repeatedly always makes forward progress through the backlog
 //      rather than re-reading the same head every time.
 //   2. Skip-unchanged: md5("<model>:<dims>:<source text>") compared against
-//      the stored embedding_source_hash. An unchanged row costs zero OpenAI
+//      the stored embedding_source_hash. An unchanged row costs zero TEI
 //      spend on a re-run. p_force / {"force":true} re-embeds regardless (e.g.
 //      after a model/dimension change).
-//   3. Batched OpenAI calls: EMBED_BATCH inputs per request, not one per row.
+//   3. Batched TEI calls: EMBED_BATCH inputs per request, not one per row.
 //
 // ── WHY AN EDGE FUNCTION AND NOT GITHUB ACTIONS / GITLAB CI ─────────────────
 //   Both of those need a human to create a schedule object (GitLab) or add
@@ -44,9 +47,9 @@
 //   pg_cron + pg_net needs none of that: once this migration applies, the job
 //   exists and fires on schedule, the same as every other ingester already
 //   does. The one remaining manual step -- `supabase secrets set
-//   OPENAI_API_KEY=...` -- is unavoidable (nobody but the project owner has
-//   this key) and is the exact same one-time step every other connector
-//   already requires for ITS OWN API credential.
+//   RUNPOD_TEI_URL=...` -- is unavoidable (the URL is specific to this
+//   RunPod instance) and is the exact same one-time step every other
+//   connector already requires for ITS OWN endpoint/credential.
 //   Each invocation processes at most `batchSize` rows per table per call,
 //   so a single run finishes comfortably inside the net.http_post
 //   timeout_milliseconds used for every other scheduled Edge Function call in
@@ -54,16 +57,29 @@
 //   re-invocation plus the self-advancing queue means the backlog is worked
 //   down a batch at a time rather than needing one run to clear it all.
 //
+// ── WHY TEI, NOT OPENAI ──────────────────────────────────────────────────────
+//   This function originally called OpenAI's text-embedding-3-small (1536-d).
+//   That dependency is now fully removed in favour of a self-hosted Text
+//   Embeddings Inference (TEI) server running nomic-ai/nomic-embed-text-v1.5
+//   (768-d) on the same RunPod instance as the self-hosted LLM, behind TEI's
+//   own OpenAI-compatible /v1/embeddings route (see
+//   supabase/functions/_shared/tei-client.ts for the client and
+//   20261005000000_update_embedding_vector_dimensions.sql for the matching
+//   vector(768) column migration — a 1536-d and a 768-d vector are different,
+//   incompatible coordinate spaces, so that migration nulls every existing
+//   embedding and this function's self-advancing queue naturally re-embeds
+//   the whole corpus against the new model on its next scheduled runs).
+//
 // ── VERIFICATION STATUS ──────────────────────────────────────────────────────
-//   The sandbox blocks outbound HTTPS, so the OpenAI call path is unexercised
+//   The sandbox blocks outbound HTTPS, so the TEI call path is unexercised
 //   here. The source-text composition, hashing and queue-ordering logic is
-//   unchanged from scripts/backfill_embeddings.ts, which has run against a
-//   live OpenAI key before (see that script's own history). Run with
-//   dryRun:true first against a real project to confirm the queue looks
-//   right before flipping to live.
+//   unchanged from the OpenAI-era version of this function (and, before
+//   that, scripts/backfill_embeddings.ts). Run with dryRun:true first against
+//   a real project to confirm the queue looks right before flipping to live.
 // =============================================================================
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { embedDocuments } from "../_shared/tei-client.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -74,10 +90,9 @@ const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { ...CORS, "Content-Type": "application/json" } });
 
 const DEFAULT_BATCH_SIZE  = 500;   // rows read from DB per table per invocation
-const DEFAULT_EMBED_BATCH = 128;   // inputs per OpenAI request
-const DEFAULT_MODEL       = "text-embedding-3-small";
-const DEFAULT_DIMENSIONS  = 1536;  // must match startups.embedding / investors.embedding vector(N)
-const MAX_RETRIES         = 5;
+const DEFAULT_EMBED_BATCH = 128;   // inputs per TEI request
+const DEFAULT_MODEL       = "nomic-ai/nomic-embed-text-v1.5";
+const DEFAULT_DIMENSIONS  = 768;   // must match startups.embedding / investors.embedding vector(N)
 
 type TableName = "startups" | "investors";
 
@@ -119,36 +134,6 @@ async function md5Hex(s: string): Promise<string> {
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function embedBatch(inputs: string[], apiKey: string, model: string, dimensions: number): Promise<number[][]> {
-  let attempt = 0;
-  for (;;) {
-    attempt++;
-    let res: Response;
-    try {
-      res = await fetch("https://api.openai.com/v1/embeddings", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model, input: inputs, dimensions }),
-        signal: AbortSignal.timeout(60_000),
-      });
-    } catch (err) {
-      if (attempt > MAX_RETRIES) throw err;
-      await new Promise((r) => setTimeout(r, Math.min(2 ** attempt * 1000, 32_000)));
-      continue;
-    }
-
-    if (res.status === 429 || res.status >= 500) {
-      if (attempt > MAX_RETRIES) throw new Error(`OpenAI ${res.status} after ${MAX_RETRIES} retries`);
-      await new Promise((r) => setTimeout(r, Math.min(2 ** attempt * 1000, 32_000)));
-      continue;
-    }
-    if (!res.ok) throw new Error(`OpenAI ${res.status}: ${await res.text()}`);
-
-    const body = await res.json() as { data: { index: number; embedding: number[] }[] };
-    return body.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
-  }
-}
-
 interface BackfillOptions {
   dryRun: boolean;
   batchSize: number;
@@ -156,7 +141,8 @@ interface BackfillOptions {
   force: boolean;
   model: string;
   dimensions: number;
-  apiKey: string;
+  teiUrl: string;
+  teiKey?: string;
 }
 
 async function backfillTable(supabase: SupabaseClient, table: TableName, opts: BackfillOptions) {
@@ -191,7 +177,9 @@ async function backfillTable(supabase: SupabaseClient, table: TableName, opts: B
       const chunk = pending.slice(i, i + opts.embedBatch);
       if (opts.dryRun) { embedded += chunk.length; continue; }
 
-      const vectors = await embedBatch(chunk.map((c) => c.text), opts.apiKey, opts.model, opts.dimensions);
+      const vectors = await embedDocuments(chunk.map((c) => c.text), {
+        baseUrl: opts.teiUrl, apiKey: opts.teiKey, model: opts.model,
+      });
       const now = new Date().toISOString();
 
       // Per-row update (not a bulk upsert): Supabase/PostgREST can't upsert
@@ -225,13 +213,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!SUPABASE_URL || !SERVICE_KEY) return json({ error: "Supabase env not available" }, 500);
 
-  const apiKey = Deno.env.get("OPENAI_API_KEY")?.trim();
-  if (!apiKey) {
+  const teiUrl = Deno.env.get("RUNPOD_TEI_URL")?.trim();
+  if (!teiUrl) {
     return json({
-      error: "OPENAI_API_KEY is not set.",
-      fix: 'supabase secrets set OPENAI_API_KEY="sk-..."',
+      error: "RUNPOD_TEI_URL is not set.",
+      fix: 'supabase secrets set RUNPOD_TEI_URL="https://<POD_ID>-8080.proxy.runpod.net"',
     }, 500);
   }
+  const teiKey = Deno.env.get("RUNPOD_TEI_KEY")?.trim() || undefined;
 
   let opts: BackfillOptions = {
     dryRun: true,
@@ -240,7 +229,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
     force: false,
     model: DEFAULT_MODEL,
     dimensions: DEFAULT_DIMENSIONS,
-    apiKey,
+    teiUrl,
+    teiKey,
   };
   let table = "both";
 

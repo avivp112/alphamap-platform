@@ -896,7 +896,7 @@ export interface UserInteraction {
  * periodically by a batch job (later phase) from user_interactions +
  * watchlist_items. Never written directly by the client — the embedding
  * itself isn't exposed here since there's no client use case for the raw
- * 1536-dim vector yet, only the metadata needed to gate the UI. */
+ * 768-dim vector yet, only the metadata needed to gate the UI. */
 export interface UserPreferenceVectorMeta {
   user_id: string;
   /** Gates the UI: below some minimum, show "still calibrating" rather than

@@ -33,10 +33,12 @@
 --   loss.
 --
 -- ── PREREQUISITE ─────────────────────────────────────────────────────────────
---   OPENAI_API_KEY must be set as an Edge Function secret before this job's
---   first live run, exactly like every other connector's own API key:
---     supabase secrets set OPENAI_API_KEY="sk-..."
---   A missing key returns a clean error response, which pg_cron records as a
+--   RUNPOD_TEI_URL must be set as an Edge Function secret before this job's
+--   first live run (as of 20261005000000_update_embedding_vector_dimensions,
+--   which moved embedding generation off OpenAI onto a self-hosted TEI
+--   server), exactly like every other connector's own endpoint/credential:
+--     supabase secrets set RUNPOD_TEI_URL="https://<POD_ID>-8080.proxy.runpod.net"
+--   A missing value returns a clean error response, which pg_cron records as a
 --   failed run in cron.job_run_details (same failure mode documented in
 --   20260726250000 for a connector missing its own credential) -- it does
 --   not crash or affect any other scheduled job.
