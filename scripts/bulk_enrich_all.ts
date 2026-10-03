@@ -10,22 +10,36 @@
  * Search engine stack: Tavily (primary, budget-tracked) → Serper.dev (Google Search fallback)
  *   Serper replaces DuckDuckGo — it is a proper REST API with no rate-limit serialisation
  *   needed, so both primary and fallback can fire in parallel per company (funding history,
- *   amounts, investors, profile/headcount, competitors, news). Every query is anchored on the
- *   company's known website domain when one exists (preserved from the CSV import, not reset)
- *   — this disambiguates generic/ambiguous company names (e.g. "Actuality") from unrelated
- *   same-named entities and noise in plain name-only search. When no website is on file — the
- *   stealth/early-stage case most prone to this exact collision — the query falls back to the
- *   row's known country + a light category qualifier instead of searching the bare name alone.
+ *   amounts, investors, profile/headcount, competitors, news, ARR/revenue/valuation signals,
+ *   tech stack/GitHub/Hugging Face). Every query is anchored on the company's known website
+ *   domain when one exists (preserved from the CSV import, not reset) — this disambiguates
+ *   generic/ambiguous company names (e.g. "Actuality") from unrelated same-named entities and
+ *   noise in plain name-only search. When no website is on file — the stealth/early-stage case
+ *   most prone to this exact collision — the query falls back to the row's known country + a
+ *   light category qualifier instead of searching the bare name alone.
  *   Set SERP_KEY (Serper API key). TAVILY_API_KEY is optional; if absent, Serper is used
  *   for everything.
  *
- *   A context source runs alongside the searches: the company's own website (when known),
- *   fetched via Tavily Extract (root + /about, JS-rendered, budget-tracked like a search call)
- *   when Tavily is available, falling back to a plain fetch + cheerio scrape of the root page's
- *   title/meta description/body text otherwise or if Extract comes back empty — the single most
+ * Domain verification (Crunchbase/LinkedIn cross-match) — runs BEFORE the known website domain
+ *   is trusted as a search anchor (see verifyDomainMatch()). A dedicated Serper search for
+ *   "<name>" alongside Crunchbase/LinkedIn handles checks whether the candidate domain is
+ *   actually referenced there; a confident mismatch (a DIFFERENT domain explicitly named)
+ *   rejects the candidate for this pass — it falls back to the country-anchor path, same as "no
+ *   website on file" — rather than let a stale/colliding domain poison every search below with
+ *   results for the wrong company. No confirmation either way (the common case — most listings
+ *   never restate the website) is treated as inconclusive, not a rejection: proceeds as before.
+ *
+ *   A context source runs alongside the searches: the company's own website (when known and not
+ *   just rejected by domain verification above), fetched via a three-tier fallback —
+ *   (1) Jina Reader (https://r.jina.ai/<url>, free, no key required, clean pre-rendered
+ *   Markdown — the preferred source since Markdown is a better LLM input than stripped HTML);
+ *   (2) Tavily Extract (root + /about, JS-rendered, budget-tracked like a search call) when Jina
+ *   is blocked/unavailable and Tavily is available; (3) a plain fetch + cheerio scrape of the
+ *   root page's title/meta description/body text as the last resort. This is the single most
  *   reliable source for description/industry/HQ location, since it's the company describing
  *   itself rather than a third party. Best-effort throughout: sites that block bots, are JS-only
- *   SPAs, or time out just fail silently, same as a failed search — never blocks a company.
+ *   SPAs, or time out just fail silently, same as a failed search — never blocks a company. An
+ *   optional JINA_API_KEY raises Jina's rate limit but isn't required to function.
  *
  *   Two conditional, targeted second-pass deep dives run after the general-purpose pass, each
  *   only firing for the specific gap it exists to close (so the added search/API cost is
@@ -50,10 +64,11 @@
  *
  * Write strategy (enforced by code, not just prompt):
  *   All tiers   — only fills NULL profile fields (never overwrites existing non-null values)
- *                 always refreshes employee_count + growth_trend (time-varying metrics)
- *                 merges founders as a union (additive, never destructive)
+ *                 always refreshes employee_count + employee_range + growth_trend (time-varying)
+ *                 merges founders as a union (additive, never destructive) — including
+ *                 backfilling title/bio onto an already-recorded founder, never overwriting
  *                 appends new funding rounds with dedup (same type + date ±6 months)
- *                 sets leadership only when currently NULL
+ *                 sets leadership (including bio) only when currently NULL
  *                 sets competitors (4-5, each with a how-it-competes explanation) only when
  *                 currently NULL — cross-linked to our own tracked startups by domain match
  *                 sets acquisitions (companies THIS company bought) only when currently NULL —
@@ -62,8 +77,16 @@
  *                 dedicated search call, omitted rather than guessed
  *                 records per-investor dollar amounts on a round (funding_rounds.investor_amounts)
  *                 only for names explicitly disclosed — never a split of the round total
- *   Tier 3      — identical rule: since profile is complete, only headcount/growth_trend
- *                 are refreshed; everything else is fill-NULL only
+ *                 sets value_proposition/github_url/huggingface_url only when currently NULL
+ *                 sets tech_stack only when currently empty — best-effort, omitted rather than
+ *                 inferred from sector alone
+ *                 appends new arr_milestones/valuation_benchmarks with dedup (same figure +
+ *                 date) — these are a time series, unlike the fill-NULL-once fields above
+ *                 sets revenue_estimate only when currently NULL — a single current snapshot,
+ *                 not a history (see arr_milestones for that)
+ *   Tier 3      — identical rule: since profile is complete, only headcount/employee_range/
+ *                 growth_trend are refreshed; everything else is fill-NULL (or append-and-dedupe
+ *                 for the arr_milestones/valuation_benchmarks time series) only
  *   Confidence  — gates ONLY funding-round dollar figures, not the whole company. Profile
  *                 fields always write regardless of the overall score (each field already
  *                 carries its own "omit if unverifiable" instruction, so fabrication risk is
@@ -126,7 +149,11 @@ if (!process.env.TAVILY_API_KEY) {
   console.warn("⚠️  TAVILY_API_KEY not set — all searches will use Serper (Google).\n");
 }
 if (!process.env.SERP_KEY) {
-  console.warn("⚠️  SERP_KEY not set — Serper fallback unavailable. Only Tavily will be used.\n");
+  console.warn("⚠️  SERP_KEY not set — Serper fallback unavailable (only Tavily will be used for general search), " +
+    "and domain verification (Crunchbase/LinkedIn cross-match) will be skipped — every known website is trusted as-is.\n");
+}
+if (!process.env.JINA_API_KEY) {
+  console.warn("ℹ️   JINA_API_KEY not set — Jina Reader (company website fetch) will run unauthenticated, at a lower rate limit.\n");
 }
 
 // ── Clients ───────────────────────────────────────────────────────────────────
@@ -163,8 +190,8 @@ interface StartupRow {
   growth_trend: string | null;
   country: string | null;
   city: string | null;
-  founders: Array<PersonQualityTags & { name: string; linkedin_url: string | null }> | null;
-  leadership: Array<PersonQualityTags & { name: string; role: string; linkedin_url?: string | null; joined_date?: string | null }> | null;
+  founders: Array<PersonQualityTags & { name: string; linkedin_url: string | null; title?: string | null; bio?: string | null }> | null;
+  leadership: Array<PersonQualityTags & { name: string; role: string; linkedin_url?: string | null; joined_date?: string | null; bio?: string | null }> | null;
   competitors: Competitor[] | null;
   acquisitions: Acquisition[] | null;
   patent_count: number | null;
@@ -178,6 +205,38 @@ interface StartupRow {
   facebook_url: string | null;
   instagram_url: string | null;
   news: NewsItem[] | null;
+  value_proposition: string | null;
+  employee_range: string | null;
+  tech_stack: string[] | null;
+  github_url: string | null;
+  huggingface_url: string | null;
+  arr_milestones: ArrMilestone[] | null;
+  revenue_estimate: RevenueEstimate | null;
+  valuation_benchmarks: ValuationBenchmark[] | null;
+}
+
+type ConfidenceLevel = "low" | "medium" | "high";
+
+interface ArrMilestone {
+  arr: number;
+  date: string;
+  source: string | null;
+  confidence: ConfidenceLevel | null;
+}
+
+interface RevenueEstimate {
+  range_low: number | null;
+  range_high: number | null;
+  as_of_date: string | null;
+  source: string | null;
+  confidence: ConfidenceLevel | null;
+}
+
+interface ValuationBenchmark {
+  valuation: number;
+  date: string | null;
+  source: string | null;
+  is_estimated: boolean | null;
 }
 
 // Individual patent/patent-application records — richer than the older
@@ -253,11 +312,25 @@ interface PersonQualityTags {
   notable_pedigree?: boolean;
 }
 
-interface ExtractedFounder extends PersonQualityTags { name: string; linkedin_url?: string }
+interface ExtractedFounder extends PersonQualityTags {
+  name: string;
+  linkedin_url?: string;
+  // Current title, e.g. "CEO & Co-Founder" — distinct from the implicit
+  // "founder" status itself. Omit if not stated anywhere in the research.
+  title?: string;
+  // 1-2 sentence professional background, for the Overview tab's founder
+  // cards. Omit rather than pad with generic filler.
+  bio?: string;
+}
 
 interface ExtractedProfile {
   website?: string;
   description?: string;
+  // 1-2 sentence differentiator/positioning statement, distinct from the
+  // fuller multi-sentence `description` above — the "why this company wins"
+  // framing, not a restatement of what it does. Omit if not clearly
+  // supported by the research.
+  value_proposition?: string;
   industry?: string;
   founded_year?: number;
   country?: string;
@@ -299,6 +372,9 @@ interface ExtractedLeader extends PersonQualityTags {
   // When this person joined, if known — feeds the Recency & Activity
   // pillar. Best-effort; far more often omitted than known.
   joined_date?: string;
+  // 1-2 sentence professional background, for the Overview tab's team
+  // cards. Omit rather than pad with generic filler.
+  bio?: string;
 }
 
 interface ExtractedHeadcountPoint { date: string; employee_count: number; source?: string }
@@ -313,6 +389,34 @@ interface ExtractedAcquisition {
   description?: string;
 }
 
+// Financial/ARR milestones — distinct from funding_rounds: these are
+// reported revenue/valuation signals found independent of (or alongside) an
+// announced funding round, e.g. a press profile stating "the company crossed
+// $10M ARR in 2025" or an analyst estimating a $2B valuation with no
+// corresponding round announcement. Omit anything unverifiable, same as
+// every other array in this schema.
+interface ExtractedArrMilestone {
+  arr: number;
+  date?: string;
+  source?: string;
+  confidence?: ConfidenceLevel;
+}
+
+interface ExtractedRevenueEstimate {
+  range_low?: number;
+  range_high?: number;
+  as_of_date?: string;
+  source?: string;
+  confidence?: ConfidenceLevel;
+}
+
+interface ExtractedValuationBenchmark {
+  valuation: number;
+  date?: string;
+  source?: string;
+  is_estimated?: boolean;
+}
+
 interface EnrichmentResult {
   is_public_company: boolean;
   is_tech_company: boolean;
@@ -322,6 +426,11 @@ interface EnrichmentResult {
   leadership: ExtractedLeader[];
   metrics: {
     headcount: number | null;
+    // Best-fit employee-count bracket (e.g. "51-200") — some sources
+    // (LinkedIn "company size", Crunchbase) only ever report a range, never
+    // an exact figure, so this captures that signal even when headcount
+    // itself can't be pinned down.
+    employee_range: string | null;
     growth_trend: string | null;
     headcount_history: ExtractedHeadcountPoint[];
   };
@@ -330,6 +439,16 @@ interface EnrichmentResult {
   news: ExtractedNewsItem[];
   patent_summary: { patent_count: number | null; patent_fields: string[] };
   patents: ExtractedPatentRecord[];
+  financials: {
+    arr_milestones: ExtractedArrMilestone[];
+    revenue_estimate: ExtractedRevenueEstimate | null;
+    valuation_benchmarks: ExtractedValuationBenchmark[];
+  };
+  technology: {
+    tech_stack: string[];
+    github_url: string | null;
+    huggingface_url: string | null;
+  };
   confidence_score: number;
   reasoning: string;
   source_url: string;
@@ -766,23 +885,150 @@ async function newsSearchWithImages(
   return serperNewsSearch(`"${name}"${anchor} news`);
 }
 
+// ── Domain verification (Crunchbase/LinkedIn cross-match) ──────────────────
+// The known `website` column (preserved from the CSV import) is used as a
+// disambiguating anchor on every search this pipeline runs — but a wrong
+// domain (a stale import, a name collision with an unrelated company) would
+// poison every downstream query with results for the WRONG company, silently.
+// Before trusting that domain, cross-check it against Crunchbase/LinkedIn —
+// two independent, authoritative-enough sources that a false-positive match
+// is unlikely to also satisfy. Serper specifically (not the Tavily-first
+// webSearch() stack): this is a cheap, unmetered, single-purpose lookup, not
+// part of the Tavily-budget-tracked general research pass.
+//
+// Returns:
+//   verified: true  — candidate domain found referenced in a Crunchbase/
+//                      LinkedIn result for this company name. Proceed as today.
+//   verified: false — a Crunchbase/LinkedIn result for this name references a
+//                      DIFFERENT domain explicitly. The candidate is rejected
+//                      as a search anchor for this pass (falls back to the
+//                      country-anchor path, same as "no website on file").
+//   verified: null  — no Crunchbase/LinkedIn result said anything about a
+//                      domain either way (the common case — most stub
+//                      listings don't restate the website). Inconclusive,
+//                      not a failure: proceed as today rather than discard a
+//                      perfectly good known domain for lack of confirmation.
+// Best-effort throughout — a Serper failure here just means "inconclusive",
+// never blocks a company.
+interface DomainVerification {
+  verified: boolean | null;
+  crunchbaseUrl: string | null;
+  linkedinUrl: string | null;
+  mismatchDomain: string | null;
+  note: string;
+}
+
+async function verifyDomainMatch(
+  name: string,
+  candidateWebsite: string | null | undefined,
+): Promise<DomainVerification> {
+  const candidateDomain = websiteDomain(candidateWebsite);
+  const empty: DomainVerification = { verified: null, crunchbaseUrl: null, linkedinUrl: null, mismatchDomain: null, note: "" };
+  if (!candidateDomain) return empty; // nothing to verify against
+
+  const raw = await serperSearch(`"${name}" (site:crunchbase.com/organization OR site:linkedin.com/company)`);
+  if (!raw) return empty; // Serper unavailable/failed — inconclusive, not a rejection
+
+  const crunchbaseMatch = raw.match(/https?:\/\/(?:www\.)?crunchbase\.com\/organization\/[^\s)\]]+/i);
+  const linkedinMatch   = raw.match(/https?:\/\/(?:www\.)?linkedin\.com\/company\/[^\s)\]]+/i);
+
+  // The candidate domain appearing anywhere in the combined result text
+  // (Crunchbase/LinkedIn listings frequently echo "Website: example.com" in
+  // their snippet/knowledge-graph description) is a positive match.
+  if (raw.toLowerCase().includes(candidateDomain)) {
+    return {
+      verified: true,
+      crunchbaseUrl: crunchbaseMatch?.[0] ?? null,
+      linkedinUrl: linkedinMatch?.[0] ?? null,
+      mismatchDomain: null,
+      note: `Candidate domain "${candidateDomain}" confirmed via Crunchbase/LinkedIn.`,
+    };
+  }
+
+  // No direct mention of our candidate — but if the result text explicitly
+  // names a DIFFERENT, specific website (e.g. "Website: otherdomain.com"),
+  // that's a real conflict signal worth rejecting the anchor over. A bare
+  // "doesn't mention our domain" with no competing domain either is just
+  // inconclusive (most listings never restate the website at all).
+  const websiteLineMatch = raw.match(/website[:\s]+(?:https?:\/\/)?(?:www\.)?([a-z0-9.-]+\.[a-z]{2,})/i);
+  const mentionedDomain  = websiteLineMatch?.[1]?.toLowerCase() ?? null;
+  if (mentionedDomain && mentionedDomain !== candidateDomain && (crunchbaseMatch || linkedinMatch)) {
+    return {
+      verified: false,
+      crunchbaseUrl: crunchbaseMatch?.[0] ?? null,
+      linkedinUrl: linkedinMatch?.[0] ?? null,
+      mismatchDomain: mentionedDomain,
+      note: `Crunchbase/LinkedIn reference "${mentionedDomain}", not candidate "${candidateDomain}" — likely false-positive domain match.`,
+    };
+  }
+
+  return {
+    verified: null,
+    crunchbaseUrl: crunchbaseMatch?.[0] ?? null,
+    linkedinUrl: linkedinMatch?.[0] ?? null,
+    mismatchDomain: null,
+    note: "Crunchbase/LinkedIn found but neither confirmed nor contradicted the candidate domain.",
+  };
+}
+
 // ── Company's own website ──────────────────────────────────────────────────
 // The single most reliable source for description/industry/HQ location is the
 // company's own site, but search-engine snippets rarely capture it in full
 // (they show a fragment of whatever page ranked, not the "About" copy).
-// Prefers Tavily Extract (root + /about, one call, JS-rendered) when Tavily
-// is available — it handles bot-blocked pages and JS-only SPAs (common for
-// early-stage startup sites on Webflow/Framer/Next.js client rendering) far
-// more reliably than a raw HTML fetch. Falls back to a plain fetch + cheerio
-// scrape of the root page when Tavily is unavailable/exhausted, or when
-// Extract itself comes back empty. Either way, failure here just means one
-// fewer context section, same as a failed search — never blocks a company.
+//
+// Three-tier fallback, in order:
+//   1. Jina Reader (https://r.jina.ai/<url>) — PRIMARY. Returns clean,
+//      pre-rendered Markdown (JS included) for free, no API key required
+//      (an optional JINA_API_KEY raises the rate limit but isn't needed to
+//      function). Markdown is a better LLM input than raw HTML-stripped text
+//      — headings/links survive, nav/boilerplate mostly doesn't.
+//   2. Tavily Extract (root + /about, one call, JS-rendered) — used when
+//      Jina is blocked/rate-limited/unavailable, or Tavily is otherwise
+//      going to be used this run anyway (shares the same budget-tracked
+//      client as the search calls).
+//   3. Plain fetch + cheerio scrape of the root page — last resort when
+//      both of the above fail or are unavailable.
+// Every tier is best-effort: failure just means one fewer context section,
+// same as a failed search — never blocks a company.
 const FETCH_TIMEOUT_MS = 8_000;
+const JINA_TIMEOUT_MS  = 15_000; // Jina renders JS server-side — slower than a raw fetch
 const MAX_WEBSITE_CHARS = 3_000;
+
+// r.jina.ai/<url> — <url> must be a fully-qualified URL appended directly
+// after the path segment (not URL-encoded as a query param; that's Jina's
+// documented format). Returns markdown as plain text on success. A 403/451
+// means the TARGET site is blocking Jina's crawler (not a Jina outage) —
+// still just a "blocked" signal that falls through to Tavily, same as any
+// other failure here.
+async function fetchViaJinaReader(url: string): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), JINA_TIMEOUT_MS);
+    const headers: Record<string, string> = { "Accept": "text/plain" };
+    if (process.env.JINA_API_KEY) headers.Authorization = `Bearer ${process.env.JINA_API_KEY}`;
+
+    const res = await fetch(`https://r.jina.ai/${url}`, { signal: controller.signal, headers })
+      .finally(() => clearTimeout(timer));
+
+    // 403/451 = target site blocking Jina's crawler; 429 = Jina's own rate
+    // limit (more likely without JINA_API_KEY) — both are "blocked", not a
+    // hard error, so just fall through to Tavily rather than retry.
+    if (!res.ok) return null;
+
+    const text = (await res.text()).trim();
+    return text ? text.slice(0, MAX_WEBSITE_CHARS) : null;
+  } catch {
+    // Timed out or network-level failure — best-effort, fail silently.
+    return null;
+  }
+}
 
 async function fetchCompanyWebsite(website: string | null | undefined): Promise<string | null> {
   if (!website) return null;
   const url = website.startsWith("http") ? website : `https://${website}`;
+
+  const viaJina = await fetchViaJinaReader(url);
+  if (viaJina) return `[Fetched via Jina Reader]\n${viaJina}`;
 
   if (!tavilyExhausted) {
     const aboutUrl  = url.replace(/\/+$/, "") + "/about";
@@ -911,17 +1157,33 @@ async function researchCompany(
   website?: string | null,
   country?: string | null,
 ): Promise<EnrichmentResult | null> {
-  const domain = websiteDomain(website);
-  // The known domain is the strongest disambiguator, so prefer it. When no
-  // website is on file — exactly the stealth/early-stage case most prone to
-  // name collisions (e.g. "1001 Fonts" vs "1001 AI") — fall back to country
-  // + a light category qualifier instead of searching the bare name alone.
+  // Domain verification (Crunchbase/LinkedIn cross-match) — runs BEFORE the
+  // known website is trusted as a search anchor or fetch target. A confident
+  // mismatch (verified: false) means the stored domain likely belongs to an
+  // unrelated same-named company; treat it exactly like "no website on file"
+  // for the rest of this pass rather than let it poison every search below
+  // with results for the wrong company. verified: true/null both proceed as
+  // before — see verifyDomainMatch() for the full semantics.
+  const domainVerification = await verifyDomainMatch(name, website);
+  if (domainVerification.verified === false) {
+    console.warn(`    ⚠️  Domain verification: ${domainVerification.note}`);
+  } else if (domainVerification.verified === true) {
+    console.log(`    ✅  Domain verified via Crunchbase/LinkedIn`);
+  }
+  const effectiveWebsite = domainVerification.verified === false ? null : website;
+
+  const domain = websiteDomain(effectiveWebsite);
+  // The known (and now verified-or-inconclusive) domain is the strongest
+  // disambiguator, so prefer it. When no website is on file or it was just
+  // rejected above — exactly the stealth/early-stage case most prone to name
+  // collisions (e.g. "1001 Fonts" vs "1001 AI") — fall back to country + a
+  // light category qualifier instead of searching the bare name alone.
   const anchor = domain
     ? ` "${domain}"`
     : country
       ? ` ${country} (startup OR tech company)`
       : "";
-  const [historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw, newsResult, patentsRaw, ownSiteRaw] = await Promise.all([
+  const [historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw, newsResult, patentsRaw, financialsRaw, techRaw, ownSiteRaw] = await Promise.all([
     webSearch(`"${name}"${anchor} seed round "Series A" first funding earliest founding investors site:crunchbase.com OR site:techcrunch.com OR site:pitchbook.com`),
     webSearch(`"${name}"${anchor} total funding raised since founding all rounds USD million billion valuation announcement history`),
     webSearch(`"${name}"${anchor} lead investor venture capital backed participated investors funded round investment amount check size`),
@@ -940,12 +1202,19 @@ async function researchCompany(
     // as one keyword among many and rarely surfaces an actual patent
     // record; searching Google Patents specifically finds real filings.
     webSearch(`"${name}"${anchor} patent OR patents OR site:patents.google.com`),
-    fetchCompanyWebsite(website),
+    // Dedicated ARR/revenue/valuation search — these are specific, fairly
+    // rare disclosures (an "$X ARR" milestone, an analyst-estimated
+    // valuation) that the generic funding/profile queries above rarely
+    // surface, since they're not phrased around "funding" or "raised".
+    webSearch(`"${name}"${anchor} ARR "annual recurring revenue" OR revenue estimate OR valued at OR valuation milestone`),
+    // Dedicated tech-stack/GitHub/Hugging Face search.
+    webSearch(`"${name}"${anchor} tech stack built with OR site:github.com OR site:huggingface.co`),
+    fetchCompanyWebsite(effectiveWebsite),
   ]);
   const newsRaw    = newsResult.text;
   const newsImages = newsResult.images;
 
-  if (![historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw, newsRaw, patentsRaw, ownSiteRaw].some(Boolean)) return null;
+  if (![historyRaw, amountsRaw, backersRaw, profileRaw, competitorsRaw, newsRaw, patentsRaw, financialsRaw, techRaw, ownSiteRaw].some(Boolean)) return null;
 
   const context = [
     `## Company's Own Website (HIGHEST TRUST for description, industry, and HQ location — this is the company describing itself, not a third party)\n${ownSiteRaw ?? "(not fetched — no known website, fetch failed, or bot-blocked)"}`,
@@ -954,6 +1223,8 @@ async function researchCompany(
     `## Investors & Backers\n${backersRaw            ?? "(search failed)"}`,
     `## Company Profile & Headcount\n${profileRaw   ?? "(search failed)"}`,
     `## Patents (for the patents[] field — only include a real, verifiable patent or published application; return [] if this search found nothing)\n${patentsRaw ?? "(search failed)"}`,
+    `## ARR / Revenue / Valuation Milestones (for financials.arr_milestones, financials.revenue_estimate, financials.valuation_benchmarks — only report a figure explicitly stated in this research; return [] / omit if this search found nothing concrete)\n${financialsRaw ?? "(search failed)"}`,
+    `## Tech Stack / GitHub / Hugging Face (for technology.tech_stack, technology.github_url, technology.huggingface_url)\n${techRaw ?? "(search failed)"}`,
     `## Competitors & Alternatives\n${competitorsRaw ?? "(search failed)"}`,
     `## Recent News & Press Coverage (for the news[] field — only use articles with a real, findable publication date)\n${newsRaw ?? "(search failed)"}`,
     newsImages.length > 0
@@ -1004,6 +1275,10 @@ async function researchCompany(
                   "Every sentence must add real information found in the research — never pad with generic filler.",
                 ].join(" "),
               },
+              value_proposition: {
+                type: "string",
+                description: "1-2 sentences: the company's distinct positioning/differentiation — 'why this company wins' — not a restatement of what it does (that's `description`'s job). Omit if the research doesn't clearly support a specific claim.",
+              },
               industry:     { type: "string",  description: "Primary tech sector (e.g. 'AI & ML', 'Cybersecurity', 'FinTech')." },
               founded_year: { type: "integer", description: "Year the company was incorporated." },
               country:      { type: "string",  description: "HQ country full name (e.g. 'United States')." },
@@ -1015,6 +1290,8 @@ async function researchCompany(
                   type: "object" as const,
                   properties: {
                     name:         { type: "string", description: "Full legal name." },
+                    title:        { type: "string", description: "Current title, e.g. 'CEO & Co-Founder'. Omit if not stated anywhere in the research." },
+                    bio:          { type: "string", description: "1-2 sentence professional background (prior companies, education, relevant expertise). Omit rather than pad with generic filler." },
                     linkedin_url: { type: "string", description: "Their personal linkedin.com/in/... profile URL, if found. Omit if not found — never guess or construct one from a name." },
                     ...PERSON_QUALITY_TAG_PROPERTIES,
                   },
@@ -1137,6 +1414,7 @@ async function researchCompany(
               properties: {
                 name:         { type: "string", description: "Full name." },
                 role:         { type: "string", description: "Current title (CEO, CTO, Co-Founder, Senior Engineer, etc.)." },
+                bio:          { type: "string", description: "1-2 sentence professional background (prior companies, education, relevant expertise). Omit rather than pad with generic filler." },
                 linkedin_url: { type: "string", description: "Their personal linkedin.com/in/... profile URL, if found. Omit if not found — never guess or construct one from a name." },
                 joined_date:  { type: "string", description: "Date they joined this company in this role, YYYY-MM-DD (YYYY-MM-01 if only month+year known). Only for a genuinely dateable hire (e.g. a hiring announcement or press mention) — omit for anyone whose start date isn't stated anywhere, which is most people." },
                 ...PERSON_QUALITY_TAG_PROPERTIES,
@@ -1150,6 +1428,11 @@ async function researchCompany(
               headcount: {
                 type: "number",
                 description: "Best available CURRENT total employee count as a plain integer. Omit if unknown.",
+              },
+              employee_range: {
+                type: "string",
+                enum: ["1-10","11-50","51-200","201-500","501-1000","1001-5000","5000+"],
+                description: "Best-fit employee-count bracket (e.g. LinkedIn 'company size', Crunchbase range) — fill this even when an exact headcount is also known. Omit if no range or exact figure is found anywhere.",
               },
               growth_trend: {
                 type: "string",
@@ -1298,6 +1581,70 @@ async function researchCompany(
               required: ["title"],
             },
           },
+          financials: {
+            type: "object" as const,
+            description: "ARR/revenue/valuation signals found independent of (or alongside) an announced funding round. Distinct from funding_rounds[].valuation, which belongs to one specific round. Best-effort — most companies disclose none of this; omit rather than estimate.",
+            properties: {
+              arr_milestones: {
+                type: "array",
+                description: "Every distinct, dated ARR (annual recurring revenue) figure explicitly reported for this company (e.g. 'crossed $10M ARR in 2025'). Return [] if none found — most companies never disclose this.",
+                items: {
+                  type: "object" as const,
+                  properties: {
+                    arr:        { type: "number", description: "USD plain integer ($10M -> 10000000)." },
+                    date:       { type: "string", description: "Date this figure was reported/accurate, YYYY-MM-DD. Use YYYY-01-01 if only the year is known." },
+                    source:     { type: "string", description: "Where this figure came from, e.g. 'TechCrunch article', 'company blog post'." },
+                    confidence: { type: "string", enum: ["low", "medium", "high"], description: "How directly this figure was stated vs. inferred/rounded." },
+                  },
+                  required: ["arr"],
+                },
+              },
+              revenue_estimate: {
+                type: "object" as const,
+                description: "A SINGLE current best-estimate revenue range, if one is reported anywhere (e.g. a database/analyst estimate like '$5M-$10M revenue'). Omit this whole object if no range is found — never fabricate one from headcount or funding alone.",
+                properties: {
+                  range_low:  { type: "number", description: "USD plain integer." },
+                  range_high: { type: "number", description: "USD plain integer." },
+                  as_of_date: { type: "string", description: "YYYY-MM-DD, or YYYY-01-01 if only the year is known." },
+                  source:     { type: "string", description: "Where this estimate came from." },
+                  confidence: { type: "string", enum: ["low", "medium", "high"] },
+                },
+              },
+              valuation_benchmarks: {
+                type: "array",
+                description: "Press/analyst-reported valuation figures NOT tied to a specific funding round already captured in funding_rounds[] (e.g. 'sources value the company at $2B as of 2025' with no corresponding round announcement). Return [] if every valuation you found is already attached to a round above — do not duplicate it here.",
+                items: {
+                  type: "object" as const,
+                  properties: {
+                    valuation:    { type: "number", description: "USD plain integer." },
+                    date:         { type: "string", description: "YYYY-MM-DD, or YYYY-01-01 if only the year is known." },
+                    source:       { type: "string" },
+                    is_estimated: { type: "boolean", description: "true if this is an analyst/press ESTIMATE rather than a company-disclosed figure." },
+                  },
+                  required: ["valuation"],
+                },
+              },
+            },
+          },
+          technology: {
+            type: "object" as const,
+            description: "Core technology/IP signals beyond the patents[] array above. Best-effort — omit any field you cannot verify.",
+            properties: {
+              tech_stack: {
+                type: "array",
+                items: { type: "string" },
+                description: "2-8 core technologies/frameworks/languages the company is known to build on (e.g. 'Python', 'Kubernetes', 'PyTorch'), from a careers page, engineering blog, or GitHub repo language stats. Omit entirely if not findable — never guess a generic stack from the sector alone.",
+              },
+              github_url: {
+                type: "string",
+                description: "The company's (not an individual employee's) GitHub organization URL, if found. Omit if not found.",
+              },
+              huggingface_url: {
+                type: "string",
+                description: "The company's Hugging Face organization URL, if found. Omit if not found.",
+              },
+            },
+          },
           confidence_score: {
             type: "number",
             description: [
@@ -1401,6 +1748,16 @@ STRICT RULES:
         headline topic, or publication). Skip it if nothing plausibly matches.
     Only leave image_url unset when neither source applies — never invent a URL, and never attach an
     image just because it's the only one available if it doesn't actually match.
+18. ARR / REVENUE / VALUATION — financials is best-effort and most companies disclose NONE of it; [] /
+    omitted is the normal, correct answer. arr_milestones is a dated HISTORY (one entry per distinct
+    reported figure, oldest to newest) — do not collapse multiple figures into one. revenue_estimate is a
+    SINGLE current snapshot, not a history — if the research shows multiple estimates over time, use only
+    the most recent. valuation_benchmarks is ONLY for a valuation NOT already attached to a round in
+    funding_rounds[] above — never duplicate a round's valuation here.
+19. TECH STACK / GITHUB / HUGGING FACE — technology.tech_stack must come from a concrete source (careers
+    page, engineering blog, GitHub repo languages), never inferred from the sector alone (e.g. do not assume
+    "Python" just because a company is "AI & ML"). github_url/huggingface_url are the company's own
+    organization pages, not a founder's personal account — omit if you can't tell the difference.
 
 Research data:
 ${context}`,
@@ -1415,13 +1772,22 @@ ${context}`,
 
   const i = tool.input as Partial<EnrichmentResult> & {
     profile?: Partial<ExtractedProfile>;
-    metrics?: { headcount?: number; growth_trend?: string; headcount_history?: ExtractedHeadcountPoint[] };
+    metrics?: { headcount?: number; employee_range?: string; growth_trend?: string; headcount_history?: ExtractedHeadcountPoint[] };
     competitors?: ExtractedCompetitor[];
     acquisitions?: ExtractedAcquisition[];
     news?: ExtractedNewsItem[];
     patent_summary?: { patent_count?: number; patent_fields?: string[] };
     patents?: ExtractedPatentRecord[];
+    financials?: {
+      arr_milestones?: ExtractedArrMilestone[];
+      revenue_estimate?: ExtractedRevenueEstimate;
+      valuation_benchmarks?: ExtractedValuationBenchmark[];
+    };
+    technology?: { tech_stack?: string[]; github_url?: string; huggingface_url?: string };
   };
+
+  const revenueEstimate = i.financials?.revenue_estimate;
+  const hasRevenueEstimate = revenueEstimate && (revenueEstimate.range_low != null || revenueEstimate.range_high != null);
 
   const result: EnrichmentResult = {
     is_public_company: i.is_public_company ?? false,
@@ -1432,6 +1798,7 @@ ${context}`,
     leadership:        i.leadership        ?? [],
     metrics: {
       headcount:         i.metrics?.headcount         ?? null,
+      employee_range:    i.metrics?.employee_range    ?? null,
       growth_trend:      i.metrics?.growth_trend      ?? null,
       headcount_history: (i.metrics?.headcount_history ?? []).filter((p) => p.date && p.employee_count != null),
     },
@@ -1443,6 +1810,16 @@ ${context}`,
       patent_fields: (i.patent_summary?.patent_fields ?? []).filter(Boolean),
     },
     patents:          (i.patents ?? []).filter((p) => p.title),
+    financials: {
+      arr_milestones: (i.financials?.arr_milestones ?? []).filter((m) => typeof m.arr === "number"),
+      revenue_estimate: hasRevenueEstimate ? revenueEstimate! : null,
+      valuation_benchmarks: (i.financials?.valuation_benchmarks ?? []).filter((v) => typeof v.valuation === "number"),
+    },
+    technology: {
+      tech_stack:      (i.technology?.tech_stack ?? []).filter(Boolean),
+      github_url:      i.technology?.github_url      ?? null,
+      huggingface_url: i.technology?.huggingface_url ?? null,
+    },
     confidence_score: typeof i.confidence_score === "number" ? i.confidence_score : 0,
     reasoning:        i.reasoning  ?? "",
     source_url:       i.source_url ?? "",
@@ -1756,12 +2133,13 @@ async function patchStartupProfile(
   existing: StartupRow,
   result: EnrichmentResult,
 ): Promise<{ fieldsPatched: number; patchedKeys: string[]; newsCount: number; newsWithImage: number }> {
-  const { profile, metrics, leadership } = result;
+  const { profile, metrics, leadership, financials, technology } = result;
   const patch: Record<string, unknown> = {};
 
   // Profile fields: fill NULL slots only (safe for all tiers including Tier 3)
   if (!existing.website      && profile.website)      patch.website      = profile.website;
   if (!existing.description  && profile.description)  patch.description  = profile.description;
+  if (!existing.value_proposition && profile.value_proposition) patch.value_proposition = profile.value_proposition;
   if (!existing.industry     && profile.industry)     patch.industry     = profile.industry;
   if (!existing.founded_year && profile.founded_year) patch.founded_year = profile.founded_year;
   if (!existing.country      && profile.country)      patch.country      = profile.country;
@@ -1808,6 +2186,8 @@ async function patchStartupProfile(
     .map((f) => ({
       name: String(f.name).trim(),
       linkedin_url: f.linkedin_url?.trim() || null,
+      title: f.title?.trim() || null,
+      bio: f.bio?.trim() || null,
       had_prior_exit: f.had_prior_exit,
       elite_background: f.elite_background,
       notable_pedigree: f.notable_pedigree,
@@ -1823,6 +2203,8 @@ async function patchStartupProfile(
       if (!match) return ef;
       const personPatch: Record<string, unknown> = {};
       if (match.linkedin_url && !ef.linkedin_url) personPatch.linkedin_url = match.linkedin_url;
+      if (match.title && !ef.title) personPatch.title = match.title;
+      if (match.bio && !ef.bio) personPatch.bio = match.bio;
       for (const tag of ["had_prior_exit", "elite_background", "notable_pedigree"] as const) {
         if (match[tag] === true && ef[tag] !== true) personPatch[tag] = true;
       }
@@ -1925,8 +2307,52 @@ async function patchStartupProfile(
     }));
   }
 
+  // Tech/IP links: fill-null only, same as website/linkedin_url.
+  if (!existing.github_url      && technology.github_url)      patch.github_url      = technology.github_url;
+  if (!existing.huggingface_url && technology.huggingface_url) patch.huggingface_url = technology.huggingface_url;
+
+  // Tech stack: fill-null-when-empty, same policy as patent_fields — a
+  // manually-curated stack is never overwritten by the pipeline.
+  if ((!existing.tech_stack || existing.tech_stack.length === 0) && technology.tech_stack.length > 0) {
+    patch.tech_stack = technology.tech_stack;
+  }
+
+  // ARR milestones: a dated HISTORY, not a one-shot fact — append newly
+  // found milestones and dedupe by (arr, date) rather than fill-null-once,
+  // since a later pass genuinely can surface a NEW milestone (e.g. this
+  // year's ARR figure) after an earlier one was already recorded. Same
+  // additive-union shape as founders, keyed on the pair since neither value
+  // alone uniquely identifies a milestone.
+  const existingArr = existing.arr_milestones ?? [];
+  const newArr = financials.arr_milestones
+    .map((m): ArrMilestone => ({
+      arr: m.arr, date: m.date ?? "unknown", source: m.source ?? null, confidence: m.confidence ?? null,
+    }))
+    .filter((m) => !existingArr.some((e) => e.arr === m.arr && e.date === m.date));
+  if (newArr.length > 0) patch.arr_milestones = [...existingArr, ...newArr];
+
+  // Revenue estimate: a SINGLE current snapshot (not a history — see
+  // arr_milestones above), so fill-null-only like the rest of the profile
+  // block rather than trying to decide which of two estimates is "more
+  // current".
+  if (!existing.revenue_estimate && financials.revenue_estimate) {
+    patch.revenue_estimate = financials.revenue_estimate;
+  }
+
+  // Valuation benchmarks: same append-and-dedupe-by-(value,date) treatment
+  // as arr_milestones, for the same reason — these accumulate across runs
+  // rather than being set once.
+  const existingValuations = existing.valuation_benchmarks ?? [];
+  const newValuations = financials.valuation_benchmarks
+    .map((v): ValuationBenchmark => ({
+      valuation: v.valuation, date: v.date ?? null, source: v.source ?? null, is_estimated: v.is_estimated ?? null,
+    }))
+    .filter((v) => !existingValuations.some((e) => e.valuation === v.valuation && e.date === v.date));
+  if (newValuations.length > 0) patch.valuation_benchmarks = [...existingValuations, ...newValuations];
+
   // Headcount + growth_trend: always refresh (time-varying — valid for all tiers)
   if (metrics.headcount    != null) patch.employee_count = metrics.headcount;
+  if (metrics.employee_range != null) patch.employee_range = metrics.employee_range;
   if (metrics.growth_trend != null) patch.growth_trend   = metrics.growth_trend;
 
   // fieldsPatched / patchedKeys (the meaningful, user-facing view of what was
@@ -1982,11 +2408,15 @@ async function patchStartupProfile(
   if (newsCount > 0)        parts.push(`${newsCount} news articles (${newsWithImage}/${newsCount} w/ image)`);
   if (patch.patents)        parts.push(`${(patch.patents as PatentRecord[]).length} patents`);
   else if (patch.patent_count != null) parts.push(`${patch.patent_count} patents (count only)`);
+  if (patch.tech_stack)     parts.push(`tech stack: ${(patch.tech_stack as string[]).join(", ")}`);
+  if (patch.arr_milestones)       parts.push(`${newArr.length} new ARR milestone(s)`);
+  if (patch.valuation_benchmarks) parts.push(`${newValuations.length} new valuation benchmark(s)`);
+  if (patch.revenue_estimate)     parts.push(`revenue estimate set`);
   if (patch.sector_id)          parts.push(`sector: ${profile.sector_name}`);
   if (tagSectorIds.length > 0)  parts.push(`tags: ${tagNames.join(", ")}`);
   const profileKeys = [
-    "website","description","industry","founded_year","country","city","founders",
-    "linkedin_url","facebook_url","instagram_url",
+    "website","description","value_proposition","industry","founded_year","country","city","founders",
+    "linkedin_url","facebook_url","instagram_url","github_url","huggingface_url",
   ].filter((k) => patch[k] !== undefined);
   if (profileKeys.length > 0) parts.push(`profile: ${profileKeys.join(", ")}`);
   if (parts.length > 0) console.log(`    👤  Patched: ${parts.join(" | ")}`);
@@ -2097,7 +2527,7 @@ async function main() {
   const startups = await fetchAllPaginated<StartupRow>((from, to) =>
     supabase
       .from("startups")
-      .select("id, name, website, description, industry, founded_year, employee_count, growth_trend, country, city, founders, leadership, competitors, acquisitions, patent_count, patent_fields, patents, funding_history_complete, updated_at, last_enriched_at, sector_id, linkedin_url, facebook_url, instagram_url, news")
+      .select("id, name, website, description, industry, founded_year, employee_count, growth_trend, country, city, founders, leadership, competitors, acquisitions, patent_count, patent_fields, patents, funding_history_complete, updated_at, last_enriched_at, sector_id, linkedin_url, facebook_url, instagram_url, news, value_proposition, employee_range, tech_stack, github_url, huggingface_url, arr_milestones, revenue_estimate, valuation_benchmarks")
       .order("name")
       .range(from, to),
   );
@@ -2220,6 +2650,7 @@ async function main() {
 
     const missingFields = [
       !row.description    && "description",
+      !row.value_proposition && "value proposition",
       !row.employee_count && "employees",
       !row.country        && "country",
       !hasRealRounds(rounds) && "real rounds",
@@ -2230,6 +2661,8 @@ async function main() {
       !row.instagram_url  && "Instagram",
       !row.sector_id      && "sector",
       !hasPatents(row)    && "patents",
+      !row.tech_stack?.length && "tech stack",
+      !row.arr_milestones?.length && "ARR milestones",
     ].filter(Boolean);
     if (missingFields.length > 0) {
       console.log(`    Missing before this pass: ${missingFields.join(", ")}`);
@@ -2330,6 +2763,7 @@ async function main() {
         const patched = new Set(profileResult.patchedKeys);
         const stillMissing = [
           !row.description       && !patched.has("description")    && "description",
+          !row.value_proposition && !patched.has("value_proposition") && "value proposition",
           !row.employee_count    && !patched.has("employee_count") && "employees",
           !row.country           && !patched.has("country")        && "country",
           !hasRealRounds(rounds) && roundsInserted === 0           && "real rounds",
@@ -2340,6 +2774,8 @@ async function main() {
           !row.instagram_url     && !patched.has("instagram_url")  && "Instagram",
           !row.sector_id         && !patched.has("sector_id")      && "sector",
           !hasPatents(row)       && !patched.has("patents")        && "patents",
+          !row.tech_stack?.length && !patched.has("tech_stack")     && "tech stack",
+          !row.arr_milestones?.length && !patched.has("arr_milestones") && "ARR milestones",
         ].filter(Boolean);
         if (stillMissing.length > 0) {
           console.log(`    ▫️  Still missing after this pass: ${stillMissing.join(", ")}`);
