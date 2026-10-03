@@ -478,6 +478,58 @@ type ProcessStatus =
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+// ── Model output sanitizer ───────────────────────────────────────────────────
+// Defends against two observed failure modes of the forced tool_choice call
+// on sparse/ambiguous companies (small/cheap models under tool use are not
+// perfectly schema-reliable, especially when they'd rather express "I don't
+// know" than correctly omit a field):
+//   1. A placeholder SENTINEL STRING (e.g. "<UNKNOWN>", "N/A") in a field that
+//      should have been omitted. Harmless by itself — until it lands in a
+//      column typed integer/numeric/date and Postgres rejects the whole
+//      .update() with "invalid input syntax for type integer" (every OTHER
+//      field in that patch is lost too, since it's one update call).
+//   2. An entire nested object field (profile/metrics/financials/technology)
+//      coming back as a STRINGIFIED JSON blob instead of a real object. Code
+//      downstream (e.g. the profile deep-dive merge) assumes object shape and
+//      does `profile[key] = value`, which THROWS on a primitive string
+//      ("Cannot create property 'x' on string") — an uncaught exception that
+//      burns the whole company's pass (and its API spend) for nothing.
+// Applied once, immediately after extracting tool.input, so every downstream
+// line can keep assuming a clean, schema-shaped value.
+const SENTINEL_STRINGS = new Set([
+  "unknown", "<unknown>", "n/a", "na", "none", "null", "undefined", "tbd", "-", "—",
+]);
+
+function sanitizeModelOutput(value: unknown): unknown {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (SENTINEL_STRINGS.has(trimmed.toLowerCase())) return undefined;
+    // A field that was supposed to be a nested object/array per the schema
+    // but came back serialized as a JSON string — recover it if parseable,
+    // discard it otherwise (never let a raw string reach object-shaped code).
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        return sanitizeModelOutput(JSON.parse(trimmed));
+      } catch {
+        return undefined;
+      }
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(sanitizeModelOutput).filter((v) => v !== undefined);
+  }
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) {
+      const cleaned = sanitizeModelOutput(v);
+      if (cleaned !== undefined) out[k] = cleaned;
+    }
+    return out;
+  }
+  return value;
+}
+
 function normalizeRoundType(raw: string): string {
   if (!raw) return "Other";
   const s = raw.toLowerCase().trim();
@@ -1007,6 +1059,14 @@ const FETCH_TIMEOUT_MS = 8_000;
 const JINA_TIMEOUT_MS  = 15_000; // Jina renders JS server-side — slower than a raw fetch
 const MAX_WEBSITE_CHARS = 3_000;
 
+// Call-count + outcome visibility, same pattern as tavilyCallCount/
+// serperCallCount — without this there is NO way to tell from the console
+// whether Jina is actually being used, silently failing every time (e.g. an
+// outbound-network/firewall block on r.jina.ai from the runner), or simply
+// never attempted because no website is on file yet for that row.
+let jinaAttemptCount = 0;
+let jinaSuccessCount = 0;
+
 // r.jina.ai/<url> — <url> must be a fully-qualified URL appended directly
 // after the path segment (not URL-encoded as a query param; that's Jina's
 // documented format). Returns markdown as plain text on success. A 403/451
@@ -1014,6 +1074,7 @@ const MAX_WEBSITE_CHARS = 3_000;
 // still just a "blocked" signal that falls through to Tavily, same as any
 // other failure here.
 async function fetchViaJinaReader(url: string): Promise<string | null> {
+  jinaAttemptCount++;
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), JINA_TIMEOUT_MS);
@@ -1026,12 +1087,24 @@ async function fetchViaJinaReader(url: string): Promise<string | null> {
     // 403/451 = target site blocking Jina's crawler; 429 = Jina's own rate
     // limit (more likely without JINA_API_KEY) — both are "blocked", not a
     // hard error, so just fall through to Tavily rather than retry.
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(`    ⚠️  Jina Reader HTTP ${res.status} for ${url} — falling back to Tavily/cheerio.`);
+      return null;
+    }
 
     const text = (await res.text()).trim();
-    return text ? text.slice(0, MAX_WEBSITE_CHARS) : null;
-  } catch {
-    // Timed out or network-level failure — best-effort, fail silently.
+    if (!text) {
+      console.warn(`    ⚠️  Jina Reader returned empty content for ${url} — falling back to Tavily/cheerio.`);
+      return null;
+    }
+    jinaSuccessCount++;
+    return text.slice(0, MAX_WEBSITE_CHARS);
+  } catch (err) {
+    // Timed out or network-level failure (e.g. r.jina.ai blocked/unreachable
+    // from this host) — best-effort, but LOGGED, not silent, since a
+    // consistently-thrown exception here across every company is exactly the
+    // signal that Jina isn't reachable at all from this environment.
+    console.warn(`    ⚠️  Jina Reader threw for ${url}: ${String(err)} — falling back to Tavily/cheerio.`);
     return null;
   }
 }
@@ -1041,7 +1114,10 @@ async function fetchCompanyWebsite(website: string | null | undefined): Promise<
   const url = website.startsWith("http") ? website : `https://${website}`;
 
   const viaJina = await fetchViaJinaReader(url);
-  if (viaJina) return `[Fetched via Jina Reader]\n${viaJina}`;
+  if (viaJina) {
+    console.log(`    🌐  Jina Reader: fetched ${url} (${viaJina.length} chars)`);
+    return `[Fetched via Jina Reader]\n${viaJina}`;
+  }
 
   if (!tavilyExhausted) {
     const aboutUrl  = url.replace(/\/+$/, "") + "/about";
@@ -1783,7 +1859,7 @@ ${context}`,
   const tool = msg.content.find((b) => b.type === "tool_use");
   if (!tool || tool.type !== "tool_use") return null;
 
-  const i = tool.input as Partial<EnrichmentResult> & {
+  const i = sanitizeModelOutput(tool.input) as Partial<EnrichmentResult> & {
     profile?: Partial<ExtractedProfile>;
     metrics?: { headcount?: number; employee_range?: string; growth_trend?: string; headcount_history?: ExtractedHeadcountPoint[] };
     competitors?: ExtractedCompetitor[];
@@ -1966,7 +2042,7 @@ ${context}`,
 
   const tool = msg.content.find((b) => b.type === "tool_use");
   if (!tool || tool.type !== "tool_use") return null;
-  const out = tool.input as { funding_rounds?: ExtractedRound[]; reasoning?: string };
+  const out = sanitizeModelOutput(tool.input) as { funding_rounds?: ExtractedRound[]; reasoning?: string };
   const rounds = (out.funding_rounds ?? []).filter((r) => r.round_type);
   if (!rounds.length) return null;
   return { rounds, note: out.reasoning ?? "" };
@@ -2037,7 +2113,7 @@ ${context}`,
 
   const tool = msg.content.find((b) => b.type === "tool_use");
   if (!tool || tool.type !== "tool_use") return null;
-  const out = tool.input as Partial<ExtractedProfile> & { reasoning?: string };
+  const out = sanitizeModelOutput(tool.input) as Partial<ExtractedProfile> & { reasoning?: string };
   const { reasoning, ...profile } = out;
   if (Object.keys(profile).length === 0) return null;
   return { profile, note: reasoning ?? "" };
@@ -2885,6 +2961,11 @@ async function main() {
   console.log(`  🔍  Serper calls used:   ${serperCallCount} (primary)`);
   if (tavilyCallCount > 0) {
     console.log(`  🔌  Tavily calls used:   ${tavilyCallCount} (fallback)`);
+  }
+  if (jinaAttemptCount > 0) {
+    console.log(`  🌐  Jina Reader:         ${jinaSuccessCount} / ${jinaAttemptCount} site fetches succeeded`);
+  } else {
+    console.log(`  🌐  Jina Reader:         never attempted this run (no company had a known website to fetch)`);
   }
   const claudeCost = totalInputTokens * PRICING.input + totalOutputTokens * PRICING.output;
   console.log(`  🧠  Claude tokens:       ${totalInputTokens.toLocaleString()} in / ${totalOutputTokens.toLocaleString()} out`);
