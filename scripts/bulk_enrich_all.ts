@@ -7,39 +7,55 @@
  *   Tier 2 (PARTIAL data) — has some profile/round data but key fields are missing
  *   Tier 3 (FULL data)    — complete profile; verification + new rounds + metrics refresh
  *
- * Search engine stack: Tavily (primary, budget-tracked) → Serper.dev (Google Search fallback)
- *   Serper replaces DuckDuckGo — it is a proper REST API with no rate-limit serialisation
- *   needed, so both primary and fallback can fire in parallel per company (funding history,
- *   amounts, investors, profile/headcount, competitors, news, ARR/revenue/valuation signals,
- *   tech stack/GitHub/Hugging Face). Every query is anchored on the company's known website
- *   domain when one exists (preserved from the CSV import, not reset) — this disambiguates
- *   generic/ambiguous company names (e.g. "Actuality") from unrelated same-named entities and
- *   noise in plain name-only search. When no website is on file — the stealth/early-stage case
- *   most prone to this exact collision — the query falls back to the row's known country + a
- *   light category qualifier instead of searching the bare name alone.
- *   Set SERP_KEY (Serper API key). TAVILY_API_KEY is optional; if absent, Serper is used
- *   for everything.
+ * ── STRICT 4-STAGE PIPELINE ──────────────────────────────────────────────────
+ *   Search Pipeline: Serper (Primary) -> Jina (Crawl) -> Claude (Extraction) -> Tavily (Fallback)
  *
- * Domain verification (Crunchbase/LinkedIn cross-match) — runs BEFORE the known website domain
- *   is trusted as a search anchor (see verifyDomainMatch()). A dedicated Serper search for
- *   "<name>" alongside Crunchbase/LinkedIn handles checks whether the candidate domain is
- *   actually referenced there; a confident mismatch (a DIFFERENT domain explicitly named)
- *   rejects the candidate for this pass — it falls back to the country-anchor path, same as "no
- *   website on file" — rather than let a stale/colliding domain poison every search below with
- *   results for the wrong company. No confirmation either way (the common case — most listings
- *   never restate the website) is treated as inconclusive, not a rejection: proceeds as before.
+ *   Stage 1 — Serper (PRIMARY, every query): domain verification, funding history, amounts,
+ *     investors, profile/headcount, competitors, news, ARR/revenue/valuation signals, tech
+ *     stack/GitHub/Hugging Face — every one of these queries goes to Serper FIRST, unconditionally,
+ *     for every company from the first row to the last. There is no Tavily-primary budget window
+ *     anymore (the old TAVILY_BUDGET allocation has been removed) — Serper is simply always tried
+ *     first. Every query is anchored on the company's known website domain when one exists
+ *     (preserved from the CSV import, not reset) — this disambiguates generic/ambiguous company
+ *     names (e.g. "Actuality") from unrelated same-named entities and noise in plain name-only
+ *     search. When no website is on file — the stealth/early-stage case most prone to this exact
+ *     collision — the query falls back to the row's known country + a light category qualifier
+ *     instead of searching the bare name alone. Set SERP_KEY (Serper API key) — without it, every
+ *     Serper call returns null immediately and every stage below degrades to its fallback (Tavily
+ *     if TAVILY_API_KEY is set, otherwise that query/section is simply skipped).
  *
- *   A context source runs alongside the searches: the company's own website (when known and not
- *   just rejected by domain verification above), fetched via a three-tier fallback —
- *   (1) Jina Reader (https://r.jina.ai/<url>, free, no key required, clean pre-rendered
- *   Markdown — the preferred source since Markdown is a better LLM input than stripped HTML);
- *   (2) Tavily Extract (root + /about, JS-rendered, budget-tracked like a search call) when Jina
- *   is blocked/unavailable and Tavily is available; (3) a plain fetch + cheerio scrape of the
- *   root page's title/meta description/body text as the last resort. This is the single most
- *   reliable source for description/industry/HQ location, since it's the company describing
- *   itself rather than a third party. Best-effort throughout: sites that block bots, are JS-only
- *   SPAs, or time out just fail silently, same as a failed search — never blocks a company. An
- *   optional JINA_API_KEY raises Jina's rate limit but isn't required to function.
+ *   Stage 1 (domain verification, Crunchbase/LinkedIn cross-match) — runs BEFORE the known
+ *     website domain is trusted as a search anchor (see verifyDomainMatch()). A dedicated Serper
+ *     search for "<name>" alongside Crunchbase/LinkedIn handles checks whether the candidate
+ *     domain is actually referenced there; a confident mismatch (a DIFFERENT domain explicitly
+ *     named) rejects the candidate for this pass — it falls back to the country-anchor path, same
+ *     as "no website on file" — rather than let a stale/colliding domain poison every search below
+ *     with results for the wrong company. No confirmation either way (the common case — most
+ *     listings never restate the website) is treated as inconclusive, not a rejection: proceeds as
+ *     before.
+ *
+ *   Stage 2 — Jina Reader (PRIMARY scraper for the company's own website): the company's own site
+ *     (when known and not just rejected by domain verification above) is fetched via
+ *     https://r.jina.ai/<url>, free, no key required, returning clean pre-rendered Markdown — the
+ *     preferred source since Markdown is a better LLM input than stripped HTML. This is the single
+ *     most reliable source for description/industry/HQ location, since it's the company describing
+ *     itself rather than a third party. An optional JINA_API_KEY raises Jina's rate limit but isn't
+ *     required to function.
+ *
+ *   Stage 3 — Claude LLM Extraction: parses the clean Jina Markdown plus every Serper
+ *     snippet/result above into AlphaMap's save_enrichment tool schema. Runs once, after every
+ *     Stage 1/2 call for this company has resolved.
+ *
+ *   Stage 4 — Tavily (FALLBACK ONLY, never primary): triggered strictly per-call, only when (a)
+ *     the corresponding Serper search above returned null — a genuine Serper failure OR zero
+ *     organic/answer results, serperSearch() collapses both into the same null return — or (b)
+ *     Jina Reader was blocked/rate-limited/timed out/returned nothing for the website fetch.
+ *     TAVILY_API_KEY is optional; with it unset, a Serper miss or Jina block simply yields no data
+ *     for that one query/section rather than erroring — same as any other best-effort gap in this
+ *     pipeline. A plain fetch + cheerio scrape of the root page is the final, last-resort fallback
+ *     after both Jina and Tavily Extract come up empty for the website-fetch step specifically.
+ *     Best-effort throughout: sites that block bots, are JS-only SPAs, or time out just fail
+ *     silently, same as a failed search — never blocks a company.
  *
  *   Two conditional, targeted second-pass deep dives run after the general-purpose pass, each
  *   only firing for the specific gap it exists to close (so the added search/API cost is
@@ -133,7 +149,6 @@ const BATCH_SIZE     = Number(process.env.BATCH_SIZE     ?? 9999);  // all by de
 const OFFSET         = Number(process.env.OFFSET         ?? 0);     // skip first N (for resume)
 const DELAY_MS       = Number(process.env.DELAY_MS       ?? 20_000); // 20 s between companies
 const DRY_RUN        = process.env.DRY_RUN               !== "false"; // safe default: dry run
-const TAVILY_BUDGET  = Number(process.env.TAVILY_BUDGET  ?? 1000);  // max Tavily calls this run
 const MIN_CONFIDENCE = Number(process.env.MIN_CONFIDENCE ?? 40);     // skip writes below this
 const MAX_TIER       = Number(process.env.MAX_TIER       ?? 3);     // 2 = skip complete companies
 const MODEL           = process.env.ENRICH_MODEL ?? "claude-haiku-4-5-20251001";
@@ -145,12 +160,14 @@ for (const key of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "ANTHROPIC_API_K
     process.exit(1);
   }
 }
-if (!process.env.TAVILY_API_KEY) {
-  console.warn("⚠️  TAVILY_API_KEY not set — all searches will use Serper (Google).\n");
-}
 if (!process.env.SERP_KEY) {
-  console.warn("⚠️  SERP_KEY not set — Serper fallback unavailable (only Tavily will be used for general search), " +
-    "and domain verification (Crunchbase/LinkedIn cross-match) will be skipped — every known website is trusted as-is.\n");
+  console.warn("⚠️  SERP_KEY not set — Serper is the PRIMARY search engine for every stage of this pipeline " +
+    "(domain verification, funding, competitors, news, tech stack). Without it, every Serper call returns " +
+    "nothing and this run falls through to Tavily alone (if TAVILY_API_KEY is set) or skips that data entirely. " +
+    "Domain verification specifically will be skipped outright — every known website is trusted as-is.\n");
+}
+if (!process.env.TAVILY_API_KEY) {
+  console.warn("ℹ️   TAVILY_API_KEY not set — Tavily fallback unavailable (only used when Serper returns zero results or fails).\n");
 }
 if (!process.env.JINA_API_KEY) {
   console.warn("ℹ️   JINA_API_KEY not set — Jina Reader (company website fetch) will run unauthenticated, at a lower rate limit.\n");
@@ -564,7 +581,12 @@ const PRICING = MODEL_PRICING[MODEL] ?? MODEL_PRICING["claude-haiku-4-5-20251001
 let totalInputTokens  = 0;
 let totalOutputTokens = 0;
 
-// ── Search stack: Tavily → DuckDuckGo ─────────────────────────────────────────
+// ── Tavily — FALLBACK ONLY (Stage 4). Never called as a first choice anywhere
+// in this file; every call site tries Serper first and only reaches here when
+// Serper returned null (failure or zero results). tavilyExhausted means
+// "Tavily has proven unusable this run" (no TAVILY_API_KEY, or Tavily itself
+// reported an auth/credit error) — once true, every fallback attempt below is
+// skipped for the rest of the run rather than repeatedly hitting a dead key.
 let tavilyCallCount = 0;
 let tavilyExhausted = !process.env.TAVILY_API_KEY;
 
@@ -583,11 +605,13 @@ async function tavilySearch(query: string, attempt = 0): Promise<string | null> 
       }),
     });
 
-    // Credit / auth exhaustion → permanent fallback for this run
+    // Credit / auth exhaustion → Tavily (already the fallback) is disabled
+    // for the rest of this run; a Serper miss on a later query simply yields
+    // no data for that query instead of retrying a dead key.
     if (res.status === 401 || res.status === 402 || res.status === 432) {
       const body = await res.text().catch(() => "");
       console.warn(
-        `    ⚠️  Tavily HTTP ${res.status} — switching ALL remaining searches to Serper.` +
+        `    ⚠️  Tavily HTTP ${res.status} — disabling Tavily fallback for the rest of this run.` +
         (body ? `\n        ${body.slice(0, 120)}` : ""),
       );
       tavilyExhausted = true;
@@ -603,7 +627,7 @@ async function tavilySearch(query: string, attempt = 0): Promise<string | null> 
     }
 
     if (!res.ok) {
-      console.warn(`    ⚠️  Tavily HTTP ${res.status} — using Serper for this query.`);
+      console.warn(`    ⚠️  Tavily HTTP ${res.status} — fallback query returned nothing.`);
       return null;
     }
 
@@ -615,14 +639,7 @@ async function tavilySearch(query: string, attempt = 0): Promise<string | null> 
     }
     if (!parts.length) return null;
 
-    // Proactive budget tracking — switch before we overshoot
     tavilyCallCount++;
-    if (tavilyCallCount >= TAVILY_BUDGET) {
-      console.warn(
-        `    ⚠️  Tavily budget reached (${tavilyCallCount}/${TAVILY_BUDGET}) — switching to Serper for remainder.`,
-      );
-      tavilyExhausted = true;
-    }
     return parts.join("\n---\n");
   } catch (err) {
     console.warn(`    ⚠️  Tavily threw: ${String(err)}`);
@@ -634,9 +651,8 @@ async function tavilySearch(query: string, attempt = 0): Promise<string | null> 
 // returns their cleaned main text, far more reliably than a raw HTML fetch
 // on bot-blocked pages or JS-only SPAs (common for early-stage startup
 // sites built on Webflow/Framer/Next.js client rendering). Used by
-// fetchCompanyWebsite() below as the preferred path when Tavily is
-// available; counts against the same budget as a search call, since it's
-// the same API/quota.
+// fetchCompanyWebsite() below as the Stage 4 fallback when Jina Reader
+// (Stage 2, the primary scraper) is blocked/unavailable.
 async function tavilyExtractUrls(urls: string[]): Promise<string | null> {
   if (tavilyExhausted) return null;
   try {
@@ -661,16 +677,16 @@ async function tavilyExtractUrls(urls: string[]): Promise<string | null> {
     if (!parts.length) return null;
 
     tavilyCallCount++;
-    if (tavilyCallCount >= TAVILY_BUDGET) tavilyExhausted = true;
     return parts.join("\n---\n");
   } catch {
     return null;
   }
 }
 
-// Tavily search with images included — used ONLY for the recent-news query,
-// so the news[] field can carry a real article image instead of always
-// omitting it. Tavily-only (no Serper equivalent used here): when Tavily is
+// Tavily search with images included — the Stage 4 fallback for the
+// recent-news query specifically, used only when Serper News (Stage 1,
+// primary) returns nothing, so the news[] field still has a shot at a real
+// article image instead of always omitting one. When Tavily is
 // unavailable/exhausted this simply returns no images, same as any other
 // best-effort source in this script. Images returned are a flat list for
 // the whole query, not attributed to a specific result — the prompt is
@@ -720,7 +736,6 @@ async function tavilyNewsSearch(query: string): Promise<{ text: string | null; i
       .slice(0, 8);
 
     tavilyCallCount++;
-    if (tavilyCallCount >= TAVILY_BUDGET) tavilyExhausted = true;
 
     if (!parts.length && images.length === 0) return { text: null, images: [] };
     return {
@@ -849,40 +864,39 @@ async function serperNewsSearch(query: string, attempt = 0): Promise<{ text: str
 }
 
 function engineLabel(): string {
-  if (!tavilyExhausted) return `Tavily (${tavilyCallCount}/${TAVILY_BUDGET})`;
-  return process.env.SERP_KEY ? `Serper (${serperCallCount})` : "no-fallback";
+  const primary = process.env.SERP_KEY ? `Serper (${serperCallCount})` : "Serper (NO KEY)";
+  return tavilyCallCount > 0 ? `${primary} + Tavily fallback (${tavilyCallCount})` : primary;
 }
 
+// Stage 1 (Serper, PRIMARY) -> Stage 4 (Tavily, FALLBACK ONLY). Serper is
+// tried first, unconditionally, for every query — serperSearch() itself
+// collapses "Serper failed" and "Serper returned zero results" into the same
+// null return, so either condition triggers the Tavily fallback here, exactly
+// as specified. Tavily is never tried first for any query in this file.
 async function webSearch(query: string): Promise<string | null> {
-  if (!tavilyExhausted) {
-    const r = await tavilySearch(query);
-    if (r !== null) return r;
-    // tavilyExhausted may now be true; fall through to Serper
-  }
-  return serperSearch(query);
+  const r = await serperSearch(query);
+  if (r !== null) return r;
+  if (tavilyExhausted) return null;
+  return tavilySearch(query);
 }
 
 // Same fallback shape as webSearch, but the news query specifically can
-// come back with images from EITHER engine now: tavilyNewsSearch's flat
-// "images found alongside the search" list on the Tavily path (unchanged),
-// or serperNewsSearch's per-article inline "Image:" pairing on the
-// fallback path. `tavilyQuery` is untouched (still the site:-heavy,
-// year-stuffed query built for general web search) — Serper's News
-// endpoint is already recency/news-scoped by nature and doesn't need
-// that; it gets a clean `"name" + anchor` query instead, which is both
-// simpler and, since `anchor` already carries the domain/country
-// disambiguator used everywhere else in this script, still targeted
-// enough to avoid generic-name collisions.
+// come back with images from EITHER engine now: serperNewsSearch's
+// per-article inline "Image:" pairing on the primary path, or
+// tavilyNewsSearch's flat "images found alongside the search" list on the
+// fallback path. The Serper News endpoint is already recency/news-scoped by
+// nature, so it gets a clean `"name" + anchor` query; `tavilyQuery` (the
+// site:-heavy, year-stuffed query built for general web search) is only
+// used if the fallback actually fires.
 async function newsSearchWithImages(
   tavilyQuery: string,
   name: string,
   anchor: string,
 ): Promise<{ text: string | null; images: string[] }> {
-  if (!tavilyExhausted) {
-    const r = await tavilyNewsSearch(tavilyQuery);
-    if (r.text !== null || r.images.length > 0) return r;
-  }
-  return serperNewsSearch(`"${name}"${anchor} news`);
+  const r = await serperNewsSearch(`"${name}"${anchor} news`);
+  if (r.text !== null || r.images.length > 0) return r;
+  if (tavilyExhausted) return { text: null, images: [] };
+  return tavilyNewsSearch(tavilyQuery);
 }
 
 // ── Domain verification (Crunchbase/LinkedIn cross-match) ──────────────────
@@ -982,10 +996,9 @@ async function verifyDomainMatch(
 //      (an optional JINA_API_KEY raises the rate limit but isn't needed to
 //      function). Markdown is a better LLM input than raw HTML-stripped text
 //      — headings/links survive, nav/boilerplate mostly doesn't.
-//   2. Tavily Extract (root + /about, one call, JS-rendered) — used when
-//      Jina is blocked/rate-limited/unavailable, or Tavily is otherwise
-//      going to be used this run anyway (shares the same budget-tracked
-//      client as the search calls).
+//   2. Tavily Extract (root + /about, one call, JS-rendered) — FALLBACK ONLY,
+//      used strictly when Jina is blocked/rate-limited/unavailable/returns
+//      nothing. Never tried first.
 //   3. Plain fetch + cheerio scrape of the root page — last resort when
 //      both of the above fail or are unavailable.
 // Every tier is best-effort: failure just means one fewer context section,
@@ -2496,9 +2509,10 @@ async function main() {
   console.log(`║${"  AlphaMap — Bulk Full-Database Enrichment Run".padEnd(62)}║`);
   console.log(`║  ${startedAt}${"".padEnd(62 - 2 - startedAt.length)}║`);
   console.log(`║  DRY_RUN=${String(DRY_RUN).padEnd(5)} | BATCH=${String(BATCH_SIZE).padEnd(6)} | OFFSET=${String(OFFSET).padEnd(5)} | DELAY=${DELAY_MS / 1000}s${" ".padEnd(62 - 58)}║`);
-  console.log(`║  TAVILY_BUDGET=${String(TAVILY_BUDGET).padEnd(5)} | MIN_CONFIDENCE=${String(MIN_CONFIDENCE).padEnd(17)}║`);
+  console.log(`║  MIN_CONFIDENCE=${String(MIN_CONFIDENCE).padEnd(44)}║`);
   console.log(`║  MODEL=${MODEL}${" ".padEnd(Math.max(0, 62 - 9 - MODEL.length))}║`);
-  console.log(`╚${"═".repeat(62)}╝\n`);
+  console.log(`╚${"═".repeat(62)}╝`);
+  console.log("Search Pipeline: Serper (Primary) -> Jina (Crawl) -> Claude (Extraction) -> Tavily (Fallback)\n");
 
   if (DRY_RUN) console.log("ℹ️  DRY RUN — set DRY_RUN=false to apply writes to the database.\n");
 
@@ -2608,12 +2622,11 @@ async function main() {
     return;
   }
 
-  const tavilyCompanies = Math.floor(TAVILY_BUDGET / 5);
-  const fallbackLabel   = process.env.SERP_KEY ? "Serper (Google)" : "no fallback";
+  const primaryLabel  = process.env.SERP_KEY ? "Serper" : "Serper (NO SERP_KEY — every call will miss)";
+  const fallbackLabel = process.env.TAVILY_API_KEY ? "Tavily" : "no fallback";
   console.log(`\n  Processing range:       [${OFFSET + 1}–${queueEnd}] of ${fullQueue.length}` +
     (tier3Skipped > 0 ? ` (${tier3Skipped} Tier 3 skipped)` : ""));
-  console.log(`  Search:                 Tavily → ${fallbackLabel}`);
-  console.log(`  Tavily covers ~${tavilyCompanies} companies, then ${fallbackLabel} for the remainder`);
+  console.log(`  Search Pipeline:        ${primaryLabel} (Primary) -> Jina (Crawl) -> Claude (Extraction) -> ${fallbackLabel} (Fallback)`);
   console.log("─".repeat(62) + "\n");
 
   // ── 4. Tally ──────────────────────────────────────────────────────────────
@@ -2869,9 +2882,9 @@ async function main() {
     const pct = Math.round((totalNewsWithImage / totalNewsArticles) * 100);
     console.log(`  🖼️   News w/ image:       ${totalNewsWithImage} / ${totalNewsArticles} (${pct}%)`);
   }
-  console.log(`  🔌  Tavily calls used:   ${tavilyCallCount} / ${TAVILY_BUDGET}`);
-  if (serperCallCount > 0) {
-    console.log(`  🔍  Serper calls used:   ${serperCallCount}`);
+  console.log(`  🔍  Serper calls used:   ${serperCallCount} (primary)`);
+  if (tavilyCallCount > 0) {
+    console.log(`  🔌  Tavily calls used:   ${tavilyCallCount} (fallback)`);
   }
   const claudeCost = totalInputTokens * PRICING.input + totalOutputTokens * PRICING.output;
   console.log(`  🧠  Claude tokens:       ${totalInputTokens.toLocaleString()} in / ${totalOutputTokens.toLocaleString()} out`);
