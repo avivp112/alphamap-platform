@@ -80,6 +80,12 @@
  *
  * Write strategy (enforced by code, not just prompt):
  *   All tiers   — only fills NULL profile fields (never overwrites existing non-null values)
+ *                 website additionally goes through validateWebsiteCandidate(): rejected to
+ *                 null (not written) when it's a directory/aggregator link (Companies House,
+ *                 Crunchbase, LinkedIn, a placeholder domain, etc.) or already on file for a
+ *                 DIFFERENT startup — startups.website is UNIQUE (startups_website_key), and
+ *                 writing a value some other row owns would otherwise fail this row's ENTIRE
+ *                 profile patch, not just the website field
  *                 always refreshes employee_count + employee_range + growth_trend (time-varying)
  *                 merges founders as a union (additive, never destructive) — including
  *                 backfilling title/bio onto an already-recorded founder, never overwriting
@@ -616,6 +622,78 @@ function websiteDomain(url: string | null | undefined): string | null {
   } catch {
     return null;
   }
+}
+
+// ── Website validation: directory/aggregator links and cross-row duplicates
+// ─────────────────────────────────────────────────────────────────────────
+// startups.website carries a UNIQUE constraint (startups_website_key) —
+// writing a URL some OTHER row already owns throws a Postgres 23505 and
+// fails the ENTIRE profile patch for this row, not just the website field.
+// Two distinct failure modes feed that: (1) Claude occasionally reports a
+// generic directory/registry/social link (Companies House, Crunchbase,
+// LinkedIn, a placeholder domain) as if it were the company's own site —
+// these are never unique per company and must never be written as `website`
+// at all; (2) two different rows genuinely resolving to the same real
+// domain (a near-duplicate company, or two rows independently discovering
+// the same wrong link). Both are checked and rejected BEFORE the candidate
+// ever reaches the patch payload.
+const GENERIC_DIRECTORY_DOMAINS = new Set([
+  // Company registries / filings — never a company's own site
+  "find-and-update.company-information.service.gov.uk", "gov.uk", "companieshouse.gov.uk",
+  "opencorporates.com", "sec.gov", "dnb.com", "bizfile.gov.sg", "companycheck.co.uk",
+  // VC/startup data aggregators
+  "crunchbase.com", "pitchbook.com", "tracxn.com", "dealroom.co", "cbinsights.com",
+  "owler.com", "zoominfo.com", "apollo.io", "craft.co", "growjo.com", "theorg.com",
+  "sifted.eu", "techcrunch.com",
+  // Social/professional networks — a company's presence there, not its own domain
+  "linkedin.com", "facebook.com", "twitter.com", "x.com", "instagram.com", "github.com",
+  "huggingface.co", "youtube.com", "medium.com",
+  // Placeholder/obviously-fake domains a model might hallucinate when unsure
+  "example.com", "example.org", "example.net", "n-a.com", "none.com", "unknown.com",
+  "tbd.com", "placeholder.com", "domain.com", "yourcompany.com", "company.com",
+]);
+
+function isGenericDirectoryDomain(domain: string): boolean {
+  for (const generic of GENERIC_DIRECTORY_DOMAINS) {
+    if (domain === generic || domain.endsWith(`.${generic}`)) return true;
+  }
+  return false;
+}
+
+// Strips protocol/www/trailing slashes and re-applies a single canonical
+// "https://" prefix, so every stored website is in the same shape regardless
+// of how Claude phrased it ("example.com", "http://www.example.com/", etc.).
+function normalizeWebsiteUrl(raw: string): string | null {
+  const stripped = raw.trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "")
+    .replace(/\/+$/, "");
+  return stripped ? `https://${stripped}` : null;
+}
+
+// Returns the normalized URL if it's safe to write, or null if it should be
+// rejected (generic directory link, or already claimed by a different
+// startup) — the caller writes that null into the patch rather than the
+// rejected URL, so the rest of the row's profile patch is unaffected.
+function validateWebsiteCandidate(raw: string, startupId: string): string | null {
+  const normalized = normalizeWebsiteUrl(raw);
+  if (!normalized) return null;
+
+  const domain = websiteDomain(normalized);
+  if (!domain) return null;
+
+  if (isGenericDirectoryDomain(domain)) {
+    console.warn(`    ⚠️  Rejected website "${normalized}" — a directory/aggregator link, not the company's own site.`);
+    return null;
+  }
+
+  const existingOwner = startupByDomain.get(domain);
+  if (existingOwner && existingOwner.id !== startupId) {
+    console.warn(`    ⚠️  Rejected website "${normalized}" — already on file for "${existingOwner.name}" (different startup; startups.website is UNIQUE).`);
+    return null;
+  }
+
+  return normalized;
 }
 
 // ── Claude token/cost tracking ─────────────────────────────────────────────────
@@ -2226,7 +2304,16 @@ async function patchStartupProfile(
   const patch: Record<string, unknown> = {};
 
   // Profile fields: fill NULL slots only (safe for all tiers including Tier 3)
-  if (!existing.website      && profile.website)      patch.website      = profile.website;
+  // website additionally goes through validateWebsiteCandidate() — a
+  // directory/aggregator link or a URL already claimed by a different
+  // startup (startups.website is UNIQUE) is rejected to null rather than
+  // written, so it can never fail the rest of this patch with a Postgres
+  // 23505. Explicitly set (not omitted) so a rejection is visible in
+  // patchedKeys/dry-run output — harmless either way since existing.website
+  // is already null in every case this branch can run.
+  if (!existing.website && profile.website) {
+    patch.website = validateWebsiteCandidate(profile.website, existing.id);
+  }
   if (!existing.description  && profile.description)  patch.description  = profile.description;
   if (!existing.value_proposition && profile.value_proposition) patch.value_proposition = profile.value_proposition;
   if (!existing.industry     && profile.industry)     patch.industry     = profile.industry;
@@ -2471,10 +2558,32 @@ async function patchStartupProfile(
     return { fieldsPatched, patchedKeys, newsCount, newsWithImage };
   }
 
-  const { error } = await supabase.from("startups").update(patch).eq("id", existing.id);
+  let { error } = await supabase.from("startups").update(patch).eq("id", existing.id);
+
+  // Belt-and-suspenders: validateWebsiteCandidate() above should already
+  // catch every duplicate/directory-link website before it reaches `patch`,
+  // but a stale in-memory startupByDomain entry or a normalization edge case
+  // in pre-existing (messy, CSV-imported) data could still collide at write
+  // time. Retry once without website rather than losing every OTHER field
+  // in this patch to a single column's unique-constraint violation.
+  if (error && "website" in patch && (error.code === "23505" || error.message.includes("startups_website_key"))) {
+    console.warn(`    ⚠️  website "${patch.website}" still collided on write (${error.message}) — retrying patch without it.`);
+    delete patch.website;
+    ({ error } = await supabase.from("startups").update(patch).eq("id", existing.id));
+  }
+
   if (error) {
     console.warn(`    ⚠️  Profile patch failed: ${error.message}`);
     return { fieldsPatched: 0, patchedKeys: [], newsCount: 0, newsWithImage: 0 };
+  }
+
+  // Keep the in-memory domain map current for the rest of this (sequential)
+  // run — a website this pass just claimed must be visible to
+  // validateWebsiteCandidate() for every company processed after this one,
+  // not just to rows that already had it before the run started.
+  if (typeof patch.website === "string") {
+    const newDomain = websiteDomain(patch.website);
+    if (newDomain) startupByDomain.set(newDomain, existing);
   }
 
   if (tagSectorIds.length > 0) {
@@ -2504,9 +2613,14 @@ async function patchStartupProfile(
   if (patch.sector_id)          parts.push(`sector: ${profile.sector_name}`);
   if (tagSectorIds.length > 0)  parts.push(`tags: ${tagNames.join(", ")}`);
   const profileKeys = [
-    "website","description","value_proposition","industry","founded_year","country","city","founders",
+    "description","value_proposition","industry","founded_year","country","city","founders",
     "linkedin_url","facebook_url","instagram_url","github_url","huggingface_url",
   ].filter((k) => patch[k] !== undefined);
+  // website is excluded from the generic filter above and checked separately
+  // — unlike every other profile field, patch.website can be present but
+  // null (a rejected directory-link/duplicate candidate; see
+  // validateWebsiteCandidate), which should never be reported as "found".
+  if (patch.website) profileKeys.unshift("website");
   if (profileKeys.length > 0) parts.push(`profile: ${profileKeys.join(", ")}`);
   if (parts.length > 0) console.log(`    👤  Patched: ${parts.join(" | ")}`);
 
