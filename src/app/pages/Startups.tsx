@@ -22,7 +22,7 @@ import {
   GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2, ChevronUp,
   SlidersHorizontal, Award, Eye, HelpCircle,
   Linkedin, Facebook, Instagram, Newspaper, Layers, ExternalLink,
-  Star, XCircle, Sparkles, Download, Webhook,
+  Star, XCircle, Sparkles, Download, Webhook, Code2, Github, Bot,
 } from "lucide-react";
 import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
@@ -85,6 +85,14 @@ function fmtEmp(n: number | null): string {
   if (!n) return "—";
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return String(n);
+}
+// "120 (51-200)" when both an exact count and a range are known; the range
+// alone when only that's known; the plain count (or "—") otherwise.
+function formatEmployeeValue(startup: Pick<Startup, "employee_count" | "employee_range">): string {
+  if (startup.employee_count) {
+    return startup.employee_range ? `${fmtEmp(startup.employee_count)} (${startup.employee_range})` : fmtEmp(startup.employee_count);
+  }
+  return startup.employee_range ?? "—";
 }
 function avatarColor(name: string): string {
   const colors = [
@@ -1113,6 +1121,8 @@ function OverviewTab({
   const dbSubSectorTags = subSectorNames(startup);
   const subSectorTags = dbSubSectorTags.length > 0 ? dbSubSectorTags : (sector.sub ? [sector.sub] : []);
 
+  const employeeValue = formatEmployeeValue(startup);
+
   return (
     <div className="space-y-6">
       {startup.description ? (
@@ -1121,10 +1131,17 @@ function OverviewTab({
         <MissingDataState message="No company description on file." />
       )}
 
+      {startup.value_proposition && (
+        <div className="flex items-start gap-2.5 bg-cyan-50/60 border border-cyan-100 rounded-[8px] px-4 py-3">
+          <Sparkles className="w-4 h-4 text-cyan-600 flex-none mt-0.5" />
+          <p className="text-xs text-cyan-900 leading-relaxed font-medium">{startup.value_proposition}</p>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard icon={Calendar}  label="Founded"     value={startup.founded_year ? String(startup.founded_year) : "—"} accent="#F59E0B" />
         <StatCard icon={MapPin}    label="Location"    value={location} accent="#0e7490" />
-        <StatCard icon={Users}     label="Employees"   value={fmtEmp(startup.employee_count)} accent="#6d28d7" />
+        <StatCard icon={Users}     label="Employees"   value={employeeValue} accent="#6d28d7" />
         <StatCard
           icon={Briefcase} label="Sector" value={sectorName} accent="#be185d"
           onClick={sectorName ? () => onFilterByMainSector(sectorName) : undefined}
@@ -1163,29 +1180,6 @@ function OverviewTab({
 
       <ScoreHistoryChart startupId={startup.id} />
 
-      {startup.leadership && startup.leadership.length > 0 && (
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <Briefcase className="w-4 h-4 text-gray-400" />
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("startups.leadership")}</h3>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {startup.leadership.map((l, i) => (
-              <div key={i} className="flex items-center gap-2.5 bg-gray-50 border border-gray-100 rounded-[8px] px-3 py-2">
-                <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black flex-none ${avatarColor(l.name)}`}>
-                  {l.name[0]}
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-gray-900 leading-tight">{l.name}</div>
-                  <div className="text-[9px] text-gray-400">{l.role}</div>
-                </div>
-                <LinkedInBadge url={l.linkedin_url} name={l.name} />
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {startup.founders && startup.founders.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-3">
@@ -1194,15 +1188,47 @@ function OverviewTab({
               Founder{startup.founders.length > 1 ? "s" : ""}
             </h3>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col gap-2">
             {startup.founders.map((f, i) => (
-              <span key={i} className="flex items-center gap-1.5 bg-gray-50 border border-gray-100 text-sm font-medium text-gray-700 pl-3 pr-1.5 py-1.5 rounded-full">
-                <div className="w-5 h-5 rounded-full bg-amber-100 flex items-center justify-center text-[10px] font-black text-amber-700">
+              <div key={i} className="flex items-start gap-3 bg-gray-50 border border-gray-100 rounded-[8px] px-3.5 py-2.5">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black flex-none ${avatarColor(f.name)}`}>
                   {f.name[0].toUpperCase()}
                 </div>
-                {f.name}
-                <LinkedInBadge url={f.linkedin_url} name={f.name} />
-              </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-sm font-bold text-gray-900 leading-tight">{f.name}</span>
+                    <LinkedInBadge url={f.linkedin_url} name={f.name} />
+                  </div>
+                  {f.title && <div className="text-[11px] text-gray-500 leading-tight mt-0.5">{f.title}</div>}
+                  {f.bio && <p className="text-[11px] text-gray-400 leading-relaxed mt-1">{f.bio}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {startup.leadership && startup.leadership.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Briefcase className="w-4 h-4 text-gray-400" />
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("startups.leadership")}</h3>
+          </div>
+          <div className="flex flex-col gap-2">
+            {startup.leadership.map((l, i) => (
+              <div key={i} className="flex items-start gap-3 bg-gray-50 border border-gray-100 rounded-[8px] px-3.5 py-2.5">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black flex-none ${avatarColor(l.name)}`}>
+                  {l.name[0]}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-sm font-bold text-gray-900 leading-tight">{l.name}</span>
+                    <LinkedInBadge url={l.linkedin_url} name={l.name} />
+                  </div>
+                  <div className="text-[11px] text-gray-500 leading-tight mt-0.5">{l.role}</div>
+                  {l.bio && <p className="text-[11px] text-gray-400 leading-relaxed mt-1">{l.bio}</p>}
+                </div>
+              </div>
             ))}
           </div>
         </div>
@@ -1283,10 +1309,15 @@ function VerticalFundingTimeline({ rounds }: { rounds: FundingRound[] }) {
   );
 }
 
-function FundingValuationTab({ sortedRounds, fundingHistoryComplete }: { sortedRounds: FundingRound[]; fundingHistoryComplete?: boolean | null }) {
+function FundingValuationTab({ startup, sortedRounds, fundingHistoryComplete }: { startup: Startup; sortedRounds: FundingRound[]; fundingHistoryComplete?: boolean | null }) {
   const { t } = useTranslation();
   const latestRound = sortedRounds[sortedRounds.length - 1] ?? null;
   const raised = sortedRounds.reduce((sum, r) => sum + (r.amount_raised ?? 0), 0);
+  const arrMilestones = (startup.arr_milestones ?? []).filter((m) => m && typeof m.arr === "number");
+  const valuationBenchmarks = (startup.valuation_benchmarks ?? []).filter((v) => v && typeof v.valuation === "number");
+  const revenueEstimate = startup.revenue_estimate;
+  const hasFinancials = arrMilestones.length > 0 || valuationBenchmarks.length > 0 ||
+    (revenueEstimate && (revenueEstimate.range_low != null || revenueEstimate.range_high != null));
 
   return (
     <div className="space-y-6">
@@ -1317,6 +1348,49 @@ function FundingValuationTab({ sortedRounds, fundingHistoryComplete }: { sortedR
           <VerticalFundingTimeline rounds={sortedRounds} />
         )}
       </div>
+
+      {hasFinancials && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <BarChart2 className="w-4 h-4 text-gray-400" />
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Financial Milestones</h3>
+          </div>
+          <div className="space-y-2">
+            {revenueEstimate && (revenueEstimate.range_low != null || revenueEstimate.range_high != null) && (
+              <div className="flex items-center justify-between gap-3 bg-gray-50 border border-gray-100 rounded-[8px] px-4 py-3">
+                <div className="min-w-0">
+                  <span className="text-sm font-bold text-gray-900">
+                    {revenueEstimate.range_low != null ? fmt(revenueEstimate.range_low) : "—"}
+                    {" – "}
+                    {revenueEstimate.range_high != null ? fmt(revenueEstimate.range_high) : "—"}
+                  </span>
+                  <span className="text-[10px] text-gray-400 ml-2">Est. revenue{revenueEstimate.as_of_date ? ` as of ${revenueEstimate.as_of_date.slice(0, 4)}` : ""}</span>
+                </div>
+                {revenueEstimate.source && <span className="text-[10px] text-gray-400 whitespace-nowrap flex-none">{revenueEstimate.source}</span>}
+              </div>
+            )}
+            {arrMilestones.map((m, idx) => (
+              <div key={`arr-${idx}`} className="flex items-center justify-between gap-3 bg-gray-50 border border-gray-100 rounded-[8px] px-4 py-3">
+                <div className="min-w-0">
+                  <span className="text-sm font-bold text-gray-900">{fmt(m.arr)} ARR</span>
+                  {m.date && <span className="text-[10px] text-gray-400 ml-2">{m.date.slice(0, 4)}</span>}
+                </div>
+                {m.source && <span className="text-[10px] text-gray-400 whitespace-nowrap flex-none">{m.source}</span>}
+              </div>
+            ))}
+            {valuationBenchmarks.map((v, idx) => (
+              <div key={`val-${idx}`} className="flex items-center justify-between gap-3 bg-gray-50 border border-gray-100 rounded-[8px] px-4 py-3">
+                <div className="min-w-0">
+                  <span className="text-sm font-bold text-gray-900">{fmt(v.valuation)} valuation</span>
+                  {v.is_estimated && <span className="text-gray-400 text-xs"> est.</span>}
+                  {v.date && <span className="text-[10px] text-gray-400 ml-2">{v.date.slice(0, 4)}</span>}
+                </div>
+                {v.source && <span className="text-[10px] text-gray-400 whitespace-nowrap flex-none">{v.source}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1470,7 +1544,7 @@ function TalentGrowthTab({
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <StatCard icon={Users}    label="Employees"      value={fmtEmp(startup.employee_count)} accent="#0e7490" />
+        <StatCard icon={Users}    label="Employees"      value={formatEmployeeValue(startup)} accent="#0e7490" />
         <StatCard icon={Activity} label="Growth Velocity" accent="#6d28d7"
           value={growthPillar?.valid && growthPillar.score != null ? `${safeFixed(growthPillar.score, 0)} / 100` : "—"} />
         <div className="rounded-[8px] p-4 flex flex-col gap-2 border bg-gray-50 border-gray-100">
@@ -1546,15 +1620,18 @@ function TalentGrowthTab({
         {startup.leadership && startup.leadership.length > 0 ? (
           <div className="flex flex-col gap-2">
             {startup.leadership.map((l, i) => (
-              <div key={i} className="flex items-center gap-3 bg-gray-50 border border-gray-100 rounded-[8px] px-3.5 py-2.5">
+              <div key={i} className="flex items-start gap-3 bg-gray-50 border border-gray-100 rounded-[8px] px-3.5 py-2.5">
                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black flex-none ${avatarColor(l.name)}`}>
                   {l.name[0]}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-bold text-gray-900 leading-tight truncate">{l.name}</div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-sm font-bold text-gray-900 leading-tight truncate">{l.name}</span>
+                    <LinkedInBadge url={l.linkedin_url} name={l.name} />
+                  </div>
                   <div className="text-[11px] text-gray-500 truncate">{l.role}</div>
+                  {l.bio && <p className="text-[11px] text-gray-400 leading-relaxed mt-1">{l.bio}</p>}
                 </div>
-                <LinkedInBadge url={l.linkedin_url} name={l.name} />
               </div>
             ))}
           </div>
@@ -1631,13 +1708,53 @@ function AcquisitionsIPTab({ startup, onNavigate }: { startup: Startup; onNaviga
   const { t } = useTranslation();
   const acquisitions = (startup.acquisitions ?? []).filter(Boolean);
   const hasPatents = startup.patent_count != null;
+  const patents = (startup.patents ?? []).filter((p) => p && p.title);
+  const techStack = startup.tech_stack ?? [];
+  const hasTech = techStack.length > 0 || !!startup.github_url || !!startup.huggingface_url;
 
-  if (acquisitions.length === 0 && !hasPatents) {
-    return <MissingDataState message="No acquisitions or patent data have been found for this company yet." />;
+  if (acquisitions.length === 0 && !hasPatents && patents.length === 0 && !hasTech) {
+    return <MissingDataState message="No acquisitions, patent, or technology data have been found for this company yet." />;
   }
 
   return (
     <div className="space-y-6">
+      {hasTech && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Code2 className="w-4 h-4 text-[#0e7490]" />
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("startups.technology")}</h3>
+          </div>
+          {techStack.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {techStack.map((tech) => (
+                <span key={tech} className="text-[10px] font-semibold px-2.5 py-1 rounded-full bg-cyan-50 text-cyan-700 border border-cyan-200">{tech}</span>
+              ))}
+            </div>
+          )}
+          {(startup.github_url || startup.huggingface_url) && (
+            <div className="flex flex-wrap gap-2">
+              {startup.github_url && (
+                <a
+                  href={startup.github_url.startsWith("http") ? startup.github_url : `https://${startup.github_url}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 bg-gray-50 border border-gray-200 rounded-full px-3 py-1.5 hover:border-gray-400 hover:bg-white transition-colors"
+                >
+                  <Github className="w-3.5 h-3.5" /> GitHub <ExternalLink className="w-3 h-3 text-gray-400" />
+                </a>
+              )}
+              {startup.huggingface_url && (
+                <a
+                  href={startup.huggingface_url.startsWith("http") ? startup.huggingface_url : `https://${startup.huggingface_url}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-3 py-1.5 hover:border-amber-400 hover:bg-amber-100/60 transition-colors"
+                >
+                  <Bot className="w-3.5 h-3.5" /> Hugging Face <ExternalLink className="w-3 h-3 text-amber-400" />
+                </a>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       {hasPatents && (
         <div>
           <div className="flex items-center gap-2 mb-3">
@@ -1654,6 +1771,42 @@ function AcquisitionsIPTab({ startup, onNavigate }: { startup: Startup; onNaviga
               ))}
             </div>
           )}
+        </div>
+      )}
+      {patents.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Award className="w-4 h-4 text-gray-400" />
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Individual Patents</h3>
+          </div>
+          <div className="space-y-2">
+            {patents.map((p, idx) => {
+              const inner = (
+                <>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-bold text-gray-900 truncate">{p.title}</span>
+                    {p.filing_date && <span className="text-[10px] text-gray-400 whitespace-nowrap flex-none">{p.filing_date.slice(0, 4)}</span>}
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {p.patent_number && <span className="text-[10px] font-mono text-gray-400">{p.patent_number}</span>}
+                  </div>
+                  {p.summary && <p className="text-xs text-gray-600 leading-relaxed">{p.summary}</p>}
+                </>
+              );
+              return p.url ? (
+                <a
+                  key={`${p.title}-${idx}`} href={p.url} target="_blank" rel="noopener noreferrer"
+                  className="flex flex-col gap-1.5 bg-gray-50 border border-gray-100 rounded-[8px] px-4 py-3.5 hover:border-cyan-300 hover:bg-cyan-50/40 transition-colors"
+                >
+                  {inner}
+                </a>
+              ) : (
+                <div key={`${p.title}-${idx}`} className="flex flex-col gap-1.5 bg-gray-50 border border-gray-100 rounded-[8px] px-4 py-3.5">
+                  {inner}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
       {acquisitions.length > 0 && (
@@ -2245,7 +2398,7 @@ function TearsheetModal({
                 />
               )}
               {activeTab === "funding" && (
-                <FundingValuationTab sortedRounds={sortedRounds} fundingHistoryComplete={detail.funding_history_complete} />
+                <FundingValuationTab startup={detail} sortedRounds={sortedRounds} fundingHistoryComplete={detail.funding_history_complete} />
               )}
               {activeTab === "captable" && <CapTableTab startup={detail} />}
               {activeTab === "talent" && (

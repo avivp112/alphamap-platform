@@ -77,11 +77,64 @@ export interface Leader extends PersonQualityTags {
   // ("a C-level hire in the last 30-90 days"). Best-effort; omitted far
   // more often than it's known.
   joined_date?: string | null;
+  // 1-2 sentence professional background. Best-effort; omitted far more
+  // often than it's known.
+  bio?: string | null;
 }
 
 export interface Founder extends PersonQualityTags {
   name: string;
   linkedin_url?: string | null;
+  // Current title, e.g. "CEO & Co-Founder". Best-effort; omitted when not
+  // stated anywhere in the research.
+  title?: string | null;
+  // 1-2 sentence professional background. Best-effort; omitted far more
+  // often than it's known.
+  bio?: string | null;
+}
+
+// Individual patent/patent-application record — richer than the older
+// patent_count/patent_fields summary scalars (which stay as-is; patents[]
+// is additive, not a replacement). See supabase/migrations/
+// 20260907000000_startups_patents_column.sql.
+export interface PatentRecord {
+  title: string;
+  patent_number?: string | null;
+  filing_date?: string | null;
+  url?: string | null;
+  summary?: string | null;
+}
+
+export type ConfidenceLevel = "low" | "medium" | "high";
+
+// A reported ARR milestone — a dated history, not a one-shot fact (a company
+// can report several over time). Auto-populated by scripts/bulk_enrich_all.ts,
+// append-and-dedupe (never overwritten wholesale).
+export interface ArrMilestone {
+  arr: number;
+  date: string;
+  source?: string | null;
+  confidence?: ConfidenceLevel | null;
+}
+
+// A single CURRENT best-estimate revenue range (not a history — see
+// ArrMilestone for that). Fill-null-only.
+export interface RevenueEstimate {
+  range_low?: number | null;
+  range_high?: number | null;
+  as_of_date?: string | null;
+  source?: string | null;
+  confidence?: ConfidenceLevel | null;
+}
+
+// A press/analyst-reported valuation NOT tied to a specific funding_rounds
+// entry — distinct from FundingRound.valuation, which belongs to one
+// specific announced round. Append-and-dedupe, same as ArrMilestone.
+export interface ValuationBenchmark {
+  valuation: number;
+  date?: string | null;
+  source?: string | null;
+  is_estimated?: boolean | null;
 }
 
 // startup_id is set when the competitor could be matched to another row in
@@ -206,12 +259,34 @@ export interface Startup extends CompanySocialLinks {
   // Best-effort IP signal — NULL means "not found", never "zero patents".
   patent_count?: number | null;
   patent_fields?: string[] | null;
+  // Individual patent/application records — distinct from, and additive
+  // alongside, the patent_count/patent_fields summary above. Fill-null-when-
+  // empty, same policy as competitors/acquisitions/news.
+  patents?: PatentRecord[] | null;
   // Claude's assessment (as of the last enrichment run) of whether
   // funding_rounds is this company's complete history. NULL = not yet
   // assessed. FALSE = a gap is suspected (e.g. a Series B+ round found with
   // no earlier Seed/Series A) — surface a warning rather than presenting
   // the rounds shown as if they were the whole story.
   funding_history_complete?: boolean | null;
+  // 1-2 sentence differentiator/positioning statement, distinct from the
+  // fuller multi-sentence `description`. Fill-null-only.
+  value_proposition?: string | null;
+  // Best-fit employee-count bracket (e.g. "51-200"), alongside the exact
+  // employee_count above — some sources only ever report a range.
+  // Always refreshed (time-varying), same as employee_count/growth_trend.
+  employee_range?: string | null;
+  // Core technologies/frameworks the company is known to build on.
+  // Best-effort, fill-null-when-empty.
+  tech_stack?: string[] | null;
+  // Company/org GitHub and Hugging Face pages. Fill-null-only.
+  github_url?: string | null;
+  huggingface_url?: string | null;
+  // ARR/revenue/valuation signals found independent of (or alongside) an
+  // announced funding round. See each type's own doc comment above.
+  arr_milestones?: ArrMilestone[] | null;
+  revenue_estimate?: RevenueEstimate | null;
+  valuation_benchmarks?: ValuationBenchmark[] | null;
 }
 
 // PostgREST caps any single response at its configured max-rows (1000 by
