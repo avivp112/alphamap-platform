@@ -68,6 +68,12 @@ const OFFSET         = Number(process.env.OFFSET         ?? 0);
 const DELAY_MS       = Number(process.env.DELAY_MS       ?? 20_000);
 const DRY_RUN        = process.env.DRY_RUN               !== "false";
 const MAX_TIER       = Number(process.env.MAX_TIER       ?? 3);
+// DRY_RUN's own "Would patch: <field names>" line only shows which fields
+// would change, not what they'd change TO -- useless for actually checking
+// accuracy against real data. VERBOSE=true additionally prints the full
+// candidate value + evidence quote per field, so a human can sanity-check
+// each claim before ever flipping DRY_RUN=false.
+const VERBOSE         = process.env.VERBOSE               === "true";
 // Kept for parity/visibility only -- v2 does not gate on a single whole-
 // company confidence score (issue 9's entire point). Printed in the run
 // header so anyone diffing v1/v2 output side by side isn't confused by its
@@ -452,6 +458,29 @@ async function processCompany(
   if (DRY_RUN) {
     console.log(`    [DRY] Would patch: ${Object.keys(patch).filter((k) => patch[k] !== null && patch[k] !== undefined).join(", ") || "(nothing)"}`);
     console.log(`    [DRY] Would insert ${newRoundsToInsert.length} new round(s): ${newRoundsToInsert.map((r) => r.round_type).join(", ") || "none"}`);
+    if (VERBOSE) {
+      const cleanPatch = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== null && v !== undefined));
+      console.log("    [VERBOSE] Full patch values:");
+      console.log(JSON.stringify(cleanPatch, null, 2).split("\n").map((l) => `      ${l}`).join("\n"));
+      // Evidence quotes for the scalar material fields that carry one directly
+      // (city/country/founded_year/website) -- the rest (arrays, merged
+      // people) are reviewable straight from cleanPatch above.
+      const evidenced: Array<[string, { value: unknown; source_id: string; evidence_quote: string } | undefined]> = [
+        ["city", profile.profile.city], ["country", profile.profile.country],
+        ["founded_year", profile.profile.founded_year], ["website", profile.profile.website],
+      ];
+      const withEvidence = evidenced.filter(([field, v]) => v && field in cleanPatch);
+      if (withEvidence.length > 0) {
+        console.log("    [VERBOSE] Evidence:");
+        for (const [field, v] of withEvidence) {
+          console.log(`      ${field}: "${v!.value}" <- [${v!.source_id}] "${v!.evidence_quote}"`);
+        }
+      }
+      if (newRoundsToInsert.length > 0) {
+        console.log("    [VERBOSE] New round details:");
+        console.log(JSON.stringify(newRoundsToInsert, null, 2).split("\n").map((l) => `      ${l}`).join("\n"));
+      }
+    }
   } else {
     const { error } = await supabase.from("startups").update(patch).eq("id", row.id);
     if (error) console.warn(`    ⚠️  Profile patch failed: ${error.message}`);
@@ -519,7 +548,7 @@ async function main() {
   console.log(`║  MIN_PROFILE_CONFIDENCE=${MIN_PROFILE_CONFIDENCE} MIN_FUNDING_CONFIDENCE=${MIN_FUNDING_CONFIDENCE}${" ".padEnd(Math.max(0, 10))}║`);
   console.log(`║  (MIN_CONFIDENCE=${MIN_CONFIDENCE} kept for parity, unused by v2)${" ".padEnd(Math.max(0, 10))}║`);
   console.log(`╚${"═".repeat(62)}╝`);
-  if (DRY_RUN) console.log("ℹ️  DRY RUN — set DRY_RUN=false to apply writes to the database.\n");
+  if (DRY_RUN) console.log(`ℹ️  DRY RUN — set DRY_RUN=false to apply writes to the database.${VERBOSE ? " (VERBOSE=true: full values + evidence printed per company.)" : " Set VERBOSE=true to see actual field values, not just names."}\n`);
   console.log(`🗂️   Sector taxonomy: ${taxonomy.parentNames.length} sectors, ${taxonomy.subNames.length} sub-sectors loaded\n`);
 
   const startups = await fetchAllPaginated<V2StartupRow>((from, to) =>
