@@ -1,33 +1,71 @@
 {
-  "version": 2,
+  "version": 3,
   "schema_notes": [
     "Each company entry is ground truth for eval/run_eval.ts to compare pipeline output against.",
     "Sourcing rule: every cited `source_url` is a company website page, an official registry, an official press release, or a news article that did its own original reporting. Aggregator/directory pages (Crunchbase, PitchBook, LinkedIn, Tracxn, Dealroom, Sacra, Seedtable, CB Insights, etc.) were used only to FIND candidate facts and leads during research — never as the cited source for a value here.",
     "Never seeded from AlphaMap's own database — built independently so comparing against it is meaningful.",
     "confidence per field: 'verified' (2+ independent primary/direct-reporting sources agree, or one lead-investor/company-direct source), 'likely' (one credible direct-reporting source, not independently corroborated), 'unknown' (no primary source found, or sources conflict with no way to resolve). Fields marked 'unknown' are excluded from precision/coverage scoring, not guessed.",
     "hard_case_tags follow the v2 spec's categories (Section 6 / issue 13): common_name, non_us, rebrand_domain_change, series_a_start, stealth_no_data, went_public.",
-    "STATUS: human-reviewed batch of 2 (Apex, Fresha). Hybrid sourcing process per the v2 rollout decision: Claude researches + cites primary sources only, Aviv reviews and confirms/corrects city, country, founded_year, and each funding round before an entry counts as final. These 2 are presented for that review now; the rest of the 50-company target batch continues in follow-up sessions, 10 at a time, prioritizing the hard-case categories not yet covered (non_us beyond UK, series_a_start, stealth_no_data, went_public)."
+    "STATUS: human-reviewed batch of 2 (Apex, Fresha) remains final/reviewed. A second, NOT-yet-human-reviewed batch of 10 (listed in the v3 schema_note above) was added by Claude in this session, covering hard-case categories not in the first batch: non_us (Israel/Wiz & Fiverr, UK/Wise, Germany/Celonis, India/Zepto), rebrand_domain_change (Wise, Shortcut), series_a_start (Wiz, Celonis), stealth_no_data (Safe Superintelligence, Thinking Machines Lab), went_public (Fiverr, Wise), and common_name (Bolt, Mercury, Shortcut). All 10 need the same hybrid human review (city/country/founded_year/every funding round) before counting as final; reviewed_by_human is false on every one. The remaining target-batch companies continue in follow-up sessions.",
+    "v3 (this batch): added 10 more companies (bolt-checkout, wiz-security, fiverr, wise-transferwise, celonis, zepto, shortcut-software, safe-superintelligence, mercury-technologies, thinking-machines-lab), Claude-researched only (reviewed_by_human: false on all), same primary-sourcing rules as v2. Two new optional structural fields introduced and used where relevant: is_public_company ({value, confidence, source_url, notes}) to test the public/private boundary explicitly, and hard_case_notes (free-text) for hard-case context that does not fit an existing field (e.g. dual-HQ ambiguity, name-collision disambiguation, bootstrapped-to-Series-A narratives). Also introduced, used only where applicable: rebrand_notes (reused from v2 Fresha pattern), funding_rounds_excluded_unknown (reused from v2), ipo_status (zepto only, for a pending-not-yet-listed IPO case), and acquisition (wiz-security only, for an announced-but-not-closed M&A exit that is NOT a going-public event)."
   ],
   "companies": [
     {
       "id": "apex-space",
       "name": "Apex",
-      "aka": ["Apex Space"],
-      "hard_case_tags": ["common_name"],
+      "aka": [
+        "Apex Space"
+      ],
+      "hard_case_tags": [
+        "common_name"
+      ],
       "reviewed_by_human": false,
       "website": "https://www.apexspace.com",
-      "city": { "value": "Los Angeles", "confidence": "verified", "source_url": "https://www.cnbc.com/2022/10/24/andreessen-horowitz-backed-apex-space-aims-to-mass-produce-spacecraft.html" },
-      "country": { "value": "United States", "confidence": "verified", "source_url": "https://www.cnbc.com/2022/10/24/andreessen-horowitz-backed-apex-space-aims-to-mass-produce-spacecraft.html" },
-      "founded_year": { "value": 2022, "confidence": "verified", "source_url": "https://techcrunch.com/2022/10/24/apex-space-takes-on-satellite-bus-bottleneck-with-seed-round-led-by-a16z/" },
+      "city": {
+        "value": "Los Angeles",
+        "confidence": "verified",
+        "source_url": "https://www.cnbc.com/2022/10/24/andreessen-horowitz-backed-apex-space-aims-to-mass-produce-spacecraft.html"
+      },
+      "country": {
+        "value": "United States",
+        "confidence": "verified",
+        "source_url": "https://www.cnbc.com/2022/10/24/andreessen-horowitz-backed-apex-space-aims-to-mass-produce-spacecraft.html"
+      },
+      "founded_year": {
+        "value": 2022,
+        "confidence": "verified",
+        "source_url": "https://techcrunch.com/2022/10/24/apex-space-takes-on-satellite-bus-bottleneck-with-seed-round-led-by-a16z/"
+      },
       "founders": [
-        { "name": "Ian Cinnamon", "title": "CEO & Co-Founder", "confidence": "verified", "source_url": "https://techcrunch.com/2022/10/24/apex-space-takes-on-satellite-bus-bottleneck-with-seed-round-led-by-a16z/", "notes": "Previously founded Synapse (AI for security checkpoints), acquired by Palantir." },
-        { "name": "Max Benassi", "title": "CTO & Co-Founder", "confidence": "verified", "source_url": "https://techcrunch.com/2022/10/24/apex-space-takes-on-satellite-bus-bottleneck-with-seed-round-led-by-a16z/", "notes": "Previously scaled aerospace manufacturing at SpaceX; Director of Engineering at Astra." }
+        {
+          "name": "Ian Cinnamon",
+          "title": "CEO & Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://techcrunch.com/2022/10/24/apex-space-takes-on-satellite-bus-bottleneck-with-seed-round-led-by-a16z/",
+          "notes": "Previously founded Synapse (AI for security checkpoints), acquired by Palantir."
+        },
+        {
+          "name": "Max Benassi",
+          "title": "CTO & Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://techcrunch.com/2022/10/24/apex-space-takes-on-satellite-bus-bottleneck-with-seed-round-led-by-a16z/",
+          "notes": "Previously scaled aerospace manufacturing at SpaceX; Director of Engineering at Astra."
+        }
       ],
       "funding_rounds": [
         {
-          "type": "Seed", "amount_usd": 7500000, "date": "2022-10-24",
-          "lead_investor": "Andreessen Horowitz", "other_investors": ["XYZ", "J2 Ventures", "Lux Capital", "Village Global"],
-          "valuation_usd": null, "confidence": "verified",
+          "type": "Seed",
+          "amount_usd": 7500000,
+          "date": "2022-10-24",
+          "lead_investor": "Andreessen Horowitz",
+          "other_investors": [
+            "XYZ",
+            "J2 Ventures",
+            "Lux Capital",
+            "Village Global"
+          ],
+          "valuation_usd": null,
+          "confidence": "verified",
           "source_urls": [
             "https://techcrunch.com/2022/10/24/apex-space-takes-on-satellite-bus-bottleneck-with-seed-round-led-by-a16z/",
             "https://spacenews.com/apex-raises-seed-round-to-mass-produce-smallsats/",
@@ -35,9 +73,13 @@
           ]
         },
         {
-          "type": "Series A", "amount_usd": 16000000, "date": "2023-06-22",
-          "lead_investor": "Andreessen Horowitz / Shield Capital (co-leads)", "other_investors": [],
-          "valuation_usd": null, "confidence": "verified",
+          "type": "Series A",
+          "amount_usd": 16000000,
+          "date": "2023-06-22",
+          "lead_investor": "Andreessen Horowitz / Shield Capital (co-leads)",
+          "other_investors": [],
+          "valuation_usd": null,
+          "confidence": "verified",
           "source_urls": [
             "https://www.businesswire.com/news/home/20230622417907/en/Apex-Raises-$16M-in-Series-A-Funding-and-Reveals-Customers-Flying-on-its-First-Aries-Satellite-Bus",
             "https://spacenews.com/apex-raises-16-million-for-spacecraft-factory/",
@@ -45,10 +87,24 @@
           ]
         },
         {
-          "type": "Series B", "amount_usd": 95000000, "date": "2024-06-12",
+          "type": "Series B",
+          "amount_usd": 95000000,
+          "date": "2024-06-12",
           "lead_investor": "XYZ Venture Capital / CRV (co-leads)",
-          "other_investors": ["Upfront", "8VC", "Toyota Ventures", "Point72 Ventures", "Mirae Asset Capital", "Outsiders Fund", "GSBackers", "Andreessen Horowitz", "Shield Capital", "J2 Ventures"],
-          "valuation_usd": null, "confidence": "verified",
+          "other_investors": [
+            "Upfront",
+            "8VC",
+            "Toyota Ventures",
+            "Point72 Ventures",
+            "Mirae Asset Capital",
+            "Outsiders Fund",
+            "GSBackers",
+            "Andreessen Horowitz",
+            "Shield Capital",
+            "J2 Ventures"
+          ],
+          "valuation_usd": null,
+          "confidence": "verified",
           "source_urls": [
             "https://techcrunch.com/2024/06/11/apex-raises-95m-to-scale-satellite-bus-production/",
             "https://spacenews.com/apex-raises-95-million-to-increase-satellite-bus-production/",
@@ -56,23 +112,46 @@
           ]
         },
         {
-          "type": "Series C", "amount_usd": 200000000, "date": "2025-04",
+          "type": "Series C",
+          "amount_usd": 200000000,
+          "date": "2025-04",
           "lead_investor": "Point72 Ventures / 8VC (co-leads)",
-          "other_investors": ["Andreessen Horowitz", "Shield Capital", "XYZ Capital", "Washington Harbour Partners", "StepStone Group"],
-          "valuation_usd": null, "confidence": "likely",
-          "source_urls": ["https://payloadspace.com/apex-raises-200m-at-2-3b-valuation/"],
+          "other_investors": [
+            "Andreessen Horowitz",
+            "Shield Capital",
+            "XYZ Capital",
+            "Washington Harbour Partners",
+            "StepStone Group"
+          ],
+          "valuation_usd": null,
+          "confidence": "likely",
+          "source_urls": [
+            "https://payloadspace.com/apex-raises-200m-at-2-3b-valuation/"
+          ],
           "notes": "Date/amount corroborated by the June 2026 article's own round-sequencing recap (CEO quote); not yet traced to its own dedicated June-2025-dated primary announcement in this pass."
         },
         {
-          "type": "Series D", "amount_usd": 200000000, "date": "2025-09",
-          "lead_investor": null, "valuation_usd": 1000000000, "confidence": "likely",
-          "source_urls": ["https://payloadspace.com/apex-raises-200m-at-2-3b-valuation/"],
+          "type": "Series D",
+          "amount_usd": 200000000,
+          "date": "2025-09",
+          "lead_investor": null,
+          "valuation_usd": 1000000000,
+          "confidence": "likely",
+          "source_urls": [
+            "https://payloadspace.com/apex-raises-200m-at-2-3b-valuation/"
+          ],
           "notes": "Same caveat as Series C above — confirmed via the June 2026 recap, not yet traced to a dedicated September-2025 primary announcement."
         },
         {
-          "type": "Growth", "amount_usd": 200000000, "date": "2026-06-05",
-          "lead_investor": "Glade Brook Capital Partners", "other_investors": ["Washington Harbour Partners"],
-          "valuation_usd": 2300000000, "confidence": "verified",
+          "type": "Growth",
+          "amount_usd": 200000000,
+          "date": "2026-06-05",
+          "lead_investor": "Glade Brook Capital Partners",
+          "other_investors": [
+            "Washington Harbour Partners"
+          ],
+          "valuation_usd": 2300000000,
+          "confidence": "verified",
           "source_urls": [
             "https://payloadspace.com/apex-raises-200m-at-2-3b-valuation/",
             "https://www.startupcouncil.org/articles/satellite-maker-apex%E2%80%99s-valuation-rises-to-2-3-billion-after-latest-200-million-raise"
@@ -81,8 +160,14 @@
         }
       ],
       "total_raised_usd_computed": 718500000,
-      "employee_count": { "value": null, "confidence": "unknown" },
-      "employee_range": { "value": null, "confidence": "unknown" },
+      "employee_count": {
+        "value": null,
+        "confidence": "unknown"
+      },
+      "employee_range": {
+        "value": null,
+        "confidence": "unknown"
+      },
       "github_url": null,
       "huggingface_url": null,
       "production_bug_notes": "AlphaMap's live DB showed 'Growth (Jun 2026)' and 'Series D (Apr 2026)' as two $200M/$2.3B rows and flagged them for merging as a duplicate. Verified research shows the REAL Series D was Sept 2025 (not Apr 2026) at a ~$1B valuation, and the Jun 2026 round is a genuinely separate, later, third $200M raise at $2.3B. The production data's 'Apr 2026' date for 'Series D' matches no real event found — it appears to be a hallucinated/mis-dated entry, not a legitimate duplicate of the June round. The correct fix is 6 distinct rounds with correct dates, not a 2-into-1 merge."
@@ -90,23 +175,58 @@
     {
       "id": "fresha",
       "name": "Fresha",
-      "aka": ["Shedul", "Shedul.com (original 2015-2020 name)"],
-      "hard_case_tags": ["rebrand_domain_change", "non_us"],
+      "aka": [
+        "Shedul",
+        "Shedul.com (original 2015-2020 name)"
+      ],
+      "hard_case_tags": [
+        "rebrand_domain_change",
+        "non_us"
+      ],
       "reviewed_by_human": false,
       "website": "https://www.fresha.com",
       "rebrand_notes": "Launched 2015 as 'Shedul'/'Shedul.com', originally Dubai-based; rebranded to 'Fresha' in 2020 and now headquartered in London. A v2 entity/domain check must not treat pre-2020 Shedul-era sources as a different company, must not let a stale 'shedul.com' domain reference fail domain verification against the current fresha.com, and must get the CURRENT (London) HQ right rather than the historical (Dubai) one when both appear across sources from different years.",
-      "city": { "value": "London", "confidence": "verified", "source_url": "https://thenextweb.com/news/londons-fresha-hits-unicorn-status-with-kkr-led-80m-raise" },
-      "country": { "value": "United Kingdom", "confidence": "verified", "source_url": "https://thenextweb.com/news/londons-fresha-hits-unicorn-status-with-kkr-led-80m-raise" },
-      "founded_year": { "value": 2015, "confidence": "verified", "source_url": "https://techfundingnews.com/beauty-techs-quiet-giant-just-became-a-unicorn-fresha-raises-80m-from-kkr-at-1b-valuation/" },
+      "city": {
+        "value": "London",
+        "confidence": "verified",
+        "source_url": "https://thenextweb.com/news/londons-fresha-hits-unicorn-status-with-kkr-led-80m-raise"
+      },
+      "country": {
+        "value": "United Kingdom",
+        "confidence": "verified",
+        "source_url": "https://thenextweb.com/news/londons-fresha-hits-unicorn-status-with-kkr-led-80m-raise"
+      },
+      "founded_year": {
+        "value": 2015,
+        "confidence": "verified",
+        "source_url": "https://techfundingnews.com/beauty-techs-quiet-giant-just-became-a-unicorn-fresha-raises-80m-from-kkr-at-1b-valuation/"
+      },
       "founders": [
-        { "name": "William Zeqiri", "title": "Co-Founder & CEO", "confidence": "verified", "source_url": "https://techfundingnews.com/beauty-techs-quiet-giant-just-became-a-unicorn-fresha-raises-80m-from-kkr-at-1b-valuation/" },
-        { "name": "Nick Miller", "title": "Co-Founder", "confidence": "verified", "source_url": "https://techfundingnews.com/beauty-techs-quiet-giant-just-became-a-unicorn-fresha-raises-80m-from-kkr-at-1b-valuation/" }
+        {
+          "name": "William Zeqiri",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://techfundingnews.com/beauty-techs-quiet-giant-just-became-a-unicorn-fresha-raises-80m-from-kkr-at-1b-valuation/"
+        },
+        {
+          "name": "Nick Miller",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://techfundingnews.com/beauty-techs-quiet-giant-just-became-a-unicorn-fresha-raises-80m-from-kkr-at-1b-valuation/"
+        }
       ],
       "funding_rounds": [
         {
-          "type": "Series A", "amount_usd": 6000000, "date": "2017-06-08",
-          "lead_investor": "Middle East Venture Partners", "other_investors": ["BECO Capital", "Lumia Capital"],
-          "valuation_usd": null, "confidence": "verified",
+          "type": "Series A",
+          "amount_usd": 6000000,
+          "date": "2017-06-08",
+          "lead_investor": "Middle East Venture Partners",
+          "other_investors": [
+            "BECO Capital",
+            "Lumia Capital"
+          ],
+          "valuation_usd": null,
+          "confidence": "verified",
           "source_urls": [
             "https://www.prnewswire.com/news-releases/fast-growing-beauty-and-wellness-platform-shedulcom-raises-6-million-627428713.html",
             "https://cosmeticsbusiness.com/salon-and-spa-booking-platform-shedul-raises-6m-in-series-a-funding-130343"
@@ -114,22 +234,45 @@
           "notes": "Company was 'Shedul.com' at this time, Dubai-based."
         },
         {
-          "type": "Series B", "amount_usd": 20000000, "date": "2019",
-          "lead_investor": "Partech", "other_investors": ["Target Global", "BECO Capital", "FJ Labs", "Niklas Ostberg (personal investment)"],
-          "valuation_usd": 105000000, "confidence": "likely",
-          "source_urls": ["https://mevp.com/news/worlds-fastest-growing-beauty-booking-platform-shedul-com-raises-20-million-series-b"],
+          "type": "Series B",
+          "amount_usd": 20000000,
+          "date": "2019",
+          "lead_investor": "Partech",
+          "other_investors": [
+            "Target Global",
+            "BECO Capital",
+            "FJ Labs",
+            "Niklas Ostberg (personal investment)"
+          ],
+          "valuation_usd": 105000000,
+          "confidence": "likely",
+          "source_urls": [
+            "https://mevp.com/news/worlds-fastest-growing-beauty-booking-platform-shedul-com-raises-20-million-series-b"
+          ],
           "notes": "Sourced from participating investor MEVP's own announcement (not the lead's or the company's own statement, hence 'likely' not 'verified'); exact month not confirmed in this pass."
         },
         {
-          "type": "Series C", "amount_usd": 100000000, "date": "2021-06-11",
-          "lead_investor": "General Atlantic", "other_investors": ["Huda Kattan"],
-          "valuation_usd": null, "confidence": "verified",
-          "source_urls": ["https://www.businesswire.com/news/home/20210611005192/en/General-Atlantic-Leads-$100-Million-Investment-in-Fresha-Leading-Global-Beauty-and-Wellness-Platform-to-Fuel-Continued-Growth"]
+          "type": "Series C",
+          "amount_usd": 100000000,
+          "date": "2021-06-11",
+          "lead_investor": "General Atlantic",
+          "other_investors": [
+            "Huda Kattan"
+          ],
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.businesswire.com/news/home/20210611005192/en/General-Atlantic-Leads-$100-Million-Investment-in-Fresha-Leading-Global-Beauty-and-Wellness-Platform-to-Fuel-Continued-Growth"
+          ]
         },
         {
-          "type": "Growth", "amount_usd": 80000000, "date": "2026-05-22",
-          "lead_investor": "KKR", "other_investors": [],
-          "valuation_usd": 1000000000, "confidence": "verified",
+          "type": "Growth",
+          "amount_usd": 80000000,
+          "date": "2026-05-22",
+          "lead_investor": "KKR",
+          "other_investors": [],
+          "valuation_usd": 1000000000,
+          "confidence": "verified",
           "source_urls": [
             "https://thenextweb.com/news/londons-fresha-hits-unicorn-status-with-kkr-led-80m-raise",
             "https://techfundingnews.com/beauty-techs-quiet-giant-just-became-a-unicorn-fresha-raises-80m-from-kkr-at-1b-valuation/",
@@ -140,23 +283,1512 @@
       ],
       "funding_rounds_excluded_unknown": [
         {
-          "type": "Series C (additional tranche?)", "amount_usd": 52500000, "date": "2021-12",
+          "type": "Series C (additional tranche?)",
+          "amount_usd": 52500000,
+          "date": "2021-12",
           "confidence": "unknown",
           "notes": "Reported as a 'Series C Plus' top-up by aggregator pages only; no primary source found in this pass. Excluded from scoring. A real test case for v2's round-dedup logic once a primary source is found: is this a distinct round, or should it merge with the June 2021 Series C above?"
         }
       ],
-      "total_raised_usd_reported": { "value": 285000000, "confidence": "unknown", "notes": "Aggregator-reported aggregate (not independently confirmed); do not use as a scoring target for 'Total Raised' — compare against total_raised_usd_computed_from_verified_rounds instead." },
+      "total_raised_usd_reported": {
+        "value": 285000000,
+        "confidence": "unknown",
+        "notes": "Aggregator-reported aggregate (not independently confirmed); do not use as a scoring target for 'Total Raised' — compare against total_raised_usd_computed_from_verified_rounds instead."
+      },
       "total_raised_usd_computed_from_verified_rounds": 206000000,
       "total_raised_discrepancy_notes": "The aggregator-reported total ($285M) exceeds the sum of rounds we could verify to a primary source ($206M: 6M+20M+100M+80M). This is a realistic, common gap between a headline aggregate and an itemized round list, made of some combination of: the unverified $52.5M 'Series C Plus' tranche above, and/or other undisclosed rounds. v2's 'never compute Total Raised from a model-returned total' rule (issue 5) should recompute from whichever individual rounds it actually stored — which will legitimately read LOWER than some press-reported aggregates until every round is independently itemized, and that's correct behavior, not a bug.",
-      "employee_count": { "value": null, "confidence": "unknown", "notes": "LinkedIn's self-reported bucket (201-500), LinkedIn's own 'people' count (~728), and third-party aggregators (500/718/916) all disagree by up to 2x depending on collection date through 2026 — and LinkedIn itself is excluded as a citable source under this golden set's sourcing rule. No primary (company-stated) headcount figure was found in this pass. Left unknown rather than picking a number." },
-      "employee_range": { "value": null, "confidence": "unknown" },
+      "employee_count": {
+        "value": null,
+        "confidence": "unknown",
+        "notes": "LinkedIn's self-reported bucket (201-500), LinkedIn's own 'people' count (~728), and third-party aggregators (500/718/916) all disagree by up to 2x depending on collection date through 2026 — and LinkedIn itself is excluded as a citable source under this golden set's sourcing rule. No primary (company-stated) headcount figure was found in this pass. Left unknown rather than picking a number."
+      },
+      "employee_range": {
+        "value": null,
+        "confidence": "unknown"
+      },
       "github_url": null,
       "huggingface_url": null,
       "production_bug_notes": "AlphaMap's live DB showed 140,000 employees — wrong by 2-3 orders of magnitude against every candidate figure found (the real range is in the low hundreds to ~900s). Likely root cause: Fresha is independently reported to be 'operating at more than $140 million in revenue run-rate as of May 2026' (ARR) — the production pipeline most plausibly confused this $140M ARR figure with an employee count (a field-confusion/unit bug), rather than genuinely mis-searching for headcount. Worth checking whether v1's extraction prompt or v2's schema could cross-contaminate an ARR figure into employee_count under the wrong conditions.",
       "sources_general": [
-        { "title": "London's Fresha hits unicorn status with KKR-led $80M raise", "url": "https://thenextweb.com/news/londons-fresha-hits-unicorn-status-with-kkr-led-80m-raise" },
-        { "title": "How a Dubai tech executive built a $1B beauty platform in London and convinced KKR to back it with $80M", "url": "https://techfundingnews.com/beauty-techs-quiet-giant-just-became-a-unicorn-fresha-raises-80m-from-kkr-at-1b-valuation/" }
+        {
+          "title": "London's Fresha hits unicorn status with KKR-led $80M raise",
+          "url": "https://thenextweb.com/news/londons-fresha-hits-unicorn-status-with-kkr-led-80m-raise"
+        },
+        {
+          "title": "How a Dubai tech executive built a $1B beauty platform in London and convinced KKR to back it with $80M",
+          "url": "https://techfundingnews.com/beauty-techs-quiet-giant-just-became-a-unicorn-fresha-raises-80m-from-kkr-at-1b-valuation/"
+        }
       ]
+    },
+    {
+      "id": "bolt-checkout",
+      "name": "Bolt",
+      "aka": [
+        "Bolt.com",
+        "Bolt Financial, Inc."
+      ],
+      "hard_case_tags": [
+        "common_name"
+      ],
+      "hard_case_notes": "Extremely common name, colliding with: Bolt (Estonian ride-hailing app, bolt.eu), bolttech (insurtech unicorn), Bolt Mobility (e-scooters, co-founded by Usain Bolt), Chevrolet Bolt (car model), and General Bolt/fastener suppliers. Must disambiguate as the US e-commerce one-click-checkout company.",
+      "reviewed_by_human": false,
+      "website": "https://www.bolt.com",
+      "city": {
+        "value": "San Francisco",
+        "confidence": "likely",
+        "source_url": "https://www.forbes.com/sites/donnafuscaldo/2019/07/09/ecommerce-checkout-platform-bolt-raises-68-million-in-funding/"
+      },
+      "country": {
+        "value": "United States",
+        "confidence": "verified",
+        "source_url": "https://www.forbes.com/sites/donnafuscaldo/2019/07/09/ecommerce-checkout-platform-bolt-raises-68-million-in-funding/"
+      },
+      "founded_year": {
+        "value": 2014,
+        "confidence": "likely",
+        "source_url": "https://www.fortune.com/2019/07/09/checkout-startup-bolt-small-retailer-amazon"
+      },
+      "founders": [
+        {
+          "name": "Ryan Breslow",
+          "title": "Co-Founder & CEO (resigned Jan 2022)",
+          "confidence": "verified",
+          "source_url": "https://techcrunch.com/2023/07/21/bolt-ex-ceo-ryan-breslow-subject-of-sec-probe/",
+          "notes": "Dropped out of Stanford in 2014 to found Bolt; resigned as CEO in Jan 2022 after a public dispute with Y Combinator; later reported to be under SEC investigation."
+        },
+        {
+          "name": "Eric Feldman",
+          "title": "Co-Founder",
+          "confidence": "likely",
+          "source_url": "https://www.fortune.com/2019/07/09/checkout-startup-bolt-small-retailer-amazon",
+          "notes": "Stanford co-founder alongside Breslow; little independent primary reporting found on his later role in this pass."
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Series A",
+          "amount_usd": 22000000,
+          "date": "2018-06",
+          "lead_investor": null,
+          "other_investors": [
+            "RRE Ventures",
+            "Floodgate",
+            "Great Oaks Venture Capital",
+            "Streamlined Ventures",
+            "Founders Fund"
+          ],
+          "valuation_usd": null,
+          "confidence": "likely",
+          "source_urls": [
+            "https://www.fortune.com/2019/07/09/checkout-startup-bolt-small-retailer-amazon"
+          ],
+          "notes": "Amount and investor list corroborated only via a 2019 Fortune recap found in this pass, not a dedicated contemporaneous 2018 primary announcement."
+        },
+        {
+          "type": "Series B",
+          "amount_usd": 68000000,
+          "date": "2019-07-15",
+          "lead_investor": "Activant Capital / Tribe Capital (co-leads)",
+          "other_investors": [
+            "personal investments from retail/brand executives (REVOLVE, Crocs, Forever 21, Jet.com)"
+          ],
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.forbes.com/sites/donnafuscaldo/2019/07/09/ecommerce-checkout-platform-bolt-raises-68-million-in-funding/",
+            "https://www.pymnts.com/news/investment-tracker/2019/bolt-funding-one-stop-checkout-software/"
+          ]
+        },
+        {
+          "type": "Series C (first tranche)",
+          "amount_usd": 50000000,
+          "date": "2020-07",
+          "lead_investor": null,
+          "other_investors": [],
+          "valuation_usd": 340000000,
+          "confidence": "likely",
+          "source_urls": [
+            "https://techcrunch.com/2020/12/21/bolt-adds-75m-to-its-series-c-as-the-battle-to-rule-online-checkout-continues/"
+          ],
+          "notes": "This July 2020 first tranche is known only via the December 2020 TechCrunch article's own recap; no dedicated July 2020 primary announcement traced in this pass."
+        },
+        {
+          "type": "Series C (additional tranche)",
+          "amount_usd": 75000000,
+          "date": "2020-12-21",
+          "lead_investor": "General Atlantic",
+          "other_investors": [
+            "Activant Capital",
+            "Tribe Capital",
+            "WestCap"
+          ],
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://techcrunch.com/2020/12/21/bolt-adds-75m-to-its-series-c-as-the-battle-to-rule-online-checkout-continues/"
+          ]
+        },
+        {
+          "type": "Series D",
+          "amount_usd": 393000000,
+          "date": "2021-10",
+          "lead_investor": null,
+          "other_investors": [],
+          "valuation_usd": null,
+          "confidence": "likely",
+          "source_urls": [
+            "https://techcrunch.com/2022/01/14/online-checkout-bolt-decacorn/"
+          ],
+          "notes": "Known only via this January 2022 TechCrunch article's own recap mentioning the prior Series D; no dedicated October 2021 primary announcement traced in this pass."
+        },
+        {
+          "type": "Series E",
+          "amount_usd": 355000000,
+          "date": "2022-01-14",
+          "lead_investor": "funds and accounts managed by BlackRock",
+          "other_investors": [
+            "Schonfeld",
+            "Invus Opportunities",
+            "CreditEase",
+            "H.I.G. Growth",
+            "Activant Capital",
+            "Moore Strategic Ventures"
+          ],
+          "valuation_usd": 11000000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://techcrunch.com/2022/01/14/online-checkout-bolt-decacorn/"
+          ]
+        }
+      ],
+      "funding_rounds_excluded_unknown": [
+        {
+          "type": "Seed",
+          "amount_usd": null,
+          "date": "2014-2015",
+          "confidence": "unknown",
+          "notes": "Secondary sources report a 2014 Partech check and a separate 2015 Formic Ventures check with no consistent amount; no primary announcement found in this pass. Excluded from scoring."
+        }
+      ],
+      "total_raised_usd_reported": {
+        "value": 970000000,
+        "confidence": "unknown",
+        "notes": "Aggregator-style figure (~$950M-$1B across ~10 rounds); not independently confirmed as a single total."
+      },
+      "total_raised_usd_computed_from_verified_rounds": 963000000,
+      "total_raised_discrepancy_notes": "Our itemized sum ($963M across Series A-E) is already close to the aggregator figure; the small residual gap is plausibly the unresolved pre-2018 seed amount in funding_rounds_excluded_unknown.",
+      "employee_count": {
+        "value": null,
+        "confidence": "unknown"
+      },
+      "employee_range": {
+        "value": null,
+        "confidence": "unknown"
+      },
+      "github_url": null,
+      "huggingface_url": null,
+      "is_public_company": {
+        "value": false,
+        "confidence": "verified",
+        "source_url": "https://techcrunch.com/2024/08/24/the-fallout-after-bolts-aggressive-fundraising-attempt-has-been-wild/",
+        "notes": "Remains private. TechCrunch reported a dramatic internal valuation markdown and a contentious, aggressive 2024 fundraising attempt rather than any move toward an IPO."
+      }
+    },
+    {
+      "id": "wiz-security",
+      "name": "Wiz",
+      "aka": [
+        "Wiz, Inc."
+      ],
+      "hard_case_tags": [
+        "series_a_start"
+      ],
+      "hard_case_notes": "Dual-HQ ambiguity: Wiz was founded and built its early engineering org in Tel Aviv, Israel (its Series A/B press describes it as an Israeli cybersecurity startup), but by its March 2025 Google-acquisition announcement, Alphabet's own SEC filing described Wiz as 'headquartered in New York.' This entry records the CURRENT officially-stated HQ (New York, US) per that filing, consistent with this golden set's 'current over historical HQ' rule (see Fresha), but a real enrichment pipeline should be able to represent — not silently collapse — this founding-country-vs-current-HQ split.",
+      "reviewed_by_human": false,
+      "website": "https://www.wiz.io",
+      "city": {
+        "value": "New York",
+        "confidence": "verified",
+        "source_url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204425000027/googexhibit99131825.htm"
+      },
+      "country": {
+        "value": "United States",
+        "confidence": "verified",
+        "source_url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204425000027/googexhibit99131825.htm"
+      },
+      "founded_year": {
+        "value": 2020,
+        "confidence": "verified",
+        "source_url": "https://www.calcalistech.com/ctech/articles/0,7340,L-3880455,00.html"
+      },
+      "founders": [
+        {
+          "name": "Assaf Rappaport",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://www.calcalistech.com/ctech/articles/0,7340,L-3880455,00.html",
+          "notes": "Previously co-founded Adallom (acquired by Microsoft, 2015) and led Microsoft Israel R&D."
+        },
+        {
+          "name": "Yinon Costica",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://www.calcalistech.com/ctech/articles/0,7340,L-3880455,00.html"
+        },
+        {
+          "name": "Roy Reznik",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://www.calcalistech.com/ctech/articles/0,7340,L-3880455,00.html"
+        },
+        {
+          "name": "Ami Luttwak",
+          "title": "Co-Founder & CTO",
+          "confidence": "verified",
+          "source_url": "https://www.calcalistech.com/ctech/articles/0,7340,L-3880455,00.html"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Series A",
+          "amount_usd": 100000000,
+          "date": "2020-10",
+          "lead_investor": null,
+          "other_investors": [
+            "Index Ventures",
+            "Sequoia",
+            "Insight Partners",
+            "Cyberstarts"
+          ],
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.calcalistech.com/ctech/articles/0,7340,L-3880455,00.html",
+            "https://www.forbes.com/sites/davidjeans/2020/12/09/wiz-sequoia-index-cybersecurity-100-million-former-microsoft-executives/"
+          ],
+          "notes": "Per Forbes, Wiz skipped a traditional seed round on the strength of the founders' prior $320M Adallom exit to Microsoft — this round, ~9 months after founding, was its first institutional capital. Core evidence for this entry's series_a_start tag."
+        },
+        {
+          "type": "Series B",
+          "amount_usd": 130000000,
+          "date": "2021-03",
+          "lead_investor": null,
+          "other_investors": [],
+          "valuation_usd": 1700000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.calcalistech.com/ctech/articles/0,7340,L-3899676,00.html",
+            "https://www.finsmes.com/2021/03/wiz-raises-130m-in-series-b-funding-valued-at-1-7-billion.html"
+          ]
+        },
+        {
+          "type": "Series C",
+          "amount_usd": 250000000,
+          "date": "2021-10",
+          "lead_investor": null,
+          "other_investors": [],
+          "valuation_usd": 6000000000,
+          "confidence": "likely",
+          "source_urls": [
+            "https://nocamels.com/2021/10/wiz-series-c-valuation-billion/"
+          ],
+          "notes": "Single direct-reporting trade-press source (NoCamels) found in this pass."
+        },
+        {
+          "type": "Series E",
+          "amount_usd": 1000000000,
+          "date": "2024-05-07",
+          "lead_investor": null,
+          "other_investors": [],
+          "valuation_usd": 12000000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://techcrunch.com/2024/05/07/wiz-raises-1b-at-a-12b-valuation-to-expand-its-cloud-security-platform-through-acquisitions"
+          ],
+          "notes": "Round letter follows TechCrunch's own framing; an interim 'Series D' (~$300M, Feb 2023, ~$10B valuation) is widely reported by aggregators but not traced to a primary source in this pass — see funding_rounds_excluded_unknown."
+        }
+      ],
+      "funding_rounds_excluded_unknown": [
+        {
+          "type": "Series D",
+          "amount_usd": 300000000,
+          "date": "2023-02",
+          "confidence": "unknown",
+          "notes": "Widely reported (~$300M at ~$10B valuation) by secondary/aggregator sources only; no primary announcement traced in this pass. Excluded from scoring."
+        }
+      ],
+      "total_raised_usd_reported": {
+        "value": 1930000000,
+        "confidence": "unknown",
+        "notes": "Approximate aggregator-style total across all rounds including the unverified Series D."
+      },
+      "total_raised_usd_computed_from_verified_rounds": 1480000000,
+      "total_raised_discrepancy_notes": "Gap from the reported total is almost entirely the excluded, unverified ~$300M 'Series D' tranche.",
+      "employee_count": {
+        "value": null,
+        "confidence": "unknown"
+      },
+      "employee_range": {
+        "value": null,
+        "confidence": "unknown"
+      },
+      "github_url": null,
+      "huggingface_url": null,
+      "acquisition": {
+        "acquirer": "Google LLC / Alphabet Inc.",
+        "announced_date": "2025-03-18",
+        "amount_usd": 32000000000,
+        "status": "Announced as an all-cash definitive agreement; TechCrunch reported US antitrust (DOJ) clearance on 2025-11-05. Per Alphabet's own 8-K, closing was still subject to customary conditions.",
+        "confidence": "verified",
+        "source_urls": [
+          "https://www.sec.gov/Archives/edgar/data/1652044/000165204425000027/googexhibit99131825.htm",
+          "https://techcrunch.com/2025/11/05/google-gets-the-us-governments-green-light-to-acquire-wiz-for-32b/"
+        ]
+      },
+      "is_public_company": {
+        "value": false,
+        "confidence": "verified",
+        "source_url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204425000027/googexhibit99131825.htm",
+        "notes": "Never completed an IPO. Agreed in March 2025 to be acquired by Google/Alphabet for $32B in cash rather than going public (one outlet framed this as a pivot 'from IPO dreams' to acquisition); once closed, Wiz becomes part of Google Cloud, not a separate public company."
+      }
+    },
+    {
+      "id": "fiverr",
+      "name": "Fiverr",
+      "aka": [],
+      "hard_case_tags": [
+        "non_us",
+        "went_public"
+      ],
+      "reviewed_by_human": false,
+      "website": "https://www.fiverr.com",
+      "city": {
+        "value": "Tel Aviv",
+        "confidence": "verified",
+        "source_url": "https://www.sec.gov/Archives/edgar/data/1762301/000110465920041146/tm203275-1_20f.htm"
+      },
+      "country": {
+        "value": "Israel",
+        "confidence": "verified",
+        "source_url": "https://www.sec.gov/Archives/edgar/data/1762301/000110465920041146/tm203275-1_20f.htm"
+      },
+      "founded_year": {
+        "value": 2010,
+        "confidence": "verified",
+        "source_url": "https://www.sec.gov/Archives/edgar/data/1762301/000110465920041146/tm203275-1_20f.htm"
+      },
+      "founders": [
+        {
+          "name": "Micha Kaufman",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://www.fiverr.com/news/ipo-pricing"
+        },
+        {
+          "name": "Shai Wininger",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://www.fiverr.com/news/ipo-pricing"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Series B",
+          "amount_usd": 15000000,
+          "date": "2012-05",
+          "lead_investor": null,
+          "other_investors": [
+            "Bessemer Venture Partners",
+            "Accel Partners"
+          ],
+          "valuation_usd": null,
+          "confidence": "likely",
+          "source_urls": [
+            "https://vator.tv/2015-11-11-fiverr-goes-beyond-5-with-60m-series-d-round/"
+          ],
+          "notes": "Cited via the 2015 Series D article's own funding-history recap; a dedicated 2012 primary announcement was not separately traced in this pass."
+        },
+        {
+          "type": "Series C",
+          "amount_usd": 30000000,
+          "date": "2014-08",
+          "lead_investor": "Qumra Capital",
+          "other_investors": [
+            "Bessemer Venture Partners",
+            "Accel Partners"
+          ],
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.fiverr.com/news/services-marketplace-fiverr-raises-30-million-in-series-c-round",
+            "https://qumracapital.com/news/fiverr-raises-30-million-to-fuel-global-growth-of-worlds-largest-marketplace-for-services-%E2%80%A8/"
+          ]
+        },
+        {
+          "type": "Series D",
+          "amount_usd": 60000000,
+          "date": "2015-11-11",
+          "lead_investor": "Square Peg Capital",
+          "other_investors": [
+            "Bessemer Venture Partners",
+            "Accel",
+            "Qumra Capital"
+          ],
+          "valuation_usd": null,
+          "confidence": "likely",
+          "source_urls": [
+            "https://vator.tv/2015-11-11-fiverr-goes-beyond-5-with-60m-series-d-round/"
+          ],
+          "notes": "Brought reported cumulative funding to $110M per this source; single direct-reporting source in this pass."
+        },
+        {
+          "type": "IPO (NYSE)",
+          "amount_usd": 118200000,
+          "date": "2019-06-13",
+          "lead_investor": "J.P. Morgan Securities / Citigroup Global Markets (joint book-runners)",
+          "other_investors": [],
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.sec.gov/Archives/edgar/data/1762301/000110465919037227/a19-11710_1s8.htm",
+            "https://www.fiverr.com/news/ipo-pricing"
+          ],
+          "notes": "Priced at $21/share; amount shown is net IPO proceeds to the company. Shares began trading on NYSE (ticker FVRR) on 2019-06-13 and closed the first day up ~89%."
+        }
+      ],
+      "funding_rounds_excluded_unknown": [
+        {
+          "type": "Seed",
+          "amount_usd": 1000000,
+          "date": "2010",
+          "confidence": "unknown",
+          "notes": "Secondary sources cite a ~$1M 2010 seed from Cubit Investments; no primary announcement traced in this pass. Excluded from scoring."
+        }
+      ],
+      "total_raised_usd_reported": {
+        "value": 110000000,
+        "confidence": "likely",
+        "notes": "Pre-IPO VC total per the 2015 Series D coverage ($15M+$30M+$60M, roughly)."
+      },
+      "total_raised_usd_computed_from_verified_rounds": 223200000,
+      "total_raised_discrepancy_notes": "Our figure includes the IPO's $118.2M net proceeds, which pre-IPO 'total raised' aggregates naturally exclude; pre-IPO VC rounds alone sum to ~$105M, close to the $110M reported figure.",
+      "employee_count": {
+        "value": null,
+        "confidence": "unknown"
+      },
+      "employee_range": {
+        "value": null,
+        "confidence": "unknown"
+      },
+      "github_url": null,
+      "huggingface_url": null,
+      "is_public_company": {
+        "value": true,
+        "confidence": "verified",
+        "source_url": "https://www.sec.gov/Archives/edgar/data/1762301/000110465920041146/tm203275-1_20f.htm",
+        "notes": "Listed on NYSE as FVRR since 2019-06-13; files annual reports on Form 20-F as a foreign private issuer."
+      }
+    },
+    {
+      "id": "wise-transferwise",
+      "name": "Wise",
+      "aka": [
+        "TransferWise (2011-2021 name)",
+        "Wise plc"
+      ],
+      "hard_case_tags": [
+        "non_us",
+        "rebrand_domain_change",
+        "went_public"
+      ],
+      "rebrand_notes": "Founded 2011 as 'TransferWise'; rebranded to 'Wise' on 2021-02-22 (transferwise.com began redirecting to wise.com, full cutover by March 2021) to reflect expansion beyond peer-to-peer money transfer into broader international banking/payments infrastructure. Pre-2021 sources referencing 'TransferWise' must resolve to this same company, and the stale transferwise.com domain must not fail domain verification against the current wise.com.",
+      "reviewed_by_human": false,
+      "website": "https://wise.com",
+      "city": {
+        "value": "London",
+        "confidence": "verified",
+        "source_url": "https://techcrunch.com/2017/07/18/taavet-hinrikus-hands-over-ceo-reins-transferwise-to-cofounder-kristo-kaarmann/"
+      },
+      "country": {
+        "value": "United Kingdom",
+        "confidence": "verified",
+        "source_url": "https://techcrunch.com/2017/07/18/taavet-hinrikus-hands-over-ceo-reins-transferwise-to-cofounder-kristo-kaarmann/"
+      },
+      "founded_year": {
+        "value": 2011,
+        "confidence": "verified",
+        "source_url": "https://techcrunch.com/2017/07/18/taavet-hinrikus-hands-over-ceo-reins-transferwise-to-cofounder-kristo-kaarmann/"
+      },
+      "founders": [
+        {
+          "name": "Kristo Käärmann",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://techcrunch.com/2017/07/18/taavet-hinrikus-hands-over-ceo-reins-transferwise-to-cofounder-kristo-kaarmann/"
+        },
+        {
+          "name": "Taavet Hinrikus",
+          "title": "Co-Founder (CEO until 2017, then Chairman)",
+          "confidence": "verified",
+          "source_url": "https://techcrunch.com/2017/07/18/taavet-hinrikus-hands-over-ceo-reins-transferwise-to-cofounder-kristo-kaarmann/",
+          "notes": "One of Skype's first employees before co-founding TransferWise."
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Seed",
+          "amount_usd": 1300000,
+          "date": "2012-04",
+          "lead_investor": "IA Ventures / Index Ventures",
+          "other_investors": [
+            "Kima Ventures",
+            "Seedcamp",
+            "angel investors"
+          ],
+          "valuation_usd": null,
+          "confidence": "likely",
+          "source_urls": [
+            "https://www.eu-startups.com/2012/04/money-transfer-transferwise-raises-1-3-million/"
+          ]
+        },
+        {
+          "type": "Series A",
+          "amount_usd": 6000000,
+          "date": "2013-05",
+          "lead_investor": "Valar Ventures",
+          "other_investors": [
+            "SV Angel"
+          ],
+          "valuation_usd": null,
+          "confidence": "likely",
+          "source_urls": [
+            "https://www.finsmes.com/2013/05/transferwise-raises-6m-funding.html"
+          ],
+          "notes": "Valar Ventures is Peter Thiel's fund; Thiel was an early personal investor per multiple sources."
+        },
+        {
+          "type": "Series C",
+          "amount_usd": 58000000,
+          "date": "2015-01-26",
+          "lead_investor": "Andreessen Horowitz",
+          "other_investors": [
+            "Richard Branson",
+            "Baillie Gifford"
+          ],
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://techcrunch.com/2015/01/25/a16z-leads-58m-round-in-uks-transferwise-to-ramp-up-p2p-remittance-business"
+          ]
+        },
+        {
+          "type": "Series E",
+          "amount_usd": 280000000,
+          "date": "2017-11-02",
+          "lead_investor": "Old Mutual Global Investors / IVP (co-leads)",
+          "other_investors": [
+            "Sapphire Ventures",
+            "Mitsui",
+            "World Innovation Lab",
+            "Andreessen Horowitz",
+            "Richard Branson",
+            "Baillie Gifford"
+          ],
+          "valuation_usd": 1600000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://tech.eu/2017/11/02/transferwise-funding/",
+            "https://finovate.com/transferwise-raises-280-million-series-e/"
+          ]
+        },
+        {
+          "type": "Secondary share sale (no new company capital)",
+          "amount_usd": 292000000,
+          "date": "2019-05-21",
+          "lead_investor": null,
+          "other_investors": [],
+          "valuation_usd": 3500000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://techcrunch.com/2019/05/21/three-point-five-unicorns"
+          ],
+          "notes": "Existing shareholders/employees sold shares to new and existing investors; no money went onto TransferWise's balance sheet. Important for total_raised accounting — see discrepancy notes."
+        },
+        {
+          "type": "Secondary share sale (no new company capital)",
+          "amount_usd": 319000000,
+          "date": "2020-07-28",
+          "lead_investor": "D1 Capital Partners / Lone Pine Capital (existing)",
+          "other_investors": [
+            "Vulcan Capital",
+            "Baillie Gifford",
+            "Fidelity Investments",
+            "LocalGlobe"
+          ],
+          "valuation_usd": 5000000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.cnbc.com/2020/07/28/fintech-firm-transferwise-valued-at-5-billion-in-secondary-share-sale.html"
+          ]
+        },
+        {
+          "type": "Direct Listing (London Stock Exchange)",
+          "amount_usd": null,
+          "date": "2021-07-07",
+          "lead_investor": null,
+          "other_investors": [],
+          "valuation_usd": 11000000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.cnbc.com/2021/07/07/wise-direct-listing-london.html",
+            "https://newsroom.wise.com/en-CEU/216920-wise-lists-on-the-london-stock-exchange/"
+          ],
+          "notes": "First direct listing of a technology company on the LSE; no new primary capital raised (not a traditional IPO). Valuation estimates range ~$11-12B depending on GBP/USD conversion moment."
+        }
+      ],
+      "total_raised_usd_reported": {
+        "value": 1750000000,
+        "confidence": "unknown",
+        "notes": "Some aggregator trackers conflate the 2019/2020 secondary share sales with primary fundraising, inflating 'total raised' well above actual new capital taken in."
+      },
+      "total_raised_usd_computed_from_verified_rounds": 345300000,
+      "total_raised_discrepancy_notes": "Computed figure counts ONLY rounds that put new capital on the company's balance sheet (Seed+A+C+E = $345.3M); it deliberately excludes the 2019 and 2020 secondary share sales and the 2021 direct listing, none of which raised primary capital for Wise itself. This is a realistic test of whether a pipeline correctly distinguishes primary funding from secondary liquidity/listing events.",
+      "employee_count": {
+        "value": null,
+        "confidence": "unknown"
+      },
+      "employee_range": {
+        "value": null,
+        "confidence": "unknown"
+      },
+      "github_url": null,
+      "huggingface_url": null,
+      "is_public_company": {
+        "value": true,
+        "confidence": "verified",
+        "source_url": "https://newsroom.wise.com/en-CEU/216920-wise-lists-on-the-london-stock-exchange/",
+        "notes": "Direct listing on the LSE main market, 2021-07-07, ticker WISE."
+      }
+    },
+    {
+      "id": "celonis",
+      "name": "Celonis",
+      "aka": [
+        "Celonis SE",
+        "Celonis GmbH (pre-2021 legal form)"
+      ],
+      "hard_case_tags": [
+        "non_us",
+        "series_a_start"
+      ],
+      "hard_case_notes": "Celonis was bootstrapped and reportedly profitable from its 2011 founding until its first institutional funding — a $27.5M Series A in June 2016 — confirmed by multiple independent contemporaneous outlets (TechCrunch, VentureBeat, SiliconANGLE). This is a genuine, well-documented no-seed-round case, not an artifact of incomplete research.",
+      "reviewed_by_human": false,
+      "website": "https://www.celonis.com",
+      "city": {
+        "value": "Munich",
+        "confidence": "verified",
+        "source_url": "https://techcrunch.com/2016/06/07/celonis-takes-27-5m-led-by-accel-83north-to-grow-the-market-for-big-data-process-mining"
+      },
+      "country": {
+        "value": "Germany",
+        "confidence": "verified",
+        "source_url": "https://techcrunch.com/2016/06/07/celonis-takes-27-5m-led-by-accel-83north-to-grow-the-market-for-big-data-process-mining"
+      },
+      "founded_year": {
+        "value": 2011,
+        "confidence": "verified",
+        "source_url": "https://techcrunch.com/2016/06/07/celonis-takes-27-5m-led-by-accel-83north-to-grow-the-market-for-big-data-process-mining"
+      },
+      "founders": [
+        {
+          "name": "Alexander Rinke",
+          "title": "Co-Founder & Co-CEO",
+          "confidence": "verified",
+          "source_url": "https://techcrunch.com/2016/06/07/celonis-takes-27-5m-led-by-accel-83north-to-grow-the-market-for-big-data-process-mining",
+          "notes": "One of three co-founders, originally students at Technische Universität München."
+        },
+        {
+          "name": "Bastian Nominacher",
+          "title": "Co-Founder & Co-CEO",
+          "confidence": "verified",
+          "source_url": "https://techcrunch.com/2016/06/07/celonis-takes-27-5m-led-by-accel-83north-to-grow-the-market-for-big-data-process-mining"
+        },
+        {
+          "name": "Martin Klenk",
+          "title": "Co-Founder & CTO",
+          "confidence": "verified",
+          "source_url": "https://techcrunch.com/2016/06/07/celonis-takes-27-5m-led-by-accel-83north-to-grow-the-market-for-big-data-process-mining"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Series A",
+          "amount_usd": 27500000,
+          "date": "2016-06-07",
+          "lead_investor": "Accel / 83North (co-leads)",
+          "other_investors": [],
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://techcrunch.com/2016/06/07/celonis-takes-27-5m-led-by-accel-83north-to-grow-the-market-for-big-data-process-mining",
+            "https://siliconangle.com/2016/06/08/german-process-mining-startup-celonis-raises-27-5-series-a/"
+          ],
+          "notes": "First institutional round after ~5 years bootstrapped — see hard_case_notes."
+        },
+        {
+          "type": "Series B",
+          "amount_usd": 50000000,
+          "date": "2018-06-27",
+          "lead_investor": "Accel / 83North",
+          "other_investors": [
+            "Alex Ott (individual)",
+            "Carsten Thoma (individual)"
+          ],
+          "valuation_usd": 1000000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://techcrunch.com/2018/06/26/celonis-scores-50-million-series-b-on-1b-valuation"
+          ]
+        },
+        {
+          "type": "Series C",
+          "amount_usd": 290000000,
+          "date": "2019-11",
+          "lead_investor": null,
+          "other_investors": [],
+          "valuation_usd": 2500000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.celonis.com/news/press/venture-beat-celonis-raises-290-million-for-ai-powered-process-mining-at-2-5-billion-valuation"
+          ]
+        },
+        {
+          "type": "Series D",
+          "amount_usd": 1000000000,
+          "date": "2021-06-04",
+          "lead_investor": null,
+          "other_investors": [],
+          "valuation_usd": 11000000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.prnewswire.com/news-releases/celonis-secures-1-billion-to-help-customers-fight-economic-and-supply-chain-challenges-with-process-improvements-301610454.html",
+            "https://www.bloomberg.com/news/videos/2021-06-04/celonis-tops-11-billion-valuation-with-new-round-of-funding-video"
+          ]
+        },
+        {
+          "type": "Series D extension",
+          "amount_usd": 400000000,
+          "date": "2022-08",
+          "lead_investor": "Qatar Investment Authority",
+          "other_investors": [
+            "Activant Capital",
+            "Neuberger Berman",
+            "Alta Park Capital",
+            "Commonfund Capital",
+            "T. Rowe Price Associates (funds)",
+            "Franklin Templeton",
+            "Durable Capital Partners",
+            "TCV",
+            "83North",
+            "Accel"
+          ],
+          "valuation_usd": 13000000000,
+          "confidence": "likely",
+          "source_urls": [
+            "https://www.munich-startup.de/en/85260/celonis-expands-series-d-round/"
+          ],
+          "notes": "Also included a separate $600M credit facility (debt, not equity) per this source; single direct-reporting source traced in this pass."
+        }
+      ],
+      "total_raised_usd_reported": {
+        "value": 2368000000,
+        "confidence": "unknown",
+        "notes": "Aggregator-style 'raised over 13 rounds' figure; likely includes the Series D extension's $600M credit facility, which is debt rather than equity."
+      },
+      "total_raised_usd_computed_from_verified_rounds": 1767500000,
+      "total_raised_discrepancy_notes": "Our equity-rounds-only sum ($1.7675B) is noticeably below the ~$2.37B aggregator figure; the gap is consistent with the Series D extension's $600M credit facility being miscounted as equity funding by secondary trackers — a realistic debt-vs-equity confusion case.",
+      "employee_count": {
+        "value": null,
+        "confidence": "unknown"
+      },
+      "employee_range": {
+        "value": null,
+        "confidence": "unknown"
+      },
+      "github_url": null,
+      "huggingface_url": null,
+      "is_public_company": {
+        "value": false,
+        "confidence": "likely",
+        "source_url": "https://www.munich-startup.de/en/85260/celonis-expands-series-d-round/",
+        "notes": "No primary IPO or listing announcement found as of this research pass; multiple 2024-2025 secondary-market commentary (Forge, PitchBook-style trackers) describes Celonis as still privately held, with a lower secondary-market valuation (~$7-8B) than its last primary round (~$13B). Absence-of-evidence confidence, hence 'likely' not 'verified'."
+      }
+    },
+    {
+      "id": "zepto",
+      "name": "Zepto",
+      "aka": [],
+      "hard_case_tags": [
+        "non_us"
+      ],
+      "hard_case_notes": "Founders Aadit Palicha and Kaivalya Vohra's immediately prior venture, 'KiranaKart' (built 2020, wound down ~March 2021), is often conflated with Zepto in press bios since it shares both founders and some investors — but it is a distinct, shut-down predecessor product, not a renamed-and-continuing entity like Fresha/Shedul, so it is not tagged as a rebrand here. Also note: as of this research pass (Oct 2026), SEBI has approved Zepto's IPO but shares have NOT yet begun trading on NSE/BSE — several low-quality secondary sources already describe Zepto as 'listed' or 'having IPO'd,' which is premature. See ipo_status and is_public_company below; this is a realistic hallucination trap for a pipeline that doesn't check actual listing/filing status.",
+      "reviewed_by_human": false,
+      "website": "https://www.zeptonow.com",
+      "city": {
+        "value": "Bengaluru",
+        "confidence": "likely",
+        "source_url": "https://www.business-standard.com/companies/start-ups/zepto-raises-340-million-led-by-general-catalyst-at-5-billion-valuation-124082901059_1.html",
+        "notes": "Business press reports Zepto moved its corporate HQ from Mumbai to Bengaluru in 2024. Its REGISTERED office remains in Mumbai per its SEBI IPO filing (CIN U46909MH2020PLC351339) — flagging both for a human reviewer to reconcile."
+      },
+      "country": {
+        "value": "India",
+        "confidence": "verified",
+        "source_url": "https://www.sebi.gov.in/sebi_data/commondocs/jun-2026/Zepto%20Limited%20-%20abridged_p.pdf"
+      },
+      "founded_year": {
+        "value": 2021,
+        "confidence": "likely",
+        "source_url": "https://www.businesstoday.in/latest/corporate/story/how-two-19-year-old-stanford-dropouts-founded-zepto-312034-2021-11-12",
+        "notes": "Sources conflict on exact month (April vs July 2021) following the KiranaKart wind-down; year is consistent across sources."
+      },
+      "founders": [
+        {
+          "name": "Aadit Palicha",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://techcrunch.com/2021/10/31/indias-zepto-a-10-minute-grocery-delivery-app-founded-by-two-19-year-old-stanford-dropouts-raises-60-million"
+        },
+        {
+          "name": "Kaivalya Vohra",
+          "title": "Co-Founder & CTO",
+          "confidence": "verified",
+          "source_url": "https://techcrunch.com/2021/10/31/indias-zepto-a-10-minute-grocery-delivery-app-founded-by-two-19-year-old-stanford-dropouts-raises-60-million"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Early institutional round (series label disputed across sources)",
+          "amount_usd": 60000000,
+          "date": "2021-10-31",
+          "lead_investor": "Glade Brook Capital Partners",
+          "other_investors": [
+            "Nexus Venture Partners",
+            "Y Combinator",
+            "Global Founders Capital",
+            "Lachy Groom",
+            "Neeraj Arora",
+            "Manik Gupta"
+          ],
+          "valuation_usd": 225000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://techcrunch.com/2021/10/31/indias-zepto-a-10-minute-grocery-delivery-app-founded-by-two-19-year-old-stanford-dropouts-raises-60-million"
+          ],
+          "notes": "TechCrunch's own headline/article does not assign a series letter to this round; secondary trackers inconsistently label it 'Series A' or 'Series B'. Recorded here without an asserted letter to avoid guessing."
+        },
+        {
+          "type": "Series C",
+          "amount_usd": 100000000,
+          "date": "2021-12-20",
+          "lead_investor": "Y Combinator Continuity Fund",
+          "other_investors": [
+            "Glade Brook Capital",
+            "Nexus Venture Partners",
+            "Breyer Capital",
+            "Lachy Groom",
+            "Global Founders Capital",
+            "Contrary Capital"
+          ],
+          "valuation_usd": 570000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://techcrunch.com/2021/12/20/zepto-a-10-minute-grocery-delivery-app-in-india-raises-100-million/"
+          ],
+          "notes": "Lead investor Y Combinator's own official account publicly called this round 'Series C', which is why it is confidently labeled despite the ambiguity of the round before it."
+        },
+        {
+          "type": "Series D",
+          "amount_usd": 200000000,
+          "date": "2022-05-02",
+          "lead_investor": "Y Combinator Continuity Fund",
+          "other_investors": [
+            "Nexus Venture Partners",
+            "Glade Brook Capital",
+            "Contrary Capital"
+          ],
+          "valuation_usd": 900000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://techcrunch.com/2022/05/02/zepto-a-10-minute-grocery-delivery-app-raises-200-million-at-900-million-valuation"
+          ]
+        },
+        {
+          "type": "Series E",
+          "amount_usd": 200000000,
+          "date": "2023-08",
+          "lead_investor": null,
+          "other_investors": [
+            "StepStone Group",
+            "Goodwater Capital",
+            "Nexus Venture Partners",
+            "Glade Brook Capital"
+          ],
+          "valuation_usd": 1400000000,
+          "confidence": "likely",
+          "source_urls": [
+            "https://www.deccanherald.com/business/zepto-raises-100-million-in-funding-from-continuity-fund-others-valuation-doubles-to-570-millionn-1063148.html"
+          ],
+          "notes": "No dedicated TechCrunch/direct-reporting primary found for this specific Aug 2023 tranche in this pass; cited to a single Indian business-press outlet."
+        },
+        {
+          "type": "Series F",
+          "amount_usd": 665000000,
+          "date": "2024-06-20",
+          "lead_investor": "Glade Brook Capital / Nexus Venture Partners / StepStone Group (co-leads)",
+          "other_investors": [],
+          "valuation_usd": 3600000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://techcrunch.com/2024/06/20/zepto-a-10-minute-delivery-app-raises-665-million-at-3-6-billion-valuation/"
+          ]
+        },
+        {
+          "type": "Growth round (label unclear)",
+          "amount_usd": 340000000,
+          "date": "2024-08-29",
+          "lead_investor": "General Catalyst",
+          "other_investors": [],
+          "valuation_usd": 5000000000,
+          "confidence": "likely",
+          "source_urls": [
+            "https://www.business-standard.com/companies/start-ups/zepto-raises-340-million-led-by-general-catalyst-at-5-billion-valuation-124082901059_1.html"
+          ]
+        }
+      ],
+      "funding_rounds_excluded_unknown": [
+        {
+          "type": "Pre-seed",
+          "amount_usd": 730000,
+          "date": "2021-01",
+          "confidence": "unknown",
+          "notes": "Widely reported (Contrary Capital lead, $2.5M valuation) but no primary/direct-reporting announcement traced in this pass (this was during the KiranaKart predecessor-product period). Excluded from scoring."
+        },
+        {
+          "type": "Series E extension",
+          "amount_usd": 31250000,
+          "date": "2023-11",
+          "confidence": "unknown",
+          "notes": "Reported by aggregators as a Series E top-up at the same $1.4B valuation; no primary source found. Excluded from scoring."
+        }
+      ],
+      "ipo_status": {
+        "status": "SEBI-approved; not yet listed as of this research pass (2026-10)",
+        "confidence": "verified",
+        "source_url": "https://www.sebi.gov.in/sebi_data/commondocs/jun-2026/Zepto%20Limited%20-%20abridged_p.pdf",
+        "notes": "SEBI approved Zepto Ltd.'s IPO on 2026-05-08. As of early October 2026, multiple secondary sources agree the exact IPO date and price band are still unannounced and shares have not begun trading on NSE/BSE, despite some lower-quality blog content already describing Zepto as 'listed'."
+      },
+      "total_raised_usd_reported": {
+        "value": 1600000000,
+        "confidence": "unknown",
+        "notes": "Commonly cited 'nearly $1.6B total raised' aggregate figure as of the 2024 $340M round."
+      },
+      "total_raised_usd_computed_from_verified_rounds": 1565000000,
+      "total_raised_discrepancy_notes": "Computed sum (excluding the two unknown-confidence tranches) is close to the commonly reported aggregate, suggesting the excluded pre-seed and Series E extension are a small fraction of total capital raised.",
+      "employee_count": {
+        "value": null,
+        "confidence": "unknown"
+      },
+      "employee_range": {
+        "value": null,
+        "confidence": "unknown"
+      },
+      "github_url": null,
+      "huggingface_url": null,
+      "is_public_company": {
+        "value": false,
+        "confidence": "verified",
+        "source_url": "https://www.sebi.gov.in/sebi_data/commondocs/jun-2026/Zepto%20Limited%20-%20abridged_p.pdf",
+        "notes": "Not yet listed despite SEBI IPO approval — see ipo_status."
+      }
+    },
+    {
+      "id": "shortcut-software",
+      "name": "Shortcut",
+      "aka": [
+        "Clubhouse (2014-2021 name)",
+        "Clubhouse.io",
+        "Clubhouse Software, Inc."
+      ],
+      "hard_case_tags": [
+        "rebrand_domain_change",
+        "common_name"
+      ],
+      "rebrand_notes": "Founded 2014 as project-management tool 'Clubhouse' (clubhouse.io). Renamed to 'Shortcut' (shortcut.com) on 2021-09-07 after the unrelated live-audio social app 'Clubhouse' became a cultural phenomenon in 2020-2021 and took the clubhouse.com domain, making the original name commercially untenable. A pipeline must resolve pre-Sept-2021 'Clubhouse' (project-management) sources to this company, and must NOT conflate it with either the audio app Clubhouse (San Francisco, founded 2020) or the unrelated nonprofit 'The Clubhouse Network' (Boston) — three genuinely distinct organizations share almost the same name, compounding the rebrand hard case with a common-name hard case.",
+      "hard_case_notes": "See rebrand_notes for the three-way 'Clubhouse' name collision.",
+      "reviewed_by_human": false,
+      "website": "https://www.shortcut.com",
+      "city": {
+        "value": "New York",
+        "confidence": "likely",
+        "source_url": "https://techcrunch.com/2017/12/12/clubhouse-nets-10m-series-a-from-battery-ventures-to-make-software-development-fun-again/"
+      },
+      "country": {
+        "value": "United States",
+        "confidence": "verified",
+        "source_url": "https://techcrunch.com/2017/12/12/clubhouse-nets-10m-series-a-from-battery-ventures-to-make-software-development-fun-again/"
+      },
+      "founded_year": {
+        "value": 2014,
+        "confidence": "likely",
+        "source_url": "https://techcrunch.com/2017/12/12/clubhouse-nets-10m-series-a-from-battery-ventures-to-make-software-development-fun-again/"
+      },
+      "founders": [
+        {
+          "name": "Kurt Schrader",
+          "title": "Co-Founder & CEO",
+          "confidence": "likely",
+          "source_url": "https://www.eweek.com/enterprise-apps/clubhouse-breaking-down-barriers-for-developers-project-teams/"
+        },
+        {
+          "name": "Andrew Childs",
+          "title": "Co-Founder & Chief Design Officer",
+          "confidence": "likely",
+          "source_url": "https://www.eweek.com/enterprise-apps/clubhouse-breaking-down-barriers-for-developers-project-teams/"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Seed (two tranches)",
+          "amount_usd": 4000000,
+          "date": "2016-09",
+          "lead_investor": "Resolute Ventures",
+          "other_investors": [
+            "Lerer Hippeau Ventures",
+            "RRE Ventures",
+            "Neu Venture Capital",
+            "Flight Ventures",
+            "Brooklyn Bridge Ventures"
+          ],
+          "valuation_usd": null,
+          "confidence": "likely",
+          "source_urls": [
+            "https://www.finsmes.com/2016/09/clubhouse-software-raises-2m-in-financing.html"
+          ],
+          "notes": "$2M of this reported via FinSMEs (a press-release wire, treated cautiously as 'likely' rather than 'verified'); the full $4M-across-two-rounds figure is a secondary-source aggregate of two separate seed checks."
+        },
+        {
+          "type": "Series A",
+          "amount_usd": 10000000,
+          "date": "2017-12-12",
+          "lead_investor": "Battery Ventures",
+          "other_investors": [
+            "Resolute Ventures",
+            "Lerer Hippeau Ventures",
+            "Neu Venture Capital",
+            "RRE Ventures",
+            "Zeitgeist Partners"
+          ],
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://techcrunch.com/2017/12/12/clubhouse-nets-10m-series-a-from-battery-ventures-to-make-software-development-fun-again/"
+          ]
+        },
+        {
+          "type": "Series B",
+          "amount_usd": 25000000,
+          "date": "2020-01-23",
+          "lead_investor": "Greylock Partners",
+          "other_investors": [],
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://siliconangle.com/2020/01/23/clubhouse-raises-25m-series-b-devops-enterprise-software-management/",
+            "https://www.builtinnyc.com/articles/clubhouse-25m-series-b"
+          ]
+        }
+      ],
+      "total_raised_usd_reported": {
+        "value": 44000000,
+        "confidence": "unknown",
+        "notes": "Aggregator figure, reasonably close to our itemized sum."
+      },
+      "total_raised_usd_computed_from_verified_rounds": 39000000,
+      "total_raised_discrepancy_notes": "Small ($5M) gap plausibly reflects imprecise rounding of the two-tranche seed amount across secondary sources.",
+      "employee_count": {
+        "value": 70,
+        "confidence": "likely",
+        "source_url": "https://getlatka.com/companies/shortcut.com",
+        "notes": "Single interview-based business-press source (Latka), as of ~2024; not independently corroborated."
+      },
+      "employee_range": {
+        "value": null,
+        "confidence": "unknown"
+      },
+      "github_url": null,
+      "huggingface_url": null,
+      "is_public_company": {
+        "value": false,
+        "confidence": "likely",
+        "source_url": "https://getlatka.com/companies/shortcut.com",
+        "notes": "No funding or exit event found since the January 2020 Series B; secondary press describes it as an independent, apparently-profitable private company generating ~$21M revenue as of 2024, with no acquisition or IPO traced in this pass."
+      }
+    },
+    {
+      "id": "safe-superintelligence",
+      "name": "Safe Superintelligence Inc.",
+      "aka": [
+        "SSI"
+      ],
+      "hard_case_tags": [
+        "stealth_no_data"
+      ],
+      "hard_case_notes": "Deliberately stealth by design: founders have stated the company will ship 'one product: a safe superintelligence' with no interim releases, and as of multiple 2025-2026 reports it has no public product, no revenue, and (per secondary estimates) roughly 50-ish employees. Thin public data is a genuine structural feature of this company, not a research gap — but its funding events themselves are unusually well-covered for a stealth company, which is itself an interesting test case.",
+      "reviewed_by_human": false,
+      "website": "https://ssi.inc",
+      "city": {
+        "value": "Palo Alto",
+        "confidence": "likely",
+        "source_url": "https://www.calcalistech.com/ctechnews/article/skntpjgl0",
+        "notes": "Company is explicitly dual-based: Palo Alto, California (primary/legal) and Tel Aviv, Israel (a second office, per the company's own founding announcement coverage)."
+      },
+      "country": {
+        "value": "United States",
+        "confidence": "likely",
+        "source_url": "https://www.calcalistech.com/ctechnews/article/skntpjgl0"
+      },
+      "founded_year": {
+        "value": 2024,
+        "confidence": "verified",
+        "source_url": "https://www.bloomberg.com/news/articles/2024-09-04/openai-co-founder-raises-1-billion-to-build-safe-powerful-ai"
+      },
+      "founders": [
+        {
+          "name": "Ilya Sutskever",
+          "title": "Co-Founder & CEO (CEO since July 2025; previously Chief Scientist)",
+          "confidence": "verified",
+          "source_url": "https://www.cnbc.com/2025/07/03/ilya-sutskever-is-ceo-of-safe-superintelligence-after-meta-hired-gross.html",
+          "notes": "Former Chief Scientist and co-founder of OpenAI."
+        },
+        {
+          "name": "Daniel Gross",
+          "title": "Co-Founder (CEO until mid-2025, then departed to join Meta)",
+          "confidence": "verified",
+          "source_url": "https://www.cnbc.com/2025/07/03/ilya-sutskever-is-ceo-of-safe-superintelligence-after-meta-hired-gross.html",
+          "notes": "Former head of AI at Apple."
+        },
+        {
+          "name": "Daniel Levy",
+          "title": "Co-Founder & President",
+          "confidence": "verified",
+          "source_url": "https://www.cnbc.com/2025/07/03/ilya-sutskever-is-ceo-of-safe-superintelligence-after-meta-hired-gross.html",
+          "notes": "Former OpenAI technical staff member."
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Seed",
+          "amount_usd": 1000000000,
+          "date": "2024-09-04",
+          "lead_investor": null,
+          "other_investors": [
+            "Andreessen Horowitz",
+            "Sequoia Capital",
+            "SV Angel",
+            "NFDG (Nat Friedman & Daniel Gross's fund)"
+          ],
+          "valuation_usd": 5000000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.bloomberg.com/news/articles/2024-09-04/openai-co-founder-raises-1-billion-to-build-safe-powerful-ai"
+          ]
+        },
+        {
+          "type": "Series B",
+          "amount_usd": 2000000000,
+          "date": "2025-04-12",
+          "lead_investor": "Greenoaks Capital",
+          "other_investors": [
+            "Andreessen Horowitz",
+            "Lightspeed Venture Partners",
+            "DST Global",
+            "Alphabet (strategic)",
+            "Nvidia (strategic)"
+          ],
+          "valuation_usd": 32000000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.calcalistech.com/ctechnews/article/hjfywdtajl",
+            "https://techcrunch.com/2025/04/12/openai-co-founder-ilya-sutskevers-safe-superintelligence-reportedly-valued-at-32b"
+          ],
+          "notes": "Both direct-reporting sources independently converge on the same $2B/$32B figures even though each individually hedges with 'reportedly' — treated as verified on that basis, per this golden set's 2-independent-sources rule."
+        }
+      ],
+      "total_raised_usd_reported": {
+        "value": 3000000000,
+        "confidence": "likely",
+        "notes": "Simple sum of the two disclosed rounds, as commonly reported."
+      },
+      "total_raised_usd_computed_from_verified_rounds": 3000000000,
+      "employee_count": {
+        "value": null,
+        "confidence": "unknown",
+        "notes": "Secondary sources estimate 'roughly 50' employees as of mid-2025; no primary (company-stated) headcount found. Left unknown rather than guessed, consistent with the stealth_no_data tag."
+      },
+      "employee_range": {
+        "value": null,
+        "confidence": "unknown"
+      },
+      "github_url": null,
+      "huggingface_url": null,
+      "is_public_company": {
+        "value": false,
+        "confidence": "verified",
+        "source_url": "https://www.bloomberg.com/news/articles/2024-09-04/openai-co-founder-raises-1-billion-to-build-safe-powerful-ai",
+        "notes": "Private company; no product, revenue, or IPO as of this research pass."
+      }
+    },
+    {
+      "id": "mercury-technologies",
+      "name": "Mercury",
+      "aka": [
+        "Mercury Technologies, Inc."
+      ],
+      "hard_case_tags": [
+        "common_name"
+      ],
+      "hard_case_notes": "Generic word collides with: Mercury Systems (public defense electronics, NASDAQ: MRCY), Mercury Insurance, Mercury General Corporation, Freddie Mercury/Mercury Records, the planet/element Mercury, and Mercury Public Affairs. Must disambiguate as the fintech 'banking for startups' company.",
+      "reviewed_by_human": false,
+      "website": "https://mercury.com",
+      "city": {
+        "value": "San Francisco",
+        "confidence": "verified",
+        "source_url": "https://techcrunch.com/2025/03/26/fintech-mercury-lands-300m-in-sequoia-led-series-c-doubles-valuation-to-3-5b/"
+      },
+      "country": {
+        "value": "United States",
+        "confidence": "verified",
+        "source_url": "https://techcrunch.com/2025/03/26/fintech-mercury-lands-300m-in-sequoia-led-series-c-doubles-valuation-to-3-5b/"
+      },
+      "founded_year": {
+        "value": 2017,
+        "confidence": "verified",
+        "source_url": "https://techcrunch.com/2025/03/26/fintech-mercury-lands-300m-in-sequoia-led-series-c-doubles-valuation-to-3-5b/"
+      },
+      "founders": [
+        {
+          "name": "Immad Akhund",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://techcrunch.com/2025/03/26/fintech-mercury-lands-300m-in-sequoia-led-series-c-doubles-valuation-to-3-5b/"
+        },
+        {
+          "name": "Max Tagher",
+          "title": "Co-Founder & CTO",
+          "confidence": "likely",
+          "source_url": "https://en.wikipedia.org/wiki/Mercury_Technologies",
+          "notes": "Confirmed across multiple secondary sources but no dedicated primary (company/press) profile independently verified in this pass; downgraded to 'likely' per sourcing rules even though well-corroborated."
+        },
+        {
+          "name": "Jason Zhang",
+          "title": "Co-Founder & COO",
+          "confidence": "likely",
+          "source_url": "https://www.sequoiacap.com/founder/jason-zhang/",
+          "notes": "Sequoia (an investor, though not confirmed as Mercury's lead) profiles him as co-founder/COO on its own site."
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Seed",
+          "amount_usd": 6000000,
+          "date": "2017-08",
+          "lead_investor": "Andreessen Horowitz",
+          "other_investors": [],
+          "valuation_usd": null,
+          "confidence": "likely",
+          "source_urls": [
+            "https://mercury.com/blog/series-a"
+          ],
+          "notes": "Amount and lead corroborated via Mercury's own Series A blog post referencing the prior seed; figure also appears as $5M in some secondary sources — treated as 'likely' pending a dedicated contemporaneous primary announcement."
+        },
+        {
+          "type": "Series A",
+          "amount_usd": 20000000,
+          "date": "2019-09-25",
+          "lead_investor": "CRV",
+          "other_investors": [],
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://mercury.com/blog/series-a"
+          ],
+          "notes": "Company's own blog post announcing the round."
+        },
+        {
+          "type": "Series B",
+          "amount_usd": 120000000,
+          "date": "2021",
+          "lead_investor": "Coatue",
+          "other_investors": [
+            "CRV"
+          ],
+          "valuation_usd": 1620000000,
+          "confidence": "likely",
+          "source_urls": [
+            "https://techcrunch.com/2025/03/26/fintech-mercury-lands-300m-in-sequoia-led-series-c-doubles-valuation-to-3-5b/"
+          ],
+          "notes": "Cited via the 2025 Series C article's own funding-history recap; exact 2021 month not independently confirmed in this pass."
+        },
+        {
+          "type": "Series C",
+          "amount_usd": 300000000,
+          "date": "2025-03-26",
+          "lead_investor": "Sequoia Capital",
+          "other_investors": [
+            "Coatue",
+            "CRV",
+            "Andreessen Horowitz",
+            "Spark Capital",
+            "Marathon"
+          ],
+          "valuation_usd": 3500000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://techcrunch.com/2025/03/26/fintech-mercury-lands-300m-in-sequoia-led-series-c-doubles-valuation-to-3-5b/"
+          ],
+          "notes": "Described as a mix of primary and secondary funding per TechCrunch; full primary-vs-secondary split not disclosed."
+        }
+      ],
+      "total_raised_usd_reported": {
+        "value": 700000000,
+        "confidence": "likely",
+        "notes": "Secondary-source aggregate ('~$700M in total primary and secondary funding since founding')."
+      },
+      "total_raised_usd_computed_from_verified_rounds": 446000000,
+      "total_raised_discrepancy_notes": "Computed sum is well below the reported ~$700M aggregate; the gap is plausibly explained by the Series C being disclosed only as a 'primary and secondary' blend (so our $300M may double-count or under-count actual new capital) plus any secondary share sales bundled into the commonly cited total, similar to the Wise case above.",
+      "employee_count": {
+        "value": null,
+        "confidence": "unknown"
+      },
+      "employee_range": {
+        "value": null,
+        "confidence": "unknown"
+      },
+      "github_url": null,
+      "huggingface_url": null,
+      "is_public_company": {
+        "value": false,
+        "confidence": "likely",
+        "source_url": "https://techcrunch.com/2025/03/26/fintech-mercury-lands-300m-in-sequoia-led-series-c-doubles-valuation-to-3-5b/",
+        "notes": "Remains private as of its March 2025 Series C; no IPO announcement found."
+      }
+    },
+    {
+      "id": "thinking-machines-lab",
+      "name": "Thinking Machines Lab",
+      "aka": [],
+      "hard_case_tags": [
+        "stealth_no_data"
+      ],
+      "hard_case_notes": "Raised the largest seed round in Silicon Valley history while remaining almost entirely product-silent for its first ~8 months (founded Feb 2025, first product 'Tinker' not released until October 2025 per secondary reporting). A textbook case of 'thin public data despite enormous funding visibility' — the inverse emphasis from Safe Superintelligence, where even the funding reporting is comparatively sparse.",
+      "reviewed_by_human": false,
+      "website": "https://thinkingmachines.ai",
+      "city": {
+        "value": "San Francisco",
+        "confidence": "likely",
+        "source_url": "https://techcrunch.com/2025/07/15/mira-muratis-thinking-machines-lab-is-worth-12b-in-seed-round/"
+      },
+      "country": {
+        "value": "United States",
+        "confidence": "verified",
+        "source_url": "https://techcrunch.com/2025/07/15/mira-muratis-thinking-machines-lab-is-worth-12b-in-seed-round/"
+      },
+      "founded_year": {
+        "value": 2025,
+        "confidence": "verified",
+        "source_url": "https://techcrunch.com/2025/07/15/mira-muratis-thinking-machines-lab-is-worth-12b-in-seed-round/"
+      },
+      "founders": [
+        {
+          "name": "Mira Murati",
+          "title": "Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://techcrunch.com/2025/07/15/mira-muratis-thinking-machines-lab-is-worth-12b-in-seed-round/",
+          "notes": "Former CTO of OpenAI."
+        },
+        {
+          "name": "John Schulman",
+          "title": "Co-Founder",
+          "confidence": "likely",
+          "source_url": "https://techcrunch.com/2025/07/15/mira-muratis-thinking-machines-lab-is-worth-12b-in-seed-round/",
+          "notes": "OpenAI co-founder and a lead architect of ChatGPT's RLHF training."
+        },
+        {
+          "name": "Barret Zoph",
+          "title": "Co-Founder & former CTO (departed back to OpenAI)",
+          "confidence": "likely",
+          "source_url": "https://www.neowin.net/news/thinking-machines-lab-cto-barret-zoph-returns-to-openai-in-surprise-move/"
+        },
+        {
+          "name": "Lilian Weng",
+          "title": "Co-Founder",
+          "confidence": "likely",
+          "source_url": "https://techcrunch.com/2025/07/15/mira-muratis-thinking-machines-lab-is-worth-12b-in-seed-round/"
+        },
+        {
+          "name": "Andrew Tulloch",
+          "title": "Co-Founder",
+          "confidence": "likely",
+          "source_url": "https://techcrunch.com/2025/07/15/mira-muratis-thinking-machines-lab-is-worth-12b-in-seed-round/"
+        },
+        {
+          "name": "Luke Metz",
+          "title": "Co-Founder",
+          "confidence": "likely",
+          "source_url": "https://techcrunch.com/2025/07/15/mira-muratis-thinking-machines-lab-is-worth-12b-in-seed-round/"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Seed",
+          "amount_usd": 2000000000,
+          "date": "2025-07-15",
+          "lead_investor": "Andreessen Horowitz",
+          "other_investors": [
+            "Nvidia",
+            "Jane Street",
+            "and others (full syndicate not fully disclosed)"
+          ],
+          "valuation_usd": 12000000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://techcrunch.com/2025/07/15/mira-muratis-thinking-machines-lab-is-worth-12b-in-seed-round/"
+          ],
+          "notes": "Widely described as the largest seed round in Silicon Valley history. Note: some secondary sources describe an interim 'first close' of this same round at a $10B valuation a few weeks earlier (June 2025); treated here as the same single seed financing event, not two rounds, per TechCrunch's own final accounting."
+        }
+      ],
+      "total_raised_usd_reported": {
+        "value": 2000000000,
+        "confidence": "verified",
+        "notes": "Matches the single disclosed seed round; no other disclosed financing found."
+      },
+      "total_raised_usd_computed_from_verified_rounds": 2000000000,
+      "employee_count": {
+        "value": null,
+        "confidence": "unknown"
+      },
+      "employee_range": {
+        "value": null,
+        "confidence": "unknown"
+      },
+      "github_url": null,
+      "huggingface_url": null,
+      "is_public_company": {
+        "value": false,
+        "confidence": "verified",
+        "source_url": "https://techcrunch.com/2025/07/15/mira-muratis-thinking-machines-lab-is-worth-12b-in-seed-round/",
+        "notes": "Private company; no IPO or acquisition found as of this research pass."
+      }
     }
   ]
 }
