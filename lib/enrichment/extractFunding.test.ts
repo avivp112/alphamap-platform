@@ -57,16 +57,18 @@ describe("processFundingExtractionResponse", () => {
     expect(result.funding_rounds[0].lead_investor?.value).toBe("Andreessen Horowitz");
   });
 
-  it("drops an amount whose quote doesn't actually support it", () => {
+  it("drops an amount whose quote doesn't actually support it, while the round itself survives on its other evidenced field", () => {
     const raw = {
       funding_rounds: [{
         round_type: "Series A",
         amount_raised: { value: 999_000_000, source_id: "S1", evidence_quote: "closed a $16 million Series A co-led by Andreessen Horowitz" },
+        lead_investor: { value: "Andreessen Horowitz", source_id: "S1", evidence_quote: "closed a $16 million Series A co-led by Andreessen Horowitz" },
       }],
       funding_history_complete: true,
     };
     const { result, dropped } = processFundingExtractionResponse(raw, sources);
     expect(result.funding_rounds[0].amount_raised).toBeUndefined();
+    expect(result.funding_rounds[0].lead_investor?.value).toBe("Andreessen Horowitz");
     expect(dropped).toContainEqual({ field: "funding_rounds[0].amount_raised", reason: "value_not_in_quote" });
   });
 
@@ -83,7 +85,13 @@ describe("processFundingExtractionResponse", () => {
 
   it("does not crash when the model collapses a one-item array into a bare object", () => {
     const raw = {
-      funding_rounds: { round_type: "Seed" }, // bare object instead of [{...}]
+      // bare object instead of [{...}], and carrying a real evidenced field
+      // so it also survives the (separate) round-without-evidence filter --
+      // this test is only about the ensureArray crash guard.
+      funding_rounds: {
+        round_type: "Seed",
+        amount_raised: { value: 16_000_000, source_id: "S1", evidence_quote: "closed a $16 million Series A co-led by Andreessen Horowitz" },
+      },
       funding_history_complete: true,
       arr_milestones: { arr: 1_000_000, source_id: "S1", evidence_quote: "x" },
       valuation_benchmarks: { valuation: 1, source_id: "S1", evidence_quote: "x" },
@@ -92,6 +100,25 @@ describe("processFundingExtractionResponse", () => {
     const { result } = processFundingExtractionResponse(raw, sources);
     expect(result.funding_rounds).toHaveLength(1);
     expect(result.funding_rounds[0].round_type).toBe("Seed");
+  });
+
+  it("drops a round whose round_type survives with no evidenced material field behind it -- the real DRY_RUN bug (empty 'Venture Debt'/'Acquired' stubs)", () => {
+    const raw = {
+      funding_rounds: [
+        { round_type: "Venture Debt" }, // no amount/valuation/date/investor at all
+        {
+          round_type: "Acquired",
+          // Fabricated quote for a field whose source never says this -- gets
+          // stripped by verifyMaterial, leaving the round with nothing.
+          announcement_date: { value: "2023-12-12", source_id: "S1", evidence_quote: "a sentence that never appears in S1" },
+        },
+      ],
+      funding_history_complete: true,
+    };
+    const { result, dropped } = processFundingExtractionResponse(raw, sources);
+    expect(result.funding_rounds).toHaveLength(0);
+    expect(dropped).toContainEqual({ field: "funding_rounds[0]", reason: "round_without_evidence" });
+    expect(dropped).toContainEqual({ field: "funding_rounds[1]", reason: "round_without_evidence" });
   });
 
   it("verifies arr_milestones and valuation_benchmarks independently", () => {

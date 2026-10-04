@@ -205,8 +205,9 @@ STRICT RULES:
 4. LEAD INVESTOR — one lead per round in lead_investor; everyone else in other_investors. Never assume a later round's lead also led an earlier round.
 5. VALUATION — set is_valuation_estimated: true if inferred/analyst-estimated rather than officially disclosed by the company or a primary source.
 6. NEVER construct or guess a source_url — only a URL that appears verbatim in a source.
-7. NON-VC EVENTS — 'PE Buyout' = a private-equity takeover/buyout/take-private. 'Acquired' = bought by a strategic operating company. 'Secondary' = existing shareholders selling, NO new money to the company — never report a secondary as capital raised. 'Debt' = venture debt/credit facilities/term loans, reported but never conflated with an equity round.
+7. NON-VC EVENTS — 'PE Buyout' = a private-equity takeover/buyout/take-private. 'Acquired' = bought by a strategic operating company. 'Secondary' = existing shareholders selling, NO new money to the company — never report a secondary as capital raised. 'Debt' = venture debt/credit facilities/term loans, reported but never conflated with an equity round. These are NOT exempt from rule 2: put the acquirer/buyer/lender's name in lead_investor and the event date in announcement_date, each with its own evidence_quote, exactly like a VC round. If you cannot cite a quote for EITHER of those two fields, you have no verified event to report — omit the round entirely rather than record a bare label.
 8. ARR/REVENUE/VALUATION — best-effort; most companies disclose none of this, and [] / omitted is the normal, correct answer, not a failure. Never duplicate a round's own valuation in valuation_benchmarks.
+9. NEVER report a round_type with nothing behind it. Every round must carry at least one evidenced field (amount_raised, valuation, announcement_date, or lead_investor) — a category label alone, with no cited fact attached, is a guess and will be discarded.
 
 Labeled research (each source is tagged [S#] for a search result or [W#] for a fetched website page):
 ${context}`;
@@ -223,7 +224,7 @@ ${context}`;
 
 // ── Response processing (pure, testable without any live call) ──────────
 
-export type DropReasonCode = "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found";
+export type DropReasonCode = "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found" | "round_without_evidence";
 
 export interface DroppedField { field: string; reason: DropReasonCode }
 
@@ -274,7 +275,22 @@ export function processFundingExtractionResponse(
       other_investors: r.other_investors,
       investor_amounts: r.investor_amounts,
       source_url: r.source_url,
-    }));
+    }))
+    // round_type itself carries no evidence requirement of its own (it's a
+    // label read off the same evidence as the material fields) -- so a round
+    // that survives with every material field undefined (either the model
+    // never supplied one, or verifyMaterial above stripped a fabricated
+    // quote) is an unevidenced assertion that an event happened at all. A
+    // real DRY_RUN run produced exactly this: "Venture Debt" and "Acquired"
+    // rounds for a real company with amount/valuation/date/investor all
+    // null -- which would have inserted two funding_rounds rows into the DB
+    // with nothing behind them but a type label. Ground rule 1 (never
+    // guess) applies to the round's existence, not just its fields.
+    .filter((r, idx) => {
+      if (r.amount_raised || r.valuation || r.announcement_date || r.lead_investor) return true;
+      dropped.push({ field: `funding_rounds[${idx}]`, reason: "round_without_evidence" });
+      return false;
+    });
 
   const arrMilestones = ensureArray<V2ArrMilestone>(i.arr_milestones).filter((m) => {
     const verdict = verifyEvidence({ field: "arr_milestones", value: m.arr, source_id: m.source_id, evidence_quote: m.evidence_quote }, sourceLookup);
