@@ -1988,6 +1988,19 @@ ${context}`,
   totalInputTokens  += msg.usage.input_tokens;
   totalOutputTokens += msg.usage.output_tokens;
 
+  // Permanent diagnostic: a tool call cut off by max_tokens silently drops
+  // whatever schema fields come after the truncation point (everything from
+  // funding_history_complete onward, in this schema's property order) while
+  // leaving earlier fields like `profile` intact — the exact signature that
+  // explained Phase 0's funding_rounds=0% baseline result on Apex/Fresha.
+  // Logged unconditionally (not just on truncation) so a sustained pattern
+  // of output_tokens sitting near the max_tokens ceiling is visible even
+  // before it actually tips over into stop_reason === "max_tokens".
+  console.log(`    🧠  Claude extraction: stop_reason=${msg.stop_reason} output_tokens=${msg.usage.output_tokens}`);
+  if (msg.stop_reason === "max_tokens") {
+    console.warn(`    ⚠️  Extraction TRUNCATED for "${name}" — response cut off at max_tokens. Any schema field after the cutoff (often funding_rounds, confidence_score, reasoning) is missing, not genuinely empty.`);
+  }
+
   const tool = msg.content.find((b) => b.type === "tool_use");
   if (!tool || tool.type !== "tool_use") return null;
 
