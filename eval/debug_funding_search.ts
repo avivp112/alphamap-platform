@@ -3,21 +3,21 @@
  * eval/debug_funding_search.ts — throwaway diagnostic, NOT part of Phase 0/1
  * architecture. Deletable once the funding_rounds=0% question is answered.
  *
- * Fires the exact same 4 funding-related queries researchCompany() (v1)
+ * Fires the exact same 3 funding-related queries researchCompany() (v1)
  * sends to Serper for Apex and Fresha — byte-for-byte the same query
  * strings/anchor logic as scripts/bulk_enrich_all.ts lines ~1402-1430 — and
- * prints the raw organic/answerBox counts. Does NOT import or modify v1 at
- * all, so it can't mask or introduce any behavior change.
+ * prints the raw organic items (title/link/snippet), not just counts. Does
+ * NOT import or modify v1 at all, so it can't mask or introduce any
+ * behavior change.
  *
- * Purpose: confirm or rule out "Serper returns zero organic/answer results
- * for these specific multi-phrase, site:-restricted queries" as the reason
- * eval/run_eval.ts just measured funding_rounds coverage=0% for both
- * golden-set companies, given that serperSearch() in v1 collapses a genuine
- * HTTP failure and a 200-with-zero-results response into the same silent
- * null (no warning logged either way) — so the earlier run's clean console
- * output (no "Serper HTTP ..." warnings) is consistent with either a key
- * problem or simply zero-result queries, and this is the fastest way to
- * tell them apart.
+ * Round 1 of this diagnostic (counts only) already RULED OUT "Serper
+ * returns zero results" — it returned organic=3/10/9 (Apex) and 1/10/10
+ * (Fresha). So the search layer isn't dark; the open question now is
+ * whether those results are actually ABOUT funding, or name-collision/
+ * irrelevant noise (Apex is deliberately a `common_name` hard case in the
+ * golden set) that Claude correctly declined to extract from per its "return
+ * [] rather than guess" instruction. This round prints the real snippet text
+ * so that can be judged directly instead of guessed at.
  *
  * Usage: npx tsx eval/debug_funding_search.ts
  * Needs: SERP_KEY, TAVILY_API_KEY (same .env as bulk_enrich_all.ts)
@@ -41,8 +41,12 @@ function websiteDomain(url: string | null | undefined): string | null {
   }
 }
 
-async function serperRaw(query: string): Promise<{ status: number; organic: number; hasAnswer: boolean; body: string }> {
-  if (!process.env.SERP_KEY) return { status: -1, organic: 0, hasAnswer: false, body: "NO SERP_KEY SET" };
+interface OrganicItem { title: string; link: string; snippet?: string }
+async function serperRaw(query: string): Promise<{
+  status: number; organic: number; hasAnswer: boolean; body: string;
+  items: OrganicItem[]; answer?: string;
+}> {
+  if (!process.env.SERP_KEY) return { status: -1, organic: 0, hasAnswer: false, body: "NO SERP_KEY SET", items: [] };
   const res = await fetch("https://google.serper.dev/search", {
     method: "POST",
     headers: { "X-API-KEY": process.env.SERP_KEY, "Content-Type": "application/json" },
@@ -50,14 +54,21 @@ async function serperRaw(query: string): Promise<{ status: number; organic: numb
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    return { status: res.status, organic: 0, hasAnswer: false, body: body.slice(0, 300) };
+    return { status: res.status, organic: 0, hasAnswer: false, body: body.slice(0, 300), items: [] };
   }
-  const data = await res.json() as { organic?: unknown[]; answerBox?: unknown; knowledgeGraph?: { description?: string } };
+  const data = await res.json() as {
+    organic?: OrganicItem[];
+    answerBox?: { answer?: string; snippet?: string };
+    knowledgeGraph?: { description?: string };
+  };
+  const answer = data.answerBox?.answer ?? data.answerBox?.snippet ?? data.knowledgeGraph?.description;
   return {
     status: res.status,
     organic: data.organic?.length ?? 0,
-    hasAnswer: !!(data.answerBox || data.knowledgeGraph?.description),
+    hasAnswer: !!answer,
+    answer,
     body: "",
+    items: data.organic ?? [],
   };
 }
 
@@ -102,6 +113,15 @@ async function main() {
     for (const [label, q] of Object.entries(queries)) {
       const s = await serperRaw(q);
       console.log(`  [serper:${label}] status=${s.status} organic=${s.organic} answerBox=${s.hasAnswer}${s.body ? ` body="${s.body}"` : ""}`);
+      if (s.answer) console.log(`    answerBox: ${s.answer}`);
+      // Print exactly what serperSearch() would hand to Claude for this
+      // section — title + link + first 600 chars of snippet, top 8 — so we
+      // can judge relevance ourselves instead of trusting the raw count.
+      for (const item of s.items.slice(0, 8)) {
+        console.log(`    - [${item.title}]`);
+        console.log(`      ${item.link}`);
+        console.log(`      "${(item.snippet ?? "").slice(0, 600)}"`);
+      }
       if (s.status !== 200 || (s.organic === 0 && !s.hasAnswer)) {
         const t = await tavilyRaw(q);
         console.log(`  [tavily:${label}]  ok=${t.ok} results=${t.results}${t.body ? ` body="${t.body}"` : ""}`);
