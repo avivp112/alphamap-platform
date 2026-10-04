@@ -65,6 +65,17 @@ describe("buildProfileExtractionRequest", () => {
     const profileProps = (request.tools[0].input_schema.properties.profile as any).properties;
     expect(profileProps.sector_name.enum).toBeUndefined();
   });
+
+  it("requires evidence for is_public_company and does not force the model to assert it", () => {
+    const topProps = request.tools[0].input_schema.properties as any;
+    expect(topProps.is_public_company.required).toEqual(["value", "source_id", "evidence_quote"]);
+    expect(request.tools[0].input_schema.required).not.toContain("is_public_company");
+  });
+
+  it("warns against conflating being acquired with being public", () => {
+    const text = request.messages[0].content as string;
+    expect(text.toLowerCase()).toContain("still private");
+  });
 });
 
 describe("processProfileExtractionResponse", () => {
@@ -166,6 +177,38 @@ describe("processProfileExtractionResponse", () => {
     expect(result.news).toEqual([{ title: "Launch", url: "https://x.com" }]);
     expect(result.leadership).toHaveLength(1); // a bare {} still gets wrapped as one entry, not silently dropped -- the point is it doesn't throw
     expect(result.patent_summary.patent_fields).toEqual(["fintech"]);
+  });
+
+  it("trusts a genuinely evidenced is_public_company claim", () => {
+    const raw = {
+      is_public_company: { value: true, source_id: "S1", evidence_quote: "closed a $16 million Series A" },
+      is_tech_company: true,
+      profile: {}, leadership: [], metrics: {}, competitors: [], acquisitions: [], news: [], patents: [],
+    };
+    const { result, dropped } = processProfileExtractionResponse(raw, sources);
+    expect(result.is_public_company).toBe(true);
+    expect(dropped).toHaveLength(0);
+  });
+
+  it("rejects is_public_company when the cited quote is fabricated -- the real DRY_RUN bug (a private, recently-acquired company flagged public with zero evidence, about to be archived)", () => {
+    const raw = {
+      is_public_company: { value: true, source_id: "S1", evidence_quote: "a sentence that never appears in S1 at all" },
+      is_tech_company: true,
+      profile: {}, leadership: [], metrics: {}, competitors: [], acquisitions: [], news: [], patents: [],
+    };
+    const { result, dropped } = processProfileExtractionResponse(raw, sources);
+    expect(result.is_public_company).toBe(false);
+    expect(dropped).toContainEqual({ field: "is_public_company", reason: "evidence_mismatch" });
+  });
+
+  it("defaults is_public_company to false (private) when the model omits it entirely -- never guess true", () => {
+    const raw = {
+      is_tech_company: true,
+      profile: {}, leadership: [], metrics: {}, competitors: [], acquisitions: [], news: [], patents: [],
+    };
+    const { result, dropped } = processProfileExtractionResponse(raw, sources);
+    expect(result.is_public_company).toBe(false);
+    expect(dropped).toHaveLength(0);
   });
 
   it("verifies headcount_history points independently, dropping only the unverifiable ones", () => {

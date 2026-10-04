@@ -26,7 +26,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sanitizeModelOutput, ensureArray } from "./sanitize";
-import { verifyEvidence, type EvidenceSource } from "./evidence";
+import { verifyEvidence, quoteMatchesSource, type EvidenceSource } from "./evidence";
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
 
 export interface SectorTaxonomy {
@@ -190,7 +190,10 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
     input_schema: {
       type: "object" as const,
       properties: {
-        is_public_company: { type: "boolean", description: "TRUE if listed on NYSE, NASDAQ, LSE, TASE, Euronext, or any other public exchange." },
+        is_public_company: materialField(
+          { type: "boolean" },
+          "TRUE only if THIS exact company is listed on a public stock exchange (NYSE, NASDAQ, LSE, TASE, Euronext, etc.) under its own ticker, with the specific exchange/ticker stated in the source. Being acquired by, or a subsidiary of, a public company does NOT make this company itself public. Omit the whole field entirely if you cannot point to that -- the default is private.",
+        ),
         is_tech_company: { type: "boolean", description: "TRUE for any company whose core product or competitive edge is its own technology/software/R&D (broad category — AI/ML, fintech, biotech, hardware, etc. all count)." },
         profile: {
           type: "object" as const,
@@ -346,7 +349,7 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
           },
         },
       },
-      required: ["is_public_company", "is_tech_company"],
+      required: ["is_tech_company"],
     },
   };
 }
@@ -368,6 +371,7 @@ STRICT RULES:
 6. Never estimate headcount or revenue — report only a figure a source explicitly states, with its date.
 7. ${BIO_DESCRIPTION}
 8. There is no excuse for a company with ANY research data at all to come back with profile: {} — at minimum, describe what it does if that's mentioned anywhere.
+9. PUBLIC COMPANY — this is a consequential flag (a true archives the company out of the active dataset), so it needs the same evidence_quote/source_id as any other material field: a specific exchange and ticker stated in the source. A company being ACQUIRED, bought by a strategic/PE buyer, or a subsidiary of a public parent is still PRIVATE itself — report that acquisition via round_type 'Acquired'/'PE Buyout' in the funding history, never by flagging is_public_company. If you cannot cite a direct public-listing statement, omit the field.
 
 Labeled research (each source is tagged [S#] for a search result or [W#] for a fetched website page):
 ${context}`;
@@ -417,6 +421,39 @@ function verifyMaterial<T>(
 }
 
 /**
+ * is_public_company gets its own check rather than reusing verifyMaterial:
+ * the claimed value is a boolean, and valueAppearsInQuote (string/number only
+ * — would throw on a boolean) has no way to confirm "true" is literally in
+ * the quote. What actually matters is that the cited quote is a REAL,
+ * genuine statement of public-market listing -- so this checks source
+ * existence + quote authenticity (same two checks verifyEvidence runs
+ * before its value-specific check) and trusts the boolean once those hold.
+ * A real DRY_RUN run flagged a privately-held, recently-acquired company as
+ * public with zero evidence at all (is_public_company had no evidence
+ * requirement before this fix) -- archiving (status='ipo') a real portfolio
+ * company on a hallucinated claim is exactly the "wrong is worse than
+ * missing" case ground rule 1 exists for. `false`/omitted never needs
+ * verification: the safe default is already private.
+ */
+function verifyIsPublicClaim(
+  claim: EvidencedValue<boolean> | undefined,
+  sources: Record<string, EvidenceSource>,
+  dropped: DroppedField[],
+): boolean {
+  if (!claim || !claim.value) return false;
+  const source = sources[claim.source_id];
+  if (!source) {
+    dropped.push({ field: "is_public_company", reason: "source_not_found" });
+    return false;
+  }
+  if (!quoteMatchesSource(claim.evidence_quote, source.content).matched) {
+    dropped.push({ field: "is_public_company", reason: "evidence_mismatch" });
+    return false;
+  }
+  return true;
+}
+
+/**
  * Sanitizes the raw tool_use input and verifies every material field's
  * evidence, dropping (and recording the reason for) anything that doesn't
  * check out. Does NOT run validation.ts's logical rules (city/country
@@ -433,7 +470,10 @@ export function processProfileExtractionResponse(
     sources.map((s) => [s.source_id, { content: s.content, url: s.url }]),
   );
   const dropped: DroppedField[] = [];
-  const i = sanitizeModelOutput(rawToolInput) as Partial<V2ProfileExtraction> & { profile?: Partial<V2Profile> };
+  const i = sanitizeModelOutput(rawToolInput) as Partial<V2ProfileExtraction> & {
+    profile?: Partial<V2Profile>;
+    is_public_company?: EvidencedValue<boolean>;
+  };
 
   const profile: V2Profile = {
     website: verifyMaterial("profile.website", i.profile?.website, sourceLookup, dropped, true),
@@ -489,7 +529,7 @@ export function processProfileExtractionResponse(
 
   return {
     result: {
-      is_public_company: i.is_public_company ?? false,
+      is_public_company: verifyIsPublicClaim(i.is_public_company, sourceLookup, dropped),
       is_tech_company: i.is_tech_company ?? true,
       profile,
       leadership,
