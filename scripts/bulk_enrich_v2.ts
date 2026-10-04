@@ -176,6 +176,13 @@ interface RunSummary {
   totalInputTokens: number;
   totalOutputTokens: number;
   totalCostUsd: number;
+  // Aggregated across every company's own SearchProviderState -- answers
+  // "is Jina actually working" with real numbers instead of eyeballing
+  // per-company log lines across a whole batch.
+  jinaAttempts: number;
+  jinaSuccesses: number;
+  jinaJunkPages: number;
+  tavilyCalls: number;
 }
 
 // $/token by model (ground rule 3: keep cost/token tracking). Computed per
@@ -223,6 +230,14 @@ async function processCompany(
     runAllSearches(row.name, anchor, searchState),
     fetchCompanyWebsitePages(effectiveWebsite, searchState),
   ]);
+  // Captured here, right after the only two stages that touch searchState,
+  // so it's accounted for regardless of which exit path this company takes
+  // below (rejected/archived/low_evidence/etc. all still searched real data).
+  summary.jinaAttempts += searchState.jinaAttemptCount;
+  summary.jinaSuccesses += searchState.jinaSuccessCount;
+  summary.jinaJunkPages += searchState.jinaJunkCount;
+  summary.tavilyCalls += searchState.tavilyCallCount;
+
   const allRaw: RawSearchResult[] = [
     ...searchResults,
     ...websitePages.map((p) => ({ url: p.url, content: p.content, provider: p.provider, query_label: "website" })),
@@ -611,6 +626,7 @@ async function main() {
     tally: { success: 0, partial: 0, rejected: 0, removed_public: 0, no_data: 0, low_evidence: 0, error: 0, error_incomplete_extraction: 0 },
     droppedByReason: new Map(),
     totalRoundsInserted: 0, totalFieldsPatched: 0, totalInputTokens: 0, totalOutputTokens: 0, totalCostUsd: 0,
+    jinaAttempts: 0, jinaSuccesses: 0, jinaJunkPages: 0, tavilyCalls: 0,
   };
 
   for (let i = 0; i < queue.length; i++) {
@@ -643,6 +659,7 @@ async function main() {
   console.log(`  fields patched               ${summary.totalFieldsPatched}`);
   console.log(`  tokens (in/out)              ${summary.totalInputTokens.toLocaleString()} / ${summary.totalOutputTokens.toLocaleString()}`);
   console.log(`  claude cost (est.)           $${summary.totalCostUsd.toFixed(2)}  (search API cost is separate)`);
+  console.log(`  jina: ${summary.jinaSuccesses} real / ${summary.jinaJunkPages} thin-404 skipped / ${summary.jinaAttempts} attempted  |  tavily calls: ${summary.tavilyCalls}`);
   console.log("  dropped/flagged by reason code:");
   for (const [reason, count] of summary.droppedByReason) {
     console.log(`    ${reason.padEnd(32)} ${count}`);

@@ -34,14 +34,40 @@ export interface SearchProviderState {
   tavilyExhausted: boolean;
   jinaAttemptCount: number;
   jinaSuccessCount: number;
+  /** Jina returned HTTP 200 + non-empty text, but it was a thin/404-style
+   *  page for a guessed path (/team, /company, /contact) that doesn't
+   *  actually exist on the site — see looksLikeRealContent(). Tracked
+   *  separately from jinaSuccessCount so a run can tell "Jina is failing"
+   *  apart from "Jina is succeeding but half of what it fetches is junk". */
+  jinaJunkCount: number;
 }
 
 export function createSearchProviderState(): SearchProviderState {
   return {
     serperCallCount: 0, tavilyCallCount: 0,
     tavilyExhausted: !process.env.TAVILY_API_KEY,
-    jinaAttemptCount: 0, jinaSuccessCount: 0,
+    jinaAttemptCount: 0, jinaSuccessCount: 0, jinaJunkCount: 0,
   };
+}
+
+const NOT_FOUND_PHRASES_RE = /\b(404(?:\s+error)?|page not found|(?:this\s+)?page (?:could not|couldn'?t) be found|we can'?t find (?:that|this) page|doesn'?t exist|does not exist|oops[,!]?\s*(?:this\s+)?page)\b/i;
+// A real page is almost never this short once Jina strips boilerplate/markup;
+// most "guessed" subpaths (/team, /company, /contact) that don't exist on a
+// given site resolve to a generic platform 404 that Jina happily converts to
+// clean, non-empty markdown -- HTTP 200, no error, no empty string, just
+// useless. A real DRY_RUN=false batch showed this exact pattern: completely
+// different companies' /about, /team, /company, /contact pages all coming
+// back at 150-250 chars (near-identical boilerplate sizes), while every real
+// homepage fetch was 1,000+ chars.
+const MIN_USEFUL_CONTENT_CHARS = 250;
+
+export function looksLikeRealContent(text: string): boolean {
+  if (text.length < MIN_USEFUL_CONTENT_CHARS) return false;
+  // A long page that merely mentions "404" somewhere isn't itself a 404 page
+  // -- only treat the not-found phrasing as disqualifying when the whole
+  // page is still short enough that it's plausibly JUST the error page.
+  if (text.length < 600 && NOT_FOUND_PHRASES_RE.test(text)) return false;
+  return true;
 }
 
 // ── Serper (PRIMARY search) ────────────────────────────────────────────────
@@ -238,6 +264,11 @@ async function fetchViaJinaReader(url: string, state: SearchProviderState): Prom
     const text = (await res.text()).trim();
     if (!text) {
       console.warn(`    ⚠️  Jina Reader returned empty content for ${url} — falling back to Tavily/cheerio.`);
+      return null;
+    }
+    if (!looksLikeRealContent(text)) {
+      state.jinaJunkCount++;
+      console.warn(`    ⚠️  Jina Reader got a thin/404-like page for ${url} (${text.length} chars) — skipping, not counted as a real source.`);
       return null;
     }
     state.jinaSuccessCount++;
