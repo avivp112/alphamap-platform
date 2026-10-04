@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildFundingExtractionRequest, processFundingExtractionResponse, roundToRoundLike } from "./extractFunding";
+import { buildFundingExtractionRequest, processFundingExtractionResponse, roundToRoundLike, type V2Round } from "./extractFunding";
 import { buildLabeledSources, type RawSearchResult } from "./sources";
 import { dedupRounds } from "./rounds";
 
@@ -95,6 +95,16 @@ describe("processFundingExtractionResponse", () => {
     expect(result.arr_milestones).toHaveLength(0);
     expect(dropped.some((d) => d.field === "arr_milestones")).toBe(true);
     expect(result.valuation_benchmarks).toHaveLength(1);
+  });
+});
+
+describe("roundToRoundLike", () => {
+  it("normalizes round_type -- caught via a real DRY_RUN run where the model emitted 'Venture' and 'Venture Debt', neither force-constrained by the schema enum in practice", () => {
+    const vague: V2Round = { round_type: "Venture" };
+    expect(roundToRoundLike(vague).round_type).toBe("Other");
+
+    const debt: V2Round = { round_type: "Venture Debt" };
+    expect(roundToRoundLike(debt).round_type).toBe("Venture Debt"); // already canonical, passes through unchanged
   });
 });
 

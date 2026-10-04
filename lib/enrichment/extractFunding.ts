@@ -15,7 +15,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { sanitizeModelOutput } from "./sanitize";
 import { verifyEvidence, type EvidenceSource } from "./evidence";
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
-import type { RoundLike } from "./rounds";
+import { normalizeRoundType, type RoundLike } from "./rounds";
 
 export interface EvidencedValue<T> {
   value: T;
@@ -72,7 +72,14 @@ export interface V2FundingExtraction {
 /** Flattens a verified V2Round down to the plain shape rounds.ts/validation.ts operate on — called by the orchestrator AFTER evidence verification has already dropped whatever didn't check out. */
 export function roundToRoundLike(round: V2Round): RoundLike {
   return {
-    round_type: round.round_type,
+    // Normalized, not the raw model string: a real DRY_RUN run against
+    // production data produced "Venture" and "Venture Debt" for round_type
+    // despite the schema's enum listing only canonical values -- Claude's
+    // tool_choice enum is a strong hint, not a hard constraint, so this
+    // (like v1's own insertNewRounds()) must normalize defensively rather
+    // than trust the raw string ever reaching rounds.ts's dedup or a DB
+    // insert unnormalized.
+    round_type: normalizeRoundType(round.round_type),
     amount_raised: round.amount_raised?.value ?? null,
     valuation: round.valuation?.value ?? null,
     announcement_date: round.announcement_date?.value ?? null,
