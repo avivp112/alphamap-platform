@@ -15,55 +15,55 @@
  * rule 2 ("missing is better than wrong").
  */
 
-import citiesData from "cities.json";
-import countries from "i18n-iso-countries";
-import en from "i18n-iso-countries/langs/en.json";
+import { MAJOR_CITIES } from "./majorCities";
 import { CANONICAL_ROUND_TYPES, normalizeRoundType, type CanonicalRoundType, type RoundLike } from "./rounds";
 import { resolveConflictBySourceRank, type SourceType } from "./sourceTypes";
 
-countries.registerLocale(en);
-
 // ── City/country reference data (issue 4: "local GeoNames cities15000 JSON,
 // with alternate names") ────────────────────────────────────────────────
-// GeoNames access itself (download.geonames.org) is blocked by this
-// environment's egress policy; `cities.json` on npm ships the same GeoNames
-// gazetteer data (171k populated places) and IS reachable via the npm
-// registry, so it's used as the equivalent local reference instead of a raw
-// GeoNames dump. It doesn't carry a separate alternate-names list, so
-// "alternate names" support here means case/whitespace-insensitive matching
-// against every place GeoNames itself records under that name — which
-// already covers the common case (a city genuinely has one canonical
-// GeoNames name, just capitalized/spaced differently across sources).
-interface CityRow { name: string; country: string }
-const CITY_COUNTRY_INDEX: Map<string, Set<string>> = (() => {
-  const index = new Map<string, Set<string>>();
-  for (const row of citiesData as CityRow[]) {
-    const key = row.name.trim().toLowerCase();
-    if (!key) continue;
-    let set = index.get(key);
-    if (!set) { set = new Set(); index.set(key, set); }
-    set.add(row.country); // ISO 3166-1 alpha-2
-  }
-  return index;
-})();
+// The spec asks for a GeoNames-derived local reference; the actual
+// deployment target turned out to have well under 1GB of RAM, where
+// loading/transforming a full GeoNames-scale dataset (whether a raw dump or
+// an npm package shipping the same data, ~15-20MB either way) was crashing
+// both `npm install` and the script itself. majorCities.ts is a small,
+// hand-curated substitute: national capitals plus the startup/tech hubs
+// this platform's data actually clusters in. "Alternate names" support
+// means case/whitespace-insensitive matching against that list.
+//
+// Country names are compared directly (normalized, with a small alias
+// table below) rather than through an ISO-code library, to avoid another
+// dependency on a memory-constrained target for what's fundamentally a
+// short, closed set of real-world spelling variants.
+const COUNTRY_ALIASES: Record<string, string> = {
+  "us": "united states", "usa": "united states", "u.s.": "united states", "u.s.a.": "united states",
+  "united states of america": "united states",
+  "uk": "united kingdom", "u.k.": "united kingdom", "great britain": "united kingdom", "britain": "united kingdom",
+  "uae": "united arab emirates", "u.a.e.": "united arab emirates",
+  "south korea": "south korea", "republic of korea": "south korea", "korea": "south korea",
+  "czech republic": "czechia",
+  "russia": "russia", "russian federation": "russia",
+};
+
+function normalizeCountryName(country: string): string {
+  const base = country.trim().toLowerCase().replace(/\s+/g, " ");
+  return COUNTRY_ALIASES[base] ?? base;
+}
 
 /**
  * True when the dataset confirms OR can't speak to the pair — false only
  * when the dataset positively knows this city and positively knows it's
  * never been in this country. Absence of data is never treated as evidence
  * of an error (ground rule 2's spirit applied to the validator itself): a
- * real small-market city missing from a 171k-place gazetteer, or a country
- * name this build can't resolve to an ISO code, must not block a
- * perfectly good value.
+ * real city missing from this deliberately small list, or a country name
+ * not in the alias table, must not block a perfectly good value.
  */
 export function cityExistsInCountry(city: string | null | undefined, country: string | null | undefined): boolean {
   if (!city || !country) return true;
-  const alpha2 = countries.getAlpha2Code(country, "en");
-  if (!alpha2) return true;
   const key = city.trim().toLowerCase();
-  const knownCountries = CITY_COUNTRY_INDEX.get(key);
+  const knownCountries = MAJOR_CITIES.get(key);
   if (!knownCountries) return true;
-  return knownCountries.has(alpha2);
+  const normalizedCountry = normalizeCountryName(country);
+  return [...knownCountries].some((c) => normalizeCountryName(c) === normalizedCountry);
 }
 
 export type ValidationRuleCode =
