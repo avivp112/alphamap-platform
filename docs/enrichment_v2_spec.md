@@ -36,8 +36,8 @@ v2 must keep collecting every field below. Before writing any code, read `bulk_e
 |---|---|---|
 | Company status | `is_public_company`, `is_tech_company` | Public companies are archived, not deleted (issue 7) |
 | Profile | `website`, `description` (4–6 sentences), `value_proposition`, `industry`, `founded_year`, `country`, `city`, sector + up to 4 sub-sector tags (taxonomy-constrained), social links (LinkedIn, Facebook, Instagram) | Location and founded year need evidence and validation (issues 1, 4) |
-| Founders | `name`, `title`, `bio`, LinkedIn URL, `prior_exit`, `elite_background`, `notable_pedigree` flags | URLs only if verbatim in a source (issue 1) |
-| Leadership | up to 15 people: `name`, `role`, `bio`, LinkedIn, join date | Same URL rule |
+| Founders | `name`, `title`, `bio` (3–4 sentences\*), LinkedIn URL, `had_prior_exit`, `elite_background`, `notable_pedigree` flags | URLs only if verbatim in a source (issue 1) |
+| Leadership | up to 15 people: `name`, `role`, `bio` (3–4 sentences\*), LinkedIn, join date | Same URL rule |
 | Funding | every round: type, amount, valuation, date, lead investor, other investors, per-investor amounts; `funding_history_complete` | Normalized types, new dedup (issue 5) |
 | Metrics | `employee_count`, `employee_range`, `growth_trend`, dated headcount history | Point types and update guard (issue 6) |
 | Competitors | 4–5, each with a "how it competes" explanation; cross-linked to tracked startups by domain | Unchanged |
@@ -50,6 +50,8 @@ v2 must keep collecting every field below. Before writing any code, read `bulk_e
 | Run metadata | `confidence_score` + `reasoning`, `last_enriched_at`, status (success / partial / low_confidence / rejected / removed_public / no_data / stealth_suspected / error) | Model confidence kept for logs; field confidence computed in code (issue 9) |
 
 **Parity check (required):** add a script `scripts/enrich_parity_report.ts` that runs v1 and v2 in `DRY_RUN` on the same companies and prints, per field, the share of companies where each version produced a value. v2 may produce fewer values on a field only when the dropped values were rejected by a validation or evidence rule. In that case the report must list the reason codes.
+
+\* **Amendment (agreed in chat, Oct 4 2026, not in the original document):** founder/leadership `bio` grows from v1's 1–2 sentences to 3–4, and must prioritize, whenever a source states it: where they studied, whether they previously founded a company (and whether it exited), whether they previously served as CEO of another company, and any notable elite technical/military background. No new boolean flag is needed for the military-unit signal specifically — v1's existing `elite_background` flag (kept as-is for v2) already defines exactly this ("an elite intelligence or technology military unit (such as Unit 8200, Talpiot, or an equivalent unit in another country)... TRUE only if you find clear evidence"); the amendment is that the bio PROSE should also narrate which unit/background, not just carry the true/false flag. Like `description`, `bio` is a narrative field backed by a `source_ids` array (issue 1), not a per-sentence `evidence_quote` — a 3–4 sentence biography is not a single material fact to cite one quote for. Still never invented: a detail only goes in if a source actually states it, same "omit rather than guess" rule as everything else. UI treatment (not shown on the card itself, suggested as a hover popup on the person's name) is a separate, later frontend decision — this amendment is about what the pipeline collects, not where it's displayed.
 
 ## 3. Target architecture
 
