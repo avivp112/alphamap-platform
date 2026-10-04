@@ -50,6 +50,21 @@ describe("buildProfileExtractionRequest", () => {
     expect(text.toLowerCase()).toContain("same source and the same sentence");
     expect(text.toLowerCase()).toContain("never construct or guess a url");
   });
+
+  it("constrains sector_name/sub_sector_name to the given taxonomy (ground rule 3)", () => {
+    const withTaxonomy = buildProfileExtractionRequest("Apex", sources, {
+      parentNames: ["Aerospace & Defense", "AI & ML"],
+      subNames: ["Satellites", "LLMs"],
+    });
+    const profileProps = (withTaxonomy.tools[0].input_schema.properties.profile as any).properties;
+    expect(profileProps.sector_name.enum).toEqual(["Aerospace & Defense", "AI & ML"]);
+    expect(profileProps.sub_sector_name.enum).toEqual(["Satellites", "LLMs"]);
+  });
+
+  it("omits the enum constraint entirely when no taxonomy is given (matches v1's own fallback)", () => {
+    const profileProps = (request.tools[0].input_schema.properties.profile as any).properties;
+    expect(profileProps.sector_name.enum).toBeUndefined();
+  });
 });
 
 describe("processProfileExtractionResponse", () => {

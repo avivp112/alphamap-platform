@@ -24,9 +24,38 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { sanitizeModelOutput } from "./sanitize";
 import { verifyEvidence, type EvidenceSource } from "./evidence";
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
+
+export interface SectorTaxonomy {
+  parentNames: string[];
+  subNames: string[];
+}
+
+/**
+ * Ground rule 3: "the sector taxonomy constraint" — fetched from the same
+ * `sectors` table v1 uses (parent_id null = top-level sector, non-null =
+ * sub-sector), so sector_name/sub_sector_name can never drift from what
+ * sector_id_by_name() actually resolves against. v1 exports loadSectorTaxonomy()
+ * too, but it only sets v1's own PRIVATE module variables — nothing reads
+ * the result back out — so v2 needs its own copy that actually returns the
+ * data. Returns empty arrays (schema falls back to no enum constraint,
+ * matching v1's own behavior) if the fetch fails, rather than block the run.
+ */
+export async function loadSectorTaxonomy(supabase: SupabaseClient): Promise<SectorTaxonomy> {
+  const { data, error } = await supabase.from("sectors").select("name, parent_id");
+  if (error) {
+    console.warn(`⚠️  Failed to load sector taxonomy: ${error.message} — sector_name/sub_sector_name classification will be skipped this run.`);
+    return { parentNames: [], subNames: [] };
+  }
+  const rows = (data ?? []) as Array<{ name: string; parent_id: string | null }>;
+  return {
+    parentNames: rows.filter((r) => r.parent_id === null).map((r) => r.name).sort(),
+    subNames: rows.filter((r) => r.parent_id !== null).map((r) => r.name).sort(),
+  };
+}
 
 export interface EvidencedValue<T> {
   value: T;
@@ -154,7 +183,7 @@ const BIO_DESCRIPTION = [
   "entirely rather than pad with generic filler, and never invent a detail to reach 3-4 sentences.",
 ].join(" ");
 
-function profileExtractionTool() {
+function profileExtractionTool(taxonomy: SectorTaxonomy) {
   return {
     name: "save_profile_extraction",
     description: "Save the company-status/profile/leadership/metrics/competitors/acquisitions/news/patents/technology half of a verified enrichment record.",
@@ -191,9 +220,24 @@ function profileExtractionTool() {
                 required: ["name"],
               },
             },
-            sector_name: { type: "string", description: "Best-fit sector. Omit if genuinely uncertain." },
-            sub_sector_name: { type: "string" },
-            sub_sector_names: { type: "array", items: { type: "string" } },
+            sector_name: {
+              type: "string",
+              enum: taxonomy.parentNames.length > 0 ? taxonomy.parentNames : undefined,
+              description: "The single best-fit sector from the enumerated list. Omit if genuinely uncertain — never guess.",
+            },
+            sub_sector_name: {
+              type: "string",
+              enum: taxonomy.subNames.length > 0 ? taxonomy.subNames : undefined,
+              description: "The single best-fit sub-sector, one level more specific than sector_name. Omit if genuinely uncertain.",
+            },
+            sub_sector_names: {
+              type: "array",
+              items: {
+                type: "string",
+                enum: [...taxonomy.parentNames, ...taxonomy.subNames].length > 0 ? [...taxonomy.parentNames, ...taxonomy.subNames] : undefined,
+              },
+              description: "1-4 OTHER fields this company meaningfully operates in, beyond sector_name/sub_sector_name above. Omit entirely if the company operates in only the one field already captured.",
+            },
             linkedin_url: materialField({ type: "string" }, "The COMPANY's own LinkedIn page — not a person's. Omit if not found verbatim in a source."),
             facebook_url: materialField({ type: "string" }, "The company's Facebook page. Omit if not found verbatim in a source."),
             instagram_url: materialField({ type: "string" }, "The company's Instagram page. Omit if not found verbatim in a source."),
@@ -307,7 +351,11 @@ function profileExtractionTool() {
   };
 }
 
-export function buildProfileExtractionRequest(companyName: string, sources: LabeledSource[]) {
+export function buildProfileExtractionRequest(
+  companyName: string,
+  sources: LabeledSource[],
+  taxonomy: SectorTaxonomy = { parentNames: [], subNames: [] },
+) {
   const context = formatSourcesForPrompt(sources);
   const prompt = `You are a financial data analyst. Extract the company status, profile, leadership, metrics, competitors, acquisitions, news, patents, and technology for the private tech company "${companyName}" from the labeled research below.
 
@@ -328,7 +376,7 @@ ${context}`;
     model: "", // filled in by the caller with PROFILE_MODEL
     max_tokens: 8192,
     temperature: 0,
-    tools: [profileExtractionTool()],
+    tools: [profileExtractionTool(taxonomy)],
     tool_choice: { type: "tool" as const, name: "save_profile_extraction" },
     messages: [{ role: "user" as const, content: prompt }],
   };
@@ -462,6 +510,7 @@ export function processProfileExtractionResponse(
 export interface ExtractProfileOptions {
   client: Anthropic;
   model: string;
+  taxonomy?: SectorTaxonomy;
 }
 
 export async function extractProfile(
@@ -469,7 +518,7 @@ export async function extractProfile(
   sources: LabeledSource[],
   options: ExtractProfileOptions,
 ): Promise<{ extraction: ProcessedProfileExtraction; stopReason: string | null; outputTokens: number } | null> {
-  const request = buildProfileExtractionRequest(companyName, sources);
+  const request = buildProfileExtractionRequest(companyName, sources, options.taxonomy);
   const msg = await options.client.messages.create({ ...request, model: options.model });
 
   // No fallback defaults that make a truncated/missing response look valid
