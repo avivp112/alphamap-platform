@@ -117,7 +117,16 @@ export interface MergeablePerson {
   joined_date?: string;
 }
 
-function normalizeName(name: string): string {
+/**
+ * Returns null, never throws, for a missing/blank name -- a real DRY_RUN=false
+ * run crashed here ("Cannot read properties of undefined (reading 'trim')")
+ * on Falanx Cyber, a company with real pre-existing founders/leadership data
+ * from a previous (non-v2) enrichment pass. Unlike the two freshly-empty
+ * companies this had been tested against, existing JSONB rows written
+ * outside this schema carry no guarantee every person object has a `name`.
+ */
+function normalizeName(name: string | null | undefined): string | null {
+  if (!name || !name.trim()) return null;
   return name.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
@@ -128,13 +137,24 @@ function normalizeName(name: string): string {
  * name) is appended. Matches v1's existing behavior ("merges founders as a
  * union — additive, never destructive — including backfilling title/bio
  * onto an already-recorded founder, never overwriting"), unchanged by v2.
+ *
+ * A person (existing OR incoming) with no identifiable name is never
+ * matched against -- an existing nameless entry stays in the output
+ * untouched (no data loss) but can't be auto-merged into, since identity
+ * can't be verified without a name; an incoming nameless entry is skipped
+ * entirely rather than appended as an unreferenceable record.
  */
 export function mergePeople<T extends MergeablePerson>(existing: T[], incoming: T[]): T[] {
   const result = existing.map((p) => ({ ...p }));
-  const byName = new Map(result.map((p, idx) => [normalizeName(p.name), idx]));
+  const byName = new Map<string, number>();
+  result.forEach((p, idx) => {
+    const key = normalizeName(p.name);
+    if (key) byName.set(key, idx);
+  });
 
   for (const person of incoming) {
     const key = normalizeName(person.name);
+    if (!key) continue;
     const idx = byName.get(key);
     if (idx == null) {
       result.push({ ...person });

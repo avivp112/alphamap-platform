@@ -117,6 +117,31 @@ describe("mergePeople", () => {
     expect(result[0].had_prior_exit).toBe(true);
     expect(result[0].elite_background).toBe(true);
   });
+
+  it("does not crash on an existing person with no name -- the real DRY_RUN=false crash (Falanx Cyber, pre-existing JSONB data from outside this schema)", () => {
+    const existing = [{ title: "CEO" }, { name: "Ian Cinnamon" }] as MergeablePerson[];
+    const incoming: MergeablePerson[] = [{ name: "Max Benassi", title: "CTO" }];
+    expect(() => mergePeople(existing, incoming)).not.toThrow();
+    const result = mergePeople(existing, incoming);
+    expect(result).toHaveLength(3); // the nameless entry survives untouched, nothing lost
+    expect(result[0]).toEqual({ title: "CEO" });
+  });
+
+  it("skips an incoming person with no name rather than appending an unreferenceable record", () => {
+    const existing: MergeablePerson[] = [{ name: "Ian Cinnamon" }];
+    const incoming = [{ title: "Advisor" }] as MergeablePerson[];
+    const result = mergePeople(existing, incoming);
+    expect(result).toHaveLength(1);
+  });
+
+  it("never lets two different nameless existing people get silently conflated into one via a shared null key", () => {
+    const existing = [{ title: "CEO" }, { title: "CTO" }] as MergeablePerson[];
+    const incoming: MergeablePerson[] = [{ name: "Max Benassi" }];
+    const result = mergePeople(existing, incoming);
+    expect(result).toHaveLength(3);
+    expect(result[0]).toEqual({ title: "CEO" });
+    expect(result[1]).toEqual({ title: "CTO" });
+  });
 });
 
 describe("appendDatedFigures", () => {
