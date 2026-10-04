@@ -323,7 +323,7 @@ export async function extractFunding(
   companyName: string,
   sources: LabeledSource[],
   options: ExtractFundingOptions,
-): Promise<{ extraction: ProcessedFundingExtraction; stopReason: string | null; outputTokens: number } | null> {
+): Promise<{ extraction: ProcessedFundingExtraction; stopReason: string | null; inputTokens: number; outputTokens: number } | null> {
   const request = buildFundingExtractionRequest(companyName, sources);
   const msg = await options.client.messages.create({ ...request, model: options.model });
 
@@ -332,6 +332,7 @@ export async function extractFunding(
     return {
       extraction: { result: { funding_rounds: [], funding_history_complete: null, arr_milestones: [], revenue_estimate: null, valuation_benchmarks: [] }, dropped: [] },
       stopReason: msg.stop_reason,
+      inputTokens: msg.usage.input_tokens,
       outputTokens: msg.usage.output_tokens,
     };
   }
@@ -339,6 +340,7 @@ export async function extractFunding(
   return {
     extraction: processFundingExtractionResponse(tool.input, sources),
     stopReason: msg.stop_reason,
+    inputTokens: msg.usage.input_tokens,
     outputTokens: msg.usage.output_tokens,
   };
 }

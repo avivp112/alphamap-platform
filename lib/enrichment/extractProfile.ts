@@ -517,7 +517,7 @@ export async function extractProfile(
   companyName: string,
   sources: LabeledSource[],
   options: ExtractProfileOptions,
-): Promise<{ extraction: ProcessedProfileExtraction; stopReason: string | null; outputTokens: number } | null> {
+): Promise<{ extraction: ProcessedProfileExtraction; stopReason: string | null; inputTokens: number; outputTokens: number } | null> {
   const request = buildProfileExtractionRequest(companyName, sources, options.taxonomy);
   const msg = await options.client.messages.create({ ...request, model: options.model });
 
@@ -527,12 +527,13 @@ export async function extractProfile(
   // company just has no data".
   const tool = msg.content.find((b) => b.type === "tool_use");
   if (!tool || tool.type !== "tool_use") {
-    return { extraction: { result: emptyProfileExtraction(), dropped: [] }, stopReason: msg.stop_reason, outputTokens: msg.usage.output_tokens };
+    return { extraction: { result: emptyProfileExtraction(), dropped: [] }, stopReason: msg.stop_reason, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens };
   }
 
   return {
     extraction: processProfileExtractionResponse(tool.input, sources),
     stopReason: msg.stop_reason,
+    inputTokens: msg.usage.input_tokens,
     outputTokens: msg.usage.output_tokens,
   };
 }
