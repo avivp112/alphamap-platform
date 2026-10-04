@@ -137,20 +137,22 @@
  * GitHub Actions: see .github/workflows/bulk-enrich-all.yml
  */
 
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "dotenv";
 import { existsSync } from "fs";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import { dirname, join } from "path";
 import * as cheerio from "cheerio";
 
-// ── Bootstrap: load .env for local dev (GHA uses repository secrets) ──────────
-const __dir   = dirname(fileURLToPath(import.meta.url));
-const envPath = join(__dir, "..", ".env");
-if (existsSync(envPath)) config({ path: envPath });
+const __dir = dirname(fileURLToPath(import.meta.url));
 
 // ── Configuration ─────────────────────────────────────────────────────────────
+// Pure env-var reads only — safe at module load, no I/O, no process.exit. Kept
+// at module scope (not inside initV1Context) because many functions below
+// reference these as plain constants; moving them would be a much larger,
+// riskier diff for no behavioral benefit — they're inert until something
+// actually calls main() or initV1Context().
 const BATCH_SIZE     = Number(process.env.BATCH_SIZE     ?? 9999);  // all by default
 const OFFSET         = Number(process.env.OFFSET         ?? 0);     // skip first N (for resume)
 const DELAY_MS       = Number(process.env.DELAY_MS       ?? 20_000); // 20 s between companies
@@ -159,32 +161,66 @@ const MIN_CONFIDENCE = Number(process.env.MIN_CONFIDENCE ?? 40);     // skip wri
 const MAX_TIER       = Number(process.env.MAX_TIER       ?? 3);     // 2 = skip complete companies
 const MODEL           = process.env.ENRICH_MODEL ?? "claude-haiku-4-5-20251001";
 
-// ── Env-var guard ─────────────────────────────────────────────────────────────
-for (const key of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "ANTHROPIC_API_KEY"]) {
-  if (!process.env[key]) {
-    console.error(`❌  Missing required environment variable: ${key}`);
-    process.exit(1);
-  }
-}
-if (!process.env.SERP_KEY) {
-  console.warn("⚠️  SERP_KEY not set — Serper is the PRIMARY search engine for every stage of this pipeline " +
-    "(domain verification, funding, competitors, news, tech stack). Without it, every Serper call returns " +
-    "nothing and this run falls through to Tavily alone (if TAVILY_API_KEY is set) or skips that data entirely. " +
-    "Domain verification specifically will be skipped outright — every known website is trusted as-is.\n");
-}
-if (!process.env.TAVILY_API_KEY) {
-  console.warn("ℹ️   TAVILY_API_KEY not set — Tavily fallback unavailable (only used when Serper returns zero results or fails).\n");
-}
-if (!process.env.JINA_API_KEY) {
-  console.warn("ℹ️   JINA_API_KEY not set — Jina Reader (company website fetch) will run unauthenticated, at a lower rate limit.\n");
-}
-
 // ── Clients ───────────────────────────────────────────────────────────────────
-const supabase  = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// Declared, not constructed, at module scope — constructing these requires
+// SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY/ANTHROPIC_API_KEY to already be in
+// process.env, which (for local dev) requires .env to have been loaded first.
+// Both now happen inside initV1Context(), so importing this module (e.g. from
+// eval/run_eval.ts) has ZERO side effects — nothing runs, nothing is read,
+// nothing is constructed, until the importer explicitly calls
+// initV1Context(). main() calls it as its first line, so `npx tsx
+// scripts/bulk_enrich_all.ts` behaves exactly as before.
+// Exported as a live ESM binding (not a snapshot) — eval/run_eval.ts reads
+// this AFTER calling initV1Context(), by which point it's been constructed.
+export let supabase: SupabaseClient;
+let anthropic: Anthropic;
+
+/**
+ * Everything this script needs before any research/DB call can run: load
+ * .env (local dev only — CI supplies real env vars directly), validate the
+ * required keys (exits the process if any are missing — same as before this
+ * refactor, just relocated from module-load time to call time), warn on
+ * missing optional keys, and construct the Supabase/Anthropic clients.
+ *
+ * Exported so eval/run_eval.ts (and any other future importer, e.g.
+ * bulk_enrich_v2.ts if it ever wants v1's exact client setup) can reuse this
+ * exact initialization instead of duplicating it — call it once before
+ * calling researchCompany() or loadSectorTaxonomy().
+ */
+export async function initV1Context(): Promise<void> {
+  const envPath = join(__dir, "..", ".env");
+  if (existsSync(envPath)) config({ path: envPath });
+
+  for (const key of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "ANTHROPIC_API_KEY"]) {
+    if (!process.env[key]) {
+      console.error(`❌  Missing required environment variable: ${key}`);
+      process.exit(1);
+    }
+  }
+  if (!process.env.SERP_KEY) {
+    console.warn("⚠️  SERP_KEY not set — Serper is the PRIMARY search engine for every stage of this pipeline " +
+      "(domain verification, funding, competitors, news, tech stack). Without it, every Serper call returns " +
+      "nothing and this run falls through to Tavily alone (if TAVILY_API_KEY is set) or skips that data entirely. " +
+      "Domain verification specifically will be skipped outright — every known website is trusted as-is.\n");
+  }
+  if (!process.env.TAVILY_API_KEY) {
+    console.warn("ℹ️   TAVILY_API_KEY not set — Tavily fallback unavailable (only used when Serper returns zero results or fails).\n");
+  }
+  if (!process.env.JINA_API_KEY) {
+    console.warn("ℹ️   JINA_API_KEY not set — Jina Reader (company website fetch) will run unauthenticated, at a lower rate limit.\n");
+  }
+
+  supabase  = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+  // tavilyExhausted (declared further below, alongside the Tavily client
+  // code) reads process.env.TAVILY_API_KEY at module-load time via a
+  // top-level `let tavilyExhausted = !process.env.TAVILY_API_KEY;` — which
+  // ran BEFORE .env was loaded, back when that read happened at import time.
+  // Re-evaluate it here now that .env has actually been loaded, so a
+  // .env-only (not shell-exported) TAVILY_API_KEY is correctly detected.
+  tavilyExhausted = !process.env.TAVILY_API_KEY;
+}
 
 // Sector taxonomy for Claude's sector_name/sub_sector_name classification —
 // fetched once at startup (loadSectorTaxonomy, called from main()) rather
@@ -193,7 +229,11 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 let SECTOR_PARENT_NAMES: string[] = [];
 let SUB_SECTOR_NAMES: string[] = [];
 
-async function loadSectorTaxonomy(): Promise<void> {
+// Exported so eval/run_eval.ts can populate SECTOR_PARENT_NAMES/
+// SUB_SECTOR_NAMES before calling researchCompany() — without this, the
+// save_enrichment tool schema's sector_name/sub_sector_name enum would be
+// empty and every company would come back unclassified.
+export async function loadSectorTaxonomy(): Promise<void> {
   const { data, error } = await supabase.from("sectors").select("name, parent_id");
   if (error) { console.warn(`⚠️  Failed to load sector taxonomy: ${error.message} — sector_name/sub_sector_name classification will be skipped this run.`); return; }
   const rows = (data ?? []) as Array<{ name: string; parent_id: string | null }>;
@@ -440,7 +480,12 @@ interface ExtractedValuationBenchmark {
   is_estimated?: boolean;
 }
 
-interface EnrichmentResult {
+// Exported so eval/run_eval.ts can type researchCompany()'s return value
+// without re-declaring this shape. Nested interfaces it references
+// (ExtractedProfile, ExtractedRound, etc.) stay unexported — TypeScript
+// resolves them fine through this exported parent type; nothing outside this
+// file needs to name them individually.
+export interface EnrichmentResult {
   is_public_company: boolean;
   is_tech_company: boolean;
   profile: ExtractedProfile;
@@ -1319,7 +1364,16 @@ const PERSON_QUALITY_TAG_PROPERTIES = {
 // posts and other companies in plain name search. When known, it's added to
 // every query as a second anchor so results have to match BOTH the name and
 // the known domain, not just the name alone.
-async function researchCompany(
+//
+// Exported for eval/run_eval.ts. PURE with respect to the database: this
+// function (and the deep dives it may call) only ever calls external search/
+// fetch APIs and Claude — it never touches `supabase`. All DB writes live
+// separately, in patchStartupProfile()/insertNewRounds()/
+// recordHeadcountSnapshot()/recordScoreSnapshot(), called only from main()'s
+// loop, never from here. eval/run_eval.ts additionally wraps the exported
+// `supabase` client's mutating methods to throw if this guarantee is ever
+// violated, so this isn't just an assertion in a comment.
+export async function researchCompany(
   name: string,
   website?: string | null,
   country?: string | null,
@@ -2692,6 +2746,8 @@ async function recordScoreSnapshot(startupId: string): Promise<void> {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
+  await initV1Context();
+
   const startedAt = new Date().toISOString();
   const bar       = "═".repeat(62);
 
@@ -3108,7 +3164,16 @@ async function main() {
   if (tally.error > 0 && tally.success === 0 && tally.low_confidence === 0 && tally.stealth_suspected === 0) process.exit(1);
 }
 
-main().catch((e) => {
-  console.error("💥  Fatal error:", e);
-  process.exit(1);
-});
+// Only auto-run when this file is the one actually invoked (`npx tsx
+// scripts/bulk_enrich_all.ts`), not when it's imported as a module (e.g. by
+// eval/run_eval.ts, which needs researchCompany()/initV1Context() without
+// triggering a full database run on import). process.argv[1] is undefined
+// when there's no script arg at all (e.g. a REPL) — pathToFileURL("") would
+// throw, so that case is treated as "not the entrypoint" rather than crashing.
+const isDirectlyInvoked = !!process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isDirectlyInvoked) {
+  main().catch((e) => {
+    console.error("💥  Fatal error:", e);
+    process.exit(1);
+  });
+}

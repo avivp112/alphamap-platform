@@ -1,85 +1,161 @@
 {
-  "version": 1,
+  "version": 2,
   "schema_notes": [
     "Each company entry is ground truth for eval/run_eval.ts to compare pipeline output against.",
-    "Every factual claim below carries a `sources` citation. Nothing here is inferred, estimated, or carried over from AlphaMap's own (possibly wrong) DB rows — that would defeat the point of a golden set.",
-    "Where independent sources genuinely disagree (see Fresha.employee_count), the field is left null/range-only rather than picking one number to look complete — this mirrors ground rule 2 (missing is better than wrong) applied to the golden set itself.",
-    "funding_rounds[].confidence is 'high' (2+ independent primary/trade-press sources agree), 'medium' (1 primary source, or 2+ aggregators agreeing), or 'low' (single aggregator source only) — used to weight precision scoring, not just hit/miss.",
-    "hard_case_tags follow the categories in the v2 spec Section 6 (issue 13): common_name, non_us, rebrand_domain_change, series_a_start, stealth_no_data, went_public."
+    "Sourcing rule: every cited `source_url` is a company website page, an official registry, an official press release, or a news article that did its own original reporting. Aggregator/directory pages (Crunchbase, PitchBook, LinkedIn, Tracxn, Dealroom, Sacra, Seedtable, CB Insights, etc.) were used only to FIND candidate facts and leads during research — never as the cited source for a value here.",
+    "Never seeded from AlphaMap's own database — built independently so comparing against it is meaningful.",
+    "confidence per field: 'verified' (2+ independent primary/direct-reporting sources agree, or one lead-investor/company-direct source), 'likely' (one credible direct-reporting source, not independently corroborated), 'unknown' (no primary source found, or sources conflict with no way to resolve). Fields marked 'unknown' are excluded from precision/coverage scoring, not guessed.",
+    "hard_case_tags follow the v2 spec's categories (Section 6 / issue 13): common_name, non_us, rebrand_domain_change, series_a_start, stealth_no_data, went_public.",
+    "STATUS: human-reviewed batch of 2 (Apex, Fresha). Hybrid sourcing process per the v2 rollout decision: Claude researches + cites primary sources only, Aviv reviews and confirms/corrects city, country, founded_year, and each funding round before an entry counts as final. These 2 are presented for that review now; the rest of the 50-company target batch continues in follow-up sessions, 10 at a time, prioritizing the hard-case categories not yet covered (non_us beyond UK, series_a_start, stealth_no_data, went_public)."
   ],
-  "coverage_status": "STARTER SET — 2 of target 50-150+ companies. See the v2 rollout thread for how the remaining entries get added (this session's research vs. team-supplied verification vs. hybrid).",
   "companies": [
     {
       "id": "apex-space",
       "name": "Apex",
       "aka": ["Apex Space"],
       "hard_case_tags": ["common_name"],
+      "reviewed_by_human": false,
       "website": "https://www.apexspace.com",
-      "city": "Los Angeles",
-      "country": "United States",
-      "founded_year": 2022,
+      "city": { "value": "Los Angeles", "confidence": "verified", "source_url": "https://www.cnbc.com/2022/10/24/andreessen-horowitz-backed-apex-space-aims-to-mass-produce-spacecraft.html" },
+      "country": { "value": "United States", "confidence": "verified", "source_url": "https://www.cnbc.com/2022/10/24/andreessen-horowitz-backed-apex-space-aims-to-mass-produce-spacecraft.html" },
+      "founded_year": { "value": 2022, "confidence": "verified", "source_url": "https://techcrunch.com/2022/10/24/apex-space-takes-on-satellite-bus-bottleneck-with-seed-round-led-by-a16z/" },
       "founders": [
-        { "name": "Ian Cinnamon", "title": "CEO & Co-Founder", "linkedin_url": null, "notes": "Previously founded Synapse (AI for security checkpoints), acquired by Palantir." },
-        { "name": "Max Benassi", "title": "CTO & Co-Founder", "linkedin_url": null, "notes": "Previously scaled aerospace manufacturing at SpaceX; Director of Engineering at Astra." }
+        { "name": "Ian Cinnamon", "title": "CEO & Co-Founder", "confidence": "verified", "source_url": "https://techcrunch.com/2022/10/24/apex-space-takes-on-satellite-bus-bottleneck-with-seed-round-led-by-a16z/", "notes": "Previously founded Synapse (AI for security checkpoints), acquired by Palantir." },
+        { "name": "Max Benassi", "title": "CTO & Co-Founder", "confidence": "verified", "source_url": "https://techcrunch.com/2022/10/24/apex-space-takes-on-satellite-bus-bottleneck-with-seed-round-led-by-a16z/", "notes": "Previously scaled aerospace manufacturing at SpaceX; Director of Engineering at Astra." }
       ],
       "funding_rounds": [
-        { "type": "Seed", "amount_usd": 7500000, "date": "2022-10-24", "lead_investor": "Andreessen Horowitz", "other_investors": ["XYZ", "J2 Ventures", "Lux Capital", "Village Global"], "valuation_usd": null, "confidence": "high" },
-        { "type": "Series A", "amount_usd": 16000000, "date": "2023-06", "lead_investor": null, "valuation_usd": null, "confidence": "medium" },
-        { "type": "Series B", "amount_usd": 95000000, "date": "2024-06", "lead_investor": null, "valuation_usd": null, "confidence": "medium" },
-        { "type": "Series C", "amount_usd": 200000000, "date": "2025-04", "lead_investor": "Point72 Ventures / 8VC (co-leads)", "other_investors": ["Andreessen Horowitz", "Shield Capital", "XYZ Capital", "Washington Harbour Partners", "StepStone Group"], "valuation_usd": null, "confidence": "medium" },
-        { "type": "Series D", "amount_usd": 200000000, "date": "2025-09", "lead_investor": null, "valuation_usd": 1000000000, "confidence": "medium" },
-        { "type": "Growth", "amount_usd": 200000000, "date": "2026-06-05", "lead_investor": "Glade Brook Capital Partners", "other_investors": ["Washington Harbour Partners"], "valuation_usd": 2300000000, "confidence": "high", "notes": "CEO Ian Cinnamon explicitly described this as the company's THIRD distinct $200M round in ~14 months, deliberately not labeled with a series letter. This and the Series D above are two SEPARATE real events, not a duplicate — see production_bug_notes." }
+        {
+          "type": "Seed", "amount_usd": 7500000, "date": "2022-10-24",
+          "lead_investor": "Andreessen Horowitz", "other_investors": ["XYZ", "J2 Ventures", "Lux Capital", "Village Global"],
+          "valuation_usd": null, "confidence": "verified",
+          "source_urls": [
+            "https://techcrunch.com/2022/10/24/apex-space-takes-on-satellite-bus-bottleneck-with-seed-round-led-by-a16z/",
+            "https://spacenews.com/apex-raises-seed-round-to-mass-produce-smallsats/",
+            "https://www.cnbc.com/2022/10/24/andreessen-horowitz-backed-apex-space-aims-to-mass-produce-spacecraft.html"
+          ]
+        },
+        {
+          "type": "Series A", "amount_usd": 16000000, "date": "2023-06-22",
+          "lead_investor": "Andreessen Horowitz / Shield Capital (co-leads)", "other_investors": [],
+          "valuation_usd": null, "confidence": "verified",
+          "source_urls": [
+            "https://www.businesswire.com/news/home/20230622417907/en/Apex-Raises-$16M-in-Series-A-Funding-and-Reveals-Customers-Flying-on-its-First-Aries-Satellite-Bus",
+            "https://spacenews.com/apex-raises-16-million-for-spacecraft-factory/",
+            "https://shieldcap.com/announcements/shield-capital-andreessen-horowitz-colead-apex-series-a-funding-round"
+          ]
+        },
+        {
+          "type": "Series B", "amount_usd": 95000000, "date": "2024-06-12",
+          "lead_investor": "XYZ Venture Capital / CRV (co-leads)",
+          "other_investors": ["Upfront", "8VC", "Toyota Ventures", "Point72 Ventures", "Mirae Asset Capital", "Outsiders Fund", "GSBackers", "Andreessen Horowitz", "Shield Capital", "J2 Ventures"],
+          "valuation_usd": null, "confidence": "verified",
+          "source_urls": [
+            "https://techcrunch.com/2024/06/11/apex-raises-95m-to-scale-satellite-bus-production/",
+            "https://spacenews.com/apex-raises-95-million-to-increase-satellite-bus-production/",
+            "https://payloadspace.com/apex-raises-95m-in-series-b/"
+          ]
+        },
+        {
+          "type": "Series C", "amount_usd": 200000000, "date": "2025-04",
+          "lead_investor": "Point72 Ventures / 8VC (co-leads)",
+          "other_investors": ["Andreessen Horowitz", "Shield Capital", "XYZ Capital", "Washington Harbour Partners", "StepStone Group"],
+          "valuation_usd": null, "confidence": "likely",
+          "source_urls": ["https://payloadspace.com/apex-raises-200m-at-2-3b-valuation/"],
+          "notes": "Date/amount corroborated by the June 2026 article's own round-sequencing recap (CEO quote); not yet traced to its own dedicated June-2025-dated primary announcement in this pass."
+        },
+        {
+          "type": "Series D", "amount_usd": 200000000, "date": "2025-09",
+          "lead_investor": null, "valuation_usd": 1000000000, "confidence": "likely",
+          "source_urls": ["https://payloadspace.com/apex-raises-200m-at-2-3b-valuation/"],
+          "notes": "Same caveat as Series C above — confirmed via the June 2026 recap, not yet traced to a dedicated September-2025 primary announcement."
+        },
+        {
+          "type": "Growth", "amount_usd": 200000000, "date": "2026-06-05",
+          "lead_investor": "Glade Brook Capital Partners", "other_investors": ["Washington Harbour Partners"],
+          "valuation_usd": 2300000000, "confidence": "verified",
+          "source_urls": [
+            "https://payloadspace.com/apex-raises-200m-at-2-3b-valuation/",
+            "https://www.startupcouncil.org/articles/satellite-maker-apex%E2%80%99s-valuation-rises-to-2-3-billion-after-latest-200-million-raise"
+          ],
+          "notes": "CEO Ian Cinnamon explicitly described this as the company's THIRD distinct $200M round in ~14 months, deliberately not labeled with a series letter — i.e. confirmed to be separate from the Series D above, not a relabeling of it."
+        }
       ],
       "total_raised_usd_computed": 718500000,
-      "employee_count": null,
-      "employee_range": null,
+      "employee_count": { "value": null, "confidence": "unknown" },
+      "employee_range": { "value": null, "confidence": "unknown" },
       "github_url": null,
       "huggingface_url": null,
-      "production_bug_notes": "AlphaMap's live DB showed 'Growth (Jun 2026)' and 'Series D (Apr 2026)' as two $200M/$2.3B rows and treated them as a duplicate to merge. Verified research shows the REAL Series D was Sept 2025 (not Apr 2026) at a ~$1B valuation, and the Jun 2026 round is a genuinely separate, later, third $200M raise at $2.3B. The production data's 'Apr 2026' date for 'Series D' does not match any real event found — it appears to be a hallucinated/mis-dated entry, not a legitimate duplicate of the June round. The correct fix is 6 distinct rounds with correct dates, not a 2-into-1 merge.",
-      "sources": [
-        { "title": "Apex Space takes on satellite bus 'bottleneck' with seed round led by a16z", "url": "https://techcrunch.com/2022/10/24/apex-space-takes-on-satellite-bus-bottleneck-with-seed-round-led-by-a16z/" },
-        { "title": "New Spacecraft Manufacturer Apex Debuts With $7.5M in Funding", "url": "https://www.satellitetoday.com/manufacturing/2022/10/24/new-spacecraft-manufacturer-apex-debuts-with-7-5m-in-funding/" },
-        { "title": "Apex Space Emerges from Stealth with a16z-Led $7.5M Seed Round", "url": "https://payloadspace.com/apex-space-emerges-from-stealth-with-a16z-led-7-5m-seed-round/" },
-        { "title": "Andreessen Horowitz-backed Apex Space aims to mass produce spacecraft", "url": "https://www.cnbc.com/2022/10/24/andreessen-horowitz-backed-apex-space-aims-to-mass-produce-spacecraft.html" },
-        { "title": "Apex raises seed round to mass produce smallsats", "url": "https://spacenews.com/apex-raises-seed-round-to-mass-produce-smallsats/" },
-        { "title": "Apex $200M Raise, $2.3B Valuation (CEO quote on round sequencing)", "url": "https://payloadspace.com/apex-raises-200m-at-2-3b-valuation/" },
-        { "title": "Satellite maker Apex's valuation rises to $2.3 billion after latest $200 million raise", "url": "https://www.startupcouncil.org/articles/satellite-maker-apex%E2%80%99s-valuation-rises-to-2-3-billion-after-latest-200-million-raise" },
-        { "title": "Apex revenue, funding & news (total raised aggregate)", "url": "https://sacra.com/c/apex/" }
-      ]
+      "production_bug_notes": "AlphaMap's live DB showed 'Growth (Jun 2026)' and 'Series D (Apr 2026)' as two $200M/$2.3B rows and flagged them for merging as a duplicate. Verified research shows the REAL Series D was Sept 2025 (not Apr 2026) at a ~$1B valuation, and the Jun 2026 round is a genuinely separate, later, third $200M raise at $2.3B. The production data's 'Apr 2026' date for 'Series D' matches no real event found — it appears to be a hallucinated/mis-dated entry, not a legitimate duplicate of the June round. The correct fix is 6 distinct rounds with correct dates, not a 2-into-1 merge."
     },
     {
       "id": "fresha",
       "name": "Fresha",
-      "aka": ["Shedul (original 2015-2020 name)"],
+      "aka": ["Shedul", "Shedul.com (original 2015-2020 name)"],
       "hard_case_tags": ["rebrand_domain_change", "non_us"],
+      "reviewed_by_human": false,
       "website": "https://www.fresha.com",
-      "city": "London",
-      "country": "United Kingdom",
-      "founded_year": 2015,
-      "rebrand_notes": "Launched 2015 as 'Shedul'; rebranded to 'Fresha' in 2020. A v2 entity/domain check must not treat pre-2020 Shedul-era sources as a different company, and must not let a stale 'shedul.com' domain reference fail domain verification against the current fresha.com.",
-      "founders": [],
-      "funding_rounds": [
-        { "type": "Series A", "amount_usd": 6000000, "date": "2017", "lead_investor": null, "other_investors": ["BECO Capital", "Lumia Capital", "Middle East Venture Partners"], "valuation_usd": null, "confidence": "low" },
-        { "type": "Series B", "amount_usd": 20000000, "date": "2019", "lead_investor": "Partech", "other_investors": ["BECO Capital", "FJ Labs", "Target Global", "Niklas Ostberg"], "valuation_usd": null, "confidence": "low" },
-        { "type": "Series C", "amount_usd": 100000000, "date": "2021-06-11", "lead_investor": "General Atlantic", "other_investors": ["Huda Kattan"], "valuation_usd": null, "confidence": "high", "notes": "Confirmed via General Atlantic's own BusinessWire press release — highest-confidence source in this set." },
-        { "type": "Series C", "amount_usd": 52500000, "date": "2021-12", "lead_investor": null, "valuation_usd": null, "confidence": "low", "notes": "Reported as a 'Series C Plus' top-up by aggregators only; not confirmed via a primary source. A real test case for round-dedup logic: is this a distinct round, or should it merge with the June 2021 Series C above?" },
-        { "type": "Growth", "amount_usd": 80000000, "date": "2026-05", "lead_investor": "KKR", "valuation_usd": 1000000000, "confidence": "medium", "notes": "One aggregator labels this 'Series C'; another calls it an unlabeled growth round. Lead investor also appears elsewhere as unspecified. Recorded here as the best-supported version; flagged for round-type ambiguity." }
+      "rebrand_notes": "Launched 2015 as 'Shedul'/'Shedul.com', originally Dubai-based; rebranded to 'Fresha' in 2020 and now headquartered in London. A v2 entity/domain check must not treat pre-2020 Shedul-era sources as a different company, must not let a stale 'shedul.com' domain reference fail domain verification against the current fresha.com, and must get the CURRENT (London) HQ right rather than the historical (Dubai) one when both appear across sources from different years.",
+      "city": { "value": "London", "confidence": "verified", "source_url": "https://thenextweb.com/news/londons-fresha-hits-unicorn-status-with-kkr-led-80m-raise" },
+      "country": { "value": "United Kingdom", "confidence": "verified", "source_url": "https://thenextweb.com/news/londons-fresha-hits-unicorn-status-with-kkr-led-80m-raise" },
+      "founded_year": { "value": 2015, "confidence": "verified", "source_url": "https://techfundingnews.com/beauty-techs-quiet-giant-just-became-a-unicorn-fresha-raises-80m-from-kkr-at-1b-valuation/" },
+      "founders": [
+        { "name": "William Zeqiri", "title": "Co-Founder & CEO", "confidence": "verified", "source_url": "https://techfundingnews.com/beauty-techs-quiet-giant-just-became-a-unicorn-fresha-raises-80m-from-kkr-at-1b-valuation/" },
+        { "name": "Nick Miller", "title": "Co-Founder", "confidence": "verified", "source_url": "https://techfundingnews.com/beauty-techs-quiet-giant-just-became-a-unicorn-fresha-raises-80m-from-kkr-at-1b-valuation/" }
       ],
-      "total_raised_usd_reported": 285000000,
-      "total_raised_usd_computed_from_rounds_above": 258500000,
-      "total_raised_discrepancy_notes": "Reported aggregate ($285M, Tracxn/Seedtable) does not equal the sum of the rounds we could individually verify ($258.5M) — a real, common gap between 'headline total raised' and an itemized, source-by-source round list. v2's 'never compute Total Raised from a model-returned total' rule (issue 5) should recompute from the rounds actually stored, which will legitimately be LOWER than some press-reported aggregates until every round is itemized.",
-      "employee_count": null,
-      "employee_range": "201-500",
-      "employee_count_discrepancy_notes": "LinkedIn's own self-reported company-size bucket is 201-500, but LinkedIn's 'people' count surfaces ~728, and third-party aggregators report 500 / 718 / 916 depending on collection date through 2026. No single authoritative figure exists. Golden value is deliberately the LinkedIn-bucket RANGE (the closest to a company-declared figure), with employee_count left null rather than picking one aggregator number. The production bug (140,000 employees) is wrong by 2-3 orders of magnitude against EVERY one of these candidates, so it's caught regardless of which is 'true' — this entry is really testing the headcount_outlier validation rule (issue 4), not precision on the exact count.",
+      "funding_rounds": [
+        {
+          "type": "Series A", "amount_usd": 6000000, "date": "2017-06-08",
+          "lead_investor": "Middle East Venture Partners", "other_investors": ["BECO Capital", "Lumia Capital"],
+          "valuation_usd": null, "confidence": "verified",
+          "source_urls": [
+            "https://www.prnewswire.com/news-releases/fast-growing-beauty-and-wellness-platform-shedulcom-raises-6-million-627428713.html",
+            "https://cosmeticsbusiness.com/salon-and-spa-booking-platform-shedul-raises-6m-in-series-a-funding-130343"
+          ],
+          "notes": "Company was 'Shedul.com' at this time, Dubai-based."
+        },
+        {
+          "type": "Series B", "amount_usd": 20000000, "date": "2019",
+          "lead_investor": "Partech", "other_investors": ["Target Global", "BECO Capital", "FJ Labs", "Niklas Ostberg (personal investment)"],
+          "valuation_usd": 105000000, "confidence": "likely",
+          "source_urls": ["https://mevp.com/news/worlds-fastest-growing-beauty-booking-platform-shedul-com-raises-20-million-series-b"],
+          "notes": "Sourced from participating investor MEVP's own announcement (not the lead's or the company's own statement, hence 'likely' not 'verified'); exact month not confirmed in this pass."
+        },
+        {
+          "type": "Series C", "amount_usd": 100000000, "date": "2021-06-11",
+          "lead_investor": "General Atlantic", "other_investors": ["Huda Kattan"],
+          "valuation_usd": null, "confidence": "verified",
+          "source_urls": ["https://www.businesswire.com/news/home/20210611005192/en/General-Atlantic-Leads-$100-Million-Investment-in-Fresha-Leading-Global-Beauty-and-Wellness-Platform-to-Fuel-Continued-Growth"]
+        },
+        {
+          "type": "Growth", "amount_usd": 80000000, "date": "2026-05-22",
+          "lead_investor": "KKR", "other_investors": [],
+          "valuation_usd": 1000000000, "confidence": "verified",
+          "source_urls": [
+            "https://thenextweb.com/news/londons-fresha-hits-unicorn-status-with-kkr-led-80m-raise",
+            "https://techfundingnews.com/beauty-techs-quiet-giant-just-became-a-unicorn-fresha-raises-80m-from-kkr-at-1b-valuation/",
+            "https://ventureburn.com/fresha-raises-80m-hits-1-billion-valuation/"
+          ],
+          "notes": "This is the round that pushed Fresha to unicorn status, widely covered independently by multiple outlets on 2026-05-22 — highest-confidence round in this set alongside the Series A and Series C."
+        }
+      ],
+      "funding_rounds_excluded_unknown": [
+        {
+          "type": "Series C (additional tranche?)", "amount_usd": 52500000, "date": "2021-12",
+          "confidence": "unknown",
+          "notes": "Reported as a 'Series C Plus' top-up by aggregator pages only; no primary source found in this pass. Excluded from scoring. A real test case for v2's round-dedup logic once a primary source is found: is this a distinct round, or should it merge with the June 2021 Series C above?"
+        }
+      ],
+      "total_raised_usd_reported": { "value": 285000000, "confidence": "unknown", "notes": "Aggregator-reported aggregate (not independently confirmed); do not use as a scoring target for 'Total Raised' — compare against total_raised_usd_computed_from_verified_rounds instead." },
+      "total_raised_usd_computed_from_verified_rounds": 206000000,
+      "total_raised_discrepancy_notes": "The aggregator-reported total ($285M) exceeds the sum of rounds we could verify to a primary source ($206M: 6M+20M+100M+80M). This is a realistic, common gap between a headline aggregate and an itemized round list, made of some combination of: the unverified $52.5M 'Series C Plus' tranche above, and/or other undisclosed rounds. v2's 'never compute Total Raised from a model-returned total' rule (issue 5) should recompute from whichever individual rounds it actually stored — which will legitimately read LOWER than some press-reported aggregates until every round is independently itemized, and that's correct behavior, not a bug.",
+      "employee_count": { "value": null, "confidence": "unknown", "notes": "LinkedIn's self-reported bucket (201-500), LinkedIn's own 'people' count (~728), and third-party aggregators (500/718/916) all disagree by up to 2x depending on collection date through 2026 — and LinkedIn itself is excluded as a citable source under this golden set's sourcing rule. No primary (company-stated) headcount figure was found in this pass. Left unknown rather than picking a number." },
+      "employee_range": { "value": null, "confidence": "unknown" },
       "github_url": null,
       "huggingface_url": null,
-      "sources": [
-        { "title": "General Atlantic Leads $100 Million Investment in Fresha (BusinessWire press release)", "url": "https://www.businesswire.com/news/home/20210611005192/en/General-Atlantic-Leads-$100-Million-Investment-in-Fresha-Leading-Global-Beauty-and-Wellness-Platform-to-Fuel-Continued-Growth" },
-        { "title": "Fresha - 2026 Company Profile, Team, Funding, Competitors & Financials - Tracxn", "url": "https://tracxn.com/d/companies/fresha/__RtZ3_FAiFOVypRalj38jh-J45D_BbHAjdaAklWTJqko" },
-        { "title": "Fresha Company Information - Funding, Investors, and More (Seedtable)", "url": "https://www.seedtable.com/startups/fresha" },
-        { "title": "Fresha — LinkedIn company profile", "url": "https://www.linkedin.com/company/heyfresha" },
-        { "title": "Fresha Revenue 2026: $140M ARR, $1B Valuation (Latka)", "url": "https://getlatka.com/companies/fresha" },
-        { "title": "Huda Backs Startup Fresha to Raise $100 Million", "url": "https://startupsavant.com/news/fresha-partners" }
+      "production_bug_notes": "AlphaMap's live DB showed 140,000 employees — wrong by 2-3 orders of magnitude against every candidate figure found (the real range is in the low hundreds to ~900s). Likely root cause: Fresha is independently reported to be 'operating at more than $140 million in revenue run-rate as of May 2026' (ARR) — the production pipeline most plausibly confused this $140M ARR figure with an employee count (a field-confusion/unit bug), rather than genuinely mis-searching for headcount. Worth checking whether v1's extraction prompt or v2's schema could cross-contaminate an ARR figure into employee_count under the wrong conditions.",
+      "sources_general": [
+        { "title": "London's Fresha hits unicorn status with KKR-led $80M raise", "url": "https://thenextweb.com/news/londons-fresha-hits-unicorn-status-with-kkr-led-80m-raise" },
+        { "title": "How a Dubai tech executive built a $1B beauty platform in London and convinced KKR to back it with $80M", "url": "https://techfundingnews.com/beauty-techs-quiet-giant-just-became-a-unicorn-fresha-raises-80m-from-kkr-at-1b-valuation/" }
       ]
     }
   ]
