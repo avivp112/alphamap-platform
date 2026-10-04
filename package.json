@@ -6,6 +6,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
+    "test": "vitest run",
     "cap:build": "npm run build && npx cap sync",
     "cap:ios": "npx cap open ios",
     "cap:android": "npx cap open android"
@@ -97,7 +98,8 @@
     "@vitejs/plugin-react": "4.7.0",
     "tailwindcss": "4.1.12",
     "typescript": "^5.9.3",
-    "vite": "6.3.5"
+    "vite": "6.3.5",
+    "vitest": "^2.1.9"
   },
   "peerDependencies": {
     "react": "^18.3.1",
