@@ -571,6 +571,19 @@ async function main() {
   console.log(`║  (MIN_CONFIDENCE=${MIN_CONFIDENCE} kept for parity, unused by v2)${" ".padEnd(Math.max(0, 10))}║`);
   console.log(`╚${"═".repeat(62)}╝`);
   if (DRY_RUN) console.log(`ℹ️  DRY RUN — set DRY_RUN=false to apply writes to the database.${VERBOSE ? " (VERBOSE=true: full values + evidence printed per company.)" : " Set VERBOSE=true to see actual field values, not just names."}\n`);
+  // Both missing/invalid keys fail silently otherwise: serperSearch() just
+  // returns [] on every call with no log line distinguishing "no key" from
+  // "no results", and TAVILY_API_KEY missing sets tavilyExhausted=true from
+  // the very first company with NO log line at all (its one early-return
+  // branch was never meant to explain a permanently-dead key, only an
+  // exhausted one mid-run) -- a real run with no Tavily key and Serper out
+  // of credits would search literally nothing for an entire batch and the
+  // logs would give no indication why.
+  if (!process.env.SERP_KEY) console.warn("⚠️  SERP_KEY is not set — Serper search is disabled for this entire run.");
+  if (!process.env.TAVILY_API_KEY) console.warn("⚠️  TAVILY_API_KEY is not set — Tavily search/fallback is disabled for this entire run.");
+  if (!process.env.SERP_KEY && !process.env.TAVILY_API_KEY) {
+    console.warn("⚠️  Neither search provider is configured — every company will run on website-page content ONLY (no funding/news/competitor search results at all).");
+  }
   console.log(`🗂️   Sector taxonomy: ${taxonomy.parentNames.length} sectors, ${taxonomy.subNames.length} sub-sectors loaded\n`);
 
   const startups = await fetchAllPaginated<V2StartupRow>((from, to) =>

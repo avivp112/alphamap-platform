@@ -189,18 +189,30 @@ export function verifyEvidence(
   const source = sources[claim.source_id];
   if (!source) return { verified: false, drop_reason: "source_not_found" };
 
+  // A real DRY_RUN=false run crashed here ("Cannot read properties of
+  // undefined (reading 'toLowerCase')"): the extraction schema marks
+  // evidence_quote (and value) "required" on every material field, but
+  // exactly like the round_type enum before it, that's a strong hint, not a
+  // hard constraint -- the model can still omit one. normalizeForMatch()/
+  // valueAppearsInQuote() assume a real string and would throw rather than
+  // just fail verification, so both are checked defensively before either
+  // ever runs, instead of trusting the schema's "required" to hold.
+  if (typeof claim.evidence_quote !== "string" || !claim.evidence_quote.trim()) {
+    return { verified: false, drop_reason: "evidence_mismatch" };
+  }
+
   const { matched, similarity } = quoteMatchesSource(claim.evidence_quote, source.content);
   if (!matched) return { verified: false, drop_reason: "evidence_mismatch", similarity };
 
   if (claim.is_url) {
-    const url = String(claim.value).trim();
-    if (!source.content.includes(url)) {
+    const url = String(claim.value ?? "").trim();
+    if (!url || !source.content.includes(url)) {
       return { verified: false, drop_reason: "url_not_in_source", similarity };
     }
     return { verified: true, similarity };
   }
 
-  if (!valueAppearsInQuote(claim.value, claim.evidence_quote)) {
+  if (claim.value == null || !valueAppearsInQuote(claim.value, claim.evidence_quote)) {
     return { verified: false, drop_reason: "value_not_in_quote", similarity };
   }
 

@@ -142,4 +142,35 @@ describe("verifyEvidence — end to end", () => {
     expect(invented.verified).toBe(false);
     expect(invented.drop_reason).toBe("url_not_in_source");
   });
+
+  it("does not crash when the model omits evidence_quote despite the schema marking it required -- the real DRY_RUN=false crash (Frameplay, 'Cannot read properties of undefined (reading toLowerCase)')", () => {
+    const claim = { field: "profile.founded_year", value: 2020, source_id: "S1" } as unknown as {
+      field: string; value: number; source_id: string; evidence_quote: string;
+    };
+    expect(() => verifyEvidence(claim, sources)).not.toThrow();
+    const result = verifyEvidence(claim, sources);
+    expect(result.verified).toBe(false);
+    expect(result.drop_reason).toBe("evidence_mismatch");
+  });
+
+  it("does not crash when the model omits value but supplies a real evidence_quote", () => {
+    const claim = { field: "profile.founded_year", source_id: "S1", evidence_quote: "closed a $16 million Series A co-led by Andreessen Horowitz" } as unknown as {
+      field: string; value: number; source_id: string; evidence_quote: string;
+    };
+    expect(() => verifyEvidence(claim, sources)).not.toThrow();
+    const result = verifyEvidence(claim, sources);
+    expect(result.verified).toBe(false);
+    expect(result.drop_reason).toBe("value_not_in_quote");
+  });
+
+  it("does not crash on a URL claim missing its value", () => {
+    const withUrl: Record<string, EvidenceSource> = {
+      S3: { url: "https://x.com", content: "Our CTO's LinkedIn is https://www.linkedin.com/in/maxbenassi and you can reach us there." },
+    };
+    const claim = { field: "founders[1].linkedin_url", source_id: "S3", evidence_quote: "Our CTO's LinkedIn is https://www.linkedin.com/in/maxbenassi", is_url: true } as unknown as {
+      field: string; value: string; source_id: string; evidence_quote: string; is_url: boolean;
+    };
+    expect(() => verifyEvidence(claim, withUrl)).not.toThrow();
+    expect(verifyEvidence(claim, withUrl).verified).toBe(false);
+  });
 });
