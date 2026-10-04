@@ -32,7 +32,13 @@ export const CANONICAL_ROUND_TYPES = [
   "Series E", "Series F+", "Growth", "Venture Debt", "Grant", "Secondary",
   // Kept for v1 parity (ground rule 1) — not part of issue 5's VC-round
   // progression, so they never participate in specificity ranking below.
-  "Convertible Note", "Bootstrapped", "Acquired", "PE Buyout", "IPO", "Debt", "Other",
+  // "Bridge" specifically: issue 5's own closed list omits it, but it's a
+  // real value in the startups.funding_rounds round_type CHECK constraint
+  // (supabase/migrations/20260526000000_init_market_intelligence_schema.sql)
+  // — without this, a real existing Bridge round would silently fall
+  // through to "Other" below and be invisible to hasRealRounds()'s tiering
+  // check, exactly the "no data loss" ground rule 1 forbids.
+  "Convertible Note", "Bootstrapped", "Acquired", "PE Buyout", "IPO", "Debt", "Bridge", "Other",
   "Unknown",
 ] as const;
 
@@ -67,6 +73,7 @@ export function normalizeRoundType(raw: string | null | undefined): CanonicalRou
   if (/venture.?debt/.test(s)) return "Venture Debt";
   if (/\bdebt\b|credit facilit|term loan|\bloan\b|mezzanine/.test(s)) return "Debt";
   if (/secondar/.test(s)) return "Secondary";
+  if (/\bbridge\b/.test(s)) return "Bridge";
   if (/convertible|safe\b|\bnote\b/.test(s)) return "Convertible Note";
   if (/buyout|\blbo\b|leveraged buy|take.?private/.test(s)) return "PE Buyout";
   if (/bootstrap/.test(s)) return "Bootstrapped";

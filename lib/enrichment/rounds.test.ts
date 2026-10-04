@@ -11,6 +11,8 @@ describe("normalizeRoundType", () => {
     expect(normalizeRoundType("growth round")).toBe("Growth");
     expect(normalizeRoundType("SAFE")).toBe("Convertible Note");
     expect(normalizeRoundType("Acquired by Palantir")).toBe("Acquired");
+    expect(normalizeRoundType("Bridge")).toBe("Bridge"); // real DB value (funding_rounds round_type CHECK constraint), not in issue 5's own list
+    expect(normalizeRoundType("Series E+")).toBe("Series E"); // DB's literal legacy value, consolidated into the new split taxonomy
     expect(normalizeRoundType("NASDAQ listing")).toBe("IPO");
     expect(normalizeRoundType(null)).toBe("Unknown");
   });
