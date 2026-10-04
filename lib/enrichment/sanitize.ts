@@ -42,3 +42,20 @@ export function sanitizeModelOutput(value: unknown): unknown {
   }
   return value;
 }
+
+/**
+ * Coerces a schema-array field to an actual array, defensively. Found
+ * necessary by a real DRY_RUN run: Claude returned `patents` as a bare
+ * object instead of a one-item array, which crashed `(i.patents ?? [])
+ * .filter(...)` with "filter is not a function" — `??` only catches
+ * null/undefined, not "present but the wrong shape". A single non-array
+ * object is treated as a one-item array (the model's evident intent);
+ * anything else unexpected (a string, a number) is dropped to `[]` rather
+ * than thrown on, consistent with "omit rather than guess" applied to malformed
+ * model output instead of missing data.
+ */
+export function ensureArray<T>(value: unknown): T[] {
+  if (value == null) return [];
+  if (Array.isArray(value)) return value as T[];
+  return [value as T];
+}

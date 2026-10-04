@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sanitizeModelOutput } from "./sanitize";
+import { sanitizeModelOutput, ensureArray } from "./sanitize";
 
 describe("sanitizeModelOutput", () => {
   it("drops sentinel placeholder strings", () => {
@@ -28,5 +28,22 @@ describe("sanitizeModelOutput", () => {
     expect(sanitizeModelOutput(42)).toBe(42);
     expect(sanitizeModelOutput("London")).toBe("London");
     expect(sanitizeModelOutput(true)).toBe(true);
+  });
+});
+
+describe("ensureArray", () => {
+  it("passes a real array through unchanged", () => {
+    expect(ensureArray([1, 2, 3])).toEqual([1, 2, 3]);
+  });
+  it("returns [] for null/undefined", () => {
+    expect(ensureArray(null)).toEqual([]);
+    expect(ensureArray(undefined)).toEqual([]);
+  });
+  it("wraps a bare object into a one-item array -- the real DRY_RUN crash this exists to prevent", () => {
+    expect(ensureArray({ title: "A real patent" })).toEqual([{ title: "A real patent" }]);
+  });
+  it("wraps a bare string/number into a one-item array", () => {
+    expect(ensureArray("fintech")).toEqual(["fintech"]);
+    expect(ensureArray(5)).toEqual([5]);
   });
 });

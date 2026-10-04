@@ -150,6 +150,24 @@ describe("processProfileExtractionResponse", () => {
     expect(result.profile.industry).toBeUndefined();
   });
 
+  it("does not crash when the model collapses a one-item array into a bare object (real DRY_RUN crash: 'patents' TypeError)", () => {
+    const raw = {
+      is_public_company: false, is_tech_company: true,
+      profile: {},
+      leadership: {}, // also a bare object instead of []
+      metrics: {}, competitors: [], acquisitions: [],
+      news: { title: "Launch", url: "https://x.com" }, // bare object instead of [{...}]
+      patents: { title: "A real patent" }, // the exact shape that crashed in production
+      patent_summary: { patent_fields: "fintech" }, // bare string instead of ["fintech"]
+    };
+    expect(() => processProfileExtractionResponse(raw, sources)).not.toThrow();
+    const { result } = processProfileExtractionResponse(raw, sources);
+    expect(result.patents).toEqual([{ title: "A real patent" }]);
+    expect(result.news).toEqual([{ title: "Launch", url: "https://x.com" }]);
+    expect(result.leadership).toHaveLength(1); // a bare {} still gets wrapped as one entry, not silently dropped -- the point is it doesn't throw
+    expect(result.patent_summary.patent_fields).toEqual(["fintech"]);
+  });
+
   it("verifies headcount_history points independently, dropping only the unverifiable ones", () => {
     const raw = {
       is_public_company: false, is_tech_company: true,

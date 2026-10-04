@@ -81,6 +81,19 @@ describe("processFundingExtractionResponse", () => {
     expect(result.funding_history_complete).toBeNull();
   });
 
+  it("does not crash when the model collapses a one-item array into a bare object", () => {
+    const raw = {
+      funding_rounds: { round_type: "Seed" }, // bare object instead of [{...}]
+      funding_history_complete: true,
+      arr_milestones: { arr: 1_000_000, source_id: "S1", evidence_quote: "x" },
+      valuation_benchmarks: { valuation: 1, source_id: "S1", evidence_quote: "x" },
+    };
+    expect(() => processFundingExtractionResponse(raw, sources)).not.toThrow();
+    const { result } = processFundingExtractionResponse(raw, sources);
+    expect(result.funding_rounds).toHaveLength(1);
+    expect(result.funding_rounds[0].round_type).toBe("Seed");
+  });
+
   it("verifies arr_milestones and valuation_benchmarks independently", () => {
     const raw = {
       funding_rounds: [], funding_history_complete: true,

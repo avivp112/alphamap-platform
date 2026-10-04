@@ -12,7 +12,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import { sanitizeModelOutput } from "./sanitize";
+import { sanitizeModelOutput, ensureArray } from "./sanitize";
 import { verifyEvidence, type EvidenceSource } from "./evidence";
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
 import { normalizeRoundType, type RoundLike } from "./rounds";
@@ -262,7 +262,7 @@ export function processFundingExtractionResponse(
     funding_rounds?: Array<Partial<V2Round> & { round_type?: string }>;
   };
 
-  const rounds: V2Round[] = (i.funding_rounds ?? [])
+  const rounds: V2Round[] = ensureArray<Partial<V2Round> & { round_type?: string }>(i.funding_rounds)
     .filter((r): r is Partial<V2Round> & { round_type: string } => !!r.round_type)
     .map((r, idx) => ({
       round_type: r.round_type,
@@ -276,7 +276,7 @@ export function processFundingExtractionResponse(
       source_url: r.source_url,
     }));
 
-  const arrMilestones = (i.arr_milestones ?? []).filter((m) => {
+  const arrMilestones = ensureArray<V2ArrMilestone>(i.arr_milestones).filter((m) => {
     const verdict = verifyEvidence({ field: "arr_milestones", value: m.arr, source_id: m.source_id, evidence_quote: m.evidence_quote }, sourceLookup);
     if (!verdict.verified) {
       dropped.push({ field: "arr_milestones", reason: (verdict.drop_reason as DropReasonCode) ?? "evidence_mismatch" });
@@ -298,7 +298,7 @@ export function processFundingExtractionResponse(
     }
   }
 
-  const valuationBenchmarks = (i.valuation_benchmarks ?? []).filter((v) => {
+  const valuationBenchmarks = ensureArray<V2ValuationBenchmark>(i.valuation_benchmarks).filter((v) => {
     const verdict = verifyEvidence({ field: "valuation_benchmarks", value: v.valuation, source_id: v.source_id, evidence_quote: v.evidence_quote }, sourceLookup);
     if (!verdict.verified) {
       dropped.push({ field: "valuation_benchmarks", reason: (verdict.drop_reason as DropReasonCode) ?? "evidence_mismatch" });

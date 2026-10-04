@@ -25,7 +25,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { sanitizeModelOutput } from "./sanitize";
+import { sanitizeModelOutput, ensureArray } from "./sanitize";
 import { verifyEvidence, type EvidenceSource } from "./evidence";
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
 
@@ -445,7 +445,7 @@ export function processProfileExtractionResponse(
     founded_year: verifyMaterial("profile.founded_year", i.profile?.founded_year, sourceLookup, dropped),
     country: verifyMaterial("profile.country", i.profile?.country, sourceLookup, dropped),
     city: verifyMaterial("profile.city", i.profile?.city, sourceLookup, dropped),
-    founders: (i.profile?.founders ?? []).map((f, idx) => ({
+    founders: ensureArray<V2Founder>(i.profile?.founders).map((f, idx) => ({
       ...f,
       linkedin_url: verifyMaterial(`profile.founders[${idx}].linkedin_url`, f.linkedin_url, sourceLookup, dropped, true),
     })),
@@ -457,12 +457,12 @@ export function processProfileExtractionResponse(
     instagram_url: verifyMaterial("profile.instagram_url", i.profile?.instagram_url, sourceLookup, dropped, true),
   };
 
-  const leadership: V2Leader[] = (i.leadership ?? []).map((l, idx) => ({
+  const leadership: V2Leader[] = ensureArray<V2Leader>(i.leadership).map((l, idx) => ({
     ...l,
     linkedin_url: verifyMaterial(`leadership[${idx}].linkedin_url`, l.linkedin_url, sourceLookup, dropped, true),
   }));
 
-  const headcountHistory = (i.metrics?.headcount_history ?? []).filter((point) => {
+  const headcountHistory = ensureArray<V2HeadcountPoint>(i.metrics?.headcount_history).filter((point) => {
     const verdict = verifyEvidence(
       { field: "metrics.headcount_history", value: point.employee_count, source_id: point.source_id, evidence_quote: point.evidence_quote },
       sourceLookup,
@@ -482,7 +482,7 @@ export function processProfileExtractionResponse(
   };
 
   const technology: V2Technology = {
-    tech_stack: i.technology?.tech_stack ?? [],
+    tech_stack: ensureArray<string>(i.technology?.tech_stack),
     github_url: verifyMaterial("technology.github_url", i.technology?.github_url, sourceLookup, dropped, true),
     huggingface_url: verifyMaterial("technology.huggingface_url", i.technology?.huggingface_url, sourceLookup, dropped, true),
   };
@@ -494,11 +494,11 @@ export function processProfileExtractionResponse(
       profile,
       leadership,
       metrics,
-      competitors: (i.competitors ?? []).filter((c) => c.name && c.how_it_competes),
-      acquisitions: (i.acquisitions ?? []).filter((a) => a.company_name),
-      news: (i.news ?? []).filter((n) => n.title && n.url),
-      patent_summary: { patent_count: i.patent_summary?.patent_count ?? null, patent_fields: i.patent_summary?.patent_fields ?? [] },
-      patents: (i.patents ?? []).filter((p) => p.title),
+      competitors: ensureArray<V2Competitor>(i.competitors).filter((c) => c.name && c.how_it_competes),
+      acquisitions: ensureArray<V2Acquisition>(i.acquisitions).filter((a) => a.company_name),
+      news: ensureArray<V2NewsItem>(i.news).filter((n) => n.title && n.url),
+      patent_summary: { patent_count: i.patent_summary?.patent_count ?? null, patent_fields: ensureArray<string>(i.patent_summary?.patent_fields) },
+      patents: ensureArray<V2PatentRecord>(i.patents).filter((p) => p.title),
       technology,
     },
     dropped,
