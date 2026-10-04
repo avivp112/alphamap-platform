@@ -95,14 +95,48 @@ export function extractNumbersFromText(text: string): number[] {
   return results;
 }
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Candidate date-shaped phrases in free text: "April 1, 2026" / "April 1
+// 2026" / "1 April 2026" / "2026-04-01" / "04/01/2026". Deliberately loose —
+// every match is run through Date.parse() and only an exact same-calendar-
+// day result counts, so a loose regex here just means more candidates
+// tried, not more false positives.
+const DATE_PHRASE_RE = new RegExp(
+  [
+    "\\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\\s+\\d{1,2},?\\s+\\d{4}\\b",
+    "\\b\\d{1,2}\\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\\s+\\d{4}\\b",
+    "\\b\\d{4}-\\d{2}-\\d{2}\\b",
+    "\\b\\d{1,2}\\/\\d{1,2}\\/\\d{4}\\b",
+  ].join("|"),
+  "gi",
+);
+
+/** True when `quote` states the same calendar day as the ISO `isoDate` value, in whatever natural format the source actually used. */
+function dateAppearsInQuote(isoDate: string, quote: string): boolean {
+  const target = new Date(isoDate);
+  if (Number.isNaN(target.getTime())) return false;
+  const matches = quote.match(DATE_PHRASE_RE) ?? [];
+  return matches.some((m) => {
+    const parsed = new Date(m);
+    if (Number.isNaN(parsed.getTime())) return false;
+    return parsed.getUTCFullYear() === target.getUTCFullYear()
+      && parsed.getUTCMonth() === target.getUTCMonth()
+      && parsed.getUTCDate() === target.getUTCDate();
+  });
+}
+
 /**
  * True when `value` is actually present inside `quote` — not just "a number
- * is present somewhere", but THIS number (or this city/name/URL text). A
- * numeric value matches either by direct string containment (years, small
+ * is present somewhere", but THIS number (or this city/name/URL/date text).
+ * A numeric value matches either by direct string containment (years, small
  * plain integers written the same way in prose) or by parsing money-scaled
  * figures ("$16 million" vs. the model's 16000000) and comparing with a
  * tight tolerance — never a loose "close enough" that would let a wrong
- * figure slip through as "basically right".
+ * figure slip through as "basically right". A YYYY-MM-DD string value also
+ * matches a same-calendar-day phrase in whatever natural format the source
+ * used ("dated April 1 2026") — dates are a material field (issue 1) and a
+ * source essentially never writes one in ISO form.
  */
 export function valueAppearsInQuote(value: string | number, quote: string): boolean {
   if (typeof value === "number") {
@@ -110,6 +144,7 @@ export function valueAppearsInQuote(value: string | number, quote: string): bool
     const candidates = extractNumbersFromText(quote);
     return candidates.some((n) => Math.abs(n - value) < 0.01 || (value !== 0 && Math.abs(n - value) / Math.abs(value) < 0.001));
   }
+  if (ISO_DATE_RE.test(value) && dateAppearsInQuote(value, quote)) return true;
   const normValue = normalizeForMatch(value);
   if (!normValue) return false;
   return normalizeForMatch(quote).includes(normValue);

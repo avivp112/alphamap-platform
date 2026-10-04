@@ -61,6 +61,23 @@ describe("extractNumbersFromText / valueAppearsInQuote — money-scaled figures"
   });
 });
 
+describe("valueAppearsInQuote — ISO date vs. natural-language date phrasing", () => {
+  it("matches an ISO date against a 'Month Day, Year' phrase in the quote", () => {
+    expect(valueAppearsInQuote("2026-04-01", "pushing its valuation up, dated April 1 2026")).toBe(true);
+    expect(valueAppearsInQuote("2026-04-01", "on April 1, 2026, the company announced")).toBe(true);
+  });
+  it("matches a 'Day Month Year' phrase too", () => {
+    expect(valueAppearsInQuote("2026-06-05", "the round closed on 5 June 2026")).toBe(true);
+  });
+  it("matches a numeric date already in ISO or slash form", () => {
+    expect(valueAppearsInQuote("2026-06-05", "closed on 2026-06-05 per the filing")).toBe(true);
+    expect(valueAppearsInQuote("2026-06-05", "closed on 06/05/2026 per the filing")).toBe(true);
+  });
+  it("rejects a quote stating a genuinely different date", () => {
+    expect(valueAppearsInQuote("2026-04-01", "the round closed on 5 June 2026")).toBe(false);
+  });
+});
+
 describe("verifyEvidence — end to end", () => {
   const sources: Record<string, EvidenceSource> = {
     S1: {
