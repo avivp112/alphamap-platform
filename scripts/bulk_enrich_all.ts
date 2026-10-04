@@ -140,7 +140,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "dotenv";
-import { existsSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { fileURLToPath, pathToFileURL } from "url";
 import { dirname, join } from "path";
 import * as cheerio from "cheerio";
@@ -489,7 +489,10 @@ export interface EnrichmentResult {
   is_public_company: boolean;
   is_tech_company: boolean;
   profile: ExtractedProfile;
-  funding_history_complete: boolean;
+  // null means "the model never told us" (missing after sanitize) — never
+  // assume true/complete just because this field happens to be absent. See
+  // missing_required_fields below.
+  funding_history_complete: boolean | null;
   funding_rounds: ExtractedRound[];
   leadership: ExtractedLeader[];
   metrics: {
@@ -517,14 +520,22 @@ export interface EnrichmentResult {
     github_url: string | null;
     huggingface_url: string | null;
   };
-  confidence_score: number;
+  // null means confidence_score was missing after sanitize — never treat
+  // this the same as a genuine, honestly-scored 0.
+  confidence_score: number | null;
   reasoning: string;
   source_url: string;
+  // Any of ["confidence_score", "reasoning", "funding_rounds"] that the
+  // model's tool call was missing after sanitizeModelOutput, even though
+  // save_enrichment's schema marks all three `required`. Non-empty here
+  // means this extraction is incomplete — the caller (main()) must treat it
+  // as a failed pass (skip all writes), not as "the company has no data".
+  missing_required_fields: string[];
 }
 
 type ProcessStatus =
   | "success" | "partial" | "low_confidence" | "rejected" | "removed_public"
-  | "no_data" | "stealth_suspected" | "error";
+  | "no_data" | "stealth_suspected" | "error" | "error_incomplete_extraction";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -579,6 +590,19 @@ function sanitizeModelOutput(value: unknown): unknown {
     return out;
   }
   return value;
+}
+
+// Diagnostic only — a no-op unless DEBUG_DUMP_RAW=true. Writes the exact
+// tool_use input Claude returned (label "raw") and/or the post-
+// sanitizeModelOutput object (label "post_sanitize") to eval/debug/, so a
+// field that goes missing between the two can be inspected directly instead
+// of inferred from which downstream fallback default it landed on.
+function debugDumpJson(name: string, label: string, data: unknown): void {
+  if (process.env.DEBUG_DUMP_RAW !== "true") return;
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  const dir = join(__dir, "..", "eval", "debug");
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${slug}_${label}.json`), JSON.stringify(data, null, 2));
 }
 
 function normalizeRoundType(raw: string): string {
@@ -2004,6 +2028,8 @@ ${context}`,
   const tool = msg.content.find((b) => b.type === "tool_use");
   if (!tool || tool.type !== "tool_use") return null;
 
+  debugDumpJson(name, "raw", tool.input);
+
   const i = sanitizeModelOutput(tool.input) as Partial<EnrichmentResult> & {
     profile?: Partial<ExtractedProfile>;
     metrics?: { headcount?: number; employee_range?: string; growth_trend?: string; headcount_history?: ExtractedHeadcountPoint[] };
@@ -2020,6 +2046,21 @@ ${context}`,
     technology?: { tech_stack?: string[]; github_url?: string; huggingface_url?: string };
   };
 
+  debugDumpJson(name, "post_sanitize", i);
+
+  // save_enrichment marks these three `required` in its schema, but Claude's
+  // forced tool_choice doesn't actually enforce that — and sanitizeModelOutput
+  // silently drops a field it can't make sense of (e.g. an unparseable
+  // stringified-JSON blob, or a recognized sentinel string). Either way, a
+  // missing-after-sanitize required field means this extraction is genuinely
+  // incomplete, not that the company happens to have no funding/no reasoning/
+  // zero confidence — so it's tracked explicitly rather than silently
+  // defaulted into something that LOOKS like a valid, confident answer.
+  const missingRequired: string[] = [];
+  if (i.confidence_score === undefined) missingRequired.push("confidence_score");
+  if (i.reasoning === undefined) missingRequired.push("reasoning");
+  if (i.funding_rounds === undefined) missingRequired.push("funding_rounds");
+
   const revenueEstimate = i.financials?.revenue_estimate;
   const hasRevenueEstimate = revenueEstimate && (revenueEstimate.range_low != null || revenueEstimate.range_high != null);
 
@@ -2027,7 +2068,7 @@ ${context}`,
     is_public_company: i.is_public_company ?? false,
     is_tech_company:   i.is_tech_company   ?? true,
     profile:           i.profile           ?? {},
-    funding_history_complete: i.funding_history_complete ?? true,
+    funding_history_complete: i.funding_history_complete ?? null,
     funding_rounds:    (i.funding_rounds   ?? []).filter((r) => r.round_type),
     leadership:        i.leadership        ?? [],
     metrics: {
@@ -2054,9 +2095,10 @@ ${context}`,
       github_url:      i.technology?.github_url      ?? null,
       huggingface_url: i.technology?.huggingface_url ?? null,
     },
-    confidence_score: typeof i.confidence_score === "number" ? i.confidence_score : 0,
+    confidence_score: typeof i.confidence_score === "number" ? i.confidence_score : null,
     reasoning:        i.reasoning  ?? "",
     source_url:       i.source_url ?? "",
+    missing_required_fields: missingRequired,
   };
 
   // Series A+ confirmed but nothing earlier — actively investigate rather than
@@ -2891,7 +2933,7 @@ async function main() {
   // ── 4. Tally ──────────────────────────────────────────────────────────────
   const tally: Record<ProcessStatus, number> = {
     success: 0, partial: 0, low_confidence: 0, rejected: 0, removed_public: 0,
-    no_data: 0, stealth_suspected: 0, error: 0,
+    no_data: 0, stealth_suspected: 0, error: 0, error_incomplete_extraction: 0,
   };
   let totalRoundsInserted = 0;
   let totalFieldsPatched  = 0;
@@ -2908,6 +2950,7 @@ async function main() {
     no_data:           "🔍",
     stealth_suspected: "👻",
     error:             "❌",
+    error_incomplete_extraction: "❌",
   };
 
   // ── 5. Sequential processing loop ─────────────────────────────────────────
@@ -2954,6 +2997,17 @@ async function main() {
         // All four searches failed
         console.log(`    🔍  All searches failed — no data retrieved`);
         status = "no_data";
+
+      } else if (result.missing_required_fields.length > 0) {
+        // The model's tool call was missing a `required` field after
+        // sanitize (confidence_score/reasoning/funding_rounds) — this is a
+        // broken extraction, not a company with no data. Skip every write
+        // (profile patch, headcount snapshot, round insert, score snapshot)
+        // rather than let an incomplete result look like a confidently-empty
+        // one, same bug class that produced Phase 0's funding_rounds=0%
+        // baseline result on Apex/Fresha.
+        console.log(`    ❌  Incomplete extraction — missing after sanitize: ${result.missing_required_fields.join(", ")}. Skipping all writes for this pass.`);
+        status = "error_incomplete_extraction";
 
       } else if (result.is_public_company) {
         // Publicly traded companies are out of scope for this private-market
@@ -3083,8 +3137,11 @@ async function main() {
     // Stamp every processed company so the queue advances across runs.
     // Hard errors are left unstamped so a transient failure is retried at
     // the front of the next run instead of being buried. Deleted rows have
-    // nothing left to stamp.
-    if (status !== "error" && !rowDeleted && !DRY_RUN) {
+    // nothing left to stamp. error_incomplete_extraction is treated the same
+    // as "error" here on purpose — it's a broken pass, not a real answer
+    // about the company, so it shouldn't get buried behind the rest of the
+    // queue either.
+    if (status !== "error" && status !== "error_incomplete_extraction" && !rowDeleted && !DRY_RUN) {
       const stamp: Record<string, unknown> = { last_enriched_at: new Date().toISOString() };
       if (confidenceSeen != null) stamp.enrichment_confidence = confidenceSeen;
       const { error: stampErr } = await supabase.from("startups").update(stamp).eq("id", row.id);
@@ -3135,6 +3192,7 @@ async function main() {
   console.log(`  🔍  No data:             ${tally.no_data}`);
   console.log(`  👻  Stealth suspected:   ${tally.stealth_suspected}  (repeat miss — already enriched once before, still nothing usable)`);
   console.log(`  ❌  Errors:              ${tally.error}`);
+  console.log(`  ❌  Incomplete extract:  ${tally.error_incomplete_extraction}  (required field missing after sanitize — writes skipped)`);
   console.log(`  💰  Rounds inserted:     ${totalRoundsInserted}`);
   console.log(`  📝  Profile fields set:  ${totalFieldsPatched}`);
   if (totalNewsArticles > 0) {
