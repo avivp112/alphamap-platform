@@ -492,11 +492,18 @@ async function processCompany(
     // founders[].linkedin_url) is the natural next increment -- they're
     // still fill-null-only writes below, just not yet provenance-tracked.
     for (const fw of fieldWrites) {
-      await supabase.from("field_provenance").insert({
+      const { error: provenanceErr } = await supabase.from("field_provenance").insert({
         startup_id: row.id, field: fw.field, value: fw.value, source_url: labeledSources.find((s) => s.source_id === fw.source_id)?.url,
         source_type: fw.source_type, evidence_quote: fw.evidence_quote,
         confidence: computeFieldConfidence([{ source_type: fw.source_type }]),
       });
+      // A real run against production caught this swallowing a genuine
+      // failure (the field_provenance/field_changes migration had never
+      // actually been applied there -- see docs/enrichment_v2_spec.md's
+      // provenance migration) with zero indication anything had gone
+      // wrong: the startups patch succeeded, so the run reported success,
+      // while every provenance row silently failed to write.
+      if (provenanceErr) console.warn(`    ⚠️  field_provenance insert failed (${fw.field}): ${provenanceErr.message}`);
     }
 
     for (const round of newRoundsToInsert) {
