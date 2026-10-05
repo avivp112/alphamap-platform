@@ -16,6 +16,7 @@ import { sanitizeModelOutput, ensureArray } from "./sanitize";
 import { verifyEvidence, type EvidenceSource } from "./evidence";
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
 import { normalizeRoundType, type RoundLike } from "./rounds";
+import { debugDumpJson } from "./debugDump";
 
 export interface EvidencedValue<T> {
   value: T;
@@ -348,6 +349,7 @@ export async function extractFunding(
   options: ExtractFundingOptions,
 ): Promise<{ extraction: ProcessedFundingExtraction; stopReason: string | null; inputTokens: number; outputTokens: number } | null> {
   const request = buildFundingExtractionRequest(companyName, sources);
+  debugDumpJson(companyName, "funding_sources", sources);
   const msg = await options.client.messages.create({ ...request, model: options.model });
 
   const tool = msg.content.find((b) => b.type === "tool_use");
@@ -359,9 +361,13 @@ export async function extractFunding(
       outputTokens: msg.usage.output_tokens,
     };
   }
+  debugDumpJson(companyName, "funding_raw", tool.input);
+
+  const extraction = processFundingExtractionResponse(tool.input, sources);
+  debugDumpJson(companyName, "funding_dropped", extraction.dropped);
 
   return {
-    extraction: processFundingExtractionResponse(tool.input, sources),
+    extraction,
     stopReason: msg.stop_reason,
     inputTokens: msg.usage.input_tokens,
     outputTokens: msg.usage.output_tokens,

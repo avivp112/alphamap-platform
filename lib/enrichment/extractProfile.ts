@@ -28,6 +28,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sanitizeModelOutput, ensureArray } from "./sanitize";
 import { verifyEvidence, quoteMatchesSource, type EvidenceSource } from "./evidence";
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
+import { debugDumpJson } from "./debugDump";
 
 export interface SectorTaxonomy {
   parentNames: string[];
@@ -559,6 +560,7 @@ export async function extractProfile(
   options: ExtractProfileOptions,
 ): Promise<{ extraction: ProcessedProfileExtraction; stopReason: string | null; inputTokens: number; outputTokens: number } | null> {
   const request = buildProfileExtractionRequest(companyName, sources, options.taxonomy);
+  debugDumpJson(companyName, "profile_sources", sources);
   const msg = await options.client.messages.create({ ...request, model: options.model });
 
   // No fallback defaults that make a truncated/missing response look valid
@@ -569,9 +571,13 @@ export async function extractProfile(
   if (!tool || tool.type !== "tool_use") {
     return { extraction: { result: emptyProfileExtraction(), dropped: [] }, stopReason: msg.stop_reason, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens };
   }
+  debugDumpJson(companyName, "profile_raw", tool.input);
+
+  const extraction = processProfileExtractionResponse(tool.input, sources);
+  debugDumpJson(companyName, "profile_dropped", extraction.dropped);
 
   return {
-    extraction: processProfileExtractionResponse(tool.input, sources),
+    extraction,
     stopReason: msg.stop_reason,
     inputTokens: msg.usage.input_tokens,
     outputTokens: msg.usage.output_tokens,
