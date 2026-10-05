@@ -138,6 +138,64 @@ export async function serperSearch(
   }
 }
 
+// ── Serper News (dedicated News API — NOT the same as serperSearch's /search endpoint) ──
+// v1 has always used this; v2 never did -- it ran the "news" query through
+// the generic web-search endpoint with "news 2025 2026" stuffed into the
+// query text, which is a structurally weaker way to find actual news
+// articles than Google's own News-scoped index. A real comparison run
+// confirmed the gap directly: v1 consistently surfaced recent articles for
+// companies v2 found none for on the exact same "news" query slot.
+
+interface SerperNewsResponse {
+  news?: Array<{ title: string; link: string; snippet?: string; date?: string; source?: string; imageUrl?: string }>;
+}
+
+export function parseSerperNewsResponse(data: SerperNewsResponse, queryLabel: string): RawSearchResult[] {
+  return (data.news ?? []).slice(0, 8).map((n) => ({
+    url: n.link,
+    title: n.title,
+    content: [n.source ? `Source: ${n.source}` : "", n.date ? `Date: ${n.date}` : "", n.snippet ?? ""].filter(Boolean).join(" — ").slice(0, 600),
+    provider: "serper" as const,
+    query_label: queryLabel,
+  }));
+}
+
+export async function serperNewsSearch(
+  query: string,
+  queryLabel: string,
+  state: SearchProviderState,
+  attempt = 0,
+): Promise<RawSearchResult[]> {
+  if (!process.env.SERP_KEY) return [];
+  try {
+    const res = await fetch("https://google.serper.dev/news", {
+      method: "POST",
+      headers: { "X-API-KEY": process.env.SERP_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ q: query, num: 10, autocorrect: false }),
+    });
+
+    if (res.status === 429 && attempt < 3) {
+      const wait = 10_000 * 2 ** attempt;
+      console.warn(`    ⚠️  Serper News 429 — waiting ${wait / 1000}s (retry ${attempt + 1}/3)…`);
+      await sleep(wait);
+      return serperNewsSearch(query, queryLabel, state, attempt + 1);
+    }
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.warn(`    ⚠️  Serper News HTTP ${res.status}` + (body ? ` — ${body.slice(0, 200)}` : ""));
+      return [];
+    }
+
+    const data = await res.json() as SerperNewsResponse;
+    const results = parseSerperNewsResponse(data, queryLabel);
+    if (results.length > 0) state.serperCallCount++;
+    return results;
+  } catch (err) {
+    console.warn(`    ⚠️  Serper News threw: ${String(err)}`);
+    return [];
+  }
+}
+
 // ── Tavily (never tried first — supplements Serper when its results are thin, see webSearch() below) ──
 
 interface TavilyResponse {
@@ -231,6 +289,24 @@ export async function webSearch(query: string, queryLabel: string, state: Search
 
   const tavilyResults = await tavilySearch(query, queryLabel, state);
   return mergeSearchResults(serperResults, tavilyResults);
+}
+
+/**
+ * Same collaboration shape as webSearch(), but for the "news" query
+ * specifically: Serper's dedicated News API (recency/news-scoped by
+ * nature, so it gets a plain "name + anchor news" query, not the
+ * site:-heavy query built for general web search) is primary; Tavily
+ * (general search, the site:-heavy query) supplements when News coverage
+ * is thin, same threshold/merge as webSearch.
+ */
+export async function newsSearch(
+  newsQuery: string, tavilyQuery: string, queryLabel: string, state: SearchProviderState,
+): Promise<RawSearchResult[]> {
+  const newsResults = await serperNewsSearch(newsQuery, queryLabel, state);
+  if (!needsTavilySupplement(newsResults)) return newsResults;
+
+  const tavilyResults = await tavilySearch(tavilyQuery, queryLabel, state);
+  return mergeSearchResults(newsResults, tavilyResults);
 }
 
 // ── Domain verification (Stage 0) ──────────────────────────────────────────

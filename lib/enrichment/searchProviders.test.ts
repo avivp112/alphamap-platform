@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  parseSerperResponse, parseTavilyResponse, looksLikeRealContent,
+  parseSerperResponse, parseSerperNewsResponse, parseTavilyResponse, looksLikeRealContent,
   needsTavilySupplement, mergeSearchResults, THIN_RESULTS_THRESHOLD,
 } from "./searchProviders";
 import type { RawSearchResult } from "./sources";
@@ -28,6 +28,32 @@ describe("parseSerperResponse", () => {
 
   it("returns [] for an empty response", () => {
     expect(parseSerperResponse({}, "history")).toEqual([]);
+  });
+});
+
+describe("parseSerperNewsResponse -- the dedicated News API v1 always used and v2 never did until a real comparison run surfaced the gap", () => {
+  it("maps news items into RawSearchResult[], folding source/date into content, capped at 8", () => {
+    const news = [
+      { title: "Apex raises $16M Series A", link: "https://techcrunch.com/apex-a", snippet: "Apex closed a $16M round.", date: "2 days ago", source: "TechCrunch", imageUrl: "https://x.com/img.png" },
+    ];
+    const results = parseSerperNewsResponse({ news }, "news");
+    expect(results).toHaveLength(1);
+    expect(results[0]).toEqual({
+      url: "https://techcrunch.com/apex-a",
+      title: "Apex raises $16M Series A",
+      content: "Source: TechCrunch — Date: 2 days ago — Apex closed a $16M round.",
+      provider: "serper",
+      query_label: "news",
+    });
+  });
+
+  it("returns [] for an empty response", () => {
+    expect(parseSerperNewsResponse({}, "news")).toEqual([]);
+  });
+
+  it("caps at 8 items", () => {
+    const news = Array.from({ length: 12 }, (_, i) => ({ title: `Article ${i}`, link: `https://x.com/${i}` }));
+    expect(parseSerperNewsResponse({ news }, "news")).toHaveLength(8);
   });
 });
 

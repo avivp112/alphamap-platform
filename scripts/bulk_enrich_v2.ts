@@ -46,7 +46,7 @@ import { initV1Context, supabase } from "./bulk_enrich_all.ts";
 
 import { classifyTier, type TierRow, type TierRound } from "../lib/enrichment/queue.ts";
 import {
-  createSearchProviderState, verifyDomainMatch, webSearch, fetchCompanyWebsitePages,
+  createSearchProviderState, verifyDomainMatch, webSearch, newsSearch, fetchCompanyWebsitePages,
 } from "../lib/enrichment/searchProviders.ts";
 import { filterByEntity, type EntityAnchors } from "../lib/enrichment/entity.ts";
 import { buildLabeledSources, type RawSearchResult } from "../lib/enrichment/sources.ts";
@@ -159,13 +159,23 @@ async function runAllSearches(
     ["backers",     `"${name}"${anchor} lead investor venture capital backed participated investors funded round investment amount check size`],
     ["profile",     `"${name}"${anchor} company founder CEO CTO description industry headquarters country city employees headcount acquired acquisition patents intellectual property linkedin.com/in profile linkedin.com/company facebook.com instagram.com 2025 2026`],
     ["competitors", `"${name}"${anchor} competitors alternatives vs rivals "compared to" market landscape`],
-    ["news",        `"${name}"${anchor} news 2025 2026 site:techcrunch.com OR site:venturebeat.com OR site:prnewswire.com OR site:businesswire.com OR site:forbes.com OR site:sifted.eu launch funding announcement`],
     ["patents",     `"${name}"${anchor} patent OR patents OR site:patents.google.com`],
     ["financials",  `"${name}"${anchor} ARR "annual recurring revenue" OR revenue estimate OR valued at OR valuation milestone`],
     ["tech",        `"${name}"${anchor} tech stack built with OR site:github.com OR site:huggingface.co`],
   ];
-  const batches = await Promise.all(queries.map(([label, q]) => webSearch(q, label, state)));
-  return batches.flat();
+  const [searchBatches, newsResults] = await Promise.all([
+    Promise.all(queries.map(([label, q]) => webSearch(q, label, state))),
+    // Serper's dedicated News API (not the generic /search endpoint) --
+    // plain "name + anchor news" query, recency/news-scoped by nature. The
+    // site:-heavy, year-stuffed query below is only used if Tavily's
+    // general-search fallback actually fires (see newsSearch()).
+    newsSearch(
+      `"${name}"${anchor} news`,
+      `"${name}"${anchor} news 2025 2026 site:techcrunch.com OR site:venturebeat.com OR site:prnewswire.com OR site:businesswire.com OR site:forbes.com OR site:sifted.eu launch funding announcement`,
+      "news", state,
+    ),
+  ]);
+  return [...searchBatches.flat(), ...newsResults];
 }
 
 interface RunSummary {
