@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   groundRoundDetails, isSameRound, planRoundWrites, mergeProfileExtractions, mergeMarketExtractions,
-  mergeFundingExtractions, normalizeIsoDate, appendNew,
+  mergeFundingExtractions, normalizeIsoDate, appendNew, reconcileOnFile,
 } from "./assemble";
 import { buildLabeledSources } from "./sources";
 import { emptyMarketExtraction } from "./extractMarket";
@@ -142,5 +142,24 @@ describe("helpers", () => {
   });
   it("appendNew keeps every existing entry and appends only unseen ones", () => {
     expect(appendNew([1, 2], [2, 3, 4], String, 3)).toEqual([1, 2, 3]);
+  });
+});
+
+describe("reconcileOnFile — contradictions written by earlier runs", () => {
+  it("removes a self-acquisition, a competitor that is also an acquisition, and a pre-founding news date", () => {
+    const out = reconcileOnFile({
+      companyName: "Glamsquad", foundedYear: 2014,
+      competitors: [{ name: "Zeel" }, { name: "Blow" }],
+      acquisitions: [{ company_name: "Veluxe" }, { company_name: "Blow Me" }, { company_name: "GLAMSQUAD" }],
+      news: [{ published_date: "2011-05-05" }, { published_date: "2014-10-22" }, { published_date: null }],
+    });
+    expect(out.competitors.map((c) => c.name)).toEqual(["Zeel"]);
+    expect(out.acquisitions.map((a) => a.company_name)).toEqual(["Veluxe", "Blow Me"]);
+    expect(out.news.map((n) => n.published_date)).toEqual([null, "2014-10-22", null]);
+    expect(out.notes).toHaveLength(3);
+  });
+  it("leaves consistent data untouched", () => {
+    const out = reconcileOnFile({ companyName: "Gladia", foundedYear: 2022, competitors: [{ name: "Deepgram" }], acquisitions: [], news: [{ published_date: "2023-06-19" }] });
+    expect(out.notes).toEqual([]);
   });
 });

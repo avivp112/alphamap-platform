@@ -36,6 +36,7 @@ function builder(table: string) {
     update: (p: unknown) => { state.op = "update"; state.payload = p; return b; },
     insert: (p: unknown) => { state.op = "insert"; state.payload = p; return b; },
     upsert: (p: unknown) => { state.op = "upsert"; state.payload = p; return b; },
+    delete: () => { state.op = "delete"; return b; },
     then: (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) => {
       calls.push({ ...state });
       return Promise.resolve({ data: state.op === "select" ? (tables[table] ?? []) : null, error: null }).then(res, rej);
@@ -230,13 +231,13 @@ describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
   });
 
   it("records the dated historical headcount point with its own recorded_date, plus today's", () => {
-    const hc = calls.filter((c) => c.table === "headcount_history").map((c) => c.payload as Record<string, unknown>);
+    const hc = calls.filter((c) => c.table === "headcount_history" && c.op === "upsert").map((c) => c.payload as Record<string, unknown>);
     expect(hc[0]).toMatchObject({ employee_count: 10, snapshot_date: "2014-03-15", recorded_date: "2014-03-15T00:00:00Z" });
     expect(hc[1]).toMatchObject({ employee_count: 60 });
   });
 
   it("never records a non-employee number as headcount (the Gladia 70,000 point)", () => {
-    const hc = calls.filter((c) => c.table === "headcount_history").map((c) => (c.payload as { employee_count: number }).employee_count);
+    const hc = calls.filter((c) => c.table === "headcount_history" && c.op === "upsert").map((c) => (c.payload as { employee_count: number }).employee_count);
     expect(hc).not.toContain(70000);
   });
 

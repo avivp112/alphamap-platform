@@ -357,3 +357,50 @@ export function appendNew<T>(existing: T[], incoming: T[], keyOf: (t: T) => stri
   }
   return out;
 }
+
+// ── Reconciling what's already on file ───────────────────────────────────
+
+export interface OnFileLists {
+  companyName: string;
+  foundedYear: number | null;
+  competitors: Array<{ name: string }>;
+  acquisitions: Array<{ company_name: string }>;
+  news: Array<{ published_date?: string | null }>;
+}
+
+/**
+ * The same contradiction rules the extraction applies to new data, applied
+ * to lists already on file — earlier runs (v1, or v2 before a rule
+ * existed) wrote values these rules now reject, and a fill-only write would
+ * otherwise keep them forever. Removes only contradictions, never an entry
+ * that is merely unverified:
+ *   - an "acquisition" that is the company itself (it was acquired, it
+ *     didn't acquire itself);
+ *   - a competitor that is also one of the company's acquisitions;
+ *   - a news date earlier than the year before the founding year (the
+ *     article is kept, its date cleared).
+ */
+export function reconcileOnFile<T extends OnFileLists>(lists: T): { competitors: T["competitors"]; acquisitions: T["acquisitions"]; news: T["news"]; notes: string[] } {
+  const notes: string[] = [];
+  const self = normalizeForMatch(lists.companyName);
+  const acquisitions = lists.acquisitions.filter((a) => {
+    const isSelf = !!a?.company_name && normalizeForMatch(a.company_name) === self;
+    if (isSelf) notes.push(`removed acquisition "${a.company_name}" (the company itself)`);
+    return !isSelf;
+  });
+  const competitors = lists.competitors.filter((c) => {
+    if (!c?.name) return true;
+    const clash = acquisitions.find((a) => a?.company_name && (termAppearsIn(c.name, a.company_name) || termAppearsIn(a.company_name, c.name)));
+    if (clash) notes.push(`removed competitor "${c.name}" (also listed as acquisition "${clash.company_name}")`);
+    return !clash;
+  });
+  const news = lists.news.map((n) => {
+    const year = n?.published_date ? Number(String(n.published_date).slice(0, 4)) : null;
+    if (year && lists.foundedYear && year < lists.foundedYear - 1) {
+      notes.push(`cleared news date ${n.published_date} (before founding in ${lists.foundedYear})`);
+      return { ...n, published_date: null };
+    }
+    return n;
+  });
+  return { competitors, acquisitions, news, notes };
+}

@@ -61,7 +61,7 @@ export function emptyMarketExtraction(): V2MarketExtraction {
 export type MarketDropReason =
   | "competitor_not_in_source" | "competitor_is_self" | "acquisition_not_in_source"
   | "news_url_not_in_sources" | "news_is_profile_page" | "patent_not_in_source"
-  | "tech_not_in_source" | "competitor_is_acquisition" | "news_date_not_in_source" | "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found";
+  | "tech_not_in_source" | "competitor_is_acquisition" | "acquisition_is_self" | "news_date_not_in_source" | "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found";
 
 export interface MarketDroppedField { field: string; reason: MarketDropReason }
 
@@ -290,6 +290,8 @@ export function processMarketExtractionResponse(
 
   const acquisitions = ensureArray<V2Acquisition>(i.acquisitions).filter((a) => {
     if (!a?.company_name) return false;
+    // "X was acquired by Y" is not an acquisition BY X (Gladia listed itself).
+    if (normalizeForMatch(a.company_name) === selfKey) { dropped.push({ field: "acquisitions", reason: "acquisition_is_self" }); return false; }
     if (!nameIsGrounded(a.company_name, a.source_ids, sources)) { dropped.push({ field: "acquisitions", reason: "acquisition_not_in_source" }); return false; }
     return true;
   });

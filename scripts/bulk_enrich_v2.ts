@@ -56,7 +56,7 @@ import { extractMarket, normalizeUrlForMatch } from "../lib/enrichment/extractMa
 import { detectGaps, buildDeepDiveQueries, type DeepDiveSection } from "../lib/enrichment/deepDive.ts";
 import {
   groundRoundDetails, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
-  normalizeIsoDate, appendNew, type ExistingRoundRef,
+  normalizeIsoDate, appendNew, reconcileOnFile, type ExistingRoundRef,
 } from "../lib/enrichment/assemble.ts";
 import { fetchArticleOgImage } from "../lib/enrichment/ogImage.ts";
 import { findPersonProfile, discoverFounders, founderTitleFromHeadline, samePersonName } from "../lib/enrichment/linkedin.ts";
@@ -489,6 +489,16 @@ async function enrichCompany(
   // attached only when its own title is the founder's name and the result
   // names the company (lib/enrichment/linkedin.ts) — never a Crunchbase
   // person page, never a URL a model constructed.
+  // A leader whose own role says Founder/Co-founder ("Chief Creative
+  // Officer & Founder") is a founder too — never "Founding Marketing".
+  for (const l of profile.leadership) {
+    if (!l?.name || !/\b(co-?\s?founder|founder)\b/i.test(l.role ?? "")) continue;
+    const founders = profile.profile.founders ?? [];
+    if (!founders.some((f) => f?.name && samePersonName(f.name, l.name))) {
+      profile.profile.founders = [...founders, { name: l.name, title: l.role, bio: l.bio, linkedin_url: l.linkedin_url }];
+    }
+  }
+
   const linkedinFounders: Array<{ name: string; title?: string; linkedin_url: string }> = [];
   if (DEEP_DIVE) {
     const knownFounders = [...(profile.profile.founders ?? []).map((f) => ({ name: f.name, linkedin_url: f.linkedin_url?.value })), ...(row.founders ?? [])]
@@ -496,7 +506,12 @@ async function enrichCompany(
     const missing = knownFounders.filter((f) => !f.linkedin_url).slice(0, 3);
     const queries = [
       ...missing.map((f) => `site:linkedin.com/in "${f.name}" "${row.name}"`),
-      ...(knownFounders.length === 0 ? [`site:linkedin.com/in "${row.name}" founder OR co-founder`] : []),
+      // Discovery also runs when only one founder is known — most startups
+      // have two or three, and the second is often missing.
+      ...(knownFounders.length < 2 ? [
+        `site:linkedin.com/in "${row.name}" founder OR co-founder`,
+        `site:linkedin.com/in "co-founder" "${row.name}"${domain ? ` OR "${domain}"` : ""}`,
+      ] : []),
     ];
     if (queries.length > 0) {
       const results = (await Promise.all(queries.map((q, i) => serperSearch(q, `linkedin_people_${i}`, searchState)))).flat();
@@ -504,15 +519,16 @@ async function enrichCompany(
         const url = findPersonProfile(f.name, results, row.name);
         if (url) linkedinFounders.push({ name: f.name, linkedin_url: url });
       }
-      if (knownFounders.length === 0) {
+      if (knownFounders.length < 2) {
         // Discovery: a self-declared founder must ALSO pass the entity
         // filter, so "Founder at Ghost" from a different Ghost is dropped.
         const anchored = results.filter((r) => passesEntity(r, anchors) || (domain ? `${r.title ?? ""} ${r.content}`.toLowerCase().includes(domain) : false));
         for (const p of discoverFounders(anchored, row.name)) {
+          if (knownFounders.some((f) => samePersonName(f.name, p.name)) || linkedinFounders.some((f) => samePersonName(f.name, p.name))) continue;
           linkedinFounders.push({ name: p.name, title: founderTitleFromHeadline(`${p.headline}`, row.name), linkedin_url: p.url });
         }
       }
-      console.log(`    🔗  LinkedIn: ${linkedinFounders.length} founder profile(s) found${knownFounders.length === 0 ? " (founders discovered from LinkedIn)" : ` of ${missing.length} missing`}${VERBOSE && linkedinFounders.length ? ` — ${linkedinFounders.map((f) => `${f.name}: ${f.linkedin_url}`).join(", ")}` : ""}`);
+      console.log(`    🔗  LinkedIn: ${linkedinFounders.length} founder profile(s) found (${missing.length} known founder(s) without a link${knownFounders.length < 2 ? ", plus founder discovery" : ""})${VERBOSE && linkedinFounders.length ? ` — ${linkedinFounders.map((f) => `${f.name}: ${f.linkedin_url}`).join(", ")}` : ""}`);
     }
   }
 
@@ -675,25 +691,40 @@ async function enrichCompany(
     const match = d ? startupByDomain.get(d) : undefined;
     return match && match.id !== row.id ? match.id : null;
   };
-  const existingCompetitors = row.competitors ?? [];
+  // Contradictions already on file (written by earlier runs) are cleaned
+  // with the same rules applied to new data — see reconcileOnFile().
+  const reconciled = reconcileOnFile({
+    companyName: row.name,
+    foundedYear: (patch.founded_year as number | undefined) ?? row.founded_year,
+    competitors: row.competitors ?? [],
+    acquisitions: [...(row.acquisitions ?? []), ...market.acquisitions.map((a) => ({ company_name: a.company_name }))],
+    news: row.news ?? [],
+  });
+  for (const note of reconciled.notes) {
+    console.log(`    🧹  On file: ${note}`);
+    bump(summary.droppedByReason, "on_file_contradiction_fixed");
+  }
+  const selfKey = normalizeForMatch(row.name);
+  const acquisitionsOnFile = (row.acquisitions ?? []).filter((a) => !a?.company_name || normalizeForMatch(a.company_name) !== selfKey);
+  const existingCompetitors = reconciled.competitors as NonNullable<V2StartupRow["competitors"]>;
   const competitors = appendNew(
     existingCompetitors,
     market.competitors.map((c) => ({ name: c.name, website: c.website ?? null, how_it_competes: c.how_it_competes, startup_id: crossLink(c.website) })),
     (c) => normalizeForMatch(c.name ?? ""), MAX_COMPETITORS,
   );
   const competitorsAdded = competitors.length - existingCompetitors.length;
-  if (competitorsAdded > 0) patch.competitors = competitors;
+  if (!sameJson(competitors, row.competitors ?? [])) patch.competitors = competitors;
 
   // Acquisitions & IP
   const acquisitions = appendNew(
-    row.acquisitions ?? [],
+    acquisitionsOnFile,
     market.acquisitions.map((a) => ({
       company_name: a.company_name, website: a.website ?? null, acquired_date: normalizeIsoDate(a.acquired_date) ?? a.acquired_date ?? null,
       amount: a.amount ?? null, description: a.description ?? null, acquired_startup_id: crossLink(a.website),
     })),
     (a) => normalizeForMatch(a.company_name ?? ""),
   );
-  if (acquisitions.length > (row.acquisitions?.length ?? 0)) patch.acquisitions = acquisitions;
+  if (acquisitions.length !== (row.acquisitions?.length ?? 0)) patch.acquisitions = acquisitions;
   if (row.patent_count == null && market.patent_summary.patent_count != null) patch.patent_count = market.patent_summary.patent_count;
   if (!row.patent_fields?.length && market.patent_summary.patent_fields.length) patch.patent_fields = market.patent_summary.patent_fields;
   const patentKey = (p: { title: string; patent_number?: string | null }) => (p.patent_number ? `#${p.patent_number}` : normalizeForMatch(p.title ?? ""));
@@ -710,7 +741,8 @@ async function enrichCompany(
 
   // News: new articles appended (deduped by URL), newest first; each new
   // one gets its own og:image (v1's technique), never a guessed image.
-  const existingNews = row.news ?? [];
+  const existingNews = reconciled.news as NonNullable<V2StartupRow["news"]>;
+  if (reconciled.notes.some((n) => n.startsWith("cleared news date"))) patch.news = existingNews;
   const existingNewsKeys = new Set(existingNews.map((n) => normalizeUrlForMatch(n.url ?? "")));
   const freshNews = market.news.filter((n) => !existingNewsKeys.has(normalizeUrlForMatch(n.url)));
   let newsAdded = 0;
@@ -802,6 +834,18 @@ async function enrichCompany(
       headcountPoints.splice(i, 1);
     }
   }
+  // The same check on points already on file — an earlier run wrote
+  // Gladia's 70,000 point; it shouldn't stay on the growth chart forever.
+  const finalHeadcount = (patch.employee_count as number | undefined) ?? row.employee_count;
+  const { data: hcOnFile } = await supabase.from("headcount_history").select("id, employee_count, snapshot_date").eq("startup_id", row.id);
+  const badHeadcountOnFile = ((hcOnFile ?? []) as Array<{ id: string; employee_count: number; snapshot_date: string }>).filter((h) =>
+    !!checkHeadcountOutlier(h.employee_count, totalRaisedEstimate) || (finalHeadcount != null && finalHeadcount > 0 && h.employee_count > finalHeadcount * 10),
+  );
+  for (const h of badHeadcountOnFile) {
+    console.log(`    🧹  On file: headcount point ${h.employee_count}@${h.snapshot_date} is implausible next to ${finalHeadcount ?? "the funding"} — ${DRY_RUN ? "would remove" : "removing"}.`);
+    bump(summary.droppedByReason, "on_file_contradiction_fixed");
+  }
+
   if (profile.metrics.employee_range) setIfChanged("employee_range", fillScalarIfNull(row.employee_range, profile.metrics.employee_range), row.employee_range);
   if (profile.metrics.growth_trend) setIfChanged("growth_trend", profile.metrics.growth_trend, row.growth_trend);
 
@@ -863,6 +907,11 @@ async function enrichCompany(
         confidence: computeFieldConfidence([{ source_type: fw.source_type }]),
       });
       if (provenanceErr) console.warn(`    ⚠️  field_provenance insert failed (${fw.field}): ${provenanceErr.message}`);
+    }
+
+    for (const h of badHeadcountOnFile) {
+      const { error: delErr } = await supabase.from("headcount_history").delete().eq("id", h.id);
+      if (delErr) console.warn(`    ⚠️  headcount_history delete failed (${h.snapshot_date}): ${delErr.message}`);
     }
 
     // recorded_date is what the Talent & Growth chart and the score read,
