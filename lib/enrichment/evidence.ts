@@ -97,33 +97,53 @@ export function extractNumbersFromText(text: string): number[] {
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-// Candidate date-shaped phrases in free text: "April 1, 2026" / "April 1
-// 2026" / "1 April 2026" / "2026-04-01" / "04/01/2026". Deliberately loose —
-// every match is run through Date.parse() and only an exact same-calendar-
-// day result counts, so a loose regex here just means more candidates
-// tried, not more false positives.
-const DATE_PHRASE_RE = new RegExp(
-  [
-    "\\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\\s+\\d{1,2},?\\s+\\d{4}\\b",
-    "\\b\\d{1,2}\\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\\s+\\d{4}\\b",
-    "\\b\\d{4}-\\d{2}-\\d{2}\\b",
-    "\\b\\d{1,2}\\/\\d{1,2}\\/\\d{4}\\b",
-  ].join("|"),
-  "gi",
-);
+// Dates are parsed explicitly (never via Date.parse, which reads
+// "October 15, 2024" in the machine's LOCAL timezone — compared as UTC that
+// shifted the day by one on any server east of UTC, silently dropping
+// correct dates). Recognized: "October 15, 2024", "Oct. 15 2024",
+// "15 Oct 2024", "2024-10-15" (also with a time), "10/15/2024" or
+// "15/10/2024", plus month-only ("October 2024") and year-only phrases for
+// the extraction schema's own partial-date convention (YYYY-MM-01 = month
+// known, YYYY-01-01 = year known).
+const MONTH_NAMES = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+const MONTH_TOKEN = "(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\\.?";
+const monthIndex = (token: string) => MONTH_NAMES.indexOf(token.slice(0, 3).toLowerCase()) + 1;
 
-/** True when `quote` states the same calendar day as the ISO `isoDate` value, in whatever natural format the source actually used. */
+interface DateMention { y: number; m: number; d: number | null }
+
+function dateMentions(text: string): DateMention[] {
+  const out: DateMention[] = [];
+  const t = text.toLowerCase();
+  const add = (y: number, m: number, d: number | null) => {
+    if (m >= 1 && m <= 12 && (d == null || (d >= 1 && d <= 31))) out.push({ y, m, d });
+  };
+  for (const x of t.matchAll(new RegExp(`\\b${MONTH_TOKEN}\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b`, "g"))) add(+x[3], monthIndex(x[1]), +x[2]);
+  for (const x of t.matchAll(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?${MONTH_TOKEN},?\\s+(\\d{4})\\b`, "g"))) add(+x[3], monthIndex(x[2]), +x[1]);
+  for (const x of t.matchAll(/\b(\d{4})-(\d{2})-(\d{2})/g)) add(+x[1], +x[2], +x[3]);
+  for (const x of t.matchAll(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/g)) { add(+x[3], +x[1], +x[2]); add(+x[3], +x[2], +x[1]); }
+  for (const x of t.matchAll(new RegExp(`\\b${MONTH_TOKEN},?\\s+(\\d{4})\\b`, "g"))) add(+x[2], monthIndex(x[1]), null);
+  return out;
+}
+
+/** The first full calendar date (day known) written in `text`, as YYYY-MM-DD, or null. */
+export function parseFullDate(text: string): string | null {
+  const x = dateMentions(text).find((mention) => mention.d != null);
+  return x ? `${x.y}-${String(x.m).padStart(2, "0")}-${String(x.d).padStart(2, "0")}` : null;
+}
+
+/**
+ * True when `quote` supports the ISO `isoDate` value: the same calendar
+ * day in any recognized format; for a YYYY-MM-01 value, also that month
+ * ("October 2024"); for a YYYY-01-01 value, also that year.
+ */
 function dateAppearsInQuote(isoDate: string, quote: string): boolean {
-  const target = new Date(isoDate);
-  if (Number.isNaN(target.getTime())) return false;
-  const matches = quote.match(DATE_PHRASE_RE) ?? [];
-  return matches.some((m) => {
-    const parsed = new Date(m);
-    if (Number.isNaN(parsed.getTime())) return false;
-    return parsed.getUTCFullYear() === target.getUTCFullYear()
-      && parsed.getUTCMonth() === target.getUTCMonth()
-      && parsed.getUTCDate() === target.getUTCDate();
-  });
+  const [y, m, d] = isoDate.split("-").map(Number);
+  if (!y || !m || !d) return false;
+  const mentions = dateMentions(quote);
+  if (mentions.some((x) => x.y === y && x.m === m && x.d === d)) return true;
+  if (d === 1 && mentions.some((x) => x.y === y && x.m === m && x.d == null)) return true;
+  if (m === 1 && d === 1 && new RegExp(`(^|[^\\d])${y}([^\\d]|$)`).test(quote)) return true;
+  return false;
 }
 
 /**

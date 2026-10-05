@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  groundRoundDetails, isSameRound, planRoundWrites, mergeProfileExtractions, mergeMarketExtractions,
+  groundRoundDetails, announcementDateFromSource, isSameRound, planRoundWrites, mergeProfileExtractions, mergeMarketExtractions,
   mergeFundingExtractions, normalizeIsoDate, appendNew, reconcileOnFile,
 } from "./assemble";
 import { buildLabeledSources } from "./sources";
@@ -39,6 +39,28 @@ describe("groundRoundDetails", () => {
     const { round, dropped } = groundRoundDetails({ ...base, source_url: "https://example.com/made-up" }, sources);
     expect(round.source_url).toBe("https://techcrunch.com/2023/06/22/apex-raises");
     expect(dropped).toContain("round_source_url_not_in_sources");
+  });
+});
+
+describe("round dates from the announcing article (Gladia/Glamsquad rounds came back undated)", () => {
+  const src = (url: string, title: string, content: string) => buildLabeledSources([{ url, title, content, provider: "serper", query_label: "funding" }])[0];
+  const seriesA = { round_type: "Series A", amount_raised: { value: 16_000_000, source_id: "S1", evidence_quote: "a $16 million Series A" } };
+  it("dates a round from its own announcement's press-wire dateline / Date line / URL", () => {
+    expect(announcementDateFromSource(seriesA, src("https://www.prnewswire.com/x", "Gladia Raises $16 Million in Series A Funding", "PARIS, Oct. 15, 2024 /PRNewswire/ -- Gladia raised a $16 million Series A"))).toBe("2024-10-15");
+    expect(announcementDateFromSource(seriesA, src("https://slator.com/x", "Gladia raises USD 16M Series A", "Source: Slator — Date: Oct 15, 2024 — Gladia raised $16 million"))).toBe("2024-10-15");
+    expect(announcementDateFromSource(seriesA, src("https://techcrunch.com/2024/10/15/gladia/", "Gladia raises $16M", "Gladia raised $16 million"))).toBe("2024-10-15");
+  });
+  it("never dates a round from a later article that only mentions it", () => {
+    expect(announcementDateFromSource(seriesA, src("https://venturebeat.com/2025/04/02/x/", "Gladia launches Solaria", "Following its $16 million Series A round in 2024, Gladia launched Solaria"))).toBeNull();
+  });
+  it("needs a real date, not a relative one", () => {
+    expect(announcementDateFromSource(seriesA, src("https://x.com/a", "Gladia raises $16M Series A", "Source: X — Date: 3 days ago — Gladia raised $16 million"))).toBeNull();
+  });
+  it("groundRoundDetails fills a missing date this way and flags it", () => {
+    const sources2 = buildLabeledSources([{ url: "https://www.prnewswire.com/x", title: "Gladia Raises $16 Million in Series A Funding", provider: "serper", query_label: "funding", content: "PARIS, Oct. 15, 2024 /PRNewswire/ -- Gladia raised a $16 million Series A" }]);
+    const { round, dropped } = groundRoundDetails(seriesA, sources2);
+    expect(round.announcement_date?.value).toBe("2024-10-15");
+    expect(dropped).toContain("round_date_from_article");
   });
 });
 

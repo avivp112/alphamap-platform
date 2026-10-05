@@ -19,7 +19,7 @@
  *     sections are unioned by identity.
  */
 
-import { normalizeForMatch, extractNumbersFromText } from "./evidence";
+import { normalizeForMatch, extractNumbersFromText, parseFullDate } from "./evidence";
 import { investorNamesMatch, normalizeRoundType, type RoundLike } from "./rounds";
 import { termAppearsIn, normalizeUrlForMatch, type V2MarketExtraction, type V2NewsItem } from "./extractMarket";
 import type { V2Round, V2FundingExtraction } from "./extractFunding";
@@ -30,7 +30,40 @@ const sourceText = (s: LabeledSource) => `${s.title ?? ""} ${s.content} ${s.url}
 
 // ── Round grounding ──────────────────────────────────────────────────────
 
-export type RoundGroundingDrop = "investor_not_in_source" | "investor_amount_not_in_source" | "round_source_url_not_in_sources";
+export type RoundGroundingDrop = "investor_not_in_source" | "investor_amount_not_in_source" | "round_source_url_not_in_sources" | "round_date_from_article";
+
+const RAISE_RE = /\b(rais(e|es|ed|ing)|secur(e|es|ed)|clos(e|es|ed)|lands|nabs|bags|announc(e|es|ed) .{0,40}(funding|round|investment))\b/i;
+
+/**
+ * The publication date of the article that ANNOUNCED this round — used as
+ * the round's announcement_date when the extraction had no verified date.
+ * Only when the article's title/lead itself reports the raise (a raise verb
+ * plus this round's type or amount), so a later article that merely
+ * mentions an old round ("Following its 2024 Series A, ...") never dates
+ * it. The date must be the article's own: a "Date:" line, a "Published
+ * Time:" line, a press-wire dateline, or a /YYYY/MM/DD/ URL.
+ */
+export function announcementDateFromSource(round: V2Round, source: LabeledSource, today = new Date().toISOString().slice(0, 10)): string | null {
+  const head = `${source.title ?? ""} ${source.content.slice(0, 700)}`;
+  if (!RAISE_RE.test(head)) return null;
+  const type = normalizeRoundType(round.round_type);
+  const amount = round.amount_raised?.value;
+  const mentionsRound =
+    (type !== "Other" && type !== "Unknown" && new RegExp(`\\b${type.replace(/[-+]/g, ".?")}\\b`, "i").test(head)) ||
+    (amount != null && extractNumbersFromText(head).some((n) => Math.abs(n - amount) / amount < 0.01));
+  if (!mentionsRound) return null;
+  const candidates = [
+    source.content.match(/Published Time:\s*(\S+)/i)?.[1],
+    source.content.match(/Date:\s*([^—|\n]{6,40})/)?.[1],
+    source.content.match(/([A-Z][a-z]{2,9}\.? \d{1,2}(?:st|nd|rd|th)?,? \d{4})\s*\/\s*(?:PRNewswire|Business Wire|GLOBE NEWSWIRE|EINPresswire)/i)?.[1],
+    source.url.match(/\/(\d{4})\/(\d{2})\/(\d{2})\//)?.slice(1, 4).join("-"),
+  ];
+  for (const c of candidates) {
+    const iso = c ? parseFullDate(c) : null;
+    if (iso && iso >= "1990-01-01" && iso <= today) return iso;
+  }
+  return null;
+}
 
 export function groundRoundDetails(
   round: V2Round,
@@ -74,9 +107,21 @@ export function groundRoundDetails(
     sourceUrl = citedId ? byId.get(citedId)?.url : undefined;
   }
 
+  let announcementDate = round.announcement_date;
+  if (!announcementDate) {
+    const citedId = (round.amount_raised ?? round.lead_investor ?? round.valuation)?.source_id;
+    const src = citedId ? byId.get(citedId) : undefined;
+    const iso = src ? announcementDateFromSource(round, src) : null;
+    if (iso && src) {
+      announcementDate = { value: iso, source_id: src.source_id, evidence_quote: `publication date of ${src.url}` };
+      dropped.push("round_date_from_article");
+    }
+  }
+
   return {
     round: {
       ...round,
+      announcement_date: announcementDate,
       other_investors: otherInvestors.length > 0 ? otherInvestors : undefined,
       investor_amounts: investorAmounts.length > 0 ? investorAmounts : undefined,
       source_url: sourceUrl,

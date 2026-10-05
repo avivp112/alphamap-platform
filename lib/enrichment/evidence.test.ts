@@ -76,6 +76,28 @@ describe("valueAppearsInQuote — ISO date vs. natural-language date phrasing", 
   it("rejects a quote stating a genuinely different date", () => {
     expect(valueAppearsInQuote("2026-04-01", "the round closed on 5 June 2026")).toBe(false);
   });
+  it("matches abbreviated months as press releases and Serper write them (dropped every Gladia/Glamsquad round date before)", () => {
+    expect(valueAppearsInQuote("2024-10-15", "PARIS, Oct. 15, 2024 /PRNewswire/ -- Gladia, an AI transcription")).toBe(true);
+    expect(valueAppearsInQuote("2024-10-15", "Source: Slator — Date: Oct 15, 2024 — Gladia raises")).toBe(true);
+    expect(valueAppearsInQuote("2015-10-09", "NEW YORK, Oct. 9th 2015 -- GLAMSQUAD announced")).toBe(true);
+    expect(valueAppearsInQuote("2024-10-15", "Published Time: 2024-10-15T08:00:00Z")).toBe(true);
+  });
+  it("accepts the schema's partial-date convention: YYYY-MM-01 for a month, YYYY-01-01 for a year", () => {
+    expect(valueAppearsInQuote("2023-06-01", "In June 2023, Gladia raised a $4 million seed round")).toBe(true);
+    expect(valueAppearsInQuote("2022-01-01", "Gladia was founded in 2022 in Paris")).toBe(true);
+    expect(valueAppearsInQuote("2023-07-01", "In June 2023, Gladia raised a $4 million seed round")).toBe(false);
+    expect(valueAppearsInQuote("2021-01-01", "Gladia was founded in 2022 in Paris")).toBe(false);
+  });
+  it("never shifts a day by timezone (parsed explicitly, not via Date.parse)", () => {
+    const tz = process.env.TZ;
+    process.env.TZ = "Asia/Jerusalem";
+    try {
+      expect(valueAppearsInQuote("2024-10-15", "on October 15, 2024 the company")).toBe(true);
+      expect(valueAppearsInQuote("2024-10-14", "on October 15, 2024 the company")).toBe(false);
+    } finally {
+      process.env.TZ = tz;
+    }
+  });
 });
 
 describe("verifyEvidence — end to end", () => {

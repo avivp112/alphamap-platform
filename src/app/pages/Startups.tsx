@@ -9,6 +9,7 @@ import {
 } from "recharts";
 import { Layout } from "../components/Layout";
 import { LinkedInBadge } from "../components/LinkedInBadge";
+import { HoverCard, HoverCardTrigger, HoverCardContent } from "../components/ui/hover-card";
 import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider, QuickQuestionsMenu, ExportMenu } from "../components/SideFilterLayout";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { useBackClose } from "../../lib/hardwareBack";
@@ -68,6 +69,14 @@ const STARTUP_EXPORT_COLUMNS: ExportColumn<StartupListRow>[] = [
   { label: "Total Raised",      value: (s) => s.total_raised },
   { label: "Completeness Score", value: (s) => s.completeness_score },
 ];
+
+// "<UNKNOWN>", "N/A" and similar written into city/country by older
+// pipeline runs are placeholders, not places — never displayed.
+const PLACE_PLACEHOLDER_RE = /^\s*<?\s*(unknown|n\/?a|none|null|undefined|tbd|-|—)\s*>?\s*$/i;
+function placeLabel(city: string | null | undefined, country: string | null | undefined): string | null {
+  const parts = [city, country].filter((p): p is string => !!p && !PLACE_PLACEHOLDER_RE.test(p));
+  return parts.length > 0 ? parts.join(", ") : null;
+}
 
 function fmt(usd: number | null | undefined): string {
   if (!usd) return "—";
@@ -1102,6 +1111,50 @@ function ScoreHistoryChart({ startupId }: { startupId: string }) {
   );
 }
 
+// ── Person row (founders / leadership / team) ─────────────────────────────────
+// The bio opens in a hover card (tap on touch screens) instead of being
+// printed inline under every person. A person with no bio on file gets no
+// popup and no "bio" hint — never an empty card.
+function PersonRow({ name, subtitle, bio, linkedinUrl, truncate = false }: {
+  name: string;
+  subtitle?: string | null;
+  bio?: string | null;
+  linkedinUrl?: string | null;
+  truncate?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const hasBio = !!bio && bio.trim().length > 0;
+  const row = (
+    <div
+      className={`flex items-start gap-3 bg-gray-50 border border-gray-100 rounded-[8px] px-3.5 py-2.5 ${hasBio ? "cursor-help hover:border-amber-200 transition-colors" : ""}`}
+      onClick={hasBio ? () => setOpen((o) => !o) : undefined}
+    >
+      <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black flex-none ${avatarColor(name ?? "")}`}>
+        {(name?.[0] ?? "?").toUpperCase()}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className={`text-sm font-bold text-gray-900 leading-tight ${truncate ? "truncate" : ""}`}>{name}</span>
+          <LinkedInBadge url={linkedinUrl ?? undefined} name={name} />
+          {hasBio && <Info className="w-3 h-3 text-gray-300" aria-label="Bio available" />}
+        </div>
+        {subtitle && <div className={`text-[11px] text-gray-500 leading-tight mt-0.5 ${truncate ? "truncate" : ""}`}>{subtitle}</div>}
+      </div>
+    </div>
+  );
+  if (!hasBio) return row;
+  return (
+    <HoverCard open={open} onOpenChange={setOpen} openDelay={150} closeDelay={100}>
+      <HoverCardTrigger asChild>{row}</HoverCardTrigger>
+      <HoverCardContent side="top" align="start" className="z-[60] w-80 bg-[#0F172A] text-white border-white/10 text-xs leading-relaxed shadow-xl">
+        <p className="font-bold text-sm">{name}</p>
+        {subtitle && <p className="text-[11px] text-[#F59E0B] mt-0.5 mb-2">{subtitle}</p>}
+        <p className="text-slate-300">{bio}</p>
+      </HoverCardContent>
+    </HoverCard>
+  );
+}
+
 function OverviewTab({
   startup, alphaScore, alphaLoading, alphaErr, matchResult, matchLoading, mandateSectors,
   onFilterByMainSector, onFilterBySubSectorTag,
@@ -1112,7 +1165,7 @@ function OverviewTab({
   onFilterBySubSectorTag: (tag: string) => void;
 }) {
   const { t } = useTranslation();
-  const location = [startup.city, startup.country].filter(Boolean).join(", ") || "—";
+  const location = placeLabel(startup.city, startup.country) ?? "—";
   const sector = classifyIndustry(startup.industry);
   const sectorName = startup.sector?.name ?? sector.parent;
   // A company's stored tags (startup_sub_sectors) can be several, from any
@@ -1190,19 +1243,7 @@ function OverviewTab({
           </div>
           <div className="flex flex-col gap-2">
             {startup.founders.map((f, i) => (
-              <div key={i} className="flex items-start gap-3 bg-gray-50 border border-gray-100 rounded-[8px] px-3.5 py-2.5">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black flex-none ${avatarColor(f.name)}`}>
-                  {f.name[0].toUpperCase()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-sm font-bold text-gray-900 leading-tight">{f.name}</span>
-                    <LinkedInBadge url={f.linkedin_url} name={f.name} />
-                  </div>
-                  {f.title && <div className="text-[11px] text-gray-500 leading-tight mt-0.5">{f.title}</div>}
-                  {f.bio && <p className="text-[11px] text-gray-400 leading-relaxed mt-1">{f.bio}</p>}
-                </div>
-              </div>
+              <PersonRow key={i} name={f.name} subtitle={f.title} bio={f.bio} linkedinUrl={f.linkedin_url} />
             ))}
           </div>
         </div>
@@ -1216,19 +1257,7 @@ function OverviewTab({
           </div>
           <div className="flex flex-col gap-2">
             {startup.leadership.map((l, i) => (
-              <div key={i} className="flex items-start gap-3 bg-gray-50 border border-gray-100 rounded-[8px] px-3.5 py-2.5">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black flex-none ${avatarColor(l.name)}`}>
-                  {l.name[0]}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-sm font-bold text-gray-900 leading-tight">{l.name}</span>
-                    <LinkedInBadge url={l.linkedin_url} name={l.name} />
-                  </div>
-                  <div className="text-[11px] text-gray-500 leading-tight mt-0.5">{l.role}</div>
-                  {l.bio && <p className="text-[11px] text-gray-400 leading-relaxed mt-1">{l.bio}</p>}
-                </div>
-              </div>
+              <PersonRow key={i} name={l.name} subtitle={l.role} bio={l.bio} linkedinUrl={l.linkedin_url} />
             ))}
           </div>
         </div>
@@ -1620,19 +1649,7 @@ function TalentGrowthTab({
         {startup.leadership && startup.leadership.length > 0 ? (
           <div className="flex flex-col gap-2">
             {startup.leadership.map((l, i) => (
-              <div key={i} className="flex items-start gap-3 bg-gray-50 border border-gray-100 rounded-[8px] px-3.5 py-2.5">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black flex-none ${avatarColor(l.name)}`}>
-                  {l.name[0]}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-sm font-bold text-gray-900 leading-tight truncate">{l.name}</span>
-                    <LinkedInBadge url={l.linkedin_url} name={l.name} />
-                  </div>
-                  <div className="text-[11px] text-gray-500 truncate">{l.role}</div>
-                  {l.bio && <p className="text-[11px] text-gray-400 leading-relaxed mt-1">{l.bio}</p>}
-                </div>
-              </div>
+              <PersonRow key={i} name={l.name} subtitle={l.role} bio={l.bio} linkedinUrl={l.linkedin_url} truncate />
             ))}
           </div>
         ) : (
@@ -1989,10 +2006,6 @@ function TearsheetModal({
     }
   }
 
-  const roundType   = startup.latest_round_type ?? null;
-  const roundStyle  = roundType ? (ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]) : null;
-  const location    = [startup.city, startup.country].filter(Boolean).join(", ") || null;
-
   // The list only carries a lightweight summary row (no funding_rounds), so
   // the full record — including every round, needed by the Funding/Cap Table
   // tabs — is fetched on demand the moment the tearsheet opens.
@@ -2007,6 +2020,21 @@ function TearsheetModal({
       .catch(() => setDetailErr(true))
       .finally(() => setDetailLoading(false));
   }, [startup.id]);
+
+  // Header facts (location, founding year, website, latest round) come from
+  // the live record as soon as it loads. The list row is a snapshot of the
+  // startups_search materialized view, refreshed periodically — a company
+  // enriched since the last refresh would otherwise show an empty header.
+  const live = detail ?? startup;
+  const latestLiveRound = useMemo(
+    () => [...(detail?.funding_rounds ?? [])]
+      .filter((r) => r.round_type)
+      .sort((a, b) => (b.announcement_date ?? "").localeCompare(a.announcement_date ?? "") || (b.created_at ?? "").localeCompare(a.created_at ?? ""))[0],
+    [detail],
+  );
+  const roundType   = (detail ? latestLiveRound?.round_type : startup.latest_round_type) ?? null;
+  const roundStyle  = roundType ? (ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]) : null;
+  const location    = placeLabel(live.city, live.country);
 
   const sortedRounds = useMemo(
     () => [...(detail?.funding_rounds ?? [])].sort(
@@ -2224,7 +2252,7 @@ function TearsheetModal({
         <div className="flex-none px-4 sm:px-6 pt-4 sm:pt-5 pb-4 sm:rounded-t-[10px]"
           style={{ background: "#B8C9D1", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
           <div className="flex items-start gap-3 sm:gap-4">
-            <CompanyLogo name={startup.name} website={startup.website} size={52} rounded="rounded-lg" />
+            <CompanyLogo name={startup.name} website={live.website} size={52} rounded="rounded-lg" />
             <div className="flex-1 min-w-0">
               <div className="flex items-start justify-between gap-2">
                 <h2 className="text-lg sm:text-xl font-black text-[#0F172A] tracking-tight leading-tight sm:leading-none mb-1.5 truncate">{startup.name}</h2>
@@ -2243,16 +2271,16 @@ function TearsheetModal({
                 {location && (
                   <span className="flex items-center gap-1"><MapPin className="w-3 h-3 flex-none" />{location}</span>
                 )}
-                {startup.founded_year && (
+                {live.founded_year && (
                   <>
                     <span className="text-[#0F172A]/30">·</span>
-                    <span className="flex items-center gap-1"><Calendar className="w-3 h-3 flex-none" />Est. {startup.founded_year}</span>
+                    <span className="flex items-center gap-1"><Calendar className="w-3 h-3 flex-none" />Est. {live.founded_year}</span>
                   </>
                 )}
-                {startup.website && (
+                {live.website && (
                   <>
                     <span className="text-[#0F172A]/30">·</span>
-                    <a href={startup.website} target="_blank" rel="noopener noreferrer"
+                    <a href={live.website.startsWith("http") ? live.website : `https://${live.website}`} target="_blank" rel="noopener noreferrer"
                       onClick={(e) => e.stopPropagation()}
                       className="flex items-center gap-1 hover:text-cyan-700 transition-colors">
                       <Globe className="w-3 h-3 flex-none" />Website
@@ -2487,7 +2515,7 @@ function LookalikesDrawer({
           ) : (
             <div className="space-y-2.5">
               {results.map((r) => {
-                const location = [r.city, r.country].filter(Boolean).join(", ") || null;
+                const location = placeLabel(r.city, r.country);
                 return (
                   <button
                     key={r.id}
@@ -2749,7 +2777,7 @@ function StartupCard({
 }) {
   const { t } = useTranslation();
   const roundType   = startup.latest_round_type ?? null;
-  const location    = [startup.city, startup.country].filter(Boolean).join(", ") || null;
+  const location    = placeLabel(startup.city, startup.country);
   const cardGlow    = roundType ? (ROUND_GLOW[roundType] ?? ROUND_GLOW.default) : ROUND_GLOW.default;
 
   return (
@@ -2924,7 +2952,7 @@ function StartupTableRow({
       <td className="py-3.5 px-4">
         {roundType && roundStyle ? <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${roundStyle}`}>{roundType}</span> : <span className="text-xs text-gray-300">—</span>}
       </td>
-      <td className="py-3.5 px-4 text-xs text-gray-500">{[startup.city, startup.country].filter(Boolean).join(", ") || "—"}</td>
+      <td className="py-3.5 px-4 text-xs text-gray-500">{placeLabel(startup.city, startup.country) ?? "—"}</td>
       <td className="py-3.5 px-4 text-sm font-bold text-[#0F172A]">{fmt(startup.latest_valuation)}</td>
       <td className="py-3.5 px-4 text-sm font-bold text-[#0F172A]">{fmt(startup.total_raised) || "—"}</td>
       <td className="py-3.5 px-4 text-xs text-gray-500">{fmtEmp(startup.employee_count)}</td>
