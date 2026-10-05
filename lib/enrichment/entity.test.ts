@@ -126,6 +126,31 @@ describe("identity keywords -- non-distinctive names (Ghost, Foundry, Gifted) wi
   });
 });
 
+describe("namesake domains and generic keyword hits (Glean AI got Glean's $7.2B valuation)", () => {
+  const anchors: EntityAnchors = { domain: "glean.ai", identityKeywords: ["spend", "vendor", "invoice", "payable", "accounting", "intelligence", "drive"] };
+  it("drops a result about the namesake's own domain", () => {
+    const v = filterByEntity({ url: "https://telosi.io/vr/glean", snippet: "Glean (glean.com) Work AI platform reached $300M ARR" }, anchors, "Glean AI");
+    expect(v).toEqual({ kept: false, drop_reason: "namesake_domain" });
+    expect(filterByEntity({ url: "https://www.glean.com/blog/x", snippet: "Glean AI assistant" }, anchors, "Glean AI").kept).toBe(false);
+  });
+  it("keeps a page that mentions both domains (it names ours)", () => {
+    expect(filterByEntity({ url: "https://x.com/suit", snippet: "glean.com sued by glean.ai over the trademark" }, anchors, "Glean AI").matched).toBe("domain_mention");
+  });
+  it("needs a core identity keyword, not just two generic ones", () => {
+    expect(filterByEntity({ url: "https://x.com/a", snippet: "Glean AI brings intelligence to your drive" }, { identityKeywords: anchors.identityKeywords }, "Glean AI").kept).toBe(false);
+    expect(filterByEntity({ url: "https://x.com/b", snippet: "Glean AI automates invoice and vendor spend" }, { identityKeywords: anchors.identityKeywords }, "Glean AI").kept).toBe(true);
+  });
+});
+
+describe("namesake LinkedIn company pages", () => {
+  it("drops another linkedin.com/company page when the company's own is on file", () => {
+    const anchors: EntityAnchors = { companyLinkedinUrl: "https://www.linkedin.com/company/globalstep" };
+    expect(filterByEntity({ url: "https://pt.linkedin.com/company/globalstep-inform%C3%A1tica", snippet: "GlobalStep fundada em 2001" }, anchors, "GlobalStep"))
+      .toEqual({ kept: false, drop_reason: "namesake_profile" });
+    expect(filterByEntity({ url: "https://www.linkedin.com/company/globalstep/", snippet: "GlobalStep game QA" }, anchors, "GlobalStep").kept).toBe(true);
+  });
+});
+
 describe("filterResultsByEntity", () => {
   it("flags low_evidence when fewer than 2 results survive", () => {
     const anchors: EntityAnchors = { domain: "apexspace.com" };

@@ -56,10 +56,14 @@ export function parseLinkedInPersonResult(
   const text = `${result.title} ${result.content ?? ""}`;
   if (!namesCompany(text, companyName)) return null;
   const company = escapeRe(companyName.trim());
+  // The company must be the OBJECT of the founder claim ("Co-founder & CEO
+  // at Gladia", "Gladia co-founder") — "Founder at XYZ Agency | GoHighLevel
+  // expert" is a founder of something else who uses GoHighLevel.
+  const role = "(?:co-?\\s?founder|founder)";
+  const titleAfter = "(?:\\s*(?:&|and|/|,)\\s*[A-Za-z][A-Za-z .]{1,25}?)?";
   const isFounder =
-    (/\b(co-?\s?founder|founder)\b/i.test(headline) && namesCompany(headline, companyName)) ||
-    new RegExp(`\\b(co-?\\s?founder|founder)\\b[^.|]{0,40}\\b${company}\\b`, "i").test(text) ||
-    new RegExp(`\\b${company}\\b[^.|]{0,15}\\b(co-?\\s?founder|founder)\\b`, "i").test(text);
+    new RegExp(`\\b${role}${titleAfter}\\s*(?:at|of|@|-|–|—|,|\\|)?\\s*${company}\\b`, "i").test(text) ||
+    new RegExp(`\\b${company}(?:'s|’s)?\\s+${role}\\b`, "i").test(text);
   return { name, headline, url, isFounder };
 }
 

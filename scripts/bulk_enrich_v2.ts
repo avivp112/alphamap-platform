@@ -53,7 +53,7 @@ import { buildLabeledSources, type RawSearchResult, type LabeledSource } from ".
 import { extractProfile, loadSectorTaxonomy, type SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { extractFunding, roundToRoundLike } from "../lib/enrichment/extractFunding.ts";
 import { extractMarket, normalizeUrlForMatch } from "../lib/enrichment/extractMarket.ts";
-import { detectGaps, buildDeepDiveQueries, type DeepDiveSection } from "../lib/enrichment/deepDive.ts";
+import { detectGaps, buildDeepDiveQueries, hasNoFinancingRounds, type DeepDiveSection } from "../lib/enrichment/deepDive.ts";
 import {
   groundRoundDetails, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
   normalizeIsoDate, appendNew, reconcileOnFile, type ExistingRoundRef,
@@ -64,6 +64,7 @@ import { openSearchCache } from "../lib/enrichment/searchCache.ts";
 import { pickArticlesToRead } from "../lib/enrichment/articles.ts";
 import { runTechGate, shouldSkipAsNonTech, type TechGateVerdict } from "../lib/enrichment/techGate.ts";
 import { namesCompany } from "../lib/enrichment/headcount.ts";
+import { foundersFromText, personMentionedIn, cleanPeople } from "../lib/enrichment/people.ts";
 import { findPersonProfile, discoverFounders, founderTitleFromHeadline, samePersonName } from "../lib/enrichment/linkedin.ts";
 import { checkHeadcountOutlier } from "../lib/enrichment/validation.ts";
 import { MAJOR_CITIES } from "../lib/enrichment/majorCities.ts";
@@ -384,6 +385,7 @@ async function enrichCompany(
     founderNames: [...(row.founders ?? []), ...(row.leadership ?? [])].map((p) => p?.name).filter((n): n is string => !!n && n.trim().length > 3),
     trustedCountry: row.is_manually_verified ? (row.country ?? undefined) : undefined,
     identityKeywords,
+    companyLinkedinUrl: row.linkedin_url,
   };
   const passesEntity = (r: RawSearchResult, a: EntityAnchors) =>
     filterByEntity({ url: r.url, title: r.title, snippet: r.content }, a, row.name).kept;
@@ -492,7 +494,10 @@ async function enrichCompany(
       hasDescription: !!(row.description || profile.profile.description),
       hasLocation: !!((row.city || profile.profile.city) && (row.country || profile.profile.country)),
       hasHeadcount: row.employee_count != null || !!profile.metrics.employee_count || !!profile.metrics.employee_range,
-      hasFounders: (row.founders?.length ?? 0) > 0 || (profile.profile.founders?.length ?? 0) > 0,
+      // Founders are covered by the "founded by" scan and the LinkedIn step
+      // below; a whole profile deep dive just for them added nothing in a
+      // 20-company run (+0 founders in every one).
+      hasFounders: true,
       competitorCount: (row.competitors?.length ?? 0) + market.competitors.length,
       // Fresh news is worth a second look even when older articles are on file.
       newsCount: market.news.length,
@@ -500,11 +505,15 @@ async function enrichCompany(
       // Patent deep dive only when some source ties a patent to this company
       // — most startups have none, and searching for them anyway found
       // nothing in every real run while costing two searches + a call.
-      patentCount: allSources.some((src) => /\bpatent(s|ed)?\b/i.test(src.content) && namesCompany(`${src.title ?? ""} ${src.content}`, row.name))
-        ? (row.patents?.length ?? 0) + (row.patent_count ?? 0) + market.patents.length + (market.patent_summary.patent_count ?? 0)
-        : undefined,
+      // No patent deep dive: the first pass already searches Google Patents,
+      // and the second search returned +0 patents in every real run.
+      patentCount: undefined,
     });
-    if (!gaps.includes("funding") && funding.funding_history_complete === false) gaps.unshift("funding");
+    // Funding deep dive only when NO financing round is known at all: with
+    // rounds already found, the extra searches returned +0 rounds in 12 of
+    // 13 companies of a real run (the model's "history incomplete" flag is
+    // set far too often to be a useful trigger on its own).
+    if (gaps.includes("funding") && !hasNoFinancingRounds(firstPassRounds)) gaps.splice(gaps.indexOf("funding"), 1);
 
     if (gaps.length > 0) {
       summary.deepDives++;
@@ -599,6 +608,20 @@ async function enrichCompany(
     }
   }
 
+  // Founders stated outright in the research — "GoCo.io, Inc. was founded
+  // in 2015 by Jason J. Wang, Michael Gugel, and Nir Leibovich." — with the
+  // company as the sentence's subject (lib/enrichment/people.ts).
+  const textFounders: string[] = [];
+  for (const src of allSources) {
+    for (const f of foundersFromText(src.content, row.name, { url: src.url, title: src.title })) {
+      const founders = profile.profile.founders ?? [];
+      if (founders.some((x) => x?.name && samePersonName(x.name, f.name))) continue;
+      profile.profile.founders = [...founders, { name: f.name, title: f.title }];
+      textFounders.push(`${f.name} [${src.source_id}]`);
+    }
+  }
+  if (textFounders.length > 0) console.log(`    👥  Founders from "founded by" sentences: ${textFounders.join(", ")}`);
+
   const linkedinFounders: Array<{ name: string; title?: string; linkedin_url: string }> = [];
   if (DEEP_DIVE) {
     const knownFounders = [...(profile.profile.founders ?? []).map((f) => ({ name: f.name, linkedin_url: f.linkedin_url?.value })), ...(row.founders ?? [])]
@@ -623,8 +646,16 @@ async function enrichCompany(
         // Discovery: a self-declared founder must ALSO pass the entity
         // filter, so "Founder at Ghost" from a different Ghost is dropped.
         const anchored = results.filter((r) => passesEntity(r, anchors) || (domain ? `${r.title ?? ""} ${r.content}`.toLowerCase().includes(domain) : false));
+        // ...and must be named somewhere in the research outside LinkedIn —
+        // a self-description alone isn't enough to call someone a founder.
+        const researchText = allSources.filter((src) => !/linkedin\.com/i.test(src.url)).map((src) => `${src.title ?? ""} ${src.content}`);
         for (const p of discoverFounders(anchored, row.name)) {
           if (knownFounders.some((f) => samePersonName(f.name, p.name)) || linkedinFounders.some((f) => samePersonName(f.name, p.name))) continue;
+          if (!researchText.some((t) => personMentionedIn(p.name, t))) {
+            console.log(`    🔗  LinkedIn: ${p.name} ("${p.headline}") not named anywhere in the research — not added as a founder.`);
+            bump(summary.droppedByReason, "linkedin_founder_uncorroborated");
+            continue;
+          }
           linkedinFounders.push({ name: p.name, title: founderTitleFromHeadline(`${p.headline}`, row.name), linkedin_url: p.url });
         }
       }
@@ -767,10 +798,10 @@ async function enrichCompany(
   }
 
   // Leadership & founders (additive merge, never destructive)
-  const cleanFounders = (profile.profile.founders ?? []).map((f) => ({
+  const cleanFounders = cleanPeople((profile.profile.founders ?? []).map((f) => ({
     name: f.name, title: f.title, bio: f.bio, linkedin_url: f.linkedin_url?.value,
     had_prior_exit: f.had_prior_exit, elite_background: f.elite_background, notable_pedigree: f.notable_pedigree,
-  }));
+  })));
   const allFounderInputs = [...cleanFounders, ...linkedinFounders];
   if (allFounderInputs.length > 0) {
     // mergePeople matches exact names; align LinkedIn names (accents,
@@ -779,10 +810,10 @@ async function enrichCompany(
     const aligned = allFounderInputs.map((f) => ({ ...f, name: knownNames.find((n) => samePersonName(n, f.name)) ?? f.name }));
     setIfChanged("founders", mergePeople(row.founders ?? [], aligned), row.founders);
   }
-  const cleanLeadership = (profile.leadership ?? []).map((l) => ({
+  const cleanLeadership = cleanPeople((profile.leadership ?? []).map((l) => ({
     name: l.name, role: l.role, bio: l.bio, linkedin_url: l.linkedin_url?.value, joined_date: l.joined_date,
     had_prior_exit: l.had_prior_exit, elite_background: l.elite_background, notable_pedigree: l.notable_pedigree,
-  }));
+  })));
   if (cleanLeadership.length > 0) setIfChanged("leadership", mergePeople(row.leadership ?? [], cleanLeadership), row.leadership);
 
   // Competitors & market (additive: entries on file are never removed)

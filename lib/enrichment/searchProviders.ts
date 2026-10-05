@@ -303,6 +303,10 @@ export function mergeSearchResults(serperResults: RawSearchResult[], tavilyResul
  */
 export async function webSearch(query: string, queryLabel: string, state: SearchProviderState): Promise<RawSearchResult[]> {
   const serperResults = await serperSearch(query, queryLabel, state);
+  // A site:-restricted query (LinkedIn, Crunchbase, Google Patents) normally
+  // returns only a few hits; Tavily's general search can't honor site: and
+  // only adds unrelated pages at a cost — 54 Tavily calls in a 20-company run.
+  if (/\bsite:/i.test(query)) return serperResults;
   if (!needsTavilySupplement(serperResults)) return serperResults;
 
   const tavilyResults = await tavilySearch(query, queryLabel, state);

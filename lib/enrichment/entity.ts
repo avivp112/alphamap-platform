@@ -68,6 +68,8 @@ export interface EntityAnchors {
    * is the publishing platform, "Ghost ... robotics ... quadruped" is not.
    */
   identityKeywords?: string[];
+  /** The company's own LinkedIn company page, when on file — any OTHER linkedin.com/company page is a namesake. */
+  companyLinkedinUrl?: string | null;
 }
 
 // Generic web/business vocabulary that says nothing about which company a
@@ -95,6 +97,16 @@ const GENERIC_WORDS = new Set([
   "connection", "approach", "building", "production", "sanity", "event", "events", "client", "clients",
   "testimonial", "testimonials", "assistant", "integration", "integrations", "model", "models", "original",
   "bundle", "label", "collection", "flavor",
+  // Seen as junk identity keywords in real runs (page chrome, navigation,
+  // vague business vocabulary that any company's page uses).
+  "intelligence", "drive", "saving", "search", "feeling", "canva", "feedback", "remove", "advanced", "computer",
+  "markdown", "network", "source", "title", "address", "explore", "check", "identity", "working", "release",
+  "issue", "please", "close", "location", "english", "deutsch", "resource", "bring", "chain", "center", "field",
+  "internal", "enterprise", "management", "operation", "found", "focused", "helping", "driven", "level",
+  "growth", "impact", "program", "project", "performance", "joining", "result", "against", "available",
+  "player", "embedded", "remote", "starting", "apply", "become", "change", "remain", "continue", "future",
+  "small", "potential", "mission", "organization", "celebrated", "option", "personal", "doesn", "integrate",
+  "morelearn", "fmedia", "fstatic",
 ]);
 
 // Strips what isn't prose before counting words: URLs, markdown images and
@@ -151,7 +163,7 @@ export interface SearchResultLike {
 }
 
 export type EntityMatchKind = "domain_url" | "domain_mention" | "founder_mention" | "verified_profile_url" | "identity_keywords" | "distinctive_name";
-export type EntityDropReason = "not_distinctive_name" | "country_contradiction" | "no_entity_match";
+export type EntityDropReason = "not_distinctive_name" | "country_contradiction" | "no_entity_match" | "namesake_domain" | "namesake_profile";
 
 export interface EntityFilterVerdict {
   kept: boolean;
@@ -195,6 +207,32 @@ export function filterByEntity(
     }
   }
 
+  // A namesake's LinkedIn company page (GlobalStep got its founding year
+  // from "linkedin.com/company/globalstep-informática", a Portuguese firm).
+  const slugOf = (u: string) => u.toLowerCase().match(/linkedin\.com\/company\/([^/?#]+)/)?.[1] ?? null;
+  const ownSlug = anchors.companyLinkedinUrl ? slugOf(anchors.companyLinkedinUrl) : null;
+  const resultSlug = slugOf(result.url);
+  if (ownSlug && resultSlug && decodeURIComponent(resultSlug) !== decodeURIComponent(ownSlug)) {
+    return { kept: false, drop_reason: "namesake_profile" };
+  }
+
+  // A namesake's own domain: the result is about glean.com while this
+  // company is glean.ai (or ghia.com vs drinkghia.com) — the collision a
+  // short name invites. Checked after the positive domain match above, so a
+  // page mentioning both domains is still kept.
+  if (anchors.domain) {
+    const domain = anchors.domain.toLowerCase();
+    const nameRoot = companyName.toLowerCase().replace(SUFFIXES_TO_STRIP, "").replace(/[^a-z0-9]/g, "");
+    if (nameRoot.length >= 3) {
+      for (const m of `${result.url.toLowerCase()} ${text}`.matchAll(/\b([a-z0-9-]+)\.(com|ai|io|co|org|net|app|dev|tech|so|xyz|us|uk|de|fr|il)\b/g)) {
+        const found = `${m[1]}.${m[2]}`;
+        if (found !== domain && !domain.endsWith(`.${found}`) && m[1].replace(/-/g, "") === nameRoot) {
+          return { kept: false, drop_reason: "namesake_domain" };
+        }
+      }
+    }
+  }
+
   for (const founder of anchors.founderNames ?? []) {
     if (founder && text.includes(founder.toLowerCase())) {
       return { kept: true, matched: "founder_mention" };
@@ -210,10 +248,14 @@ export function filterByEntity(
 
   // A non-distinctive name is still trusted when the page names the company
   // AND uses at least two words that characterize it on its own website.
+  // At least one hit must be among the company's top-5 most characteristic
+  // words — two generic hits ("intelligence", "drive") let a different
+  // "Glean" through in a real run.
   const keywords = anchors.identityKeywords ?? [];
   if (keywords.length >= MIN_IDENTITY_KEYWORD_HITS && mentionsName(text, companyName)) {
     const hits = keywords.filter((k) => text.includes(k)).length;
-    if (hits >= MIN_IDENTITY_KEYWORD_HITS) {
+    const coreHit = keywords.slice(0, 5).some((k) => text.includes(k));
+    if (hits >= MIN_IDENTITY_KEYWORD_HITS && coreHit) {
       return { kept: true, matched: "identity_keywords" };
     }
   }
