@@ -30,7 +30,7 @@
  *
  * Same CLI/env vars as v1 (ground rule 3), plus:
  *   PROFILE_MODEL / FUNDING_MODEL / MARKET_MODEL (default ENRICH_MODEL),
- *   MIN_PROFILE_CONFIDENCE (50), MIN_FUNDING_CONFIDENCE (60),
+ *   MIN_PROFILE_CONFIDENCE (40), MIN_FUNDING_CONFIDENCE (60),
  *   DEEP_DIVE (default true; false skips Stage 9), VERBOSE.
  *
  * Usage:
@@ -86,6 +86,8 @@ const VERBOSE         = process.env.VERBOSE               === "true";
 const DEEP_DIVE       = process.env.DEEP_DIVE             !== "false";
 // ONLY=<id or exact name>[,...] re-runs specific companies, ignoring the
 // queue order, OFFSET and BATCH_SIZE (e.g. ONLY=Gladia after a fix).
+// startups_search refresh cadence during a long run (companies); 0 = only at the end.
+const REFRESH_EVERY = Number(process.env.REFRESH_EVERY ?? 25);
 const ONLY = (process.env.ONLY ?? "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean);
 // Kept for parity/visibility only -- v2 gates per field (issue 9), never on
 // one whole-company score. Printed in the run header, never read.
@@ -95,7 +97,9 @@ const ENRICH_MODEL  = process.env.ENRICH_MODEL  ?? "claude-haiku-4-5-20251001";
 const PROFILE_MODEL = process.env.PROFILE_MODEL ?? ENRICH_MODEL;
 const FUNDING_MODEL = process.env.FUNDING_MODEL ?? ENRICH_MODEL;
 const MARKET_MODEL  = process.env.MARKET_MODEL  ?? ENRICH_MODEL;
-const MIN_PROFILE_CONFIDENCE = Number(process.env.MIN_PROFILE_CONFIDENCE ?? 50);
+// 40 = a city/country quoted verbatim from a Crunchbase/LinkedIn-type
+// profile is enough; a value with no source at all (0) never is.
+const MIN_PROFILE_CONFIDENCE = Number(process.env.MIN_PROFILE_CONFIDENCE ?? 40);
 const MIN_FUNDING_CONFIDENCE = Number(process.env.MIN_FUNDING_CONFIDENCE ?? 60);
 const THRESHOLDS = { minProfileConfidence: MIN_PROFILE_CONFIDENCE, minFundingConfidence: MIN_FUNDING_CONFIDENCE };
 
@@ -256,8 +260,18 @@ async function processCompany(
 ): Promise<void> {
   console.log(`── ${row.name} (${row.id}) ──`);
   const searchState = createSearchProviderState();
+  const before = { ...summary.tally };
   try {
     await enrichCompany(row, existingRounds, taxonomy, startupByDomain, summary, searchState);
+    // A company that was checked and rejected / found too thin / archived
+    // is still "done" for this pass — without the stamp, every restart of
+    // a long run would re-process the same companies first and never get
+    // further. (Errors are not stamped, so they're retried.)
+    const settled = (["rejected", "low_evidence", "no_data", "removed_public"] as const).some((k) => summary.tally[k] > before[k]);
+    if (settled && !DRY_RUN) {
+      const { error } = await supabase.from("startups").update({ last_enriched_at: new Date().toISOString() }).eq("id", row.id);
+      if (error) console.warn(`    ⚠️  last_enriched_at update failed: ${error.message}`);
+    }
   } finally {
     // Every exit path (rejected / archived / low_evidence / success) still
     // spent real search calls, so they're counted here, once.
@@ -1068,19 +1082,42 @@ async function main() {
     websitePagesFetched: 0, websitePagesSkippedThin: 0, serperCalls: 0, tavilyCalls: 0,
   };
 
-  for (let i = 0; i < queue.length; i++) {
+  // Ctrl+C once: finish the current company (its writes are never left
+  // half-done), print the summary, stop. Ctrl+C twice: exit immediately.
+  let stopRequested = false;
+  process.on("SIGINT", () => {
+    if (stopRequested) { console.log("\n⛔  Second Ctrl+C — exiting immediately."); process.exit(130); }
+    stopRequested = true;
+    console.log("\n🛑  Stop requested — finishing the current company, then stopping. Ctrl+C again to exit immediately.");
+  });
+  const interruptibleSleep = async (ms: number) => {
+    for (let waited = 0; waited < ms && !stopRequested; waited += 500) await sleep(Math.min(500, ms - waited));
+  };
+  const refreshSearch = async () => {
+    await refreshSearch();
+  };
+  const runStartedAt = Date.now();
+
+  for (let i = 0; i < queue.length && !stopRequested; i++) {
     const row = queue[i];
+    const elapsedMin = (Date.now() - runStartedAt) / 60_000;
+    const t = summary.tally;
+    console.log(`📍 [${i + 1}/${queue.length}] ${elapsedMin.toFixed(0)} min | $${summary.totalCostUsd.toFixed(2)} so far | ✅ ${t.success} 🟠 ${t.partial} 🚫 ${t.rejected} 🔍 ${t.low_evidence + t.no_data} 💥 ${t.error}`);
     try {
       await processCompany(row, roundsByStartup.get(row.id) ?? [], taxonomy, startupByDomain, summary);
     } catch (err) {
       console.error(`    💥  Unhandled error processing "${row.name}": ${String(err)}`);
       summary.tally.error++;
     }
-    if (i < queue.length - 1) {
+    // The company page reads startups_search — refresh it periodically on a
+    // long run, not only at the very end.
+    if (!DRY_RUN && REFRESH_EVERY > 0 && (i + 1) % REFRESH_EVERY === 0) await refreshSearch();
+    if (i < queue.length - 1 && !stopRequested) {
       console.log(`    ⏳  Waiting ${DELAY_MS / 1000}s…\n`);
-      await sleep(DELAY_MS);
+      await interruptibleSleep(DELAY_MS);
     }
   }
+  if (stopRequested) console.log("🛑  Stopped by request. Re-running continues from the companies not yet processed (queue is ordered by last_enriched_at).");
 
   if (!DRY_RUN && (summary.totalFieldsPatched > 0 || summary.totalRoundsInserted > 0 || summary.totalRoundsUpdated > 0)) {
     const { error } = await supabase.rpc("refresh_startups_search");

@@ -12,3 +12,6 @@ supabase/.temp/
 # truth) plus the live schema on every `generate` run, so it doesn't need
 # its own history the way the seed examples do.
 dataset/schema_training.jsonl
+
+# scripts/run_enrich_v2_all.sh run logs
+logs/
