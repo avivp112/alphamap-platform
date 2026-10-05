@@ -197,6 +197,7 @@ describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
     process.env.DRY_RUN = "false";
     process.env.SEARCH_CACHE = "false";
     process.env.DELAY_MS = "0";
+    process.env.REFRESH_EVERY = "1";
     process.env.SERP_KEY = "test";
     process.env.TAVILY_API_KEY = "test";
     vi.stubGlobal("fetch", fakeFetch);
@@ -271,6 +272,11 @@ describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
     expect(calls.some((c) => c.table === "startup_sub_sectors" && c.op === "upsert")).toBe(true);
     expect(calls.filter((c) => c.table === "field_provenance").length).toBeGreaterThan(0);
     expect(rpcCalls).toContain("refresh_startups_search");
+  });
+
+  it("refreshes startups_search every REFRESH_EVERY companies during the run, plus once at the end", () => {
+    // REFRESH_EVERY=1 with two companies: two periodic refreshes + the final one.
+    expect(rpcCalls.filter((n) => n === "refresh_startups_search")).toHaveLength(3);
   });
 
   it("never let the same-named Ghost Robotics article into any Claude prompt", () => {

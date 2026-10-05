@@ -1266,7 +1266,9 @@ async function main() {
     for (let waited = 0; waited < ms && !stopRequested; waited += 500) await sleep(Math.min(500, ms - waited));
   };
   const refreshSearch = async () => {
-    await refreshSearch();
+    const { error } = await supabase.rpc("refresh_startups_search");
+    if (error) console.warn(`⚠️  startups_search refresh failed: ${error.message} — the 15-minute pg_cron refresh will pick the changes up; if this repeats, check that migration 20261009000000 (service_role statement_timeout) is applied.`);
+    else console.log("🔄  startups_search refreshed");
   };
   const runStartedAt = Date.now();
   let consecutiveErrors = 0;
@@ -1295,9 +1297,7 @@ async function main() {
   if (stopRequested) console.log("🛑  Stopped by request. Re-running continues from the companies not yet processed (queue is ordered by last_enriched_at).");
 
   if (!DRY_RUN && (summary.totalFieldsPatched > 0 || summary.totalRoundsInserted > 0 || summary.totalRoundsUpdated > 0)) {
-    const { error } = await supabase.rpc("refresh_startups_search");
-    if (error) console.warn(`⚠️  startups_search refresh failed: ${error.message} — the 15-minute pg_cron refresh will pick the changes up; if this repeats, check that migration 20261009000000 (service_role statement_timeout) is applied.`);
-    else console.log("🔄  startups_search refreshed");
+    await refreshSearch();
   }
 
   console.log(`\n${"═".repeat(62)}`);
