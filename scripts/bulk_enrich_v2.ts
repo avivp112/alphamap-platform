@@ -470,32 +470,37 @@ async function processCompany(
   if (profile.metrics.employee_range) patch.employee_range = fillScalarIfNull(row.employee_range, profile.metrics.employee_range);
   if (profile.metrics.growth_trend) patch.growth_trend = profile.metrics.growth_trend;
 
+  // VERBOSE used to be nested inside the DRY_RUN branch only -- useless for
+  // exactly the case it matters most, reviewing what a REAL (DRY_RUN=false)
+  // write actually contained, since that's the one case where the values
+  // are about to become permanent. Runs regardless of DRY_RUN now.
+  if (VERBOSE) {
+    const cleanPatch = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== null && v !== undefined));
+    console.log(`    [VERBOSE] Full patch values${DRY_RUN ? " (would write)" : " (writing now)"}:`);
+    console.log(JSON.stringify(cleanPatch, null, 2).split("\n").map((l) => `      ${l}`).join("\n"));
+    // Evidence quotes for the scalar material fields that carry one directly
+    // (city/country/founded_year/website) -- the rest (arrays, merged
+    // people) are reviewable straight from cleanPatch above.
+    const evidenced: Array<[string, { value: unknown; source_id: string; evidence_quote: string } | undefined]> = [
+      ["city", profile.profile.city], ["country", profile.profile.country],
+      ["founded_year", profile.profile.founded_year], ["website", profile.profile.website],
+    ];
+    const withEvidence = evidenced.filter(([field, v]) => v && field in cleanPatch);
+    if (withEvidence.length > 0) {
+      console.log("    [VERBOSE] Evidence:");
+      for (const [field, v] of withEvidence) {
+        console.log(`      ${field}: "${v!.value}" <- [${v!.source_id}] "${v!.evidence_quote}"`);
+      }
+    }
+    if (newRoundsToInsert.length > 0) {
+      console.log(`    [VERBOSE] New round details${DRY_RUN ? " (would insert)" : " (inserting now)"}:`);
+      console.log(JSON.stringify(newRoundsToInsert, null, 2).split("\n").map((l) => `      ${l}`).join("\n"));
+    }
+  }
+
   if (DRY_RUN) {
     console.log(`    [DRY] Would patch: ${Object.keys(patch).filter((k) => patch[k] !== null && patch[k] !== undefined).join(", ") || "(nothing)"}`);
     console.log(`    [DRY] Would insert ${newRoundsToInsert.length} new round(s): ${newRoundsToInsert.map((r) => r.round_type).join(", ") || "none"}`);
-    if (VERBOSE) {
-      const cleanPatch = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== null && v !== undefined));
-      console.log("    [VERBOSE] Full patch values:");
-      console.log(JSON.stringify(cleanPatch, null, 2).split("\n").map((l) => `      ${l}`).join("\n"));
-      // Evidence quotes for the scalar material fields that carry one directly
-      // (city/country/founded_year/website) -- the rest (arrays, merged
-      // people) are reviewable straight from cleanPatch above.
-      const evidenced: Array<[string, { value: unknown; source_id: string; evidence_quote: string } | undefined]> = [
-        ["city", profile.profile.city], ["country", profile.profile.country],
-        ["founded_year", profile.profile.founded_year], ["website", profile.profile.website],
-      ];
-      const withEvidence = evidenced.filter(([field, v]) => v && field in cleanPatch);
-      if (withEvidence.length > 0) {
-        console.log("    [VERBOSE] Evidence:");
-        for (const [field, v] of withEvidence) {
-          console.log(`      ${field}: "${v!.value}" <- [${v!.source_id}] "${v!.evidence_quote}"`);
-        }
-      }
-      if (newRoundsToInsert.length > 0) {
-        console.log("    [VERBOSE] New round details:");
-        console.log(JSON.stringify(newRoundsToInsert, null, 2).split("\n").map((l) => `      ${l}`).join("\n"));
-      }
-    }
   } else {
     const { error } = await supabase.from("startups").update(patch).eq("id", row.id);
     if (error) console.warn(`    ⚠️  Profile patch failed: ${error.message}`);
@@ -571,6 +576,7 @@ async function main() {
   console.log(`║  (MIN_CONFIDENCE=${MIN_CONFIDENCE} kept for parity, unused by v2)${" ".padEnd(Math.max(0, 10))}║`);
   console.log(`╚${"═".repeat(62)}╝`);
   if (DRY_RUN) console.log(`ℹ️  DRY RUN — set DRY_RUN=false to apply writes to the database.${VERBOSE ? " (VERBOSE=true: full values + evidence printed per company.)" : " Set VERBOSE=true to see actual field values, not just names."}\n`);
+  else if (VERBOSE) console.log("ℹ️  VERBOSE=true: full values + evidence printed per company (in addition to the real writes).\n");
   // Both missing/invalid keys fail silently otherwise: serperSearch() just
   // returns [] on every call with no log line distinguishing "no key" from
   // "no results", and TAVILY_API_KEY missing sets tavilyExhausted=true from
