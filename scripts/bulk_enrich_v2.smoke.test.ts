@@ -71,7 +71,7 @@ function serperResults(q: string) {
   const r = (link: string, title: string, snippet: string) => ({ link, title, snippet });
   if (q.startsWith("site:linkedin.com/in")) {
     return [
-      r("https://uk.linkedin.com/in/johnonolan?trk=public", "John O'Nolan - Ghost | LinkedIn", "Founder & CEO at Ghost (ghost.org)."),
+      r("https://uk.linkedin.com/in/johnonolan?trk=public", "John O'Nolan - Ghost | LinkedIn", "Founder & CEO at Ghost (ghost.org). · Experience: WordPress · Education: Stanford University"),
       r("https://www.linkedin.com/in/john-onolan-plumber", "John Nolan - Ghost Plumbing | LinkedIn", "Owner"),
     ];
   }
@@ -258,6 +258,13 @@ describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
     const founders = startupPatch().founders as Array<{ name: string; linkedin_url?: string }>;
     expect(founders.find((f) => f.name === "John O'Nolan")?.linkedin_url).toBe("https://www.linkedin.com/in/johnonolan");
     expect(founders.find((f) => f.name === "Hannah Wolfe")?.linkedin_url).toBeUndefined();
+  });
+
+  it("adds education / prior experience from the LinkedIn snippet to the bio, and the elite-school flag", () => {
+    const founders = startupPatch().founders as Array<{ name: string; bio?: string; notable_pedigree?: boolean }>;
+    const john = founders.find((f) => f.name === "John O'Nolan");
+    expect(john?.bio).toBe("Previously at WordPress. Studied at Stanford University.");
+    expect(john?.notable_pedigree).toBe(true);
   });
 
   it("tags the sub-sector, writes provenance, refreshes startups_search", () => {

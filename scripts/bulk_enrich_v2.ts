@@ -65,7 +65,7 @@ import { pickArticlesToRead } from "../lib/enrichment/articles.ts";
 import { runTechGate, shouldSkipAsNonTech, type TechGateVerdict } from "../lib/enrichment/techGate.ts";
 import { namesCompany } from "../lib/enrichment/headcount.ts";
 import { foundersFromText, personMentionedIn, cleanPeople } from "../lib/enrichment/people.ts";
-import { findPersonProfile, discoverFounders, founderTitleFromHeadline, samePersonName } from "../lib/enrichment/linkedin.ts";
+import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "../lib/enrichment/linkedin.ts";
 import { checkHeadcountOutlier } from "../lib/enrichment/validation.ts";
 import { MAJOR_CITIES } from "../lib/enrichment/majorCities.ts";
 import { normalizeForMatch } from "../lib/enrichment/evidence.ts";
@@ -641,13 +641,38 @@ async function enrichCompany(
   }
   if (textFounders.length > 0) console.log(`    👥  Founders from "founded by" sentences: ${textFounders.join(", ")}`);
 
-  const linkedinFounders: Array<{ name: string; title?: string; linkedin_url: string }> = [];
+  // People found or enriched from LinkedIn search results: profile URL, plus
+  // education / prior employers / elite unit read from the public snippet
+  // (lib/enrichment/linkedin.ts parseLinkedInFacts) — never from the
+  // login-walled profile page itself.
+  type LinkedInPersonPatch = { name: string; title?: string; role?: string; linkedin_url?: string; bio?: string; elite_background?: boolean; notable_pedigree?: boolean };
+  const linkedinFounders: LinkedInPersonPatch[] = [];
+  const linkedinLeaders: LinkedInPersonPatch[] = [];
+  const factsPatch = (snippet: string): Pick<LinkedInPersonPatch, "bio" | "elite_background" | "notable_pedigree"> => {
+    const facts = parseLinkedInFacts(snippet);
+    return {
+      bio: bioFromLinkedInFacts(facts, row.name) ?? undefined,
+      elite_background: facts.eliteUnit ? true : undefined,
+      notable_pedigree: facts.eliteSchool ? true : undefined,
+    };
+  };
   if (DEEP_DIVE) {
-    const knownFounders = [...(profile.profile.founders ?? []).map((f) => ({ name: f.name, linkedin_url: f.linkedin_url?.value })), ...(row.founders ?? [])]
-      .filter((f, i, all) => f?.name && all.findIndex((g) => g?.name && samePersonName(g.name, f.name)) === i);
-    const missing = knownFounders.filter((f) => !f.linkedin_url).slice(0, 3);
+    const knownFounders = [
+      ...(profile.profile.founders ?? []).map((f) => ({ name: f.name, linkedin_url: f.linkedin_url?.value, bio: f.bio })),
+      ...(row.founders ?? []),
+    ].filter((f, i, all) => f?.name && all.findIndex((g) => g?.name && samePersonName(g.name, f.name)) === i);
+    // Looked up: founders missing a link OR a bio, and a CEO/CTO/President
+    // from leadership missing a bio — at most 4 people per company.
+    const knownLeaders = [...(profile.leadership ?? []), ...(row.leadership ?? [])]
+      .filter((l) => l?.name && /\b(ceo|chief executive|cto|chief technology|president)\b/i.test(l.role ?? ""))
+      .filter((l, i, all) => all.findIndex((g) => samePersonName(g.name, l.name)) === i)
+      .filter((l) => !knownFounders.some((f) => samePersonName(f.name, l.name)));
+    const lookups = [
+      ...knownFounders.filter((f) => !f.linkedin_url || !f.bio).map((f) => ({ name: f.name, kind: "founder" as const })),
+      ...knownLeaders.filter((l) => !l.bio).map((l) => ({ name: l.name, role: l.role, kind: "leader" as const })),
+    ].slice(0, 4);
     const queries = [
-      ...missing.map((f) => `site:linkedin.com/in "${f.name}" "${row.name}"`),
+      ...lookups.map((p) => `site:linkedin.com/in "${p.name}" "${row.name}"`),
       // Discovery also runs when only one founder is known — most startups
       // have two or three, and the second is often missing.
       ...(knownFounders.length < 2 ? [
@@ -657,9 +682,12 @@ async function enrichCompany(
     ];
     if (queries.length > 0) {
       const results = (await Promise.all(queries.map((q, i) => serperSearch(q, `linkedin_people_${i}`, searchState)))).flat();
-      for (const f of missing) {
-        const url = findPersonProfile(f.name, results, row.name);
-        if (url) linkedinFounders.push({ name: f.name, linkedin_url: url });
+      for (const person of lookups) {
+        const hit = findPersonResult(person.name, results, row.name);
+        if (!hit) continue;
+        const patch = { name: person.name, linkedin_url: hit.url, ...factsPatch(hit.snippet) };
+        if (person.kind === "founder") linkedinFounders.push(patch);
+        else linkedinLeaders.push({ ...patch, role: person.role });
       }
       if (knownFounders.length < 2) {
         // Discovery: a self-declared founder must ALSO pass the entity
@@ -675,10 +703,11 @@ async function enrichCompany(
             bump(summary.droppedByReason, "linkedin_founder_uncorroborated");
             continue;
           }
-          linkedinFounders.push({ name: p.name, title: founderTitleFromHeadline(`${p.headline}`, row.name), linkedin_url: p.url });
+          linkedinFounders.push({ name: p.name, title: founderTitleFromHeadline(`${p.headline}`, row.name), linkedin_url: p.url, ...factsPatch(p.snippet) });
         }
       }
-      console.log(`    🔗  LinkedIn: ${linkedinFounders.length} founder profile(s) found (${missing.length} known founder(s) without a link${knownFounders.length < 2 ? ", plus founder discovery" : ""})${VERBOSE && linkedinFounders.length ? ` — ${linkedinFounders.map((f) => `${f.name}: ${f.linkedin_url}`).join(", ")}` : ""}`);
+      const withBio = [...linkedinFounders, ...linkedinLeaders].filter((p) => p.bio);
+      console.log(`    🔗  LinkedIn: ${linkedinFounders.length + linkedinLeaders.length} profile(s) matched, ${withBio.length} with education/experience from the snippet${VERBOSE && withBio.length ? ` — ${withBio.map((p) => `${p.name}: ${p.bio}`).join(" | ")}` : ""}`);
     }
   }
 
@@ -833,7 +862,12 @@ async function enrichCompany(
     name: l.name, role: l.role, bio: l.bio, linkedin_url: l.linkedin_url?.value, joined_date: l.joined_date,
     had_prior_exit: l.had_prior_exit, elite_background: l.elite_background, notable_pedigree: l.notable_pedigree,
   })));
-  if (cleanLeadership.length > 0) setIfChanged("leadership", mergePeople(row.leadership ?? [], cleanLeadership), row.leadership);
+  const allLeaderInputs = [...cleanLeadership, ...linkedinLeaders.map((l) => ({ ...l, role: l.role ?? "" }))];
+  if (allLeaderInputs.length > 0) {
+    const knownLeaderNames = [...(row.leadership ?? []).map((l) => l?.name), ...cleanLeadership.map((l) => l.name)].filter((n): n is string => !!n);
+    const alignedLeaders = allLeaderInputs.map((l) => ({ ...l, name: knownLeaderNames.find((n) => samePersonName(n, l.name)) ?? l.name }));
+    setIfChanged("leadership", mergePeople(row.leadership ?? [], alignedLeaders), row.leadership);
+  }
 
   // Competitors & market (additive: entries on file are never removed)
   const crossLink = (website: string | undefined) => {

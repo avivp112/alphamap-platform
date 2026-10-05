@@ -44,3 +44,20 @@ describe("findPersonProfile / discoverFounders", () => {
     expect(founderTitleFromHeadline("Gladia", "Gladia")).toBe("Founder");
   });
 });
+
+describe("background facts from the LinkedIn search snippet", async () => {
+  const { parseLinkedInFacts, bioFromLinkedInFacts } = await import("./linkedin");
+  it("reads education, prior experience and elite flags only from what the snippet states", () => {
+    const facts = parseLinkedInFacts("Dana Levi - Co-founder & CEO - Acme | LinkedIn Co-founder & CEO at Acme · Experience: Google · Education: Technion - Israel Institute of Technology · Location: Tel Aviv. Former Unit 8200 officer.");
+    expect(facts.education).toEqual(["Technion - Israel Institute of Technology"]);
+    expect(facts.experience).toEqual(["Google"]);
+    expect(facts.eliteUnit).toBe("Unit 8200");
+    expect(facts.eliteSchool).toBe("Technion");
+    expect(bioFromLinkedInFacts(facts, "Acme")).toBe("Previously at Google. Studied at Technion - Israel Institute of Technology. Served in Unit 8200.");
+  });
+  it("leaves out the company itself as 'previous' and returns null when the snippet states nothing", () => {
+    const facts = parseLinkedInFacts("Experience: Acme · Location: Paris");
+    expect(bioFromLinkedInFacts(facts, "Acme")).toBeNull();
+    expect(parseLinkedInFacts("Education: Tel Aviv University").eliteSchool).toBeNull();
+  });
+});

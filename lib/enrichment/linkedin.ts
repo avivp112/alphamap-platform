@@ -20,6 +20,8 @@ export interface LinkedInPerson {
   headline: string;
   url: string;
   isFounder: boolean;
+  /** Title + snippet of the search result — the "Education: … · Experience: …" line lives here. */
+  snippet: string;
 }
 
 /** Canonical https://www.linkedin.com/in/<slug> (regional hosts and query strings stripped), or null. */
@@ -64,7 +66,20 @@ export function parseLinkedInPersonResult(
   const isFounder =
     new RegExp(`\\b${role}${titleAfter}\\s*(?:at|of|@|-|–|—|,|\\|)?\\s*${company}\\b`, "i").test(text) ||
     new RegExp(`\\b${company}(?:'s|’s)?\\s+${role}\\b`, "i").test(text);
-  return { name, headline, url, isFounder };
+  return { name, headline, url, isFounder, snippet: text };
+}
+
+/** The LinkedIn profile for `personName` among the results (URL + snippet), or null. */
+export function findPersonResult(
+  personName: string,
+  results: Array<{ url: string; title?: string; content?: string }>,
+  companyName: string,
+): LinkedInPerson | null {
+  for (const r of results) {
+    const p = parseLinkedInPersonResult(r, companyName);
+    if (p && samePersonName(p.name, personName)) return p;
+  }
+  return null;
 }
 
 /** The LinkedIn profile URL for `personName` among the results, or null. */
@@ -102,4 +117,52 @@ export function founderTitleFromHeadline(headline: string, companyName: string):
     .find((part) => /founder/i.test(part));
   const cleaned = role?.replace(new RegExp(`\\s*(?:at|@|of)?\\s*${escapeRe(companyName)}\\s*$`, "i"), "").trim();
   return cleaned && cleaned.length <= 60 ? cleaned : "Founder";
+}
+
+// ── Background facts from the public search snippet ─────────────────────
+// The profile page itself is behind LinkedIn's login wall (and its terms
+// forbid scraping it), but the search snippet Google shows for it usually
+// carries "Education: … · Experience: …". Only what that snippet states is
+// used — nothing inferred.
+
+const ELITE_UNIT_RE = /\b(unit\s*8200|8200|unit\s*81|talpiot|mamram|matzov|sayeret\s+matkal|shayetet\s*13|unit\s*9900|lotem)\b/i;
+const ELITE_SCHOOL_RE = /\b(massachusetts institute of technology|mit|stanford|harvard|technion|uc berkeley|university of california,? berkeley|caltech|california institute of technology|princeton|yale|university of oxford|oxford university|university of cambridge|cambridge university|carnegie mellon|columbia university|wharton|eth z(?:u|ü)rich|imperial college|weizmann institute|insead|(?:e|é)cole polytechnique)\b/i;
+
+export interface LinkedInFacts {
+  education: string[];
+  experience: string[];
+  eliteUnit: string | null;
+  eliteSchool: string | null;
+}
+
+function fieldValues(text: string, label: string): string[] {
+  const out: string[] = [];
+  for (const m of text.matchAll(new RegExp(`${label}:\\s*([^·|\\n]{2,80})`, "gi"))) {
+    const v = m[1].replace(/\s*(…|\.\.\.)\s*$/, "").replace(/[,;.]\s*$/, "").trim();
+    if (v && !out.includes(v)) out.push(v);
+  }
+  return out;
+}
+
+export function parseLinkedInFacts(snippet: string): LinkedInFacts {
+  const education = fieldValues(snippet, "Education");
+  const experience = fieldValues(snippet, "Experience");
+  const unit = snippet.match(ELITE_UNIT_RE)?.[1] ?? null;
+  const school = education.map((e) => e.match(ELITE_SCHOOL_RE)?.[1]).find(Boolean) ?? null;
+  return {
+    education,
+    experience,
+    eliteUnit: unit ? (/^\d/.test(unit) ? `Unit ${unit}` : unit.replace(/\s+/g, " ")) : null,
+    eliteSchool: school,
+  };
+}
+
+/** A short factual bio from the snippet facts, or null when the snippet states none. */
+export function bioFromLinkedInFacts(facts: LinkedInFacts, companyName: string): string | null {
+  const parts: string[] = [];
+  const previous = facts.experience.filter((e) => !namesCompany(e, companyName));
+  if (previous.length > 0) parts.push(`Previously at ${previous.join(", ")}.`);
+  if (facts.education.length > 0) parts.push(`Studied at ${facts.education.join(", ")}.`);
+  if (facts.eliteUnit) parts.push(`Served in ${facts.eliteUnit}.`);
+  return parts.length > 0 ? parts.join(" ") : null;
 }
