@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  buildMarketExtractionRequest, processMarketExtractionResponse, termAppearsIn, normalizeUrlForMatch,
+  buildMarketExtractionRequest, processMarketExtractionResponse, termAppearsIn, normalizeUrlForMatch, newsDateIsGrounded,
 } from "./extractMarket";
 import { buildLabeledSources, type RawSearchResult } from "./sources";
 
@@ -110,5 +110,39 @@ describe("processMarketExtractionResponse", () => {
       news: { title: "t", url: "https://techcrunch.com/2024/05/01/ghost-launches-activitypub/" },
       patents: { title: "Publishing system", patent_number: "US1234567B2" },
     }, sources, "Ghost")).not.toThrow();
+  });
+});
+
+describe("news dates must come from the source (Glamsquad: a 2014 press release dated 2011 by the model)", () => {
+  it("accepts the same day written in the text, abbreviated month, or a /YYYY/MM/ URL", () => {
+    expect(newsDateIsGrounded("2024-10-15", { url: "https://x.com/a", content: "PARIS, Oct. 15, 2024 /PRNewswire/ -- Gladia" })).toBe(true);
+    expect(newsDateIsGrounded("2024-05-01", { url: "https://techcrunch.com/2024/05/01/x/", content: "" })).toBe(true);
+    expect(newsDateIsGrounded("2024-05-20", { url: "https://techcrunch.com/2024/05/x/", content: "" })).toBe(true);
+  });
+  it("accepts a relative 'N days ago' within tolerance", () => {
+    expect(newsDateIsGrounded("2026-10-02", { url: "https://x.com/a", content: "Date: 3 days ago" }, "2026-10-05")).toBe(true);
+    expect(newsDateIsGrounded("2026-06-01", { url: "https://x.com/a", content: "Date: 3 days ago" }, "2026-10-05")).toBe(false);
+  });
+  it("drops an unsupported date but keeps the article", () => {
+    const { result, dropped } = processMarketExtractionResponse({
+      competitors: [],
+      news: [{ title: "Ghost launches ActivityPub support", url: "https://techcrunch.com/2024/05/01/ghost-launches-activitypub/", published_date: "2011-05-05" }],
+    }, sources, "Ghost");
+    expect(result.news).toHaveLength(1);
+    expect(result.news[0].published_date).toBeUndefined();
+    expect(dropped).toContainEqual({ field: "news.published_date", reason: "news_date_not_in_source" });
+  });
+});
+
+describe("a company it acquired is never also listed as a competitor", () => {
+  it("drops the competitor, keeps the acquisition", () => {
+    const { result, dropped } = processMarketExtractionResponse({
+      competitors: [{ name: "Substack", how_it_competes: "x", source_ids: ["S1"] }, { name: "Beehiiv", how_it_competes: "y", source_ids: ["S1"] }],
+      acquisitions: [{ company_name: "Beehiiv", source_ids: ["S1"] }],
+      news: [],
+    }, sources, "Ghost");
+    expect(result.competitors.map((c) => c.name)).toEqual(["Substack"]);
+    expect(result.acquisitions).toHaveLength(1);
+    expect(dropped).toContainEqual({ field: "competitors", reason: "competitor_is_acquisition" });
   });
 });

@@ -61,7 +61,7 @@ export function emptyMarketExtraction(): V2MarketExtraction {
 export type MarketDropReason =
   | "competitor_not_in_source" | "competitor_is_self" | "acquisition_not_in_source"
   | "news_url_not_in_sources" | "news_is_profile_page" | "patent_not_in_source"
-  | "tech_not_in_source" | "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found";
+  | "tech_not_in_source" | "competitor_is_acquisition" | "news_date_not_in_source" | "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found";
 
 export interface MarketDroppedField { field: string; reason: MarketDropReason }
 
@@ -233,34 +233,81 @@ function isProfilePageUrl(url: string): boolean {
   return PROFILE_PAGE_HOSTS.some((h) => n.startsWith(h) || n.includes(`.${h}`));
 }
 
+// ── News dates ───────────────────────────────────────────────────────────
+
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+const MONTH_RE = "(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?";
+
+function isoOf(y: number, m: number, d: number): string {
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+/** Every calendar date written in `text` ("Oct. 15, 2024", "15 October 2024", "2024-10-15", URL "/2024/10/15/"). */
+function datesIn(text: string): string[] {
+  const out: string[] = [];
+  const t = text.toLowerCase();
+  for (const m of t.matchAll(new RegExp(`\\b${MONTH_RE}\\s+(\\d{1,2}),?\\s+(\\d{4})\\b`, "g"))) out.push(isoOf(+m[3], MONTHS.indexOf(m[1]) + 1, +m[2]));
+  for (const m of t.matchAll(new RegExp(`\\b(\\d{1,2})\\s+${MONTH_RE}\\s+(\\d{4})\\b`, "g"))) out.push(isoOf(+m[3], MONTHS.indexOf(m[2]) + 1, +m[1]));
+  for (const m of t.matchAll(/\b(\d{4})[-/](\d{2})[-/](\d{2})\b/g)) out.push(isoOf(+m[1], +m[2], +m[3]));
+  return out;
+}
+
+/**
+ * A news item's published_date is kept only when the source itself supports
+ * it: the same day written in the source text or URL, the same month in a
+ * /YYYY/MM/ URL path, or a relative "N days ago" that lands within its own
+ * granularity of the claimed date. Anything else is the model's guess.
+ */
+export function newsDateIsGrounded(date: string, source: { url: string; title?: string; content: string }, today = new Date().toISOString().slice(0, 10)): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+  const text = `${source.title ?? ""} ${source.content} ${source.url}`;
+  if (datesIn(text).includes(date)) return true;
+  const ym = date.slice(0, 7).replace("-", "/");
+  if (source.url.includes(`/${ym}/`)) return true;
+  const rel = text.toLowerCase().match(/\b(\d+|an?|one)\s+(hour|day|week|month)s?\s+ago\b/);
+  if (rel) {
+    const n = /^\d+$/.test(rel[1]) ? +rel[1] : 1;
+    const days = { hour: 0, day: 1, week: 7, month: 30 }[rel[2] as "hour" | "day" | "week" | "month"] * n;
+    const tolerance = { hour: 1, day: 2, week: 7, month: 31 }[rel[2] as "hour" | "day" | "week" | "month"];
+    const expected = new Date(new Date(today).getTime() - days * 86_400_000);
+    return Math.abs(new Date(date).getTime() - expected.getTime()) / 86_400_000 <= tolerance;
+  }
+  return false;
+}
+
 // ── Response processing (pure) ───────────────────────────────────────────
 
 export function processMarketExtractionResponse(
   rawToolInput: unknown,
   sources: LabeledSource[],
   companyName: string,
+  today = new Date().toISOString().slice(0, 10),
 ): ProcessedMarketExtraction {
   const dropped: MarketDroppedField[] = [];
   const i = (sanitizeModelOutput(rawToolInput) ?? {}) as Partial<V2MarketExtraction>;
   const sourceLookup: Record<string, EvidenceSource> = Object.fromEntries(sources.map((s) => [s.source_id, { content: s.content, url: s.url }]));
   const selfKey = normalizeForMatch(companyName);
 
+  const acquisitions = ensureArray<V2Acquisition>(i.acquisitions).filter((a) => {
+    if (!a?.company_name) return false;
+    if (!nameIsGrounded(a.company_name, a.source_ids, sources)) { dropped.push({ field: "acquisitions", reason: "acquisition_not_in_source" }); return false; }
+    return true;
+  });
+
+  // A company this one bought is not also its competitor ("Blow" vs the
+  // acquired "Blow Me") — that pairing is a contradiction, not two facts.
+  const isAcquired = (name: string) => acquisitions.some((a) => termAppearsIn(name, a.company_name) || termAppearsIn(a.company_name, name));
   const seenCompetitors = new Set<string>();
   const competitors = ensureArray<V2Competitor>(i.competitors).filter((c) => {
     if (!c?.name || !c.how_it_competes) return false;
     const key = normalizeForMatch(c.name);
     if (!key || seenCompetitors.has(key)) return false;
     if (key === selfKey) { dropped.push({ field: "competitors", reason: "competitor_is_self" }); return false; }
+    if (isAcquired(c.name)) { dropped.push({ field: "competitors", reason: "competitor_is_acquisition" }); return false; }
     if (!nameIsGrounded(c.name, c.source_ids, sources)) { dropped.push({ field: "competitors", reason: "competitor_not_in_source" }); return false; }
     seenCompetitors.add(key);
     return true;
   }).slice(0, 6);
-
-  const acquisitions = ensureArray<V2Acquisition>(i.acquisitions).filter((a) => {
-    if (!a?.company_name) return false;
-    if (!nameIsGrounded(a.company_name, a.source_ids, sources)) { dropped.push({ field: "acquisitions", reason: "acquisition_not_in_source" }); return false; }
-    return true;
-  });
 
   const sourceByUrl = new Map(sources.map((s) => [normalizeUrlForMatch(s.url), s]));
   const seenNews = new Set<string>();
@@ -273,7 +320,12 @@ export function processMarketExtractionResponse(
     if (!src) { dropped.push({ field: "news", reason: "news_url_not_in_sources" }); continue; }
     if (src.source_id.startsWith("W") || isProfilePageUrl(src.url)) { dropped.push({ field: "news", reason: "news_is_profile_page" }); continue; }
     seenNews.add(key);
-    news.push({ ...n, url: src.url });
+    let publishedDate = n.published_date;
+    if (publishedDate && !newsDateIsGrounded(publishedDate, src, today)) {
+      dropped.push({ field: "news.published_date", reason: "news_date_not_in_source" });
+      publishedDate = undefined;
+    }
+    news.push({ ...n, url: src.url, published_date: publishedDate });
     if (news.length >= 8) break;
   }
 

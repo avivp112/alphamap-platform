@@ -84,7 +84,29 @@ const GENERIC_WORDS = new Set([
   "since", "software", "solution", "solutions", "start", "started", "support", "system", "systems", "technology",
   "terms", "under", "using", "value", "where", "which", "while", "world", "would", "years", "your", "yours",
   "login", "signup", "email", "trusted", "worldwide", "website", "rights", "reserved",
+  // Cookie banners, consent managers, embeds and page chrome — present on
+  // most sites, so they say nothing about which company a page is about.
+  "cookie", "consent", "session", "visitor", "analytic", "analytics", "duration", "description", "necessary",
+  "functional", "preference", "preferences", "advertisement", "tracking", "browser", "information", "store",
+  "stored", "google", "youtube", "stripe", "hubspot", "linkedin", "facebook", "twitter", "instagram",
+  "image", "images", "video", "videos", "format", "width", "height", "media", "static", "asset", "assets",
+  "upload", "uploads", "wordmark", "button", "submit", "subscribe", "newsletter-signup", "accept", "reject",
+  "settings", "enable", "enabled", "domain", "third", "party", "partie", "apply", "become", "compare",
+  "connection", "approach", "building", "production", "sanity", "event", "events", "client", "clients",
+  "testimonial", "testimonials", "assistant", "integration", "integrations", "model", "models", "original",
+  "bundle", "label", "collection", "flavor",
 ]);
+
+// Strips what isn't prose before counting words: URLs, markdown images and
+// link targets, percent-encoded path fragments ("%2Fmedia" -> "fmedia").
+function proseOnly(text: string): string {
+  return text
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\]\([^)]*\)/g, "] ")
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/%[0-9a-f]{2}/gi, " ")
+    .replace(/\S+\.(png|jpe?g|svg|webp|gif|avif)\S*/gi, " ");
+}
 
 /**
  * Picks the most frequent non-generic words (5+ letters) from the company's
@@ -96,7 +118,7 @@ export function deriveIdentityKeywords(texts: string[], companyName: string, max
   const nameTokens = new Set(companyName.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean));
   const counts = new Map<string, number>();
   for (const text of texts) {
-    for (const raw of text.toLowerCase().split(/[^\p{L}]+/u)) {
+    for (const raw of proseOnly(text).toLowerCase().split(/[^\p{L}]+/u)) {
       if (raw.length < 5 || GENERIC_WORDS.has(raw) || nameTokens.has(raw)) continue;
       // Plural folds into singular ("newsletters" -> "newsletter"); the
       // singular stem still matches the plural in filterByEntity's

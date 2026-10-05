@@ -61,6 +61,12 @@ const SITE = "Ghost is an independent open source publishing platform for newsle
 
 function serperResults(q: string) {
   const r = (link: string, title: string, snippet: string) => ({ link, title, snippet });
+  if (q.startsWith("site:linkedin.com/in")) {
+    return [
+      r("https://uk.linkedin.com/in/johnonolan?trk=public", "John O'Nolan - Ghost | LinkedIn", "Founder & CEO at Ghost (ghost.org)."),
+      r("https://www.linkedin.com/in/john-onolan-plumber", "John Nolan - Ghost Plumbing | LinkedIn", "Owner"),
+    ];
+  }
   if (q.includes("employees team size headquarters")) {
     return [r("https://sifted.eu/articles/ghost-profile", "Inside Ghost", "Ghost (ghost.org) is headquartered in London, United Kingdom, and runs as a non-profit foundation.")];
   }
@@ -68,7 +74,7 @@ function serperResults(q: string) {
     return [r("https://zapier.com/blog/ghost-alternatives", "Best Ghost alternatives", "Top alternatives to Ghost (ghost.org) for newsletters: Substack and Beehiiv both offer paid newsletters and membership.")];
   }
   return [
-    r("https://techcrunch.com/2014/03/15/ghost-raises-seed", "Ghost raises $2M", "Ghost (ghost.org), the 10-person publishing startup, raised a $2 million seed round led by Y Combinator with SV Angel participating."),
+    r("https://techcrunch.com/2014/03/15/ghost-raises-seed", "Ghost raises $2M", "Ghost (ghost.org), the 10-person publishing startup, raised a $2 million seed round led by Y Combinator with SV Angel participating. Ghost now powers 70,000 publishers."),
     r("https://www.linkedin.com/company/ghost-foundation", "Ghost | LinkedIn", "Ghost (ghost.org) open source publishing platform. Ghost has 60 employees."),
     r("https://techcrunch.com/ghost-robotics-raises", "Ghost Robotics raises $100M", "Ghost Robotics builds legged quadruped robots for defense."),
   ];
@@ -130,7 +136,10 @@ const createMock = vi.fn(async (req: { tools: Array<{ name: string }>; messages:
       leadership: [],
       metrics: {
         ...(li ? { employee_count: { value: 60, source_id: li, evidence_quote: "Ghost has 60 employees" } } : {}),
-        ...(tc ? { headcount_history: [{ date: "2014-03-15", employee_count: 10, source_id: tc, evidence_quote: "the 10-person publishing startup" }] } : {}),
+        ...(tc ? { headcount_history: [
+          { date: "2014-03-15", employee_count: 10, source_id: tc, evidence_quote: "the 10-person publishing startup" },
+          { date: "2024-10-15", employee_count: 70000, source_id: tc, evidence_quote: "Ghost now powers 70,000 publishers" },
+        ] } : {}),
       },
     };
   } else if (tool === "save_funding_extraction") {
@@ -224,6 +233,17 @@ describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
     const hc = calls.filter((c) => c.table === "headcount_history").map((c) => c.payload as Record<string, unknown>);
     expect(hc[0]).toMatchObject({ employee_count: 10, snapshot_date: "2014-03-15", recorded_date: "2014-03-15T00:00:00Z" });
     expect(hc[1]).toMatchObject({ employee_count: 60 });
+  });
+
+  it("never records a non-employee number as headcount (the Gladia 70,000 point)", () => {
+    const hc = calls.filter((c) => c.table === "headcount_history").map((c) => (c.payload as { employee_count: number }).employee_count);
+    expect(hc).not.toContain(70000);
+  });
+
+  it("attaches the founder's personal LinkedIn /in/ profile, not a namesake's", () => {
+    const founders = startupPatch().founders as Array<{ name: string; linkedin_url?: string }>;
+    expect(founders.find((f) => f.name === "John O'Nolan")?.linkedin_url).toBe("https://www.linkedin.com/in/johnonolan");
+    expect(founders.find((f) => f.name === "Hannah Wolfe")?.linkedin_url).toBeUndefined();
   });
 
   it("tags the sub-sector, writes provenance, refreshes startups_search", () => {

@@ -45,7 +45,7 @@ import { initV1Context, supabase } from "./bulk_enrich_all.ts";
 
 import { classifyTier, type TierRow, type TierRound } from "../lib/enrichment/queue.ts";
 import {
-  createSearchProviderState, verifyDomainMatch, webSearch, newsSearch, fetchCompanyWebsitePages,
+  createSearchProviderState, verifyDomainMatch, webSearch, newsSearch, serperSearch, fetchCompanyWebsitePages,
   type SearchProviderState,
 } from "../lib/enrichment/searchProviders.ts";
 import { filterByEntity, deriveIdentityKeywords, type EntityAnchors } from "../lib/enrichment/entity.ts";
@@ -59,6 +59,9 @@ import {
   normalizeIsoDate, appendNew, type ExistingRoundRef,
 } from "../lib/enrichment/assemble.ts";
 import { fetchArticleOgImage } from "../lib/enrichment/ogImage.ts";
+import { findPersonProfile, discoverFounders, founderTitleFromHeadline, samePersonName } from "../lib/enrichment/linkedin.ts";
+import { checkHeadcountOutlier } from "../lib/enrichment/validation.ts";
+import { MAJOR_CITIES } from "../lib/enrichment/majorCities.ts";
 import { normalizeForMatch } from "../lib/enrichment/evidence.ts";
 import { validateEnrichment } from "../lib/enrichment/validation.ts";
 import { computeTotalRaised, normalizeRoundType, type RoundLike } from "../lib/enrichment/rounds.ts";
@@ -81,6 +84,9 @@ const MAX_TIER       = Number(process.env.MAX_TIER       ?? 3);
 const VERBOSE         = process.env.VERBOSE               === "true";
 // Stage 9 (targeted second search for thin sections). On by default.
 const DEEP_DIVE       = process.env.DEEP_DIVE             !== "false";
+// ONLY=<id or exact name>[,...] re-runs specific companies, ignoring the
+// queue order, OFFSET and BATCH_SIZE (e.g. ONLY=Gladia after a fix).
+const ONLY = (process.env.ONLY ?? "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean);
 // Kept for parity/visibility only -- v2 gates per field (issue 9), never on
 // one whole-company score. Printed in the run header, never read.
 const MIN_CONFIDENCE = Number(process.env.MIN_CONFIDENCE ?? 40);
@@ -395,6 +401,8 @@ async function enrichCompany(
       competitorCount: (row.competitors?.length ?? 0) + market.competitors.length,
       // Fresh news is worth a second look even when older articles are on file.
       newsCount: market.news.length,
+      hasFoundedYear: row.founded_year != null || !!profile.profile.founded_year,
+      patentCount: (row.patents?.length ?? 0) + (row.patent_count ?? 0) + market.patents.length + (market.patent_summary.patent_count ?? 0),
     });
     if (!gaps.includes("funding") && funding.funding_history_complete === false) gaps.unshift("funding");
 
@@ -444,7 +452,7 @@ async function enrichCompany(
 
         const fundingSrc = gaps.includes("funding") ? forSections("funding") : [];
         const profileSrc = gaps.includes("profile") ? forSections("profile") : [];
-        const marketSrc = gaps.includes("competitors") || gaps.includes("news") ? forSections("competitors", "news") : [];
+        const marketSrc = gaps.some((g) => g === "competitors" || g === "news" || g === "patents") ? forSections("competitors", "news", "patents") : [];
 
         const [dFunding, dProfile, dMarket] = await Promise.all([
           fundingSrc.length ? extractFunding(row.name, fundingSrc, { client: anthropic, model: FUNDING_MODEL }) : null,
@@ -452,7 +460,7 @@ async function enrichCompany(
           marketSrc.length ? extractMarket(row.name, marketSrc, { client: anthropic, model: MARKET_MODEL }) : null,
         ]);
 
-        const before = { rounds: funding.funding_rounds.length, competitors: market.competitors.length, news: market.news.length, founders: profile.profile.founders?.length ?? 0 };
+        const before = { rounds: funding.funding_rounds.length, competitors: market.competitors.length, news: market.news.length, founders: profile.profile.founders?.length ?? 0, patents: market.patents.length, founded: !!profile.profile.founded_year };
         if (dFunding) {
           recordCost(summary, FUNDING_MODEL, dFunding.inputTokens, dFunding.outputTokens);
           logExtraction("deep funding", row.name, dFunding);
@@ -471,8 +479,40 @@ async function enrichCompany(
           for (const d of dMarket.extraction.dropped) bump(summary.droppedByReason, d.reason);
           market = mergeMarketExtractions(market, dMarket.extraction.result);
         }
-        console.log(`    🔎  Deep dive added: +${funding.funding_rounds.length - before.rounds} round(s), +${market.competitors.length - before.competitors} competitor(s), +${market.news.length - before.news} news, +${(profile.profile.founders?.length ?? 0) - before.founders} founder(s)`);
+        console.log(`    🔎  Deep dive added: +${funding.funding_rounds.length - before.rounds} round(s), +${market.competitors.length - before.competitors} competitor(s), +${market.news.length - before.news} news, +${(profile.profile.founders?.length ?? 0) - before.founders} founder(s), +${market.patents.length - before.patents} patent(s)${!before.founded && profile.profile.founded_year ? `, founded ${profile.profile.founded_year.value}` : ""}`);
       }
+    }
+  }
+
+  // ── Stage 9b: founders' personal LinkedIn profiles ──────────────────────
+  // Read mechanically from `site:linkedin.com/in` results: a profile is
+  // attached only when its own title is the founder's name and the result
+  // names the company (lib/enrichment/linkedin.ts) — never a Crunchbase
+  // person page, never a URL a model constructed.
+  const linkedinFounders: Array<{ name: string; title?: string; linkedin_url: string }> = [];
+  if (DEEP_DIVE) {
+    const knownFounders = [...(profile.profile.founders ?? []).map((f) => ({ name: f.name, linkedin_url: f.linkedin_url?.value })), ...(row.founders ?? [])]
+      .filter((f, i, all) => f?.name && all.findIndex((g) => g?.name && samePersonName(g.name, f.name)) === i);
+    const missing = knownFounders.filter((f) => !f.linkedin_url).slice(0, 3);
+    const queries = [
+      ...missing.map((f) => `site:linkedin.com/in "${f.name}" "${row.name}"`),
+      ...(knownFounders.length === 0 ? [`site:linkedin.com/in "${row.name}" founder OR co-founder`] : []),
+    ];
+    if (queries.length > 0) {
+      const results = (await Promise.all(queries.map((q, i) => serperSearch(q, `linkedin_people_${i}`, searchState)))).flat();
+      for (const f of missing) {
+        const url = findPersonProfile(f.name, results, row.name);
+        if (url) linkedinFounders.push({ name: f.name, linkedin_url: url });
+      }
+      if (knownFounders.length === 0) {
+        // Discovery: a self-declared founder must ALSO pass the entity
+        // filter, so "Founder at Ghost" from a different Ghost is dropped.
+        const anchored = results.filter((r) => passesEntity(r, anchors) || (domain ? `${r.title ?? ""} ${r.content}`.toLowerCase().includes(domain) : false));
+        for (const p of discoverFounders(anchored, row.name)) {
+          linkedinFounders.push({ name: p.name, title: founderTitleFromHeadline(`${p.headline}`, row.name), linkedin_url: p.url });
+        }
+      }
+      console.log(`    🔗  LinkedIn: ${linkedinFounders.length} founder profile(s) found${knownFounders.length === 0 ? " (founders discovered from LinkedIn)" : ` of ${missing.length} missing`}${VERBOSE && linkedinFounders.length ? ` — ${linkedinFounders.map((f) => `${f.name}: ${f.linkedin_url}`).join(", ")}` : ""}`);
     }
   }
 
@@ -564,6 +604,18 @@ async function enrichCompany(
       console.log(`    ⚠️  Country overwrite candidate outranked the existing source but confidence (${countryConfidence}) is below the threshold -- kept existing value.`);
     }
   }
+  // A city with no country (a "PARIS, Oct. 15 /PRNewswire/" dateline): the
+  // country is filled only when the city maps to exactly one country in
+  // the curated city list — never for an ambiguous name.
+  if (patch.city && !patch.country && row.country == null) {
+    const countries = MAJOR_CITIES.get(String(patch.city).trim().toLowerCase());
+    if (countries && countries.size === 1) {
+      patch.country = [...countries][0];
+      console.log(`    🧭  Country "${patch.country}" derived from city "${patch.city}" (unambiguous in the city list).`);
+    } else {
+      console.log(`    ℹ️   City "${patch.city}" written without a country — no source states one and the city is not unambiguous.`);
+    }
+  }
   if (validation.accepted.founded_year && row.founded_year == null) {
     patch.founded_year = validation.accepted.founded_year;
     provenance("profile.founded_year", validation.accepted.founded_year, profile.profile.founded_year);
@@ -603,7 +655,14 @@ async function enrichCompany(
     name: f.name, title: f.title, bio: f.bio, linkedin_url: f.linkedin_url?.value,
     had_prior_exit: f.had_prior_exit, elite_background: f.elite_background, notable_pedigree: f.notable_pedigree,
   }));
-  if (cleanFounders.length > 0) setIfChanged("founders", mergePeople(row.founders ?? [], cleanFounders), row.founders);
+  const allFounderInputs = [...cleanFounders, ...linkedinFounders];
+  if (allFounderInputs.length > 0) {
+    // mergePeople matches exact names; align LinkedIn names (accents,
+    // middle names) to the spelling already in use before merging.
+    const knownNames = [...(row.founders ?? []).map((f) => f?.name), ...cleanFounders.map((f) => f.name)].filter((n): n is string => !!n);
+    const aligned = allFounderInputs.map((f) => ({ ...f, name: knownNames.find((n) => samePersonName(n, f.name)) ?? f.name }));
+    setIfChanged("founders", mergePeople(row.founders ?? [], aligned), row.founders);
+  }
   const cleanLeadership = (profile.leadership ?? []).map((l) => ({
     name: l.name, role: l.role, bio: l.bio, linkedin_url: l.linkedin_url?.value, joined_date: l.joined_date,
     had_prior_exit: l.had_prior_exit, elite_background: l.elite_background, notable_pedigree: l.notable_pedigree,
@@ -659,7 +718,13 @@ async function enrichCompany(
     const toAdd = freshNews.slice(0, MAX_NEWS - existingNews.length);
     const withImages = await Promise.all(toAdd.map(async (n) => ({
       title: n.title, url: n.url, source: n.source ?? null,
-      published_date: normalizeIsoDate(n.published_date) ?? null,
+      // An article dated before the company existed is a wrong date, not
+      // a time-travelling article — the date is dropped, the article kept.
+      published_date: (() => {
+        const d = normalizeIsoDate(n.published_date);
+        const founded = (patch.founded_year as number | undefined) ?? row.founded_year;
+        return d && founded && Number(d.slice(0, 4)) < founded - 1 ? null : d;
+      })(),
       summary: n.summary ?? null,
       image_url: (await fetchArticleOgImage(n.url)) ?? n.image_url ?? null,
     })));
@@ -693,6 +758,7 @@ async function enrichCompany(
   }
 
   // Talent & growth: headcount (issue 6's guard + validation's outlier check)
+  const totalRaisedEstimate = computeTotalRaised([...existingRefs, ...plan.inserts]);
   const headcountPoints: Array<{ date: string; count: number }> = [];
   for (const h of profile.metrics.headcount_history ?? []) {
     const date = normalizeIsoDate(h.date);
@@ -719,6 +785,21 @@ async function enrichCompany(
       if (!staleDuplicate && !headcountPoints.some((p) => p.date === today)) headcountPoints.push({ date: today, count: candidate.value });
     } else {
       console.log(`    ⚠️  Headcount change rejected (point_type=${headcountDecision.pointType}): ${row.employee_count} -> ${candidate.value} not strongly enough evidenced.`);
+    }
+  }
+  // Series sanity: a point implausible for this company's size and funding
+  // (the 70,000-employee Gladia point) never reaches the growth chart.
+  const reference = acceptedHeadcount ?? row.employee_count;
+  for (let i = headcountPoints.length - 1; i >= 0; i--) {
+    const p = headcountPoints[i];
+    const outlier = checkHeadcountOutlier(p.count, totalRaisedEstimate);
+    // Only the upward direction: real companies grow 50x over a decade,
+    // but one that is 10x smaller today than at a past point is a bad point.
+    const offScale = reference != null && reference > 0 && p.count > reference * 10;
+    if (outlier || offScale) {
+      console.log(`    ⚠️  Headcount point ${p.count}@${p.date} dropped — ${outlier ? outlier.message : `inconsistent with the current ${reference}`}.`);
+      bump(summary.droppedByReason, "headcount_point_outlier");
+      headcountPoints.splice(i, 1);
     }
   }
   if (profile.metrics.employee_range) setIfChanged("employee_range", fillScalarIfNull(row.employee_range, profile.metrics.employee_range), row.employee_range);
@@ -920,7 +1001,10 @@ async function main() {
     return tierDiff !== 0 ? tierDiff : a.name.localeCompare(b.name);
   });
 
-  const queue = eligibleQueue.slice(OFFSET, OFFSET + BATCH_SIZE);
+  const queue = ONLY.length > 0
+    ? startups.filter((s) => ONLY.includes(s.id.toLowerCase()) || ONLY.includes(s.name.trim().toLowerCase()))
+    : eligibleQueue.slice(OFFSET, OFFSET + BATCH_SIZE);
+  if (ONLY.length > 0) console.log(`ONLY=${ONLY.join(",")} — ${queue.length} matching compan${queue.length === 1 ? "y" : "ies"}.`);
   if (queue.length === 0) {
     console.log("✅  Queue is empty after OFFSET/BATCH_SIZE/MAX_TIER filter. Nothing to process.");
     return;
@@ -951,7 +1035,7 @@ async function main() {
 
   if (!DRY_RUN && (summary.totalFieldsPatched > 0 || summary.totalRoundsInserted > 0 || summary.totalRoundsUpdated > 0)) {
     const { error } = await supabase.rpc("refresh_startups_search");
-    if (error) console.warn(`⚠️  startups_search refresh failed: ${error.message}`);
+    if (error) console.warn(`⚠️  startups_search refresh failed: ${error.message} — the 15-minute pg_cron refresh will pick the changes up; if this repeats, check that migration 20261009000000 (service_role statement_timeout) is applied.`);
     else console.log("🔄  startups_search refreshed");
   }
 

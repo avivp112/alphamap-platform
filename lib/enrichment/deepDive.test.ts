@@ -28,6 +28,11 @@ describe("detectGaps", () => {
     expect(detectGaps({ ...full, rounds: [], hasHeadcount: false, competitorCount: 0, newsCount: 0 }))
       .toEqual(["funding", "profile", "competitors", "news"]);
   });
+  it("adds the patent search and the founding-year search only when asked", () => {
+    expect(detectGaps({ ...full, patentCount: 0 })).toEqual(["patents"]);
+    expect(detectGaps({ ...full, hasFoundedYear: false })).toEqual(["profile"]);
+    expect(buildDeepDiveQueries("patents", { name: "Gladia", anchor: "", domain: null, rounds: [], founderNames: [] })[0].query).toBe('site:patents.google.com "Gladia"');
+  });
   it("never runs a funding deep dive on a company known to be bootstrapped", () => {
     expect(detectGaps({ ...full, rounds: [], bootstrapped: true })).not.toContain("funding");
   });
@@ -74,7 +79,7 @@ describe("buildDeepDiveQueries", () => {
   });
 
   it("every query label is namespaced so deep-dive sources are distinguishable in evidence dumps", () => {
-    for (const s of ["funding", "profile", "competitors", "news"] as const) {
+    for (const s of ["funding", "profile", "competitors", "news", "patents"] as const) {
       expect(buildDeepDiveQueries(s, ctx).every((q) => q.label.startsWith("deep_"))).toBe(true);
     }
   });

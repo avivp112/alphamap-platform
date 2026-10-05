@@ -27,6 +27,7 @@ import { sanitizeModelOutput, ensureArray } from "./sanitize";
 import { verifyEvidence, quoteMatchesSource, type EvidenceSource } from "./evidence";
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
 import { debugDumpJson } from "./debugDump";
+import { checkHeadcountClaim, type HeadcountDropReason } from "./headcount";
 
 export interface SectorTaxonomy {
   parentNames: string[];
@@ -253,7 +254,7 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
         metrics: {
           type: "object" as const,
           properties: {
-            employee_count: materialField({ type: "integer" }, "Most recent stated headcount figure. Never estimate — report only an explicitly stated number, with its date captured in headcount_history."),
+            employee_count: materialField({ type: "integer" }, "Most recent stated number of EMPLOYEES of this company ('45 employees', 'the 45-person team', 'team of 45'). Never a count of users, customers, developers, or downloads; never one end of a range ('51-100 employees' goes to employee_range, not here). The quote must name the company unless it comes from its own website. Never estimate."),
             employee_range: { type: "string", description: "Best-fit bracket (e.g. '51-200') when a source only gives a range." },
             growth_trend: { type: "string", description: "12-month headcount direction, if determinable from headcount_history." },
             headcount_history: {
@@ -296,7 +297,7 @@ STRICT RULES:
 7. ${BIO_DESCRIPTION}
 8. There is no excuse for a company with ANY research data at all to come back with profile: {} — at minimum, describe what it does if that's mentioned anywhere.
 9. PUBLIC COMPANY — this is a consequential flag (a true archives the company out of the active dataset), so it needs the same evidence_quote/source_id as any other material field: a specific exchange and ticker stated in the source. A company being ACQUIRED, bought by a strategic/PE buyer, or a subsidiary of a public parent is still PRIVATE itself — report that acquisition via round_type 'Acquired'/'PE Buyout' in the funding history, never by flagging is_public_company. If you cannot cite a direct public-listing statement, omit the field.
-10. ACTIVELY SEARCH EVERY CATEGORY — before leaving founders, leadership, metrics.employee_count, metrics.headcount_history, or the HQ location empty, actively re-scan EVERY source below, not just the one whose label obviously matches: a funding-round article often states headcount at the time of the round ("the 45-person startup"), a LinkedIn company snippet states "X employees" or a size bracket ("51-200 employees" -> employee_range), a team/about page names the executives, a Crunchbase/LinkedIn snippet often states the headquarters city. An empty field is correct only AFTER that active check, never as a default for not having looked.
+10. ACTIVELY SEARCH EVERY CATEGORY — before leaving founders, leadership, metrics.employee_count, metrics.headcount_history, or the HQ location empty, actively re-scan EVERY source below, not just the one whose label obviously matches: a funding-round article often states headcount at the time of the round ("the 45-person startup"), a LinkedIn company snippet states "X employees" or a size bracket ("51-200 employees" -> employee_range ONLY, never employee_count), a founding-year line ("Founded in 2019", "Founded: 2019", "since 2019") often sits in a Crunchbase/LinkedIn snippet or a press release's boilerplate "About" paragraph, a team/about page names the executives, a Crunchbase/LinkedIn snippet often states the headquarters city. An empty field is correct only AFTER that active check, never as a default for not having looked.
 11. SECTOR — always pick sector_name (and sub_sector_name when one clearly fits) from the enumerated lists once you know what the company does; add sub_sector_names for any other field it genuinely operates in.
 
 Labeled research (each source is tagged [S#] for a search result or [W#] for a fetched website page):
@@ -315,7 +316,7 @@ ${context}`;
 // ── Response processing (pure, testable without any live call) ──────────
 
 export type DropReasonCode =
-  | "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found";
+  | "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found" | HeadcountDropReason;
 
 export interface DroppedField {
   field: string;
@@ -391,6 +392,7 @@ function verifyIsPublicClaim(
 export function processProfileExtractionResponse(
   rawToolInput: unknown,
   sources: LabeledSource[],
+  companyName?: string,
 ): ProcessedProfileExtraction {
   const sourceLookup: Record<string, EvidenceSource> = Object.fromEntries(
     sources.map((s) => [s.source_id, { content: s.content, url: s.url }]),
@@ -428,6 +430,17 @@ export function processProfileExtractionResponse(
     linkedin_url: verifyMaterial(`leadership[${idx}].linkedin_url`, l.linkedin_url, sourceLookup, dropped, true),
   }));
 
+  // A headcount number also has to be an EMPLOYEE count of THIS company
+  // (see headcount.ts) — not "70,000 developers", "$4 million", or one end
+  // of "51-100 employees".
+  const sourceById = new Map(sources.map((s) => [s.source_id, s]));
+  const headcountProblem = (value: number, sourceId: string, quote: string): HeadcountDropReason | null => {
+    const src = sourceById.get(sourceId);
+    return checkHeadcountClaim(value, quote ?? "", src && {
+      url: src.url, title: src.title, isCompanySite: src.source_id.startsWith("W") || src.source_type === "company_site",
+    }, companyName);
+  };
+
   const headcountHistory = ensureArray<V2HeadcountPoint>(i.metrics?.headcount_history).filter((point) => {
     const verdict = verifyEvidence(
       { field: "metrics.headcount_history", value: point.employee_count, source_id: point.source_id, evidence_quote: point.evidence_quote },
@@ -437,11 +450,19 @@ export function processProfileExtractionResponse(
       dropped.push({ field: "metrics.headcount_history", reason: (verdict.drop_reason as DropReasonCode) ?? "evidence_mismatch" });
       return false;
     }
+    const problem = headcountProblem(point.employee_count, point.source_id, point.evidence_quote);
+    if (problem) { dropped.push({ field: "metrics.headcount_history", reason: problem }); return false; }
     return true;
   });
 
+  let employeeCount = verifyMaterial("metrics.employee_count", i.metrics?.employee_count, sourceLookup, dropped);
+  if (employeeCount) {
+    const problem = headcountProblem(employeeCount.value, employeeCount.source_id, employeeCount.evidence_quote);
+    if (problem) { dropped.push({ field: "metrics.employee_count", reason: problem }); employeeCount = undefined; }
+  }
+
   const metrics: V2Metrics = {
-    employee_count: verifyMaterial("metrics.employee_count", i.metrics?.employee_count, sourceLookup, dropped),
+    employee_count: employeeCount,
     employee_range: i.metrics?.employee_range,
     growth_trend: i.metrics?.growth_trend,
     headcount_history: headcountHistory,
@@ -486,7 +507,7 @@ export async function extractProfile(
   }
   debugDumpJson(companyName, "profile_raw", tool.input);
 
-  const extraction = processProfileExtractionResponse(tool.input, sources);
+  const extraction = processProfileExtractionResponse(tool.input, sources, companyName);
   debugDumpJson(companyName, "profile_dropped", extraction.dropped);
 
   return {

@@ -19,7 +19,7 @@
 
 import { normalizeRoundType, type RoundLike } from "./rounds";
 
-export type DeepDiveSection = "funding" | "profile" | "competitors" | "news";
+export type DeepDiveSection = "funding" | "profile" | "competitors" | "news" | "patents";
 
 export interface DeepDiveQuery {
   label: string;
@@ -56,14 +56,19 @@ export interface GapInput {
   hasFounders: boolean;
   competitorCount: number;
   newsCount: number;
+  /** Optional: when false, the profile pass also looks for the founding year. */
+  hasFoundedYear?: boolean;
+  /** Optional: patents + patent_count on file and extracted; 0 triggers a patent search. */
+  patentCount?: number;
 }
 
 export function detectGaps(g: GapInput): DeepDiveSection[] {
   const gaps: DeepDiveSection[] = [];
   if (!g.bootstrapped && (hasNoFinancingRounds(g.rounds) || hasEarlyRoundGap(g.rounds))) gaps.push("funding");
-  if (!g.hasDescription || !g.hasLocation || !g.hasHeadcount || !g.hasFounders) gaps.push("profile");
+  if (!g.hasDescription || !g.hasLocation || !g.hasHeadcount || !g.hasFounders || g.hasFoundedYear === false) gaps.push("profile");
   if (g.competitorCount === 0) gaps.push("competitors");
   if (g.newsCount === 0) gaps.push("news");
+  if (g.patentCount === 0) gaps.push("patents");
   return gaps;
 }
 
@@ -110,6 +115,7 @@ export function buildDeepDiveQueries(section: DeepDiveSection, ctx: QueryContext
         q("profile_crunchbase", `site:crunchbase.com/organization "${name}"`),
         q("profile_founders", `"${name}"${anchor} founder CEO "co-founded" OR "founded by"`),
         q("profile_headcount", `"${name}"${anchor} employees team size headquarters`),
+        q("profile_founded", `"${name}"${anchor} "founded in" OR "was founded" OR "established in" OR "since"`),
       ];
     case "competitors":
       return [
@@ -124,6 +130,11 @@ export function buildDeepDiveQueries(section: DeepDiveSection, ctx: QueryContext
         q("news_announces", `"${name}" announces OR launches OR partners OR acquires`, "news"),
         ...ctx.founderNames.slice(0, 1).map((f) => q("news_founder", `"${name}" "${f}"`, "news")),
         q("news_web", `"${name}"${anchor} press release announcement`),
+      ];
+    case "patents":
+      return [
+        q("patents_google", `site:patents.google.com "${name}"`),
+        q("patents_web", `"${name}"${anchor} patent granted OR "patent pending" OR patented OR USPTO OR EPO`),
       ];
   }
 }
