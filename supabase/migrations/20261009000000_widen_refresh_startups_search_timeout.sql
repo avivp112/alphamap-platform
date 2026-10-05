@@ -1,0 +1,38 @@
+-- Raise service_role's own statement_timeout. Every real (DRY_RUN=false) v2
+-- batch so far has logged "startups_search refresh failed: canceling
+-- statement due to statement timeout" -- and this is not just a log
+-- curiosity: total_raised, latest-round, sector bucket, and
+-- completeness_score are ALL columns of the startups_search materialized
+-- view (20260811000000_materialize_startups_search.sql), computed by
+-- REFRESH MATERIALIZED VIEW CONCURRENTLY, not stored on startups itself.
+-- When the on-demand refresh after a batch keeps timing out, anyone
+-- checking a just-enriched company's page within that window sees a STALE
+-- total_raised/latest-round that doesn't match the funding_rounds just
+-- written -- exactly the "Total Raised doesn't match the funding timeline"
+-- inconsistency spotted on Geegpay right after a real batch (its
+-- total_raised still showed only the pre-existing Seed round's $3M, not
+-- the Pre-Seed + Series A rows v2 had just inserted).
+--
+-- pg_cron refreshes the same view every 15 minutes regardless of this
+-- script's own on-demand call, so this isn't permanent staleness -- but a
+-- reviewer checking data immediately after a run (exactly this project's
+-- whole testing loop so far) will see it stale until the next tick.
+--
+-- An EARLIER version of this migration tried `ALTER FUNCTION
+-- refresh_startups_search() SET statement_timeout = ...` -- confirmed by
+-- local testing (pg_ctlcluster scratch DB) to be a NO-OP: a per-function
+-- `SET` config only takes effect for GUCs that are re-evaluated mid-
+-- statement, and statement_timeout's cancellation timer is armed once, at
+-- the start of the OUTER statement, using whatever value was in effect at
+-- that point -- a nested function's own `SET` never re-arms it, in either
+-- direction (tested a shorter function-level override too; it didn't cut
+-- the call short either). The only mechanism confirmed to actually work:
+-- a role-level default via ALTER ROLE, which Postgres applies when a NEW
+-- session authenticates as that role -- exactly how Supabase's
+-- service-role client (which every enrichment/import/discover script
+-- uses) opens each RPC call. Scoped to service_role specifically, not the
+-- whole database, so anon/authenticated (the live frontend's API roles)
+-- keep whatever tighter timeout protects them from a runaway
+-- user-triggered query.
+
+ALTER ROLE service_role SET statement_timeout = '180s';
