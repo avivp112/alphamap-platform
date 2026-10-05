@@ -253,7 +253,7 @@ async function processCompany(
     founderNames: (row.founders ?? []).map((f) => f.name),
     trustedCountry: row.is_manually_verified ? (row.country ?? undefined) : undefined,
   };
-  const searchOnlyResults = allRaw.filter((r) => r.provider !== "tavily_extract" && r.provider !== "cheerio");
+  const searchOnlyResults = allRaw.filter((r) => r.provider !== "jina" && r.provider !== "tavily_extract" && r.provider !== "cheerio");
   const kept = searchOnlyResults.filter((r) =>
     filterByEntity({ url: r.url, title: r.title, snippet: r.content }, anchors, row.name).kept,
   );
@@ -261,7 +261,7 @@ async function processCompany(
   // Website pages are never entity-filtered -- they ARE the company's own
   // site by construction (we just fetched it from its own verified/on-file
   // domain), so there's no "wrong company" risk for entity.ts to catch.
-  const websiteRaw = allRaw.filter((r) => r.provider === "tavily_extract" || r.provider === "cheerio");
+  const websiteRaw = allRaw.filter((r) => r.provider === "jina" || r.provider === "tavily_extract" || r.provider === "cheerio");
   const usableResults = [...kept, ...websiteRaw];
 
   if (entityStatus === "low_evidence" && websiteRaw.length === 0) {
