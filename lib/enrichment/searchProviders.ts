@@ -129,7 +129,7 @@ export async function serperSearch(
   }
 }
 
-// ── Tavily (FALLBACK ONLY — never tried first) ─────────────────────────────
+// ── Tavily (never tried first — supplements Serper when its results are thin, see webSearch() below) ──
 
 interface TavilyResponse {
   answer?: string;
@@ -187,10 +187,42 @@ export async function tavilySearch(
 }
 
 /** Stage 1 -> Stage 4: Serper first, unconditionally; Tavily only when Serper returned nothing. */
+// Below this many organic results, Serper's own coverage of a query is
+// treated as too thin to trust on its own -- Tavily is queried too and the
+// two are MERGED (not an either/or fallback) so a query that got, say, 2
+// real Serper hits keeps those AND gains Tavily's independent hits, rather
+// than discarding one provider's results in favor of the other. At or
+// above this count, Serper alone is trusted and Tavily is skipped entirely
+// (keeps cost/latency down on a query that's already well covered).
+export const THIN_RESULTS_THRESHOLD = 3;
+
+/** Pure: does this query's own Serper coverage need Tavily's help? Split out from webSearch() so this threshold decision is unit-testable without live credentials. */
+export function needsTavilySupplement(serperResults: RawSearchResult[]): boolean {
+  return serperResults.length < THIN_RESULTS_THRESHOLD;
+}
+
+/** Pure: Serper's own results first (primary), then any Tavily result whose URL Serper didn't already return -- never a duplicate of the same source under two different provider labels. */
+export function mergeSearchResults(serperResults: RawSearchResult[], tavilyResults: RawSearchResult[]): RawSearchResult[] {
+  const seenUrls = new Set(serperResults.map((r) => r.url));
+  return [...serperResults, ...tavilyResults.filter((r) => !seenUrls.has(r.url))];
+}
+
+/**
+ * Serper + Jina are the primary pair (same endpoints/order as before);
+ * Jina covers the company's own site (fetchCompanyWebsitePages, unaffected
+ * by this function) while Serper covers general web search. Tavily is not
+ * a strict last-resort fallback -- it supplements whenever Serper's own
+ * results for THIS query are thin (including literally empty), merged
+ * alongside Serper's rather than replacing them, so the two providers
+ * genuinely combine their coverage instead of one simply standing in for
+ * the other.
+ */
 export async function webSearch(query: string, queryLabel: string, state: SearchProviderState): Promise<RawSearchResult[]> {
-  const r = await serperSearch(query, queryLabel, state);
-  if (r.length > 0) return r;
-  return tavilySearch(query, queryLabel, state);
+  const serperResults = await serperSearch(query, queryLabel, state);
+  if (!needsTavilySupplement(serperResults)) return serperResults;
+
+  const tavilyResults = await tavilySearch(query, queryLabel, state);
+  return mergeSearchResults(serperResults, tavilyResults);
 }
 
 // ── Domain verification (Stage 0) ──────────────────────────────────────────
