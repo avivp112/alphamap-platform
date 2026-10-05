@@ -152,8 +152,12 @@ export function checkRoundValuation(round: Pick<RoundLike, "amount_raised" | "va
   };
 }
 
+// A Pre-Seed/Seed round this long after founding is almost always another
+// company's round (Global Relay, founded 1999, got a namesake's 2020 Seed).
+const MAX_YEARS_FOUNDING_TO_SEED = 12;
+
 export function checkRoundDate(
-  round: Pick<RoundLike, "announcement_date">,
+  round: Pick<RoundLike, "announcement_date"> & Partial<Pick<RoundLike, "round_type">>,
   foundedYear: number | null | undefined,
 ): ValidationIssue | null {
   if (!round.announcement_date) return null;
@@ -173,6 +177,15 @@ export function checkRoundDate(
       rule: "round_date_invalid",
       fields: ["announcement_date"],
       message: `Round date ${round.announcement_date} is before the company's founded_year (${foundedYear}).`,
+      action: "drop_round",
+    };
+  }
+  const type = round.round_type ? normalizeRoundType(round.round_type) : null;
+  if (foundedYear != null && (type === "Pre-Seed" || type === "Seed") && d.getFullYear() > foundedYear + MAX_YEARS_FOUNDING_TO_SEED) {
+    return {
+      rule: "round_date_invalid",
+      fields: ["announcement_date", "round_type"],
+      message: `${type} round dated ${round.announcement_date} is ${d.getFullYear() - foundedYear} years after founding (${foundedYear}) — almost certainly another company's round.`,
       action: "drop_round",
     };
   }

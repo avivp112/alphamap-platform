@@ -163,7 +163,7 @@ export interface SearchResultLike {
 }
 
 export type EntityMatchKind = "domain_url" | "domain_mention" | "founder_mention" | "verified_profile_url" | "identity_keywords" | "distinctive_name";
-export type EntityDropReason = "not_distinctive_name" | "country_contradiction" | "no_entity_match" | "namesake_domain" | "namesake_profile";
+export type EntityDropReason = "not_distinctive_name" | "country_contradiction" | "no_entity_match" | "namesake_domain" | "namesake_profile" | "name_not_mentioned";
 
 export interface EntityFilterVerdict {
   kept: boolean;
@@ -264,6 +264,12 @@ export function filterByEntity(
   // enough to trust on its own".
   if (!isDistinctiveName(companyName)) {
     return { kept: false, drop_reason: "not_distinctive_name" };
+  }
+  // A distinctive name still has to actually appear (title, snippet or URL
+  // slug): Serper also returns partial matches, and a "relay-funding" page
+  // about "Relay" gave Global Relay another company's Seed/A/B rounds.
+  if (!mentionsName(`${text} ${result.url.toLowerCase().replace(/[-_/.]+/g, " ")}`, companyName)) {
+    return { kept: false, drop_reason: "name_not_mentioned" };
   }
 
   // Contradiction filter: even a distinctive-name match is dropped if the

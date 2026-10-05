@@ -49,7 +49,7 @@ import {
   type SearchProviderState,
 } from "../lib/enrichment/searchProviders.ts";
 import { filterByEntity, deriveIdentityKeywords, type EntityAnchors } from "../lib/enrichment/entity.ts";
-import { buildLabeledSources, type RawSearchResult, type LabeledSource } from "../lib/enrichment/sources.ts";
+import { buildLabeledSources, mergeDuplicateResults, type RawSearchResult, type LabeledSource } from "../lib/enrichment/sources.ts";
 import { extractProfile, loadSectorTaxonomy, type SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { extractFunding, roundToRoundLike } from "../lib/enrichment/extractFunding.ts";
 import { extractMarket, normalizeUrlForMatch } from "../lib/enrichment/extractMarket.ts";
@@ -231,6 +231,7 @@ interface RunSummary {
   articlesRead: number;
   websitePagesDuplicate: number;
   earlyRejected: number;
+  duplicateResultsMerged: number;
 }
 
 // $/token by model (ground rule 3: keep cost/token tracking), per call.
@@ -358,7 +359,12 @@ async function enrichCompany(
       return;
     }
   }
-  const searchResults = await runAllSearches(row.name, anchor, searchState);
+  const rawSearchResults = await runAllSearches(row.name, anchor, searchState);
+  // One source per URL — the same page returned by several queries used to
+  // reach Claude several times (billed as input on every call).
+  const { results: searchResults, merged: duplicateResults } = mergeDuplicateResults(rawSearchResults);
+  summary.duplicateResultsMerged += duplicateResults;
+  if (VERBOSE && duplicateResults > 0) console.log(`    🧹  ${duplicateResults} duplicate search result(s) merged (same URL from several queries)`);
 
   const allRaw: RawSearchResult[] = [
     ...searchResults,
@@ -395,7 +401,7 @@ async function enrichCompany(
   // Website pages are never entity-filtered — fetched from the company's
   // own domain, so there's no "wrong company" risk.
   const websiteRaw = allRaw.filter(isWebsiteResult);
-  const usableResults = [...kept, ...websiteRaw];
+  let usableResults = [...kept, ...websiteRaw];
   console.log(`    🧭  Entity filter: kept ${kept.length}/${searchOnly.length} search results + ${websiteRaw.length} website page(s)${VERBOSE && identityKeywords.length ? ` | identity keywords: ${identityKeywords.join(", ")}` : ""}`);
 
   if (kept.length < 2 && websiteRaw.length === 0) {
@@ -411,10 +417,23 @@ async function enrichCompany(
     const toRead = pickArticlesToRead(kept, row.name, domain, ARTICLES_TO_READ);
     const texts = await Promise.all(toRead.map((r) => fetchArticleText(r.url, searchState)));
     let read = 0;
+    const namesakeArticles = new Set<RawSearchResult>();
     toRead.forEach((r, i) => {
       const text = texts[i];
-      if (text) { r.content = `${r.content}\n[Full article text]\n${text}`; read++; }
+      if (!text) return;
+      // The snippet passed the entity filter, but the full article can show
+      // it is about a namesake (Glean AI kept reading Glean's telosi page).
+      const verdict = filterByEntity({ url: r.url, title: r.title, snippet: text }, anchors, row.name);
+      if (!verdict.kept && (verdict.drop_reason === "namesake_domain" || verdict.drop_reason === "namesake_profile")) {
+        namesakeArticles.add(r);
+        console.log(`    🧭  ${r.url} is about a namesake (full text) — dropped.`);
+        bump(summary.droppedByReason, "article_about_namesake");
+        return;
+      }
+      r.content = `${r.content}\n[Full article text]\n${text}`;
+      read++;
     });
+    if (namesakeArticles.size > 0) usableResults = usableResults.filter((r) => !namesakeArticles.has(r));
     summary.articlesRead += read;
     if (toRead.length > 0) console.log(`    📰  Read ${read}/${toRead.length} full article(s) via Jina${VERBOSE ? `: ${toRead.map((r) => r.url).join(", ")}` : ""}`);
   }
@@ -1198,7 +1217,7 @@ async function main() {
     totalRoundsInserted: 0, totalRoundsUpdated: 0, totalFieldsPatched: 0, totalNewsAdded: 0, totalCompetitorsAdded: 0, deepDives: 0,
     totalInputTokens: 0, totalOutputTokens: 0, totalCostUsd: 0,
     websitePagesFetched: 0, websitePagesSkippedThin: 0, serperCalls: 0, tavilyCalls: 0,
-    totalCacheReadTokens: 0, searchCacheHits: 0, articlesRead: 0, websitePagesDuplicate: 0, earlyRejected: 0,
+    totalCacheReadTokens: 0, searchCacheHits: 0, articlesRead: 0, websitePagesDuplicate: 0, earlyRejected: 0, duplicateResultsMerged: 0,
   };
 
   // Ctrl+C once: finish the current company (its writes are never left
@@ -1262,6 +1281,7 @@ async function main() {
   console.log(`  full articles read (Jina)    ${summary.articlesRead}`);
   console.log(`  prompt-cache tokens read     ${summary.totalCacheReadTokens.toLocaleString()}  (billed at 10%)`);
   console.log(`  search results from cache    ${summary.searchCacheHits}  (no API cost)`);
+  console.log(`  duplicate results merged     ${summary.duplicateResultsMerged}  (not sent to Claude twice)`);
   console.log(`  fields patched               ${summary.totalFieldsPatched}`);
   console.log(`  tokens (in/out)              ${summary.totalInputTokens.toLocaleString()} / ${summary.totalOutputTokens.toLocaleString()}`);
   console.log(`  claude cost (est.)           $${summary.totalCostUsd.toFixed(2)}  (search API cost is separate)`);

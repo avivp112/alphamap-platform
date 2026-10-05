@@ -75,3 +75,19 @@ describe("aggregatorOnlyShare", () => {
     expect(aggregatorOnlyShare([], labeled)).toBe(0);
   });
 });
+
+describe("mergeDuplicateResults", () => {
+  it("keeps one source per URL across queries, joining only snippets that add something", async () => {
+    const { mergeDuplicateResults } = await import("./sources");
+    const { results, merged } = mergeDuplicateResults([
+      { url: "https://www.crunchbase.com/organization/gladia/", provider: "serper", query_label: "funding", content: "Gladia raised $16M." },
+      { url: "https://crunchbase.com/organization/gladia", provider: "serper", query_label: "overview", content: "Gladia raised $16M." },
+      { url: "https://crunchbase.com/organization/gladia", provider: "tavily", query_label: "team", content: "Gladia has 49 employees." },
+      { url: "https://gladia.io", provider: "jina", query_label: "website", content: "home" },
+    ]);
+    expect(merged).toBe(2);
+    expect(results).toHaveLength(2);
+    expect(results[0].content).toBe("Gladia raised $16M. … Gladia has 49 employees.");
+    expect(results[0].query_label).toBe("funding");
+  });
+});

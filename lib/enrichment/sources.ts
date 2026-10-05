@@ -119,3 +119,40 @@ export function aggregatorOnlyShare(sourceIds: string[], sources: LabeledSource[
   const aggregatorCount = sourceIds.filter((id) => byId.get(id)?.source_type === "aggregator_snippet").length;
   return aggregatorCount / sourceIds.length;
 }
+
+/**
+ * The same URL returned by several of the ~11 queries (a company's
+ * Crunchbase page, its funding announcement) used to reach Claude once per
+ * query — the same page billed as several sources. Merged here into one
+ * source per URL; snippets that add something are kept (joined), exact or
+ * contained repeats are dropped. Website pages are never touched.
+ */
+export function mergeDuplicateResults(results: RawSearchResult[]): { results: RawSearchResult[]; merged: number } {
+  const keyOf = (url: string) => {
+    try {
+      const u = new URL(url);
+      return `${u.hostname.replace(/^www\./, "").toLowerCase()}${u.pathname.replace(/\/+$/, "")}`;
+    } catch {
+      return url.trim().toLowerCase();
+    }
+  };
+  const byKey = new Map<string, RawSearchResult>();
+  const out: RawSearchResult[] = [];
+  let merged = 0;
+  for (const r of results) {
+    if (WEBSITE_PROVIDERS.has(r.provider)) { out.push(r); continue; }
+    const key = keyOf(r.url);
+    const first = byKey.get(key);
+    if (!first) {
+      const copy = { ...r };
+      byKey.set(key, copy);
+      out.push(copy);
+      continue;
+    }
+    merged++;
+    const snippet = r.content.trim();
+    if (snippet && !first.content.includes(snippet)) first.content = `${first.content} … ${snippet}`;
+    if (!first.title && r.title) first.title = r.title;
+  }
+  return { results: out, merged };
+}

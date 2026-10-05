@@ -142,6 +142,14 @@ describe("namesake domains and generic keyword hits (Glean AI got Glean's $7.2B 
   });
 });
 
+describe("distinctive names must actually be mentioned", () => {
+  it("drops a partial match about a different company (Global Relay got Relay's rounds)", () => {
+    expect(filterByEntity({ url: "https://www.clay.com/dossier/relay-funding", snippet: "Relay raised a $32.2M Series B" }, {}, "Global Relay"))
+      .toEqual({ kept: false, drop_reason: "name_not_mentioned" });
+    expect(filterByEntity({ url: "https://www.crunchbase.com/organization/global-relay", snippet: "Archiving and compliance." }, {}, "Global Relay").kept).toBe(true);
+  });
+});
+
 describe("namesake LinkedIn company pages", () => {
   it("drops another linkedin.com/company page when the company's own is on file", () => {
     const anchors: EntityAnchors = { companyLinkedinUrl: "https://www.linkedin.com/company/globalstep" };
