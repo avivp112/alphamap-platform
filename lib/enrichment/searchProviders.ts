@@ -1,11 +1,18 @@
 /**
- * lib/enrichment/searchProviders.ts — v2's Serper/Tavily/Jina calling code.
- * Ground rule 4: "keep the current providers... do not add or remove
- * providers without an explicit request." Same endpoints, same retry/
- * backoff behavior, same timeouts as v1's private serperSearch/
- * tavilySearch/fetchViaJinaReader/fetchCompanyWebsite/verifyDomainMatch
- * (duplicated rather than imported — v1 is frozen, same reasoning as
- * sanitize.ts).
+ * lib/enrichment/searchProviders.ts — v2's Serper/Tavily calling code.
+ * Ground rule 4 originally said "keep the current providers... do not add
+ * or remove providers without an explicit request" (Serper/Tavily/Jina) —
+ * Jina was explicitly REMOVED from this pipeline per a direct later
+ * instruction (real DRY_RUN=false batches showed Jina returning thin/
+ * timeout/503/aborted results often enough to be worth dropping). Serper
+ * remains primary search, Tavily supplements thin Serper coverage (see
+ * webSearch() below); the company's own website pages (Stage 2) are now
+ * fetched via cheerio directly (free, no API key, no rate limit) with
+ * Tavily Extract as the fallback for a site that blocks direct scraping or
+ * needs JS rendering cheerio can't execute. Same endpoints, same retry/
+ * backoff behavior as v1's private serperSearch/tavilySearch/
+ * fetchCompanyWebsite/verifyDomainMatch (duplicated rather than imported —
+ * v1 is frozen, same reasoning as sanitize.ts).
  *
  * The one deliberate shape change: v1's functions return ONE pre-joined
  * text blob per query ("fine" for v1's single mega-prompt). v2 needs each
@@ -32,33 +39,31 @@ export interface SearchProviderState {
   serperCallCount: number;
   tavilyCallCount: number;
   tavilyExhausted: boolean;
-  jinaAttemptCount: number;
-  jinaSuccessCount: number;
-  /** Jina returned HTTP 200 + non-empty text, but it was a thin/404-style
-   *  page for a guessed path (/team, /company, /contact) that doesn't
-   *  actually exist on the site — see looksLikeRealContent(). Tracked
-   *  separately from jinaSuccessCount so a run can tell "Jina is failing"
-   *  apart from "Jina is succeeding but half of what it fetches is junk". */
-  jinaJunkCount: number;
+  websitePagesFetched: number;
+  /** A fetched page was non-empty but thin/404-style for a guessed path
+   *  (/team, /company, /contact) that doesn't actually exist on the site —
+   *  see looksLikeRealContent(). Tracked separately so a run can tell
+   *  "website fetch is failing" apart from "it's succeeding but half of
+   *  what it fetches is junk". */
+  websitePagesSkippedThin: number;
 }
 
 export function createSearchProviderState(): SearchProviderState {
   return {
     serperCallCount: 0, tavilyCallCount: 0,
     tavilyExhausted: !process.env.TAVILY_API_KEY,
-    jinaAttemptCount: 0, jinaSuccessCount: 0, jinaJunkCount: 0,
+    websitePagesFetched: 0, websitePagesSkippedThin: 0,
   };
 }
 
 const NOT_FOUND_PHRASES_RE = /\b(404(?:\s+error)?|page not found|(?:this\s+)?page (?:could not|couldn'?t) be found|we can'?t find (?:that|this) page|doesn'?t exist|does not exist|oops[,!]?\s*(?:this\s+)?page)\b/i;
-// A real page is almost never this short once Jina strips boilerplate/markup;
-// most "guessed" subpaths (/team, /company, /contact) that don't exist on a
-// given site resolve to a generic platform 404 that Jina happily converts to
-// clean, non-empty markdown -- HTTP 200, no error, no empty string, just
-// useless. A real DRY_RUN=false batch showed this exact pattern: completely
-// different companies' /about, /team, /company, /contact pages all coming
-// back at 150-250 chars (near-identical boilerplate sizes), while every real
-// homepage fetch was 1,000+ chars.
+// A real page is almost never this short once boilerplate/markup is
+// stripped; most "guessed" subpaths (/team, /company, /contact) that don't
+// actually exist on a given site resolve to a generic platform 404 --
+// non-empty, no error, just useless. A real DRY_RUN=false batch showed this
+// exact pattern: completely different companies' /about, /team, /company,
+// /contact pages all coming back at 150-250 chars (near-identical
+// boilerplate sizes), while every real homepage fetch was 1,000+ chars.
 const MIN_USEFUL_CONTENT_CHARS = 250;
 
 export function looksLikeRealContent(text: string): boolean {
@@ -208,14 +213,13 @@ export function mergeSearchResults(serperResults: RawSearchResult[], tavilyResul
 }
 
 /**
- * Serper + Jina are the primary pair (same endpoints/order as before);
- * Jina covers the company's own site (fetchCompanyWebsitePages, unaffected
- * by this function) while Serper covers general web search. Tavily is not
- * a strict last-resort fallback -- it supplements whenever Serper's own
- * results for THIS query are thin (including literally empty), merged
- * alongside Serper's rather than replacing them, so the two providers
- * genuinely combine their coverage instead of one simply standing in for
- * the other.
+ * Serper is primary for general web search; the company's own site
+ * (fetchCompanyWebsitePages, unaffected by this function) is fetched
+ * separately via cheerio. Tavily is not a strict last-resort fallback --
+ * it supplements whenever Serper's own results for THIS query are thin
+ * (including literally empty), merged alongside Serper's rather than
+ * replacing them, so the two providers genuinely combine their coverage
+ * instead of one simply standing in for the other.
  */
 export async function webSearch(query: string, queryLabel: string, state: SearchProviderState): Promise<RawSearchResult[]> {
   const serperResults = await serperSearch(query, queryLabel, state);
@@ -277,39 +281,7 @@ export async function verifyDomainMatch(
 // ── Company website fetch (Stage 2) ────────────────────────────────────────
 
 const FETCH_TIMEOUT_MS = 8_000;
-const JINA_TIMEOUT_MS = 15_000;
 const MAX_WEBSITE_CHARS = 6_000; // spec stage 2: "cap content per page (for example 6,000 characters)" -- raised from v1's 3,000 now that each page is its own labeled [W#] source rather than one slot in a single shared context budget
-
-async function fetchViaJinaReader(url: string, state: SearchProviderState): Promise<string | null> {
-  state.jinaAttemptCount++;
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), JINA_TIMEOUT_MS);
-    const headers: Record<string, string> = { Accept: "text/plain" };
-    if (process.env.JINA_API_KEY) headers.Authorization = `Bearer ${process.env.JINA_API_KEY}`;
-
-    const res = await fetch(`https://r.jina.ai/${url}`, { signal: controller.signal, headers }).finally(() => clearTimeout(timer));
-    if (!res.ok) {
-      console.warn(`    ⚠️  Jina Reader HTTP ${res.status} for ${url} — falling back to Tavily/cheerio.`);
-      return null;
-    }
-    const text = (await res.text()).trim();
-    if (!text) {
-      console.warn(`    ⚠️  Jina Reader returned empty content for ${url} — falling back to Tavily/cheerio.`);
-      return null;
-    }
-    if (!looksLikeRealContent(text)) {
-      state.jinaJunkCount++;
-      console.warn(`    ⚠️  Jina Reader got a thin/404-like page for ${url} (${text.length} chars) — skipping, not counted as a real source.`);
-      return null;
-    }
-    state.jinaSuccessCount++;
-    return text.slice(0, MAX_WEBSITE_CHARS);
-  } catch (err) {
-    console.warn(`    ⚠️  Jina Reader threw for ${url}: ${String(err)} — falling back to Tavily/cheerio.`);
-    return null;
-  }
-}
 
 async function tavilyExtractUrls(urls: string[], state: SearchProviderState): Promise<string | null> {
   if (state.tavilyExhausted) return null;
@@ -367,8 +339,12 @@ export interface FetchedPage { url: string; content: string; provider: Provider 
  * Spec stage 2: home page plus /about, /team, /company, /contact "when they
  * exist" — each one its own [W#] source (not concatenated into one blob
  * like v1), so a quote can be traced to exactly which page it came from.
- * Jina primary, Tavily Extract fallback (home+/about only, matching v1 —
- * Tavily Extract is billed per URL), cheerio last resort on the home page.
+ * cheerio (direct fetch, free, no API key, no rate limit) is now primary
+ * for every candidate path, per-page, same as Jina used to be -- Jina was
+ * explicitly removed from this pipeline. Tavily Extract (home+/about, one
+ * call, matching v1's own fallback shape) is the fallback ONLY when
+ * cheerio got nothing usable for ANY candidate path -- covers a site that
+ * blocks direct scraping or needs JS rendering cheerio can't execute.
  */
 export async function fetchCompanyWebsitePages(
   website: string | null | undefined,
@@ -381,24 +357,26 @@ export async function fetchCompanyWebsitePages(
 
   for (const path of candidatePaths) {
     const url = root.replace(/\/+$/, "") + path;
-    const viaJina = await fetchViaJinaReader(url, state);
-    if (viaJina) {
-      pages.push({ url, content: viaJina, provider: "jina" });
-      console.log(`    🌐  Jina Reader: fetched ${url} (${viaJina.length} chars)`);
+    const content = await cheerioFetch(url);
+    if (!content) continue;
+    if (!looksLikeRealContent(content)) {
+      state.websitePagesSkippedThin++;
+      console.warn(`    ⚠️  thin/404-like page for ${url} (${content.length} chars) — skipping, not counted as a real source.`);
+      continue;
     }
+    state.websitePagesFetched++;
+    pages.push({ url, content: content.slice(0, MAX_WEBSITE_CHARS), provider: "cheerio" });
+    console.log(`    🌐  fetched ${url} (${content.length} chars)`);
   }
   if (pages.length > 0) return pages;
 
-  // Jina got nothing for ANY candidate page — fall back to Tavily Extract on
-  // home+/about (one call, matching v1), then cheerio on the home page alone.
+  // cheerio got nothing usable for ANY candidate page -- fall back to
+  // Tavily Extract on home+/about (one call, matching v1's own fallback).
   if (!state.tavilyExhausted) {
     const aboutUrl = root.replace(/\/+$/, "") + "/about";
     const extracted = await tavilyExtractUrls([root, aboutUrl], state);
     if (extracted) return [{ url: root, content: extracted, provider: "tavily_extract" }];
   }
-
-  const viaCheerio = await cheerioFetch(root);
-  if (viaCheerio) return [{ url: root, content: viaCheerio, provider: "cheerio" }];
 
   return [];
 }

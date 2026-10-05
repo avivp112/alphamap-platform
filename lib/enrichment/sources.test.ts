@@ -31,9 +31,9 @@ describe("classifySourceType", () => {
 describe("buildLabeledSources", () => {
   const raw: RawSearchResult[] = [
     { url: "https://techcrunch.com/a", content: "search result 1", provider: "serper", query_label: "history" },
-    { url: "https://www.apexspace.com/", content: "homepage text", provider: "jina", query_label: "website" },
+    { url: "https://www.apexspace.com/", content: "homepage text", provider: "cheerio", query_label: "website" },
     { url: "https://spacenews.com/b", content: "search result 2", provider: "tavily", query_label: "amounts" },
-    { url: "https://www.apexspace.com/about", content: "about page text", provider: "jina", query_label: "website" },
+    { url: "https://www.apexspace.com/about", content: "about page text", provider: "cheerio", query_label: "website" },
   ];
 
   it("assigns S-ids to search results and W-ids to website pages, in input order", () => {

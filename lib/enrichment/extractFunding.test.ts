@@ -9,7 +9,7 @@ const rawSources: RawSearchResult[] = [
     content: "Satellite bus manufacturing startup Apex Space closed a $16 million Series A co-led by Andreessen Horowitz and new investor Shield Capital.",
   },
   {
-    url: "https://www.apexspace.com/news/apex-announces-additional-fundraising-at-2b-valuation", provider: "jina", query_label: "website",
+    url: "https://www.apexspace.com/news/apex-announces-additional-fundraising-at-2b-valuation", provider: "cheerio", query_label: "website",
     content: "Apex Announces Additional Fundraising at $2.3B Valuation. The $200 million round was led by Glade Brook Capital Partners, on June 5, 2026, nearly doubling Apex's valuation to $2.3 billion.",
   },
   {
@@ -31,6 +31,11 @@ describe("buildFundingExtractionRequest", () => {
     const text = request.messages[0].content as string;
     expect(text).toContain("Never collapse two distinct rounds into one");
     expect(text).toContain("never invent a round to fill a suspected gap");
+  });
+
+  it("instructs actively re-scanning every source for ARR/revenue/valuation signals, not just the financials-labeled ones", () => {
+    const text = request.messages[0].content as string;
+    expect(text.toLowerCase()).toContain("actively re-scan every source below (not just ones labeled \"financials\")");
   });
 
   it("every material round field requires value/source_id/evidence_quote", () => {

@@ -373,6 +373,7 @@ STRICT RULES:
 7. ${BIO_DESCRIPTION}
 8. There is no excuse for a company with ANY research data at all to come back with profile: {} — at minimum, describe what it does if that's mentioned anywhere.
 9. PUBLIC COMPANY — this is a consequential flag (a true archives the company out of the active dataset), so it needs the same evidence_quote/source_id as any other material field: a specific exchange and ticker stated in the source. A company being ACQUIRED, bought by a strategic/PE buyer, or a subsidiary of a public parent is still PRIVATE itself — report that acquisition via round_type 'Acquired'/'PE Buyout' in the funding history, never by flagging is_public_company. If you cannot cite a direct public-listing statement, omit the field.
+10. ACTIVELY SEARCH EVERY CATEGORY — before leaving competitors, patents, patent_summary, metrics.headcount_history, news, or technology.tech_stack empty, actively re-scan EVERY source below for that category's signal, not just the one source whose query_label obviously matches it: a funding-round article often states headcount at the time of the round, a careers or engineering-blog page often names the real tech stack, an "about"/"team" page sometimes names direct competitors in its own positioning language. An empty array is the correct, normal answer for most companies on most categories — but only AFTER that active check, never as a default for not having looked.
 
 Labeled research (each source is tagged [S#] for a search result or [W#] for a fetched website page):
 ${context}`;

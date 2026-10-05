@@ -177,11 +177,10 @@ interface RunSummary {
   totalOutputTokens: number;
   totalCostUsd: number;
   // Aggregated across every company's own SearchProviderState -- answers
-  // "is Jina actually working" with real numbers instead of eyeballing
-  // per-company log lines across a whole batch.
-  jinaAttempts: number;
-  jinaSuccesses: number;
-  jinaJunkPages: number;
+  // "is the website fetch actually working" with real numbers instead of
+  // eyeballing per-company log lines across a whole batch.
+  websitePagesFetched: number;
+  websitePagesSkippedThin: number;
   tavilyCalls: number;
 }
 
@@ -233,9 +232,8 @@ async function processCompany(
   // Captured here, right after the only two stages that touch searchState,
   // so it's accounted for regardless of which exit path this company takes
   // below (rejected/archived/low_evidence/etc. all still searched real data).
-  summary.jinaAttempts += searchState.jinaAttemptCount;
-  summary.jinaSuccesses += searchState.jinaSuccessCount;
-  summary.jinaJunkPages += searchState.jinaJunkCount;
+  summary.websitePagesFetched += searchState.websitePagesFetched;
+  summary.websitePagesSkippedThin += searchState.websitePagesSkippedThin;
   summary.tavilyCalls += searchState.tavilyCallCount;
 
   const allRaw: RawSearchResult[] = [
@@ -255,7 +253,7 @@ async function processCompany(
     founderNames: (row.founders ?? []).map((f) => f.name),
     trustedCountry: row.is_manually_verified ? (row.country ?? undefined) : undefined,
   };
-  const searchOnlyResults = allRaw.filter((r) => r.provider !== "jina" && r.provider !== "tavily_extract" && r.provider !== "cheerio");
+  const searchOnlyResults = allRaw.filter((r) => r.provider !== "tavily_extract" && r.provider !== "cheerio");
   const kept = searchOnlyResults.filter((r) =>
     filterByEntity({ url: r.url, title: r.title, snippet: r.content }, anchors, row.name).kept,
   );
@@ -263,7 +261,7 @@ async function processCompany(
   // Website pages are never entity-filtered -- they ARE the company's own
   // site by construction (we just fetched it from its own verified/on-file
   // domain), so there's no "wrong company" risk for entity.ts to catch.
-  const websiteRaw = allRaw.filter((r) => r.provider === "jina" || r.provider === "tavily_extract" || r.provider === "cheerio");
+  const websiteRaw = allRaw.filter((r) => r.provider === "tavily_extract" || r.provider === "cheerio");
   const usableResults = [...kept, ...websiteRaw];
 
   if (entityStatus === "low_evidence" && websiteRaw.length === 0) {
@@ -645,7 +643,7 @@ async function main() {
     tally: { success: 0, partial: 0, rejected: 0, removed_public: 0, no_data: 0, low_evidence: 0, error: 0, error_incomplete_extraction: 0 },
     droppedByReason: new Map(),
     totalRoundsInserted: 0, totalFieldsPatched: 0, totalInputTokens: 0, totalOutputTokens: 0, totalCostUsd: 0,
-    jinaAttempts: 0, jinaSuccesses: 0, jinaJunkPages: 0, tavilyCalls: 0,
+    websitePagesFetched: 0, websitePagesSkippedThin: 0, tavilyCalls: 0,
   };
 
   for (let i = 0; i < queue.length; i++) {
@@ -678,7 +676,7 @@ async function main() {
   console.log(`  fields patched               ${summary.totalFieldsPatched}`);
   console.log(`  tokens (in/out)              ${summary.totalInputTokens.toLocaleString()} / ${summary.totalOutputTokens.toLocaleString()}`);
   console.log(`  claude cost (est.)           $${summary.totalCostUsd.toFixed(2)}  (search API cost is separate)`);
-  console.log(`  jina: ${summary.jinaSuccesses} real / ${summary.jinaJunkPages} thin-404 skipped / ${summary.jinaAttempts} attempted  |  tavily calls: ${summary.tavilyCalls}`);
+  console.log(`  website pages: ${summary.websitePagesFetched} real / ${summary.websitePagesSkippedThin} thin-404 skipped  |  tavily calls: ${summary.tavilyCalls}`);
   console.log("  dropped/flagged by reason code:");
   for (const [reason, count] of summary.droppedByReason) {
     console.log(`    ${reason.padEnd(32)} ${count}`);

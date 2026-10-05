@@ -4,7 +4,7 @@ import { buildLabeledSources, type RawSearchResult } from "./sources";
 
 const rawSources: RawSearchResult[] = [
   {
-    url: "https://www.apexspace.com/about", provider: "jina", query_label: "website",
+    url: "https://www.apexspace.com/about", provider: "cheerio", query_label: "website",
     content: "Apex is headquartered in Los Angeles, California, United States. Founded in 2022 by Ian Cinnamon and Max Benassi.",
   },
   {
@@ -49,6 +49,12 @@ describe("buildProfileExtractionRequest", () => {
     const text = request.messages[0].content as string;
     expect(text.toLowerCase()).toContain("same source and the same sentence");
     expect(text.toLowerCase()).toContain("never construct or guess a url");
+  });
+
+  it("instructs actively re-scanning every source for competitors/patents/headcount/news/tech_stack before leaving them empty", () => {
+    const text = request.messages[0].content as string;
+    expect(text).toContain("ACTIVELY SEARCH EVERY CATEGORY");
+    expect(text.toLowerCase()).toContain("not just the one source whose query_label obviously matches");
   });
 
   it("constrains sector_name/sub_sector_name to the given taxonomy (ground rule 3)", () => {
