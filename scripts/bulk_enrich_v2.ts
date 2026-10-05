@@ -62,7 +62,7 @@ import { fetchArticleOgImage } from "../lib/enrichment/ogImage.ts";
 import { buildSharedExtractionRequest, type ExtractionKind } from "../lib/enrichment/sharedExtraction.ts";
 import { openSearchCache } from "../lib/enrichment/searchCache.ts";
 import { pickArticlesToRead } from "../lib/enrichment/articles.ts";
-import { runTechGate, shouldSkipAsNonTech } from "../lib/enrichment/techGate.ts";
+import { runTechGate, shouldSkipAsNonTech, type TechGateVerdict } from "../lib/enrichment/techGate.ts";
 import { namesCompany } from "../lib/enrichment/headcount.ts";
 import { findPersonProfile, discoverFounders, founderTitleFromHeadline, samePersonName } from "../lib/enrichment/linkedin.ts";
 import { checkHeadcountOutlier } from "../lib/enrichment/validation.ts";
@@ -97,6 +97,8 @@ const ARTICLES_TO_READ = Number(process.env.ARTICLES_TO_READ ?? 4);
 // queue order, OFFSET and BATCH_SIZE (e.g. ONLY=Gladia after a fix).
 // startups_search refresh cadence during a long run (companies); 0 = only at the end.
 const REFRESH_EVERY = Number(process.env.REFRESH_EVERY ?? 25);
+// Stop the run after this many failures in a row (systemic problem guard).
+const MAX_CONSECUTIVE_ERRORS = Number(process.env.MAX_CONSECUTIVE_ERRORS ?? 5);
 const ONLY = (process.env.ONLY ?? "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean);
 // Kept for parity/visibility only -- v2 gates per field (issue 9), never on
 // one whole-company score. Printed in the run header, never read.
@@ -286,12 +288,20 @@ async function processCompany(
   searchState.cache = openSearchCache(row.id);
   const before = { ...summary.tally };
   try {
-    await enrichCompany(row, existingRounds, taxonomy, startupByDomain, summary, searchState);
-    // A company that was checked and rejected / found too thin / archived
-    // is still "done" for this pass — without the stamp, every restart of
-    // a long run would re-process the same companies first and never get
-    // further. (Errors are not stamped, so they're retried.)
-    const settled = (["rejected", "low_evidence", "no_data", "removed_public"] as const).some((k) => summary.tally[k] > before[k]);
+    try {
+      await enrichCompany(row, existingRounds, taxonomy, startupByDomain, summary, searchState);
+    } catch (err) {
+      console.error(`    💥  Unhandled error processing "${row.name}": ${String(err)}`);
+      summary.tally.error++;
+    }
+    // Every outcome moves the company to the back of the queue (the queue
+    // is ordered by last_enriched_at). Without this, a company that is
+    // rejected — or that fails the same way every time — stays first in
+    // line and is re-processed at the start of every run. A failed company
+    // comes back in the next full cycle; a systemic failure (bad key,
+    // provider outage) stops the run instead, see MAX_CONSECUTIVE_ERRORS.
+    const settled = (["rejected", "low_evidence", "no_data", "removed_public", "error", "error_incomplete_extraction"] as const)
+      .some((k) => summary.tally[k] > before[k]);
     if (settled && !DRY_RUN) {
       const { error } = await supabase.from("startups").update({ last_enriched_at: new Date().toISOString() }).eq("id", row.id);
       if (error) console.warn(`    ⚠️  last_enriched_at update failed: ${error.message}`);
@@ -332,7 +342,13 @@ async function enrichCompany(
   // rejected before paying for ~11 searches and three extraction calls.
   const websitePages = await fetchCompanyWebsitePages(effectiveWebsite, searchState);
   if (TECH_GATE) {
-    const gate = await runTechGate(row.name, websitePages[0]?.content ?? "", row.description, row.industry, { client: anthropic, model: ENRICH_MODEL });
+    // The verdict is cached with the search results, so seeing the same
+    // company again (a re-run, the next cycle) costs nothing.
+    const cachedVerdict = searchState.cache?.get<TechGateVerdict>("techgate");
+    const gate = cachedVerdict
+      ? { verdict: cachedVerdict, inputTokens: 0, outputTokens: 0 }
+      : await runTechGate(row.name, websitePages[0]?.content ?? "", row.description, row.industry, { client: anthropic, model: ENRICH_MODEL });
+    if (!cachedVerdict) searchState.cache?.set("techgate", gate.verdict);
     recordCost(summary, ENRICH_MODEL, gate);
     if (shouldSkipAsNonTech(gate.verdict)) {
       console.log(`    🚫  REJECTED before searching — not a technology company: ${gate.verdict!.reason}`);
@@ -1169,17 +1185,20 @@ async function main() {
     await refreshSearch();
   };
   const runStartedAt = Date.now();
+  let consecutiveErrors = 0;
+  if (DRY_RUN) console.log("ℹ️  DRY_RUN: nothing is written, so the queue does not advance between dry runs — the same companies come first every time (use OFFSET=… or ONLY=… to look at others).\n");
 
   for (let i = 0; i < queue.length && !stopRequested; i++) {
     const row = queue[i];
     const elapsedMin = (Date.now() - runStartedAt) / 60_000;
     const t = summary.tally;
     console.log(`📍 [${i + 1}/${queue.length}] ${elapsedMin.toFixed(0)} min | $${summary.totalCostUsd.toFixed(2)} so far | ✅ ${t.success} 🟠 ${t.partial} 🚫 ${t.rejected} 🔍 ${t.low_evidence + t.no_data} 💥 ${t.error}`);
-    try {
-      await processCompany(row, roundsByStartup.get(row.id) ?? [], taxonomy, startupByDomain, summary);
-    } catch (err) {
-      console.error(`    💥  Unhandled error processing "${row.name}": ${String(err)}`);
-      summary.tally.error++;
+    const errorsBefore = summary.tally.error + summary.tally.error_incomplete_extraction;
+    await processCompany(row, roundsByStartup.get(row.id) ?? [], taxonomy, startupByDomain, summary);
+    consecutiveErrors = summary.tally.error + summary.tally.error_incomplete_extraction > errorsBefore ? consecutiveErrors + 1 : 0;
+    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+      console.error(`\n⛔  ${consecutiveErrors} companies in a row failed — this looks systemic (API key, credits, provider outage), not company-specific. Stopping so the rest of the queue isn't burned. Fix the cause and re-run; it continues from here.`);
+      break;
     }
     // The company page reads startups_search — refresh it periodically on a
     // long run, not only at the very end.

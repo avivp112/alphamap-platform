@@ -21,6 +21,13 @@ const tables: Record<string, unknown[]> = {
     patents: null, tech_stack: null, github_url: null, huggingface_url: null, arr_milestones: null, revenue_estimate: null,
     valuation_benchmarks: null, linkedin_url: null, facebook_url: null, instagram_url: null, sector_id: null,
     funding_history_complete: null, status: "active", last_enriched_at: null, is_manually_verified: false,
+  }, {
+    id: "st-ghia", name: "Ghia", website: "https://drinkghia.com", description: "Non-alcoholic aperitif brand.", value_proposition: null, industry: "Beverages",
+    founded_year: null, country: null, city: null, employee_count: null, employee_range: null, growth_trend: null,
+    founders: null, leadership: null, competitors: null, acquisitions: null, news: null, patent_count: null, patent_fields: null,
+    patents: null, tech_stack: null, github_url: null, huggingface_url: null, arr_milestones: null, revenue_estimate: null,
+    valuation_benchmarks: null, linkedin_url: null, facebook_url: null, instagram_url: null, sector_id: null,
+    funding_history_complete: null, status: "active", last_enriched_at: null, is_manually_verified: false,
   }],
   funding_rounds: [{
     id: "r-1", startup_id: "st-1", round_type: "Seed", amount_raised: 2_000_000, valuation: null, is_valuation_estimated: null,
@@ -120,7 +127,11 @@ const createMock = vi.fn(async (req: { tools: Array<{ name: string }>; messages:
   const li = sid(prompt, "linkedin.com/company");
   const hq = sid(prompt, "sifted.eu");
 
-  if (tool === "save_profile_extraction") {
+  if (tool === "classify_company") {
+    input = prompt.includes('"Ghia"')
+      ? { is_tech_company: false, confidence: "high", reason: "a non-alcoholic beverage brand" }
+      : { is_tech_company: true, confidence: "high", reason: "publishing software" };
+  } else if (tool === "save_profile_extraction") {
     input = {
       is_public_company: false, is_tech_company: true,
       profile: {
@@ -265,6 +276,14 @@ describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
     expect(firstPass.map((r) => r.tool_choice.name).sort()).toEqual(["save_funding_extraction", "save_market_extraction", "save_profile_extraction"]);
     const prefix = (r: (typeof firstPass)[number]) => JSON.stringify({ tools: r.tools, system: r.system });
     expect(new Set(firstPass.map(prefix)).size).toBe(1);
+  });
+
+  it("rejects a clearly non-tech company before searching, and moves it to the back of the queue (the Ghia loop)", () => {
+    const stamp = calls.find((c) => c.table === "startups" && c.op === "update" && c.filters.some(([k, v]) => k === "id" && v === "st-ghia"));
+    expect(stamp?.payload).toEqual({ last_enriched_at: expect.any(String) });
+    const ghiaSearches = fakeFetch.mock.calls.filter(([u, init]) => String(u).includes("google.serper.dev") && String(init?.body ?? "").includes("Ghia"));
+    expect(ghiaSearches).toHaveLength(1); // only Stage 0's domain check
+    expect(createMock.mock.calls.filter((c) => JSON.stringify(c[0]).includes('Ghia')).map((c) => (c[0] as { tool_choice?: { name?: string } }).tool_choice?.name)).toEqual(["classify_company"]);
   });
 
   it("runs the cheap tech pre-check before any search", () => {
