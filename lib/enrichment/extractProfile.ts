@@ -486,14 +486,16 @@ export interface ExtractProfileOptions {
   client: Anthropic;
   model: string;
   taxonomy?: SectorTaxonomy;
+  /** A prebuilt request (sharedExtraction.ts, prompt-cached) instead of this module's own single-call request. */
+  request?: object;
 }
 
 export async function extractProfile(
   companyName: string,
   sources: LabeledSource[],
   options: ExtractProfileOptions,
-): Promise<{ extraction: ProcessedProfileExtraction; stopReason: string | null; inputTokens: number; outputTokens: number } | null> {
-  const request = buildProfileExtractionRequest(companyName, sources, options.taxonomy);
+): Promise<{ extraction: ProcessedProfileExtraction; stopReason: string | null; inputTokens: number; outputTokens: number; cacheWriteTokens: number; cacheReadTokens: number } | null> {
+  const request = (options.request ?? buildProfileExtractionRequest(companyName, sources, options.taxonomy)) as ReturnType<typeof buildProfileExtractionRequest>;
   debugDumpJson(companyName, "profile_sources", sources);
   const msg = await options.client.messages.create({ ...request, model: options.model });
 
@@ -503,7 +505,7 @@ export async function extractProfile(
   // company just has no data".
   const tool = msg.content.find((b) => b.type === "tool_use");
   if (!tool || tool.type !== "tool_use") {
-    return { extraction: { result: emptyProfileExtraction(), dropped: [] }, stopReason: msg.stop_reason, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens };
+    return { extraction: { result: emptyProfileExtraction(), dropped: [] }, stopReason: msg.stop_reason, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 };
   }
   debugDumpJson(companyName, "profile_raw", tool.input);
 
@@ -514,7 +516,7 @@ export async function extractProfile(
     extraction,
     stopReason: msg.stop_reason,
     inputTokens: msg.usage.input_tokens,
-    outputTokens: msg.usage.output_tokens,
+    outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0,
   };
 }
 

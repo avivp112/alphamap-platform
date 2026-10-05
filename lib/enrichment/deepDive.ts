@@ -101,8 +101,9 @@ export function buildDeepDiveQueries(section: DeepDiveSection, ctx: QueryContext
     case "funding": {
       const investors = pickBacktrackInvestors(ctx.rounds);
       return [
-        q("funding_raises", `"${name}"${anchor} raises funding round million investors`),
-        q("funding_databases", `"${name}" funding rounds investors site:crunchbase.com OR site:tracxn.com OR site:dealroom.co OR site:pitchbook.com OR site:cbinsights.com`),
+        // The general "raised funding" and database-site queries already run in
+        // the first pass (bulk_enrich_v2 runAllSearches) — repeating them here
+        // would return the same results for the same price.
         q("funding_seed", `"${name}"${anchor} seed round raised announcement`),
         q("funding_preseed", `"${name}"${anchor} pre-seed OR angel round raised`),
         q("funding_news", `"${name}" raises`, "news"),

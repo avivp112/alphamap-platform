@@ -45,7 +45,7 @@ import { initV1Context, supabase } from "./bulk_enrich_all.ts";
 
 import { classifyTier, type TierRow, type TierRound } from "../lib/enrichment/queue.ts";
 import {
-  createSearchProviderState, verifyDomainMatch, webSearch, newsSearch, serperSearch, fetchCompanyWebsitePages,
+  createSearchProviderState, verifyDomainMatch, webSearch, newsSearch, serperSearch, fetchCompanyWebsitePages, fetchArticleText,
   type SearchProviderState,
 } from "../lib/enrichment/searchProviders.ts";
 import { filterByEntity, deriveIdentityKeywords, type EntityAnchors } from "../lib/enrichment/entity.ts";
@@ -59,6 +59,11 @@ import {
   normalizeIsoDate, appendNew, reconcileOnFile, type ExistingRoundRef,
 } from "../lib/enrichment/assemble.ts";
 import { fetchArticleOgImage } from "../lib/enrichment/ogImage.ts";
+import { buildSharedExtractionRequest, type ExtractionKind } from "../lib/enrichment/sharedExtraction.ts";
+import { openSearchCache } from "../lib/enrichment/searchCache.ts";
+import { pickArticlesToRead } from "../lib/enrichment/articles.ts";
+import { runTechGate, shouldSkipAsNonTech } from "../lib/enrichment/techGate.ts";
+import { namesCompany } from "../lib/enrichment/headcount.ts";
 import { findPersonProfile, discoverFounders, founderTitleFromHeadline, samePersonName } from "../lib/enrichment/linkedin.ts";
 import { checkHeadcountOutlier } from "../lib/enrichment/validation.ts";
 import { MAJOR_CITIES } from "../lib/enrichment/majorCities.ts";
@@ -84,6 +89,10 @@ const MAX_TIER       = Number(process.env.MAX_TIER       ?? 3);
 const VERBOSE         = process.env.VERBOSE               === "true";
 // Stage 9 (targeted second search for thin sections). On by default.
 const DEEP_DIVE       = process.env.DEEP_DIVE             !== "false";
+// Cheap homepage-based "is this tech?" check before any searching (techGate.ts).
+const TECH_GATE       = process.env.TECH_GATE             !== "false";
+// How many third-party articles to read in full via Jina (free) per company.
+const ARTICLES_TO_READ = Number(process.env.ARTICLES_TO_READ ?? 4);
 // ONLY=<id or exact name>[,...] re-runs specific companies, ignoring the
 // queue order, OFFSET and BATCH_SIZE (e.g. ONLY=Gladia after a fix).
 // startups_search refresh cadence during a long run (companies); 0 = only at the end.
@@ -164,15 +173,16 @@ async function fetchAllPaginated<T>(build: (from: number, to: number) => Promise
   return all;
 }
 
-// First-pass searches: v1's query set, with its one overloaded "profile"
+// First-pass searches (10 web + 1 news): v1's query set, with its one overloaded "profile"
 // query (founders + HQ + headcount + acquisitions + patents + social links
 // in a single Google query) split into focused ones, one per section the
 // company page shows. Each result keeps its query_label for evidence dumps.
 async function runAllSearches(name: string, anchor: string, state: SearchProviderState): Promise<RawSearchResult[]> {
   const queries: Array<[string, string]> = [
-    ["history",      `"${name}"${anchor} seed round "Series A" first funding earliest founding investors site:crunchbase.com OR site:techcrunch.com OR site:pitchbook.com`],
-    ["amounts",      `"${name}"${anchor} total funding raised since founding all rounds USD million billion valuation announcement history`],
-    ["backers",      `"${name}"${anchor} lead investor venture capital backed participated investors funded round investment amount check size`],
+    // history/amounts/backers (three overlapping funding queries) merged
+    // into one general query plus one aimed at the funding databases.
+    ["funding",      `"${name}"${anchor} raised funding round seed "Series A" million investors "led by"`],
+    ["funding_db",   `"${name}" funding rounds investors site:crunchbase.com OR site:tracxn.com OR site:dealroom.co OR site:pitchbook.com OR site:cbinsights.com`],
     ["overview",     `"${name}"${anchor} company overview headquarters founded`],
     ["founders",     `"${name}"${anchor} founder CEO co-founder CTO`],
     ["team",         `"${name}"${anchor} employees team size headcount hiring`],
@@ -181,7 +191,8 @@ async function runAllSearches(name: string, anchor: string, state: SearchProvide
     ["acquisitions", `"${name}"${anchor} acquires OR acquired OR acquisition`],
     ["patents",      `"${name}"${anchor} patent OR patents OR site:patents.google.com`],
     ["financials",   `"${name}"${anchor} ARR "annual recurring revenue" OR revenue estimate OR valued at OR valuation milestone`],
-    ["tech",         `"${name}"${anchor} tech stack built with OR site:github.com OR site:huggingface.co`],
+    // (the separate "tech stack" query was dropped: careers/engineering
+    // pages fetched from the company's own site carry that, for free)
   ];
   const [searchBatches, newsResults] = await Promise.all([
     Promise.all(queries.map(([label, q]) => webSearch(q, label, state))),
@@ -212,6 +223,11 @@ interface RunSummary {
   websitePagesSkippedThin: number;
   serperCalls: number;
   tavilyCalls: number;
+  totalCacheReadTokens: number;
+  searchCacheHits: number;
+  articlesRead: number;
+  websitePagesDuplicate: number;
+  earlyRejected: number;
 }
 
 // $/token by model (ground rule 3: keep cost/token tracking), per call.
@@ -222,11 +238,18 @@ const PRICING: Record<string, { input: number; output: number }> = {
   "claude-sonnet-5-5": { input: 3 / 1_000_000, output: 15 / 1_000_000 },
 };
 
-function recordCost(summary: RunSummary, model: string, inputTokens: number, outputTokens: number): void {
-  summary.totalInputTokens += inputTokens;
-  summary.totalOutputTokens += outputTokens;
+// Prompt-cache pricing: a cache write bills 1.25x the input rate (5-minute
+// TTL), a cache read 0.1x — see lib/enrichment/sharedExtraction.ts.
+function recordCost(
+  summary: RunSummary, model: string,
+  usage: { inputTokens: number; outputTokens: number; cacheWriteTokens?: number; cacheReadTokens?: number },
+): void {
+  const write = usage.cacheWriteTokens ?? 0, read = usage.cacheReadTokens ?? 0;
+  summary.totalInputTokens += usage.inputTokens + write + read;
+  summary.totalOutputTokens += usage.outputTokens;
+  summary.totalCacheReadTokens += read;
   const pricing = PRICING[model] ?? PRICING["claude-haiku-4-5-20251001"];
-  summary.totalCostUsd += inputTokens * pricing.input + outputTokens * pricing.output;
+  summary.totalCostUsd += (usage.inputTokens + write * 1.25 + read * 0.1) * pricing.input + usage.outputTokens * pricing.output;
 }
 
 function bump(map: Map<string, number>, key: string): void {
@@ -260,6 +283,7 @@ async function processCompany(
 ): Promise<void> {
   console.log(`── ${row.name} (${row.id}) ──`);
   const searchState = createSearchProviderState();
+  searchState.cache = openSearchCache(row.id);
   const before = { ...summary.tally };
   try {
     await enrichCompany(row, existingRounds, taxonomy, startupByDomain, summary, searchState);
@@ -279,6 +303,10 @@ async function processCompany(
     summary.websitePagesSkippedThin += searchState.websitePagesSkippedThin;
     summary.serperCalls += searchState.serperCallCount;
     summary.tavilyCalls += searchState.tavilyCallCount;
+    summary.websitePagesDuplicate += searchState.websitePagesDuplicate;
+    summary.searchCacheHits += searchState.cache?.hits ?? 0;
+    if (searchState.cache?.hits) console.log(`    ♻️   ${searchState.cache.hits} search/page result(s) reused from the local cache (no API cost)`);
+    searchState.cache?.save();
   }
 }
 
@@ -299,11 +327,21 @@ async function enrichCompany(
   const domain = websiteDomain(effectiveWebsite);
   const anchor = domain ? ` "${domain}"` : row.country ? ` ${row.country} (startup OR tech company)` : "";
 
-  // ── Stage 1 + 2: search + website fetch, in parallel ──────────────────
-  const [searchResults, websitePages] = await Promise.all([
-    runAllSearches(row.name, anchor, searchState),
-    fetchCompanyWebsitePages(effectiveWebsite, searchState),
-  ]);
+  // ── Stage 1: website (Jina, free) → tech pre-check → searches ─────────
+  // The homepage is fetched first so a clearly non-tech company is
+  // rejected before paying for ~11 searches and three extraction calls.
+  const websitePages = await fetchCompanyWebsitePages(effectiveWebsite, searchState);
+  if (TECH_GATE) {
+    const gate = await runTechGate(row.name, websitePages[0]?.content ?? "", row.description, row.industry, { client: anthropic, model: ENRICH_MODEL });
+    recordCost(summary, ENRICH_MODEL, gate);
+    if (shouldSkipAsNonTech(gate.verdict)) {
+      console.log(`    🚫  REJECTED before searching — not a technology company: ${gate.verdict!.reason}`);
+      summary.tally.rejected++;
+      summary.earlyRejected++;
+      return;
+    }
+  }
+  const searchResults = await runAllSearches(row.name, anchor, searchState);
 
   const allRaw: RawSearchResult[] = [
     ...searchResults,
@@ -348,31 +386,37 @@ async function enrichCompany(
     return;
   }
 
+  // ── Stage 3b: read the most useful articles in full (Jina, free) ──────
+  // A snippet stops at ~600 characters; the full funding announcement has
+  // the exact date, every investor, headcount and the "About" boilerplate.
+  if (ARTICLES_TO_READ > 0) {
+    const toRead = pickArticlesToRead(kept, row.name, domain, ARTICLES_TO_READ);
+    const texts = await Promise.all(toRead.map((r) => fetchArticleText(r.url, searchState)));
+    let read = 0;
+    toRead.forEach((r, i) => {
+      const text = texts[i];
+      if (text) { r.content = `${r.content}\n[Full article text]\n${text}`; read++; }
+    });
+    summary.articlesRead += read;
+    if (toRead.length > 0) console.log(`    📰  Read ${read}/${toRead.length} full article(s) via Jina${VERBOSE ? `: ${toRead.map((r) => r.url).join(", ")}` : ""}`);
+  }
+
   // ── Stage 4: labeled sources + three extraction calls ──────────────────
+  // All three share one prompt-cached prefix (sharedExtraction.ts). The
+  // profile call goes first: it writes the cache, and it decides
+  // public / non-tech — in which case the other two calls are never made.
   let allSources: LabeledSource[] = buildLabeledSources(usableResults, domain);
-  const [profileOutcome, fundingOutcome, marketOutcome] = await Promise.all([
-    extractProfile(row.name, allSources, { client: anthropic, model: PROFILE_MODEL, taxonomy }),
-    extractFunding(row.name, allSources, { client: anthropic, model: FUNDING_MODEL }),
-    extractMarket(row.name, allSources, { client: anthropic, model: MARKET_MODEL }),
-  ]);
-  if (!profileOutcome || !fundingOutcome) {
-    console.log("    ❌  Extraction call(s) returned no tool_use block at all.");
+  const shared = (kind: ExtractionKind) => buildSharedExtractionRequest(kind, row.name, allSources, { taxonomy });
+  const profileOutcome = await extractProfile(row.name, allSources, { client: anthropic, model: PROFILE_MODEL, taxonomy, request: shared("profile") });
+  if (!profileOutcome) {
+    console.log("    ❌  Profile extraction returned no tool_use block at all.");
     summary.tally.error++;
     return;
   }
-  recordCost(summary, PROFILE_MODEL, profileOutcome.inputTokens, profileOutcome.outputTokens);
-  recordCost(summary, FUNDING_MODEL, fundingOutcome.inputTokens, fundingOutcome.outputTokens);
-  recordCost(summary, MARKET_MODEL, marketOutcome.inputTokens, marketOutcome.outputTokens);
+  recordCost(summary, PROFILE_MODEL, profileOutcome);
   logExtraction("profile", row.name, profileOutcome);
-  logExtraction("funding", row.name, fundingOutcome);
-  logExtraction("market", row.name, marketOutcome);
-
   let profile = profileOutcome.extraction.result;
-  let funding = fundingOutcome.extraction.result;
-  let market = marketOutcome.extraction.result;
-  for (const d of [...profileOutcome.extraction.dropped, ...fundingOutcome.extraction.dropped, ...marketOutcome.extraction.dropped]) {
-    bump(summary.droppedByReason, d.reason);
-  }
+  for (const d of profileOutcome.extraction.dropped) bump(summary.droppedByReason, d.reason);
 
   if (profile.is_public_company) {
     console.log(`    🏛️   PUBLIC COMPANY — archiving (status='ipo') rather than deleting (issue 7)`);
@@ -395,6 +439,27 @@ async function enrichCompany(
     return;
   }
 
+  const [fundingOutcome, marketOutcome] = await Promise.all([
+    extractFunding(row.name, allSources, { client: anthropic, model: FUNDING_MODEL, request: shared("funding") }),
+    extractMarket(row.name, allSources, { client: anthropic, model: MARKET_MODEL, request: shared("market") }),
+  ]);
+  if (!fundingOutcome) {
+    console.log("    ❌  Funding extraction returned no tool_use block at all.");
+    summary.tally.error++;
+    return;
+  }
+  recordCost(summary, FUNDING_MODEL, fundingOutcome);
+  recordCost(summary, MARKET_MODEL, marketOutcome);
+  logExtraction("funding", row.name, fundingOutcome);
+  logExtraction("market", row.name, marketOutcome);
+  if (VERBOSE) {
+    const read = fundingOutcome.cacheReadTokens + marketOutcome.cacheReadTokens;
+    console.log(`    💾  Prompt cache: ${profileOutcome.cacheWriteTokens} tokens written, ${read} read back (${read > 0 ? "hit" : "MISS — check that all three calls use the same model"})`);
+  }
+  let funding = fundingOutcome.extraction.result;
+  let market = marketOutcome.extraction.result;
+  for (const d of [...fundingOutcome.extraction.dropped, ...marketOutcome.extraction.dropped]) bump(summary.droppedByReason, d.reason);
+
   const existingRefs: ExistingRoundRef[] = existingRounds.map((r) => ({
     id: r.id, round_type: r.round_type ?? "Other", amount_raised: r.amount_raised, valuation: r.valuation,
     is_valuation_estimated: r.is_valuation_estimated, announcement_date: r.announcement_date,
@@ -416,7 +481,12 @@ async function enrichCompany(
       // Fresh news is worth a second look even when older articles are on file.
       newsCount: market.news.length,
       hasFoundedYear: row.founded_year != null || !!profile.profile.founded_year,
-      patentCount: (row.patents?.length ?? 0) + (row.patent_count ?? 0) + market.patents.length + (market.patent_summary.patent_count ?? 0),
+      // Patent deep dive only when some source ties a patent to this company
+      // — most startups have none, and searching for them anyway found
+      // nothing in every real run while costing two searches + a call.
+      patentCount: allSources.some((src) => /\bpatent(s|ed)?\b/i.test(src.content) && namesCompany(`${src.title ?? ""} ${src.content}`, row.name))
+        ? (row.patents?.length ?? 0) + (row.patent_count ?? 0) + market.patents.length + (market.patent_summary.patent_count ?? 0)
+        : undefined,
     });
     if (!gaps.includes("funding") && funding.funding_history_complete === false) gaps.unshift("funding");
 
@@ -476,19 +546,19 @@ async function enrichCompany(
 
         const before = { rounds: funding.funding_rounds.length, competitors: market.competitors.length, news: market.news.length, founders: profile.profile.founders?.length ?? 0, patents: market.patents.length, founded: !!profile.profile.founded_year };
         if (dFunding) {
-          recordCost(summary, FUNDING_MODEL, dFunding.inputTokens, dFunding.outputTokens);
+          recordCost(summary, FUNDING_MODEL, dFunding);
           logExtraction("deep funding", row.name, dFunding);
           for (const d of dFunding.extraction.dropped) bump(summary.droppedByReason, d.reason);
           funding = mergeFundingExtractions(funding, dFunding.extraction.result);
         }
         if (dProfile) {
-          recordCost(summary, PROFILE_MODEL, dProfile.inputTokens, dProfile.outputTokens);
+          recordCost(summary, PROFILE_MODEL, dProfile);
           logExtraction("deep profile", row.name, dProfile);
           for (const d of dProfile.extraction.dropped) bump(summary.droppedByReason, d.reason);
           profile = mergeProfileExtractions(profile, dProfile.extraction.result);
         }
         if (dMarket) {
-          recordCost(summary, MARKET_MODEL, dMarket.inputTokens, dMarket.outputTokens);
+          recordCost(summary, MARKET_MODEL, dMarket);
           logExtraction("deep market", row.name, dMarket);
           for (const d of dMarket.extraction.dropped) bump(summary.droppedByReason, d.reason);
           market = mergeMarketExtractions(market, dMarket.extraction.result);
@@ -1001,7 +1071,8 @@ async function main() {
   console.log(`║  PROFILE_MODEL=${PROFILE_MODEL}${" ".padEnd(Math.max(0, 62 - 16 - PROFILE_MODEL.length))}║`);
   console.log(`║  FUNDING_MODEL=${FUNDING_MODEL}${" ".padEnd(Math.max(0, 62 - 16 - FUNDING_MODEL.length))}║`);
   console.log(`║  MARKET_MODEL=${MARKET_MODEL}${" ".padEnd(Math.max(0, 62 - 15 - MARKET_MODEL.length))}║`);
-  console.log(`║  DEEP_DIVE=${String(DEEP_DIVE).padEnd(5)}${" ".padEnd(Math.max(0, 62 - 16))}║`);
+  console.log(`║  DEEP_DIVE=${String(DEEP_DIVE).padEnd(5)} TECH_GATE=${String(TECH_GATE).padEnd(5)} ARTICLES_TO_READ=${ARTICLES_TO_READ}`.padEnd(63) + "║");
+  console.log(`║  SEARCH_CACHE=${process.env.SEARCH_CACHE === "false" ? "off" : `on (${process.env.SEARCH_CACHE_DAYS ?? 30} days)`}`.padEnd(63) + "║");
   console.log(`║  MIN_PROFILE_CONFIDENCE=${MIN_PROFILE_CONFIDENCE} MIN_FUNDING_CONFIDENCE=${MIN_FUNDING_CONFIDENCE}${" ".padEnd(Math.max(0, 10))}║`);
   console.log(`║  (MIN_CONFIDENCE=${MIN_CONFIDENCE} kept for parity, unused by v2)${" ".padEnd(Math.max(0, 10))}║`);
   console.log(`╚${"═".repeat(62)}╝`);
@@ -1080,6 +1151,7 @@ async function main() {
     totalRoundsInserted: 0, totalRoundsUpdated: 0, totalFieldsPatched: 0, totalNewsAdded: 0, totalCompetitorsAdded: 0, deepDives: 0,
     totalInputTokens: 0, totalOutputTokens: 0, totalCostUsd: 0,
     websitePagesFetched: 0, websitePagesSkippedThin: 0, serperCalls: 0, tavilyCalls: 0,
+    totalCacheReadTokens: 0, searchCacheHits: 0, articlesRead: 0, websitePagesDuplicate: 0, earlyRejected: 0,
   };
 
   // Ctrl+C once: finish the current company (its writes are never left
@@ -1136,10 +1208,14 @@ async function main() {
   console.log(`  news articles added          ${summary.totalNewsAdded}`);
   console.log(`  competitors added            ${summary.totalCompetitorsAdded}`);
   console.log(`  companies deep-dived         ${summary.deepDives}`);
+  console.log(`  rejected before searching    ${summary.earlyRejected}  (tech pre-check)`);
+  console.log(`  full articles read (Jina)    ${summary.articlesRead}`);
+  console.log(`  prompt-cache tokens read     ${summary.totalCacheReadTokens.toLocaleString()}  (billed at 10%)`);
+  console.log(`  search results from cache    ${summary.searchCacheHits}  (no API cost)`);
   console.log(`  fields patched               ${summary.totalFieldsPatched}`);
   console.log(`  tokens (in/out)              ${summary.totalInputTokens.toLocaleString()} / ${summary.totalOutputTokens.toLocaleString()}`);
   console.log(`  claude cost (est.)           $${summary.totalCostUsd.toFixed(2)}  (search API cost is separate)`);
-  console.log(`  website pages: ${summary.websitePagesFetched} real / ${summary.websitePagesSkippedThin} thin-404 skipped  |  serper calls: ${summary.serperCalls}  |  tavily calls: ${summary.tavilyCalls}`);
+  console.log(`  website pages: ${summary.websitePagesFetched} real / ${summary.websitePagesSkippedThin} thin-404 / ${summary.websitePagesDuplicate} duplicate skipped  |  serper calls: ${summary.serperCalls}  |  tavily calls: ${summary.tavilyCalls}`);
   console.log("  dropped/flagged by reason code:");
   for (const [reason, count] of summary.droppedByReason) {
     console.log(`    ${reason.padEnd(32)} ${count}`);

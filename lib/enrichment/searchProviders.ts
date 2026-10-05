@@ -36,6 +36,8 @@
 import * as cheerio from "cheerio";
 import type { Provider, RawSearchResult } from "./sources";
 import { websiteDomain } from "./websiteValidation";
+import type { SearchCache } from "./searchCache";
+import { cleanArticleText } from "./articles";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -50,13 +52,17 @@ export interface SearchProviderState {
    *  "website fetch is failing" apart from "it's succeeding but half of
    *  what it fetches is junk". */
   websitePagesSkippedThin: number;
+  /** Website pages dropped as near-duplicates of a page already kept (e.g. /team redirecting to /about). */
+  websitePagesDuplicate: number;
+  /** Per-company disk cache (searchCache.ts) — a hit costs no API call. */
+  cache?: SearchCache;
 }
 
 export function createSearchProviderState(): SearchProviderState {
   return {
     serperCallCount: 0, tavilyCallCount: 0,
     tavilyExhausted: !process.env.TAVILY_API_KEY,
-    websitePagesFetched: 0, websitePagesSkippedThin: 0,
+    websitePagesFetched: 0, websitePagesSkippedThin: 0, websitePagesDuplicate: 0,
   };
 }
 
@@ -109,6 +115,9 @@ export async function serperSearch(
   attempt = 0,
 ): Promise<RawSearchResult[]> {
   if (!process.env.SERP_KEY) return [];
+  const cacheKey = `serper:${query}`;
+  const cached = state.cache?.get<RawSearchResult[]>(cacheKey);
+  if (cached) return cached.map((r) => ({ ...r, query_label: queryLabel }));
   try {
     const res = await fetch("https://google.serper.dev/search", {
       method: "POST",
@@ -131,6 +140,7 @@ export async function serperSearch(
     const data = await res.json() as SerperResponse;
     const results = parseSerperResponse(data, queryLabel);
     if (results.length > 0) state.serperCallCount++;
+    state.cache?.set(cacheKey, results);
     return results;
   } catch (err) {
     console.warn(`    ⚠️  Serper threw: ${String(err)}`);
@@ -167,6 +177,9 @@ export async function serperNewsSearch(
   attempt = 0,
 ): Promise<RawSearchResult[]> {
   if (!process.env.SERP_KEY) return [];
+  const cacheKey = `serper_news:${query}`;
+  const cached = state.cache?.get<RawSearchResult[]>(cacheKey);
+  if (cached) return cached.map((r) => ({ ...r, query_label: queryLabel }));
   try {
     const res = await fetch("https://google.serper.dev/news", {
       method: "POST",
@@ -189,6 +202,7 @@ export async function serperNewsSearch(
     const data = await res.json() as SerperNewsResponse;
     const results = parseSerperNewsResponse(data, queryLabel);
     if (results.length > 0) state.serperCallCount++;
+    state.cache?.set(cacheKey, results);
     return results;
   } catch (err) {
     console.warn(`    ⚠️  Serper News threw: ${String(err)}`);
@@ -219,6 +233,9 @@ export async function tavilySearch(
   state: SearchProviderState,
   attempt = 0,
 ): Promise<RawSearchResult[]> {
+  const cacheKey = `tavily:${query}`;
+  const cached = state.cache?.get<RawSearchResult[]>(cacheKey);
+  if (cached) return cached.map((r) => ({ ...r, query_label: queryLabel }));
   if (state.tavilyExhausted) return [];
   try {
     const res = await fetch("https://api.tavily.com/search", {
@@ -246,6 +263,7 @@ export async function tavilySearch(
     const data = await res.json() as TavilyResponse;
     const results = parseTavilyResponse(data, queryLabel);
     if (results.length > 0) state.tavilyCallCount++;
+    state.cache?.set(cacheKey, results);
     return results;
   } catch (err) {
     console.warn(`    ⚠️  Tavily threw: ${String(err)}`);
@@ -440,6 +458,39 @@ async function cheerioFetch(url: string): Promise<string | null> {
 
 export interface FetchedPage { url: string; content: string; provider: Provider }
 
+function shingles(text: string, size = 5): Set<string> {
+  const words = text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean);
+  const out = new Set<string>();
+  for (let i = 0; i + size <= words.length; i++) out.add(words.slice(i, i + size).join(" "));
+  return out;
+}
+
+/** True when two pages share at least `threshold` of their 5-word shingles (Jaccard) — the same page under two URLs. */
+export function isNearDuplicatePage(a: string, b: string, threshold = 0.8): boolean {
+  const sa = shingles(a), sb = shingles(b);
+  if (sa.size === 0 || sb.size === 0) return a.trim() === b.trim();
+  let inter = 0;
+  for (const x of sa) if (sb.has(x)) inter++;
+  return inter / (sa.size + sb.size - inter) >= threshold;
+}
+
+/**
+ * Full text of a third-party article via Jina Reader (free), cleaned of
+ * images/link targets and capped. null on any failure — the caller keeps
+ * the search snippet it already has.
+ */
+export async function fetchArticleText(url: string, state: SearchProviderState): Promise<string | null> {
+  const cacheKey = `article:${url}`;
+  const cached = state.cache?.get<string>(cacheKey);
+  if (cached) return cached;
+  const raw = await fetchViaJinaReader(url, state);
+  if (!raw) return null;
+  const text = cleanArticleText(raw);
+  if (!looksLikeRealContent(text)) return null;
+  state.cache?.set(cacheKey, text);
+  return text;
+}
+
 /**
  * Spec stage 2: home page plus /about, /team, /company, /contact "when they
  * exist" — each one its own [W#] source (not concatenated into one blob
@@ -465,17 +516,34 @@ export async function fetchCompanyWebsitePages(
 
   for (const path of candidatePaths) {
     const url = root.replace(/\/+$/, "") + path;
-    const viaJina = await fetchViaJinaReader(url, state);
-    const [content, provider]: [string | null, Provider] = viaJina ? [viaJina, "jina"] : [await cheerioFetch(url), "cheerio"];
+    const cachedPage = state.cache?.get<{ content: string; provider: Provider }>(`page:${url}`);
+    let content: string | null;
+    let provider: Provider;
+    if (cachedPage) {
+      ({ content, provider } = cachedPage);
+    } else {
+      const viaJina = await fetchViaJinaReader(url, state);
+      [content, provider] = viaJina ? [viaJina, "jina"] : [await cheerioFetch(url), "cheerio"];
+    }
     if (!content) continue;
     if (!looksLikeRealContent(content)) {
       state.websitePagesSkippedThin++;
       console.warn(`    ⚠️  thin/404-like page for ${url} (${content.length} chars, ${provider}) — skipping, not counted as a real source.`);
       continue;
     }
+    if (!cachedPage) state.cache?.set(`page:${url}`, { content, provider });
+    const capped = content.slice(0, MAX_WEBSITE_CHARS);
+    // /team, /company and /contact often redirect to (or render) the same
+    // page as /about or the homepage — sending it again only costs tokens.
+    const duplicateOf = pages.find((p) => isNearDuplicatePage(p.content, capped));
+    if (duplicateOf) {
+      state.websitePagesDuplicate++;
+      console.log(`    ♻️   ${url} is the same page as ${duplicateOf.url} — not sent twice.`);
+      continue;
+    }
     state.websitePagesFetched++;
-    pages.push({ url, content: content.slice(0, MAX_WEBSITE_CHARS), provider });
-    console.log(`    🌐  fetched ${url} (${content.length} chars, ${provider})`);
+    pages.push({ url, content: capped, provider });
+    console.log(`    🌐  fetched ${url} (${content.length} chars, ${provider}${cachedPage ? ", cached" : ""})`);
   }
   if (pages.length > 0) return pages;
 

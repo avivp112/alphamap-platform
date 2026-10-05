@@ -52,9 +52,9 @@ describe("pickBacktrackInvestors", () => {
 describe("buildDeepDiveQueries", () => {
   const ctx = { name: "Ghost", anchor: ' "ghost.org"', domain: "ghost.org", rounds: [{ round_type: "Series A", lead_investor: "a16z" }], founderNames: ["John O'Nolan"] };
 
-  it("funding: database sites, seed/pre-seed searches, a News-endpoint 'raises' query, and investor backtracking", () => {
+  it("funding: seed/pre-seed searches, a News-endpoint 'raises' query, and investor backtracking — not the first-pass queries again", () => {
     const qs = buildDeepDiveQueries("funding", ctx);
-    expect(qs.some((q) => q.query.includes("site:crunchbase.com") && q.query.includes("site:tracxn.com"))).toBe(true);
+    expect(qs.some((q) => q.query.includes("site:crunchbase.com"))).toBe(false);
     expect(qs.some((q) => q.kind === "news" && q.query === '"Ghost" raises')).toBe(true);
     expect(qs.some((q) => q.query.includes('"a16z" "Ghost"'))).toBe(true);
   });

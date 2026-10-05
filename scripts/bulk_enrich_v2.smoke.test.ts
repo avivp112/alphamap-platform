@@ -111,8 +111,9 @@ function sid(prompt: string, urlPart: string): string | undefined {
 }
 
 const createMock = vi.fn(async (req: { tools: Array<{ name: string }>; messages: Array<{ content: string }> }) => {
-  const prompt = req.messages[0].content;
-  const tool = req.tools[0].name;
+  const system = (req as { system?: Array<{ text: string }> }).system ?? [];
+  const prompt = [...system.map((b) => b.text), req.messages[0].content].join("\n");
+  const tool = (req as { tool_choice?: { name?: string } }).tool_choice?.name ?? req.tools[0].name;
   let input: Record<string, unknown> = {};
   const tc = sid(prompt, "ghost-raises-seed");
   const w1 = sid(prompt, "ghost.org");
@@ -183,6 +184,7 @@ vi.mock("@anthropic-ai/sdk", () => ({ default: class { messages = { create: crea
 describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
   beforeAll(async () => {
     process.env.DRY_RUN = "false";
+    process.env.SEARCH_CACHE = "false";
     process.env.DELAY_MS = "0";
     process.env.SERP_KEY = "test";
     process.env.TAVILY_API_KEY = "test";
@@ -196,7 +198,7 @@ describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
   const startupPatch = () => calls.find((c) => c.table === "startups" && c.op === "update" && (c.payload as Record<string, unknown>).last_enriched_at === undefined)?.payload as Record<string, unknown>;
 
   it("runs all three extraction calls plus a deep-dive profile call", () => {
-    const tools = createMock.mock.calls.map((c) => c[0].tools[0].name);
+    const tools = createMock.mock.calls.map((c) => (c[0] as { tool_choice?: { name?: string } }).tool_choice?.name ?? c[0].tools[0].name);
     expect(tools.filter((t) => t === "save_profile_extraction")).toHaveLength(2);
     expect(tools).toContain("save_funding_extraction");
     expect(tools).toContain("save_market_extraction");
@@ -254,6 +256,19 @@ describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
   });
 
   it("never let the same-named Ghost Robotics article into any Claude prompt", () => {
-    for (const c of createMock.mock.calls) expect(c[0].messages[0].content).not.toContain("ghost-robotics");
+    for (const c of createMock.mock.calls) expect(JSON.stringify(c[0])).not.toContain("ghost-robotics");
+  });
+
+  it("the three first-pass calls share one prompt-cached prefix (tools + system), differing only in tool_choice", () => {
+    const firstPass = createMock.mock.calls.map((c) => c[0] as unknown as { tools: unknown; system?: Array<{ cache_control?: unknown }>; tool_choice: { name: string } })
+      .filter((r) => r.system?.[0]?.cache_control);
+    expect(firstPass.map((r) => r.tool_choice.name).sort()).toEqual(["save_funding_extraction", "save_market_extraction", "save_profile_extraction"]);
+    const prefix = (r: (typeof firstPass)[number]) => JSON.stringify({ tools: r.tools, system: r.system });
+    expect(new Set(firstPass.map(prefix)).size).toBe(1);
+  });
+
+  it("runs the cheap tech pre-check before any search", () => {
+    const names = createMock.mock.calls.map((c) => (c[0] as { tool_choice?: { name?: string } }).tool_choice?.name);
+    expect(names[0]).toBe("classify_company");
   });
 });

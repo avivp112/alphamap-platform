@@ -379,23 +379,23 @@ export function processMarketExtractionResponse(
 
 // ── Live API wrapper ─────────────────────────────────────────────────────
 
-export interface ExtractMarketOptions { client: Anthropic; model: string }
+export interface ExtractMarketOptions { client: Anthropic; model: string; request?: object }
 
 export async function extractMarket(
   companyName: string,
   sources: LabeledSource[],
   options: ExtractMarketOptions,
-): Promise<{ extraction: ProcessedMarketExtraction; stopReason: string | null; inputTokens: number; outputTokens: number }> {
-  const request = buildMarketExtractionRequest(companyName, sources);
+): Promise<{ extraction: ProcessedMarketExtraction; stopReason: string | null; inputTokens: number; outputTokens: number; cacheWriteTokens: number; cacheReadTokens: number }> {
+  const request = (options.request ?? buildMarketExtractionRequest(companyName, sources)) as ReturnType<typeof buildMarketExtractionRequest>;
   debugDumpJson(companyName, "market_sources", sources);
   const msg = await options.client.messages.create({ ...request, model: options.model });
 
   const tool = msg.content.find((b) => b.type === "tool_use");
   if (!tool || tool.type !== "tool_use") {
-    return { extraction: { result: emptyMarketExtraction(), dropped: [] }, stopReason: msg.stop_reason, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens };
+    return { extraction: { result: emptyMarketExtraction(), dropped: [] }, stopReason: msg.stop_reason, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 };
   }
   debugDumpJson(companyName, "market_raw", tool.input);
   const extraction = processMarketExtractionResponse(tool.input, sources, companyName);
   debugDumpJson(companyName, "market_dropped", extraction.dropped);
-  return { extraction, stopReason: msg.stop_reason, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens };
+  return { extraction, stopReason: msg.stop_reason, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 };
 }
