@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isDistinctiveName, filterByEntity, filterResultsByEntity, type EntityAnchors } from "./entity";
+import { isDistinctiveName, filterByEntity, filterResultsByEntity, deriveIdentityKeywords, type EntityAnchors } from "./entity";
 
 describe("isDistinctiveName", () => {
   it("rejects the spec's own example common names", () => {
@@ -84,6 +84,45 @@ describe("filterByEntity", () => {
     );
     expect(verdict.kept).toBe(true);
     expect(verdict.matched).toBe("distinctive_name");
+  });
+});
+
+describe("identity keywords -- non-distinctive names (Ghost, Foundry, Gifted) without starving news/competitors", () => {
+  const ghostSite = [
+    "Ghost: The best open source blog & newsletter platform. Independent publishing with paid membership subscriptions.",
+    "Ghost is a publishing platform for newsletters and paid membership. Creators publish content and grow subscriptions.",
+  ];
+  const keywords = deriveIdentityKeywords(ghostSite, "Ghost");
+
+  it("derives the words that characterize the company from its own site, never the name or generic filler", () => {
+    expect(keywords).toEqual(expect.arrayContaining(["newsletter", "membership", "publishing"]));
+    expect(keywords).not.toContain("ghost");
+    expect(keywords).not.toContain("platform");
+  });
+
+  it("keeps a news article that names Ghost and talks about publishing/newsletters (was dropped as not_distinctive_name before)", () => {
+    const verdict = filterByEntity(
+      { url: "https://techcrunch.com/ghost-activitypub", title: "Ghost adds ActivityPub", snippet: "Ghost, the open source newsletter and publishing platform, now federates." },
+      { identityKeywords: keywords }, "Ghost",
+    );
+    expect(verdict.kept).toBe(true);
+    expect(verdict.matched).toBe("identity_keywords");
+  });
+
+  it("still drops a different same-named company (Ghost Robotics) — the collision issue 2 exists for", () => {
+    const verdict = filterByEntity(
+      { url: "https://techcrunch.com/ghost-robotics", title: "Ghost Robotics raises $100M", snippet: "Ghost Robotics builds legged quadruped robots for defense." },
+      { identityKeywords: keywords }, "Ghost",
+    );
+    expect(verdict.kept).toBe(false);
+  });
+
+  it("does not apply with fewer than two identity keywords (too weak to tell companies apart)", () => {
+    const verdict = filterByEntity(
+      { url: "https://x.com/a", snippet: "Ghost newsletter update" },
+      { identityKeywords: ["newsletter"] }, "Ghost",
+    );
+    expect(verdict.kept).toBe(false);
   });
 });
 

@@ -4,35 +4,34 @@
  * docs/enrichment_v2_spec.md Section 3's per-company pipeline, reusing
  * every lib/enrichment/ module built against that spec.
  *
- * ── WHAT THIS IS (and isn't) ─────────────────────────────────────────────
- * v1 (scripts/bulk_enrich_all.ts) stays untouched and runnable until this
- * passes the Phase 1 acceptance criteria (spec Section 7). This script
- * does NOT yet implement:
- *   - Stage 9 (conditional deep dives for early rounds / thin profiles) —
- *     the general-purpose pass below is the full pipeline for every
- *     company; the two targeted second-pass re-searches v1 has are
- *     deferred. A company that needs one will simply score lower / stay
- *     incomplete rather than get a wrong guess — consistent with ground
- *     rule 2, just less thorough than the final version should be.
- *   - News article OG-image fetching (cosmetic, v1's fetchArticleOgImage).
- *   - enrich_tech_signals.ts's GitHub/Hugging Face API signals (issue 11,
- *     explicitly a separate script per the target architecture).
- * Both are flagged here, not silently dropped, and are natural next
- * increments once this core pipeline is validated against real data.
+ * What it collects per company (every value traced to a fetched source):
+ *   1. Overview — description, founding year, HQ city/country, headcount,
+ *      sector + sub-sector tags.
+ *   2. Founders and leadership (bios, LinkedIn, quality tags).
+ *   3. Funding & valuation — every round (type, amount, date, valuation,
+ *      lead, participants, per-investor amounts when disclosed, source
+ *      URL), ARR milestones, revenue range, valuation benchmarks.
+ *   4. Talent & growth — current headcount plus dated historical points
+ *      (headcount_history, which drives Growth Velocity / Trend).
+ *   5. Competitors (4-6, each with a short overview), cross-linked to our
+ *      own startups by domain.
+ *   6. Acquisitions and patents.
+ *   7. News articles with links and og:image.
  *
- * Reuses from v1 (already safely exported for exactly this, per the Phase
- * 0 refactor — v1 itself is not modified): initV1Context() for env
- * loading + the `supabase` client, so this script never duplicates
- * credential handling.
+ * Pipeline: Stage 0 domain check -> Stage 1+2 search + website fetch ->
+ * Stage 3 entity filter -> Stage 4 three extraction calls in parallel
+ * (profile / funding / market) -> Stage 9 deep dive for whichever
+ * sections came back thin (targeted second search + the same evidence-
+ * gated extraction) -> Stage 6 validation -> Stage 7 round planning
+ * (fill / insert / contradiction) -> Stage 10 write.
  *
- * Same CLI/env vars as v1 (ground rule 3), plus the new ones from the spec:
- *   DRY_RUN (default true), OFFSET (default 0), BATCH_SIZE (default 9999),
- *   DELAY_MS (default 20000), MAX_TIER (default 3), MIN_CONFIDENCE (kept
- *   for parity but UNUSED here — v2 gates per-field via
- *   MIN_PROFILE_CONFIDENCE/MIN_FUNDING_CONFIDENCE instead of one whole-
- *   company score, per issue 9), ENRICH_MODEL, PROFILE_MODEL,
- *   FUNDING_MODEL (both default to ENRICH_MODEL), MIN_PROFILE_CONFIDENCE
- *   (default 50), MIN_FUNDING_CONFIDENCE (default 60).
+ * v1 (scripts/bulk_enrich_all.ts) stays untouched and runnable. Reuses
+ * initV1Context() for env loading + the `supabase` client.
+ *
+ * Same CLI/env vars as v1 (ground rule 3), plus:
+ *   PROFILE_MODEL / FUNDING_MODEL / MARKET_MODEL (default ENRICH_MODEL),
+ *   MIN_PROFILE_CONFIDENCE (50), MIN_FUNDING_CONFIDENCE (60),
+ *   DEEP_DIVE (default true; false skips Stage 9), VERBOSE.
  *
  * Usage:
  *   npx tsx scripts/bulk_enrich_v2.ts                              # dry run (default)
@@ -47,20 +46,29 @@ import { initV1Context, supabase } from "./bulk_enrich_all.ts";
 import { classifyTier, type TierRow, type TierRound } from "../lib/enrichment/queue.ts";
 import {
   createSearchProviderState, verifyDomainMatch, webSearch, newsSearch, fetchCompanyWebsitePages,
+  type SearchProviderState,
 } from "../lib/enrichment/searchProviders.ts";
-import { filterByEntity, type EntityAnchors } from "../lib/enrichment/entity.ts";
-import { buildLabeledSources, type RawSearchResult } from "../lib/enrichment/sources.ts";
+import { filterByEntity, deriveIdentityKeywords, type EntityAnchors } from "../lib/enrichment/entity.ts";
+import { buildLabeledSources, type RawSearchResult, type LabeledSource } from "../lib/enrichment/sources.ts";
 import { extractProfile, loadSectorTaxonomy, type SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { extractFunding, roundToRoundLike } from "../lib/enrichment/extractFunding.ts";
+import { extractMarket, normalizeUrlForMatch } from "../lib/enrichment/extractMarket.ts";
+import { detectGaps, buildDeepDiveQueries, type DeepDiveSection } from "../lib/enrichment/deepDive.ts";
+import {
+  groundRoundDetails, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
+  normalizeIsoDate, appendNew, type ExistingRoundRef,
+} from "../lib/enrichment/assemble.ts";
+import { fetchArticleOgImage } from "../lib/enrichment/ogImage.ts";
+import { normalizeForMatch } from "../lib/enrichment/evidence.ts";
 import { validateEnrichment } from "../lib/enrichment/validation.ts";
-import { dedupRounds, computeTotalRaised, type RoundLike } from "../lib/enrichment/rounds.ts";
-import { computeFieldConfidence, meetsProfileThreshold, meetsFundingThreshold } from "../lib/enrichment/confidence.ts";
+import { computeTotalRaised, normalizeRoundType, type RoundLike } from "../lib/enrichment/rounds.ts";
+import { computeFieldConfidence, meetsProfileThreshold } from "../lib/enrichment/confidence.ts";
 import {
   decideScalarWrite, decideHeadcountUpdate, mergePeople, appendDatedFigures,
-  fillArrayIfEmpty, fillScalarIfNull, type CandidateValue,
+  fillScalarIfNull, type CandidateValue,
 } from "../lib/enrichment/write.ts";
 import { validateWebsiteCandidate, websiteDomain, type DomainOwner } from "../lib/enrichment/websiteValidation.ts";
-import type { SourceType } from "../lib/enrichment/sourceTypes.ts";
+import { sourceTypeRank, type SourceType } from "../lib/enrichment/sourceTypes.ts";
 
 // ── Configuration (ground rule 3: same env vars as v1) ──────────────────
 const BATCH_SIZE     = Number(process.env.BATCH_SIZE     ?? 9999);
@@ -68,33 +76,31 @@ const OFFSET         = Number(process.env.OFFSET         ?? 0);
 const DELAY_MS       = Number(process.env.DELAY_MS       ?? 20_000);
 const DRY_RUN        = process.env.DRY_RUN               !== "false";
 const MAX_TIER       = Number(process.env.MAX_TIER       ?? 3);
-// DRY_RUN's own "Would patch: <field names>" line only shows which fields
-// would change, not what they'd change TO -- useless for actually checking
-// accuracy against real data. VERBOSE=true additionally prints the full
-// candidate value + evidence quote per field, so a human can sanity-check
-// each claim before ever flipping DRY_RUN=false.
+// VERBOSE=true prints the full candidate value + evidence per field, not
+// just the field names, in both dry and real runs.
 const VERBOSE         = process.env.VERBOSE               === "true";
-// Kept for parity/visibility only -- v2 does not gate on a single whole-
-// company confidence score (issue 9's entire point). Printed in the run
-// header so anyone diffing v1/v2 output side by side isn't confused by its
-// absence; never read for a decision anywhere below.
+// Stage 9 (targeted second search for thin sections). On by default.
+const DEEP_DIVE       = process.env.DEEP_DIVE             !== "false";
+// Kept for parity/visibility only -- v2 gates per field (issue 9), never on
+// one whole-company score. Printed in the run header, never read.
 const MIN_CONFIDENCE = Number(process.env.MIN_CONFIDENCE ?? 40);
 
 const ENRICH_MODEL  = process.env.ENRICH_MODEL  ?? "claude-haiku-4-5-20251001";
 const PROFILE_MODEL = process.env.PROFILE_MODEL ?? ENRICH_MODEL;
 const FUNDING_MODEL = process.env.FUNDING_MODEL ?? ENRICH_MODEL;
+const MARKET_MODEL  = process.env.MARKET_MODEL  ?? ENRICH_MODEL;
 const MIN_PROFILE_CONFIDENCE = Number(process.env.MIN_PROFILE_CONFIDENCE ?? 50);
 const MIN_FUNDING_CONFIDENCE = Number(process.env.MIN_FUNDING_CONFIDENCE ?? 60);
+const THRESHOLDS = { minProfileConfidence: MIN_PROFILE_CONFIDENCE, minFundingConfidence: MIN_FUNDING_CONFIDENCE };
+
+// Upper bounds on the additive list sections, so repeated runs can't grow
+// them without limit. Entries already on file are never removed.
+const MAX_COMPETITORS = 8;
+const MAX_NEWS = 15;
 
 let anthropic: Anthropic;
 
-// ── Minimal row shapes this script actually reads/writes ─────────────────
-// A deliberately narrower slice than v1's full StartupRow/FundingRoundRow —
-// only the columns this pipeline's current scope (profile scalars, social
-// links, founders/leadership, headcount, funding rounds, competitors/
-// acquisitions/patents/tech/financials fill-once fields) touches. Anything
-// this script doesn't yet write (news images, tech signals) isn't fetched
-// either, keeping the query itself a source of truth for current scope.
+// ── Row shapes this script reads/writes ──────────────────────────────────
 interface V2StartupRow {
   id: string; name: string; website: string | null;
   description: string | null; value_proposition: string | null; industry: string | null;
@@ -102,14 +108,15 @@ interface V2StartupRow {
   employee_count: number | null; employee_range: string | null; growth_trend: string | null;
   founders: Array<{ name: string; title?: string; bio?: string; linkedin_url?: string; had_prior_exit?: boolean; elite_background?: boolean; notable_pedigree?: boolean }> | null;
   leadership: Array<{ name: string; role: string; bio?: string; linkedin_url?: string; joined_date?: string; had_prior_exit?: boolean; elite_background?: boolean; notable_pedigree?: boolean }> | null;
-  competitors: Array<{ name: string; website?: string; how_it_competes: string }> | null;
-  acquisitions: Array<{ company_name: string; website?: string; acquired_date?: string; amount?: number; description?: string }> | null;
+  competitors: Array<{ name: string; website?: string | null; how_it_competes: string; startup_id?: string | null }> | null;
+  acquisitions: Array<{ company_name: string; website?: string | null; acquired_date?: string | null; amount?: number | null; description?: string | null; acquired_startup_id?: string | null }> | null;
+  news: Array<{ title: string; url: string; source?: string | null; published_date?: string | null; summary?: string | null; image_url?: string | null }> | null;
   patent_count: number | null; patent_fields: string[] | null;
-  patents: Array<{ title: string; patent_number?: string; filing_date?: string; url?: string; summary?: string }> | null;
+  patents: Array<{ title: string; patent_number?: string | null; filing_date?: string | null; url?: string | null; summary?: string | null }> | null;
   tech_stack: string[] | null; github_url: string | null; huggingface_url: string | null;
-  arr_milestones: Array<{ arr: number; date?: string }> | null;
-  revenue_estimate: { range_low?: number; range_high?: number; as_of_date?: string } | null;
-  valuation_benchmarks: Array<{ valuation: number; date?: string }> | null;
+  arr_milestones: Array<{ arr: number; date?: string | null; source?: string | null; confidence?: string | null }> | null;
+  revenue_estimate: { range_low?: number | null; range_high?: number | null; as_of_date?: string | null; source?: string | null; confidence?: string | null } | null;
+  valuation_benchmarks: Array<{ valuation: number; date?: string | null; source?: string | null; is_estimated?: boolean | null }> | null;
   linkedin_url: string | null; facebook_url: string | null; instagram_url: string | null;
   sector_id: string | null;
   funding_history_complete: boolean | null;
@@ -123,6 +130,7 @@ interface V2FundingRoundRow {
   amount_raised: number | null; valuation: number | null; is_valuation_estimated: boolean | null;
   announcement_date: string | null; source_url: string | null;
   lead_investor: string | null; investors: string[] | null;
+  investor_amounts: Array<{ name: string; amount: number }> | null;
 }
 
 type ProcessStatus =
@@ -146,29 +154,29 @@ async function fetchAllPaginated<T>(build: (from: number, to: number) => Promise
   return all;
 }
 
-// The 9 search queries from v1's researchCompany(), unchanged (ground rule
-// 4 / spec stage 1: "The same 9 Serper queries as v1"). Returns structured
-// results per query instead of v1's joined-string-per-query, each tagged
-// with its own query_label for sources.ts to carry through.
-async function runAllSearches(
-  name: string, anchor: string, state: ReturnType<typeof createSearchProviderState>,
-): Promise<RawSearchResult[]> {
+// First-pass searches: v1's query set, with its one overloaded "profile"
+// query (founders + HQ + headcount + acquisitions + patents + social links
+// in a single Google query) split into focused ones, one per section the
+// company page shows. Each result keeps its query_label for evidence dumps.
+async function runAllSearches(name: string, anchor: string, state: SearchProviderState): Promise<RawSearchResult[]> {
   const queries: Array<[string, string]> = [
-    ["history",     `"${name}"${anchor} seed round "Series A" first funding earliest founding investors site:crunchbase.com OR site:techcrunch.com OR site:pitchbook.com`],
-    ["amounts",     `"${name}"${anchor} total funding raised since founding all rounds USD million billion valuation announcement history`],
-    ["backers",     `"${name}"${anchor} lead investor venture capital backed participated investors funded round investment amount check size`],
-    ["profile",     `"${name}"${anchor} company founder CEO CTO description industry headquarters country city employees headcount acquired acquisition patents intellectual property linkedin.com/in profile linkedin.com/company facebook.com instagram.com 2025 2026`],
-    ["competitors", `"${name}"${anchor} competitors alternatives vs rivals "compared to" market landscape`],
-    ["patents",     `"${name}"${anchor} patent OR patents OR site:patents.google.com`],
-    ["financials",  `"${name}"${anchor} ARR "annual recurring revenue" OR revenue estimate OR valued at OR valuation milestone`],
-    ["tech",        `"${name}"${anchor} tech stack built with OR site:github.com OR site:huggingface.co`],
+    ["history",      `"${name}"${anchor} seed round "Series A" first funding earliest founding investors site:crunchbase.com OR site:techcrunch.com OR site:pitchbook.com`],
+    ["amounts",      `"${name}"${anchor} total funding raised since founding all rounds USD million billion valuation announcement history`],
+    ["backers",      `"${name}"${anchor} lead investor venture capital backed participated investors funded round investment amount check size`],
+    ["overview",     `"${name}"${anchor} company overview headquarters founded`],
+    ["founders",     `"${name}"${anchor} founder CEO co-founder CTO`],
+    ["team",         `"${name}"${anchor} employees team size headcount hiring`],
+    ["linkedin",     `site:linkedin.com/company "${name}"`],
+    ["competitors",  `"${name}"${anchor} competitors alternatives vs rivals "compared to" market landscape`],
+    ["acquisitions", `"${name}"${anchor} acquires OR acquired OR acquisition`],
+    ["patents",      `"${name}"${anchor} patent OR patents OR site:patents.google.com`],
+    ["financials",   `"${name}"${anchor} ARR "annual recurring revenue" OR revenue estimate OR valued at OR valuation milestone`],
+    ["tech",         `"${name}"${anchor} tech stack built with OR site:github.com OR site:huggingface.co`],
   ];
   const [searchBatches, newsResults] = await Promise.all([
     Promise.all(queries.map(([label, q]) => webSearch(q, label, state))),
-    // Serper's dedicated News API (not the generic /search endpoint) --
-    // plain "name + anchor news" query, recency/news-scoped by nature. The
-    // site:-heavy, year-stuffed query below is only used if Tavily's
-    // general-search fallback actually fires (see newsSearch()).
+    // Serper's News endpoint is primary for news; the site:-heavy query is
+    // only used if Tavily has to supplement (see newsSearch()).
     newsSearch(
       `"${name}"${anchor} news`,
       `"${name}"${anchor} news 2025 2026 site:techcrunch.com OR site:venturebeat.com OR site:prnewswire.com OR site:businesswire.com OR site:forbes.com OR site:sifted.eu launch funding announcement`,
@@ -182,26 +190,26 @@ interface RunSummary {
   tally: Record<ProcessStatus, number>;
   droppedByReason: Map<string, number>;
   totalRoundsInserted: number;
+  totalRoundsUpdated: number;
   totalFieldsPatched: number;
+  totalNewsAdded: number;
+  totalCompetitorsAdded: number;
+  deepDives: number;
   totalInputTokens: number;
   totalOutputTokens: number;
   totalCostUsd: number;
-  // Aggregated across every company's own SearchProviderState -- answers
-  // "is the website fetch actually working" with real numbers instead of
-  // eyeballing per-company log lines across a whole batch.
   websitePagesFetched: number;
   websitePagesSkippedThin: number;
+  serperCalls: number;
   tavilyCalls: number;
 }
 
-// $/token by model (ground rule 3: keep cost/token tracking). Computed per
-// call against that call's OWN model, then accumulated as a running dollar
-// total -- not reconstructed from aggregate token counts after the fact --
-// since PROFILE_MODEL and FUNDING_MODEL can legitimately differ.
+// $/token by model (ground rule 3: keep cost/token tracking), per call.
 const PRICING: Record<string, { input: number; output: number }> = {
   "claude-haiku-4-5": { input: 1 / 1_000_000, output: 5 / 1_000_000 },
   "claude-haiku-4-5-20251001": { input: 1 / 1_000_000, output: 5 / 1_000_000 },
   "claude-sonnet-5": { input: 3 / 1_000_000, output: 15 / 1_000_000 },
+  "claude-sonnet-5-5": { input: 3 / 1_000_000, output: 15 / 1_000_000 },
 };
 
 function recordCost(summary: RunSummary, model: string, inputTokens: number, outputTokens: number): void {
@@ -215,6 +223,24 @@ function bump(map: Map<string, number>, key: string): void {
   map.set(key, (map.get(key) ?? 0) + 1);
 }
 
+const WEBSITE_PROVIDERS = new Set(["jina", "tavily_extract", "cheerio"]);
+const isWebsiteResult = (r: RawSearchResult) => WEBSITE_PROVIDERS.has(r.provider);
+
+function logExtraction(label: string, companyName: string, outcome: { stopReason: string | null; outputTokens: number }): void {
+  console.log(`    🧠  ${label} extraction: stop_reason=${outcome.stopReason} output_tokens=${outcome.outputTokens}`);
+  if (outcome.stopReason === "max_tokens") {
+    console.warn(`    ⚠️  ${label} extraction TRUNCATED for "${companyName}" — fields after the cutoff are missing, not genuinely empty.`);
+  }
+}
+
+function confidenceLabel(t: SourceType | undefined): "high" | "medium" | "low" {
+  if (!t) return "low";
+  const rank = sourceTypeRank(t);
+  return rank >= sourceTypeRank("press_release") ? "high" : rank >= sourceTypeRank("news") ? "medium" : "low";
+}
+
+const sameJson = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
 async function processCompany(
   row: V2StartupRow,
   existingRounds: V2FundingRoundRow[],
@@ -224,7 +250,26 @@ async function processCompany(
 ): Promise<void> {
   console.log(`── ${row.name} (${row.id}) ──`);
   const searchState = createSearchProviderState();
+  try {
+    await enrichCompany(row, existingRounds, taxonomy, startupByDomain, summary, searchState);
+  } finally {
+    // Every exit path (rejected / archived / low_evidence / success) still
+    // spent real search calls, so they're counted here, once.
+    summary.websitePagesFetched += searchState.websitePagesFetched;
+    summary.websitePagesSkippedThin += searchState.websitePagesSkippedThin;
+    summary.serperCalls += searchState.serperCallCount;
+    summary.tavilyCalls += searchState.tavilyCallCount;
+  }
+}
 
+async function enrichCompany(
+  row: V2StartupRow,
+  existingRounds: V2FundingRoundRow[],
+  taxonomy: SectorTaxonomy,
+  startupByDomain: Map<string, DomainOwner>,
+  summary: RunSummary,
+  searchState: SearchProviderState,
+): Promise<void> {
   // ── Stage 0: domain verification ──────────────────────────────────────
   const domainVerification = await verifyDomainMatch(row.name, row.website, searchState);
   const effectiveWebsite = domainVerification.verified === false ? null : row.website;
@@ -239,12 +284,6 @@ async function processCompany(
     runAllSearches(row.name, anchor, searchState),
     fetchCompanyWebsitePages(effectiveWebsite, searchState),
   ]);
-  // Captured here, right after the only two stages that touch searchState,
-  // so it's accounted for regardless of which exit path this company takes
-  // below (rejected/archived/low_evidence/etc. all still searched real data).
-  summary.websitePagesFetched += searchState.websitePagesFetched;
-  summary.websitePagesSkippedThin += searchState.websitePagesSkippedThin;
-  summary.tavilyCalls += searchState.tavilyCallCount;
 
   const allRaw: RawSearchResult[] = [
     ...searchResults,
@@ -258,35 +297,44 @@ async function processCompany(
   }
 
   // ── Stage 3: entity filter ─────────────────────────────────────────────
+  // Identity keywords come from the company's OWN site (trusted by
+  // construction): they let a result naming a non-distinctive company
+  // ("Ghost", "Foundry") through only when it also talks about what this
+  // company actually does.
+  const identityKeywords = deriveIdentityKeywords(
+    [...websitePages.map((p) => p.content), row.description ?? "", row.value_proposition ?? "", row.industry ?? ""],
+    row.name,
+  );
   const anchors: EntityAnchors = {
     domain: domain ?? undefined,
-    founderNames: (row.founders ?? []).map((f) => f.name),
+    founderNames: [...(row.founders ?? []), ...(row.leadership ?? [])].map((p) => p?.name).filter((n): n is string => !!n && n.trim().length > 3),
     trustedCountry: row.is_manually_verified ? (row.country ?? undefined) : undefined,
+    identityKeywords,
   };
-  const searchOnlyResults = allRaw.filter((r) => r.provider !== "jina" && r.provider !== "tavily_extract" && r.provider !== "cheerio");
-  const kept = searchOnlyResults.filter((r) =>
-    filterByEntity({ url: r.url, title: r.title, snippet: r.content }, anchors, row.name).kept,
-  );
-  const entityStatus = kept.length < 2 ? "low_evidence" : "ok";
-  // Website pages are never entity-filtered -- they ARE the company's own
-  // site by construction (we just fetched it from its own verified/on-file
-  // domain), so there's no "wrong company" risk for entity.ts to catch.
-  const websiteRaw = allRaw.filter((r) => r.provider === "jina" || r.provider === "tavily_extract" || r.provider === "cheerio");
-  const usableResults = [...kept, ...websiteRaw];
+  const passesEntity = (r: RawSearchResult, a: EntityAnchors) =>
+    filterByEntity({ url: r.url, title: r.title, snippet: r.content }, a, row.name).kept;
 
-  if (entityStatus === "low_evidence" && websiteRaw.length === 0) {
+  const searchOnly = allRaw.filter((r) => !isWebsiteResult(r));
+  const kept = searchOnly.filter((r) => passesEntity(r, anchors));
+  // Website pages are never entity-filtered — fetched from the company's
+  // own domain, so there's no "wrong company" risk.
+  const websiteRaw = allRaw.filter(isWebsiteResult);
+  const usableResults = [...kept, ...websiteRaw];
+  console.log(`    🧭  Entity filter: kept ${kept.length}/${searchOnly.length} search results + ${websiteRaw.length} website page(s)${VERBOSE && identityKeywords.length ? ` | identity keywords: ${identityKeywords.join(", ")}` : ""}`);
+
+  if (kept.length < 2 && websiteRaw.length === 0) {
     console.log(`    🔍  low_evidence — fewer than 2 results survived entity filtering, and no website fetch. Skipping Claude calls.`);
     summary.tally.low_evidence++;
     return;
   }
 
-  // ── Stage 4: labeled sources + two extraction calls ────────────────────
-  const labeledSources = buildLabeledSources(usableResults, domain);
-  const [profileOutcome, fundingOutcome] = await Promise.all([
-    extractProfile(row.name, labeledSources, { client: anthropic, model: PROFILE_MODEL, taxonomy }),
-    extractFunding(row.name, labeledSources, { client: anthropic, model: FUNDING_MODEL }),
+  // ── Stage 4: labeled sources + three extraction calls ──────────────────
+  let allSources: LabeledSource[] = buildLabeledSources(usableResults, domain);
+  const [profileOutcome, fundingOutcome, marketOutcome] = await Promise.all([
+    extractProfile(row.name, allSources, { client: anthropic, model: PROFILE_MODEL, taxonomy }),
+    extractFunding(row.name, allSources, { client: anthropic, model: FUNDING_MODEL }),
+    extractMarket(row.name, allSources, { client: anthropic, model: MARKET_MODEL }),
   ]);
-
   if (!profileOutcome || !fundingOutcome) {
     console.log("    ❌  Extraction call(s) returned no tool_use block at all.");
     summary.tally.error++;
@@ -294,16 +342,17 @@ async function processCompany(
   }
   recordCost(summary, PROFILE_MODEL, profileOutcome.inputTokens, profileOutcome.outputTokens);
   recordCost(summary, FUNDING_MODEL, fundingOutcome.inputTokens, fundingOutcome.outputTokens);
-  for (const [label, outcome] of [["profile", profileOutcome], ["funding", fundingOutcome]] as const) {
-    console.log(`    🧠  ${label} extraction: stop_reason=${outcome.stopReason} output_tokens=${outcome.outputTokens}`);
-    if (outcome.stopReason === "max_tokens") {
-      console.warn(`    ⚠️  ${label} extraction TRUNCATED for "${row.name}" — fields after the cutoff are missing, not genuinely empty.`);
-    }
-  }
+  recordCost(summary, MARKET_MODEL, marketOutcome.inputTokens, marketOutcome.outputTokens);
+  logExtraction("profile", row.name, profileOutcome);
+  logExtraction("funding", row.name, fundingOutcome);
+  logExtraction("market", row.name, marketOutcome);
 
-  const { result: profile, dropped: profileDropped } = profileOutcome.extraction;
-  const { result: funding, dropped: fundingDropped } = fundingOutcome.extraction;
-  for (const d of [...profileDropped, ...fundingDropped]) bump(summary.droppedByReason, d.reason);
+  let profile = profileOutcome.extraction.result;
+  let funding = fundingOutcome.extraction.result;
+  let market = marketOutcome.extraction.result;
+  for (const d of [...profileOutcome.extraction.dropped, ...fundingOutcome.extraction.dropped, ...marketOutcome.extraction.dropped]) {
+    bump(summary.droppedByReason, d.reason);
+  }
 
   if (profile.is_public_company) {
     console.log(`    🏛️   PUBLIC COMPANY — archiving (status='ipo') rather than deleting (issue 7)`);
@@ -326,17 +375,121 @@ async function processCompany(
     return;
   }
 
-  // ── Stage 6: validation (city/country/founded_year/headcount/rounds) ──
-  const allRoundLikes: RoundLike[] = [
-    ...existingRounds.map((r) => ({
-      round_type: r.round_type ?? "Other", amount_raised: r.amount_raised, valuation: r.valuation,
-      announcement_date: r.announcement_date, lead_investor: r.lead_investor,
-      other_investors: r.investors, source_url: r.source_url,
-    })),
-    ...funding.funding_rounds.map(roundToRoundLike),
-  ];
-  const totalRaisedUsd = computeTotalRaised(allRoundLikes);
+  const existingRefs: ExistingRoundRef[] = existingRounds.map((r) => ({
+    id: r.id, round_type: r.round_type ?? "Other", amount_raised: r.amount_raised, valuation: r.valuation,
+    is_valuation_estimated: r.is_valuation_estimated, announcement_date: r.announcement_date,
+    lead_investor: r.lead_investor, other_investors: r.investors, source_url: r.source_url,
+    investor_amounts: r.investor_amounts,
+  }));
 
+  // ── Stage 9: deep dive into whichever sections came back thin ──────────
+  if (DEEP_DIVE) {
+    const firstPassRounds: RoundLike[] = [...existingRefs, ...funding.funding_rounds.map(roundToRoundLike)];
+    const gaps = detectGaps({
+      rounds: firstPassRounds,
+      bootstrapped: firstPassRounds.some((r) => normalizeRoundType(r.round_type) === "Bootstrapped"),
+      hasDescription: !!(row.description || profile.profile.description),
+      hasLocation: !!((row.city || profile.profile.city) && (row.country || profile.profile.country)),
+      hasHeadcount: row.employee_count != null || !!profile.metrics.employee_count || !!profile.metrics.employee_range,
+      hasFounders: (row.founders?.length ?? 0) > 0 || (profile.profile.founders?.length ?? 0) > 0,
+      competitorCount: (row.competitors?.length ?? 0) + market.competitors.length,
+      // Fresh news is worth a second look even when older articles are on file.
+      newsCount: market.news.length,
+    });
+    if (!gaps.includes("funding") && funding.funding_history_complete === false) gaps.unshift("funding");
+
+    if (gaps.length > 0) {
+      summary.deepDives++;
+      const extractedPeople = [...(profile.profile.founders ?? []), ...profile.leadership].map((p) => p.name).filter(Boolean);
+      const founderNames = [...new Set([...extractedPeople, ...(anchors.founderNames ?? [])])];
+      const queries = gaps.flatMap((section) =>
+        buildDeepDiveQueries(section, { name: row.name, anchor, domain, rounds: firstPassRounds, founderNames })
+          .map((q) => ({ ...q, section })),
+      );
+      console.log(`    🔎  Deep dive: ${gaps.join(", ")} (${queries.length} targeted searches)`);
+      const batches = await Promise.all(queries.map(async (q) => ({
+        section: q.section,
+        results: q.kind === "news" ? await newsSearch(q.query, q.query, q.label, searchState) : await webSearch(q.query, q.label, searchState),
+      })));
+
+      // Newly found people are anchors too: an article naming a founder
+      // the first pass just verified is about this company.
+      const deepAnchors: EntityAnchors = { ...anchors, founderNames: founderNames.filter((n) => n.trim().length > 3) };
+      const firstPassUrls = new Set(allRaw.map((r) => normalizeUrlForMatch(r.url)));
+      const sectionsByUrl = new Map<string, Set<DeepDiveSection>>();
+      const deepUnique: RawSearchResult[] = [];
+      let deepSeen = 0;
+      for (const { section, results } of batches) {
+        for (const r of results) {
+          deepSeen++;
+          const key = normalizeUrlForMatch(r.url);
+          if (firstPassUrls.has(key)) continue;
+          if (!sectionsByUrl.has(key)) {
+            if (!passesEntity(r, deepAnchors)) continue;
+            sectionsByUrl.set(key, new Set());
+            deepUnique.push(r);
+          }
+          sectionsByUrl.get(key)!.add(section);
+        }
+      }
+      console.log(`    🔎  Deep dive: ${deepUnique.length} new source(s) kept of ${deepSeen} result(s)`);
+
+      if (deepUnique.length > 0) {
+        // Appended after the first-pass sources, so every first-pass S#/W#
+        // id stays exactly the same and the new ones continue the sequence.
+        allSources = buildLabeledSources([...usableResults, ...deepUnique], domain);
+        const deepSources = allSources.slice(usableResults.length);
+        const forSections = (...sections: DeepDiveSection[]) =>
+          deepSources.filter((s) => sections.some((sec) => sectionsByUrl.get(normalizeUrlForMatch(s.url))?.has(sec)));
+
+        const fundingSrc = gaps.includes("funding") ? forSections("funding") : [];
+        const profileSrc = gaps.includes("profile") ? forSections("profile") : [];
+        const marketSrc = gaps.includes("competitors") || gaps.includes("news") ? forSections("competitors", "news") : [];
+
+        const [dFunding, dProfile, dMarket] = await Promise.all([
+          fundingSrc.length ? extractFunding(row.name, fundingSrc, { client: anthropic, model: FUNDING_MODEL }) : null,
+          profileSrc.length ? extractProfile(row.name, profileSrc, { client: anthropic, model: PROFILE_MODEL, taxonomy }) : null,
+          marketSrc.length ? extractMarket(row.name, marketSrc, { client: anthropic, model: MARKET_MODEL }) : null,
+        ]);
+
+        const before = { rounds: funding.funding_rounds.length, competitors: market.competitors.length, news: market.news.length, founders: profile.profile.founders?.length ?? 0 };
+        if (dFunding) {
+          recordCost(summary, FUNDING_MODEL, dFunding.inputTokens, dFunding.outputTokens);
+          logExtraction("deep funding", row.name, dFunding);
+          for (const d of dFunding.extraction.dropped) bump(summary.droppedByReason, d.reason);
+          funding = mergeFundingExtractions(funding, dFunding.extraction.result);
+        }
+        if (dProfile) {
+          recordCost(summary, PROFILE_MODEL, dProfile.inputTokens, dProfile.outputTokens);
+          logExtraction("deep profile", row.name, dProfile);
+          for (const d of dProfile.extraction.dropped) bump(summary.droppedByReason, d.reason);
+          profile = mergeProfileExtractions(profile, dProfile.extraction.result);
+        }
+        if (dMarket) {
+          recordCost(summary, MARKET_MODEL, dMarket.inputTokens, dMarket.outputTokens);
+          logExtraction("deep market", row.name, dMarket);
+          for (const d of dMarket.extraction.dropped) bump(summary.droppedByReason, d.reason);
+          market = mergeMarketExtractions(market, dMarket.extraction.result);
+        }
+        console.log(`    🔎  Deep dive added: +${funding.funding_rounds.length - before.rounds} round(s), +${market.competitors.length - before.competitors} competitor(s), +${market.news.length - before.news} news, +${(profile.profile.founders?.length ?? 0) - before.founders} founder(s)`);
+      }
+    }
+  }
+
+  const sourceById = new Map(allSources.map((s) => [s.source_id, s]));
+  const sourceTypeFor = (sourceId: string | undefined): SourceType | undefined => (sourceId ? sourceById.get(sourceId)?.source_type : undefined);
+  const sourceUrlFor = (sourceId: string | undefined): string | null => (sourceId ? sourceById.get(sourceId)?.url ?? null : null);
+
+  // ── Round grounding: co-investors / per-investor amounts / source URL ──
+  const newRoundLikes: RoundLike[] = funding.funding_rounds.map((r) => {
+    const grounded = groundRoundDetails(r, allSources);
+    for (const reason of grounded.dropped) bump(summary.droppedByReason, reason);
+    return roundToRoundLike(grounded.round);
+  });
+
+  // ── Stage 6: validation (city/country/founded_year/headcount/rounds) ──
+  type TaggedRound = RoundLike & { _new?: true };
+  const roughPlan = planRoundWrites(existingRefs, newRoundLikes);
   const validation = validateEnrichment({
     existing: {
       founded_year: row.founded_year,
@@ -347,72 +500,83 @@ async function processCompany(
       founded_year: profile.profile.founded_year?.value ?? null,
       city: profile.profile.city?.value ?? null,
       country: profile.profile.country?.value ?? null,
-      country_source_type: profile.profile.country ? labeledSources.find((s) => s.source_id === profile.profile.country!.source_id)?.source_type : null,
+      country_source_type: sourceTypeFor(profile.profile.country?.source_id) ?? null,
       employee_count: profile.metrics.employee_count?.value ?? null,
     },
-    rounds: allRoundLikes,
-    totalRaisedUsd,
+    rounds: [...existingRefs, ...newRoundLikes.map((r): TaggedRound => ({ ...r, _new: true }))],
+    totalRaisedUsd: computeTotalRaised([...existingRefs, ...roughPlan.inserts]),
   });
   for (const issue of validation.issues) {
     console.log(`    ⚠️  [${issue.rule}] ${issue.message}`);
     bump(summary.droppedByReason, issue.rule);
   }
+  const acceptedNewRounds: RoundLike[] = validation.acceptedRounds
+    .filter((r) => (r as TaggedRound)._new)
+    .map((r) => { const { _new, ...rest } = r as TaggedRound; void _new; return rest; });
 
-  // ── Stage 7: round dedup (existing + new, combined) ────────────────────
-  const dedup = dedupRounds(allRoundLikes);
-  for (const { a, b } of dedup.needsReview) {
-    console.log(`    🔶  Possible duplicate rounds need human review: ${a.round_type} (${a.announcement_date}) vs ${b.round_type} (${b.announcement_date})`);
-    bump(summary.droppedByReason, "possible_duplicate_needs_review");
+  // ── Stage 7: round planning (fill existing / insert new / contradiction)
+  const plan = planRoundWrites(existingRefs, acceptedNewRounds);
+  for (const c of plan.conflicts) {
+    console.log(`    ⚔️   Contradiction on ${c.round_type}: ${c.message} — kept the round on file, nothing written for it`);
+    bump(summary.droppedByReason, "round_conflict_with_existing");
   }
-  // Only rounds that are genuinely NEW (not already one of existingRounds)
-  // get inserted -- dedup.rounds includes both old and new, merged.
-  const existingKey = (r: RoundLike) => `${r.round_type}|${r.announcement_date}|${r.amount_raised}`;
-  const existingKeys = new Set(existingRounds.map((r) => existingKey({ round_type: r.round_type ?? "Other", announcement_date: r.announcement_date, amount_raised: r.amount_raised })));
-  const newRoundsToInsert = dedup.rounds.filter((r) => !existingKeys.has(existingKey(r)) && r.round_type !== "IPO"); // IPO rounds never stored, matching v1
 
   // ── Stage 8: confidence ─────────────────────────────────────────────────
-  function sourceTypeFor(sourceId: string | undefined): SourceType | undefined {
-    if (!sourceId) return undefined;
-    return labeledSources.find((s) => s.source_id === sourceId)?.source_type;
-  }
   const cityConfidence = profile.profile.city ? computeFieldConfidence([{ source_type: sourceTypeFor(profile.profile.city.source_id) ?? "model_inferred" }]) : 0;
   const countryConfidence = profile.profile.country ? computeFieldConfidence([{ source_type: sourceTypeFor(profile.profile.country.source_id) ?? "model_inferred" }]) : 0;
 
   // ── Stage 10: write ──────────────────────────────────────────────────────
   const patch: Record<string, unknown> = {};
   const fieldWrites: Array<{ field: string; value: unknown; source_id: string; evidence_quote: string; source_type: SourceType }> = [];
+  const provenance = (field: string, value: unknown, ev: { source_id: string; evidence_quote: string } | undefined) => {
+    if (ev) fieldWrites.push({ field, value, source_id: ev.source_id, evidence_quote: ev.evidence_quote, source_type: sourceTypeFor(ev.source_id) ?? "model_inferred" });
+  };
+  /** Sets a patch key only when it actually changes what's on file. */
+  const setIfChanged = (key: string, next: unknown, prev: unknown) => {
+    if (next === null || next === undefined) return;
+    if (Array.isArray(next) && next.length === 0) return;
+    if (!sameJson(next, prev)) patch[key] = next;
+  };
 
-  if (validation.accepted.city && meetsProfileThreshold(cityConfidence) && row.city == null) {
-    patch.city = validation.accepted.city;
-    if (profile.profile.city) fieldWrites.push({ field: "profile.city", value: validation.accepted.city, source_id: profile.profile.city.source_id, evidence_quote: profile.profile.city.evidence_quote, source_type: sourceTypeFor(profile.profile.city.source_id) ?? "model_inferred" });
+  // Overview
+  if (validation.accepted.city && row.city == null && !meetsProfileThreshold(cityConfidence, THRESHOLDS)) {
+    console.log(`    ℹ️   City "${validation.accepted.city}" withheld — its only evidence is a ${sourceTypeFor(profile.profile.city?.source_id) ?? "unknown"} source (confidence ${cityConfidence} < ${MIN_PROFILE_CONFIDENCE}).`);
+    bump(summary.droppedByReason, "below_profile_confidence");
   }
-  if (validation.accepted.country && row.country == null && meetsProfileThreshold(countryConfidence)) {
+  if (validation.accepted.city && meetsProfileThreshold(cityConfidence, THRESHOLDS) && row.city == null) {
+    patch.city = validation.accepted.city;
+    provenance("profile.city", validation.accepted.city, profile.profile.city);
+  }
+  if (validation.accepted.country && row.country == null && meetsProfileThreshold(countryConfidence, THRESHOLDS)) {
     patch.country = validation.accepted.country;
-    if (profile.profile.country) fieldWrites.push({ field: "profile.country", value: validation.accepted.country, source_id: profile.profile.country.source_id, evidence_quote: profile.profile.country.evidence_quote, source_type: sourceTypeFor(profile.profile.country.source_id) ?? "model_inferred" });
-  } else if (validation.accepted.country && row.country != null) {
+    provenance("profile.country", validation.accepted.country, profile.profile.country);
+  } else if (validation.accepted.country && row.country != null && normalizeForMatch(row.country) !== normalizeForMatch(validation.accepted.country)) {
     // Existing value present -- issue 3's overwrite rule, not a plain fill.
     const decision = decideScalarWrite<string>(
       { value: row.country, provenance: row.is_manually_verified ? { source_type: "manual", is_manually_verified: true } : null },
       { value: validation.accepted.country, source_type: sourceTypeFor(profile.profile.country?.source_id) ?? "model_inferred", independentSourceCount: 1 },
     );
-    // Outranking the existing source is necessary but not sufficient --
-    // ground rule 2 means even a higher-ranked source still needs to clear
-    // the normal confidence bar before it's allowed to overwrite a real
-    // value (as opposed to filling a blank, where there's nothing to lose).
-    if (decision.decision === "overwrite" && meetsProfileThreshold(countryConfidence)) {
+    if (decision.decision === "overwrite" && meetsProfileThreshold(countryConfidence, THRESHOLDS)) {
       patch.country = validation.accepted.country;
+      provenance("profile.country", validation.accepted.country, profile.profile.country);
       console.log(`    ✏️   Overwriting country: ${decision.reason}`);
     } else if (decision.decision === "overwrite") {
       console.log(`    ⚠️  Country overwrite candidate outranked the existing source but confidence (${countryConfidence}) is below the threshold -- kept existing value.`);
     }
   }
-  if (validation.accepted.founded_year && row.founded_year == null) patch.founded_year = validation.accepted.founded_year;
+  if (validation.accepted.founded_year && row.founded_year == null) {
+    patch.founded_year = validation.accepted.founded_year;
+    provenance("profile.founded_year", validation.accepted.founded_year, profile.profile.founded_year);
+  }
   if (!row.description && profile.profile.description) patch.description = profile.profile.description;
-  patch.value_proposition = fillScalarIfNull(row.value_proposition, profile.profile.value_proposition);
+  if (!row.value_proposition && profile.profile.value_proposition) patch.value_proposition = profile.profile.value_proposition;
   if (!row.industry && profile.profile.industry) patch.industry = profile.profile.industry;
   if (!row.website && profile.profile.website) {
     const websiteResult = validateWebsiteCandidate(profile.profile.website.value, row.id, startupByDomain);
-    patch.website = websiteResult.website;
+    if (websiteResult.website) {
+      patch.website = websiteResult.website;
+      provenance("profile.website", websiteResult.website, profile.profile.website);
+    }
     if (websiteResult.rejectedReason) console.warn(`    ⚠️  Rejected website "${profile.profile.website.value}" — ${websiteResult.rejectedReason}${websiteResult.rejectedOwnerName ? ` (${websiteResult.rejectedOwnerName})` : ""}.`);
   }
   if (!row.linkedin_url && profile.profile.linkedin_url) patch.linkedin_url = profile.profile.linkedin_url.value;
@@ -423,132 +587,230 @@ async function processCompany(
     const { data: sid } = await supabase.rpc("sector_id_by_name", { p_name: profile.profile.sector_name });
     if (sid) patch.sector_id = sid;
   }
+  // Sub-sector tags (startup_sub_sectors): additive across runs, like v1.
+  const tagNames = [...new Set([
+    ...(profile.profile.sub_sector_name ? [profile.profile.sub_sector_name] : []),
+    ...(profile.profile.sub_sector_names ?? []),
+  ])];
+  const tagSectorIds: string[] = [];
+  for (const tagName of tagNames) {
+    const { data: tagId } = await supabase.rpc("sector_id_by_name", { p_name: tagName });
+    if (tagId) tagSectorIds.push(tagId as string);
+  }
 
+  // Leadership & founders (additive merge, never destructive)
   const cleanFounders = (profile.profile.founders ?? []).map((f) => ({
     name: f.name, title: f.title, bio: f.bio, linkedin_url: f.linkedin_url?.value,
     had_prior_exit: f.had_prior_exit, elite_background: f.elite_background, notable_pedigree: f.notable_pedigree,
   }));
-  if (cleanFounders.length > 0) patch.founders = mergePeople(row.founders ?? [], cleanFounders);
-
+  if (cleanFounders.length > 0) setIfChanged("founders", mergePeople(row.founders ?? [], cleanFounders), row.founders);
   const cleanLeadership = (profile.leadership ?? []).map((l) => ({
     name: l.name, role: l.role, bio: l.bio, linkedin_url: l.linkedin_url?.value, joined_date: l.joined_date,
     had_prior_exit: l.had_prior_exit, elite_background: l.elite_background, notable_pedigree: l.notable_pedigree,
   }));
-  if (cleanLeadership.length > 0) patch.leadership = mergePeople(row.leadership ?? [], cleanLeadership);
+  if (cleanLeadership.length > 0) setIfChanged("leadership", mergePeople(row.leadership ?? [], cleanLeadership), row.leadership);
 
-  patch.competitors = fillArrayIfEmpty(row.competitors ?? [], profile.competitors);
-  patch.acquisitions = fillArrayIfEmpty(row.acquisitions ?? [], profile.acquisitions);
-  patch.patent_count = fillScalarIfNull(row.patent_count, profile.patent_summary.patent_count);
-  patch.patent_fields = fillArrayIfEmpty(row.patent_fields ?? [], profile.patent_summary.patent_fields);
-  patch.patents = fillArrayIfEmpty(row.patents ?? [], profile.patents);
-  patch.tech_stack = fillArrayIfEmpty(row.tech_stack ?? [], profile.technology.tech_stack ?? []);
-  if (!row.github_url && profile.technology.github_url) patch.github_url = profile.technology.github_url.value;
-  if (!row.huggingface_url && profile.technology.huggingface_url) patch.huggingface_url = profile.technology.huggingface_url.value;
+  // Competitors & market (additive: entries on file are never removed)
+  const crossLink = (website: string | undefined) => {
+    const d = websiteDomain(website);
+    const match = d ? startupByDomain.get(d) : undefined;
+    return match && match.id !== row.id ? match.id : null;
+  };
+  const existingCompetitors = row.competitors ?? [];
+  const competitors = appendNew(
+    existingCompetitors,
+    market.competitors.map((c) => ({ name: c.name, website: c.website ?? null, how_it_competes: c.how_it_competes, startup_id: crossLink(c.website) })),
+    (c) => normalizeForMatch(c.name ?? ""), MAX_COMPETITORS,
+  );
+  const competitorsAdded = competitors.length - existingCompetitors.length;
+  if (competitorsAdded > 0) patch.competitors = competitors;
 
-  patch.arr_milestones = appendDatedFigures(row.arr_milestones ?? [], funding.arr_milestones, (m) => m.arr);
-  if (funding.revenue_estimate) patch.revenue_estimate = fillScalarIfNull(row.revenue_estimate, funding.revenue_estimate);
-  patch.valuation_benchmarks = appendDatedFigures(row.valuation_benchmarks ?? [], funding.valuation_benchmarks, (v) => v.valuation);
+  // Acquisitions & IP
+  const acquisitions = appendNew(
+    row.acquisitions ?? [],
+    market.acquisitions.map((a) => ({
+      company_name: a.company_name, website: a.website ?? null, acquired_date: normalizeIsoDate(a.acquired_date) ?? a.acquired_date ?? null,
+      amount: a.amount ?? null, description: a.description ?? null, acquired_startup_id: crossLink(a.website),
+    })),
+    (a) => normalizeForMatch(a.company_name ?? ""),
+  );
+  if (acquisitions.length > (row.acquisitions?.length ?? 0)) patch.acquisitions = acquisitions;
+  if (row.patent_count == null && market.patent_summary.patent_count != null) patch.patent_count = market.patent_summary.patent_count;
+  if (!row.patent_fields?.length && market.patent_summary.patent_fields.length) patch.patent_fields = market.patent_summary.patent_fields;
+  const patentKey = (p: { title: string; patent_number?: string | null }) => (p.patent_number ? `#${p.patent_number}` : normalizeForMatch(p.title ?? ""));
+  const patents = appendNew(
+    row.patents ?? [],
+    market.patents.map((p) => ({ title: p.title, patent_number: p.patent_number ?? null, filing_date: p.filing_date ?? null, url: p.url ?? null, summary: p.summary ?? null })),
+    patentKey,
+  );
+  if (patents.length > (row.patents?.length ?? 0)) patch.patents = patents;
+  const techStack = [...new Set([...(row.tech_stack ?? []), ...(market.technology.tech_stack ?? [])])];
+  if (techStack.length > (row.tech_stack?.length ?? 0)) patch.tech_stack = techStack;
+  if (!row.github_url && market.technology.github_url) patch.github_url = market.technology.github_url.value;
+  if (!row.huggingface_url && market.technology.huggingface_url) patch.huggingface_url = market.technology.huggingface_url.value;
 
-  // funding_history_complete: NEVER defaults to true when the model omitted
-  // it (the Phase 0 lesson) -- null means genuinely unknown, not "complete".
-  if (funding.funding_history_complete !== null) patch.funding_history_complete = funding.funding_history_complete;
+  // News: new articles appended (deduped by URL), newest first; each new
+  // one gets its own og:image (v1's technique), never a guessed image.
+  const existingNews = row.news ?? [];
+  const existingNewsKeys = new Set(existingNews.map((n) => normalizeUrlForMatch(n.url ?? "")));
+  const freshNews = market.news.filter((n) => !existingNewsKeys.has(normalizeUrlForMatch(n.url)));
+  let newsAdded = 0;
+  if (freshNews.length > 0 && existingNews.length < MAX_NEWS) {
+    const toAdd = freshNews.slice(0, MAX_NEWS - existingNews.length);
+    const withImages = await Promise.all(toAdd.map(async (n) => ({
+      title: n.title, url: n.url, source: n.source ?? null,
+      published_date: normalizeIsoDate(n.published_date) ?? null,
+      summary: n.summary ?? null,
+      image_url: (await fetchArticleOgImage(n.url)) ?? n.image_url ?? null,
+    })));
+    newsAdded = withImages.length;
+    patch.news = [...existingNews, ...withImages].sort((a, b) => (b.published_date ?? "").localeCompare(a.published_date ?? ""));
+  }
 
-  // Headcount: issue 6's guard, not a blind overwrite.
-  let fieldsPatched = Object.values(patch).filter((v) => v !== null && v !== undefined).length;
-  if (profile.metrics.employee_count) {
+  // Funding & valuation (dated series: appended, deduped)
+  const arr = appendDatedFigures(
+    row.arr_milestones ?? [],
+    funding.arr_milestones.map((m) => ({ arr: m.arr, date: normalizeIsoDate(m.date) ?? m.date ?? "unknown", source: sourceUrlFor(m.source_id), confidence: confidenceLabel(sourceTypeFor(m.source_id)) })),
+    (m) => m.arr,
+  );
+  if (arr.length > (row.arr_milestones?.length ?? 0)) patch.arr_milestones = arr;
+  const valuations = appendDatedFigures(
+    row.valuation_benchmarks ?? [],
+    funding.valuation_benchmarks.map((v) => ({ valuation: v.valuation, date: normalizeIsoDate(v.date) ?? v.date ?? null, source: sourceUrlFor(v.source_id), is_estimated: v.is_estimated ?? null })),
+    (v) => v.valuation,
+  );
+  if (valuations.length > (row.valuation_benchmarks?.length ?? 0)) patch.valuation_benchmarks = valuations;
+  if (!row.revenue_estimate && funding.revenue_estimate) {
+    const re = funding.revenue_estimate;
+    patch.revenue_estimate = {
+      range_low: re.range_low ?? null, range_high: re.range_high ?? null, as_of_date: normalizeIsoDate(re.as_of_date) ?? re.as_of_date ?? null,
+      source: sourceUrlFor(re.source_id), confidence: confidenceLabel(sourceTypeFor(re.source_id)),
+    };
+  }
+  // NEVER defaults to true when the model omitted it -- null is "unknown".
+  if (funding.funding_history_complete !== null && funding.funding_history_complete !== row.funding_history_complete) {
+    patch.funding_history_complete = funding.funding_history_complete;
+  }
+
+  // Talent & growth: headcount (issue 6's guard + validation's outlier check)
+  const headcountPoints: Array<{ date: string; count: number }> = [];
+  for (const h of profile.metrics.headcount_history ?? []) {
+    const date = normalizeIsoDate(h.date);
+    if (date && h.employee_count > 0 && !headcountPoints.some((p) => p.date === date)) headcountPoints.push({ date, count: h.employee_count });
+  }
+  const acceptedHeadcount = validation.accepted.employee_count;
+  if (acceptedHeadcount != null && profile.metrics.employee_count) {
     const candidate: CandidateValue<number> = {
-      value: profile.metrics.employee_count.value,
+      value: acceptedHeadcount,
       source_type: sourceTypeFor(profile.metrics.employee_count.source_id) ?? "model_inferred",
       independentSourceCount: 1,
     };
     const headcountDecision = decideHeadcountUpdate(row.employee_count, candidate);
     if (headcountDecision.writeEmployeeCount) {
-      patch.employee_count = candidate.value;
-      fieldsPatched++;
+      if (candidate.value !== row.employee_count) {
+        patch.employee_count = candidate.value;
+        provenance("metrics.employee_count", candidate.value, profile.metrics.employee_count);
+      }
+      // A figure that is really an old article's dated count (e.g. "the
+      // 45-person startup" in a 2023 Series A story) is recorded at that
+      // date only — never re-stamped as today's headcount.
+      const today = new Date().toISOString().slice(0, 10);
+      const staleDuplicate = headcountPoints.some((p) => p.count === candidate.value && (Date.now() - new Date(p.date).getTime()) / 86_400_000 > 180);
+      if (!staleDuplicate && !headcountPoints.some((p) => p.date === today)) headcountPoints.push({ date: today, count: candidate.value });
     } else {
       console.log(`    ⚠️  Headcount change rejected (point_type=${headcountDecision.pointType}): ${row.employee_count} -> ${candidate.value} not strongly enough evidenced.`);
     }
-    if (!DRY_RUN) {
-      await supabase.from("headcount_history").upsert(
-        { startup_id: row.id, employee_count: candidate.value, snapshot_date: new Date().toISOString().slice(0, 10) },
-        { onConflict: "startup_id,snapshot_date" },
-      );
-    }
   }
-  if (profile.metrics.employee_range) patch.employee_range = fillScalarIfNull(row.employee_range, profile.metrics.employee_range);
-  if (profile.metrics.growth_trend) patch.growth_trend = profile.metrics.growth_trend;
+  if (profile.metrics.employee_range) setIfChanged("employee_range", fillScalarIfNull(row.employee_range, profile.metrics.employee_range), row.employee_range);
+  if (profile.metrics.growth_trend) setIfChanged("growth_trend", profile.metrics.growth_trend, row.growth_trend);
 
-  // VERBOSE used to be nested inside the DRY_RUN branch only -- useless for
-  // exactly the case it matters most, reviewing what a REAL (DRY_RUN=false)
-  // write actually contained, since that's the one case where the values
-  // are about to become permanent. Runs regardless of DRY_RUN now.
+  const fieldsPatched = Object.keys(patch).length;
+
   if (VERBOSE) {
-    const cleanPatch = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== null && v !== undefined));
     console.log(`    [VERBOSE] Full patch values${DRY_RUN ? " (would write)" : " (writing now)"}:`);
-    console.log(JSON.stringify(cleanPatch, null, 2).split("\n").map((l) => `      ${l}`).join("\n"));
-    // Evidence quotes for the scalar material fields that carry one directly
-    // (city/country/founded_year/website) -- the rest (arrays, merged
-    // people) are reviewable straight from cleanPatch above.
-    const evidenced: Array<[string, { value: unknown; source_id: string; evidence_quote: string } | undefined]> = [
-      ["city", profile.profile.city], ["country", profile.profile.country],
-      ["founded_year", profile.profile.founded_year], ["website", profile.profile.website],
-    ];
-    const withEvidence = evidenced.filter(([field, v]) => v && field in cleanPatch);
-    if (withEvidence.length > 0) {
+    console.log(JSON.stringify(patch, null, 2).split("\n").map((l) => `      ${l}`).join("\n"));
+    if (fieldWrites.length > 0) {
       console.log("    [VERBOSE] Evidence:");
-      for (const [field, v] of withEvidence) {
-        console.log(`      ${field}: "${v!.value}" <- [${v!.source_id}] "${v!.evidence_quote}"`);
-      }
+      for (const fw of fieldWrites) console.log(`      ${fw.field}: "${fw.value}" <- [${fw.source_id}] ${sourceById.get(fw.source_id)?.url ?? ""} "${fw.evidence_quote}"`);
     }
-    if (newRoundsToInsert.length > 0) {
-      console.log(`    [VERBOSE] New round details${DRY_RUN ? " (would insert)" : " (inserting now)"}:`);
-      console.log(JSON.stringify(newRoundsToInsert, null, 2).split("\n").map((l) => `      ${l}`).join("\n"));
+    if (plan.inserts.length > 0) {
+      console.log(`    [VERBOSE] New rounds${DRY_RUN ? " (would insert)" : " (inserting now)"}:`);
+      console.log(JSON.stringify(plan.inserts, null, 2).split("\n").map((l) => `      ${l}`).join("\n"));
     }
+    if (plan.updates.length > 0) {
+      console.log(`    [VERBOSE] Existing rounds filled${DRY_RUN ? " (would update)" : " (updating now)"}:`);
+      for (const u of plan.updates) console.log(`      ${u.round_type} (${u.id}): ${JSON.stringify(u.patch)}`);
+    }
+    if (headcountPoints.length > 0) console.log(`    [VERBOSE] Headcount points: ${headcountPoints.map((p) => `${p.count}@${p.date}`).join(", ")}`);
+    if (tagNames.length > 0) console.log(`    [VERBOSE] Sub-sector tags: ${tagNames.join(", ")}`);
   }
 
   if (DRY_RUN) {
-    console.log(`    [DRY] Would patch: ${Object.keys(patch).filter((k) => patch[k] !== null && patch[k] !== undefined).join(", ") || "(nothing)"}`);
-    console.log(`    [DRY] Would insert ${newRoundsToInsert.length} new round(s): ${newRoundsToInsert.map((r) => r.round_type).join(", ") || "none"}`);
+    console.log(`    [DRY] Would patch: ${Object.keys(patch).join(", ") || "(nothing)"}`);
+    console.log(`    [DRY] Would insert ${plan.inserts.length} new round(s): ${plan.inserts.map((r) => r.round_type).join(", ") || "none"} | fill ${plan.updates.length} existing round(s)`);
+    if (headcountPoints.length > 0) console.log(`    [DRY] Would upsert headcount_history: ${headcountPoints.map((p) => `${p.count}@${p.date}`).join(", ")}`);
+    if (tagSectorIds.length > 0) console.log(`    [DRY] Would tag sub-sectors: ${tagNames.join(", ")}`);
   } else {
-    const { error } = await supabase.from("startups").update(patch).eq("id", row.id);
-    if (error) console.warn(`    ⚠️  Profile patch failed: ${error.message}`);
+    if (fieldsPatched > 0) {
+      let { error } = await supabase.from("startups").update(patch).eq("id", row.id);
+      // Another startup already holds this website (unique index): retry
+      // without it rather than lose the rest of the patch.
+      if (error && (error as { code?: string }).code === "23505" && patch.website) {
+        console.warn(`    ⚠️  Website "${patch.website}" already belongs to another startup — retrying without it.`);
+        delete patch.website;
+        ({ error } = await supabase.from("startups").update(patch).eq("id", row.id));
+      }
+      if (error) console.warn(`    ⚠️  Profile patch failed: ${error.message}`);
+      else if (typeof patch.website === "string") {
+        const d = websiteDomain(patch.website);
+        if (d) startupByDomain.set(d, { id: row.id, name: row.name });
+      }
+    }
 
-    // NOTE: field_provenance is currently populated only for city/country,
-    // the two fields this first version's overwrite logic actually acts on
-    // (see decideScalarWrite calls above). Extending this to every material
-    // field (founded_year, website, social/GitHub/Hugging Face URLs,
-    // founders[].linkedin_url) is the natural next increment -- they're
-    // still fill-null-only writes below, just not yet provenance-tracked.
+    if (tagSectorIds.length > 0) {
+      const { error: tagErr } = await supabase.from("startup_sub_sectors").upsert(
+        tagSectorIds.map((sector_id) => ({ startup_id: row.id, sector_id })),
+        { onConflict: "startup_id,sector_id", ignoreDuplicates: true },
+      );
+      if (tagErr) console.warn(`    ⚠️  Sub-sector tag write failed: ${tagErr.message}`);
+    }
+
     for (const fw of fieldWrites) {
       const { error: provenanceErr } = await supabase.from("field_provenance").insert({
-        startup_id: row.id, field: fw.field, value: fw.value, source_url: labeledSources.find((s) => s.source_id === fw.source_id)?.url,
+        startup_id: row.id, field: fw.field, value: fw.value, source_url: sourceById.get(fw.source_id)?.url,
         source_type: fw.source_type, evidence_quote: fw.evidence_quote,
         confidence: computeFieldConfidence([{ source_type: fw.source_type }]),
       });
-      // A real run against production caught this swallowing a genuine
-      // failure (the field_provenance/field_changes migration had never
-      // actually been applied there -- see docs/enrichment_v2_spec.md's
-      // provenance migration) with zero indication anything had gone
-      // wrong: the startups patch succeeded, so the run reported success,
-      // while every provenance row silently failed to write.
       if (provenanceErr) console.warn(`    ⚠️  field_provenance insert failed (${fw.field}): ${provenanceErr.message}`);
     }
 
-    for (const round of newRoundsToInsert) {
-      if (round.round_type === "IPO") continue;
-      const roundConfidence = computeFieldConfidence([{ source_type: "news" }]); // conservative default absent a per-round source trace
-      if (!meetsFundingThreshold(roundConfidence) && round.amount_raised != null) {
-        console.log(`    🟠  Round ${round.round_type} below funding confidence threshold -- inserted anyway, flagged needs_review (Phase 1 doesn't yet withhold, only flags).`);
-      }
+    // recorded_date is what the Talent & Growth chart and the score read,
+    // so a backfilled point carries its own date there too, not "now".
+    for (const p of headcountPoints) {
+      const { error: hcErr } = await supabase.from("headcount_history").upsert(
+        { startup_id: row.id, employee_count: p.count, snapshot_date: p.date, recorded_date: `${p.date}T00:00:00Z` },
+        { onConflict: "startup_id,snapshot_date" },
+      );
+      if (hcErr) console.warn(`    ⚠️  headcount_history upsert failed (${p.date}): ${hcErr.message}`);
+    }
+
+    for (const round of plan.inserts) {
       const { error: roundErr } = await supabase.from("funding_rounds").insert({
         startup_id: row.id, round_type: round.round_type,
         amount_raised: round.amount_raised ?? null, valuation: round.valuation ?? null,
+        is_valuation_estimated: round.valuation != null ? (round.is_valuation_estimated ?? null) : null,
         announcement_date: round.announcement_date ?? null, source_url: round.source_url ?? null,
         lead_investor: round.lead_investor ?? null,
         investors: round.other_investors && round.other_investors.length > 0 ? round.other_investors : null,
+        investor_amounts: round.investor_amounts && round.investor_amounts.length > 0 ? round.investor_amounts : null,
       });
       if (roundErr) console.warn(`    ⚠️  Round insert failed (${round.round_type}): ${roundErr.message}`);
       else summary.totalRoundsInserted++;
+    }
+    for (const u of plan.updates) {
+      const { error: updErr } = await supabase.from("funding_rounds").update(u.patch).eq("id", u.id);
+      if (updErr) console.warn(`    ⚠️  Round update failed (${u.round_type}): ${updErr.message}`);
+      else summary.totalRoundsUpdated++;
     }
 
     await supabase.from("startups").update({ last_enriched_at: new Date().toISOString() }).eq("id", row.id);
@@ -564,8 +826,22 @@ async function processCompany(
   }
 
   summary.totalFieldsPatched += fieldsPatched;
-  summary.tally[fieldsPatched > 0 || newRoundsToInsert.length > 0 ? "success" : "partial"]++;
-  console.log(`    ${fieldsPatched > 0 ? "✅" : "🟠"} ${fieldsPatched} field(s) patched | ${newRoundsToInsert.length} round(s) inserted | ${dedup.needsReview.length} pair(s) flagged for review`);
+  summary.totalNewsAdded += newsAdded;
+  summary.totalCompetitorsAdded += Math.max(0, competitorsAdded);
+  const anyWrite = fieldsPatched > 0 || plan.inserts.length > 0 || plan.updates.length > 0 || headcountPoints.length > 0;
+  summary.tally[anyWrite ? "success" : "partial"]++;
+
+  const totalRaised = computeTotalRaised([...existingRefs, ...plan.inserts]);
+  const parts = [
+    `${fieldsPatched} field(s)`,
+    `rounds +${plan.inserts.length} new / ${plan.updates.length} filled${plan.conflicts.length ? ` / ${plan.conflicts.length} conflict(s)` : ""}`,
+    totalRaised > 0 ? `total raised $${(totalRaised / 1e6).toFixed(1)}M` : null,
+    `${competitorsAdded > 0 ? `+${competitorsAdded}` : 0} competitor(s)`,
+    `${newsAdded > 0 ? `+${newsAdded}` : 0} news`,
+    headcountPoints.length ? `${headcountPoints.length} headcount point(s)` : null,
+    tagNames.length ? `tags: ${tagNames.join(", ")}` : null,
+  ].filter(Boolean);
+  console.log(`    ${anyWrite ? "✅" : "🟠"} ${parts.join(" | ")}`);
 }
 
 async function main() {
@@ -580,6 +856,8 @@ async function main() {
   console.log(`║  DRY_RUN=${String(DRY_RUN).padEnd(5)} | BATCH=${String(BATCH_SIZE).padEnd(6)} | OFFSET=${String(OFFSET).padEnd(5)} | DELAY=${DELAY_MS / 1000}s${" ".padEnd(Math.max(0, 62 - 58))}║`);
   console.log(`║  PROFILE_MODEL=${PROFILE_MODEL}${" ".padEnd(Math.max(0, 62 - 16 - PROFILE_MODEL.length))}║`);
   console.log(`║  FUNDING_MODEL=${FUNDING_MODEL}${" ".padEnd(Math.max(0, 62 - 16 - FUNDING_MODEL.length))}║`);
+  console.log(`║  MARKET_MODEL=${MARKET_MODEL}${" ".padEnd(Math.max(0, 62 - 15 - MARKET_MODEL.length))}║`);
+  console.log(`║  DEEP_DIVE=${String(DEEP_DIVE).padEnd(5)}${" ".padEnd(Math.max(0, 62 - 16))}║`);
   console.log(`║  MIN_PROFILE_CONFIDENCE=${MIN_PROFILE_CONFIDENCE} MIN_FUNDING_CONFIDENCE=${MIN_FUNDING_CONFIDENCE}${" ".padEnd(Math.max(0, 10))}║`);
   console.log(`║  (MIN_CONFIDENCE=${MIN_CONFIDENCE} kept for parity, unused by v2)${" ".padEnd(Math.max(0, 10))}║`);
   console.log(`╚${"═".repeat(62)}╝`);
@@ -602,12 +880,12 @@ async function main() {
 
   const startups = await fetchAllPaginated<V2StartupRow>((from, to) =>
     supabase.from("startups").select(
-      "id, name, website, description, value_proposition, industry, founded_year, country, city, employee_count, employee_range, growth_trend, founders, leadership, competitors, acquisitions, patent_count, patent_fields, patents, tech_stack, github_url, huggingface_url, arr_milestones, revenue_estimate, valuation_benchmarks, linkedin_url, facebook_url, instagram_url, sector_id, funding_history_complete, status, last_enriched_at, is_manually_verified",
+      "id, name, website, description, value_proposition, industry, founded_year, country, city, employee_count, employee_range, growth_trend, founders, leadership, competitors, acquisitions, news, patent_count, patent_fields, patents, tech_stack, github_url, huggingface_url, arr_milestones, revenue_estimate, valuation_benchmarks, linkedin_url, facebook_url, instagram_url, sector_id, funding_history_complete, status, last_enriched_at, is_manually_verified",
     ).order("name").range(from, to),
   );
   const allRounds = await fetchAllPaginated<V2FundingRoundRow>((from, to) =>
     supabase.from("funding_rounds").select(
-      "id, startup_id, round_type, amount_raised, valuation, is_valuation_estimated, announcement_date, source_url, lead_investor, investors",
+      "id, startup_id, round_type, amount_raised, valuation, is_valuation_estimated, announcement_date, source_url, lead_investor, investors, investor_amounts",
     ).order("created_at").range(from, to),
   );
 
@@ -652,8 +930,9 @@ async function main() {
   const summary: RunSummary = {
     tally: { success: 0, partial: 0, rejected: 0, removed_public: 0, no_data: 0, low_evidence: 0, error: 0, error_incomplete_extraction: 0 },
     droppedByReason: new Map(),
-    totalRoundsInserted: 0, totalFieldsPatched: 0, totalInputTokens: 0, totalOutputTokens: 0, totalCostUsd: 0,
-    websitePagesFetched: 0, websitePagesSkippedThin: 0, tavilyCalls: 0,
+    totalRoundsInserted: 0, totalRoundsUpdated: 0, totalFieldsPatched: 0, totalNewsAdded: 0, totalCompetitorsAdded: 0, deepDives: 0,
+    totalInputTokens: 0, totalOutputTokens: 0, totalCostUsd: 0,
+    websitePagesFetched: 0, websitePagesSkippedThin: 0, serperCalls: 0, tavilyCalls: 0,
   };
 
   for (let i = 0; i < queue.length; i++) {
@@ -670,7 +949,7 @@ async function main() {
     }
   }
 
-  if (!DRY_RUN && (summary.totalFieldsPatched > 0 || summary.totalRoundsInserted > 0)) {
+  if (!DRY_RUN && (summary.totalFieldsPatched > 0 || summary.totalRoundsInserted > 0 || summary.totalRoundsUpdated > 0)) {
     const { error } = await supabase.rpc("refresh_startups_search");
     if (error) console.warn(`⚠️  startups_search refresh failed: ${error.message}`);
     else console.log("🔄  startups_search refreshed");
@@ -683,10 +962,14 @@ async function main() {
     console.log(`  ${status.padEnd(28)} ${count}`);
   }
   console.log(`  rounds inserted              ${summary.totalRoundsInserted}`);
+  console.log(`  existing rounds filled       ${summary.totalRoundsUpdated}`);
+  console.log(`  news articles added          ${summary.totalNewsAdded}`);
+  console.log(`  competitors added            ${summary.totalCompetitorsAdded}`);
+  console.log(`  companies deep-dived         ${summary.deepDives}`);
   console.log(`  fields patched               ${summary.totalFieldsPatched}`);
   console.log(`  tokens (in/out)              ${summary.totalInputTokens.toLocaleString()} / ${summary.totalOutputTokens.toLocaleString()}`);
   console.log(`  claude cost (est.)           $${summary.totalCostUsd.toFixed(2)}  (search API cost is separate)`);
-  console.log(`  website pages: ${summary.websitePagesFetched} real / ${summary.websitePagesSkippedThin} thin-404 skipped  |  tavily calls: ${summary.tavilyCalls}`);
+  console.log(`  website pages: ${summary.websitePagesFetched} real / ${summary.websitePagesSkippedThin} thin-404 skipped  |  serper calls: ${summary.serperCalls}  |  tavily calls: ${summary.tavilyCalls}`);
   console.log("  dropped/flagged by reason code:");
   for (const [reason, count] of summary.droppedByReason) {
     console.log(`    ${reason.padEnd(32)} ${count}`);

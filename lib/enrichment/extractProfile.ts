@@ -2,13 +2,11 @@
  * lib/enrichment/extractProfile.ts — extractProfile(), per
  * docs/enrichment_v2_spec.md issue 1 point 5 and the spec's stage 4.
  *
- * One of the two extraction calls (the other, extractFunding, lives in its
- * own file). Takes the website pages + profile/competitors/news/patents/
- * tech search results (already filtered by entity.ts) and produces company
- * status, profile, founders, leadership, metrics, competitors, acquisitions,
- * news, patents, technology — the SAME fields v1's single save_enrichment
- * call produces for this half of the schema (Section 2 parity), but with
- * every material field citing a source_id + a verbatim evidence_quote.
+ * One of three extraction calls (extractFunding.ts and extractMarket.ts are
+ * the others). Takes the website pages + search results (already filtered
+ * by entity.ts) and produces company status, profile, founders,
+ * leadership, and headcount metrics, with every material field citing a
+ * source_id + a verbatim evidence_quote.
  *
  * Split into two pieces on purpose:
  *   - buildProfileExtractionRequest() / processProfileExtractionResponse()
@@ -121,28 +119,16 @@ export interface V2Metrics {
   headcount_history?: V2HeadcountPoint[];
 }
 
-export interface V2Competitor { name: string; website?: string; how_it_competes: string; source_ids?: string[] }
-export interface V2Acquisition { company_name: string; website?: string; acquired_date?: string; amount?: number; description?: string; source_ids?: string[] }
-export interface V2NewsItem { title: string; url: string; source?: string; published_date?: string; summary?: string; image_url?: string }
-export interface V2PatentRecord { title: string; patent_number?: string; filing_date?: string; url?: string; summary?: string }
-export interface V2Technology {
-  tech_stack?: string[];
-  github_url?: EvidencedValue<string>;
-  huggingface_url?: EvidencedValue<string>;
-}
-
+// Competitors, acquisitions, news, patents, and technology are extracted
+// by their own call (extractMarket.ts) — keeping them here overloaded a
+// single Haiku call enough that those sections came back empty for
+// companies whose sources plainly contained them.
 export interface V2ProfileExtraction {
   is_public_company: boolean;
   is_tech_company: boolean;
   profile: V2Profile;
   leadership: V2Leader[];
   metrics: V2Metrics;
-  competitors: V2Competitor[];
-  acquisitions: V2Acquisition[];
-  news: V2NewsItem[];
-  patent_summary: { patent_count: number | null; patent_fields: string[] };
-  patents: V2PatentRecord[];
-  technology: V2Technology;
 }
 
 // ── Schema construction ─────────────────────────────────────────────────
@@ -187,7 +173,7 @@ const BIO_DESCRIPTION = [
 function profileExtractionTool(taxonomy: SectorTaxonomy) {
   return {
     name: "save_profile_extraction",
-    description: "Save the company-status/profile/leadership/metrics/competitors/acquisitions/news/patents/technology half of a verified enrichment record.",
+    description: "Save the company status, profile, founders, leadership, and headcount metrics of a verified enrichment record.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -286,69 +272,6 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
             },
           },
         },
-        competitors: {
-          type: "array",
-          description: "4-5 DIRECT competitors, each with a specific explanation of how they compete. Return [] rather than guess generic same-sector companies.",
-          items: {
-            type: "object" as const,
-            properties: {
-              name: { type: "string" }, website: { type: "string" },
-              how_it_competes: { type: "string" },
-              source_ids: { type: "array", items: { type: "string" } },
-            },
-            required: ["name", "how_it_competes"],
-          },
-        },
-        acquisitions: {
-          type: "array",
-          description: "Companies THIS company bought (outbound only). [] is the normal, correct answer for most companies.",
-          items: {
-            type: "object" as const,
-            properties: {
-              company_name: { type: "string" }, website: { type: "string" },
-              acquired_date: { type: "string" }, amount: { type: "number" }, description: { type: "string" },
-              source_ids: { type: "array", items: { type: "string" } },
-            },
-            required: ["company_name"],
-          },
-        },
-        news: {
-          type: "array",
-          description: "Up to 5 recent articles with a real, findable publication date.",
-          items: {
-            type: "object" as const,
-            properties: {
-              title: { type: "string" }, url: { type: "string" }, source: { type: "string" },
-              published_date: { type: "string" }, summary: { type: "string" }, image_url: { type: "string" },
-            },
-            required: ["title", "url"],
-          },
-        },
-        patent_summary: {
-          type: "object" as const,
-          properties: {
-            patent_count: { type: "integer" }, patent_fields: { type: "array", items: { type: "string" } },
-          },
-        },
-        patents: {
-          type: "array",
-          items: {
-            type: "object" as const,
-            properties: {
-              title: { type: "string" }, patent_number: { type: "string" }, filing_date: { type: "string" },
-              url: { type: "string" }, summary: { type: "string" },
-            },
-            required: ["title"],
-          },
-        },
-        technology: {
-          type: "object" as const,
-          properties: {
-            tech_stack: { type: "array", items: { type: "string" }, description: "Only from a concrete source (careers page, engineering blog, GitHub). Never inferred from sector alone." },
-            github_url: materialField({ type: "string" }, "The company's own GitHub org page, not a founder's personal account."),
-            huggingface_url: materialField({ type: "string" }, "The company's own Hugging Face org page."),
-          },
-        },
       },
       required: ["is_tech_company"],
     },
@@ -361,7 +284,7 @@ export function buildProfileExtractionRequest(
   taxonomy: SectorTaxonomy = { parentNames: [], subNames: [] },
 ) {
   const context = formatSourcesForPrompt(sources);
-  const prompt = `You are a financial data analyst. Extract the company status, profile, leadership, metrics, competitors, acquisitions, news, patents, and technology for the private tech company "${companyName}" from the labeled research below.
+  const prompt = `You are a financial data analyst. Extract the company status, profile (overview, founding year, location, sector), founders, leadership team, and headcount for the private tech company "${companyName}" from the labeled research below.
 
 STRICT RULES:
 1. Only extract facts stated explicitly in the sources below. If a field is not stated, omit it entirely — never guess.
@@ -373,7 +296,8 @@ STRICT RULES:
 7. ${BIO_DESCRIPTION}
 8. There is no excuse for a company with ANY research data at all to come back with profile: {} — at minimum, describe what it does if that's mentioned anywhere.
 9. PUBLIC COMPANY — this is a consequential flag (a true archives the company out of the active dataset), so it needs the same evidence_quote/source_id as any other material field: a specific exchange and ticker stated in the source. A company being ACQUIRED, bought by a strategic/PE buyer, or a subsidiary of a public parent is still PRIVATE itself — report that acquisition via round_type 'Acquired'/'PE Buyout' in the funding history, never by flagging is_public_company. If you cannot cite a direct public-listing statement, omit the field.
-10. ACTIVELY SEARCH EVERY CATEGORY — before leaving competitors, patents, patent_summary, metrics.headcount_history, news, or technology.tech_stack empty, actively re-scan EVERY source below for that category's signal, not just the one source whose query_label obviously matches it: a funding-round article often states headcount at the time of the round, a careers or engineering-blog page often names the real tech stack, an "about"/"team" page sometimes names direct competitors in its own positioning language. An empty array is the correct, normal answer for most companies on most categories — but only AFTER that active check, never as a default for not having looked.
+10. ACTIVELY SEARCH EVERY CATEGORY — before leaving founders, leadership, metrics.employee_count, metrics.headcount_history, or the HQ location empty, actively re-scan EVERY source below, not just the one whose label obviously matches: a funding-round article often states headcount at the time of the round ("the 45-person startup"), a LinkedIn company snippet states "X employees" or a size bracket ("51-200 employees" -> employee_range), a team/about page names the executives, a Crunchbase/LinkedIn snippet often states the headquarters city. An empty field is correct only AFTER that active check, never as a default for not having looked.
+11. SECTOR — always pick sector_name (and sub_sector_name when one clearly fits) from the enumerated lists once you know what the company does; add sub_sector_names for any other field it genuinely operates in.
 
 Labeled research (each source is tagged [S#] for a search result or [W#] for a fetched website page):
 ${context}`;
@@ -523,12 +447,6 @@ export function processProfileExtractionResponse(
     headcount_history: headcountHistory,
   };
 
-  const technology: V2Technology = {
-    tech_stack: ensureArray<string>(i.technology?.tech_stack),
-    github_url: verifyMaterial("technology.github_url", i.technology?.github_url, sourceLookup, dropped, true),
-    huggingface_url: verifyMaterial("technology.huggingface_url", i.technology?.huggingface_url, sourceLookup, dropped, true),
-  };
-
   return {
     result: {
       is_public_company: verifyIsPublicClaim(i.is_public_company, sourceLookup, dropped),
@@ -536,12 +454,6 @@ export function processProfileExtractionResponse(
       profile,
       leadership,
       metrics,
-      competitors: ensureArray<V2Competitor>(i.competitors).filter((c) => c.name && c.how_it_competes),
-      acquisitions: ensureArray<V2Acquisition>(i.acquisitions).filter((a) => a.company_name),
-      news: ensureArray<V2NewsItem>(i.news).filter((n) => n.title && n.url),
-      patent_summary: { patent_count: i.patent_summary?.patent_count ?? null, patent_fields: ensureArray<string>(i.patent_summary?.patent_fields) },
-      patents: ensureArray<V2PatentRecord>(i.patents).filter((p) => p.title),
-      technology,
     },
     dropped,
   };
@@ -592,11 +504,5 @@ function emptyProfileExtraction(): V2ProfileExtraction {
     profile: {},
     leadership: [],
     metrics: {},
-    competitors: [],
-    acquisitions: [],
-    news: [],
-    patent_summary: { patent_count: null, patent_fields: [] },
-    patents: [],
-    technology: {},
   };
 }

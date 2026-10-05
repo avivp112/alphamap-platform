@@ -59,7 +59,68 @@ export interface EntityAnchors {
   verifiedProfileUrls?: string[];
   /** Only set when the existing country is manually verified or registry-sourced (issue 2). */
   trustedCountry?: string | null;
+  /**
+   * Words that characterize THIS company, taken from its own website pages
+   * (trusted by construction — fetched from its own domain). See
+   * deriveIdentityKeywords(). Lets a result that names a non-distinctive
+   * company ("Ghost", "Foundry") through only when it ALSO uses at least
+   * two of these words — "Ghost ... open-source publishing ... newsletter"
+   * is the publishing platform, "Ghost ... robotics ... quadruped" is not.
+   */
+  identityKeywords?: string[];
 }
+
+// Generic web/business vocabulary that says nothing about which company a
+// page is about — never used as an identity keyword.
+const GENERIC_WORDS = new Set([
+  "about", "access", "account", "across", "after", "again", "based", "before", "being", "below", "best",
+  "better", "build", "built", "business", "businesses", "careers", "click", "company", "companies", "contact",
+  "content", "cookie", "cookies", "could", "create", "customer", "customers", "digital", "every", "experience",
+  "features", "first", "following", "founded", "free", "global", "great", "group", "helps", "their", "there",
+  "these", "thing", "things", "those", "through", "today", "together", "industry", "innovative", "leading",
+  "learn", "manage", "market", "modern", "month", "months", "never", "offer", "offers", "online",
+  "other", "people", "platform", "platforms", "policy", "power", "powerful", "pricing", "privacy", "product",
+  "products", "provide", "provides", "really", "request", "right", "service", "services", "should", "simple",
+  "since", "software", "solution", "solutions", "start", "started", "support", "system", "systems", "technology",
+  "terms", "under", "using", "value", "where", "which", "while", "world", "would", "years", "your", "yours",
+  "login", "signup", "email", "trusted", "worldwide", "website", "rights", "reserved",
+]);
+
+/**
+ * Picks the most frequent non-generic words (5+ letters) from the company's
+ * own website text, excluding the company's own name tokens — these are
+ * what any page genuinely about this company tends to repeat ("publishing",
+ * "newsletter", "membership" for Ghost).
+ */
+export function deriveIdentityKeywords(texts: string[], companyName: string, max = 12): string[] {
+  const nameTokens = new Set(companyName.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean));
+  const counts = new Map<string, number>();
+  for (const text of texts) {
+    for (const raw of text.toLowerCase().split(/[^\p{L}]+/u)) {
+      if (raw.length < 5 || GENERIC_WORDS.has(raw) || nameTokens.has(raw)) continue;
+      // Plural folds into singular ("newsletters" -> "newsletter"); the
+      // singular stem still matches the plural in filterByEntity's
+      // substring check.
+      const stem = raw.endsWith("s") && !raw.endsWith("ss") ? raw.slice(0, -1) : raw;
+      if (stem.length < 5 || GENERIC_WORDS.has(stem) || nameTokens.has(stem)) continue;
+      counts.set(stem, (counts.get(stem) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .filter(([, n]) => n >= 2)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, max)
+    .map(([w]) => w);
+}
+
+function mentionsName(text: string, companyName: string): boolean {
+  const name = companyName.toLowerCase().replace(SUFFIXES_TO_STRIP, "").replace(/\s+/g, " ").trim();
+  if (!name) return false;
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}([^\\p{L}\\p{N}]|$)`, "u").test(text);
+}
+
+const MIN_IDENTITY_KEYWORD_HITS = 2;
 
 export interface SearchResultLike {
   url: string;
@@ -67,7 +128,7 @@ export interface SearchResultLike {
   snippet?: string;
 }
 
-export type EntityMatchKind = "domain_url" | "domain_mention" | "founder_mention" | "verified_profile_url" | "distinctive_name";
+export type EntityMatchKind = "domain_url" | "domain_mention" | "founder_mention" | "verified_profile_url" | "identity_keywords" | "distinctive_name";
 export type EntityDropReason = "not_distinctive_name" | "country_contradiction" | "no_entity_match";
 
 export interface EntityFilterVerdict {
@@ -122,6 +183,16 @@ export function filterByEntity(
     const profileHost = hostnameOf(profileUrl);
     if (profileHost && host === profileHost && result.url.replace(/\/+$/, "") === profileUrl.replace(/\/+$/, "")) {
       return { kept: true, matched: "verified_profile_url" };
+    }
+  }
+
+  // A non-distinctive name is still trusted when the page names the company
+  // AND uses at least two words that characterize it on its own website.
+  const keywords = anchors.identityKeywords ?? [];
+  if (keywords.length >= MIN_IDENTITY_KEYWORD_HITS && mentionsName(text, companyName)) {
+    const hits = keywords.filter((k) => text.includes(k)).length;
+    if (hits >= MIN_IDENTITY_KEYWORD_HITS) {
+      return { kept: true, matched: "identity_keywords" };
     }
   }
 

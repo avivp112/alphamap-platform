@@ -51,10 +51,17 @@ describe("buildProfileExtractionRequest", () => {
     expect(text.toLowerCase()).toContain("never construct or guess a url");
   });
 
-  it("instructs actively re-scanning every source for competitors/patents/headcount/news/tech_stack before leaving them empty", () => {
+  it("instructs actively re-scanning every source for founders/leadership/headcount/location before leaving them empty", () => {
     const text = request.messages[0].content as string;
     expect(text).toContain("ACTIVELY SEARCH EVERY CATEGORY");
-    expect(text.toLowerCase()).toContain("not just the one source whose query_label obviously matches");
+    expect(text).toContain("51-200 employees");
+  });
+
+  it("no longer carries the market sections (those moved to extractMarket.ts)", () => {
+    const props = request.tools[0].input_schema.properties as Record<string, unknown>;
+    for (const k of ["competitors", "acquisitions", "news", "patents", "patent_summary", "technology"]) {
+      expect(props[k]).toBeUndefined();
+    }
   });
 
   it("constrains sector_name/sub_sector_name to the given taxonomy (ground rule 3)", () => {
@@ -102,7 +109,7 @@ describe("processProfileExtractionResponse", () => {
           },
         ],
       },
-      leadership: [], metrics: {}, competitors: [], acquisitions: [], news: [], patents: [],
+      leadership: [], metrics: {},
     };
 
     const { result, dropped } = processProfileExtractionResponse(raw, sources);
@@ -122,7 +129,7 @@ describe("processProfileExtractionResponse", () => {
         // Fabricated: W1's content never mentions the United Kingdom.
         country: { value: "United Kingdom", source_id: "W1", evidence_quote: "Apex is headquartered in the United Kingdom" },
       },
-      leadership: [], metrics: {}, competitors: [], acquisitions: [], news: [], patents: [],
+      leadership: [], metrics: {},
     };
 
     const { result, dropped } = processProfileExtractionResponse(raw, sources);
@@ -139,7 +146,7 @@ describe("processProfileExtractionResponse", () => {
           { name: "Ian Cinnamon", linkedin_url: { value: "linkedin.com/in/someone-invented", source_id: "S1", evidence_quote: "His LinkedIn is linkedin.com/in/iancinnamon" } },
         ],
       },
-      leadership: [], metrics: {}, competitors: [], acquisitions: [], news: [], patents: [],
+      leadership: [], metrics: {},
     };
     const { result, dropped } = processProfileExtractionResponse(raw, sources);
     expect(result.profile.founders?.[0].linkedin_url).toBeUndefined();
@@ -150,7 +157,7 @@ describe("processProfileExtractionResponse", () => {
     const raw = {
       is_public_company: false, is_tech_company: true,
       profile: { city: { value: "Paris", source_id: "W99", evidence_quote: "anything" } },
-      leadership: [], metrics: {}, competitors: [], acquisitions: [], news: [], patents: [],
+      leadership: [], metrics: {},
     };
     const { dropped } = processProfileExtractionResponse(raw, sources);
     expect(dropped).toContainEqual({ field: "profile.city", reason: "source_not_found" });
@@ -160,36 +167,31 @@ describe("processProfileExtractionResponse", () => {
     const raw = {
       is_public_company: false, is_tech_company: true,
       profile: { description: "unknown", industry: "N/A" },
-      leadership: [], metrics: {}, competitors: [], acquisitions: [], news: [], patents: [],
+      leadership: [], metrics: {},
     };
     const { result } = processProfileExtractionResponse(raw, sources);
     expect(result.profile.description).toBeUndefined();
     expect(result.profile.industry).toBeUndefined();
   });
 
-  it("does not crash when the model collapses a one-item array into a bare object (real DRY_RUN crash: 'patents' TypeError)", () => {
+  it("does not crash when the model collapses a one-item array into a bare object (real DRY_RUN crash class)", () => {
     const raw = {
       is_public_company: false, is_tech_company: true,
-      profile: {},
-      leadership: {}, // also a bare object instead of []
-      metrics: {}, competitors: [], acquisitions: [],
-      news: { title: "Launch", url: "https://x.com" }, // bare object instead of [{...}]
-      patents: { title: "A real patent" }, // the exact shape that crashed in production
-      patent_summary: { patent_fields: "fintech" }, // bare string instead of ["fintech"]
+      profile: { founders: { name: "Ian Cinnamon" } }, // bare object instead of [{...}]
+      leadership: { name: "Max Benassi", role: "CTO" }, // bare object instead of [{...}]
+      metrics: {},
     };
     expect(() => processProfileExtractionResponse(raw, sources)).not.toThrow();
     const { result } = processProfileExtractionResponse(raw, sources);
-    expect(result.patents).toEqual([{ title: "A real patent" }]);
-    expect(result.news).toEqual([{ title: "Launch", url: "https://x.com" }]);
-    expect(result.leadership).toHaveLength(1); // a bare {} still gets wrapped as one entry, not silently dropped -- the point is it doesn't throw
-    expect(result.patent_summary.patent_fields).toEqual(["fintech"]);
+    expect(result.profile.founders).toHaveLength(1);
+    expect(result.leadership).toHaveLength(1);
   });
 
   it("trusts a genuinely evidenced is_public_company claim", () => {
     const raw = {
       is_public_company: { value: true, source_id: "S1", evidence_quote: "closed a $16 million Series A" },
       is_tech_company: true,
-      profile: {}, leadership: [], metrics: {}, competitors: [], acquisitions: [], news: [], patents: [],
+      profile: {}, leadership: [], metrics: {},
     };
     const { result, dropped } = processProfileExtractionResponse(raw, sources);
     expect(result.is_public_company).toBe(true);
@@ -200,7 +202,7 @@ describe("processProfileExtractionResponse", () => {
     const raw = {
       is_public_company: { value: true, source_id: "S1", evidence_quote: "a sentence that never appears in S1 at all" },
       is_tech_company: true,
-      profile: {}, leadership: [], metrics: {}, competitors: [], acquisitions: [], news: [], patents: [],
+      profile: {}, leadership: [], metrics: {},
     };
     const { result, dropped } = processProfileExtractionResponse(raw, sources);
     expect(result.is_public_company).toBe(false);
@@ -210,7 +212,7 @@ describe("processProfileExtractionResponse", () => {
   it("defaults is_public_company to false (private) when the model omits it entirely -- never guess true", () => {
     const raw = {
       is_tech_company: true,
-      profile: {}, leadership: [], metrics: {}, competitors: [], acquisitions: [], news: [], patents: [],
+      profile: {}, leadership: [], metrics: {},
     };
     const { result, dropped } = processProfileExtractionResponse(raw, sources);
     expect(result.is_public_company).toBe(false);
@@ -228,7 +230,7 @@ describe("processProfileExtractionResponse", () => {
           { date: "2024-01-01", employee_count: 9999, source_id: "S1", evidence_quote: "a completely invented sentence" },
         ],
       },
-      competitors: [], acquisitions: [], news: [], patents: [],
+
     };
     const { result, dropped } = processProfileExtractionResponse(raw, sources);
     expect(result.metrics.headcount_history).toHaveLength(1);

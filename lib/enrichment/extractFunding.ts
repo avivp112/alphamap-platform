@@ -87,6 +87,8 @@ export function roundToRoundLike(round: V2Round): RoundLike {
     lead_investor: round.lead_investor?.value ?? null,
     other_investors: round.other_investors ?? null,
     source_url: round.source_url ?? null,
+    is_valuation_estimated: round.valuation ? (round.is_valuation_estimated ?? null) : null,
+    investor_amounts: round.investor_amounts?.length ? round.investor_amounts : null,
   };
 }
 

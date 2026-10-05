@@ -110,6 +110,9 @@ export interface RoundLike {
   lead_investor?: string | null;
   other_investors?: string[] | null;
   source_url?: string | null;
+  is_valuation_estimated?: boolean | null;
+  /** Per-investor disclosed contributions (funding_rounds.investor_amounts) — rare. */
+  investor_amounts?: Array<{ name: string; amount: number }> | null;
 }
 
 function parseDate(d: string | null | undefined): Date | null {
@@ -203,6 +206,8 @@ export function mergeRoundPair(a: RoundLike, b: RoundLike): RoundLike {
     lead_investor: mergedLead,
     other_investors: [...otherInvestorSet],
     source_url: a.source_url ?? b.source_url ?? null,
+    is_valuation_estimated: a.valuation != null ? (a.is_valuation_estimated ?? null) : (b.is_valuation_estimated ?? null),
+    investor_amounts: a.investor_amounts?.length ? a.investor_amounts : (b.investor_amounts ?? null),
   };
 }
 
