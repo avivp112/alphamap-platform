@@ -47,7 +47,7 @@ const ENTRIES: Array<[string, string]> = [
   ["colombo", "Sri Lanka"], ["kathmandu", "Nepal"], ["thimphu", "Bhutan"],
   ["canberra", "Australia"], ["wellington", "New Zealand"],
   ["ottawa", "Canada"], ["mexico city", "Mexico"], ["guatemala city", "Guatemala"],
-  ["san jose", "Costa Rica"], ["panama city", "Panama"], ["havana", "Cuba"],
+  ["san jose", "Costa Rica"], ["san jose", "United States"], ["panama city", "Panama"], ["havana", "Cuba"],
   ["santo domingo", "Dominican Republic"], ["kingston", "Jamaica"],
   ["bogota", "Colombia"], ["caracas", "Venezuela"], ["quito", "Ecuador"], ["lima", "Peru"],
   ["la paz", "Bolivia"], ["santiago", "Chile"], ["buenos aires", "Argentina"],

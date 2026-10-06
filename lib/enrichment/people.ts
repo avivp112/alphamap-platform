@@ -20,7 +20,21 @@ import { samePersonName } from "./linkedin";
 
 const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "");
 const NAME_RE = /^[A-Z][\p{L}'’.-]*(?:\s+[A-Z][\p{L}'’.-]*){1,3}$/u;
-const NOT_A_PERSON = /\b(inc|llc|ltd|corp|capital|ventures|partners|labs|technologies|university|group|holdings|fund|foundation|team|engineers|google|microsoft|amazon|meta|apple)\b/i;
+const NOT_A_PERSON = /\b(inc|llc|ltd|corp|capital|ventures|partners|labs|technologies|university|group|holdings|fund|foundation|team|engineers|google|microsoft|amazon|meta|apple|money|bank|banking|payments?|finance|financial|media|systems|software|digital|global|networks?|solutions|studios?|games|investments?|management|consulting|insurance)\b/i;
+// Sentence words that end up glued to a name when a sentence break is
+// missed ("Mark Spera.  However").
+const NOT_A_NAME_TOKEN = new Set(["however", "the", "and", "but", "this", "its", "their", "while", "after", "before", "since", "today", "also", "together", "both", "who", "which"]);
+
+/** A sentence word glued to a name, or a whole word ending a sentence ("Spera."). */
+function badNameToken(t: string): boolean {
+  if (NOT_A_NAME_TOKEN.has(t.toLowerCase().replace(/[.,]$/, ""))) return true;
+  return /^\p{L}{3,}\.$/u.test(t) && !/^(Prof|Mrs)\.$/.test(t);
+}
+
+/** A person's name: 2-4 capitalized tokens, no organisation words, no sentence words. */
+function looksLikePersonName(p: string): boolean {
+  return NAME_RE.test(p) && !NOT_A_PERSON.test(p) && !p.split(/\s+/).some(badNameToken);
+}
 const SUBJECT_GAP_WORDS = new Set(["was", "is", "were", "has", "been", "originally", "officially", "which", "that", "first", "initially", "a", "an", "the"]);
 
 function sentencesOf(text: string): string[] {
@@ -35,7 +49,7 @@ function namesAfterBy(rest: string): string[] {
   return list
     .split(/,\s*(?:and\s+)?|\s+and\s+|\s*&\s*/)
     .map((p) => p.trim().replace(/[.,]+$/, ""))
-    .filter((p) => NAME_RE.test(p) && !NOT_A_PERSON.test(p))
+    .filter(looksLikePersonName)
     .slice(0, 5);
 }
 
@@ -80,12 +94,37 @@ export function personMentionedIn(name: string, text: string): boolean {
   return new RegExp(`\\b${first}\\b[^a-z]+(?:[a-z.]+[^a-z]+){0,2}${last}\\b`).test(fold(text).toLowerCase());
 }
 
+/**
+ * Drops entries without a surname and folds duplicates of the same person
+ * ("Mitchell Stewart" / "Mitch Stewart", "Albert Sebag" / "Albert Sebago")
+ * into the first one, filling its empty fields from the duplicate.
+ */
 export function cleanPeople<T extends { name: string }>(people: T[]): T[] {
   const out: T[] = [];
   for (const p of people) {
     if (!p?.name || fold(p.name).trim().split(/\s+/).filter((t) => /\p{L}{2,}/u.test(t)).length < 2) continue;
-    if (out.some((o) => samePersonName(o.name, p.name))) continue;
-    out.push(p);
+    // "Mark Spera.  However", "Virgin Money" — not a person's name.
+    if (NOT_A_PERSON.test(p.name) || p.name.trim().split(/\s+/).some(badNameToken)) continue;
+    const same = out.find((o) => samePersonName(o.name, p.name));
+    if (same) {
+      for (const [k, v] of Object.entries(p)) {
+        const cur = (same as Record<string, unknown>)[k];
+        if ((cur === undefined || cur === null || cur === "") && v !== undefined && v !== null && v !== "") (same as Record<string, unknown>)[k] = v;
+      }
+      continue;
+    }
+    out.push({ ...p });
   }
   return out;
+}
+
+/**
+ * A "founder" whose bio says they were hired or appointed, and nothing
+ * about founding (GreyNoise's "Ash Devata, CEO — was hired as CEO"), is
+ * leadership, not a founder. A plain "CEO" title alone proves nothing —
+ * founders are often listed by their current role.
+ */
+export function isFounderEntry(p: { title?: string | null; bio?: string | null }): boolean {
+  if (/found/i.test(`${p.title ?? ""} ${p.bio ?? ""}`)) return true;
+  return !/\b(hired|appointed|was named|named as|promoted|joined|brought in|took over|succeed(?:s|ed)?)\b/i.test(p.bio ?? "");
 }

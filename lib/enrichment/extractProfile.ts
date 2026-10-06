@@ -32,6 +32,8 @@ import { checkHeadcountClaim, type HeadcountDropReason } from "./headcount";
 export interface SectorTaxonomy {
   parentNames: string[];
   subNames: string[];
+  /** Sub-sector name -> its parent sector's name. */
+  parentOf?: Record<string, string>;
 }
 
 /**
@@ -45,16 +47,48 @@ export interface SectorTaxonomy {
  * matching v1's own behavior) if the fetch fails, rather than block the run.
  */
 export async function loadSectorTaxonomy(supabase: SupabaseClient): Promise<SectorTaxonomy> {
-  const { data, error } = await supabase.from("sectors").select("name, parent_id");
+  const { data, error } = await supabase.from("sectors").select("id, name, parent_id");
   if (error) {
     console.warn(`⚠️  Failed to load sector taxonomy: ${error.message} — sector_name/sub_sector_name classification will be skipped this run.`);
     return { parentNames: [], subNames: [] };
   }
-  const rows = (data ?? []) as Array<{ name: string; parent_id: string | null }>;
+  const rows = (data ?? []) as Array<{ id?: string; name: string; parent_id: string | null }>;
+  const nameById = new Map(rows.map((r) => [r.id, r.name]));
+  const parentOf: Record<string, string> = {};
+  for (const r of rows) if (r.parent_id && nameById.has(r.parent_id)) parentOf[r.name] = nameById.get(r.parent_id)!;
   return {
     parentNames: rows.filter((r) => r.parent_id === null).map((r) => r.name).sort(),
     subNames: rows.filter((r) => r.parent_id !== null).map((r) => r.name).sort(),
+    parentOf,
   };
+}
+
+const TAG_FILLER_WORDS = new Set(["general", "digital", "tech", "technology", "technologies", "and", "other", "services", "platforms", "platform", "software", "management", "solutions", "data"]);
+
+/**
+ * Sub-sector tags have no evidence of their own. A tag from a DIFFERENT
+ * sector than the company's main one is kept only when the company's own
+ * description names what the tag is about — a digital bank tagged "Digital
+ * Health" (GXBank, GoTyme) is dropped because nothing about it mentions
+ * health. Tags inside the main sector, and any tag when the main sector or
+ * the taxonomy's parent map is unknown, are left as they are.
+ */
+export function filterCrossSectorTags(
+  tags: string[],
+  mainSector: string | null | undefined,
+  taxonomy: SectorTaxonomy,
+  companyText: string,
+): { kept: string[]; dropped: string[] } {
+  const kept: string[] = [], dropped: string[] = [];
+  const text = companyText.toLowerCase();
+  for (const tag of tags) {
+    const parent = taxonomy.parentOf?.[tag] ?? (taxonomy.parentNames.includes(tag) ? tag : undefined);
+    if (!mainSector || !parent || parent === mainSector) { kept.push(tag); continue; }
+    const words = tag.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 2 && !TAG_FILLER_WORDS.has(w));
+    const named = words.some((w) => new RegExp(`\\b${w.length > 5 ? w.slice(0, w.length - 1) : w}`, "i").test(text));
+    (named ? kept : dropped).push(tag);
+  }
+  return { kept, dropped };
 }
 
 export interface EvidencedValue<T> {

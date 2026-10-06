@@ -50,6 +50,26 @@ export interface V2MarketExtraction {
   technology: V2Technology;
 }
 
+const escapeForRe = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** `term` appears within ~250 characters of the word "patent". */
+export function nearPatentWord(term: string, text: string): boolean {
+  if (!term.trim()) return false;
+  const re = new RegExp(escapeForRe(term.trim()), "gi");
+  for (const m of text.matchAll(re)) {
+    const window = text.slice(Math.max(0, m.index! - 250), m.index! + m[0].length + 250);
+    if (/patent/i.test(window)) return true;
+  }
+  return false;
+}
+
+/** The text states `count` patents: "120 patents", "over 120 technology patents", "patents: 6". */
+export function patentCountStated(count: number, text: string): boolean {
+  const n = `(?:${count}|${count.toLocaleString("en-US")})`;
+  return new RegExp(`\\b${n}\\+?\\s+(?:[A-Za-z-]+\\s+){0,3}patents?\\b`, "i").test(text) ||
+    new RegExp(`\\bpatents?\\b[^.\\d]{0,25}\\b${n}\\b`, "i").test(text);
+}
+
 export function emptyMarketExtraction(): V2MarketExtraction {
   return {
     competitors: [], acquisitions: [], news: [],
@@ -60,7 +80,7 @@ export function emptyMarketExtraction(): V2MarketExtraction {
 
 export type MarketDropReason =
   | "competitor_not_in_source" | "competitor_is_self" | "acquisition_not_in_source"
-  | "news_url_not_in_sources" | "news_is_profile_page" | "patent_not_in_source"
+  | "news_url_not_in_sources" | "news_is_profile_page" | "patent_not_in_source" | "patent_count_not_stated"
   | "tech_not_in_source" | "competitor_is_acquisition" | "acquisition_is_self" | "news_date_not_in_source" | "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found";
 
 export interface MarketDroppedField { field: string; reason: MarketDropReason }
@@ -331,20 +351,27 @@ export function processMarketExtractionResponse(
     if (news.length >= 8) break;
   }
 
+  // A patent named only by its title needs that title next to the word
+  // "patent" in a source — a page's "Contact" link is not a patent.
   const patents = ensureArray<V2PatentRecord>(i.patents).filter((p) => {
     if (!p?.title) return false;
     const grounded =
       (p.url && sourceByUrl.has(normalizeUrlForMatch(p.url))) ||
       (p.patent_number && sources.some((s) => sourceText(s).includes(p.patent_number!))) ||
-      sources.some((s) => termAppearsIn(p.title, sourceText(s)));
+      (p.title.trim().split(/\s+/).length >= 2 && sources.some((s) => nearPatentWord(p.title, sourceText(s))));
     if (!grounded) { dropped.push({ field: "patents", reason: "patent_not_in_source" }); return false; }
     return true;
   });
 
-  const anyPatentMention = sources.some((s) => /\bpatent/i.test(sourceText(s)));
+  // A patent count must be stated as a count ("holds over 120 patents"),
+  // never taken from the length of a list.
+  const count = i.patent_summary?.patent_count ?? null;
+  const countStated = count != null && count > 0 && sources.some((s) => patentCountStated(count, sourceText(s)));
+  if (count != null && !countStated) dropped.push({ field: "patent_summary.patent_count", reason: "patent_count_not_stated" });
+  const patentFields = ensureArray<string>(i.patent_summary?.patent_fields).filter((f) => sources.some((s) => nearPatentWord(f, sourceText(s))));
   const patentSummary = {
-    patent_count: anyPatentMention ? (i.patent_summary?.patent_count ?? null) : null,
-    patent_fields: anyPatentMention ? ensureArray<string>(i.patent_summary?.patent_fields) : [],
+    patent_count: countStated ? count : null,
+    patent_fields: patentFields,
   };
 
   const techStack = ensureArray<string>(i.technology?.tech_stack).filter((t) => {

@@ -36,11 +36,30 @@ function personTokens(name: string): string[] {
     .split(/[^a-z]+/).filter((t) => t.length > 1);
 }
 
-/** Same person when first and last name tokens agree (middle names/initials ignored, accents ignored). */
+/** At most one inserted, deleted or substituted letter between a and b. */
+function withinOneEdit(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1);
+  return a.length > b.length ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1);
+}
+
+/**
+ * Same person when first and last name tokens agree (middle names/initials
+ * and accents ignored). Also the same person: a short form of the first
+ * name with the same surname ("Mitch"/"Mitchell Stewart"), and a one-letter
+ * spelling slip in a surname of 5+ letters with the same first name
+ * ("Albert Sebag"/"Albert Sebago").
+ */
 export function samePersonName(a: string, b: string): boolean {
   const ta = personTokens(a), tb = personTokens(b);
   if (ta.length < 2 || tb.length < 2) return false;
-  return ta[0] === tb[0] && ta[ta.length - 1] === tb[tb.length - 1];
+  const [fa, la] = [ta[0], ta[ta.length - 1]], [fb, lb] = [tb[0], tb[tb.length - 1]];
+  if (fa === fb && la === lb) return true;
+  if (la === lb && Math.min(fa.length, fb.length) >= 3 && (fa.startsWith(fb) || fb.startsWith(fa))) return true;
+  return fa === fb && Math.min(la.length, lb.length) >= 5 && withinOneEdit(la, lb);
 }
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

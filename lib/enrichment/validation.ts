@@ -16,6 +16,7 @@
  */
 
 import { MAJOR_CITIES } from "./majorCities";
+import { isRegionNotCity } from "./location";
 import { CANONICAL_ROUND_TYPES, normalizeRoundType, type CanonicalRoundType, type RoundLike } from "./rounds";
 import { resolveConflictBySourceRank, type SourceType } from "./sourceTypes";
 
@@ -69,7 +70,7 @@ export function cityExistsInCountry(city: string | null | undefined, country: st
 export type ValidationRuleCode =
   | "city_country_mismatch" | "founded_after_first_round" | "founded_out_of_range"
   | "headcount_outlier" | "valuation_below_round" | "round_date_invalid"
-  | "stage_order" | "profile_country_conflict";
+  | "stage_order" | "profile_country_conflict" | "city_not_a_city";
 
 export interface ValidationIssue {
   rule: ValidationRuleCode;
@@ -79,6 +80,8 @@ export interface ValidationIssue {
   action: "drop_field" | "drop_both" | "drop_round" | "flag_needs_review" | "keep_existing";
   /** True when this module could not resolve the conflict itself and a fresh targeted search might. */
   needsExternalResolution?: boolean;
+  /** For action "drop_round": the rounds (by reference) this issue removes. */
+  rounds?: RoundLike[];
 }
 
 // ── Individual rule checks (each independently unit-testable) ────────────
@@ -126,10 +129,15 @@ export function checkFoundedYear(
 export function checkHeadcountOutlier(
   employee_count: number | null | undefined,
   totalRaisedUsd: number | null | undefined,
+  foundedYear?: number | null,
 ): ValidationIssue | null {
   if (employee_count == null) return null;
   const overAbsoluteCap = employee_count > 20_000;
-  const overRaiseRatio = !!totalRaisedUsd && totalRaisedUsd > 1_000_000 && employee_count > totalRaisedUsd / 20_000;
+  // The employees-per-dollar-raised ratio only says something about young,
+  // venture-funded companies; a company 12+ years old (greytHR, 1994) may
+  // have grown on revenue far beyond what it ever raised.
+  const mature = foundedYear != null && foundedYear <= new Date().getFullYear() - 12;
+  const overRaiseRatio = !mature && !!totalRaisedUsd && totalRaisedUsd > 1_000_000 && employee_count > totalRaisedUsd / 20_000;
   if (!overAbsoluteCap && !overRaiseRatio) return null;
   return {
     rule: "headcount_outlier",
@@ -196,9 +204,19 @@ const SERIES_ORDER: CanonicalRoundType[] = [
   "Pre-Seed", "Seed", "Series A", "Series B", "Series C", "Series D", "Series E", "Series F+",
 ];
 
+/** 3 = full date, 2 = month only (YYYY-MM-01), 1 = year only (YYYY-01-01). */
+function datePrecision(iso: string): number {
+  if (/-01-01$/.test(iso)) return 1;
+  if (/-01$/.test(iso)) return 2;
+  return 3;
+}
+
 /**
- * Flags consecutive named-series rounds (issue 4's "stage_order": a LATER
- * stage dated more than 6 months BEFORE an earlier one) for human review.
+ * Consecutive named-series rounds out of order (issue 4's "stage_order": a
+ * LATER stage dated more than 6 months BEFORE an earlier one) cannot both
+ * be right. The round with the vaguer date is dropped (Grit's "Series A,
+ * 2022" from a multi-company job board vs its dated 2023 Seed); when both
+ * are equally precise there is no way to tell which is wrong, so both go.
  * Only compares the closed Pre-Seed..Series F+ progression — "Growth" and
  * the non-VC types have no fixed position in a stage order to violate.
  */
@@ -212,17 +230,21 @@ export function checkStageOrder(rounds: RoundLike[]): ValidationIssue[] {
   for (let i = 0; i < named.length - 1; i++) {
     const earlier = named[i];
     const later = named[i + 1];
+    if (earlier.type === later.type) continue;
     if (!earlier.r.announcement_date || !later.r.announcement_date) continue;
     const dEarlier = new Date(earlier.r.announcement_date);
     const dLater = new Date(later.r.announcement_date);
     if (Number.isNaN(dEarlier.getTime()) || Number.isNaN(dLater.getTime())) continue;
     const daysDiff = (dEarlier.getTime() - dLater.getTime()) / 86_400_000; // positive if later-stage is dated BEFORE earlier-stage
     if (daysDiff > 182) {
+      const pe = datePrecision(earlier.r.announcement_date), pl = datePrecision(later.r.announcement_date);
+      const drop = pe === pl ? [earlier, later] : pe < pl ? [earlier] : [later];
       issues.push({
         rule: "stage_order",
         fields: [`funding_rounds.${earlier.type}`, `funding_rounds.${later.type}`],
-        message: `${later.type} is dated ${Math.round(daysDiff)} days before ${earlier.type} — stage order looks wrong.`,
-        action: "flag_needs_review",
+        message: `${later.type} is dated ${Math.round(daysDiff)} days before ${earlier.type} — stage order is impossible; dropped ${drop.map((d) => `${d.type} (${d.r.announcement_date})`).join(" and ")}.`,
+        action: "drop_round",
+        rounds: drop.map((d) => d.r),
       });
     }
   }
@@ -293,6 +315,9 @@ export interface ValidateEnrichmentInput {
     city?: string | null;
     country?: string | null;
     country_source_type?: SourceType | null;
+    /** Evidence quotes, used to drop a country read off the same "HQ: Delaware, United States" line as a non-city. */
+    city_quote?: string | null;
+    country_quote?: string | null;
     employee_count?: number | null;
   };
   /** Rounds already on file PLUS newly extracted ones, ideally already deduped via rounds.ts. */
@@ -326,6 +351,18 @@ export function validateEnrichment(input: ValidateEnrichmentInput): ValidateEnri
 
   let acceptedCity: string | null = input.extracted.city ?? null;
   let acceptedCountry: string | null = input.extracted.country ?? null;
+  if (isRegionNotCity(acceptedCity)) {
+    // "Headquarters: Delaware, United States" is an incorporation address.
+    const sameLine = !!input.extracted.city_quote && input.extracted.city_quote === input.extracted.country_quote;
+    issues.push({
+      rule: "city_not_a_city",
+      fields: sameLine ? ["profile.city", "profile.country"] : ["profile.city"],
+      message: `"${acceptedCity}" is a state/region/country, not a city${sameLine ? " — the country from the same line is dropped too" : ""}.`,
+      action: sameLine ? "drop_both" : "drop_field",
+    });
+    acceptedCity = null;
+    if (sameLine) acceptedCountry = null;
+  }
   const cityCountryIssue = checkCityCountryMismatch(acceptedCity, acceptedCountry);
   if (cityCountryIssue) {
     issues.push(cityCountryIssue);
@@ -342,7 +379,7 @@ export function validateEnrichment(input: ValidateEnrichmentInput): ValidateEnri
   }
 
   let acceptedEmployeeCount: number | null = input.extracted.employee_count ?? null;
-  const headcountIssue = checkHeadcountOutlier(acceptedEmployeeCount, input.totalRaisedUsd);
+  const headcountIssue = checkHeadcountOutlier(acceptedEmployeeCount, input.totalRaisedUsd, acceptedFoundedYear ?? input.existing.founded_year);
   if (headcountIssue) { issues.push(headcountIssue); acceptedEmployeeCount = null; }
 
   const acceptedRounds: RoundLike[] = [];
@@ -357,7 +394,10 @@ export function validateEnrichment(input: ValidateEnrichmentInput): ValidateEnri
     }
     acceptedRounds.push(r);
   }
-  issues.push(...checkStageOrder(acceptedRounds));
+  const stageIssues = checkStageOrder(acceptedRounds);
+  issues.push(...stageIssues);
+  const dropped = new Set(stageIssues.flatMap((i) => i.rounds ?? []));
+  for (let k = acceptedRounds.length - 1; k >= 0; k--) if (dropped.has(acceptedRounds[k])) acceptedRounds.splice(k, 1);
 
   return {
     issues,

@@ -70,6 +70,12 @@ export interface EntityAnchors {
   identityKeywords?: string[];
   /** The company's own LinkedIn company page, when on file — any OTHER linkedin.com/company page is a namesake. */
   companyLinkedinUrl?: string | null;
+  /**
+   * Words that follow the company's name on its OWN site ("Guardant Health"
+   * on guardanthealth.com) — see nameQualifiersOnOwnSite(). Any other
+   * organisation word after the name in a result's title marks a namesake.
+   */
+  ownQualifiers?: string[];
 }
 
 // Generic web/business vocabulary that says nothing about which company a
@@ -107,7 +113,41 @@ const GENERIC_WORDS = new Set([
   "player", "embedded", "remote", "starting", "apply", "become", "change", "remain", "continue", "future",
   "small", "potential", "mission", "organization", "celebrated", "option", "personal", "doesn", "integrate",
   "morelearn", "fmedia", "fstatic",
+  // More page chrome / consent-manager / address words seen as identity
+  // keywords in the 50-company run (Guardant: "clarity, pardot, awsalb").
+  "clarity", "display", "pardot", "active", "amazon", "awsalb", "basic", "campaign", "category", "certain",
+  "cloudfront", "error", "purpose", "storage", "vendor", "strictly", "allow", "allowed", "select", "checkbox",
+  "accessibility", "expire", "timestamp", "wordpress", "pixel", "tracker", "behaviour", "behavior", "maximum",
+  "provider", "chief", "officer", "leadership", "press", "documentation", "library", "upcoming", "interaction",
+  "multiple", "currently", "determine", "entry", "functionality", "language", "visit", "sorry", "reason",
+  "question", "guide", "report", "alway", "detail", "during", "greet", "state", "united", "suite", "partner",
+  "community", "collect", "personalize", "response", "solicitation", "illustrative", "corporate", "featured",
+  "discover", "story", "storie", "action", "interest", "looking", "different", "launch", "easily", "improve",
 ]);
+
+// Organisation-type words: "GuidePoint Security" is a different company
+// from "Guidepoint", "Gridline Industries Group" from "Gridline".
+const ORG_DESIGNATORS = new Set([
+  "security", "industries", "technologies", "telematics", "robotics", "therapeutics", "biosciences", "bio",
+  "pharma", "pharmaceuticals", "bank", "insurance", "capital", "ventures", "partners", "consulting", "holdings",
+  "realty", "properties", "motors", "energy", "logistics", "foods", "entertainment", "studios", "records",
+  "agency", "labs", "systems", "media", "games", "health", "medical", "construction", "homes", "apparel",
+]);
+
+/** Words directly after the company's name on its own pages (lower-case). */
+export function nameQualifiersOnOwnSite(texts: string[], companyName: string): string[] {
+  const name = companyName.toLowerCase().replace(SUFFIXES_TO_STRIP, "").trim();
+  if (!name) return [];
+  const re = new RegExp(`(?:^|[^\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[\\s-]+(\\p{L}+)`, "gu");
+  const out = new Set<string>();
+  for (const t of texts) for (const m of t.toLowerCase().matchAll(re)) out.add(m[1]);
+  return [...out];
+}
+
+// Pages listing many companies at once (job boards, market maps) — a fact
+// on them cannot be tied to one company (Grit's "Series A" came from a
+// hnhiring.com month of job posts).
+const MULTI_COMPANY_PAGE_RE = /^https?:\/\/(?:[a-z0-9-]+\.)*(?:hnhiring\.com)\/|\/landscape\//i;
 
 // Strips what isn't prose before counting words: URLs, markdown images and
 // link targets, percent-encoded path fragments ("%2Fmedia" -> "fmedia").
@@ -163,7 +203,9 @@ export interface SearchResultLike {
 }
 
 export type EntityMatchKind = "domain_url" | "domain_mention" | "founder_mention" | "verified_profile_url" | "identity_keywords" | "distinctive_name";
-export type EntityDropReason = "not_distinctive_name" | "country_contradiction" | "no_entity_match" | "namesake_domain" | "namesake_profile" | "name_not_mentioned";
+export type EntityDropReason =
+  | "not_distinctive_name" | "country_contradiction" | "no_entity_match" | "namesake_domain" | "namesake_profile"
+  | "name_not_mentioned" | "namesake_qualified_name" | "multi_company_page";
 
 export interface EntityFilterVerdict {
   kept: boolean;
@@ -202,6 +244,28 @@ export function filterByEntity(
     if (host === domain || host?.endsWith(`.${domain}`)) {
       return { kept: true, matched: "domain_url" };
     }
+  }
+
+  if (MULTI_COMPANY_PAGE_RE.test(result.url)) return { kept: false, drop_reason: "multi_company_page" };
+
+  // "<Name> <Security|Industries|...>" in the title or URL slug, when the
+  // company's own site never calls itself that, is a different company.
+  {
+    const name = companyName.toLowerCase().replace(SUFFIXES_TO_STRIP, "").trim();
+    const own = new Set([...(anchors.ownQualifiers ?? []), ...companyName.toLowerCase().split(/[^\p{L}\p{N}]+/u)]);
+    const ownDomain = (anchors.domain ?? "").toLowerCase();
+    const slug = result.url.toLowerCase().replace(/[-_/.]+/g, " ");
+    if (name) {
+      const re = new RegExp(`(?:^|[^\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+(\\p{L}+)`, "gu");
+      for (const m of `${(result.title ?? "").toLowerCase()} | ${slug}`.matchAll(re)) {
+        const q = m[1];
+        if (ORG_DESIGNATORS.has(q) && !own.has(q) && !ownDomain.includes(q)) return { kept: false, drop_reason: "namesake_qualified_name" };
+      }
+    }
+  }
+
+  if (anchors.domain) {
+    const domain = anchors.domain.toLowerCase();
     if (text.includes(domain)) {
       return { kept: true, matched: "domain_mention" };
     }

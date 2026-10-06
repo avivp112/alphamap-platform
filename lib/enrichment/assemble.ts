@@ -30,7 +30,13 @@ const sourceText = (s: LabeledSource) => `${s.title ?? ""} ${s.content} ${s.url}
 
 // ── Round grounding ──────────────────────────────────────────────────────
 
-export type RoundGroundingDrop = "investor_not_in_source" | "investor_amount_not_in_source" | "round_source_url_not_in_sources" | "round_date_from_article";
+export type RoundGroundingDrop =
+  | "investor_not_in_source" | "investor_amount_not_in_source" | "round_source_url_not_in_sources" | "round_date_from_article"
+  | "valuation_not_stated_as_valuation";
+
+// A valuation's quote must call the figure a valuation — "bringing total
+// funding to $65.5 million" or "sold with $318,000 ARR" is not one.
+const VALUATION_WORD_RE = /\b(valu(?:e|ed|ation|ing)|post-?money|pre-?money|worth|unicorn|market cap)/i;
 
 const RAISE_RE = /\b(rais(e|es|ed|ing)|secur(e|es|ed)|clos(e|es|ed)|lands|nabs|bags|announc(e|es|ed) .{0,40}(funding|round|investment))\b/i;
 
@@ -43,6 +49,12 @@ const RAISE_RE = /\b(rais(e|es|ed|ing)|secur(e|es|ed)|clos(e|es|ed)|lands|nabs|b
  * it. The date must be the article's own: a "Date:" line, a "Published
  * Time:" line, a press-wire dateline, or a /YYYY/MM/DD/ URL.
  */
+function shiftIsoDate(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 export function announcementDateFromSource(round: V2Round, source: LabeledSource, today = new Date().toISOString().slice(0, 10)): string | null {
   const head = `${source.title ?? ""} ${source.content.slice(0, 700)}`;
   if (!RAISE_RE.test(head)) return null;
@@ -60,7 +72,9 @@ export function announcementDateFromSource(round: V2Round, source: LabeledSource
   ];
   for (const c of candidates) {
     const iso = c ? parseFullDate(c) : null;
-    if (iso && iso >= "1990-01-01" && iso <= today) return iso;
+    // A "published" date within the last few days is the crawl date of an
+    // old article (vccircle's 2017 Grofers story came back dated today).
+    if (iso && iso >= "1990-01-01" && iso <= shiftIsoDate(today, -3)) return iso;
   }
   return null;
 }
@@ -107,6 +121,12 @@ export function groundRoundDetails(
     sourceUrl = citedId ? byId.get(citedId)?.url : undefined;
   }
 
+  let valuation = round.valuation;
+  if (valuation && !VALUATION_WORD_RE.test(valuation.evidence_quote ?? "")) {
+    dropped.push("valuation_not_stated_as_valuation");
+    valuation = undefined;
+  }
+
   let announcementDate = round.announcement_date;
   if (!announcementDate) {
     const citedId = (round.amount_raised ?? round.lead_investor ?? round.valuation)?.source_id;
@@ -121,6 +141,8 @@ export function groundRoundDetails(
   return {
     round: {
       ...round,
+      valuation,
+      is_valuation_estimated: valuation ? round.is_valuation_estimated : undefined,
       announcement_date: announcementDate,
       other_investors: otherInvestors.length > 0 ? otherInvestors : undefined,
       investor_amounts: investorAmounts.length > 0 ? investorAmounts : undefined,
@@ -161,6 +183,10 @@ export function isSameRound(a: RoundLike, b: RoundLike): boolean {
   const ta = normalizeRoundType(a.round_type), tb = normalizeRoundType(b.round_type);
   const gap = daysApart(a.announcement_date, b.announcement_date);
   if (ta === tb && NAMED_STAGES.has(ta) && (gap == null || gap <= 270)) return true;
+  // The same named stage for the same amount is the same raise even when
+  // one side carries a later article's date (Griffin's $13.5M Series A
+  // re-reported with its 2024 extension).
+  if (ta === tb && NAMED_STAGES.has(ta) && amountsClose(a.amount_raised, b.amount_raised, 0.10)) return true;
   if (ta === tb && !NAMED_STAGES.has(ta) && gap != null && gap <= 60) return true;
   if (amountsClose(a.amount_raised, b.amount_raised, 0.10) && gap != null && gap <= 60) return true;
   return false;

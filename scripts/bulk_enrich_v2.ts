@@ -48,9 +48,9 @@ import {
   createSearchProviderState, verifyDomainMatch, webSearch, newsSearch, serperSearch, fetchCompanyWebsitePages, fetchArticleText,
   type SearchProviderState,
 } from "../lib/enrichment/searchProviders.ts";
-import { filterByEntity, deriveIdentityKeywords, type EntityAnchors } from "../lib/enrichment/entity.ts";
+import { filterByEntity, deriveIdentityKeywords, nameQualifiersOnOwnSite, type EntityAnchors } from "../lib/enrichment/entity.ts";
 import { buildLabeledSources, mergeDuplicateResults, type RawSearchResult, type LabeledSource } from "../lib/enrichment/sources.ts";
-import { extractProfile, loadSectorTaxonomy, type SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
+import { extractProfile, loadSectorTaxonomy, filterCrossSectorTags, type SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { extractFunding, roundToRoundLike } from "../lib/enrichment/extractFunding.ts";
 import { extractMarket, normalizeUrlForMatch } from "../lib/enrichment/extractMarket.ts";
 import { detectGaps, buildDeepDiveQueries, hasNoFinancingRounds, type DeepDiveSection } from "../lib/enrichment/deepDive.ts";
@@ -64,9 +64,11 @@ import { openSearchCache } from "../lib/enrichment/searchCache.ts";
 import { pickArticlesToRead } from "../lib/enrichment/articles.ts";
 import { runTechGate, shouldSkipAsNonTech, type TechGateVerdict } from "../lib/enrichment/techGate.ts";
 import { namesCompany } from "../lib/enrichment/headcount.ts";
-import { foundersFromText, personMentionedIn, cleanPeople } from "../lib/enrichment/people.ts";
+import { foundersFromText, personMentionedIn, cleanPeople, isFounderEntry } from "../lib/enrichment/people.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "../lib/enrichment/linkedin.ts";
 import { checkHeadcountOutlier } from "../lib/enrichment/validation.ts";
+import { countryFromLocationQuote } from "../lib/enrichment/location.ts";
+import { findListingStatement } from "../lib/enrichment/listing.ts";
 import { MAJOR_CITIES } from "../lib/enrichment/majorCities.ts";
 import { normalizeForMatch } from "../lib/enrichment/evidence.ts";
 import { validateEnrichment } from "../lib/enrichment/validation.ts";
@@ -392,6 +394,7 @@ async function enrichCompany(
     trustedCountry: row.is_manually_verified ? (row.country ?? undefined) : undefined,
     identityKeywords,
     companyLinkedinUrl: row.linkedin_url,
+    ownQualifiers: nameQualifiersOnOwnSite([...websitePages.map((p) => p.content), row.description ?? ""], row.name),
   };
   const passesEntity = (r: RawSearchResult, a: EntityAnchors) =>
     filterByEntity({ url: r.url, title: r.title, snippet: r.content }, a, row.name).kept;
@@ -455,7 +458,10 @@ async function enrichCompany(
   let profile = profileOutcome.extraction.result;
   for (const d of profileOutcome.extraction.dropped) bump(summary.droppedByReason, d.reason);
 
-  if (profile.is_public_company) {
+  // Backstop for the model's flag: "<Name>, Inc. (Nasdaq: XYZ)" in a source.
+  const listing = profile.is_public_company ? null : findListingStatement(row.name, allSources, domain);
+  if (listing) console.log(`    🏛️   Listed on an exchange per ${listing.url}: "${listing.quote}"`);
+  if (profile.is_public_company || listing) {
     console.log(`    🏛️   PUBLIC COMPANY — archiving (status='ipo') rather than deleting (issue 7)`);
     summary.tally.removed_public++;
     if (!DRY_RUN) {
@@ -737,6 +743,8 @@ async function enrichCompany(
       country: profile.profile.country?.value ?? null,
       country_source_type: sourceTypeFor(profile.profile.country?.source_id) ?? null,
       employee_count: profile.metrics.employee_count?.value ?? null,
+      city_quote: profile.profile.city?.evidence_quote ?? null,
+      country_quote: profile.profile.country?.evidence_quote ?? null,
     },
     rounds: [...existingRefs, ...newRoundLikes.map((r): TaggedRound => ({ ...r, _new: true }))],
     totalRaisedUsd: computeTotalRaised([...existingRefs, ...roughPlan.inserts]),
@@ -804,7 +812,13 @@ async function enrichCompany(
   // the curated city list — never for an ambiguous name.
   if (patch.city && !patch.country && row.country == null) {
     const countries = MAJOR_CITIES.get(String(patch.city).trim().toLowerCase());
-    if (countries && countries.size === 1) {
+    const fromQuote = countryFromLocationQuote(profile.profile.city?.evidence_quote, String(patch.city));
+    if (fromQuote) {
+      // "Poway, Calif.-based", "2970 Hørsholm Denmark": the city's own quote names the country.
+      patch.country = fromQuote;
+      provenance("profile.country", fromQuote, profile.profile.city);
+      console.log(`    🧭  Country "${fromQuote}" read from the city's own evidence quote.`);
+    } else if (countries && countries.size === 1) {
       patch.country = [...countries][0];
       console.log(`    🧭  Country "${patch.country}" derived from city "${patch.city}" (unambiguous in the city list).`);
     } else {
@@ -835,10 +849,19 @@ async function enrichCompany(
     if (sid) patch.sector_id = sid;
   }
   // Sub-sector tags (startup_sub_sectors): additive across runs, like v1.
-  const tagNames = [...new Set([
+  const proposedTags = [...new Set([
     ...(profile.profile.sub_sector_name ? [profile.profile.sub_sector_name] : []),
     ...(profile.profile.sub_sector_names ?? []),
   ])];
+  const tagFilter = filterCrossSectorTags(
+    proposedTags, profile.profile.sector_name, taxonomy,
+    [profile.profile.description, profile.profile.value_proposition, profile.profile.industry, row.description].filter(Boolean).join(" "),
+  );
+  for (const t of tagFilter.dropped) {
+    console.log(`    🏷️   Tag "${t}" dropped — it belongs to another sector and nothing in the description is about it.`);
+    bump(summary.droppedByReason, "tag_outside_sector_unsupported");
+  }
+  const tagNames = tagFilter.kept;
   const tagSectorIds: string[] = [];
   for (const tagName of tagNames) {
     const { data: tagId } = await supabase.rpc("sector_id_by_name", { p_name: tagName });
@@ -846,27 +869,40 @@ async function enrichCompany(
   }
 
   // Leadership & founders (additive merge, never destructive)
-  const cleanFounders = cleanPeople((profile.profile.founders ?? []).map((f) => ({
+  const founderCandidates = cleanPeople((profile.profile.founders ?? []).map((f) => ({
     name: f.name, title: f.title, bio: f.bio, linkedin_url: f.linkedin_url?.value,
     had_prior_exit: f.had_prior_exit, elite_background: f.elite_background, notable_pedigree: f.notable_pedigree,
   })));
+  const cleanFounders = founderCandidates.filter(isFounderEntry);
+  // A hired executive the model listed as a founder stays in leadership.
+  const demotedFounders = founderCandidates.filter((f) => !isFounderEntry(f));
+  for (const f of demotedFounders) {
+    console.log(`    👤  ${f.name} ("${f.title}") is not stated to be a founder — kept in leadership only.`);
+    bump(summary.droppedByReason, "founder_not_stated_as_founder");
+  }
   const allFounderInputs = [...cleanFounders, ...linkedinFounders];
   if (allFounderInputs.length > 0) {
     // mergePeople matches exact names; align LinkedIn names (accents,
     // middle names) to the spelling already in use before merging.
     const knownNames = [...(row.founders ?? []).map((f) => f?.name), ...cleanFounders.map((f) => f.name)].filter((n): n is string => !!n);
     const aligned = allFounderInputs.map((f) => ({ ...f, name: knownNames.find((n) => samePersonName(n, f.name)) ?? f.name }));
-    setIfChanged("founders", mergePeople(row.founders ?? [], aligned), row.founders);
+    // cleanPeople also folds duplicates already on file ("Mitch"/"Mitchell Stewart").
+    setIfChanged("founders", cleanPeople(mergePeople(row.founders ?? [], aligned)), row.founders);
   }
   const cleanLeadership = cleanPeople((profile.leadership ?? []).map((l) => ({
     name: l.name, role: l.role, bio: l.bio, linkedin_url: l.linkedin_url?.value, joined_date: l.joined_date,
     had_prior_exit: l.had_prior_exit, elite_background: l.elite_background, notable_pedigree: l.notable_pedigree,
   })));
-  const allLeaderInputs = [...cleanLeadership, ...linkedinLeaders.map((l) => ({ ...l, role: l.role ?? "" }))];
+  const allLeaderInputs = [
+    ...cleanLeadership,
+    ...linkedinLeaders.map((l) => ({ ...l, role: l.role ?? "" })),
+    ...demotedFounders.filter((f) => !cleanLeadership.some((l) => samePersonName(l.name, f.name)))
+      .map((f) => ({ name: f.name, role: f.title ?? "", bio: f.bio, linkedin_url: f.linkedin_url })),
+  ];
   if (allLeaderInputs.length > 0) {
     const knownLeaderNames = [...(row.leadership ?? []).map((l) => l?.name), ...cleanLeadership.map((l) => l.name)].filter((n): n is string => !!n);
     const alignedLeaders = allLeaderInputs.map((l) => ({ ...l, name: knownLeaderNames.find((n) => samePersonName(n, l.name)) ?? l.name }));
-    setIfChanged("leadership", mergePeople(row.leadership ?? [], alignedLeaders), row.leadership);
+    setIfChanged("leadership", cleanPeople(mergePeople(row.leadership ?? [], alignedLeaders)), row.leadership);
   }
 
   // Competitors & market (additive: entries on file are never removed)
@@ -1006,9 +1042,10 @@ async function enrichCompany(
   // Series sanity: a point implausible for this company's size and funding
   // (the 70,000-employee Gladia point) never reaches the growth chart.
   const reference = acceptedHeadcount ?? row.employee_count;
+  const foundedForChecks = validation.accepted.founded_year ?? row.founded_year ?? null;
   for (let i = headcountPoints.length - 1; i >= 0; i--) {
     const p = headcountPoints[i];
-    const outlier = checkHeadcountOutlier(p.count, totalRaisedEstimate);
+    const outlier = checkHeadcountOutlier(p.count, totalRaisedEstimate, foundedForChecks);
     // Only the upward direction: real companies grow 50x over a decade,
     // but one that is 10x smaller today than at a past point is a bad point.
     const offScale = reference != null && reference > 0 && p.count > reference * 10;
@@ -1023,7 +1060,7 @@ async function enrichCompany(
   const finalHeadcount = (patch.employee_count as number | undefined) ?? row.employee_count;
   const { data: hcOnFile } = await supabase.from("headcount_history").select("id, employee_count, snapshot_date").eq("startup_id", row.id);
   const badHeadcountOnFile = ((hcOnFile ?? []) as Array<{ id: string; employee_count: number; snapshot_date: string }>).filter((h) =>
-    !!checkHeadcountOutlier(h.employee_count, totalRaisedEstimate) || (finalHeadcount != null && finalHeadcount > 0 && h.employee_count > finalHeadcount * 10),
+    !!checkHeadcountOutlier(h.employee_count, totalRaisedEstimate, foundedForChecks) || (finalHeadcount != null && finalHeadcount > 0 && h.employee_count > finalHeadcount * 10),
   );
   for (const h of badHeadcountOnFile) {
     console.log(`    🧹  On file: headcount point ${h.employee_count}@${h.snapshot_date} is implausible next to ${finalHeadcount ?? "the funding"} — ${DRY_RUN ? "would remove" : "removing"}.`);
