@@ -22,7 +22,7 @@ export BATCH_SIZE="${BATCH_SIZE:-9999}"
 export DELAY_MS="${DELAY_MS:-20000}"
 export REFRESH_EVERY="${REFRESH_EVERY:-25}"
 
-echo "▶ Enrichment v2 over all companies — DRY_RUN=$DRY_RUN VERBOSE=$VERBOSE BATCH_SIZE=$BATCH_SIZE DELAY_MS=$DELAY_MS"
+echo "▶ Enrichment v2 over all companies — MODE=${MODE:-full} DRY_RUN=$DRY_RUN VERBOSE=$VERBOSE BATCH_SIZE=$BATCH_SIZE DELAY_MS=$DELAY_MS"
 echo "▶ Full log: $LOG"
 echo "▶ Ctrl+C once = finish the current company and stop; twice = stop now."
 echo

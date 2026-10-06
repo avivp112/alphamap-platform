@@ -1417,6 +1417,7 @@ async function main() {
     const t = summary.tally;
     console.log(`📍 [${i + 1}/${queue.length}] ${elapsedMin.toFixed(0)} min | $${summary.totalCostUsd.toFixed(2)} so far | ✅ ${t.success} 🟠 ${t.partial} 🚫 ${t.rejected} 🔍 ${t.low_evidence + t.no_data} 💥 ${t.error}${UPDATE ? ` 💤 ${t.no_change}` : ""}`);
     const errorsBefore = summary.tally.error + summary.tally.error_incomplete_extraction;
+    const noChangeBefore = summary.tally.no_change;
     await processCompany(row, roundsByStartup.get(row.id) ?? [], taxonomy, startupByDomain, summary);
     consecutiveErrors = summary.tally.error + summary.tally.error_incomplete_extraction > errorsBefore ? consecutiveErrors + 1 : 0;
     if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
@@ -1427,8 +1428,11 @@ async function main() {
     // long run, not only at the very end.
     if (!DRY_RUN && REFRESH_EVERY > 0 && (i + 1) % REFRESH_EVERY === 0) await refreshSearch();
     if (i < queue.length - 1 && !stopRequested) {
-      console.log(`    ⏳  Waiting ${DELAY_MS / 1000}s…\n`);
-      await interruptibleSleep(DELAY_MS);
+      // The pause protects the Claude rate limit; a company with nothing new
+      // made no Claude call, so the next one can follow almost at once.
+      const wait = summary.tally.no_change > noChangeBefore ? Math.min(DELAY_MS, 2_000) : DELAY_MS;
+      console.log(`    ⏳  Waiting ${wait / 1000}s…\n`);
+      await interruptibleSleep(wait);
     }
   }
   if (stopRequested) console.log("🛑  Stopped by request. Re-running continues from the companies not yet processed (queue is ordered by last_enriched_at).");
