@@ -45,7 +45,7 @@ import { initV1Context, supabase } from "./bulk_enrich_all.ts";
 
 import { classifyTier, type TierRow, type TierRound } from "../lib/enrichment/queue.ts";
 import {
-  createSearchProviderState, verifyDomainMatch, webSearch, newsSearch, serperSearch, fetchCompanyWebsitePages, fetchArticleText,
+  createSearchProviderState, verifyDomainMatch, webSearch, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, fetchArticleText,
   type SearchProviderState,
 } from "../lib/enrichment/searchProviders.ts";
 import { filterByEntity, deriveIdentityKeywords, nameQualifiersOnOwnSite, type EntityAnchors } from "../lib/enrichment/entity.ts";
@@ -69,6 +69,10 @@ import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePerso
 import { checkHeadcountOutlier } from "../lib/enrichment/validation.ts";
 import { countryFromLocationQuote } from "../lib/enrichment/location.ts";
 import { findListingStatement } from "../lib/enrichment/listing.ts";
+import {
+  ACTIVE_DAYS, QUIET_DAYS, SeenUrls, buildUpdateQueries, isUpdateDue, knownUrlSet, mentionsFunding, newResultsOnly,
+  retireReplacedExecutives,
+} from "../lib/enrichment/update.ts";
 import { MAJOR_CITIES } from "../lib/enrichment/majorCities.ts";
 import { normalizeForMatch } from "../lib/enrichment/evidence.ts";
 import { validateEnrichment } from "../lib/enrichment/validation.ts";
@@ -100,6 +104,11 @@ const ARTICLES_TO_READ = Number(process.env.ARTICLES_TO_READ ?? 4);
 // queue order, OFFSET and BATCH_SIZE (e.g. ONLY=Gladia after a fix).
 // startups_search refresh cadence during a long run (companies); 0 = only at the end.
 const REFRESH_EVERY = Number(process.env.REFRESH_EVERY ?? 25);
+// MODE=update re-checks companies already enriched: only what is new since
+// the last check (lib/enrichment/update.ts). Default: a full enrichment.
+const UPDATE = process.env.MODE === "update";
+const UPDATE_ACTIVE_DAYS = Number(process.env.UPDATE_ACTIVE_DAYS ?? ACTIVE_DAYS);
+const UPDATE_QUIET_DAYS = Number(process.env.UPDATE_QUIET_DAYS ?? QUIET_DAYS);
 let warnedNoEnrichedV2Column = false;
 // Stop the run after this many failures in a row (systemic problem guard).
 const MAX_CONSECUTIVE_ERRORS = Number(process.env.MAX_CONSECUTIVE_ERRORS ?? 5);
@@ -124,6 +133,12 @@ const MAX_COMPETITORS = 8;
 const MAX_NEWS = 15;
 
 let anthropic: Anthropic;
+
+// Stand-in for a funding call an update skipped (no money words in its pages).
+const EMPTY_FUNDING_OUTCOME: NonNullable<Awaited<ReturnType<typeof extractFunding>>> = {
+  extraction: { result: { funding_rounds: [], funding_history_complete: null, arr_milestones: [], revenue_estimate: null, valuation_benchmarks: [] }, dropped: [] },
+  stopReason: "skipped", inputTokens: 0, outputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0,
+};
 
 // ── Row shapes this script reads/writes ──────────────────────────────────
 interface V2StartupRow {
@@ -160,7 +175,7 @@ interface V2FundingRoundRow {
 
 type ProcessStatus =
   | "success" | "partial" | "rejected" | "removed_public" | "no_data"
-  | "low_evidence" | "error" | "error_incomplete_extraction";
+  | "low_evidence" | "error" | "error_incomplete_extraction" | "no_change";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -211,6 +226,19 @@ async function runAllSearches(name: string, anchor: string, state: SearchProvide
     ),
   ]);
   return [...searchBatches.flat(), ...newsResults];
+}
+
+// MODE=update: news and change searches limited to pages published since
+// the last check, plus one search per missing core field when due
+// (lib/enrichment/update.ts). Serper only — Tavily can't filter by date.
+async function runUpdateSearches(
+  row: V2StartupRow, anchor: string, hasRounds: boolean, gapFillDue: boolean, state: SearchProviderState,
+): Promise<RawSearchResult[]> {
+  const since = (row.last_enriched_at ?? new Date(Date.now() - QUIET_DAYS * 86_400_000).toISOString()).slice(0, 10);
+  const queries = buildUpdateQueries(row.name, anchor, since, gapFillDue ? { row, hasRounds } : null);
+  const batches = await Promise.all(queries.map((q) =>
+    q.kind === "news" ? serperNewsSearch(q.query, q.label, state) : serperSearch(q.query, q.label, state)));
+  return batches.flat();
 }
 
 interface RunSummary {
@@ -305,7 +333,7 @@ async function processCompany(
     // line and is re-processed at the start of every run. A failed company
     // comes back in the next full cycle; a systemic failure (bad key,
     // provider outage) stops the run instead, see MAX_CONSECUTIVE_ERRORS.
-    const settled = (["rejected", "low_evidence", "no_data", "removed_public", "error", "error_incomplete_extraction"] as const)
+    const settled = (["rejected", "low_evidence", "no_data", "removed_public", "error", "error_incomplete_extraction", "no_change"] as const)
       .some((k) => summary.tally[k] > before[k]);
     if (settled && !DRY_RUN) {
       const { error } = await supabase.from("startups").update({ last_enriched_at: new Date().toISOString() }).eq("id", row.id);
@@ -333,8 +361,14 @@ async function enrichCompany(
   summary: RunSummary,
   searchState: SearchProviderState,
 ): Promise<void> {
+  // URLs this company's earlier runs already sent to Claude (update mode
+  // skips them; both modes record what they send).
+  const seen = new SeenUrls(row.id);
+  const gapFillDue = UPDATE && seen.gapFillDue();
+
   // ── Stage 0: domain verification ──────────────────────────────────────
-  const domainVerification = await verifyDomainMatch(row.name, row.website, searchState);
+  // (an update trusts the website already checked by the full run)
+  const domainVerification = UPDATE ? { verified: undefined, note: "" } : await verifyDomainMatch(row.name, row.website, searchState);
   const effectiveWebsite = domainVerification.verified === false ? null : row.website;
   if (domainVerification.verified === false) console.warn(`    ⚠️  Domain verification: ${domainVerification.note}`);
   else if (domainVerification.verified === true) console.log(`    ✅  Domain verified via Crunchbase/LinkedIn`);
@@ -345,8 +379,8 @@ async function enrichCompany(
   // ── Stage 1: website (Jina, free) → tech pre-check → searches ─────────
   // The homepage is fetched first so a clearly non-tech company is
   // rejected before paying for ~11 searches and three extraction calls.
-  const websitePages = await fetchCompanyWebsitePages(effectiveWebsite, searchState);
-  if (TECH_GATE) {
+  const websitePages = UPDATE ? [] : await fetchCompanyWebsitePages(effectiveWebsite, searchState);
+  if (TECH_GATE && !UPDATE) {
     // The verdict is cached with the search results, so seeing the same
     // company again (a re-run, the next cycle) costs nothing.
     const cachedVerdict = searchState.cache?.get<TechGateVerdict>("techgate");
@@ -362,10 +396,26 @@ async function enrichCompany(
       return;
     }
   }
-  const rawSearchResults = await runAllSearches(row.name, anchor, searchState);
+  const rawSearchResults = UPDATE
+    ? await runUpdateSearches(row, anchor, existingRounds.length > 0, gapFillDue, searchState)
+    : await runAllSearches(row.name, anchor, searchState);
   // One source per URL — the same page returned by several queries used to
   // reach Claude several times (billed as input on every call).
-  const { results: searchResults, merged: duplicateResults } = mergeDuplicateResults(rawSearchResults);
+  const { results: mergedResults, merged: duplicateResults } = mergeDuplicateResults(rawSearchResults);
+  // An update only looks at pages this company has never been checked against.
+  let searchResults = mergedResults;
+  if (UPDATE) {
+    const { data: prov } = await supabase.from("field_provenance").select("source_url").eq("startup_id", row.id).limit(2000);
+    const known = knownUrlSet({
+      news: row.news,
+      roundSourceUrls: existingRounds.map((r) => r.source_url),
+      provenanceUrls: ((prov ?? []) as Array<{ source_url: string | null }>).map((p) => p.source_url),
+      seen: seen.urls,
+    });
+    searchResults = newResultsOnly(mergedResults, known);
+    console.log(`    🔁  Update since ${row.last_enriched_at?.slice(0, 10)}: ${searchResults.length} new result(s) of ${mergedResults.length}${gapFillDue ? " (incl. searches for missing fields)" : ""}`);
+    if (gapFillDue) seen.markGapFill();
+  }
   summary.duplicateResultsMerged += duplicateResults;
   if (VERBOSE && duplicateResults > 0) console.log(`    🧹  ${duplicateResults} duplicate search result(s) merged (same URL from several queries)`);
 
@@ -374,6 +424,12 @@ async function enrichCompany(
     ...websitePages.map((p) => ({ url: p.url, content: p.content, provider: p.provider, query_label: "website" })),
   ];
 
+  if (allRaw.length === 0 && UPDATE) {
+    console.log("    💤  Nothing new since the last check — no Claude call.");
+    summary.tally.no_change++;
+    if (!DRY_RUN) seen.save();
+    return;
+  }
   if (allRaw.length === 0) {
     console.log("    🔍  All searches failed — no data retrieved");
     summary.tally.no_data++;
@@ -408,7 +464,13 @@ async function enrichCompany(
   let usableResults = [...kept, ...websiteRaw];
   console.log(`    🧭  Entity filter: kept ${kept.length}/${searchOnly.length} search results + ${websiteRaw.length} website page(s)${VERBOSE && identityKeywords.length ? ` | identity keywords: ${identityKeywords.join(", ")}` : ""}`);
 
-  if (kept.length < 2 && websiteRaw.length === 0) {
+  if (UPDATE && kept.length === 0) {
+    console.log("    💤  Nothing new about this company since the last check — no Claude call.");
+    summary.tally.no_change++;
+    if (!DRY_RUN) seen.save();
+    return;
+  }
+  if (!UPDATE && kept.length < 2 && websiteRaw.length === 0) {
     console.log(`    🔍  low_evidence — fewer than 2 results survived entity filtering, and no website fetch. Skipping Claude calls.`);
     summary.tally.low_evidence++;
     return;
@@ -477,14 +539,19 @@ async function enrichCompany(
     }
     return;
   }
-  if (!profile.is_tech_company) {
+  // An update reads a few news items, not the company's whole footprint —
+  // the tech/non-tech decision from the full run stands.
+  if (!profile.is_tech_company && !UPDATE) {
     console.log("    🚫  REJECTED — not a technology-driven company");
     summary.tally.rejected++;
     return;
   }
 
+  // An update whose new pages say nothing about money skips the funding call.
+  const skipFunding = UPDATE && !mentionsFunding(allSources.map((src) => `${src.title ?? ""} ${src.content}`));
+  if (skipFunding) console.log("    ⏭️   No funding/M&A words in the new pages — funding extraction skipped.");
   const [fundingOutcome, marketOutcome] = await Promise.all([
-    extractFunding(row.name, allSources, { client: anthropic, model: FUNDING_MODEL, request: shared("funding") }),
+    skipFunding ? Promise.resolve(EMPTY_FUNDING_OUTCOME) : extractFunding(row.name, allSources, { client: anthropic, model: FUNDING_MODEL, request: shared("funding") }),
     extractMarket(row.name, allSources, { client: anthropic, model: MARKET_MODEL, request: shared("market") }),
   ]);
   if (!fundingOutcome) {
@@ -512,7 +579,8 @@ async function enrichCompany(
   }));
 
   // ── Stage 9: deep dive into whichever sections came back thin ──────────
-  if (DEEP_DIVE) {
+  // (an update fills gaps with its own few searches instead)
+  if (DEEP_DIVE && !UPDATE) {
     const firstPassRounds: RoundLike[] = [...existingRefs, ...funding.funding_rounds.map(roundToRoundLike)];
     const gaps = detectGaps({
       rounds: firstPassRounds,
@@ -663,7 +731,7 @@ async function enrichCompany(
       notable_pedigree: facts.eliteSchool ? true : undefined,
     };
   };
-  if (DEEP_DIVE) {
+  if (DEEP_DIVE && (!UPDATE || gapFillDue)) {
     const knownFounders = [
       ...(profile.profile.founders ?? []).map((f) => ({ name: f.name, linkedin_url: f.linkedin_url?.value, bio: f.bio })),
       ...(row.founders ?? []),
@@ -903,7 +971,15 @@ async function enrichCompany(
   if (allLeaderInputs.length > 0) {
     const knownLeaderNames = [...(row.leadership ?? []).map((l) => l?.name), ...cleanLeadership.map((l) => l.name)].filter((n): n is string => !!n);
     const alignedLeaders = allLeaderInputs.map((l) => ({ ...l, name: knownLeaderNames.find((n) => samePersonName(n, l.name)) ?? l.name }));
-    setIfChanged("leadership", cleanPeople(mergePeople(row.leadership ?? [], alignedLeaders)), row.leadership);
+    // An update that reads "X appointed CEO" keeps the previous CEO as
+    // "Former CEO" instead of listing two current CEOs.
+    let leadershipOnFile = row.leadership ?? [];
+    if (UPDATE) {
+      const { leaders, retired } = retireReplacedExecutives(leadershipOnFile, cleanLeadership);
+      leadershipOnFile = leaders;
+      for (const r of retired) console.log(`    👔  ${r} replaced by a newly announced leader — kept as "Former".`);
+    }
+    setIfChanged("leadership", cleanPeople(mergePeople(leadershipOnFile, alignedLeaders)), row.leadership);
   }
 
   // Competitors & market (additive: entries on file are never removed)
@@ -1006,7 +1082,8 @@ async function enrichCompany(
     };
   }
   // NEVER defaults to true when the model omitted it -- null is "unknown".
-  if (funding.funding_history_complete !== null && funding.funding_history_complete !== row.funding_history_complete) {
+  // A handful of new articles can't judge whether the whole history is known.
+  if (!UPDATE && funding.funding_history_complete !== null && funding.funding_history_complete !== row.funding_history_complete) {
     patch.funding_history_complete = funding.funding_history_complete;
   }
 
@@ -1166,6 +1243,9 @@ async function enrichCompany(
     }
 
     await supabase.from("startups").update({ last_enriched_at: new Date().toISOString() }).eq("id", row.id);
+    // Every page this run sent to Claude: a later update skips them.
+    seen.add(allSources.map((src) => src.url));
+    seen.save();
     // Marks the company as written by v2; the Private Market page always
     // lists such companies (migration 20261010000000). A separate update,
     // so a database without that column yet still gets last_enriched_at.
@@ -1215,6 +1295,7 @@ async function main() {
   console.log(`╔${"═".repeat(62)}╗`);
   console.log(`║${"  AlphaMap — v2 Enrichment Run".padEnd(62)}║`);
   console.log(`║  ${startedAt}${"".padEnd(Math.max(0, 62 - 2 - startedAt.length))}║`);
+  console.log(`║  MODE=${UPDATE ? "update (only what is new since the last check)" : "full"}`.padEnd(63) + "║");
   console.log(`║  DRY_RUN=${String(DRY_RUN).padEnd(5)} | BATCH=${String(BATCH_SIZE).padEnd(6)} | OFFSET=${String(OFFSET).padEnd(5)} | DELAY=${DELAY_MS / 1000}s${" ".padEnd(Math.max(0, 62 - 58))}║`);
   console.log(`║  PROFILE_MODEL=${PROFILE_MODEL}${" ".padEnd(Math.max(0, 62 - 16 - PROFILE_MODEL.length))}║`);
   console.log(`║  FUNDING_MODEL=${FUNDING_MODEL}${" ".padEnd(Math.max(0, 62 - 16 - FUNDING_MODEL.length))}║`);
@@ -1283,18 +1364,26 @@ async function main() {
     return tierDiff !== 0 ? tierDiff : a.name.localeCompare(b.name);
   });
 
+  // MODE=update: only companies already enriched (with a description, not
+  // archived as public) whose re-check is due — active ones every
+  // UPDATE_ACTIVE_DAYS, quiet ones every UPDATE_QUIET_DAYS — oldest check first.
+  const updateQueue = startups
+    .filter((s) => !!s.description && s.status !== "ipo" &&
+      isUpdateDue(s, (roundsByStartup.get(s.id) ?? []).map((r) => r.announcement_date), { activeDays: UPDATE_ACTIVE_DAYS, quietDays: UPDATE_QUIET_DAYS }))
+    .sort((a, b) => (a.last_enriched_at ?? "").localeCompare(b.last_enriched_at ?? ""));
   const queue = ONLY.length > 0
     ? startups.filter((s) => ONLY.includes(s.id.toLowerCase()) || ONLY.includes(s.name.trim().toLowerCase()))
-    : eligibleQueue.slice(OFFSET, OFFSET + BATCH_SIZE);
+    : (UPDATE ? updateQueue : eligibleQueue).slice(OFFSET, OFFSET + BATCH_SIZE);
   if (ONLY.length > 0) console.log(`ONLY=${ONLY.join(",")} — ${queue.length} matching compan${queue.length === 1 ? "y" : "ies"}.`);
   if (queue.length === 0) {
     console.log("✅  Queue is empty after OFFSET/BATCH_SIZE/MAX_TIER filter. Nothing to process.");
     return;
   }
-  console.log(`Processing ${queue.length} of ${eligibleQueue.length} eligible companies (Tier 1: ${tier1.length}, Tier 2: ${tier2.length}, Tier 3: ${tier3.length}).\n`);
+  if (UPDATE) console.log(`🔁  MODE=update — processing ${queue.length} of ${updateQueue.length} companies due for a re-check (active every ${UPDATE_ACTIVE_DAYS} days, quiet every ${UPDATE_QUIET_DAYS}).\n`);
+  else console.log(`Processing ${queue.length} of ${eligibleQueue.length} eligible companies (Tier 1: ${tier1.length}, Tier 2: ${tier2.length}, Tier 3: ${tier3.length}).\n`);
 
   const summary: RunSummary = {
-    tally: { success: 0, partial: 0, rejected: 0, removed_public: 0, no_data: 0, low_evidence: 0, error: 0, error_incomplete_extraction: 0 },
+    tally: { success: 0, partial: 0, rejected: 0, removed_public: 0, no_data: 0, low_evidence: 0, error: 0, error_incomplete_extraction: 0, no_change: 0 },
     droppedByReason: new Map(),
     totalRoundsInserted: 0, totalRoundsUpdated: 0, totalFieldsPatched: 0, totalNewsAdded: 0, totalCompetitorsAdded: 0, deepDives: 0,
     totalInputTokens: 0, totalOutputTokens: 0, totalCostUsd: 0,
@@ -1326,7 +1415,7 @@ async function main() {
     const row = queue[i];
     const elapsedMin = (Date.now() - runStartedAt) / 60_000;
     const t = summary.tally;
-    console.log(`📍 [${i + 1}/${queue.length}] ${elapsedMin.toFixed(0)} min | $${summary.totalCostUsd.toFixed(2)} so far | ✅ ${t.success} 🟠 ${t.partial} 🚫 ${t.rejected} 🔍 ${t.low_evidence + t.no_data} 💥 ${t.error}`);
+    console.log(`📍 [${i + 1}/${queue.length}] ${elapsedMin.toFixed(0)} min | $${summary.totalCostUsd.toFixed(2)} so far | ✅ ${t.success} 🟠 ${t.partial} 🚫 ${t.rejected} 🔍 ${t.low_evidence + t.no_data} 💥 ${t.error}${UPDATE ? ` 💤 ${t.no_change}` : ""}`);
     const errorsBefore = summary.tally.error + summary.tally.error_incomplete_extraction;
     await processCompany(row, roundsByStartup.get(row.id) ?? [], taxonomy, startupByDomain, summary);
     consecutiveErrors = summary.tally.error + summary.tally.error_incomplete_extraction > errorsBefore ? consecutiveErrors + 1 : 0;
