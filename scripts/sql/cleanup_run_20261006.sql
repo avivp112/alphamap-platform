@@ -58,7 +58,7 @@ DELETE FROM startup_sub_sectors
 
 -- Public companies the model did not flag: archive like the script does.
 INSERT INTO field_changes (startup_id, field, old_value, new_value, source_url)
-  SELECT id, 'status', status, 'ipo', NULL FROM startups
+  SELECT id, 'status', to_jsonb(status), to_jsonb('ipo'::text), NULL FROM startups
   WHERE id IN ('3dc5a00e-9c60-414d-9bf0-7fb7a1bf2738', '350ceeaf-d249-4416-8de1-2aca77411bfd', '37720cea-ee41-416c-8fc6-16d9fbd12f10');
 UPDATE startups SET status = 'ipo'
   WHERE id IN ('3dc5a00e-9c60-414d-9bf0-7fb7a1bf2738', '350ceeaf-d249-4416-8de1-2aca77411bfd', '37720cea-ee41-416c-8fc6-16d9fbd12f10'); -- Guardant, Gritstone, Gubra
