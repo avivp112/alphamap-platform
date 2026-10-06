@@ -2800,6 +2800,24 @@ function PassReasonModal({
 
 // ── Grid Card ─────────────────────────────────────────────────────────────────
 
+// The card's two stat tiles show what is actually known, in this order:
+// valuation, total raised, latest round, team size, founding year — never
+// an empty "—". A company with only one known fact gets one full-width
+// tile; with none, the tile row is left out.
+type CardTile = { key: "valuation" | "raised" | "round" | "team" | "founded"; label: string; value: string };
+function cardTiles(s: StartupListRow, t: (key: string) => string): CardTile[] {
+  const candidates: Array<CardTile | null> = [
+    s.latest_valuation ? { key: "valuation", label: t("common.valuation"), value: fmt(s.latest_valuation) } : null,
+    s.total_raised > 0 ? { key: "raised", label: t("startups.raised"), value: fmt(s.total_raised) } : null,
+    s.latest_round_type
+      ? { key: "round", label: "Latest round", value: s.latest_round_date ? `${s.latest_round_type} · ${s.latest_round_date.slice(0, 4)}` : s.latest_round_type }
+      : null,
+    s.employee_count ? { key: "team", label: "Team", value: `${fmtEmp(s.employee_count)} emp` } : null,
+    s.founded_year ? { key: "founded", label: "Founded", value: String(s.founded_year) } : null,
+  ];
+  return candidates.filter((c): c is CardTile => c !== null).slice(0, 2);
+}
+
 // A founder chip on the grid card. Like PersonRow, the bio opens in a hover
 // card (tap on touch screens) only when one is on file — never an empty popup.
 function FounderChip({ name, title, bio }: { name: string; title?: string | null; bio?: string | null }) {
@@ -2848,6 +2866,8 @@ function StartupCard({
   const roundType   = startup.latest_round_type ?? null;
   const location    = placeLabel(startup.city, startup.country);
   const cardGlow    = roundType ? (ROUND_GLOW[roundType] ?? ROUND_GLOW.default) : ROUND_GLOW.default;
+  const tiles       = cardTiles(startup, t);
+  const tileKeys    = new Set(tiles.map((tile) => tile.key));
 
   return (
     <div
@@ -2919,20 +2939,20 @@ function StartupCard({
         {startup.description && (
           <p className="text-xs text-gray-500 leading-relaxed line-clamp-2 mb-4">{startup.description}</p>
         )}
-        <div className="grid grid-cols-2 gap-2 mb-4">
-          <div className="rounded-[10px] px-3 py-2 bg-gray-50 border border-gray-100">
-            <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">{t("common.valuation")}</div>
-            <div className="text-sm font-bold text-gray-900">{fmt(startup.latest_valuation)}</div>
+        {tiles.length > 0 && (
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            {tiles.map((tile) => (
+              <div key={tile.key} className={`rounded-[10px] px-3 py-2 bg-gray-50 border border-gray-100 ${tiles.length === 1 ? "col-span-2" : ""}`}>
+                <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">{tile.label}</div>
+                <div className="text-sm font-bold text-gray-900 truncate">{tile.value}</div>
+              </div>
+            ))}
           </div>
-          <div className="rounded-[10px] px-3 py-2 bg-gray-50 border border-gray-100">
-            <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">{t("startups.raised")}</div>
-            <div className="text-sm font-bold text-gray-900">{fmt(startup.total_raised) || "—"}</div>
-          </div>
-        </div>
+        )}
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500 mb-3">
           {location    && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{location}</span>}
-          {startup.employee_count && <span className="flex items-center gap-1"><Users className="w-3 h-3" />{fmtEmp(startup.employee_count)} emp</span>}
-          {startup.founded_year   && <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{startup.founded_year}</span>}
+          {startup.employee_count && !tileKeys.has("team") && <span className="flex items-center gap-1"><Users className="w-3 h-3" />{fmtEmp(startup.employee_count)} emp</span>}
+          {startup.founded_year && !tileKeys.has("founded") && <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{startup.founded_year}</span>}
         </div>
         {startup.founders && startup.founders.length > 0 && (
           <div className="flex flex-wrap gap-1.5">

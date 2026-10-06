@@ -426,8 +426,8 @@ function applyStartupSearchFilters(
 }
 
 // The Private Market page reads startups_market: startups_search limited to
-// companies the v2 enrichment script has written data for (migration
-// 20261010000000). Until that migration is applied the view doesn't exist,
+// companies with real data on them — enriched by v1 or v2, not just a few
+// imported basics (migration 20261010000000). Until that migration is applied the view doesn't exist,
 // and the page falls back to the full startups_search instead of breaking.
 let marketViewMissing = false;
 const MARKET_VIEW = "startups_market";
