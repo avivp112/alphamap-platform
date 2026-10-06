@@ -425,17 +425,39 @@ function applyStartupSearchFilters(
   return q;
 }
 
+// The Private Market page reads startups_market: startups_search limited to
+// companies the v2 enrichment script has written data for (migration
+// 20261010000000). Until that migration is applied the view doesn't exist,
+// and the page falls back to the full startups_search instead of breaking.
+let marketViewMissing = false;
+const MARKET_VIEW = "startups_market";
+
+function isMissingRelation(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return error.code === "PGRST205" || error.code === "42P01" || /does not exist|could not find the table/i.test(error.message ?? "");
+}
+
+async function fromMarket<T>(run: (relation: string) => PromiseLike<{ data: T; error: { code?: string; message?: string } | null; count?: number | null }>) {
+  if (!marketViewMissing) {
+    const res = await run(MARKET_VIEW);
+    if (!isMissingRelation(res.error)) return res;
+    marketViewMissing = true;
+  }
+  return run("startups_search");
+}
+
 export async function fetchStartupsPage(
   filters: StartupSearchFilters,
   page: number,
 ): Promise<StartupListRow[]> {
   const from = (page - 1) * STARTUPS_PAGE_SIZE;
   const to = from + STARTUPS_PAGE_SIZE - 1;
-  const query = applyStartupSearchFilters(supabase.from("startups_search").select("*"), filters);
-  const { data, error } = await query
-    .order("completeness_score", { ascending: false })
-    .order("updated_at", { ascending: false })
-    .range(from, to);
+  const { data, error } = await fromMarket((relation) =>
+    applyStartupSearchFilters(supabase.from(relation).select("*"), filters)
+      .order("completeness_score", { ascending: false })
+      .order("updated_at", { ascending: false })
+      .range(from, to),
+  );
   if (error) throw error;
   return (data ?? []) as StartupListRow[];
 }
@@ -450,11 +472,12 @@ export async function fetchStartupsForExport(filters: StartupSearchFilters): Pro
   const out: StartupListRow[] = [];
   for (let from = 0; from < EXPORT_ROW_CAP; from += batchSize) {
     const to = Math.min(from + batchSize, EXPORT_ROW_CAP) - 1;
-    const query = applyStartupSearchFilters(supabase.from("startups_search").select("*"), filters);
-    const { data, error } = await query
-      .order("completeness_score", { ascending: false })
-      .order("updated_at", { ascending: false })
-      .range(from, to);
+    const { data, error } = await fromMarket((relation) =>
+      applyStartupSearchFilters(supabase.from(relation).select("*"), filters)
+        .order("completeness_score", { ascending: false })
+        .order("updated_at", { ascending: false })
+        .range(from, to),
+    );
     if (error) throw error;
     const batch = (data ?? []) as StartupListRow[];
     out.push(...batch);
@@ -464,11 +487,9 @@ export async function fetchStartupsForExport(filters: StartupSearchFilters): Pro
 }
 
 export async function fetchStartupsCount(filters: StartupSearchFilters): Promise<number> {
-  const query = applyStartupSearchFilters(
-    supabase.from("startups_search").select("id", { count: "exact", head: true }),
-    filters,
+  const { count, error } = await fromMarket((relation) =>
+    applyStartupSearchFilters(supabase.from(relation).select("id", { count: "exact", head: true }), filters),
   );
-  const { count, error } = await query;
   if (error) throw error;
   return count ?? 0;
 }

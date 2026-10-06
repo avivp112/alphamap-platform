@@ -1969,6 +1969,32 @@ const TEARSHEET_TABS: { id: TearsheetTab; label: string }[] = [
   { id: "news",        label: "News" },
 ];
 
+/**
+ * Which tearsheet tabs have anything to show. A tab whose content would be
+ * only a "Data requires filling" notice is left out of the tab bar.
+ */
+function tabsWithData(s: Startup): Set<TearsheetTab> {
+  const rounds = s.funding_rounds ?? [];
+  const has = (a: unknown[] | null | undefined) => (a ?? []).filter(Boolean).length > 0;
+  const revenue = s.revenue_estimate;
+  const funding = rounds.length > 0 ||
+    (s.arr_milestones ?? []).some((m) => m && typeof m.arr === "number") ||
+    (s.valuation_benchmarks ?? []).some((v) => v && typeof v.valuation === "number") ||
+    !!(revenue && (revenue.range_low != null || revenue.range_high != null));
+  const talent = s.employee_count != null || !!s.employee_range ||
+    (!!s.growth_trend && s.growth_trend !== "unknown") || has(s.leadership);
+  const acquisitions = has(s.acquisitions) || s.patent_count != null ||
+    (s.patents ?? []).some((p) => p && p.title) || has(s.tech_stack) || !!s.github_url || !!s.huggingface_url;
+  const tabs = new Set<TearsheetTab>(["overview"]);
+  if (funding) tabs.add("funding");
+  if (buildInvestorSchedule(rounds).length > 0) tabs.add("captable");
+  if (talent) tabs.add("talent");
+  if (has(s.competitors)) tabs.add("competitors");
+  if (acquisitions) tabs.add("acquisitions");
+  if ((s.news ?? []).some((n) => n && n.url && n.title)) tabs.add("news");
+  return tabs;
+}
+
 function TearsheetModal({
   startup, onClose, onNavigate, onFilterByMainSector, onFilterBySubSectorTag, saved, onSave, onOpenPass,
   mandateSectors, hasCrmWebhook,
@@ -2026,6 +2052,16 @@ function TearsheetModal({
   // startups_search materialized view, refreshed periodically — a company
   // enriched since the last refresh would otherwise show an empty header.
   const live = detail ?? startup;
+
+  // Tabs with nothing to show are not offered (all tabs show while loading).
+  const visibleTabs = useMemo(() => {
+    if (!detail) return TEARSHEET_TABS;
+    const withData = tabsWithData(detail);
+    return TEARSHEET_TABS.filter((tab) => withData.has(tab.id));
+  }, [detail]);
+  useEffect(() => {
+    if (!visibleTabs.some((tab) => tab.id === activeTab)) setActiveTab("overview");
+  }, [visibleTabs, activeTab]);
   const latestLiveRound = useMemo(
     () => [...(detail?.funding_rounds ?? [])]
       .filter((r) => r.round_type)
@@ -2380,7 +2416,7 @@ function TearsheetModal({
         {/* ── Tab bar (same blue-gray, slightly deeper) ── */}
         <div className="flex-none" style={{ background: "#AFC2CB", borderBottom: "1px solid rgba(15,23,42,0.10)" }}>
           <div className="flex items-center overflow-x-auto px-4" style={{ scrollbarWidth: "none" }}>
-            {TEARSHEET_TABS.map((tab) => {
+            {visibleTabs.map((tab) => {
               const active = activeTab === tab.id;
               return (
                 <button
@@ -2764,6 +2800,39 @@ function PassReasonModal({
 
 // ── Grid Card ─────────────────────────────────────────────────────────────────
 
+// A founder chip on the grid card. Like PersonRow, the bio opens in a hover
+// card (tap on touch screens) only when one is on file — never an empty popup.
+function FounderChip({ name, title, bio }: { name: string; title?: string | null; bio?: string | null }) {
+  const [open, setOpen] = useState(false);
+  const hasBio = !!bio && bio.trim().length > 0;
+  const chip = (
+    <span
+      className={`flex items-center gap-1 text-[10px] font-semibold text-gray-600 px-2 py-1 rounded-full bg-gray-50 border border-gray-200 ${hasBio ? "cursor-help hover:border-amber-300 transition-colors" : ""}`}
+      onClick={hasBio ? (e) => { e.stopPropagation(); setOpen((o) => !o); } : undefined}
+    >
+      <div className="w-3.5 h-3.5 rounded-full bg-amber-100 flex items-center justify-center text-[8px] font-black text-amber-700">
+        {(name?.[0] ?? "?").toUpperCase()}
+      </div>
+      {name.split(" ")[0]}
+    </span>
+  );
+  if (!hasBio) return chip;
+  return (
+    <HoverCard open={open} onOpenChange={setOpen} openDelay={150} closeDelay={100}>
+      <HoverCardTrigger asChild>{chip}</HoverCardTrigger>
+      <HoverCardContent
+        side="top" align="start"
+        className="z-[60] w-72 bg-[#0F172A] text-white border-white/10 text-xs leading-relaxed shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className="font-bold text-sm">{name}</p>
+        {title && <p className="text-[11px] text-[#F59E0B] mt-0.5 mb-2">{title}</p>}
+        <p className="text-slate-300">{bio}</p>
+      </HoverCardContent>
+    </HoverCard>
+  );
+}
+
 function StartupCard({
   startup, onSelect, selected, onToggleSelect, dataTour, saved, onSave, onOpenPass, matchResult,
 }: {
@@ -2868,12 +2937,7 @@ function StartupCard({
         {startup.founders && startup.founders.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {startup.founders.slice(0, 3).map((f, i) => (
-              <span key={i} className="flex items-center gap-1 text-[10px] font-semibold text-gray-600 px-2 py-1 rounded-full bg-gray-50 border border-gray-200">
-                <div className="w-3.5 h-3.5 rounded-full bg-amber-100 flex items-center justify-center text-[8px] font-black text-amber-700">
-                  {f.name[0].toUpperCase()}
-                </div>
-                {f.name.split(" ")[0]}
-              </span>
+              <FounderChip key={i} name={f.name} title={f.title} bio={f.bio} />
             ))}
             {startup.founders.length > 3 && (
               <span className="text-[10px] font-semibold text-gray-400 px-2 py-1">+{startup.founders.length - 3}</span>

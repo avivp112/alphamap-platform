@@ -100,6 +100,7 @@ const ARTICLES_TO_READ = Number(process.env.ARTICLES_TO_READ ?? 4);
 // queue order, OFFSET and BATCH_SIZE (e.g. ONLY=Gladia after a fix).
 // startups_search refresh cadence during a long run (companies); 0 = only at the end.
 const REFRESH_EVERY = Number(process.env.REFRESH_EVERY ?? 25);
+let warnedNoEnrichedV2Column = false;
 // Stop the run after this many failures in a row (systemic problem guard).
 const MAX_CONSECUTIVE_ERRORS = Number(process.env.MAX_CONSECUTIVE_ERRORS ?? 5);
 const ONLY = (process.env.ONLY ?? "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean);
@@ -1165,6 +1166,16 @@ async function enrichCompany(
     }
 
     await supabase.from("startups").update({ last_enriched_at: new Date().toISOString() }).eq("id", row.id);
+    // The Private Market page lists only companies v2 has written data for
+    // (migration 20261010000000). A separate update, so a database without
+    // that column yet still gets last_enriched_at above.
+    if (Object.keys(patch).length > 0 || plan.inserts.length > 0 || plan.updates.length > 0) {
+      const { error: markErr } = await supabase.from("startups").update({ enriched_v2_at: new Date().toISOString() }).eq("id", row.id);
+      if (markErr && !warnedNoEnrichedV2Column) {
+        warnedNoEnrichedV2Column = true;
+        console.warn(`    ⚠️  enriched_v2_at not set (${markErr.message}) — apply migration 20261010000000 so enriched companies show on the Private Market page.`);
+      }
+    }
 
     const { data: scoreData } = await supabase.rpc("calculate_alphamap_score", { p_startup_id: row.id });
     const score = scoreData as { score?: number; tier?: string } | null;
