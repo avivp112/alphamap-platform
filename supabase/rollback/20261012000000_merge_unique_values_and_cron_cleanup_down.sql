@@ -1,0 +1,11 @@
+-- Rollback for 20261012000000_merge_unique_values_and_cron_cleanup.sql
+--
+-- merge_companies(): re-run supabase/migrations/20260726190000_company_merge.sql,
+-- which restores the version without the unique-value release (and with it
+-- the slug collision that aborts resolve_tier1).
+--
+-- weekly-startup-enrichment: not recreated. It was created by hand outside
+-- version control, its schedule is not recorded anywhere in this repository,
+-- and it failed on every run. To restore it, schedule CALL run_enrichment()
+-- again with cron.schedule('weekly-startup-enrichment', '<schedule>', 'CALL run_enrichment();').
+SELECT 1;
