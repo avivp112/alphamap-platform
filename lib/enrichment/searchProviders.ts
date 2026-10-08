@@ -386,7 +386,18 @@ const FETCH_TIMEOUT_MS = 8_000;
 const JINA_TIMEOUT_MS = 15_000;
 const MAX_WEBSITE_CHARS = 6_000; // spec stage 2: "cap content per page (for example 6,000 characters)" -- raised from v1's 3,000 now that each page is its own labeled [W#] source rather than one slot in a single shared context budget
 
+// Set on the first HTTP 402/401 from Jina (out of credit / bad key): every
+// later page in the run goes straight to cheerio/Tavily instead of paying a
+// failed round trip and a warning line per page.
+let jinaDisabledReason: string | null = null;
+
+/** Why Jina Reader was switched off for the rest of the run, or null while it works. */
+export function jinaDisabled(): string | null {
+  return jinaDisabledReason;
+}
+
 async function fetchViaJinaReader(url: string, state: SearchProviderState): Promise<string | null> {
+  if (jinaDisabledReason) return null;
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), JINA_TIMEOUT_MS);
@@ -394,6 +405,11 @@ async function fetchViaJinaReader(url: string, state: SearchProviderState): Prom
     if (process.env.JINA_API_KEY) headers.Authorization = `Bearer ${process.env.JINA_API_KEY}`;
 
     const res = await fetch(`https://r.jina.ai/${url}`, { signal: controller.signal, headers }).finally(() => clearTimeout(timer));
+    if (res.status === 402 || res.status === 401) {
+      jinaDisabledReason = res.status === 402 ? "HTTP 402 — out of credit" : "HTTP 401 — JINA_API_KEY rejected";
+      console.warn(`    ⛔  Jina Reader ${jinaDisabledReason}. Switched off for the rest of this run — pages and articles now come from cheerio/Tavily only, so fewer full articles are read. Top up Jina (jina.ai) or fix JINA_API_KEY in .env.`);
+      return null;
+    }
     if (!res.ok) {
       console.warn(`    ⚠️  Jina Reader HTTP ${res.status} for ${url} — falling back to cheerio/Tavily.`);
       return null;

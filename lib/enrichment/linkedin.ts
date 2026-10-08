@@ -163,8 +163,12 @@ function fieldValues(text: string, label: string): string[] {
   return out;
 }
 
+// Accelerators and programmes show up in LinkedIn's "Education" field but are
+// not where someone studied ("Studied at Y Combinator").
+const NOT_A_SCHOOL_RE = /\b(y\s?combinator|techstars|500\s?(startups|global)|antler|entrepreneur first|on deck|seedcamp|plug and play|founders? institute|startup school|accelerator|incubator|bootcamp)\b/i;
+
 export function parseLinkedInFacts(snippet: string): LinkedInFacts {
-  const education = fieldValues(snippet, "Education");
+  const education = fieldValues(snippet, "Education").filter((e) => !NOT_A_SCHOOL_RE.test(e));
   const experience = fieldValues(snippet, "Experience");
   const unit = snippet.match(ELITE_UNIT_RE)?.[1] ?? null;
   const school = education.map((e) => e.match(ELITE_SCHOOL_RE)?.[1]).find(Boolean) ?? null;

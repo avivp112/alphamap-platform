@@ -36,7 +36,7 @@ const REGIONS: Record<string, string> = {
   "british columbia": "Canada", ontario: "Canada", quebec: "Canada", "québec": "Canada", alberta: "Canada",
   manitoba: "Canada", saskatchewan: "Canada", "nova scotia": "Canada", "new brunswick": "Canada",
   "new south wales": "Australia", queensland: "Australia", "western australia": "Australia",
-  "south australia": "Australia", tasmania: "Australia",
+  "south australia": "Australia", tasmania: "Australia", victoria: "Australia", "northern territory": "Australia",
   karnataka: "India", maharashtra: "India", haryana: "India", telangana: "India", "tamil nadu": "India",
   "uttar pradesh": "India", gujarat: "India", kerala: "India", "west bengal": "India",
   selangor: "Malaysia", penang: "Malaysia", johor: "Malaysia",
@@ -48,7 +48,7 @@ const AUSTRALIA_CODES = ["NSW", "VIC", "QLD", "WA"];
 
 const CITY_STATES = new Set(["singapore", "hong kong", "monaco", "luxembourg", "macau", "san marino", "vatican city", "kuwait"]);
 // Cities that share a state's name and are commonly a real HQ city.
-const CITY_NAMED_LIKE_STATE = new Set(["new york", "washington"]);
+const CITY_NAMED_LIKE_STATE = new Set(["new york", "washington", "victoria"]);
 
 const COUNTRIES: string[] = [...new Set([...MAJOR_CITIES.values()].flatMap((s) => [...s]))];
 
@@ -82,8 +82,8 @@ function countryInWindow(window: string): string | null {
   for (const [region, country] of Object.entries(REGIONS)) {
     if (new RegExp(`(^|[^\\p{L}])${escapeRe(region)}(?![\\p{L}])`, "iu").test(window)) return country;
   }
-  // Postal codes only right after a comma ("El Segundo, CA", "ANAHEIM,CA,92801").
-  const code = window.match(/^\s*,\s*([A-Z]{2,3})(?=[\s,.\d)]|$)/)?.[1];
+  // Postal codes only right after a comma ("El Segundo, CA", "ANAHEIM,CA,92801", "Beverly, MA-based").
+  const code = window.match(/^\s*,\s*([A-Z]{2,3})(?=[\s,.\d)-]|$)/)?.[1];
   if (code) {
     if (Object.values(US_STATES).includes(code) || code === "DC") return "United States";
     if (CANADA_CODES.includes(code)) return "Canada";

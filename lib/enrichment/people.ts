@@ -48,9 +48,46 @@ function namesAfterBy(rest: string): string[] {
     .split(/\b(?:in|on|back in|during)\s+(?:\d{4}|[A-Z][a-z]+ \d{4})\b|[;:]|\bto\b|\bwho\b|\bwith the\b/)[0];
   return list
     .split(/,\s*(?:and\s+)?|\s+and\s+|\s*&\s*/)
-    .map((p) => p.trim().replace(/[.,]+$/, ""))
+    .map((p) => cleanPersonName(p.trim().replace(/[.,]+$/, "")))
     .filter(looksLikePersonName)
     .slice(0, 5);
+}
+
+// A role or relation written in front of a name: "CEO Adi Tatarko",
+// "her husband Alon Cohen", "Dr. Reece Akhtar", "⚡ Roland Ligtenberg".
+const NAME_PREFIX_RE = /^(?:(?:ceo|cto|coo|cfo|cmo|cpo|cro|president|chairman|chairwoman|chair|co-?\s?founder|founder|dr|mr|mrs|ms|prof|sir)\.?,?\s+)+/i;
+
+/** The person's name alone: no leading symbols, titles or lowercase words. */
+export function cleanPersonName(name: string): string {
+  let n = name.replace(/^[^\p{L}]+/u, "").trim();
+  for (let i = 0; i < 3; i++) {
+    const before = n;
+    n = n.replace(NAME_PREFIX_RE, "").replace(/^(?:\p{Ll}[\p{L}'’-]*\s+)+(?=\p{Lu})/u, "").trim();
+    if (n === before) break;
+  }
+  return n.replace(/[\s,;]+$/, "");
+}
+
+const ROLE_WORDS = new Set([
+  "co", "cofounder", "founder", "founders", "ceo", "cto", "coo", "cfo", "cmo", "cpo", "cro", "chief", "officer", "executive",
+  "chairman", "chairwoman", "chair", "president", "vp", "vice", "head", "lead", "director", "managing", "general", "group",
+  "global", "technical", "technology", "engineering", "product", "operations", "board", "member", "partner", "and", "of", "the", "at",
+]);
+
+/**
+ * A founder's title that names another organisation ("Founder of BellQR",
+ * "Founder Artu Capital") describes a different company — it becomes plain
+ * "Founder"/"Co-founder". Role words and this company's own name are kept.
+ */
+export function cleanFounderTitle(title: string | null | undefined, companyName: string): string | null | undefined {
+  if (!title) return title;
+  const t = title.replace(/\([^)]*\)/g, " ").replace(/[\s,;]+$/, "").trim();
+  if (!/founder/i.test(t)) return t;
+  const rest = t.split(/[^\p{L}\p{N}.]+/u).filter(Boolean)
+    .filter((w) => !ROLE_WORDS.has(w.toLowerCase().replace(/\.$/, "")))
+    .join(" ");
+  if (!rest || namesCompany(rest, companyName)) return t;
+  return /co-?\s?founder/i.test(t) ? "Co-founder" : "Founder";
 }
 
 export function foundersFromText(
@@ -60,13 +97,19 @@ export function foundersFromText(
 ): Array<{ name: string; title: string }> {
   const out: Array<{ name: string; title: string }> = [];
   const pageIsAboutCompany = !!page && (namesCompany(page.url, companyName) || (!!page.title && namesCompany(page.title, companyName)));
-  for (const sentence of sentencesOf(text)) {
+  const sentences = sentencesOf(text);
+  for (let i = 0; i < sentences.length; i++) {
+    const sentence = sentences[i];
     const m = sentence.match(/\b(co-?\s?founded|founded)\b([^.]{0,40}?)\bby\s+(.+)$/i);
     if (!m) continue;
     const before = sentence.slice(0, m.index);
     let subjectOk = false;
     if (/^(it|the company|the startup|the firm|the business)\s*$/i.test(before.trim().replace(/\s+(was|is|were|has been)$/i, ""))) {
-      subjectOk = pageIsAboutCompany;
+      // "It" is whatever the previous sentence was about: after "Dropbox is a
+      // file hosting service.", "It was founded by Drew Houston" is Dropbox's.
+      const antecedent = (sentences[i - 1] ?? "").match(/^([A-Z][\p{L}\d.&'’-]*(?:\s+[A-Z][\p{L}\d.&'’-]*){0,3})(?:\s+(?:is|was|has|had|offers|provides|became|builds|makes)\b|,)/u)?.[1];
+      subjectOk = pageIsAboutCompany && (!antecedent || namesCompany(antecedent, companyName) ||
+        /^(The|Its|Their|This|Our|Today|Now|Since|In|Last|Earlier|Recently|However|Additionally|Meanwhile|Currently|Previously|Founded|Based|Headquartered)\b/.test(antecedent));
     } else {
       // The company name must end right before "<was|is|...> founded".
       const words = fold(before)
@@ -101,7 +144,8 @@ export function personMentionedIn(name: string, text: string): boolean {
  */
 export function cleanPeople<T extends { name: string }>(people: T[]): T[] {
   const out: T[] = [];
-  for (const p of people) {
+  for (const raw of people) {
+    const p = raw?.name ? { ...raw, name: cleanPersonName(raw.name) } : raw;
     if (!p?.name || fold(p.name).trim().split(/\s+/).filter((t) => /\p{L}{2,}/u.test(t)).length < 2) continue;
     // "Mark Spera.  However", "Virgin Money" — not a person's name.
     if (NOT_A_PERSON.test(p.name) || p.name.trim().split(/\s+/).some(badNameToken)) continue;

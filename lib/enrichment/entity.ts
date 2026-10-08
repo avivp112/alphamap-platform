@@ -290,7 +290,11 @@ export function filterByEntity(
     if (nameRoot.length >= 3) {
       for (const m of `${result.url.toLowerCase()} ${text}`.matchAll(/\b([a-z0-9-]+)\.(com|ai|io|co|org|net|app|dev|tech|so|xyz|us|uk|de|fr|il)\b/g)) {
         const found = `${m[1]}.${m[2]}`;
-        if (found !== domain && !domain.endsWith(`.${found}`) && m[1].replace(/-/g, "") === nameRoot) {
+        // "gethightower.com" / "hightowerhq.com" are the same name with a
+        // marketing prefix or suffix — still a different company's site.
+        const label = m[1].replace(/-/g, "");
+        const bare = label.replace(/^(get|try|use|join|go|my|the|hello|hi)(?=.{3})/, "").replace(/(hq|app|labs|inc|team|official)$/, "");
+        if (found !== domain && !domain.endsWith(`.${found}`) && (label === nameRoot || bare === nameRoot)) {
           return { kept: false, drop_reason: "namesake_domain" };
         }
       }

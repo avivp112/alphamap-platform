@@ -45,7 +45,7 @@ import { initV1Context, supabase } from "./bulk_enrich_all.ts";
 
 import { classifyTier, type TierRow, type TierRound } from "../lib/enrichment/queue.ts";
 import {
-  createSearchProviderState, verifyDomainMatch, webSearch, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, fetchArticleText,
+  createSearchProviderState, verifyDomainMatch, webSearch, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, fetchArticleText, jinaDisabled,
   type SearchProviderState,
 } from "../lib/enrichment/searchProviders.ts";
 import { filterByEntity, deriveIdentityKeywords, nameQualifiersOnOwnSite, type EntityAnchors } from "../lib/enrichment/entity.ts";
@@ -55,7 +55,7 @@ import { extractFunding, roundToRoundLike } from "../lib/enrichment/extractFundi
 import { extractMarket, normalizeUrlForMatch } from "../lib/enrichment/extractMarket.ts";
 import { detectGaps, buildDeepDiveQueries, hasNoFinancingRounds, type DeepDiveSection } from "../lib/enrichment/deepDive.ts";
 import {
-  groundRoundDetails, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
+  groundRoundDetails, rejectRound, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
   normalizeIsoDate, appendNew, reconcileOnFile, type ExistingRoundRef,
 } from "../lib/enrichment/assemble.ts";
 import { fetchArticleOgImage } from "../lib/enrichment/ogImage.ts";
@@ -64,7 +64,7 @@ import { openSearchCache } from "../lib/enrichment/searchCache.ts";
 import { pickArticlesToRead } from "../lib/enrichment/articles.ts";
 import { runTechGate, shouldSkipAsNonTech, type TechGateVerdict } from "../lib/enrichment/techGate.ts";
 import { namesCompany } from "../lib/enrichment/headcount.ts";
-import { foundersFromText, personMentionedIn, cleanPeople, isFounderEntry } from "../lib/enrichment/people.ts";
+import { foundersFromText, personMentionedIn, cleanPeople, isFounderEntry, cleanFounderTitle } from "../lib/enrichment/people.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "../lib/enrichment/linkedin.ts";
 import { checkHeadcountOutlier } from "../lib/enrichment/validation.ts";
 import { countryFromLocationQuote } from "../lib/enrichment/location.ts";
@@ -791,7 +791,14 @@ async function enrichCompany(
   const sourceUrlFor = (sourceId: string | undefined): string | null => (sourceId ? sourceById.get(sourceId)?.url ?? null : null);
 
   // ── Round grounding: co-investors / per-investor amounts / source URL ──
-  const newRoundLikes: RoundLike[] = funding.funding_rounds.map((r) => {
+  const keptRounds = funding.funding_rounds.filter((r) => {
+    const why = rejectRound(r, row.name, allSources);
+    if (!why) return true;
+    console.log(`    🚫  ${r.round_type} not written (${why})`);
+    bump(summary.droppedByReason, why);
+    return false;
+  });
+  const newRoundLikes: RoundLike[] = keptRounds.map((r) => {
     const grounded = groundRoundDetails(r, allSources);
     for (const reason of grounded.dropped) bump(summary.droppedByReason, reason);
     return roundToRoundLike(grounded.round);
@@ -939,7 +946,7 @@ async function enrichCompany(
 
   // Leadership & founders (additive merge, never destructive)
   const founderCandidates = cleanPeople((profile.profile.founders ?? []).map((f) => ({
-    name: f.name, title: f.title, bio: f.bio, linkedin_url: f.linkedin_url?.value,
+    name: f.name, title: cleanFounderTitle(f.title, row.name), bio: f.bio, linkedin_url: f.linkedin_url?.value,
     had_prior_exit: f.had_prior_exit, elite_background: f.elite_background, notable_pedigree: f.notable_pedigree,
   })));
   const cleanFounders = founderCandidates.filter(isFounderEntry);
@@ -1460,6 +1467,7 @@ async function main() {
   console.log(`  fields patched               ${summary.totalFieldsPatched}`);
   console.log(`  tokens (in/out)              ${summary.totalInputTokens.toLocaleString()} / ${summary.totalOutputTokens.toLocaleString()}`);
   console.log(`  claude cost (est.)           $${summary.totalCostUsd.toFixed(2)}  (search API cost is separate)`);
+  if (jinaDisabled()) console.log(`  ⛔ Jina Reader was switched off mid-run (${jinaDisabled()}) — top up Jina and re-run the affected companies for full articles.`);
   console.log(`  website pages: ${summary.websitePagesFetched} real / ${summary.websitePagesSkippedThin} thin-404 / ${summary.websitePagesDuplicate} duplicate skipped  |  serper calls: ${summary.serperCalls}  |  tavily calls: ${summary.tavilyCalls}`);
   console.log("  dropped/flagged by reason code:");
   for (const [reason, count] of summary.droppedByReason) {

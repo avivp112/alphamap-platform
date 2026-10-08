@@ -22,6 +22,7 @@
 import { normalizeForMatch, extractNumbersFromText, parseFullDate } from "./evidence";
 import { investorNamesMatch, normalizeRoundType, type RoundLike } from "./rounds";
 import { termAppearsIn, normalizeUrlForMatch, type V2MarketExtraction, type V2NewsItem } from "./extractMarket";
+import { namesCompany } from "./headcount";
 import type { V2Round, V2FundingExtraction } from "./extractFunding";
 import type { V2ProfileExtraction, V2Founder, V2Leader } from "./extractProfile";
 import type { LabeledSource } from "./sources";
@@ -150,6 +151,43 @@ export function groundRoundDetails(
     },
     dropped,
   };
+}
+
+// ── Rounds not written at all ────────────────────────────────────────────
+
+export type RoundRejection = "round_without_substance" | "round_from_job_posting" | "round_raised_by_another_company";
+
+const JOB_POSTING_URL_RE = /\/(j|job|jobs|careers?|vacanc(?:y|ies)|openings?|positions?)\/|(?:lever\.co|greenhouse\.io|workable\.com|ashbyhq\.com|indeed\.\w+|glassdoor\.\w+)\//i;
+const RAISER_RE = /(?:^|[.;:!?]\s+|\s—\s|,\s+)([A-Z][\p{L}\d.&'’-]*(?:\s+[A-Z][\p{L}\d.&'’-]*){0,3})\s+(?:has\s+|have\s+|just\s+)?(?:[Rr]ais(?:ed|es)|[Ss]ecur(?:ed|es)|[Cc]los(?:ed|es)|[Ll]ands|[Bb]ags|[Nn]abs)\b/u;
+const NOT_A_RAISER = /^(The|It|This|That|Its|Their|Our|We|They|He|She|Company|Startup|Today|In|On|Last|Since|After|Before)\b/;
+
+/**
+ * Rounds that are not written, whatever the extraction says:
+ *   - nothing but a label: no amount, valuation or investor (HomeLane's
+ *     undated "Series F+" from a financials page) — an acquisition or IPO
+ *     row is the exception, the event itself is the fact;
+ *   - sourced from a job posting (Hirist's "Series B" came from another
+ *     company's job ad on Hirist's own job board);
+ *   - the quote names someone else as the raiser ("Contentsquare raised a
+ *     $500M Series E" is not Hotjar's round).
+ */
+export function rejectRound(round: V2Round, companyName: string, sources: LabeledSource[]): RoundRejection | null {
+  const type = normalizeRoundType(round.round_type);
+  const hasInvestor = !!round.lead_investor?.value || (round.other_investors ?? []).some((n) => typeof n === "string" && n.trim());
+  if (type !== "Acquired" && type !== "IPO" && round.amount_raised?.value == null && round.valuation?.value == null && !hasInvestor) {
+    return "round_without_substance";
+  }
+  const byId = new Map(sources.map((s) => [s.source_id, s]));
+  const cited = [round.amount_raised, round.lead_investor, round.valuation, round.announcement_date]
+    .map((f) => (f?.source_id ? byId.get(f.source_id)?.url : undefined))
+    .concat(round.source_url ?? undefined)
+    .filter((u): u is string => !!u);
+  if (cited.length > 0 && cited.every((u) => JOB_POSTING_URL_RE.test(u))) return "round_from_job_posting";
+  const quote = round.amount_raised?.evidence_quote ?? "";
+  const raiser = quote.match(RAISER_RE)?.[1];
+  const bareName = companyName.replace(/\.(io|ai|com|co|app|so|dev|net)$/i, "");
+  if (raiser && !NOT_A_RAISER.test(raiser) && !namesCompany(raiser, companyName) && !namesCompany(raiser, bareName)) return "round_raised_by_another_company";
+  return null;
 }
 
 // ── Round write planning ─────────────────────────────────────────────────
