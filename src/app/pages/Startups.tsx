@@ -23,7 +23,7 @@ import {
   GitCompare, Clock, Briefcase, Zap, Info, Activity, BarChart2, ChevronUp,
   SlidersHorizontal, Award, Eye, HelpCircle,
   Linkedin, Facebook, Instagram, Newspaper, Layers, ExternalLink,
-  Star, XCircle, Sparkles, Download, Webhook, Code2, Github, Bot,
+  Star, XCircle, Sparkles, Download, Webhook,
 } from "lucide-react";
 import {
   ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
@@ -1718,60 +1718,21 @@ function CompetitorsMarketTab({ startup, onNavigate }: { startup: Startup; onNav
 
 // ── Tab 6: Acquisitions & IP ───────────────────────────────────────────────────
 // Renders startup.acquisitions (companies THIS company bought — outbound only)
-// and startup.patent_count/patent_fields. Both are best-effort: an empty/null
-// state here is the common, correct answer for most companies, not missing data.
+// and startup.patent_count/patent_fields/patents — nothing else. The tab is
+// hidden (tabsWithData) when a company has neither acquisitions nor patents.
 
 function AcquisitionsIPTab({ startup, onNavigate }: { startup: Startup; onNavigate: (id: string) => void }) {
   const { t } = useTranslation();
   const acquisitions = (startup.acquisitions ?? []).filter(Boolean);
-  const hasPatents = startup.patent_count != null;
+  const hasPatents = (startup.patent_count ?? 0) > 0;
   const patents = (startup.patents ?? []).filter((p) => p && p.title);
-  const techStack = startup.tech_stack ?? [];
-  const hasTech = techStack.length > 0 || !!startup.github_url || !!startup.huggingface_url;
 
-  if (acquisitions.length === 0 && !hasPatents && patents.length === 0 && !hasTech) {
-    return <MissingDataState message="No acquisitions, patent, or technology data have been found for this company yet." />;
+  if (acquisitions.length === 0 && !hasPatents && patents.length === 0) {
+    return <MissingDataState message="No acquisitions or patents have been found for this company." />;
   }
 
   return (
     <div className="space-y-6">
-      {hasTech && (
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <Code2 className="w-4 h-4 text-[#0e7490]" />
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("startups.technology")}</h3>
-          </div>
-          {techStack.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-3">
-              {techStack.map((tech) => (
-                <span key={tech} className="text-[10px] font-semibold px-2.5 py-1 rounded-full bg-cyan-50 text-cyan-700 border border-cyan-200">{tech}</span>
-              ))}
-            </div>
-          )}
-          {(startup.github_url || startup.huggingface_url) && (
-            <div className="flex flex-wrap gap-2">
-              {startup.github_url && (
-                <a
-                  href={startup.github_url.startsWith("http") ? startup.github_url : `https://${startup.github_url}`}
-                  target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 bg-gray-50 border border-gray-200 rounded-full px-3 py-1.5 hover:border-gray-400 hover:bg-white transition-colors"
-                >
-                  <Github className="w-3.5 h-3.5" /> GitHub <ExternalLink className="w-3 h-3 text-gray-400" />
-                </a>
-              )}
-              {startup.huggingface_url && (
-                <a
-                  href={startup.huggingface_url.startsWith("http") ? startup.huggingface_url : `https://${startup.huggingface_url}`}
-                  target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-3 py-1.5 hover:border-amber-400 hover:bg-amber-100/60 transition-colors"
-                >
-                  <Bot className="w-3.5 h-3.5" /> Hugging Face <ExternalLink className="w-3 h-3 text-amber-400" />
-                </a>
-              )}
-            </div>
-          )}
-        </div>
-      )}
       {hasPatents && (
         <div>
           <div className="flex items-center gap-2 mb-3">
@@ -1983,8 +1944,8 @@ function tabsWithData(s: Startup): Set<TearsheetTab> {
     !!(revenue && (revenue.range_low != null || revenue.range_high != null));
   const talent = s.employee_count != null || !!s.employee_range ||
     (!!s.growth_trend && s.growth_trend !== "unknown") || has(s.leadership);
-  const acquisitions = has(s.acquisitions) || s.patent_count != null ||
-    (s.patents ?? []).some((p) => p && p.title) || has(s.tech_stack) || !!s.github_url || !!s.huggingface_url;
+  const acquisitions = has(s.acquisitions) || (s.patent_count ?? 0) > 0 ||
+    (s.patents ?? []).some((p) => p && p.title);
   const tabs = new Set<TearsheetTab>(["overview"]);
   if (funding) tabs.add("funding");
   if (buildInvestorSchedule(rounds).length > 0) tabs.add("captable");
