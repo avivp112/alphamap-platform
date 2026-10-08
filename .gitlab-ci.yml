@@ -187,7 +187,9 @@ migrate-database:
   stage: migrate
   image: node:20-slim
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "web"'
+    # "web" = Run pipeline in the GitLab UI; "api" = the same, started
+    # through the API (POST /projects/:id/pipeline). Never on a push.
+    - if: '$CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "api"'
   before_script:
     - apt-get update -qq && apt-get install -y -qq --no-install-recommends postgresql-client >/dev/null
     - npm install -g supabase
@@ -375,7 +377,9 @@ deploy-public-market-functions:
   needs: ["migrate-database"]
   image: node:20-slim
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "web"'
+    # "web" = Run pipeline in the GitLab UI; "api" = the same, started
+    # through the API (POST /projects/:id/pipeline). Never on a push.
+    - if: '$CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "api"'
   before_script:
     - npm install -g supabase
     - supabase --version
