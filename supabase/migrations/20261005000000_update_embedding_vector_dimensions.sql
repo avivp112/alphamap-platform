@@ -42,6 +42,158 @@
 -- in place; dropping explicitly (rather than relying on CASCADE) keeps this
 -- migration's effects legible, matching this codebase's established style of
 -- never leaning on implicit cascading behaviour for schema changes.
+-- 0. ── Views that select the embedding columns ─────────────────────────────
+-- A column's type cannot change while a view or materialized view uses it:
+-- startups_search is `SELECT s.*, ...` over startups, so it carries
+-- startups.embedding ("cannot alter type of a column used by a view or rule
+-- ... materialized view startups_search depends on column embedding" — the
+-- error this migration first hit on the live database). This block records
+-- every such view, every view built on top of them (startups_market), their
+-- indexes, grants and comments, and every function that returns or takes
+-- their row type (search_startups & co. return SETOF startups_search) —
+-- exactly as the database has them, via pg_get_viewdef / pg_get_indexdef /
+-- pg_get_functiondef — then drops them. Step 5b below recreates all of it,
+-- so the views come back identical except for the new vector(768) column.
+-- Anything else that depends on them aborts the migration (nothing is
+-- dropped that is not recreated).
+--
+-- Runs only while a column is still not vector(768), so this migration is
+-- now safe to re-run: on a second run nothing is dropped, altered or reset.
+-- Plain temp tables (not ON COMMIT DROP): psql -f runs each statement in its
+-- own transaction, and the rebuild list has to survive until step 5b.
+DROP TABLE IF EXISTS pg_temp._embedding_rebuild;
+DROP TABLE IF EXISTS pg_temp._emb_rels;
+CREATE TEMP TABLE _embedding_rebuild (ord serial, ddl text NOT NULL);
+
+DO $$
+DECLARE
+  v_need   boolean;
+  v_roots  oid[];
+  v_rels   oid[];
+  v_types  oid[];
+  v_funcs  oid[];
+  v_stray  text;
+  r        record;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1 FROM pg_attribute a
+     WHERE a.attrelid IN ('public.startups'::regclass, 'public.investors'::regclass, 'public.user_preference_vectors'::regclass)
+       AND a.attname = 'embedding' AND NOT a.attisdropped
+       AND format_type(a.atttypid, a.atttypmod) NOT IN ('vector(768)', 'extensions.vector(768)')
+  ) INTO v_need;
+  IF NOT v_need THEN
+    RAISE NOTICE 'embedding columns are already vector(768) — nothing to rebuild';
+    RETURN;
+  END IF;
+
+  -- Views / materialized views reading an embedding column directly.
+  SELECT array_agg(DISTINCT rw.ev_class) INTO v_roots
+    FROM pg_depend d
+    JOIN pg_rewrite rw ON rw.oid = d.objid
+    JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
+   WHERE d.classid = 'pg_rewrite'::regclass
+     AND d.refobjid IN ('public.startups'::regclass, 'public.investors'::regclass, 'public.user_preference_vectors'::regclass)
+     AND a.attname = 'embedding'
+     AND rw.ev_class NOT IN ('public.startups'::regclass, 'public.investors'::regclass, 'public.user_preference_vectors'::regclass);
+  IF v_roots IS NULL THEN
+    RETURN;
+  END IF;
+
+  -- Plus every view built on them, deepest last.
+  CREATE TEMP TABLE _emb_rels AS
+  WITH RECURSIVE deps(relid, depth) AS (
+    SELECT unnest(v_roots), 0
+    UNION
+    SELECT rw.ev_class, deps.depth + 1
+      FROM deps
+      JOIN pg_depend d ON d.refobjid = deps.relid AND d.classid = 'pg_rewrite'::regclass AND d.deptype = 'n'
+      JOIN pg_rewrite rw ON rw.oid = d.objid
+     WHERE rw.ev_class <> deps.relid AND deps.depth < 10
+  )
+  SELECT relid, max(depth) AS depth FROM deps GROUP BY relid;
+
+  SELECT array_agg(relid), array_agg(c.reltype) INTO v_rels, v_types
+    FROM _emb_rels e JOIN pg_class c ON c.oid = e.relid;
+
+  SELECT array_agg(p.oid) INTO v_funcs
+    FROM pg_proc p
+   WHERE p.prorettype = ANY (v_types)
+      OR p.proargtypes::oid[] && v_types;
+
+  -- Refuse to drop anything that would not be recreated.
+  SELECT string_agg(DISTINCT pg_describe_object(d.classid, d.objid, d.objsubid), ', ') INTO v_stray
+    FROM pg_depend d
+   WHERE d.deptype = 'n'
+     AND (d.refobjid = ANY (v_rels) OR d.refobjid = ANY (v_types))
+     AND NOT (d.classid = 'pg_rewrite'::regclass
+              AND (SELECT ev_class FROM pg_rewrite WHERE oid = d.objid) = ANY (v_rels))
+     AND NOT (d.classid = 'pg_proc'::regclass AND d.objid = ANY (coalesce(v_funcs, '{}')));
+  IF v_stray IS NOT NULL THEN
+    RAISE EXCEPTION 'embedding migration: these objects depend on % and would be dropped without being recreated: %',
+      (SELECT string_agg(relid::regclass::text, ', ') FROM _emb_rels), v_stray;
+  END IF;
+
+  -- Record: views (shallowest first) with their indexes, then functions,
+  -- then grants and comments.
+  FOR r IN
+    SELECT c.oid, c.relkind, c.reloptions, format('%I.%I', n.nspname, c.relname) AS qname,
+           regexp_replace(pg_get_viewdef(c.oid, true), ';\s*$', '') AS def
+      FROM _emb_rels e JOIN pg_class c ON c.oid = e.relid JOIN pg_namespace n ON n.oid = c.relnamespace
+     ORDER BY e.depth, c.relname
+  LOOP
+    INSERT INTO _embedding_rebuild (ddl) VALUES (
+      CASE r.relkind
+        WHEN 'm' THEN format('CREATE MATERIALIZED VIEW %s AS %s', r.qname, r.def)
+        ELSE format('CREATE VIEW %s%s AS %s', r.qname,
+                    CASE WHEN r.reloptions IS NOT NULL THEN ' WITH (' || array_to_string(r.reloptions, ', ') || ')' ELSE '' END,
+                    r.def)
+      END);
+    INSERT INTO _embedding_rebuild (ddl)
+      SELECT pg_get_indexdef(i.indexrelid) FROM pg_index i WHERE i.indrelid = r.oid ORDER BY i.indexrelid;
+  END LOOP;
+
+  INSERT INTO _embedding_rebuild (ddl)
+    SELECT pg_get_functiondef(f) FROM unnest(coalesce(v_funcs, '{}')) f;
+
+  INSERT INTO _embedding_rebuild (ddl)
+    SELECT format('GRANT %s ON %s TO %s', x.privilege_type, format('%I.%I', n.nspname, c.relname),
+                  CASE WHEN x.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(x.grantee)) END)
+      FROM _emb_rels e JOIN pg_class c ON c.oid = e.relid JOIN pg_namespace n ON n.oid = c.relnamespace,
+           LATERAL aclexplode(c.relacl) x;
+
+  -- A recreated function starts with the default (EXECUTE for PUBLIC); a
+  -- function whose grants were set explicitly gets exactly those back.
+  INSERT INTO _embedding_rebuild (ddl)
+    SELECT format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', p.oid::regprocedure)
+      FROM pg_proc p WHERE p.oid = ANY (coalesce(v_funcs, '{}')) AND p.proacl IS NOT NULL;
+
+  INSERT INTO _embedding_rebuild (ddl)
+    SELECT format('GRANT EXECUTE ON FUNCTION %s TO %s', p.oid::regprocedure,
+                  CASE WHEN x.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(x.grantee)) END)
+      FROM pg_proc p, LATERAL aclexplode(p.proacl) x
+     WHERE p.oid = ANY (coalesce(v_funcs, '{}')) AND x.privilege_type = 'EXECUTE';
+
+  INSERT INTO _embedding_rebuild (ddl)
+    SELECT format('COMMENT ON %s %s IS %L', CASE c.relkind WHEN 'm' THEN 'MATERIALIZED VIEW' ELSE 'VIEW' END,
+                  format('%I.%I', n.nspname, c.relname), obj_description(c.oid, 'pg_class'))
+      FROM _emb_rels e JOIN pg_class c ON c.oid = e.relid JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE obj_description(c.oid, 'pg_class') IS NOT NULL;
+
+  INSERT INTO _embedding_rebuild (ddl)
+    SELECT format('COMMENT ON FUNCTION %s IS %L', p.oid::regprocedure, obj_description(p.oid, 'pg_proc'))
+      FROM pg_proc p WHERE p.oid = ANY (coalesce(v_funcs, '{}')) AND obj_description(p.oid, 'pg_proc') IS NOT NULL;
+
+  -- Drop: the roots, CASCADE takes the recorded views and functions with them.
+  FOR r IN SELECT c.relkind, format('%I.%I', n.nspname, c.relname) AS qname
+             FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.oid = ANY (v_roots)
+  LOOP
+    EXECUTE format('DROP %s IF EXISTS %s CASCADE',
+                   CASE r.relkind WHEN 'm' THEN 'MATERIALIZED VIEW' ELSE 'VIEW' END, r.qname);
+  END LOOP;
+END;
+$$;
+
 DROP INDEX IF EXISTS idx_startups_embedding_hnsw;
 DROP INDEX IF EXISTS idx_investors_embedding_hnsw;
 
@@ -49,26 +201,44 @@ DROP INDEX IF EXISTS idx_investors_embedding_hnsw;
 -- `USING NULL` is the only honest cast here: a 1536-d OpenAI vector and a
 -- 768-d Nomic vector do not share a coordinate space, so there is no
 -- value-preserving conversion — every row must be treated as unembedded.
-ALTER TABLE startups
-  ALTER COLUMN embedding TYPE extensions.vector(768) USING NULL;
+DO $$
+BEGIN
+  -- Only while still not 768-d: re-running this migration must never wipe
+  -- embeddings that were written after it first ran.
+  IF EXISTS (
+    SELECT 1 FROM pg_attribute a
+     WHERE a.attrelid IN ('public.startups'::regclass, 'public.investors'::regclass, 'public.user_preference_vectors'::regclass)
+       AND a.attname = 'embedding' AND NOT a.attisdropped
+       AND format_type(a.atttypid, a.atttypmod) NOT IN ('vector(768)', 'extensions.vector(768)')
+  ) THEN
+    ALTER TABLE startups
+      ALTER COLUMN embedding TYPE extensions.vector(768) USING NULL;
+    ALTER TABLE investors
+      ALTER COLUMN embedding TYPE extensions.vector(768) USING NULL;
+    ALTER TABLE user_preference_vectors
+      ALTER COLUMN embedding TYPE extensions.vector(768) USING NULL;
+    UPDATE startups  SET embedding_source_hash = NULL, embedding_updated_at = NULL
+     WHERE embedding_source_hash IS NOT NULL OR embedding_updated_at IS NOT NULL;
+    UPDATE investors SET embedding_source_hash = NULL, embedding_updated_at = NULL
+     WHERE embedding_source_hash IS NOT NULL OR embedding_updated_at IS NOT NULL;
+  END IF;
+END;
+$$;
 
-ALTER TABLE investors
-  ALTER COLUMN embedding TYPE extensions.vector(768) USING NULL;
+-- 5b. ── Recreate the views, indexes, functions, grants and comments step 0
+-- recorded (nothing when step 0 had nothing to do). ──────────────────────────
+DO $$
+DECLARE
+  r record;
+BEGIN
+  FOR r IN SELECT ddl FROM _embedding_rebuild ORDER BY ord LOOP
+    EXECUTE r.ddl;
+  END LOOP;
+END;
+$$;
 
-ALTER TABLE user_preference_vectors
-  ALTER COLUMN embedding TYPE extensions.vector(768) USING NULL;
-
--- 3. ── Reset bookkeeping so the backfill queue re-processes every row ────────
--- embedding_updated_at = NULL sorts first in the backfill's
--- `ORDER BY embedding_updated_at NULLS FIRST, id` queue; embedding_source_hash
--- is cleared too since the OpenAI-era hash is meaningless against a
--- TEI-produced vector (though the backfill would recompute and overwrite it
--- anyway on the first pass regardless).
-UPDATE startups  SET embedding_source_hash = NULL, embedding_updated_at = NULL
- WHERE embedding_source_hash IS NOT NULL OR embedding_updated_at IS NOT NULL;
-
-UPDATE investors SET embedding_source_hash = NULL, embedding_updated_at = NULL
- WHERE embedding_source_hash IS NOT NULL OR embedding_updated_at IS NOT NULL;
+DROP TABLE IF EXISTS pg_temp._embedding_rebuild;
+DROP TABLE IF EXISTS pg_temp._emb_rels;
 
 -- user_preference_vectors has no embedding_source_hash/embedding_updated_at
 -- columns (it's recomputed wholesale by its own batch job, not incrementally
