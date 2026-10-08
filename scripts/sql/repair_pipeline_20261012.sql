@@ -360,7 +360,15 @@ BEGIN
   SELECT array_agg(p.oid) INTO v_funcs
     FROM pg_proc p
    WHERE p.prorettype = ANY (v_types)
-      OR p.proargtypes::oid[] && v_types;
+      OR p.proargtypes::oid[] && v_types
+      -- RETURNS TABLE(peer startups_search, ...) puts the row type in the
+      -- OUT parameters (hybrid_lookalikes), which only proallargtypes lists.
+      OR coalesce(p.proallargtypes, '{}') && v_types
+      -- Any other function the catalogue records as depending on the views
+      -- (e.g. a BEGIN ATOMIC SQL body that reads them).
+      OR p.oid IN (SELECT d.objid FROM pg_depend d
+                    WHERE d.classid = 'pg_proc'::regclass AND d.deptype = 'n'
+                      AND (d.refobjid = ANY (v_rels) OR d.refobjid = ANY (v_types)));
 
   -- Refuse to drop anything that would not be recreated.
   SELECT string_agg(DISTINCT pg_describe_object(d.classid, d.objid, d.objsubid), ', ') INTO v_stray
