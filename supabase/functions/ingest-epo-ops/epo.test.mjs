@@ -20,7 +20,10 @@ const src = new URL("./index.ts", import.meta.url).pathname;
 const stripped = join(dir, "index.ts");
 const bundle = join(dir, "epo.mjs");
 const source = readFileSync(src, "utf8");
-const out = source.replace(/^import\s+.*?from\s+"https:\/\/[^"]+";\s*$/m, "");
+const out = source.replace(/^import\s+.*?from\s+"https:\/\/[^"]+";\s*$/m, "")
+  // _shared/run-log.ts (the source_runs logger) is a no-op wrapper here.
+  .replace(/^import\s+\{[^}]*\}\s+from\s+"\.\.\/_shared\/run-log\.ts";\s*$/m,
+    "const withRunLog = (_s: string, _c: unknown, h: unknown) => h; const countKeys = (..._k: string[]) => () => 0;");
 if (out === source) { console.error("no remote import to strip"); process.exit(1); }
 writeFileSync(stripped, out);
 execFileSync("npx", ["--yes", "esbuild@0.21.5", stripped, "--bundle", "--format=esm",

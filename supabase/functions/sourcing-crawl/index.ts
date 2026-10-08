@@ -50,6 +50,7 @@
 // =============================================================================
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { withRunLog, countKeys } from "../_shared/run-log.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -480,7 +481,7 @@ async function probeSlug(token: string): Promise<ProbeResult[]> {
 
 // ── Handler ─────────────────────────────────────────────────────────────────
 
-Deno.serve(async (req: Request): Promise<Response> => {
+Deno.serve(withRunLog("ats_crawl", countKeys("upserted"), async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -591,4 +592,4 @@ Deno.serve(async (req: Request): Promise<Response> => {
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : "crawl failed" }, 500);
   }
-});
+}));

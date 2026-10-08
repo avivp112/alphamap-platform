@@ -3,7 +3,8 @@
 # Functions (sync-public-markets, search-tickers, stock-profile, stock-history,
 # sourcing-crawl, extract-job-signals, discover-boards, ingest-sec-form-d,
 # ingest-uk-companies-house, ingest-uspto-patents, ingest-huggingface,
-# ingest-github-velocity, ingest-epo-ops) plus their migrations.
+# ingest-github-velocity, ingest-epo-ops, ingest-startup, backfill-embeddings,
+# pipeline-health) plus their migrations.
 #
 # This pipeline does NOT run on ordinary pushes/merges — it only exists so you
 # can trigger it by hand from the GitLab UI (Build -> Pipelines -> "Run
@@ -432,6 +433,8 @@ deploy-public-market-functions:
     - deploy_fn ingest-github-velocity
     - deploy_fn ingest-epo-ops
     - deploy_fn ingest-startup
+    - deploy_fn backfill-embeddings
+    - deploy_fn pipeline-health
 
 # ── Embedding backfill ────────────────────────────────────────────────────────
 # SUPERSEDED as the production automation path by supabase/functions/

@@ -80,6 +80,7 @@
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { embedDocuments } from "../_shared/tei-client.ts";
+import { withRunLog } from "../_shared/run-log.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -136,6 +137,8 @@ async function md5Hex(s: string): Promise<string> {
 
 interface BackfillOptions {
   dryRun: boolean;
+  /** Epoch ms after which no new page is started — the run stops cleanly and reports timedOut. */
+  deadline: number;
   batchSize: number;
   embedBatch: number;
   force: boolean;
@@ -151,8 +154,10 @@ async function backfillTable(supabase: SupabaseClient, table: TableName, opts: B
     : "id, name, description, thesis, embedding_source_hash";
 
   let processed = 0, embedded = 0, skipped = 0, noText = 0, from = 0;
+  let timedOut = false;
 
   for (;;) {
+    if (Date.now() > opts.deadline) { timedOut = true; break; }
     const { data, error } = await supabase
       .from(table)
       .select(selectCols)
@@ -164,6 +169,7 @@ async function backfillTable(supabase: SupabaseClient, table: TableName, opts: B
     const rows = (data ?? []) as unknown as Row[];
     if (rows.length === 0) break;
 
+    let movedThisPage = 0;
     const pending: { row: Row; text: string; hash: string }[] = [];
     for (const row of rows) {
       const text = sourceText(table, row);
@@ -191,22 +197,38 @@ async function backfillTable(supabase: SupabaseClient, table: TableName, opts: B
           .update({ embedding: vectors[j], embedding_source_hash: c.hash, embedding_updated_at: now })
           .eq("id", c.row.id);
         if (upErr) console.error(`update ${table}.${c.row.id}: ${upErr.message}`);
-        else embedded++;
+        else { embedded++; movedThisPage++; }
       }));
     }
 
     processed += rows.length;
-    // DRY_RUN never writes, so embedding_updated_at never advances the
-    // self-advancing queue -- page forward by hand so a dry run actually
-    // surveys the whole backlog instead of re-reading the same head.
-    if (opts.dryRun) from += opts.batchSize;
+    // Paging. A row that was embedded just now moves to the END of the
+    // order (its embedding_updated_at is now the newest); every other row of
+    // this page — unchanged, without prose, or failed — stays where it was.
+    // So the next page starts after the rows that stayed. Without this the
+    // loop re-read the same head forever: rows with no description keep a
+    // NULL embedding_updated_at and sort first, and once a page was all
+    // such rows nothing ever moved — no embeddings, until the function was
+    // killed by its time limit. A dry run writes nothing, so all rows stay.
+    from += opts.dryRun ? rows.length : rows.length - movedThisPage;
     if (rows.length < opts.batchSize) break;
   }
 
-  return { table, processed, embedded, skipped, noText };
+  return { table, processed, embedded, skipped, noText, timedOut };
 }
 
-Deno.serve(async (req: Request): Promise<Response> => {
+// Stop starting new pages well inside the Edge Function wall-clock limit, so
+// a long backlog ends as a clean, logged run instead of a killed one; the
+// next daily run continues where this one stopped.
+const RUN_BUDGET_MS = 110_000;
+
+/** Rows embedded across all tables of the run (for source_runs.rows_in). */
+function embeddedRows(body: Record<string, unknown>): number {
+  const results = Array.isArray(body.results) ? body.results as Array<{ embedded?: number }> : [];
+  return results.reduce((n, r) => n + (typeof r.embedded === "number" ? r.embedded : 0), 0);
+}
+
+Deno.serve(withRunLog("backfill_embeddings", embeddedRows, async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -224,6 +246,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   let opts: BackfillOptions = {
     dryRun: true,
+    deadline: Date.now() + RUN_BUDGET_MS,
     batchSize: DEFAULT_BATCH_SIZE,
     embedBatch: DEFAULT_EMBED_BATCH,
     force: false,
@@ -258,4 +281,4 @@ Deno.serve(async (req: Request): Promise<Response> => {
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : "backfill failed" }, 500);
   }
-});
+}));

@@ -62,6 +62,7 @@
 // =============================================================================
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { withRunLog, countKeys } from "../_shared/run-log.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -241,7 +242,7 @@ export function searchUrl(q: string, page: number, perPage = PAGE_SIZE): string 
 
 // ── Handler ─────────────────────────────────────────────────────────────────
 
-Deno.serve(async (req: Request): Promise<Response> => {
+Deno.serve(withRunLog("github_velocity", countKeys("recorded"), async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -421,4 +422,4 @@ Deno.serve(async (req: Request): Promise<Response> => {
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : "ingest failed" }, 500);
   }
-});
+}));

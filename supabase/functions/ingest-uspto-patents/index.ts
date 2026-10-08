@@ -1,6 +1,14 @@
 // =============================================================================
 // Supabase Edge Function: ingest-uspto-patents
 //
+// ── OFF THE SCHEDULE SINCE 2026-10-11 ───────────────────────────────────────
+// PatentsView API keys now go through USPTO's ID.me identity verification,
+// which needs a US Social Security Number or US government ID — a non-US team
+// cannot get one. Migration 20261011000000_pipeline_monitoring.sql removed
+// the weekly pg_cron job and disabled the source in source_expectations.
+// EPO OPS (ingest-epo-ops) serves the same US publications through DOCDB.
+// The function stays deployed for manual use if a key is ever obtained.
+//
 // The earliest layer of all. A pre-grant publication appears ~18 months after
 // filing and frequently BEFORE the company incorporates, raises, or has a
 // website — sometimes the assignee is still the inventors' names. It is also
@@ -63,6 +71,7 @@
 // =============================================================================
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { withRunLog, countKeys } from "../_shared/run-log.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -223,7 +232,7 @@ const ymd = (d: Date) => d.toISOString().slice(0, 10);
 
 // ── Handler ─────────────────────────────────────────────────────────────────
 
-Deno.serve(async (req: Request): Promise<Response> => {
+Deno.serve(withRunLog("uspto_patents", countKeys("ingested", "inventorHeld"), async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -435,4 +444,4 @@ Deno.serve(async (req: Request): Promise<Response> => {
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : "ingest failed" }, 500);
   }
-});
+}));

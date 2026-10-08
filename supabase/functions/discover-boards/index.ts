@@ -34,6 +34,7 @@
 // =============================================================================
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { withRunLog, countKeys } from "../_shared/run-log.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -220,7 +221,7 @@ async function stampAttempted(supabase: SupabaseClient, ids: string[]) {
   if (error) throw new Error(`stamp board_discovery_at: ${error.message}`);
 }
 
-Deno.serve(async (req: Request): Promise<Response> => {
+Deno.serve(withRunLog("discover_boards", countKeys("registered"), async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -320,4 +321,4 @@ Deno.serve(async (req: Request): Promise<Response> => {
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : "discovery failed" }, 500);
   }
-});
+}));

@@ -29,7 +29,10 @@ const src = new URL("./index.ts", import.meta.url).pathname;
 // Drop the https: import; leave every other line byte-identical so what we
 // test is the real taxonomy and not a copy that can drift from it.
 const source = readFileSync(src, "utf8");
-const withoutRemoteImport = source.replace(/^import\s+.*?from\s+"https:\/\/[^"]+";\s*$/m, "");
+const withoutRemoteImport = source.replace(/^import\s+.*?from\s+"https:\/\/[^"]+";\s*$/m, "")
+  // _shared/run-log.ts (the source_runs logger) is a no-op wrapper here.
+  .replace(/^import\s+\{[^}]*\}\s+from\s+"\.\.\/_shared\/run-log\.ts";\s*$/m,
+    "const withRunLog = (_s: string, _c: unknown, h: unknown) => h; const countKeys = (..._k: string[]) => () => 0;");
 if (withoutRemoteImport === source) {
   console.error("expected a remote import to strip — has index.ts changed shape?");
   process.exit(1);
