@@ -33,11 +33,13 @@
 // Deploy:  supabase functions deploy pipeline-health --no-verify-jwt
 // Invoke:  POST {}                 -> run the checks, notify on failures
 //          POST { "notify": false } -> run and store, notify nobody
-// Only callers holding the service-role key are served — it sends email.
+// Only callers holding a service-role key are served — it sends email
+// (_shared/service-auth.ts).
 // =============================================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { evaluateChecks, type Snapshot, type TeiProbe } from "./checks.ts";
+import { isServiceRoleRequest } from "../_shared/service-auth.ts";
 
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { "Content-Type": "application/json" } });
@@ -75,7 +77,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!SUPABASE_URL || !SERVICE_KEY) return json({ error: "Supabase env not available" }, 500);
-  if (req.headers.get("Authorization") !== `Bearer ${SERVICE_KEY}`) return json({ error: "service role only" }, 401);
+  if (!(await isServiceRoleRequest(req.headers.get("Authorization"), { supabaseUrl: SUPABASE_URL, serviceKey: SERVICE_KEY }))) {
+    return json({ error: "service role only" }, 401);
+  }
 
   let notify = true;
   try { notify = (await req.json())?.notify !== false; } catch { /* no body */ }
