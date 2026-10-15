@@ -210,33 +210,33 @@ migrate-database:
         exit 0
       fi
 
-    # ── Baseline guard ──────────────────────────────────────────────────────
-    # These migrations predate this pipeline and were applied by hand, and
-    # four of them use bare CREATE TABLE. If the remote has no migration
-    # history, `db push` would treat all of them as pending and abort on
-    # "relation already exists". Detect that and stop with instructions rather
-    # than firing 30+ historical migrations at a live database.
+    # ── Pending-count guard ─────────────────────────────────────────────────
+    # Most migrations were applied by hand in the SQL Editor, so the remote's
+    # history (supabase_migrations.schema_migrations) can be missing or
+    # incomplete — and `db push` treats every file absent from it as pending
+    # and RUNS it against the live database. The old guard only caught a
+    # missing history table; a stale baseline (30 of 90 files) would have
+    # replayed ~60 historical migrations. So count what is actually pending
+    # and stop if it is more than a normal release carries.
+    # Override for a deliberate larger push: CI variable MIGRATIONS_MAX_PENDING.
     - |
       set -e
-      APPLIED=$(psql "$SUPABASE_DB_URL" -tAc "
-        SELECT count(*) FROM information_schema.tables
-         WHERE table_schema='supabase_migrations' AND table_name='schema_migrations';
-      ")
-      if [ "$APPLIED" = "0" ]; then
-        HAS_DATA=$(psql "$SUPABASE_DB_URL" -tAc "
-          SELECT count(*) FROM information_schema.tables
-           WHERE table_schema='public' AND table_name='startups';
-        ")
-        if [ "$HAS_DATA" != "0" ]; then
-          echo "ERROR: this database has application tables but no migration history."
-          echo "Pushing now would replay every historical migration and fail on"
-          echo "the un-guarded CREATE TABLEs. Baseline it once, then re-run:"
-          echo ""
-          echo "  psql \"\$SUPABASE_DB_URL\" -f supabase/scripts/baseline_migration_history.sql"
-          echo ""
-          echo "That marks the already-applied files as applied without re-running them."
-          exit 1
-        fi
+      psql "$SUPABASE_DB_URL" -tAc "
+        SELECT version FROM supabase_migrations.schema_migrations
+      " > /tmp/remote_versions 2>/dev/null || : > /tmp/remote_versions
+      sed -i -e 's/[[:space:]]//g' -e '/^$/d' /tmp/remote_versions
+      ls supabase/migrations/*.sql | sed -E 's#.*/([0-9]+)_.*#\1#' | sort > /tmp/local_versions
+      grep -vxF -f /tmp/remote_versions /tmp/local_versions > /tmp/pending_versions || true
+      PENDING=$(wc -l < /tmp/pending_versions)
+      MAX="${MIGRATIONS_MAX_PENDING:-3}"
+      echo "remote history: $(wc -l < /tmp/remote_versions) versions; pending: $PENDING (max $MAX)"
+      sed 's/^/  pending: /' /tmp/pending_versions
+      if [ "$PENDING" -gt "$MAX" ]; then
+        echo "ERROR: $PENDING migrations would run against the live database."
+        echo "That is a missing or stale migration history, not a release."
+        echo "Run supabase/scripts/verify_migration_history.sql in the SQL Editor,"
+        echo "baseline the verified versions, then re-run this pipeline."
+        exit 1
       fi
 
     # Print the plan before acting on it, so the log shows the intent even if

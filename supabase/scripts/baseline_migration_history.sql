@@ -1,4 +1,14 @@
 -- =============================================================================
+-- STALE — DO NOT RUN. Lists 30 of 90 migrations (written 2026-07); running it
+-- and then `supabase db push` would replay ~60 historical migrations against
+-- the live database. Superseded by an evidence-based baseline: run
+-- supabase/scripts/verify_migration_history.sql first. The block below stops
+-- this file if it is run anyway.
+-- =============================================================================
+\set ON_ERROR_STOP on
+DO $$ BEGIN RAISE EXCEPTION 'baseline_migration_history.sql is stale (30 of 90 migrations) — run verify_migration_history.sql instead'; END $$;
+
+-- =============================================================================
 -- One-time baseline of the Supabase migration history.
 --
 -- WHY THIS EXISTS
