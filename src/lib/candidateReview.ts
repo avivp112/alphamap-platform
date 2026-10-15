@@ -50,6 +50,18 @@ export interface CompanyCandidate {
   review_note: string | null;
 }
 
+/** What get_candidate_preview() returns: everything for a live candidate, only id + status once rejected. */
+export type CandidatePreview =
+  | { id: string; status: "rejected" }
+  | (Pick<CompanyCandidate, "id" | "source" | "name" | "country" | "founded_year" | "cik" | "entity_number"
+      | "website" | "gate_tier" | "filings_count" | "first_seen_at" | "evidence" | "startup_id">
+      & { status: "pending" | "approved"; sector: string | null });
+
+/** Where an approved candidate's alert should go: the company page. */
+export function companyPath(startupId: string): string {
+  return `/startups?company=${encodeURIComponent(startupId)}`;
+}
+
 export const SOURCE_LABEL: Record<string, string> = {
   sec_form_d: "SEC Form D",
   uk_companies_house: "UK Companies House",

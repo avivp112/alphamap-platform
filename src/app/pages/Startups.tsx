@@ -3329,6 +3329,36 @@ export function Startups() {
   const cityParam = searchParams.get("city") ?? "";
   const [cityFilter, setCityFilter] = useState(cityParam);
 
+  // Deep link from an alert: /startups?company=<id> opens that company's
+  // tearsheet straight away. The param is dropped on close so a refresh or
+  // Back doesn't reopen it. A company approved minutes ago may not be in
+  // startups_search until its next refresh — say so instead of doing nothing.
+  const companyParam = searchParams.get("company");
+  const [deepLinkMissing, setDeepLinkMissing] = useState(false);
+  useEffect(() => {
+    if (!companyParam) return;
+    let cancelled = false;
+    fetchStartupListRowById(companyParam)
+      .then((row) => {
+        if (cancelled) return;
+        if (row) setSelected(row);
+        else setDeepLinkMissing(true);
+      })
+      .catch(() => { if (!cancelled) setDeepLinkMissing(true); });
+    return () => { cancelled = true; };
+  }, [companyParam]);
+  useEffect(() => {
+    if (!deepLinkMissing) return;
+    const id = setTimeout(() => setDeepLinkMissing(false), 6000);
+    return () => clearTimeout(id);
+  }, [deepLinkMissing]);
+  function closeTearsheet() {
+    setSelected(null);
+    if (searchParams.has("company")) {
+      setSearchParams((p) => { p.delete("company"); return p; }, { replace: true });
+    }
+  }
+
   function toggleSelect(row: StartupListRow, e: React.MouseEvent) {
     e.stopPropagation();
     setSelectedMap((prev) => {
@@ -3826,7 +3856,7 @@ export function Startups() {
       {tearsheetStartup && (
         <TearsheetModal
           startup={tearsheetStartup}
-          onClose={() => setSelected(null)}
+          onClose={closeTearsheet}
           onNavigate={(row) => setSelected(row)}
           onFilterByMainSector={handleFilterByMainSector}
           onFilterBySubSectorTag={handleFilterBySubSectorTag}
@@ -3850,6 +3880,13 @@ export function Startups() {
           onConfirm={handlePassConfirm}
           submitting={passSubmitting}
         />
+      )}
+
+      {deepLinkMissing && (
+        <div role="status" className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-md flex items-start gap-2 px-4 py-3 rounded-[8px] bg-[#0F172A] text-white text-xs shadow-lg">
+          <AlertCircle className="w-4 h-4 flex-none mt-0.5 text-amber-300" />
+          <span>{t("startups.deepLinkMissing")}</span>
+        </div>
       )}
 
       {/* ── Floating Compare FAB ────────────────────────────────────────── */}

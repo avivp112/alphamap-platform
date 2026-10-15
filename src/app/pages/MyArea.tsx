@@ -1,16 +1,17 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   Search, Plus, X, Check, Square, CheckSquare, Eye, Building2, Landmark,
   MapPin, Calendar, Users, Loader2, AlertCircle, GitCompare, Sparkles, Bell,
-  CheckCheck, Radar, Star,
+  CheckCheck, Radar, Star, SlidersHorizontal,
 } from "lucide-react";
 import { Layout } from "../components/Layout";
 import { CompanyLogo } from "../components/CompanyLogo";
 import {
   fetchStartupsPage, fetchInvestors, fetchStartupsByIds, fetchTopThesisMatches,
   fetchPreferenceSignalCount, fetchNotifications, markNotificationRead, markAllNotificationsRead,
+  fetchAlertsFilter, setAlertsFiltered,
   type StartupListRow, type InvestorRow, type ThesisMatch, type Notification,
 } from "../../lib/supabase";
 import {
@@ -31,11 +32,10 @@ import { useUserPlan } from "../../lib/plan";
 //   2. Thesis Matches     — the questionnaire (user_mandates) + the derived
 //      preference vector now take effect HERE, not on the Private Market
 //      page (which is unfiltered global discovery — see Startups.tsx).
-//   3. Live Alerts        — the existing notification bell's data, surfaced
-//      as a feed rather than only a dropdown. Today this only ever shows the
-//      one-time welcome notification (20260930000000) — the alert-matching
-//      job that would populate real watchlist/match alerts is separate,
-//      later infrastructure, not built as part of this page.
+//   3. Live Alerts        — the notification bell's data as a feed
+//      (generate_live_alerts: watchlist filings/velocity, thesis matches,
+//      new companies), plus the toggle that narrows new-company alerts to
+//      the user's mandate.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type TabId = "watchlist" | "matches" | "alerts";
@@ -822,6 +822,7 @@ function LiveAlertsTab() {
 
   return (
     <div>
+      <AlertsFilterToggle />
       <div className="flex items-center justify-between mb-5">
         <p className="text-sm text-gray-500">{t("myArea.alerts.blurb")}</p>
         {unreadCount > 0 && (
@@ -862,6 +863,69 @@ function LiveAlertsTab() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// New-company alerts: off = every company that passes AlphaMap's quality
+// filter; on = only those matching the questionnaire + watchlist sectors
+// (candidate_alert_wanted, 20261017000000). Needs a questionnaire to filter by.
+function AlertsFilterToggle() {
+  const { t } = useTranslation();
+  const [state, setState] = useState<{ hasMandate: boolean; filtered: boolean } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchAlertsFilter().then(setState).catch(() => setState(null));
+  }, []);
+
+  async function toggle() {
+    if (!state || saving) return;
+    const next = !state.filtered;
+    setSaving(true);
+    setError(null);
+    setState({ ...state, filtered: next });
+    try {
+      await setAlertsFiltered(next);
+    } catch (e) {
+      setState({ ...state, filtered: !next });
+      setError(watchlistErrorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!state) return null;
+  return (
+    <div className="mb-6 rounded-[10px] border border-gray-100 bg-white p-4">
+      <div className="flex items-start gap-3">
+        <SlidersHorizontal className="mt-0.5 h-4 w-4 flex-none text-[#7C8967]" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-[#0F172A]">{t("myArea.alerts.filterTitle")}</p>
+          <p className="mt-0.5 text-xs leading-relaxed text-gray-500">
+            {state.filtered ? t("myArea.alerts.filterOn") : t("myArea.alerts.filterOff")}
+          </p>
+          {!state.hasMandate && (
+            <p className="mt-1.5 text-xs text-gray-500">
+              {t("myArea.alerts.filterNeedsMandate")}{" "}
+              <Link to={`/onboarding?next=${encodeURIComponent("/my-area?tab=alerts")}`} className="font-semibold text-[#0F172A] underline">{t("myArea.alerts.filterCompleteMandate")}</Link>
+            </p>
+          )}
+          {error && <p className="mt-1.5 text-xs text-rose-600">{error}</p>}
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={state.filtered}
+          aria-label={t("myArea.alerts.filterTitle")}
+          disabled={!state.hasMandate || saving}
+          onClick={toggle}
+          className={`relative mt-0.5 h-6 w-11 flex-none rounded-full transition-colors disabled:opacity-40 ${state.filtered ? "bg-[#0F172A]" : "bg-gray-200"}`}
+        >
+          <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${state.filtered ? "translate-x-5" : ""}`} />
+        </button>
+      </div>
     </div>
   );
 }

@@ -1,14 +1,15 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router";
 import {
-  ShieldCheck, Check, X, ExternalLink, Loader2, AlertCircle, Bell, Eye, Globe, FileText, CheckSquare, Square,
+  ShieldCheck, Check, X, ExternalLink, Loader2, AlertCircle, Bell, Eye, Globe, FileText, CheckSquare, Square, ArrowRight,
 } from "lucide-react";
 import { Layout } from "../components/Layout";
 import {
   fetchCompanyCandidates, approveCompanyCandidate, rejectCompanyCandidate,
 } from "../../lib/supabase";
 import {
-  SOURCE_LABEL, registryUrl, evidenceLines,
+  SOURCE_LABEL, registryUrl, evidenceLines, companyPath,
   type CompanyCandidate, type CandidateSource, type CandidateStatus,
 } from "../../lib/candidateReview";
 
@@ -349,6 +350,11 @@ function CandidateCard(props: {
                 className="flex items-center gap-1 font-medium text-blue-600 hover:underline">
                 <Globe className="h-3.5 w-3.5" />{t("adminReview.website")}
               </a>
+            )}
+            {props.status === "approved" && c.startup_id && (
+              <Link to={companyPath(c.startup_id)} className="flex items-center gap-1 font-medium text-blue-600 hover:underline">
+                <ArrowRight className="h-3.5 w-3.5" />{t("adminReview.openCompany")}
+              </Link>
             )}
             {pending && (
               <div className="ml-auto flex items-center gap-2">

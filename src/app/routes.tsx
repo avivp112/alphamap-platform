@@ -21,6 +21,7 @@ import { Profile } from "./pages/Profile";
 import { MyArea } from "./pages/MyArea";
 import { Onboarding } from "./pages/Onboarding";
 import { AdminReview } from "./pages/AdminReview";
+import { CandidatePreview } from "./pages/CandidatePreview";
 import { NotFound, RouteError } from "./pages/RouteFallback";
 import { requireAuth, requireOnboarding, requireAdmin } from "./routeGuards";
 
@@ -84,6 +85,7 @@ export const router = createBrowserRouter([
   { path: "/my-area",    Component: MyArea, loader: requireAuth },
   { path: "/watchlist",  Component: MyArea, loader: requireAuth },  // legacy alias — old bookmarks/links keep working
   { path: "/admin/review", Component: AdminReview, loader: requireAdmin },
+  { path: "/candidates/:id", Component: CandidatePreview, loader: requireAuth },
 
       // Must stay last. Anything unmatched lands here instead of throwing.
       { path: "*",       Component: NotFound },

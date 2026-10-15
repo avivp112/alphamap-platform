@@ -312,6 +312,7 @@
   },
   "startups": {
     "allCountries": "All Countries",
+    "deepLinkMissing": "This company's profile isn't available yet — it appears here after the next data refresh.",
     "noMatches": "No matches",
     "fundingTimeline": "Funding Timeline",
     "cumulativeRaised": "Cumulative raised",
@@ -514,7 +515,23 @@
     "rejectedFlash_other": "Rejected {{count}} — they will not be proposed again.",
     "empty": { "pending": "Nothing waiting for review", "approved": "No approved companies yet", "rejected": "No rejected companies yet" },
     "emptyPendingBlurb": "New candidates arrive after the nightly runs of SEC Form D, UK Companies House and EPO.",
-    "loadMore": "Load more"
+    "loadMore": "Load more",
+    "openCompany": "Open company"
+  },
+  "candidatePreview": {
+    "back": "Back to alerts",
+    "pendingNote": "New company found in a government filing. It passed AlphaMap's quality filter but hasn't been reviewed by our team yet, so there is no full profile — below is what the filing says.",
+    "approvedNote": "Reviewed and added to AlphaMap. Its full profile will open here once our data refresh picks it up.",
+    "fromFiling": "From the filing",
+    "noDetails": "The filing carries no further details.",
+    "officialRecord": "Official record",
+    "website": "Website",
+    "missingTitle": "Company not found",
+    "missingBody": "This alert no longer points to a company we can show.",
+    "rejectedTitle": "No longer tracked",
+    "rejectedBody": "After review, this company didn't meet AlphaMap's criteria and was removed.",
+    "errorTitle": "Couldn't load this company",
+    "errorBody": "Please try again in a moment."
   },
   "myArea": {
     "title": "My Area",
@@ -535,10 +552,15 @@
       "emptyBlurb": "Nothing new fits your mandate at the moment — check back as new companies are added."
     },
     "alerts": {
-      "blurb": "Updates on your watchlist and thesis matches.",
+      "blurb": "Updates on your watchlist, thesis matches and new companies.",
       "markAllRead": "Mark all read",
       "emptyTitle": "No alerts yet",
-      "emptyBlurb": "You'll see updates here as new signals come in for your watchlist and thesis matches."
+      "emptyBlurb": "You'll see updates here as new signals come in for your watchlist and thesis matches.",
+      "filterTitle": "Only new companies that match me",
+      "filterOff": "Off: you get an alert for every new company that passes AlphaMap's quality filter.",
+      "filterOn": "On: only new companies that fit your questionnaire (stages, sectors, geographies) and the sectors on your watchlist. New companies whose filing doesn't reveal enough to judge are skipped.",
+      "filterNeedsMandate": "Filtering uses your questionnaire answers.",
+      "filterCompleteMandate": "Complete the questionnaire"
     }
   },
   "pricing": {

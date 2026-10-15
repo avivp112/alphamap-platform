@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { registryUrl, formatUsd, formatPeople, evidenceLines } from "./candidateReview";
+import { registryUrl, formatUsd, formatPeople, evidenceLines, companyPath } from "./candidateReview";
 
 describe("registryUrl", () => {
   it("links each source to its official record", () => {
@@ -65,5 +65,11 @@ describe("evidenceLines", () => {
   });
   it("skips empty fields instead of showing blanks", () => {
     expect(evidenceLines({ source: "uk_companies_house", country: null, founded_year: null, evidence: {} })).toEqual([]);
+  });
+});
+
+describe("companyPath", () => {
+  it("opens the company's tearsheet on the Private Market page", () => {
+    expect(companyPath("63f3cf48-db5c-4a8f-9507-075af3c57813")).toBe("/startups?company=63f3cf48-db5c-4a8f-9507-075af3c57813");
   });
 });

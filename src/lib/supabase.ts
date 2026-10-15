@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { CompanyCandidate, CandidateSource, CandidateStatus } from "./candidateReview";
+import type { CompanyCandidate, CandidateSource, CandidateStatus, CandidatePreview } from "./candidateReview";
 
 const rawUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -966,6 +966,8 @@ export interface UserMandate {
   pain_point_focus: PainPointFocus | null;
   signal_triggers: SignalTrigger[];
   delivery_prefs: UserMandateDeliveryPrefs;
+  /** New-company alerts: false = every one, true = only those matching this mandate + watchlist. */
+  alerts_filtered?: boolean;
   updated_at: string;
 }
 
@@ -1366,5 +1368,41 @@ export async function approveCompanyCandidate(id: string, note?: string): Promis
 
 export async function rejectCompanyCandidate(id: string, note?: string): Promise<void> {
   const { error } = await supabase.rpc("reject_company_candidate", { p_candidate_id: id, p_note: note ?? null });
+  if (error) throw error;
+}
+
+// ─── New-company alerts (20261017000000) ─────────────────────────────────────
+
+/** The read-only preview a new-company alert links to. null = not found or not visible to this user. */
+export async function fetchCandidatePreview(id: string): Promise<CandidatePreview | null> {
+  const { data, error } = await supabase.rpc("get_candidate_preview", { p_candidate_id: id });
+  if (error) throw error;
+  return (data as CandidatePreview | null) ?? null;
+}
+
+/** The "only companies that match me" toggle. It filters by the onboarding
+ * questionnaire, so it exists only once the user has a mandate row — creating
+ * one here would also mark onboarding as done (requireOnboarding). */
+export async function fetchAlertsFilter(): Promise<{ hasMandate: boolean; filtered: boolean }> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const userId = sessionData.session?.user?.id;
+  if (!userId) return { hasMandate: false, filtered: false };
+  const { data, error } = await supabase
+    .from("user_mandates")
+    .select("alerts_filtered")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return { hasMandate: !!data, filtered: data?.alerts_filtered === true };
+}
+
+export async function setAlertsFiltered(on: boolean): Promise<void> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const userId = sessionData.session?.user?.id;
+  if (!userId) throw new Error("Not signed in");
+  const { error } = await supabase
+    .from("user_mandates")
+    .update({ alerts_filtered: on })
+    .eq("user_id", userId);
   if (error) throw error;
 }
