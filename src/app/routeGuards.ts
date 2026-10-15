@@ -35,3 +35,14 @@ export async function requireOnboarding() {
 
   return null;
 }
+
+// Admin-only pages (the company review queue). The database enforces the same
+// rule on every read and write (RLS + the review RPCs check is_app_admin()),
+// so this only keeps non-admins from landing on an empty page.
+export async function requireAdmin() {
+  const { data } = await supabase.auth.getSession();
+  if (!data.session?.user) throw redirect("/pricing");
+  const { data: isAdmin } = await supabase.rpc("is_app_admin");
+  if (isAdmin !== true) throw redirect("/dashboard");
+  return null;
+}

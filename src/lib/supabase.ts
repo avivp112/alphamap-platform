@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import type { CompanyCandidate, CandidateSource, CandidateStatus } from "./candidateReview";
 
 const rawUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -1309,4 +1310,61 @@ export async function fetchPassedStartupIds(): Promise<string[]> {
     .eq("action_type", "pass");
   if (error) throw error;
   return Array.from(new Set((data ?? []).map((r) => r.startup_id as string)));
+}
+
+// ─── Admin: company review queue (company_candidates, 20261016000000) ───────
+// Candidates are readable only by admins (RLS through is_app_admin()), and
+// approve/reject are RPCs that check the same thing server-side — the client
+// gate below only decides what to show.
+
+
+/** True when the signed-in user is in app_admins. False when signed out or on any error. */
+export async function isAppAdmin(): Promise<boolean> {
+  const { data, error } = await supabase.rpc("is_app_admin");
+  if (error) return false;
+  return data === true;
+}
+
+export async function fetchCompanyCandidates(opts: {
+  status: CandidateStatus;
+  source?: CandidateSource | "all";
+  limit?: number;
+  offset?: number;
+}): Promise<CompanyCandidate[]> {
+  const limit = opts.limit ?? 50;
+  const offset = opts.offset ?? 0;
+  let q = supabase
+    .from("company_candidates")
+    .select("*")
+    .eq("status", opts.status)
+    // Alert tier first (those reach users), then newest.
+    .order("gate_tier", { ascending: true })
+    .order(opts.status === "pending" ? "first_seen_at" : "reviewed_at", { ascending: false })
+    .range(offset, offset + limit - 1);
+  if (opts.source && opts.source !== "all") q = q.eq("source", opts.source);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []) as CompanyCandidate[];
+}
+
+/** Pending candidates — for the badge in the account menu. */
+export async function countPendingCandidates(): Promise<number> {
+  const { count, error } = await supabase
+    .from("company_candidates")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "pending");
+  if (error) throw error;
+  return count ?? 0;
+}
+
+/** Creates the company (or links an existing one) and returns its startups id. */
+export async function approveCompanyCandidate(id: string, note?: string): Promise<string> {
+  const { data, error } = await supabase.rpc("approve_company_candidate", { p_candidate_id: id, p_note: note ?? null });
+  if (error) throw error;
+  return data as string;
+}
+
+export async function rejectCompanyCandidate(id: string, note?: string): Promise<void> {
+  const { error } = await supabase.rpc("reject_company_candidate", { p_candidate_id: id, p_note: note ?? null });
+  if (error) throw error;
 }

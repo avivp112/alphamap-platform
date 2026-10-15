@@ -20,8 +20,9 @@ import { Checkout } from "./pages/Checkout";
 import { Profile } from "./pages/Profile";
 import { MyArea } from "./pages/MyArea";
 import { Onboarding } from "./pages/Onboarding";
+import { AdminReview } from "./pages/AdminReview";
 import { NotFound, RouteError } from "./pages/RouteFallback";
-import { requireAuth, requireOnboarding } from "./routeGuards";
+import { requireAuth, requireOnboarding, requireAdmin } from "./routeGuards";
 
 // Everything hangs off one pathless parent so a single ErrorBoundary covers
 // every route. Without it, any render error — or any URL that matches nothing —
@@ -82,6 +83,7 @@ export const router = createBrowserRouter([
   { path: "/profile",    Component: Profile, loader: requireAuth },
   { path: "/my-area",    Component: MyArea, loader: requireAuth },
   { path: "/watchlist",  Component: MyArea, loader: requireAuth },  // legacy alias — old bookmarks/links keep working
+  { path: "/admin/review", Component: AdminReview, loader: requireAdmin },
 
       // Must stay last. Anything unmatched lands here instead of throwing.
       { path: "*",       Component: NotFound },

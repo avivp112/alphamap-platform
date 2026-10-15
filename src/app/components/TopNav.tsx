@@ -4,12 +4,13 @@ import { useTranslation } from 'react-i18next';
 import {
   Bell, User, ChevronDown, UserCircle, LogOut, Menu, X,
   Rocket, CandlestickChart, Landmark, Vault, Handshake, Globe2, ClipboardCheck,
-  CheckCheck, Loader2,
+  CheckCheck, Loader2, ShieldCheck,
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import {
   supabase, fetchNotifications, fetchUnreadNotificationCount, markNotificationRead, markAllNotificationsRead,
+  isAppAdmin, countPendingCandidates,
   type Notification,
 } from '../../lib/supabase';
 import { homePathNow } from '../../lib/navHome';
@@ -294,6 +295,9 @@ export function TopNav() {
   const [notifLoading, setNotifLoading]   = useState(false);
   const [unreadCount, setUnreadCount]     = useState(0);
   const notifRef = useRef<HTMLDivElement>(null);
+  // Admins get a "Review queue" entry with the pending-candidate count.
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [pendingReview, setPendingReview] = useState(0);
 
   // Primary nav (Data / Market Map dropdowns + mobile menu) state.
   const [openMenu, setOpenMenu] = useState<MenuId | null>(null);
@@ -334,6 +338,19 @@ export function TopNav() {
 
     return () => { cancelled = true; subscription.subscription.unsubscribe(); };
   }, []);
+
+  // Admin check once per signed-in user; the pending count refreshes each
+  // time the account menu opens. Non-admins never see the entry.
+  useEffect(() => {
+    if (!user) { setIsAdmin(false); return; }
+    let cancelled = false;
+    isAppAdmin().then((v) => { if (!cancelled) setIsAdmin(v); });
+    return () => { cancelled = true; };
+  }, [user?.email]);
+  useEffect(() => {
+    if (!isAdmin || !menuOpen) return;
+    countPendingCandidates().then(setPendingReview).catch(() => {});
+  }, [isAdmin, menuOpen]);
 
   // Close the account dropdown on an outside click or Escape.
   useEffect(() => {
@@ -724,6 +741,22 @@ export function TopNav() {
                     <UserCircle className="h-4 w-4 text-gray-400" />
                     {t('header.profile')}
                   </Link>
+                  {isAdmin && (
+                    <Link
+                      to="/admin/review"
+                      onClick={() => setMenuOpen(false)}
+                      role="menuitem"
+                      className="flex items-center gap-2.5 px-3.5 py-2 text-sm text-[#111827] hover:bg-gray-50 transition-colors"
+                    >
+                      <ShieldCheck className="h-4 w-4 text-gray-400" />
+                      {t('header.reviewQueue')}
+                      {pendingReview > 0 && (
+                        <span className="ml-auto rounded-full bg-[#0F172A] px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                          {pendingReview > 99 ? '99+' : pendingReview}
+                        </span>
+                      )}
+                    </Link>
+                  )}
                   <button
                     onClick={handleSignOut}
                     disabled={signingOut}
