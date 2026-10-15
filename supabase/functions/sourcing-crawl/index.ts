@@ -51,6 +51,7 @@
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { withRunLog, countKeys } from "../_shared/run-log.ts";
+import { uniqueByJobId } from "./dedupe.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -243,7 +244,7 @@ export const PROVIDERS: Record<AtsProvider, {
 
 export function parseJobs(provider: AtsProvider, payload: unknown, token = ""): NormalisedJob[] {
   const cfg = PROVIDERS[provider];
-  return cfg ? cfg.parse(payload, token) : [];
+  return cfg ? uniqueByJobId(cfg.parse(payload, token)) : [];
 }
 
 /**
