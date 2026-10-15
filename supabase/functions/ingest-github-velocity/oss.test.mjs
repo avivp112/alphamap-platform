@@ -48,29 +48,30 @@ const NOW = Date.parse("2026-07-26T00:00:00Z");
 
 // ── GitHub ──────────────────────────────────────────────────────────────────
 
-console.log("── GitHub: search query ──");
-check("query combines age, stars and OR-ed topics",
-  GH.buildQuery({ topics: ["llm", "agents"], minStars: 25, maxAgeDays: 180, now: NOW }),
-  "created:>2026-01-27 stars:>=25 is:public archived:false (topic:llm OR topic:agents)");
-check("no topics -> no topic clause",
-  GH.buildQuery({ topics: [], minStars: 50, maxAgeDays: 30, now: NOW }),
+console.log("── GitHub: search query (one topic per query — repository search has no grouping) ──");
+check("query combines age, stars and ONE topic",
+  GH.buildQuery({ topic: "llm", minStars: 25, maxAgeDays: 180, now: NOW }),
+  "created:>2026-01-27 stars:>=25 is:public archived:false topic:llm");
+check("no topic -> no topic clause",
+  GH.buildQuery({ topic: null, minStars: 50, maxAgeDays: 30, now: NOW }),
   "created:>2026-06-26 stars:>=50 is:public archived:false");
+// The 2026-10-15 bug: "(topic:a OR topic:b)" is read as literal text and
+// matches nothing. No query may group, OR, or carry two topic qualifiers.
+for (const t of GH.DEFAULT_TOPICS) {
+  const q = GH.buildQuery({ topic: t, minStars: 25, maxAgeDays: 180, now: NOW });
+  check(`query for ${t}: no parentheses, no OR, one topic`,
+    [/[()]/.test(q), / OR /.test(q), (q.match(/topic:/g) ?? []).length], [false, false, 1]);
+  check(`query for ${t} is <=256 chars`, q.length <= 256, true);
+}
 check("since date", GH.sinceDate(90, NOW), "2026-04-27");
 check("search url pages",
   new URL(GH.searchUrl("x", 2)).searchParams.get("page"), "2");
 
-console.log("\n── GitHub: topic chunking (422 fix — GitHub caps search at 5 boolean operators / 256 chars) ──");
-check("chunks of size 5", GH.chunk([1, 2, 3, 4, 5, 6, 7], 5), [[1, 2, 3, 4, 5], [6, 7]]);
-check("empty array -> no chunks", GH.chunk([], 5), []);
-check("exact multiple -> no trailing empty chunk", GH.chunk([1, 2, 3, 4], 2), [[1, 2], [3, 4]]);
-for (const c of GH.chunk(GH.DEFAULT_TOPICS, 5)) {
-  const q = GH.buildQuery({ topics: c, minStars: 25, maxAgeDays: 180, now: NOW });
-  const orCount = (q.match(/ OR /g) ?? []).length;
-  check(`chunk [${c.join(",")}] has <=5 OR operators`, orCount <= 5, true);
-  check(`chunk [${c.join(",")}] query is <=256 chars`, q.length <= 256, true);
-}
-check("13 default topics need 3 chunks of <=5",
-  GH.chunk(GH.DEFAULT_TOPICS, 5).map((c) => c.length), [5, 5, 3]);
+console.log("\n── GitHub: limit is shared across topics ──");
+check("100 repos over 13 topics -> 8 each (first topic cannot fill the run)", GH.perTopicQuota(100, 13), 8);
+check("one topic gets the whole limit", GH.perTopicQuota(100, 1), 100);
+check("never zero", GH.perTopicQuota(5, 13), 1);
+check("no topics -> whole limit", GH.perTopicQuota(100, 0), 100);
 
 console.log("\n── GitHub: repo mapping ──");
 const repo = {
