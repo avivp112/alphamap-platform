@@ -53,6 +53,7 @@
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { withRunLog, countKeys } from "../_shared/run-log.ts";
+import { gatePatentApplicant, type GateTier } from "../_shared/company-gate.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -580,7 +581,7 @@ Deno.serve(withRunLog("epo_ops", countKeys("ingested", "inventorHeld"), async (r
 
     const results: Array<Record<string, unknown>> = [];
     let ingested = 0;
-    let created = 0;
+    const tiers: Record<GateTier, number> = { reject: 0, queue: 0, alert: 0 };
     let inventorHeld = 0;
 
     for (const p of inScope) {
@@ -625,6 +626,12 @@ Deno.serve(withRunLog("epo_ops", countKeys("ingested", "inventorHeld"), async (r
         continue;
       }
 
+      // Quality gate: denylisted applicants were dropped above; this catches
+      // individuals, institutions and incumbents' IP subsidiaries. A patent
+      // applicant is never an "alert" — the admin review queue decides.
+      const gate = gatePatentApplicant({ name: p.applicant, excluded: denied.has(p.applicant) });
+      tiers[gate.tier]++;
+
       const { data, error } = await supabase.rpc("ingest_gov_entity_filing", {
         p_source: "epo_ops",
         p_accession: p.publicationNumber,
@@ -638,11 +645,11 @@ Deno.serve(withRunLog("epo_ops", countKeys("ingested", "inventorHeld"), async (r
         p_officers: inventorsAsOfficers(p),
         p_tech_summary: techSummary(p),
         p_raw: p,
+        p_gate: gate,
       });
       if (error) { results.push({ publication: p.publicationNumber, ok: false, reason: error.message }); continue; }
       ingested++;
-      if ((data as { created_startup?: boolean })?.created_startup) created++;
-      results.push({ publication: p.publicationNumber, ok: true, applicant: p.applicant, ...(data as Record<string, unknown>) });
+      results.push({ publication: p.publicationNumber, ok: true, applicant: p.applicant, gate, ...(data as Record<string, unknown>) });
     }
 
     return json({
@@ -650,7 +657,7 @@ Deno.serve(withRunLog("epo_ops", countKeys("ingested", "inventorHeld"), async (r
       // The private-market boundary, reported rather than silent: a run that
       // drops 90% of what it fetched should say so on the face of the result.
       cap, excluded,
-      ingested, createdStartups: created,
+      ingested, gate: tiers,
       inventorHeld,
       results,
     });

@@ -57,6 +57,7 @@
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { withRunLog, countKeys } from "../_shared/run-log.ts";
+import { gateFormD, type GateTier } from "../_shared/company-gate.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -429,7 +430,7 @@ Deno.serve(withRunLog("sec_form_d", countKeys("ingested", "fundsRecorded"), asyn
     const results: Array<Record<string, unknown>> = [];
     const rejected: Record<string, number> = {};
     let ingested = 0;
-    let createdStartups = 0;
+    const tiers: Record<GateTier, number> = { reject: 0, queue: 0, alert: 0 };
     let fundsSeen = 0;
     let fundsRecorded = 0;
     const fundErrors: string[] = [];
@@ -488,12 +489,17 @@ Deno.serve(withRunLog("sec_form_d", countKeys("ingested", "fundsRecorded"), asyn
         continue;
       }
       const f = parsed as FormD;
+      // Quality gate: classifyFiling already dropped funds and non-tech
+      // industries; this also catches investment vehicles named as companies
+      // (SPVs, series LLCs, co-invest and equities vehicles).
+      const gate = gateFormD({ name: f.entityName ?? "", industryGroup: f.industryGroup, isFund: f.isFund });
+      tiers[gate.tier]++;
 
       if (dryRun) {
         ingested++;
         results.push({
           entity: f.entityName, accession: row.accession, industryGroup: f.industryGroup,
-          yearOfInc: f.yearOfInc, officers: f.officers.length, summary: techSummary(f), wouldIngest: true,
+          yearOfInc: f.yearOfInc, officers: f.officers.length, summary: techSummary(f), gate,
         });
         continue;
       }
@@ -515,6 +521,7 @@ Deno.serve(withRunLog("sec_form_d", countKeys("ingested", "fundsRecorded"), asyn
         p_total_offering: f.totalOffering,
         p_total_sold: f.totalSold,
         p_raw: f,
+        p_gate: gate,
       });
 
       if (error) {
@@ -523,10 +530,9 @@ Deno.serve(withRunLog("sec_form_d", countKeys("ingested", "fundsRecorded"), asyn
       }
 
       ingested++;
-      if ((data as { created_startup?: boolean })?.created_startup) createdStartups++;
       results.push({
         entity: f.entityName, accession: row.accession, ok: true,
-        industryGroup: f.industryGroup, ...(data as Record<string, unknown>),
+        industryGroup: f.industryGroup, gate, ...(data as Record<string, unknown>),
       });
     }
 
@@ -536,7 +542,7 @@ Deno.serve(withRunLog("sec_form_d", countKeys("ingested", "fundsRecorded"), asyn
       formDInIndex: parseDailyIndex(idx.body).length,
       examined: rows.length,
       ingested,
-      createdStartups,
+      gate: tiers,
       // Funds are not companies, but they are not noise either.
       fundsSeen,
       fundsRecorded,
