@@ -33,6 +33,10 @@
 // Deploy:  supabase functions deploy pipeline-health --no-verify-jwt
 // Invoke:  POST {}                 -> run the checks, notify on failures
 //          POST { "notify": false } -> run and store, notify nobody
+//          POST { "testEmail": true } -> run and store, no bell notification,
+//                                       and ALWAYS email the results — proves
+//                                       the email path works before a real
+//                                       failure depends on it
 // Only callers holding a service-role key are served — it sends email
 // (_shared/service-auth.ts).
 // =============================================================================
@@ -81,8 +85,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ error: "service role only" }, 401);
   }
 
-  let notify = true;
-  try { notify = (await req.json())?.notify !== false; } catch { /* no body */ }
+  let notify = true, testEmail = false;
+  try {
+    const b = await req.json();
+    notify = b?.notify !== false;
+    testEmail = b?.testEmail === true;
+  } catch { /* no body */ }
+  if (testEmail) notify = false;   // the test goes to the inbox, not the bell
 
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
   const { data: snap, error: snapErr } = await supabase.rpc("pipeline_health_snapshot");
@@ -97,7 +106,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   let emailed = 0, emailError: string | null = null;
   const resendKey = Deno.env.get("RESEND_API_KEY");
-  if (notify && failed.length > 0 && recorded.recipients.length > 0) {
+  if ((testEmail || (notify && failed.length > 0)) && recorded.recipients.length > 0) {
     if (!resendKey) {
       emailError = "RESEND_API_KEY is not set — in-app notification only";
     } else {
@@ -107,9 +116,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
         body: JSON.stringify({
           from: Deno.env.get("HEALTH_FROM_EMAIL") || DEFAULT_FROM_EMAIL,
           to: recorded.recipients,
-          subject: `[AlphaMap] Pipeline health: ${failed.length} problem(s)`,
-          html: `<p>The daily pipeline check found ${failed.length} problem(s):</p><ul>${
-            failed.map((c) => `<li><strong>${escapeHtml(c.check)}</strong> — ${escapeHtml(c.detail)}</li>`).join("")
+          subject: testEmail
+            ? `[AlphaMap] Pipeline health — test email (${failed.length} problem(s))`
+            : `[AlphaMap] Pipeline health: ${failed.length} problem(s)`,
+          html: `${testEmail ? "<p><strong>Test email</strong> — sent on request to confirm alerts reach this inbox.</p>" : ""}<p>The pipeline check found ${failed.length} problem(s)${testEmail ? " — every check is listed" : ""}:</p><ul>${
+            (testEmail ? checks : failed).map((c) => `<li>${c.ok ? "✅" : "❌"} <strong>${escapeHtml(c.check)}</strong> — ${escapeHtml(c.detail)}</li>`).join("")
           }</ul><p>All results: <code>SELECT * FROM pipeline_health_checks ORDER BY checked_at DESC LIMIT 30;</code> — per-source runs: <code>SELECT * FROM source_health;</code></p>`,
         }),
       });
