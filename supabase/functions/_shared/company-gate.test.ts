@@ -47,6 +47,25 @@ describe("UK Companies House", () => {
     expect(gateUkCompany(uk("PROJECT50CHALLENGE LTD", "47910 62012", 2)).reasons).toEqual(["blocked_sic:47910 online retail"]);
   });
 
+  // Found by the full dry run (2026-10-15): companies that had added 62012 to a non-tech business.
+  it("rejects whole non-tech sectors even alongside a software code", () => {
+    const sector = (name: string, sic: string) => gateUkCompany(uk(name, sic, 2)).reasons;
+    expect(sector("VISTARA GLOBAL LTD", "46210 46310 46900 62012")).toContain("blocked_sic:46210 wholesale / retail trade");
+    expect(sector("SHROOM ME UP LTD", "10840 72110")).toEqual(["blocked_sic:10840 food & drink manufacturing"]);
+    expect(sector("SHAKIL UK LIMITED", "62012 73110 79120 85600")).toEqual(expect.arrayContaining([
+      "blocked_sic:73110 advertising", "blocked_sic:79120 travel", "blocked_sic:85600 tutoring / training"]));
+    expect(sector("TWO PLUS THREE LIMITED", "58110 59112 62012 74100")).toEqual(["blocked_sic:58110 print publishing"]);
+    expect(sector("AMAVOLA LTD", "59112 62012 63120 73110")).toEqual(["blocked_sic:73110 advertising"]);
+    // 58290 is software publishing — not print, stays allowed
+    expect(gateUkCompany(uk("NUOVA AI LTD", "58290 62012", 2)).tier).toBe("alert");
+  });
+
+  it("rejects group / ventures / family names (holding structures at incorporation)", () => {
+    expect(gateUkCompany(uk("INTHEKNOW GROUP LIMITED", "63120", 2)).reasons).toEqual(["name:group"]);
+    expect(gateUkCompany(uk("TWIN PALM VENTURES LTD", "62011 62012", 2)).reasons).toEqual(["name:ventures"]);
+    expect(gateUkCompany(uk("HENDERSON AJ & FAMILY LTD", "62012", 2)).reasons).toEqual(["name:family"]);
+  });
+
   it("rejects shell and consultancy names", () => {
     expect(gateUkCompany(uk("JAMES-FROWN HOLDINGS LTD", "62012", 2)).reasons).toEqual(["name:holdings"]);
     expect(gateUkCompany(uk("UNOVIC STRATEGIC PARTNERS LIMITED", "62012", 2)).reasons).toEqual(["name:strategic"]);
@@ -101,6 +120,10 @@ describe("SEC Form D", () => {
     ]) expect(gateFormD({ name, industryGroup: "Other Technology" }).tier, name).toBe("reject");
   });
 
+  it("rejects an equities vehicle (Crafton Equities Inc., full dry run)", () => {
+    expect(gateFormD({ name: "Crafton Equities Inc.", industryGroup: "Other Technology" }).reasons).toEqual(["vehicle_name:equities"]);
+  });
+
   it("rejects funds and out-of-scope industries", () => {
     expect(gateFormD({ name: "Acme Inc.", industryGroup: "Pooled Investment Fund", isFund: true }).reasons)
       .toEqual(["investment_fund", "industry:Pooled Investment Fund"]);
@@ -126,6 +149,27 @@ describe("EPO patent applicants", () => {
     expect(gatePatentApplicant({ name: "University of Cambridge", excluded: false }).reasons).toEqual(["institution"]);
     expect(gatePatentApplicant({ name: "Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V.", excluded: false }).reasons)
       .toEqual(["institution"]);
+  });
+
+  it("rejects incumbents' IP and operating subsidiaries, governments and partnerships (full dry run)", () => {
+    for (const name of [
+      "Microsoft Technology Licensing, LLC", "Ford Global Technologies, LLC", "GM Global Technology Operations LLC",
+      "Intrinsic Innovation LLC", "Cerner Innovation, Inc.", "Avago Technologies International Sales Pte. Limited",
+      "Camelot UK Bidco Limited", "OpenAI OpCo, LLC", "Core Scientific Operating Company", "Walmart Apollo, LLC",
+      "Tuhui Shengchuang Enterprise Management (Suzhou) Partnership (Limited Partnership)",
+    ]) expect(gatePatentApplicant({ name, excluded: false }).reasons, name).toContain("corporate_ip_vehicle");
+    expect(gatePatentApplicant({ name: "Government of the United States, as represented by the Secretary of the Air Force", excluded: false }).reasons)
+      .toEqual(["institution"]);
+    // a startup whose name merely contains "Innovation" is not caught
+    expect(gatePatentApplicant({ name: "Hunt Innovative Technologies, L.L.C.", excluded: false }).tier).toBe("queue");
+  });
+
+  it("knows company forms it missed in the full dry run", () => {
+    expect(gatePatentApplicant({ name: "ExtensityAI FlexCo", excluded: false }).tier).toBe("queue");  // Austrian FlexCo
+    expect(looksLikePerson("Toshiba Tec Kabushiki Kaisha")).toBe(false);
+    expect(looksLikePerson("IDEMIA PUBLIC SECURITY FRANCE")).toBe(false);   // all-caps, 4 words: an organisation
+    expect(looksLikePerson("HOSSEINZADEH TAHER Mohammad Reza")).toBe(true);
+    expect(looksLikePerson("GHOSH Ashish")).toBe(true);
   });
 
   it("tells people from organisations", () => {
