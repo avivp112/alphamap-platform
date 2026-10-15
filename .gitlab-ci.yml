@@ -235,7 +235,7 @@ migrate-database:
         echo "ERROR: $PENDING migrations would run against the live database."
         echo "That is a missing or stale migration history, not a release."
         echo "Run supabase/scripts/verify_migration_history.sql in the SQL Editor,"
-        echo "baseline the verified versions, then re-run this pipeline."
+        echo "then supabase/scripts/baseline_migration_history.sql, then re-run."
         exit 1
       fi
 
