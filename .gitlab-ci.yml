@@ -241,8 +241,13 @@ migrate-database:
 
     # Print the plan before acting on it, so the log shows the intent even if
     # the apply then fails.
-    - supabase db push --db-url "$SUPABASE_DB_URL" --dry-run
-    - supabase db push --db-url "$SUPABASE_DB_URL" --yes
+    # --include-all: migrations here were applied by hand out of order, so a
+    # pending file can be older than the newest recorded one (2026-10-15:
+    # 20260930000000 behind 20261013010000), which db push otherwise refuses.
+    # Safe only because the pending-count guard above has already capped
+    # what can run.
+    - supabase db push --db-url "$SUPABASE_DB_URL" --include-all --dry-run
+    - supabase db push --db-url "$SUPABASE_DB_URL" --include-all --yes
 
     # `db push` exits 0 on an empty migration set, which is indistinguishable
     # from a real apply — so assert the end state instead of trusting the code.
