@@ -650,6 +650,8 @@
     "saveTwenty": "· save 20%"
   },
   "checkout": {
+    "requestReceived": "Request for {{plan}} received",
+    "requestReceivedBlurb": "Online payment isn't live yet, so nothing was charged. We'll activate your plan and let you know by email.",
     "backToPricing": "Back to pricing",
     "upgradingTo": "Upgrading to",
     "unknownPlan": "Unknown plan",

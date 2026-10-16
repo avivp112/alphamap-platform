@@ -891,26 +891,6 @@ export async function fetchInvestorTierMap(): Promise<Map<string, number>> {
   return map;
 }
 
-export async function ingestStartup(companyName: string): Promise<{ startup: Startup; funding_round: FundingRound | null }> {
-  const res = await fetch(
-    `${supabaseUrl}/functions/v1/ingest-startup`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${supabaseAnonKey}`,
-      },
-      body: JSON.stringify({ company_name: companyName }),
-    },
-  );
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error ?? `Request failed (${res.status})`);
-  return {
-    startup: { ...json.startup, funding_rounds: json.funding_round ? [json.funding_round] : [] },
-    funding_round: json.funding_round ?? null,
-  };
-}
-
 export type ContactTopic = "general" | "partnership" | "press" | "support" | "enterprise";
 
 export interface ContactMessageInput {

@@ -5,7 +5,7 @@ import {
   CreditCard, Lock, CheckCircle2, ArrowRight, Loader2, ShieldCheck, Sparkles, Building2,
 } from "lucide-react";
 import { Layout } from "../components/Layout";
-import { useUserPlan, setPlanPlaceholder, type Plan } from "../../lib/plan";
+import { useUserPlan, requestPlanUpgrade } from "../../lib/plan";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Checkout — placeholder billing-details screen for the Pro / Enterprise
@@ -77,7 +77,8 @@ export function Checkout() {
     }
     setSubmitting(true);
     try {
-      await setPlanPlaceholder(plan as Plan);
+      // Payments are not live: record the request; an admin activates the plan.
+      await requestPlanUpgrade(plan!, annual);
       setDone(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("checkout.somethingWrong"));
@@ -93,8 +94,8 @@ export function Checkout() {
           <div className="w-14 h-14 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center mb-5">
             <CheckCircle2 className="w-7 h-7 text-emerald-600" />
           </div>
-          <h1 className="text-xl font-bold text-[#0F172A]">You're on {info.name} now</h1>
-          <p className="mt-2 text-sm text-gray-500">{t("checkout.unlockedBlurb")}</p>
+          <h1 className="text-xl font-bold text-[#0F172A]">{t("checkout.requestReceived", { plan: info.name })}</h1>
+          <p className="mt-2 text-sm text-gray-500">{t("checkout.requestReceivedBlurb")}</p>
           <button
             onClick={() => navigate("/dashboard")}
             className="mt-7 flex items-center gap-1.5 rounded-[8px] bg-[#0F172A] px-5 py-3 text-sm font-bold text-white hover:bg-gray-900 transition-colors"
