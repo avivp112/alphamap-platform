@@ -124,6 +124,32 @@ describe("SEC Form D", () => {
     expect(gateFormD({ name: "Crafton Equities Inc.", industryGroup: "Other Technology" }).reasons).toEqual(["vehicle_name:equities"]);
   });
 
+  it("energy, health and hardware tech count when the name says so — review queue, no alert", () => {
+    for (const [name, industryGroup] of [
+      ["Helio Solar Storage Inc.", "Other Energy"], ["Kestrel Batteries, Inc.", "Energy Conservation"],
+      ["Embold Therapeutics, Inc.", "Pharmaceuticals"], ["NeuroPace AI Inc.", "Other Health Care"],
+      ["Acme Robotics Inc.", "Manufacturing"], ["Lumen AI, Inc.", "Business Services"], ["Qubit Quantum Inc.", "Other"],
+    ]) expect(gateFormD({ name, industryGroup }).tier, name).toBe("queue");
+  });
+
+  it("the same industries without a tech name stay out", () => {
+    for (const [name, industryGroup] of [
+      ["Sunrise Home Health LLC", "Other Health Care"], ["Acme Technologies Inc.", "Business Services"],
+      ["Prairie Wind Energy LLC", "Other Energy"], ["Acme Data Systems Inc.", "Other"], ["Smith Manufacturing Co.", "Manufacturing"],
+    ]) expect(gateFormD({ name, industryGroup }).tier, name).toBe("reject");
+  });
+
+  it("banks, insurers, real estate and oil & gas never pass, whatever the name", () => {
+    for (const industryGroup of ["Commercial Banking", "Insurance", "Residential", "REITS and Finance", "Oil and Gas", "Restaurants"]) {
+      expect(gateFormD({ name: "Acme AI Inc.", industryGroup }).tier, industryGroup).toBe("reject");
+    }
+  });
+
+  it("a tech company over five years old is a deal, not a new company: queue, no alert", () => {
+    expect(gateFormD({ name: "Datifact Inc.", industryGroup: "Other Technology", isNew: false }).tier).toBe("queue");
+    expect(gateFormD({ name: "Datifact Inc.", industryGroup: "Other Technology", isNew: true }).tier).toBe("alert");
+  });
+
   it("rejects funds and out-of-scope industries", () => {
     expect(gateFormD({ name: "Acme Inc.", industryGroup: "Pooled Investment Fund", isFund: true }).reasons)
       .toEqual(["investment_fund", "industry:Pooled Investment Fund"]);

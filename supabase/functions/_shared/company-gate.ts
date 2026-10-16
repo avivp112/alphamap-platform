@@ -138,20 +138,60 @@ const SEC_TECH_GROUPS = new Set(["technology", "computers", "telecommunications"
 const SEC_VEHICLE_NAME =
   /\b(fund|funds|spv|a series of|series\s+[a-z0-9][\w-]*|l\.?p\.?|co-?invest\w*|opportunit(?:y|ies)|investors?|capital partners|holdings?|equit(?:y|ies))\b/i;
 
+/**
+ * Industry groups that hold technology companies among many that are not:
+ * drug developers and medtech (Pharmaceuticals, Other Health Care), energy
+ * tech (Energy Conservation, Environmental Services, Other Energy), hardware
+ * and robotics (Manufacturing), and the startups that tick Business Services
+ * or Other. In scope only when the NAME says deep tech (SEC_DEEP_TECH_NAME) —
+ * the industry alone would let in clinics, installers and consultancies.
+ * Banking, insurance, real estate, oil & gas, utilities, retail, restaurants,
+ * travel and agriculture are never in scope.
+ */
+const SEC_ADJACENT_GROUPS = new Set([
+  "pharmaceuticals", "other health care",
+  "energy conservation", "environmental services", "other energy",
+  "manufacturing", "business services", "other",
+]);
+
+/**
+ * Whole words that make a name a technology company. Specific on purpose:
+ * generic ones ("technologies", "systems", "data", "solutions", "health")
+ * are what IT contractors and clinics call themselves too.
+ */
+const SEC_DEEP_TECH_NAME =
+  /\b(ai|robotics?|robots?|autonomous|quantum|semiconductors?|photonics?|lidar|drones?|satellites?|aerospace|biotech\w*|bio|biosciences?|biologics|therapeutics|genomics?|diagnostics|medtech|neuro\w*|solar|batter(?:y|ies)|hydrogen|fusion|cleantech|climatetech|software|saas|cyber\w*|fintech|blockchain)\b/i;
+
+/** "core" = a technology industry group; "adjacent" = see SEC_ADJACENT_GROUPS; null = out of scope. */
+export function secIndustryScope(industryGroup: string | null, name: string): "core" | "adjacent" | null {
+  const g = (industryGroup ?? "").toLowerCase();
+  if (SEC_TECH_GROUPS.has(g)) return "core";
+  if (SEC_ADJACENT_GROUPS.has(g) && SEC_DEEP_TECH_NAME.test(name ?? "")) return "adjacent";
+  return null;
+}
+
 export interface FormDInput {
   name: string;
   industryGroup: string | null;
   /** True when the filing carries the investment-fund sub-block. */
   isFund?: boolean;
+  /**
+   * Incorporated within five years, or not yet formed (Form D's own flags).
+   * Default true. An older company is a real deal but not news as a NEW
+   * company, so it goes to the review queue without a user alert.
+   */
+  isNew?: boolean;
 }
 
 export function gateFormD(f: FormDInput): GateResult {
   const reasons: string[] = [];
   if (f.isFund) reasons.push("investment_fund");
-  if (!SEC_TECH_GROUPS.has((f.industryGroup ?? "").toLowerCase())) reasons.push(`industry:${f.industryGroup ?? "none"}`);
+  const scope = secIndustryScope(f.industryGroup, f.name);
+  if (!scope) reasons.push(`industry:${f.industryGroup ?? "none"}`);
   const hit = SEC_VEHICLE_NAME.exec(f.name ?? "");
   if (hit) reasons.push(`vehicle_name:${hit[1].toLowerCase()}`);
-  return verdict(reasons, "alert");
+  // Adjacent industries rest on a name match — an admin confirms before users hear of it.
+  return verdict(reasons, scope === "core" && f.isNew !== false ? "alert" : "queue");
 }
 
 // ── Patent applicants (EPO) ─────────────────────────────────────────────────

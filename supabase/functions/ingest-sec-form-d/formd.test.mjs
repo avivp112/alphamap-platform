@@ -198,7 +198,8 @@ const verdict = (xml) => M.classifyFiling(M.parseFormD(xml));
 check("tech operating company is eligible", verdict(operatingCo), { eligible: true });
 check("declared venture fund rejected", verdict(ventureFund), { eligible: false, reason: "fund" });
 check("fund hiding under a tech industry group rejected", verdict(sneakyFund), { eligible: false, reason: "fund" });
-check("company over five years old rejected", verdict(oldCompany), { eligible: false, reason: "too_old" });
+check("company over five years old is kept (a deal, not a new company)", verdict(oldCompany), { eligible: true });
+check("…and flagged as not new, so the gate queues it without an alert", M.isNewCompany(M.parseFormD(oldCompany)), false);
 check("entity not yet formed is eligible — earlier than early", verdict(notYetFormed), { eligible: true });
 check("restaurant rejected as non-tech", verdict(restaurant), { eligible: false, reason: "not_tech" });
 check("unparseable rejected", M.classifyFiling(null), { eligible: false, reason: "no_name" });
@@ -254,6 +255,30 @@ check("summary is composed from real fields, nothing invented",
 check("not-yet-formed says so instead of a year",
   M.techSummary(M.parseFormD(notYetFormed)),
   "SEC industry: Other Technology; entity not yet formed at filing");
+
+// ── Which days the worker processes ─────────────────────────────────────────
+// The 2026-10-16 bug: the job ran at 00:10 UTC for "yesterday", before EDGAR
+// had built that index, logged "empty" and never came back for the day.
+
+console.log("\n── day planning (catch-up) ──");
+const friday = new Date("2026-10-16T09:00:00Z");
+check("last 7 days, business days only, newest first",
+  M.recentBusinessDays(friday, 7), ["2026-10-15", "2026-10-14", "2026-10-13", "2026-10-12", "2026-10-09"]);
+check("Monday morning looks back over the weekend to Friday",
+  M.recentBusinessDays(new Date("2026-10-19T09:00:00Z"), 3), ["2026-10-16"]);
+check("open days: recent not done + backfill still pending, newest first",
+  M.planDays(["2026-10-15", "2026-10-14", "2026-10-13"], [
+    { index_date: "2026-10-14", status: "complete" },
+    { index_date: "2026-10-13", status: "no_index" },
+    { index_date: "2026-07-21", status: "pending" },
+    { index_date: "2026-08-03", status: "in_progress" },
+    { index_date: "2026-07-22", status: "complete" },
+  ]),
+  ["2026-10-15", "2026-08-03", "2026-07-21"]);
+check("a day not published yet is waited for, not written off",
+  M.missingIndexStatus("2026-10-15", friday), "waiting");
+check("an index still missing after 3 days was a holiday",
+  M.missingIndexStatus("2026-10-12", friday), "no_index");
 
 rmSync(dir, { recursive: true, force: true });
 console.log(failed === 0 ? "\nALL PASS" : `\n${failed} FAILURE(S)`);
