@@ -15,6 +15,8 @@ describe("vercel_release_app", () => {
     expect(skipReason(prod)).toBeNull();
     expect(skipReason({ ...prod, VERCEL_ENV: "preview" })).toMatch(/not a production deploy/);
     expect(skipReason({ ...prod, VERCEL_GIT_COMMIT_MESSAGE: "Landing hero tweak [skip-app]" })).toMatch(/skip-app/);
+    // A body that only mentions the marker is not a request to skip.
+    expect(skipReason({ ...prod, VERCEL_GIT_COMMIT_MESSAGE: "Ship deploys to the app\n\nSkipped for [skip-app] commits." })).toBeNull();
     expect(skipReason({ ...prod, SUPABASE_SERVICE_ROLE_KEY: undefined })).toMatch(/SUPABASE_SERVICE_ROLE_KEY/);
   });
 

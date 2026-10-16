@@ -8,7 +8,7 @@
  * Skips (and never fails the website deploy — vercel.json runs it as
  * `... || true`, and this script itself always exits 0):
  *   - preview deployments (VERCEL_ENV !== "production");
- *   - a commit whose message contains [skip-app] (a website-only change);
+ *   - a commit whose SUBJECT LINE contains [skip-app] (a website-only change);
  *   - when SUPABASE_SERVICE_ROLE_KEY is not set in Vercel's environment.
  *
  * Version: web-<YYYYMMDD>-<commit sha 7>. Keeps the 5 newest releases.
@@ -30,7 +30,9 @@ export function releaseVersion(sha: string, now: Date): string {
 
 export function skipReason(env: Record<string, string | undefined>): string | null {
   if (env.VERCEL_ENV !== "production") return `not a production deploy (VERCEL_ENV=${env.VERCEL_ENV ?? "unset"})`;
-  if ((env.VERCEL_GIT_COMMIT_MESSAGE ?? "").includes("[skip-app]")) return "commit marked [skip-app]";
+  // The subject line only: a commit body that merely mentions the marker
+  // (as the commit introducing it did, 2026-10-16) must not skip the release.
+  if ((env.VERCEL_GIT_COMMIT_MESSAGE ?? "").split("\n")[0].includes("[skip-app]")) return "commit marked [skip-app]";
   if (!env.SUPABASE_SERVICE_ROLE_KEY) return "SUPABASE_SERVICE_ROLE_KEY is not set in Vercel (Settings → Environment Variables → Production)";
   if (!(env.SUPABASE_URL || env.VITE_SUPABASE_URL)) return "no SUPABASE_URL / VITE_SUPABASE_URL";
   return null;
