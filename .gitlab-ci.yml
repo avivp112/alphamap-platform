@@ -478,6 +478,7 @@ deploy-public-market-functions:
     - deploy_fn backfill-embeddings
     - deploy_fn pipeline-health
     - deploy_fn admin-review-digest
+    - deploy_fn app-update-check
 
 # ── Embedding backfill ────────────────────────────────────────────────────────
 # SUPERSEDED as the production automation path by supabase/functions/
