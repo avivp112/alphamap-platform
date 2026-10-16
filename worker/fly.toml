@@ -1,0 +1,16 @@
+# AlphaMap check worker on Fly.io. Deploy from the repository root:
+#   fly apps create alphamap-check-worker                     (first time)
+#   fly secrets set --config worker/fly.toml SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... ANTHROPIC_API_KEY=... SERP_KEY=...
+#   fly deploy --config worker/fly.toml --dockerfile worker/Dockerfile
+app = "alphamap-check-worker"
+primary_region = "iad"
+
+[env]
+  POLL_MS = "5000"
+  LEASE_SECONDS = "120"
+  MAX_RUN_MS = "900000"
+
+# A background worker: no HTTP service, one always-on machine.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

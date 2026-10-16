@@ -1,4 +1,5 @@
 import type { CapacitorConfig } from '@capacitor/cli';
+import { config as loadEnv } from 'dotenv';
 
 // AlphaMap mobile companion app — wraps the same Vite build the web app
 // ships (webDir: 'dist') behind a thin native shell for iOS/Android.
@@ -12,8 +13,17 @@ import type { CapacitorConfig } from '@capacitor/cli';
 // hardcoded value, since this file is evaluated by the Capacitor CLI (not
 // bundled by Vite, so import.meta.env isn't available here). It needs to be
 // set in whatever environment runs `npx cap sync` (locally or in CI).
+//
+// The Capacitor CLI does not read .env files the way Vite does, so a local
+// `npx cap sync` used to see no VITE_SUPABASE_URL and ship an app with
+// live updates switched OFF — every later web release then never reached it.
+// Load the same files Vite reads (shell variables still win).
+for (const file of ['.env.production.local', '.env.local', '.env.production', '.env']) loadEnv({ path: file, quiet: true });
 const supabaseUrl = (process.env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '');
 const updateUrl = supabaseUrl ? `${supabaseUrl}/functions/v1/app-update-check` : undefined;
+if (!updateUrl) {
+  console.warn('[capacitor.config] VITE_SUPABASE_URL is not set — this build will NOT receive live updates.');
+}
 
 const config: CapacitorConfig = {
   appId: 'com.alphamap.app',

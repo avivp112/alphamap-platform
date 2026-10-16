@@ -48,6 +48,7 @@
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { withRunLog, countKeys } from "../_shared/run-log.ts";
+import { gateUkCompany, type GateTier } from "../_shared/company-gate.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -283,20 +284,29 @@ Deno.serve(withRunLog("uk_companies_house", countKeys("ingested"), async (req: R
 
     const results: Array<Record<string, unknown>> = [];
     let ingested = 0;
-    let created = 0;
+    const tiers: Record<GateTier, number> = { reject: 0, queue: 0, alert: 0 };
 
     for (const c of candidates) {
+      // Quality gate (_shared/company-gate.ts). First without officers, as if
+      // the company had a founding team: if it is rejected on SIC codes, name
+      // or type, no officer list can save it, so that request is skipped.
+      const twoDirectors = [{ name: "", relationships: ["director"] }, { name: "", relationships: ["director"] }];
+      const preGate = gateUkCompany({ name: c.companyName, sicCodes: c.sicCodes, companyType: c.companyType, officers: twoDirectors });
+
       let officers: CHOfficer[] = [];
-      if (withOfficers && !dryRun) {
+      if (withOfficers && preGate.tier !== "reject") {
         await sleep(REQUEST_DELAY_MS);
         const o = await chFetch(`${API}/company/${encodeURIComponent(c.companyNumber)}/officers`, apiKey);
-        // A missing officer list is not a reason to drop the company — the
-        // incorporation itself is the signal.
         if (o.ok && o.body) officers = mapOfficers(o.body as Record<string, unknown>);
       }
+      // Unknown officers reject (no_officer_data): "missing is better than wrong".
+      const gate = preGate.tier === "reject"
+        ? preGate
+        : gateUkCompany({ name: c.companyName, sicCodes: c.sicCodes, companyType: c.companyType, officers });
+      tiers[gate.tier]++;
 
       if (dryRun) {
-        results.push({ ...c, wouldIngest: true });
+        results.push({ name: c.companyName, sic: c.sicCodes, officers: officers.length, gate });
         ingested++;
         continue;
       }
@@ -315,15 +325,17 @@ Deno.serve(withRunLog("uk_companies_house", countKeys("ingested"), async (req: R
         p_officers: officers,
         p_tech_summary: techSummary(c, officers.length),
         p_raw: c,
+        // A new company becomes a review candidate (queue/alert) or nothing
+        // (reject) — never a startups row directly (20261016000000).
+        p_gate: gate,
       });
 
       if (error) { results.push({ name: c.companyName, ok: false, reason: error.message }); continue; }
       ingested++;
-      if ((data as { created_startup?: boolean })?.created_startup) created++;
-      results.push({ name: c.companyName, ok: true, sic: c.sicCodes, officers: officers.length, ...(data as Record<string, unknown>) });
+      results.push({ name: c.companyName, ok: true, sic: c.sicCodes, officers: officers.length, gate, ...(data as Record<string, unknown>) });
     }
 
-    return json({ from, to, dryRun, scanned, nonTech, ingested, createdStartups: created, results });
+    return json({ from, to, dryRun, scanned, nonTech, ingested, gate: tiers, results });
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : "ingest failed" }, 500);
   }

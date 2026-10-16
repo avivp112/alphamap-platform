@@ -1,4 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
+import type { CompanyCandidate, CandidateSource, CandidateStatus, CandidatePreview } from "./candidateReview";
+import { sanitizeSearch, type DealFeedRow, type DealFeedStats, type DealKind, type DealSort } from "./dealFeed";
 
 const rawUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -735,6 +737,8 @@ export async function fetchDeals(limit = 200): Promise<DealRow[]> {
   const { data, error } = await supabase
     .from("deals")
     .select("*")
+    // Rows hidden by 20261020000000 (the ungated legacy SEC import) stay out.
+    .is("hidden_reason", null)
     .order("deal_date", { ascending: false })
     .limit(limit);
   if (error) throw error;
@@ -887,26 +891,6 @@ export async function fetchInvestorTierMap(): Promise<Map<string, number>> {
   return map;
 }
 
-export async function ingestStartup(companyName: string): Promise<{ startup: Startup; funding_round: FundingRound | null }> {
-  const res = await fetch(
-    `${supabaseUrl}/functions/v1/ingest-startup`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${supabaseAnonKey}`,
-      },
-      body: JSON.stringify({ company_name: companyName }),
-    },
-  );
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error ?? `Request failed (${res.status})`);
-  return {
-    startup: { ...json.startup, funding_rounds: json.funding_round ? [json.funding_round] : [] },
-    funding_round: json.funding_round ?? null,
-  };
-}
-
 export type ContactTopic = "general" | "partnership" | "press" | "support" | "enterprise";
 
 export interface ContactMessageInput {
@@ -965,6 +949,8 @@ export interface UserMandate {
   pain_point_focus: PainPointFocus | null;
   signal_triggers: SignalTrigger[];
   delivery_prefs: UserMandateDeliveryPrefs;
+  /** New-company alerts: false = every one, true = only those matching this mandate + watchlist. */
+  alerts_filtered?: boolean;
   updated_at: string;
 }
 
@@ -1309,4 +1295,150 @@ export async function fetchPassedStartupIds(): Promise<string[]> {
     .eq("action_type", "pass");
   if (error) throw error;
   return Array.from(new Set((data ?? []).map((r) => r.startup_id as string)));
+}
+
+// ─── Admin: company review queue (company_candidates, 20261016000000) ───────
+// Candidates are readable only by admins (RLS through is_app_admin()), and
+// approve/reject are RPCs that check the same thing server-side — the client
+// gate below only decides what to show.
+
+
+/** True when the signed-in user is in app_admins. False when signed out or on any error. */
+export async function isAppAdmin(): Promise<boolean> {
+  const { data, error } = await supabase.rpc("is_app_admin");
+  if (error) return false;
+  return data === true;
+}
+
+export async function fetchCompanyCandidates(opts: {
+  status: CandidateStatus;
+  source?: CandidateSource | "all";
+  limit?: number;
+  offset?: number;
+}): Promise<CompanyCandidate[]> {
+  const limit = opts.limit ?? 50;
+  const offset = opts.offset ?? 0;
+  let q = supabase
+    .from("company_candidates")
+    .select("*")
+    .eq("status", opts.status)
+    // Alert tier first (those reach users), then newest.
+    .order("gate_tier", { ascending: true })
+    .order(opts.status === "pending" ? "first_seen_at" : "reviewed_at", { ascending: false })
+    .range(offset, offset + limit - 1);
+  if (opts.source && opts.source !== "all") q = q.eq("source", opts.source);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []) as CompanyCandidate[];
+}
+
+/** Pending candidates — for the badge in the account menu. */
+export async function countPendingCandidates(): Promise<number> {
+  const { count, error } = await supabase
+    .from("company_candidates")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "pending");
+  if (error) throw error;
+  return count ?? 0;
+}
+
+/** Creates the company (or links an existing one) and returns its startups id. */
+export async function approveCompanyCandidate(id: string, note?: string): Promise<string> {
+  const { data, error } = await supabase.rpc("approve_company_candidate", { p_candidate_id: id, p_note: note ?? null });
+  if (error) throw error;
+  return data as string;
+}
+
+export async function rejectCompanyCandidate(id: string, note?: string): Promise<void> {
+  const { error } = await supabase.rpc("reject_company_candidate", { p_candidate_id: id, p_note: note ?? null });
+  if (error) throw error;
+}
+
+// ─── New-company alerts (20261017000000) ─────────────────────────────────────
+
+/** The read-only preview a new-company alert links to. null = not found or not visible to this user. */
+export async function fetchCandidatePreview(id: string): Promise<CandidatePreview | null> {
+  const { data, error } = await supabase.rpc("get_candidate_preview", { p_candidate_id: id });
+  if (error) throw error;
+  return (data as CandidatePreview | null) ?? null;
+}
+
+/** The "only companies that match me" toggle. It filters by the onboarding
+ * questionnaire, so it exists only once the user has a mandate row — creating
+ * one here would also mark onboarding as done (requireOnboarding). */
+export async function fetchAlertsFilter(): Promise<{ hasMandate: boolean; filtered: boolean }> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const userId = sessionData.session?.user?.id;
+  if (!userId) return { hasMandate: false, filtered: false };
+  const { data, error } = await supabase
+    .from("user_mandates")
+    .select("alerts_filtered")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return { hasMandate: !!data, filtered: data?.alerts_filtered === true };
+}
+
+export async function setAlertsFiltered(on: boolean): Promise<void> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const userId = sessionData.session?.user?.id;
+  if (!userId) throw new Error("Not signed in");
+  const { error } = await supabase
+    .from("user_mandates")
+    .update({ alerts_filtered: on })
+    .eq("user_id", userId);
+  if (error) throw error;
+}
+
+// ─── Deal Flow: the gated SEC feed (deal_feed view, 20261020000000) ─────────
+
+export interface DealFeedQuery {
+  kind: DealKind;
+  search?: string;
+  sort: DealSort;
+  ascending: boolean;
+  limit: number;
+  offset: number;
+}
+
+function dealFeedSelect(q: Omit<DealFeedQuery, "limit" | "offset">, count: boolean) {
+  let query = supabase
+    .from("deal_feed")
+    .select("*", count ? { count: "exact" } : undefined)
+    .eq("kind", q.kind)
+    .order(q.sort, { ascending: q.ascending, nullsFirst: false })
+    .order("id", { ascending: true });   // stable pages when the sort key ties
+  const term = sanitizeSearch(q.search ?? "");
+  if (term) {
+    query = q.kind === "fund"
+      ? query.or(`name.ilike.*${term}*,firm_name.ilike.*${term}*`)
+      : query.ilike("name", `*${term}*`);
+  }
+  return query;
+}
+
+/** One page of the feed plus the total matching the filters. */
+export async function fetchDealFeed(q: DealFeedQuery): Promise<{ rows: DealFeedRow[]; total: number }> {
+  const { data, error, count } = await dealFeedSelect(q, true).range(q.offset, q.offset + q.limit - 1);
+  if (error) throw error;
+  return { rows: (data ?? []) as DealFeedRow[], total: count ?? 0 };
+}
+
+/** Every row matching the filters, for export — paged under PostgREST's 1,000-row cap, up to `max`. */
+export async function fetchDealFeedForExport(q: Omit<DealFeedQuery, "limit" | "offset">, max = 5000): Promise<DealFeedRow[]> {
+  const out: DealFeedRow[] = [];
+  for (let offset = 0; offset < max; offset += 1000) {
+    const { data, error } = await dealFeedSelect(q, false).range(offset, Math.min(offset + 1000, max) - 1);
+    if (error) throw error;
+    out.push(...((data ?? []) as DealFeedRow[]));
+    if (!data || data.length < 1000) break;
+  }
+  return out;
+}
+
+/** Headline numbers over the whole feed of one kind. */
+export async function fetchDealFeedStats(kind: DealKind): Promise<DealFeedStats> {
+  const { data, error } = await supabase.rpc("deal_feed_stats", { p_kind: kind });
+  if (error) throw error;
+  return data as DealFeedStats;
 }

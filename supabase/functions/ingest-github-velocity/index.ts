@@ -81,12 +81,13 @@ const REQUEST_DELAY_MS = 2200;
 const FETCH_TIMEOUT_MS = 20_000;
 const DEFAULT_MAX_AGE_DAYS = 180;
 const DEFAULT_MIN_STARS = 25;
-// GitHub's search API rejects a query with more than 5 boolean operators
-// (AND/OR/NOT) with a 422, and separately caps query length at 256 chars.
-// 13 topics OR-ed into one clause hits both: 12 operators, ~280+ chars. 5
-// topics per chunk keeps every chunk at 4 operators and comfortably under
-// the length cap regardless of topic name length.
-const TOPICS_PER_QUERY = 5;
+// One topic per query. Repository search has no grouping: the earlier
+// "(topic:a OR topic:b)" clause was read as literal text and every query
+// returned total_count 0 (found 2026-10-15 — the job "succeeded" with zero
+// repos since it was written), and OR-ing many topics also hit GitHub's
+// 5-operator / 256-char limits (422). A single topic:x qualifier is the
+// documented form. Each topic gets an equal share of the run's limit, so the
+// first topic (llm) cannot fill it and starve robotics, vision and the rest.
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -207,16 +208,9 @@ export const ageDays = (createdAt: string | null, now = Date.now()): number | nu
 export const sinceDate = (maxAgeDays: number, now = Date.now()): string =>
   new Date(now - maxAgeDays * 86_400_000).toISOString().slice(0, 10);
 
-/**
- * GitHub search query for ONE chunk of topics.
- *
- * Topics within a chunk are OR-ed together; the caller is responsible for
- * keeping each chunk at or under TOPICS_PER_QUERY (see its comment for why —
- * GitHub's search API 422s past 5 boolean operators or 256 characters, and
- * this function does not itself validate the chunk it's given).
- */
+/** GitHub search query for ONE topic (or none). Repository search has no grouping — see the note above DEFAULT_TOPICS. */
 export function buildQuery(opts: {
-  topics: string[]; minStars: number; maxAgeDays: number; now?: number;
+  topic: string | null; minStars: number; maxAgeDays: number; now?: number;
 }): string {
   const parts = [
     `created:>${sinceDate(opts.maxAgeDays, opts.now)}`,
@@ -224,15 +218,13 @@ export function buildQuery(opts: {
     "is:public",
     "archived:false",
   ];
-  if (opts.topics.length) parts.push(`(${opts.topics.map((t) => `topic:${t}`).join(" OR ")})`);
+  if (opts.topic) parts.push(`topic:${opts.topic}`);
   return parts.join(" ");
 }
 
-/** Splits an array into chunks of at most `size` elements each. */
-export function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
+/** Repos each topic may contribute: an equal share of the run's limit. */
+export function perTopicQuota(limit: number, topicCount: number): number {
+  return Math.max(1, Math.ceil(limit / Math.max(1, topicCount)));
 }
 
 export function searchUrl(q: string, page: number, perPage = PAGE_SIZE): string {
@@ -292,24 +284,25 @@ Deno.serve(withRunLog("github_velocity", countKeys("recorded"), async (req: Requ
     const { data: denied } = await supabase.from("oss_excluded_owners").select("owner_login");
     const denyset = new Set((denied ?? []).map((r: { owner_login: string }) => r.owner_login.toLowerCase()));
 
-    // One query per chunk, not one query for all topics — see TOPICS_PER_QUERY.
-    const topicChunks = chunk(topics, TOPICS_PER_QUERY);
+    // One query per topic, each capped at an equal share of the limit.
+    const quota = perTopicQuota(limit, topics.length);
     const keptByRepo = new Map<string, Repo>();
     let scanned = 0;
     const queries: Array<{ query: string; totalHits: number | null }> = [];
     const rejected: Record<string, number> = {};
     const reject = (why: string) => { rejected[why] = (rejected[why] ?? 0) + 1; };
 
-    for (const topicChunk of topicChunks) {
+    for (const [ti, topic] of topics.entries()) {
       if (keptByRepo.size >= limit) break;
 
-      const q = buildQuery({ topics: topicChunk, minStars, maxAgeDays });
+      const q = buildQuery({ topic, minStars, maxAgeDays });
       let page = 1;
-      let chunkTotalHits: number | null = null;
+      let totalHits: number | null = null;
+      let keptThisTopic = 0;
 
       // GitHub search caps at 1000 results (10 pages) regardless of hit count.
-      while (keptByRepo.size < limit && page <= 10) {
-        const res = await gh(searchUrl(q, page));
+      while (keptByRepo.size < limit && keptThisTopic < quota && page <= 10) {
+        const res = await gh(searchUrl(q, page, Math.min(PAGE_SIZE, quota)));
         if (!res.ok) {
           if (res.status === 403 || res.status === 429) {
             return json({ error: "GitHub rate limit or forbidden", status: res.status, query: q,
@@ -318,7 +311,7 @@ Deno.serve(withRunLog("github_velocity", countKeys("recorded"), async (req: Requ
           return json({ error: `GitHub returned ${res.status}`, query: q }, 502);
         }
         const body = await res.json() as Record<string, unknown>;
-        chunkTotalHits = chunkTotalHits ?? Number(body?.total_count ?? 0);
+        totalHits = totalHits ?? Number(body?.total_count ?? 0);
         const items = Array.isArray(body?.items) ? (body!.items as Record<string, unknown>[]) : [];
         if (items.length === 0) break;
 
@@ -332,20 +325,21 @@ Deno.serve(withRunLog("github_velocity", countKeys("recorded"), async (req: Requ
           if (denyset.has(r.owner.toLowerCase())) { reject("excluded_owner"); continue; }
           const age = ageDays(r.createdAt);
           if (age !== null && age > maxAgeDays) { reject("too_old"); continue; }
-          // A repo matching topics in two different chunks (e.g. both "llm"
+          // A repo matching two topics (e.g. both "llm"
           // and "agents") would otherwise be counted and ingested twice.
-          if (keptByRepo.has(r.externalId)) { reject("duplicate_across_chunks"); continue; }
+          if (keptByRepo.has(r.externalId)) { reject("duplicate_across_topics"); continue; }
           keptByRepo.set(r.externalId, r);
-          if (keptByRepo.size >= limit) break;
+          keptThisTopic++;
+          if (keptByRepo.size >= limit || keptThisTopic >= quota) break;
         }
 
         page++;
-        if (items.length < PAGE_SIZE) break;
+        if (items.length < Math.min(PAGE_SIZE, quota)) break;
         await sleep(REQUEST_DELAY_MS);
       }
 
-      queries.push({ query: q, totalHits: chunkTotalHits });
-      if (topicChunks.indexOf(topicChunk) < topicChunks.length - 1) await sleep(REQUEST_DELAY_MS);
+      queries.push({ query: q, totalHits: totalHits });
+      if (ti < topics.length - 1) await sleep(REQUEST_DELAY_MS);
     }
 
     const kept = [...keptByRepo.values()];

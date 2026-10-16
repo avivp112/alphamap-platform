@@ -29,9 +29,21 @@ export function isPaidPlan(plan: Plan): boolean {
   return plan !== "free";
 }
 
-export async function setPlanPlaceholder(plan: Plan): Promise<void> {
-  const { error } = await supabase.auth.updateUser({ data: { plan } });
+/**
+ * Checkout cannot switch the plan any more (users could grant themselves
+ * one): it records a request in plan_requests, which rings the admins' bell;
+ * an admin grants it with set_user_plan(). Migration 20261021000000.
+ */
+export async function requestPlanUpgrade(plan: Exclude<Plan, "free">, annual: boolean): Promise<void> {
+  const { error } = await supabase.rpc("request_plan_upgrade", { p_plan: plan, p_annual: annual });
   if (error) throw error;
+}
+
+/** The plan that counts — user_plans, which only the server writes. No row = free. */
+async function fetchPlan(userId: string): Promise<Plan> {
+  const { data, error } = await supabase.from("user_plans").select("plan").eq("user_id", userId).maybeSingle();
+  if (error) return "free";
+  return coercePlan(data?.plan);
 }
 
 export interface UserPlanState {
@@ -50,13 +62,15 @@ export function useUserPlan(): UserPlanState {
     supabase.auth.getUser().then(({ data, error }) => {
       if (cancelled) return;
       if (error || !data.user) { setState({ plan: "free", loggedIn: false, loading: false }); return; }
-      setState({ plan: coercePlan(data.user.user_metadata?.plan), loggedIn: true, loading: false });
+      const uid = data.user.id;
+      fetchPlan(uid).then((plan) => { if (!cancelled) setState({ plan, loggedIn: true, loading: false }); });
     });
 
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
       if (cancelled) return;
       if (!session?.user) { setState({ plan: "free", loggedIn: false, loading: false }); return; }
-      setState({ plan: coercePlan(session.user.user_metadata?.plan), loggedIn: true, loading: false });
+      const uid = session.user.id;
+      fetchPlan(uid).then((plan) => { if (!cancelled) setState({ plan, loggedIn: true, loading: false }); });
     });
 
     return () => { cancelled = true; subscription.subscription.unsubscribe(); };

@@ -80,6 +80,7 @@
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { embedDocuments } from "../_shared/tei-client.ts";
+import { md5Hex } from "../_shared/md5.ts";
 import { withRunLog } from "../_shared/run-log.ts";
 
 const CORS = {
@@ -129,11 +130,6 @@ function sourceText(table: TableName, row: Row): string | null {
   return parts.join(". ").replace(/\s+/g, " ").slice(0, 8000);
 }
 
-async function md5Hex(s: string): Promise<string> {
-  const data = new TextEncoder().encode(s);
-  const digest = await crypto.subtle.digest("MD5", data);
-  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
-}
 
 interface BackfillOptions {
   dryRun: boolean;
@@ -174,7 +170,7 @@ async function backfillTable(supabase: SupabaseClient, table: TableName, opts: B
     for (const row of rows) {
       const text = sourceText(table, row);
       if (!text) { noText++; continue; }
-      const hash = await md5Hex(`${opts.model}:${opts.dimensions}:${text}`);
+      const hash = md5Hex(`${opts.model}:${opts.dimensions}:${text}`);
       if (!opts.force && row.embedding_source_hash === hash) { skipped++; continue; }
       pending.push({ row, text, hash });
     }

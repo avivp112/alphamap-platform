@@ -26,7 +26,7 @@ import {
   Star, XCircle, Sparkles, Download, Webhook,
 } from "lucide-react";
 import {
-  ingestStartup, fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
+  fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
   fetchStartupsPage, fetchStartupsCount, fetchStartupsForExport, EXPORT_ROW_CAP, fetchDistinctCountries, fetchStartupDetail,
   fetchSuggestedPeers, fetchStartupListRowById, fetchScoreHistory, fetchArticleImage, STARTUPS_PAGE_SIZE, subSectorNames,
   fetchUserMandate, logInteraction, fetchPassedStartupIds, fetchMatchScores, fetchLookalikes,
@@ -335,15 +335,6 @@ const QUICK_QUESTIONS: QuickQuestion[] = [
   { label: "Under-the-radar companies with little competition",   density: "blue-ocean" },
 ];
 
-
-const PROGRESS_MESSAGES = [
-  "Searching the web for funding data…",
-  "Analyzing founding team & leadership…",
-  "Identifying headquarters location…",
-  "Scanning job boards for hiring signals…",
-  "Validating entry conditions…",
-  "Saving to AlphaMap…",
-];
 
 // ── Hierarchical Sector Filter ────────────────────────────────────────────────
 // Tag/checkbox-style list for the sidebar: selecting a parent sector reveals
@@ -3038,98 +3029,6 @@ function StartupTableRow({
   );
 }
 
-// ── Add Dialog ────────────────────────────────────────────────────────────────
-
-function AddStartupDialog({ open, onClose, onSuccess }: {
-  open: boolean; onClose: () => void; onSuccess: (s: Startup) => void;
-}) {
-  const { t } = useTranslation();
-  const [name, setName]       = useState("");
-  const [status, setStatus]   = useState<"idle" | "loading" | "error" | "success">("idle");
-  const [errorMsg, setError]  = useState("");
-  const [progressIdx, setIdx] = useState(0);
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (open) { setName(""); setStatus("idle"); setError(""); setIdx(0); setTimeout(() => inputRef.current?.focus(), 50); }
-  }, [open]);
-  useEffect(() => {
-    if (status === "loading") {
-      timer.current = setInterval(() => setIdx((i) => Math.min(i + 1, PROGRESS_MESSAGES.length - 1)), 3500);
-    } else {
-      if (timer.current) clearInterval(timer.current);
-    }
-    return () => { if (timer.current) clearInterval(timer.current); };
-  }, [status]);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) return;
-    setStatus("loading"); setIdx(0); setError("");
-    try {
-      const { startup } = await ingestStartup(name.trim());
-      setStatus("success");
-      setTimeout(() => { onSuccess(startup); onClose(); }, 1200);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-      setStatus("error");
-    }
-  }
-
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={status !== "loading" ? onClose : undefined} />
-      <div className="relative bg-white rounded-[10px] shadow-[0_24px_60px_rgba(0,0,0,0.12)] w-full max-w-md p-8 border border-gray-100">
-        <button onClick={onClose} disabled={status === "loading"} className="absolute top-5 right-5 text-gray-300 hover:text-gray-600 transition-colors disabled:opacity-30"><X className="w-5 h-5" /></button>
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center"><Rocket className="w-5 h-5 text-[#F59E0B]" /></div>
-          <div>
-            <h2 className="text-base font-bold text-[#0F172A]">{t("startups.addStartup")}</h2>
-            <p className="text-xs text-gray-400">{t("startups.agentResearches")}</p>
-          </div>
-        </div>
-        {status === "success" ? (
-          <div className="flex flex-col items-center py-4 gap-3 text-center">
-            <CheckCircle2 className="w-10 h-10 text-emerald-500" />
-            <p className="text-sm font-semibold text-[#0F172A]">{t("startups.addedSuccessfully")}</p>
-          </div>
-        ) : status === "loading" ? (
-          <div className="flex flex-col items-center py-6 gap-4 text-center">
-            <Loader2 className="w-8 h-8 text-[#F59E0B] animate-spin" />
-            <div>
-              <p className="text-sm font-semibold text-[#0F172A] mb-1">Researching "{name}"</p>
-              <p className="text-xs text-gray-400">{PROGRESS_MESSAGES[progressIdx]}</p>
-            </div>
-            <div className="flex gap-1 mt-2">
-              {PROGRESS_MESSAGES.map((_, i) => (
-                <div key={i} className={`h-1 w-6 rounded-full transition-all duration-500 ${i <= progressIdx ? "bg-[#F59E0B]" : "bg-gray-100"}`} />
-              ))}
-            </div>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit}>
-            {status === "error" && (
-              <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-lg p-3 mb-4 text-sm text-red-600">
-                <AlertCircle className="w-4 h-4 flex-none mt-0.5" /><span>{errorMsg}</span>
-              </div>
-            )}
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{t("startups.companyName")}</label>
-            <input ref={inputRef} type="text" value={name} onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Stripe, Wiz, Deel…"
-              className="w-full border border-gray-200 rounded-[8px] px-4 py-3 text-sm text-[#0F172A] placeholder-gray-300 focus:outline-none focus:border-[#0F172A]/30 focus:ring-2 focus:ring-[#0F172A]/10 transition-all"
-            />
-            <p className="text-[11px] text-gray-400 mt-2 mb-5">The agent searches the web, validates the data, and saves — takes ~15 seconds.</p>
-            <button type="submit" disabled={!name.trim()} className="w-full rounded-[8px] bg-[#0F172A] hover:bg-gray-800 disabled:bg-gray-100 disabled:text-gray-300 text-white font-semibold text-sm py-3 transition-all duration-200">
-              Research & Add
-            </button>
-          </form>
-        )}
-      </div>
-    </div>
-  );
-}
 
 // ── Info Tooltip ──────────────────────────────────────────────────────────────
 // Hover-triggered dark popover. `align` controls the arrow / box horizontal anchor.
@@ -3253,7 +3152,6 @@ export function Startups() {
   const [exporting, setExporting]       = useState(false);
   const [exportError, setExportError]   = useState<string | null>(null);
 
-  const [showAdd, setShowAdd]           = useState(false);
   const [search, setSearch]             = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [parentSector, setParentSector] = useState("");
@@ -3328,6 +3226,36 @@ export function Startups() {
 
   const cityParam = searchParams.get("city") ?? "";
   const [cityFilter, setCityFilter] = useState(cityParam);
+
+  // Deep link from an alert: /startups?company=<id> opens that company's
+  // tearsheet straight away. The param is dropped on close so a refresh or
+  // Back doesn't reopen it. A company approved minutes ago may not be in
+  // startups_search until its next refresh — say so instead of doing nothing.
+  const companyParam = searchParams.get("company");
+  const [deepLinkMissing, setDeepLinkMissing] = useState(false);
+  useEffect(() => {
+    if (!companyParam) return;
+    let cancelled = false;
+    fetchStartupListRowById(companyParam)
+      .then((row) => {
+        if (cancelled) return;
+        if (row) setSelected(row);
+        else setDeepLinkMissing(true);
+      })
+      .catch(() => { if (!cancelled) setDeepLinkMissing(true); });
+    return () => { cancelled = true; };
+  }, [companyParam]);
+  useEffect(() => {
+    if (!deepLinkMissing) return;
+    const id = setTimeout(() => setDeepLinkMissing(false), 6000);
+    return () => clearTimeout(id);
+  }, [deepLinkMissing]);
+  function closeTearsheet() {
+    setSelected(null);
+    if (searchParams.has("company")) {
+      setSearchParams((p) => { p.delete("company"); return p; }, { replace: true });
+    }
+  }
 
   function toggleSelect(row: StartupListRow, e: React.MouseEvent) {
     e.stopPropagation();
@@ -3755,12 +3683,7 @@ export function Startups() {
               <div className="flex flex-col items-center justify-center py-32 text-center">
                 <div className="w-16 h-16 rounded-lg bg-amber-50 flex items-center justify-center mb-6"><Rocket className="w-7 h-7 text-[#F59E0B]" /></div>
                 <h2 className="text-xl font-bold text-[#0F172A] mb-3">{t("startups.noStartupsYet")}</h2>
-                <p className="text-sm text-gray-400 max-w-sm leading-relaxed mb-8">
-                  Add your first startup — the AI agent will research, validate, and store it with full funding history.
-                </p>
-                <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 rounded-[8px] bg-[#0F172A] px-6 py-3 text-sm font-bold text-white shadow-[0_4px_14px_rgba(15,23,42,0.25)] hover:bg-[#1e293b] transition-all">
-                  <Plus className="w-4 h-4" />Add First Startup
-                </button>
+
               </div>
             ) : rows.length === 0 ? (
               <div className="flex flex-col items-center py-20 gap-3 text-center">
@@ -3818,15 +3741,12 @@ export function Startups() {
             )}
       </SideFilterLayout>
 
-      <AddStartupDialog open={showAdd} onClose={() => setShowAdd(false)}
-        onSuccess={() => { setPage(1); setRefreshKey((k) => k + 1); }} />
-
       <ProductTour steps={tourSteps} open={tourOpen} onClose={closeTour} />
 
       {tearsheetStartup && (
         <TearsheetModal
           startup={tearsheetStartup}
-          onClose={() => setSelected(null)}
+          onClose={closeTearsheet}
           onNavigate={(row) => setSelected(row)}
           onFilterByMainSector={handleFilterByMainSector}
           onFilterBySubSectorTag={handleFilterBySubSectorTag}
@@ -3850,6 +3770,13 @@ export function Startups() {
           onConfirm={handlePassConfirm}
           submitting={passSubmitting}
         />
+      )}
+
+      {deepLinkMissing && (
+        <div role="status" className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-md flex items-start gap-2 px-4 py-3 rounded-[8px] bg-[#0F172A] text-white text-xs shadow-lg">
+          <AlertCircle className="w-4 h-4 flex-none mt-0.5 text-amber-300" />
+          <span>{t("startups.deepLinkMissing")}</span>
+        </div>
       )}
 
       {/* ── Floating Compare FAB ────────────────────────────────────────── */}

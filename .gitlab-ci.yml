@@ -70,10 +70,14 @@ stages:
 # Build & typecheck — web (Vite/React) + mobile (Capacitor: Android, iOS)
 #
 # Unlike the migrate/deploy jobs below (which only run when you trigger them
-# by hand from the GitLab UI), these run automatically on every ordinary
-# pipeline — branch pushes and merge requests — no `rules:` gate needed. The
-# whole point is to catch a broken build/typecheck before it lands. None of
-# them deploy anything or touch a secret CI/CD variable.
+# by hand from the GitLab UI), these run automatically on branch pushes and
+# merge requests — but, to save compute minutes, only when files they build
+# changed (see each job's `rules:`), and never in a hand/API-started
+# pipeline. None of them deploy anything or touch a secret CI/CD variable.
+#
+# Server-only changes (migrations, Edge Functions) are pushed with
+# `git push -o ci.skip` and shipped by one hand/API-started pipeline, which
+# runs only migrate-database + deploy-public-market-functions (~3 min).
 # =============================================================================
 
 # ── Web: typecheck + production build ───────────────────────────────────────
@@ -85,6 +89,22 @@ stages:
 web-build:
   stage: build
   image: node:20
+  # Compute-minute budget (2026-10-16): only when the web app itself changed,
+  # and never in the database/functions pipeline started by hand or API —
+  # Vercel builds and deploys the site from every push on its own.
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "api"'
+      when: never
+    - changes:
+        - src/**/*
+        - lib/**/*
+        - locales/**/*
+        - public/**/*
+        - index.html
+        - package.json
+        - package-lock.json
+        - vite.config.ts
+        - tsconfig.json
   script:
     - npm ci
     - npx tsc --noEmit
@@ -104,6 +124,19 @@ web-build:
 android-build:
   stage: build
   image: mobiledevops/android-sdk-image:latest
+  # Compute-minute budget (2026-10-16): ~4.5 min a run, so only when the
+  # native project or its dependencies changed. Otherwise it is offered as a
+  # manual job — press play in the pipeline when an APK is wanted.
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "api"'
+      when: never
+    - changes:
+        - android/**/*
+        - capacitor.config.ts
+        - package.json
+        - package-lock.json
+    - when: manual
+      allow_failure: true
   before_script:
     # mobiledevops/android-sdk-image ships Java + the Android SDK (with
     # ANDROID_HOME already configured) but no Node.js — install it so
@@ -210,39 +243,44 @@ migrate-database:
         exit 0
       fi
 
-    # ── Baseline guard ──────────────────────────────────────────────────────
-    # These migrations predate this pipeline and were applied by hand, and
-    # four of them use bare CREATE TABLE. If the remote has no migration
-    # history, `db push` would treat all of them as pending and abort on
-    # "relation already exists". Detect that and stop with instructions rather
-    # than firing 30+ historical migrations at a live database.
+    # ── Pending-count guard ─────────────────────────────────────────────────
+    # Most migrations were applied by hand in the SQL Editor, so the remote's
+    # history (supabase_migrations.schema_migrations) can be missing or
+    # incomplete — and `db push` treats every file absent from it as pending
+    # and RUNS it against the live database. The old guard only caught a
+    # missing history table; a stale baseline (30 of 90 files) would have
+    # replayed ~60 historical migrations. So count what is actually pending
+    # and stop if it is more than a normal release carries.
+    # Override for a deliberate larger push: CI variable MIGRATIONS_MAX_PENDING.
     - |
       set -e
-      APPLIED=$(psql "$SUPABASE_DB_URL" -tAc "
-        SELECT count(*) FROM information_schema.tables
-         WHERE table_schema='supabase_migrations' AND table_name='schema_migrations';
-      ")
-      if [ "$APPLIED" = "0" ]; then
-        HAS_DATA=$(psql "$SUPABASE_DB_URL" -tAc "
-          SELECT count(*) FROM information_schema.tables
-           WHERE table_schema='public' AND table_name='startups';
-        ")
-        if [ "$HAS_DATA" != "0" ]; then
-          echo "ERROR: this database has application tables but no migration history."
-          echo "Pushing now would replay every historical migration and fail on"
-          echo "the un-guarded CREATE TABLEs. Baseline it once, then re-run:"
-          echo ""
-          echo "  psql \"\$SUPABASE_DB_URL\" -f supabase/scripts/baseline_migration_history.sql"
-          echo ""
-          echo "That marks the already-applied files as applied without re-running them."
-          exit 1
-        fi
+      psql "$SUPABASE_DB_URL" -tAc "
+        SELECT version FROM supabase_migrations.schema_migrations
+      " > /tmp/remote_versions 2>/dev/null || : > /tmp/remote_versions
+      sed -i -e 's/[[:space:]]//g' -e '/^$/d' /tmp/remote_versions
+      ls supabase/migrations/*.sql | sed -E 's#.*/([0-9]+)_.*#\1#' | sort > /tmp/local_versions
+      grep -vxF -f /tmp/remote_versions /tmp/local_versions > /tmp/pending_versions || true
+      PENDING=$(wc -l < /tmp/pending_versions)
+      MAX="${MIGRATIONS_MAX_PENDING:-3}"
+      echo "remote history: $(wc -l < /tmp/remote_versions) versions; pending: $PENDING (max $MAX)"
+      sed 's/^/  pending: /' /tmp/pending_versions
+      if [ "$PENDING" -gt "$MAX" ]; then
+        echo "ERROR: $PENDING migrations would run against the live database."
+        echo "That is a missing or stale migration history, not a release."
+        echo "Run supabase/scripts/verify_migration_history.sql in the SQL Editor,"
+        echo "then supabase/scripts/baseline_migration_history.sql, then re-run."
+        exit 1
       fi
 
     # Print the plan before acting on it, so the log shows the intent even if
     # the apply then fails.
-    - supabase db push --db-url "$SUPABASE_DB_URL" --dry-run
-    - supabase db push --db-url "$SUPABASE_DB_URL" --yes
+    # --include-all: migrations here were applied by hand out of order, so a
+    # pending file can be older than the newest recorded one (2026-10-15:
+    # 20260930000000 behind 20261013010000), which db push otherwise refuses.
+    # Safe only because the pending-count guard above has already capped
+    # what can run.
+    - supabase db push --db-url "$SUPABASE_DB_URL" --include-all --dry-run
+    - supabase db push --db-url "$SUPABASE_DB_URL" --include-all --yes
 
     # `db push` exits 0 on an empty migration set, which is indistinguishable
     # from a real apply — so assert the end state instead of trusting the code.
@@ -439,6 +477,9 @@ deploy-public-market-functions:
     - deploy_fn ingest-startup
     - deploy_fn backfill-embeddings
     - deploy_fn pipeline-health
+    - deploy_fn admin-review-digest
+    - deploy_fn app-update-check
+    - deploy_fn company-check
 
 # ── Embedding backfill ────────────────────────────────────────────────────────
 # SUPERSEDED as the production automation path by supabase/functions/
