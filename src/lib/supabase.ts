@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { CompanyCandidate, CandidateSource, CandidateStatus, CandidatePreview } from "./candidateReview";
+import { sanitizeSearch, type DealFeedRow, type DealFeedStats, type DealKind, type DealSort } from "./dealFeed";
 
 const rawUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -736,6 +737,8 @@ export async function fetchDeals(limit = 200): Promise<DealRow[]> {
   const { data, error } = await supabase
     .from("deals")
     .select("*")
+    // Rows hidden by 20261020000000 (the ungated legacy SEC import) stay out.
+    .is("hidden_reason", null)
     .order("deal_date", { ascending: false })
     .limit(limit);
   if (error) throw error;
@@ -1405,4 +1408,57 @@ export async function setAlertsFiltered(on: boolean): Promise<void> {
     .update({ alerts_filtered: on })
     .eq("user_id", userId);
   if (error) throw error;
+}
+
+// ─── Deal Flow: the gated SEC feed (deal_feed view, 20261020000000) ─────────
+
+export interface DealFeedQuery {
+  kind: DealKind;
+  search?: string;
+  sort: DealSort;
+  ascending: boolean;
+  limit: number;
+  offset: number;
+}
+
+function dealFeedSelect(q: Omit<DealFeedQuery, "limit" | "offset">, count: boolean) {
+  let query = supabase
+    .from("deal_feed")
+    .select("*", count ? { count: "exact" } : undefined)
+    .eq("kind", q.kind)
+    .order(q.sort, { ascending: q.ascending, nullsFirst: false })
+    .order("id", { ascending: true });   // stable pages when the sort key ties
+  const term = sanitizeSearch(q.search ?? "");
+  if (term) {
+    query = q.kind === "fund"
+      ? query.or(`name.ilike.*${term}*,firm_name.ilike.*${term}*`)
+      : query.ilike("name", `*${term}*`);
+  }
+  return query;
+}
+
+/** One page of the feed plus the total matching the filters. */
+export async function fetchDealFeed(q: DealFeedQuery): Promise<{ rows: DealFeedRow[]; total: number }> {
+  const { data, error, count } = await dealFeedSelect(q, true).range(q.offset, q.offset + q.limit - 1);
+  if (error) throw error;
+  return { rows: (data ?? []) as DealFeedRow[], total: count ?? 0 };
+}
+
+/** Every row matching the filters, for export — paged under PostgREST's 1,000-row cap, up to `max`. */
+export async function fetchDealFeedForExport(q: Omit<DealFeedQuery, "limit" | "offset">, max = 5000): Promise<DealFeedRow[]> {
+  const out: DealFeedRow[] = [];
+  for (let offset = 0; offset < max; offset += 1000) {
+    const { data, error } = await dealFeedSelect(q, false).range(offset, Math.min(offset + 1000, max) - 1);
+    if (error) throw error;
+    out.push(...((data ?? []) as DealFeedRow[]));
+    if (!data || data.length < 1000) break;
+  }
+  return out;
+}
+
+/** Headline numbers over the whole feed of one kind. */
+export async function fetchDealFeedStats(kind: DealKind): Promise<DealFeedStats> {
+  const { data, error } = await supabase.rpc("deal_feed_stats", { p_kind: kind });
+  if (error) throw error;
+  return data as DealFeedStats;
 }

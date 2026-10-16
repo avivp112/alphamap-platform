@@ -506,7 +506,7 @@ Deno.serve(withRunLog("sec_form_d", countKeys("ingested", "fundsRecorded"), asyn
   const rejected: Record<string, number> = {};
   const tiers: Record<GateTier, number> = { reject: 0, queue: 0, alert: 0 };
   const fundErrors: string[] = [];
-  let ingested = 0, fundsSeen = 0, fundsRecorded = 0, examined = 0;
+  let ingested = 0, fundsSeen = 0, fundsRecorded = 0, fundsSkipped = 0, examined = 0;
   let stopReason: string | null = null;
 
   try {
@@ -578,7 +578,7 @@ Deno.serve(withRunLog("sec_form_d", countKeys("ingested", "fundsRecorded"), asyn
             if (verdict.reason === "fund" && parsed) {
               fundsSeen++;
               if (!dryRun) {
-                const { error: fundErr } = await supabase.rpc("record_fund_filing", {
+                const { data: fundRes, error: fundErr } = await supabase.rpc("record_fund_filing", {
                   p_accession: row.accession,
                   p_cik: parsed.cik ?? row.cik,
                   p_form_type: row.formType,
@@ -594,6 +594,8 @@ Deno.serve(withRunLog("sec_form_d", countKeys("ingested", "fundsRecorded"), asyn
                   p_raw: parsed,
                 });
                 if (fundErr) { fundErrors.push(`${parsed.entityName}: ${fundErr.message}`); outcome = null; }
+                // Only venture funds, not their SPV / feeder vehicles, are stored (fund_filing_gate).
+                else if ((fundRes as { skipped?: boolean } | null)?.skipped) fundsSkipped++;
                 else fundsRecorded++;
               }
             }
@@ -663,6 +665,7 @@ Deno.serve(withRunLog("sec_form_d", countKeys("ingested", "fundsRecorded"), asyn
       // Funds are not companies, but they are not noise either.
       fundsSeen,
       fundsRecorded,
+      fundsSkipped,
       ...(fundErrors.length ? { fundErrors } : {}),
       rejected,
       stopped: stopReason,
