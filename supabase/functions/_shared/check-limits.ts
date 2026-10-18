@@ -32,9 +32,12 @@ export const FRESH_ENOUGH_DAYS = 30;
 /**
  * Statuses that do not use up the monthly allowance. Only check-phase rows
  * count at all: finding the company (the identify phase) is never charged,
- * the allowance is taken when the user confirms it.
+ * the allowance is taken when the user confirms it. A company AlphaMap does
+ * not cover (public, not technology) is not charged either (2026-10-18).
  */
-export const FREE_OF_CHARGE_STATUSES = ["matched", "failed", "cancelled", "awaiting_confirmation"] as const;
+export const FREE_OF_CHARGE_STATUSES = [
+  "matched", "failed", "cancelled", "awaiting_confirmation", "rejected_public", "rejected_non_tech",
+] as const;
 
 export function limitsFor(plan: string | null | undefined): CheckLimits {
   return CHECK_LIMITS[(plan === "pro" || plan === "enterprise") ? plan : "free"];

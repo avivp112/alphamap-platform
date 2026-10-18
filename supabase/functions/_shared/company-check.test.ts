@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { validateCheckInput, normalizeWebsite, normalizeLinkedIn, decideAllowance, monthStartUtc, applyChoice } from "./company-check";
-import { CHECK_LIMITS } from "./check-limits";
+import { CHECK_LIMITS, FREE_OF_CHARGE_STATUSES } from "./check-limits";
 
 describe("validateCheckInput", () => {
   it("requires only a name and normalises the rest", () => {
@@ -71,5 +71,16 @@ describe("applyChoice", () => {
   it("anything else is refused, never guessed", () => {
     for (const c of [2, -1, 0.5, "0", null]) expect(applyChoice(typed, cands, c).ok).toBe(false);
     expect(applyChoice(typed, null, 0).ok).toBe(false);
+  });
+});
+
+describe("FREE_OF_CHARGE_STATUSES", () => {
+  it("charges only checks that ran on a company AlphaMap covers", () => {
+    for (const s of ["rejected_public", "rejected_non_tech", "matched", "failed", "cancelled", "awaiting_confirmation"]) {
+      expect(FREE_OF_CHARGE_STATUSES as readonly string[]).toContain(s);
+    }
+    for (const s of ["queued", "running", "ready", "stealth", "done"]) {
+      expect(FREE_OF_CHARGE_STATUSES as readonly string[]).not.toContain(s);
+    }
   });
 });
