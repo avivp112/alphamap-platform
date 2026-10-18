@@ -3,7 +3,7 @@ import { decideGate } from "./gates";
 import { isTransient, backoffSeconds, PermanentError, RunTimeoutError } from "./retry";
 import { processOne, withTimeout, type Outcome } from "./runner";
 import type { CheckRow, Queue } from "./queue";
-import { loadConfig, llmCostUsd } from "./config";
+import { loadConfig, llmCostUsd, ConfigError } from "./config";
 
 const ev = (o: Partial<Parameters<typeof decideGate>[0]> = {}) =>
   ({ listing: null, ownPagesChars: 5000, mentions: 6, tech: { is_tech_company: true, confidence: "high" as const, reason: "SaaS" }, ...o });
@@ -108,7 +108,17 @@ describe("withTimeout / config", () => {
     expect(await withTimeout(Promise.resolve(5), 1000)).toBe(5);
   });
   it("refuses to start without its secrets, and prices like v2", () => {
-    expect(() => loadConfig({})).toThrow(/SUPABASE_URL/);
+    expect(() => loadConfig({})).toThrow(/SERP_KEY/);
     expect(llmCostUsd("claude-haiku-4-5-20251001", 1_000_000, 100_000)).toBeCloseTo(1.5);
+  });
+  // 2026-10-18: the first Fly deploy crash-looped on SUPABASE_URL copied
+  // verbatim from the README ("https://<project>.supabase.co").
+  it("rejects values left as the template placeholder, with a one-line reason", () => {
+    const ok = { SUPABASE_URL: "https://abcd1234.supabase.co/", SUPABASE_SERVICE_ROLE_KEY: "eyJ.x.y", ANTHROPIC_API_KEY: "sk-ant-x", SERP_KEY: "k" };
+    expect(loadConfig(ok).supabaseUrl).toBe("https://abcd1234.supabase.co");
+    expect(() => loadConfig({ ...ok, SUPABASE_URL: "https://<project>.supabase.co" })).toThrow(ConfigError);
+    expect(() => loadConfig({ ...ok, SUPABASE_URL: "abcd1234.supabase.co" })).toThrow(/project address/);
+    expect(() => loadConfig({ ...ok, ANTHROPIC_API_KEY: "..." })).toThrow(/ANTHROPIC_API_KEY still holds the template/);
+    expect(() => loadConfig({ ...ok, SERP_KEY: " " })).toThrow(/Missing SERP_KEY/);
   });
 });

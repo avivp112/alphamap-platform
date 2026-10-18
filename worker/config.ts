@@ -19,15 +19,34 @@ export interface WorkerConfig {
   searchCostUsd: number;
 }
 
+/** A setting that was never filled in: thrown at start, printed as one line. */
+export class ConfigError extends Error {}
+
+// Values copied from the README template ("https://<project>.supabase.co",
+// "..."). No real URL or key contains angle brackets or an ellipsis.
+const PLACEHOLDER = /[<>]|\.\.\.|…/;
+
 function required(env: Record<string, string | undefined>, key: string): string {
   const v = env[key]?.trim();
-  if (!v) throw new Error(`Missing ${key} in the worker's environment.`);
+  if (!v) throw new ConfigError(`Missing ${key} in the worker's environment.`);
+  if (PLACEHOLDER.test(v)) throw new ConfigError(`${key} still holds the template placeholder — set the real value.`);
+  return v;
+}
+
+function supabaseUrl(env: Record<string, string | undefined>): string {
+  const v = required(env, "SUPABASE_URL").replace(/\/+$/, "");
+  if (!/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(v)) {
+    throw new ConfigError("SUPABASE_URL must be the project address, like https://abcd1234.supabase.co");
+  }
   return v;
 }
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): WorkerConfig {
+  // Without search every check would look like a stealth company: refuse to
+  // start rather than return wrong verdicts.
+  required(env, "SERP_KEY");
   return {
-    supabaseUrl: required(env, "SUPABASE_URL"),
+    supabaseUrl: supabaseUrl(env),
     serviceKey: required(env, "SUPABASE_SERVICE_ROLE_KEY"),
     anthropicKey: required(env, "ANTHROPIC_API_KEY"),
     workerId: env.WORKER_ID?.trim() || `worker-${Math.random().toString(36).slice(2, 8)}`,

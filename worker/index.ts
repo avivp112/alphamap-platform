@@ -11,13 +11,20 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
-import { loadConfig, llmCostUsd } from "./config.ts";
+import { loadConfig, llmCostUsd, ConfigError, type WorkerConfig } from "./config.ts";
 import { Queue } from "./queue.ts";
 import { processOne, type Execute } from "./runner.ts";
 import { runGates } from "./gates.ts";
 import { PermanentError } from "./retry.ts";
 
-const cfg = loadConfig();
+let cfg: WorkerConfig;
+try {
+  cfg = loadConfig();
+} catch (e) {
+  if (!(e instanceof ConfigError)) throw e;
+  console.error(`[worker] not started: ${e.message}`);
+  process.exit(1);
+}
 const db = createClient(cfg.supabaseUrl, cfg.serviceKey, { auth: { persistSession: false } });
 const anthropic = new Anthropic({ apiKey: cfg.anthropicKey });
 const queue = new Queue(db, cfg.workerId, cfg.leaseSeconds);
