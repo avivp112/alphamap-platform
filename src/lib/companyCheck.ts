@@ -97,6 +97,8 @@ export interface CheckResultData {
 }
 
 export interface CheckProgress {
+  /** Set by the identify phase: a name many companies share ("Zero", "Atlas"). */
+  generic_name?: boolean;
   stage?: string;
   sources?: number;
   sections?: string[];

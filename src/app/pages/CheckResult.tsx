@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { Layout } from "../components/Layout";
 import { CompanyLogo } from "../components/CompanyLogo";
-import { CandidateList, CheckCompanyDialog, OpenCompanyLink } from "../components/CheckCompanyDialog";
+import { CandidateList, CheckCompanyDialog, GenericNameNote, OpenCompanyLink } from "../components/CheckCompanyDialog";
 import { CheckProfileView } from "../components/CheckProfileView";
 import { fetchCompanyCheck, confirmCompanyCheck, cancelCompanyCheck } from "../../lib/supabase";
 import { companyPath } from "../../lib/candidateReview";
@@ -77,8 +77,8 @@ export function CheckResult() {
   return (
     <Layout>
       <div className="mx-auto max-w-[760px] px-4 sm:px-6 py-8 sm:py-12">
-        <Link to="/my-area?tab=checks" className="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-[#0F172A]">
-          <ArrowLeft className="h-4 w-4" />{t("companyCheck.myChecks")}
+        <Link to="/my-area?tab=crm" className="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-[#0F172A]">
+          <ArrowLeft className="h-4 w-4" />{t("crm.back")}
         </Link>
 
         {loading && <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-gray-400" /></div>}
@@ -136,6 +136,7 @@ function CheckView({ row, busy, error, onChoose, onOpenCompany, onRetry }: {
         <section className="rounded-xl border border-gray-200 bg-white p-5">
           <h2 className="text-base font-bold text-[#0F172A]">{t("companyCheck.confirmTitle")}</h2>
           <p className="mb-4 mt-0.5 text-sm text-gray-500">{(row.candidates?.length ?? 0) > 0 ? t("companyCheck.confirmBlurb") : "\u00a0"}</p>
+          {row.progress?.generic_name && !row.input.website && <GenericNameNote name={row.input.name} />}
           <CandidateList candidates={row.candidates ?? []} onChoose={onChoose} onOpenCompany={onOpenCompany} busy={busy} />
           {!row.input.website && (
             <div className="mt-4 flex justify-end border-t border-gray-100 pt-4">
@@ -150,6 +151,12 @@ function CheckView({ row, busy, error, onChoose, onOpenCompany, onRetry }: {
       )}
 
       {step !== "confirm" && <Outcome row={row} onRetry={onRetry} />}
+      {/* The verdict may be about the wrong company when it was picked from search results (zero.ai, 2026-10-18). */}
+      {["rejected_non_tech", "rejected_public", "stealth"].includes(row.status) && row.identity?.source === "search" && (
+        <button onClick={onRetry} className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0F172A] hover:underline">
+          <Globe className="h-3.5 w-3.5" />{t("companyCheck.wrongCompany")}
+        </button>
+      )}
 
       {/* Where the check is, end to end. */}
       {/* Once the profile is there, it speaks for itself. */}

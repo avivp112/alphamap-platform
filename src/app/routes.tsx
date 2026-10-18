@@ -23,6 +23,7 @@ import { Onboarding } from "./pages/Onboarding";
 import { AdminReview } from "./pages/AdminReview";
 import { CandidatePreview } from "./pages/CandidatePreview";
 import { CheckResult } from "./pages/CheckResult";
+import { CrmCompany } from "./pages/CrmCompany";
 import { NotFound, RouteError } from "./pages/RouteFallback";
 import { requireAuth, requireOnboarding, requireAdmin } from "./routeGuards";
 
@@ -88,6 +89,7 @@ export const router = createBrowserRouter([
   { path: "/admin/review", Component: AdminReview, loader: requireAdmin },
   { path: "/candidates/:id", Component: CandidatePreview, loader: requireAuth },
   { path: "/checks/:id", Component: CheckResult, loader: requireAuth },
+  { path: "/crm/:id", Component: CrmCompany, loader: requireAuth },
 
       // Must stay last. Anything unmatched lands here instead of throwing.
       { path: "*",       Component: NotFound },

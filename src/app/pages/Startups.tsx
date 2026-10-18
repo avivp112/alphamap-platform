@@ -12,6 +12,8 @@ import { LinkedInBadge } from "../components/LinkedInBadge";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "../components/ui/hover-card";
 import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider, QuickQuestionsMenu, ExportMenu } from "../components/SideFilterLayout";
 import { CompanyLogo } from "../components/CompanyLogo";
+import { CheckCompanyDialog } from "../components/CheckCompanyDialog";
+import { emptyCheckForm } from "../../lib/companyCheck";
 import { useBackClose } from "../../lib/hardwareBack";
 import { ProductTour, type TourStep } from "../components/ProductTour";
 import {
@@ -24,6 +26,7 @@ import {
   SlidersHorizontal, Award, Eye, HelpCircle,
   Linkedin, Facebook, Instagram, Newspaper, Layers, ExternalLink,
   Star, XCircle, Sparkles, Download, Webhook,
+  ScanSearch,
 } from "lucide-react";
 import {
   fetchAlphaScore, fetchHeadcountHistory, fetchInvestorTierMap,
@@ -3154,6 +3157,8 @@ export function Startups() {
 
   const [search, setSearch]             = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  // "Check a company" for a name the search did not find (stage 5 of that feature).
+  const [checkName, setCheckName] = useState<string | null>(null);
   const [parentSector, setParentSector] = useState("");
   const [subSector, setSubSector]       = useState("");
   // Set exclusively by clicking a sub-sector tag chip on a company's own
@@ -3690,6 +3695,16 @@ export function Startups() {
                 <Building2 className="w-8 h-8 text-gray-300" />
                 <p className="text-sm font-semibold text-gray-400">{t("startups.noCompaniesMatch")}</p>
                 <button onClick={clearAll} className="text-xs text-gray-500 font-semibold hover:text-rose-600 transition-colors">{t("startups.clearAllFilters")}</button>
+                {/* Not in AlphaMap: the same "check a company" as My Area (same service, limits and privacy). */}
+                {debouncedSearch.trim().length >= 2 && (
+                  <div className="mt-4 max-w-sm rounded-xl border border-gray-200 bg-white px-5 py-4">
+                    <p className="text-sm text-gray-600">{t("startups.checkPrompt", { name: debouncedSearch.trim() })}</p>
+                    <button onClick={() => setCheckName(debouncedSearch.trim())}
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1e293b]">
+                      <ScanSearch className="h-4 w-4" />{t("startups.checkIt", { name: debouncedSearch.trim() })}
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="relative">
@@ -3742,6 +3757,7 @@ export function Startups() {
       </SideFilterLayout>
 
       <ProductTour steps={tourSteps} open={tourOpen} onClose={closeTour} />
+      {checkName !== null && <CheckCompanyDialog initial={{ ...emptyCheckForm(), name: checkName }} onClose={() => setCheckName(null)} />}
 
       {tearsheetStartup && (
         <TearsheetModal

@@ -45,6 +45,7 @@ export function CheckCompanyDialog({ onClose, initial }: { onClose: () => void; 
   const [candidates, setCandidates] = useState<IdentityCandidate[]>([]);
   const [remaining, setRemaining] = useState<number | null>(null);
   const [slow, setSlow] = useState(false);
+  const [generic, setGeneric] = useState(false);
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
 
@@ -59,6 +60,7 @@ export function CheckCompanyDialog({ onClose, initial }: { onClose: () => void; 
         if (!alive.current) return;
         if (row?.status === "awaiting_confirmation") {
           setCandidates(row.candidates ?? []);
+          setGeneric(row.progress?.generic_name === true);
           setStep("confirm");
           return;
         }
@@ -214,6 +216,7 @@ export function CheckCompanyDialog({ onClose, initial }: { onClose: () => void; 
 
           {step === "confirm" && (
             <>
+              {generic && !form.website.trim() && <GenericNameNote name={form.name.trim()} />}
               <CandidateList candidates={candidates} onChoose={choose} onOpenCompany={openCompany} />
               {remaining !== null && candidates.some((c) => !c.startup_id) && (
                 <p className="mt-3 text-[11px] text-gray-400">{t("companyCheck.remaining", { count: remaining })}</p>
@@ -335,5 +338,15 @@ export function OpenCompanyLink({ startupId, label }: { startupId: string; label
       className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
       {label}<ArrowRight className="h-4 w-4" />
     </Link>
+  );
+}
+
+/** A name many companies share: the website is what tells them apart. */
+export function GenericNameNote({ name }: { name: string }) {
+  const { t } = useTranslation();
+  return (
+    <p className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-relaxed text-amber-900">
+      <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-none" />{t("companyCheck.genericName", { name })}
+    </p>
   );
 }

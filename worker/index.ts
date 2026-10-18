@@ -22,6 +22,7 @@ import { serperSearch } from "./search.ts";
 import { runEnrichment } from "./enrich.ts";
 import { buildProfile, investorNames } from "./profile.ts";
 import { loadSectorTaxonomy, type SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
+import { isDistinctiveName } from "../lib/enrichment/entity.ts";
 import { PermanentError } from "./retry.ts";
 
 let cfg: WorkerConfig;
@@ -45,7 +46,8 @@ const execute: Execute = async (row, meter) => {
       { name: row.input.name, website: row.input.website, country: row.input.country, founder: row.input.founder },
       { search: search(meter), fetchSite: fetchSiteMeta, findExisting: (w) => queue.findExisting(w) },
     );
-    return { status: "awaiting_confirmation", patch: { candidates } };
+    // "Zero", "Atlas": names many companies share — the app asks for the website (2026-10-18, zero.ai).
+    return { status: "awaiting_confirmation", patch: { candidates, progress: { generic_name: !isDistinctiveName(row.input.name) } } };
   }
   const g = await runGates(
     { name: row.input.name, website: row.input.website, country: row.input.country, sector: row.input.sector },

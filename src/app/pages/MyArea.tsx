@@ -4,15 +4,15 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   Search, Plus, X, Check, Square, CheckSquare, Eye, Building2, Landmark,
   MapPin, Calendar, Users, Loader2, AlertCircle, GitCompare, Sparkles, Bell,
-  CheckCheck, Radar, Star, SlidersHorizontal, ScanSearch, ChevronRight,
+  CheckCheck, Radar, Star, SlidersHorizontal, Briefcase,
 } from "lucide-react";
 import { Layout } from "../components/Layout";
 import { CompanyLogo } from "../components/CompanyLogo";
-import { CheckCompanyDialog } from "../components/CheckCompanyDialog";
+import { CrmTab } from "../components/crm/CrmTab";
 import {
   fetchStartupsPage, fetchInvestors, fetchStartupsByIds, fetchTopThesisMatches,
   fetchPreferenceSignalCount, fetchNotifications, markNotificationRead, markAllNotificationsRead,
-  fetchAlertsFilter, setAlertsFiltered, fetchMyCompanyChecks,
+  fetchAlertsFilter, setAlertsFiltered,
   type StartupListRow, type InvestorRow, type ThesisMatch, type Notification,
 } from "../../lib/supabase";
 import {
@@ -20,7 +20,6 @@ import {
   type WatchlistEntityType, type WatchlistData, type WithWatchlistMeta,
 } from "../../lib/watchlist";
 import { useUserPlan } from "../../lib/plan";
-import { checkTitle, displayDomain, statusKey, statusTone, type CompanyCheckRow, type StatusTone } from "../../lib/companyCheck";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // My Area — the personal hub. Watchlist_items/user_mandates/
@@ -38,17 +37,17 @@ import { checkTitle, displayDomain, statusKey, statusTone, type CompanyCheckRow,
 //      (generate_live_alerts: watchlist filings/velocity, thesis matches,
 //      new companies), plus the toggle that narrows new-company alerts to
 //      the user's mandate.
-//   4. Checked Companies  — the user's own "check a company" requests
-//      (company_checks, private by RLS) and the button that starts one.
-//      Becomes the CRM in stage 4 of that feature.
+//   4. CRM                — the investor's own pipeline (crm_companies,
+//      private by RLS): AlphaMap companies they add and companies they
+//      checked, with stage, notes, deal terms and documents (/crm/:id).
 // ─────────────────────────────────────────────────────────────────────────────
 
-type TabId = "watchlist" | "matches" | "alerts" | "checks";
+type TabId = "watchlist" | "matches" | "alerts" | "crm";
 const TABS: { id: TabId; icon: React.ElementType }[] = [
   { id: "watchlist", icon: Star },
   { id: "matches", icon: Sparkles },
   { id: "alerts", icon: Bell },
-  { id: "checks", icon: ScanSearch },
+  { id: "crm", icon: Briefcase },
 ];
 
 function key(type: WatchlistEntityType, id: string): string {
@@ -89,7 +88,8 @@ export function MyArea() {
   const { loggedIn, loading: authLoading } = useUserPlan();
 
   const tabParam = searchParams.get("tab");
-  const activeTab: TabId = (tabParam === "matches" || tabParam === "alerts" || tabParam === "checks") ? tabParam : "watchlist";
+  // "checks" was this tab's name before the CRM (stage 4); old links keep working.
+  const activeTab: TabId = tabParam === "checks" ? "crm" : (tabParam === "matches" || tabParam === "alerts" || tabParam === "crm") ? tabParam : "watchlist";
   function setActiveTab(tab: TabId) {
     setSearchParams((p) => { if (tab === "watchlist") p.delete("tab"); else p.set("tab", tab); return p; });
   }
@@ -127,7 +127,7 @@ export function MyArea() {
         {activeTab === "watchlist" && <CuratedWatchlistTab />}
         {activeTab === "matches" && <ThesisMatchesTab />}
         {activeTab === "alerts" && <LiveAlertsTab />}
-        {activeTab === "checks" && <CheckedCompaniesTab />}
+        {activeTab === "crm" && <CrmTab />}
       </div>
     </Layout>
   );
@@ -937,78 +937,3 @@ function AlertsFilterToggle() {
   );
 }
 
-const TONE_CHIP: Record<StatusTone, string> = {
-  progress: "bg-slate-100 text-slate-700",
-  ok: "bg-emerald-50 text-emerald-700",
-  warn: "bg-amber-50 text-amber-700",
-  bad: "bg-rose-50 text-rose-700",
-  neutral: "bg-gray-100 text-gray-500",
-};
-
-function CheckedCompaniesTab() {
-  const { t } = useTranslation();
-  const [rows, setRows] = useState<CompanyCheckRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchMyCompanyChecks()
-      .then((r) => { if (!cancelled) setRows(r); })
-      .catch((e) => { if (!cancelled) { setError(e instanceof Error ? e.message : String(e)); setRows([]); } });
-    return () => { cancelled = true; };
-  }, []);
-
-  return (
-    <div>
-      <div className="mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <p className="text-sm text-gray-500">{t("myArea.checks.blurb")}</p>
-        <button onClick={() => setDialogOpen(true)}
-          className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#0F172A] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1e293b]">
-          <ScanSearch className="h-4 w-4" />{t("companyCheck.open")}
-        </button>
-      </div>
-
-      {error && (
-        <div className="mb-4 flex items-start gap-2 rounded-lg border border-rose-100 bg-rose-50 px-4 py-2.5 text-sm text-rose-700">
-          <AlertCircle className="mt-0.5 h-4 w-4 flex-none" /><span className="break-words">{error}</span>
-        </div>
-      )}
-
-      {rows === null && <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-gray-400" /></div>}
-
-      {rows?.length === 0 && !error && (
-        <div className="rounded-xl border border-dashed border-gray-200 px-6 py-12 text-center">
-          <ScanSearch className="mx-auto h-8 w-8 text-gray-300" />
-          <p className="mt-3 text-sm font-semibold text-gray-700">{t("myArea.checks.emptyTitle")}</p>
-          <p className="mx-auto mt-1 max-w-md text-xs text-gray-500">{t("myArea.checks.emptyBlurb")}</p>
-        </div>
-      )}
-
-      {!!rows?.length && (
-        <ul className="divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-200 bg-white">
-          {rows.map((r) => {
-            const { name, website } = checkTitle(r);
-            return (
-              <li key={r.id}>
-                <Link to={`/checks/${r.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50">
-                  <CompanyLogo name={name} website={website} size={36} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold text-[#0F172A]">{name}</div>
-                    <div className="truncate text-xs text-gray-500">{[displayDomain(website), timeAgo(r.created_at)].filter(Boolean).join(" · ")}</div>
-                  </div>
-                  <span className={`flex-none rounded-full px-2 py-0.5 text-[11px] font-semibold ${TONE_CHIP[statusTone(r.status)]}`}>
-                    {t(`companyCheck.status.${statusKey(r)}`)}
-                  </span>
-                  <ChevronRight className="h-4 w-4 flex-none text-gray-300" />
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      {dialogOpen && <CheckCompanyDialog onClose={() => setDialogOpen(false)} />}
-    </div>
-  );
-}

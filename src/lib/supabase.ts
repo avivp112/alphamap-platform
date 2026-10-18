@@ -5,6 +5,7 @@ import {
   CheckRequestError,
   type CheckFormValues, type CompanyCheckRow, type ConfirmResponse, type IdentifyResponse,
 } from "./companyCheck";
+import { documentPath, type CrmCompany, type CrmDocument, type DealTerm } from "./crm";
 
 const rawUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -1506,4 +1507,105 @@ export async function fetchMyCompanyChecks(limit = 50): Promise<CompanyCheckRow[
     .neq("status", "cancelled").order("created_at", { ascending: false }).limit(limit);
   if (error) throw error;
   return (data ?? []) as CompanyCheckRow[];
+}
+
+// ── CRM (crm_companies / crm_deal_terms / crm_documents; private by RLS) ─────
+// Types and pure helpers in ./crm.ts.
+
+const CRM_COLUMNS = "*, startup:startups(id, name, website, country), check:company_checks(id, status, phase)";
+
+export async function fetchCrmCompanies(): Promise<CrmCompany[]> {
+  const { data, error } = await supabase.from("crm_companies").select(CRM_COLUMNS).order("updated_at", { ascending: false }).limit(500);
+  if (error) throw error;
+  return (data ?? []) as CrmCompany[];
+}
+
+export async function fetchCrmCompany(id: string): Promise<{ company: CrmCompany; terms: DealTerm[]; documents: CrmDocument[] } | null> {
+  const [c, t, d] = await Promise.all([
+    supabase.from("crm_companies").select(CRM_COLUMNS).eq("id", id).maybeSingle(),
+    supabase.from("crm_deal_terms").select("*").eq("crm_company_id", id).order("invested_on", { ascending: false, nullsFirst: false }),
+    supabase.from("crm_documents").select("*").eq("crm_company_id", id).order("created_at", { ascending: false }),
+  ]);
+  if (c.error && c.error.code !== "22P02") throw c.error;
+  if (!c.data) return null;
+  if (t.error) throw t.error;
+  if (d.error) throw d.error;
+  return { company: c.data as CrmCompany, terms: (t.data ?? []) as DealTerm[], documents: (d.data ?? []) as CrmDocument[] };
+}
+
+/** Add an AlphaMap company (or a name without one). An existing entry for the same company is returned instead. */
+export async function addCrmCompany(input: { startupId?: string | null; name: string; website?: string | null }): Promise<string> {
+  if (input.startupId) {
+    const { data: existing } = await supabase.from("crm_companies").select("id").eq("startup_id", input.startupId).maybeSingle();
+    if (existing) return (existing as { id: string }).id;
+  }
+  const { data, error } = await supabase.from("crm_companies")
+    .insert({ startup_id: input.startupId ?? null, name: input.name.trim().slice(0, 200), website: input.website ?? null })
+    .select("id").single();
+  if (error) throw error;
+  return (data as { id: string }).id;
+}
+
+export type CrmCompanyPatch = Partial<Pick<CrmCompany, "stage" | "notes" | "tags" | "next_step" | "next_step_date">>;
+
+export async function updateCrmCompany(id: string, patch: CrmCompanyPatch): Promise<void> {
+  const { error } = await supabase.from("crm_companies").update(patch).eq("id", id);
+  if (error) throw error;
+}
+
+/** Removes the company from the CRM, its files first (the database row cascade cannot delete Storage files). */
+export async function deleteCrmCompany(id: string): Promise<void> {
+  const { data: docs, error: dErr } = await supabase.from("crm_documents").select("storage_path").eq("crm_company_id", id);
+  if (dErr) throw dErr;
+  const paths = ((docs ?? []) as Array<{ storage_path: string }>).map((d) => d.storage_path);
+  if (paths.length) {
+    const { error: sErr } = await supabase.storage.from("crm-documents").remove(paths);
+    if (sErr) throw sErr;
+  }
+  const { error } = await supabase.from("crm_companies").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export type DealTermInput = Omit<DealTerm, "id" | "crm_company_id" | "created_at">;
+
+export async function saveDealTerm(crmCompanyId: string, term: DealTermInput, id?: string): Promise<void> {
+  const { error } = id
+    ? await supabase.from("crm_deal_terms").update(term).eq("id", id)
+    : await supabase.from("crm_deal_terms").insert({ ...term, crm_company_id: crmCompanyId });
+  if (error) throw error;
+}
+
+export async function deleteDealTerm(id: string): Promise<void> {
+  const { error } = await supabase.from("crm_deal_terms").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function uploadCrmDocument(crmCompanyId: string, file: File): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const userId = session?.user?.id;
+  if (!userId) throw new Error("Sign in to upload documents.");
+  const path = documentPath(userId, crmCompanyId, file.name);
+  const { error: upErr } = await supabase.storage.from("crm-documents").upload(path, file, { contentType: file.type || undefined, upsert: false });
+  if (upErr) throw upErr;
+  const { error } = await supabase.from("crm_documents").insert({
+    crm_company_id: crmCompanyId, file_name: file.name.slice(0, 255), storage_path: path, size_bytes: file.size, mime_type: file.type || null,
+  });
+  if (error) {
+    await supabase.storage.from("crm-documents").remove([path]);   // no orphan file
+    throw error;
+  }
+}
+
+/** A short-lived link to the user's own file. */
+export async function crmDocumentUrl(path: string): Promise<string> {
+  const { data, error } = await supabase.storage.from("crm-documents").createSignedUrl(path, 60);
+  if (error || !data?.signedUrl) throw error ?? new Error("Could not open the file.");
+  return data.signedUrl;
+}
+
+export async function deleteCrmDocument(doc: Pick<CrmDocument, "id" | "storage_path">): Promise<void> {
+  const { error: sErr } = await supabase.storage.from("crm-documents").remove([doc.storage_path]);
+  if (sErr) throw sErr;
+  const { error } = await supabase.from("crm_documents").delete().eq("id", doc.id);
+  if (error) throw error;
 }
