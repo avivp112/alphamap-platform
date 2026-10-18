@@ -6,6 +6,7 @@ export interface WorkerConfig {
   supabaseUrl: string;
   serviceKey: string;
   anthropicKey: string;
+  serpKey: string;
   workerId: string;
   /** Idle wait between queue polls. */
   pollMs: number;
@@ -44,13 +45,14 @@ function supabaseUrl(env: Record<string, string | undefined>): string {
 export function loadConfig(env: Record<string, string | undefined> = process.env): WorkerConfig {
   // Without search every check would look like a stealth company: refuse to
   // start rather than return wrong verdicts.
-  required(env, "SERP_KEY");
+  const serpKey = required(env, "SERP_KEY");
   return {
     supabaseUrl: supabaseUrl(env),
     serviceKey: required(env, "SUPABASE_SERVICE_ROLE_KEY"),
     anthropicKey: required(env, "ANTHROPIC_API_KEY"),
+    serpKey,
     workerId: env.WORKER_ID?.trim() || `worker-${Math.random().toString(36).slice(2, 8)}`,
-    pollMs: Number(env.POLL_MS ?? 5000),
+    pollMs: Number(env.POLL_MS ?? 2000),
     leaseSeconds: Number(env.LEASE_SECONDS ?? 120),
     maxRunMs: Number(env.MAX_RUN_MS ?? 15 * 60_000),
     gateModel: env.GATE_MODEL?.trim() || "claude-haiku-4-5-20251001",

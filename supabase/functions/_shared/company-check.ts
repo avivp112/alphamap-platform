@@ -115,6 +115,34 @@ export function decideAllowance(a: AllowanceInput, willRun: boolean): AllowanceD
   return { ok: true, limits, remaining };
 }
 
+export type ConfirmResult =
+  | { ok: true; identity: Record<string, unknown>; input: CheckInput; startupId: string | null }
+  | { ok: false; error: string };
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The user's answer to "is this the company?": a candidate's index, or
+ * "none" (run with what they typed). A chosen candidate's website becomes the
+ * check's website; one already in AlphaMap returns its startup id, so the
+ * company is shown instead of running anything.
+ */
+export function applyChoice(input: CheckInput, candidates: unknown, choice: unknown): ConfirmResult {
+  if (choice === "none") return { ok: true, identity: {}, input, startupId: null };
+  const list = Array.isArray(candidates) ? candidates : [];
+  if (typeof choice !== "number" || !Number.isInteger(choice) || choice < 0 || choice >= list.length) {
+    return { ok: false, error: "That company is not one of the options." };
+  }
+  const c = list[choice] as Record<string, unknown>;
+  const site = typeof c.website === "string" ? normalizeWebsite(c.website) : null;
+  return {
+    ok: true,
+    identity: c,
+    input: site ? { ...input, website: site.website, host: site.host } : input,
+    startupId: typeof c.startup_id === "string" && UUID.test(c.startup_id) ? c.startup_id : null,
+  };
+}
+
 /** First instant of the current UTC month. */
 export function monthStartUtc(now: Date): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));

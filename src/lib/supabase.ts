@@ -1,6 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 import type { CompanyCandidate, CandidateSource, CandidateStatus, CandidatePreview } from "./candidateReview";
 import { sanitizeSearch, type DealFeedRow, type DealFeedStats, type DealKind, type DealSort } from "./dealFeed";
+import {
+  CheckRequestError,
+  type CheckFormValues, type CompanyCheckRow, type ConfirmResponse, type IdentifyResponse,
+} from "./companyCheck";
 
 const rawUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -1441,4 +1445,65 @@ export async function fetchDealFeedStats(kind: DealKind): Promise<DealFeedStats>
   const { data, error } = await supabase.rpc("deal_feed_stats", { p_kind: kind });
   if (error) throw error;
   return data as DealFeedStats;
+}
+
+// ── Check a company (company_checks; the company-check Edge Function) ────────
+// Types and pure helpers in ./companyCheck.ts.
+
+async function callCompanyCheck<T>(body: Record<string, unknown>): Promise<T> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new CheckRequestError({ status: 401, message: "Sign in to check a company." });
+  let res: Response;
+  try {
+    res = await fetch(`${supabaseUrl}/functions/v1/company-check`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}`, apikey: supabaseAnonKey },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new CheckRequestError({ status: 0, message: "Could not reach AlphaMap. Check your connection and try again." });
+  }
+  const payload = await res.json().catch(() => ({})) as Record<string, unknown>;
+  if (!res.ok) {
+    throw new CheckRequestError({
+      status: res.status,
+      message: typeof payload.error === "string" ? payload.error : `Request failed (${res.status}).`,
+      fields: payload.fields as Record<string, string> | undefined,
+      reason: payload.reason as string | undefined,
+    });
+  }
+  return payload as T;
+}
+
+/** Step 1: find the company (or match one already in AlphaMap). Not charged. */
+export function identifyCompany(input: Partial<CheckFormValues>): Promise<IdentifyResponse> {
+  return callCompanyCheck<IdentifyResponse>({ action: "identify", input });
+}
+
+/** Step 2: the user's answer — a candidate's index, or "none" to use what they typed. */
+export function confirmCompanyCheck(checkId: string, choice: number | "none"): Promise<ConfirmResponse> {
+  return callCompanyCheck<ConfirmResponse>({ action: "confirm", check_id: checkId, choice });
+}
+
+/** Abandon a check that has not started (own rows only, enforced in SQL). */
+export async function cancelCompanyCheck(checkId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc("cancel_company_check", { p_id: checkId });
+  if (error) throw error;
+  return data === true;
+}
+
+const CHECK_COLUMNS = "id, status, phase, input, candidates, identity, gate, matched_startup_id, error, created_at, finished_at";
+
+export async function fetchCompanyCheck(checkId: string): Promise<CompanyCheckRow | null> {
+  const { data, error } = await supabase.from("company_checks").select(CHECK_COLUMNS).eq("id", checkId).maybeSingle();
+  if (error && error.code !== "22P02") throw error;   // 22P02: not a uuid -> not found
+  return (data as CompanyCheckRow | null) ?? null;
+}
+
+/** The signed-in user's checks, newest first (RLS: their own only). */
+export async function fetchMyCompanyChecks(limit = 50): Promise<CompanyCheckRow[]> {
+  const { data, error } = await supabase.from("company_checks").select(CHECK_COLUMNS)
+    .neq("status", "cancelled").order("created_at", { ascending: false }).limit(limit);
+  if (error) throw error;
+  return (data ?? []) as CompanyCheckRow[];
 }

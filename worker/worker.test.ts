@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { decideGate } from "./gates";
-import { isTransient, backoffSeconds, PermanentError, RunTimeoutError } from "./retry";
-import { processOne, withTimeout, type Outcome } from "./runner";
+import { isTransient, backoffSeconds, PermanentError, RunTimeoutError, ProviderKeyError, isProviderKeyError } from "./retry";
+import { processOne, withTimeout, KEY_ERROR_RETRY_SECONDS, type Outcome, type Meter } from "./runner";
 import type { CheckRow, Queue } from "./queue";
 import { loadConfig, llmCostUsd, ConfigError } from "./config";
 
@@ -49,16 +49,20 @@ function fakeQueue(row: CheckRow | null, heartbeatHeld = true) {
     patch: vi.fn(async () => true),
     finish: vi.fn(async (_id: string, status: string, _p: unknown, err?: string | null) => { calls.push(`finish:${status}${err ? `:${err}` : ""}`); return true; }),
     retryLater: vi.fn(async (_id: string, s: number) => { calls.push(`retry:${s}`); return true; }),
+    release: vi.fn(async (_id: string, s: number) => { calls.push(`release:${s}`); return true; }),
     logRun: vi.fn(async () => { calls.push("log"); }),
   };
   return { q: q as unknown as Queue, calls, raw: q };
 }
 const row = (attempts = 1, max = 3): CheckRow => ({
-  id: "c1", user_id: "u1", status: "running", attempts, max_attempts: max,
+  id: "c1", user_id: "u1", status: "running", phase: "check", attempts, max_attempts: max,
   input: { name: "Acme", website: null, host: null, country: null, founder: null, linkedin: null, sector: null },
 });
-const ok: Outcome = { status: "ready", patch: { gate: {} }, usage: { cost_usd: 0.002, search_calls: 2, llm_input_tokens: 900, llm_output_tokens: 80 } };
-const opts = { leaseSeconds: 120, maxRunMs: 1000, model: "claude-haiku-4-5-20251001", log: () => {} };
+const ok: Outcome = { status: "ready", patch: { gate: {} } };
+// What a real run would have counted: two searches, one LLM call.
+const spend = (m: Meter) => { m.searchCalls += 2; m.llmInputTokens += 900; m.llmOutputTokens += 80; };
+const opts = { leaseSeconds: 120, maxRunMs: 1000, model: "claude-haiku-4-5-20251001", log: () => {},
+  cost: (m: Meter) => llmCostUsd("claude-haiku-4-5-20251001", m.llmInputTokens, m.llmOutputTokens) + m.searchCalls * 0.001 };
 
 describe("processOne", () => {
   it("nothing queued: returns false, touches nothing", async () => {
@@ -68,9 +72,35 @@ describe("processOne", () => {
   });
   it("success: final status, then one cost-log row", async () => {
     const { q, calls, raw } = fakeQueue(row());
-    await processOne(q, async () => ok, opts);
+    await processOne(q, async (_r, m) => { spend(m); return ok; }, opts);
     expect(calls).toEqual(["finish:ready", "log"]);
-    expect(raw.finish.mock.calls[0][2]).toMatchObject({ gate: {}, cost_usd: 0.002, search_calls: 2 });
+    expect(raw.finish.mock.calls[0][2]).toMatchObject({ gate: {}, search_calls: 2, llm_input_tokens: 900 });
+    expect((raw.finish.mock.calls[0][2] as { cost_usd: number }).cost_usd).toBeCloseTo(0.0033);
+  });
+  // 2026-10-18: a run that failed after its searches recorded a cost of 0.
+  it("a run that fails half way still records what it spent", async () => {
+    const { q, calls, raw } = fakeQueue(row(3, 3));
+    await processOne(q, async (_r, m) => { m.searchCalls += 2; throw new Error("ECONNRESET"); }, opts);
+    expect(calls).toEqual(["finish:failed:ECONNRESET", "log"]);
+    expect(raw.finish.mock.calls[0][2]).toMatchObject({ search_calls: 2 });
+  });
+  // 2026-10-18: two test checks failed on a revoked Anthropic key — our fault, not the check's.
+  it("a provider rejecting our key puts the check back without using an attempt", async () => {
+    const anthropic401 = Object.assign(new Error('401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}'), { status: 401 });
+    for (const err of [anthropic401, new ProviderKeyError("Serper", "HTTP 403")]) {
+      const { q, calls, raw } = fakeQueue(row(3, 3));
+      const lines: string[] = [];
+      await processOne(q, async (_r, m) => { m.searchCalls += 1; throw err; }, { ...opts, log: (l) => lines.push(l) });
+      expect(calls).toEqual([`release:${KEY_ERROR_RETRY_SECONDS}`, "log"]);
+      expect(raw.release.mock.calls[0][3]).toMatchObject({ search_calls: 1 });
+      expect(lines.some((l) => l.startsWith("CONFIG"))).toBe(true);
+    }
+  });
+  it("key errors are told apart from other failures", () => {
+    expect(isProviderKeyError(Object.assign(new Error("x"), { status: 403 }))).toBe(true);
+    expect(isProviderKeyError(new Error("400 Your credit balance is too low to access the Anthropic API"))).toBe(true);
+    expect(isProviderKeyError(new Error("fetch failed"))).toBe(false);
+    expect(isProviderKeyError(Object.assign(new Error("overloaded"), { status: 529 }))).toBe(false);
   });
   it("transient error: back to the queue with backoff", async () => {
     const { q, calls } = fakeQueue(row(2));

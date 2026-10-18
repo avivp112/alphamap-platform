@@ -2,22 +2,37 @@
 // time limit, then close it — final status, or back to the queue with a
 // growing delay (attempts are capped by company_checks.max_attempts, enforced
 // in claim_company_check).
+//
+// Usage is counted on a Meter while the run goes, so a run that fails half
+// way still records the searches and tokens it already spent.
 
 import type { CheckRow, Queue, Usage } from "./queue.ts";
-import { backoffSeconds, isTransient, RunTimeoutError } from "./retry.ts";
+import { backoffSeconds, isProviderKeyError, isTransient, keyErrorProvider, RunTimeoutError } from "./retry.ts";
 
-export interface Outcome {
-  status: "ready" | "stealth" | "rejected_public" | "rejected_non_tech" | "done";
-  patch: Record<string, unknown>;
-  usage: Required<Omit<Usage, "duration_ms">>;
+export interface Meter {
+  searchCalls: number;
+  llmInputTokens: number;
+  llmOutputTokens: number;
 }
 
-export type Execute = (row: CheckRow) => Promise<Outcome>;
+export const newMeter = (): Meter => ({ searchCalls: 0, llmInputTokens: 0, llmOutputTokens: 0 });
+
+export interface Outcome {
+  status: "awaiting_confirmation" | "ready" | "stealth" | "rejected_public" | "rejected_non_tech" | "done";
+  patch: Record<string, unknown>;
+}
+
+export type Execute = (row: CheckRow, meter: Meter) => Promise<Outcome>;
+
+/** A rejected key is retried after this long: whoever fixes it gets a few minutes. */
+export const KEY_ERROR_RETRY_SECONDS = 300;
 
 export interface RunnerOptions {
   leaseSeconds: number;
   maxRunMs: number;
   model: string;
+  /** Estimated USD of what the meter counted. */
+  cost: (m: Meter) => number;
   log?: (msg: string) => void;
   now?: () => number;
 }
@@ -39,7 +54,15 @@ export async function processOne(queue: Queue, execute: Execute, o: RunnerOption
   if (!row) return false;
 
   const started = now();
-  log(`check ${row.id} — attempt ${row.attempts}/${row.max_attempts}`);
+  const meter = newMeter();
+  const usage = (): Required<Usage> => ({
+    duration_ms: now() - started,
+    cost_usd: o.cost(meter),
+    search_calls: meter.searchCalls,
+    llm_input_tokens: meter.llmInputTokens,
+    llm_output_tokens: meter.llmOutputTokens,
+  });
+  log(`check ${row.id} (${row.phase}) — attempt ${row.attempts}/${row.max_attempts}`);
   let leaseLost = false;
   const beat = setInterval(() => {
     queue.heartbeat(row.id)
@@ -48,24 +71,29 @@ export async function processOne(queue: Queue, execute: Execute, o: RunnerOption
   }, Math.max(5, o.leaseSeconds / 3) * 1000);
 
   try {
-    const out = await withTimeout(execute(row), o.maxRunMs);
+    const out = await withTimeout(execute(row, meter), o.maxRunMs);
     if (leaseLost) { log(`check ${row.id}: finished after losing the lease — result dropped`); return true; }
-    const usage = { ...out.usage, duration_ms: now() - started };
-    const ok = await queue.finish(row.id, out.status, { ...out.patch, ...usage });
-    if (ok) await queue.logRun(row.id, o.model, usage);
-    log(`check ${row.id}: ${out.status} in ${Math.round(usage.duration_ms / 1000)} s, $${usage.cost_usd.toFixed(4)}`);
+    const u = usage();
+    const ok = await queue.finish(row.id, out.status, { ...out.patch, ...u });
+    if (ok) await queue.logRun(row.id, o.model, u);
+    log(`check ${row.id}: ${out.status} in ${Math.round(u.duration_ms / 1000)} s, $${u.cost_usd.toFixed(4)}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    const usage = { duration_ms: now() - started };
     if (leaseLost) return true;
-    if (isTransient(err) && row.attempts < row.max_attempts) {
+    const u = usage();
+    if (isProviderKeyError(err)) {
+      // Ours, not the check's: back to the queue, no attempt used.
+      log(`CONFIG ${keyErrorProvider(err)} key rejected — check ${row.id} waits ${KEY_ERROR_RETRY_SECONDS} s: ${msg}`);
+      await queue.release(row.id, KEY_ERROR_RETRY_SECONDS, `waiting: ${keyErrorProvider(err)} rejected the worker's API key`, u);
+    } else if (isTransient(err) && row.attempts < row.max_attempts) {
       const wait = backoffSeconds(row.attempts);
       log(`check ${row.id}: ${msg} — retry in ${wait} s`);
-      await queue.retryLater(row.id, wait, msg, usage);
+      await queue.retryLater(row.id, wait, msg, u);
     } else {
       log(`check ${row.id}: failed — ${msg}`);
-      await queue.finish(row.id, "failed", usage, msg);
+      await queue.finish(row.id, "failed", u, msg);
     }
+    if (u.search_calls || u.llm_input_tokens) await queue.logRun(row.id, o.model, u);
   } finally {
     clearInterval(beat);
   }

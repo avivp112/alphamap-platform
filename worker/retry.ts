@@ -8,6 +8,32 @@ export class RunTimeoutError extends Error {
   constructor(ms: number) { super(`run exceeded ${Math.round(ms / 1000)} s`); this.name = "RunTimeoutError"; }
 }
 
+/**
+ * A provider rejected one of the WORKER's keys (revoked, wrong, out of
+ * credits). Not the check's fault: the check goes back to the queue without
+ * using an attempt (release_company_check) and the log says which key.
+ */
+export class ProviderKeyError extends Error {
+  constructor(public provider: string, detail: string) {
+    super(`${provider} rejected the worker's API key (${detail})`);
+    this.name = "ProviderKeyError";
+  }
+}
+
+/** ProviderKeyError, or the Anthropic SDK's own 401/403 / no-credit errors. */
+export function isProviderKeyError(err: unknown): boolean {
+  if (err instanceof ProviderKeyError) return true;
+  const status = (err as { status?: unknown } | null)?.status;
+  const msg = err instanceof Error ? err.message : String(err);
+  if (status === 401 || status === 403) return true;
+  return /authentication_error|invalid x-api-key|permission_error|credit balance is too low/i.test(msg);
+}
+
+/** Which provider a key error names, for the log line. */
+export function keyErrorProvider(err: unknown): string {
+  return err instanceof ProviderKeyError ? err.provider : "Anthropic";
+}
+
 /** Network trouble, rate limits, provider 5xx, our own timeout: worth another attempt. Bad input or code bugs: not. */
 export function isTransient(err: unknown): boolean {
   if (err instanceof PermanentError) return false;

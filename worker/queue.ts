@@ -1,5 +1,5 @@
 // The company_checks queue, through the lease-guarded RPCs of migration
-// 20261021010000. Every write after the claim names this worker; a run
+// 20261021010000 / 20261022000000. Every write after the claim names this worker; a run
 // whose lease was taken over cannot overwrite the newer one.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -10,6 +10,8 @@ export interface CheckRow {
   input: { name: string; website: string | null; host: string | null; country: string | null;
            founder: string | null; linkedin: string | null; sector: string | null };
   status: string;
+  /** identify = the short search for the company; check = the threshold checks (migration 20261022000000). */
+  phase: "identify" | "check";
   attempts: number;
   max_attempts: number;
 }
@@ -58,6 +60,23 @@ export class Queue {
     });
     if (e) throw new Error(`finish_company_check (retry): ${e.message}`);
     return data === true;
+  }
+
+  /** Back to the queue WITHOUT using an attempt — for a key of ours that a provider rejected. */
+  async release(id: string, seconds: number, note: string, usage: Usage): Promise<boolean> {
+    const { data, error: e } = await this.db.rpc("release_company_check", {
+      p_id: id, p_worker: this.workerId, p_retry_in_seconds: seconds, p_note: note, p_usage: usage,
+    });
+    if (e) throw new Error(`release_company_check: ${e.message}`);
+    return data === true;
+  }
+
+  /** The AlphaMap company at this website, if any (find_existing_startup, by registrable domain). */
+  async findExisting(website: string): Promise<{ id: string; name: string } | null> {
+    const { data, error } = await this.db.rpc("find_existing_startup", { p_website: website, p_linkedin: null });
+    if (error) throw new Error(`find_existing_startup: ${error.message}`);
+    const hit = Array.isArray(data) ? data[0] : null;
+    return hit ? { id: hit.id, name: hit.name } : null;
   }
 
   /** One row per on-demand run in the shared cost log (service-role only table). */

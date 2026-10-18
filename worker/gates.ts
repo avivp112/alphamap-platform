@@ -11,15 +11,19 @@
 //      verdict (lib/enrichment/techGate.ts) — an uncertain one goes through.
 //
 // decideGate() is pure (tested in gates.test.ts); runGates() gathers its
-// evidence: the company's own pages (Jina) and two searches (Serper).
+// evidence: the company's own pages (Jina) and two searches (Serper, through
+// worker/search.ts so a rejected key fails the run instead of looking like an
+// empty web). Searches and tokens go on the run's meter as they happen.
 // =============================================================================
 
 import Anthropic from "@anthropic-ai/sdk";
-import { createSearchProviderState, fetchCompanyWebsitePages, serperSearch } from "../lib/enrichment/searchProviders.ts";
+import { createSearchProviderState, fetchCompanyWebsitePages } from "../lib/enrichment/searchProviders.ts";
 import { findListingStatement, type ListingStatement } from "../lib/enrichment/listing.ts";
 import { runTechGate, shouldSkipAsNonTech, type TechGateVerdict } from "../lib/enrichment/techGate.ts";
 import { namesCompany } from "../lib/enrichment/headcount.ts";
 import { websiteDomain } from "../lib/enrichment/websiteValidation.ts";
+import type { Search } from "./search.ts";
+import type { Meter } from "./runner.ts";
 
 export type GateStatus = "ready" | "stealth" | "rejected_public" | "rejected_non_tech";
 
@@ -65,21 +69,21 @@ export function decideGate(e: GateEvidence): GateDecision {
 
 export interface GateRun {
   decision: GateDecision;
-  searchCalls: number;
   pagesFetched: number;
-  llmInputTokens: number;
-  llmOutputTokens: number;
 }
 
-export async function runGates(input: GateInput, deps: { anthropic: Anthropic; model: string }): Promise<GateRun> {
+export async function runGates(
+  input: GateInput,
+  deps: { anthropic: Anthropic; model: string; search: Search; meter: Meter },
+): Promise<GateRun> {
   const state = createSearchProviderState();
   const domain = websiteDomain(input.website);
 
   const pages = input.website ? await fetchCompanyWebsitePages(input.website, state) : [];
   const anchor = domain ? ` "${domain}"` : input.country ? ` ${input.country}` : "";
-  const [general, listing] = await Promise.all([
-    serperSearch(`"${input.name}"${anchor}`, "check_identity", state),
-    serperSearch(`"${input.name}" (Nasdaq OR NYSE OR "stock exchange" OR ticker)`, "check_listing", state),
+  const [{ organic: general }, { organic: listing }] = await Promise.all([
+    deps.search(`"${input.name}"${anchor}`, "check_identity"),
+    deps.search(`"${input.name}" (Nasdaq OR NYSE OR "stock exchange" OR ticker)`, "check_listing"),
   ]);
   const results = [...general, ...listing];
 
@@ -93,20 +97,18 @@ export async function runGates(input: GateInput, deps: { anthropic: Anthropic; m
   const listingStatement = findListingStatement(input.name, sources, domain);
 
   // The tech verdict costs an LLM call: only when it can change the outcome.
-  let tech: TechGateVerdict | null = null, inTok = 0, outTok = 0;
+  let tech: TechGateVerdict | null = null;
   const preliminary = decideGate({ listing: listingStatement, ownPagesChars, mentions, tech: null });
   if (preliminary.status === "ready") {
     const material = pages[0]?.content || general.slice(0, 5).map((r) => `${r.title ?? ""}: ${r.content}`).join("\n");
     const g = await runTechGate(input.name, material, null, input.sector, { client: deps.anthropic, model: deps.model });
-    tech = g.verdict; inTok = g.inputTokens; outTok = g.outputTokens;
+    tech = g.verdict;
+    deps.meter.llmInputTokens += g.inputTokens;
+    deps.meter.llmOutputTokens += g.outputTokens;
   }
 
   return {
     decision: decideGate({ listing: listingStatement, ownPagesChars, mentions, tech }),
-    // Both searches are billed whether or not they return anything (serperCallCount only counts hits).
-    searchCalls: process.env.SERP_KEY ? 2 : 0,
     pagesFetched: state.websitePagesFetched,
-    llmInputTokens: inTok,
-    llmOutputTokens: outTok,
   };
 }

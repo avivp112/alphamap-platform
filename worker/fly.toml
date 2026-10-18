@@ -6,7 +6,7 @@ app = "alphamap-check-worker"
 primary_region = "iad"
 
 [env]
-  POLL_MS = "5000"
+  POLL_MS = "2000"
   LEASE_SECONDS = "120"
   MAX_RUN_MS = "900000"
 

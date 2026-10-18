@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateCheckInput, normalizeWebsite, normalizeLinkedIn, decideAllowance, monthStartUtc } from "./company-check";
+import { validateCheckInput, normalizeWebsite, normalizeLinkedIn, decideAllowance, monthStartUtc, applyChoice } from "./company-check";
 import { CHECK_LIMITS } from "./check-limits";
 
 describe("validateCheckInput", () => {
@@ -49,5 +49,27 @@ describe("decideAllowance", () => {
   });
   it("month boundary is UTC", () => {
     expect(monthStartUtc(new Date("2026-10-31T23:30:00-05:00")).toISOString()).toBe("2026-11-01T00:00:00.000Z");
+  });
+});
+
+describe("applyChoice", () => {
+  const typed = (validateCheckInput({ name: "Nuova AI", country: "Israel" }) as { ok: true; input: import("./company-check").CheckInput }).input;
+  const cands = [
+    { name: "Nuova AI", website: "https://www.nuova.ai/", startup_id: null },
+    { name: "Nuova", website: "https://getnuova.com", startup_id: "6f1c2a7e-1b2c-4d5e-8f90-123456789abc" },
+  ];
+  it("a chosen candidate's website becomes the check's website", () => {
+    const r = applyChoice(typed, cands, 0);
+    expect(r).toMatchObject({ ok: true, startupId: null, input: { name: "Nuova AI", website: "https://nuova.ai", host: "nuova.ai", country: "Israel" } });
+  });
+  it("a candidate already in AlphaMap returns its id: nothing runs", () => {
+    expect(applyChoice(typed, cands, 1)).toMatchObject({ ok: true, startupId: "6f1c2a7e-1b2c-4d5e-8f90-123456789abc" });
+  });
+  it("'none of these' runs with what the user typed", () => {
+    expect(applyChoice(typed, cands, "none")).toEqual({ ok: true, identity: {}, input: typed, startupId: null });
+  });
+  it("anything else is refused, never guessed", () => {
+    for (const c of [2, -1, 0.5, "0", null]) expect(applyChoice(typed, cands, c).ok).toBe(false);
+    expect(applyChoice(typed, null, 0).ok).toBe(false);
   });
 });

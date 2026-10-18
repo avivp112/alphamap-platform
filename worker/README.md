@@ -5,8 +5,16 @@ a small server of its own — **Railway or Fly.io** — and never on CI runners
 (GitHub Actions / GitLab CI terms do not allow using them as a production
 backend).
 
-Stage 1 runs the threshold checks (public company, stealth, non-tech —
-`worker/gates.ts`). Later stages add the enrichment to the same run.
+Each check has two phases:
+
+1. **identify** (`worker/identify.ts`) — one search; leaves "is this the
+   company you mean?" candidates for the user. Never charged.
+2. **check** (`worker/gates.ts`) — after the user confirms: the threshold
+   checks (public company, stealth, non-tech). Stage 3 adds the enrichment.
+
+A provider rejecting one of the worker's keys (Serper, Anthropic) puts the
+check back in the queue without using an attempt and logs a `CONFIG` line
+naming the key — fix the key (`fly secrets import`) and the check resumes.
 
 ## Environment (set on the worker server only)
 
@@ -18,7 +26,7 @@ Stage 1 runs the threshold checks (public company, stealth, non-tech —
 | `SERP_KEY` | yes | Serper search, same key as enrichment v2. |
 | `JINA_API_KEY` | no | Raises the rate limit for reading company websites. |
 | `WORKER_ID` | no | Name in the logs and on the lease (default: random). |
-| `POLL_MS` | no | Idle wait between queue polls, default 5000. |
+| `POLL_MS` | no | Idle wait between queue polls, default 2000 (the user waits on the identify phase). |
 | `LEASE_SECONDS` | no | Lease on a claimed check, default 120 (renewed every 40 s). |
 | `MAX_RUN_MS` | no | Hard limit for one run, default 900000 (15 min); then it is retried. |
 | `GATE_MODEL` | no | Default `claude-haiku-4-5-20251001`, as enrichment v2. |
