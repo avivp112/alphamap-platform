@@ -33,7 +33,7 @@ import {
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
 import { pickArticlesToRead } from "./articles.ts";
 import { runTechGate, shouldSkipAsNonTech, type TechGateVerdict } from "./techGate.ts";
-import { foundersFromText, personMentionedIn } from "./people.ts";
+import { foundersFromText, personMentionedIn, groundFounders } from "./people.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
@@ -622,6 +622,27 @@ export async function collectCompany(
       }
       const withBio = [...linkedinFounders, ...linkedinLeaders].filter((p) => p.bio);
       console.log(`    🔗  LinkedIn: ${linkedinFounders.length + linkedinLeaders.length} profile(s) matched, ${withBio.length} with education/experience from the snippet${ctx.verbose && withBio.length ? ` — ${withBio.map((p) => `${p.name}: ${p.bio}`).join(" | ")}` : ""}`);
+    }
+  }
+
+  // ── Founders must be grounded (lib/enrichment/people.ts groundFounders) ─
+  // A founder stays only when a source states they founded THIS company;
+  // anyone named among the round's investors never is (huskeys.io: six
+  // angels, each introduced as "co-founder of <another company>").
+  const roundInvestors = funding.funding_rounds.flatMap((r) => {
+    const like = roundToRoundLike(r);
+    return [like.lead_investor, ...(like.other_investors ?? [])].filter((n): n is string => !!n);
+  });
+  const grounded = groundFounders(profile.profile.founders ?? [], allSources, row.name, roundInvestors);
+  for (const d of grounded.dropped) {
+    console.log(`    👤  ${d.name} not kept as a founder (${d.reason === "founder_is_investor" ? "named among the investors" : "no source says they founded this company"}).`);
+    bump(stats.droppedByReason, d.reason);
+  }
+  profile.profile.founders = grounded.kept;
+  for (let i = linkedinFounders.length - 1; i >= 0; i--) {
+    if (roundInvestors.some((n) => samePersonName(n, linkedinFounders[i].name))) {
+      bump(stats.droppedByReason, "founder_is_investor");
+      linkedinFounders.splice(i, 1);
     }
   }
 
