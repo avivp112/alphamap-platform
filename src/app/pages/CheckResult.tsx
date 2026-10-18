@@ -7,10 +7,11 @@ import {
 import { Layout } from "../components/Layout";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { CandidateList, CheckCompanyDialog, OpenCompanyLink } from "../components/CheckCompanyDialog";
+import { CheckProfileView } from "../components/CheckProfileView";
 import { fetchCompanyCheck, confirmCompanyCheck, cancelCompanyCheck } from "../../lib/supabase";
 import { companyPath } from "../../lib/candidateReview";
 import {
-  CHECK_POLL_MS, checkStep, checkTitle, displayDomain, formFromInput, isPending,
+  CHECK_POLL_MS, checkStep, checkTitle, displayDomain, formFromInput, isPending, progressKey,
   type CompanyCheckRow,
 } from "../../lib/companyCheck";
 
@@ -18,8 +19,8 @@ import {
 // One "check a company" request (/checks/:id): follows the worker while it
 // runs, then shows the verdict with its evidence. Private: the row is read
 // through RLS, so another user's id simply reads as "not found".
-// Stage 3 fills the profile sections; until then they say "coming soon"
-// rather than pretend.
+// Stage 3: once the checks pass, the research runs in the same job and the
+// profile appears here — unverified, every value linked to its source.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function CheckResult() {
@@ -105,7 +106,8 @@ function CheckView({ row, busy, error, onChoose, onOpenCompany, onRetry }: {
   const { name, website } = checkTitle(row);
   const domain = displayDomain(website);
   const identified = row.phase === "check" && row.status !== "cancelled";
-  const checksDone = step === "final" && row.status !== "cancelled" && row.status !== "matched";
+  const checksDone = row.gate?.status === "ready" || (step === "final" && row.status !== "cancelled" && row.status !== "matched");
+  const profile = row.result?.profile;
 
   return (
     <div className="space-y-5">
@@ -150,18 +152,25 @@ function CheckView({ row, busy, error, onChoose, onOpenCompany, onRetry }: {
       {step !== "confirm" && <Outcome row={row} onRetry={onRetry} />}
 
       {/* Where the check is, end to end. */}
-      {row.status !== "cancelled" && row.status !== "matched" && (
+      {/* Once the profile is there, it speaks for itself. */}
+      {row.status !== "cancelled" && row.status !== "matched" && row.status !== "done" && (
         <section className="rounded-xl border border-gray-200 bg-white p-5">
           <ol className="space-y-3 text-sm">
             <StepLine state={identified ? "done" : step === "identifying" ? "active" : "todo"} label={t("companyCheck.steps.identified")} />
             <StepLine state={checksDone ? (row.status === "failed" ? "failed" : "done") : step === "checking" ? "active" : "todo"} label={t("companyCheck.steps.checks")} />
             {/* The profile only follows a check that passed. */}
             {!["rejected_public", "rejected_non_tech", "stealth", "failed"].includes(row.status) && (
-              <StepLine state="todo" label={t("companyCheck.steps.profile")} note={t("companyCheck.steps.soon")} />
+              <StepLine
+                state={step === "researching" ? "active" : "todo"}
+                label={t("companyCheck.steps.profile")}
+                note={step === "researching" ? t(`companyCheck.progress.${progressKey(row.progress?.stage)}`, { count: row.progress?.sources ?? 0 })
+                  : row.status === "ready" ? t("companyCheck.steps.beforeResearch") : undefined} />
             )}
           </ol>
         </section>
       )}
+
+      {profile && <CheckProfileView profile={profile} investors={row.result?.investors ?? null} />}
     </div>
   );
 }
@@ -191,13 +200,26 @@ function Outcome({ row, onRetry }: { row: CompanyCheckRow; onRetry: () => void }
         title={step === "identifying" ? t("companyCheck.finding") : o("checkingTitle")} body={o("checkingBody")} />
     );
   }
+  if (step === "researching") {
+    return (
+      <Panel tone="progress" icon={<Loader2 className="h-5 w-5 animate-spin" />}
+        title={o("researchingTitle")} body={o("researchingBody")} />
+    );
+  }
 
   const listing = row.gate?.evidence?.listing ?? null;
   const techReason = row.gate?.evidence?.tech?.reason;
   switch (row.status) {
-    case "ready":
     case "done":
-      return <Panel tone="ok" icon={<ShieldCheck className="h-5 w-5" />} title={o("readyTitle")} body={o("readyBody")} />;
+      return <Panel tone="ok" icon={<ShieldCheck className="h-5 w-5" />} title={o("doneTitle")} body={o("doneBody")} />;
+    case "ready":   // checked before the research existed (stage 2)
+      return (
+        <Panel tone="ok" icon={<ShieldCheck className="h-5 w-5" />} title={o("readyTitle")} body={o("readyBody")}>
+          <button onClick={onRetry} className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-50">
+            <RotateCcw className="h-3.5 w-3.5" />{t("companyCheck.runResearch")}
+          </button>
+        </Panel>
+      );
     case "stealth":
       return <Panel tone="warn" icon={<EyeOff className="h-5 w-5" />} title={o("stealthTitle")} body={o("stealthBody")} />;
     case "rejected_public":
@@ -214,7 +236,7 @@ function Outcome({ row, onRetry }: { row: CompanyCheckRow; onRetry: () => void }
     case "rejected_non_tech":
       return (
         <Panel tone="bad" icon={<XCircle className="h-5 w-5" />} title={o("nonTechTitle")} body={o("nonTechBody")}>
-          {techReason && <p className="mt-2 text-xs text-gray-600">{techReason}</p>}
+          {(techReason ?? row.gate?.reason) && <p className="mt-2 text-xs text-gray-600">{techReason ?? row.gate?.reason}</p>}
         </Panel>
       );
     case "matched":

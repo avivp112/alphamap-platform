@@ -37,6 +37,72 @@ export interface CompanyCheckGate {
   evidence?: { listing?: { url: string; quote: string } | null; tech?: { reason?: string } | null };
 }
 
+// ── The research (stage 3) — mirrors worker/profile.ts ──────────────────────
+
+export type Confidence = "high" | "medium" | "low";
+
+export interface Sourced<T> {
+  value: T;
+  source_url: string | null;
+  quote: string | null;
+  confidence: Confidence;
+}
+
+export interface ProfilePerson { name: string; title: string | null; bio: string | null; linkedin_url: string | null }
+
+export interface ProfileRound {
+  round_type: string;
+  amount: number | null;
+  valuation: number | null;
+  date: string | null;
+  lead_investor: string | null;
+  investors: string[];
+  source_url: string | null;
+}
+
+export interface InvestorFact {
+  name: string;
+  investor_id: string | null;
+  investor_name: string | null;
+  /** In AlphaMap's own data. */
+  companies: number;
+  rounds: number;
+  rounds_led: number;
+  main_stages: string[];
+  led_here: boolean;
+}
+
+export interface CheckProfile {
+  overview: {
+    description: string | null;
+    value_proposition: string | null;
+    industry: string | null;
+    sector: string | null;
+    sub_sectors: string[];
+    founded_year: Sourced<number> | null;
+    city: Sourced<string> | null;
+    country: Sourced<string> | null;
+    headcount: Sourced<number> | null;
+    employee_range: string | null;
+    linkedin_url: string | null;
+  };
+  people: { founders: ProfilePerson[]; leadership: ProfilePerson[] };
+  funding: { rounds: ProfileRound[]; total_raised: number | null; history_complete: boolean | null };
+  sources_count: number;
+}
+
+export interface CheckResultData {
+  profile?: CheckProfile;
+  investors?: InvestorFact[];
+}
+
+export interface CheckProgress {
+  stage?: string;
+  sources?: number;
+  sections?: string[];
+  at?: string;
+}
+
 export interface CompanyCheckRow {
   id: string;
   status: CheckStatus;
@@ -45,6 +111,8 @@ export interface CompanyCheckRow {
   candidates: IdentityCandidate[] | null;
   identity: Partial<IdentityCandidate> | null;
   gate: CompanyCheckGate | null;
+  result: CheckResultData | null;
+  progress: CheckProgress | null;
   matched_startup_id: string | null;
   error: string | null;
   created_at: string;
@@ -72,12 +140,22 @@ export function formFromInput(input: Partial<CheckInput> | null | undefined): Ch
 }
 
 /** What the screen should show for a row. */
-export type CheckStep = "identifying" | "confirm" | "checking" | "final";
+export type CheckStep = "identifying" | "confirm" | "checking" | "researching" | "final";
 
-export function checkStep(row: Pick<CompanyCheckRow, "status" | "phase">): CheckStep {
+export function checkStep(row: Pick<CompanyCheckRow, "status" | "phase"> & { gate?: CompanyCheckGate | null }): CheckStep {
   if (row.status === "awaiting_confirmation") return "confirm";
-  if (row.status === "queued" || row.status === "running") return row.phase === "identify" ? "identifying" : "checking";
+  if (row.status === "queued" || row.status === "running") {
+    if (row.phase === "identify") return "identifying";
+    // The worker saves the verdict before the research starts.
+    return row.status === "running" && row.gate?.status === "ready" ? "researching" : "checking";
+  }
   return "final";
+}
+
+/** What the research is doing now, as a companyCheck.progress.* key. */
+export function progressKey(stage: string | undefined): string {
+  const known = ["starting", "searching", "reading", "extracting", "deep_dive", "people", "validating", "investors"];
+  return known.includes(stage ?? "") ? stage! : "starting";
 }
 
 /** Still moving on the worker's side: keep polling. */

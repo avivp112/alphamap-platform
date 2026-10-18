@@ -7,17 +7,21 @@
 //
 // Two phases per check: identify (worker/identify.ts — one search for "is
 // this the company?") and, once the user confirms, the threshold checks
-// (worker/gates.ts). Stage 3 adds the enrichment after the checks pass.
+// (worker/gates.ts) and, when they pass, the research itself: enrichment
+// v2's collection on that one company (worker/enrich.ts, worker/profile.ts).
 // =============================================================================
 
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
-import { loadConfig, llmCostUsd, ConfigError, type WorkerConfig } from "./config.ts";
+import { loadConfig, ConfigError, type WorkerConfig } from "./config.ts";
 import { Queue } from "./queue.ts";
 import { processOne, type Execute, type Meter } from "./runner.ts";
 import { runGates } from "./gates.ts";
 import { runIdentify, fetchSiteMeta } from "./identify.ts";
 import { serperSearch } from "./search.ts";
+import { runEnrichment } from "./enrich.ts";
+import { buildProfile, investorNames } from "./profile.ts";
+import { loadSectorTaxonomy, type SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { PermanentError } from "./retry.ts";
 
 let cfg: WorkerConfig;
@@ -47,13 +51,64 @@ const execute: Execute = async (row, meter) => {
     { name: row.input.name, website: row.input.website, country: row.input.country, sector: row.input.sector },
     { anthropic, model: cfg.gateModel, search: search(meter), meter },
   );
+  const gate = { status: g.decision.status, reason: g.decision.reason, evidence: g.decision.evidence, pages_fetched: g.pagesFetched };
+  const name = row.input.name;
+  if (g.decision.status !== "ready") {
+    return { status: g.decision.status, patch: { gate }, notify: verdictNotice(g.decision.status, name) };
+  }
+
+  // Passed: the verdict shows at once, the research follows (stage 3).
+  await queue.patch(row.id, { gate, progress: { stage: "starting", at: new Date().toISOString() } });
+  const onStage = (stage: string, detail?: Record<string, unknown>) => {
+    void queue.patch(row.id, { progress: { stage, ...detail, at: new Date().toISOString() } }).catch(() => {});
+  };
+  const collected = await runEnrichment(
+    { checkId: row.id, name, website: row.input.website, country: row.input.country, founder: row.input.founder },
+    { anthropic, model: cfg.enrichModel, taxonomy: await taxonomy(), meter, onStage },
+  );
+  switch (collected.outcome) {
+    case "collected": break;
+    case "public":
+      return { status: "rejected_public", patch: { gate: { ...gate, status: "rejected_public",
+        reason: "Publicly listed, per the research.", evidence: { ...gate.evidence, listing: collected.listing } } },
+        notify: verdictNotice("rejected_public", name) };
+    case "rejected":
+      return { status: "rejected_non_tech", patch: { gate: { ...gate, status: "rejected_non_tech",
+        reason: "The research shows the company is not technology-driven." } }, notify: verdictNotice("rejected_non_tech", name) };
+    case "no_data": case "low_evidence": case "no_change":
+      return { status: "stealth", patch: { gate: { ...gate, status: "stealth",
+        reason: "The research found too little public information to build a profile." } }, notify: verdictNotice("stealth", name) };
+    case "error":
+      throw new Error(`enrichment: ${collected.reason}`);   // a malformed model answer: worth one more attempt
+  }
+
+  const profile = buildProfile(collected, name);
+  await queue.patch(row.id, { result: { profile }, progress: { stage: "investors", at: new Date().toISOString() } });
+  const { names, led } = investorNames(profile);
+  const facts = (await queue.investorFacts(names)).map((f) => ({ ...f, led_here: led.has(f.name.toLowerCase()) }));
   return {
-    status: g.decision.status,
-    patch: { gate: { status: g.decision.status, reason: g.decision.reason, evidence: g.decision.evidence, pages_fetched: g.pagesFetched } },
+    status: "done",
+    patch: { result: { investors: facts }, progress: { stage: "done", at: new Date().toISOString() } },
+    notify: verdictNotice("done", name),
   };
 };
 
-const cost = (m: Meter) => llmCostUsd(cfg.gateModel, m.llmInputTokens, m.llmOutputTokens) + m.searchCalls * cfg.searchCostUsd;
+/** The owner's bell line for a finished check. */
+function verdictNotice(status: string, name: string): { title: string; body: string } {
+  switch (status) {
+    case "done": return { title: `${name}: profile ready`, body: "The research on the company you checked is ready (unverified)." };
+    case "stealth": return { title: `${name}: probably in stealth`, body: "Very little public information about this company yet." };
+    case "rejected_public": return { title: `${name}: a public company`, body: "AlphaMap covers private companies only." };
+    case "rejected_non_tech": return { title: `${name}: not a technology company`, body: "AlphaMap covers technology companies only." };
+    default: return { title: `${name}: check finished`, body: "See the result." };
+  }
+}
+
+// The sector list, loaded once (enrichment v2 classifies against it).
+let taxonomyCache: SectorTaxonomy | null = null;
+const taxonomy = async (): Promise<SectorTaxonomy> => (taxonomyCache ??= await loadSectorTaxonomy(db));
+
+const cost = (m: Meter) => m.llmCostUsd + m.searchCalls * cfg.searchCostUsd;
 
 let stopping = false;
 let wake: (() => void) | null = null;

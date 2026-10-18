@@ -1492,7 +1492,7 @@ export async function cancelCompanyCheck(checkId: string): Promise<boolean> {
   return data === true;
 }
 
-const CHECK_COLUMNS = "id, status, phase, input, candidates, identity, gate, matched_startup_id, error, created_at, finished_at";
+const CHECK_COLUMNS = "id, status, phase, input, candidates, identity, gate, result, progress, matched_startup_id, error, created_at, finished_at";
 
 export async function fetchCompanyCheck(checkId: string): Promise<CompanyCheckRow | null> {
   const { data, error } = await supabase.from("company_checks").select(CHECK_COLUMNS).eq("id", checkId).maybeSingle();

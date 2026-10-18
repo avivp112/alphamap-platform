@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { checkStep, checkTitle, displayDomain, formFromInput, isPending, statusKey, statusTone } from "./companyCheck";
+import { checkStep, checkTitle, displayDomain, formFromInput, isPending, progressKey, statusKey, statusTone } from "./companyCheck";
 
 describe("checkStep", () => {
   it("follows the two phases", () => {
@@ -7,8 +7,14 @@ describe("checkStep", () => {
     expect(checkStep({ status: "running", phase: "identify" })).toBe("identifying");
     expect(checkStep({ status: "awaiting_confirmation", phase: "identify" })).toBe("confirm");
     expect(checkStep({ status: "queued", phase: "check" })).toBe("checking");
+    expect(checkStep({ status: "running", phase: "check", gate: null })).toBe("checking");
+    expect(checkStep({ status: "running", phase: "check", gate: { status: "ready", reason: "" } })).toBe("researching");
+    expect(checkStep({ status: "done", phase: "check", gate: { status: "ready", reason: "" } })).toBe("final");
     expect(checkStep({ status: "ready", phase: "check" })).toBe("final");
     expect(checkStep({ status: "cancelled", phase: "identify" })).toBe("final");
+  });
+  it("unknown progress reads as starting", () => {
+    expect([progressKey("reading"), progressKey("whatever"), progressKey(undefined)]).toEqual(["reading", "starting", "starting"]);
   });
   it("polls only while the worker has it", () => {
     expect(["queued", "running"].every((s) => isPending({ status: s as "queued" }))).toBe(true);

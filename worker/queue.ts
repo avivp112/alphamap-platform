@@ -79,6 +79,21 @@ export class Queue {
     return hit ? { id: hit.id, name: hit.name } : null;
   }
 
+  /** Facts about investors from AlphaMap's own rounds (migration 20261023000000). */
+  async investorFacts(names: string[]): Promise<Array<{ name: string; investor_id: string | null; investor_name: string | null;
+    companies: number; rounds: number; rounds_led: number; main_stages: string[] }>> {
+    if (names.length === 0) return [];
+    const { data, error } = await this.db.rpc("investor_facts", { p_names: names });
+    if (error) throw new Error(`investor_facts: ${error.message}`);
+    return (data ?? []) as Awaited<ReturnType<Queue["investorFacts"]>>;
+  }
+
+  /** The owner's bell. Private: one row for the user who asked, nobody else. */
+  async notify(userId: string, title: string, body: string, link: string): Promise<void> {
+    const { error } = await this.db.from("notifications").insert({ user_id: userId, type: "company_check", title, body, link });
+    if (error) console.error(`[worker] notification failed: ${error.message}`);
+  }
+
   /** One row per on-demand run in the shared cost log (service-role only table). */
   async logRun(checkId: string, model: string, usage: Required<Usage>): Promise<void> {
     const { error } = await this.db.from("enrichment_runs").insert({

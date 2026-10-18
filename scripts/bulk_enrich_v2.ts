@@ -42,45 +42,27 @@ import Anthropic from "@anthropic-ai/sdk";
 import { pathToFileURL } from "url";
 
 import { initV1Context, supabase } from "./bulk_enrich_all.ts";
+import { collectCompany, type V2StartupRow, type V2FundingRoundRow } from "../lib/enrichment/collect.ts";
 
 import { classifyTier, type TierRow, type TierRound } from "../lib/enrichment/queue.ts";
-import {
-  createSearchProviderState, verifyDomainMatch, webSearch, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, fetchArticleText, jinaDisabled,
-  type SearchProviderState,
-} from "../lib/enrichment/searchProviders.ts";
-import { filterByEntity, deriveIdentityKeywords, nameQualifiersOnOwnSite, type EntityAnchors } from "../lib/enrichment/entity.ts";
-import { buildLabeledSources, mergeDuplicateResults, type RawSearchResult, type LabeledSource } from "../lib/enrichment/sources.ts";
-import { extractProfile, loadSectorTaxonomy, filterCrossSectorTags, type SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
-import { extractFunding, roundToRoundLike } from "../lib/enrichment/extractFunding.ts";
-import { extractMarket, normalizeUrlForMatch } from "../lib/enrichment/extractMarket.ts";
-import { detectGaps, buildDeepDiveQueries, hasNoFinancingRounds, type DeepDiveSection } from "../lib/enrichment/deepDive.ts";
-import {
-  groundRoundDetails, rejectRound, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
-  normalizeIsoDate, appendNew, reconcileOnFile, type ExistingRoundRef,
-} from "../lib/enrichment/assemble.ts";
+import { createSearchProviderState, jinaDisabled, type SearchProviderState } from "../lib/enrichment/searchProviders.ts";
+import { loadSectorTaxonomy, filterCrossSectorTags, type SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
+import { normalizeUrlForMatch } from "../lib/enrichment/extractMarket.ts";
+import { normalizeIsoDate, appendNew, reconcileOnFile } from "../lib/enrichment/assemble.ts";
 import { fetchArticleOgImage } from "../lib/enrichment/ogImage.ts";
-import { buildSharedExtractionRequest, type ExtractionKind } from "../lib/enrichment/sharedExtraction.ts";
 import { openSearchCache } from "../lib/enrichment/searchCache.ts";
-import { pickArticlesToRead } from "../lib/enrichment/articles.ts";
-import { runTechGate, shouldSkipAsNonTech, type TechGateVerdict } from "../lib/enrichment/techGate.ts";
 import { namesCompany } from "../lib/enrichment/headcount.ts";
-import { foundersFromText, personMentionedIn, cleanPeople, isFounderEntry, cleanFounderTitle } from "../lib/enrichment/people.ts";
-import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "../lib/enrichment/linkedin.ts";
+import { cleanPeople, isFounderEntry, cleanFounderTitle } from "../lib/enrichment/people.ts";
+import { samePersonName } from "../lib/enrichment/linkedin.ts";
 import { checkHeadcountOutlier } from "../lib/enrichment/validation.ts";
 import { countryFromLocationQuote } from "../lib/enrichment/location.ts";
-import { findListingStatement } from "../lib/enrichment/listing.ts";
-import {
-  ACTIVE_DAYS, QUIET_DAYS, SeenUrls, buildUpdateQueries, isUpdateDue, knownUrlSet, mentionsFunding, newResultsOnly,
-  retireReplacedExecutives,
-} from "../lib/enrichment/update.ts";
+import { ACTIVE_DAYS, QUIET_DAYS, SeenUrls, isUpdateDue, retireReplacedExecutives } from "../lib/enrichment/update.ts";
 import { MAJOR_CITIES } from "../lib/enrichment/majorCities.ts";
 import { normalizeForMatch } from "../lib/enrichment/evidence.ts";
-import { validateEnrichment } from "../lib/enrichment/validation.ts";
-import { computeTotalRaised, normalizeRoundType, type RoundLike } from "../lib/enrichment/rounds.ts";
+import { computeTotalRaised } from "../lib/enrichment/rounds.ts";
 import { computeFieldConfidence, meetsProfileThreshold } from "../lib/enrichment/confidence.ts";
 import {
-  decideScalarWrite, decideHeadcountUpdate, mergePeople, appendDatedFigures,
-  fillScalarIfNull, type CandidateValue,
+  decideScalarWrite, decideHeadcountUpdate, mergePeople, appendDatedFigures, fillScalarIfNull, type CandidateValue,
 } from "../lib/enrichment/write.ts";
 import { validateWebsiteCandidate, websiteDomain, type DomainOwner } from "../lib/enrichment/websiteValidation.ts";
 import { sourceTypeRank, type SourceType } from "../lib/enrichment/sourceTypes.ts";
@@ -134,45 +116,6 @@ const MAX_NEWS = 15;
 
 let anthropic: Anthropic;
 
-// Stand-in for a funding call an update skipped (no money words in its pages).
-const EMPTY_FUNDING_OUTCOME: NonNullable<Awaited<ReturnType<typeof extractFunding>>> = {
-  extraction: { result: { funding_rounds: [], funding_history_complete: null, arr_milestones: [], revenue_estimate: null, valuation_benchmarks: [] }, dropped: [] },
-  stopReason: "skipped", inputTokens: 0, outputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0,
-};
-
-// ── Row shapes this script reads/writes ──────────────────────────────────
-interface V2StartupRow {
-  id: string; name: string; website: string | null;
-  description: string | null; value_proposition: string | null; industry: string | null;
-  founded_year: number | null; country: string | null; city: string | null;
-  employee_count: number | null; employee_range: string | null; growth_trend: string | null;
-  founders: Array<{ name: string; title?: string; bio?: string; linkedin_url?: string; had_prior_exit?: boolean; elite_background?: boolean; notable_pedigree?: boolean }> | null;
-  leadership: Array<{ name: string; role: string; bio?: string; linkedin_url?: string; joined_date?: string; had_prior_exit?: boolean; elite_background?: boolean; notable_pedigree?: boolean }> | null;
-  competitors: Array<{ name: string; website?: string | null; how_it_competes: string; startup_id?: string | null }> | null;
-  acquisitions: Array<{ company_name: string; website?: string | null; acquired_date?: string | null; amount?: number | null; description?: string | null; acquired_startup_id?: string | null }> | null;
-  news: Array<{ title: string; url: string; source?: string | null; published_date?: string | null; summary?: string | null; image_url?: string | null }> | null;
-  patent_count: number | null; patent_fields: string[] | null;
-  patents: Array<{ title: string; patent_number?: string | null; filing_date?: string | null; url?: string | null; summary?: string | null }> | null;
-  tech_stack: string[] | null; github_url: string | null; huggingface_url: string | null;
-  arr_milestones: Array<{ arr: number; date?: string | null; source?: string | null; confidence?: string | null }> | null;
-  revenue_estimate: { range_low?: number | null; range_high?: number | null; as_of_date?: string | null; source?: string | null; confidence?: string | null } | null;
-  valuation_benchmarks: Array<{ valuation: number; date?: string | null; source?: string | null; is_estimated?: boolean | null }> | null;
-  linkedin_url: string | null; facebook_url: string | null; instagram_url: string | null;
-  sector_id: string | null;
-  funding_history_complete: boolean | null;
-  status: string;
-  last_enriched_at: string | null;
-  is_manually_verified: boolean;
-}
-
-interface V2FundingRoundRow {
-  id: string; startup_id: string; round_type: string | null;
-  amount_raised: number | null; valuation: number | null; is_valuation_estimated: boolean | null;
-  announcement_date: string | null; source_url: string | null;
-  lead_investor: string | null; investors: string[] | null;
-  investor_amounts: Array<{ name: string; amount: number }> | null;
-}
-
 type ProcessStatus =
   | "success" | "partial" | "rejected" | "removed_public" | "no_data"
   | "low_evidence" | "error" | "error_incomplete_extraction" | "no_change";
@@ -192,53 +135,6 @@ async function fetchAllPaginated<T>(build: (from: number, to: number) => Promise
     from += PAGE;
   }
   return all;
-}
-
-// First-pass searches (10 web + 1 news): v1's query set, with its one overloaded "profile"
-// query (founders + HQ + headcount + acquisitions + patents + social links
-// in a single Google query) split into focused ones, one per section the
-// company page shows. Each result keeps its query_label for evidence dumps.
-async function runAllSearches(name: string, anchor: string, state: SearchProviderState): Promise<RawSearchResult[]> {
-  const queries: Array<[string, string]> = [
-    // history/amounts/backers (three overlapping funding queries) merged
-    // into one general query plus one aimed at the funding databases.
-    ["funding",      `"${name}"${anchor} raised funding round seed "Series A" million investors "led by"`],
-    ["funding_db",   `"${name}" funding rounds investors site:crunchbase.com OR site:tracxn.com OR site:dealroom.co OR site:pitchbook.com OR site:cbinsights.com`],
-    ["overview",     `"${name}"${anchor} company overview headquarters founded`],
-    ["founders",     `"${name}"${anchor} founder CEO co-founder CTO`],
-    ["team",         `"${name}"${anchor} employees team size headcount hiring`],
-    ["linkedin",     `site:linkedin.com/company "${name}"`],
-    ["competitors",  `"${name}"${anchor} competitors alternatives vs rivals "compared to" market landscape`],
-    ["acquisitions", `"${name}"${anchor} acquires OR acquired OR acquisition`],
-    ["patents",      `"${name}"${anchor} patent OR patents OR site:patents.google.com`],
-    ["financials",   `"${name}"${anchor} ARR "annual recurring revenue" OR revenue estimate OR valued at OR valuation milestone`],
-    // (the separate "tech stack" query was dropped: careers/engineering
-    // pages fetched from the company's own site carry that, for free)
-  ];
-  const [searchBatches, newsResults] = await Promise.all([
-    Promise.all(queries.map(([label, q]) => webSearch(q, label, state))),
-    // Serper's News endpoint is primary for news; the site:-heavy query is
-    // only used if Tavily has to supplement (see newsSearch()).
-    newsSearch(
-      `"${name}"${anchor} news`,
-      `"${name}"${anchor} news 2025 2026 site:techcrunch.com OR site:venturebeat.com OR site:prnewswire.com OR site:businesswire.com OR site:forbes.com OR site:sifted.eu launch funding announcement`,
-      "news", state,
-    ),
-  ]);
-  return [...searchBatches.flat(), ...newsResults];
-}
-
-// MODE=update: news and change searches limited to pages published since
-// the last check, plus one search per missing core field when due
-// (lib/enrichment/update.ts). Serper only — Tavily can't filter by date.
-async function runUpdateSearches(
-  row: V2StartupRow, anchor: string, hasRounds: boolean, gapFillDue: boolean, state: SearchProviderState,
-): Promise<RawSearchResult[]> {
-  const since = (row.last_enriched_at ?? new Date(Date.now() - QUIET_DAYS * 86_400_000).toISOString()).slice(0, 10);
-  const queries = buildUpdateQueries(row.name, anchor, since, gapFillDue ? { row, hasRounds } : null);
-  const batches = await Promise.all(queries.map((q) =>
-    q.kind === "news" ? serperNewsSearch(q.query, q.label, state) : serperSearch(q.query, q.label, state)));
-  return batches.flat();
 }
 
 interface RunSummary {
@@ -289,16 +185,6 @@ function recordCost(
 
 function bump(map: Map<string, number>, key: string): void {
   map.set(key, (map.get(key) ?? 0) + 1);
-}
-
-const WEBSITE_PROVIDERS = new Set(["jina", "tavily_extract", "cheerio"]);
-const isWebsiteResult = (r: RawSearchResult) => WEBSITE_PROVIDERS.has(r.provider);
-
-function logExtraction(label: string, companyName: string, outcome: { stopReason: string | null; outputTokens: number }): void {
-  console.log(`    🧠  ${label} extraction: stop_reason=${outcome.stopReason} output_tokens=${outcome.outputTokens}`);
-  if (outcome.stopReason === "max_tokens") {
-    console.warn(`    ⚠️  ${label} extraction TRUNCATED for "${companyName}" — fields after the cutoff are missing, not genuinely empty.`);
-  }
 }
 
 function confidenceLabel(t: SourceType | undefined): "high" | "medium" | "low" {
@@ -361,171 +247,21 @@ async function enrichCompany(
   summary: RunSummary,
   searchState: SearchProviderState,
 ): Promise<void> {
-  // URLs this company's earlier runs already sent to Claude (update mode
-  // skips them; both modes record what they send).
+  // ── Stages 0-9: collect (lib/enrichment/collect.ts; no writes) ─────────
   const seen = new SeenUrls(row.id);
-  const gapFillDue = UPDATE && seen.gapFillDue();
+  const collected = await collectCompany(row, existingRounds, taxonomy, {
+    anthropic,
+    models: { enrich: ENRICH_MODEL, profile: PROFILE_MODEL, funding: FUNDING_MODEL, market: MARKET_MODEL },
+    update: UPDATE, deepDive: DEEP_DIVE, techGate: TECH_GATE, articlesToRead: ARTICLES_TO_READ, verbose: VERBOSE,
+    seen,
+    knownProvenanceUrls: async () => {
+      const { data: prov } = await supabase.from("field_provenance").select("source_url").eq("startup_id", row.id).limit(2000);
+      return ((prov ?? []) as Array<{ source_url: string | null }>).map((p) => p.source_url);
+    },
+    recordCost: (model, usage) => recordCost(summary, model, usage),
+  }, summary, searchState);
 
-  // ── Stage 0: domain verification ──────────────────────────────────────
-  // (an update trusts the website already checked by the full run)
-  const domainVerification = UPDATE ? { verified: undefined, note: "" } : await verifyDomainMatch(row.name, row.website, searchState);
-  const effectiveWebsite = domainVerification.verified === false ? null : row.website;
-  if (domainVerification.verified === false) console.warn(`    ⚠️  Domain verification: ${domainVerification.note}`);
-  else if (domainVerification.verified === true) console.log(`    ✅  Domain verified via Crunchbase/LinkedIn`);
-
-  const domain = websiteDomain(effectiveWebsite);
-  const anchor = domain ? ` "${domain}"` : row.country ? ` ${row.country} (startup OR tech company)` : "";
-
-  // ── Stage 1: website (Jina, free) → tech pre-check → searches ─────────
-  // The homepage is fetched first so a clearly non-tech company is
-  // rejected before paying for ~11 searches and three extraction calls.
-  const websitePages = UPDATE ? [] : await fetchCompanyWebsitePages(effectiveWebsite, searchState);
-  if (TECH_GATE && !UPDATE) {
-    // The verdict is cached with the search results, so seeing the same
-    // company again (a re-run, the next cycle) costs nothing.
-    const cachedVerdict = searchState.cache?.get<TechGateVerdict>("techgate");
-    const gate = cachedVerdict
-      ? { verdict: cachedVerdict, inputTokens: 0, outputTokens: 0 }
-      : await runTechGate(row.name, websitePages[0]?.content ?? "", row.description, row.industry, { client: anthropic, model: ENRICH_MODEL });
-    if (!cachedVerdict) searchState.cache?.set("techgate", gate.verdict);
-    recordCost(summary, ENRICH_MODEL, gate);
-    if (shouldSkipAsNonTech(gate.verdict)) {
-      console.log(`    🚫  REJECTED before searching — not a technology company: ${gate.verdict!.reason}`);
-      summary.tally.rejected++;
-      summary.earlyRejected++;
-      return;
-    }
-  }
-  const rawSearchResults = UPDATE
-    ? await runUpdateSearches(row, anchor, existingRounds.length > 0, gapFillDue, searchState)
-    : await runAllSearches(row.name, anchor, searchState);
-  // One source per URL — the same page returned by several queries used to
-  // reach Claude several times (billed as input on every call).
-  const { results: mergedResults, merged: duplicateResults } = mergeDuplicateResults(rawSearchResults);
-  // An update only looks at pages this company has never been checked against.
-  let searchResults = mergedResults;
-  if (UPDATE) {
-    const { data: prov } = await supabase.from("field_provenance").select("source_url").eq("startup_id", row.id).limit(2000);
-    const known = knownUrlSet({
-      news: row.news,
-      roundSourceUrls: existingRounds.map((r) => r.source_url),
-      provenanceUrls: ((prov ?? []) as Array<{ source_url: string | null }>).map((p) => p.source_url),
-      seen: seen.urls,
-    });
-    searchResults = newResultsOnly(mergedResults, known);
-    console.log(`    🔁  Update since ${row.last_enriched_at?.slice(0, 10)}: ${searchResults.length} new result(s) of ${mergedResults.length}${gapFillDue ? " (incl. searches for missing fields)" : ""}`);
-    if (gapFillDue) seen.markGapFill();
-  }
-  summary.duplicateResultsMerged += duplicateResults;
-  if (VERBOSE && duplicateResults > 0) console.log(`    🧹  ${duplicateResults} duplicate search result(s) merged (same URL from several queries)`);
-
-  const allRaw: RawSearchResult[] = [
-    ...searchResults,
-    ...websitePages.map((p) => ({ url: p.url, content: p.content, provider: p.provider, query_label: "website" })),
-  ];
-
-  if (allRaw.length === 0 && UPDATE) {
-    console.log("    💤  Nothing new since the last check — no Claude call.");
-    summary.tally.no_change++;
-    if (!DRY_RUN) seen.save();
-    return;
-  }
-  if (allRaw.length === 0) {
-    console.log("    🔍  All searches failed — no data retrieved");
-    summary.tally.no_data++;
-    return;
-  }
-
-  // ── Stage 3: entity filter ─────────────────────────────────────────────
-  // Identity keywords come from the company's OWN site (trusted by
-  // construction): they let a result naming a non-distinctive company
-  // ("Ghost", "Foundry") through only when it also talks about what this
-  // company actually does.
-  const identityKeywords = deriveIdentityKeywords(
-    [...websitePages.map((p) => p.content), row.description ?? "", row.value_proposition ?? "", row.industry ?? ""],
-    row.name,
-  );
-  const anchors: EntityAnchors = {
-    domain: domain ?? undefined,
-    founderNames: [...(row.founders ?? []), ...(row.leadership ?? [])].map((p) => p?.name).filter((n): n is string => !!n && n.trim().length > 3),
-    trustedCountry: row.is_manually_verified ? (row.country ?? undefined) : undefined,
-    identityKeywords,
-    companyLinkedinUrl: row.linkedin_url,
-    ownQualifiers: nameQualifiersOnOwnSite([...websitePages.map((p) => p.content), row.description ?? ""], row.name),
-  };
-  const passesEntity = (r: RawSearchResult, a: EntityAnchors) =>
-    filterByEntity({ url: r.url, title: r.title, snippet: r.content }, a, row.name).kept;
-
-  const searchOnly = allRaw.filter((r) => !isWebsiteResult(r));
-  const kept = searchOnly.filter((r) => passesEntity(r, anchors));
-  // Website pages are never entity-filtered — fetched from the company's
-  // own domain, so there's no "wrong company" risk.
-  const websiteRaw = allRaw.filter(isWebsiteResult);
-  let usableResults = [...kept, ...websiteRaw];
-  console.log(`    🧭  Entity filter: kept ${kept.length}/${searchOnly.length} search results + ${websiteRaw.length} website page(s)${VERBOSE && identityKeywords.length ? ` | identity keywords: ${identityKeywords.join(", ")}` : ""}`);
-
-  if (UPDATE && kept.length === 0) {
-    console.log("    💤  Nothing new about this company since the last check — no Claude call.");
-    summary.tally.no_change++;
-    if (!DRY_RUN) seen.save();
-    return;
-  }
-  if (!UPDATE && kept.length < 2 && websiteRaw.length === 0) {
-    console.log(`    🔍  low_evidence — fewer than 2 results survived entity filtering, and no website fetch. Skipping Claude calls.`);
-    summary.tally.low_evidence++;
-    return;
-  }
-
-  // ── Stage 3b: read the most useful articles in full (Jina, free) ──────
-  // A snippet stops at ~600 characters; the full funding announcement has
-  // the exact date, every investor, headcount and the "About" boilerplate.
-  if (ARTICLES_TO_READ > 0) {
-    const toRead = pickArticlesToRead(kept, row.name, domain, ARTICLES_TO_READ);
-    const texts = await Promise.all(toRead.map((r) => fetchArticleText(r.url, searchState)));
-    let read = 0;
-    const namesakeArticles = new Set<RawSearchResult>();
-    toRead.forEach((r, i) => {
-      const text = texts[i];
-      if (!text) return;
-      // The snippet passed the entity filter, but the full article can show
-      // it is about a namesake (Glean AI kept reading Glean's telosi page).
-      const verdict = filterByEntity({ url: r.url, title: r.title, snippet: text }, anchors, row.name);
-      if (!verdict.kept && (verdict.drop_reason === "namesake_domain" || verdict.drop_reason === "namesake_profile")) {
-        namesakeArticles.add(r);
-        console.log(`    🧭  ${r.url} is about a namesake (full text) — dropped.`);
-        bump(summary.droppedByReason, "article_about_namesake");
-        return;
-      }
-      r.content = `${r.content}\n[Full article text]\n${text}`;
-      read++;
-    });
-    if (namesakeArticles.size > 0) usableResults = usableResults.filter((r) => !namesakeArticles.has(r));
-    summary.articlesRead += read;
-    if (toRead.length > 0) console.log(`    📰  Read ${read}/${toRead.length} full article(s) via Jina${VERBOSE ? `: ${toRead.map((r) => r.url).join(", ")}` : ""}`);
-  }
-
-  // ── Stage 4: labeled sources + three extraction calls ──────────────────
-  // All three share one prompt-cached prefix (sharedExtraction.ts). The
-  // profile call goes first: it writes the cache, and it decides
-  // public / non-tech — in which case the other two calls are never made.
-  let allSources: LabeledSource[] = buildLabeledSources(usableResults, domain);
-  const shared = (kind: ExtractionKind) => buildSharedExtractionRequest(kind, row.name, allSources, { taxonomy });
-  const profileOutcome = await extractProfile(row.name, allSources, { client: anthropic, model: PROFILE_MODEL, taxonomy, request: shared("profile") });
-  if (!profileOutcome) {
-    console.log("    ❌  Profile extraction returned no tool_use block at all.");
-    summary.tally.error++;
-    return;
-  }
-  recordCost(summary, PROFILE_MODEL, profileOutcome);
-  logExtraction("profile", row.name, profileOutcome);
-  let profile = profileOutcome.extraction.result;
-  for (const d of profileOutcome.extraction.dropped) bump(summary.droppedByReason, d.reason);
-
-  // Backstop for the model's flag: "<Name>, Inc. (Nasdaq: XYZ)" in a source.
-  const listing = profile.is_public_company ? null : findListingStatement(row.name, allSources, domain);
-  if (listing) console.log(`    🏛️   Listed on an exchange per ${listing.url}: "${listing.quote}"`);
-  if (profile.is_public_company || listing) {
-    console.log(`    🏛️   PUBLIC COMPANY — archiving (status='ipo') rather than deleting (issue 7)`);
+  if (collected.outcome === "public") {
     summary.tally.removed_public++;
     if (!DRY_RUN) {
       const { error: changeErr } = await supabase.from("field_changes").insert({
@@ -539,310 +275,20 @@ async function enrichCompany(
     }
     return;
   }
-  // An update reads a few news items, not the company's whole footprint —
-  // the tech/non-tech decision from the full run stands.
-  if (!profile.is_tech_company && !UPDATE) {
-    console.log("    🚫  REJECTED — not a technology-driven company");
-    summary.tally.rejected++;
+  if (collected.outcome === "no_change") {
+    summary.tally.no_change++;
+    if (!DRY_RUN) seen.save();
     return;
   }
-
-  // An update whose new pages say nothing about money skips the funding call.
-  const skipFunding = UPDATE && !mentionsFunding(allSources.map((src) => `${src.title ?? ""} ${src.content}`));
-  if (skipFunding) console.log("    ⏭️   No funding/M&A words in the new pages — funding extraction skipped.");
-  const [fundingOutcome, marketOutcome] = await Promise.all([
-    skipFunding ? Promise.resolve(EMPTY_FUNDING_OUTCOME) : extractFunding(row.name, allSources, { client: anthropic, model: FUNDING_MODEL, request: shared("funding") }),
-    extractMarket(row.name, allSources, { client: anthropic, model: MARKET_MODEL, request: shared("market") }),
-  ]);
-  if (!fundingOutcome) {
-    console.log("    ❌  Funding extraction returned no tool_use block at all.");
-    summary.tally.error++;
+  if (collected.outcome !== "collected") {
+    summary.tally[collected.outcome]++;
     return;
   }
-  recordCost(summary, FUNDING_MODEL, fundingOutcome);
-  recordCost(summary, MARKET_MODEL, marketOutcome);
-  logExtraction("funding", row.name, fundingOutcome);
-  logExtraction("market", row.name, marketOutcome);
-  if (VERBOSE) {
-    const read = fundingOutcome.cacheReadTokens + marketOutcome.cacheReadTokens;
-    console.log(`    💾  Prompt cache: ${profileOutcome.cacheWriteTokens} tokens written, ${read} read back (${read > 0 ? "hit" : "MISS — check that all three calls use the same model"})`);
-  }
-  let funding = fundingOutcome.extraction.result;
-  let market = marketOutcome.extraction.result;
-  for (const d of [...fundingOutcome.extraction.dropped, ...marketOutcome.extraction.dropped]) bump(summary.droppedByReason, d.reason);
+  const {
+    profile, funding, market, allSources, sourceById, sourceTypeFor, sourceUrlFor,
+    linkedinFounders, linkedinLeaders, existingRefs, validation, plan, cityConfidence, countryConfidence,
+  } = collected;
 
-  const existingRefs: ExistingRoundRef[] = existingRounds.map((r) => ({
-    id: r.id, round_type: r.round_type ?? "Other", amount_raised: r.amount_raised, valuation: r.valuation,
-    is_valuation_estimated: r.is_valuation_estimated, announcement_date: r.announcement_date,
-    lead_investor: r.lead_investor, other_investors: r.investors, source_url: r.source_url,
-    investor_amounts: r.investor_amounts,
-  }));
-
-  // ── Stage 9: deep dive into whichever sections came back thin ──────────
-  // (an update fills gaps with its own few searches instead)
-  if (DEEP_DIVE && !UPDATE) {
-    const firstPassRounds: RoundLike[] = [...existingRefs, ...funding.funding_rounds.map(roundToRoundLike)];
-    const gaps = detectGaps({
-      rounds: firstPassRounds,
-      bootstrapped: firstPassRounds.some((r) => normalizeRoundType(r.round_type) === "Bootstrapped"),
-      hasDescription: !!(row.description || profile.profile.description),
-      hasLocation: !!((row.city || profile.profile.city) && (row.country || profile.profile.country)),
-      hasHeadcount: row.employee_count != null || !!profile.metrics.employee_count || !!profile.metrics.employee_range,
-      // Founders are covered by the "founded by" scan and the LinkedIn step
-      // below; a whole profile deep dive just for them added nothing in a
-      // 20-company run (+0 founders in every one).
-      hasFounders: true,
-      competitorCount: (row.competitors?.length ?? 0) + market.competitors.length,
-      // Fresh news is worth a second look even when older articles are on file.
-      newsCount: market.news.length,
-      hasFoundedYear: row.founded_year != null || !!profile.profile.founded_year,
-      // Patent deep dive only when some source ties a patent to this company
-      // — most startups have none, and searching for them anyway found
-      // nothing in every real run while costing two searches + a call.
-      // No patent deep dive: the first pass already searches Google Patents,
-      // and the second search returned +0 patents in every real run.
-      patentCount: undefined,
-    });
-    // Funding deep dive only when NO financing round is known at all: with
-    // rounds already found, the extra searches returned +0 rounds in 12 of
-    // 13 companies of a real run (the model's "history incomplete" flag is
-    // set far too often to be a useful trigger on its own).
-    if (gaps.includes("funding") && !hasNoFinancingRounds(firstPassRounds)) gaps.splice(gaps.indexOf("funding"), 1);
-
-    if (gaps.length > 0) {
-      summary.deepDives++;
-      const extractedPeople = [...(profile.profile.founders ?? []), ...profile.leadership].map((p) => p.name).filter(Boolean);
-      const founderNames = [...new Set([...extractedPeople, ...(anchors.founderNames ?? [])])];
-      const queries = gaps.flatMap((section) =>
-        buildDeepDiveQueries(section, { name: row.name, anchor, domain, rounds: firstPassRounds, founderNames })
-          .map((q) => ({ ...q, section })),
-      );
-      console.log(`    🔎  Deep dive: ${gaps.join(", ")} (${queries.length} targeted searches)`);
-      const batches = await Promise.all(queries.map(async (q) => ({
-        section: q.section,
-        results: q.kind === "news" ? await newsSearch(q.query, q.query, q.label, searchState) : await webSearch(q.query, q.label, searchState),
-      })));
-
-      // Newly found people are anchors too: an article naming a founder
-      // the first pass just verified is about this company.
-      const deepAnchors: EntityAnchors = { ...anchors, founderNames: founderNames.filter((n) => n.trim().length > 3) };
-      const firstPassUrls = new Set(allRaw.map((r) => normalizeUrlForMatch(r.url)));
-      const sectionsByUrl = new Map<string, Set<DeepDiveSection>>();
-      const deepUnique: RawSearchResult[] = [];
-      let deepSeen = 0;
-      for (const { section, results } of batches) {
-        for (const r of results) {
-          deepSeen++;
-          const key = normalizeUrlForMatch(r.url);
-          if (firstPassUrls.has(key)) continue;
-          if (!sectionsByUrl.has(key)) {
-            if (!passesEntity(r, deepAnchors)) continue;
-            sectionsByUrl.set(key, new Set());
-            deepUnique.push(r);
-          }
-          sectionsByUrl.get(key)!.add(section);
-        }
-      }
-      console.log(`    🔎  Deep dive: ${deepUnique.length} new source(s) kept of ${deepSeen} result(s)`);
-
-      if (deepUnique.length > 0) {
-        // Appended after the first-pass sources, so every first-pass S#/W#
-        // id stays exactly the same and the new ones continue the sequence.
-        allSources = buildLabeledSources([...usableResults, ...deepUnique], domain);
-        const deepSources = allSources.slice(usableResults.length);
-        const forSections = (...sections: DeepDiveSection[]) =>
-          deepSources.filter((s) => sections.some((sec) => sectionsByUrl.get(normalizeUrlForMatch(s.url))?.has(sec)));
-
-        const fundingSrc = gaps.includes("funding") ? forSections("funding") : [];
-        const profileSrc = gaps.includes("profile") ? forSections("profile") : [];
-        const marketSrc = gaps.some((g) => g === "competitors" || g === "news" || g === "patents") ? forSections("competitors", "news", "patents") : [];
-
-        const [dFunding, dProfile, dMarket] = await Promise.all([
-          fundingSrc.length ? extractFunding(row.name, fundingSrc, { client: anthropic, model: FUNDING_MODEL }) : null,
-          profileSrc.length ? extractProfile(row.name, profileSrc, { client: anthropic, model: PROFILE_MODEL, taxonomy }) : null,
-          marketSrc.length ? extractMarket(row.name, marketSrc, { client: anthropic, model: MARKET_MODEL }) : null,
-        ]);
-
-        const before = { rounds: funding.funding_rounds.length, competitors: market.competitors.length, news: market.news.length, founders: profile.profile.founders?.length ?? 0, patents: market.patents.length, founded: !!profile.profile.founded_year };
-        if (dFunding) {
-          recordCost(summary, FUNDING_MODEL, dFunding);
-          logExtraction("deep funding", row.name, dFunding);
-          for (const d of dFunding.extraction.dropped) bump(summary.droppedByReason, d.reason);
-          funding = mergeFundingExtractions(funding, dFunding.extraction.result);
-        }
-        if (dProfile) {
-          recordCost(summary, PROFILE_MODEL, dProfile);
-          logExtraction("deep profile", row.name, dProfile);
-          for (const d of dProfile.extraction.dropped) bump(summary.droppedByReason, d.reason);
-          profile = mergeProfileExtractions(profile, dProfile.extraction.result);
-        }
-        if (dMarket) {
-          recordCost(summary, MARKET_MODEL, dMarket);
-          logExtraction("deep market", row.name, dMarket);
-          for (const d of dMarket.extraction.dropped) bump(summary.droppedByReason, d.reason);
-          market = mergeMarketExtractions(market, dMarket.extraction.result);
-        }
-        console.log(`    🔎  Deep dive added: +${funding.funding_rounds.length - before.rounds} round(s), +${market.competitors.length - before.competitors} competitor(s), +${market.news.length - before.news} news, +${(profile.profile.founders?.length ?? 0) - before.founders} founder(s), +${market.patents.length - before.patents} patent(s)${!before.founded && profile.profile.founded_year ? `, founded ${profile.profile.founded_year.value}` : ""}`);
-      }
-    }
-  }
-
-  // ── Stage 9b: founders' personal LinkedIn profiles ──────────────────────
-  // Read mechanically from `site:linkedin.com/in` results: a profile is
-  // attached only when its own title is the founder's name and the result
-  // names the company (lib/enrichment/linkedin.ts) — never a Crunchbase
-  // person page, never a URL a model constructed.
-  // A leader whose own role says Founder/Co-founder ("Chief Creative
-  // Officer & Founder") is a founder too — never "Founding Marketing".
-  for (const l of profile.leadership) {
-    if (!l?.name || !/\b(co-?\s?founder|founder)\b/i.test(l.role ?? "")) continue;
-    const founders = profile.profile.founders ?? [];
-    if (!founders.some((f) => f?.name && samePersonName(f.name, l.name))) {
-      profile.profile.founders = [...founders, { name: l.name, title: l.role, bio: l.bio, linkedin_url: l.linkedin_url }];
-    }
-  }
-
-  // Founders stated outright in the research — "GoCo.io, Inc. was founded
-  // in 2015 by Jason J. Wang, Michael Gugel, and Nir Leibovich." — with the
-  // company as the sentence's subject (lib/enrichment/people.ts).
-  const textFounders: string[] = [];
-  for (const src of allSources) {
-    for (const f of foundersFromText(src.content, row.name, { url: src.url, title: src.title })) {
-      const founders = profile.profile.founders ?? [];
-      if (founders.some((x) => x?.name && samePersonName(x.name, f.name))) continue;
-      profile.profile.founders = [...founders, { name: f.name, title: f.title }];
-      textFounders.push(`${f.name} [${src.source_id}]`);
-    }
-  }
-  if (textFounders.length > 0) console.log(`    👥  Founders from "founded by" sentences: ${textFounders.join(", ")}`);
-
-  // People found or enriched from LinkedIn search results: profile URL, plus
-  // education / prior employers / elite unit read from the public snippet
-  // (lib/enrichment/linkedin.ts parseLinkedInFacts) — never from the
-  // login-walled profile page itself.
-  type LinkedInPersonPatch = { name: string; title?: string; role?: string; linkedin_url?: string; bio?: string; elite_background?: boolean; notable_pedigree?: boolean };
-  const linkedinFounders: LinkedInPersonPatch[] = [];
-  const linkedinLeaders: LinkedInPersonPatch[] = [];
-  const factsPatch = (snippet: string): Pick<LinkedInPersonPatch, "bio" | "elite_background" | "notable_pedigree"> => {
-    const facts = parseLinkedInFacts(snippet);
-    return {
-      bio: bioFromLinkedInFacts(facts, row.name) ?? undefined,
-      elite_background: facts.eliteUnit ? true : undefined,
-      notable_pedigree: facts.eliteSchool ? true : undefined,
-    };
-  };
-  if (DEEP_DIVE && (!UPDATE || gapFillDue)) {
-    const knownFounders = [
-      ...(profile.profile.founders ?? []).map((f) => ({ name: f.name, linkedin_url: f.linkedin_url?.value, bio: f.bio })),
-      ...(row.founders ?? []),
-    ].filter((f, i, all) => f?.name && all.findIndex((g) => g?.name && samePersonName(g.name, f.name)) === i);
-    // Looked up: founders missing a link OR a bio, and a CEO/CTO/President
-    // from leadership missing a bio — at most 4 people per company.
-    const knownLeaders = [...(profile.leadership ?? []), ...(row.leadership ?? [])]
-      .filter((l) => l?.name && /\b(ceo|chief executive|cto|chief technology|president)\b/i.test(l.role ?? ""))
-      .filter((l, i, all) => all.findIndex((g) => samePersonName(g.name, l.name)) === i)
-      .filter((l) => !knownFounders.some((f) => samePersonName(f.name, l.name)));
-    const lookups = [
-      ...knownFounders.filter((f) => !f.linkedin_url || !f.bio).map((f) => ({ name: f.name, kind: "founder" as const })),
-      ...knownLeaders.filter((l) => !l.bio).map((l) => ({ name: l.name, role: l.role, kind: "leader" as const })),
-    ].slice(0, 4);
-    const queries = [
-      ...lookups.map((p) => `site:linkedin.com/in "${p.name}" "${row.name}"`),
-      // Discovery also runs when only one founder is known — most startups
-      // have two or three, and the second is often missing.
-      ...(knownFounders.length < 2 ? [
-        `site:linkedin.com/in "${row.name}" founder OR co-founder`,
-        `site:linkedin.com/in "co-founder" "${row.name}"${domain ? ` OR "${domain}"` : ""}`,
-      ] : []),
-    ];
-    if (queries.length > 0) {
-      const results = (await Promise.all(queries.map((q, i) => serperSearch(q, `linkedin_people_${i}`, searchState)))).flat();
-      for (const person of lookups) {
-        const hit = findPersonResult(person.name, results, row.name);
-        if (!hit) continue;
-        const patch = { name: person.name, linkedin_url: hit.url, ...factsPatch(hit.snippet) };
-        if (person.kind === "founder") linkedinFounders.push(patch);
-        else linkedinLeaders.push({ ...patch, role: person.role });
-      }
-      if (knownFounders.length < 2) {
-        // Discovery: a self-declared founder must ALSO pass the entity
-        // filter, so "Founder at Ghost" from a different Ghost is dropped.
-        const anchored = results.filter((r) => passesEntity(r, anchors) || (domain ? `${r.title ?? ""} ${r.content}`.toLowerCase().includes(domain) : false));
-        // ...and must be named somewhere in the research outside LinkedIn —
-        // a self-description alone isn't enough to call someone a founder.
-        const researchText = allSources.filter((src) => !/linkedin\.com/i.test(src.url)).map((src) => `${src.title ?? ""} ${src.content}`);
-        for (const p of discoverFounders(anchored, row.name)) {
-          if (knownFounders.some((f) => samePersonName(f.name, p.name)) || linkedinFounders.some((f) => samePersonName(f.name, p.name))) continue;
-          if (!researchText.some((t) => personMentionedIn(p.name, t))) {
-            console.log(`    🔗  LinkedIn: ${p.name} ("${p.headline}") not named anywhere in the research — not added as a founder.`);
-            bump(summary.droppedByReason, "linkedin_founder_uncorroborated");
-            continue;
-          }
-          linkedinFounders.push({ name: p.name, title: founderTitleFromHeadline(`${p.headline}`, row.name), linkedin_url: p.url, ...factsPatch(p.snippet) });
-        }
-      }
-      const withBio = [...linkedinFounders, ...linkedinLeaders].filter((p) => p.bio);
-      console.log(`    🔗  LinkedIn: ${linkedinFounders.length + linkedinLeaders.length} profile(s) matched, ${withBio.length} with education/experience from the snippet${VERBOSE && withBio.length ? ` — ${withBio.map((p) => `${p.name}: ${p.bio}`).join(" | ")}` : ""}`);
-    }
-  }
-
-  const sourceById = new Map(allSources.map((s) => [s.source_id, s]));
-  const sourceTypeFor = (sourceId: string | undefined): SourceType | undefined => (sourceId ? sourceById.get(sourceId)?.source_type : undefined);
-  const sourceUrlFor = (sourceId: string | undefined): string | null => (sourceId ? sourceById.get(sourceId)?.url ?? null : null);
-
-  // ── Round grounding: co-investors / per-investor amounts / source URL ──
-  const keptRounds = funding.funding_rounds.filter((r) => {
-    const why = rejectRound(r, row.name, allSources);
-    if (!why) return true;
-    console.log(`    🚫  ${r.round_type} not written (${why})`);
-    bump(summary.droppedByReason, why);
-    return false;
-  });
-  const newRoundLikes: RoundLike[] = keptRounds.map((r) => {
-    const grounded = groundRoundDetails(r, allSources);
-    for (const reason of grounded.dropped) bump(summary.droppedByReason, reason);
-    return roundToRoundLike(grounded.round);
-  });
-
-  // ── Stage 6: validation (city/country/founded_year/headcount/rounds) ──
-  type TaggedRound = RoundLike & { _new?: true };
-  const roughPlan = planRoundWrites(existingRefs, newRoundLikes);
-  const validation = validateEnrichment({
-    existing: {
-      founded_year: row.founded_year,
-      country: { value: row.country, is_manually_verified: row.is_manually_verified },
-      employee_count: row.employee_count,
-    },
-    extracted: {
-      founded_year: profile.profile.founded_year?.value ?? null,
-      city: profile.profile.city?.value ?? null,
-      country: profile.profile.country?.value ?? null,
-      country_source_type: sourceTypeFor(profile.profile.country?.source_id) ?? null,
-      employee_count: profile.metrics.employee_count?.value ?? null,
-      city_quote: profile.profile.city?.evidence_quote ?? null,
-      country_quote: profile.profile.country?.evidence_quote ?? null,
-    },
-    rounds: [...existingRefs, ...newRoundLikes.map((r): TaggedRound => ({ ...r, _new: true }))],
-    totalRaisedUsd: computeTotalRaised([...existingRefs, ...roughPlan.inserts]),
-  });
-  for (const issue of validation.issues) {
-    console.log(`    ⚠️  [${issue.rule}] ${issue.message}`);
-    bump(summary.droppedByReason, issue.rule);
-  }
-  const acceptedNewRounds: RoundLike[] = validation.acceptedRounds
-    .filter((r) => (r as TaggedRound)._new)
-    .map((r) => { const { _new, ...rest } = r as TaggedRound; void _new; return rest; });
-
-  // ── Stage 7: round planning (fill existing / insert new / contradiction)
-  const plan = planRoundWrites(existingRefs, acceptedNewRounds);
-  for (const c of plan.conflicts) {
-    console.log(`    ⚔️   Contradiction on ${c.round_type}: ${c.message} — kept the round on file, nothing written for it`);
-    bump(summary.droppedByReason, "round_conflict_with_existing");
-  }
-
-  // ── Stage 8: confidence ─────────────────────────────────────────────────
-  const cityConfidence = profile.profile.city ? computeFieldConfidence([{ source_type: sourceTypeFor(profile.profile.city.source_id) ?? "model_inferred" }]) : 0;
-  const countryConfidence = profile.profile.country ? computeFieldConfidence([{ source_type: sourceTypeFor(profile.profile.country.source_id) ?? "model_inferred" }]) : 0;
 
   // ── Stage 10: write ──────────────────────────────────────────────────────
   const patch: Record<string, unknown> = {};

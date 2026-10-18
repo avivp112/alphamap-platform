@@ -9,8 +9,14 @@ Each check has two phases:
 
 1. **identify** (`worker/identify.ts`) — one search; leaves "is this the
    company you mean?" candidates for the user. Never charged.
-2. **check** (`worker/gates.ts`) — after the user confirms: the threshold
-   checks (public company, stealth, non-tech). Stage 3 adds the enrichment.
+2. **check** — after the user confirms: the threshold checks (public
+   company, stealth, non-tech — `worker/gates.ts`) and, when they pass, the
+   research: enrichment v2's collection on that one company
+   (`lib/enrichment/collect.ts`, shared with the bulk run), shown to the user
+   unverified with every source (`worker/profile.ts`), plus facts about its
+   investors from AlphaMap's own rounds. Nothing is written to the shared
+   database, and there is no search cache (no cross-user cache). Progress is
+   saved as it goes, and the owner gets a bell notification at the end.
 
 A provider rejecting one of the worker's keys (Serper, Anthropic) puts the
 check back in the queue without using an attempt and logs a `CONFIG` line
@@ -30,6 +36,7 @@ naming the key — fix the key (`fly secrets import`) and the check resumes.
 | `LEASE_SECONDS` | no | Lease on a claimed check, default 120 (renewed every 40 s). |
 | `MAX_RUN_MS` | no | Hard limit for one run, default 900000 (15 min); then it is retried. |
 | `GATE_MODEL` | no | Default `claude-haiku-4-5-20251001`, as enrichment v2. |
+| `ENRICH_MODEL` | no | Model for the research extractions, default as enrichment v2. |
 | `SEARCH_COST_USD` | no | Estimated price of one search, for the cost log, default 0.001. |
 
 ## Railway

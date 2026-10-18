@@ -50,6 +50,7 @@ function fakeQueue(row: CheckRow | null, heartbeatHeld = true) {
     finish: vi.fn(async (_id: string, status: string, _p: unknown, err?: string | null) => { calls.push(`finish:${status}${err ? `:${err}` : ""}`); return true; }),
     retryLater: vi.fn(async (_id: string, s: number) => { calls.push(`retry:${s}`); return true; }),
     release: vi.fn(async (_id: string, s: number) => { calls.push(`release:${s}`); return true; }),
+    notify: vi.fn(async (user: string, _t: string, _b: string, link: string) => { calls.push(`notify:${user}:${link}`); }),
     logRun: vi.fn(async () => { calls.push("log"); }),
   };
   return { q: q as unknown as Queue, calls, raw: q };
@@ -60,9 +61,9 @@ const row = (attempts = 1, max = 3): CheckRow => ({
 });
 const ok: Outcome = { status: "ready", patch: { gate: {} } };
 // What a real run would have counted: two searches, one LLM call.
-const spend = (m: Meter) => { m.searchCalls += 2; m.llmInputTokens += 900; m.llmOutputTokens += 80; };
+const spend = (m: Meter) => { m.searchCalls += 2; m.llmInputTokens += 900; m.llmOutputTokens += 80; m.llmCostUsd += llmCostUsd("claude-haiku-4-5-20251001", 900, 80); };
 const opts = { leaseSeconds: 120, maxRunMs: 1000, model: "claude-haiku-4-5-20251001", log: () => {},
-  cost: (m: Meter) => llmCostUsd("claude-haiku-4-5-20251001", m.llmInputTokens, m.llmOutputTokens) + m.searchCalls * 0.001 };
+  cost: (m: Meter) => m.llmCostUsd + m.searchCalls * 0.001 };
 
 describe("processOne", () => {
   it("nothing queued: returns false, touches nothing", async () => {
@@ -76,6 +77,11 @@ describe("processOne", () => {
     expect(calls).toEqual(["finish:ready", "log"]);
     expect(raw.finish.mock.calls[0][2]).toMatchObject({ gate: {}, search_calls: 2, llm_input_tokens: 900 });
     expect((raw.finish.mock.calls[0][2] as { cost_usd: number }).cost_usd).toBeCloseTo(0.0033);
+  });
+  it("a finished check rings its owner's bell, after the result is saved", async () => {
+    const { q, calls } = fakeQueue(row());
+    await processOne(q, async () => ({ ...ok, status: "done", notify: { title: "Acme: profile ready", body: "…" } }), opts);
+    expect(calls).toEqual(["finish:done", "log", "notify:u1:/checks/c1"]);
   });
   // 2026-10-18: a run that failed after its searches recorded a cost of 0.
   it("a run that fails half way still records what it spent", async () => {

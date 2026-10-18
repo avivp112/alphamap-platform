@@ -16,6 +16,8 @@ export interface WorkerConfig {
   maxRunMs: number;
   /** Model for the threshold checks (same default as enrichment v2). */
   gateModel: string;
+  /** Model for the enrichment extractions (enrichment v2's ENRICH_MODEL). */
+  enrichModel: string;
   /** Estimated price of one search call, for the per-run cost log. */
   searchCostUsd: number;
 }
@@ -56,6 +58,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     leaseSeconds: Number(env.LEASE_SECONDS ?? 120),
     maxRunMs: Number(env.MAX_RUN_MS ?? 15 * 60_000),
     gateModel: env.GATE_MODEL?.trim() || "claude-haiku-4-5-20251001",
+    enrichModel: env.ENRICH_MODEL?.trim() || "claude-haiku-4-5-20251001",
     searchCostUsd: Number(env.SEARCH_COST_USD ?? 0.001),
   };
 }
@@ -69,4 +72,12 @@ export const MODEL_PRICING: Record<string, { input: number; output: number }> = 
 export function llmCostUsd(model: string, inputTokens: number, outputTokens: number): number {
   const p = MODEL_PRICING[model] ?? MODEL_PRICING["claude-haiku-4-5-20251001"];
   return inputTokens * p.input + outputTokens * p.output;
+}
+
+/** With prompt caching, as the bulk run prices it: a cache write bills 1.25x input, a read 0.1x. */
+export function cachedCallCostUsd(
+  model: string, u: { inputTokens: number; outputTokens: number; cacheWriteTokens?: number; cacheReadTokens?: number },
+): number {
+  const p = MODEL_PRICING[model] ?? MODEL_PRICING["claude-haiku-4-5-20251001"];
+  return (u.inputTokens + (u.cacheWriteTokens ?? 0) * 1.25 + (u.cacheReadTokens ?? 0) * 0.1) * p.input + u.outputTokens * p.output;
 }

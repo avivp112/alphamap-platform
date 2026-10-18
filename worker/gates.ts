@@ -24,6 +24,7 @@ import { namesCompany } from "../lib/enrichment/headcount.ts";
 import { websiteDomain } from "../lib/enrichment/websiteValidation.ts";
 import type { Search } from "./search.ts";
 import type { Meter } from "./runner.ts";
+import { llmCostUsd } from "./config.ts";
 
 export type GateStatus = "ready" | "stealth" | "rejected_public" | "rejected_non_tech";
 
@@ -105,6 +106,7 @@ export async function runGates(
     tech = g.verdict;
     deps.meter.llmInputTokens += g.inputTokens;
     deps.meter.llmOutputTokens += g.outputTokens;
+    deps.meter.llmCostUsd += llmCostUsd(deps.model, g.inputTokens, g.outputTokens);
   }
 
   return {

@@ -13,13 +13,17 @@ export interface Meter {
   searchCalls: number;
   llmInputTokens: number;
   llmOutputTokens: number;
+  /** Each model call adds its own price (prompt-cache rates differ per call). */
+  llmCostUsd: number;
 }
 
-export const newMeter = (): Meter => ({ searchCalls: 0, llmInputTokens: 0, llmOutputTokens: 0 });
+export const newMeter = (): Meter => ({ searchCalls: 0, llmInputTokens: 0, llmOutputTokens: 0, llmCostUsd: 0 });
 
 export interface Outcome {
   status: "awaiting_confirmation" | "ready" | "stealth" | "rejected_public" | "rejected_non_tech" | "done";
   patch: Record<string, unknown>;
+  /** A bell notification for the check's owner once the result is saved. */
+  notify?: { title: string; body: string };
 }
 
 export type Execute = (row: CheckRow, meter: Meter) => Promise<Outcome>;
@@ -31,7 +35,7 @@ export interface RunnerOptions {
   leaseSeconds: number;
   maxRunMs: number;
   model: string;
-  /** Estimated USD of what the meter counted. */
+  /** Estimated USD of what the meter counted (model calls + searches). */
   cost: (m: Meter) => number;
   log?: (msg: string) => void;
   now?: () => number;
@@ -76,6 +80,7 @@ export async function processOne(queue: Queue, execute: Execute, o: RunnerOption
     const u = usage();
     const ok = await queue.finish(row.id, out.status, { ...out.patch, ...u });
     if (ok) await queue.logRun(row.id, o.model, u);
+    if (ok && out.notify) await queue.notify(row.user_id, out.notify.title, out.notify.body, `/checks/${row.id}`);
     log(`check ${row.id}: ${out.status} in ${Math.round(u.duration_ms / 1000)} s, $${u.cost_usd.toFixed(4)}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
