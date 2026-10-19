@@ -12,7 +12,7 @@ const sources: Record<string, { url: string; type: SourceType }> = {
   W1: { url: "https://nuova.ai/about", type: "company_site" },
 };
 
-function collected(over: { city?: string; cityType?: SourceType; founders?: Array<{ name: string; title?: string; bio?: string }>; employees?: number } = {}): CollectedCompany {
+function collected(over: { city?: string; cityType?: SourceType; cityConfidence?: number; founders?: Array<{ name: string; title?: string; bio?: string }>; employees?: number } = {}): CollectedCompany {
   const profile = {
     is_public_company: false, is_tech_company: true,
     profile: {
@@ -57,7 +57,7 @@ function collected(over: { city?: string; cityType?: SourceType; founders?: Arra
     existingRefs: [],
     validation,
     plan: planRoundWrites([], validation.acceptedRounds),
-    cityConfidence: over.city ? (over.cityType === "model_inferred" ? 0 : 70) : 0,
+    cityConfidence: over.cityConfidence ?? (over.city ? (over.cityType === "model_inferred" ? 0 : 70) : 0),
     countryConfidence: 70,
     domain: "nuova.ai",
   };
@@ -74,6 +74,10 @@ describe("buildProfile", () => {
   it("a city below the confidence threshold is withheld, as in the bulk run", () => {
     expect(buildProfile(collected({ city: "Tel Aviv", cityType: "model_inferred" }), "Nuova AI").overview.city).toBeNull();
     expect(buildProfile(collected({ city: "Tel Aviv" }), "Nuova AI").overview.city?.value).toBe("Tel Aviv");
+  });
+  it("the threshold is the bulk run's own (40), so the profile shows what an approval would write", () => {
+    expect(buildProfile(collected({ city: "Tel Aviv", cityConfidence: 45 }), "Nuova AI").overview.city?.value).toBe("Tel Aviv");
+    expect(buildProfile(collected({ city: "Tel Aviv", cityConfidence: 35 }), "Nuova AI").overview.city).toBeNull();
   });
   it("a hired executive listed as founder moves to leadership; LinkedIn adds the founder's profile", () => {
     const p = buildProfile(collected(), "Nuova AI");

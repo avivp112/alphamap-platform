@@ -10,7 +10,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import {
   supabase, fetchNotifications, fetchUnreadNotificationCount, markNotificationRead, markAllNotificationsRead,
-  isAppAdmin, countPendingCandidates,
+  isAppAdmin, countPendingCandidates, countPendingPromotions,
   type Notification,
 } from '../../lib/supabase';
 import { homePathNow } from '../../lib/navHome';
@@ -349,7 +349,9 @@ export function TopNav() {
   }, [user?.email]);
   useEffect(() => {
     if (!isAdmin || !menuOpen) return;
-    countPendingCandidates().then(setPendingReview).catch(() => {});
+    // Filings and users' checks share one badge; either may fail alone.
+    Promise.all([countPendingCandidates().catch(() => 0), countPendingPromotions().catch(() => 0)])
+      .then(([a, b]) => setPendingReview(a + b));
   }, [isAdmin, menuOpen]);
 
   // Close the account dropdown on an outside click or Escape.

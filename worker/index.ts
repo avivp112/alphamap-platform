@@ -9,6 +9,8 @@
 // this the company?") and, once the user confirms, the threshold checks
 // (worker/gates.ts) and, when they pass, the research itself: enrichment
 // v2's collection on that one company (worker/enrich.ts, worker/profile.ts).
+// A finished company enters AlphaMap only after an admin approves it
+// (worker/promote.ts).
 // =============================================================================
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -21,6 +23,7 @@ import { runIdentify, fetchSiteMeta } from "./identify.ts";
 import { serperSearch } from "./search.ts";
 import { runEnrichment } from "./enrich.ts";
 import { buildProfile, investorNames } from "./profile.ts";
+import { promoteOne, serializeCollected } from "./promote.ts";
 import { loadSectorTaxonomy, type SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { isDistinctiveName } from "../lib/enrichment/entity.ts";
 import { PermanentError } from "./retry.ts";
@@ -92,6 +95,8 @@ const execute: Execute = async (row, meter) => {
     status: "done",
     patch: { result: { investors: facts }, progress: { stage: "done", at: new Date().toISOString() } },
     notify: verdictNotice("done", name),
+    // Into AlphaMap only with an admin's approval (worker/promote.ts).
+    after: () => queue.proposePromotion(row.id, serializeCollected(collected)),
   };
 };
 
@@ -129,6 +134,8 @@ async function main() {
     let worked = false;
     try {
       worked = await processOne(queue, execute, { leaseSeconds: cfg.leaseSeconds, maxRunMs: cfg.maxRunMs, model: cfg.gateModel, cost });
+      // Users' checks first; an approved company is written when none is waiting.
+      if (!worked) worked = await promoteOne({ db, taxonomy, findExisting: (w) => queue.findExisting(w), notify: (...a) => queue.notify(...a) });
     } catch (e) {
       console.error(`[worker] queue error: ${String(e)}`);   // e.g. Supabase unreachable: wait and try again
     }

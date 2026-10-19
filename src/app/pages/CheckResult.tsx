@@ -218,7 +218,12 @@ function Outcome({ row, onRetry }: { row: CompanyCheckRow; onRetry: () => void }
   const techReason = row.gate?.evidence?.tech?.reason;
   switch (row.status) {
     case "done":
-      return <Panel tone="ok" icon={<ShieldCheck className="h-5 w-5" />} title={o("doneTitle")} body={o("doneBody")} />;
+      return (
+        <Panel tone="ok" icon={<ShieldCheck className="h-5 w-5" />} title={o("doneTitle")} body={o("doneBody")}>
+          {/* Approved by AlphaMap's team and added (check_promotions, 20261025000000). */}
+          {row.matched_startup_id && <div className="mt-3"><OpenCompanyLink startupId={row.matched_startup_id} label={t("companyCheck.nowInAlphaMap")} /></div>}
+        </Panel>
+      );
     case "ready":   // checked before the research existed (stage 2)
       return (
         <Panel tone="ok" icon={<ShieldCheck className="h-5 w-5" />} title={o("readyTitle")} body={o("readyBody")}>

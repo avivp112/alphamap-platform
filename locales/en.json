@@ -566,7 +566,32 @@
     "empty": { "pending": "Nothing waiting for review", "approved": "No approved companies yet", "rejected": "No rejected companies yet" },
     "emptyPendingBlurb": "New candidates arrive after the nightly runs of SEC Form D, UK Companies House and EPO.",
     "loadMore": "Load more",
-    "openCompany": "Open company"
+    "openCompany": "Open company",
+    "sheet": { "filings": "From filings", "checks": "From user checks" },
+    "checks": {
+      "blurb": "Companies users checked. Each enters AlphaMap only when you approve it; the worker then writes it from the research shown here, by the same rules as the enrichment run.",
+      "tab": { "pending": "Pending", "accepted": "Approved", "rejected": "Rejected" },
+      "status": {
+        "pending": "Waiting for you", "approved": "Approved — queued", "writing": "Being written", "written": "In AlphaMap",
+        "linked": "Was already in AlphaMap", "rejected": "Rejected", "failed": "Write failed"
+      },
+      "source": { "your_website": "Website from the user", "search": "Picked from search" },
+      "genericName": "Many companies are called \"{{name}}\" — make sure the website and the profile are this company's.",
+      "sources_one": "{{count}} source",
+      "sources_other": "{{count}} sources",
+      "founders": "Founders",
+      "funding": "Funding",
+      "investors": "Investors",
+      "checks": "Checks",
+      "fullProfile": "Full profile and sources",
+      "approve": "Add to AlphaMap",
+      "retry": "Try again",
+      "noRetry": "its company row was already created, so it is not written again; fix it by hand.",
+      "approvedFlash": "Approved — the worker adds it to AlphaMap within a minute.",
+      "rejectedFlash": "Rejected — it stays private to the user who checked it.",
+      "empty": { "pending": "Nothing waiting for review", "accepted": "No approved companies yet", "rejected": "No rejected companies yet" },
+      "emptyPendingBlurb": "When a user's check ends with a full profile, the company waits here for your decision."
+    }
   },
   "candidatePreview": {
     "back": "Back to alerts",
@@ -650,6 +675,7 @@
     "thisOne": "This is it",
     "inAlphaMap": "Already in AlphaMap",
     "openInAlphaMap": "Open in AlphaMap",
+    "nowInAlphaMap": "Now in AlphaMap — open the company",
     "yourWebsite": "The website you gave",
     "unreachable": "We couldn't open this site right now.",
     "noneOfThese": "None of these: check with what I entered",

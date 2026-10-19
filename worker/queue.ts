@@ -88,6 +88,14 @@ export class Queue {
     return (data ?? []) as Awaited<ReturnType<Queue["investorFacts"]>>;
   }
 
+  /** Proposes a finished check's company for the admin's review (migration 20261025000000). Once per check. */
+  async proposePromotion(checkId: string, collected: unknown): Promise<void> {
+    const { error } = await this.db.from("check_promotions").upsert(
+      { check_id: checkId, collected }, { onConflict: "check_id", ignoreDuplicates: true },
+    );
+    if (error) throw new Error(`check_promotions insert: ${error.message}`);
+  }
+
   /** The owner's bell. Private: one row for the user who asked, nobody else. */
   async notify(userId: string, title: string, body: string, link: string): Promise<void> {
     const { error } = await this.db.from("notifications").insert({ user_id: userId, type: "company_check", title, body, link });

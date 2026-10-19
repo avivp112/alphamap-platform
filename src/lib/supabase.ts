@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { CompanyCandidate, CandidateSource, CandidateStatus, CandidatePreview } from "./candidateReview";
+import { TAB_STATUSES, type CheckPromotion, type PromotionTab } from "./checkPromotion";
 import { sanitizeSearch, type DealFeedRow, type DealFeedStats, type DealKind, type DealSort } from "./dealFeed";
 import {
   CheckRequestError,
@@ -1356,6 +1357,43 @@ export async function approveCompanyCandidate(id: string, note?: string): Promis
 
 export async function rejectCompanyCandidate(id: string, note?: string): Promise<void> {
   const { error } = await supabase.rpc("reject_company_candidate", { p_candidate_id: id, p_note: note ?? null });
+  if (error) throw error;
+}
+
+// ─── Admin: companies from users' checks (check_promotions, 20261025000000) ──
+// The research itself (check_promotions.collected) stays out of these reads:
+// the card shows the check's own profile.
+
+const PROMOTION_COLUMNS =
+  "id, check_id, status, startup_id, reviewed_at, review_note, error, created_at, " +
+  "check:company_checks(id, input, identity, gate, result, progress, created_at)";
+
+export async function fetchCheckPromotions(opts: { tab: PromotionTab; limit: number; offset: number }): Promise<CheckPromotion[]> {
+  const { data, error } = await supabase
+    .from("check_promotions")
+    .select(PROMOTION_COLUMNS)
+    .in("status", TAB_STATUSES[opts.tab])
+    .order(opts.tab === "pending" ? "created_at" : "updated_at", { ascending: opts.tab === "pending" })
+    .range(opts.offset, opts.offset + opts.limit - 1);
+  if (error) throw error;
+  return (data ?? []) as unknown as CheckPromotion[];
+}
+
+/** Pending proposals — added to the account menu's review badge. */
+export async function countPendingPromotions(): Promise<number> {
+  const { count, error } = await supabase.from("check_promotions").select("id", { count: "exact", head: true }).eq("status", "pending");
+  if (error) throw error;
+  return count ?? 0;
+}
+
+/** Hands it to the worker, which writes it by enrichment v2's rules. */
+export async function approveCheckPromotion(id: string, note?: string): Promise<void> {
+  const { error } = await supabase.rpc("approve_check_promotion", { p_id: id, p_note: note ?? null });
+  if (error) throw error;
+}
+
+export async function rejectCheckPromotion(id: string, note?: string): Promise<void> {
+  const { error } = await supabase.rpc("reject_check_promotion", { p_id: id, p_note: note ?? null });
   if (error) throw error;
 }
 

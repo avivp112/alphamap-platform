@@ -24,6 +24,8 @@ export interface Outcome {
   patch: Record<string, unknown>;
   /** A bell notification for the check's owner once the result is saved. */
   notify?: { title: string; body: string };
+  /** Runs once the result is saved (e.g. propose the company for review). Its failure does not touch the check. */
+  after?: () => Promise<void>;
 }
 
 export type Execute = (row: CheckRow, meter: Meter) => Promise<Outcome>;
@@ -81,6 +83,7 @@ export async function processOne(queue: Queue, execute: Execute, o: RunnerOption
     const ok = await queue.finish(row.id, out.status, { ...out.patch, ...u });
     if (ok) await queue.logRun(row.id, o.model, u);
     if (ok && out.notify) await queue.notify(row.user_id, out.notify.title, out.notify.body, `/checks/${row.id}`);
+    if (ok && out.after) await out.after().catch((e) => log(`check ${row.id}: after-step failed: ${String(e)}`));
     log(`check ${row.id}: ${out.status} in ${Math.round(u.duration_ms / 1000)} s, $${u.cost_usd.toFixed(4)}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

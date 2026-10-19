@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import {
   ShieldCheck, Check, X, ExternalLink, Loader2, AlertCircle, Bell, Eye, Globe, FileText, CheckSquare, Square, ArrowRight,
 } from "lucide-react";
 import { Layout } from "../components/Layout";
+import { RejectNote } from "../components/admin/RejectNote";
+import { CheckPromotionsSheet } from "../components/admin/CheckPromotionsSheet";
 import {
   fetchCompanyCandidates, approveCompanyCandidate, rejectCompanyCandidate,
 } from "../../lib/supabase";
@@ -43,6 +45,9 @@ function timeAgo(iso: string | null): string {
 
 export function AdminReview() {
   const { t } = useTranslation();
+  // Two sheets: companies from government filings, and from users' checks (20261025000000).
+  const [params, setParams] = useSearchParams();
+  const sheet: "filings" | "checks" = params.get("sheet") === "checks" ? "checks" : "filings";
   const [status, setStatus] = useState<CandidateStatus>("pending");
   const [source, setSource] = useState<CandidateSource | "all">("all");
   const [items, setItems] = useState<CompanyCandidate[]>([]);
@@ -126,8 +131,20 @@ export function AdminReview() {
             <ShieldCheck className="w-6 h-6 text-[#0F172A]" />
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A]">{t("adminReview.title")}</h1>
           </div>
-          <p className="mt-1 sm:mt-2 text-sm font-medium text-gray-500">{t("adminReview.subtitle")}</p>
         </div>
+
+        <div className="mb-5 inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
+          {(["filings", "checks"] as const).map((s) => (
+            <button key={s} onClick={() => setParams(s === "checks" ? { sheet: "checks" } : {}, { replace: true })}
+              className={`rounded-md px-4 py-1.5 text-sm font-semibold transition-colors ${
+                sheet === s ? "bg-white text-[#0F172A] shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+              {t(`adminReview.sheet.${s}`)}
+            </button>
+          ))}
+        </div>
+
+        {sheet === "checks" ? <CheckPromotionsSheet /> : (<>
+        <p className="mb-4 text-sm text-gray-500">{t("adminReview.subtitle")}</p>
 
         {/* Status tabs */}
         <div className="flex items-center gap-1 border-b border-gray-100 mb-4 -mx-1 overflow-x-auto">
@@ -249,31 +266,9 @@ export function AdminReview() {
             </button>
           </div>
         )}
+        </>)}
       </div>
     </Layout>
-  );
-}
-
-function RejectNote(props: {
-  note: string; setNote: (s: string) => void; onCancel: () => void; onConfirm: () => void; busy: boolean;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="flex w-full flex-wrap items-center gap-2 pt-1">
-      <input
-        autoFocus
-        value={props.note}
-        onChange={(e) => props.setNote(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") props.onConfirm(); if (e.key === "Escape") props.onCancel(); }}
-        placeholder={t("adminReview.rejectNotePlaceholder")}
-        className="min-w-[200px] flex-1 rounded-md border border-gray-200 px-3 py-1.5 text-sm focus:border-gray-400 focus:outline-none"
-      />
-      <button disabled={props.busy} onClick={props.onConfirm}
-        className="rounded-md bg-rose-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-40">
-        {t("adminReview.confirmReject")}
-      </button>
-      <button onClick={props.onCancel} className="px-2 py-1.5 text-sm text-gray-500 hover:text-gray-700">{t("adminReview.cancel")}</button>
-    </div>
   );
 }
 

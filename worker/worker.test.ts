@@ -83,6 +83,12 @@ describe("processOne", () => {
     await processOne(q, async () => ({ ...ok, status: "done", notify: { title: "Acme: profile ready", body: "…" } }), opts);
     expect(calls).toEqual(["finish:done", "log", "notify:u1:/checks/c1"]);
   });
+  it("the after-step (propose for review) runs once the result is saved, and its failure leaves the check done", async () => {
+    const { q, calls } = fakeQueue(row());
+    const after = vi.fn(async () => { calls.push("after"); throw new Error("db down"); });
+    await processOne(q, async () => ({ ...ok, status: "done", after }), opts);
+    expect(calls).toEqual(["finish:done", "log", "after"]);
+  });
   // 2026-10-18: a run that failed after its searches recorded a cost of 0.
   it("a run that fails half way still records what it spent", async () => {
     const { q, calls, raw } = fakeQueue(row(3, 3));

@@ -2,7 +2,7 @@
 // worker/profile.ts — turns what v2 collected about one company
 // (lib/enrichment/collect.ts) into the profile a user sees on /checks/:id.
 //
-// The same rules as the bulk run's write stage (scripts/bulk_enrich_v2.ts,
+// The same rules as the bulk run's write stage (lib/enrichment/writeCompany.ts,
 // Stage 10), applied to a company with nothing on file: a city or country
 // only above the profile confidence threshold, a headcount only when
 // decideHeadcountUpdate accepts its evidence, a "founder" only when a source
@@ -18,6 +18,7 @@ import { cleanPeople, isFounderEntry, cleanFounderTitle } from "../lib/enrichmen
 import { samePersonName } from "../lib/enrichment/linkedin.ts";
 import { mergePeople, decideHeadcountUpdate } from "../lib/enrichment/write.ts";
 import { meetsProfileThreshold } from "../lib/enrichment/confidence.ts";
+import { BULK_THRESHOLDS } from "../lib/enrichment/writeCompany.ts";
 import { computeTotalRaised } from "../lib/enrichment/rounds.ts";
 import { countryFromLocationQuote } from "../lib/enrichment/location.ts";
 import { MAJOR_CITIES } from "../lib/enrichment/majorCities.ts";
@@ -100,9 +101,9 @@ export function buildProfile(c: CollectedCompany, companyName: string): CheckPro
   });
 
   // Location: the threshold the bulk run writes with.
-  const city = validation.accepted.city && meetsProfileThreshold(c.cityConfidence)
+  const city = validation.accepted.city && meetsProfileThreshold(c.cityConfidence, BULK_THRESHOLDS)
     ? sourced(validation.accepted.city, profile.profile.city) : null;
-  let country = validation.accepted.country && meetsProfileThreshold(c.countryConfidence)
+  let country = validation.accepted.country && meetsProfileThreshold(c.countryConfidence, BULK_THRESHOLDS)
     ? sourced(validation.accepted.country, profile.profile.country) : null;
   if (city && !country) {
     // Only from the city's own quote, or a city that maps to one country.
