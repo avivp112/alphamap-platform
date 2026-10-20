@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "schema_notes": [
     "Each company entry is ground truth for eval/run_eval.ts to compare pipeline output against.",
     "Sourcing rule: every cited `source_url` is a company website page, an official registry, an official press release, or a news article that did its own original reporting. Aggregator/directory pages (Crunchbase, PitchBook, LinkedIn, Tracxn, Dealroom, Sacra, Seedtable, CB Insights, etc.) were used only to FIND candidate facts and leads during research — never as the cited source for a value here.",
@@ -7,7 +7,8 @@
     "confidence per field: 'verified' (2+ independent primary/direct-reporting sources agree, or one lead-investor/company-direct source), 'likely' (one credible direct-reporting source, not independently corroborated), 'unknown' (no primary source found, or sources conflict with no way to resolve). Fields marked 'unknown' are excluded from precision/coverage scoring, not guessed.",
     "hard_case_tags follow the v2 spec's categories (Section 6 / issue 13): common_name, non_us, rebrand_domain_change, series_a_start, stealth_no_data, went_public.",
     "STATUS: human-reviewed batch of 2 (Apex, Fresha) remains final/reviewed. A second, NOT-yet-human-reviewed batch of 10 (listed in the v3 schema_note above) was added by Claude in this session, covering hard-case categories not in the first batch: non_us (Israel/Wiz & Fiverr, UK/Wise, Germany/Celonis, India/Zepto), rebrand_domain_change (Wise, Shortcut), series_a_start (Wiz, Celonis), stealth_no_data (Safe Superintelligence, Thinking Machines Lab), went_public (Fiverr, Wise), and common_name (Bolt, Mercury, Shortcut). All 10 need the same hybrid human review (city/country/founded_year/every funding round) before counting as final; reviewed_by_human is false on every one. The remaining target-batch companies continue in follow-up sessions.",
-    "v3 (this batch): added 10 more companies (bolt-checkout, wiz-security, fiverr, wise-transferwise, celonis, zepto, shortcut-software, safe-superintelligence, mercury-technologies, thinking-machines-lab), Claude-researched only (reviewed_by_human: false on all), same primary-sourcing rules as v2. Two new optional structural fields introduced and used where relevant: is_public_company ({value, confidence, source_url, notes}) to test the public/private boundary explicitly, and hard_case_notes (free-text) for hard-case context that does not fit an existing field (e.g. dual-HQ ambiguity, name-collision disambiguation, bootstrapped-to-Series-A narratives). Also introduced, used only where applicable: rebrand_notes (reused from v2 Fresha pattern), funding_rounds_excluded_unknown (reused from v2), ipo_status (zepto only, for a pending-not-yet-listed IPO case), and acquisition (wiz-security only, for an announced-but-not-closed M&A exit that is NOT a going-public event)."
+    "v3 (this batch): added 10 more companies (bolt-checkout, wiz-security, fiverr, wise-transferwise, celonis, zepto, shortcut-software, safe-superintelligence, mercury-technologies, thinking-machines-lab), Claude-researched only (reviewed_by_human: false on all), same primary-sourcing rules as v2. Two new optional structural fields introduced and used where relevant: is_public_company ({value, confidence, source_url, notes}) to test the public/private boundary explicitly, and hard_case_notes (free-text) for hard-case context that does not fit an existing field (e.g. dual-HQ ambiguity, name-collision disambiguation, bootstrapped-to-Series-A narratives). Also introduced, used only where applicable: rebrand_notes (reused from v2 Fresha pattern), funding_rounds_excluded_unknown (reused from v2), ipo_status (zepto only, for a pending-not-yet-listed IPO case), and acquisition (wiz-security only, for an announced-but-not-closed M&A exit that is NOT a going-public event).",
+    "Batch 3 (2026-10-20): Claude-researched from search-result summaries only (pages could not be opened from the research sandbox), so every value needs the human review before it counts; confidence was set conservatively — 'verified' only where two independent direct-reporting sources agreed. New optional fields: batch (number), arr_usd ({value, as_of, confidence, source_url, notes}) for revenue scoring, and funding_rounds_excluded_unknown is now honoured by eval/score.ts (an extracted round matching one of them is neither right nor wrong). Round type 'Unknown' marks a round whose letter the sources contradict."
   ],
   "companies": [
     {
@@ -1789,6 +1790,904 @@
         "source_url": "https://techcrunch.com/2025/07/15/mira-muratis-thinking-machines-lab-is-worth-12b-in-seed-round/",
         "notes": "Private company; no IPO or acquisition found as of this research pass."
       }
+    },
+    {
+      "id": "port-io",
+      "name": "Port",
+      "aka": [
+        "Port IO Ltd.",
+        "getport.io",
+        "port.io"
+      ],
+      "batch": 3,
+      "hard_case_tags": [
+        "common_name",
+        "non_us",
+        "rebrand_domain_change"
+      ],
+      "hard_case_notes": "'Port' is about as generic as a company name gets; the domain moved from getport.io to port.io. HQ is reported as Tel Aviv by Israeli press and as New York by some directories. Founding year conflicts (Nov 2021 in Dealroom/StartupHub, 2022 in TechCrunch/Built In) — left unknown rather than guessed.",
+      "reviewed_by_human": false,
+      "website": "https://www.port.io",
+      "city": {
+        "value": "Tel Aviv",
+        "confidence": "likely",
+        "source_url": "https://www.calcalistech.com/ctechnews/article/r1vronkjt",
+        "notes": "Israeli press; some directories list New York."
+      },
+      "country": {
+        "value": "Israel",
+        "confidence": "verified",
+        "source_url": "https://techcrunch.com/2025/12/11/port-raises-100m-at-800m-valuation-to-take-on-spotifys-backstage"
+      },
+      "founded_year": {
+        "value": 2022,
+        "confidence": "unknown",
+        "notes": "2021 vs 2022 across sources."
+      },
+      "founders": [
+        {
+          "name": "Zohar Einy",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://techcrunch.com/2025/12/11/port-raises-100m-at-800m-valuation-to-take-on-spotifys-backstage"
+        },
+        {
+          "name": "Yonatan Boguslavski",
+          "title": "Co-Founder & CTO",
+          "confidence": "verified",
+          "source_url": "https://techcrunch.com/2025/12/11/port-raises-100m-at-800m-valuation-to-take-on-spotifys-backstage"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Series A",
+          "amount_usd": 18000000,
+          "date": "2023-09",
+          "lead_investor": "Team8",
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.calcalistech.com/ctechnews/article/r1vronkjt",
+            "https://pulse2.com/port-18-million-funding/amp/"
+          ],
+          "notes": "Total $23M after this round."
+        },
+        {
+          "type": "Series B",
+          "amount_usd": 35000000,
+          "date": "2024-10-15",
+          "lead_investor": "Accel",
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://getport.io/blog/port-raises-35m-for-its-end-to-end-internal-developer-portal",
+            "https://siliconangle.com/2024/10/15/developer-tooling-startup-port-sails-away-35m-funding/"
+          ],
+          "notes": "Total $58M after this round."
+        },
+        {
+          "type": "Series C",
+          "amount_usd": 100000000,
+          "date": "2025-12-11",
+          "lead_investor": "General Atlantic",
+          "valuation_usd": 800000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://techcrunch.com/2025/12/11/port-raises-100m-at-800m-valuation-to-take-on-spotifys-backstage",
+            "https://siliconangle.com/2025/12/11/port-nets-100m-turn-developer-portal-agentic-ai-hub/"
+          ],
+          "notes": "Total $158M after this round."
+        }
+      ],
+      "funding_rounds_excluded_unknown": [
+        {
+          "type": "Seed",
+          "amount_usd": 5000000,
+          "date": "2022",
+          "notes": "Implied ~$5M by the Series A total ($23M); one profile says $7M in Nov 2022. No primary announcement found."
+        }
+      ]
+    },
+    {
+      "id": "hailo-ai",
+      "name": "Hailo",
+      "aka": [
+        "Hailo Technologies Ltd."
+      ],
+      "batch": 3,
+      "hard_case_tags": [
+        "common_name",
+        "non_us"
+      ],
+      "hard_case_notes": "Name collision with the defunct UK taxi app Hailo (2011-2016). The 2024 round is an extension of the Series C, not a new letter.",
+      "reviewed_by_human": false,
+      "website": "https://hailo.ai",
+      "city": {
+        "value": "Tel Aviv",
+        "confidence": "likely",
+        "notes": "Reported as Tel Aviv-based; not separately confirmed in this pass."
+      },
+      "country": {
+        "value": "Israel",
+        "confidence": "verified",
+        "source_url": "https://en.globes.co.il/en/article-israeli-edge-ai-chipmaker-hailo-raises-136m-1001387010"
+      },
+      "founded_year": {
+        "value": 2017,
+        "confidence": "verified",
+        "source_url": "https://en.globes.co.il/en/article-israeli-edge-ai-chipmaker-hailo-raises-136m-1001387010"
+      },
+      "founders": [
+        {
+          "name": "Orr Danon",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://en.globes.co.il/en/article-israeli-edge-ai-chipmaker-hailo-raises-136m-1001387010"
+        },
+        {
+          "name": "Avi Baum",
+          "title": "Co-Founder & CTO",
+          "confidence": "verified",
+          "source_url": "https://siliconangle.com/2024/04/02/hailo-raises-120m-debuts-first-chip-generative-ai-edge/"
+        },
+        {
+          "name": "Hadar Zeitlin",
+          "title": "Co-Founder & CBO",
+          "confidence": "likely",
+          "source_url": "https://www.israelhayom.com/2021/10/12/ai-chipmaker-hailo-raises-136m-to-expand-edge-ai-solutions"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Series B",
+          "amount_usd": 60000000,
+          "date": "2020-03",
+          "lead_investor": null,
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://globalventuring.com/corporate/hailo-attracts-136m-in-series-c/?format=md",
+            "https://calcalistech.com/tags/Hailo"
+          ],
+          "notes": "Led by existing investors (unnamed)."
+        },
+        {
+          "type": "Series C",
+          "amount_usd": 136000000,
+          "date": "2021-10",
+          "lead_investor": "Poalim Equity",
+          "valuation_usd": 1130000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://en.globes.co.il/en/article-israeli-edge-ai-chipmaker-hailo-raises-136m-1001387010",
+            "https://www.edge-ai-vision.com/2021/10/leading-ai-chipmaker-hailo-raises-136-million-to-expand-edge-ai-solutions-as-global-demand-surges/"
+          ],
+          "notes": "Co-led with Gil Agmon. Valuation per Globes' sources only (company did not disclose). Total $224M after this round."
+        },
+        {
+          "type": "Series C Extension",
+          "amount_usd": 120000000,
+          "date": "2024-04-02",
+          "lead_investor": null,
+          "valuation_usd": 1200000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://siliconangle.com/2024/04/02/hailo-raises-120m-debuts-first-chip-generative-ai-edge/",
+            "https://www.sdxcentral.com/news/edge-ai-chip-company-hailo-raises-120m-launches-hailo-10-genai-accelerator/"
+          ],
+          "notes": "No single lead; Akirov, OurCrowd, Poalim Equity, Zisapel family and others. Total $340M."
+        }
+      ],
+      "funding_rounds_excluded_unknown": [
+        {
+          "type": "Seed/Series A",
+          "amount_usd": 28000000,
+          "date": "2018-2019",
+          "notes": "~$28M before the Series B by subtraction ($224M total after C); individual rounds not traced to primary sources."
+        }
+      ]
+    },
+    {
+      "id": "cyera",
+      "name": "Cyera",
+      "aka": [
+        "Cyera Ltd."
+      ],
+      "batch": 3,
+      "hard_case_tags": [
+        "non_us"
+      ],
+      "hard_case_notes": "Like Wiz: founded and built in Israel, described as New York-based in its 2025-26 round coverage (one aggregator says San Francisco). Website deliberately left empty for the reviewer to confirm (cyera.io vs cyera.com) — a wrong anchor would mis-test the pipeline.",
+      "reviewed_by_human": false,
+      "city": {
+        "value": "New York",
+        "confidence": "likely",
+        "source_url": "https://www.securityweek.com/cyera-raises-400-million-at-9-billion-valuation/"
+      },
+      "country": {
+        "value": "United States",
+        "confidence": "likely",
+        "source_url": "https://www.securityweek.com/cyera-raises-400-million-at-9-billion-valuation/"
+      },
+      "founded_year": {
+        "value": 2021,
+        "confidence": "verified",
+        "source_url": "https://en.globes.co.il/en/article-1001512567"
+      },
+      "founders": [
+        {
+          "name": "Yotam Segev",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://en.globes.co.il/en/article-1001512567"
+        },
+        {
+          "name": "Tamar Bar-Ilan",
+          "title": "Co-Founder & CTO",
+          "confidence": "verified",
+          "source_url": "https://en.globes.co.il/en/article-1001512567"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Series C",
+          "amount_usd": 300000000,
+          "date": "2024-04",
+          "lead_investor": null,
+          "valuation_usd": 1400000000,
+          "confidence": "likely",
+          "source_urls": [
+            "https://en.globes.co.il/en/article-1001494562"
+          ],
+          "notes": "Date and valuation as reported alongside the Series D."
+        },
+        {
+          "type": "Series D",
+          "amount_usd": 300000000,
+          "date": "2024-11",
+          "lead_investor": "Accel",
+          "valuation_usd": 3000000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://en.globes.co.il/en/article-1001494562",
+            "https://www.securityweek.com/cyera-raises-300-million-at-3-billion-valuation/"
+          ],
+          "notes": "Co-led by Sapphire Ventures."
+        },
+        {
+          "type": "Series E",
+          "amount_usd": 540000000,
+          "date": "2025-06",
+          "lead_investor": "Georgian",
+          "valuation_usd": 6000000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://en.globes.co.il/en/article-1001512567",
+            "https://builtin.com/articles/cyera-raises-540m-series-e-20250617"
+          ],
+          "notes": "Co-led by Greenoaks and Lightspeed. Total $1.3B."
+        },
+        {
+          "type": "Series F",
+          "amount_usd": 400000000,
+          "date": "2026-01-08",
+          "lead_investor": "Blackstone",
+          "valuation_usd": 9000000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.securityweek.com/cyera-raises-400-million-at-9-billion-valuation/",
+            "https://www.weil.com/articles/weil-advised-blackstone-in-400m-series-f-funding-for-cyera"
+          ],
+          "notes": "WSJ reported it in progress on 2025-12-17; announcement date per SiliconANGLE (Jan 8) — confirm."
+        }
+      ],
+      "funding_rounds_excluded_unknown": [
+        {
+          "type": "Seed/Series A/B",
+          "amount_usd": null,
+          "date": "2021-2023",
+          "notes": "Early rounds not traced in this pass."
+        },
+        {
+          "type": "Series G",
+          "amount_usd": 300000000,
+          "date": "2026-06",
+          "notes": "$300M at $12B per one aggregator (multiples.vc) only."
+        }
+      ]
+    },
+    {
+      "id": "cato-networks",
+      "name": "Cato Networks",
+      "aka": [
+        "Cato Networks Ltd."
+      ],
+      "batch": 3,
+      "hard_case_tags": [
+        "non_us"
+      ],
+      "hard_case_notes": "Round letters conflict across coverage: the 2023 $238M round and the 2025 $359M round are both called 'Series G' by different outlets. ARR is stated by the company itself.",
+      "reviewed_by_human": false,
+      "website": "https://www.catonetworks.com",
+      "city": {
+        "value": "Tel Aviv",
+        "confidence": "verified",
+        "source_url": "https://en.globes.co.il/en/article-1001514443"
+      },
+      "country": {
+        "value": "Israel",
+        "confidence": "verified",
+        "source_url": "https://en.globes.co.il/en/article-1001514443"
+      },
+      "founded_year": {
+        "value": 2015,
+        "confidence": "verified",
+        "source_url": "https://fintech.global/2023/09/20/cato-networks-clinches-238m-investment-at-over-3bn-valuation/"
+      },
+      "founders": [
+        {
+          "name": "Shlomo Kramer",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://en.globes.co.il/en/article-1001514443"
+        },
+        {
+          "name": "Gur Shatz",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://en.globes.co.il/en/article-1001514443"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Series E",
+          "amount_usd": 130000000,
+          "date": "2020-11-17",
+          "lead_investor": null,
+          "valuation_usd": 1000000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://techcrunch.com/2020/11/17/cato-network-snags-100m-series-e-on-1b-valuation-as-cloud-wide-area-networking-thrives/",
+            "https://pulse2.com/cato-networks-130-million-funding-and-over-1-billion-valuation/amp/"
+          ]
+        },
+        {
+          "type": "Series F",
+          "amount_usd": 200000000,
+          "date": "2021-10",
+          "lead_investor": "Lightspeed Venture Partners",
+          "valuation_usd": 2500000000,
+          "confidence": "likely",
+          "source_urls": [
+            "https://investing.com/news/stock-market-news/cato-networks-secures-238-million-funding-plans-2024-ipo-93CH-3178860"
+          ],
+          "notes": "Only one source calls it Series F."
+        },
+        {
+          "type": "Private round",
+          "amount_usd": 238000000,
+          "date": "2023-09-20",
+          "lead_investor": "Lightspeed Venture Partners",
+          "valuation_usd": 3000000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://fintech.global/2023/09/20/cato-networks-clinches-238m-investment-at-over-3bn-valuation/",
+            "https://www.agbi.com/article/israeli-cybersecurity-startup-cato-networks-raises-238m/"
+          ],
+          "notes": "Letter not stated; $3.1B per Investing.com."
+        },
+        {
+          "type": "Series G",
+          "amount_usd": 359000000,
+          "date": "2025-06",
+          "lead_investor": "Vitruvian Partners",
+          "valuation_usd": 4800000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://en.globes.co.il/en/article-1001514443",
+            "https://www.channele2e.com/brief/cato-networks-raises-359m-to-expand-ai-sase"
+          ],
+          "notes": "Co-led with ION Crossover; later extended to $409M."
+        }
+      ],
+      "funding_rounds_excluded_unknown": [
+        {
+          "type": "Series A-D",
+          "amount_usd": null,
+          "date": "2015-2019",
+          "notes": "Early rounds not traced in this pass."
+        }
+      ],
+      "arr_usd": {
+        "value": 350000000,
+        "as_of": "2025-12",
+        "confidence": "likely",
+        "source_url": "https://www.bolsamania.com/nota-de-prensa_print/mercados/cato-networks-surpasses-350-million-arr-with-43-yoy-growth-in-2025--21809566.html",
+        "notes": "Company release: 2025 ARR 'surpassed $350 million'. Globes: $250M at end of 2024."
+      }
+    },
+    {
+      "id": "upwind-security",
+      "name": "Upwind",
+      "aka": [
+        "Upwind Security"
+      ],
+      "batch": 3,
+      "hard_case_tags": [
+        "non_us"
+      ],
+      "hard_case_notes": "Round labels conflict: the Dec 2024 $100M round is called Series B by Globes/Calcalist but Series A by JNS/BankInfoSecurity, and the company calls its Jan 2026 $250M round its Series B. A pipeline should not invent a letter.",
+      "reviewed_by_human": false,
+      "website": "https://www.upwind.io",
+      "city": {
+        "confidence": "unknown",
+        "notes": "HQ not established in this pass."
+      },
+      "country": {
+        "value": "Israel",
+        "confidence": "likely",
+        "source_url": "https://en.globes.co.il/en/article-1001495634"
+      },
+      "founded_year": {
+        "value": 2022,
+        "confidence": "verified",
+        "source_url": "https://calcalistech.com/ctechnews/article/hkxgq11pwjl"
+      },
+      "founders": [
+        {
+          "name": "Amiram Shachar",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://en.globes.co.il/en/article-1001495634"
+        },
+        {
+          "name": "Liran Polak",
+          "title": "Co-Founder",
+          "confidence": "likely",
+          "source_url": "https://calcalistech.com/ctechnews/article/hkxgq11pwjl"
+        },
+        {
+          "name": "Lavi Ferdman",
+          "title": "Co-Founder",
+          "confidence": "likely",
+          "source_url": "https://calcalistech.com/ctechnews/article/hkxgq11pwjl"
+        },
+        {
+          "name": "Tal Zuri",
+          "title": "Co-Founder",
+          "confidence": "likely",
+          "source_url": "https://calcalistech.com/ctechnews/article/hkxgq11pwjl"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Unknown",
+          "amount_usd": 50000000,
+          "date": "2023-09",
+          "lead_investor": null,
+          "valuation_usd": 300000000,
+          "confidence": "likely",
+          "source_urls": [
+            "https://fintech.global/2024/11/11/israeli-cloud-security-firm-upwind-seeks-100m-in-series-b-funding/"
+          ]
+        },
+        {
+          "type": "Unknown",
+          "amount_usd": 100000000,
+          "date": "2024-12",
+          "lead_investor": "Craft Ventures",
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://en.globes.co.il/en/article-1001495634",
+            "https://www.bankinfosecurity.com/upwind-raises-100m-to-thwart-cloud-security-vulnerabilities-a-26953"
+          ],
+          "notes": "Valuation $850-900M per market sources, undisclosed."
+        },
+        {
+          "type": "Series B",
+          "amount_usd": 250000000,
+          "date": "2026-01-29",
+          "lead_investor": "Bessemer Venture Partners",
+          "valuation_usd": 1500000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.securityweek.com/upwind-raises-250-million-at-1-5-billion-valuation/amp/",
+            "https://en.globes.co.il/en/article-1001533016"
+          ],
+          "notes": "Total $430M after this round."
+        }
+      ],
+      "funding_rounds_excluded_unknown": [
+        {
+          "type": "Seed",
+          "amount_usd": 30000000,
+          "date": "2022",
+          "notes": "~$30M implied by the $430M total; not traced."
+        }
+      ]
+    },
+    {
+      "id": "coralogix",
+      "name": "Coralogix",
+      "aka": [
+        "Coralogix Ltd."
+      ],
+      "batch": 3,
+      "hard_case_tags": [
+        "non_us"
+      ],
+      "hard_case_notes": "Conflicts everywhere: HQ (Tel Aviv / Ramat Gan / California), founding year (2014 / 2015), co-founders (Calcalist names Yoni Farin as co-founder & CTO; Wikipedia names Guy Kroupp and Lior Redlus), and the CEO's surname spelling (Assaraf / Assaref). Only what agrees is scored.",
+      "reviewed_by_human": false,
+      "website": "https://coralogix.com",
+      "city": {
+        "confidence": "unknown",
+        "notes": "Tel Aviv vs Ramat Gan vs California."
+      },
+      "country": {
+        "confidence": "unknown",
+        "notes": "Founded in Israel; Wikipedia lists a US HQ."
+      },
+      "founded_year": {
+        "value": 2014,
+        "confidence": "likely",
+        "source_url": "https://www.calcalistech.com/ctechnews/article/h1tsdarqge",
+        "notes": "DUNS100 says 2015."
+      },
+      "founders": [
+        {
+          "name": "Ariel Assaraf",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://www.calcalistech.com/ctechnews/article/h1tsdarqge"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Series D",
+          "amount_usd": 142000000,
+          "date": "2022",
+          "lead_investor": "Advent International",
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.calcalistech.com/ctechnews/article/h1tsdarqge",
+            "https://en.globes.co.il/en/article-1001413941"
+          ],
+          "notes": "Co-led with Brighton Park Capital. Month not established in this pass."
+        },
+        {
+          "type": "Series E",
+          "amount_usd": 115000000,
+          "date": "2025-06",
+          "lead_investor": "NewView Capital",
+          "valuation_usd": 1000000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://en.globes.co.il/en/article-1001513111",
+            "https://fintech.global/2025/06/18/coralogix-raises-115m-to-scale-ai-observability-tools/"
+          ],
+          "notes": "Valuation 'above $1B'."
+        }
+      ],
+      "funding_rounds_excluded_unknown": [
+        {
+          "type": "Seed-Series C",
+          "amount_usd": null,
+          "date": "2014-2021",
+          "notes": "Not traced."
+        }
+      ]
+    },
+    {
+      "id": "hibob",
+      "name": "HiBob",
+      "aka": [
+        "Bob",
+        "Hi Bob Ltd."
+      ],
+      "batch": 3,
+      "hard_case_tags": [
+        "common_name",
+        "non_us"
+      ],
+      "hard_case_notes": "The product is called 'Bob' — the common-name case. Founded in Tel Aviv, headquartered in London per its own site and Wikipedia; directories say Tel Aviv or New York.",
+      "reviewed_by_human": false,
+      "website": "https://www.hibob.com",
+      "city": {
+        "value": "London",
+        "confidence": "likely",
+        "source_url": "https://www.hibob.com/about/"
+      },
+      "country": {
+        "value": "United Kingdom",
+        "confidence": "likely",
+        "source_url": "https://www.hibob.com/about/"
+      },
+      "founded_year": {
+        "value": 2015,
+        "confidence": "verified",
+        "source_url": "https://www.hibob.com/about/"
+      },
+      "founders": [
+        {
+          "name": "Ronni Zehavi",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://www.hibob.com/about/"
+        },
+        {
+          "name": "Israel David",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://en.wikipedia.org/wiki/HiBob"
+        },
+        {
+          "name": "Amit Knaani",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://en.wikipedia.org/wiki/HiBob"
+        },
+        {
+          "name": "Andy Bellass",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://en.wikipedia.org/wiki/HiBob"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Series C",
+          "amount_usd": 150000000,
+          "date": "2021-10",
+          "lead_investor": null,
+          "valuation_usd": null,
+          "confidence": "likely",
+          "source_urls": [
+            "https://techcrunch.com/2022/08/17/hr-startup-hibobs-valuation-surges-50-to-2-45b-on-a-150m-raise"
+          ],
+          "notes": "Date per the Series D coverage ('ten months before')."
+        },
+        {
+          "type": "Series D",
+          "amount_usd": 150000000,
+          "date": "2022-08-17",
+          "lead_investor": "General Atlantic",
+          "valuation_usd": 2450000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://techcrunch.com/2022/08/17/hr-startup-hibobs-valuation-surges-50-to-2-45b-on-a-150m-raise",
+            "https://www.peoplematters.in/news/funding-investment/hibob-raises-150-million-series-d-up-round-led-by-general-atlantic-34906"
+          ]
+        }
+      ],
+      "funding_rounds_excluded_unknown": [
+        {
+          "type": "Seed-Series B",
+          "amount_usd": null,
+          "date": "2015-2020",
+          "notes": "Not traced."
+        }
+      ]
+    },
+    {
+      "id": "aidoc",
+      "name": "Aidoc",
+      "aka": [
+        "Aidoc Medical Ltd."
+      ],
+      "batch": 3,
+      "hard_case_tags": [
+        "non_us"
+      ],
+      "hard_case_notes": "The July 2025 '$150M' is probably $110M equity plus a $40M credit line — a pipeline should not record debt as an equity round.",
+      "reviewed_by_human": false,
+      "website": "https://www.aidoc.com",
+      "city": {
+        "value": "Tel Aviv",
+        "confidence": "verified",
+        "source_url": "https://www.timesofisrael.com/israels-aidoc-raises-110m-for-ai-tech-that-reads-imaging-scans/"
+      },
+      "country": {
+        "value": "Israel",
+        "confidence": "verified",
+        "source_url": "https://www.timesofisrael.com/israels-aidoc-raises-110m-for-ai-tech-that-reads-imaging-scans/"
+      },
+      "founded_year": {
+        "value": 2016,
+        "confidence": "verified",
+        "source_url": "https://www.mobihealthnews.com/news/aidoc-raises-110m-expand-ai-enabled-imaging-platform"
+      },
+      "founders": [
+        {
+          "name": "Elad Walach",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://www.timesofisrael.com/israels-aidoc-raises-110m-for-ai-tech-that-reads-imaging-scans/"
+        },
+        {
+          "name": "Guy Reiner",
+          "title": "Co-Founder",
+          "confidence": "likely",
+          "source_url": "https://www.timesofisrael.com/israels-aidoc-raises-110m-for-ai-tech-that-reads-imaging-scans/"
+        },
+        {
+          "name": "Michael Braginsky",
+          "title": "Co-Founder",
+          "confidence": "likely",
+          "source_url": "https://www.timesofisrael.com/israels-aidoc-raises-110m-for-ai-tech-that-reads-imaging-scans/"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Series D",
+          "amount_usd": 110000000,
+          "date": "2022-06",
+          "lead_investor": "TCV",
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.mobihealthnews.com/news/aidoc-raises-110m-expand-ai-enabled-imaging-platform",
+            "https://www.timesofisrael.com/israels-aidoc-raises-110m-for-ai-tech-that-reads-imaging-scans/"
+          ],
+          "notes": "Co-led with Alpha Intelligence Capital. Total $250M."
+        }
+      ],
+      "funding_rounds_excluded_unknown": [
+        {
+          "type": "Seed-Series C",
+          "amount_usd": null,
+          "date": "2016-2021",
+          "notes": "Not traced."
+        },
+        {
+          "type": "Series D-IV / 2025 raise",
+          "amount_usd": 110000000,
+          "date": "2025-07",
+          "notes": "$150M reported = $110M equity + $40M credit line per CB Insights; no primary source."
+        }
+      ]
+    },
+    {
+      "id": "pagaya",
+      "name": "Pagaya",
+      "aka": [
+        "Pagaya Technologies Ltd.",
+        "PGY"
+      ],
+      "batch": 3,
+      "hard_case_tags": [
+        "went_public",
+        "non_us"
+      ],
+      "hard_case_notes": "Public since June 2022 (SPAC with EJF Acquisition Corp, Nasdaq: PGY). The pipeline should recognise it as public and not write it as a startup. HQ (New York vs Tel Aviv) not scored.",
+      "reviewed_by_human": false,
+      "website": "https://pagaya.com",
+      "is_public_company": {
+        "value": true,
+        "confidence": "verified",
+        "source_url": "https://en.globes.co.il/en/article-pagaya-completes-spac-merger-at-85b-valuation-1001416009"
+      },
+      "city": {
+        "confidence": "unknown"
+      },
+      "country": {
+        "confidence": "unknown"
+      },
+      "founded_year": {
+        "value": 2016,
+        "confidence": "verified",
+        "source_url": "https://en.globes.co.il/en/article-1001419790"
+      },
+      "founders": [
+        {
+          "name": "Gal Krubiner",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://en.globes.co.il/en/article-1001419790"
+        },
+        {
+          "name": "Yahav Yulzari",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://en.globes.co.il/en/article-1001419790"
+        },
+        {
+          "name": "Avital Pardo",
+          "title": "Co-Founder & CTO",
+          "confidence": "verified",
+          "source_url": "https://en.globes.co.il/en/article-1001419790"
+        }
+      ],
+      "funding_rounds": []
+    },
+    {
+      "id": "oligo-security",
+      "name": "Oligo Security",
+      "aka": [
+        "Oligo"
+      ],
+      "batch": 3,
+      "hard_case_tags": [
+        "non_us",
+        "common_name"
+      ],
+      "hard_case_notes": "Early rounds reported two ways: a $28M 'split seed/Series A', or an $8M seed then a $20M Series A nine months later. Small enough that Hebrew/Israeli press is most of the coverage.",
+      "reviewed_by_human": false,
+      "website": "https://www.oligo.security",
+      "city": {
+        "value": "Tel Aviv",
+        "confidence": "likely",
+        "source_url": "https://archive.israel21c.org/israeli-startup-raises-50m-to-stop-app-based-cyberattacks/"
+      },
+      "country": {
+        "value": "Israel",
+        "confidence": "verified",
+        "source_url": "https://archive.israel21c.org/israeli-startup-raises-50m-to-stop-app-based-cyberattacks/"
+      },
+      "founded_year": {
+        "value": 2022,
+        "confidence": "likely",
+        "source_url": "https://archive.israel21c.org/israeli-startup-raises-50m-to-stop-app-based-cyberattacks/"
+      },
+      "founders": [
+        {
+          "name": "Nadav Czerninski",
+          "title": "Co-Founder & CEO",
+          "confidence": "likely",
+          "source_url": "https://archive.israel21c.org/israeli-startup-raises-50m-to-stop-app-based-cyberattacks/"
+        },
+        {
+          "name": "Gal Elbaz",
+          "title": "Co-Founder & CTO",
+          "confidence": "likely",
+          "source_url": "https://archive.israel21c.org/israeli-startup-raises-50m-to-stop-app-based-cyberattacks/"
+        },
+        {
+          "name": "Avshalom Hilu",
+          "title": "Co-Founder & CPO",
+          "confidence": "likely",
+          "source_url": "https://archive.israel21c.org/israeli-startup-raises-50m-to-stop-app-based-cyberattacks/"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Seed",
+          "amount_usd": 8000000,
+          "date": null,
+          "lead_investor": null,
+          "valuation_usd": null,
+          "confidence": "likely",
+          "source_urls": [
+            "https://www.calcalistech.com/ctechnews/article/hkrrovctj"
+          ]
+        },
+        {
+          "type": "Series A",
+          "amount_usd": 20000000,
+          "date": null,
+          "lead_investor": null,
+          "valuation_usd": null,
+          "confidence": "likely",
+          "source_urls": [
+            "https://www.calcalistech.com/ctechnews/article/hkrrovctj"
+          ],
+          "notes": "Nine months after the seed."
+        },
+        {
+          "type": "Series B",
+          "amount_usd": 50000000,
+          "date": "2025",
+          "lead_investor": "Greenfield Partners",
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.bankinfosecurity.com/oligo-security-raises-50m-to-tackle-app-detection-response-a-27420",
+            "https://archive.israel21c.org/israeli-startup-raises-50m-to-stop-app-based-cyberattacks/"
+          ],
+          "notes": "Total ~$78-80M."
+        }
+      ]
     }
   ]
 }

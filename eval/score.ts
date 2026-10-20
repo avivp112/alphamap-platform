@@ -24,6 +24,8 @@ export interface GoldenCompany {
   id: string; name: string; website?: string;
   city?: GoldenField<string>; country?: GoldenField<string>; founded_year?: GoldenField<number>;
   founders?: GoldenFounder[]; funding_rounds?: GoldenRound[];
+  /** Rounds that probably happened but have no primary source: not scored either way. */
+  funding_rounds_excluded_unknown?: Array<Omit<GoldenRound, "confidence"> & { confidence?: Confidence }>;
   employee_range?: GoldenField<string>; github_url?: string | null; huggingface_url?: string | null;
   /** Latest annual recurring revenue a primary source states (batch 3 on). */
   arr_usd?: GoldenField<number> & { as_of?: string | null };
@@ -105,11 +107,18 @@ export function roundsDayGap(g: GoldenRound, e: { amount_raised?: number | null;
 // Greedy injective matching, closest first: one extracted round satisfies at
 // most one golden round — otherwise a round between two real ones would
 // "cover" both and hide the duplicate-round bug (Apex) this exists to catch.
-function scoreRounds(s: FieldStats, golden: GoldenRound[] | undefined, extracted: PipelineOutput["rounds"]): FieldResult {
+function scoreRounds(s: FieldStats, g: GoldenCompany, extracted: PipelineOutput["rounds"]): FieldResult {
+  const golden = g.funding_rounds;
   const verified = (golden ?? []).filter((r) => r.confidence !== "unknown");
   if (verified.length === 0) return "excluded";
+  // A round that matches one the golden set could not source (2023 Wiz Series
+  // D) is neither right nor wrong: left out of "produced" rather than counted
+  // as a wrong write. Only rounds no verified golden round takes.
+  const unknown = [
+    ...(golden ?? []).filter((r) => r.confidence === "unknown"),
+    ...(g.funding_rounds_excluded_unknown ?? []).map((r) => ({ ...r, confidence: "unknown" as const })),
+  ];
   s.scored += verified.length;
-  s.produced += extracted.length;   // a hallucinated or duplicate round is produced-but-not-correct
   const used = new Set<number>();
   const order = verified.map((gr) => {
     let best = Infinity;
@@ -128,6 +137,9 @@ function scoreRounds(s: FieldStats, golden: GoldenRound[] | undefined, extracted
     used.add(idx);
     correct++;
   }
+  const ignored = extracted.filter((er, i) => !used.has(i) && unknown.some((ur) => roundsDayGap(ur, er) !== null)).length;
+  // A hallucinated or duplicate round is produced-but-not-correct.
+  s.produced += extracted.length - ignored;
   s.correct += correct;
   return extracted.length === 0 ? "missing" : correct === verified.length && extracted.length === verified.length ? "correct" : "wrong";
 }
@@ -148,7 +160,7 @@ export function scoreCompany(board: Scoreboard, g: GoldenCompany, out: PipelineO
     country: scoreScalar(board.country, g.country, out.country),
     founded_year: scoreScalar(board.founded_year, g.founded_year, out.founded_year),
     founders: scoreFounders(board.founders, g.founders, out.founders),
-    funding_rounds: scoreRounds(board.funding_rounds, g.funding_rounds, out.rounds),
+    funding_rounds: scoreRounds(board.funding_rounds, g, out.rounds),
     employee_range: scoreScalar(board.employee_range, g.employee_range, out.employee_range),
     arr_usd: scoreArr(board.arr_usd, g.arr_usd, out.arr_usd),
   };

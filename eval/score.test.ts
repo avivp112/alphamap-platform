@@ -29,6 +29,18 @@ describe("scoreCompany", () => {
     scoreCompany(b, apex, out({ rounds: [{ round_type: "Series D", amount_raised: 200_000_000, date: "2026-01-15" }] }));
     expect(b.funding_rounds.correct).toBe(1);
   });
+  it("a real round the golden set could not source is neither right nor wrong", () => {
+    const b = newScoreboard();
+    const wiz: GoldenCompany = { id: "wiz", name: "Wiz",
+      funding_rounds: [{ type: "Series E", amount_usd: 1_000_000_000, date: "2024-05", confidence: "verified" }],
+      funding_rounds_excluded_unknown: [{ type: "Series D", amount_usd: 300_000_000, date: "2023-02" }] };
+    scoreCompany(b, wiz, out({ rounds: [
+      { round_type: "Series E", amount_raised: 1_000_000_000, date: "2024-05-07" },
+      { round_type: "Series D", amount_raised: 300_000_000, date: "2023-02-20" },   // probably real: not counted
+      { round_type: "Seed", amount_raised: 9_000_000, date: "2020-01-01" },         // not in the golden set at all: wrong
+    ] }));
+    expect(b.funding_rounds).toEqual({ scored: 1, produced: 2, correct: 1 });
+  });
   it("ARR within 20% counts as right", () => {
     const b = newScoreboard();
     scoreCompany(b, { ...apex, arr_usd: { value: 10_000_000, confidence: "verified" } }, out({ arr_usd: 11_500_000 }));
