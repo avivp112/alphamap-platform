@@ -84,6 +84,7 @@ const ARTICLES_TO_READ = Number(process.env.ARTICLES_TO_READ ?? 4);
 const DEEP_DIVE = process.env.DEEP_DIVE !== "false";
 const TECH_GATE = process.env.TECH_GATE !== "false";
 const SEARCH_COST_USD = Number(process.env.SEARCH_COST_USD ?? 0.001);
+const VERBOSE = process.env.VERBOSE === "true";
 
 // ── Evidence storage (v1, best-effort, see header comment on Phase 0 limits) ──
 async function findExistingStartupId(name: string): Promise<string | null> {
@@ -138,7 +139,7 @@ async function runV2(company: GoldenCompany, anthropic: Anthropic, taxonomy: Sec
     const c = await collectCompany(row, [], taxonomy, {
       anthropic,
       models: { enrich: ENRICH_MODEL, profile: ENRICH_MODEL, funding: ENRICH_MODEL, market: ENRICH_MODEL },
-      update: false, deepDive: DEEP_DIVE, techGate: TECH_GATE, articlesToRead: ARTICLES_TO_READ, verbose: false, seen: null,
+      update: false, deepDive: DEEP_DIVE, techGate: TECH_GATE, articlesToRead: ARTICLES_TO_READ, verbose: VERBOSE, seen: null,
       recordCost: (model, usage) => { llmCost += cachedCallCostUsd(model, usage); },
     }, newCollectStats(), searchState);
     if (c.outcome !== "collected") return done(null, c.outcome);
@@ -242,6 +243,9 @@ async function main() {
     console.log(`    city="${out.city ?? "—"}" (${fields.city}) country="${out.country ?? "—"}" (${fields.country}) founded=${out.founded_year ?? "—"} (${fields.founded_year})`);
     console.log(`    founders=${out.founders.map((f) => f.name).join(", ") || "—"} (${fields.founders})`);
     console.log(`    rounds=${out.rounds.length} (golden: ${(company.funding_rounds ?? []).filter((r) => r.confidence !== "unknown").length} verified; ${fields.funding_rounds})${dups.length ? ` ⚠️ ${dups.length} duplicate pair(s)` : ""}${afterRound ? " ⚠️ founded after first round" : ""}`);
+    const usd = (n: number | null) => (n == null ? "?" : n >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : `$${(n / 1e6).toFixed(1)}M`);
+    for (const r of out.rounds) console.log(`      · ${r.round_type} ${usd(r.amount_raised)} ${r.date ?? "(no date)"}`);
+    for (const r of (company.funding_rounds ?? []).filter((g) => g.confidence !== "unknown")) console.log(`      ✓ golden: ${r.type} ${usd(r.amount_usd)} ${r.date ?? "(no date)"}`);
     console.log("");
   }
 

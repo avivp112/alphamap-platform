@@ -13,6 +13,8 @@
 // A golden value marked "unknown" is excluded, never guessed.
 // =============================================================================
 
+import { samePersonName } from "../lib/enrichment/linkedin.ts";
+
 export type Confidence = "verified" | "likely" | "unknown";
 export interface GoldenField<T> { value: T | null; confidence: Confidence; source_url?: string; notes?: string }
 export interface GoldenFounder { name: string; title?: string; confidence: Confidence; source_url?: string }
@@ -62,6 +64,11 @@ const ALIASES: Record<string, string> = {
   "tel aviv-yafo": "tel aviv", "tel aviv-jaffa": "tel aviv", "new york city": "new york", "nyc": "new york",
 };
 
+/** The same person: exact after normalising, or lib/enrichment's samePersonName (Boguslavski / Boguslavsky). */
+function samePerson(a: string, b: string): boolean {
+  return normalize(a) === normalize(b) || samePersonName(a, b);
+}
+
 export function normalize(s: string | null | undefined): string {
   const n = (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase().replace(/\s+/g, " ");
   return ALIASES[n] ?? n;
@@ -85,10 +92,9 @@ function scoreScalar(s: FieldStats, golden: GoldenField<string | number> | undef
 function scoreFounders(s: FieldStats, golden: GoldenFounder[] | undefined, extracted: Array<{ name: string }>): FieldResult {
   const verified = (golden ?? []).filter((f) => f.confidence !== "unknown");
   if (verified.length === 0) return "excluded";
-  const names = new Set(verified.map((f) => normalize(f.name)));
   s.scored += verified.length;
   s.produced += extracted.length;
-  const correct = extracted.filter((f) => names.has(normalize(f.name))).length;
+  const correct = extracted.filter((f) => verified.some((g) => samePerson(g.name, f.name))).length;
   s.correct += correct;
   return extracted.length === 0 ? "missing" : correct === extracted.length && correct === verified.length ? "correct" : "wrong";
 }

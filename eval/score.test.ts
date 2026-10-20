@@ -83,3 +83,12 @@ describe("Phase 1 rules", () => {
     expect(c[3].detail).toBe("95.0%");
   });
 });
+
+describe("founders — one person, two spellings", () => {
+  it("Boguslavski and Boguslavsky are the same founder", () => {
+    const b = newScoreboard();
+    const port: GoldenCompany = { id: "port", name: "Port", founders: [{ name: "Yonatan Boguslavski", confidence: "verified" }, { name: "Zohar Einy", confidence: "verified" }] };
+    scoreCompany(b, port, out({ founders: [{ name: "Yonatan Boguslavsky" }] }));
+    expect(b.founders).toEqual({ scored: 2, produced: 1, correct: 1 });
+  });
+});

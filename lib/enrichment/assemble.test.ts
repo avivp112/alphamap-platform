@@ -185,3 +185,23 @@ describe("reconcileOnFile — contradictions written by earlier runs", () => {
     expect(out.notes).toEqual([]);
   });
 });
+
+describe("planRoundWrites — late-stage rounds (Series F+ bucket)", () => {
+  it("F, G and an unlettered late round years apart are three rounds, not contradictions (Cato Networks)", () => {
+    const plan = planRoundWrites([], [
+      { round_type: "Series F", amount_raised: 200_000_000, announcement_date: "2021-10-01" },
+      { round_type: "Series G", amount_raised: 238_000_000, announcement_date: null },
+      { round_type: "Series G", amount_raised: 359_000_000, announcement_date: "2025-06-10" },
+    ]);
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.inserts.map((r) => r.amount_raised)).toEqual([200_000_000, 238_000_000, 359_000_000]);
+  });
+  it("the same late round reported twice is still one round", () => {
+    const plan = planRoundWrites([], [
+      { round_type: "Series G", amount_raised: 359_000_000, announcement_date: "2025-06-10" },
+      { round_type: "Series G", amount_raised: 359_000_000, announcement_date: null, lead_investor: "Vitruvian Partners" },
+    ]);
+    expect(plan.inserts).toHaveLength(1);
+    expect(plan.inserts[0].lead_investor).toBe("Vitruvian Partners");
+  });
+});

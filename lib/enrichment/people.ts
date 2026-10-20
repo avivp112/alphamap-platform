@@ -64,7 +64,9 @@ const NAME_PREFIX_RE = /^(?:(?:ceo|cto|coo|cfo|cmo|cpo|cro|president|chairman|ch
 
 /** The person's name alone: no leading symbols, titles or lowercase words. */
 export function cleanPersonName(name: string): string {
-  let n = name.replace(/^[^\p{L}]+/u, "").trim();
+  // Invisible format characters (a right-to-left mark from a Hebrew page:
+  // "Yonatan Boguslavsky\u200F", 2026-10-20) are never part of a name.
+  let n = name.replace(/\p{Cf}/gu, "").replace(/^[^\p{L}]+/u, "").trim();
   for (let i = 0; i < 3; i++) {
     const before = n;
     n = n.replace(NAME_PREFIX_RE, "").replace(/^(?:\p{Ll}[\p{L}'’-]*\s+)+(?=\p{Lu})/u, "").trim();

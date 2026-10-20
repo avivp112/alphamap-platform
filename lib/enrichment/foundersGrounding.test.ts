@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { groundFounders, sentenceGroundsFounder } from "./people";
+import { groundFounders, sentenceGroundsFounder, cleanPersonName } from "./people";
 
 // The funding announcement shape that put six angels in Huskeys' founders (2026-10-18).
 const announcement = {
@@ -40,5 +40,12 @@ describe("sentenceGroundsFounder", () => {
     expect(sentenceGroundsFounder("Huskeys hired Lior Tal, co-founder of Guardium, as an advisor.", "Lior Tal", "Huskeys", false)).toBe(false);
     expect(sentenceGroundsFounder("Huskeys founders were joined by angel investor Etay Bogner.", "Etay Bogner", "Huskeys", false)).toBe(false);
     expect(sentenceGroundsFounder("Etay Bogner co-founded Meta Networks.", "Etay Bogner", "Huskeys", false)).toBe(false);
+  });
+});
+
+describe("cleanPersonName — invisible characters", () => {
+  it("drops a right-to-left mark and zero-width characters from a name (Port, 2026-10-20)", () => {
+    expect(cleanPersonName("Yonatan Boguslavsky‏")).toBe("Yonatan Boguslavsky");
+    expect(cleanPersonName("‎Zohar​ Einy")).toBe("Zohar Einy");
   });
 });

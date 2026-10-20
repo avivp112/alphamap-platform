@@ -220,6 +220,13 @@ function amountsClose(a: number | null | undefined, b: number | null | undefined
 export function isSameRound(a: RoundLike, b: RoundLike): boolean {
   const ta = normalizeRoundType(a.round_type), tb = normalizeRoundType(b.round_type);
   const gap = daysApart(a.announcement_date, b.announcement_date);
+  // "Series F+" is a bucket of letters (F, G, H...), not one stage: two of
+  // them are the same raise only by amount and time, like an unnamed round
+  // (Cato Networks, 2026-10-20: its 2021 $200M, 2023 $238M and 2025 $359M
+  // rounds were "contradictions" of each other and all but one dropped).
+  if (ta === "Series F+" && tb === "Series F+") {
+    return (gap != null && gap <= 60) || (amountsClose(a.amount_raised, b.amount_raised, 0.10) && (gap == null || gap <= 270));
+  }
   if (ta === tb && NAMED_STAGES.has(ta) && (gap == null || gap <= 270)) return true;
   // The same named stage for the same amount is the same raise even when
   // one side carries a later article's date (Griffin's $13.5M Series A
