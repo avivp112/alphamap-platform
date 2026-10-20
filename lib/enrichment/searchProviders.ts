@@ -9,11 +9,13 @@
  * zero pages at all) versus Jina's prior 3.9 pages/company -- roughly a
  * 3x drop in website content volume, because cheerio is a static-HTML
  * parser with no JS execution and weaker anti-bot handling than a real
- * rendering proxy. Jina is primary for Stage 2 again; cheerio stays in
- * the fallback chain as a zero-cost last resort. Serper remains primary
- * general search, Tavily supplements thin Serper coverage (see
- * webSearch() below) -- that part of the removal instruction is unrelated
- * to Stage 2 and stays as implemented. Same endpoints, same retry/
+ * rendering proxy. Jina is primary for Stage 2 again.
+ *
+ * Provider order (owner's decision, 2026-10-20): Jina reads pages and
+ * articles, Serper searches. Tavily is used only to go deeper (the Stage 9
+ * deep dive) or when Jina is unavailable — then Tavily search joins Serper
+ * and Tavily Extract reads what Jina could not. cheerio is not used for
+ * reading at all. Same endpoints, same retry/
  * backoff behavior as v1's private serperSearch/tavilySearch/
  * fetchViaJinaReader/fetchCompanyWebsite/verifyDomainMatch (duplicated
  * rather than imported — v1 is frozen, same reasoning as sanitize.ts).
@@ -33,7 +35,6 @@
  * live API wrappers.
  */
 
-import * as cheerio from "cheerio";
 import type { Provider, RawSearchResult } from "./sources";
 import { websiteDomain } from "./websiteValidation";
 import type { SearchCache } from "./searchCache";
@@ -272,20 +273,6 @@ export async function tavilySearch(
 }
 
 /** Stage 1 -> Stage 4: Serper first, unconditionally; Tavily only when Serper returned nothing. */
-// Below this many organic results, Serper's own coverage of a query is
-// treated as too thin to trust on its own -- Tavily is queried too and the
-// two are MERGED (not an either/or fallback) so a query that got, say, 2
-// real Serper hits keeps those AND gains Tavily's independent hits, rather
-// than discarding one provider's results in favor of the other. At or
-// above this count, Serper alone is trusted and Tavily is skipped entirely
-// (keeps cost/latency down on a query that's already well covered).
-export const THIN_RESULTS_THRESHOLD = 3;
-
-/** Pure: does this query's own Serper coverage need Tavily's help? Split out from webSearch() so this threshold decision is unit-testable without live credentials. */
-export function needsTavilySupplement(serperResults: RawSearchResult[]): boolean {
-  return serperResults.length < THIN_RESULTS_THRESHOLD;
-}
-
 /** Pure: Serper's own results first (primary), then any Tavily result whose URL Serper didn't already return -- never a duplicate of the same source under two different provider labels. */
 export function mergeSearchResults(serperResults: RawSearchResult[], tavilyResults: RawSearchResult[]): RawSearchResult[] {
   const seenUrls = new Set(serperResults.map((r) => r.url));
@@ -293,21 +280,27 @@ export function mergeSearchResults(serperResults: RawSearchResult[], tavilyResul
 }
 
 /**
- * Serper is primary for general web search; the company's own site
- * (fetchCompanyWebsitePages, unaffected by this function) is fetched
- * separately via cheerio. Tavily is not a strict last-resort fallback --
- * it supplements whenever Serper's own results for THIS query are thin
- * (including literally empty), merged alongside Serper's rather than
- * replacing them, so the two providers genuinely combine their coverage
- * instead of one simply standing in for the other.
+ * Serper is the search engine. Tavily search joins it, merged alongside
+ * Serper's results (never replacing them), only when going deeper — the
+ * Stage 9 deep dive — or while Jina is unavailable (see the header).
  */
-export async function webSearch(query: string, queryLabel: string, state: SearchProviderState): Promise<RawSearchResult[]> {
+export interface SearchOptions {
+  /** A Stage 9 deep-dive search: Tavily joins Serper. */
+  deep?: boolean;
+}
+
+/** Tavily search joins Serper: when going deeper, or while Jina is down. */
+export function tavilyJoins(opts: SearchOptions = {}): boolean {
+  return !!opts.deep || jinaDisabled() !== null;
+}
+
+export async function webSearch(query: string, queryLabel: string, state: SearchProviderState, opts: SearchOptions = {}): Promise<RawSearchResult[]> {
   const serperResults = await serperSearch(query, queryLabel, state);
   // A site:-restricted query (LinkedIn, Crunchbase, Google Patents) normally
   // returns only a few hits; Tavily's general search can't honor site: and
   // only adds unrelated pages at a cost — 54 Tavily calls in a 20-company run.
   if (/\bsite:/i.test(query)) return serperResults;
-  if (!needsTavilySupplement(serperResults)) return serperResults;
+  if (!tavilyJoins(opts)) return serperResults;
 
   const tavilyResults = await tavilySearch(query, queryLabel, state);
   return mergeSearchResults(serperResults, tavilyResults);
@@ -318,14 +311,14 @@ export async function webSearch(query: string, queryLabel: string, state: Search
  * specifically: Serper's dedicated News API (recency/news-scoped by
  * nature, so it gets a plain "name + anchor news" query, not the
  * site:-heavy query built for general web search) is primary; Tavily
- * (general search, the site:-heavy query) supplements when News coverage
- * is thin, same threshold/merge as webSearch.
+ * (general search, the site:-heavy query) joins it on the same terms as
+ * webSearch.
  */
 export async function newsSearch(
-  newsQuery: string, tavilyQuery: string, queryLabel: string, state: SearchProviderState,
+  newsQuery: string, tavilyQuery: string, queryLabel: string, state: SearchProviderState, opts: SearchOptions = {},
 ): Promise<RawSearchResult[]> {
   const newsResults = await serperNewsSearch(newsQuery, queryLabel, state);
-  if (!needsTavilySupplement(newsResults)) return newsResults;
+  if (!tavilyJoins(opts)) return newsResults;
 
   const tavilyResults = await tavilySearch(tavilyQuery, queryLabel, state);
   return mergeSearchResults(newsResults, tavilyResults);
@@ -382,22 +375,25 @@ export async function verifyDomainMatch(
 
 // ── Company website fetch (Stage 2) ────────────────────────────────────────
 
-const FETCH_TIMEOUT_MS = 8_000;
 const JINA_TIMEOUT_MS = 15_000;
 const MAX_WEBSITE_CHARS = 6_000; // spec stage 2: "cap content per page (for example 6,000 characters)" -- raised from v1's 3,000 now that each page is its own labeled [W#] source rather than one slot in a single shared context budget
 
-// Set on the first HTTP 402/401 from Jina (out of credit / bad key): every
-// later page in the run goes straight to cheerio/Tavily instead of paying a
-// failed round trip and a warning line per page.
+// Set on an HTTP 402/401 from Jina (out of credit / bad key): later pages go
+// straight to Tavily instead of paying a failed round trip and a warning line
+// each. Only for a while — the check worker runs for weeks, and a key topped
+// up or fixed must come back without a restart.
 let jinaDisabledReason: string | null = null;
+let jinaDisabledAt = 0;
+export const JINA_RETRY_AFTER_MS = 10 * 60_000;
 
-/** Why Jina Reader was switched off for the rest of the run, or null while it works. */
-export function jinaDisabled(): string | null {
+/** Why Jina Reader is switched off for now, or null while it works. */
+export function jinaDisabled(now = Date.now()): string | null {
+  if (jinaDisabledReason && now - jinaDisabledAt > JINA_RETRY_AFTER_MS) jinaDisabledReason = null;
   return jinaDisabledReason;
 }
 
 async function fetchViaJinaReader(url: string, state: SearchProviderState): Promise<string | null> {
-  if (jinaDisabledReason) return null;
+  if (jinaDisabled()) return null;
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), JINA_TIMEOUT_MS);
@@ -407,27 +403,30 @@ async function fetchViaJinaReader(url: string, state: SearchProviderState): Prom
     const res = await fetch(`https://r.jina.ai/${url}`, { signal: controller.signal, headers }).finally(() => clearTimeout(timer));
     if (res.status === 402 || res.status === 401) {
       jinaDisabledReason = res.status === 402 ? "HTTP 402 — out of credit" : "HTTP 401 — JINA_API_KEY rejected";
-      console.warn(`    ⛔  Jina Reader ${jinaDisabledReason}. Switched off for the rest of this run — pages and articles now come from cheerio/Tavily only, so fewer full articles are read. Top up Jina (jina.ai) or fix JINA_API_KEY in .env.`);
+      jinaDisabledAt = Date.now();
+      console.warn(`    ⛔  Jina Reader ${jinaDisabledReason}. Switched off for ${JINA_RETRY_AFTER_MS / 60_000} minutes — Tavily now reads pages and articles and joins Serper's searches (it costs more). Top up Jina (jina.ai) or fix JINA_API_KEY in .env.`);
       return null;
     }
     if (!res.ok) {
-      console.warn(`    ⚠️  Jina Reader HTTP ${res.status} for ${url} — falling back to cheerio/Tavily.`);
+      console.warn(`    ⚠️  Jina Reader HTTP ${res.status} for ${url} — Tavily may read it instead.`);
       return null;
     }
     const text = (await res.text()).trim();
     if (!text) {
-      console.warn(`    ⚠️  Jina Reader returned empty content for ${url} — falling back to cheerio/Tavily.`);
+      console.warn(`    ⚠️  Jina Reader returned empty content for ${url} — Tavily may read it instead.`);
       return null;
     }
     return text;
   } catch (err) {
-    console.warn(`    ⚠️  Jina Reader threw for ${url}: ${String(err)} — falling back to cheerio/Tavily.`);
+    console.warn(`    ⚠️  Jina Reader threw for ${url}: ${String(err)} — Tavily may read it instead.`);
     return null;
   }
 }
 
-async function tavilyExtractUrls(urls: string[], state: SearchProviderState): Promise<string | null> {
-  if (state.tavilyExhausted) return null;
+/** Tavily Extract, one call for several pages: each page's text by URL. Empty when Tavily is out or fails. */
+async function tavilyExtractPages(urls: string[], state: SearchProviderState): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (state.tavilyExhausted || urls.length === 0) return out;
   try {
     const res = await fetch("https://api.tavily.com/extract", {
       method: "POST",
@@ -436,44 +435,25 @@ async function tavilyExtractUrls(urls: string[], state: SearchProviderState): Pr
     });
     if (res.status === 401 || res.status === 402 || res.status === 432) {
       state.tavilyExhausted = true;
-      return null;
+      return out;
     }
-    if (!res.ok) return null;
-
+    if (!res.ok) return out;
     const data = await res.json() as { results?: Array<{ url: string; raw_content?: string }> };
-    const parts = (data.results ?? [])
-      .filter((r) => r.raw_content)
-      .map((r) => r.raw_content!.replace(/\s+/g, " ").trim().slice(0, MAX_WEBSITE_CHARS));
-    if (!parts.length) return null;
-    state.tavilyCallCount++;
-    return parts.join("\n---\n");
+    for (const r of data.results ?? []) {
+      if (r.raw_content) out.set(r.url, r.raw_content.replace(/\s+/g, " ").trim());
+    }
+    if (out.size > 0) state.tavilyCallCount++;
+    return out;
   } catch {
-    return null;
+    return out;
   }
 }
 
-async function cheerioFetch(url: string): Promise<string | null> {
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    const res = await fetch(url, {
-      signal: controller.signal, redirect: "follow",
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; AlphaMapEnrichmentBot/1.0; +https://alphamap.app)", Accept: "text/html" },
-    }).finally(() => clearTimeout(timer));
-    if (!res.ok) return null;
-    if (!(res.headers.get("content-type") ?? "").includes("text/html")) return null;
-
-    const html = await res.text();
-    const $ = cheerio.load(html);
-    $("script, style, noscript, svg, nav, footer").remove();
-    const title = $("title").first().text().trim();
-    const metaDesc = $('meta[name="description"]').attr("content")?.trim() ?? $('meta[property="og:description"]').attr("content")?.trim() ?? "";
-    const bodyText = $("body").text().replace(/\s+/g, " ").trim();
-    const parts = [title && `Title: ${title}`, metaDesc && `Meta description: ${metaDesc}`, bodyText && `Page text: ${bodyText.slice(0, MAX_WEBSITE_CHARS)}`].filter(Boolean);
-    return parts.length > 0 ? parts.join("\n") : null;
-  } catch {
-    return null;
-  }
+/** Tavily's answer for one of the URLs asked: the same URL, or the same page with a trailing slash. */
+function extractedFor(extracted: Map<string, string>, url: string): string | undefined {
+  const bare = url.replace(/\/+$/, "");
+  for (const [u, text] of extracted) if (u.replace(/\/+$/, "") === bare) return text;
+  return undefined;
 }
 
 export interface FetchedPage { url: string; content: string; provider: Provider }
@@ -495,35 +475,47 @@ export function isNearDuplicatePage(a: string, b: string, threshold = 0.8): bool
 }
 
 /**
- * Full text of a third-party article via Jina Reader (free), cleaned of
- * images/link targets and capped. null on any failure — the caller keeps
- * the search snippet it already has.
+ * Full text of third-party articles: Jina Reader first; whatever Jina could
+ * not read (it is down, or the page refused it) goes to Tavily Extract in
+ * one call. Cleaned of images/link targets. null for an article neither
+ * read — the caller keeps the search snippet it already has.
  */
-export async function fetchArticleText(url: string, state: SearchProviderState): Promise<string | null> {
-  const cacheKey = `article:${url}`;
-  const cached = state.cache?.get<string>(cacheKey);
-  if (cached) return cached;
-  const raw = await fetchViaJinaReader(url, state);
-  if (!raw) return null;
-  const text = cleanArticleText(raw);
-  if (!looksLikeRealContent(text)) return null;
-  state.cache?.set(cacheKey, text);
-  return text;
+export async function fetchArticleTexts(urls: string[], state: SearchProviderState): Promise<Array<{ text: string | null; provider: Provider | null }>> {
+  const out: Array<{ text: string | null; provider: Provider | null }> = urls.map(() => ({ text: null, provider: null }));
+  const usable = (raw: string | null | undefined) => {
+    if (!raw) return null;
+    const text = cleanArticleText(raw);
+    return looksLikeRealContent(text) ? text : null;
+  };
+  const unread: number[] = [];
+  await Promise.all(urls.map(async (url, i) => {
+    const cached = state.cache?.get<{ text: string; provider: Provider } | string>(`article:${url}`);
+    if (cached) { out[i] = typeof cached === "string" ? { text: cached, provider: "jina" } : cached; return; }
+    const text = usable(await fetchViaJinaReader(url, state));
+    if (text) out[i] = { text, provider: "jina" };
+    else unread.push(i);
+  }));
+  if (unread.length > 0) {
+    const extracted = await tavilyExtractPages(unread.map((i) => urls[i]), state);
+    for (const i of unread) {
+      const text = usable(extractedFor(extracted, urls[i]));
+      if (text) out[i] = { text, provider: "tavily_extract" };
+    }
+  }
+  urls.forEach((url, i) => { if (out[i].text) state.cache?.set(`article:${url}`, out[i]); });
+  return out;
 }
 
 /**
  * Spec stage 2: home page plus /about, /team, /company, /contact "when they
  * exist" — each one its own [W#] source (not concatenated into one blob
  * like v1), so a quote can be traced to exactly which page it came from.
- * Per candidate path: Jina Reader first (a real rendering proxy -- handles
- * JS-rendered pages and basic anti-bot measures cheerio structurally
- * cannot), cheerio second (free, zero-cost direct fetch, catches whatever
- * Jina itself fails or times out on). Both are checked against
- * looksLikeRealContent() so a generic 404 page for a guessed path that
- * doesn't exist isn't counted as a real source regardless of which one
- * fetched it. If NEITHER got anything usable for ANY candidate path,
- * Tavily Extract (home+/about, one call, matching v1's own fallback shape)
- * is the last resort.
+ * Jina Reader reads each candidate path (a real rendering proxy: handles
+ * JS-rendered pages and basic anti-bot measures). Tavily Extract reads them
+ * instead, in one call, only when Jina is down for the run or got nothing
+ * usable from the whole site — not for every guessed path that 404s.
+ * Everything is checked against looksLikeRealContent(), so a generic 404
+ * page isn't counted as a real source whichever provider fetched it.
  */
 export async function fetchCompanyWebsitePages(
   website: string | null | undefined,
@@ -532,20 +524,30 @@ export async function fetchCompanyWebsitePages(
   if (!website) return [];
   const root = website.startsWith("http") ? website : `https://${website}`;
   const candidatePaths = ["", "/about", "/team", "/company", "/contact"];
+  const urls = candidatePaths.map((path) => root.replace(/\/+$/, "") + path);
   const pages: FetchedPage[] = [];
 
-  for (const path of candidatePaths) {
-    const url = root.replace(/\/+$/, "") + path;
+  const fetched = new Map<string, { content: string; provider: Provider; cached: boolean }>();
+  for (const url of urls) {
     const cachedPage = state.cache?.get<{ content: string; provider: Provider }>(`page:${url}`);
-    let content: string | null;
-    let provider: Provider;
-    if (cachedPage) {
-      ({ content, provider } = cachedPage);
-    } else {
-      const viaJina = await fetchViaJinaReader(url, state);
-      [content, provider] = viaJina ? [viaJina, "jina"] : [await cheerioFetch(url), "cheerio"];
+    if (cachedPage) { fetched.set(url, { ...cachedPage, cached: true }); continue; }
+    const viaJina = await fetchViaJinaReader(url, state);
+    if (viaJina && looksLikeRealContent(viaJina)) fetched.set(url, { content: viaJina, provider: "jina", cached: false });
+  }
+  if (fetched.size === 0) {
+    // Jina is down, or this site gives it nothing: Tavily Extract, one call.
+    const extracted = await tavilyExtractPages(urls, state);
+    for (const url of urls) {
+      const text = extractedFor(extracted, url);
+      if (text) fetched.set(url, { content: text, provider: "tavily_extract", cached: false });
     }
-    if (!content) continue;
+  }
+
+  for (const url of urls) {
+    const page = fetched.get(url);
+    if (!page) continue;
+    const { content, provider } = page;
+    const cachedPage = page.cached;
     if (!looksLikeRealContent(content)) {
       state.websitePagesSkippedThin++;
       console.warn(`    ⚠️  thin/404-like page for ${url} (${content.length} chars, ${provider}) — skipping, not counted as a real source.`);
@@ -565,16 +567,5 @@ export async function fetchCompanyWebsitePages(
     pages.push({ url, content: capped, provider });
     console.log(`    🌐  fetched ${url} (${content.length} chars, ${provider}${cachedPage ? ", cached" : ""})`);
   }
-  if (pages.length > 0) return pages;
-
-  // Neither Jina nor cheerio got anything usable for ANY candidate page --
-  // fall back to Tavily Extract on home+/about (one call, matching v1's
-  // own fallback).
-  if (!state.tavilyExhausted) {
-    const aboutUrl = root.replace(/\/+$/, "") + "/about";
-    const extracted = await tavilyExtractUrls([root, aboutUrl], state);
-    if (extracted) return [{ url: root, content: extracted, provider: "tavily_extract" }];
-  }
-
-  return [];
+  return pages;
 }

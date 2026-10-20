@@ -17,7 +17,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import {
-  verifyDomainMatch, webSearch, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, fetchArticleText,
+  verifyDomainMatch, webSearch, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, fetchArticleTexts,
   type SearchProviderState,
 } from "./searchProviders.ts";
 import { filterByEntity, deriveIdentityKeywords, nameQualifiersOnOwnSite, type EntityAnchors } from "./entity.ts";
@@ -353,12 +353,12 @@ export async function collectCompany(
     return { outcome: "low_evidence" };
   }
 
-  // ── Stage 3b: read the most useful articles in full (Jina, free) ──────
+  // ── Stage 3b: read the most useful articles in full (Jina; Tavily when Jina cannot) ──
   // A snippet stops at ~600 characters; the full funding announcement has
   // the exact date, every investor, headcount and the "About" boilerplate.
   if (ctx.articlesToRead > 0) {
     const toRead = pickArticlesToRead(kept, row.name, domain, ctx.articlesToRead);
-    const texts = await Promise.all(toRead.map((r) => fetchArticleText(r.url, searchState)));
+    const texts = (await fetchArticleTexts(toRead.map((r) => r.url), searchState)).map((t) => t.text);
     let read = 0;
     const namesakeArticles = new Set<RawSearchResult>();
     toRead.forEach((r, i) => {
@@ -378,7 +378,7 @@ export async function collectCompany(
     });
     if (namesakeArticles.size > 0) usableResults = usableResults.filter((r) => !namesakeArticles.has(r));
     stats.articlesRead += read;
-    if (toRead.length > 0) console.log(`    📰  Read ${read}/${toRead.length} full article(s) via Jina${ctx.verbose ? `: ${toRead.map((r) => r.url).join(", ")}` : ""}`);
+    if (toRead.length > 0) console.log(`    📰  Read ${read}/${toRead.length} full article(s)${ctx.verbose ? `: ${toRead.map((r) => r.url).join(", ")}` : ""}`);
   }
 
   // ── Stage 4: labeled sources + three extraction calls ──────────────────
@@ -480,7 +480,10 @@ export async function collectCompany(
       console.log(`    🔎  Deep dive: ${gaps.join(", ")} (${queries.length} targeted searches)`);
       const batches = await Promise.all(queries.map(async (q) => ({
         section: q.section,
-        results: q.kind === "news" ? await newsSearch(q.query, q.query, q.label, searchState) : await webSearch(q.query, q.label, searchState),
+        // Going deeper: Tavily joins Serper (searchProviders.ts header).
+        results: q.kind === "news"
+          ? await newsSearch(q.query, q.query, q.label, searchState, { deep: true })
+          : await webSearch(q.query, q.label, searchState, { deep: true }),
       })));
 
       // Newly found people are anchors too: an article naming a founder

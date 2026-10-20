@@ -9,7 +9,7 @@ import { parseLinkedInFacts } from "./linkedin";
 import { rejectRound } from "./assemble";
 import { countryFromLocationQuote, isRegionNotCity } from "./location";
 import { filterByEntity } from "./entity";
-import { createSearchProviderState, fetchArticleText, jinaDisabled } from "./searchProviders";
+import { createSearchProviderState, fetchArticleTexts, jinaDisabled } from "./searchProviders";
 import type { V2Round } from "./extractFunding";
 import type { LabeledSource } from "./sources";
 
@@ -108,10 +108,10 @@ describe("Jina Reader out of credit", () => {
     vi.stubGlobal("fetch", fetchMock);
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const state = createSearchProviderState();
-    expect(await fetchArticleText("https://example.com/a", state)).toBeNull();
+    expect((await fetchArticleTexts(["https://example.com/a"], state))[0].text).toBeNull();
     expect(jinaDisabled()).toMatch(/402/);
     const calls = fetchMock.mock.calls.length;
-    await fetchArticleText("https://example.com/b", state);
+    await fetchArticleTexts(["https://example.com/b"], state);
     expect(fetchMock.mock.calls.length).toBe(calls);
   });
 });

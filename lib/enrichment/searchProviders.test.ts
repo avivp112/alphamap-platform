@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   parseSerperResponse, parseSerperNewsResponse, parseTavilyResponse, looksLikeRealContent,
-  needsTavilySupplement, mergeSearchResults, THIN_RESULTS_THRESHOLD,
+  mergeSearchResults,
 } from "./searchProviders";
 import type { RawSearchResult } from "./sources";
 
@@ -85,19 +85,6 @@ describe("looksLikeRealContent", () => {
   it("does not reject a long real page merely because it happens to mention '404' somewhere", () => {
     const real = ("Our platform returns clean error codes like 404 for missing resources, and our team of engineers builds reliable, well-documented APIs for enterprise customers worldwide. ").repeat(5);
     expect(looksLikeRealContent(real)).toBe(true);
-  });
-});
-
-describe("needsTavilySupplement -- Serper+Tavily collaboration, not a strict fallback", () => {
-  it("does not need Tavily once Serper's own coverage meets the threshold", () => {
-    const serperResults = Array.from({ length: THIN_RESULTS_THRESHOLD }, (_, i) => result(`https://x.com/${i}`));
-    expect(needsTavilySupplement(serperResults)).toBe(false);
-  });
-
-  it("needs Tavily when Serper's coverage is below the threshold, including literally empty", () => {
-    expect(needsTavilySupplement([])).toBe(true);
-    const thin = Array.from({ length: THIN_RESULTS_THRESHOLD - 1 }, (_, i) => result(`https://x.com/${i}`));
-    expect(needsTavilySupplement(thin)).toBe(true);
   });
 });
 
