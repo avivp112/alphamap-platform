@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateCheckInput, normalizeWebsite, normalizeLinkedIn, decideAllowance, monthStartUtc, applyChoice } from "./company-check";
+import { validateCheckInput, normalizeWebsite, normalizeLinkedIn, decideAllowance, monthStartUtc, applyChoice, decideDeepen } from "./company-check";
 import { CHECK_LIMITS, FREE_OF_CHARGE_STATUSES } from "./check-limits";
 
 describe("validateCheckInput", () => {
@@ -82,5 +82,24 @@ describe("FREE_OF_CHARGE_STATUSES", () => {
     for (const s of ["queued", "running", "ready", "stealth", "done"]) {
       expect(FREE_OF_CHARGE_STATUSES as readonly string[]).not.toContain(s);
     }
+  });
+});
+
+describe("decideDeepen", () => {
+  const now = new Date("2026-10-20T12:00:00Z");
+  const daysAgo = (d: number) => new Date(now.getTime() - d * 86_400_000).toISOString();
+  it("a thin profile (below 7) may always be deepened, free of the allowance", () => {
+    expect(decideDeepen({ completeness: 3, enrichedV2At: daysAgo(2) }, now)).toEqual({ ok: true, free: true });
+    expect(decideDeepen({ completeness: 6, enrichedV2At: null }, now)).toEqual({ ok: true, free: true });
+  });
+  it("a fuller profile updated by v2 in the last 30 days is shown as is", () => {
+    expect(decideDeepen({ completeness: 7, enrichedV2At: daysAgo(10) }, now)).toEqual({ ok: false, reason: "recently_updated", updatedDaysAgo: 10 });
+  });
+  it("…and may be deepened once older, using the allowance", () => {
+    expect(decideDeepen({ completeness: 12, enrichedV2At: daysAgo(45) }, now)).toEqual({ ok: true, free: false });
+    expect(decideDeepen({ completeness: 12, enrichedV2At: null }, now)).toEqual({ ok: true, free: false });
+  });
+  it("the thresholds come from the config", () => {
+    expect(decideDeepen({ completeness: 8, enrichedV2At: daysAgo(1) }, now, { freeBelow: 10, alwaysBelow: 10, freshDays: 30 })).toEqual({ ok: true, free: true });
   });
 });

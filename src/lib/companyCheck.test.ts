@@ -2,6 +2,11 @@ import { describe, it, expect } from "vitest";
 import { checkStep, checkTitle, displayDomain, formFromInput, isPending, progressKey, statusKey, statusTone } from "./companyCheck";
 
 describe("checkStep", () => {
+  it("a deepen of an AlphaMap company goes straight to the research", () => {
+    expect(checkStep({ status: "queued", phase: "check", kind: "deepen" })).toBe("researching");
+    expect(checkStep({ status: "running", phase: "check", kind: "deepen" })).toBe("researching");
+    expect(checkStep({ status: "no_new_data", phase: "check", kind: "deepen" })).toBe("final");
+  });
   it("follows the two phases", () => {
     expect(checkStep({ status: "queued", phase: "identify" })).toBe("identifying");
     expect(checkStep({ status: "running", phase: "identify" })).toBe("identifying");

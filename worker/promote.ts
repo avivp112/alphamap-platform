@@ -14,7 +14,8 @@
 // =============================================================================
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { CollectedCompany, V2StartupRow } from "../lib/enrichment/collect.ts";
+import { roundRefs, newAcceptedRounds, type CollectedCompany, type V2StartupRow, type V2FundingRoundRow } from "../lib/enrichment/collect.ts";
+import { planRoundWrites } from "../lib/enrichment/assemble.ts";
 import type { LabeledSource } from "../lib/enrichment/sources.ts";
 import type { SourceType } from "../lib/enrichment/sourceTypes.ts";
 import type { SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
@@ -69,6 +70,9 @@ export function freshRow(id: string, name: string, website: string | null): V2St
 
 export interface PromotionJob {
   id: string;
+  /** new = add the company; update = a deepen's additions to the AlphaMap company in startup_id. */
+  kind?: "new" | "update";
+  startup_id?: string | null;
   check_id: string;
   user_id: string;
   name: string;
@@ -78,6 +82,8 @@ export interface PromotionJob {
 
 export interface PromoteDeps {
   db: SupabaseClient;
+  /** The company and its rounds as they are now (worker/deepen.ts loadCompany). */
+  loadCompany?: (startupId: string) => Promise<{ row: V2StartupRow; rounds: V2FundingRoundRow[] } | null>;
   taxonomy: () => Promise<SectorTaxonomy>;
   findExisting: (website: string) => Promise<{ id: string; name: string } | null>;
   notify: (userId: string, title: string, body: string, link: string) => Promise<void>;
@@ -99,6 +105,27 @@ export async function promoteOne(d: PromoteDeps): Promise<boolean> {
   };
 
   try {
+    if (job.kind === "update") {
+      if (!job.startup_id || !d.loadCompany) throw new Error("update without its company");
+      const company = await d.loadCompany(job.startup_id);
+      if (!company) throw new Error("the company is no longer in AlphaMap");
+      // Rounds were planned against the file at research time: plan again against today's,
+      // so a round added meanwhile is filled, not duplicated.
+      const stored = deserializeCollected(job.collected);
+      const refs = roundRefs(company.rounds);
+      const collected = { ...stored, existingRefs: refs, plan: planRoundWrites(refs, newAcceptedRounds(stored.validation)) };
+      await writeCollected(company.row, collected, {
+        db: d.db, dryRun: false, update: false, verbose: false, thresholds: BULK_THRESHOLDS,
+        taxonomy: await d.taxonomy(), startupByDomain: await domainIndex(d.db), seen: null,
+      }, newWriteSummary());
+      const { error: refreshErr } = await d.db.rpc("refresh_startups_search");
+      if (refreshErr) log(`promotion ${job.id}: search refresh failed (${refreshErr.message}) — the nightly refresh will add it`);
+      await finish("written", job.startup_id, null);
+      log(`promotion ${job.id}: update to ${job.startup_id} written`);
+      await d.notify(job.user_id, `${job.name}: your additions are in AlphaMap`, "What your deeper research found was reviewed and added.", `/checks/${job.check_id}`);
+      return true;
+    }
+
     const existing = job.website ? await d.findExisting(job.website) : null;
     if (existing) {
       await finish("linked", existing.id, null);
@@ -131,7 +158,7 @@ export async function promoteOne(d: PromoteDeps): Promise<boolean> {
 }
 
 /** Who owns which website domain — competitors are cross-linked by it, and no second company takes a site. */
-async function domainIndex(db: SupabaseClient): Promise<Map<string, DomainOwner>> {
+export async function domainIndex(db: SupabaseClient): Promise<Map<string, DomainOwner>> {
   const index = new Map<string, DomainOwner>();
   const PAGE = 1000;
   for (let from = 0; ; from += PAGE) {

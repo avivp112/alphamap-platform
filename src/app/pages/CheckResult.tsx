@@ -8,11 +8,12 @@ import { Layout } from "../components/Layout";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { CandidateList, CheckCompanyDialog, GenericNameNote, OpenCompanyLink } from "../components/CheckCompanyDialog";
 import { CheckProfileView } from "../components/CheckProfileView";
+import { DeepenProfileButton } from "../components/DeepenProfileButton";
 import { fetchCompanyCheck, confirmCompanyCheck, cancelCompanyCheck } from "../../lib/supabase";
 import { companyPath } from "../../lib/candidateReview";
 import {
   CHECK_POLL_MS, checkStep, checkTitle, displayDomain, formFromInput, isPending, progressKey,
-  type CompanyCheckRow,
+  type CompanyCheckRow, type UpdateDiff,
 } from "../../lib/companyCheck";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -105,6 +106,7 @@ function CheckView({ row, busy, error, onChoose, onOpenCompany, onRetry }: {
   const step = checkStep(row);
   const { name, website } = checkTitle(row);
   const domain = displayDomain(website);
+  const deepen = row.kind === "deepen";
   const identified = row.phase === "check" && row.status !== "cancelled";
   const checksDone = row.gate?.status === "ready" || (step === "final" && row.status !== "cancelled" && row.status !== "matched");
   const profile = row.result?.profile;
@@ -163,10 +165,10 @@ function CheckView({ row, busy, error, onChoose, onOpenCompany, onRetry }: {
       {row.status !== "cancelled" && row.status !== "matched" && row.status !== "done" && (
         <section className="rounded-xl border border-gray-200 bg-white p-5">
           <ol className="space-y-3 text-sm">
-            <StepLine state={identified ? "done" : step === "identifying" ? "active" : "todo"} label={t("companyCheck.steps.identified")} />
-            <StepLine state={checksDone ? (row.status === "failed" ? "failed" : "done") : step === "checking" ? "active" : "todo"} label={t("companyCheck.steps.checks")} />
+            {!deepen && <StepLine state={identified ? "done" : step === "identifying" ? "active" : "todo"} label={t("companyCheck.steps.identified")} />}
+            {!deepen && <StepLine state={checksDone ? (row.status === "failed" ? "failed" : "done") : step === "checking" ? "active" : "todo"} label={t("companyCheck.steps.checks")} />}
             {/* The profile only follows a check that passed. */}
-            {!["rejected_public", "rejected_non_tech", "stealth", "failed"].includes(row.status) && (
+            {!["rejected_public", "rejected_non_tech", "stealth", "failed", "no_new_data"].includes(row.status) && (
               <StepLine
                 state={step === "researching" ? "active" : "todo"}
                 label={t("companyCheck.steps.profile")}
@@ -177,7 +179,7 @@ function CheckView({ row, busy, error, onChoose, onOpenCompany, onRetry }: {
         </section>
       )}
 
-      {profile && <CheckProfileView profile={profile} investors={row.result?.investors ?? null} />}
+      {profile && <CheckProfileView profile={profile} investors={row.result?.investors ?? null} pendingReview={deepen && !!row.result?.deepen?.proposed} />}
     </div>
   );
 }
@@ -216,7 +218,36 @@ function Outcome({ row, onRetry }: { row: CompanyCheckRow; onRetry: () => void }
 
   const listing = row.gate?.evidence?.listing ?? null;
   const techReason = row.gate?.evidence?.tech?.reason;
+  if (row.kind === "deepen" && row.status === "done") {
+    const d = row.result?.deepen;
+    const changes = d?.proposed ? countChanges(d.diff) : 0;
+    return (
+      <Panel tone="ok" icon={<ShieldCheck className="h-5 w-5" />} title={o("deepenDoneTitle")} body={o(d?.proposed ? "deepenReviewBody" : "deepenDoneBody")}>
+        {d && d.direct.length > 0 && (
+          <div className="mt-3 rounded-lg bg-white/70 px-3 py-2 text-sm text-[#0F172A]">
+            <p className="text-xs font-semibold text-emerald-800">{o("directTitle")}</p>
+            <ul className="mt-1 space-y-0.5">
+              {d.direct.map((w) => (
+                <li key={w.field}>
+                  {t(`companyCheck.fields.${w.field}`)}: <span className="font-semibold">{String(w.value)}</span>
+                  {w.source_url && <> — <a href={w.source_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{o("source")}</a></>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {changes > 0 && <p className="mt-2 text-xs opacity-90">{t("companyCheck.outcome.waitingReview", { count: changes })}</p>}
+        {row.matched_startup_id && <div className="mt-3"><OpenCompanyLink startupId={row.matched_startup_id} label={t("companyCheck.openInAlphaMap")} /></div>}
+      </Panel>
+    );
+  }
   switch (row.status) {
+    case "no_new_data":
+      return (
+        <Panel tone="neutral" icon={<Circle className="h-5 w-5" />} title={o("noNewDataTitle")} body={row.result?.note ?? o("noNewDataBody")}>
+          {row.matched_startup_id && <div className="mt-3"><OpenCompanyLink startupId={row.matched_startup_id} label={t("companyCheck.openInAlphaMap")} /></div>}
+        </Panel>
+      );
     case "done":
       return (
         <Panel tone="ok" icon={<ShieldCheck className="h-5 w-5" />} title={o("doneTitle")} body={o("doneBody")}>
@@ -255,6 +286,8 @@ function Outcome({ row, onRetry }: { row: CompanyCheckRow; onRetry: () => void }
       return (
         <Panel tone="ok" icon={<CheckCircle2 className="h-5 w-5" />} title={o("matchedTitle")} body={o("matchedBody")}>
           {row.matched_startup_id && <div className="mt-3"><OpenCompanyLink startupId={row.matched_startup_id} label={t("companyCheck.openInAlphaMap")} /></div>}
+          {/* Thin or old profile: the same research can deepen it (worker/deepen.ts). */}
+          {row.matched_startup_id && <div className="mt-4"><DeepenProfileButton startupId={row.matched_startup_id} /></div>}
         </Panel>
       );
     case "cancelled":
@@ -268,6 +301,12 @@ function Outcome({ row, onRetry }: { row: CompanyCheckRow; onRetry: () => void }
         </Panel>
       );
   }
+}
+
+/** How many single changes a deepen sent for review. */
+function countChanges(d: UpdateDiff): number {
+  return d.fields.length + d.lists.reduce((n, l) => n + l.added.length, 0) + d.rounds.inserts.length + d.rounds.updates.length
+    + (d.headcount_points ? 1 : 0) + d.tags.length;
 }
 
 const TONES = {

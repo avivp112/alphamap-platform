@@ -84,11 +84,12 @@ const job = (): PromotionJob => ({
   collected: JSON.parse(JSON.stringify(serializeCollected(collected()))),
 });
 
+const deps = (db: never, existing: { id: string; name: string } | null = null) => ({
+  db, taxonomy: async () => ({}) as never, findExisting: vi.fn(async () => existing), notify: vi.fn(async () => {}), log: () => {},
+});
+
 describe("promoteOne", () => {
   beforeEach(() => writeCollected.mockClear());
-  const deps = (db: never, existing: { id: string; name: string } | null = null) => ({
-    db, taxonomy: async () => ({}) as never, findExisting: vi.fn(async () => existing), notify: vi.fn(async () => {}), log: () => {},
-  });
 
   it("nothing approved: nothing done", async () => {
     const { db, rpcs } = fakeDb(null);
@@ -124,5 +125,31 @@ describe("promoteOne", () => {
     expect(writeCollected).not.toHaveBeenCalled();
     expect(rpcs.at(-1)).toMatchObject({ name: "finish_check_promotion", args: { p_status: "failed", p_startup_id: null } });
     expect(String(rpcs.at(-1)?.args.p_error)).toContain("duplicate key");
+  });
+});
+
+describe("promoteOne — an approved update to an AlphaMap company", () => {
+  beforeEach(() => writeCollected.mockClear());
+  it("writes to the company as it is now, with the rounds planned again against today's file", async () => {
+    const stored = collected();
+    stored.validation = { accepted: {}, acceptedRounds: [{ round_type: "Seed", amount_raised: 8_000_000, announcement_date: "2025-05-10", _new: true }] } as never;
+    stored.plan = { inserts: [{ round_type: "Seed", amount_raised: 8_000_000 }], updates: [], conflicts: [] } as never;   // planned when the file had no Seed
+    const updateJob: PromotionJob = { ...job(), kind: "update", startup_id: "s-7", collected: JSON.parse(JSON.stringify(serializeCollected(stored))) };
+    const { db, rpcs } = fakeDb(updateJob);
+    const today = { row: freshRow("s-7", "Nuova AI", "https://nuova.ai"), rounds: [{ id: "r-1", startup_id: "s-7", round_type: "Seed", amount_raised: 8_000_000, valuation: null, is_valuation_estimated: null, announcement_date: "2025-05-10", source_url: null, lead_investor: null, investors: null, investor_amounts: null }] };
+    const d = { ...deps(db), loadCompany: vi.fn(async () => today) };
+    expect(await promoteOne(d as never)).toBe(true);
+    const [row, written, ctx] = writeCollected.mock.calls[0] as unknown as [{ id: string }, CollectedCompany, { dryRun: boolean }];
+    expect(row.id).toBe("s-7");
+    expect(ctx.dryRun).toBe(false);
+    expect(written.plan.inserts).toEqual([]);   // the Seed added meanwhile is not written twice
+    expect(rpcs.map((r) => r.name)).toEqual(["claim_check_promotion", "refresh_startups_search", "finish_check_promotion"]);
+    expect(rpcs[2].args).toMatchObject({ p_status: "written", p_startup_id: "s-7" });
+  });
+  it("a company that left AlphaMap: the update fails, nothing written", async () => {
+    const { db, rpcs } = fakeDb({ ...job(), kind: "update", startup_id: "s-7" });
+    expect(await promoteOne({ ...deps(db), loadCompany: vi.fn(async () => null) } as never)).toBe(true);
+    expect(writeCollected).not.toHaveBeenCalled();
+    expect(rpcs.at(-1)?.args).toMatchObject({ p_status: "failed" });
   });
 });

@@ -67,7 +67,11 @@ function Person({ p }: { p: ProfilePerson }) {
   );
 }
 
-export function CheckProfileView({ profile, investors }: { profile: CheckProfile; investors: InvestorFact[] | null }) {
+export function CheckProfileView({ profile, investors, pendingReview = false }: {
+  profile: CheckProfile; investors: InvestorFact[] | null;
+  /** A deepen of an AlphaMap company: what it found waits for review before it is added. */
+  pendingReview?: boolean;
+}) {
   const { t } = useTranslation();
   const k = (key: string, o?: Record<string, unknown>) => t(`companyCheck.profile.${key}`, o);
   const ov = profile.overview;
@@ -99,7 +103,7 @@ export function CheckProfileView({ profile, investors }: { profile: CheckProfile
     <div className="space-y-5">
       <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
         <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
-        <p><span className="font-semibold">{k("unverifiedTitle")}</span> {k("unverifiedBody", { count: profile.sources_count })}</p>
+        <p><span className="font-semibold">{k(pendingReview ? "pendingTitle" : "unverifiedTitle")}</span> {k(pendingReview ? "pendingBody" : "unverifiedBody", { count: profile.sources_count })}</p>
       </div>
 
       <Card icon={Building2} title={k("overview")}>

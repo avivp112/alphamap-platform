@@ -16,7 +16,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { createSearchProviderState } from "../lib/enrichment/searchProviders.ts";
-import { collectCompany, newCollectStats, type CollectResult, type CollectStage, type V2StartupRow } from "../lib/enrichment/collect.ts";
+import { collectCompany, newCollectStats, type CollectResult, type CollectStage, type V2StartupRow, type V2FundingRoundRow } from "../lib/enrichment/collect.ts";
 import type { SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { cachedCallCostUsd } from "./config.ts";
 import type { Meter } from "./runner.ts";
@@ -51,16 +51,24 @@ export function blankRow(i: EnrichInput): V2StartupRow {
   };
 }
 
-export async function runEnrichment(input: EnrichInput, deps: {
+export interface EnrichDeps {
   anthropic: Anthropic;
   model: string;
   taxonomy: SectorTaxonomy;
   meter: Meter;
   onStage?: (stage: CollectStage, detail?: Record<string, unknown>) => void;
-}): Promise<CollectResult> {
+}
+
+/** A company not in AlphaMap: collected from nothing on file. */
+export function runEnrichment(input: EnrichInput, deps: EnrichDeps): Promise<CollectResult> {
+  return runCollection(blankRow(input), [], deps);
+}
+
+/** Any company — for "deepen", the AlphaMap row and its rounds, exactly as the bulk run reads them. */
+export async function runCollection(row: V2StartupRow, rounds: V2FundingRoundRow[], deps: EnrichDeps): Promise<CollectResult> {
   const searchState = createSearchProviderState();   // no .cache: see the header
   try {
-    return await collectCompany(blankRow(input), [], deps.taxonomy, {
+    return await collectCompany(row, rounds, deps.taxonomy, {
       anthropic: deps.anthropic,
       models: { enrich: deps.model, profile: deps.model, funding: deps.model, market: deps.model },
       update: false, deepDive: true, techGate: false, articlesToRead: ARTICLES_TO_READ, verbose: false,

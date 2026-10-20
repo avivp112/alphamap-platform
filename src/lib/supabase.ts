@@ -4,7 +4,7 @@ import { TAB_STATUSES, type CheckPromotion, type PromotionTab } from "./checkPro
 import { sanitizeSearch, type DealFeedRow, type DealFeedStats, type DealKind, type DealSort } from "./dealFeed";
 import {
   CheckRequestError,
-  type CheckFormValues, type CompanyCheckRow, type ConfirmResponse, type IdentifyResponse,
+  type CheckFormValues, type CompanyCheckRow, type ConfirmResponse, type IdentifyResponse, type DeepenStatus,
 } from "./companyCheck";
 import { documentPath, type CrmCompany, type CrmDocument, type DealTerm } from "./crm";
 
@@ -1365,7 +1365,7 @@ export async function rejectCompanyCandidate(id: string, note?: string): Promise
 // the card shows the check's own profile.
 
 const PROMOTION_COLUMNS =
-  "id, check_id, status, startup_id, reviewed_at, review_note, error, created_at, " +
+  "id, check_id, kind, diff, status, startup_id, reviewed_at, review_note, error, created_at, " +
   "check:company_checks(id, input, identity, gate, result, progress, created_at)";
 
 export async function fetchCheckPromotions(opts: { tab: PromotionTab; limit: number; offset: number }): Promise<CheckPromotion[]> {
@@ -1524,6 +1524,16 @@ export function confirmCompanyCheck(checkId: string, choice: number | "none"): P
   return callCompanyCheck<ConfirmResponse>({ action: "confirm", check_id: checkId, choice });
 }
 
+/** May this AlphaMap company be deepened, and would it be free? (read only) */
+export function deepenStatus(startupId: string): Promise<DeepenStatus> {
+  return callCompanyCheck<DeepenStatus>({ action: "deepen_status", startup_id: startupId });
+}
+
+/** "Deepen this profile": queues v2's research on a company already in AlphaMap. */
+export function deepenProfile(startupId: string): Promise<{ status: "queued"; check_id: string; free?: boolean }> {
+  return callCompanyCheck({ action: "deepen", startup_id: startupId });
+}
+
 /** Abandon a check that has not started (own rows only, enforced in SQL). */
 export async function cancelCompanyCheck(checkId: string): Promise<boolean> {
   const { data, error } = await supabase.rpc("cancel_company_check", { p_id: checkId });
@@ -1531,7 +1541,7 @@ export async function cancelCompanyCheck(checkId: string): Promise<boolean> {
   return data === true;
 }
 
-const CHECK_COLUMNS = "id, status, phase, input, candidates, identity, gate, result, progress, matched_startup_id, error, created_at, finished_at";
+const CHECK_COLUMNS = "id, status, phase, kind, input, candidates, identity, gate, result, progress, matched_startup_id, error, created_at, finished_at";
 
 export async function fetchCompanyCheck(checkId: string): Promise<CompanyCheckRow | null> {
   const { data, error } = await supabase.from("company_checks").select(CHECK_COLUMNS).eq("id", checkId).maybeSingle();

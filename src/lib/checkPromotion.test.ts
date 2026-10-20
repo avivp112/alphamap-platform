@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canRetry, identitySource, promotionSummary, TAB_STATUSES, PROMOTION_TABS, type CheckPromotion } from "./checkPromotion";
+import { canRetry, diffLines, identitySource, promotionSummary, TAB_STATUSES, PROMOTION_TABS, type CheckPromotion } from "./checkPromotion";
 
 const sourced = <T,>(value: T) => ({ value, source_url: "https://x", quote: null, confidence: "high" as const });
 
@@ -70,4 +70,27 @@ describe("the review rules", () => {
     expect(identitySource(promo({ check: { ...promo().check!, identity: { source: "your_website" } } }))).toBe("your_website");
     expect(identitySource(promo({ check: null }))).toBeNull();
   });
+});
+
+describe("diffLines — an update as the admin reads it", () => {
+  it("additions, changes, rounds and lists, nothing invented", () => {
+    expect(diffLines({
+      fields: [{ field: "country", from: null, to: "Israel" }, { field: "employee_count", from: 20, to: 45 },
+        { field: "revenue_estimate", from: null, to: { range_low: 5_000_000, range_high: 10_000_000 } }],
+      lists: [{ field: "founders", added: ["Omer Katz"] }],
+      rounds: { inserts: [{ round_type: "Seed", amount: 8_000_000, date: "2025-05-10", lead: "Sequoia", source_url: null }],
+                updates: [{ round_type: "Pre-Seed", changes: ["lead_investor"] }] },
+      headcount_points: 2, tags: ["AI Agents"],
+    })).toEqual([
+      { kind: "add", text: "Country: Israel" },
+      { kind: "change", text: "Employees: 20 → 45" },
+      { kind: "add", text: "Revenue estimate: $5M–$10M" },
+      { kind: "add", text: "Founders: Omer Katz" },
+      { kind: "add", text: "Round: Seed $8M 2025-05 (lead: Sequoia)" },
+      { kind: "change", text: "Round Pre-Seed: fills lead investor" },
+      { kind: "add", text: "Headcount: 2 dated points" },
+      { kind: "add", text: "Sub-sector tags: AI Agents" },
+    ]);
+  });
+  it("no diff: no lines", () => { expect(diffLines(null)).toEqual([]); });
 });

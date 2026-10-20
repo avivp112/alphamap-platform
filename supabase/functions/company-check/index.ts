@@ -21,6 +21,16 @@
 //   queued with the confirmed website: public / non-tech / stealth checks
 //   and, from stage 3, the enrichment.
 //
+// POST { action: "deepen_status", startup_id }   (read only)
+// POST { action: "deepen", startup_id }
+//   "Deepen this profile": enrichment v2 on a company ALREADY in AlphaMap.
+//   decideDeepen (_shared/company-check.ts) with the thresholds of
+//   _shared/check-limits.ts: a thin profile may always be deepened and does
+//   not use the monthly allowance; a fuller one only if v2 has not updated it
+//   lately. The rate limit applies to both. The worker runs it (kind
+//   'deepen', migration 20261026000000); what it finds waits for the admin,
+//   except empty fields filled from an official source.
+//
 // Cancelling an unstarted check needs no function: cancel_company_check()
 // is callable from the browser for the user's own rows.
 //
@@ -32,7 +42,7 @@
 // =============================================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { validateCheckInput, decideAllowance, monthStartUtc, applyChoice, type CheckInput } from "../_shared/company-check.ts";
+import { validateCheckInput, decideAllowance, decideDeepen, monthStartUtc, applyChoice, type CheckInput } from "../_shared/company-check.ts";
 import { FRESH_ENOUGH_DAYS, FREE_OF_CHARGE_STATUSES } from "../_shared/check-limits.ts";
 
 const CORS = {
@@ -57,7 +67,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const user = auth?.user;
   if (authErr || !user) return json({ error: "Sign in to check a company." }, 401);
 
-  let body: { action?: string; input?: Record<string, unknown>; check_id?: unknown; choice?: unknown };
+  let body: { action?: string; input?: Record<string, unknown>; check_id?: unknown; choice?: unknown; startup_id?: unknown };
   try { body = await req.json(); } catch { return json({ error: "Invalid JSON body." }, 400); }
 
   // Usage so far — this user's own rows only. Only check-phase rows are ever charged.
@@ -67,7 +77,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     supabase.from("company_checks").select("id", { count: "exact", head: true })
       .eq("user_id", user.id).gte("created_at", new Date(now.getTime() - 3_600_000).toISOString()),
     supabase.from("company_checks").select("id", { count: "exact", head: true })
-      .eq("user_id", user.id).eq("phase", "check").gte("created_at", monthStartUtc(now).toISOString())
+      .eq("user_id", user.id).eq("phase", "check").eq("free_of_charge", false).gte("created_at", monthStartUtc(now).toISOString())
       .not("status", "in", `(${FREE_OF_CHARGE_STATUSES.join(",")})`),
   ]);
   for (const r of [planRes, hourRes, monthRes]) if (r.error) return json({ error: r.error.message }, 500);
@@ -139,6 +149,41 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return choice.startupId
       ? json({ status: "matched", check_id: row.id, startup: { id: choice.startupId, name: choice.identity.startup_name ?? choice.identity.name ?? null } })
       : json({ status: "queued", check_id: row.id });
+  }
+
+  if (body.action === "deepen_status" || body.action === "deepen") {
+    const startupId = typeof body.startup_id === "string" ? body.startup_id : "";
+    const { data: s, error: sErr } = await supabase.from("startups")
+      .select("id, name, website, country, enriched_v2_at").eq("id", startupId).maybeSingle();
+    if (sErr && !/invalid input syntax/i.test(sErr.message)) return json({ error: sErr.message }, 500);
+    if (!s) return json({ error: "Company not found." }, 404);
+    const [{ data: completeness, error: cErr }, { data: inFlight, error: fErr }] = await Promise.all([
+      supabase.rpc("startup_completeness", { p_startup_id: s.id }),
+      supabase.from("company_checks").select("id").eq("user_id", user.id).eq("kind", "deepen")
+        .eq("matched_startup_id", s.id).in("status", ["queued", "running"]).maybeSingle(),
+    ]);
+    if (cErr || fErr) return json({ error: (cErr ?? fErr)!.message }, 500);
+    const decision = decideDeepen({ completeness: Number(completeness ?? 0), enrichedV2At: s.enriched_v2_at }, now);
+    const allow = decision.ok ? decideAllowance(usage, !decision.free) : null;
+
+    if (body.action === "deepen_status") {
+      return json({
+        eligible: decision.ok, free: decision.ok ? decision.free : false, completeness: completeness ?? 0,
+        reason: decision.ok ? (allow?.ok ? null : allow?.reason) : decision.reason,
+        remaining: allow?.remaining ?? null, pending_check_id: inFlight?.id ?? null,
+      });
+    }
+    if (inFlight) return json({ status: "queued", check_id: inFlight.id });
+    if (!decision.ok) return json({ error: "This profile was updated recently.", reason: decision.reason }, 409);
+    if (!allow!.ok) return refuse(allow as Extract<ReturnType<typeof decideAllowance>, { ok: false }>);
+    const identity = { name: s.name, website: s.website, startup_id: s.id, startup_name: s.name };
+    const { data: row, error: insErr } = await supabase.from("company_checks").insert({
+      user_id: user.id, kind: "deepen", phase: "check", status: "queued", matched_startup_id: s.id,
+      free_of_charge: decision.free, identity,
+      input: { name: s.name, website: s.website, host: null, country: s.country, founder: null, linkedin: null, sector: null },
+    }).select("id").single();
+    if (insErr) return json({ error: insErr.message }, 500);
+    return json({ status: "queued", check_id: row.id, free: decision.free });
   }
 
   return json({ error: `Unknown action: ${body.action ?? "none"}` }, 400);

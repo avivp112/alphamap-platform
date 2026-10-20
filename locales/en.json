@@ -569,7 +569,7 @@
     "openCompany": "Open company",
     "sheet": { "filings": "From filings", "checks": "From user checks" },
     "checks": {
-      "blurb": "Companies users checked. Each enters AlphaMap only when you approve it; the worker then writes it from the research shown here, by the same rules as the enrichment run.",
+      "blurb": "Companies users checked, and additions from users' deeper research on AlphaMap companies. Nothing enters AlphaMap until you approve it; the worker then writes it from the research shown here, by the same rules as the enrichment run.",
       "tab": { "pending": "Pending", "accepted": "Approved", "rejected": "Rejected" },
       "status": {
         "pending": "Waiting for you", "approved": "Approved — queued", "writing": "Being written", "written": "In AlphaMap",
@@ -585,6 +585,10 @@
       "checks": "Checks",
       "fullProfile": "Full profile and sources",
       "approve": "Add to AlphaMap",
+      "applyUpdate": "Apply update",
+      "updateChip": "Update to an AlphaMap company",
+      "updateTitle_one": "{{count}} change from a user's deeper research:",
+      "updateTitle_other": "{{count}} changes from a user's deeper research:",
       "retry": "Try again",
       "noRetry": "its company row was already created, so it is not written again; fix it by hand.",
       "approvedFlash": "Approved — the worker adds it to AlphaMap within a minute.",
@@ -718,11 +722,27 @@
       "failedTitle": "Something went wrong on our side",
       "failedBody": "This doesn't count toward your plan. Please try again in a little while.",
       "matchedTitle": "Already in AlphaMap",
-      "matchedBody": "This company is already in AlphaMap, with its full profile.",
+      "matchedBody": "This company is already in AlphaMap.",
       "cancelledTitle": "Cancelled",
       "cancelledBody": "This check was cancelled before it ran. It didn't count toward your plan.",
-      "source": "Source"
+      "source": "Source",
+      "deepenDoneTitle": "Deeper profile ready",
+      "deepenDoneBody": "Here is what the research found. Nothing else needed adding to AlphaMap.",
+      "deepenReviewBody": "Here is what the research found. AlphaMap's team reviews it before it is added to the company's profile for everyone.",
+      "directTitle": "Added to AlphaMap now, from official records:",
+      "waitingReview_one": "{{count}} more change is waiting for review.",
+      "waitingReview_other": "{{count}} more changes are waiting for review.",
+      "noNewDataTitle": "Nothing new found",
+      "noNewDataBody": "The research found nothing to add to this profile."
     },
+    "deepen": {
+      "button": "Deepen profile",
+      "blurb": "Run AlphaMap's research on this company to fill in what's missing. You see the results at once; they are added to AlphaMap after review.",
+      "free": "Free: this profile is thin.",
+      "usesCheck": "Uses one of your monthly checks.",
+      "inProgress": "Deepening…"
+    },
+    "fields": { "founded_year": "Founded", "country": "Country", "city": "City" },
     "progress": {
       "starting": "Starting…",
       "searching": "Searching the web",
@@ -742,6 +762,9 @@
         "low": "Low confidence: from a directory or a search snippet"
       },
       "unverifiedTitle": "Unverified.",
+      "pendingTitle": "Pending verification.",
+      "pendingBody_one": "Found by AlphaMap's research in {{count}} public source. It is added to the company's profile after review; every value links to the page it came from.",
+      "pendingBody_other": "Found by AlphaMap's research in {{count}} public sources. It is added to the company's profile after review; every value links to the page it came from.",
       "unverifiedBody_one": "Collected automatically from {{count}} public source and not yet checked by AlphaMap. Every value links to the page it came from.",
       "unverifiedBody_other": "Collected automatically from {{count}} public sources and not yet checked by AlphaMap. Every value links to the page it came from.",
       "overview": "Overview",
@@ -790,6 +813,7 @@
       "rejected_non_tech": "Not tech",
       "failed": "Failed",
       "matched": "In AlphaMap",
+      "no_new_data": "Nothing new",
       "cancelled": "Cancelled"
     }
   },

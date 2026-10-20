@@ -8,7 +8,7 @@ import { fetchCheckPromotions, approveCheckPromotion, rejectCheckPromotion } fro
 import { companyPath } from "../../../lib/candidateReview";
 import { displayDomain } from "../../../lib/companyCheck";
 import {
-  PROMOTION_TABS, canRetry, identitySource, promotionSummary,
+  PROMOTION_TABS, canRetry, diffLines, identitySource, promotionSummary,
   type CheckPromotion, type PromotionTab, type PromotionStatus,
 } from "../../../lib/checkPromotion";
 
@@ -136,6 +136,8 @@ function PromotionCard(props: {
   const s = promotionSummary(p);
   const source = identitySource(p);
   const decidable = p.status === "pending" || canRetry(p);
+  const update = p.kind === "update";
+  const changes = update ? diffLines(p.diff) : [];
   const domain = displayDomain(s.website);
   const lines: Array<{ label: string; value: string }> = [
     s.founders ? { label: t("adminReview.checks.founders"), value: s.founders } : null,
@@ -152,7 +154,10 @@ function PromotionCard(props: {
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-base font-bold text-[#0F172A] break-words">{s.name}</h2>
             <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_CHIP[p.status]}`}>{t(`adminReview.checks.status.${p.status}`)}</span>
-            {source && (
+            {update && (
+              <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700">{t("adminReview.checks.updateChip")}</span>
+            )}
+            {!update && source && (
               <span className="flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600">
                 {source === "your_website" ? <UserCheck className="h-3 w-3" /> : <Search className="h-3 w-3" />}
                 {t(`adminReview.checks.source.${source}`)}
@@ -160,7 +165,8 @@ function PromotionCard(props: {
             )}
           </div>
           <p className="mt-1 text-xs text-gray-400">
-            {[domain, ...s.facts].filter(Boolean).join(" · ")}
+            {/* An update is about the changes below, not the research's own summary. */}
+            {[domain, ...(update ? [] : s.facts)].filter(Boolean).join(" · ")}
             {" · "}{t("adminReview.checks.sources", { count: s.sources })}
           </p>
 
@@ -169,9 +175,25 @@ function PromotionCard(props: {
               <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-none" />{t("adminReview.checks.genericName", { name: s.name })}
             </p>
           )}
-          {s.description && <p className="mt-3 text-sm text-[#111827]">{s.description}</p>}
+          {!update && s.description && <p className="mt-3 text-sm text-[#111827]">{s.description}</p>}
 
-          {lines.length > 0 && (
+          {update && (
+            <div className="mt-3">
+              <p className="text-xs font-semibold text-gray-500">{t("adminReview.checks.updateTitle", { count: changes.length })}</p>
+              <ul className="mt-1.5 space-y-1 text-sm">
+                {changes.map((c, i) => (
+                  <li key={i} className="flex items-start gap-2 break-words">
+                    <span className={`mt-0.5 flex-none rounded px-1 text-[10px] font-bold ${c.kind === "add" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>
+                      {c.kind === "add" ? "+" : "≠"}
+                    </span>
+                    <span className="text-[#111827]">{c.text}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {!update && lines.length > 0 && (
             <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-[120px_1fr] text-sm">
               {lines.map((l) => (
                 <React.Fragment key={l.label}>
@@ -203,7 +225,7 @@ function PromotionCard(props: {
                 <Globe className="h-3.5 w-3.5" />{t("adminReview.website")}
               </a>
             )}
-            {(p.status === "written" || p.status === "linked") && p.startup_id && (
+            {(update || p.status === "written" || p.status === "linked") && p.startup_id && (
               <Link to={companyPath(p.startup_id)} className="flex items-center gap-1 font-medium text-blue-600 hover:underline">
                 <ArrowRight className="h-3.5 w-3.5" />{t("adminReview.openCompany")}
               </Link>
@@ -213,7 +235,7 @@ function PromotionCard(props: {
                 <button disabled={props.busy} onClick={props.onApprove}
                   className="flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-40">
                   {props.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : p.status === "failed" ? <RotateCcw className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
-                  {t(p.status === "failed" ? "adminReview.checks.retry" : "adminReview.checks.approve")}
+                  {t(p.status === "failed" ? "adminReview.checks.retry" : update ? "adminReview.checks.applyUpdate" : "adminReview.checks.approve")}
                 </button>
                 <button disabled={props.busy} onClick={props.onStartReject}
                   className="flex items-center gap-1 rounded-md border border-rose-200 px-3 py-1.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-40">

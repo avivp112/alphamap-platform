@@ -10,7 +10,8 @@
 // (worker/gates.ts) and, when they pass, the research itself: enrichment
 // v2's collection on that one company (worker/enrich.ts, worker/profile.ts).
 // A finished company enters AlphaMap only after an admin approves it
-// (worker/promote.ts).
+// (worker/promote.ts). "Deepen this profile" runs the same research on a
+// company already in AlphaMap (worker/deepen.ts).
 // =============================================================================
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -21,9 +22,11 @@ import { processOne, type Execute, type Meter } from "./runner.ts";
 import { runGates } from "./gates.ts";
 import { runIdentify, fetchSiteMeta } from "./identify.ts";
 import { serperSearch } from "./search.ts";
-import { runEnrichment } from "./enrich.ts";
+import { runEnrichment, runCollection } from "./enrich.ts";
 import { buildProfile, investorNames } from "./profile.ts";
-import { promoteOne, serializeCollected } from "./promote.ts";
+import { promoteOne, serializeCollected, domainIndex } from "./promote.ts";
+import { runDeepen, loadCompany, applyDirectWrites } from "./deepen.ts";
+import { writeCollected, newWriteSummary, BULK_THRESHOLDS } from "../lib/enrichment/writeCompany.ts";
 import { loadSectorTaxonomy, type SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { isDistinctiveName } from "../lib/enrichment/entity.ts";
 import { PermanentError } from "./retry.ts";
@@ -51,6 +54,22 @@ const execute: Execute = async (row, meter) => {
     );
     // "Zero", "Atlas": names many companies share — the app asks for the website (2026-10-18, zero.ai).
     return { status: "awaiting_confirmation", patch: { candidates, progress: { generic_name: !isDistinctiveName(row.input.name) } } };
+  }
+  if (row.kind === "deepen") {
+    // A company already in AlphaMap: no identify phase, no threshold checks (worker/deepen.ts).
+    const progress = (stage: string) => { void queue.patch(row.id, { progress: { stage, at: new Date().toISOString() } }).catch(() => {}); };
+    return runDeepen(row, {
+      loadCompany: (id) => loadCompany(db, id),
+      collect: async (c, onStage) => runCollection(c.row, c.rounds, { anthropic, model: cfg.enrichModel, taxonomy: await taxonomy(), meter, onStage }),
+      applyDirectWrites: (id, w) => applyDirectWrites(db, id, w),
+      dryRunWrite: async (r, c) => writeCollected(r, c, {
+        db, dryRun: true, update: false, verbose: false, thresholds: BULK_THRESHOLDS,
+        taxonomy: await taxonomy(), startupByDomain: await domainIndex(db), seen: null,
+      }, newWriteSummary()),
+      investorFacts: (names) => queue.investorFacts(names),
+      proposeUpdate: (checkId, startupId, c, diff) => queue.proposeUpdate(checkId, startupId, serializeCollected(c), diff),
+      progress,
+    });
   }
   const g = await runGates(
     { name: row.input.name, website: row.input.website, country: row.input.country, sector: row.input.sector },
@@ -135,7 +154,9 @@ async function main() {
     try {
       worked = await processOne(queue, execute, { leaseSeconds: cfg.leaseSeconds, maxRunMs: cfg.maxRunMs, model: cfg.gateModel, cost });
       // Users' checks first; an approved company is written when none is waiting.
-      if (!worked) worked = await promoteOne({ db, taxonomy, findExisting: (w) => queue.findExisting(w), notify: (...a) => queue.notify(...a) });
+      if (!worked) worked = await promoteOne({
+        db, taxonomy, loadCompany: (id) => loadCompany(db, id), findExisting: (w) => queue.findExisting(w), notify: (...a) => queue.notify(...a),
+      });
     } catch (e) {
       console.error(`[worker] queue error: ${String(e)}`);   // e.g. Supabase unreachable: wait and try again
     }

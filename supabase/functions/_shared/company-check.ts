@@ -5,7 +5,7 @@
 // Function and the worker share one definition.
 // =============================================================================
 
-import { limitsFor, type CheckLimits } from "./check-limits.ts";
+import { limitsFor, DEEPEN_FREE_BELOW, DEEPEN_ALWAYS_BELOW, FRESH_ENOUGH_DAYS, type CheckLimits } from "./check-limits.ts";
 
 export interface CheckInputRaw {
   name?: unknown;
@@ -113,6 +113,26 @@ export function decideAllowance(a: AllowanceInput, willRun: boolean): AllowanceD
   if (a.requestsLastHour >= limits.requestsPerHour) return { ok: false, reason: "rate_limited", limits, remaining };
   if (willRun && remaining <= 0) return { ok: false, reason: "monthly_limit", limits, remaining };
   return { ok: true, limits, remaining };
+}
+
+export type DeepenDecision =
+  | { ok: true; free: boolean }
+  | { ok: false; reason: "recently_updated"; updatedDaysAgo: number };
+
+/**
+ * May this company be deepened, and is it free? A thin profile always may,
+ * free of the allowance; a fuller one only if v2 has not updated it lately.
+ */
+export function decideDeepen(
+  f: { completeness: number; enrichedV2At: string | null },
+  now: Date,
+  limits = { freeBelow: DEEPEN_FREE_BELOW, alwaysBelow: DEEPEN_ALWAYS_BELOW, freshDays: FRESH_ENOUGH_DAYS },
+): DeepenDecision {
+  const free = f.completeness < limits.freeBelow;
+  if (f.completeness < limits.alwaysBelow || !f.enrichedV2At) return { ok: true, free };
+  const days = (now.getTime() - Date.parse(f.enrichedV2At)) / 86_400_000;
+  if (Number.isFinite(days) && days <= limits.freshDays) return { ok: false, reason: "recently_updated", updatedDaysAgo: Math.floor(days) };
+  return { ok: true, free };
 }
 
 export type ConfirmResult =

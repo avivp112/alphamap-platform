@@ -20,7 +20,7 @@ export interface Meter {
 export const newMeter = (): Meter => ({ searchCalls: 0, llmInputTokens: 0, llmOutputTokens: 0, llmCostUsd: 0 });
 
 export interface Outcome {
-  status: "awaiting_confirmation" | "ready" | "stealth" | "rejected_public" | "rejected_non_tech" | "done";
+  status: "awaiting_confirmation" | "ready" | "stealth" | "rejected_public" | "rejected_non_tech" | "no_new_data" | "done";
   patch: Record<string, unknown>;
   /** A bell notification for the check's owner once the result is saved. */
   notify?: { title: string; body: string };

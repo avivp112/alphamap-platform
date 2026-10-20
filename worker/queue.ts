@@ -12,6 +12,9 @@ export interface CheckRow {
   status: string;
   /** identify = the short search for the company; check = the threshold checks (migration 20261022000000). */
   phase: "identify" | "check";
+  /** new = a company not in AlphaMap; deepen = more research on matched_startup_id (migration 20261026000000). */
+  kind: "new" | "deepen";
+  matched_startup_id: string | null;
   attempts: number;
   max_attempts: number;
 }
@@ -94,6 +97,14 @@ export class Queue {
       { check_id: checkId, collected }, { onConflict: "check_id", ignoreDuplicates: true },
     );
     if (error) throw new Error(`check_promotions insert: ${error.message}`);
+  }
+
+  /** Proposes a deepen's additions to an AlphaMap company for the admin's review, with the differences. */
+  async proposeUpdate(checkId: string, startupId: string, collected: unknown, diff: unknown): Promise<void> {
+    const { error } = await this.db.from("check_promotions").upsert(
+      { check_id: checkId, kind: "update", startup_id: startupId, collected, diff }, { onConflict: "check_id", ignoreDuplicates: true },
+    );
+    if (error) throw new Error(`check_promotions insert (update): ${error.message}`);
   }
 
   /** The owner's bell. Private: one row for the user who asked, nobody else. */

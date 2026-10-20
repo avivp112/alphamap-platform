@@ -95,7 +95,8 @@ export function CheckCompanyDialog({ onClose, initial }: { onClose: () => void; 
     try {
       const res = await identifyCompany(form);
       if (!alive.current) return;
-      if (res.status === "matched") { openCompany(res.startup.id); return; }
+      // Already in AlphaMap: the check page offers it, and deepening a thin profile.
+      if (res.status === "matched") { onClose(); navigate(`/checks/${encodeURIComponent(res.check_id)}`); return; }
       setCheckId(res.check_id);
       setRemaining(res.remaining);
     } catch (err) {
@@ -114,7 +115,6 @@ export function CheckCompanyDialog({ onClose, initial }: { onClose: () => void; 
     setError(null);
     try {
       const res = await confirmCompanyCheck(checkId, choice);
-      if (res.status === "matched") { openCompany(res.startup.id); return; }
       onClose();
       navigate(`/checks/${encodeURIComponent(res.check_id)}`);
     } catch (err) {

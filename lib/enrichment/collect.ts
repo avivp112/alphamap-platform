@@ -80,6 +80,32 @@ export interface V2FundingRoundRow {
 export interface ExtractionUsage { inputTokens: number; outputTokens: number; cacheWriteTokens?: number; cacheReadTokens?: number }
 
 /** What the bulk script's globals were, passed in. */
+/** The columns of startups / funding_rounds a collection reads (V2StartupRow, V2FundingRoundRow). */
+export const V2_STARTUP_COLUMNS =
+  "id, name, website, description, value_proposition, industry, founded_year, country, city, employee_count, employee_range, growth_trend, founders, leadership, competitors, acquisitions, news, patent_count, patent_fields, patents, tech_stack, github_url, huggingface_url, arr_milestones, revenue_estimate, valuation_benchmarks, linkedin_url, facebook_url, instagram_url, sector_id, funding_history_complete, status, last_enriched_at, is_manually_verified";
+export const V2_ROUND_COLUMNS =
+  "id, startup_id, round_type, amount_raised, valuation, is_valuation_estimated, announcement_date, source_url, lead_investor, investors, investor_amounts";
+
+/** The rounds on file, as Stage 7 plans against them. */
+export function roundRefs(existingRounds: V2FundingRoundRow[]): ExistingRoundRef[] {
+  return existingRounds.map((r) => ({
+    id: r.id, round_type: r.round_type ?? "Other", amount_raised: r.amount_raised, valuation: r.valuation,
+    is_valuation_estimated: r.is_valuation_estimated, announcement_date: r.announcement_date,
+    lead_investor: r.lead_investor, other_investors: r.investors, source_url: r.source_url,
+    investor_amounts: r.investor_amounts,
+  }));
+}
+
+/** A round validation saw, marked when this run found it (not one on file). */
+type TaggedRound = RoundLike & { _new?: true };
+
+/** The validated rounds this run found (not the ones on file it re-read). */
+export function newAcceptedRounds(validation: { acceptedRounds: RoundLike[] }): RoundLike[] {
+  return validation.acceptedRounds
+    .filter((r) => (r as TaggedRound)._new)
+    .map((r) => { const { _new, ...rest } = r as TaggedRound; void _new; return rest; });
+}
+
 export interface CollectContext {
   anthropic: Anthropic;
   models: { enrich: string; profile: string; funding: string; market: string };
@@ -409,12 +435,7 @@ export async function collectCompany(
   let market = marketOutcome.extraction.result;
   for (const d of [...fundingOutcome.extraction.dropped, ...marketOutcome.extraction.dropped]) bump(stats.droppedByReason, d.reason);
 
-  const existingRefs: ExistingRoundRef[] = existingRounds.map((r) => ({
-    id: r.id, round_type: r.round_type ?? "Other", amount_raised: r.amount_raised, valuation: r.valuation,
-    is_valuation_estimated: r.is_valuation_estimated, announcement_date: r.announcement_date,
-    lead_investor: r.lead_investor, other_investors: r.investors, source_url: r.source_url,
-    investor_amounts: r.investor_amounts,
-  }));
+  const existingRefs = roundRefs(existingRounds);
 
   // ── Stage 9: deep dive into whichever sections came back thin ──────────
   // (an update fills gaps with its own few searches instead)
@@ -666,7 +687,6 @@ export async function collectCompany(
 
   ctx.onStage?.("validating");
   // ── Stage 6: validation (city/country/founded_year/headcount/rounds) ──
-  type TaggedRound = RoundLike & { _new?: true };
   const roughPlan = planRoundWrites(existingRefs, newRoundLikes);
   const validation = validateEnrichment({
     existing: {
@@ -690,9 +710,7 @@ export async function collectCompany(
     console.log(`    ⚠️  [${issue.rule}] ${issue.message}`);
     bump(stats.droppedByReason, issue.rule);
   }
-  const acceptedNewRounds: RoundLike[] = validation.acceptedRounds
-    .filter((r) => (r as TaggedRound)._new)
-    .map((r) => { const { _new, ...rest } = r as TaggedRound; void _new; return rest; });
+  const acceptedNewRounds = newAcceptedRounds(validation);
 
   // ── Stage 7: round planning (fill existing / insert new / contradiction)
   const plan = planRoundWrites(existingRefs, acceptedNewRounds);

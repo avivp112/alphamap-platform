@@ -42,7 +42,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { pathToFileURL } from "url";
 
 import { initV1Context, supabase } from "./bulk_enrich_all.ts";
-import { collectCompany, type V2StartupRow, type V2FundingRoundRow } from "../lib/enrichment/collect.ts";
+import { collectCompany, V2_STARTUP_COLUMNS, V2_ROUND_COLUMNS, type V2StartupRow, type V2FundingRoundRow } from "../lib/enrichment/collect.ts";
 import { writeCollected, BULK_THRESHOLDS } from "../lib/enrichment/writeCompany.ts";
 
 import { classifyTier, type TierRow, type TierRound } from "../lib/enrichment/queue.ts";
@@ -298,12 +298,12 @@ async function main() {
 
   const startups = await fetchAllPaginated<V2StartupRow>((from, to) =>
     supabase.from("startups").select(
-      "id, name, website, description, value_proposition, industry, founded_year, country, city, employee_count, employee_range, growth_trend, founders, leadership, competitors, acquisitions, news, patent_count, patent_fields, patents, tech_stack, github_url, huggingface_url, arr_milestones, revenue_estimate, valuation_benchmarks, linkedin_url, facebook_url, instagram_url, sector_id, funding_history_complete, status, last_enriched_at, is_manually_verified",
+      V2_STARTUP_COLUMNS,
     ).order("name").range(from, to),
   );
   const allRounds = await fetchAllPaginated<V2FundingRoundRow>((from, to) =>
     supabase.from("funding_rounds").select(
-      "id, startup_id, round_type, amount_raised, valuation, is_valuation_estimated, announcement_date, source_url, lead_investor, investors, investor_amounts",
+      V2_ROUND_COLUMNS,
     ).order("created_at").range(from, to),
   );
 

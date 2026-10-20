@@ -87,12 +87,25 @@ export const newWriteSummary = (): WriteSummary => ({
   totalRoundsInserted: 0, totalRoundsUpdated: 0, totalFieldsPatched: 0, totalNewsAdded: 0, totalCompetitorsAdded: 0,
 });
 
+/** What Stage 10 wrote — or, in a dry run, would write. */
+export interface WriteOutcome {
+  anyWrite: boolean;
+  /** The startups columns changed, with their new values. */
+  patch: Record<string, unknown>;
+  roundInserts: CollectedCompany["plan"]["inserts"];
+  roundUpdates: CollectedCompany["plan"]["updates"];
+  headcountPoints: Array<{ date: string; count: number }>;
+  tags: string[];
+  newsAdded: number;
+  competitorsAdded: number;
+}
+
 export async function writeCollected(
   row: V2StartupRow,
   collected: CollectedCompany,
   ctx: WriteContext,
   summary: WriteSummary,
-): Promise<{ anyWrite: boolean }> {
+): Promise<WriteOutcome> {
   const { db: supabase, dryRun: DRY_RUN, update: UPDATE, verbose: VERBOSE, thresholds: THRESHOLDS, taxonomy, startupByDomain, seen } = ctx;
   const MIN_PROFILE_CONFIDENCE = THRESHOLDS.minProfileConfidence;
   const {
@@ -548,5 +561,8 @@ export async function writeCollected(
     tagNames.length ? `tags: ${tagNames.join(", ")}` : null,
   ].filter(Boolean);
   console.log(`    ${anyWrite ? "✅" : "🟠"} ${parts.join(" | ")}`);
-  return { anyWrite };
+  return {
+    anyWrite, patch, roundInserts: plan.inserts, roundUpdates: plan.updates,
+    headcountPoints, tags: tagNames, newsAdded, competitorsAdded: Math.max(0, competitorsAdded),
+  };
 }

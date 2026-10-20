@@ -12,6 +12,7 @@ import { LinkedInBadge } from "../components/LinkedInBadge";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "../components/ui/hover-card";
 import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider, QuickQuestionsMenu, ExportMenu } from "../components/SideFilterLayout";
 import { CompanyLogo } from "../components/CompanyLogo";
+import { DeepenProfileButton } from "../components/DeepenProfileButton";
 import { CheckCompanyDialog } from "../components/CheckCompanyDialog";
 import { emptyCheckForm } from "../../lib/companyCheck";
 import { useBackClose } from "../../lib/hardwareBack";
@@ -2319,6 +2320,8 @@ function TearsheetModal({
               <Layers className="w-3.5 h-3.5" />
               {t("startups.lookalikes")}
             </button>
+            {/* Hidden unless the profile is thin or not updated lately (company-check: deepen_status). */}
+            <DeepenProfileButton startupId={startup.id} variant="chip" />
             <button
               onClick={handleGenerateTearSheet}
               disabled={pdfGenerating || detailLoading}

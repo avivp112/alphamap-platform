@@ -39,6 +39,18 @@ export const FREE_OF_CHARGE_STATUSES = [
   "matched", "failed", "cancelled", "awaiting_confirmation", "rejected_public", "rejected_non_tech",
 ] as const;
 
+// ── "Deepen this profile" (a company already in AlphaMap; 2026-10-20) ────────
+// Completeness is the 0-15 score of startups_search (startup_completeness()).
+
+/** A company scoring below this is deepened without using the monthly allowance (the rate limit still applies). */
+export const DEEPEN_FREE_BELOW = 7;
+
+/**
+ * A company scoring below this may always be deepened. At or above it, one
+ * enriched by v2 within FRESH_ENOUGH_DAYS is shown as is.
+ */
+export const DEEPEN_ALWAYS_BELOW = 7;
+
 export function limitsFor(plan: string | null | undefined): CheckLimits {
   return CHECK_LIMITS[(plan === "pro" || plan === "enterprise") ? plan : "free"];
 }

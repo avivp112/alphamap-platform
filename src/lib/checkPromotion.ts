@@ -3,7 +3,7 @@
 // (check_promotions, migration 20261025000000). The data calls live in
 // ./supabase.ts.
 
-import type { CheckInput, CheckProfile, CheckProgress, CompanyCheckGate, IdentityCandidate, InvestorFact } from "./companyCheck";
+import type { CheckInput, CheckProfile, CheckProgress, CompanyCheckGate, IdentityCandidate, InvestorFact, UpdateDiff } from "./companyCheck";
 import { formatUsd } from "./candidateReview";
 
 export type PromotionStatus = "pending" | "approved" | "writing" | "written" | "linked" | "rejected" | "failed";
@@ -21,6 +21,9 @@ export const TAB_STATUSES: Record<PromotionTab, PromotionStatus[]> = {
 export interface CheckPromotion {
   id: string;
   check_id: string;
+  /** new = add the company; update = a deepen's additions to the AlphaMap company in startup_id (20261026000000). */
+  kind?: "new" | "update";
+  diff?: UpdateDiff | null;
   status: PromotionStatus;
   startup_id: string | null;
   reviewed_at: string | null;
@@ -93,4 +96,45 @@ export function promotionSummary(p: CheckPromotion): PromotionSummary {
     investors: investorNames.length ? investorNames.slice(0, 8).join(", ") + (investorNames.length > 8 ? ` +${investorNames.length - 8}` : "") : null,
     sources: profile?.sources_count ?? 0,
   };
+}
+
+const FIELD_LABEL: Record<string, string> = {
+  founded_year: "Founded", employee_count: "Employees", employee_range: "Employee range", growth_trend: "Growth trend",
+  linkedin_url: "LinkedIn", value_proposition: "Value proposition", funding_history_complete: "Funding history complete",
+  revenue_estimate: "Revenue estimate", patent_count: "Patents", github_url: "GitHub", huggingface_url: "Hugging Face",
+  arr_milestones: "ARR milestones", valuation_benchmarks: "Valuations", tech_stack: "Tech stack", patent_fields: "Patent fields",
+};
+const label = (f: string) => FIELD_LABEL[f] ?? f.charAt(0).toUpperCase() + f.slice(1).replace(/_/g, " ");
+
+function show(v: unknown): string {
+  if (v == null || v === "") return "—";
+  if (typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    if ("range_low" in o || "range_high" in o) return `${formatUsd(o.range_low as number) ?? "?"}–${formatUsd(o.range_high as number) ?? "?"}`;
+    return JSON.stringify(v);
+  }
+  const s = String(v);
+  return s.length > 140 ? `${s.slice(0, 137)}…` : s;
+}
+
+/** An update proposal as lines the admin reads: "+ Country: Israel", "Country: Israel → UK", "+ Seed $8M 2025-05 (lead: Sequoia)". */
+export function diffLines(d: UpdateDiff | null | undefined): Array<{ kind: "add" | "change"; text: string }> {
+  if (!d) return [];
+  const out: Array<{ kind: "add" | "change"; text: string }> = [];
+  for (const f of d.fields) {
+    out.push(f.from == null || f.from === ""
+      ? { kind: "add", text: `${label(f.field)}: ${show(f.to)}` }
+      : { kind: "change", text: `${label(f.field)}: ${show(f.from)} → ${show(f.to)}` });
+  }
+  for (const l of d.lists) {
+    const names = l.added.slice(0, 6).join(", ") + (l.added.length > 6 ? ` +${l.added.length - 6}` : "");
+    out.push({ kind: "add", text: `${label(l.field)}: ${names}` });
+  }
+  for (const r of d.rounds.inserts) {
+    out.push({ kind: "add", text: `Round: ${[r.round_type, formatUsd(r.amount), r.date?.slice(0, 7), r.lead ? `(lead: ${r.lead})` : null].filter(Boolean).join(" ")}` });
+  }
+  for (const r of d.rounds.updates) out.push({ kind: "change", text: `Round ${r.round_type}: fills ${r.changes.join(", ").replace(/_/g, " ")}` });
+  if (d.headcount_points) out.push({ kind: "add", text: `Headcount: ${d.headcount_points} dated point${d.headcount_points === 1 ? "" : "s"}` });
+  if (d.tags.length) out.push({ kind: "add", text: `Sub-sector tags: ${d.tags.join(", ")}` });
+  return out;
 }

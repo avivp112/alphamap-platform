@@ -6,7 +6,7 @@
 
 export type CheckStatus =
   | "matched" | "queued" | "running" | "awaiting_confirmation"
-  | "ready" | "stealth" | "rejected_public" | "rejected_non_tech" | "done" | "failed" | "cancelled";
+  | "ready" | "stealth" | "rejected_public" | "rejected_non_tech" | "no_new_data" | "done" | "failed" | "cancelled";
 
 export interface IdentityCandidate {
   name: string;
@@ -91,9 +91,30 @@ export interface CheckProfile {
   sources_count: number;
 }
 
+/** "Deepen this profile" (worker/deepen.ts): what went straight in, and what waits for review. */
+export interface DeepenResult {
+  direct: Array<{ field: string; value: string | number; source_url: string | null; quote: string | null }>;
+  proposed: boolean;
+  diff: UpdateDiff;
+}
+
+export interface UpdateDiff {
+  fields: Array<{ field: string; from: unknown; to: unknown }>;
+  lists: Array<{ field: string; added: string[] }>;
+  rounds: {
+    inserts: Array<{ round_type: string; amount: number | null; date: string | null; lead: string | null; source_url: string | null }>;
+    updates: Array<{ round_type: string; changes: string[] }>;
+  };
+  headcount_points: number;
+  tags: string[];
+}
+
 export interface CheckResultData {
   profile?: CheckProfile;
   investors?: InvestorFact[];
+  deepen?: DeepenResult;
+  /** Why a deepen added nothing (status no_new_data). */
+  note?: string;
 }
 
 export interface CheckProgress {
@@ -109,6 +130,8 @@ export interface CompanyCheckRow {
   id: string;
   status: CheckStatus;
   phase: "identify" | "check";
+  /** deepen = more research on the AlphaMap company in matched_startup_id. */
+  kind?: "new" | "deepen";
   input: CheckInput;
   candidates: IdentityCandidate[] | null;
   identity: Partial<IdentityCandidate> | null;
@@ -144,10 +167,11 @@ export function formFromInput(input: Partial<CheckInput> | null | undefined): Ch
 /** What the screen should show for a row. */
 export type CheckStep = "identifying" | "confirm" | "checking" | "researching" | "final";
 
-export function checkStep(row: Pick<CompanyCheckRow, "status" | "phase"> & { gate?: CompanyCheckGate | null }): CheckStep {
+export function checkStep(row: Pick<CompanyCheckRow, "status" | "phase"> & { gate?: CompanyCheckGate | null; kind?: "new" | "deepen" }): CheckStep {
   if (row.status === "awaiting_confirmation") return "confirm";
   if (row.status === "queued" || row.status === "running") {
     if (row.phase === "identify") return "identifying";
+    if (row.kind === "deepen") return "researching";   // a known company: no identify, no threshold checks
     // The worker saves the verdict before the research starts.
     return row.status === "running" && row.gate?.status === "ready" ? "researching" : "checking";
   }
@@ -182,6 +206,7 @@ export function statusTone(status: CheckStatus): StatusTone {
     case "queued": case "running": case "awaiting_confirmation": return "progress";
     case "ready": case "done": case "matched": return "ok";
     case "stealth": return "warn";
+    case "no_new_data": return "neutral";
     case "rejected_public": case "rejected_non_tech": case "failed": return "bad";
     default: return "neutral";
   }
@@ -221,6 +246,18 @@ export class CheckRequestError extends Error {
 export type IdentifyResponse =
   | { status: "identifying"; check_id: string; remaining: number }
   | { status: "matched"; check_id: string; startup: { id: string; name: string | null; website?: string | null }; fresh?: boolean };
+
+export interface DeepenStatus {
+  eligible: boolean;
+  /** Free of the monthly allowance (a thin profile). */
+  free: boolean;
+  completeness: number;
+  /** Why not now: recently_updated, or the plan's rate_limited / monthly_limit. */
+  reason: string | null;
+  remaining: number | null;
+  /** A deepen of this company by this user already under way. */
+  pending_check_id: string | null;
+}
 
 export type ConfirmResponse =
   | { status: "queued"; check_id: string }
