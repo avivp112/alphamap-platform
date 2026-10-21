@@ -26,6 +26,7 @@ import { runEnrichment, runCollection } from "./enrich.ts";
 import { buildProfile, investorNames } from "./profile.ts";
 import { promoteOne, serializeCollected, domainIndex } from "./promote.ts";
 import { runDeepen, loadCompany, applyDirectWrites } from "./deepen.ts";
+import { boardsBatch, logBoardRun } from "./boards.ts";
 import { writeCollected, newWriteSummary, BULK_THRESHOLDS } from "../lib/enrichment/writeCompany.ts";
 import { loadSectorTaxonomy, type SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { isDistinctiveName } from "../lib/enrichment/entity.ts";
@@ -136,6 +137,32 @@ const taxonomy = async (): Promise<SectorTaxonomy> => (taxonomyCache ??= await l
 
 const cost = (m: Meter) => m.llmCostUsd + m.searchCalls * cfg.searchCostUsd;
 
+// Job boards: is each one really the company's (worker/boards.ts)? A few at a
+// time, between users' checks. BOARD_CHECK=false turns it off.
+const BOARD_CHECK = process.env.BOARD_CHECK !== "false";
+const BOARD_CHECK_EVERY_MS = Number(process.env.BOARD_CHECK_EVERY_MS ?? 60_000);
+const BOARD_BATCH = Number(process.env.BOARD_BATCH ?? 3);
+let lastBoardsAt = 0;
+let lastEmptyBoardLogAt = 0;
+
+async function boardsTurn(): Promise<void> {
+  if (!BOARD_CHECK || Date.now() - lastBoardsAt < BOARD_CHECK_EVERY_MS) return;
+  lastBoardsAt = Date.now();
+  const started = new Date();
+  try {
+    const r = await boardsBatch({ db, jinaKey: process.env.JINA_API_KEY }, BOARD_BATCH);
+    const empty = r.checked === 0 && r.scanned === 0;
+    // An empty turn is logged at most hourly: enough for the daily health check.
+    if (!empty || Date.now() - lastEmptyBoardLogAt > 3_600_000) {
+      await logBoardRun(db, r, null, started);
+      if (empty) lastEmptyBoardLogAt = Date.now();
+    }
+  } catch (e) {
+    console.error(`[worker] boards: ${String(e)}`);
+    await logBoardRun(db, null, String(e).slice(0, 500), started);
+  }
+}
+
 let stopping = false;
 let wake: (() => void) | null = null;
 for (const sig of ["SIGTERM", "SIGINT"] as const) {
@@ -160,6 +187,7 @@ async function main() {
     } catch (e) {
       console.error(`[worker] queue error: ${String(e)}`);   // e.g. Supabase unreachable: wait and try again
     }
+    if (!worked && !stopping) await boardsTurn();
     if (!worked && !stopping) await idle(cfg.pollMs);
   }
   console.log("[worker] stopped");
