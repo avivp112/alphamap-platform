@@ -6,6 +6,12 @@
 // checks the guess, strongest evidence first (decideLink), and reads company
 // websites for careers links to find the boards guessing missed.
 //
+// Only the company's own site or its domain verifies a board (rules v2,
+// migration 20261028000000): its site links to the board, the board declares
+// the company's website, or the postings give its domain. The name alone —
+// the very thing the slug was guessed from — is low confidence at most, and
+// never shown.
+//
 // Runs in the check worker between users' checks, a few boards at a time:
 // it reads public pages and public ATS APIs, gently.
 // =============================================================================
@@ -20,6 +26,8 @@ export interface AtsRef { provider: AtsProvider; token: string; url: string }
 // ── Reading ATS links out of a page ──────────────────────────────────────────
 
 const ATS_PATTERNS: Array<{ provider: AtsProvider; re: RegExp }> = [
+  // The embed script and iframe: boards.greenhouse.io/embed/job_board/js?for=acme
+  { provider: "greenhouse", re: /https?:\/\/(?:job-)?boards(?:\.eu)?\.greenhouse\.io\/embed\/job_(?:board|app)(?:\/js)?\?(?:[^"'\s<>]*?&(?:amp;)?)?for=([a-z0-9_-]+)/gi },
   { provider: "greenhouse", re: /https?:\/\/(?:job-)?boards(?:\.eu)?\.greenhouse\.io\/(?:embed\/job_board\?for=)?([a-z0-9_-]+)/gi },
   { provider: "greenhouse", re: /https?:\/\/boards-api\.greenhouse\.io\/v1\/boards\/([a-z0-9_-]+)/gi },
   { provider: "lever", re: /https?:\/\/jobs(?:\.eu)?\.lever\.co\/([a-z0-9_.-]+)/gi },
@@ -32,8 +40,9 @@ const NOT_A_TOKEN = new Set(["embed", "v1", "api", "jobs", "www", "apply", "care
 /** Every ATS board a page links to (deduplicated). */
 export function atsLinksIn(text: string): AtsRef[] {
   const out: AtsRef[] = [];
+  const page = unescapeUrls(text);
   for (const { provider, re } of ATS_PATTERNS) {
-    for (const m of text.matchAll(re)) {
+    for (const m of page.matchAll(re)) {
       const token = decodeURIComponent(m[1]).toLowerCase().replace(/[.,;)]+$/, "");
       if (!token || NOT_A_TOKEN.has(token)) continue;
       if (!out.some((r) => r.provider === provider && r.token === token)) out.push({ provider, token, url: m[0] });
@@ -42,11 +51,30 @@ export function atsLinksIn(text: string): AtsRef[] {
   return out;
 }
 
+/** URLs as they appear inside scripts and JSON (https:\/\/...) and HTML attributes (&amp;). */
+export function unescapeUrls(text: string): string {
+  return text.replace(/\\u002[fF]/g, "/").replace(/\\\//g, "/").replace(/&amp;/g, "&");
+}
+
+/** Every link on a page, markdown ([text](url), from Jina) or HTML (<a href>, fetched directly); relative ones resolved. */
+export function linksIn(page: string, base: string): Array<{ text: string; url: string }> {
+  const out: Array<{ text: string; url: string }> = [];
+  const add = (text: string, href: string) => {
+    try {
+      const url = new URL(href.trim(), base).toString();
+      if (/^https?:/.test(url)) out.push({ text: text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(), url });
+    } catch { /* not a URL */ }
+  };
+  for (const m of page.matchAll(/\[([^\]]{0,80})\]\((https?:\/\/[^)\s]+)\)/g)) add(m[1], m[2]);
+  for (const m of page.matchAll(/<a\b[^>]*?\bhref\s*=\s*["']([^"'#][^"']*)["'][^>]*>([\s\S]{0,300}?)<\/a>/gi)) add(m[2], unescapeUrls(m[1]));
+  return out;
+}
+
 /** The careers page a home page links to, if any (same site only). */
-export function careersLinkIn(markdown: string, site: string): string | null {
+export function careersLinkIn(page: string, site: string): string | null {
+  const base = site.startsWith("http") ? site : `https://${site}`;
   const home = websiteDomain(site);
-  for (const m of markdown.matchAll(/\[([^\]]{0,80})\]\((https?:\/\/[^)\s]+)\)/g)) {
-    const [, text, url] = m;
+  for (const { text, url } of linksIn(page, base)) {
     const looksLikeCareers = /\b(careers?|jobs?|join (?:us|the team)|we'?re hiring|open (?:roles|positions)|work (?:with|at) us)\b/i.test(text)
       || /\/(careers?|jobs?|join-us|work-with-us|open-roles)(\/|$|\?)/i.test(url);
     if (!looksLikeCareers) continue;
@@ -83,8 +111,19 @@ export function namesMatch(a: string, b: string): boolean {
   return !!x && !!y && (x === y || x.replace(/\s/g, "") === y.replace(/\s/g, ""));
 }
 
-export type LinkStatus = "verified" | "mismatch" | "unverifiable";
-export type LinkMethod = "website_link" | "domain_match" | "name_match" | "content_match";
+/**
+ * verified        strong evidence: shown on the profile (the only status that is)
+ * low_confidence  only the name agrees — the board was FOUND by that name, so
+ *                 the name cannot confirm it (decision of 2026-10-22). Kept, never shown.
+ * mismatch        evidence that the board is someone else's
+ * unverifiable    no evidence either way
+ */
+export type LinkStatus = "verified" | "low_confidence" | "mismatch" | "unverifiable";
+/** Strong: website_link, domain_match, posting_domain. Name only: name_match, content_match. */
+export type LinkMethod = "website_link" | "domain_match" | "posting_domain" | "name_match" | "content_match";
+
+/** Raised when the rules change; boards checked under older rules are checked again (migration 20261028000000). */
+export const LINK_RULES_VERSION = 2;
 
 export interface LinkEvidenceInput {
   company: { name: string; website: string | null };
@@ -93,53 +132,74 @@ export interface LinkEvidenceInput {
   siteBoards: AtsRef[] | null;
   /** The page those links were found on. */
   sitePage?: string | null;
-  /** What the ATS says about the board itself, where it says anything. */
-  boardMeta: { name?: string | null; website?: string | null } | null;
+  /**
+   * What the ATS says about the board itself, where it says anything.
+   * website: the company website the board itself declares (Workable's
+   * website, Ashby's publicWebsite, Lever's header logo link) — it can verify
+   * or refute. linkedDomains: sites the board's free-text intro links to
+   * (Greenhouse) — they can verify, never refute (an intro links to partners
+   * and investors too).
+   */
+  boardMeta: { name?: string | null; website?: string | null; linkedDomains?: string[] } | null;
   /** A few postings' text. */
   postingTexts: string[];
 }
 
 export interface LinkDecision { status: LinkStatus; method: LinkMethod | null; evidence: Record<string, unknown> }
 
+/** The domain as a whole word: "acme.com" in "careers@acme.com", not in "notacme.com". */
+const mentionsDomain = (text: string, domain: string) =>
+  new RegExp(`(^|[^a-z0-9-])${escapeRe(domain)}($|[^a-z0-9-])`).test(text.toLowerCase());
+
 export function decideLink(i: LinkEvidenceInput): LinkDecision {
   const { company, board } = i;
   const domain = websiteDomain(company.website);
   const generic = isGenericSlug(board.token);
-  const ev = (o: Record<string, unknown>) => ({ slug: board.token, generic_slug: generic, ...o });
+  const ev = (o: Record<string, unknown>) => ({ slug: board.token, generic_slug: generic, rules: LINK_RULES_VERSION, ...o });
 
+  // ── Strong evidence: the company's own site, or its domain ──────────────────
   // 1. The company's own site links to this very board.
   if (i.siteBoards?.some((r) => r.provider === board.provider && r.token === board.token)) {
     return { status: "verified", method: "website_link", evidence: ev({ page: i.sitePage ?? company.website }) };
   }
-  // 2. The board names a website: the same domain verifies, another one refutes.
+  // 2. The board declares a website: the same domain verifies, another one refutes.
   const boardDomain = websiteDomain(i.boardMeta?.website ?? null);
   if (boardDomain && domain) {
     return sameSite(boardDomain, domain)
       ? { status: "verified", method: "domain_match", evidence: ev({ board_website: i.boardMeta?.website }) }
       : { status: "mismatch", method: "domain_match", evidence: ev({ board_website: i.boardMeta?.website, company_website: company.website }) };
   }
+  //    ...or its intro links to the company's site (verifies only).
+  const linked = domain ? (i.boardMeta?.linkedDomains ?? []).find((d) => sameSite(d, domain)) : undefined;
+  if (linked) return { status: "verified", method: "domain_match", evidence: ev({ board_links_to: linked }) };
   // 3. The site links to a DIFFERENT board: this one is not theirs.
   if (i.siteBoards && i.siteBoards.length > 0) {
     return { status: "mismatch", method: "website_link", evidence: ev({ page: i.sitePage ?? company.website, site_links_to: i.siteBoards.map((r) => `${r.provider}/${r.token}`) }) };
   }
-  // 4. A generic slug needs 1 or 2.
+  // 4. A generic slug needs 1 or 2 (the owner's rule of 2026-10-21).
   if (generic) return { status: "unverifiable", method: null, evidence: ev({ reason: "generic slug: needs a link from the company's site or a matching domain" }) };
-  // 5. The board's company name.
+  // 5. The postings give the company's domain (an email, an apply link, "visit acme.com").
+  const withDomain = domain ? i.postingTexts.filter((t) => mentionsDomain(t, domain)).length : 0;
+  if (withDomain > 0 && withDomain >= Math.min(2, i.postingTexts.length)) {
+    return { status: "verified", method: "posting_domain", evidence: ev({ postings_with_domain: withDomain, postings_read: i.postingTexts.length, domain }) };
+  }
+
+  // ── The name only: never verifies ───────────────────────────────────────────
+  // 6. The board's company name: another name refutes; the same name is low confidence.
   const boardName = i.boardMeta?.name?.trim();
-  if (boardName) {
-    return namesMatch(boardName, company.name)
-      ? { status: "verified", method: "name_match", evidence: ev({ board_name: boardName }) }
-      : { status: "mismatch", method: "name_match", evidence: ev({ board_name: boardName, company: company.name }) };
+  if (boardName && !namesMatch(boardName, company.name)) {
+    return { status: "mismatch", method: "name_match", evidence: ev({ board_name: boardName, company: company.name }) };
   }
-  // 6. The postings name the company (its domain, or its own distinctive name).
-  const mentions = i.postingTexts.filter((t) => {
-    const low = t.toLowerCase();
-    return (domain && low.includes(domain)) || (isDistinctiveName(company.name) && new RegExp(`\\b${escapeRe(company.name.toLowerCase())}\\b`).test(low));
-  }).length;
-  if (mentions >= Math.min(2, i.postingTexts.length) && mentions > 0) {
-    return { status: "verified", method: "content_match", evidence: ev({ postings_naming_company: mentions, postings_read: i.postingTexts.length }) };
+  if (!isDistinctiveName(company.name)) {
+    return { status: "unverifiable", method: null, evidence: ev({ reason: "the name is not distinctive and nothing stronger was found", postings_read: i.postingTexts.length }) };
   }
-  return { status: "unverifiable", method: null, evidence: ev({ reason: "no site link, no board website or name, postings do not name the company", postings_read: i.postingTexts.length }) };
+  if (boardName) return { status: "low_confidence", method: "name_match", evidence: ev({ board_name: boardName }) };
+  // 7. The postings name the company.
+  const named = i.postingTexts.filter((t) => new RegExp(`\\b${escapeRe(company.name.toLowerCase())}\\b`).test(t.toLowerCase())).length;
+  if (named > 0 && named >= Math.min(2, i.postingTexts.length)) {
+    return { status: "low_confidence", method: "content_match", evidence: ev({ postings_naming_company: named, postings_read: i.postingTexts.length }) };
+  }
+  return { status: "unverifiable", method: null, evidence: ev({ reason: "no site link, no board website, postings name neither the domain nor the company", postings_read: i.postingTexts.length }) };
 }
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -167,43 +227,111 @@ export async function readPage(f: Fetch, url: string, jinaKey?: string): Promise
   return text || null;
 }
 
-/** The ATS boards a company's site links to: the home page, then its careers page. */
+const BROWSER_HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; AlphaMapBot/1.0; +https://alphamap.app)", Accept: "text/html,application/xhtml+xml" };
+
+/** A page's own HTML — every href, iframe and embed script, which a reader's markdown can drop. */
+export async function fetchHtml(f: Fetch, url: string): Promise<string | null> {
+  const res = await get(f, url, BROWSER_HEADERS);
+  if (!res || !/html|text\/plain/i.test(res.headers.get("content-type") ?? "text/html")) return null;
+  const text = (await res.text()).slice(0, 2_000_000);
+  return text.trim() || null;
+}
+
+/**
+ * A page, for its links: its own HTML first (free, and it keeps the embed
+ * scripts an ATS is wired in with); Jina, which runs the page's JavaScript,
+ * when the HTML lacks what is looked for — any link on a home page, an ATS
+ * link on a careers page. A guessed path that does not answer is not read
+ * through Jina (guessed: true).
+ */
+export async function readForLinks(f: Fetch, url: string, jinaKey?: string, o: { wantAts?: boolean; guessed?: boolean } = {}): Promise<string | null> {
+  const html = await fetchHtml(f, url);
+  if (html && atsLinksIn(html).length) return html;
+  if (html && !o.wantAts && linksIn(html, url).length) return html;
+  if (!html && o.guessed) return null;
+  return (await readPage(f, url, jinaKey)) ?? html;
+}
+
+/** Where companies usually keep the careers page, tried when the home page does not link to one. */
+const CAREERS_PATHS = ["/careers", "/jobs"];
+
+/** The ATS boards a company's site links to: the home page, its careers page, then the usual careers paths. */
 export async function boardsOnSite(f: Fetch, website: string, jinaKey?: string): Promise<{ boards: AtsRef[]; page: string } | null> {
   const home = website.startsWith("http") ? website : `https://${website}`;
-  const md = await readPage(f, home, jinaKey);
-  if (!md) return null;
-  const onHome = atsLinksIn(md);
+  const page = await readForLinks(f, home, jinaKey);
+  if (!page) return null;
+  const onHome = atsLinksIn(page);
   if (onHome.length) return { boards: onHome, page: home };
-  const careers = careersLinkIn(md, home);
-  if (!careers) return { boards: [], page: home };
-  const cmd = await readPage(f, careers, jinaKey);
-  return { boards: cmd ? atsLinksIn(cmd) : [], page: careers };
+  const tried = new Set<string>();
+  const linked = careersLinkIn(page, home);
+  const candidates = [
+    ...(linked ? [{ url: linked, guessed: false }] : []),
+    ...CAREERS_PATHS.flatMap((p) => { try { return [{ url: new URL(p, home).toString(), guessed: true }]; } catch { return []; } }),
+  ];
+  for (const { url, guessed } of candidates) {
+    if (tried.has(url.replace(/\/$/, ""))) continue;
+    tried.add(url.replace(/\/$/, ""));
+    const c = await readForLinks(f, url, jinaKey, { wantAts: true, guessed });
+    const boards = c ? atsLinksIn(c) : [];
+    if (boards.length) return { boards, page: url };
+  }
+  return { boards: [], page: home };
 }
 
 const strip = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&[a-z]+;/g, " ").replace(/\s+/g, " ").trim();
 
+// Links that say nothing about whose board it is.
+const NOT_A_COMPANY_SITE = /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|workable\.com|linkedin\.com|twitter\.com|x\.com|facebook\.com|instagram\.com|youtube\.com|youtu\.be|tiktok\.com|glassdoor\.[a-z.]+|github\.com|medium\.com|crunchbase\.com|google\.[a-z.]+|bit\.ly|eeoc\.gov|dol\.gov)$/i;
+
+/** The company sites a board's free-text intro links to (Greenhouse's board "content"). */
+export function linkedDomainsIn(html: string | null | undefined): string[] {
+  const out: string[] = [];
+  for (const u of unescapeUrls(decodeHtml(html ?? "")).match(/https?:\/\/[^\s"'<>)]+/g) ?? []) {
+    const d = websiteDomain(u);
+    if (d && !NOT_A_COMPANY_SITE.test(d) && !out.includes(d)) out.push(d);
+  }
+  return out;
+}
+
+/** Lever's board page: the header logo links to the company's website. */
+export function leverWebsite(html: string | null): string | null {
+  for (const m of (html ?? "").matchAll(/<a\b[^>]*>/gi)) {
+    if (!/class\s*=\s*["'][^"']*main-header-logo/i.test(m[0])) continue;
+    const href = m[0].match(/href\s*=\s*["']([^"']+)["']/i)?.[1];
+    if (href && /^https?:/i.test(href) && !NOT_A_COMPANY_SITE.test(websiteDomain(href) ?? "")) return href;
+  }
+  return null;
+}
+
+/** Ashby's board page carries the organisation's own website in its app data. */
+export function ashbyWebsite(html: string | null): string | null {
+  const href = unescapeUrls(html ?? "").match(/"publicWebsite"\s*:\s*"([^"]+)"/)?.[1] ?? null;
+  return href && !NOT_A_COMPANY_SITE.test(websiteDomain(href) ?? "") ? href : null;
+}
+
 /** What the ATS says about the board, and a few postings' text. Defensive: fields differ per provider. */
 export async function boardFacts(f: Fetch, b: { provider: AtsProvider; token: string }): Promise<{ meta: LinkEvidenceInput["boardMeta"]; postings: string[]; exists: boolean }> {
   const t = encodeURIComponent(b.token);
-  const firstUrl = (html: string | undefined) => html?.match(/https?:\/\/[^\s"'<>]+/g)?.find((u) => !/greenhouse\.io|lever\.co|ashbyhq\.com|workable\.com/.test(u)) ?? null;
   switch (b.provider) {
     case "greenhouse": {
       const meta = await get(f, `https://boards-api.greenhouse.io/v1/boards/${t}`);
       const jobs = await get(f, `https://boards-api.greenhouse.io/v1/boards/${t}/jobs?content=true`);
       const m = meta ? await meta.json().catch(() => null) as { name?: string; content?: string } | null : null;
       const j = jobs ? await jobs.json().catch(() => null) as { jobs?: Array<{ content?: string }> } | null : null;
-      return { exists: !!jobs, meta: m ? { name: m.name ?? null, website: firstUrl(m.content) } : null,
+      return { exists: !!jobs, meta: m ? { name: m.name ?? null, linkedDomains: linkedDomainsIn(m.content) } : null,
         postings: (j?.jobs ?? []).slice(0, 5).map((x) => strip(decodeHtml(x.content ?? ""))) };
     }
     case "lever": {
       const res = await get(f, `https://api.lever.co/v0/postings/${t}?mode=json&limit=5`);
       const j = res ? await res.json().catch(() => null) as Array<{ descriptionPlain?: string; additionalPlain?: string }> | null : null;
-      return { exists: !!res, meta: null, postings: (j ?? []).slice(0, 5).map((x) => `${x.descriptionPlain ?? ""} ${x.additionalPlain ?? ""}`) };
+      const website = res ? leverWebsite(await fetchHtml(f, `https://jobs.lever.co/${t}`)) : null;
+      return { exists: !!res, meta: website ? { website } : null, postings: (j ?? []).slice(0, 5).map((x) => `${x.descriptionPlain ?? ""} ${x.additionalPlain ?? ""}`) };
     }
     case "ashby": {
       const res = await get(f, `https://api.ashbyhq.com/posting-api/job-board/${t}`);
       const j = res ? await res.json().catch(() => null) as { jobs?: Array<{ descriptionPlain?: string }> } | null : null;
-      return { exists: !!res, meta: null, postings: (j?.jobs ?? []).slice(0, 5).map((x) => x.descriptionPlain ?? "") };
+      const website = res ? ashbyWebsite(await fetchHtml(f, `https://jobs.ashbyhq.com/${t}`)) : null;
+      return { exists: !!res, meta: website ? { website } : null, postings: (j?.jobs ?? []).slice(0, 5).map((x) => x.descriptionPlain ?? "") };
     }
     case "workable": {
       const res = await get(f, `https://apply.workable.com/api/v1/widget/accounts/${t}`);
@@ -227,15 +355,15 @@ export interface BoardDeps {
   log?: (m: string) => void;
 }
 
-export interface BatchResult { checked: number; verified: number; mismatch: number; unverifiable: number; scanned: number; registered: number }
+export interface BatchResult { checked: number; verified: number; low_confidence: number; mismatch: number; unverifiable: number; scanned: number; registered: number }
 
 /** A few boards checked, or, when none is waiting, a few company sites read for boards. */
 export async function boardsBatch(d: BoardDeps, size = 3): Promise<BatchResult> {
   const f = d.fetch ?? fetch;
   const log = d.log ?? ((m: string) => console.log(`[worker] boards: ${m}`));
-  const r: BatchResult = { checked: 0, verified: 0, mismatch: 0, unverifiable: 0, scanned: 0, registered: 0 };
+  const r: BatchResult = { checked: 0, verified: 0, low_confidence: 0, mismatch: 0, unverifiable: 0, scanned: 0, registered: 0 };
 
-  const { data: boards, error } = await d.db.rpc("claim_board_links", { p_limit: size });
+  const { data: boards, error } = await d.db.rpc("claim_board_links", { p_limit: size, p_rule_version: LINK_RULES_VERSION });
   if (error) throw new Error(`claim_board_links: ${error.message}`);
   for (const b of (boards ?? []) as Array<{ id: string; ats_provider: AtsProvider; ats_board_token: string; startup_id: string; startup_name: string; website: string | null }>) {
     const site = b.website ? await boardsOnSite(f, b.website, d.jinaKey) : null;
@@ -246,7 +374,7 @@ export async function boardsBatch(d: BoardDeps, size = 3): Promise<BatchResult> 
       siteBoards: site?.boards ?? null, sitePage: site?.page ?? null,
       boardMeta: facts.meta, postingTexts: facts.postings,
     });
-    const { error: e } = await d.db.rpc("record_board_link", { p_id: b.id, p_status: dec.status, p_method: dec.method, p_evidence: dec.evidence });
+    const { error: e } = await d.db.rpc("record_board_link", { p_id: b.id, p_status: dec.status, p_method: dec.method, p_evidence: dec.evidence, p_rule_version: LINK_RULES_VERSION });
     if (e) throw new Error(`record_board_link: ${e.message}`);
     r.checked++; r[dec.status]++;
     log(`${b.startup_name} ↔ ${b.ats_provider}/${b.ats_board_token}: ${dec.status}${dec.method ? ` (${dec.method})` : ""}`);
