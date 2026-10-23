@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { atsLinksIn, careersLinkIn, linksIn, sameSite, isGenericSlug, namesMatch, decideLink, boardsBatch, boardsOnSite, boardFacts, linkedDomainsIn, leverWebsite, ashbyWebsite, LINK_RULES_VERSION, type LinkEvidenceInput } from "./boards";
+import { atsLinksIn, careersLinkIn, linksIn, sameSite, isGenericSlug, namesMatch, decideLink, boardsBatch, boardsOnSite, boardFacts, finalDomain, linkedDomainsIn, leverWebsite, ashbyWebsite, LINK_RULES_VERSION, type LinkEvidenceInput } from "./boards";
 
 describe("atsLinksIn", () => {
   it("reads every ATS's board links, in every URL form", () => {
@@ -219,5 +219,32 @@ describe("boardsOnSite", () => {
   it("the site cannot be read at all: null (nothing inferred)", async () => {
     const f = vi.fn(async () => new Response("", { status: 503 }));
     expect(await boardsOnSite(f as never, "acme.ai")).toBeNull();
+  });
+});
+
+describe("one company, two domains (rules 3)", () => {
+  const redis = (redirects?: Record<string, string | null>) => decideLink(base({
+    company: { name: "Redis", website: "https://redis.com" }, board: { provider: "ashby", token: "redis" },
+    boardMeta: { website: "https://redis.io/" }, redirects,
+  }));
+  it("one domain redirecting to the other verifies", () => {
+    expect(redis({ "redis.io": "redis.io", "redis.com": "redis.io" })).toMatchObject({ status: "verified", method: "domain_match", evidence: { redirect: "redis.com -> redis.io" } });
+    expect(redis({ "redis.io": "www.redis.com", "redis.com": "redis.com" })).toMatchObject({ status: "verified", evidence: { redirect: "redis.io -> www.redis.com" } });
+  });
+  it("no redirect, or both landing on a third site (parked domains): still a mismatch", () => {
+    expect(redis(undefined)).toMatchObject({ status: "mismatch" });
+    expect(redis({ "redis.io": null, "redis.com": null })).toMatchObject({ status: "mismatch" });
+    expect(redis({ "redis.io": "sedo.com", "redis.com": "sedo.com" })).toMatchObject({ status: "mismatch" });
+  });
+  it("Savvy: two different companies stay a mismatch", () => {
+    expect(decideLink(base({ company: { name: "Savvy", website: "https://savvy.security" }, board: { provider: "ashby", token: "savvy" },
+      boardMeta: { website: "https://savvywealth.com" }, redirects: { "savvywealth.com": "savvywealth.com", "savvy.security": "savvy.security" } })))
+      .toMatchObject({ status: "mismatch" });
+  });
+  it("finalDomain follows the response's final URL", async () => {
+    const res = new Response("ok");
+    Object.defineProperty(res, "url", { value: "https://www.redis.io/" });
+    expect(await finalDomain((async () => res) as never, "redis.com")).toBe("redis.io");
+    expect(await finalDomain((async () => new Response("", { status: 404 })) as never, "x.com")).toBeNull();
   });
 });

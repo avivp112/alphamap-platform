@@ -122,8 +122,13 @@ export type LinkStatus = "verified" | "low_confidence" | "mismatch" | "unverifia
 /** Strong: website_link, domain_match, posting_domain. Name only: name_match, content_match. */
 export type LinkMethod = "website_link" | "domain_match" | "posting_domain" | "name_match" | "content_match";
 
-/** Raised when the rules change; boards checked under older rules are checked again (migration 20261028000000). */
-export const LINK_RULES_VERSION = 2;
+/**
+ * Raised when the rules change; boards checked under older rules are checked
+ * again (migration 20261028000000). 3: a board website on another domain is
+ * the company's own when one domain redirects to the other (redis.com ->
+ * redis.io), 2026-10-23.
+ */
+export const LINK_RULES_VERSION = 3;
 
 export interface LinkEvidenceInput {
   company: { name: string; website: string | null };
@@ -143,6 +148,12 @@ export interface LinkEvidenceInput {
   boardMeta: { name?: string | null; website?: string | null; linkedDomains?: string[] } | null;
   /** A few postings' text. */
   postingTexts: string[];
+  /**
+   * When the board's website is on another domain: where each of the two
+   * domains ends up after redirects ({ [domain]: final domain }). Only a
+   * redirect from one of the two straight to the other makes them one site.
+   */
+  redirects?: Record<string, string | null>;
 }
 
 export interface LinkDecision { status: LinkStatus; method: LinkMethod | null; evidence: Record<string, unknown> }
@@ -165,9 +176,14 @@ export function decideLink(i: LinkEvidenceInput): LinkDecision {
   // 2. The board declares a website: the same domain verifies, another one refutes.
   const boardDomain = websiteDomain(i.boardMeta?.website ?? null);
   if (boardDomain && domain) {
-    return sameSite(boardDomain, domain)
-      ? { status: "verified", method: "domain_match", evidence: ev({ board_website: i.boardMeta?.website }) }
-      : { status: "mismatch", method: "domain_match", evidence: ev({ board_website: i.boardMeta?.website, company_website: company.website }) };
+    if (sameSite(boardDomain, domain)) return { status: "verified", method: "domain_match", evidence: ev({ board_website: i.boardMeta?.website }) };
+    // One company, two domains: one redirects to the other. Never "both end up
+    // at the same third place" — two parked domains do that too.
+    const theirs = i.redirects?.[boardDomain], ours = i.redirects?.[domain];
+    if ((theirs && sameSite(theirs, domain)) || (ours && sameSite(ours, boardDomain))) {
+      return { status: "verified", method: "domain_match", evidence: ev({ board_website: i.boardMeta?.website, redirect: theirs && sameSite(theirs, domain) ? `${boardDomain} -> ${theirs}` : `${domain} -> ${ours}` }) };
+    }
+    return { status: "mismatch", method: "domain_match", evidence: ev({ board_website: i.boardMeta?.website, company_website: company.website }) };
   }
   //    ...or its intro links to the company's site (verifies only).
   const linked = domain ? (i.boardMeta?.linkedDomains ?? []).find((d) => sameSite(d, domain)) : undefined;
@@ -346,6 +362,19 @@ function decodeHtml(s: string): string {
   return s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
 }
 
+/** Where a domain's home page ends up after redirects (its final domain), or null. */
+export async function finalDomain(f: Fetch, domain: string): Promise<string | null> {
+  const res = await get(f, `https://${domain}`, BROWSER_HEADERS);
+  return res?.url ? websiteDomain(res.url) : null;
+}
+
+/** Both domains' redirects — only when the board's website is on another domain than ours. */
+async function redirectsBetween(f: Fetch, board: string | null, ours: string | null): Promise<Record<string, string | null> | undefined> {
+  if (!board || !ours || sameSite(board, ours)) return undefined;
+  const [a, b] = await Promise.all([finalDomain(f, board), finalDomain(f, ours)]);
+  return { [board]: a, [ours]: b };
+}
+
 // ── One batch ────────────────────────────────────────────────────────────────
 
 export interface BoardDeps {
@@ -368,11 +397,12 @@ export async function boardsBatch(d: BoardDeps, size = 3): Promise<BatchResult> 
   for (const b of (boards ?? []) as Array<{ id: string; ats_provider: AtsProvider; ats_board_token: string; startup_id: string; startup_name: string; website: string | null }>) {
     const site = b.website ? await boardsOnSite(f, b.website, d.jinaKey) : null;
     const facts = await boardFacts(f, { provider: b.ats_provider, token: b.ats_board_token });
+    const redirects = await redirectsBetween(f, websiteDomain(facts.meta?.website ?? null), websiteDomain(b.website));
     const dec = decideLink({
       company: { name: b.startup_name, website: b.website },
       board: { provider: b.ats_provider, token: b.ats_board_token },
       siteBoards: site?.boards ?? null, sitePage: site?.page ?? null,
-      boardMeta: facts.meta, postingTexts: facts.postings,
+      boardMeta: facts.meta, postingTexts: facts.postings, redirects,
     });
     const { error: e } = await d.db.rpc("record_board_link", { p_id: b.id, p_status: dec.status, p_method: dec.method, p_evidence: dec.evidence, p_rule_version: LINK_RULES_VERSION });
     if (e) throw new Error(`record_board_link: ${e.message}`);
