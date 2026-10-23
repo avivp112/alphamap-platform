@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { uniqueByJobId } from "./dedupe";
+import { uniqueByJobId, webLinksOnly } from "./dedupe";
 
 describe("uniqueByJobId", () => {
   it("keeps one posting per id, the first one, in order", () => {
@@ -19,6 +19,10 @@ describe("uniqueByJobId", () => {
   });
   it("is applied to every provider's output before the upsert", () => {
     const src = readFileSync(join(__dirname, "index.ts"), "utf8");
-    expect(src).toMatch(/return cfg \? uniqueByJobId\(cfg\.parse\(payload, token\)\) : \[\];/);
+    expect(src).toMatch(/return cfg \? webLinksOnly\(uniqueByJobId\(cfg\.parse\(payload, token\)\)\) : \[\];/);
+  });
+  it("only web links are kept", () => {
+    const jobs = [{ url: "https://jobs.lever.co/a/1" }, { url: "javascript:alert(1)" }, { url: "/jobs/2" }, { url: "data:text/html,x" }, { url: " http://x.com/3 " }];
+    expect(webLinksOnly(jobs).map((j) => j.url)).toEqual(["https://jobs.lever.co/a/1", " http://x.com/3 "]);
   });
 });

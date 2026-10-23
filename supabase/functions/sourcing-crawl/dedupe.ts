@@ -11,3 +11,9 @@ export function uniqueByJobId<T extends { external_job_id: string }>(jobs: T[]):
   const seen = new Set<string>();
   return jobs.filter((j) => (seen.has(j.external_job_id) ? false : (seen.add(j.external_job_id), true)));
 }
+
+// Only web links are stored: a payload's javascript:, data: or relative URL
+// would otherwise reach a profile as a link (review of 2026-10-23).
+export function webLinksOnly<T extends { url: string }>(jobs: T[]): T[] {
+  return jobs.filter((j) => /^https?:\/\/\S+$/i.test(j.url.trim()));
+}

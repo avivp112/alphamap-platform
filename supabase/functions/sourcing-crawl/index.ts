@@ -61,7 +61,7 @@
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { withRunLog, countKeys } from "../_shared/run-log.ts";
-import { uniqueByJobId } from "./dedupe.ts";
+import { uniqueByJobId, webLinksOnly } from "./dedupe.ts";
 import {
   parseGreenhouse, parseLever, parseAshby, parseWorkable, parseComeet, comeetPage, departmentsByJobId, str,
   parseSmartRecruiters, smartRecruitersNext, parseTeamtailor, personioXml, parsePersonio, parseRecruitee,
@@ -196,8 +196,7 @@ export const PROVIDERS: Record<AtsProvider, {
 
 export function parseJobs(provider: AtsProvider, payload: unknown, token = ""): NormalisedJob[] {
   const cfg = PROVIDERS[provider];
-  // Only web links: a payload's javascript: or relative URL is never stored.
-  return cfg ? uniqueByJobId(cfg.parse(payload, token)).filter((j) => /^https?:\/\//i.test(j.url)) : [];
+  return cfg ? webLinksOnly(uniqueByJobId(cfg.parse(payload, token))) : [];
 }
 
 /**
