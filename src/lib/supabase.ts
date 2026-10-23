@@ -665,8 +665,11 @@ export async function fetchHeadcountHistory(startupId: string): Promise<Headcoun
 export interface HiringCount { open: number }
 export interface StartupHiring {
   has_board: boolean;
+  /** A verified board read successfully in the last 72 hours; false = its roles are not shown. */
+  fresh: boolean;
   tracking_since: string | null;
-  sources: Array<{ provider: string; token: string; verified_by: string | null; last_crawled_at: string | null; tracking_since: string | null }>;
+  sources: Array<{ provider: string; token: string; verified_by: string | null; last_crawled_at: string | null;
+    last_success_at: string | null; fresh: boolean; tracking_since: string | null }>;
   open_roles: number;
   /** First seen in the last 30 days, after the board's first crawl. */
   new_roles_30d: number;

@@ -105,7 +105,9 @@ describe("decideLink", () => {
     expect(decideLink(base({ postingTexts: ["We build photonic chips", "Join our team"] }))).toMatchObject({ status: "unverifiable" });
   });
   it("2b. sites the board's intro links to verify, never refute", () => {
-    expect(decideLink(base({ boardMeta: { name: "X", linkedDomains: ["linkedin.com", "psiquantum.com"] } }))).toMatchObject({ status: "verified", method: "domain_match" });
+    expect(decideLink(base({ boardMeta: { name: "PsiQuantum Inc", linkedDomains: ["linkedin.com", "psiquantum.com"] } }))).toMatchObject({ status: "verified", method: "domain_match" });
+    // rules 4: a board calling itself something else is not verified by its intro's links
+    expect(decideLink(base({ boardMeta: { name: "Quantum Circuits", linkedDomains: ["psiquantum.com"] } }))).toMatchObject({ status: "unverifiable" });
     // an intro linking to an investor is not a mismatch: falls through to the name
     expect(decideLink(base({ boardMeta: { name: "PsiQuantum", linkedDomains: ["a16z.com"] } }))).toMatchObject({ status: "low_confidence" });
   });
@@ -363,5 +365,52 @@ describe("SmartRecruiters, Teamtailor, Personio, Recruitee on company sites", ()
   it("Recruitee: offers on the company's own careers domain verify it", async () => {
     const f = vi.fn(async () => new Response(JSON.stringify({ offers: [{ company_name: "Acme", careers_url: "https://jobs.acme.com/o/x", description: "<p>hi</p>" }] })));
     expect(await boardFacts(f as never, { provider: "recruitee", token: "acme" })).toEqual({ exists: true, meta: { name: "Acme", linkedDomains: ["jobs.acme.com"] }, postings: ["hi"] });
+  });
+});
+
+describe("rules 4: the board's own declarations first, no proof from a list of boards", () => {
+  it("our site links to a board that names another company (a wrong website on file): not verified", () => {
+    // Sanctuary Mental, with sanctuary.ai (a robotics company) on file
+    const d = decideLink(base({ company: { name: "Sanctuary Mental", website: "https://sanctuary.ai" }, board: { provider: "greenhouse", token: "sanctuary" },
+      siteBoards: [{ provider: "greenhouse", token: "sanctuary", url: "u" }], boardMeta: { name: "Sanctuary AI" } }));
+    expect(d).toMatchObject({ status: "unverifiable", evidence: { reason: expect.stringContaining("conflicting") } });
+  });
+  it("our site links to a board that declares another website: mismatch, the link notwithstanding", () => {
+    expect(decideLink(base({ siteBoards: [{ provider: "greenhouse", token: "psiquantum", url: "u" }], boardMeta: { website: "https://parent-co.com" } })))
+      .toMatchObject({ status: "mismatch", method: "domain_match" });
+  });
+  it("legal suffixes are not a different name", () => {
+    expect(decideLink(base({ siteBoards: [{ provider: "greenhouse", token: "psiquantum", url: "u" }], boardMeta: { name: "PsiQuantum Corporation" } })))
+      .toMatchObject({ status: "verified", method: "website_link" });
+    expect(namesMatch("Dremio Corporation", "Dremio")).toBe(true);
+    expect(namesMatch("Acme GmbH & Co. KG", "Acme")).toBe(true);
+  });
+  it("the postings give our domain but the board names another company: not verified", () => {
+    expect(decideLink(base({ boardMeta: { name: "Quantum Circuits" }, postingTexts: ["psiquantum.com", "psiquantum.com"] })).status).toBe("unverifiable");
+  });
+  it("a page linking to many boards (a portfolio page) proves nothing — no link, and no 'links elsewhere' either", () => {
+    const many = ["a", "b", "c", "psiquantum"].map((t) => ({ provider: "greenhouse" as const, token: t, url: "u" }));
+    const d = decideLink(base({ siteBoards: many }));
+    expect(d.status).not.toBe("verified");
+    expect(d.method).not.toBe("website_link");
+    expect(decideLink(base({ siteBoards: many.slice(0, 3) })).status).toBe("mismatch");   // 3 boards: still the company's page, links elsewhere
+  });
+  it("a site scan does not register a board that would not be verified", async () => {
+    const rpcs: string[] = [];
+    const db = { rpc: vi.fn(async (name: string) => {
+      rpcs.push(name);
+      if (name === "claim_board_links") return { data: [], error: null };
+      if (name === "claim_board_site_scans") return { data: [{ startup_id: "s1", startup_name: "Sanctuary Mental", website: "https://sanctuary.ai" }], error: null };
+      return { data: "registered", error: null };
+    }) };
+    const f = vi.fn(async (url: string) => {
+      if (url === "https://sanctuary.ai") return new Response(`<a href="https://boards.greenhouse.io/sanctuary">Careers</a>`, { headers: { "content-type": "text/html" } });
+      if (url === "https://boards-api.greenhouse.io/v1/boards/sanctuary") return new Response(JSON.stringify({ name: "Sanctuary AI" }));
+      if (url === "https://boards-api.greenhouse.io/v1/boards/sanctuary/jobs?content=true") return new Response(JSON.stringify({ jobs: [] }));
+      return new Response("", { status: 404 });
+    });
+    const r = await boardsBatch({ db: db as never, fetch: f as never, log: () => {} }, 3);
+    expect(r).toMatchObject({ scanned: 1, registered: 0 });
+    expect(rpcs).not.toContain("register_board_from_website");
   });
 });

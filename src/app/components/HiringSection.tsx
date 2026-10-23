@@ -12,6 +12,7 @@ import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, Legend,
 } from "recharts";
 import { fetchStartupHiring, boardUrl, type StartupHiring } from "../../lib/supabase";
+import { safeHref } from "../../lib/safeHref";
 
 const PROVIDER_LABEL: Record<string, string> = { greenhouse: "Greenhouse", lever: "Lever", ashby: "Ashby", workable: "Workable", comeet: "Comeet",
   smartrecruiters: "SmartRecruiters", teamtailor: "Teamtailor", personio: "Personio", recruitee: "Recruitee" };
@@ -80,6 +81,35 @@ export function HiringSection({ startupId, load = fetchStartupHiring }: {
   if (!data) return <div>{header}<Loader2 className="w-4 h-4 animate-spin text-gray-300" /></div>;
   if (!data.has_board) {
     return <div>{header}<p className="text-xs text-gray-400 leading-relaxed">{t("startups.hiring.noBoard")}</p></div>;
+  }
+
+  const sources = (
+    <div className="text-[10px] text-gray-400 space-y-0.5">
+      {data.sources.map((s) => {
+        const url = safeHref(boardUrl(s.provider, s.token));
+        const method = s.verified_by ? t(`startups.hiring.method_${s.verified_by}`, { defaultValue: s.verified_by }) : null;
+        return (
+          <div key={`${s.provider}/${s.token}`}>
+            {t("startups.hiring.source")}:{" "}
+            {url ? <a href={url} target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">{PROVIDER_LABEL[s.provider] ?? s.provider}</a>
+              : (PROVIDER_LABEL[s.provider] ?? s.provider)}
+            {" · "}{t("startups.hiring.lastChecked", { date: day(s.last_success_at) })}
+            {" · "}{t("startups.hiring.trackingSince", { date: day(s.tracking_since) })}
+            {method && <>{" · "}{t("startups.hiring.verifiedBy", { method })}</>}
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  // Not read successfully for 72 hours: its last roles may be gone — none shown.
+  if (!data.fresh) {
+    return (
+      <div>{header}
+        <p className="text-xs text-gray-400 leading-relaxed mb-2">{t("startups.hiring.stale")}</p>
+        {sources}
+      </div>
+    );
   }
 
   const chart = data.timeline.map((w) => ({
@@ -170,11 +200,15 @@ export function HiringSection({ startupId, load = fetchStartupHiring }: {
                   // Personio links every role to its board: the URL is not unique
                   <li key={`${i}:${j.url}`} className="px-3 py-2 flex items-start gap-2">
                     <div className="min-w-0 flex-1">
-                      <a href={j.url} target="_blank" rel="noopener noreferrer"
-                        className="text-xs font-semibold text-[#0F172A] hover:underline inline-flex items-center gap-1 max-w-full">
-                        <span className="truncate">{j.title}</span>
-                        <ExternalLink className="w-3 h-3 flex-none text-gray-400" />
-                      </a>
+                      {safeHref(j.url) ? (
+                        <a href={safeHref(j.url)!} target="_blank" rel="noopener noreferrer"
+                          className="text-xs font-semibold text-[#0F172A] hover:underline inline-flex items-center gap-1 max-w-full">
+                          <span className="truncate">{j.title}</span>
+                          <ExternalLink className="w-3 h-3 flex-none text-gray-400" />
+                        </a>
+                      ) : (
+                        <span className="text-xs font-semibold text-[#0F172A] truncate block">{j.title}</span>
+                      )}
                       <div className="text-[10px] text-gray-400 truncate">
                         {[j.department, j.location, day(j.first_seen_at)].filter(Boolean).join(" · ")}
                       </div>
@@ -191,22 +225,7 @@ export function HiringSection({ startupId, load = fetchStartupHiring }: {
           </>
         )}
 
-        <div className="text-[10px] text-gray-400 space-y-0.5">
-          {data.sources.map((s) => {
-            const url = boardUrl(s.provider, s.token);
-            const method = s.verified_by ? t(`startups.hiring.method_${s.verified_by}`, { defaultValue: s.verified_by }) : null;
-            return (
-              <div key={`${s.provider}/${s.token}`}>
-                {t("startups.hiring.source")}:{" "}
-                {url ? <a href={url} target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">{PROVIDER_LABEL[s.provider] ?? s.provider}</a>
-                  : (PROVIDER_LABEL[s.provider] ?? s.provider)}
-                {" · "}{t("startups.hiring.lastChecked", { date: day(s.last_crawled_at) })}
-                {" · "}{t("startups.hiring.trackingSince", { date: day(s.tracking_since) })}
-                {method && <>{" · "}{t("startups.hiring.verifiedBy", { method })}</>}
-              </div>
-            );
-          })}
-        </div>
+        {sources}
       </div>
     </div>
   );

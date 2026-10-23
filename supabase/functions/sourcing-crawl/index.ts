@@ -196,7 +196,8 @@ export const PROVIDERS: Record<AtsProvider, {
 
 export function parseJobs(provider: AtsProvider, payload: unknown, token = ""): NormalisedJob[] {
   const cfg = PROVIDERS[provider];
-  return cfg ? uniqueByJobId(cfg.parse(payload, token)) : [];
+  // Only web links: a payload's javascript: or relative URL is never stored.
+  return cfg ? uniqueByJobId(cfg.parse(payload, token)).filter((j) => /^https?:\/\//i.test(j.url)) : [];
 }
 
 /**
@@ -398,10 +399,12 @@ async function crawlBoard(supabase: SupabaseClient, company: BoardRef & { id: st
     }
   }
 
-  // 4. Mark the pass complete.
+  // 4. Mark the pass complete — and successful: the profile shows a board's
+  //    roles only while this is recent (migration 20261101000000).
+  const now = new Date().toISOString();
   const { error: stampErr } = await supabase
     .from("sourcing_companies")
-    .update({ last_crawled_at: new Date().toISOString() })
+    .update({ last_crawled_at: now, last_success_at: now })
     .eq("id", company.id);
   if (stampErr) throw new Error(`stamp last_crawled_at for ${label}: ${stampErr.message}`);
 

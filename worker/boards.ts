@@ -151,7 +151,7 @@ export function isGenericSlug(token: string): boolean {
   return t.replace(/\s/g, "").length <= 4 || !isDistinctiveName(t);
 }
 
-const LEGAL = /\b(inc|ltd|llc|gmbh|corp|co|ai|labs?|technologies|technology|tech|hq|group|holdings|limited|io|app|software)\b\.?/gi;
+const LEGAL = /\b(inc|incorporated|ltd|llc|llp|plc|gmbh|ag|bv|nv|sa|sas|srl|oy|ab|as|aps|pty|kg|se|corp|corporation|co|company|ai|labs?|technologies|technology|tech|hq|group|holdings|limited|io|app|software)\b\.?/gi;
 const nameKey = (s: string) => s.toLowerCase().replace(LEGAL, " ").replace(/[^a-z0-9]+/g, " ").trim();
 
 /** Same company name, once legal and generic suffixes are set aside ("Risk Ledger" / "Risk Ledger Ltd"). */
@@ -175,9 +175,18 @@ export type LinkMethod = "website_link" | "domain_match" | "posting_domain" | "n
  * Raised when the rules change; boards checked under older rules are checked
  * again (migration 20261028000000). 3: a board website on another domain is
  * the company's own when one domain redirects to the other (redis.com ->
- * redis.io), 2026-10-23.
+ * redis.io), 2026-10-23. 4: the board's own declarations decide first — a
+ * board naming another company or website is never verified by a link or a
+ * domain in its postings; a page linking to many boards proves nothing.
  */
-export const LINK_RULES_VERSION = 3;
+export const LINK_RULES_VERSION = 4;
+
+/**
+ * A page linking to more boards than this is a list of other companies' jobs
+ * (an investor's portfolio, a job aggregator): its links prove nothing about
+ * any one company (rules 4, 2026-10-23).
+ */
+export const MAX_SITE_BOARDS = 3;
 
 export interface LinkEvidenceInput {
   company: { name: string; website: string | null };
@@ -216,13 +225,19 @@ export function decideLink(i: LinkEvidenceInput): LinkDecision {
   const domain = websiteDomain(company.website);
   const generic = isGenericSlug(board.provider === "comeet" ? board.token.split("/")[0] : board.token);
   const ev = (o: Record<string, unknown>) => ({ slug: board.token, generic_slug: generic, rules: LINK_RULES_VERSION, ...o });
+  const boardName = i.boardMeta?.name?.trim() || null;
+  // The board calls itself something else: no link or domain in passing outweighs that.
+  const nameConflict = !!boardName && !namesMatch(boardName, company.name);
+  // A page listing many boards is not the company's own careers page.
+  const crowded = (i.siteBoards?.length ?? 0) > MAX_SITE_BOARDS;
+  const siteBoards = crowded ? null : i.siteBoards;
+  const conflict = (o: Record<string, unknown>): LinkDecision =>
+    ({ status: "unverifiable", method: null, evidence: ev({ reason: "conflicting evidence: the board names another company", board_name: boardName, company: company.name, ...o }) });
 
   // ── Strong evidence: the company's own site, or its domain ──────────────────
-  // 1. The company's own site links to this very board.
-  if (i.siteBoards?.some((r) => r.provider === board.provider && (r.token === board.token || (board.provider === "comeet" && sameComeetBoard(r.token, board.token))))) {
-    return { status: "verified", method: "website_link", evidence: ev({ page: i.sitePage ?? company.website }) };
-  }
-  // 2. The board declares a website: the same domain verifies, another one refutes.
+  // 1. The board declares a website — it decides first: the same domain (or
+  //    one redirecting to the other) verifies, another one refutes, whatever
+  //    links to the board.
   const boardDomain = websiteDomain(i.boardMeta?.website ?? null);
   if (boardDomain && domain) {
     if (sameSite(boardDomain, domain)) return { status: "verified", method: "domain_match", evidence: ev({ board_website: i.boardMeta?.website }) };
@@ -234,25 +249,33 @@ export function decideLink(i: LinkEvidenceInput): LinkDecision {
     }
     return { status: "mismatch", method: "domain_match", evidence: ev({ board_website: i.boardMeta?.website, company_website: company.website }) };
   }
-  //    ...or its intro links to the company's site (verifies only).
+  // 2. The company's own site links to this very board.
+  if (siteBoards?.some((r) => r.provider === board.provider && (r.token === board.token || (board.provider === "comeet" && sameComeetBoard(r.token, board.token))))) {
+    if (nameConflict) return conflict({ page: i.sitePage ?? company.website });
+    return { status: "verified", method: "website_link", evidence: ev({ page: i.sitePage ?? company.website }) };
+  }
+  //    ...or the board's intro links to the company's site (verifies only).
   const linked = domain ? (i.boardMeta?.linkedDomains ?? []).find((d) => sameSite(d, domain)) : undefined;
-  if (linked) return { status: "verified", method: "domain_match", evidence: ev({ board_links_to: linked }) };
+  if (linked) {
+    if (nameConflict) return conflict({ board_links_to: linked });
+    return { status: "verified", method: "domain_match", evidence: ev({ board_links_to: linked }) };
+  }
   // 3. The site links to a DIFFERENT board: this one is not theirs.
-  if (i.siteBoards && i.siteBoards.length > 0) {
-    return { status: "mismatch", method: "website_link", evidence: ev({ page: i.sitePage ?? company.website, site_links_to: i.siteBoards.map((r) => `${r.provider}/${r.token}`) }) };
+  if (siteBoards && siteBoards.length > 0) {
+    return { status: "mismatch", method: "website_link", evidence: ev({ page: i.sitePage ?? company.website, site_links_to: siteBoards.map((r) => `${r.provider}/${r.token}`) }) };
   }
   // 4. A generic slug needs 1 or 2 (the owner's rule of 2026-10-21).
   if (generic) return { status: "unverifiable", method: null, evidence: ev({ reason: "generic slug: needs a link from the company's site or a matching domain" }) };
   // 5. The postings give the company's domain (an email, an apply link, "visit acme.com").
   const withDomain = domain ? i.postingTexts.filter((t) => mentionsDomain(t, domain)).length : 0;
   if (withDomain > 0 && withDomain >= Math.min(2, i.postingTexts.length)) {
+    if (nameConflict) return conflict({ postings_with_domain: withDomain, domain });
     return { status: "verified", method: "posting_domain", evidence: ev({ postings_with_domain: withDomain, postings_read: i.postingTexts.length, domain }) };
   }
 
   // ── The name only: never verifies ───────────────────────────────────────────
   // 6. The board's company name: another name refutes; the same name is low confidence.
-  const boardName = i.boardMeta?.name?.trim();
-  if (boardName && !namesMatch(boardName, company.name)) {
+  if (nameConflict) {
     return { status: "mismatch", method: "name_match", evidence: ev({ board_name: boardName, company: company.name }) };
   }
   if (!isDistinctiveName(company.name)) {
@@ -264,7 +287,7 @@ export function decideLink(i: LinkEvidenceInput): LinkDecision {
   if (named > 0 && named >= Math.min(2, i.postingTexts.length)) {
     return { status: "low_confidence", method: "content_match", evidence: ev({ postings_naming_company: named, postings_read: i.postingTexts.length }) };
   }
-  return { status: "unverifiable", method: null, evidence: ev({ reason: "no site link, no board website, postings name neither the domain nor the company", postings_read: i.postingTexts.length }) };
+  return { status: "unverifiable", method: null, evidence: ev({ reason: "no site link, no board website, postings name neither the domain nor the company", postings_read: i.postingTexts.length, ...(crowded ? { site_lists_many_boards: i.siteBoards?.length } : {}) }) };
 }
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -562,10 +585,10 @@ export async function boardsBatch(d: BoardDeps, size = 3): Promise<BatchResult> 
     if (e) throw new Error(`record_board_link: ${e.message}`);
     r.checked++; r[dec.status]++;
     log(`${b.startup_name} ↔ ${b.ats_provider}/${b.ats_board_token}: ${dec.status}${dec.method ? ` (${dec.method})` : ""}`);
-    // The site points to a board we did not have: register it, verified.
+    // The site points to a board we did not have: register it if it is verified.
     for (const ref of site?.boards ?? []) {
       if (ref.provider === b.ats_provider && ref.token === b.ats_board_token) continue;
-      if (await registerFromSite(d, f, b.startup_id, b.startup_name, ref, site!.page)) r.registered++;
+      if (await registerFromSite(d, f, { id: b.startup_id, name: b.startup_name, website: b.website }, ref, site!)) r.registered++;
     }
   }
   if (r.checked > 0) return r;
@@ -576,22 +599,39 @@ export async function boardsBatch(d: BoardDeps, size = 3): Promise<BatchResult> 
     r.scanned++;
     const site = await boardsOnSite(f, s.website, d.jinaKey);
     for (const ref of site?.boards ?? []) {
-      if (await registerFromSite(d, f, s.startup_id, s.startup_name, ref, site!.page)) r.registered++;
+      if (await registerFromSite(d, f, { id: s.startup_id, name: s.startup_name, website: s.website }, ref, site!)) r.registered++;
     }
   }
   return r;
 }
 
-async function registerFromSite(d: BoardDeps, f: Fetch, startupId: string, name: string, ref: AtsRef, page: string): Promise<boolean> {
+/**
+ * A board the company's site points to, registered only when the same rules
+ * that check every board verify it: the board exists, the page is not a list
+ * of many companies' boards, and the board does not name another company or
+ * website.
+ */
+async function registerFromSite(d: BoardDeps, f: Fetch, company: { id: string; name: string; website: string | null },
+  ref: AtsRef, site: { boards: AtsRef[]; page: string }): Promise<boolean> {
+  const log = d.log ?? console.log;
   // Only a board that really exists (a careers link can be stale).
   const facts = await boardFacts(f, ref);
   if (!facts.exists) return false;
+  const redirects = await redirectsBetween(f, websiteDomain(facts.meta?.website ?? null), websiteDomain(company.website));
+  const dec = decideLink({
+    company: { name: company.name, website: company.website }, board: { provider: ref.provider, token: ref.token },
+    siteBoards: site.boards, sitePage: site.page, boardMeta: facts.meta, postingTexts: facts.postings, redirects,
+  });
+  if (dec.status !== "verified") {
+    log(`[worker] boards: ${company.name}: its site links to ${ref.provider}/${ref.token} — not registered (${dec.status}${dec.method ? `, ${dec.method}` : ""})`);
+    return false;
+  }
   const { data, error } = await d.db.rpc("register_board_from_website", {
-    p_startup_id: startupId, p_provider: ref.provider, p_token: ref.token, p_name: name,
-    p_evidence: { page, link: ref.url },
+    p_startup_id: company.id, p_provider: ref.provider, p_token: ref.token, p_name: company.name,
+    p_evidence: { ...dec.evidence, link: ref.url },
   });
   if (error) throw new Error(`register_board_from_website: ${error.message}`);
-  (d.log ?? console.log)(`[worker] boards: ${name}: its site links to ${ref.provider}/${ref.token} — ${data}`);
+  log(`[worker] boards: ${company.name}: its site links to ${ref.provider}/${ref.token} — ${data}`);
   return data === "registered" || data === "verified_existing";
 }
 
