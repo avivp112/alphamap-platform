@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { atsLinksIn, careersLinkIn, linksIn, sameSite, isGenericSlug, namesMatch, decideLink, boardsBatch, boardsOnSite, boardFacts, finalDomain, linkedDomainsIn, leverWebsite, ashbyWebsite, LINK_RULES_VERSION, type LinkEvidenceInput } from "./boards";
+import { atsLinksIn, careersLinkIn, linksIn, sameSite, isGenericSlug, namesMatch, decideLink, boardsBatch, boardsOnSite, boardFacts, finalDomain, comeetLinksIn, linkedDomainsIn, leverWebsite, ashbyWebsite, LINK_RULES_VERSION, type LinkEvidenceInput } from "./boards";
 
 describe("atsLinksIn", () => {
   it("reads every ATS's board links, in every URL form", () => {
@@ -246,5 +246,46 @@ describe("one company, two domains (rules 3)", () => {
     Object.defineProperty(res, "url", { value: "https://www.redis.io/" });
     expect(await finalDomain((async () => res) as never, "redis.com")).toBe("redis.io");
     expect(await finalDomain((async () => new Response("", { status: 404 })) as never, "x.com")).toBeNull();
+  });
+});
+
+describe("Comeet", () => {
+  it("finds the hosted careers page in a link, keeping the uid's case", () => {
+    const page = `<a href="https://www.comeet.com/jobs/Sett/4A.00B/deployment-strategist/37.071">Apply</a>
+      <a href="https://www.comeet.com/jobs/sett/4a.00b">All jobs</a>`;
+    expect(comeetLinksIn(page)).toEqual([{ provider: "comeet", token: "sett/4A.00B", url: "https://www.comeet.com/jobs/Sett/4A.00B" }]);
+    expect(atsLinksIn(page).map((r) => `${r.provider}/${r.token}`)).toEqual(["comeet/sett/4A.00B"]);
+  });
+  it("finds the careers widget's uid, with its company name for the slug", () => {
+    const widget = `<script>window.comeetInit = function() { COMEET.init({ "token": "abc", "company-uid": "41.00B", "company-name": "Monday.com" }); };</script>`;
+    expect(comeetLinksIn(widget).map((r) => r.token)).toEqual(["monday-com/41.00B"]);
+    // a uid with no name: no URL can be built, nothing is registered
+    expect(comeetLinksIn(`"company-uid": "41.00B"`)).toEqual([]);
+    expect(comeetLinksIn("comeet is great")).toEqual([]);
+  });
+  const sett = base({ company: { name: "Sett", website: "https://sett.ai" }, board: { provider: "comeet", token: "sett/4A.00B" } });
+  it("the board's own website (COMPANY_DATA.website) verifies or refutes it", () => {
+    expect(decideLink({ ...sett, boardMeta: { name: "Sett", website: "https://www.sett.ai/" } })).toMatchObject({ status: "verified", method: "domain_match" });
+    expect(decideLink({ ...sett, boardMeta: { name: "Sett", website: "https://sett.com" } })).toMatchObject({ status: "mismatch" });
+    // positions published on the company's own site verify too
+    expect(decideLink({ ...sett, boardMeta: { name: "Sett", linkedDomains: ["sett.ai"] } })).toMatchObject({ status: "verified", method: "domain_match" });
+  });
+  it("the site links to the same board under another slug: still the same board (by uid)", () => {
+    expect(decideLink({ ...sett, siteBoards: [{ provider: "comeet", token: "sett-ai/4A.00B", url: "u" }] })).toMatchObject({ status: "verified", method: "website_link" });
+  });
+  it("a short slug is judged by the slug part, not the uid", () => {
+    expect(decideLink({ ...sett, boardMeta: { name: "Sett" } }).status).toBe("unverifiable");
+  });
+  it("boardFacts reads the hosted page: website, the company-site domains of positions, posting texts", async () => {
+    const html = `<script>COMPANY_DATA = {"name": "Sett", "website": "https://www.sett.ai/", "company_uid": "4A.00B"};
+      COMPANY_POSITIONS_DATA = [{"uid": "1", "name": "AE", "url_active_page": "https://www.sett.ai/careers/ae/1/",
+        "details": [{"name": "Description", "value": "<p>Join Sett</p>"}]}];</script>`;
+    const f = vi.fn(async (url: string) => url === "https://www.comeet.com/jobs/sett/4A.00B"
+      ? new Response(html, { headers: { "content-type": "text/html" } }) : new Response("", { status: 404 }));
+    expect(await boardFacts(f as never, { provider: "comeet", token: "sett/4A.00B" })).toEqual({
+      exists: true, meta: { name: "Sett", website: "https://www.sett.ai/", linkedDomains: ["sett.ai"] }, postings: ["Join Sett"],
+    });
+    const blocked = vi.fn(async () => new Response("<html>denied</html>", { headers: { "content-type": "text/html" } }));
+    expect(await boardFacts(blocked as never, { provider: "comeet", token: "sett/4A.00B" })).toMatchObject({ exists: false });
   });
 });

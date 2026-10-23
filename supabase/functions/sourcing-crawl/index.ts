@@ -29,6 +29,9 @@
 //               -> { jobs: [ { id, title, jobUrl, isListed }, ... ] }
 //   Workable    https://apply.workable.com/api/v1/widget/accounts/{token}?details=true
 //               -> { name, jobs: [ { id, shortcode, title, url }, ... ] }
+//   Comeet      https://www.comeet.com/jobs/{slug}/{company_uid}   (an HTML page)
+//               -> COMPANY_POSITIONS_DATA = [ { uid, name, department, location, ... } ]
+//               A page without it is a failed read, never an empty board.
 // All public, keyless, JSON, and intended for exactly this use — far more
 // stable than scraping the rendered board HTML.
 //
@@ -54,7 +57,7 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { withRunLog, countKeys } from "../_shared/run-log.ts";
 import { uniqueByJobId } from "./dedupe.ts";
-import { parseGreenhouse, parseLever, parseAshby, parseWorkable, departmentsByJobId, str, type NormalisedJob } from "./parse.ts";
+import { parseGreenhouse, parseLever, parseAshby, parseWorkable, parseComeet, comeetPage, departmentsByJobId, str, type NormalisedJob, type ComeetPage } from "./parse.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -74,8 +77,10 @@ const CLOSE_CHUNK = 100;
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
-export type AtsProvider = "greenhouse" | "lever" | "ashby" | "workable";
+export type AtsProvider = "greenhouse" | "lever" | "ashby" | "workable" | "comeet";
 
+// The providers a bare slug can be tried against (probe). Comeet is not one:
+// its boards need a company uid that only a company's own website gives.
 export const ATS_PROVIDERS: AtsProvider[] = ["greenhouse", "lever", "ashby", "workable"];
 
 export interface BoardRef {
@@ -86,7 +91,7 @@ export interface BoardRef {
 }
 
 export type { NormalisedJob } from "./parse.ts";
-export { parseGreenhouse, parseLever, parseAshby, parseWorkable, departmentsByJobId } from "./parse.ts";
+export { parseGreenhouse, parseLever, parseAshby, parseWorkable, parseComeet, departmentsByJobId } from "./parse.ts";
 
 // ── Provider registry ───────────────────────────────────────────────────────
 // One entry per ATS. `urls` is a fallback chain tried in order until one
@@ -98,6 +103,8 @@ export const PROVIDERS: Record<AtsProvider, {
   urls: (token: string) => string[];
   parse: (payload: unknown, token: string) => NormalisedJob[];
   nameFrom?: (payload: unknown) => string | null;
+  /** The body is a page, not JSON: what to read out of it, or null = a failed read. */
+  decode?: (html: string) => unknown | null;
 }> = {
   greenhouse: {
     urls: (t) => [`https://boards-api.greenhouse.io/v1/boards/${t}/jobs`],
@@ -136,6 +143,13 @@ export const PROVIDERS: Record<AtsProvider, {
     // Workable returns the display name alongside the jobs — free enrichment.
     nameFrom: (p) => str((p as Record<string, unknown>)?.name),
   },
+  comeet: {
+    // token = "{slug}/{company_uid}", e.g. "sett/4A.00B"
+    urls: (t) => [`https://www.comeet.com/jobs/${t}`],
+    decode: comeetPage,
+    parse: (p) => parseComeet(p),
+    nameFrom: (p) => (p as ComeetPage | null)?.company.name ?? null,
+  },
 };
 
 export function parseJobs(provider: AtsProvider, payload: unknown, token = ""): NormalisedJob[] {
@@ -164,17 +178,22 @@ export function idsToClose(
 function boardUrls(b: BoardRef): string[] {
   const cfg = PROVIDERS[b.ats_provider];
   if (!cfg) return [];
-  return cfg.urls(encodeURIComponent(b.ats_board_token));
+  // Each path segment encoded on its own: a Comeet token is "slug/uid".
+  return cfg.urls(b.ats_board_token.split("/").map(encodeURIComponent).join("/"));
 }
 
-async function getJson(url: string): Promise<{ ok: true; data: unknown } | { ok: false; reason: string }> {
+async function getJson(url: string, decode?: (html: string) => unknown | null): Promise<{ ok: true; data: unknown } | { ok: false; reason: string }> {
   try {
     const res = await fetch(url, {
-      headers: { Accept: "application/json", "User-Agent": "AlphaMap-Sourcing/1.0" },
+      headers: { Accept: decode ? "text/html" : "application/json", "User-Agent": "AlphaMap-Sourcing/1.0" },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     const text = await res.text();
     if (!res.ok) return { ok: false, reason: `HTTP ${res.status}: ${text.slice(0, 120)}` };
+    if (decode) {
+      const data = decode(text);
+      return data == null ? { ok: false, reason: `page without the job data: ${text.slice(0, 120)}` } : { ok: true, data };
+    }
     try {
       return { ok: true, data: JSON.parse(text) };
     } catch {
@@ -221,7 +240,7 @@ async function crawlBoard(supabase: SupabaseClient, company: BoardRef & { id: st
   let lastReason = "";
   let gotOk = false;
   for (const url of urls) {
-    const r = await getJson(url);
+    const r = await getJson(url, PROVIDERS[company.ats_provider]?.decode);
     if (!r.ok) { lastReason = r.reason; continue; }
     gotOk = true;
     payload = r.data;
@@ -410,7 +429,7 @@ Deno.serve(withRunLog("ats_crawl", countKeys("upserted"), async (req: Request): 
     const n = Number(body?.limit);
     if (Number.isFinite(n) && n > 0) limit = Math.min(Math.floor(n), MAX_LIMIT);
     if (body?.board?.ats_provider && body?.board?.ats_board_token) {
-      if (ATS_PROVIDERS.includes(body.board.ats_provider)) {
+      if (Object.hasOwn(PROVIDERS, body.board.ats_provider)) {
         board = body.board as BoardRef;
       } else {
         badProvider = String(body.board.ats_provider);
@@ -422,7 +441,7 @@ Deno.serve(withRunLog("ats_crawl", countKeys("upserted"), async (req: Request): 
 
   if (badProvider) {
     return json(
-      { error: `unsupported ats_provider "${badProvider}" (expected one of ${ATS_PROVIDERS.join(", ")})` },
+      { error: `unsupported ats_provider "${badProvider}" (expected one of ${Object.keys(PROVIDERS).join(", ")})` },
       400,
     );
   }

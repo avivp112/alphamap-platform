@@ -162,3 +162,78 @@ export function parseWorkable(payload: unknown, token = ""): NormalisedJob[] {
   }
   return out;
 }
+
+// ── Comeet ────────────────────────────────────────────────────────────────────
+// No public JSON API without a per-company token, but the hosted careers page
+// (https://www.comeet.com/jobs/{slug}/{company_uid}) carries everything in two
+// script assignments, seen 2026-10-23 on comeet.com/jobs/sett/4A.00B:
+//   COMPANY_DATA = { name, website, company_uid, url_comeet_hosted_page, ... }
+//   COMPANY_POSITIONS_DATA = [ { uid, name, department, location: { name, city, country },
+//                                url_comeet_hosted_page, url_active_page, time_updated, ... } ]
+// A board is (slug, company_uid); the uid cannot be guessed, so Comeet boards
+// come only from links on company websites (worker/boards.ts).
+
+/**
+ * The JSON literal assigned to `NAME =` in a page's scripts: the object or
+ * array is bracket-matched (strings and escapes respected), then JSON.parse'd.
+ * null when absent or not JSON.
+ */
+export function scriptJson(html: string, name: string): unknown {
+  const m = new RegExp(`\\b${name}\\s*=\\s*([\\[{])`).exec(html);
+  if (!m) return null;
+  const start = m.index + m[0].length - 1;
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < html.length; i++) {
+    const c = html[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === "[" || c === "{") depth++;
+    else if (c === "]" || c === "}") {
+      if (--depth === 0) {
+        try { return JSON.parse(html.slice(start, i + 1)); } catch { return null; }
+      }
+    }
+  }
+  return null;
+}
+
+export interface ComeetPage {
+  company: { name: string | null; website: string | null; uid: string | null; hosted: string | null };
+  positions: unknown[];
+}
+
+/**
+ * A Comeet careers page, or null when it does not carry the positions data —
+ * which the crawler treats as a FAILED read (closes nothing), never as an
+ * empty board.
+ */
+export function comeetPage(html: string): ComeetPage | null {
+  const positions = scriptJson(html, "COMPANY_POSITIONS_DATA");
+  if (!Array.isArray(positions)) return null;
+  const c = (scriptJson(html, "COMPANY_DATA") ?? {}) as Record<string, unknown>;
+  return {
+    company: { name: str(c.name), website: str(c.website), uid: str(c.company_uid), hosted: str(c.url_comeet_hosted_page) },
+    positions,
+  };
+}
+
+export function parseComeet(payload: unknown): NormalisedJob[] {
+  const positions = (payload as ComeetPage | null)?.positions;
+  if (!Array.isArray(positions)) return [];
+  const out: NormalisedJob[] = [];
+  for (const p of positions) {
+    const o = p as Record<string, unknown>;
+    const id = str(o?.uid);
+    const title = str(o?.name);
+    const url = str(o?.url_comeet_hosted_page) ?? str(o?.url_active_page) ?? str(o?.url_detected_page);
+    if (!id || !title || !url) continue;
+    const loc = (o?.location ?? {}) as Record<string, unknown>;
+    out.push({ external_job_id: id, title, url, department: label(o?.department), location: place(loc.city, loc.country) ?? label(loc.name) });
+  }
+  return out;
+}

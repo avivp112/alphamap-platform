@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import { fetchStartupHiring, boardUrl, type StartupHiring } from "../../lib/supabase";
 
-const PROVIDER_LABEL: Record<string, string> = { greenhouse: "Greenhouse", lever: "Lever", ashby: "Ashby", workable: "Workable" };
+const PROVIDER_LABEL: Record<string, string> = { greenhouse: "Greenhouse", lever: "Lever", ashby: "Ashby", workable: "Workable", comeet: "Comeet" };
 
 const day = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—";

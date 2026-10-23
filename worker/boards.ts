@@ -19,8 +19,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isDistinctiveName } from "../lib/enrichment/entity.ts";
 import { websiteDomain } from "../lib/enrichment/websiteValidation.ts";
+import { comeetPage } from "../supabase/functions/sourcing-crawl/parse.ts";
 
-export type AtsProvider = "greenhouse" | "lever" | "ashby" | "workable";
+export type AtsProvider = "greenhouse" | "lever" | "ashby" | "workable" | "comeet";
 export interface AtsRef { provider: AtsProvider; token: string; url: string }
 
 // ── Reading ATS links out of a page ──────────────────────────────────────────
@@ -46,6 +47,43 @@ export function atsLinksIn(text: string): AtsRef[] {
       const token = decodeURIComponent(m[1]).toLowerCase().replace(/[.,;)]+$/, "");
       if (!token || NOT_A_TOKEN.has(token)) continue;
       if (!out.some((r) => r.provider === provider && r.token === token)) out.push({ provider, token, url: m[0] });
+    }
+  }
+  for (const ref of comeetLinksIn(page)) {
+    if (!out.some((r) => r.provider === "comeet" && sameComeetBoard(r.token, ref.token))) out.push(ref);
+  }
+  return out;
+}
+
+// ── Comeet ───────────────────────────────────────────────────────────────────
+// A Comeet board is "{slug}/{company_uid}" (comeet.com/jobs/sett/4A.00B). The
+// uid cannot be guessed, so it is only ever found here, on a company's own
+// site: a link to the hosted careers page, or the careers widget's settings.
+// The uid keeps its case ("4A.00B"); the slug is lowercased.
+
+const COMEET_UID = "[0-9A-Fa-f]{2}\\.[0-9A-Fa-f]{3}";
+const COMEET_LINK = new RegExp(`https?://(?:www\\.)?comeet\\.(?:com|co)/jobs/([a-z0-9_.%-]+)/(${COMEET_UID})(?![0-9A-Za-z])`, "gi");
+const COMEET_WIDGET_UID = new RegExp(`["']?company[-_]uid["']?\\s*[:=]\\s*["'](${COMEET_UID})["']`, "gi");
+const COMEET_API_UID = new RegExp(`comeet\\.co(?:m)?/careers-api/[0-9.]+/company/(${COMEET_UID})`, "gi");
+const COMEET_WIDGET_NAME = /["']?company[-_]name["']?\s*[:=]\s*["']([^"']{1,80})["']/i;
+
+const comeetSlug = (name: string) => name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+export const comeetUid = (token: string) => token.split("/").pop()!.toUpperCase();
+const sameComeetBoard = (a: string, b: string) => comeetUid(a) === comeetUid(b);
+
+/** Comeet boards a page links to or embeds; a widget gives its uid, and its company name for the slug. */
+export function comeetLinksIn(page: string): AtsRef[] {
+  const out: AtsRef[] = [];
+  const add = (slug: string, uid: string, url: string) => {
+    const token = `${slug}/${uid.toUpperCase()}`;
+    if (slug && !out.some((r) => sameComeetBoard(r.token, token))) out.push({ provider: "comeet", token, url });
+  };
+  for (const m of page.matchAll(COMEET_LINK)) add(decodeURIComponent(m[1]).toLowerCase(), m[2], m[0]);
+  const widgetName = page.match(COMEET_WIDGET_NAME)?.[1];
+  for (const re of [COMEET_WIDGET_UID, COMEET_API_UID]) {
+    for (const m of page.matchAll(re)) {
+      // the widget's own settings; a slug is needed for the hosted page's URL
+      if (widgetName) add(comeetSlug(widgetName), m[1], `https://www.comeet.com/jobs/${comeetSlug(widgetName)}/${m[1].toUpperCase()}`);
     }
   }
   return out;
@@ -165,12 +203,12 @@ const mentionsDomain = (text: string, domain: string) =>
 export function decideLink(i: LinkEvidenceInput): LinkDecision {
   const { company, board } = i;
   const domain = websiteDomain(company.website);
-  const generic = isGenericSlug(board.token);
+  const generic = isGenericSlug(board.provider === "comeet" ? board.token.split("/")[0] : board.token);
   const ev = (o: Record<string, unknown>) => ({ slug: board.token, generic_slug: generic, rules: LINK_RULES_VERSION, ...o });
 
   // ── Strong evidence: the company's own site, or its domain ──────────────────
   // 1. The company's own site links to this very board.
-  if (i.siteBoards?.some((r) => r.provider === board.provider && r.token === board.token)) {
+  if (i.siteBoards?.some((r) => r.provider === board.provider && (r.token === board.token || (board.provider === "comeet" && sameComeetBoard(r.token, board.token))))) {
     return { status: "verified", method: "website_link", evidence: ev({ page: i.sitePage ?? company.website }) };
   }
   // 2. The board declares a website: the same domain verifies, another one refutes.
@@ -348,6 +386,18 @@ export async function boardFacts(f: Fetch, b: { provider: AtsProvider; token: st
       const j = res ? await res.json().catch(() => null) as { jobs?: Array<{ descriptionPlain?: string }> } | null : null;
       const website = res ? ashbyWebsite(await fetchHtml(f, `https://jobs.ashbyhq.com/${t}`)) : null;
       return { exists: !!res, meta: website ? { website } : null, postings: (j?.jobs ?? []).slice(0, 5).map((x) => x.descriptionPlain ?? "") };
+    }
+    case "comeet": {
+      // the hosted careers page: COMPANY_DATA.website is the company's own
+      // declaration; the positions' pages on the company's site verify too
+      const page = comeetPage((await fetchHtml(f, `https://www.comeet.com/jobs/${b.token.split("/").map(encodeURIComponent).join("/")}`)) ?? "");
+      if (!page) return { exists: false, meta: null, postings: [] };
+      const positions = page.positions as Array<Record<string, unknown>>;
+      const linkedDomains = [...new Set(positions.map((p) => websiteDomain(typeof p.url_active_page === "string" ? p.url_active_page : null))
+        .filter((d): d is string => !!d && !/comeet\.(com|co)$/.test(d)))];
+      const postings = positions.slice(0, 5).map((p) => strip(decodeHtml((Array.isArray(p.details) ? p.details : [])
+        .map((d) => String((d as Record<string, unknown>)?.value ?? "")).join(" "))));
+      return { exists: true, meta: { name: page.company.name, website: page.company.website, linkedDomains }, postings };
     }
     case "workable": {
       const res = await get(f, `https://apply.workable.com/api/v1/widget/accounts/${t}`);

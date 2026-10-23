@@ -695,6 +695,8 @@ export function boardUrl(provider: string, token: string): string | null {
     case "lever": return `https://jobs.lever.co/${t}`;
     case "ashby": return `https://jobs.ashbyhq.com/${t}`;
     case "workable": return `https://apply.workable.com/${t}/`;
+    // "{slug}/{company_uid}": each part encoded on its own
+    case "comeet": return `https://www.comeet.com/jobs/${token.split("/").map(encodeURIComponent).join("/")}`;
     default: return null;
   }
 }

@@ -15,6 +15,7 @@ RUN npm ci --ignore-scripts --no-audit --no-fund
 COPY lib ./lib
 COPY worker ./worker
 COPY supabase/functions/_shared/check-limits.ts supabase/functions/_shared/company-check.ts ./supabase/functions/_shared/
+COPY supabase/functions/sourcing-crawl/parse.ts ./supabase/functions/sourcing-crawl/
 COPY tsconfig.json ./
 
 # Not root.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseGreenhouse, parseLever, parseAshby, parseWorkable, departmentsByJobId } from "./parse";
+import { parseGreenhouse, parseLever, parseAshby, parseWorkable, parseComeet, comeetPage, scriptJson, departmentsByJobId } from "./parse";
 
 describe("department and location, per ATS", () => {
   it("Greenhouse: location from the job list, department from /departments (most specific wins)", () => {
@@ -50,5 +50,48 @@ describe("department and location, per ATS", () => {
     const [j] = parseAshby({ jobs: [{ id: "1", title: "T", jobUrl: "u", department: `  Eng\n  ${"x".repeat(400)}` }] });
     expect(j.department!.length).toBe(255);
     expect(j.department!.startsWith("Eng x")).toBe(true);
+  });
+});
+
+describe("Comeet (the hosted careers page, as seen on comeet.com/jobs/sett/4A.00B)", () => {
+  const page = `<html><script>
+    var COMPANY_DATA = {"name": "Sett", "location": "Israel", "website": "https://www.sett.ai/", "company_uid": "4A.00B",
+      "url_comeet_hosted_page": "https://www.comeet.com/jobs/sett/4A.00B"};
+    var COMPANY_POSITIONS_DATA = [
+      {"uid": "75.474", "name": "Account Manager", "department": "Account Management",
+       "location": {"name": "Tel Aviv Office", "country": "IL", "city": "Tel Aviv-Yafo"},
+       "url_comeet_hosted_page": "https://www.comeet.com/jobs/sett/4A.00B/account-manager/75.474",
+       "url_active_page": "https://www.sett.ai/careers/account-manager/75.474/",
+       "details": [{"name": "Description", "value": "<p>We say \\"hi\\" [sometimes] {braces}</p>"}],
+       "time_updated": "2026-10-22T11:52:29Z", "company_name": "Sett"},
+      {"uid": "53.F66", "name": "AI Fullstack Engineer", "department": "Engineering",
+       "location": {"name": "Tel Aviv Office", "country": "IL", "city": "Tel Aviv-Yafo"},
+       "url_active_page": "https://www.sett.ai/careers/ai-fullstack-engineer/53.F66/"}
+    ];
+    var POSITION_DATA = null;
+  </script></html>`;
+
+  it("reads the company and every position, brackets inside strings included", () => {
+    const p = comeetPage(page)!;
+    expect(p.company).toEqual({ name: "Sett", website: "https://www.sett.ai/", uid: "4A.00B", hosted: "https://www.comeet.com/jobs/sett/4A.00B" });
+    expect(parseComeet(p)).toEqual([
+      { external_job_id: "75.474", title: "Account Manager", url: "https://www.comeet.com/jobs/sett/4A.00B/account-manager/75.474",
+        department: "Account Management", location: "Tel Aviv-Yafo, IL" },
+      { external_job_id: "53.F66", title: "AI Fullstack Engineer", url: "https://www.sett.ai/careers/ai-fullstack-engineer/53.F66/",
+        department: "Engineering", location: "Tel Aviv-Yafo, IL" },
+    ]);
+  });
+
+  it("a page WITHOUT the positions data is a failed read (null), never an empty board", () => {
+    expect(comeetPage("<html>Access denied</html>")).toBeNull();
+    expect(comeetPage("<script>COMPANY_POSITIONS_DATA = [ {broken</script>")).toBeNull();
+    // a board with no open positions is an empty list, not a failure
+    expect(comeetPage("<script>COMPANY_POSITIONS_DATA = [];</script>")?.positions).toEqual([]);
+  });
+
+  it("scriptJson reads one assignment", () => {
+    expect(scriptJson('x; FOO = {"a": "}"}; BAR = [1]', "FOO")).toEqual({ a: "}" });
+    expect(scriptJson("BAR = [1, 2]", "BAR")).toEqual([1, 2]);
+    expect(scriptJson("nothing here", "BAR")).toBeNull();
   });
 });
