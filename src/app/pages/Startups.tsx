@@ -13,6 +13,7 @@ import { HoverCard, HoverCardTrigger, HoverCardContent } from "../components/ui/
 import { SideFilterLayout, FilterAccordion, FilterBadge, StepSlider, QuickQuestionsMenu, ExportMenu } from "../components/SideFilterLayout";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { DeepenProfileButton } from "../components/DeepenProfileButton";
+import { HiringSection } from "../components/HiringSection";
 import { CheckCompanyDialog } from "../components/CheckCompanyDialog";
 import { emptyCheckForm } from "../../lib/companyCheck";
 import { useBackClose } from "../../lib/hardwareBack";
@@ -1635,6 +1636,8 @@ function TalentGrowthTab({
           <MissingDataState message="No historical headcount snapshots have been recorded for this company yet — at least 2 data points are needed to plot a trend." />
         )}
       </div>
+
+      <HiringSection startupId={startup.id} />
 
       <div>
         <div className="flex items-center gap-2 mb-3">

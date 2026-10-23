@@ -658,6 +658,47 @@ export async function fetchHeadcountHistory(startupId: string): Promise<Headcoun
   return (data ?? []) as HeadcountPoint[];
 }
 
+// The hiring section of a profile: startup_hiring (migration 20261029000000)
+// reads the company's VERIFIED job boards only (worker/boards.ts) — a board
+// whose link to the company is not proven is never shown. has_board = false
+// means there is no verified board, and nothing else is shown.
+export interface HiringCount { open: number }
+export interface StartupHiring {
+  has_board: boolean;
+  tracking_since: string | null;
+  sources: Array<{ provider: string; token: string; verified_by: string | null; last_crawled_at: string | null; tracking_since: string | null }>;
+  open_roles: number;
+  /** First seen in the last 30 days, after the board's first crawl. */
+  new_roles_30d: number;
+  new_roles_since_tracking: number;
+  closed_since_tracking: number;
+  /** Open roles whose ATS gives a department (the rest are not counted in by_department). */
+  departments_known: number;
+  by_department: Array<HiringCount & { department: string }>;
+  timeline: Array<{ week: string; open: number; new: number; closed: number }>;
+  latest: Array<{ title: string; url: string; department: string | null; location: string | null; first_seen_at: string; is_new: boolean }>;
+  seniority: Array<HiringCount & { value: string }>;
+  tech: Array<HiringCount & { value: string }>;
+}
+
+export async function fetchStartupHiring(startupId: string): Promise<StartupHiring> {
+  const { data, error } = await supabase.rpc("startup_hiring", { p_startup_id: startupId });
+  if (error) throw error;
+  return data as StartupHiring;
+}
+
+/** The public page of a job board. */
+export function boardUrl(provider: string, token: string): string | null {
+  const t = encodeURIComponent(token);
+  switch (provider) {
+    case "greenhouse": return `https://job-boards.greenhouse.io/${t}`;
+    case "lever": return `https://jobs.lever.co/${t}`;
+    case "ashby": return `https://jobs.ashbyhq.com/${t}`;
+    case "workable": return `https://apply.workable.com/${t}/`;
+    default: return null;
+  }
+}
+
 // One AlphaMap Score snapshot per startup per calendar day, written by
 // scripts/bulk_enrich_all.ts after each enrichment pass (calculate_
 // alphamap_score is a live, memoryless RPC — this table is what gives it a

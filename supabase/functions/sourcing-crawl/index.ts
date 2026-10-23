@@ -18,7 +18,9 @@
 //
 // ── Endpoints ───────────────────────────────────────────────────────────────
 //   Greenhouse  https://boards-api.greenhouse.io/v1/boards/{token}/jobs
-//               -> { jobs: [ { id, title, absolute_url }, ... ] }
+//               -> { jobs: [ { id, title, absolute_url, location }, ... ] }
+//               https://boards-api.greenhouse.io/v1/boards/{token}/departments
+//               -> { departments: [ { name, jobs: [ { id } ] } ] }  (department per job)
 //               https://boards-api.greenhouse.io/v1/boards/{token}
 //               -> { name }   (separate call, used once for inferred_name)
 //   Lever       https://api.lever.co/v0/postings/{token}?mode=json
@@ -52,6 +54,7 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { withRunLog, countKeys } from "../_shared/run-log.ts";
 import { uniqueByJobId } from "./dedupe.ts";
+import { parseGreenhouse, parseLever, parseAshby, parseWorkable, departmentsByJobId, str, type NormalisedJob } from "./parse.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -82,115 +85,8 @@ export interface BoardRef {
   inferred_name?: string | null;
 }
 
-/** A job as we care about it, normalised across providers. */
-export interface NormalisedJob {
-  external_job_id: string;
-  title: string;
-  url: string;
-}
-
-// ── Pure parsing (unit-testable, no network) ────────────────────────────────
-
-const str = (v: unknown): string | null => {
-  if (typeof v === "string" && v.trim()) return v.trim();
-  if (typeof v === "number" && isFinite(v)) return String(v);
-  return null;
-};
-
-/**
- * Greenhouse: { jobs: [ { id, title, absolute_url } ] }
- * `id` is numeric in the payload — coerced to string because external_job_id
- * is varchar (Lever uses UUIDs, so the column cannot be numeric).
- */
-export function parseGreenhouse(payload: unknown): NormalisedJob[] {
-  const jobs = (payload as { jobs?: unknown })?.jobs;
-  if (!Array.isArray(jobs)) return [];
-  const out: NormalisedJob[] = [];
-  for (const j of jobs) {
-    const o = j as Record<string, unknown>;
-    const id = str(o?.id);
-    const title = str(o?.title);
-    const url = str(o?.absolute_url);
-    // A job with no id cannot be tracked idempotently; skip rather than invent
-    // a surrogate that would duplicate on the next crawl.
-    if (!id || !title || !url) continue;
-    out.push({ external_job_id: id, title, url });
-  }
-  return out;
-}
-
-/**
- * Lever: a bare array of postings, title under `text`, link under `hostedUrl`
- * (falling back to `applyUrl`, which some older boards return instead).
- */
-export function parseLever(payload: unknown): NormalisedJob[] {
-  if (!Array.isArray(payload)) return [];
-  const out: NormalisedJob[] = [];
-  for (const p of payload) {
-    const o = p as Record<string, unknown>;
-    const id = str(o?.id);
-    const title = str(o?.text);
-    const url = str(o?.hostedUrl) ?? str(o?.applyUrl);
-    if (!id || !title || !url) continue;
-    out.push({ external_job_id: id, title, url });
-  }
-  return out;
-}
-
-/**
- * Ashby: { jobs: [ { id, title, jobUrl, applyUrl, isListed } ] }
- *
- * isListed is respected when present: Ashby uses it to mark a posting that
- * exists but is not shown on the public board. Treating an unlisted posting as
- * live would report roles the company is not actually advertising. Absent
- * field = listed, since older payloads omit it entirely.
- */
-export function parseAshby(payload: unknown): NormalisedJob[] {
-  const jobs = (payload as { jobs?: unknown })?.jobs;
-  if (!Array.isArray(jobs)) return [];
-  const out: NormalisedJob[] = [];
-  for (const j of jobs) {
-    const o = j as Record<string, unknown>;
-    if (o?.isListed === false) continue;
-    const id = str(o?.id);
-    const title = str(o?.title);
-    const url = str(o?.jobUrl) ?? str(o?.applyUrl);
-    if (!id || !title || !url) continue;
-    out.push({ external_job_id: id, title, url });
-  }
-  return out;
-}
-
-/**
- * Workable: { name, jobs: [ { id, shortcode, title, url, application_url } ] }
- *
- * Identity prefers `shortcode` over `id`: the shortcode is the stable public
- * handle that appears in the posting URL, while `id` has been observed to be
- * an internal numeric that is not guaranteed stable across payload versions.
- * Getting this wrong would break idempotency and duplicate every posting on
- * the next crawl, so the more durable key wins.
- *
- * Some payloads omit `url` and give only a shortcode, so the canonical link is
- * reconstructed from the board token when needed.
- */
-export function parseWorkable(payload: unknown, token = ""): NormalisedJob[] {
-  const jobs = (payload as { jobs?: unknown })?.jobs;
-  if (!Array.isArray(jobs)) return [];
-  const out: NormalisedJob[] = [];
-  for (const j of jobs) {
-    const o = j as Record<string, unknown>;
-    const shortcode = str(o?.shortcode);
-    const id = shortcode ?? str(o?.id);
-    const title = str(o?.title);
-    const url =
-      str(o?.url) ??
-      str(o?.application_url) ??
-      (shortcode && token ? `https://apply.workable.com/${token}/j/${shortcode}/` : null);
-    if (!id || !title || !url) continue;
-    out.push({ external_job_id: id, title, url });
-  }
-  return out;
-}
+export type { NormalisedJob } from "./parse.ts";
+export { parseGreenhouse, parseLever, parseAshby, parseWorkable, departmentsByJobId } from "./parse.ts";
 
 // ── Provider registry ───────────────────────────────────────────────────────
 // One entry per ATS. `urls` is a fallback chain tried in order until one
@@ -362,11 +258,21 @@ async function crawlBoard(supabase: SupabaseClient, company: BoardRef & { id: st
     const heldActiveSet = new Set((heldActive ?? []).map((r) => r.external_job_id));
     reopened = fetched.filter((j) => !heldActiveSet.has(j.external_job_id)).length;
 
+    // Greenhouse keeps departments on a separate endpoint. Best effort: if it
+    // fails, department is left out of the upsert, so what is on file stays.
+    let departments: Map<string, string> | null = null;
+    if (company.ats_provider === "greenhouse") {
+      const d = await getJson(`https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(company.ats_board_token)}/departments`);
+      departments = d.ok ? departmentsByJobId(d.data) : null;
+    }
+    const withDepartment = company.ats_provider !== "greenhouse" || departments !== null;
     const rows = fetched.map((j) => ({
       company_id: company.id,
       external_job_id: j.external_job_id,
       title: j.title,
       url: j.url,
+      location: j.location ?? null,
+      ...(withDepartment ? { department: departments ? departments.get(j.external_job_id) ?? null : j.department ?? null } : {}),
       is_active: true,
       closed_at: null,
     }));
