@@ -334,3 +334,34 @@ describe("Comeet behind the company's own careers pages (sett.ai, 2026-10-23)", 
     expect(f.mock.calls.filter(([u]) => String(u).includes("/53.F66")).length).toBe(0);
   });
 });
+
+describe("SmartRecruiters, Teamtailor, Personio, Recruitee on company sites", () => {
+  it("their board links, the ATSs' own subdomains aside; a SmartRecruiters id keeps its case", () => {
+    const page = `<a href="https://jobs.smartrecruiters.com/BoschGroup/744000157427223">x</a>
+      <a href="https://jobs.smartrecruiters.com/oneclick-ui/company/BoschGroup/publication/1">apply</a>
+      <a href="https://acme.teamtailor.com/jobs">x</a><a href="https://career.teamtailor.com/jobs">theirs</a><a href="https://app.teamtailor.com">app</a>
+      <a href="https://acme-gmbh.jobs.personio.de/">x</a><a href="https://acme2.jobs.personio.com/job/1">x</a>
+      <a href="https://watchvice.recruitee.com/o/x">x</a><a href="https://www.recruitee.com">vendor</a>`;
+    expect(atsLinksIn(page).map((r) => `${r.provider}/${r.token}`).sort()).toEqual([
+      "personio/acme-gmbh", "personio/acme2", "recruitee/watchvice", "smartrecruiters/BoschGroup", "teamtailor/acme",
+    ]);
+  });
+  it("Teamtailor: the website its postings declare verifies or refutes; its own careers domain verifies", async () => {
+    const feed = { title: "Acme", home_page_url: "https://careers.acme.com/jobs", items: [{ content_html: "<p>Join Acme</p>",
+      _jobposting: { hiringOrganization: { sameAs: "https://acme.com" } } }] };
+    const f = vi.fn(async (url: string) => url === "https://acme.teamtailor.com/jobs.json" ? new Response(JSON.stringify(feed)) : new Response("", { status: 404 }));
+    const facts = await boardFacts(f as never, { provider: "teamtailor", token: "acme" });
+    expect(facts).toEqual({ exists: true, meta: { name: "Acme", website: "https://acme.com", linkedDomains: ["careers.acme.com"] }, postings: ["Join Acme"] });
+    const acme = base({ company: { name: "Acme Robotics", website: "https://acme.com" }, board: { provider: "teamtailor", token: "acme" } });
+    expect(decideLink({ ...acme, boardMeta: facts.meta })).toMatchObject({ status: "verified", method: "domain_match" });
+    expect(decideLink({ ...acme, boardMeta: { website: "https://acme.io" } })).toMatchObject({ status: "mismatch" });
+  });
+  it("SmartRecruiters: a company with no posting is not a board to register", async () => {
+    const f = vi.fn(async () => new Response(JSON.stringify({ totalFound: 0, content: [] })));
+    expect(await boardFacts(f as never, { provider: "smartrecruiters", token: "Nobody" })).toMatchObject({ exists: false });
+  });
+  it("Recruitee: offers on the company's own careers domain verify it", async () => {
+    const f = vi.fn(async () => new Response(JSON.stringify({ offers: [{ company_name: "Acme", careers_url: "https://jobs.acme.com/o/x", description: "<p>hi</p>" }] })));
+    expect(await boardFacts(f as never, { provider: "recruitee", token: "acme" })).toEqual({ exists: true, meta: { name: "Acme", linkedDomains: ["jobs.acme.com"] }, postings: ["hi"] });
+  });
+});

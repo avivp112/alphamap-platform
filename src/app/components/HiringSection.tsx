@@ -13,7 +13,8 @@ import {
 } from "recharts";
 import { fetchStartupHiring, boardUrl, type StartupHiring } from "../../lib/supabase";
 
-const PROVIDER_LABEL: Record<string, string> = { greenhouse: "Greenhouse", lever: "Lever", ashby: "Ashby", workable: "Workable", comeet: "Comeet" };
+const PROVIDER_LABEL: Record<string, string> = { greenhouse: "Greenhouse", lever: "Lever", ashby: "Ashby", workable: "Workable", comeet: "Comeet",
+  smartrecruiters: "SmartRecruiters", teamtailor: "Teamtailor", personio: "Personio", recruitee: "Recruitee" };
 
 const day = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—";
@@ -165,8 +166,9 @@ export function HiringSection({ startupId, load = fetchStartupHiring }: {
             <div>
               <Heading>{t("startups.hiring.latest")}</Heading>
               <ul className="divide-y divide-gray-100 border border-gray-100 rounded-[8px] bg-white">
-                {data.latest.map((j) => (
-                  <li key={j.url} className="px-3 py-2 flex items-start gap-2">
+                {data.latest.map((j, i) => (
+                  // Personio links every role to its board: the URL is not unique
+                  <li key={`${i}:${j.url}`} className="px-3 py-2 flex items-start gap-2">
                     <div className="min-w-0 flex-1">
                       <a href={j.url} target="_blank" rel="noopener noreferrer"
                         className="text-xs font-semibold text-[#0F172A] hover:underline inline-flex items-center gap-1 max-w-full">

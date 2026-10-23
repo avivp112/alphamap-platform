@@ -19,9 +19,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isDistinctiveName } from "../lib/enrichment/entity.ts";
 import { websiteDomain } from "../lib/enrichment/websiteValidation.ts";
-import { comeetPage } from "../supabase/functions/sourcing-crawl/parse.ts";
+import { comeetPage, personioXml, teamtailorWebsite } from "../supabase/functions/sourcing-crawl/parse.ts";
 
-export type AtsProvider = "greenhouse" | "lever" | "ashby" | "workable" | "comeet";
+export type AtsProvider = "greenhouse" | "lever" | "ashby" | "workable" | "comeet"
+  | "smartrecruiters" | "teamtailor" | "personio" | "recruitee";
 export interface AtsRef { provider: AtsProvider; token: string; url: string }
 
 // ── Reading ATS links out of a page ──────────────────────────────────────────
@@ -35,8 +36,17 @@ const ATS_PATTERNS: Array<{ provider: AtsProvider; re: RegExp }> = [
   { provider: "ashby", re: /https?:\/\/jobs\.ashbyhq\.com\/([a-z0-9_.%-]+)/gi },
   { provider: "workable", re: /https?:\/\/apply\.workable\.com\/([a-z0-9_-]+)/gi },
   { provider: "workable", re: /https?:\/\/([a-z0-9-]+)\.workable\.com\b/gi },
+  { provider: "smartrecruiters", re: /https?:\/\/(?:jobs|careers)\.smartrecruiters\.com\/([a-z0-9_-]+)/gi },
+  { provider: "smartrecruiters", re: /https?:\/\/api\.smartrecruiters\.com\/v1\/companies\/([a-z0-9_-]+)/gi },
+  { provider: "teamtailor", re: /https?:\/\/([a-z0-9-]+)\.teamtailor\.com\b/gi },
+  { provider: "personio", re: /https?:\/\/([a-z0-9-]+)\.jobs\.personio\.(?:de|com)\b/gi },
+  { provider: "recruitee", re: /https?:\/\/([a-z0-9-]+)\.recruitee\.com\b/gi },
 ];
-const NOT_A_TOKEN = new Set(["embed", "v1", "api", "jobs", "www", "apply", "careers", "j", "o"]);
+const NOT_A_TOKEN = new Set(["embed", "v1", "api", "jobs", "www", "apply", "careers", "j", "o",
+  // the ATSs' own subdomains and paths, never a company's board
+  "app", "career", "support", "help", "status", "blog", "docs", "login", "auth", "cdn", "assets", "static", "scripts", "oneclick-ui", "sr-jobs"]);
+/** Providers whose board id is case-sensitive: kept as written ("BoschGroup"). */
+const KEEP_CASE = new Set<AtsProvider>(["smartrecruiters"]);
 
 /** Every ATS board a page links to (deduplicated). */
 export function atsLinksIn(text: string): AtsRef[] {
@@ -44,8 +54,9 @@ export function atsLinksIn(text: string): AtsRef[] {
   const page = unescapeUrls(text);
   for (const { provider, re } of ATS_PATTERNS) {
     for (const m of page.matchAll(re)) {
-      const token = decodeURIComponent(m[1]).toLowerCase().replace(/[.,;)]+$/, "");
-      if (!token || NOT_A_TOKEN.has(token)) continue;
+      const raw = decodeURIComponent(m[1]).replace(/[.,;)]+$/, "");
+      const token = KEEP_CASE.has(provider) ? raw : raw.toLowerCase();
+      if (!token || NOT_A_TOKEN.has(token.toLowerCase())) continue;
       if (!out.some((r) => r.provider === provider && r.token === token)) out.push({ provider, token, url: m[0] });
     }
   }
@@ -391,7 +402,7 @@ async function comeetBehindSite(f: Fetch, read: Array<{ url: string; page: strin
 const strip = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&[a-z]+;/g, " ").replace(/\s+/g, " ").trim();
 
 // Links that say nothing about whose board it is.
-const NOT_A_COMPANY_SITE = /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|workable\.com|linkedin\.com|twitter\.com|x\.com|facebook\.com|instagram\.com|youtube\.com|youtu\.be|tiktok\.com|glassdoor\.[a-z.]+|github\.com|medium\.com|crunchbase\.com|google\.[a-z.]+|bit\.ly|eeoc\.gov|dol\.gov)$/i;
+const NOT_A_COMPANY_SITE = /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|workable\.com|comeet\.(?:com|co)|smartrecruiters\.com|teamtailor\.com|personio\.(?:de|com)|recruitee\.com|linkedin\.com|twitter\.com|x\.com|facebook\.com|instagram\.com|youtube\.com|youtu\.be|tiktok\.com|glassdoor\.[a-z.]+|github\.com|medium\.com|crunchbase\.com|google\.[a-z.]+|bit\.ly|eeoc\.gov|dol\.gov)$/i;
 
 /** The company sites a board's free-text intro links to (Greenhouse's board "content"). */
 export function linkedDomainsIn(html: string | null | undefined): string[] {
@@ -442,6 +453,43 @@ export async function boardFacts(f: Fetch, b: { provider: AtsProvider; token: st
       const j = res ? await res.json().catch(() => null) as { jobs?: Array<{ descriptionPlain?: string }> } | null : null;
       const website = res ? ashbyWebsite(await fetchHtml(f, `https://jobs.ashbyhq.com/${t}`)) : null;
       return { exists: !!res, meta: website ? { website } : null, postings: (j?.jobs ?? []).slice(0, 5).map((x) => x.descriptionPlain ?? "") };
+    }
+    case "smartrecruiters": {
+      // the postings name the company; no website, no descriptions in the list
+      const res = await get(f, `https://api.smartrecruiters.com/v1/companies/${t}/postings?limit=5`);
+      const j = res ? await res.json().catch(() => null) as { totalFound?: number; content?: Array<{ company?: { name?: string } }> } | null : null;
+      return { exists: (j?.totalFound ?? 0) > 0, meta: j?.content?.[0]?.company?.name ? { name: j.content[0].company.name } : null, postings: [] };
+    }
+    case "teamtailor": {
+      // the postings' schema.org hiringOrganization gives the company's website;
+      // a careers site on the company's own domain verifies too
+      const res = await get(f, `https://${t}.teamtailor.com/jobs.json`);
+      const j = res ? await res.json().catch(() => null) as { title?: string; home_page_url?: string; items?: Array<{ content_html?: string }> } | null : null;
+      if (!Array.isArray(j?.items)) return { exists: false, meta: null, postings: [] };
+      const home = websiteDomain(j.home_page_url ?? null);
+      return { exists: true,
+        meta: { name: j.title ?? null, website: teamtailorWebsite(j), linkedDomains: home && !NOT_A_COMPANY_SITE.test(home) ? [home] : [] },
+        postings: j.items.slice(0, 5).map((x) => strip(decodeHtml(x.content_html ?? ""))) };
+    }
+    case "personio": {
+      let feed = null;
+      for (const host of ["jobs.personio.de", "jobs.personio.com"]) {
+        const res = await get(f, `https://${t}.${host}/xml`);
+        feed = res ? personioXml(await res.text()) : null;
+        if (feed) break;
+      }
+      if (!feed) return { exists: false, meta: null, postings: [] };
+      return { exists: true, meta: { name: feed.positions.find((p) => p.subcompany)?.subcompany ?? null },
+        postings: feed.positions.slice(0, 5).map((p) => strip(decodeHtml(p.description ?? ""))) };
+    }
+    case "recruitee": {
+      const res = await get(f, `https://${t}.recruitee.com/api/offers/`);
+      const j = res ? await res.json().catch(() => null) as { offers?: Array<{ company_name?: string; careers_url?: string; description?: string }> } | null : null;
+      if (!Array.isArray(j?.offers)) return { exists: false, meta: null, postings: [] };
+      // offers published on the company's own careers domain verify it
+      const linkedDomains = [...new Set(j.offers.map((o) => websiteDomain(o.careers_url ?? null)).filter((d): d is string => !!d && !NOT_A_COMPANY_SITE.test(d)))];
+      return { exists: true, meta: { name: j.offers[0]?.company_name ?? null, linkedDomains },
+        postings: j.offers.slice(0, 5).map((o) => strip(decodeHtml(o.description ?? ""))) };
     }
     case "comeet": {
       // the hosted careers page: COMPANY_DATA.website is the company's own

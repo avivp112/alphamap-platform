@@ -32,6 +32,11 @@
 //   Comeet      https://www.comeet.com/jobs/{slug}/{company_uid}   (an HTML page)
 //               -> COMPANY_POSITIONS_DATA = [ { uid, name, department, location, ... } ]
 //               A page without it is a failed read, never an empty board.
+//   SmartRecruiters https://api.smartrecruiters.com/v1/companies/{id}/postings (paged, 100 a page)
+//   Teamtailor  https://{slug}.teamtailor.com/jobs.json   (a JSON Feed; next_url when paged)
+//   Personio    https://{slug}.jobs.personio.de/xml       (XML; not that = a failed read)
+//   Recruitee   https://{slug}.recruitee.com/api/offers/
+//   See parse.ts for each payload's shape as seen on a real board.
 // All public, keyless, JSON, and intended for exactly this use — far more
 // stable than scraping the rendered board HTML.
 //
@@ -57,7 +62,11 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { withRunLog, countKeys } from "../_shared/run-log.ts";
 import { uniqueByJobId } from "./dedupe.ts";
-import { parseGreenhouse, parseLever, parseAshby, parseWorkable, parseComeet, comeetPage, departmentsByJobId, str, type NormalisedJob, type ComeetPage } from "./parse.ts";
+import {
+  parseGreenhouse, parseLever, parseAshby, parseWorkable, parseComeet, comeetPage, departmentsByJobId, str,
+  parseSmartRecruiters, smartRecruitersNext, parseTeamtailor, personioXml, parsePersonio, parseRecruitee,
+  type NormalisedJob, type ComeetPage, type PersonioFeed,
+} from "./parse.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -77,7 +86,8 @@ const CLOSE_CHUNK = 100;
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
-export type AtsProvider = "greenhouse" | "lever" | "ashby" | "workable" | "comeet";
+export type AtsProvider = "greenhouse" | "lever" | "ashby" | "workable" | "comeet"
+  | "smartrecruiters" | "teamtailor" | "personio" | "recruitee";
 
 // The providers a bare slug can be tried against (probe). Comeet is not one:
 // its boards need a company uid that only a company's own website gives.
@@ -105,6 +115,13 @@ export const PROVIDERS: Record<AtsProvider, {
   nameFrom?: (payload: unknown) => string | null;
   /** The body is a page, not JSON: what to read out of it, or null = a failed read. */
   decode?: (html: string) => unknown | null;
+  /**
+   * A board listed over several pages: the next page's URL, or null. Every
+   * page is read before anything is closed; one failed page fails the read.
+   */
+  next?: (payload: unknown, token: string) => string | null;
+  /** Two pages of one board, as one payload. */
+  merge?: (a: unknown, b: unknown) => unknown;
 }> = {
   greenhouse: {
     urls: (t) => [`https://boards-api.greenhouse.io/v1/boards/${t}/jobs`],
@@ -149,6 +166,31 @@ export const PROVIDERS: Record<AtsProvider, {
     decode: comeetPage,
     parse: (p) => parseComeet(p),
     nameFrom: (p) => (p as ComeetPage | null)?.company.name ?? null,
+  },
+  smartrecruiters: {
+    // token = the company identifier, case kept ("BoschGroup")
+    urls: (t) => [`https://api.smartrecruiters.com/v1/companies/${t}/postings?limit=100`],
+    parse: (p, t) => parseSmartRecruiters(p, t),
+    next: (p, t) => smartRecruitersNext(p, t),
+    merge: (a, b) => ({ ...(b as object), content: [...((a as { content?: unknown[] }).content ?? []), ...((b as { content?: unknown[] }).content ?? [])] }),
+    nameFrom: (p) => str((((p as { content?: unknown[] })?.content ?? [])[0] as { company?: { name?: unknown } } | undefined)?.company?.name),
+  },
+  teamtailor: {
+    urls: (t) => [`https://${t}.teamtailor.com/jobs.json`],
+    parse: (p) => parseTeamtailor(p),
+    next: (p) => str((p as Record<string, unknown> | null)?.next_url),
+    merge: (a, b) => ({ ...(b as object), items: [...((a as { items?: unknown[] }).items ?? []), ...((b as { items?: unknown[] }).items ?? [])] }),
+  },
+  personio: {
+    urls: (t) => [`https://${t}.jobs.personio.de/xml`, `https://${t}.jobs.personio.com/xml`],
+    decode: personioXml,
+    parse: (p, t) => parsePersonio(p, t),
+    nameFrom: (p) => (p as PersonioFeed | null)?.positions.find((x) => x.subcompany)?.subcompany ?? null,
+  },
+  recruitee: {
+    urls: (t) => [`https://${t}.recruitee.com/api/offers/`],
+    parse: (p) => parseRecruitee(p),
+    nameFrom: (p) => str((((p as { offers?: unknown[] })?.offers ?? [])[0] as { company_name?: unknown } | undefined)?.company_name),
   },
 };
 
@@ -239,12 +281,22 @@ async function crawlBoard(supabase: SupabaseClient, company: BoardRef & { id: st
   let fetched: NormalisedJob[] = [];
   let lastReason = "";
   let gotOk = false;
+  const cfg = PROVIDERS[company.ats_provider];
   for (const url of urls) {
-    const r = await getJson(url, PROVIDERS[company.ats_provider]?.decode);
+    const r = await getJson(url, cfg?.decode);
     if (!r.ok) { lastReason = r.reason; continue; }
+    // A board over several pages: all of them, or the read failed.
+    let data = r.data;
+    let failed: string | null = null;
+    for (let next = cfg?.next?.(data, company.ats_board_token), n = 0; next && n < 25; next = cfg?.next?.(data, company.ats_board_token), n++) {
+      const more = await getJson(next, cfg?.decode);
+      if (!more.ok) { failed = more.reason; break; }
+      data = cfg?.merge ? cfg.merge(data, more.data) : more.data;
+    }
+    if (failed) { lastReason = `a later page failed: ${failed}`; continue; }
     gotOk = true;
-    payload = r.data;
-    fetched = parseJobs(company.ats_provider, r.data, company.ats_board_token);
+    payload = data;
+    fetched = parseJobs(company.ats_provider, data, company.ats_board_token);
     if (fetched.length > 0) break;
   }
 

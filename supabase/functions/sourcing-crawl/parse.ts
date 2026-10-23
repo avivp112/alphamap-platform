@@ -237,3 +237,117 @@ export function parseComeet(payload: unknown): NormalisedJob[] {
   }
   return out;
 }
+
+// ── SmartRecruiters, Teamtailor, Personio, Recruitee (added 2026-10-23) ──────
+// Each payload's shape as seen that day on a real board:
+//   SmartRecruiters  api.smartrecruiters.com/v1/companies/{id}/postings?limit=100&offset=N
+//                    { offset, limit, totalFound, content: [ { id, name, location: { city, region,
+//                      country, remote }, department: { label }, company: { identifier, name } } ] }
+//                    public page: jobs.smartrecruiters.com/{id}/{posting id} (200)
+//   Teamtailor       {slug}.teamtailor.com/jobs.json — a JSON Feed: { home_page_url, items: [ { id,
+//                    title, url, _jobposting: schema.org JobPosting } ], next_url? }
+//   Personio         {slug}.jobs.personio.de/xml — <workzag-jobs><position><id/><name/><office/>
+//                    <department/><subcompany/>… ; /job/{id} answered 404, so a role links to the board
+//   Recruitee        {slug}.recruitee.com/api/offers/ — { offers: [ { id, title, careers_url,
+//                    department, city, country, location, company_name, description } ] }
+
+export function parseSmartRecruiters(payload: unknown, token = ""): NormalisedJob[] {
+  const content = (payload as { content?: unknown })?.content;
+  if (!Array.isArray(content)) return [];
+  const out: NormalisedJob[] = [];
+  for (const p of content) {
+    const o = p as Record<string, unknown>;
+    const id = str(o?.id);
+    const title = str(o?.name);
+    const company = str((o?.company as Record<string, unknown> | undefined)?.identifier) ?? token;
+    if (!id || !title || !company) continue;
+    const loc = (o?.location ?? {}) as Record<string, unknown>;
+    out.push({
+      external_job_id: id, title, url: `https://jobs.smartrecruiters.com/${encodeURIComponent(company)}/${encodeURIComponent(id)}`,
+      department: label((o?.department as Record<string, unknown> | undefined)?.label),
+      location: place(loc.city, loc.region !== "Remote" ? loc.region : null, typeof loc.country === "string" ? loc.country.toUpperCase() : null),
+    });
+  }
+  return out;
+}
+
+/** The next page of a SmartRecruiters list, or null on the last one. */
+export function smartRecruitersNext(payload: unknown, token: string): string | null {
+  const o = payload as { offset?: number; limit?: number; totalFound?: number } | null;
+  if (typeof o?.offset !== "number" || typeof o?.limit !== "number" || typeof o?.totalFound !== "number") return null;
+  const next = o.offset + o.limit;
+  return next < o.totalFound && next < 2000
+    ? `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(token)}/postings?limit=100&offset=${next}` : null;
+}
+
+export function parseTeamtailor(payload: unknown): NormalisedJob[] {
+  const items = (payload as { items?: unknown })?.items;
+  if (!Array.isArray(items)) return [];
+  const out: NormalisedJob[] = [];
+  for (const it of items) {
+    const o = it as Record<string, unknown>;
+    const id = str(o?.id);
+    const title = str(o?.title);
+    const url = str(o?.url);
+    if (!id || !title || !url) continue;
+    const jp = (o?._jobposting ?? {}) as Record<string, unknown>;
+    const jl = Array.isArray(jp.jobLocation) ? (jp.jobLocation as unknown[])[0] : jp.jobLocation;
+    const addr = ((jl as Record<string, unknown> | undefined)?.address ?? {}) as Record<string, unknown>;
+    out.push({ external_job_id: id, title, url, department: null, location: place(addr.addressLocality, addr.addressCountry) });
+  }
+  return out;
+}
+
+/** The company's own website, as the board's postings declare it (schema.org hiringOrganization.sameAs). */
+export function teamtailorWebsite(payload: unknown): string | null {
+  for (const it of ((payload as { items?: unknown })?.items as unknown[] | undefined) ?? []) {
+    const org = ((it as Record<string, unknown>)?._jobposting as Record<string, unknown> | undefined)?.hiringOrganization as Record<string, unknown> | undefined;
+    const site = str(org?.sameAs) ?? str(org?.url);
+    if (site && /^https?:\/\//.test(site)) return site;
+  }
+  return null;
+}
+
+const xmlText = (block: string, tag: string): string | null => {
+  const m = block.match(new RegExp(`<${tag}>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</${tag}>`));
+  return m ? m[1].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, "&").trim() || null : null;
+};
+
+export interface PersonioFeed { positions: Array<Record<string, string | null>> }
+
+/** Personio's XML feed, or null when the body is not one — a FAILED read, never an empty board. */
+export function personioXml(xml: string): PersonioFeed | null {
+  if (!/<workzag-jobs\b/.test(xml)) return null;
+  const positions = [...xml.matchAll(/<position>([\s\S]*?)<\/position>/g)].map(([, b]) => {
+    const descriptions = [...b.matchAll(/<value>([\s\S]*?)<\/value>/g)].map(([, v]) => v.replace(/<!\[CDATA\[|\]\]>/g, "")).join(" ");
+    return {
+      id: xmlText(b, "id"), name: xmlText(b, "name"), office: xmlText(b, "office"), department: xmlText(b, "department"),
+      subcompany: xmlText(b, "subcompany"), description: descriptions ? xmlText(`<d>${descriptions}</d>`, "d") : null,
+    };
+  });
+  return { positions };
+}
+
+export function parsePersonio(payload: unknown, token = ""): NormalisedJob[] {
+  const positions = (payload as PersonioFeed | null)?.positions;
+  if (!Array.isArray(positions)) return [];
+  const board = `https://${token}.jobs.personio.de/`;
+  return positions.flatMap((p) => (p.id && p.name
+    ? [{ external_job_id: p.id, title: p.name, url: board, department: label(p.department), location: label(p.office) }] : []));
+}
+
+export function parseRecruitee(payload: unknown): NormalisedJob[] {
+  const offers = (payload as { offers?: unknown })?.offers;
+  if (!Array.isArray(offers)) return [];
+  const out: NormalisedJob[] = [];
+  for (const of of offers) {
+    const o = of as Record<string, unknown>;
+    if (typeof o?.status === "string" && o.status !== "published") continue;
+    const id = str(o?.id);
+    const title = str(o?.title);
+    const url = str(o?.careers_url);
+    if (!id || !title || !url) continue;
+    out.push({ external_job_id: id, title, url, department: label(o?.department), location: place(o?.city, o?.country) ?? label(o?.location) });
+  }
+  return out;
+}
