@@ -405,71 +405,21 @@ export async function boardsOnSite(f: Fetch, website: string, jinaKey?: string):
     ...(linked ? [{ url: linked, guessed: false }] : []),
     ...CAREERS_PATHS.flatMap((p) => { try { return [{ url: new URL(p, home).toString(), guessed: true }]; } catch { return []; } }),
   ];
-  const read: Array<{ url: string; page: string }> = [{ url: home, page }];
   for (const { url, guessed } of candidates) {
     if (tried.has(url.replace(/\/$/, ""))) continue;
     tried.add(url.replace(/\/$/, ""));
     const c = await readForLinks(f, url, jinaKey, { wantAts: true, guessed });
     const boards = c ? atsLinksIn(c) : [];
     if (boards.length) return { boards, page: url };
-    if (c) read.push({ url, page: c });
   }
-  return (await comeetBehindSite(f, read)) ?? { boards: [], page: home };
+  // A site that builds its careers pages from Comeet on its own server
+  // (sett.ai) shows no Comeet link: its board is not found here. Comeet's
+  // careers API, with the token such a site carries, was used for that until
+  // 2026-10-24 — the owner stopped it: the token is given to the company for
+  // its own site, not to us.
+  return { boards: [], page: home };
 }
 
-// ── Comeet behind a company's own careers pages ──────────────────────────────
-// Some sites build their careers pages from Comeet on their own server: the
-// list never mentions Comeet (sett.ai/careers), but each position's page
-// carries Comeet's apply form — COMEET.init({"token": ..., "company-uid":
-// "4A.00B"}) — and its paths end in a Comeet position uid
-// (/careers/account-manager/75.474). Comeet's public careers API (the one
-// that widget loads) then gives the hosted careers page, slug included.
-// Seen 2026-10-23 on sett.ai.
-
-/** The careers widget's settings on a page: Comeet's company uid and the site's public API token. */
-export function comeetWidgetIn(page: string): { uid: string; token: string } | null {
-  const init = page.match(/COMEET\.init\(\s*(\{[^}]{0,2000}\})/)?.[1] ?? "";
-  const uid = init.match(/["']company-uid["']\s*:\s*["']([0-9A-Fa-f]{2}\.[0-9A-Fa-f]{3})["']/)?.[1];
-  const token = init.match(/["']token["']\s*:\s*["']([0-9A-Za-z]{16,80})["']/)?.[1];
-  return uid && token ? { uid: uid.toUpperCase(), token } : null;
-}
-
-/** Links on the same site whose path ends in a Comeet position uid (/careers/account-manager/75.474). */
-export function comeetPositionLinksIn(page: string, base: string): string[] {
-  const home = websiteDomain(base);
-  return [...new Set(linksIn(page, base)
-    .map((l) => l.url)
-    .filter((u) => { const d = websiteDomain(u); return !!d && !!home && sameSite(d, home) && /\/[a-z0-9-]+\/[0-9A-F]{2}\.[0-9A-F]{3}\/?(?:[?#].*)?$/i.test(new URL(u).pathname + new URL(u).search); }))];
-}
-
-/** The hosted careers board for a widget's uid and token, from Comeet's public API; null when it lists no position. */
-export async function comeetBoardFromApi(f: Fetch, w: { uid: string; token: string }): Promise<AtsRef | null> {
-  const res = await get(f, `https://www.comeet.co/careers-api/2.0/company/${encodeURIComponent(w.uid)}/positions?token=${encodeURIComponent(w.token)}`);
-  const positions = res ? await res.json().catch(() => null) as Array<Record<string, unknown>> | null : null;
-  for (const p of Array.isArray(positions) ? positions : []) {
-    const ref = comeetLinksIn(String(p?.url_comeet_hosted_page ?? "")).find((r) => comeetUid(r.token) === w.uid);
-    if (ref) return { ...ref, url: `https://www.comeet.com/jobs/${ref.token}` };
-  }
-  return null;
-}
-
-/** The widget on a page already read, else on the first position page those pages link to. */
-async function comeetBehindSite(f: Fetch, read: Array<{ url: string; page: string }>): Promise<{ boards: AtsRef[]; page: string } | null> {
-  for (const r of read) {
-    const w = comeetWidgetIn(r.page);
-    const ref = w ? await comeetBoardFromApi(f, w) : null;
-    if (ref) return { boards: [ref], page: r.url };
-  }
-  for (const r of read) {
-    const position = comeetPositionLinksIn(r.page, r.url)[0];
-    if (!position) continue;
-    const html = await fetchHtml(f, position);
-    const w = html ? comeetWidgetIn(html) : null;
-    const ref = w ? await comeetBoardFromApi(f, w) : null;
-    return ref ? { boards: [ref], page: position } : null;
-  }
-  return null;
-}
 
 const strip = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&[a-z]+;/g, " ").replace(/\s+/g, " ").trim();
 

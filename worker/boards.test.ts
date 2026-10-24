@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { atsLinksIn, careersLinkIn, linksIn, sameSite, isGenericSlug, namesMatch, namesCompatible, decideLink, boardsBatch, boardsOnSite, boardFacts, finalDomain, comeetLinksIn, comeetWidgetIn, comeetPositionLinksIn, comeetBoardFromApi, linkedDomainsIn, leverWebsite, ashbyWebsite, LINK_RULES_VERSION, type LinkEvidenceInput } from "./boards";
+import { atsLinksIn, careersLinkIn, linksIn, sameSite, isGenericSlug, namesMatch, namesCompatible, decideLink, boardsBatch, boardsOnSite, boardFacts, finalDomain, comeetLinksIn, linkedDomainsIn, leverWebsite, ashbyWebsite, LINK_RULES_VERSION, type LinkEvidenceInput } from "./boards";
 
 describe("atsLinksIn", () => {
   it("reads every ATS's board links, in every URL form", () => {
@@ -292,48 +292,18 @@ describe("Comeet", () => {
   });
 });
 
-describe("Comeet behind the company's own careers pages (sett.ai, 2026-10-23)", () => {
-  const TOKEN = "A4B480D292C149652585CA333775CA35CA33377";
-  const positionPage = `<div id="comeet-applyform"></div><script src="https://www.comeet.co/careers-api/api.js"></script>
-    <script>window.comeetInit = function() { COMEET.init({"token":"${TOKEN}","company-uid":"4A.00B","candidate-source-storage":false,"thankyou-url":""}); };</script>`;
-  const careers = `<a href="/careers/account-manager/75.474/">Account Manager</a><a href="/careers/ai-fullstack-engineer/53.F66/">AI</a>
-    <a href="https://other.com/careers/x/75.474">elsewhere</a><a href="/careers/">All</a>`;
-  const api = JSON.stringify([{ name: "Account Manager", url_comeet_hosted_page: "https://www.comeet.com/jobs/sett/4A.00B/account-manager/75.474" }]);
-
-  it("reads the widget's uid and public token", () => {
-    expect(comeetWidgetIn(positionPage)).toEqual({ uid: "4A.00B", token: TOKEN });
-    expect(comeetWidgetIn(`COMEET.init({"company-uid":"4A.00B"})`)).toBeNull();   // no token, no API
-    expect(comeetWidgetIn("nothing")).toBeNull();
-  });
-  it("finds the site's own position pages by their Comeet uid", () => {
-    expect(comeetPositionLinksIn(careers, "https://www.sett.ai/careers/")).toEqual([
-      "https://www.sett.ai/careers/account-manager/75.474/", "https://www.sett.ai/careers/ai-fullstack-engineer/53.F66/",
-    ]);
-  });
-  it("the API gives the hosted board, slug included; no position = nothing", async () => {
-    const ok = vi.fn(async () => new Response(api));
-    expect(await comeetBoardFromApi(ok as never, { uid: "4A.00B", token: TOKEN })).toEqual({ provider: "comeet", token: "sett/4A.00B", url: "https://www.comeet.com/jobs/sett/4A.00B" });
-    expect(ok.mock.calls[0][0]).toBe(`https://www.comeet.co/careers-api/2.0/company/4A.00B/positions?token=${TOKEN}`);
-    expect(await comeetBoardFromApi((async () => new Response("[]")) as never, { uid: "4A.00B", token: TOKEN })).toBeNull();
-    // a position of ANOTHER company uid is not taken
-    const other = JSON.stringify([{ url_comeet_hosted_page: "https://www.comeet.com/jobs/x/11.111/a/1" }]);
-    expect(await comeetBoardFromApi((async () => new Response(other)) as never, { uid: "4A.00B", token: TOKEN })).toBeNull();
-  });
-  it("end to end: home -> careers list -> one position page -> API -> the board", async () => {
+describe("Comeet's careers API is not used (owner, 2026-10-24)", () => {
+  it("is never called, even when a site's pages carry the widget's token", async () => {
     const html = (b: string) => new Response(b, { headers: { "content-type": "text/html" } });
+    const widget = `<script>COMEET.init({"token":"A4B480D292C149652585CA333775CA35CA33377","company-uid":"4A.00B"});</script>`;
     const f = vi.fn(async (url: string) => {
       if (url === "https://www.sett.ai") return html(`<a href="/careers/">Careers</a>`);
-      if (url === "https://www.sett.ai/careers/") return html(careers);
-      if (url === "https://www.sett.ai/careers/account-manager/75.474/") return html(positionPage);
-      if (url.startsWith("https://www.comeet.co/careers-api/2.0/company/4A.00B/positions")) return new Response(api);
+      if (url === "https://www.sett.ai/careers/") return html(`<a href="/careers/account-manager/75.474/">AM</a>`);
+      if (url === "https://www.sett.ai/careers/account-manager/75.474/") return html(widget);
       return new Response("", { status: 404 });
     });
-    expect(await boardsOnSite(f as never, "https://www.sett.ai")).toEqual({
-      boards: [{ provider: "comeet", token: "sett/4A.00B", url: "https://www.comeet.com/jobs/sett/4A.00B" }],
-      page: "https://www.sett.ai/careers/account-manager/75.474/",
-    });
-    // one position page read, not all of them
-    expect(f.mock.calls.filter(([u]) => String(u).includes("/53.F66")).length).toBe(0);
+    expect(await boardsOnSite(f as never, "https://www.sett.ai")).toEqual({ boards: [], page: "https://www.sett.ai" });
+    expect(f.mock.calls.map(([u]) => String(u)).filter((u) => u.includes("careers-api"))).toEqual([]);
   });
 });
 
