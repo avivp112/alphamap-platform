@@ -15,18 +15,22 @@
 // vitest tests it.
 // =============================================================================
 
-/** Who we are, in every request. Site owners write to CONTACT to be left out. */
+/**
+ * Who we are, in every request: the product and its site (owner, 2026-10-24:
+ * no email). infoUrl stays empty until the owner gives the site's address —
+ * then "AlphaMapBot/1.0" alone: never an address that is not ours.
+ */
 export const CRAWLER = {
   name: "AlphaMapBot",
   version: "1.0",
-  /** A page about the crawler (or the product's site). */
-  infoUrl: "__ALPHAMAP_INFO_URL__",
-  /** Where a site owner asks us to stop. */
-  contact: "__ALPHAMAP_CONTACT_EMAIL__",
+  /** The product's site (Vercel), e.g. "https://….vercel.app". */
+  infoUrl: "",
 };
 
 export const crawlerUserAgent = (): string =>
-  `${CRAWLER.name}/${CRAWLER.version} (+${CRAWLER.infoUrl}; ${CRAWLER.contact})`;
+  /^https:\/\/[a-z0-9.-]+\.[a-z]{2,}\/?$/.test(CRAWLER.infoUrl)
+    ? `${CRAWLER.name}/${CRAWLER.version} (+${CRAWLER.infoUrl})`
+    : `${CRAWLER.name}/${CRAWLER.version}`;
 
 // ── robots.txt ───────────────────────────────────────────────────────────────
 

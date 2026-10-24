@@ -61,8 +61,8 @@ describe("RobotsGate", () => {
 });
 
 describe("the User-Agent", () => {
-  it("names the product and a contact", () => {
-    expect(crawlerUserAgent()).toContain("AlphaMapBot/");
-    expect(crawlerUserAgent()).toContain(CRAWLER.contact);
+  it("names the product, and its site only when a real https address is set", () => {
+    expect(crawlerUserAgent()).toBe(CRAWLER.infoUrl ? `AlphaMapBot/1.0 (+${CRAWLER.infoUrl})` : "AlphaMapBot/1.0");
+    expect(crawlerUserAgent()).not.toMatch(/__|example|alphamap\.(app|io)/);
   });
 });

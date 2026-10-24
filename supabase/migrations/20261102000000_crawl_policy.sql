@@ -28,15 +28,15 @@ CREATE TABLE IF NOT EXISTS ats_providers (
 COMMENT ON TABLE ats_providers IS
   'Job-board providers AlphaMap reads. enabled = false: not read, not registered, roles not shown (robots.txt or a person decided). legal_status: where the terms review stands.';
 INSERT INTO ats_providers (provider, enabled, legal_status, note) VALUES
-  ('greenhouse',      true,  'not_reviewed',              'public job board API'),
-  ('lever',           true,  'not_reviewed',              'public postings API'),
-  ('ashby',           true,  'not_reviewed',              'public job board API'),
-  ('workable',        true,  'not_reviewed',              'public widget API'),
+  ('greenhouse',      true,  'legal_review_before_launch','public job board API'),
+  ('lever',           true,  'legal_review_before_launch','public postings API'),
+  ('ashby',           true,  'legal_review_before_launch','public job board API'),
+  ('workable',        true,  'legal_review_before_launch','public widget API'),
   ('smartrecruiters', true,  'approved_by_owner',         'Posting API: documented as public, no authentication (owner, 2026-10-24)'),
   ('recruitee',       true,  'legal_review_before_launch','Careers Site API: documented as needing no authorisation; 2022 API terms limit bulk copying'),
   ('personio',        true,  'legal_review_before_launch','public XML feed, switched on by the employer for its own site'),
   ('teamtailor',      true,  'legal_review_before_launch','public jobs.json feed; no official terms found'),
-  ('comeet',          true,  'pending_robots_review',     'hosted careers page only; the careers API with a site''s token is not used (owner, 2026-10-24)')
+  ('comeet',          true,  'robots_checked_automatically',     'hosted careers page only, subject to the automatic robots.txt check; never the careers API or a token (owner, 2026-10-24)')
 ON CONFLICT (provider) DO NOTHING;
 ALTER TABLE ats_providers ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS ats_providers_read_admin ON ats_providers;
