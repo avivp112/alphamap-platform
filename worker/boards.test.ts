@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { atsLinksIn, careersLinkIn, linksIn, sameSite, isGenericSlug, namesMatch, decideLink, boardsBatch, boardsOnSite, boardFacts, finalDomain, comeetLinksIn, comeetWidgetIn, comeetPositionLinksIn, comeetBoardFromApi, linkedDomainsIn, leverWebsite, ashbyWebsite, LINK_RULES_VERSION, type LinkEvidenceInput } from "./boards";
+import { atsLinksIn, careersLinkIn, linksIn, sameSite, isGenericSlug, namesMatch, namesCompatible, decideLink, boardsBatch, boardsOnSite, boardFacts, finalDomain, comeetLinksIn, comeetWidgetIn, comeetPositionLinksIn, comeetBoardFromApi, linkedDomainsIn, leverWebsite, ashbyWebsite, LINK_RULES_VERSION, type LinkEvidenceInput } from "./boards";
 
 describe("atsLinksIn", () => {
   it("reads every ATS's board links, in every URL form", () => {
@@ -370,9 +370,9 @@ describe("SmartRecruiters, Teamtailor, Personio, Recruitee on company sites", ()
 
 describe("rules 4: the board's own declarations first, no proof from a list of boards", () => {
   it("our site links to a board that names another company (a wrong website on file): not verified", () => {
-    // Sanctuary Mental, with sanctuary.ai (a robotics company) on file
-    const d = decideLink(base({ company: { name: "Sanctuary Mental", website: "https://sanctuary.ai" }, board: { provider: "greenhouse", token: "sanctuary" },
-      siteBoards: [{ provider: "greenhouse", token: "sanctuary", url: "u" }], boardMeta: { name: "Sanctuary AI" } }));
+    // Heroine's site linked to Grailed's board (seen 2026-10-24)
+    const d = decideLink(base({ company: { name: "Heroine", website: "https://heroine.com" }, board: { provider: "greenhouse", token: "grailed" },
+      siteBoards: [{ provider: "greenhouse", token: "grailed", url: "u" }], boardMeta: { name: "Grailed" } }));
     expect(d).toMatchObject({ status: "unverifiable", evidence: { reason: expect.stringContaining("conflicting") } });
   });
   it("our site links to a board that declares another website: mismatch, the link notwithstanding", () => {
@@ -400,17 +400,45 @@ describe("rules 4: the board's own declarations first, no proof from a list of b
     const db = { rpc: vi.fn(async (name: string) => {
       rpcs.push(name);
       if (name === "claim_board_links") return { data: [], error: null };
-      if (name === "claim_board_site_scans") return { data: [{ startup_id: "s1", startup_name: "Sanctuary Mental", website: "https://sanctuary.ai" }], error: null };
+      if (name === "claim_board_site_scans") return { data: [{ startup_id: "s1", startup_name: "Heroine", website: "https://heroine.com" }], error: null };
       return { data: "registered", error: null };
     }) };
     const f = vi.fn(async (url: string) => {
-      if (url === "https://sanctuary.ai") return new Response(`<a href="https://boards.greenhouse.io/sanctuary">Careers</a>`, { headers: { "content-type": "text/html" } });
-      if (url === "https://boards-api.greenhouse.io/v1/boards/sanctuary") return new Response(JSON.stringify({ name: "Sanctuary AI" }));
-      if (url === "https://boards-api.greenhouse.io/v1/boards/sanctuary/jobs?content=true") return new Response(JSON.stringify({ jobs: [] }));
+      if (url === "https://heroine.com") return new Response(`<a href="https://boards.greenhouse.io/grailed">Careers</a>`, { headers: { "content-type": "text/html" } });
+      if (url === "https://boards-api.greenhouse.io/v1/boards/grailed") return new Response(JSON.stringify({ name: "Grailed" }));
+      if (url === "https://boards-api.greenhouse.io/v1/boards/grailed/jobs?content=true") return new Response(JSON.stringify({ jobs: [] }));
       return new Response("", { status: 404 });
     });
     const r = await boardsBatch({ db: db as never, fetch: f as never, log: () => {} }, 3);
     expect(r).toMatchObject({ scanned: 1, registered: 0 });
     expect(rpcs).not.toContain("register_board_from_website");
+  });
+});
+
+describe("rules 5: one company's names (the 62 boards rules 4 hid, 2026-10-24)", () => {
+  const same: Array<[string, string]> = [
+    ["AppGate Cybersecurity, Inc.", "Appgate"], ["Calm.com", "Calm"], ["Cloud9 Esports", "Cloud9"], ["Cognite - AI for Industry", "Cognite"],
+    ["Faherty Brand", "Faherty"], ["Funding Societies | Modalku Group", "Funding Societies"], ["Headspace", "Headspace Health"],
+["Isomorphic Labs", "Isomorphic Laboratories"], ["Kodiak", "Kodiak Robotics"],
+    ["Komodo Health", "Komodo"], ["Later", "Later Influence"], ["LTK USA", "LTK"],
+    ["Luma Health", "Luma"], ["Mantra Health", "Mantra"], ["May Mobility (Part-Time)", "May Mobility"], ["Mercer Advisors", "Mercer"],
+    ["Palmetto Clean Technology", "Palmetto"], ["Parachute Home", "Parachute"],
+    ["Piermont Bank", "Piermont"], ["Plum Fintech", "Plum"], ["The Predictive Index", "Predictive Index"], ["Quilt", "Quilt Comfort"],
+    ["Grupo QuintoAndar", "QuintoAndar"], ["Redwood Materials", "Redwood"], ["Splash Financial", "Splash"], ["Synack SRT", "Synack"],
+    ["Trust Bank", "Trust"], ["Valera Health", "Valera"], ["VideoAmp Careers Website", "VideoAmp"], ["Jobs @ Wunderflats", "Wunderflats"],
+    ["YugabyteDB", "YugaByte"], ["Zesty.ai", "ZestyAI"], ["AIRCO", "Air Company"],
+  ];
+  it.each(same)("%s is %s's board", (board, ours) => expect(namesCompatible(board, ours)).toBe(true));
+  const other: Array<[string, string]> = [
+    ["Grailed", "Heroine"], ["Relae", "Carbon Direct"], ["Arc Institute", "Evo"], ["Natera", "ChartHop"], ["Attivo Partners", "Numeric"],
+    ["Zinier", "Remote"], ["Sail Biomedicines", "Senda Biosciences"], ["Bolt.new", "StackBlitz"], ["Happy Money", "Payoff"],
+    ["Quantum Circuits", "PsiQuantum"],
+    // the accepted limit: the same first word with different rest stays apart (missing, never wrong)
+    ["Headspace Providers", "Headspace Health"], ["Montai Therapeutics", "Montai Health"], ["Leapfrog Power, Inc.", "Leap Energy"],
+  ];
+  it.each(other)("%s is not %s's board", (board, ours) => expect(namesCompatible(board, ours)).toBe(false));
+  it("a real board with a longer name is verified by the company's link again", () => {
+    expect(decideLink(base({ company: { name: "Komodo", website: "https://komodohealth.com" }, board: { provider: "greenhouse", token: "komodohealth" },
+      siteBoards: [{ provider: "greenhouse", token: "komodohealth", url: "u" }], boardMeta: { name: "Komodo Health" } }))).toMatchObject({ status: "verified", method: "website_link" });
   });
 });

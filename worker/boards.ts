@@ -160,6 +160,53 @@ export function namesMatch(a: string, b: string): boolean {
   return !!x && !!y && (x === y || x.replace(/\s/g, "") === y.replace(/\s/g, ""));
 }
 
+// What a board puts around the company's name: "Jobs @ Wunderflats", "VideoAmp
+// Careers Website", "Cognite - AI for Industry", "Funding Societies | Modalku
+// Group", "May Mobility (Part-Time)", "Calm.com", "Isomorphic Laboratories".
+const nameVariants = (s: string): string[] => {
+  const base = s.toLowerCase()
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/^\s*(?:jobs|careers|work)\s*(?:@|at)\s*/i, "")
+    .replace(/\b(?:careers?|jobs?)(?:\s+(?:website|site|page|board))?\s*$/i, "")
+    .replace(/\.(?:com|ai|io|co|app|net|org|dev|so|xyz)\b/g, " ")
+    .replace(/\blaboratories\b/g, "labs");
+  return [base, ...base.split(/\s+[-–—|]\s+|\s*\|\s*/)]
+    .map((v) => nameKey(v.replace(/^\s*(?:the|grupo|group)\s+/i, "")).replace(/\s+/g, " ").trim())
+    .filter((v) => v.length > 0);
+};
+
+/**
+ * Could these be one company's names? Used only to VETO strong evidence (a
+ * board that names another company is not verified by a link to it), so it
+ * is lenient: the same name, one inside the other as whole words, or one
+ * the start of the other (4+ letters, spaces aside: "YugaByte" / "YugabyteDB",
+ * "Air Company" / "AIRCO"). "Grailed" / "Heroine" and "Natera" / "ChartHop"
+ * are still different companies. (rules 5, 2026-10-24)
+ *
+ * Its limit, accepted: two names sharing only a first word ("Montai Health" /
+ * "Montai Therapeutics", "Sanctuary AI" / "Sanctuary Mental") stay apart —
+ * unless the rest is a suffix the comparison drops ("AI"), so a WRONG website
+ * on file for a same-first-word company is not caught here: fix the record.
+ */
+export function namesCompatible(a: string, b: string): boolean {
+  if (namesMatch(a, b)) return true;
+  for (const x of nameVariants(a)) {
+    for (const y of nameVariants(b)) {
+      if (x === y) return true;
+      const [short, long] = x.length <= y.length ? [x, y] : [y, x];
+      // one inside the other as whole words ("Komodo" / "Komodo Health"); a
+      // 3-letter name only as the other's first word ("LTK" / "LTK USA")
+      if (short.length >= 4 && new RegExp(`(^|\\s)${escapeRe(short)}(\\s|$)`).test(long)) return true;
+      if (short.length === 3 && !/\s/.test(short) && long.startsWith(`${short} `)) return true;
+      const cs = short.replace(/\s/g, ""), cl = long.replace(/\s/g, "");
+      if (cs.length >= 4 && cl.startsWith(cs)) return true;
+    }
+  }
+  // spaces and suffixes aside, before any is removed ("AIRCO" / "Air Company")
+  const [rs, rl] = [a, b].map((v) => v.toLowerCase().replace(/[^a-z0-9]/g, "")).sort((p, q) => p.length - q.length);
+  return rs.length >= 4 && rl.startsWith(rs);
+}
+
 /**
  * verified        strong evidence: shown on the profile (the only status that is)
  * low_confidence  only the name agrees — the board was FOUND by that name, so
@@ -178,8 +225,10 @@ export type LinkMethod = "website_link" | "domain_match" | "posting_domain" | "n
  * redis.io), 2026-10-23. 4: the board's own declarations decide first — a
  * board naming another company or website is never verified by a link or a
  * domain in its postings; a page linking to many boards proves nothing.
+ * 5: "names another company" means clearly another name (namesCompatible):
+ * "Komodo Health" is Komodo's board, "Grailed" is not Heroine's.
  */
-export const LINK_RULES_VERSION = 4;
+export const LINK_RULES_VERSION = 5;
 
 /**
  * A page linking to more boards than this is a list of other companies' jobs
@@ -227,7 +276,7 @@ export function decideLink(i: LinkEvidenceInput): LinkDecision {
   const ev = (o: Record<string, unknown>) => ({ slug: board.token, generic_slug: generic, rules: LINK_RULES_VERSION, ...o });
   const boardName = i.boardMeta?.name?.trim() || null;
   // The board calls itself something else: no link or domain in passing outweighs that.
-  const nameConflict = !!boardName && !namesMatch(boardName, company.name);
+  const nameConflict = !!boardName && !namesCompatible(boardName, company.name);
   // A page listing many boards is not the company's own careers page.
   const crowded = (i.siteBoards?.length ?? 0) > MAX_SITE_BOARDS;
   const siteBoards = crowded ? null : i.siteBoards;
