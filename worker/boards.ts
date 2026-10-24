@@ -20,6 +20,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { isDistinctiveName } from "../lib/enrichment/entity.ts";
 import { websiteDomain } from "../lib/enrichment/websiteValidation.ts";
 import { comeetPage, personioXml, teamtailorWebsite } from "../supabase/functions/sourcing-crawl/parse.ts";
+import { RobotsGate, crawlerUserAgent, providerOfUrl as providerOf } from "../supabase/functions/_shared/crawl-policy.ts";
+
+/** The job-board provider a URL belongs to, if any. */
+export const providerOfUrl = (url: string) => providerOf(url) as AtsProvider | null;
 
 export type AtsProvider = "greenhouse" | "lever" | "ashby" | "workable" | "comeet"
   | "smartrecruiters" | "teamtailor" | "personio" | "recruitee";
@@ -364,7 +368,7 @@ export async function readPage(f: Fetch, url: string, jinaKey?: string): Promise
   return text || null;
 }
 
-const BROWSER_HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; AlphaMapBot/1.0; +https://alphamap.app)", Accept: "text/html,application/xhtml+xml" };
+const BROWSER_HEADERS = { Accept: "text/html,application/xhtml+xml" };
 
 /** A page's own HTML — every href, iframe and embed script, which a reader's markdown can drop. */
 export async function fetchHtml(f: Fetch, url: string): Promise<string | null> {
@@ -405,71 +409,21 @@ export async function boardsOnSite(f: Fetch, website: string, jinaKey?: string):
     ...(linked ? [{ url: linked, guessed: false }] : []),
     ...CAREERS_PATHS.flatMap((p) => { try { return [{ url: new URL(p, home).toString(), guessed: true }]; } catch { return []; } }),
   ];
-  const read: Array<{ url: string; page: string }> = [{ url: home, page }];
   for (const { url, guessed } of candidates) {
     if (tried.has(url.replace(/\/$/, ""))) continue;
     tried.add(url.replace(/\/$/, ""));
     const c = await readForLinks(f, url, jinaKey, { wantAts: true, guessed });
     const boards = c ? atsLinksIn(c) : [];
     if (boards.length) return { boards, page: url };
-    if (c) read.push({ url, page: c });
   }
-  return (await comeetBehindSite(f, read)) ?? { boards: [], page: home };
+  // A site that builds its careers pages from Comeet on its own server
+  // (sett.ai) shows no Comeet link: its board is not found here. Comeet's
+  // careers API, with the token such a site carries, was used for that until
+  // 2026-10-24 — the owner stopped it: the token is given to the company for
+  // its own site, not to us.
+  return { boards: [], page: home };
 }
 
-// ── Comeet behind a company's own careers pages ──────────────────────────────
-// Some sites build their careers pages from Comeet on their own server: the
-// list never mentions Comeet (sett.ai/careers), but each position's page
-// carries Comeet's apply form — COMEET.init({"token": ..., "company-uid":
-// "4A.00B"}) — and its paths end in a Comeet position uid
-// (/careers/account-manager/75.474). Comeet's public careers API (the one
-// that widget loads) then gives the hosted careers page, slug included.
-// Seen 2026-10-23 on sett.ai.
-
-/** The careers widget's settings on a page: Comeet's company uid and the site's public API token. */
-export function comeetWidgetIn(page: string): { uid: string; token: string } | null {
-  const init = page.match(/COMEET\.init\(\s*(\{[^}]{0,2000}\})/)?.[1] ?? "";
-  const uid = init.match(/["']company-uid["']\s*:\s*["']([0-9A-Fa-f]{2}\.[0-9A-Fa-f]{3})["']/)?.[1];
-  const token = init.match(/["']token["']\s*:\s*["']([0-9A-Za-z]{16,80})["']/)?.[1];
-  return uid && token ? { uid: uid.toUpperCase(), token } : null;
-}
-
-/** Links on the same site whose path ends in a Comeet position uid (/careers/account-manager/75.474). */
-export function comeetPositionLinksIn(page: string, base: string): string[] {
-  const home = websiteDomain(base);
-  return [...new Set(linksIn(page, base)
-    .map((l) => l.url)
-    .filter((u) => { const d = websiteDomain(u); return !!d && !!home && sameSite(d, home) && /\/[a-z0-9-]+\/[0-9A-F]{2}\.[0-9A-F]{3}\/?(?:[?#].*)?$/i.test(new URL(u).pathname + new URL(u).search); }))];
-}
-
-/** The hosted careers board for a widget's uid and token, from Comeet's public API; null when it lists no position. */
-export async function comeetBoardFromApi(f: Fetch, w: { uid: string; token: string }): Promise<AtsRef | null> {
-  const res = await get(f, `https://www.comeet.co/careers-api/2.0/company/${encodeURIComponent(w.uid)}/positions?token=${encodeURIComponent(w.token)}`);
-  const positions = res ? await res.json().catch(() => null) as Array<Record<string, unknown>> | null : null;
-  for (const p of Array.isArray(positions) ? positions : []) {
-    const ref = comeetLinksIn(String(p?.url_comeet_hosted_page ?? "")).find((r) => comeetUid(r.token) === w.uid);
-    if (ref) return { ...ref, url: `https://www.comeet.com/jobs/${ref.token}` };
-  }
-  return null;
-}
-
-/** The widget on a page already read, else on the first position page those pages link to. */
-async function comeetBehindSite(f: Fetch, read: Array<{ url: string; page: string }>): Promise<{ boards: AtsRef[]; page: string } | null> {
-  for (const r of read) {
-    const w = comeetWidgetIn(r.page);
-    const ref = w ? await comeetBoardFromApi(f, w) : null;
-    if (ref) return { boards: [ref], page: r.url };
-  }
-  for (const r of read) {
-    const position = comeetPositionLinksIn(r.page, r.url)[0];
-    if (!position) continue;
-    const html = await fetchHtml(f, position);
-    const w = html ? comeetWidgetIn(html) : null;
-    const ref = w ? await comeetBoardFromApi(f, w) : null;
-    return ref ? { boards: [ref], page: position } : null;
-  }
-  return null;
-}
 
 const strip = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&[a-z]+;/g, " ").replace(/\s+/g, " ").trim();
 
@@ -601,6 +555,38 @@ async function redirectsBetween(f: Fetch, board: string | null, ours: string | n
   return { [board]: a, [ours]: b };
 }
 
+// ── Reading politely (crawl-policy.ts) ───────────────────────────────────────
+
+
+// One gate per fetch function: the long-running worker keeps robots.txt for a day.
+const GATES = new WeakMap<Fetch, RobotsGate>();
+const gateFor = (f: Fetch) => {
+  let g = GATES.get(f);
+  if (!g) { g = new RobotsGate(f as never); GATES.set(f, g); }
+  return g;
+};
+
+/**
+ * A fetch that identifies us honestly and asks robots.txt first. Through
+ * Jina, the page Jina is asked to read is the one checked. Disallowed or
+ * unknown: no request — an empty 451 answer, which every reader here treats
+ * as "could not be read". A provider's own path disallowed: onBlocked, which
+ * switches the provider off.
+ */
+export function politeFetch(f: Fetch, onBlocked: (provider: AtsProvider, url: string) => void, gate = gateFor(f)): Fetch {
+  return (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    const url = String(input);
+    const target = url.startsWith("https://r.jina.ai/") ? url.slice("https://r.jina.ai/".length) : url;
+    const verdict = await gate.check(target);
+    if (verdict !== "allowed") {
+      const provider = verdict === "disallowed" ? providerOfUrl(target) : null;
+      if (provider) onBlocked(provider, target);
+      return new Response("", { status: 451, statusText: `robots.txt: ${verdict}` });
+    }
+    return f(input, { ...init, headers: { ...(init.headers as Record<string, string> | undefined), "User-Agent": crawlerUserAgent() } });
+  }) as Fetch;
+}
+
 // ── One batch ────────────────────────────────────────────────────────────────
 
 export interface BoardDeps {
@@ -614,7 +600,21 @@ export interface BatchResult { checked: number; verified: number; low_confidence
 
 /** A few boards checked, or, when none is waiting, a few company sites read for boards. */
 export async function boardsBatch(d: BoardDeps, size = 3): Promise<BatchResult> {
-  const f = d.fetch ?? fetch;
+  const blocked = new Map<AtsProvider, string>();
+  const f = politeFetch(d.fetch ?? fetch, (provider, url) => { if (!blocked.has(provider)) blocked.set(provider, url); });
+  try {
+    return await boardsBatchWith(d, f, size);
+  } finally {
+    // A provider whose robots.txt disallows the path we read is switched off
+    // until a person looks at it (ats_providers.enabled).
+    for (const [provider, url] of blocked) {
+      const { error } = await d.db.rpc("disable_ats_provider", { p_provider: provider, p_reason: `robots.txt disallows ${url}` });
+      (d.log ?? console.log)(`[worker] boards: ${provider} SWITCHED OFF — robots.txt disallows ${url}${error ? ` (not saved: ${error.message})` : ""}`);
+    }
+  }
+}
+
+async function boardsBatchWith(d: BoardDeps, f: Fetch, size: number): Promise<BatchResult> {
   const log = d.log ?? ((m: string) => console.log(`[worker] boards: ${m}`));
   const r: BatchResult = { checked: 0, verified: 0, low_confidence: 0, mismatch: 0, unverifiable: 0, scanned: 0, registered: 0 };
 

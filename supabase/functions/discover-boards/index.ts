@@ -35,6 +35,7 @@
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { withRunLog, countKeys } from "../_shared/run-log.ts";
+import { RobotsGate, crawlerUserAgent, providerOfUrl } from "../_shared/crawl-policy.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -166,10 +167,23 @@ function countJobs(provider: AtsProvider, data: unknown): number {
   return Array.isArray(jobs) ? jobs.length : 0;
 }
 
+// robots.txt first, every request (crawl-policy.ts); providers switched off
+// (ats_providers) or found disallowed in this run are not probed.
+const robots = new RobotsGate(fetch);
+const skipProviders = new Set<string>();
+const blockedProviders = new Map<string, string>();
+
 async function probe(provider: AtsProvider, slug: string): Promise<number | null> {
+  if (skipProviders.has(provider) || blockedProviders.has(provider)) return null;
+  const url = PROVIDER_URL[provider](encodeURIComponent(slug));
+  const verdict = await robots.check(url);
+  if (verdict !== "allowed") {
+    if (verdict === "disallowed" && providerOfUrl(url)) blockedProviders.set(provider, url);
+    return null;
+  }
   try {
-    const res = await fetch(PROVIDER_URL[provider](encodeURIComponent(slug)), {
-      headers: { Accept: "application/json", "User-Agent": "AlphaMap-Sourcing/1.0" },
+    const res = await fetch(url, {
+      headers: { Accept: "application/json", "User-Agent": crawlerUserAgent() },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!res.ok) return null;
@@ -264,6 +278,12 @@ Deno.serve(withRunLog("discover_boards", countKeys("registered"), async (req: Re
       });
     }
 
+    // Switched-off providers are not probed.
+    skipProviders.clear(); blockedProviders.clear();
+    const { data: providers, error: pErr } = await supabase.from("ats_providers").select("provider, enabled");
+    if (pErr) return json({ error: `ats_providers: ${pErr.message}` }, 500);
+    for (const p of (providers ?? []) as Array<{ provider: string; enabled: boolean }>) if (!p.enabled) skipProviders.add(p.provider);
+
     const results: Array<Record<string, unknown>> = [];
     const attemptedIds: string[] = [];
     let registered = 0;
@@ -272,6 +292,14 @@ Deno.serve(withRunLog("discover_boards", countKeys("registered"), async (req: Re
     for (const c of candidates) {
       const slugs = slugCandidates(c.website, c.name);
       attemptedIds.push(c.startup_id);
+
+      // A company that asked not to be collected is not looked for.
+      const { data: optedOut, error: oErr } = await supabase.rpc("crawl_opted_out", { p_provider: null, p_token: null, p_startup_id: c.startup_id, p_website: c.website });
+      if (oErr) throw new Error(`crawl_opted_out: ${oErr.message}`);
+      if (optedOut) {
+        results.push({ name: c.name, found: false, reason: "opted out" });
+        continue;
+      }
 
       if (slugs.length === 0) {
         results.push({ name: c.name, website: c.website, found: false, reason: "no usable slug from website or name" });
@@ -310,6 +338,11 @@ Deno.serve(withRunLog("discover_boards", countKeys("registered"), async (req: Re
     // Stamp every company we looked at, hit or miss — a company with no board
     // must not come back in the next batch forever.
     await stampAttempted(supabase, attemptedIds);
+
+    for (const [provider, url] of blockedProviders) {
+      const { error } = await supabase.rpc("disable_ats_provider", { p_provider: provider, p_reason: `robots.txt disallows ${url}` });
+      console.error(`[discover-boards] ${provider} SWITCHED OFF — robots.txt disallows ${url}${error ? ` (not saved: ${error.message})` : ""}`);
+    }
 
     return json({
       attempted: candidates.length,

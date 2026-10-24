@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { atsLinksIn, careersLinkIn, linksIn, sameSite, isGenericSlug, namesMatch, namesCompatible, decideLink, boardsBatch, boardsOnSite, boardFacts, finalDomain, comeetLinksIn, comeetWidgetIn, comeetPositionLinksIn, comeetBoardFromApi, linkedDomainsIn, leverWebsite, ashbyWebsite, LINK_RULES_VERSION, type LinkEvidenceInput } from "./boards";
+import { atsLinksIn, careersLinkIn, linksIn, sameSite, isGenericSlug, namesMatch, namesCompatible, decideLink, boardsBatch, boardsOnSite, boardFacts, finalDomain, comeetLinksIn, politeFetch, providerOfUrl, linkedDomainsIn, leverWebsite, ashbyWebsite, LINK_RULES_VERSION, type LinkEvidenceInput } from "./boards";
 
 describe("atsLinksIn", () => {
   it("reads every ATS's board links, in every URL form", () => {
@@ -292,50 +292,6 @@ describe("Comeet", () => {
   });
 });
 
-describe("Comeet behind the company's own careers pages (sett.ai, 2026-10-23)", () => {
-  const TOKEN = "A4B480D292C149652585CA333775CA35CA33377";
-  const positionPage = `<div id="comeet-applyform"></div><script src="https://www.comeet.co/careers-api/api.js"></script>
-    <script>window.comeetInit = function() { COMEET.init({"token":"${TOKEN}","company-uid":"4A.00B","candidate-source-storage":false,"thankyou-url":""}); };</script>`;
-  const careers = `<a href="/careers/account-manager/75.474/">Account Manager</a><a href="/careers/ai-fullstack-engineer/53.F66/">AI</a>
-    <a href="https://other.com/careers/x/75.474">elsewhere</a><a href="/careers/">All</a>`;
-  const api = JSON.stringify([{ name: "Account Manager", url_comeet_hosted_page: "https://www.comeet.com/jobs/sett/4A.00B/account-manager/75.474" }]);
-
-  it("reads the widget's uid and public token", () => {
-    expect(comeetWidgetIn(positionPage)).toEqual({ uid: "4A.00B", token: TOKEN });
-    expect(comeetWidgetIn(`COMEET.init({"company-uid":"4A.00B"})`)).toBeNull();   // no token, no API
-    expect(comeetWidgetIn("nothing")).toBeNull();
-  });
-  it("finds the site's own position pages by their Comeet uid", () => {
-    expect(comeetPositionLinksIn(careers, "https://www.sett.ai/careers/")).toEqual([
-      "https://www.sett.ai/careers/account-manager/75.474/", "https://www.sett.ai/careers/ai-fullstack-engineer/53.F66/",
-    ]);
-  });
-  it("the API gives the hosted board, slug included; no position = nothing", async () => {
-    const ok = vi.fn(async () => new Response(api));
-    expect(await comeetBoardFromApi(ok as never, { uid: "4A.00B", token: TOKEN })).toEqual({ provider: "comeet", token: "sett/4A.00B", url: "https://www.comeet.com/jobs/sett/4A.00B" });
-    expect(ok.mock.calls[0][0]).toBe(`https://www.comeet.co/careers-api/2.0/company/4A.00B/positions?token=${TOKEN}`);
-    expect(await comeetBoardFromApi((async () => new Response("[]")) as never, { uid: "4A.00B", token: TOKEN })).toBeNull();
-    // a position of ANOTHER company uid is not taken
-    const other = JSON.stringify([{ url_comeet_hosted_page: "https://www.comeet.com/jobs/x/11.111/a/1" }]);
-    expect(await comeetBoardFromApi((async () => new Response(other)) as never, { uid: "4A.00B", token: TOKEN })).toBeNull();
-  });
-  it("end to end: home -> careers list -> one position page -> API -> the board", async () => {
-    const html = (b: string) => new Response(b, { headers: { "content-type": "text/html" } });
-    const f = vi.fn(async (url: string) => {
-      if (url === "https://www.sett.ai") return html(`<a href="/careers/">Careers</a>`);
-      if (url === "https://www.sett.ai/careers/") return html(careers);
-      if (url === "https://www.sett.ai/careers/account-manager/75.474/") return html(positionPage);
-      if (url.startsWith("https://www.comeet.co/careers-api/2.0/company/4A.00B/positions")) return new Response(api);
-      return new Response("", { status: 404 });
-    });
-    expect(await boardsOnSite(f as never, "https://www.sett.ai")).toEqual({
-      boards: [{ provider: "comeet", token: "sett/4A.00B", url: "https://www.comeet.com/jobs/sett/4A.00B" }],
-      page: "https://www.sett.ai/careers/account-manager/75.474/",
-    });
-    // one position page read, not all of them
-    expect(f.mock.calls.filter(([u]) => String(u).includes("/53.F66")).length).toBe(0);
-  });
-});
 
 describe("SmartRecruiters, Teamtailor, Personio, Recruitee on company sites", () => {
   it("their board links, the ATSs' own subdomains aside; a SmartRecruiters id keeps its case", () => {
@@ -440,5 +396,53 @@ describe("rules 5: one company's names (the 62 boards rules 4 hid, 2026-10-24)",
   it("a real board with a longer name is verified by the company's link again", () => {
     expect(decideLink(base({ company: { name: "Komodo", website: "https://komodohealth.com" }, board: { provider: "greenhouse", token: "komodohealth" },
       siteBoards: [{ provider: "greenhouse", token: "komodohealth", url: "u" }], boardMeta: { name: "Komodo Health" } }))).toMatchObject({ status: "verified", method: "website_link" });
+  });
+});
+
+describe("reading politely (owner's decisions of 2026-10-24)", () => {
+  const html = (b: string) => new Response(b, { headers: { "content-type": "text/html" } });
+  it("Comeet's careers API is never called, even when a site's pages carry the widget's token", async () => {
+    const widget = `<script>COMEET.init({"token":"A4B480D292C149652585CA333775CA35CA33377","company-uid":"4A.00B"});</script>`;
+    const f = vi.fn(async (url: string) => {
+      if (url === "https://www.sett.ai") return html(`<a href="/careers/">Careers</a>`);
+      if (url === "https://www.sett.ai/careers/") return html(`<a href="/careers/account-manager/75.474/">AM</a>`);
+      if (url === "https://www.sett.ai/careers/account-manager/75.474/") return html(widget);
+      return new Response("", { status: 404 });
+    });
+    expect(await boardsOnSite(f as never, "https://www.sett.ai")).toEqual({ boards: [], page: "https://www.sett.ai" });
+    expect(f.mock.calls.map(([u]) => String(u)).filter((u) => u.includes("careers-api"))).toEqual([]);
+  });
+  it("every request carries our honest User-Agent, and robots.txt is asked first", async () => {
+    const f = vi.fn(async (_url: string, _init?: RequestInit) => new Response("", { status: 404 }));
+    await politeFetch(f as never, () => {})("https://acme.com/careers", {});
+    expect(f.mock.calls.map(([u]) => u)).toEqual(["https://acme.com/robots.txt", "https://acme.com/careers"]);
+    expect((f.mock.calls[1][1]?.headers as Record<string, string>)["User-Agent"]).toMatch(/^AlphaMapBot\//);
+  });
+  it("a disallowed company site is not read; through Jina, the page asked for is the one checked", async () => {
+    const f = vi.fn(async (url: string) => url === "https://acme.com/robots.txt" ? new Response("User-agent: *\nDisallow: /") : html("<a href='https://boards.greenhouse.io/acme'>x</a>"));
+    const blocked = vi.fn();
+    const pf = politeFetch(f as never, blocked);
+    expect((await pf("https://acme.com/careers")).status).toBe(451);
+    expect((await pf("https://r.jina.ai/https://acme.com/careers")).status).toBe(451);
+    expect(f.mock.calls.map(([u]) => u)).toEqual(["https://acme.com/robots.txt"]);
+    expect(blocked).not.toHaveBeenCalled();   // a company site is not a provider
+  });
+  it("a provider's data path disallowed: the provider is switched off", async () => {
+    const rpcs: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const db = { rpc: vi.fn(async (name: string, args: Record<string, unknown>) => {
+      rpcs.push({ name, args });
+      if (name === "claim_board_links") return { data: [{ id: "b1", ats_provider: "lever", ats_board_token: "acme", startup_id: "s1", startup_name: "Acme", website: null }], error: null };
+      return { data: null, error: null };
+    }) };
+    const f = vi.fn(async (url: string) => url === "https://api.lever.co/robots.txt" ? new Response("User-agent: *\nDisallow: /v0/") : new Response("", { status: 404 }));
+    await boardsBatch({ db: db as never, fetch: f as never, log: () => {} }, 3);
+    expect(f.mock.calls.map(([u]) => String(u))).not.toContain("https://api.lever.co/v0/postings/acme?mode=json&limit=5");
+    expect(rpcs.find((x) => x.name === "disable_ats_provider")?.args).toMatchObject({ p_provider: "lever", p_reason: expect.stringContaining("robots.txt disallows https://api.lever.co/v0/postings/acme") });
+  });
+  it("providerOfUrl", () => {
+    expect(providerOfUrl("https://boards-api.greenhouse.io/v1/boards/x/jobs")).toBe("greenhouse");
+    expect(providerOfUrl("https://acme-gmbh.jobs.personio.de/xml")).toBe("personio");
+    expect(providerOfUrl("https://www.comeet.com/jobs/sett/4A.00B")).toBe("comeet");
+    expect(providerOfUrl("https://acme.com/careers")).toBeNull();
   });
 });

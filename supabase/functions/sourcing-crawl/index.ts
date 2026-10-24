@@ -61,6 +61,7 @@
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { withRunLog, countKeys } from "../_shared/run-log.ts";
+import { RobotsGate, crawlerUserAgent, providerOfUrl } from "../_shared/crawl-policy.ts";
 import { uniqueByJobId, webLinksOnly } from "./dedupe.ts";
 import {
   parseGreenhouse, parseLever, parseAshby, parseWorkable, parseComeet, comeetPage, departmentsByJobId, str,
@@ -224,10 +225,22 @@ function boardUrls(b: BoardRef): string[] {
   return cfg.urls(b.ats_board_token.split("/").map(encodeURIComponent).join("/"));
 }
 
+// robots.txt, asked before every request (crawl-policy.ts); a provider whose
+// own path is disallowed is noted here and switched off at the end of the run.
+const robots = new RobotsGate(fetch);
+const blockedProviders = new Map<string, string>();
+
 async function getJson(url: string, decode?: (html: string) => unknown | null): Promise<{ ok: true; data: unknown } | { ok: false; reason: string }> {
+  const verdict = await robots.check(url);
+  if (verdict !== "allowed") {
+    const provider = verdict === "disallowed" ? providerOfUrl(url) : null;
+    if (provider && !blockedProviders.has(provider)) blockedProviders.set(provider, url);
+    // closes nothing: a read that did not happen is a failed read
+    return { ok: false, reason: `robots.txt ${verdict}: ${url}` };
+  }
   try {
     const res = await fetch(url, {
-      headers: { Accept: decode ? "text/html" : "application/json", "User-Agent": "AlphaMap-Sourcing/1.0" },
+      headers: { Accept: decode ? "text/html" : "application/json", "User-Agent": crawlerUserAgent() },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     const text = await res.text();
@@ -529,10 +542,14 @@ Deno.serve(withRunLog("ats_crawl", countKeys("upserted"), async (req: Request): 
         .limit(1);
       if (error) return json({ error: `register board: ${error.message}` }, 500);
       companies = (data ?? []) as typeof companies;
+      // not a switched-off provider, not an opted-out company (migration 20261102000000)
+      const { data: ok } = await supabase.from("crawlable_boards").select("id").in("id", companies.map((c) => c.id));
+      if (!ok?.length) return json({ error: "this board is not read: its provider is switched off or the company opted out" }, 403);
     } else {
       // Scheduled: stalest first, never-crawled ahead of everything.
+      // Boards it may read: no switched-off provider, no opted-out company.
       const { data, error } = await supabase
-        .from("sourcing_companies")
+        .from("crawlable_boards")
         .select("id, ats_provider, ats_board_token, inferred_name")
         .order("last_crawled_at", { ascending: true, nullsFirst: true })
         .limit(limit);
@@ -546,7 +563,12 @@ Deno.serve(withRunLog("ats_crawl", countKeys("upserted"), async (req: Request): 
     // burst of parallel requests is the fastest way to get rate-limited off
     // them. Throughput comes from invoking more often, not harder.
     const results: BoardResult[] = [];
+    blockedProviders.clear();
     for (const c of companies) {
+      if (blockedProviders.has(c.ats_provider)) {
+        results.push({ board: `${c.ats_provider}/${c.ats_board_token}`, ok: false, fetched: 0, upserted: 0, closed: 0, reopened: 0, reason: "provider switched off: robots.txt" });
+        continue;
+      }
       try {
         results.push(await crawlBoard(supabase, c));
       } catch (e) {
@@ -556,6 +578,16 @@ Deno.serve(withRunLog("ats_crawl", countKeys("upserted"), async (req: Request): 
         console.error(`[sourcing-crawl] ${label}: ${reason}`);
         results.push({ board: label, ok: false, fetched: 0, upserted: 0, closed: 0, reopened: 0, reason });
       }
+    }
+
+    // A provider whose robots.txt disallows the path we read is switched off
+    // until a person looks at it (ats_providers.enabled).
+    const switchedOff: string[] = [];
+    for (const [provider, url] of blockedProviders) {
+      const { error } = await supabase.rpc("disable_ats_provider", { p_provider: provider, p_reason: `robots.txt disallows ${url}` });
+      if (error) console.error(`[sourcing-crawl] could not switch off ${provider}: ${error.message}`);
+      console.error(`[sourcing-crawl] ${provider} SWITCHED OFF — robots.txt disallows ${url}`);
+      switchedOff.push(provider);
     }
 
     const totals = results.reduce(
@@ -568,7 +600,7 @@ Deno.serve(withRunLog("ats_crawl", countKeys("upserted"), async (req: Request): 
       { fetched: 0, upserted: 0, closed: 0, failed: 0 },
     );
 
-    return json({ crawled: results.length, ...totals, results });
+    return json({ crawled: results.length, ...totals, switchedOff, results });
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : "crawl failed" }, 500);
   }
