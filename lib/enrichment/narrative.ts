@@ -37,8 +37,8 @@ const SOURCE_TALK: RegExp[] = [
 ];
 
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const word = (term: string) => new RegExp(`(^|[^\\p{L}\\p{N}])${esc(term)}(?=$|[^\\p{L}\\p{N}])`, "iu");
-const PLATFORM_RES = DATA_PLATFORMS.map(word);
+const word = (term: string, flags = "iu") => new RegExp(`(^|[^\\p{L}\\p{N}])${esc(term)}(?=$|[^\\p{L}\\p{N}])`, flags);
+const PLATFORM_RES = DATA_PLATFORMS.map((p) => word(p));
 
 export interface NarrativeOptions {
   /** Names the text must not mention — a description's own competitors. */
@@ -56,7 +56,8 @@ export function clauseProblem(clause: string, opts: NarrativeOptions = {}): "dat
     const name = n?.trim();
     // Very short names ("X", "Go") would match ordinary words.
     if (!name || name.length < 3 || name.toLowerCase() === self) continue;
-    if (word(name).test(clause)) return "names_competitor";
+    // As written, case and all: the competitor "Square" — not "square footage", "ramp up", "notion of".
+    if (word(name, "u").test(clause)) return "names_competitor";
   }
   return null;
 }
@@ -67,12 +68,26 @@ export function clauseProblem(clause: string, opts: NarrativeOptions = {}): "dat
  * "" when nothing is left.
  */
 export function cleanNarrative(text: string | null | undefined, opts: NarrativeOptions = {}): string {
-  if (!text) return "";
+  return cleanNarrativeWithReasons(text, opts).text;
+}
+
+/** cleanNarrative(), plus why each dropped clause went (for reports). */
+export function cleanNarrativeWithReasons(
+  text: string | null | undefined,
+  opts: NarrativeOptions = {},
+): { text: string; reasons: Array<NonNullable<ReturnType<typeof clauseProblem>>> } {
+  const reasons: Array<NonNullable<ReturnType<typeof clauseProblem>>> = [];
+  if (!text) return { text: "", reasons };
   const sentences = text.replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+(?=[A-Z0-9"“(])/);
   const kept: string[] = [];
   for (const sentence of sentences) {
     const parts = sentence.split(/\s*;\s*/);
-    const good = parts.filter((p) => p.trim() && !clauseProblem(p, opts));
+    const good = parts.filter((p) => {
+      if (!p.trim()) return false;
+      const problem = clauseProblem(p, opts);
+      if (problem) reasons.push(problem);
+      return !problem;
+    });
     if (good.length === 0) continue;
     let s = good.join("; ").trim();
     if (good.length < parts.length) {
@@ -81,5 +96,5 @@ export function cleanNarrative(text: string | null | undefined, opts: NarrativeO
     }
     kept.push(s.charAt(0).toUpperCase() + s.slice(1));
   }
-  return kept.join(" ");
+  return { text: kept.join(" "), reasons };
 }

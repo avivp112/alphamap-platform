@@ -18,6 +18,7 @@
  * description is better than a wrong one) — counted separately.
  *
  *   npx tsx scripts/clean_narratives.ts                 # report only
+ *   SAMPLE=10 npx tsx scripts/clean_narratives.ts       # + 10 random examples per field and reason
  *   DRY_RUN=false npx tsx scripts/clean_narratives.ts   # write
  *
  * Needs SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (env or .env).
@@ -28,13 +29,14 @@ import { config } from "dotenv";
 import { existsSync, writeFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import { cleanNarrative } from "../lib/enrichment/narrative.ts";
+import { cleanNarrativeWithReasons, type NarrativeOptions } from "../lib/enrichment/narrative.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const envPath = join(__dir, "..", ".env");
 if (existsSync(envPath)) config({ path: envPath });
 
 const DRY_RUN = process.env.DRY_RUN !== "false";
+const SAMPLE = Number(process.env.SAMPLE ?? 0);
 const PAGE = 500;
 
 const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL;
@@ -42,9 +44,17 @@ const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!url || !key) { console.error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required."); process.exit(1); }
 const db = createClient(url, key, { auth: { persistSession: false } });
 
-interface Change { table: string; id: string; name: string; field: string; before: string; after: string }
+interface Change { table: string; id: string; name: string; field: string; before: string; after: string; reasons: string }
 const changes: Change[] = [];
 const emptied: Record<string, number> = {};
+let lastReasons = "";
+/** cleanNarrative, remembering why — the reasons go on the next recorded change. */
+function cleanNarrative(text: string | null | undefined, opts: NarrativeOptions = {}): string {
+  const r = cleanNarrativeWithReasons(text, opts);
+  lastReasons = [...new Set(r.reasons)].join("+");
+  return r.text;
+}
+const record = (c: Omit<Change, "reasons">) => changes.push({ ...c, reasons: lastReasons });
 
 type Person = { name?: string; bio?: string | null; [k: string]: unknown };
 type Competitor = { name?: string; how_it_competes?: string | null; [k: string]: unknown } | string;
@@ -57,7 +67,7 @@ function cleanPeople(list: Person[] | null, table: string, id: string, name: str
     const bio = cleanNarrative(p.bio);
     if (bio === p.bio.replace(/\s+/g, " ").trim()) return p;
     changed = true;
-    changes.push({ table, id, name, field: `${field}[${p.name ?? "?"}].bio`, before: p.bio, after: bio });
+    record({ table, id, name, field: `${field}[${p.name ?? "?"}].bio`, before: p.bio, after: bio });
     return { ...p, bio: bio || null };
   });
   return changed ? out : null;
@@ -79,7 +89,7 @@ async function startups(): Promise<number> {
         if (!before) continue;
         const after = cleanNarrative(before, { avoidNames: names, selfName: s.name });
         if (after === before.replace(/\s+/g, " ").trim()) continue;
-        changes.push({ table: "startups", id: s.id, name: s.name, field, before, after });
+        record({ table: "startups", id: s.id, name: s.name, field, before, after });
         if (!after) emptied[field] = (emptied[field] ?? 0) + 1;
         patch[field] = after || null;
       }
@@ -90,7 +100,7 @@ async function startups(): Promise<number> {
           const how = cleanNarrative(c.how_it_competes, { selfName: s.name });
           if (how === c.how_it_competes.replace(/\s+/g, " ").trim()) return c;
           changed = true;
-          changes.push({ table: "startups", id: s.id, name: s.name, field: `competitors[${c.name ?? "?"}].how_it_competes`, before: c.how_it_competes, after: how });
+          record({ table: "startups", id: s.id, name: s.name, field: `competitors[${c.name ?? "?"}].how_it_competes`, before: c.how_it_competes, after: how });
           return { ...c, how_it_competes: how };
         });
         if (changed) patch.competitors = competitors;
@@ -123,7 +133,7 @@ async function investors(): Promise<number> {
       if (!f.description) continue;
       const after = cleanNarrative(f.description, { selfName: f.name });
       if (after === f.description.replace(/\s+/g, " ").trim()) continue;
-      changes.push({ table: "investors", id: f.id, name: f.name, field: "description", before: f.description, after });
+      record({ table: "investors", id: f.id, name: f.name, field: "description", before: f.description, after });
       if (!after) emptied["investors.description"] = (emptied["investors.description"] ?? 0) + 1;
       updated++;
       if (!DRY_RUN) {
@@ -142,11 +152,22 @@ const csvCell = (v: string) => `"${v.replace(/"/g, '""')}"`;
   const s = await startups();
   const i = await investors();
   const out = `clean_narratives_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`;
-  writeFileSync(out, ["table,id,name,field,before,after", ...changes.map((c) => [c.table, c.id, c.name, c.field, c.before, c.after].map(csvCell).join(","))].join("\n"));
+  writeFileSync(out, ["table,id,name,field,reasons,before,after", ...changes.map((c) => [c.table, c.id, c.name, c.field, c.reasons, c.before, c.after].map(csvCell).join(","))].join("\n"));
   const byField: Record<string, number> = {};
+  const groups = new Map<string, Change[]>();
   for (const c of changes) {
     const f = c.field.replace(/\[.*?\]/, "[]");
-    byField[f] = (byField[f] ?? 0) + 1;
+    byField[`${f} (${c.reasons})`] = (byField[`${f} (${c.reasons})`] ?? 0) + 1;
+    const g = `${f} · ${c.reasons}`;
+    groups.set(g, [...(groups.get(g) ?? []), c]);
+  }
+  if (SAMPLE > 0) {
+    for (const [g, list] of groups) {
+      console.log(`\n── ${g} (${list.length}) ──`);
+      for (const c of [...list].sort(() => Math.random() - 0.5).slice(0, SAMPLE)) {
+        console.log(`• ${c.name}\n  BEFORE: ${c.before}\n  AFTER:  ${c.after || "(empty)"}`);
+      }
+    }
   }
   console.log(`\nCompanies ${DRY_RUN ? "to change" : "changed"}: ${s} · VC/PE firms: ${i}`);
   console.log("Changes by field:", byField);

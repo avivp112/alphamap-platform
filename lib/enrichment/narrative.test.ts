@@ -36,6 +36,13 @@ describe("cleanNarrative", () => {
     expect(clauseProblem("Golden retrievers love it")).toBeNull();
   });
 
+  it("matches a competitor's name as written, not the same ordinary word", () => {
+    const opts = { avoidNames: ["Square", "Ramp", "Notion"], selfName: "Acme" };
+    expect(cleanNarrative("Acme helps retailers plan square footage. Teams ramp up fast; it builds on the notion of shared ledgers.", opts))
+      .toBe("Acme helps retailers plan square footage. Teams ramp up fast; it builds on the notion of shared ledgers.");
+    expect(cleanNarrative("Acme sells card readers. It is an alternative to Square for cafés.", opts)).toBe("Acme sells card readers.");
+  });
+
   it("returns empty when nothing is left", () => {
     expect(cleanNarrative("Listed as a competitor in CB Insights comparisons.")).toBe("");
     expect(cleanNarrative(null)).toBe("");
