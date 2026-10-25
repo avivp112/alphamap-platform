@@ -433,9 +433,9 @@ export interface NarrativeTexts {
  */
 export function checkNarratives<T extends NarrativeTexts>(texts: T, companyName: string): { texts: T; issues: ValidationIssue[] } {
   const issues: ValidationIssue[] = [];
-  const clean = (field: string, text: string | undefined): string | undefined => {
+  const clean = (field: string, text: string | undefined, subjectName?: string): string | undefined => {
     if (!text) return text;
-    const r = cleanNarrativeWithReasons(text, { selfName: companyName });
+    const r = cleanNarrativeWithReasons(text, { selfName: companyName, subjectName });
     for (const reason of new Set(r.reasons)) {
       issues.push({
         rule: reason === "data_platform" ? "narrative_data_platform" : "narrative_source_talk",
@@ -453,7 +453,7 @@ export function checkNarratives<T extends NarrativeTexts>(texts: T, companyName:
       value_proposition: clean("profile.value_proposition", texts.value_proposition),
       founders: texts.founders?.map((f) => ({ ...f, bio: clean(`profile.founders[${f.name}].bio`, f.bio) })),
       leadership: texts.leadership?.map((l) => ({ ...l, bio: clean(`leadership[${l.name}].bio`, l.bio) })),
-      competitors: texts.competitors?.map((c) => ({ ...c, how_it_competes: clean(`competitors[${c.name}].how_it_competes`, c.how_it_competes) ?? "" })),
+      competitors: texts.competitors?.map((c) => ({ ...c, how_it_competes: clean(`competitors[${c.name}].how_it_competes`, c.how_it_competes, c.name) ?? "" })),
     },
     issues,
   };

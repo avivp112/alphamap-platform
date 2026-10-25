@@ -42,17 +42,56 @@ const COMMON_OPENERS = /^(provides?|offers?|it|its|both|competes?|competing|focu
 const splitClauses = (text: string) => text.replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+(?=[A-Z0-9"“(])/).flatMap((s) => s.split(/\s*;\s*/));
 
 export interface NarrativeOptions {
-  /** The company itself: a data platform's own profile may name itself. */
+  /**
+   * The company the text is about. When it is itself a data platform
+   * (Apollo.io, Grata …), other platforms are its competitors — real
+   * information — so platform names are not removed from its texts.
+   */
   selfName?: string | null;
+  /** A competitor the text describes ("how it competes"): it may name itself (PitchBook). */
+  subjectName?: string | null;
 }
 
 export type NarrativeProblem = "data_platform" | "source_talk";
 
+/** "Apollo.io" / "Apollo", "CB Insights" / "cbinsights": the same name. */
+const core = (n: string) => n.toLowerCase().replace(/\.(io|com|co|ai|vc|app)\b/g, "").replace(/[^\p{L}\p{N}]/gu, "");
+const PLATFORM_CORES = DATA_PLATFORMS.map((p) => [p.name, ...(p.aliases ?? [])].map(core));
+export const isDataPlatform = (name: string | null | undefined) => !!name && PLATFORM_CORES.some((cores) => cores.includes(core(name)));
+
 /** Why a clause goes, or null when it stays. */
 export function clauseProblem(clause: string, opts: NarrativeOptions = {}): NarrativeProblem | null {
-  const self = opts.selfName?.trim().toLowerCase();
-  if (PLATFORMS.some((p) => !(self && p.names.includes(self)) && p.res.some((re) => re.test(clause)))) return "data_platform";
+  if (!isDataPlatform(opts.selfName)) {
+    const subject = opts.subjectName ? core(opts.subjectName) : null;
+    if (PLATFORMS.some((p, i) => !(subject && PLATFORM_CORES[i].includes(subject)) && p.res.some((re) => re.test(clause)))) return "data_platform";
+  }
   if (SOURCE_TALK.some((re) => re.test(clause))) return "source_talk";
+  return null;
+}
+
+/**
+ * Where a flagged part can be cut instead of dropped whole: before a
+ * trailing "…, positioned as an alternative on comparison lists", "…, as
+ * reported by LinkedIn", "… according to case studies", or after a leading
+ * "According to user testimonials, …". Only when what is kept is itself
+ * clean and a real sentence (6+ words). null: drop the whole part.
+ */
+const TAIL_MARKER = /(,\s*|\s+)(according to|as reported (by|on|in)|as listed (on|in|by)|based on|per (its|their|the)\b|positioned as|listed (as|among|on|in)|cited (as|by)|named (as|among)|ranked (as|among|by)|identified (as|by)|recognized (as|by)|being recognized|with recognition)\b/gi;
+const LEAD_IN = /^(according to|based on|per)\b[^,]{0,120},\s*/i;
+function rescue(part: string, opts: NarrativeOptions): string | null {
+  const words = (t: string) => t.trim().split(/\s+/).length;
+  for (const m of part.matchAll(TAIL_MARKER)) {
+    const head = part.slice(0, m.index).replace(/[\s,;:–—-]+$/, "");
+    if (words(head) >= 6 && !clauseProblem(head, opts)) return head;
+  }
+  const lead = part.match(LEAD_IN);
+  if (lead) {
+    const rest = part.slice(lead[0].length);
+    if (words(rest) >= 6) {
+      const kept = clauseProblem(rest, opts) ? rescue(rest, opts) : rest;
+      if (kept) return /^[a-z]+\b/.test(kept) && !/^[a-z]+[A-Z]/.test(kept) && COMMON_OPENERS.test(kept) ? kept.charAt(0).toUpperCase() + kept.slice(1) : kept;
+    }
+  }
   return null;
 }
 
@@ -78,15 +117,20 @@ export function cleanNarrativeWithReasons(
   const kept: string[] = [];
   for (const sentence of sentences) {
     const parts = sentence.split(/\s*;\s*/);
-    const good = parts.filter((p) => {
-      if (!p.trim()) return false;
+    const good: string[] = [];
+    let touched = false;
+    for (const p of parts) {
+      if (!p.trim()) continue;
       const problem = clauseProblem(p, opts);
-      if (problem) reasons.push(problem);
-      return !problem;
-    });
+      if (!problem) { good.push(p); continue; }
+      reasons.push(problem);
+      touched = true;
+      const cut = rescue(p, opts);
+      if (cut) good.push(cut);
+    }
     if (good.length === 0) continue;
     let s = good.join("; ").trim();
-    if (good.length < parts.length) {
+    if (touched) {
       s = s.replace(/[\s,;:–—-]+$/, "");
       if (!/[.!?]$/.test(s)) s += ".";
       // A part that now opens the sentence gets a capital — only a plain

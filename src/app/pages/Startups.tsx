@@ -1691,6 +1691,7 @@ function normalizeCompetitor(c: Competitor | string): Competitor {
 
 function CompetitorsMarketTab({ startup, onNavigate }: { startup: Startup; onNavigate: (id: string) => void }) {
   const competitors = (startup.competitors ?? []).filter(Boolean).map(normalizeCompetitor);
+  const companyName = startup.name;
 
   if (competitors.length === 0) {
     return (
@@ -1713,8 +1714,8 @@ function CompetitorsMarketTab({ startup, onNavigate }: { startup: Startup; onNav
               <span className="text-sm font-bold text-gray-900 truncate">{c.name}</span>
               {linked && <span className="text-[10px] font-semibold text-cyan-700 bg-cyan-100 rounded-full px-2 py-0.5 flex-none">Tracked ↗</span>}
             </div>
-            {cleanNarrative(c.how_it_competes) && (
-              <p className="text-xs text-gray-600 leading-relaxed">{cleanNarrative(c.how_it_competes)}</p>
+            {cleanNarrative(c.how_it_competes, { selfName: companyName, subjectName: c.name }) && (
+              <p className="text-xs text-gray-600 leading-relaxed">{cleanNarrative(c.how_it_competes, { selfName: companyName, subjectName: c.name })}</p>
             )}
             {c.website && !linked && (
               <a

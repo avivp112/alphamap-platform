@@ -65,6 +65,32 @@ describe("cleanNarrative", () => {
     expect(cleanNarrative("Offers credit products; a direct competitor according to Tracxn comparables.")).toBe("Offers credit products.");
   });
 
+  it("cuts a trailing or leading source phrase instead of the whole sentence — second review (2026-10-25)", () => {
+    expect(cleanNarrative("Offers similar AI image generation and editing tools including background removal, positioned as a direct alternative on feature-comparison lists for creatives."))
+      .toBe("Offers similar AI image generation and editing tools including background removal.");
+    expect(cleanNarrative("The company was founded in 2022 and has raised $7.37M in extended seed funding, with recognition as a 2025 CB Insights Fintech 100 innovator."))
+      .toBe("The company was founded in 2022 and has raised $7.37M in extended seed funding.");
+    expect(cleanNarrative("FurtherAI delivers measurable outcomes: 95% data accuracy, 30x faster quote readiness, and 646% ROI according to case studies published on its website."))
+      .toBe("FurtherAI delivers measurable outcomes: 95% data accuracy, 30x faster quote readiness, and 646% ROI.");
+    expect(cleanNarrative("Founded in 2021, the company was acquired by NVIDIA in July 2024 for $300 million, as reported by LinkedIn sources tracking AI M&A activity."))
+      .toBe("Founded in 2021, the company was acquired by NVIDIA in July 2024 for $300 million.");
+    expect(cleanNarrative("According to user testimonials, Happo is positioned as a cheaper alternative to Percy that supports more browsers."))
+      .toBe("Happo is positioned as a cheaper alternative to Percy that supports more browsers.");
+    // Too little left to stand as a sentence: dropped whole.
+    expect(cleanNarrative("Acme sells to banks. Listed on Crunchbase.")).toBe("Acme sells to banks.");
+  });
+
+  it("keeps platform names in the texts of a company that is itself a data platform", () => {
+    const apollo = "Apollo.io is an AI-powered go-to-market platform combining sales intelligence and CRM.";
+    expect(cleanNarrative(apollo, { selfName: "Apollo" })).toBe(apollo);
+    const grata = "PitchBook is a private company database that competes for the same investment banking users.";
+    expect(cleanNarrative(grata, { selfName: "Grata" })).toBe(grata);
+    // A competitor that is a platform may name itself in its own explanation.
+    expect(cleanNarrative(grata, { selfName: "Acme", subjectName: "PitchBook" })).toBe(grata);
+    expect(cleanNarrative("Arctic Wolf provides managed security for mid-market firms; listed as a competitor on PitchBook.", { selfName: "ActZero", subjectName: "Arctic Wolf" }))
+      .toBe("Arctic Wolf provides managed security for mid-market firms.");
+  });
+
   it("returns a text with nothing to drop exactly as stored", () => {
     const t = "Acme builds  payroll software.\nIt sells in the US.";
     expect(cleanNarrative(t)).toBe(t);

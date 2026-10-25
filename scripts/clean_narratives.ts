@@ -103,7 +103,7 @@ async function startups(): Promise<number> {
         let changed = false;
         const competitors = s.competitors.map((c) => {
           if (!c || typeof c === "string" || !c.how_it_competes) return c;
-          const how = cleanNarrative(c.how_it_competes, { selfName: s.name });
+          const how = cleanNarrative(c.how_it_competes, { selfName: s.name, subjectName: c.name });
           if (how === c.how_it_competes) return c;
           record({ table: "startups", id: s.id, name: s.name, field: `competitors[${c.name ?? "?"}].how_it_competes`, before: c.how_it_competes, after: how });
           // Nothing left: keep it (the site shows the competitor without it) and collect again.

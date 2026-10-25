@@ -318,10 +318,11 @@ export async function writeCollected(
   const freshExplanation = new Map(market.competitors.map((c) => [normalizeForMatch(c.name), c.how_it_competes]));
   let staleExplanations = 0;
   const existingCompetitors = (reconciled.competitors as NonNullable<V2StartupRow["competitors"]>).map((c) => {
-    if (!c?.how_it_competes || cleanNarrative(c.how_it_competes, { selfName: row.name }) === c.how_it_competes) return c;
+    const opts = { selfName: row.name, subjectName: c?.name };
+    if (!c?.how_it_competes || cleanNarrative(c.how_it_competes, opts) === c.how_it_competes) return c;
     const fresh = freshExplanation.get(normalizeForMatch(c.name ?? ""));
     if (fresh) return { ...c, how_it_competes: fresh };
-    const cleaned = cleanNarrative(c.how_it_competes, { selfName: row.name });
+    const cleaned = cleanNarrative(c.how_it_competes, opts);
     if (cleaned) return { ...c, how_it_competes: cleaned };
     staleExplanations++;
     return c;
