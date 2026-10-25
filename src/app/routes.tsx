@@ -2,15 +2,10 @@ import { createBrowserRouter, Outlet, ScrollRestoration } from "react-router";
 import { LandingPage } from "./pages/LandingPage";
 import { Dashboard } from "./pages/Dashboard";
 import { Startups } from "./pages/Startups";
-import { Stocks } from "./pages/Stocks";
-import { IPOs } from "./pages/IPOs";
 import { VCs } from "./pages/VCs";
 import { Deals } from "./pages/Deals";
 import { SignUp } from "./pages/SignUp";
 import { Login } from "./pages/Login";
-import { MarketMap } from "./pages/MarketMap";
-import { PrivateEquity } from "./pages/PrivateEquity";
-import { PublicMarket } from "./pages/PublicMarket";
 import { Pricing } from "./pages/Pricing";
 import { AboutUs } from "./pages/AboutUs";
 import { ContactUs } from "./pages/ContactUs";
@@ -72,11 +67,6 @@ export const router = createBrowserRouter([
   { path: "/vcs",        Component: VCs, loader: requireAuth },
   { path: "/startups",   Component: Startups, loader: requireAuth },
   { path: "/deals",      Component: Deals, loader: requireAuth },
-  { path: "/stocks",     Component: Stocks, loader: requireAuth },
-  { path: "/public-market", Component: PublicMarket, loader: requireAuth },
-  { path: "/ipos",       Component: IPOs, loader: requireAuth },
-  { path: "/market-map", Component: MarketMap, loader: requireAuth },
-  { path: "/private-equity", Component: PrivateEquity, loader: requireAuth },
   { path: "/pricing",    Component: Pricing },
   { path: "/about",      Component: AboutUs },
   { path: "/contact",    Component: ContactUs },

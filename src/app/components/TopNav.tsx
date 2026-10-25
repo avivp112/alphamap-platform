@@ -3,7 +3,7 @@ import { useNavigate, useLocation, Link, NavLink } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import {
   Bell, User, ChevronDown, UserCircle, LogOut, Menu, X,
-  Rocket, CandlestickChart, Landmark, Vault, Handshake, Globe2, ClipboardCheck,
+  Rocket, Landmark, Handshake,
   CheckCheck, Loader2, ShieldCheck,
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
@@ -55,7 +55,7 @@ function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-// ── Primary nav (Home / Data / Market Map / My Watchlist) ───────────────────
+// ── Primary nav (Home / Our Data / Your Alpha) ──────────────────────────────
 
 interface NavItem {
   labelKey: string;
@@ -79,33 +79,15 @@ const DATA_ITEMS: NavItem[] = [
   { labelKey: 'nav.privateMarket',  to: '/startups',       icon: Rocket,
     description: 'Startups, funding rounds, and cap tables in one place.',
     accent: { bg: 'linear-gradient(135deg, #EEF1E7, #DCE3D0)' } },
-  { labelKey: 'nav.publicMarket',   to: '/public-market',  icon: CandlestickChart,
-    description: 'Live comps, multiples, and sector benchmarks.',
-    accent: { bg: 'linear-gradient(135deg, #F0EFE7, #E3DFCF)' } },
-  { labelKey: 'nav.privateEquity',  to: '/private-equity', icon: Vault,
-    description: 'PE fund profiles, portfolios, and deal activity.',
-    accent: { bg: 'linear-gradient(135deg, #ECEFEB, #DBE1D6)' } },
   { labelKey: 'nav.ventureCapital', to: '/vcs',            icon: Landmark,
     description: 'VC firm profiles, check sizes, and investment focus.',
     accent: { bg: 'linear-gradient(135deg, #EFF0E9, #E0E5D6)' } },
-];
-
-// Valuations and Due Diligence has no `to` — not built yet. Rendered as an
-// inert card with a "Soon" badge rather than omitted, so the menu's shape
-// doesn't shift once it ships.
-const MARKET_MAP_ITEMS: NavItem[] = [
-  { labelKey: 'nav.marketMap', to: '/market-map', icon: Globe2,
-    description: 'Visualize the global tech ecosystem by sector and geography.',
-    accent: { bg: 'linear-gradient(135deg, #EEF1E7, #DCE3D0)' } },
-  { labelKey: 'nav.deals',     to: '/deals',       icon: Handshake,
+  { labelKey: 'nav.deals',          to: '/deals',          icon: Handshake,
     description: 'Track recent funding rounds and M&A activity.',
     accent: { bg: 'linear-gradient(135deg, #F0EFE7, #E3DFCF)' } },
-  { labelKey: 'nav.valuationsDueDiligence', to: null, icon: ClipboardCheck,
-    description: 'Comparable analysis and diligence checklists.',
-    accent: { bg: 'linear-gradient(135deg, #ECEFEB, #DBE1D6)' } },
 ];
 
-type MenuId = 'data' | 'marketMap';
+type MenuId = 'data';
 
 const topLinkCls =
   "relative px-3.5 py-2 text-sm font-medium transition-colors rounded-lg";
@@ -545,16 +527,6 @@ export function TopNav() {
             onSelect={() => setOpenMenu(null)}
           />
 
-          <NavDropdown
-            id="marketMap"
-            label={t('nav.marketMap')}
-            items={MARKET_MAP_ITEMS}
-            openMenu={openMenu}
-            onOpen={openNow}
-            onCloseSoon={closeSoon}
-            onSelect={() => setOpenMenu(null)}
-          />
-
           <NavLink
             to="/my-area"
             className={({ isActive }) => cn(topLinkCls, isActive ? topLinkActive : topLinkInactive)}
@@ -584,13 +556,6 @@ export function TopNav() {
             items={DATA_ITEMS}
             expanded={mobileExpanded === 'data'}
             onToggle={() => setMobileExpanded((cur) => (cur === 'data' ? null : 'data'))}
-            onSelect={() => setMobileOpen(false)}
-          />
-          <MobileAccordion
-            label={t('nav.marketMap')}
-            items={MARKET_MAP_ITEMS}
-            expanded={mobileExpanded === 'marketMap'}
-            onToggle={() => setMobileExpanded((cur) => (cur === 'marketMap' ? null : 'marketMap'))}
             onSelect={() => setMobileOpen(false)}
           />
           <Link

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * import_startups_list.ts — sync the startups table with the master company
- * list (public/startups_list_v1.csv), which is the source of truth for WHICH
+ * list (data/seed/startups_list_v1.csv), which is the source of truth for WHICH
  * companies belong in the database. The CSV carries only name + website;
  * everything else is filled afterwards by the enrichment pipeline
  * (bulk_enrich_all.ts).
@@ -41,7 +41,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const envPath = join(__dir, "..", ".env");
 if (existsSync(envPath)) config({ path: envPath });
 
-const CSV_PATH     = join(__dir, "..", "public", "startups_list_v1.csv");
+const CSV_PATH     = join(__dir, "..", "data", "seed", "startups_list_v1.csv");
 const PARSE_ONLY   = process.env.PARSE_ONLY === "true";
 const DRY_RUN      = process.env.DRY_RUN !== "false";      // safe default
 const PURGE_MISSING = process.env.PURGE_MISSING === "true"; // default: report only

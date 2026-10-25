@@ -1,7 +1,6 @@
 # =============================================================================
-# GitLab CI — manual deploy job for the Public Market Hub's Supabase Edge
-# Functions (sync-public-markets, search-tickers, stock-profile, stock-history,
-# sourcing-crawl, extract-job-signals, discover-boards, ingest-sec-form-d,
+# GitLab CI — manual deploy job for the Supabase Edge Functions
+# (sourcing-crawl, extract-job-signals, discover-boards, ingest-sec-form-d,
 # ingest-uk-companies-house, ingest-uspto-patents, ingest-huggingface,
 # ingest-github-velocity, ingest-epo-ops, ingest-startup, backfill-embeddings,
 # pipeline-health) plus their migrations.
@@ -28,10 +27,6 @@
 #     AND "Protect variable" — this grants full DDL access to your database.
 #     The password must be percent-encoded if it contains URL-reserved
 #     characters (@ : / ? # [ ] are the ones that bite).
-#
-# The FMP_API_KEY is a separate Supabase secret (set once via
-# `supabase secrets set FMP_API_KEY=...`, see supabase/functions/sync-public-markets/README.md)
-# — this pipeline never touches it.
 #
 # SEC_USER_AGENT is likewise a Supabase secret, not a CI variable, and
 # ingest-sec-form-d refuses to run without it. SEC's access policy requires a
@@ -461,10 +456,6 @@ deploy-public-market-functions:
         echo "deploy of $name failed after 3 attempts"
         return 1
       }
-    - deploy_fn sync-public-markets
-    - deploy_fn search-tickers
-    - deploy_fn stock-profile
-    - deploy_fn stock-history
     - deploy_fn sourcing-crawl
     - deploy_fn extract-job-signals
     - deploy_fn discover-boards

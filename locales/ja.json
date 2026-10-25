@@ -5,15 +5,11 @@
   },
   "nav": {
     "home": "ホーム",
-    "data": "データ",
+    "data": "私たちのデータ",
     "privateMarket": "未公開市場",
-    "publicMarket": "公開市場",
     "ventureCapital": "ベンチャーキャピタル",
     "deals": "案件",
-    "marketMap": "マーケットマップ",
-    "privateEquity": "プライベートエクイティ",
-    "myArea": "マイエリア",
-    "valuationsDueDiligence": "バリュエーションとデューデリジェンス",
+    "myArea": "Your Alpha",
     "settings": "設定",
     "soon": "近日公開",
     "toggleNavigation": "ナビゲーションの表示切替",
@@ -102,39 +98,6 @@
     "totalRaised": "累計調達額",
     "growth": "成長率",
     "ebitdaMargin": "EBITDA マージン"
-  },
-  "publicMarket": {
-    "directoryTitle": "上場企業ディレクトリ",
-    "keyMetrics": "主要指標とバリュエーション",
-    "fromSync": "AlphaMap の同期データ",
-    "trackedCounterpart": "対応する未公開企業：",
-    "tracked": "追跡中",
-    "addAndSync": "追加して同期",
-    "syncing": "同期中…",
-    "filterPlaceholder": "追跡中の企業を絞り込む",
-    "hubTitle": "公開市場ハブ",
-    "hubSubtitle": "上場企業のベンチマークを未公開企業のバリュエーションに接続。セクター別倍率、IPO ウィンドウの体感指標、上場・未公開の比較分析を提供します。",
-    "syncNow": "今すぐ同期",
-    "liveQuotes": "リアルタイム株価",
-    "sectorMatrixTitle": "セクター別バリュエーション倍率",
-    "sectorMatrixSubtitle": "主要ソフトウェアセクターごとの上場企業バリュエーション倍率の中央値——未公開企業の価格算定における基準値です。",
-    "medianEvRevenue": "EV / 売上高（中央値）",
-    "publicCount": "上場 {{count}} 社",
-    "applyToStartups": "未公開スタートアップに適用",
-    "appliedToPrivate": "未公開企業に適用済み",
-    "barometerTitle": "IPO・市場センチメント指標",
-    "barometerSubtitle": "上場テック株のモメンタムから、IPO およびレイターステージ資金調達の窓が開いているか、未公開レイターステージの動きがどう連動しているかを読み解きます。",
-    "leadingSector": "上位セクター",
-    "laggingSector": "下位セクター",
-    "chart": {
-      "1D": "1日",
-      "1M": "1カ月",
-      "3M": "3カ月",
-      "1Y": "1年",
-      "5Y": "5年",
-      "ALL": "全期間",
-      "noData": "チャートデータがありません"
-    }
   },
   "landing": {
     "viewDashboard": "ダッシュボードを見る",
@@ -393,42 +356,6 @@
     "founded": "設立年",
     "headquarters": "本社"
   },
-  "pe": {
-    "title": "プライベートエクイティ",
-    "failedToLoad": "PE ファームを読み込めませんでした",
-    "aumFundSize": "AUM / ファンド規模",
-    "assetsUnderMgmt": "運用資産残高",
-    "buyoutsOnRecord": "記録済みバイアウト",
-    "dealTypes": "案件種別",
-    "dealValue": "案件金額",
-    "founded": "設立",
-    "growthEquity": "グロースエクイティ投資",
-    "headquarters": "本社",
-    "heldSince": "保有開始",
-    "holdingsMature": "保有——成熟未公開企業",
-    "investmentThesis": "投資テーゼ",
-    "latestDeal": "直近の案件",
-    "lead": "リード",
-    "mostDeals": "案件数最多",
-    "totalDisclosed": "開示済み総額",
-    "yearsActive": "活動年数",
-    "growingFast": "急成長中",
-    "privateEquityFirm": "プライベートエクイティ・ファーム",
-    "notTrackable": "追跡はまだ不可",
-    "notTrackableHint": "このファームはまだ整備されたプロフィールがないため、追跡できません。",
-    "noDescription": "このファームの説明は登録されていません。",
-    "noLeadership": "このファームの経営陣はまだ登録されていません。",
-    "noPortfolio": "このファームのバイアウト・セカンダリー取引に紐づく投資先企業はまだありません。",
-    "noTransactions": "このファームのバイアウト・セカンダリー取引はまだ記録されていません。",
-    "failedPortfolio": "このファームのポートフォリオを読み込めませんでした。",
-    "failedTransactions": "このファームの取引履歴を読み込めませんでした。",
-    "pageSubtitle": "バイアウトとセカンダリー市場のインテリジェンス——実際の取引データから抽出したファームを、成熟市場のファンダメンタルズで評価。",
-    "overview": "概要",
-    "transactions": "取引履歴",
-    "growing": "成長中",
-    "stable": "安定",
-    "contracting": "縮小中"
-  },
   "deals": {
     "title": "ディールフロー",
     "ledger": "台帳",
@@ -634,28 +561,6 @@
     "termsOfUse": "利用規約",
     "acceptanceOnFile": "登録時に同意が記録されています。"
   },
-  "marketMap": {
-    "title": "マーケットマップ",
-    "subtitle": "グローバルなテックエコシステム間の国境を越えた資金フロー。"
-  },
-  "stocks": {
-    "title": "銘柄",
-    "search": "ティッカーまたは企業名を検索…",
-    "refresh": "更新",
-    "tryAgain": "再試行",
-    "tracking": "追跡中",
-    "gaining": "上昇",
-    "declining": "下落",
-    "daysRange": "本日のレンジ",
-    "todaysRange": "本日のレンジ",
-    "addApiKey": "FMP の API キーを追加してください"
-  },
-  "ipos": {
-    "title": "IPO パイプライン",
-    "subtitle": "上場が近づく企業——IPO 前のインテリジェンスと S-1 提出書類。",
-    "comingSoon": "近日公開",
-    "blurb": "IPO パイプラインの追跡、S-1 分析、ロックアップ期限アラートは開発中です。"
-  },
   "dealModal": {
     "capTable": "キャップテーブルと希薄化",
     "burnRunway": "バーンレートとランウェイ",
@@ -791,14 +696,6 @@
       "view": { "title": "グリッドまたはリスト", "body": "視覚的なカードグリッドと、密度の高い並べ替え可能なテーブルを切り替えられます。お好みの閲覧スタイルでどうぞ。" },
       "results": { "title": "選択・比較・追跡", "body": "企業をクリックすると詳細プロフィールが開きます。チェックボックスで1社をウォッチリストに追加したり、最大3社を選んで比較したりできます。" }
     },
-    "marketMap": {
-      "steps": {
-        "sector": { "title": "セクターで絞り込む", "body": "マップと分析を単一のセクターに絞り込むか、すべてまとめて表示できます。" },
-        "map": { "title": "世界地図を探索", "body": "点滅するハブをクリックすると、その地域の企業、資本、エコシステムの健全性を詳しく確認できます。" },
-        "panel": { "title": "ハブの詳細", "body": "ハブを選択すると、企業数、調達資本、人材プールなどの主要な統計がここに表示されます。" },
-        "insights": { "title": "マーケットインテリジェンス", "body": "選択したハブとセクターのより詳細な分析: 資本効率、資金調達速度、案件モメンタム、主要プレイヤー。" }
-      }
-    },
     "deals": {
       "steps": {
         "search": { "title": "企業で検索", "body": "会社名を入力すると、その企業の案件にすぐたどり着けます。" },
@@ -817,15 +714,6 @@
         "smart": { "title": "ファンド規模・チェックサイズ・活動状況", "body": "これらを展開すると、AUM、通常のチェックサイズ、過去24か月間に活動のあったファームで絞り込めます。" },
         "sort": { "title": "ディレクトリを並べ替え", "body": "直近の投資、ポートフォリオ数、AUM、設立年でファームを並べ替えられます。" },
         "results": { "title": "選択・比較・追跡", "body": "ファームをクリックすると詳細プロフィールが開きます。チェックボックスで1社をウォッチリストに追加したり、最大3社を選んで比較したりできます。" }
-      }
-    },
-    "publicMarket": {
-      "steps": {
-        "sectorMatrix": { "title": "セクター別バリュエーション倍率", "body": "セクター別の公開市場の中央値倍率を確認し、プライベート市場の類似スタートアップに適用して簡易的な相対評価ができます。" },
-        "comps": { "title": "公開企業とプライベート企業の比較", "body": "AlphaMapで追跡しているプライベート企業と対応付けられた大手公開企業を、バリュエーションの差が一目でわかる形で閲覧できます。" },
-        "search": { "title": "任意の銘柄を追加", "body": "NASDAQまたはNYSEの任意のティッカーを検索し、プラットフォームの追跡企業に同期できます。" },
-        "directory": { "title": "追跡中の企業を閲覧", "body": "セクターや名前で絞り込み、行をクリックすると詳細プロフィールが開きます。" },
-        "sync": { "title": "データを最新に保つ", "body": "いつでも手動で最新の市場データを取得したり、リアルタイムの日中相場に移動したりできます。" }
       }
     }
   }

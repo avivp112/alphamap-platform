@@ -5,15 +5,11 @@
   },
   "nav": {
     "home": "Inicio",
-    "data": "Datos",
+    "data": "Nuestros datos",
     "privateMarket": "Mercado privado",
-    "publicMarket": "Mercado cotizado",
     "ventureCapital": "Capital de riesgo",
     "deals": "Operaciones",
-    "marketMap": "Mapa de mercado",
-    "privateEquity": "Capital privado",
-    "myArea": "Mi Área",
-    "valuationsDueDiligence": "Valoraciones y due diligence",
+    "myArea": "Your Alpha",
     "settings": "Configuración",
     "soon": "Pronto",
     "toggleNavigation": "Mostrar u ocultar la navegación",
@@ -102,39 +98,6 @@
     "totalRaised": "Capital captado",
     "growth": "Crecimiento",
     "ebitdaMargin": "Margen EBITDA"
-  },
-  "publicMarket": {
-    "directoryTitle": "Directorio de empresas cotizadas",
-    "keyMetrics": "Métricas clave y valoración",
-    "fromSync": "Sincronizado desde AlphaMap",
-    "trackedCounterpart": "Homóloga privada en seguimiento:",
-    "tracked": "En seguimiento",
-    "addAndSync": "Añadir y sincronizar",
-    "syncing": "Sincronizando…",
-    "filterPlaceholder": "Filtrar empresas en seguimiento",
-    "hubTitle": "Centro de mercados cotizados",
-    "hubSubtitle": "Referencias públicas conectadas con valoraciones privadas: múltiplos sectoriales, un barómetro de la ventana de OPV y comparables cotizadas frente a privadas.",
-    "syncNow": "Sincronizar ahora",
-    "liveQuotes": "Cotizaciones en vivo",
-    "sectorMatrixTitle": "Matriz de múltiplos sectoriales",
-    "sectorMatrixSubtitle": "Múltiplos de valoración medianos de las cotizadas por sector de software: la referencia con la que valoras empresas privadas.",
-    "medianEvRevenue": "EV / Ingresos mediano",
-    "publicCount": "{{count}} cotizadas",
-    "applyToStartups": "Aplicar a startups privadas",
-    "appliedToPrivate": "Aplicado a privadas",
-    "barometerTitle": "Barómetro de OPV y sentimiento de mercado",
-    "barometerSubtitle": "Lectura del momentum del sector tecnológico cotizado sobre si la ventana de OPV / financiación late stage está abierta, y cómo acompaña la actividad privada late stage.",
-    "leadingSector": "Sector líder",
-    "laggingSector": "Sector rezagado",
-    "chart": {
-      "1D": "1D",
-      "1M": "1M",
-      "3M": "3M",
-      "1Y": "1A",
-      "5Y": "5A",
-      "ALL": "TODO",
-      "noData": "No hay datos disponibles para el gráfico"
-    }
   },
   "landing": {
     "viewDashboard": "Ver el panel",
@@ -393,42 +356,6 @@
     "founded": "Fundación",
     "headquarters": "Sede"
   },
-  "pe": {
-    "title": "Capital privado",
-    "failedToLoad": "No se pudieron cargar las firmas de capital privado",
-    "aumFundSize": "AUM / Tamaño del fondo",
-    "assetsUnderMgmt": "Activos bajo gestión",
-    "buyoutsOnRecord": "Buyouts registrados",
-    "dealTypes": "Tipos de operación",
-    "dealValue": "Valor de la operación",
-    "founded": "Fundada",
-    "growthEquity": "Posiciones de growth equity",
-    "headquarters": "Sede",
-    "heldSince": "En cartera desde",
-    "holdingsMature": "Participaciones — privadas maduras",
-    "investmentThesis": "Tesis de inversión",
-    "latestDeal": "Última operación",
-    "lead": "Líder",
-    "mostDeals": "Más operaciones",
-    "totalDisclosed": "Valor total divulgado",
-    "yearsActive": "Años de actividad",
-    "growingFast": "Crecimiento rápido",
-    "privateEquityFirm": "Firma de capital privado",
-    "notTrackable": "Aún no rastreable",
-    "notTrackableHint": "Esta firma aún no tiene un perfil curado, por lo que no se puede seguir.",
-    "noDescription": "No hay descripción de la firma registrada.",
-    "noLeadership": "Aún no se ha registrado el equipo directivo de esta firma.",
-    "noPortfolio": "Todavía no hay participadas vinculadas a las operaciones de buyout o secundario de esta firma.",
-    "noTransactions": "Aún no hay operaciones de buyout ni de secundario registradas para esta firma.",
-    "failedPortfolio": "No se pudo cargar la cartera de esta firma.",
-    "failedTransactions": "No se pudieron cargar las operaciones de esta firma.",
-    "pageSubtitle": "Inteligencia de buyout y mercado secundario: firmas derivadas de datos reales de operaciones y puntuadas según fundamentales de mercados maduros.",
-    "overview": "Resumen",
-    "transactions": "Operaciones",
-    "growing": "Creciendo",
-    "stable": "Estable",
-    "contracting": "En contracción"
-  },
   "deals": {
     "title": "Deal Flow",
     "ledger": "Registro",
@@ -634,28 +561,6 @@
     "termsOfUse": "Términos de uso",
     "acceptanceOnFile": "Aceptación registrada desde el alta."
   },
-  "marketMap": {
-    "title": "Mapa de mercado",
-    "subtitle": "Flujo de capital transfronterizo entre los ecosistemas tecnológicos globales."
-  },
-  "stocks": {
-    "title": "Acciones",
-    "search": "Buscar símbolo o empresa…",
-    "refresh": "Actualizar",
-    "tryAgain": "Reintentar",
-    "tracking": "Siguiendo",
-    "gaining": "Al alza",
-    "declining": "A la baja",
-    "daysRange": "Rango del día",
-    "todaysRange": "Rango de hoy",
-    "addApiKey": "Añade tu clave de API de FMP"
-  },
-  "ipos": {
-    "title": "Pipeline de OPV",
-    "subtitle": "Empresas que se acercan a los mercados cotizados: inteligencia pre-OPV y registros S-1.",
-    "comingSoon": "Próximamente",
-    "blurb": "El seguimiento del pipeline de OPV, el análisis de S-1 y las alertas de vencimiento de lock-up están en desarrollo."
-  },
   "dealModal": {
     "capTable": "Cap table y dilución",
     "burnRunway": "Burn rate y runway",
@@ -791,14 +696,6 @@
       "view": { "title": "Cuadrícula o lista", "body": "Cambia entre una cuadrícula visual de tarjetas y una tabla densa y ordenable, según prefieras explorar." },
       "results": { "title": "Selecciona, compara, sigue", "body": "Haz clic en una empresa para ver su perfil completo. Usa la casilla para añadir una empresa a tu lista de seguimiento, o selecciona hasta tres para compararlas entre sí." }
     },
-    "marketMap": {
-      "steps": {
-        "sector": { "title": "Filtrar por sector", "body": "Reduce el mapa y las analíticas a un solo sector, o visualízalos todos juntos." },
-        "map": { "title": "Explora el mapa mundial", "body": "Haz clic en cualquier polo pulsante para profundizar en las empresas, el capital y la salud del ecosistema de esa región." },
-        "panel": { "title": "Detalles del polo", "body": "Al seleccionar un polo, aquí aparecen sus estadísticas clave: número de empresas, capital captado, talento disponible y más." },
-        "insights": { "title": "Inteligencia de mercado", "body": "Análisis más profundo del polo y sector seleccionados: eficiencia de capital, velocidad de financiación, ritmo de operaciones y los principales actores." }
-      }
-    },
     "deals": {
       "steps": {
         "search": { "title": "Busca por empresa", "body": "Escribe el nombre de una empresa para ir directo a sus operaciones." },
@@ -817,15 +714,6 @@
         "smart": { "title": "Tamaño de fondo, cheque y actividad", "body": "Despliega estos filtros para filtrar por AUM, tamaño de cheque habitual o firmas activas en los últimos 24 meses." },
         "sort": { "title": "Ordena el directorio", "body": "Ordena las firmas por inversiones recientes, tamaño de portafolio, AUM o año de fundación." },
         "results": { "title": "Selecciona, compara, sigue", "body": "Haz clic en una firma para ver su perfil completo. Usa la casilla para añadir una firma a tu lista de seguimiento, o selecciona hasta tres para compararlas entre sí." }
-      }
-    },
-    "publicMarket": {
-      "steps": {
-        "sectorMatrix": { "title": "Múltiplos de valoración por sector", "body": "Consulta los múltiplos medianos del mercado público por sector, y aplica uno a startups comparables del Mercado Privado para una valoración relativa rápida." },
-        "comps": { "title": "Comparables públicos y privados", "body": "Explora grandes empresas públicas comparadas con sus equivalentes privados registrados en AlphaMap, con la brecha de valoración de un vistazo." },
-        "search": { "title": "Añade cualquier ticker", "body": "Busca cualquier ticker de NASDAQ o NYSE y sincronízalo con las empresas rastreadas de la plataforma." },
-        "directory": { "title": "Explora las empresas registradas", "body": "Filtra por sector o nombre, y haz clic en cualquier fila para ver el perfil completo." },
-        "sync": { "title": "Mantén los datos actualizados", "body": "Actualiza manualmente los datos de mercado en cualquier momento, o accede a las cotizaciones intradía en vivo." }
       }
     }
   }

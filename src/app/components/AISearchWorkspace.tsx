@@ -513,9 +513,7 @@ function CitationModal({ match, onClose }: { match: SemanticMatch; onClose: () =
   // Best-effort redirect into the relevant directory page.
   const dir = isCompany
     ? { label: "Startups", path: "/startups" }
-    : str(match.metadata.firm_type) === "pe"
-      ? { label: "Private Equity", path: "/private-equity" }
-      : { label: "VCs", path: "/vcs" };
+    : { label: "VCs", path: "/vcs" };
 
   return (
     <div

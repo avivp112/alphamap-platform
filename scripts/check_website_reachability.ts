@@ -2,7 +2,7 @@
 /**
  * check_website_reachability.ts — Verify a batch of company websites actually resolve
  *
- * Reads a CSV (name,website — same shape as public/startups_list_v1.csv and any
+ * Reads a CSV (name,website — same shape as data/seed/startups_list_v1.csv and any
  * new-company upload), makes a live HTTP request to every website concurrently,
  * and reports which ones are reachable vs. genuinely broken. Built for vetting a
  * new-company CSV before it's appended to the master list — run it from a machine

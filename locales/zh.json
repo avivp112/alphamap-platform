@@ -5,15 +5,11 @@
   },
   "nav": {
     "home": "首页",
-    "data": "数据",
+    "data": "我们的数据",
     "privateMarket": "一级市场",
-    "publicMarket": "二级市场",
     "ventureCapital": "风险投资",
     "deals": "交易",
-    "marketMap": "市场地图",
-    "privateEquity": "私募股权",
-    "myArea": "我的专区",
-    "valuationsDueDiligence": "估值与尽职调查",
+    "myArea": "Your Alpha",
     "settings": "设置",
     "soon": "即将推出",
     "toggleNavigation": "展开或收起导航",
@@ -102,39 +98,6 @@
     "totalRaised": "累计融资",
     "growth": "增长",
     "ebitdaMargin": "EBITDA 利润率"
-  },
-  "publicMarket": {
-    "directoryTitle": "上市公司目录",
-    "keyMetrics": "关键指标与估值",
-    "fromSync": "来自 AlphaMap 同步",
-    "trackedCounterpart": "对标的未上市公司：",
-    "tracked": "已跟踪",
-    "addAndSync": "添加并同步",
-    "syncing": "同步中…",
-    "filterPlaceholder": "筛选已跟踪公司",
-    "hubTitle": "二级市场中心",
-    "hubSubtitle": "将公开市场基准与一级市场估值打通：行业倍数、IPO 窗口晴雨表，以及上市与未上市公司的可比分析。",
-    "syncNow": "立即同步",
-    "liveQuotes": "实时行情",
-    "sectorMatrixTitle": "行业估值倍数矩阵",
-    "sectorMatrixSubtitle": "各核心软件行业上市公司的估值倍数中位数——你为未上市公司定价时的基准。",
-    "medianEvRevenue": "EV / 营收中位数",
-    "publicCount": "{{count}} 家上市公司",
-    "applyToStartups": "应用于未上市初创公司",
-    "appliedToPrivate": "已应用于未上市公司",
-    "barometerTitle": "IPO 与市场情绪晴雨表",
-    "barometerSubtitle": "从科技股动量判断 IPO 与后期融资窗口是否开启，以及一级市场后期活跃度的同步情况。",
-    "leadingSector": "领涨行业",
-    "laggingSector": "落后行业",
-    "chart": {
-      "1D": "1日",
-      "1M": "1月",
-      "3M": "3月",
-      "1Y": "1年",
-      "5Y": "5年",
-      "ALL": "全部",
-      "noData": "暂无图表数据"
-    }
   },
   "landing": {
     "viewDashboard": "查看仪表板",
@@ -393,42 +356,6 @@
     "founded": "成立年份",
     "headquarters": "总部"
   },
-  "pe": {
-    "title": "私募股权",
-    "failedToLoad": "无法加载私募股权机构",
-    "aumFundSize": "AUM / 基金规模",
-    "assetsUnderMgmt": "管理资产规模",
-    "buyoutsOnRecord": "已记录的收购",
-    "dealTypes": "交易类型",
-    "dealValue": "交易金额",
-    "founded": "成立于",
-    "growthEquity": "成长股权投资",
-    "headquarters": "总部",
-    "heldSince": "持有起始",
-    "holdingsMature": "持仓——成熟未上市企业",
-    "investmentThesis": "投资逻辑",
-    "latestDeal": "最新交易",
-    "lead": "领投",
-    "mostDeals": "交易最多",
-    "totalDisclosed": "已披露交易总额",
-    "yearsActive": "活跃年数",
-    "growingFast": "快速增长",
-    "privateEquityFirm": "私募股权机构",
-    "notTrackable": "暂不可跟踪",
-    "notTrackableHint": "该机构尚无整理好的资料，因此无法跟踪。",
-    "noDescription": "暂无该机构的简介。",
-    "noLeadership": "尚未记录该机构的管理团队。",
-    "noPortfolio": "尚无被投企业与该机构的私募股权收购或二级交易关联。",
-    "noTransactions": "尚未记录该机构的私募股权收购或二级交易。",
-    "failedPortfolio": "无法加载该机构的投资组合。",
-    "failedTransactions": "无法加载该机构的交易记录。",
-    "pageSubtitle": "收购与二级市场情报——机构数据源自真实交易记录，并按成熟市场基本面评分。",
-    "overview": "概览",
-    "transactions": "交易记录",
-    "growing": "增长中",
-    "stable": "稳定",
-    "contracting": "收缩中"
-  },
   "deals": {
     "title": "项目流",
     "ledger": "明细",
@@ -634,28 +561,6 @@
     "termsOfUse": "使用条款",
     "acceptanceOnFile": "注册时已记录接受条款。"
   },
-  "marketMap": {
-    "title": "市场地图",
-    "subtitle": "全球科技生态系统之间的跨境资本流动。"
-  },
-  "stocks": {
-    "title": "股票",
-    "search": "搜索代码或公司…",
-    "refresh": "刷新",
-    "tryAgain": "重试",
-    "tracking": "跟踪中",
-    "gaining": "上涨",
-    "declining": "下跌",
-    "daysRange": "当日区间",
-    "todaysRange": "今日区间",
-    "addApiKey": "请添加你的 FMP API 密钥"
-  },
-  "ipos": {
-    "title": "IPO 储备",
-    "subtitle": "即将进入公开市场的公司——上市前情报与 S-1 文件。",
-    "comingSoon": "敬请期待",
-    "blurb": "IPO 储备跟踪、S-1 分析与锁定期到期提醒正在开发中。"
-  },
   "dealModal": {
     "capTable": "股权结构与稀释",
     "burnRunway": "现金消耗与资金续航",
@@ -791,14 +696,6 @@
       "view": { "title": "网格或列表", "body": "在可视化卡片网格和信息密集的可排序表格之间切换，选择您喜欢的浏览方式。" },
       "results": { "title": "选择、比较、关注", "body": "点击公司可查看完整档案。使用复选框将单个公司加入自选列表，或最多选择三家公司进行并排比较。" }
     },
-    "marketMap": {
-      "steps": {
-        "sector": { "title": "按行业筛选", "body": "将地图和分析范围缩小到单一行业，或同时查看所有行业。" },
-        "map": { "title": "探索世界地图", "body": "点击任意跳动的枢纽，深入了解该地区的公司、资本和生态系统健康状况。" },
-        "panel": { "title": "枢纽详情", "body": "选择枢纽后，这里会显示其关键统计数据——公司数量、募资总额、人才储备等。" },
-        "insights": { "title": "市场情报", "body": "针对所选枢纽和行业的深度分析：资本效率、融资速度、交易动能以及头部机构。" }
-      }
-    },
     "deals": {
       "steps": {
         "search": { "title": "按公司搜索", "body": "输入公司名称，直接找到其相关交易。" },
@@ -817,15 +714,6 @@
         "smart": { "title": "基金规模、支票规模与活跃度", "body": "展开这些筛选项，可按管理规模（AUM）、典型支票规模或过去24个月内活跃的机构进行筛选。" },
         "sort": { "title": "对目录排序", "body": "按近期投资、投资组合规模、AUM或成立年份对机构排序。" },
         "results": { "title": "选择、比较、关注", "body": "点击机构可查看完整档案。使用复选框将单个机构加入自选列表，或最多选择三家机构进行并排比较。" }
-      }
-    },
-    "publicMarket": {
-      "steps": {
-        "sectorMatrix": { "title": "行业估值倍数", "body": "查看各行业的公开市场估值倍数中位数，并将其应用于私募市场中可比的初创公司，快速进行相对估值。" },
-        "comps": { "title": "公开与私募可比公司", "body": "浏览与 AlphaMap 追踪的私募公司对应的公开巨头，一目了然地查看估值差距。" },
-        "search": { "title": "添加任意股票代码", "body": "搜索任意纳斯达克或纽交所股票代码，并将其同步到平台追踪的公司列表中。" },
-        "directory": { "title": "浏览追踪的公司", "body": "按行业或名称筛选，然后点击任意行即可查看完整档案。" },
-        "sync": { "title": "保持数据最新", "body": "随时手动获取最新市场数据，或跳转到实时盘中报价。" }
       }
     }
   }

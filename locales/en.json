@@ -5,15 +5,11 @@
   },
   "nav": {
     "home": "Home",
-    "data": "Data",
+    "data": "Our Data",
     "privateMarket": "Private Market",
-    "publicMarket": "Public Market",
     "ventureCapital": "Venture Capital",
     "deals": "Deals",
-    "marketMap": "Market Map",
-    "privateEquity": "Private Equity",
-    "myArea": "My Area",
-    "valuationsDueDiligence": "Valuations and Due Diligence",
+    "myArea": "Your Alpha",
     "settings": "Settings",
     "soon": "Soon",
     "toggleNavigation": "Toggle navigation",
@@ -105,39 +101,6 @@
     "totalRaised": "Total Raised",
     "growth": "Growth",
     "ebitdaMargin": "EBITDA Margin"
-  },
-  "publicMarket": {
-    "directoryTitle": "Public Companies Directory",
-    "keyMetrics": "Key Metrics & Valuation",
-    "fromSync": "From AlphaMap sync",
-    "trackedCounterpart": "Tracked private counterpart:",
-    "tracked": "Tracked",
-    "addAndSync": "Add & sync",
-    "syncing": "Syncing…",
-    "filterPlaceholder": "Filter tracked companies",
-    "hubTitle": "Public Market Hub",
-    "hubSubtitle": "Public benchmarks wired to private valuations — sector multiples, an IPO-window barometer, and public-vs-private comps.",
-    "syncNow": "Sync now",
-    "liveQuotes": "Live quotes",
-    "sectorMatrixTitle": "Sector Multiples Matrix",
-    "sectorMatrixSubtitle": "Public median valuation multiples per core software sector — the benchmark you price private companies against.",
-    "medianEvRevenue": "Median EV / Revenue",
-    "publicCount": "{{count}} public",
-    "applyToStartups": "Apply to private startups",
-    "appliedToPrivate": "Applied to private",
-    "barometerTitle": "IPO & Market Sentiment Barometer",
-    "barometerSubtitle": "A public-tech momentum read on whether the IPO / late-stage funding window is open — and how private late-stage activity is co-moving.",
-    "leadingSector": "Leading sector",
-    "laggingSector": "Lagging sector",
-    "chart": {
-      "1D": "1D",
-      "1M": "1M",
-      "3M": "3M",
-      "1Y": "1Y",
-      "5Y": "5Y",
-      "ALL": "ALL",
-      "noData": "No chart data available"
-    }
   },
   "landing": {
     "viewDashboard": "View Dashboard",
@@ -448,42 +411,6 @@
     "founded": "Founded",
     "headquarters": "Headquarters"
   },
-  "pe": {
-    "title": "Private Equity",
-    "failedToLoad": "Failed to load PE firms",
-    "aumFundSize": "AUM / Fund Size",
-    "assetsUnderMgmt": "Assets Under Management",
-    "buyoutsOnRecord": "Buyouts on Record",
-    "dealTypes": "Deal Types",
-    "dealValue": "Deal Value",
-    "founded": "Founded",
-    "growthEquity": "Growth Equity Positions",
-    "headquarters": "Headquarters",
-    "heldSince": "Held Since",
-    "holdingsMature": "Holdings — Mature Private",
-    "investmentThesis": "Investment Thesis",
-    "latestDeal": "Latest Deal",
-    "lead": "Lead",
-    "mostDeals": "Most Deals",
-    "totalDisclosed": "Total Disclosed Value",
-    "yearsActive": "Years Active",
-    "growingFast": "Growing fast",
-    "privateEquityFirm": "Private equity firm",
-    "notTrackable": "Not Trackable Yet",
-    "notTrackableHint": "This firm has no curated profile yet, so it can't be tracked.",
-    "noDescription": "No firm description on file.",
-    "noLeadership": "No leadership team has been recorded for this firm yet.",
-    "noPortfolio": "No portfolio companies are linked to this firm's PE Buyout or Secondary transactions yet.",
-    "noTransactions": "No PE Buyout or Secondary transactions are on record for this firm yet.",
-    "failedPortfolio": "Failed to load this firm's portfolio.",
-    "failedTransactions": "Failed to load this firm's transactions.",
-    "pageSubtitle": "Buyout and secondary-market intelligence — firms derived from real transaction data, scored on mature-market fundamentals.",
-    "overview": "Overview",
-    "transactions": "Transactions",
-    "growing": "Growing",
-    "stable": "Stable",
-    "contracting": "Contracting"
-  },
   "deals": {
     "title": "Deal Flow",
     "ledger": "Ledger",
@@ -643,9 +570,9 @@
     "errorBody": "Please try again in a moment."
   },
   "myArea": {
-    "title": "My Area",
+    "title": "Your Alpha",
     "subtitle": "Your personal radar — curated companies, thesis matches, and live signals in one place.",
-    "signInTitle": "Sign in to use My Area",
+    "signInTitle": "Sign in to use Your Alpha",
     "signInBlurb": "Your watchlist, thesis matches, and alerts, synced across sessions and devices.",
     "tabs": {
       "watchlist": "Watchlist",
@@ -703,7 +630,7 @@
     "remaining_one": "{{count}} check left this month on your plan.",
     "remaining_other": "{{count}} checks left this month on your plan.",
     "finding": "Looking for the company…",
-    "slow": "This is taking longer than usual. You can close this window: the check is saved under My Area → CRM.",
+    "slow": "This is taking longer than usual. You can close this window: the check is saved under Your Alpha → CRM.",
     "confirmTitle": "Is this the company you mean?",
     "confirmBlurb": "Pick the right one. The checks run on the company you confirm.",
     "thisOne": "This is it",
@@ -740,11 +667,11 @@
       "doneTitle": "Profile ready",
       "doneBody": "A private technology company. Below is what public sources say about it.",
       "checkingTitle": "Running the checks…",
-      "checkingBody": "Usually under a minute. You can leave this page: the result is saved under My Area → CRM.",
+      "checkingBody": "Usually under a minute. You can leave this page: the result is saved under Your Alpha → CRM.",
       "readyTitle": "Passed the checks",
       "readyBody": "A private technology company. This check ran before the full research existed.",
       "stealthTitle": "Probably in stealth",
-      "stealthBody": "There is very little public information about this company yet. The check is saved under My Area; automatic tracking for new information is coming soon.",
+      "stealthBody": "There is very little public information about this company yet. The check is saved under Your Alpha; automatic tracking for new information is coming soon.",
       "publicTitle": "A publicly listed company",
       "publicBody": "AlphaMap covers private companies only.",
       "nonTechTitle": "Not a technology company",
@@ -1101,28 +1028,6 @@
     "termsOfUse": "Terms of Use",
     "acceptanceOnFile": "Acceptance on file from registration."
   },
-  "marketMap": {
-    "title": "Market Map",
-    "subtitle": "Cross-border capital flow across global tech ecosystems."
-  },
-  "stocks": {
-    "title": "Stocks",
-    "search": "Search symbol or company…",
-    "refresh": "Refresh",
-    "tryAgain": "Try again",
-    "tracking": "Tracking",
-    "gaining": "Gaining",
-    "declining": "Declining",
-    "daysRange": "Day's Range",
-    "todaysRange": "Today's Range",
-    "addApiKey": "Add your FMP API key"
-  },
-  "ipos": {
-    "title": "IPO Pipeline",
-    "subtitle": "Companies approaching public markets — pre-IPO intelligence and S-1 filings.",
-    "comingSoon": "Coming Soon",
-    "blurb": "IPO pipeline tracking, S-1 analysis, and lock-up expiry alerts are under development."
-  },
   "dealModal": {
     "capTable": "Cap Table & Dilution",
     "burnRunway": "Burn Rate & Runway",
@@ -1258,14 +1163,6 @@
       "view": { "title": "Grid or list", "body": "Switch between a visual card grid and a dense, sortable table — whichever suits how you like to scan." },
       "results": { "title": "Select, compare, track", "body": "Click a company to open its full profile. Use the checkbox to add one company to your Watchlist, or select up to three to compare them side by side." }
     },
-    "marketMap": {
-      "steps": {
-        "sector": { "title": "Filter by sector", "body": "Narrow the map and analytics to a single sector, or view all of them together." },
-        "map": { "title": "Explore the world map", "body": "Click any pulsing hub to drill into that region's companies, capital, and ecosystem health." },
-        "panel": { "title": "Hub details", "body": "Once you select a hub, its key stats appear here — company count, capital raised, talent pool, and more." },
-        "insights": { "title": "Market intelligence", "body": "Deeper analytics for the selected hub and sector: capital efficiency, funding velocity, deal momentum, and the top players." }
-      }
-    },
     "deals": {
       "steps": {
         "search": { "title": "Search by company", "body": "Type a company name to jump straight to its deals." },
@@ -1284,15 +1181,6 @@
         "smart": { "title": "Fund size, check size, activity", "body": "Expand these to filter by AUM, typical check size, or firms that have been active in the last 24 months." },
         "sort": { "title": "Sort the directory", "body": "Order firms by recent investments, portfolio size, AUM, or founding year." },
         "results": { "title": "Select, compare, track", "body": "Click a firm to open its full profile. Use the checkbox to add one firm to your Watchlist, or select up to three to compare them side by side." }
-      }
-    },
-    "publicMarket": {
-      "steps": {
-        "sectorMatrix": { "title": "Sector valuation multiples", "body": "See median public-market multiples by sector, and apply one to comparable Private Market startups for a quick relative valuation." },
-        "comps": { "title": "Public vs. private comps", "body": "Browse public giants mapped to their private counterparts tracked in AlphaMap, with the valuation gap at a glance." },
-        "search": { "title": "Add any ticker", "body": "Search any NASDAQ or NYSE ticker and sync it into the platform's tracked companies." },
-        "directory": { "title": "Browse tracked companies", "body": "Filter by sector or name, then click any row to open a full profile." },
-        "sync": { "title": "Keep data fresh", "body": "Manually pull the latest market data anytime, or jump to live intraday quotes." }
       }
     }
   },
