@@ -38,7 +38,7 @@ const tables: Record<string, unknown[]> = {
 function builder(table: string) {
   const state: Call = { table, op: "select", payload: null, filters: [] };
   const b: Record<string, unknown> = {
-    select: () => b, order: () => b, range: () => b,
+    select: () => b, order: () => b, range: () => b, single: () => b,
     eq: (k: string, v: unknown) => { state.filters.push([k, v]); return b; },
     update: (p: unknown) => { state.op = "update"; state.payload = p; return b; },
     insert: (p: unknown) => { state.op = "insert"; state.payload = p; return b; },

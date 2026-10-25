@@ -25,6 +25,7 @@ import { MAJOR_CITIES } from "./majorCities.ts";
 import { normalizeForMatch } from "./evidence.ts";
 import { computeTotalRaised } from "./rounds.ts";
 import { computeFieldConfidence, meetsProfileThreshold } from "./confidence.ts";
+import { roundFieldEvidence } from "./roundProvenance.ts";
 import {
   decideScalarWrite, decideHeadcountUpdate, mergePeople, appendDatedFigures, fillScalarIfNull, type CandidateValue,
 } from "./write.ts";
@@ -165,6 +166,8 @@ export async function writeCollected(
       console.log(`    🧭  Country "${fromQuote}" read from the city's own evidence quote.`);
     } else if (countries && countries.size === 1) {
       patch.country = [...countries][0];
+      // Derived from the city's own evidence: that quote is the source.
+      provenance("profile.country", patch.country, profile.profile.city);
       console.log(`    🧭  Country "${patch.country}" derived from city "${patch.city}" (unambiguous in the city list).`);
     } else {
       console.log(`    ℹ️   City "${patch.city}" written without a country — no source states one and the city is not unambiguous.`);
@@ -198,9 +201,13 @@ export async function writeCollected(
     }
     if (websiteResult.rejectedReason) console.warn(`    ⚠️  Rejected website "${profile.profile.website.value}" — ${websiteResult.rejectedReason}${websiteResult.rejectedOwnerName ? ` (${websiteResult.rejectedOwnerName})` : ""}.`);
   }
-  if (!row.linkedin_url && profile.profile.linkedin_url) patch.linkedin_url = profile.profile.linkedin_url.value;
-  if (!row.facebook_url && profile.profile.facebook_url) patch.facebook_url = profile.profile.facebook_url.value;
-  if (!row.instagram_url && profile.profile.instagram_url) patch.instagram_url = profile.profile.instagram_url.value;
+  for (const key of ["linkedin_url", "facebook_url", "instagram_url"] as const) {
+    const ev = profile.profile[key];
+    if (!row[key] && ev) {
+      patch[key] = ev.value;
+      provenance(`profile.${key}`, ev.value, ev);
+    }
+  }
 
   if (!row.sector_id && profile.profile.sector_name) {
     const { data: sid } = await supabase.rpc("sector_id_by_name", { p_name: profile.profile.sector_name });
@@ -323,8 +330,13 @@ export async function writeCollected(
   if (patents.length > (row.patents?.length ?? 0)) patch.patents = patents;
   const techStack = [...new Set([...(row.tech_stack ?? []), ...(market.technology.tech_stack ?? [])])];
   if (techStack.length > (row.tech_stack?.length ?? 0)) patch.tech_stack = techStack;
-  if (!row.github_url && market.technology.github_url) patch.github_url = market.technology.github_url.value;
-  if (!row.huggingface_url && market.technology.huggingface_url) patch.huggingface_url = market.technology.huggingface_url.value;
+  for (const key of ["github_url", "huggingface_url"] as const) {
+    const ev = market.technology[key];
+    if (!row[key] && ev) {
+      patch[key] = ev.value;
+      provenance(`technology.${key}`, ev.value, ev);
+    }
+  }
 
   // News: new articles appended (deduped by URL), newest first; each new
   // one gets its own og:image (v1's technique), never a guessed image.
@@ -357,19 +369,28 @@ export async function writeCollected(
     funding.arr_milestones.map((m) => ({ arr: m.arr, date: normalizeIsoDate(m.date) ?? m.date ?? "unknown", source: sourceUrlFor(m.source_id), confidence: confidenceLabel(sourceTypeFor(m.source_id)) })),
     (m) => m.arr,
   );
-  if (arr.length > (row.arr_milestones?.length ?? 0)) patch.arr_milestones = arr;
+  if (arr.length > (row.arr_milestones?.length ?? 0)) {
+    patch.arr_milestones = arr;
+    const onFile = new Set((row.arr_milestones ?? []).map((m) => m.arr));
+    for (const m of funding.arr_milestones) if (!onFile.has(m.arr) && arr.some((a) => a.arr === m.arr)) provenance("funding.arr_milestones", m.arr, m);
+  }
   const valuations = appendDatedFigures(
     row.valuation_benchmarks ?? [],
     funding.valuation_benchmarks.map((v) => ({ valuation: v.valuation, date: normalizeIsoDate(v.date) ?? v.date ?? null, source: sourceUrlFor(v.source_id), is_estimated: v.is_estimated ?? null })),
     (v) => v.valuation,
   );
-  if (valuations.length > (row.valuation_benchmarks?.length ?? 0)) patch.valuation_benchmarks = valuations;
+  if (valuations.length > (row.valuation_benchmarks?.length ?? 0)) {
+    patch.valuation_benchmarks = valuations;
+    const onFile = new Set((row.valuation_benchmarks ?? []).map((v) => v.valuation));
+    for (const v of funding.valuation_benchmarks) if (!onFile.has(v.valuation) && valuations.some((x) => x.valuation === v.valuation)) provenance("funding.valuation_benchmarks", v.valuation, v);
+  }
   if (!row.revenue_estimate && funding.revenue_estimate) {
     const re = funding.revenue_estimate;
     patch.revenue_estimate = {
       range_low: re.range_low ?? null, range_high: re.range_high ?? null, as_of_date: normalizeIsoDate(re.as_of_date) ?? re.as_of_date ?? null,
       source: sourceUrlFor(re.source_id), confidence: confidenceLabel(sourceTypeFor(re.source_id)),
     };
+    if (re.source_id && re.evidence_quote) provenance("funding.revenue_estimate", { range_low: re.range_low ?? null, range_high: re.range_high ?? null }, { source_id: re.source_id, evidence_quote: re.evidence_quote });
   }
   // NEVER defaults to true when the model omitted it -- null is "unknown".
   // A handful of new articles can't judge whether the whole history is known.
@@ -489,14 +510,21 @@ export async function writeCollected(
       if (tagErr) console.warn(`    ⚠️  Sub-sector tag write failed: ${tagErr.message}`);
     }
 
-    for (const fw of fieldWrites) {
+    const writeProvenance = async (fw: { field: string; value: unknown; source_id: string; evidence_quote: string; source_type: SourceType }) => {
       const { error: provenanceErr } = await supabase.from("field_provenance").insert({
         startup_id: row.id, field: fw.field, value: fw.value, source_url: sourceById.get(fw.source_id)?.url,
         source_type: fw.source_type, evidence_quote: fw.evidence_quote,
         confidence: computeFieldConfidence([{ source_type: fw.source_type }]),
       });
       if (provenanceErr) console.warn(`    ⚠️  field_provenance insert failed (${fw.field}): ${provenanceErr.message}`);
-    }
+    };
+    for (const fw of fieldWrites) await writeProvenance(fw);
+    // A round's amount / valuation / date / lead: field "funding_rounds.<id>.<column>".
+    const roundProvenance = async (roundId: string, written: Parameters<typeof roundFieldEvidence>[0]) => {
+      for (const e of roundFieldEvidence(written, funding.funding_rounds)) {
+        await writeProvenance({ field: `funding_rounds.${roundId}.${e.field}`, value: e.value, source_id: e.source_id, evidence_quote: e.evidence_quote, source_type: sourceTypeFor(e.source_id) ?? "model_inferred" });
+      }
+    };
 
     for (const h of badHeadcountOnFile) {
       const { error: delErr } = await supabase.from("headcount_history").delete().eq("id", h.id);
@@ -514,7 +542,7 @@ export async function writeCollected(
     }
 
     for (const round of plan.inserts) {
-      const { error: roundErr } = await supabase.from("funding_rounds").insert({
+      const { data: inserted, error: roundErr } = await supabase.from("funding_rounds").insert({
         startup_id: row.id, round_type: round.round_type,
         amount_raised: round.amount_raised ?? null, valuation: round.valuation ?? null,
         is_valuation_estimated: round.valuation != null ? (round.is_valuation_estimated ?? null) : null,
@@ -522,14 +550,20 @@ export async function writeCollected(
         lead_investor: round.lead_investor ?? null,
         investors: round.other_investors && round.other_investors.length > 0 ? round.other_investors : null,
         investor_amounts: round.investor_amounts && round.investor_amounts.length > 0 ? round.investor_amounts : null,
-      });
+      }).select("id").single();
       if (roundErr) console.warn(`    ⚠️  Round insert failed (${round.round_type}): ${roundErr.message}`);
-      else summary.totalRoundsInserted++;
+      else {
+        summary.totalRoundsInserted++;
+        if (inserted?.id) await roundProvenance(inserted.id as string, round);
+      }
     }
     for (const u of plan.updates) {
       const { error: updErr } = await supabase.from("funding_rounds").update(u.patch).eq("id", u.id);
       if (updErr) console.warn(`    ⚠️  Round update failed (${u.round_type}): ${updErr.message}`);
-      else summary.totalRoundsUpdated++;
+      else {
+        summary.totalRoundsUpdated++;
+        await roundProvenance(u.id, u.patch);
+      }
     }
 
     await supabase.from("startups").update({ last_enriched_at: new Date().toISOString() }).eq("id", row.id);

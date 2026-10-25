@@ -59,7 +59,7 @@ const tables: Record<string, unknown[]> = {
 function builder(table: string) {
   const state: Call = { table, op: "select", payload: null, filters: [] };
   const b: Record<string, unknown> = {
-    select: () => b, order: () => b, range: () => b, limit: () => b, not: () => b, is: () => b,
+    select: () => b, order: () => b, range: () => b, limit: () => b, not: () => b, is: () => b, single: () => b,
     eq: (k: string, v: unknown) => { state.filters.push([k, v]); return b; },
     update: (p: unknown) => { state.op = "update"; state.payload = p; return b; },
     insert: (p: unknown) => { state.op = "insert"; state.payload = p; return b; },
@@ -68,7 +68,9 @@ function builder(table: string) {
     then: (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) => {
       calls.push({ ...state });
       const rows = (tables[table] ?? []).filter((r) => state.filters.every(([k, v]) => (r as Record<string, unknown>)[k] === v || k === "id"));
-      return Promise.resolve({ data: state.op === "select" ? rows : null, error: null }).then(res, rej);
+      // An insert answers with its new row's id, as .insert().select("id").single() does.
+      const data = state.op === "select" ? rows : state.op === "insert" ? { id: `${table}-new` } : null;
+      return Promise.resolve({ data, error: null }).then(res, rej);
     },
   };
   return b;
@@ -167,6 +169,16 @@ describe("bulk_enrich_v2 MODE=update end to end (all I/O faked)", () => {
     expect(inserts).toHaveLength(1);
     expect(inserts[0].payload).toMatchObject({ round_type: "Series A", amount_raised: 10_000_000, lead_investor: "Accel" });
     expect(calls.some((c) => c.table === "funding_rounds" && c.op === "update")).toBe(false);
+  });
+
+  it("records where the new round's amount and lead investor came from", () => {
+    const rows = calls.filter((c) => c.table === "field_provenance" && c.op === "insert").map((c) => c.payload as Record<string, unknown>);
+    const amount = rows.find((r) => r.field === "funding_rounds.funding_rounds-new.amount_raised");
+    const lead = rows.find((r) => r.field === "funding_rounds.funding_rounds-new.lead_investor");
+    expect(amount).toMatchObject({ value: 10_000_000 });
+    expect(String(amount?.evidence_quote)).toContain("$10 million");
+    expect(lead).toMatchObject({ value: "Accel" });
+    expect(amount?.source_url).toBeTruthy();
   });
 
   it("keeps the previous CEO as 'Former CEO' next to the newly appointed one, and never flips funding_history_complete", () => {
