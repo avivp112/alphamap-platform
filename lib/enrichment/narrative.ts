@@ -102,6 +102,9 @@ function decide(part: string, opts: NarrativeOptions): Decision {
     // "per" / "based on" / "citing" are also product language ("pricing based
     // on usage", "per user", "per the agreement"): an attribution only when
     // what follows is a source.
+    // "pricing based on proprietary data", "offers based on traffic data": inside a phrase, "based on" / "citing"
+    // describe the product. As an attribution they open the sentence or follow a comma.
+    if (/^(based on|citing)$/i.test(m[2]) && !/^(|,\s*)$/.test(m[1]) && !namesPlatform(source, opts)) continue;
     const lead = source.trim().split(/\s+/).slice(0, 4).join(" ");   // the source is named right away: "per its LinkedIn page"
     if (!/^(according to|as reported)/i.test(m[2]) && !namesPlatform(lead, opts) && !SOURCE_NOUN.test(lead)) continue;
     if (namesPlatform(source, opts)) return { kind: "drop", reason: "data_platform" };

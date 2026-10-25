@@ -127,10 +127,15 @@ describe("cleanNarrative", () => {
         "Founded in 2019 and based on research from MIT, Acme builds battery materials.",
         "As stated in its mission, Acme aims to make clean steel affordable for every mill.",
         "Acme cut energy use by a third, as shown in a pilot with Tata Steel.",
+        // The final report (2026-10-25): CrakRevenue and Habi.
+        "It serves affiliate marketers globally, with SmartLink technology that auto-optimizes offers based on traffic data.",
+        "Habi offers direct home purchases with cash offers, transparent pricing based on proprietary data, and a streamlined process.",
       ]) expect(cleanNarrative(t)).toBe(t);
       // …and the real attributions with the same words are still caught.
       expect(cleanNarrative("Acme sells to banks. Per its LinkedIn page, it employs 140 people.")).toBe("Acme sells to banks.");
       expect(cleanNarrative("Acme sells to banks. Based on Crunchbase references, it raised $8 million.")).toBe("Acme sells to banks.");
+      expect(cleanNarrative("Acme sells to banks. Based on recent data, it reached $5M in ARR in 2024.")).toBe("Acme sells to banks.");
+      expect(cleanNarrative("Acme sells to banks. It reached $5M in ARR in 2024, based on LinkedIn data.")).toBe("Acme sells to banks.");
     });
 
     it("hearsay without a named source is weak too", () => {
