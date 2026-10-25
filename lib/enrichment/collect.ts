@@ -38,6 +38,7 @@ import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePerso
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
 import { validateEnrichment, checkNarratives } from "./validation.ts";
+import type { VerifiedFact } from "./narrative.ts";
 import { computeTotalRaised, normalizeRoundType, type RoundLike } from "./rounds.ts";
 import { computeFieldConfidence } from "./confidence.ts";
 import { websiteDomain } from "./websiteValidation.ts";
@@ -88,6 +89,24 @@ export const V2_STARTUP_COLUMNS =
   "id, name, website, description, value_proposition, industry, founded_year, country, city, founding_country, israel_rnd_center, refresh_fields, employee_count, employee_range, growth_trend, founders, leadership, competitors, acquisitions, news, patent_count, patent_fields, patents, tech_stack, github_url, huggingface_url, arr_milestones, revenue_estimate, valuation_benchmarks, linkedin_url, facebook_url, instagram_url, sector_id, funding_history_complete, status, last_enriched_at, is_manually_verified";
 export const V2_ROUND_COLUMNS =
   "id, startup_id, round_type, amount_raised, valuation, is_valuation_estimated, announcement_date, source_url, lead_investor, investors, investor_amounts";
+
+/** Every value this run verified against a quote, with the quote: profile, rounds, ARR, valuations. */
+export function collectVerifiedFacts(
+  profile: { profile: object; metrics: object },
+  funding: { funding_rounds: object[]; arr_milestones: Array<{ arr: number; evidence_quote?: string }>; valuation_benchmarks: Array<{ valuation: number; evidence_quote?: string }> },
+): VerifiedFact[] {
+  const facts: VerifiedFact[] = [];
+  const add = (ev: unknown) => {
+    const e = ev as { value?: unknown; evidence_quote?: string } | undefined;
+    if (e && e.evidence_quote) facts.push({ value: e.value, quote: e.evidence_quote });
+  };
+  for (const v of Object.values(profile.profile)) add(v);
+  for (const v of Object.values(profile.metrics)) add(v);
+  for (const r of funding.funding_rounds as Array<Record<string, unknown>>) for (const k of ["amount_raised", "valuation", "announcement_date", "lead_investor"]) add(r[k]);
+  for (const m of funding.arr_milestones) facts.push({ value: m.arr, quote: m.evidence_quote ?? null });
+  for (const v of funding.valuation_benchmarks) facts.push({ value: v.valuation, quote: v.evidence_quote ?? null });
+  return facts;
+}
 
 /** The rounds on file, as Stage 7 plans against them. */
 export function roundRefs(existingRounds: V2FundingRoundRow[]): ExistingRoundRef[] {
@@ -163,6 +182,8 @@ export interface CollectedCompany {
   cityConfidence: number;
   countryConfidence: number;
   domain: string | null;
+  /** This run's verified values and quotes: what a weakly attributed claim must match (narrative.ts). */
+  verifiedFacts?: VerifiedFact[];
 }
 
 export type CollectResult =
@@ -712,12 +733,14 @@ export async function collectCompany(
     rounds: [...existingRefs, ...newRoundLikes.map((r): TaggedRound => ({ ...r, _new: true }))],
     totalRaisedUsd: computeTotalRaised([...existingRefs, ...roughPlan.inserts]),
   });
-  // Written text says what the company does: no data platform, no "according
-  // to" (owner's rule 2026-10-25) — here, so a check, a deepen and every run apply it.
+  // Written text says what the company does: no data platform, no weakly
+  // attributed claim this run did not verify (owner's rule 2026-10-25) —
+  // here, so a check, a deepen and every run apply it.
+  const verifiedFacts = collectVerifiedFacts(profile, funding);
   const narratives = checkNarratives({
     description: profile.profile.description, value_proposition: profile.profile.value_proposition,
     founders: profile.profile.founders, leadership: profile.leadership, competitors: market.competitors,
-  }, row.name);
+  }, row.name, verifiedFacts);
   profile.profile.description = narratives.texts.description;
   profile.profile.value_proposition = narratives.texts.value_proposition;
   profile.profile.founders = narratives.texts.founders as typeof profile.profile.founders;
@@ -745,6 +768,6 @@ export async function collectCompany(
     outcome: "collected",
     profile, funding, market, allSources, sourceById, sourceTypeFor, sourceUrlFor,
     linkedinFounders, linkedinLeaders, existingRefs, validation, plan,
-    cityConfidence, countryConfidence, domain,
+    cityConfidence, countryConfidence, domain, verifiedFacts,
   };
 }

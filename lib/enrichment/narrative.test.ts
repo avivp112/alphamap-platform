@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cleanNarrative, clauseProblem } from "./narrative";
+import { cleanNarrative, clauseProblem, verifierFrom } from "./narrative";
 
 describe("cleanNarrative", () => {
   it("drops the data-platform clause from a 'how it competes' line, keeping the rest", () => {
@@ -65,19 +65,63 @@ describe("cleanNarrative", () => {
     expect(cleanNarrative("Offers credit products; a direct competitor according to Tracxn comparables.")).toBe("Offers credit products.");
   });
 
-  it("cuts a trailing or leading source phrase instead of the whole sentence — second review (2026-10-25)", () => {
+  it("cuts a listing or recognition tail — it does not attribute the claim before it", () => {
     expect(cleanNarrative("Offers similar AI image generation and editing tools including background removal, positioned as a direct alternative on feature-comparison lists for creatives."))
       .toBe("Offers similar AI image generation and editing tools including background removal.");
     expect(cleanNarrative("The company was founded in 2022 and has raised $7.37M in extended seed funding, with recognition as a 2025 CB Insights Fintech 100 innovator."))
       .toBe("The company was founded in 2022 and has raised $7.37M in extended seed funding.");
-    expect(cleanNarrative("FurtherAI delivers measurable outcomes: 95% data accuracy, 30x faster quote readiness, and 646% ROI according to case studies published on its website."))
-      .toBe("FurtherAI delivers measurable outcomes: 95% data accuracy, 30x faster quote readiness, and 646% ROI.");
-    expect(cleanNarrative("Founded in 2021, the company was acquired by NVIDIA in July 2024 for $300 million, as reported by LinkedIn sources tracking AI M&A activity."))
-      .toBe("Founded in 2021, the company was acquired by NVIDIA in July 2024 for $300 million.");
-    expect(cleanNarrative("According to user testimonials, Happo is positioned as a cheaper alternative to Percy that supports more browsers."))
-      .toBe("Happo is positioned as a cheaper alternative to Percy that supports more browsers.");
     // Too little left to stand as a sentence: dropped whole.
     expect(cleanNarrative("Acme sells to banks. Listed on Crunchbase.")).toBe("Acme sells to banks.");
+  });
+
+  describe("attribution, by who is cited (owner, 2026-10-25)", () => {
+    const BREV = "Brev.dev builds GPU development environments for AI teams. Founded in 2021, the company was acquired by NVIDIA in July 2024 for $300 million, as reported by LinkedIn sources tracking AI M&A activity.";
+    const FURTHER = "FurtherAI automates insurance workflows for carriers and MGAs. FurtherAI delivers measurable outcomes: 95% data accuracy, 30x faster quote readiness, and 646% ROI according to case studies published on its website.";
+
+    it("a primary source (the company, its press release, SEC filings): untouched", () => {
+      for (const t of [
+        "Acme reached $40M in ARR in 2025, according to the company.",
+        "Acme raised $20 million, per its press release, to expand in Europe.",
+        "Acme's revenue grew 80% in 2024, according to SEC filings.",
+        "Acme's revenue grew 80% in 2024, according to its annual report.",
+      ]) expect(cleanNarrative(t)).toBe(t);
+    });
+
+    it("a data platform: the whole claim goes, not only the attribution", () => {
+      expect(cleanNarrative("Acme sells to banks. Acme has 120 employees and $26M in revenue, according to Crunchbase."))
+        .toBe("Acme sells to banks.");
+      expect(cleanNarrative("Acme sells to banks. Per PitchBook, the company raised $12 million in 2023."))
+        .toBe("Acme sells to banks.");
+    });
+
+    it("a weak source, unverified: the whole claim goes — Brev and FurtherAI", () => {
+      expect(cleanNarrative(BREV)).toBe("Brev.dev builds GPU development environments for AI teams.");
+      expect(cleanNarrative(FURTHER)).toBe("FurtherAI automates insurance workflows for carriers and MGAs.");
+      expect(cleanNarrative("According to user testimonials, Happo is positioned as a cheaper alternative to Percy that supports more browsers."))
+        .toBe("");
+    });
+
+    it("a weak source, verified in field_provenance: the claim stays, the attribution goes", () => {
+      const brevFacts = verifierFrom([
+        { value: 2021, quote: "Brev.dev was founded in 2021" },
+        { value: 300_000_000, quote: "NVIDIA acquired Brev.dev in July 2024 for $300 million" },
+      ]);
+      expect(cleanNarrative(BREV, { isVerified: brevFacts })).toBe(
+        "Brev.dev builds GPU development environments for AI teams. Founded in 2021, the company was acquired by NVIDIA in July 2024 for $300 million.",
+      );
+      // Every figure must be verified: 646% alone does not cover 95% and 30x.
+      const partial = verifierFrom([{ quote: "customers saw a 646% ROI" }]);
+      expect(cleanNarrative(FURTHER, { isVerified: partial })).toBe("FurtherAI automates insurance workflows for carriers and MGAs.");
+      const all = verifierFrom([{ quote: "95% data accuracy, 30x faster quote readiness and a 646% ROI" }]);
+      expect(cleanNarrative(FURTHER, { isVerified: all })).toBe(
+        "FurtherAI automates insurance workflows for carriers and MGAs. FurtherAI delivers measurable outcomes: 95% data accuracy, 30x faster quote readiness, and 646% ROI.",
+      );
+    });
+
+    it("hearsay without a named source is weak too", () => {
+      expect(cleanNarrative("Dataherald offers an NL-to-SQL API. It reached $1.4M in ARR in 2024, though sources indicate it is out of business."))
+        .toBe("Dataherald offers an NL-to-SQL API.");
+    });
   });
 
   it("keeps platform names in the texts of a company that is itself a data platform", () => {

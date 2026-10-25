@@ -26,7 +26,7 @@ import { normalizeForMatch } from "./evidence.ts";
 import { computeTotalRaised } from "./rounds.ts";
 import { computeFieldConfidence, meetsProfileThreshold } from "./confidence.ts";
 import { roundFieldEvidence } from "./roundProvenance.ts";
-import { cleanNarrative } from "./narrative.ts";
+import { cleanNarrative, verifierFrom } from "./narrative.ts";
 import {
   decideScalarWrite, decideHeadcountUpdate, mergePeople, appendDatedFigures, fillScalarIfNull, type CandidateValue,
 } from "./write.ts";
@@ -318,7 +318,7 @@ export async function writeCollected(
   const freshExplanation = new Map(market.competitors.map((c) => [normalizeForMatch(c.name), c.how_it_competes]));
   let staleExplanations = 0;
   const existingCompetitors = (reconciled.competitors as NonNullable<V2StartupRow["competitors"]>).map((c) => {
-    const opts = { selfName: row.name, subjectName: c?.name };
+    const opts = { selfName: row.name, subjectName: c?.name, isVerified: verifierFrom(collected.verifiedFacts ?? []) };
     if (!c?.how_it_competes || cleanNarrative(c.how_it_competes, opts) === c.how_it_competes) return c;
     const fresh = freshExplanation.get(normalizeForMatch(c.name ?? ""));
     if (fresh) return { ...c, how_it_competes: fresh };

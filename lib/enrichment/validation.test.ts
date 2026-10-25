@@ -218,3 +218,18 @@ describe("checkNarratives (owner's rule, 2026-10-25)", () => {
     expect(texts.description).toBeUndefined();
   });
 });
+
+describe("checkNarratives with this run's verified facts", () => {
+  const text = "Founded in 2021, the company was acquired by NVIDIA in July 2024 for $300 million, as reported by LinkedIn sources tracking AI M&A activity.";
+  it("keeps a weakly attributed claim the run verified, without the attribution", () => {
+    const { texts, issues } = checkNarratives({ description: text }, "Brev", [
+      { value: 2021, quote: "Brev.dev was founded in 2021" },
+      { value: 300_000_000, quote: "NVIDIA acquired Brev.dev in July 2024 for $300 million" },
+    ]);
+    expect(texts.description).toBe("Founded in 2021, the company was acquired by NVIDIA in July 2024 for $300 million.");
+    expect(issues.map((i) => i.rule)).toEqual(["narrative_source_talk"]);
+  });
+  it("drops it when the run verified nothing for it", () => {
+    expect(checkNarratives({ description: text }, "Brev").texts.description).toBeUndefined();
+  });
+});

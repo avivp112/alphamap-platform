@@ -5,11 +5,14 @@
  * it writes, and the site applies it on display).
  *
  * A company's description, value proposition, founder / executive bios and
- * each competitor's "how it competes" lose the clauses that say where a fact
- * was read or name a data platform ("listed as a top competitor in Tracxn and
- * CB Insights comparisons" — platforms per lib/enrichment/dataPlatforms.ts).
- * A company's own competitors are NOT removed. VC / PE firm descriptions get
- * the same rule. Nothing is rephrased.
+ * each competitor's "how it competes" are cleaned by lib/enrichment/
+ * narrative.ts: attribution to the company or its filings stays; a claim
+ * attributed to a data platform (dataPlatforms.ts) goes whole; a claim with
+ * a weak attribution (LinkedIn, sources, case studies …) stays without the
+ * attribution only when field_provenance holds a verified fact for it, and
+ * goes whole otherwise. A listing tail ("…, listed as a competitor on
+ * PitchBook") is cut. A company's own competitors are never removed.
+ * Nothing is rephrased.
  *
  * DRY_RUN (the default) changes nothing: it prints counts and writes a CSV of
  * every change (table, id, name, field, before, after) to review. With
@@ -32,7 +35,7 @@ import { config } from "dotenv";
 import { existsSync, writeFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import { cleanNarrativeWithReasons, type NarrativeOptions } from "../lib/enrichment/narrative.ts";
+import { cleanNarrativeWithReasons, verifierFrom, type NarrativeOptions, type VerifiedFact } from "../lib/enrichment/narrative.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const envPath = join(__dir, "..", ".env");
@@ -63,12 +66,12 @@ const record = (c: Omit<Change, "reasons">) => changes.push({ ...c, reasons: las
 type Person = { name?: string; bio?: string | null; [k: string]: unknown };
 type Competitor = { name?: string; how_it_competes?: string | null; [k: string]: unknown } | string;
 
-function cleanPeople(list: Person[] | null, table: string, id: string, name: string, field: string): Person[] | null {
+function cleanPeople(list: Person[] | null, table: string, id: string, name: string, field: string, isVerified: (claim: string) => boolean): Person[] | null {
   if (!Array.isArray(list)) return null;
   let changed = false;
   const out = list.map((p) => {
     if (!p || typeof p !== "object" || !p.bio) return p;
-    const bio = cleanNarrative(p.bio);
+    const bio = cleanNarrative(p.bio, { isVerified });
     if (bio === p.bio) return p;
     changed = true;
     record({ table, id, name, field: `${field}[${p.name ?? "?"}].bio`, before: p.bio, after: bio });
@@ -77,8 +80,24 @@ function cleanPeople(list: Person[] | null, table: string, id: string, name: str
   return changed ? out : null;
 }
 
+/** Every verified value and quote on file, per company (field_provenance). */
+async function provenanceFacts(): Promise<Map<string, VerifiedFact[]>> {
+  const byCompany = new Map<string, VerifiedFact[]>();
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db.from("field_provenance").select("startup_id, value, evidence_quote").order("id").range(from, from + 999);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    for (const r of data as Array<{ startup_id: string; value: unknown; evidence_quote: string | null }>) {
+      byCompany.set(r.startup_id, [...(byCompany.get(r.startup_id) ?? []), { value: r.value, quote: r.evidence_quote }]);
+    }
+  }
+  return byCompany;
+}
+
 async function startups(): Promise<number> {
   let updated = 0;
+  const facts = await provenanceFacts();
+  console.log(`  verified facts on file for ${facts.size} companies (field_provenance)`);
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await db.from("startups")
       .select("id, name, description, value_proposition, competitors, founders, leadership, refresh_fields")
@@ -88,10 +107,11 @@ async function startups(): Promise<number> {
     for (const s of data as Array<{ id: string; name: string; description: string | null; value_proposition: string | null; competitors: Competitor[] | null; founders: Person[] | null; leadership: Person[] | null; refresh_fields: string[] | null }>) {
       const patch: Record<string, unknown> = {};
       const refresh = new Set(s.refresh_fields ?? []);
+      const isVerified = verifierFrom(facts.get(s.id) ?? []);
       for (const field of ["description", "value_proposition"] as const) {
         const before = s[field];
         if (!before) continue;
-        const after = cleanNarrative(before, { selfName: s.name });
+        const after = cleanNarrative(before, { selfName: s.name, isVerified });
         if (after === before) continue;
         record({ table: "startups", id: s.id, name: s.name, field, before, after });
         if (after) { patch[field] = after; continue; }
@@ -103,7 +123,7 @@ async function startups(): Promise<number> {
         let changed = false;
         const competitors = s.competitors.map((c) => {
           if (!c || typeof c === "string" || !c.how_it_competes) return c;
-          const how = cleanNarrative(c.how_it_competes, { selfName: s.name, subjectName: c.name });
+          const how = cleanNarrative(c.how_it_competes, { selfName: s.name, subjectName: c.name, isVerified });
           if (how === c.how_it_competes) return c;
           record({ table: "startups", id: s.id, name: s.name, field: `competitors[${c.name ?? "?"}].how_it_competes`, before: c.how_it_competes, after: how });
           // Nothing left: keep it (the site shows the competitor without it) and collect again.
@@ -114,9 +134,9 @@ async function startups(): Promise<number> {
         if (changed) patch.competitors = competitors;
       }
       if (refresh.size !== (s.refresh_fields ?? []).length) patch.refresh_fields = [...refresh];
-      const founders = cleanPeople(s.founders, "startups", s.id, s.name, "founders");
+      const founders = cleanPeople(s.founders, "startups", s.id, s.name, "founders", isVerified);
       if (founders) patch.founders = founders;
-      const leadership = cleanPeople(s.leadership, "startups", s.id, s.name, "leadership");
+      const leadership = cleanPeople(s.leadership, "startups", s.id, s.name, "leadership", isVerified);
       if (leadership) patch.leadership = leadership;
 
       if (Object.keys(patch).length === 0) continue;

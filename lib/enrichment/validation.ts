@@ -19,7 +19,7 @@ import { MAJOR_CITIES } from "./majorCities";
 import { isRegionNotCity } from "./location";
 import { CANONICAL_ROUND_TYPES, normalizeRoundType, type CanonicalRoundType, type RoundLike } from "./rounds";
 import { resolveConflictBySourceRank, type SourceType } from "./sourceTypes";
-import { cleanNarrativeWithReasons } from "./narrative";
+import { cleanNarrativeWithReasons, verifierFrom, type VerifiedFact } from "./narrative";
 
 // ── City/country reference data (issue 4: "local GeoNames cities15000 JSON,
 // with alternate names") ────────────────────────────────────────────────
@@ -431,11 +431,12 @@ export interface NarrativeTexts {
  * same rule, and the run summary counts it. A text left with nothing keeps
  * nothing (undefined): never written, never shown.
  */
-export function checkNarratives<T extends NarrativeTexts>(texts: T, companyName: string): { texts: T; issues: ValidationIssue[] } {
+export function checkNarratives<T extends NarrativeTexts>(texts: T, companyName: string, facts: VerifiedFact[] = []): { texts: T; issues: ValidationIssue[] } {
   const issues: ValidationIssue[] = [];
+  const isVerified = verifierFrom(facts);
   const clean = (field: string, text: string | undefined, subjectName?: string): string | undefined => {
     if (!text) return text;
-    const r = cleanNarrativeWithReasons(text, { selfName: companyName, subjectName });
+    const r = cleanNarrativeWithReasons(text, { selfName: companyName, subjectName, isVerified });
     for (const reason of new Set(r.reasons)) {
       issues.push({
         rule: reason === "data_platform" ? "narrative_data_platform" : "narrative_source_talk",
