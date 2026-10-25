@@ -56,7 +56,7 @@ export function freshRow(id: string, name: string, website: string | null): V2St
   return {
     id, name, website,
     description: null, value_proposition: null, industry: null,
-    founded_year: null, country: null, city: null, founding_country: null, israel_rnd_center: null,
+    founded_year: null, country: null, city: null, founding_country: null, israel_rnd_center: null, refresh_fields: [],
     employee_count: null, employee_range: null, growth_trend: null,
     founders: null, leadership: null, competitors: null, acquisitions: null, news: null,
     patent_count: null, patent_fields: null, patents: null,

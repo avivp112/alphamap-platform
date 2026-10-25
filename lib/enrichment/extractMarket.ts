@@ -24,7 +24,6 @@ import { sanitizeModelOutput, ensureArray } from "./sanitize";
 import { verifyEvidence, normalizeForMatch, type EvidenceSource } from "./evidence";
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
 import { debugDumpJson } from "./debugDump";
-import { cleanNarrative } from "./narrative";
 
 export interface EvidencedValue<T> {
   value: T;
@@ -82,7 +81,7 @@ export function emptyMarketExtraction(): V2MarketExtraction {
 export type MarketDropReason =
   | "competitor_not_in_source" | "competitor_is_self" | "acquisition_not_in_source"
   | "news_url_not_in_sources" | "news_is_profile_page" | "patent_not_in_source" | "patent_count_not_stated"
-  | "tech_not_in_source" | "competitor_is_acquisition" | "acquisition_is_self" | "news_date_not_in_source" | "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found" | "source_talk_removed";
+  | "tech_not_in_source" | "competitor_is_acquisition" | "acquisition_is_self" | "news_date_not_in_source" | "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found";
 
 export interface MarketDroppedField { field: string; reason: MarketDropReason }
 
@@ -330,12 +329,6 @@ export function processMarketExtractionResponse(
     if (!nameIsGrounded(c.name, c.source_ids, sources)) { dropped.push({ field: "competitors", reason: "competitor_not_in_source" }); return false; }
     seenCompetitors.add(key);
     return true;
-  }).map((c) => {
-    // "listed as a top competitor in Tracxn and CB Insights comparisons" goes (narrative.ts);
-    // the competitor stays, with whatever the explanation still says.
-    const how = cleanNarrative(c.how_it_competes, { selfName: companyName });
-    if (how !== c.how_it_competes.replace(/\s+/g, " ").trim()) dropped.push({ field: "competitors.how_it_competes", reason: "source_talk_removed" });
-    return { ...c, how_it_competes: how };
   }).slice(0, 6);
 
   const sourceByUrl = new Map(sources.map((s) => [normalizeUrlForMatch(s.url), s]));

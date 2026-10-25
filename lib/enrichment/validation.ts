@@ -19,6 +19,7 @@ import { MAJOR_CITIES } from "./majorCities";
 import { isRegionNotCity } from "./location";
 import { CANONICAL_ROUND_TYPES, normalizeRoundType, type CanonicalRoundType, type RoundLike } from "./rounds";
 import { resolveConflictBySourceRank, type SourceType } from "./sourceTypes";
+import { cleanNarrativeWithReasons } from "./narrative";
 
 // ── City/country reference data (issue 4: "local GeoNames cities15000 JSON,
 // with alternate names") ────────────────────────────────────────────────
@@ -70,7 +71,8 @@ export function cityExistsInCountry(city: string | null | undefined, country: st
 export type ValidationRuleCode =
   | "city_country_mismatch" | "founded_after_first_round" | "founded_out_of_range"
   | "headcount_outlier" | "valuation_below_round" | "round_date_invalid"
-  | "stage_order" | "profile_country_conflict" | "city_not_a_city";
+  | "stage_order" | "profile_country_conflict" | "city_not_a_city"
+  | "narrative_data_platform" | "narrative_source_talk";
 
 export interface ValidationIssue {
   rule: ValidationRuleCode;
@@ -408,6 +410,52 @@ export function validateEnrichment(input: ValidateEnrichmentInput): ValidateEnri
       employee_count: acceptedEmployeeCount,
     },
     acceptedRounds,
+  };
+}
+
+// ── Written text (owner's rule, 2026-10-25; lib/enrichment/narrative.ts) ──
+
+export interface NarrativeTexts {
+  description?: string;
+  value_proposition?: string;
+  founders?: Array<{ name: string; bio?: string }>;
+  leadership?: Array<{ name: string; bio?: string }>;
+  competitors?: Array<{ name: string; how_it_competes: string }>;
+}
+
+/**
+ * A company's text says what it does: a clause naming a data platform
+ * (dataPlatforms.ts) or saying where a fact was read is dropped, the rest
+ * kept as written. Returns the cleaned texts and one issue per field that
+ * lost something — so a check, a deepen and every enrichment run apply the
+ * same rule, and the run summary counts it. A text left with nothing keeps
+ * nothing (undefined): never written, never shown.
+ */
+export function checkNarratives<T extends NarrativeTexts>(texts: T, companyName: string): { texts: T; issues: ValidationIssue[] } {
+  const issues: ValidationIssue[] = [];
+  const clean = (field: string, text: string | undefined): string | undefined => {
+    if (!text) return text;
+    const r = cleanNarrativeWithReasons(text, { selfName: companyName });
+    for (const reason of new Set(r.reasons)) {
+      issues.push({
+        rule: reason === "data_platform" ? "narrative_data_platform" : "narrative_source_talk",
+        fields: [field],
+        message: reason === "data_platform" ? `${field}: a clause naming a data platform was removed.` : `${field}: a clause saying where a fact was read was removed.`,
+        action: "drop_field",
+      });
+    }
+    return r.text || undefined;
+  };
+  return {
+    texts: {
+      ...texts,
+      description: clean("profile.description", texts.description),
+      value_proposition: clean("profile.value_proposition", texts.value_proposition),
+      founders: texts.founders?.map((f) => ({ ...f, bio: clean(`profile.founders[${f.name}].bio`, f.bio) })),
+      leadership: texts.leadership?.map((l) => ({ ...l, bio: clean(`leadership[${l.name}].bio`, l.bio) })),
+      competitors: texts.competitors?.map((c) => ({ ...c, how_it_competes: clean(`competitors[${c.name}].how_it_competes`, c.how_it_competes) ?? "" })),
+    },
+    issues,
   };
 }
 

@@ -4,25 +4,18 @@
  *
  * A description, value proposition, founder bio or "how it competes" line
  * says what the company (or person) does. It never says where AlphaMap read
- * it, and never names a data platform — most of them are AlphaMap's own
- * competitors ("listed as a top competitor in Tracxn and CB Insights
- * comparisons"). A description never names the company's competitors either:
- * those belong in the Competitors section, where each one explains how it
- * competes.
+ * it, and never names a data platform (lib/enrichment/dataPlatforms.ts —
+ * most are AlphaMap's own competitors): "listed as a top competitor in
+ * Tracxn and CB Insights comparisons" goes. A company's own competitors are
+ * NOT in this rule: "Unlike Hinge Health, it uses AI care" is information
+ * and stays.
  *
  * cleanNarrative() drops every clause (a sentence, or a part of one between
- * semicolons) that does any of that, and keeps the rest as written. Nothing
- * is rephrased. Pure, no imports: used by enrichment (lib/), the check worker
- * and the site (src/), so all three agree.
+ * semicolons) that does either, and keeps the rest as written. Nothing is
+ * rephrased. Pure: used by enrichment v2's validation stage (lib/), the
+ * check worker, the site (src/) and scripts/clean_narratives.ts, so all agree.
  */
-
-/** Data and company-intelligence platforms — named in a company's text only as a source. */
-const DATA_PLATFORMS = [
-  "crunchbase", "pitchbook", "tracxn", "cb insights", "cbinsights", "dealroom", "owler", "growjo",
-  "zoominfo", "rocketreach", "seedtable", "sacra", "mattermark", "preqin", "craft.co", "getlatka",
-  "latka", "wellfound", "angellist", "angel list", "startup nation finder", "ivc research", "golden.com",
-  "clay.com", "privco", "signalhire", "apollo.io", "leadiq", "lusha", "6sense", "cbinsight",
-];
+import { DATA_PLATFORMS } from "./dataPlatforms";
 
 /** "according to …", "listed as a competitor in …", "per its LinkedIn": where it was read, not what it does. */
 const SOURCE_TALK: RegExp[] = [
@@ -37,28 +30,24 @@ const SOURCE_TALK: RegExp[] = [
 ];
 
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const word = (term: string, flags = "iu") => new RegExp(`(^|[^\\p{L}\\p{N}])${esc(term)}(?=$|[^\\p{L}\\p{N}])`, flags);
-const PLATFORM_RES = DATA_PLATFORMS.map((p) => word(p));
+const word = (term: string, flags: string) => new RegExp(`(^|[^\\p{L}\\p{N}])${esc(term)}(?=$|[^\\p{L}\\p{N}])`, flags);
+const PLATFORMS = DATA_PLATFORMS.map((p) => ({
+  names: [p.name, ...(p.aliases ?? [])].map((n) => n.toLowerCase()),
+  res: [p.name, ...(p.aliases ?? [])].map((n) => word(n, p.caseSensitive ? "u" : "iu")),
+}));
 
 export interface NarrativeOptions {
-  /** Names the text must not mention — a description's own competitors. */
-  avoidNames?: Array<string | null | undefined>;
-  /** The company itself: never treated as a name to avoid. */
+  /** The company itself: a data platform's own profile may name itself. */
   selfName?: string | null;
 }
 
+export type NarrativeProblem = "data_platform" | "source_talk";
+
 /** Why a clause goes, or null when it stays. */
-export function clauseProblem(clause: string, opts: NarrativeOptions = {}): "data_platform" | "source_talk" | "names_competitor" | null {
-  if (PLATFORM_RES.some((re) => re.test(clause))) return "data_platform";
-  if (SOURCE_TALK.some((re) => re.test(clause))) return "source_talk";
+export function clauseProblem(clause: string, opts: NarrativeOptions = {}): NarrativeProblem | null {
   const self = opts.selfName?.trim().toLowerCase();
-  for (const n of opts.avoidNames ?? []) {
-    const name = n?.trim();
-    // Very short names ("X", "Go") would match ordinary words.
-    if (!name || name.length < 3 || name.toLowerCase() === self) continue;
-    // As written, case and all: the competitor "Square" — not "square footage", "ramp up", "notion of".
-    if (word(name, "u").test(clause)) return "names_competitor";
-  }
+  if (PLATFORMS.some((p) => !(self && p.names.includes(self)) && p.res.some((re) => re.test(clause)))) return "data_platform";
+  if (SOURCE_TALK.some((re) => re.test(clause))) return "source_talk";
   return null;
 }
 
@@ -75,8 +64,8 @@ export function cleanNarrative(text: string | null | undefined, opts: NarrativeO
 export function cleanNarrativeWithReasons(
   text: string | null | undefined,
   opts: NarrativeOptions = {},
-): { text: string; reasons: Array<NonNullable<ReturnType<typeof clauseProblem>>> } {
-  const reasons: Array<NonNullable<ReturnType<typeof clauseProblem>>> = [];
+): { text: string; reasons: NarrativeProblem[] } {
+  const reasons: NarrativeProblem[] = [];
   if (!text) return { text: "", reasons };
   const sentences = text.replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+(?=[A-Z0-9"“(])/);
   const kept: string[] = [];

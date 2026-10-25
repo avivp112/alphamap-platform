@@ -57,6 +57,8 @@ v2 must keep collecting every field below. Before writing any code, read `bulk_e
 
 \*\*\* **Amendment (agreed in chat, Oct 25 2026, not in the original document):** location follows the Dealroom model. `country`/`city` stay the headquarters today; two new evidenced profile fields record origin: `founding_country` (where the company was founded) and `israel_rnd_center` (a source states an R&D / development centre in Israel). A company is Israel-related when its HQ, founding country or R&D centre is in Israel (`is_israel_related()`, migration `20261104000000`). Deterministic checks in `lib/enrichment/origin.ts` drop a founding country read off a founder's nationality, an office or a customer. The golden set scores `founding_country` as its own field.
 
+\*\*\*\* **Amendment (agreed in chat, Oct 25 2026):** written text (description, value proposition, bios, a competitor's "how it competes") says what the company or person does. It never names a data platform — the list lives in one place, `lib/enrichment/dataPlatforms.ts` — and never says where a fact was read ("according to", "listed as a competitor in …"). A company's own competitors may be named. Enforced by the extraction prompts and by the validation stage (`checkNarratives`, reason codes `narrative_data_platform` / `narrative_source_talk`), so checks, deepens and every run apply it; the site applies the same rule on display. A text the rule would leave empty is never emptied: it goes into `startups.refresh_fields` and the next run rewrites it.
+
 ## 3. Target architecture
 
 New and changed files:

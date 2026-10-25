@@ -26,7 +26,6 @@ import { normalizeForMatch } from "./evidence.ts";
 import { computeTotalRaised } from "./rounds.ts";
 import { computeFieldConfidence, meetsProfileThreshold } from "./confidence.ts";
 import { roundFieldEvidence } from "./roundProvenance.ts";
-import { cleanNarrative } from "./narrative.ts";
 import {
   decideScalarWrite, decideHeadcountUpdate, mergePeople, appendDatedFigures, fillScalarIfNull, type CandidateValue,
 } from "./write.ts";
@@ -191,12 +190,20 @@ export async function writeCollected(
     patch.israel_rnd_center = true;
     provenance("profile.israel_rnd_center", true, rnd);
   }
-  // A description is about THIS company: a sentence naming one of its competitors goes (narrative.ts).
-  const narrativeOpts = { avoidNames: [...market.competitors.map((c) => c.name), ...(row.competitors ?? []).map((c) => c.name)], selfName: row.name };
-  const description = cleanNarrative(profile.profile.description, narrativeOpts);
-  const valueProposition = cleanNarrative(profile.profile.value_proposition, narrativeOpts);
-  if (!row.description && description) patch.description = description;
-  if (!row.value_proposition && valueProposition) patch.value_proposition = valueProposition;
+  // Texts were cleaned in the validation stage (collect.ts, checkNarratives).
+  // A field listed in refresh_fields is written over (and leaves the list).
+  const refresh = new Set(row.refresh_fields ?? []);
+  const description = profile.profile.description;
+  const valueProposition = profile.profile.value_proposition;
+  if ((!row.description || refresh.has("description")) && description && description !== row.description) {
+    patch.description = description;
+    refresh.delete("description");
+  }
+  if ((!row.value_proposition || refresh.has("value_proposition")) && valueProposition && valueProposition !== row.value_proposition) {
+    patch.value_proposition = valueProposition;
+    refresh.delete("value_proposition");
+  }
+  if (refresh.size !== (row.refresh_fields ?? []).length) patch.refresh_fields = [...refresh];
   if (!row.industry && profile.profile.industry) patch.industry = profile.profile.industry;
   if (!row.website && profile.profile.website) {
     const websiteResult = validateWebsiteCandidate(profile.profile.website.value, row.id, startupByDomain);

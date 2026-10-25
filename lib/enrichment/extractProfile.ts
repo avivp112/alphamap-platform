@@ -29,7 +29,6 @@ import { formatSourcesForPrompt, type LabeledSource } from "./sources";
 import { debugDumpJson } from "./debugDump";
 import { checkHeadcountClaim, type HeadcountDropReason } from "./headcount";
 import { checkFoundingCountry, checkIsraelRnd, type OriginDrop } from "./origin";
-import { cleanNarrative } from "./narrative";
 
 export interface SectorTaxonomy {
   parentNames: string[];
@@ -227,9 +226,9 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
           type: "object" as const,
           properties: {
             website: materialField({ type: "string" }, "Root domain URL (https://example.com)."),
-            description: { type: "string", description: "4-6 detailed sentences: what the company does, who it serves, its differentiator, one concrete traction detail. Every sentence must add real information from the research. About THIS company only: never name a competitor, never say where a fact was read (no 'according to'), never mention a data platform (Crunchbase, PitchBook, Tracxn, CB Insights, Dealroom, LinkedIn)." },
+            description: { type: "string", description: "4-6 detailed sentences: what the company does, who it serves, its differentiator, one concrete traction detail. Every sentence must add real information from the research. About THIS company only: never say where a fact was read (no 'according to', no 'per its LinkedIn'), never mention a data platform (Crunchbase, PitchBook, Tracxn, CB Insights, Dealroom, Harmonic, Specter, Dealigence and the like)." },
             description_source_ids: { type: "array", items: { type: "string" }, description: "Every [Sx]/[Wx] id that contributed a fact used in `description`." },
-            value_proposition: { type: "string", description: "1-2 sentences: the company's distinct positioning, in its own terms — never by naming a competitor or a data platform. Omit if not clearly supported." },
+            value_proposition: { type: "string", description: "1-2 sentences: the company's distinct positioning, in its own terms — never naming a data platform or where a fact was read. Omit if not clearly supported." },
             value_proposition_source_ids: { type: "array", items: { type: "string" } },
             industry: { type: "string", description: "Primary tech sector (e.g. 'AI & ML', 'Cybersecurity', 'FinTech')." },
             founded_year: materialField({ type: "integer" }, "Year the company was incorporated. Never infer from an article's publish date or a funding round's date — only from an explicit founding-year statement."),
@@ -338,7 +337,7 @@ STRICT RULES:
 5. Never infer founded_year from an article's publish date or from a funding round's date — only from an explicit founding statement.
 6. Never estimate headcount or revenue — report only a figure a source explicitly states, with its date.
 7. ${BIO_DESCRIPTION}
-7b. WRITTEN TEXT (description, value_proposition, bios) says what the company or person does — never where it was read ('according to …', 'per its LinkedIn'), never a data platform (Crunchbase, PitchBook, Tracxn, CB Insights, Dealroom, LinkedIn), and the description never names a competitor.
+7b. WRITTEN TEXT (description, value_proposition, bios) says what the company or person does — never where it was read ('according to …', 'per its LinkedIn', 'listed as a competitor in …'), and never a data platform (Crunchbase, PitchBook, Tracxn, CB Insights, Dealroom, Harmonic, Specter, Dealigence and the like). Naming the company's own competitors is fine.
 8. There is no excuse for a company with ANY research data at all to come back with profile: {} — at minimum, describe what it does if that's mentioned anywhere.
 9. PUBLIC COMPANY — this is a consequential flag (a true archives the company out of the active dataset), so it needs the same evidence_quote/source_id as any other material field: a specific exchange and ticker stated in the source. A company being ACQUIRED, bought by a strategic/PE buyer, or a subsidiary of a public parent is still PRIVATE itself — report that acquisition via round_type 'Acquired'/'PE Buyout' in the funding history, never by flagging is_public_company. If you cannot cite a direct public-listing statement, omit the field.
 10. ACTIVELY SEARCH EVERY CATEGORY — before leaving founders, leadership, metrics.employee_count, metrics.headcount_history, or the HQ location empty, actively re-scan EVERY source below, not just the one whose label obviously matches: a funding-round article often states headcount at the time of the round ("the 45-person startup"), a LinkedIn company snippet states "X employees" or a size bracket ("51-200 employees" -> employee_range ONLY, never employee_count), a founding-year line ("Founded in 2019", "Founded: 2019", "since 2019") often sits in a Crunchbase/LinkedIn snippet or a press release's boilerplate "About" paragraph, a "founded by"/"co-founded by" sentence names EVERY founder (list each one), a team/about page names the executives, a Crunchbase/LinkedIn snippet often states the headquarters city. An empty field is correct only AFTER that active check, never as a default for not having looked.
@@ -475,10 +474,9 @@ export function processProfileExtractionResponse(
 
   const profile: V2Profile = {
     website: verifyMaterial("profile.website", i.profile?.website, sourceLookup, dropped, true),
-    // Written text never says where it was read or names a data platform (narrative.ts).
-    description: cleanNarrative(i.profile?.description, { selfName: companyName }) || undefined,
+    description: i.profile?.description,
     description_source_ids: i.profile?.description_source_ids,
-    value_proposition: cleanNarrative(i.profile?.value_proposition, { selfName: companyName }) || undefined,
+    value_proposition: i.profile?.value_proposition,
     value_proposition_source_ids: i.profile?.value_proposition_source_ids,
     industry: i.profile?.industry,
     founded_year: verifyMaterial("profile.founded_year", i.profile?.founded_year, sourceLookup, dropped),
@@ -488,7 +486,6 @@ export function processProfileExtractionResponse(
     israel_rnd_center: verifyOrigin("profile.israel_rnd_center", i.profile?.israel_rnd_center, sourceLookup, dropped),
     founders: ensureArray<V2Founder>(i.profile?.founders).map((f, idx) => ({
       ...f,
-      bio: cleanNarrative(f.bio) || undefined,
       linkedin_url: verifyMaterial(`profile.founders[${idx}].linkedin_url`, f.linkedin_url, sourceLookup, dropped, true),
     })),
     sector_name: i.profile?.sector_name,
@@ -501,7 +498,6 @@ export function processProfileExtractionResponse(
 
   const leadership: V2Leader[] = ensureArray<V2Leader>(i.leadership).map((l, idx) => ({
     ...l,
-    bio: cleanNarrative(l.bio) || undefined,
     linkedin_url: verifyMaterial(`leadership[${idx}].linkedin_url`, l.linkedin_url, sourceLookup, dropped, true),
   }));
 

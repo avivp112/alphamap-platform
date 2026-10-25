@@ -331,6 +331,9 @@ async function main() {
 
   const eligibleQueue = MAX_TIER >= 3 ? [...tier1, ...tier2, ...tier3] : [...tier1, ...tier2];
   eligibleQueue.sort((a, b) => {
+    // Fields marked to collect again (refresh_fields) go first.
+    const aRefresh = (a.refresh_fields?.length ?? 0) > 0, bRefresh = (b.refresh_fields?.length ?? 0) > 0;
+    if (aRefresh !== bRefresh) return aRefresh ? -1 : 1;
     const aNever = a.last_enriched_at == null, bNever = b.last_enriched_at == null;
     if (aNever !== bNever) return aNever ? -1 : 1;
     if (!aNever && a.last_enriched_at !== b.last_enriched_at) return a.last_enriched_at! < b.last_enriched_at! ? -1 : 1;
@@ -342,9 +345,10 @@ async function main() {
   // archived as public) whose re-check is due — active ones every
   // UPDATE_ACTIVE_DAYS, quiet ones every UPDATE_QUIET_DAYS — oldest check first.
   const updateQueue = startups
-    .filter((s) => !!s.description && s.status !== "ipo" &&
-      isUpdateDue(s, (roundsByStartup.get(s.id) ?? []).map((r) => r.announcement_date), { activeDays: UPDATE_ACTIVE_DAYS, quietDays: UPDATE_QUIET_DAYS }))
-    .sort((a, b) => (a.last_enriched_at ?? "").localeCompare(b.last_enriched_at ?? ""));
+    .filter((s) => !!s.description && s.status !== "ipo" && ((s.refresh_fields?.length ?? 0) > 0 ||
+      isUpdateDue(s, (roundsByStartup.get(s.id) ?? []).map((r) => r.announcement_date), { activeDays: UPDATE_ACTIVE_DAYS, quietDays: UPDATE_QUIET_DAYS })))
+    .sort((a, b) => Number((b.refresh_fields?.length ?? 0) > 0) - Number((a.refresh_fields?.length ?? 0) > 0)
+      || (a.last_enriched_at ?? "").localeCompare(b.last_enriched_at ?? ""));
   const queue = ONLY.length > 0
     ? startups.filter((s) => ONLY.includes(s.id.toLowerCase()) || ONLY.includes(s.name.trim().toLowerCase()))
     : (UPDATE ? updateQueue : eligibleQueue).slice(OFFSET, OFFSET + BATCH_SIZE);

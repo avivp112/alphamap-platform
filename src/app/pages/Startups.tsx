@@ -85,11 +85,6 @@ function placeLabel(city: string | null | undefined, country: string | null | un
   return parts.length > 0 ? parts.join(", ") : null;
 }
 
-/** A company's competitor names (stored as objects, or as plain strings by older runs). */
-function competitorNames(list: ReadonlyArray<{ name?: string | null } | string> | null | undefined): string[] {
-  return (list ?? []).map((c) => (typeof c === "string" ? c : c?.name ?? "")).filter(Boolean);
-}
-
 /** "Founded in Israel · R&D centre in Israel" — only what adds to the HQ (src/lib/origin.ts). */
 function originNote(o: OriginFacts, t: (k: string, o?: Record<string, unknown>) => string): string | null {
   const parts = [
@@ -1192,7 +1187,7 @@ function OverviewTab({
   const subSectorTags = dbSubSectorTags.length > 0 ? dbSubSectorTags : (sector.sub ? [sector.sub] : []);
 
   const employeeValue = formatEmployeeValue(startup);
-  const narrativeOpts = { avoidNames: competitorNames(startup.competitors), selfName: startup.name };
+  const narrativeOpts = { selfName: startup.name };
   const description = cleanNarrative(startup.description, narrativeOpts);
   const valueProposition = cleanNarrative(startup.value_proposition, narrativeOpts);
 
@@ -2860,7 +2855,7 @@ function StartupCard({
   const location    = placeLabel(startup.city, startup.country);
   const cardGlow    = roundType ? (ROUND_GLOW[roundType] ?? ROUND_GLOW.default) : ROUND_GLOW.default;
   const tiles       = cardTiles(startup, t);
-  const cardDescription = cleanNarrative(startup.description, { avoidNames: competitorNames(startup.competitors), selfName: startup.name });
+  const cardDescription = cleanNarrative(startup.description, { selfName: startup.name });
   const tileKeys    = new Set(tiles.map((tile) => tile.key));
 
   return (

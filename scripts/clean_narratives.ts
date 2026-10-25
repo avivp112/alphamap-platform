@@ -7,15 +7,18 @@
  * A company's description, value proposition, founder / executive bios and
  * each competitor's "how it competes" lose the clauses that say where a fact
  * was read or name a data platform ("listed as a top competitor in Tracxn and
- * CB Insights comparisons"); a description and value proposition also lose
- * the sentences naming the company's own competitors. VC / PE firm
- * descriptions get the same platform rule. Nothing is rephrased.
+ * CB Insights comparisons" — platforms per lib/enrichment/dataPlatforms.ts).
+ * A company's own competitors are NOT removed. VC / PE firm descriptions get
+ * the same rule. Nothing is rephrased.
  *
  * DRY_RUN (the default) changes nothing: it prints counts and writes a CSV of
  * every change (table, id, name, field, before, after) to review. With
  * DRY_RUN=false it writes the same changes, and the CSV is the backup of the
- * text before them. A text with nothing left becomes null (a missing
- * description is better than a wrong one) — counted separately.
+ * text before them. A description or value proposition with nothing left is
+ * NOT emptied (owner, 2026-10-25): it is kept, the site hides the offending
+ * clauses, and the field goes into startups.refresh_fields so the next v2
+ * run writes a clean one (migration 20261106000000 first). A firm
+ * description with nothing left is only reported.
  *
  *   npx tsx scripts/clean_narratives.ts                 # report only
  *   SAMPLE=10 npx tsx scripts/clean_narratives.ts       # + 10 random examples per field and reason
@@ -46,7 +49,8 @@ const db = createClient(url, key, { auth: { persistSession: false } });
 
 interface Change { table: string; id: string; name: string; field: string; before: string; after: string; reasons: string }
 const changes: Change[] = [];
-const emptied: Record<string, number> = {};
+const markedForRefresh: Record<string, number> = {};
+const firmLeftAsIs: string[] = [];
 let lastReasons = "";
 /** cleanNarrative, remembering why — the reasons go on the next recorded change. */
 function cleanNarrative(text: string | null | undefined, opts: NarrativeOptions = {}): string {
@@ -77,22 +81,25 @@ async function startups(): Promise<number> {
   let updated = 0;
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await db.from("startups")
-      .select("id, name, description, value_proposition, competitors, founders, leadership")
+      .select("id, name, description, value_proposition, competitors, founders, leadership, refresh_fields")
       .order("id").range(from, from + PAGE - 1);
     if (error) throw error;
     if (!data || data.length === 0) break;
-    for (const s of data as Array<{ id: string; name: string; description: string | null; value_proposition: string | null; competitors: Competitor[] | null; founders: Person[] | null; leadership: Person[] | null }>) {
+    for (const s of data as Array<{ id: string; name: string; description: string | null; value_proposition: string | null; competitors: Competitor[] | null; founders: Person[] | null; leadership: Person[] | null; refresh_fields: string[] | null }>) {
       const patch: Record<string, unknown> = {};
-      const names = (s.competitors ?? []).map((c) => (typeof c === "string" ? c : c?.name ?? "")).filter(Boolean);
+      const refresh = new Set(s.refresh_fields ?? []);
       for (const field of ["description", "value_proposition"] as const) {
         const before = s[field];
         if (!before) continue;
-        const after = cleanNarrative(before, { avoidNames: names, selfName: s.name });
+        const after = cleanNarrative(before, { selfName: s.name });
         if (after === before.replace(/\s+/g, " ").trim()) continue;
         record({ table: "startups", id: s.id, name: s.name, field, before, after });
-        if (!after) emptied[field] = (emptied[field] ?? 0) + 1;
-        patch[field] = after || null;
+        if (after) { patch[field] = after; continue; }
+        // Nothing left: keep it, and collect it again on the next run.
+        markedForRefresh[field] = (markedForRefresh[field] ?? 0) + 1;
+        refresh.add(field);
       }
+      if (refresh.size !== (s.refresh_fields ?? []).length) patch.refresh_fields = [...refresh];
       if (Array.isArray(s.competitors)) {
         let changed = false;
         const competitors = s.competitors.map((c) => {
@@ -134,10 +141,10 @@ async function investors(): Promise<number> {
       const after = cleanNarrative(f.description, { selfName: f.name });
       if (after === f.description.replace(/\s+/g, " ").trim()) continue;
       record({ table: "investors", id: f.id, name: f.name, field: "description", before: f.description, after });
-      if (!after) emptied["investors.description"] = (emptied["investors.description"] ?? 0) + 1;
+      if (!after) { firmLeftAsIs.push(f.name); continue; }
       updated++;
       if (!DRY_RUN) {
-        const { error: uErr } = await db.from("investors").update({ description: after || null }).eq("id", f.id);
+        const { error: uErr } = await db.from("investors").update({ description: after }).eq("id", f.id);
         if (uErr) console.warn(`  ⚠️  ${f.name}: ${uErr.message}`);
       }
     }
@@ -171,6 +178,7 @@ const csvCell = (v: string) => `"${v.replace(/"/g, '""')}"`;
   }
   console.log(`\nCompanies ${DRY_RUN ? "to change" : "changed"}: ${s} · VC/PE firms: ${i}`);
   console.log("Changes by field:", byField);
-  if (Object.keys(emptied).length) console.log("Left empty (becomes null):", emptied);
+  if (Object.keys(markedForRefresh).length) console.log("Nothing left — kept as is and marked for re-enrichment (refresh_fields):", markedForRefresh);
+  if (firmLeftAsIs.length) console.log("Firm descriptions with nothing left — kept as is:", firmLeftAsIs.join(", "));
   console.log(`Every change, before and after: ${out}`);
 })().catch((e) => { console.error(e); process.exit(1); });

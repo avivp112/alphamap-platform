@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  checkNarratives,
   cityExistsInCountry, checkCityCountryMismatch, checkFoundedYear,
   checkHeadcountOutlier, checkRoundValuation, checkRoundDate, checkStageOrder,
   checkProfileCountryConflict, validateEnrichment,
@@ -190,5 +191,30 @@ describe("validateEnrichment — Fresha headcount bug", () => {
     });
     expect(result.issues.some((i) => i.rule === "headcount_outlier")).toBe(true);
     expect(result.accepted.employee_count).toBeNull();
+  });
+});
+
+describe("checkNarratives (owner's rule, 2026-10-25)", () => {
+  it("removes data-platform and source talk from every text, keeps competitor names, and reports each field", () => {
+    const { texts, issues } = checkNarratives({
+      description: "Sword Health offers digital physical therapy. According to Crunchbase, it has 900 employees. Unlike Hinge Health, it uses AI care.",
+      value_proposition: "AI-first MSK care.",
+      founders: [{ name: "Virgílio Bento", bio: "Founded Sword in 2015. His LinkedIn profile lists a PhD." }],
+      competitors: [{ name: "Hinge Health", how_it_competes: "Direct competitor offering digital MSK care; listed as a top competitor in Tracxn and CB Insights comparisons." }],
+    }, "Sword Health");
+    expect(texts.description).toBe("Sword Health offers digital physical therapy. Unlike Hinge Health, it uses AI care.");
+    expect(texts.value_proposition).toBe("AI-first MSK care.");
+    expect(texts.founders?.[0].bio).toBe("Founded Sword in 2015.");
+    expect(texts.competitors?.[0].how_it_competes).toBe("Direct competitor offering digital MSK care.");
+    expect(issues.map((i) => [i.rule, i.fields[0]])).toEqual([
+      ["narrative_data_platform", "profile.description"],   // "According to Crunchbase": the platform is named
+      ["narrative_source_talk", "profile.founders[Virgílio Bento].bio"],
+      ["narrative_data_platform", "competitors[Hinge Health].how_it_competes"],
+    ]);
+  });
+
+  it("leaves nothing (never an empty string) when a text was only source talk", () => {
+    const { texts } = checkNarratives({ description: "Listed as a competitor in CB Insights comparisons." }, "Acme");
+    expect(texts.description).toBeUndefined();
   });
 });

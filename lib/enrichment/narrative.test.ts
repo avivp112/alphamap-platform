@@ -18,29 +18,25 @@ describe("cleanNarrative", () => {
       .toBe("Acme sells to hospitals.");
   });
 
-  it("drops a description's sentence that names one of the company's competitors", () => {
-    expect(cleanNarrative(
-      "Sword Health offers digital physical therapy. Unlike Hinge Health, it uses AI care. It serves employers.",
-      { avoidNames: ["Hinge Health", "Kaia"], selfName: "Sword Health" },
-    )).toBe("Sword Health offers digital physical therapy. It serves employers.");
-  });
-
-  it("never treats the company's own name, or a 1–2 letter name, as a competitor", () => {
-    expect(cleanNarrative("Hinge Health offers virtual MSK care.", { avoidNames: ["Hinge Health", "X"], selfName: "Hinge Health" }))
-      .toBe("Hinge Health offers virtual MSK care.");
-  });
-
   it("keeps ordinary text untouched — no false positives on common words", () => {
     expect(cleanNarrative("Clayton builds price comparisons for travellers; it partners with airlines.")).toBe("Clayton builds price comparisons for travellers; it partners with airlines.");
     expect(cleanNarrative("A craft beer marketplace that sources from local breweries.")).toBe("A craft beer marketplace that sources from local breweries.");
     expect(clauseProblem("Golden retrievers love it")).toBeNull();
   });
 
-  it("matches a competitor's name as written, not the same ordinary word", () => {
-    const opts = { avoidNames: ["Square", "Ramp", "Notion"], selfName: "Acme" };
-    expect(cleanNarrative("Acme helps retailers plan square footage. Teams ramp up fast; it builds on the notion of shared ledgers.", opts))
-      .toBe("Acme helps retailers plan square footage. Teams ramp up fast; it builds on the notion of shared ledgers.");
-    expect(cleanNarrative("Acme sells card readers. It is an alternative to Square for cafés.", opts)).toBe("Acme sells card readers.");
+  it("keeps a sentence about the company's own competitors — that is information (owner, 2026-10-25)", () => {
+    expect(cleanNarrative("Sword Health offers digital physical therapy. Unlike Hinge Health, it uses AI care.", { selfName: "Sword Health" }))
+      .toBe("Sword Health offers digital physical therapy. Unlike Hinge Health, it uses AI care.");
+  });
+
+  it("matches an ambiguous platform name only as written (dataPlatforms.ts caseSensitive)", () => {
+    expect(cleanNarrative("Acme models harmonic signals in power grids.")).toBe("Acme models harmonic signals in power grids.");
+    expect(cleanNarrative("Acme sells to utilities. It is tracked on Harmonic and Specter.")).toBe("Acme sells to utilities.");
+    expect(cleanNarrative("Acme sells to utilities; Dealigence lists it among peers.")).toBe("Acme sells to utilities.");
+  });
+
+  it("lets a data platform's own profile name itself", () => {
+    expect(cleanNarrative("Tracxn is a startup data platform for investors.", { selfName: "Tracxn" })).toBe("Tracxn is a startup data platform for investors.");
   });
 
   it("returns empty when nothing is left", () => {

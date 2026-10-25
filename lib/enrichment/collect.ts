@@ -37,7 +37,7 @@ import { foundersFromText, personMentionedIn, groundFounders } from "./people.ts
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
-import { validateEnrichment } from "./validation.ts";
+import { validateEnrichment, checkNarratives } from "./validation.ts";
 import { computeTotalRaised, normalizeRoundType, type RoundLike } from "./rounds.ts";
 import { computeFieldConfidence } from "./confidence.ts";
 import { websiteDomain } from "./websiteValidation.ts";
@@ -49,6 +49,8 @@ export interface V2StartupRow {
   description: string | null; value_proposition: string | null; industry: string | null;
   founded_year: number | null; country: string | null; city: string | null;
   founding_country: string | null; israel_rnd_center: boolean | null;
+  /** Fields to collect again even though they hold a value (migration 20261106000000). */
+  refresh_fields: string[] | null;
   employee_count: number | null; employee_range: string | null; growth_trend: string | null;
   founders: Array<{ name: string; title?: string; bio?: string; linkedin_url?: string; had_prior_exit?: boolean; elite_background?: boolean; notable_pedigree?: boolean }> | null;
   leadership: Array<{ name: string; role: string; bio?: string; linkedin_url?: string; joined_date?: string; had_prior_exit?: boolean; elite_background?: boolean; notable_pedigree?: boolean }> | null;
@@ -83,7 +85,7 @@ export interface ExtractionUsage { inputTokens: number; outputTokens: number; ca
 /** What the bulk script's globals were, passed in. */
 /** The columns of startups / funding_rounds a collection reads (V2StartupRow, V2FundingRoundRow). */
 export const V2_STARTUP_COLUMNS =
-  "id, name, website, description, value_proposition, industry, founded_year, country, city, founding_country, israel_rnd_center, employee_count, employee_range, growth_trend, founders, leadership, competitors, acquisitions, news, patent_count, patent_fields, patents, tech_stack, github_url, huggingface_url, arr_milestones, revenue_estimate, valuation_benchmarks, linkedin_url, facebook_url, instagram_url, sector_id, funding_history_complete, status, last_enriched_at, is_manually_verified";
+  "id, name, website, description, value_proposition, industry, founded_year, country, city, founding_country, israel_rnd_center, refresh_fields, employee_count, employee_range, growth_trend, founders, leadership, competitors, acquisitions, news, patent_count, patent_fields, patents, tech_stack, github_url, huggingface_url, arr_milestones, revenue_estimate, valuation_benchmarks, linkedin_url, facebook_url, instagram_url, sector_id, funding_history_complete, status, last_enriched_at, is_manually_verified";
 export const V2_ROUND_COLUMNS =
   "id, startup_id, round_type, amount_raised, valuation, is_valuation_estimated, announcement_date, source_url, lead_investor, investors, investor_amounts";
 
@@ -710,6 +712,18 @@ export async function collectCompany(
     rounds: [...existingRefs, ...newRoundLikes.map((r): TaggedRound => ({ ...r, _new: true }))],
     totalRaisedUsd: computeTotalRaised([...existingRefs, ...roughPlan.inserts]),
   });
+  // Written text says what the company does: no data platform, no "according
+  // to" (owner's rule 2026-10-25) — here, so a check, a deepen and every run apply it.
+  const narratives = checkNarratives({
+    description: profile.profile.description, value_proposition: profile.profile.value_proposition,
+    founders: profile.profile.founders, leadership: profile.leadership, competitors: market.competitors,
+  }, row.name);
+  profile.profile.description = narratives.texts.description;
+  profile.profile.value_proposition = narratives.texts.value_proposition;
+  profile.profile.founders = narratives.texts.founders as typeof profile.profile.founders;
+  profile.leadership = narratives.texts.leadership as typeof profile.leadership;
+  market.competitors = narratives.texts.competitors as typeof market.competitors;
+  validation.issues.push(...narratives.issues);
   for (const issue of validation.issues) {
     console.log(`    ⚠️  [${issue.rule}] ${issue.message}`);
     bump(stats.droppedByReason, issue.rule);
