@@ -26,6 +26,7 @@ import { normalizeForMatch } from "./evidence.ts";
 import { computeTotalRaised } from "./rounds.ts";
 import { computeFieldConfidence, meetsProfileThreshold } from "./confidence.ts";
 import { roundFieldEvidence } from "./roundProvenance.ts";
+import { cleanNarrative } from "./narrative.ts";
 import {
   decideScalarWrite, decideHeadcountUpdate, mergePeople, appendDatedFigures, fillScalarIfNull, type CandidateValue,
 } from "./write.ts";
@@ -190,8 +191,12 @@ export async function writeCollected(
     patch.israel_rnd_center = true;
     provenance("profile.israel_rnd_center", true, rnd);
   }
-  if (!row.description && profile.profile.description) patch.description = profile.profile.description;
-  if (!row.value_proposition && profile.profile.value_proposition) patch.value_proposition = profile.profile.value_proposition;
+  // A description is about THIS company: a sentence naming one of its competitors goes (narrative.ts).
+  const narrativeOpts = { avoidNames: [...market.competitors.map((c) => c.name), ...(row.competitors ?? []).map((c) => c.name)], selfName: row.name };
+  const description = cleanNarrative(profile.profile.description, narrativeOpts);
+  const valueProposition = cleanNarrative(profile.profile.value_proposition, narrativeOpts);
+  if (!row.description && description) patch.description = description;
+  if (!row.value_proposition && valueProposition) patch.value_proposition = valueProposition;
   if (!row.industry && profile.profile.industry) patch.industry = profile.profile.industry;
   if (!row.website && profile.profile.website) {
     const websiteResult = validateWebsiteCandidate(profile.profile.website.value, row.id, startupByDomain);

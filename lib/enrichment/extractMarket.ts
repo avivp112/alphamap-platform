@@ -24,6 +24,7 @@ import { sanitizeModelOutput, ensureArray } from "./sanitize";
 import { verifyEvidence, normalizeForMatch, type EvidenceSource } from "./evidence";
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
 import { debugDumpJson } from "./debugDump";
+import { cleanNarrative } from "./narrative";
 
 export interface EvidencedValue<T> {
   value: T;
@@ -81,7 +82,7 @@ export function emptyMarketExtraction(): V2MarketExtraction {
 export type MarketDropReason =
   | "competitor_not_in_source" | "competitor_is_self" | "acquisition_not_in_source"
   | "news_url_not_in_sources" | "news_is_profile_page" | "patent_not_in_source" | "patent_count_not_stated"
-  | "tech_not_in_source" | "competitor_is_acquisition" | "acquisition_is_self" | "news_date_not_in_source" | "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found";
+  | "tech_not_in_source" | "competitor_is_acquisition" | "acquisition_is_self" | "news_date_not_in_source" | "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found" | "source_talk_removed";
 
 export interface MarketDroppedField { field: string; reason: MarketDropReason }
 
@@ -120,7 +121,7 @@ function marketExtractionTool() {
             properties: {
               name: { type: "string", description: "The competitor's company name exactly as written in the source." },
               website: { type: "string", description: "Competitor's root domain, only if it appears in a source." },
-              how_it_competes: { type: "string", description: "2-3 sentences: who this competitor is (what it sells, to whom) and specifically how it overlaps with the company." },
+              how_it_competes: { type: "string", description: "2-3 sentences: who this competitor is (what it sells, to whom) and specifically how it overlaps with the company — never where it was listed, ranked or compared, and never a data platform (Crunchbase, PitchBook, Tracxn, CB Insights, Dealroom, LinkedIn, G2 and the like)." },
               source_ids: { type: "array", items: { type: "string" }, description: "Every [Sx]/[Wx] id that names this competitor." },
             },
             required: ["name", "how_it_competes", "source_ids"],
@@ -193,7 +194,7 @@ export function buildMarketExtractionRequest(companyName: string, sources: Label
   const prompt = `You are a market research analyst. From the labeled research below, extract the competitors, acquisitions, news coverage, patents, and technology of the company "${companyName}". Today's date is ${today}.
 
 RULES:
-1. COMPETITORS — find 4-6 DIRECT competitors. Real evidence includes: "alternatives to ${companyName}" / "${companyName} vs X" pages, G2/Capterra/Crunchbase "similar companies" or "top competitors" lists, market-landscape articles that group ${companyName} with named peers, and ${companyName}'s own comparison pages. A company named alongside ${companyName} in such a source IS a competitor for this purpose. For each, write 2-3 sentences: who the competitor is and exactly how it overlaps with ${companyName}. Never list ${companyName} itself, a parent company, an investor, or a customer. Only name competitors that actually appear in the sources (cite them in source_ids) — never add a well-known company from your own knowledge that no source mentions.
+1. COMPETITORS — find 4-6 DIRECT competitors. Real evidence includes: "alternatives to ${companyName}" / "${companyName} vs X" pages, G2/Capterra/Crunchbase "similar companies" or "top competitors" lists, market-landscape articles that group ${companyName} with named peers, and ${companyName}'s own comparison pages. A company named alongside ${companyName} in such a source IS a competitor for this purpose. For each, write 2-3 sentences: who the competitor is and exactly how it overlaps with ${companyName} — what each sells and to whom; never where it was listed, ranked or compared, and never a data platform (Crunchbase, PitchBook, Tracxn, CB Insights, Dealroom, LinkedIn, G2 and the like). Those lists are how you FIND a competitor, never what you write about it. Never list ${companyName} itself, a parent company, an investor, or a customer. Only name competitors that actually appear in the sources (cite them in source_ids) — never add a well-known company from your own knowledge that no source mentions.
 2. NEWS — include EVERY article in the sources that is about ${companyName} (funding, product launches, partnerships, acquisitions, executive hires, awards, interviews), up to 8, most recent first. Use the article URL exactly as it appears in that source's header line. A source's "Source:" and "Date:" lines give the publication and date. Do NOT list the company's own website pages ([W#] sources) or directory/profile pages (Crunchbase, LinkedIn, PitchBook, Tracxn, CB Insights profiles) as news.
 3. ACQUISITIONS — only companies ${companyName} itself bought. If ${companyName} was acquired BY someone, that is not an acquisition here.
 4. PATENTS — individual patent records named in the sources (title, number, URL from patents.google.com or similar). patent_summary.patent_count only if a source states a count. Never infer.
@@ -329,6 +330,12 @@ export function processMarketExtractionResponse(
     if (!nameIsGrounded(c.name, c.source_ids, sources)) { dropped.push({ field: "competitors", reason: "competitor_not_in_source" }); return false; }
     seenCompetitors.add(key);
     return true;
+  }).map((c) => {
+    // "listed as a top competitor in Tracxn and CB Insights comparisons" goes (narrative.ts);
+    // the competitor stays, with whatever the explanation still says.
+    const how = cleanNarrative(c.how_it_competes, { selfName: companyName });
+    if (how !== c.how_it_competes.replace(/\s+/g, " ").trim()) dropped.push({ field: "competitors.how_it_competes", reason: "source_talk_removed" });
+    return { ...c, how_it_competes: how };
   }).slice(0, 6);
 
   const sourceByUrl = new Map(sources.map((s) => [normalizeUrlForMatch(s.url), s]));

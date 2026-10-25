@@ -43,6 +43,7 @@ import {
 import { useWatchlistMembership, addToWatchlist, removeFromWatchlist, watchlistErrorMessage } from "../../lib/watchlist";
 import { exportRows, type ExportColumn, type ExportFormat } from "../../lib/exportData";
 import { originFacts, type OriginFacts } from "../../lib/origin";
+import { cleanNarrative } from "../../../lib/enrichment/narrative";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -82,6 +83,11 @@ const PLACE_PLACEHOLDER_RE = /^\s*<?\s*(unknown|n\/?a|none|null|undefined|tbd|-|
 function placeLabel(city: string | null | undefined, country: string | null | undefined): string | null {
   const parts = [city, country].filter((p): p is string => !!p && !PLACE_PLACEHOLDER_RE.test(p));
   return parts.length > 0 ? parts.join(", ") : null;
+}
+
+/** A company's competitor names (stored as objects, or as plain strings by older runs). */
+function competitorNames(list: ReadonlyArray<{ name?: string | null } | string> | null | undefined): string[] {
+  return (list ?? []).map((c) => (typeof c === "string" ? c : c?.name ?? "")).filter(Boolean);
 }
 
 /** "Founded in Israel · R&D centre in Israel" — only what adds to the HQ (src/lib/origin.ts). */
@@ -1124,7 +1130,7 @@ function ScoreHistoryChart({ startupId }: { startupId: string }) {
 // The bio opens in a hover card (tap on touch screens) instead of being
 // printed inline under every person. A person with no bio on file gets no
 // popup and no "bio" hint — never an empty card.
-function PersonRow({ name, subtitle, bio, linkedinUrl, truncate = false }: {
+function PersonRow({ name, subtitle, bio: rawBio, linkedinUrl, truncate = false }: {
   name: string;
   subtitle?: string | null;
   bio?: string | null;
@@ -1132,6 +1138,7 @@ function PersonRow({ name, subtitle, bio, linkedinUrl, truncate = false }: {
   truncate?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const bio = cleanNarrative(rawBio);
   const hasBio = !!bio && bio.trim().length > 0;
   const row = (
     <div
@@ -1185,19 +1192,22 @@ function OverviewTab({
   const subSectorTags = dbSubSectorTags.length > 0 ? dbSubSectorTags : (sector.sub ? [sector.sub] : []);
 
   const employeeValue = formatEmployeeValue(startup);
+  const narrativeOpts = { avoidNames: competitorNames(startup.competitors), selfName: startup.name };
+  const description = cleanNarrative(startup.description, narrativeOpts);
+  const valueProposition = cleanNarrative(startup.value_proposition, narrativeOpts);
 
   return (
     <div className="space-y-6">
-      {startup.description ? (
-        <p className="text-sm text-gray-700 leading-relaxed">{startup.description}</p>
+      {description ? (
+        <p className="text-sm text-gray-700 leading-relaxed">{description}</p>
       ) : (
         <MissingDataState message="No company description on file." />
       )}
 
-      {startup.value_proposition && (
+      {valueProposition && (
         <div className="flex items-start gap-2.5 bg-cyan-50/60 border border-cyan-100 rounded-[8px] px-4 py-3">
           <Sparkles className="w-4 h-4 text-cyan-600 flex-none mt-0.5" />
-          <p className="text-xs text-cyan-900 leading-relaxed font-medium">{startup.value_proposition}</p>
+          <p className="text-xs text-cyan-900 leading-relaxed font-medium">{valueProposition}</p>
         </div>
       )}
 
@@ -1708,8 +1718,8 @@ function CompetitorsMarketTab({ startup, onNavigate }: { startup: Startup; onNav
               <span className="text-sm font-bold text-gray-900 truncate">{c.name}</span>
               {linked && <span className="text-[10px] font-semibold text-cyan-700 bg-cyan-100 rounded-full px-2 py-0.5 flex-none">Tracked ↗</span>}
             </div>
-            {c.how_it_competes && (
-              <p className="text-xs text-gray-600 leading-relaxed">{c.how_it_competes}</p>
+            {cleanNarrative(c.how_it_competes) && (
+              <p className="text-xs text-gray-600 leading-relaxed">{cleanNarrative(c.how_it_competes)}</p>
             )}
             {c.website && !linked && (
               <a
@@ -2802,8 +2812,9 @@ function cardTiles(s: StartupListRow, t: (key: string) => string): CardTile[] {
 
 // A founder chip on the grid card. Like PersonRow, the bio opens in a hover
 // card (tap on touch screens) only when one is on file — never an empty popup.
-function FounderChip({ name, title, bio }: { name: string; title?: string | null; bio?: string | null }) {
+function FounderChip({ name, title, bio: rawBio }: { name: string; title?: string | null; bio?: string | null }) {
   const [open, setOpen] = useState(false);
+  const bio = cleanNarrative(rawBio);
   const hasBio = !!bio && bio.trim().length > 0;
   const chip = (
     <span
@@ -2849,6 +2860,7 @@ function StartupCard({
   const location    = placeLabel(startup.city, startup.country);
   const cardGlow    = roundType ? (ROUND_GLOW[roundType] ?? ROUND_GLOW.default) : ROUND_GLOW.default;
   const tiles       = cardTiles(startup, t);
+  const cardDescription = cleanNarrative(startup.description, { avoidNames: competitorNames(startup.competitors), selfName: startup.name });
   const tileKeys    = new Set(tiles.map((tile) => tile.key));
 
   return (
@@ -2918,8 +2930,8 @@ function StartupCard({
             <span className={`flex-none text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]}`}>{roundType}</span>
           )}
         </div>
-        {startup.description && (
-          <p className="text-xs text-gray-500 leading-relaxed line-clamp-2 mb-4">{startup.description}</p>
+        {cardDescription && (
+          <p className="text-xs text-gray-500 leading-relaxed line-clamp-2 mb-4">{cardDescription}</p>
         )}
         {tiles.length > 0 && (
           <div className="grid grid-cols-2 gap-2 mb-4">

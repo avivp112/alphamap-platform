@@ -4,6 +4,7 @@ import { ExternalLink, Users, Banknote, Building2, Landmark, LineChart, AlertTri
 import { fmtUsd } from "../../lib/dealFeed";
 import { sectorLabel, stageLabel } from "../../lib/taxonomy";
 import type { CheckProfile, InvestorFact, ProfilePerson, Sourced } from "../../lib/companyCheck";
+import { cleanNarrative } from "../../../lib/enrichment/narrative";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The research on one checked company (/checks/:id), from worker/profile.ts.
@@ -62,7 +63,7 @@ function Person({ p }: { p: ProfilePerson }) {
           </a>
         )}
       </div>
-      {p.bio && <p className="mt-1 text-xs leading-relaxed text-gray-600 line-clamp-3">{p.bio}</p>}
+      {cleanNarrative(p.bio) && <p className="mt-1 text-xs leading-relaxed text-gray-600 line-clamp-3">{cleanNarrative(p.bio)}</p>}
     </li>
   );
 }
@@ -107,7 +108,7 @@ export function CheckProfileView({ profile, investors, pendingReview = false }: 
       </div>
 
       <Card icon={Building2} title={k("overview")}>
-        {ov.description ? <p className="text-sm leading-relaxed text-[#111827]">{ov.description}</p> : <Empty text={k("noDescription")} />}
+        {cleanNarrative(ov.description) ? <p className="text-sm leading-relaxed text-[#111827]">{cleanNarrative(ov.description)}</p> : <Empty text={k("noDescription")} />}
         {facts.length > 0 && (
           <dl className="mt-4 grid grid-cols-1 sm:grid-cols-[140px_1fr] gap-x-4 gap-y-2 text-sm">
             {facts.map(([label, value]) => (

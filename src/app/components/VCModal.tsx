@@ -8,6 +8,7 @@ import {
 import type { VCFirm } from "../pages/VCs";
 import { CompanyLogo } from "./CompanyLogo";
 import { DonutFocusChart } from "./DonutFocusChart";
+import { cleanNarrative } from "../../../lib/enrichment/narrative";
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -258,9 +259,9 @@ function OverviewTab({ firm, accent }: { firm: VCFirm; accent: AccentConfig }) {
 
   return (
     <div className="space-y-5">
-      {firm.description && (
+      {cleanNarrative(firm.description) && (
         <div className="rounded-lg px-5 py-4 bg-gray-50 border border-gray-100">
-          <p className="text-[13px] text-gray-700 leading-relaxed">{firm.description}</p>
+          <p className="text-[13px] text-gray-700 leading-relaxed">{cleanNarrative(firm.description)}</p>
         </div>
       )}
 

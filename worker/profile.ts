@@ -23,6 +23,7 @@ import { computeTotalRaised } from "../lib/enrichment/rounds.ts";
 import { countryFromLocationQuote } from "../lib/enrichment/location.ts";
 import { MAJOR_CITIES } from "../lib/enrichment/majorCities.ts";
 import { normalizeIsoDate } from "../lib/enrichment/assemble.ts";
+import { cleanNarrative } from "../lib/enrichment/narrative.ts";
 import { sourceTypeRank, type SourceType } from "../lib/enrichment/sourceTypes.ts";
 
 export type Confidence = "high" | "medium" | "low";
@@ -117,6 +118,8 @@ export function buildProfile(c: CollectedCompany, companyName: string): CheckPro
   }
 
   const founded = validation.accepted.founded_year ? sourced(validation.accepted.founded_year, profile.profile.founded_year) : null;
+  // A description is about THIS company: never a competitor's name (lib/enrichment/narrative.ts).
+  const narrativeOpts = { avoidNames: (c.market?.competitors ?? []).map((x) => x.name), selfName: companyName };
   const origin = profile.profile.founding_country;
   const founding_country = origin && meetsProfileThreshold(computeFieldConfidence([{ source_type: c.sourceTypeFor(origin.source_id) ?? "model_inferred" }]), BULK_THRESHOLDS)
     ? sourced(origin.value, origin) : null;
@@ -168,8 +171,8 @@ export function buildProfile(c: CollectedCompany, companyName: string): CheckPro
 
   return {
     overview: {
-      description: profile.profile.description ?? null,
-      value_proposition: profile.profile.value_proposition ?? null,
+      description: cleanNarrative(profile.profile.description, narrativeOpts) || null,
+      value_proposition: cleanNarrative(profile.profile.value_proposition, narrativeOpts) || null,
       industry: profile.profile.industry ?? null,
       sector: profile.profile.sector_name ?? null,
       sub_sectors: [...new Set([profile.profile.sub_sector_name, ...(profile.profile.sub_sector_names ?? [])].filter((s): s is string => !!s))],

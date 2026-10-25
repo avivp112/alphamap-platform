@@ -13,6 +13,7 @@ import {
   CheckRequestError, CHECK_POLL_MS, SLOW_WORKER_MS, emptyCheckForm, displayDomain,
   type CheckFormValues, type IdentityCandidate,
 } from "../../lib/companyCheck";
+import { cleanNarrative } from "../../../lib/enrichment/narrative";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // "Check a company" — the one dialog every entry point opens (My Area today,
@@ -303,7 +304,7 @@ export function CandidateList({ candidates, onChoose, onOpenCompany, busy = fals
                   )}
                   {c.location && <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />{c.location}</span>}
                 </div>
-                {c.description && <p className="mt-1.5 text-xs leading-relaxed text-gray-600 line-clamp-3">{c.description}</p>}
+                {cleanNarrative(c.description) && <p className="mt-1.5 text-xs leading-relaxed text-gray-600 line-clamp-3">{cleanNarrative(c.description)}</p>}
                 {c.unreachable && <p className="mt-1 text-[11px] text-amber-700">{t("companyCheck.unreachable")}</p>}
               </div>
             </div>

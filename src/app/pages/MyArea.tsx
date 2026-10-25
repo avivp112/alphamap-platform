@@ -20,6 +20,7 @@ import {
   type WatchlistEntityType, type WatchlistData, type WithWatchlistMeta,
 } from "../../lib/watchlist";
 import { useUserPlan } from "../../lib/plan";
+import { cleanNarrative } from "../../../lib/enrichment/narrative";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // My Area — the personal hub. Watchlist_items/user_mandates/
@@ -512,7 +513,7 @@ function TrackableCard({
           <div className="min-w-0"><h4 className="text-sm font-bold text-[#0F172A] truncate">{item.name}</h4></div>
           {tracked && !focused && <Check className="w-3.5 h-3.5 text-[#7C8967] flex-none ml-auto" />}
         </div>
-        {item.description && <p className="text-xs text-gray-500 leading-relaxed line-clamp-2 mb-2">{item.description}</p>}
+        {cleanNarrative(item.description) && <p className="text-xs text-gray-500 leading-relaxed line-clamp-2 mb-2">{cleanNarrative(item.description)}</p>}
         {item.chips.length > 0 && (
           <div className="flex flex-wrap gap-x-2.5 gap-y-1 text-[10px] font-medium text-gray-400">
             {item.chips.map((c, i) => <span key={i}>{c}</span>)}
@@ -767,7 +768,7 @@ function ThesisMatchesTab() {
                     <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 flex-none">{t("myArea.matches.newBadge")}</span>
                   )}
                 </div>
-                {s.description && <p className="text-xs text-gray-500 leading-relaxed line-clamp-2 mb-2">{s.description}</p>}
+                {cleanNarrative(s.description) && <p className="text-xs text-gray-500 leading-relaxed line-clamp-2 mb-2">{cleanNarrative(s.description)}</p>}
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex flex-wrap gap-x-2.5 gap-y-1 text-[10px] font-medium text-gray-400">
                     {[s.industry, loc].filter(Boolean).map((c, i) => <span key={i}>{c}</span>)}

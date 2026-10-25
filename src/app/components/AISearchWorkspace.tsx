@@ -8,6 +8,7 @@ import {
 import { CompanyLogo } from "./CompanyLogo";
 import type { SemanticMatch } from "../../lib/semanticSearch";
 import { streamChatAnalyst, parseAnswerSegments, type ChatHistoryTurn } from "../../lib/chatAnalyst";
+import { cleanNarrative } from "../../../lib/enrichment/narrative";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AISearchWorkspace — the multi-turn AlphaMap AI Analyst on the Market
@@ -484,8 +485,8 @@ function ResultRow({ match, onOpen }: { match: SemanticMatch; onOpen: (m: Semant
             {pct}% match
           </span>
         </div>
-        {match.description && (
-          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-gray-500">{match.description}</p>
+        {cleanNarrative(match.description) && (
+          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-gray-500">{cleanNarrative(match.description)}</p>
         )}
         {chips.length > 0 && (
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-medium text-gray-400">
@@ -549,8 +550,8 @@ function CitationModal({ match, onClose }: { match: SemanticMatch; onClose: () =
         </div>
 
         <div className="px-6 py-5">
-          {match.description ? (
-            <p className="text-sm leading-relaxed text-gray-600">{match.description}</p>
+          {cleanNarrative(match.description) ? (
+            <p className="text-sm leading-relaxed text-gray-600">{cleanNarrative(match.description)}</p>
           ) : (
             <p className="text-sm text-gray-400">No description on file for this record yet.</p>
           )}
