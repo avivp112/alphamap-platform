@@ -26,6 +26,7 @@ import { normalizeForMatch } from "./evidence.ts";
 import { computeTotalRaised } from "./rounds.ts";
 import { computeFieldConfidence, meetsProfileThreshold } from "./confidence.ts";
 import { roundFieldEvidence } from "./roundProvenance.ts";
+import { cleanNarrative } from "./narrative.ts";
 import {
   decideScalarWrite, decideHeadcountUpdate, mergePeople, appendDatedFigures, fillScalarIfNull, type CandidateValue,
 } from "./write.ts";
@@ -203,7 +204,6 @@ export async function writeCollected(
     patch.value_proposition = valueProposition;
     refresh.delete("value_proposition");
   }
-  if (refresh.size !== (row.refresh_fields ?? []).length) patch.refresh_fields = [...refresh];
   if (!row.industry && profile.profile.industry) patch.industry = profile.profile.industry;
   if (!row.website && profile.profile.website) {
     const websiteResult = validateWebsiteCandidate(profile.profile.website.value, row.id, startupByDomain);
@@ -312,7 +312,22 @@ export async function writeCollected(
   }
   const selfKey = normalizeForMatch(row.name);
   const acquisitionsOnFile = (row.acquisitions ?? []).filter((a) => !a?.company_name || normalizeForMatch(a.company_name) !== selfKey);
-  const existingCompetitors = reconciled.competitors as NonNullable<V2StartupRow["competitors"]>;
+  // An explanation on file that names a data platform or says where it was read
+  // (narrative.ts) is replaced by this run's own for the same competitor; with
+  // none, it stays as stored (the site hides the offending part).
+  const freshExplanation = new Map(market.competitors.map((c) => [normalizeForMatch(c.name), c.how_it_competes]));
+  let staleExplanations = 0;
+  const existingCompetitors = (reconciled.competitors as NonNullable<V2StartupRow["competitors"]>).map((c) => {
+    if (!c?.how_it_competes || cleanNarrative(c.how_it_competes, { selfName: row.name }) === c.how_it_competes) return c;
+    const fresh = freshExplanation.get(normalizeForMatch(c.name ?? ""));
+    if (fresh) return { ...c, how_it_competes: fresh };
+    const cleaned = cleanNarrative(c.how_it_competes, { selfName: row.name });
+    if (cleaned) return { ...c, how_it_competes: cleaned };
+    staleExplanations++;
+    return c;
+  });
+  if (staleExplanations === 0) refresh.delete("competitors");
+  else refresh.add("competitors");
   const competitors = appendNew(
     existingCompetitors,
     market.competitors.map((c) => ({ name: c.name, website: c.website ?? null, how_it_competes: c.how_it_competes, startup_id: crossLink(c.website) })),
@@ -320,6 +335,7 @@ export async function writeCollected(
   );
   const competitorsAdded = competitors.length - existingCompetitors.length;
   if (!sameJson(competitors, row.competitors ?? [])) patch.competitors = competitors;
+  if (!sameJson([...refresh].sort(), [...(row.refresh_fields ?? [])].sort())) patch.refresh_fields = [...refresh];
 
   // Acquisitions & IP
   const acquisitions = appendNew(

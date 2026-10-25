@@ -69,7 +69,7 @@ function cleanPeople(list: Person[] | null, table: string, id: string, name: str
   const out = list.map((p) => {
     if (!p || typeof p !== "object" || !p.bio) return p;
     const bio = cleanNarrative(p.bio);
-    if (bio === p.bio.replace(/\s+/g, " ").trim()) return p;
+    if (bio === p.bio) return p;
     changed = true;
     record({ table, id, name, field: `${field}[${p.name ?? "?"}].bio`, before: p.bio, after: bio });
     return { ...p, bio: bio || null };
@@ -92,26 +92,28 @@ async function startups(): Promise<number> {
         const before = s[field];
         if (!before) continue;
         const after = cleanNarrative(before, { selfName: s.name });
-        if (after === before.replace(/\s+/g, " ").trim()) continue;
+        if (after === before) continue;
         record({ table: "startups", id: s.id, name: s.name, field, before, after });
         if (after) { patch[field] = after; continue; }
         // Nothing left: keep it, and collect it again on the next run.
         markedForRefresh[field] = (markedForRefresh[field] ?? 0) + 1;
         refresh.add(field);
       }
-      if (refresh.size !== (s.refresh_fields ?? []).length) patch.refresh_fields = [...refresh];
       if (Array.isArray(s.competitors)) {
         let changed = false;
         const competitors = s.competitors.map((c) => {
           if (!c || typeof c === "string" || !c.how_it_competes) return c;
           const how = cleanNarrative(c.how_it_competes, { selfName: s.name });
-          if (how === c.how_it_competes.replace(/\s+/g, " ").trim()) return c;
-          changed = true;
+          if (how === c.how_it_competes) return c;
           record({ table: "startups", id: s.id, name: s.name, field: `competitors[${c.name ?? "?"}].how_it_competes`, before: c.how_it_competes, after: how });
+          // Nothing left: keep it (the site shows the competitor without it) and collect again.
+          if (!how) { markedForRefresh.competitors = (markedForRefresh.competitors ?? 0) + 1; refresh.add("competitors"); return c; }
+          changed = true;
           return { ...c, how_it_competes: how };
         });
         if (changed) patch.competitors = competitors;
       }
+      if (refresh.size !== (s.refresh_fields ?? []).length) patch.refresh_fields = [...refresh];
       const founders = cleanPeople(s.founders, "startups", s.id, s.name, "founders");
       if (founders) patch.founders = founders;
       const leadership = cleanPeople(s.leadership, "startups", s.id, s.name, "leadership");
@@ -139,7 +141,7 @@ async function investors(): Promise<number> {
     for (const f of data as Array<{ id: string; name: string; description: string | null }>) {
       if (!f.description) continue;
       const after = cleanNarrative(f.description, { selfName: f.name });
-      if (after === f.description.replace(/\s+/g, " ").trim()) continue;
+      if (after === f.description) continue;
       record({ table: "investors", id: f.id, name: f.name, field: "description", before: f.description, after });
       if (!after) { firmLeftAsIs.push(f.name); continue; }
       updated++;

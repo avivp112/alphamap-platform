@@ -20,12 +20,12 @@ import { DATA_PLATFORMS } from "./dataPlatforms";
 /** "according to …", "listed as a competitor in …", "per its LinkedIn": where it was read, not what it does. */
 const SOURCE_TALK: RegExp[] = [
   /\baccording to\b/i,
-  /\bas (reported|listed|noted|cited|described|ranked) (by|on|in)\b/i,
-  /\b(listed|named|ranked|cited|mentioned|identified|flagged) (as|among) (a |an |the |one of )?(top |main |key |leading |direct |primary )*(competitors?|rivals?|alternatives?|peers?)\b/i,
-  /\b(competitors?|alternatives?|rivals?) (in|on|by) [^.;]{0,60}\b(comparisons?|lists?|rankings?|reports?|profiles?|databases?)\b/i,
+  /\bas (reported|listed|ranked) (by|on|in)\b/i,
+  // "listed as a top competitor in … comparisons": names the list it was read in. A bare
+  // "Fondeadora is listed as a direct alternative to Hey Banco" names none, and stays.
+  /\b(competitors?|alternatives?|rivals?|comparables|peers?) (in|on|by) [^.;]{0,60}\b(comparisons?|lists?|rankings?|reports?|profiles?|databases?|comparables)\b/i,
   /\b(per|on|from|in) (its|their|the company'?s) (linkedin|crunchbase|pitchbook)\b/i,
   /\b(linkedin|crunchbase|pitchbook) (profile|page|data|listing|snippet)s?\b/i,
-  /\b(data|figures|estimates) (from|by|via) [A-Z]/,
   /\bsources? (say|said|show|indicate|report|suggest)s?\b/i,
 ];
 
@@ -35,6 +35,11 @@ const PLATFORMS = DATA_PLATFORMS.map((p) => ({
   names: [p.name, ...(p.aliases ?? [])].map((n) => n.toLowerCase()),
   res: [p.name, ...(p.aliases ?? [])].map((n) => word(n, p.caseSensitive ? "u" : "iu")),
 }));
+
+/** Ordinary words a clause may open with — capitalized when it starts a sentence. */
+const COMMON_OPENERS = /^(provides?|offers?|it|its|both|competes?|competing|focus(es|ed)?|operates?|serves?|sells?|builds?|develops?|delivers?|targets?|specializ(es|ing)|positioned|the|a|an|also|with|and|but|while|unlike|like|as|in|on|for)\b/;
+
+const splitClauses = (text: string) => text.replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+(?=[A-Z0-9"“(])/).flatMap((s) => s.split(/\s*;\s*/));
 
 export interface NarrativeOptions {
   /** The company itself: a data platform's own profile may name itself. */
@@ -67,6 +72,8 @@ export function cleanNarrativeWithReasons(
 ): { text: string; reasons: NarrativeProblem[] } {
   const reasons: NarrativeProblem[] = [];
   if (!text) return { text: "", reasons };
+  // Nothing to drop: the text comes back exactly as stored.
+  if (!splitClauses(text).some((p) => clauseProblem(p, opts))) return { text, reasons };
   const sentences = text.replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+(?=[A-Z0-9"“(])/);
   const kept: string[] = [];
   for (const sentence of sentences) {
@@ -82,8 +89,14 @@ export function cleanNarrativeWithReasons(
     if (good.length < parts.length) {
       s = s.replace(/[\s,;:–—-]+$/, "");
       if (!/[.!?]$/.test(s)) s += ".";
+      // A part that now opens the sentence gets a capital — only a plain
+      // lowercase word ("provides …"), never a name written in lowercase or
+      // mixed case (mParticle, eMed, happyhotel, greytHR).
+      if (parts.indexOf(good[0]) > 0 && /^[a-z]+\b/.test(s) && !/^[a-z]+[A-Z]/.test(s) && COMMON_OPENERS.test(s)) {
+        s = s.charAt(0).toUpperCase() + s.slice(1);
+      }
     }
-    kept.push(s.charAt(0).toUpperCase() + s.slice(1));
+    kept.push(s);
   }
   return { text: kept.join(" "), reasons };
 }

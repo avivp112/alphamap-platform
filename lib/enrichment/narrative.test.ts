@@ -39,6 +39,37 @@ describe("cleanNarrative", () => {
     expect(cleanNarrative("Tracxn is a startup data platform for investors.", { selfName: "Tracxn" })).toBe("Tracxn is a startup data platform for investors.");
   });
 
+  it("never changes the case of a name — the first owner review (2026-10-25)", () => {
+    for (const t of [
+      "mParticle is a competing customer data platform.",
+      "eClinicalWorks develops EHR software. It competes in ambulatory care.",
+      "uMed is a clinical research platform.",
+      "happyhotel is an AI revenue management platform.",
+      "greytHR automates HR and payroll.",
+    ]) expect(cleanNarrative(t)).toBe(t);
+    // A plain word that now opens the sentence is capitalized; a lowercase name is not.
+    expect(cleanNarrative("Listed among top competitors in Owler; provides cyber risk testing.")).toBe("Provides cyber risk testing.");
+    expect(cleanNarrative("Listed among top competitors in Owler; eMed offers telehealth.")).toBe("eMed offers telehealth.");
+  });
+
+  it("keeps what the first review showed to be information", () => {
+    // "data from CAD …" is the product, not a source.
+    expect(cleanNarrative("Sensat consolidates fragmented data from CAD, BIM and GIS into one context."))
+      .toBe("Sensat consolidates fragmented data from CAD, BIM and GIS into one context.");
+    // A listing that names no source.
+    expect(cleanNarrative("Fondeadora is listed as a direct alternative and competitor to Hey Banco, offering digital banking in Mexico."))
+      .toBe("Fondeadora is listed as a direct alternative and competitor to Hey Banco, offering digital banking in Mexico.");
+    expect(cleanNarrative("The company received government funding, as noted in its submissions to Australia's Cyber Security Strategy."))
+      .toBe("The company received government funding, as noted in its submissions to Australia's Cyber Security Strategy.");
+    // Still dropped: a named platform, or "according to".
+    expect(cleanNarrative("Offers credit products; a direct competitor according to Tracxn comparables.")).toBe("Offers credit products.");
+  });
+
+  it("returns a text with nothing to drop exactly as stored", () => {
+    const t = "Acme builds  payroll software.\nIt sells in the US.";
+    expect(cleanNarrative(t)).toBe(t);
+  });
+
   it("returns empty when nothing is left", () => {
     expect(cleanNarrative("Listed as a competitor in CB Insights comparisons.")).toBe("");
     expect(cleanNarrative(null)).toBe("");
