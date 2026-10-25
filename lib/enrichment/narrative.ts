@@ -35,6 +35,9 @@ const WEAK_HEARSAY = /(^|,\s*|\s+)((?:though |but |while |and )?(?:sources?|repo
 const ALWAYS_WEAK = /\b(case stud(?:y|ies)|testimonials?|linkedin|sources?|estimates?|rumou?rs?|third[- ]party|media|analysts?|reviews?)\b/i;
 const PRIMARY_SOURCE = /\b(the company|the firm|its (?:own )?(?:press releases?|announcements?|website|blog|filings?|annual reports?|reports? to|submissions?|statements?|prospectus|investor (?:relations|materials)|s-1|10-k|20-f|ceo|founders?|co-founders?|management)|(?:a |the )?press releases?|sec|edgar|companies house|regulatory filings?|official filings?|(?:the )?(?:ceo|founders?|co-founders?|management))\b/i;
 
+/** What a source is called: "per its LinkedIn", "based on Crunchbase references", "citing filings". */
+const SOURCE_NOUN = /\b(case stud(?:y|ies)|testimonials?|linkedin|sources?|estimates?|rumou?rs?|third[- ]party|media|analysts?|reviews?|data|reports?|filings?|press releases?|references?|figures|statements?|announcements?|website|records?)\b/i;
+
 /** Mentions that only say where it was listed or ranked: "listed as a top competitor in … comparisons". */
 const LISTING_TALK: RegExp[] = [
   /\b(competitors?|alternatives?|rivals?|comparables|peers?) (in|on|by) [^.;]{0,60}\b(comparisons?|lists?|rankings?|reports?|profiles?|databases?|comparables)\b/i,
@@ -96,6 +99,11 @@ function decide(part: string, opts: NarrativeOptions): Decision {
   // 1. Attribution, by who is cited.
   for (const m of part.matchAll(ATTRIBUTION)) {
     const source = m[3];
+    // "per" / "based on" / "citing" are also product language ("pricing based
+    // on usage", "per user", "per the agreement"): an attribution only when
+    // what follows is a source.
+    const lead = source.trim().split(/\s+/).slice(0, 4).join(" ");   // the source is named right away: "per its LinkedIn page"
+    if (!/^(according to|as reported)/i.test(m[2]) && !namesPlatform(lead, opts) && !SOURCE_NOUN.test(lead)) continue;
     if (namesPlatform(source, opts)) return { kind: "drop", reason: "data_platform" };
     if (!ALWAYS_WEAK.test(source) && PRIMARY_SOURCE.test(source)) continue;   // the company / its filings: untouched
     return weakClaim(part, m.index!, m[0], opts);

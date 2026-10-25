@@ -118,6 +118,21 @@ describe("cleanNarrative", () => {
       );
     });
 
+    it("product language that looks like attribution is untouched", () => {
+      for (const t of [
+        "Acme offers usage-based pricing, based on the number of API calls each month.",
+        "Acme charges $12 per user per month, per the plan selected.",
+        "Its routing engine is based on a proprietary graph model trained on fleet data.",
+        "Acme ships hardware per a long-term agreement with Siemens.",
+        "Founded in 2019 and based on research from MIT, Acme builds battery materials.",
+        "As stated in its mission, Acme aims to make clean steel affordable for every mill.",
+        "Acme cut energy use by a third, as shown in a pilot with Tata Steel.",
+      ]) expect(cleanNarrative(t)).toBe(t);
+      // …and the real attributions with the same words are still caught.
+      expect(cleanNarrative("Acme sells to banks. Per its LinkedIn page, it employs 140 people.")).toBe("Acme sells to banks.");
+      expect(cleanNarrative("Acme sells to banks. Based on Crunchbase references, it raised $8 million.")).toBe("Acme sells to banks.");
+    });
+
     it("hearsay without a named source is weak too", () => {
       expect(cleanNarrative("Dataherald offers an NL-to-SQL API. It reached $1.4M in ARR in 2024, though sources indicate it is out of business."))
         .toBe("Dataherald offers an NL-to-SQL API.");
