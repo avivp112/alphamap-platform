@@ -28,6 +28,7 @@ import { verifyEvidence, quoteMatchesSource, type EvidenceSource } from "./evide
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
 import { debugDumpJson } from "./debugDump";
 import { checkHeadcountClaim, type HeadcountDropReason } from "./headcount";
+import { checkFoundingCountry, checkIsraelRnd, type OriginDrop } from "./origin";
 
 export interface SectorTaxonomy {
   parentNames: string[];
@@ -131,6 +132,10 @@ export interface V2Profile {
   founded_year?: EvidencedValue<number>;
   country?: EvidencedValue<string>;
   city?: EvidencedValue<string>;
+  /** Where the company was founded — may differ from the HQ `country` (lib/enrichment/origin.ts). */
+  founding_country?: EvidencedValue<string>;
+  /** States an R&D / development centre in Israel. */
+  israel_rnd_center?: EvidencedValue<boolean>;
   founders?: V2Founder[];
   sector_name?: string;
   sub_sector_name?: string;
@@ -229,6 +234,8 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
             founded_year: materialField({ type: "integer" }, "Year the company was incorporated. Never infer from an article's publish date or a funding round's date — only from an explicit founding-year statement."),
             country: materialField({ type: "string" }, "HQ country full name. Must come from the SAME source and the SAME sentence/address as `city` — never combine a city from one source with a country from another."),
             city: materialField({ type: "string" }, "HQ city. Must come from the SAME source and the SAME sentence/address as `country`."),
+            founding_country: materialField({ type: "string" }, "Country full name where the company was FOUNDED — may differ from the HQ `country` (e.g. founded in Israel, HQ now in New York). Only from a quote that says it of the company: 'founded in Tel Aviv', 'the Israeli startup', 'started in Berlin'. Never from a founder's nationality, army unit or university, a customer, or an office."),
+            israel_rnd_center: materialField({ type: "boolean" }, "TRUE only if a source states the company has its R&D / development / engineering centre or team in Israel (e.g. 'headquartered in New York with R&D in Tel Aviv'). A sales office does not count. Omit otherwise."),
             founders: {
               type: "array",
               description: "ALL founders/co-founders, full legal names.",
@@ -323,9 +330,10 @@ export function buildProfileExtractionRequest(
 
 STRICT RULES:
 1. Only extract facts stated explicitly in the sources below. If a field is not stated, omit it entirely — never guess.
-2. Every material field (website, founded_year, country, city, employee_count, every headcount_history point, every LinkedIn/GitHub/Hugging Face URL) requires an evidence_quote copied VERBATIM (5-40 words) from its cited source, and the exact source_id ([S3], [W1], etc.) that quote came from.
+2. Every material field (website, founded_year, country, city, founding_country, israel_rnd_center, employee_count, every headcount_history point, every LinkedIn/GitHub/Hugging Face URL) requires an evidence_quote copied VERBATIM (5-40 words) from its cited source, and the exact source_id ([S3], [W1], etc.) that quote came from.
 3. Never construct or guess a URL. Only output a URL that appears verbatim, character-for-character, in a source.
 4. city and country MUST come from the same source and the same sentence or address — never pair a city from one source with a country from another.
+4b. founding_country is WHERE THE COMPANY WAS FOUNDED, separate from the HQ: an Israeli-founded company headquartered in New York has country "United States" and founding_country "Israel". Set it only from a quote about the company ("founded in Tel Aviv", "the Israeli cybersecurity startup"); never from a founder's nationality or military service. israel_rnd_center: only when a source states its R&D / development / engineering centre or team is in Israel.
 5. Never infer founded_year from an article's publish date or from a funding round's date — only from an explicit founding statement.
 6. Never estimate headcount or revenue — report only a figure a source explicitly states, with its date.
 7. ${BIO_DESCRIPTION}
@@ -350,7 +358,7 @@ ${context}`;
 // ── Response processing (pure, testable without any live call) ──────────
 
 export type DropReasonCode =
-  | "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found" | HeadcountDropReason;
+  | "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found" | HeadcountDropReason | OriginDrop;
 
 export interface DroppedField {
   field: string;
@@ -378,6 +386,32 @@ function verifyMaterial<T>(
     dropped.push({ field, reason: (verdict.drop_reason as DropReasonCode) ?? "evidence_mismatch" });
     return undefined;
   }
+  return claim;
+}
+
+/**
+ * founding_country / israel_rnd_center: the quote must be real (same two
+ * checks as verifyIsPublicClaim below), and must SAY it of the company
+ * (origin.ts) — "founded in Tel Aviv" holds "Israel" without the word, so
+ * verifyMaterial's value-in-quote test would wrongly drop it.
+ */
+function verifyOrigin<T extends string | boolean>(
+  field: "profile.founding_country" | "profile.israel_rnd_center",
+  claim: EvidencedValue<T> | undefined,
+  sources: Record<string, EvidenceSource>,
+  dropped: DroppedField[],
+): EvidencedValue<T> | undefined {
+  if (!claim || claim.value === false || claim.value === "") return undefined;
+  const source = sources[claim.source_id];
+  if (!source) { dropped.push({ field, reason: "source_not_found" }); return undefined; }
+  if (!claim.evidence_quote || !quoteMatchesSource(claim.evidence_quote, source.content).matched) {
+    dropped.push({ field, reason: "evidence_mismatch" });
+    return undefined;
+  }
+  const issue = field === "profile.founding_country"
+    ? checkFoundingCountry(String(claim.value), claim.evidence_quote)
+    : checkIsraelRnd(claim.value === true, claim.evidence_quote);
+  if (issue) { dropped.push({ field, reason: issue }); return undefined; }
   return claim;
 }
 
@@ -447,6 +481,8 @@ export function processProfileExtractionResponse(
     founded_year: verifyMaterial("profile.founded_year", i.profile?.founded_year, sourceLookup, dropped),
     country: verifyMaterial("profile.country", i.profile?.country, sourceLookup, dropped),
     city: verifyMaterial("profile.city", i.profile?.city, sourceLookup, dropped),
+    founding_country: verifyOrigin("profile.founding_country", i.profile?.founding_country, sourceLookup, dropped),
+    israel_rnd_center: verifyOrigin("profile.israel_rnd_center", i.profile?.israel_rnd_center, sourceLookup, dropped),
     founders: ensureArray<V2Founder>(i.profile?.founders).map((f, idx) => ({
       ...f,
       linkedin_url: verifyMaterial(`profile.founders[${idx}].linkedin_url`, f.linkedin_url, sourceLookup, dropped, true),

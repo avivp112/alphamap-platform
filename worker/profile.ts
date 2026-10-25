@@ -17,7 +17,7 @@ import type { EvidencedValue } from "../lib/enrichment/extractProfile.ts";
 import { cleanPeople, isFounderEntry, cleanFounderTitle } from "../lib/enrichment/people.ts";
 import { samePersonName } from "../lib/enrichment/linkedin.ts";
 import { mergePeople, decideHeadcountUpdate } from "../lib/enrichment/write.ts";
-import { meetsProfileThreshold } from "../lib/enrichment/confidence.ts";
+import { computeFieldConfidence, meetsProfileThreshold } from "../lib/enrichment/confidence.ts";
 import { BULK_THRESHOLDS } from "../lib/enrichment/writeCompany.ts";
 import { computeTotalRaised } from "../lib/enrichment/rounds.ts";
 import { countryFromLocationQuote } from "../lib/enrichment/location.ts";
@@ -74,6 +74,9 @@ export interface CheckProfile {
     founded_year: Sourced<number> | null;
     city: Sourced<string> | null;
     country: Sourced<string> | null;
+    /** Where it was founded, when that differs from — or confirms — the HQ (lib/enrichment/origin.ts). */
+    founding_country?: Sourced<string> | null;
+    israel_rnd_center?: Sourced<boolean> | null;
     headcount: Sourced<number> | null;
     employee_range: string | null;
     linkedin_url: string | null;
@@ -114,6 +117,12 @@ export function buildProfile(c: CollectedCompany, companyName: string): CheckPro
   }
 
   const founded = validation.accepted.founded_year ? sourced(validation.accepted.founded_year, profile.profile.founded_year) : null;
+  const origin = profile.profile.founding_country;
+  const founding_country = origin && meetsProfileThreshold(computeFieldConfidence([{ source_type: c.sourceTypeFor(origin.source_id) ?? "model_inferred" }]), BULK_THRESHOLDS)
+    ? sourced(origin.value, origin) : null;
+  const rnd = profile.profile.israel_rnd_center;
+  const israel_rnd_center = rnd?.value === true && meetsProfileThreshold(computeFieldConfidence([{ source_type: c.sourceTypeFor(rnd.source_id) ?? "model_inferred" }]), BULK_THRESHOLDS)
+    ? sourced(true, rnd) : null;
 
   let headcount: Sourced<number> | null = null;
   const hc = validation.accepted.employee_count;
@@ -165,7 +174,7 @@ export function buildProfile(c: CollectedCompany, companyName: string): CheckPro
       sector: profile.profile.sector_name ?? null,
       sub_sectors: [...new Set([profile.profile.sub_sector_name, ...(profile.profile.sub_sector_names ?? [])].filter((s): s is string => !!s))],
       founded_year: founded,
-      city, country, headcount,
+      city, country, founding_country, israel_rnd_center, headcount,
       employee_range: profile.metrics.employee_range ?? null,
       linkedin_url: profile.profile.linkedin_url?.value ?? null,
     },

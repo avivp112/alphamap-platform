@@ -147,6 +147,7 @@ async function runV2(company: GoldenCompany, anthropic: Anthropic, taxonomy: Sec
     const arr = [...c.funding.arr_milestones].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))[0];
     return done({
       city: p.overview.city?.value ?? null, country: p.overview.country?.value ?? null, founded_year: p.overview.founded_year?.value ?? null,
+      founding_country: p.overview.founding_country?.value ?? null,
       founders: p.people.founders.map((f) => ({ name: f.name })),
       rounds: p.funding.rounds.map((r) => ({ round_type: r.round_type, amount_raised: r.amount, date: r.date })),
       employee_range: p.overview.employee_range,
@@ -240,7 +241,7 @@ async function main() {
     if (afterRound) foundedAfterRound++;
     perCompany[company.id] = { output, ...extra, fields, duplicates: dups, founded_after_round: afterRound };
 
-    console.log(`    city="${out.city ?? "—"}" (${fields.city}) country="${out.country ?? "—"}" (${fields.country}) founded=${out.founded_year ?? "—"} (${fields.founded_year})`);
+    console.log(`    city="${out.city ?? "—"}" (${fields.city}) country="${out.country ?? "—"}" (${fields.country}) founded-in="${out.founding_country ?? "—"}" (${fields.founding_country}) founded=${out.founded_year ?? "—"} (${fields.founded_year})`);
     console.log(`    founders=${out.founders.map((f) => f.name).join(", ") || "—"} (${fields.founders})`);
     console.log(`    rounds=${out.rounds.length} (golden: ${(company.funding_rounds ?? []).filter((r) => r.confidence !== "unknown").length} verified; ${fields.funding_rounds})${dups.length ? ` ⚠️ ${dups.length} duplicate pair(s)` : ""}${afterRound ? " ⚠️ founded after first round" : ""}`);
     const usd = (n: number | null) => (n == null ? "?" : n >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : `$${(n / 1e6).toFixed(1)}M`);

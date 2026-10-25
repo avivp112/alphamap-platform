@@ -238,3 +238,43 @@ describe("processProfileExtractionResponse", () => {
     expect(dropped.some((d) => d.field === "metrics.headcount_history")).toBe(true);
   });
 });
+
+describe("founding country and R&D in Israel (origin.ts)", () => {
+  const originSources = buildLabeledSources([
+    {
+      url: "https://en.globes.co.il/en/article-upwind", provider: "serper", query_label: "history",
+      content: "Upwind, founded in Tel Aviv in 2022, is headquartered in San Francisco with its R&D center in Tel Aviv. CEO Amiram Shachar, an Israeli Army veteran, said the company will hire.",
+    },
+  ], "upwind.io");
+
+  it("keeps a founding sentence, and an R&D centre in Israel, with the HQ elsewhere", () => {
+    const { result, dropped } = processProfileExtractionResponse({
+      is_tech_company: true,
+      profile: {
+        founding_country: { value: "Israel", source_id: "S1", evidence_quote: "Upwind, founded in Tel Aviv in 2022, is headquartered in San Francisco" },
+        israel_rnd_center: { value: true, source_id: "S1", evidence_quote: "headquartered in San Francisco with its R&D center in Tel Aviv" },
+      },
+    }, originSources);
+    expect(result.profile.founding_country?.value).toBe("Israel");
+    expect(result.profile.israel_rnd_center?.value).toBe(true);
+    expect(dropped).toEqual([]);
+  });
+
+  it("drops a founding country read off the CEO's nationality", () => {
+    const { result, dropped } = processProfileExtractionResponse({
+      is_tech_company: true,
+      profile: { founding_country: { value: "Israel", source_id: "S1", evidence_quote: "CEO Amiram Shachar, an Israeli Army veteran, said the company will hire" } },
+    }, originSources);
+    expect(result.profile.founding_country).toBeUndefined();
+    expect(dropped).toContainEqual({ field: "profile.founding_country", reason: "founding_country_not_stated" });
+  });
+
+  it("drops a quote the source does not contain", () => {
+    const { result, dropped } = processProfileExtractionResponse({
+      is_tech_company: true,
+      profile: { founding_country: { value: "Israel", source_id: "S1", evidence_quote: "Upwind was founded in Israel by four Israeli entrepreneurs" } },
+    }, originSources);
+    expect(result.profile.founding_country).toBeUndefined();
+    expect(dropped).toContainEqual({ field: "profile.founding_country", reason: "evidence_mismatch" });
+  });
+});

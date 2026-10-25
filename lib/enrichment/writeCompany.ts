@@ -174,6 +174,19 @@ export async function writeCollected(
     patch.founded_year = validation.accepted.founded_year;
     provenance("profile.founded_year", validation.accepted.founded_year, profile.profile.founded_year);
   }
+  // Origin (lib/enrichment/origin.ts): filled once, at the same bar as the HQ country.
+  const origin = profile.profile.founding_country;
+  if (origin && row.founding_country == null
+    && meetsProfileThreshold(computeFieldConfidence([{ source_type: sourceTypeFor(origin.source_id) ?? "model_inferred" }]), THRESHOLDS)) {
+    patch.founding_country = origin.value;
+    provenance("profile.founding_country", origin.value, origin);
+  }
+  const rnd = profile.profile.israel_rnd_center;
+  if (rnd?.value === true && row.israel_rnd_center == null
+    && meetsProfileThreshold(computeFieldConfidence([{ source_type: sourceTypeFor(rnd.source_id) ?? "model_inferred" }]), THRESHOLDS)) {
+    patch.israel_rnd_center = true;
+    provenance("profile.israel_rnd_center", true, rnd);
+  }
   if (!row.description && profile.profile.description) patch.description = profile.profile.description;
   if (!row.value_proposition && profile.profile.value_proposition) patch.value_proposition = profile.profile.value_proposition;
   if (!row.industry && profile.profile.industry) patch.industry = profile.profile.industry;

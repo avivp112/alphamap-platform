@@ -48,6 +48,7 @@ export interface V2StartupRow {
   id: string; name: string; website: string | null;
   description: string | null; value_proposition: string | null; industry: string | null;
   founded_year: number | null; country: string | null; city: string | null;
+  founding_country: string | null; israel_rnd_center: boolean | null;
   employee_count: number | null; employee_range: string | null; growth_trend: string | null;
   founders: Array<{ name: string; title?: string; bio?: string; linkedin_url?: string; had_prior_exit?: boolean; elite_background?: boolean; notable_pedigree?: boolean }> | null;
   leadership: Array<{ name: string; role: string; bio?: string; linkedin_url?: string; joined_date?: string; had_prior_exit?: boolean; elite_background?: boolean; notable_pedigree?: boolean }> | null;
@@ -82,7 +83,7 @@ export interface ExtractionUsage { inputTokens: number; outputTokens: number; ca
 /** What the bulk script's globals were, passed in. */
 /** The columns of startups / funding_rounds a collection reads (V2StartupRow, V2FundingRoundRow). */
 export const V2_STARTUP_COLUMNS =
-  "id, name, website, description, value_proposition, industry, founded_year, country, city, employee_count, employee_range, growth_trend, founders, leadership, competitors, acquisitions, news, patent_count, patent_fields, patents, tech_stack, github_url, huggingface_url, arr_milestones, revenue_estimate, valuation_benchmarks, linkedin_url, facebook_url, instagram_url, sector_id, funding_history_complete, status, last_enriched_at, is_manually_verified";
+  "id, name, website, description, value_proposition, industry, founded_year, country, city, founding_country, israel_rnd_center, employee_count, employee_range, growth_trend, founders, leadership, competitors, acquisitions, news, patent_count, patent_fields, patents, tech_stack, github_url, huggingface_url, arr_milestones, revenue_estimate, valuation_benchmarks, linkedin_url, facebook_url, instagram_url, sector_id, funding_history_complete, status, last_enriched_at, is_manually_verified";
 export const V2_ROUND_COLUMNS =
   "id, startup_id, round_type, amount_raised, valuation, is_valuation_estimated, announcement_date, source_url, lead_investor, investors, investor_amounts";
 

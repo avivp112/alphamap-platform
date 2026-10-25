@@ -2,6 +2,8 @@
 
 Ten companies, researched by Claude from search-result summaries (pages could not be opened from the research sandbox). For each value: check the source, then mark it right, fix it, or set it to `unknown`. When a company is done, set `reviewed_by_human: true` in `eval/golden_set.json` (or tell Claude the corrections).
 
+Location rule (2026-10-25): `city`/`country` = the headquarters today; `founding_country` = where the company was founded.
+
 Confidence: **verified** = two independent direct-reporting sources agree · **likely** = one credible source · **unknown** = not scored.
 
 ## Port (`port-io`)
@@ -14,6 +16,7 @@ Website: https://www.port.io · hard cases: common_name, non_us, rebrand_domain_
 |---|---|---|---|
 | city | Tel Aviv | likely | https://www.calcalistech.com/ctechnews/article/r1vronkjt |
 | country | Israel | verified | https://techcrunch.com/2025/12/11/port-raises-100m-at-800m-valuation-to-take-on-spotifys-backstage |
+| founding_country | Israel | likely | https://www.calcalistech.com/ctechnews/article/r1vronkjt — Israeli-founded per Israeli press describing it as an Israeli company; reviewer to confirm the quote says so of the company. |
 | founded_year | 2022 | unknown | 2021 vs 2022 across sources. |
 | founder | Zohar Einy (Co-Founder & CEO) | verified | https://techcrunch.com/2025/12/11/port-raises-100m-at-800m-valuation-to-take-on-spotifys-backstage |
 | founder | Yonatan Boguslavski (Co-Founder & CTO) | verified | https://techcrunch.com/2025/12/11/port-raises-100m-at-800m-valuation-to-take-on-spotifys-backstage |
@@ -32,6 +35,7 @@ Website: https://hailo.ai · hard cases: common_name, non_us
 |---|---|---|---|
 | city | Tel Aviv | likely | Reported as Tel Aviv-based; not separately confirmed in this pass. |
 | country | Israel | verified | https://en.globes.co.il/en/article-israeli-edge-ai-chipmaker-hailo-raises-136m-1001387010 |
+| founding_country | Israel | likely | https://en.globes.co.il/en/article-israeli-edge-ai-chipmaker-hailo-raises-136m-1001387010 — Israeli-founded per Israeli press describing it as an Israeli company; reviewer to confirm the quote says so of the company. |
 | founded_year | 2017 | verified | https://en.globes.co.il/en/article-israeli-edge-ai-chipmaker-hailo-raises-136m-1001387010 |
 | founder | Orr Danon (Co-Founder & CEO) | verified | https://en.globes.co.il/en/article-israeli-edge-ai-chipmaker-hailo-raises-136m-1001387010 |
 | founder | Avi Baum (Co-Founder & CTO) | verified | https://siliconangle.com/2024/04/02/hailo-raises-120m-debuts-first-chip-generative-ai-edge/ |
@@ -51,6 +55,7 @@ Website: https://www.cyera.com (confirmed 2026-10-25: the company's own llms.txt
 |---|---|---|---|
 | city | New York | likely | https://www.securityweek.com/cyera-raises-400-million-at-9-billion-valuation/ |
 | country | United States | likely | https://www.securityweek.com/cyera-raises-400-million-at-9-billion-valuation/ |
+| founding_country | Israel | likely | https://en.globes.co.il/en/article-1001512567 — Founded and built in Israel; HQ now New York (see hard_case_notes). |
 | founded_year | 2021 | verified | https://en.globes.co.il/en/article-1001512567 |
 | founder | Yotam Segev (Co-Founder & CEO) | verified | https://en.globes.co.il/en/article-1001512567 |
 | founder | Tamar Bar-Ilan (Co-Founder & CTO) | verified | https://en.globes.co.il/en/article-1001512567 |
@@ -71,6 +76,7 @@ Website: https://www.catonetworks.com · hard cases: non_us
 |---|---|---|---|
 | city | Tel Aviv | verified | https://en.globes.co.il/en/article-1001514443 |
 | country | Israel | verified | https://en.globes.co.il/en/article-1001514443 |
+| founding_country | Israel | likely | https://en.globes.co.il/en/article-1001514443 — Israeli-founded per Israeli press describing it as an Israeli company; reviewer to confirm the quote says so of the company. |
 | founded_year | 2015 | verified | https://fintech.global/2023/09/20/cato-networks-clinches-238m-investment-at-over-3bn-valuation/ |
 | founder | Shlomo Kramer (Co-Founder & CEO) | verified | https://en.globes.co.il/en/article-1001514443 |
 | founder | Gur Shatz (Co-Founder) | verified | https://en.globes.co.il/en/article-1001514443 |
@@ -89,8 +95,9 @@ Website: https://www.upwind.io · hard cases: non_us
 
 | Field | Value | Confidence | Source |
 |---|---|---|---|
-| city | — | unknown | HQ not established in this pass. |
-| country | Israel | likely | https://en.globes.co.il/en/article-1001495634 — open: Globes (2024) and company profiles place the HQ in San Francisco with R&D in Tel Aviv: https://en.globes.co.il/en/article-israeli-cybersecurity-co-upwind-raises-100m-report-1001493613 |
+| city | San Francisco | likely | https://en.globes.co.il/en/article-israeli-cybersecurity-co-upwind-raises-100m-report-1001493613 |
+| country | United States | likely | https://en.globes.co.il/en/article-israeli-cybersecurity-co-upwind-raises-100m-report-1001493613 — HQ San Francisco, R&D Tel Aviv (changed from Israel on 2026-10-25 under the HQ-now rule; founding_country carries Israel) |
+| founding_country | Israel | likely | https://en.globes.co.il/en/article-1001495634 — Founded in 2022 by four Israeli entrepreneurs; R&D in Tel Aviv, HQ San Francisco. |
 | founded_year | 2022 | verified | https://calcalistech.com/ctechnews/article/hkxgq11pwjl |
 | founder | Amiram Shachar (Co-Founder & CEO) | verified | https://en.globes.co.il/en/article-1001495634 |
 | founder | Liran Polak (Co-Founder) | likely | https://calcalistech.com/ctechnews/article/hkxgq11pwjl |
@@ -111,6 +118,7 @@ Website: https://coralogix.com · hard cases: non_us
 |---|---|---|---|
 | city | — | unknown | Tel Aviv vs Ramat Gan vs California. |
 | country | — | unknown | Founded in Israel; Wikipedia lists a US HQ. |
+| founding_country | Israel | likely | https://www.calcalistech.com/ctechnews/article/h1tsdarqge — Founded in Tel Aviv in 2014; HQ disputed (Israel vs US), so `country` stays unknown. |
 | founded_year | 2014 | likely | https://www.calcalistech.com/ctechnews/article/h1tsdarqge |
 | founder | Ariel Assaraf (Co-Founder & CEO) | verified | https://www.calcalistech.com/ctechnews/article/h1tsdarqge |
 | round | Series D $142M · 2022, lead Advent International | verified | https://www.calcalistech.com/ctechnews/article/h1tsdarqge · https://en.globes.co.il/en/article-1001413941 |
@@ -127,6 +135,7 @@ Website: https://www.hibob.com · hard cases: common_name, non_us
 |---|---|---|---|
 | city | London | likely | https://www.hibob.com/about/ |
 | country | United Kingdom | likely | https://www.hibob.com/about/ |
+| founding_country | Israel | likely | https://en.wikipedia.org/wiki/HiBob — Founded in Tel Aviv; HQ London per its own site. |
 | founded_year | 2015 | verified | https://www.hibob.com/about/ |
 | founder | Ronni Zehavi (Co-Founder & CEO) | verified | https://www.hibob.com/about/ |
 | founder | Israel David (Co-Founder) | verified | https://en.wikipedia.org/wiki/HiBob |
@@ -146,6 +155,7 @@ Website: https://www.aidoc.com · hard cases: non_us
 |---|---|---|---|
 | city | Tel Aviv | verified | https://www.timesofisrael.com/israels-aidoc-raises-110m-for-ai-tech-that-reads-imaging-scans/ |
 | country | Israel | verified | https://www.timesofisrael.com/israels-aidoc-raises-110m-for-ai-tech-that-reads-imaging-scans/ |
+| founding_country | Israel | likely | https://www.timesofisrael.com/israels-aidoc-raises-110m-for-ai-tech-that-reads-imaging-scans/ — Israeli-founded per Israeli press describing it as an Israeli company; reviewer to confirm the quote says so of the company. |
 | founded_year | 2016 | verified | https://www.mobihealthnews.com/news/aidoc-raises-110m-expand-ai-enabled-imaging-platform |
 | founder | Elad Walach (Co-Founder & CEO) | verified | https://www.timesofisrael.com/israels-aidoc-raises-110m-for-ai-tech-that-reads-imaging-scans/ |
 | founder | Guy Reiner (Co-Founder) | likely | https://www.timesofisrael.com/israels-aidoc-raises-110m-for-ai-tech-that-reads-imaging-scans/ |
@@ -164,6 +174,7 @@ Website: https://pagaya.com · hard cases: went_public, non_us
 |---|---|---|---|
 | city | — | unknown |  |
 | country | — | unknown |  |
+| founding_country | Israel | likely | https://en.globes.co.il/en/article-1001419790 — Founded in Tel Aviv in 2016; HQ New York vs Tel Aviv not scored. |
 | founded_year | 2016 | verified | https://en.globes.co.il/en/article-1001419790 |
 | public company | yes | verified | https://en.globes.co.il/en/article-pagaya-completes-spac-merger-at-85b-valuation-1001416009 |
 | founder | Gal Krubiner (Co-Founder & CEO) | verified | https://en.globes.co.il/en/article-1001419790 |
@@ -180,6 +191,7 @@ Website: https://www.oligo.security · hard cases: non_us, common_name
 |---|---|---|---|
 | city | Tel Aviv | likely | https://archive.israel21c.org/israeli-startup-raises-50m-to-stop-app-based-cyberattacks/ |
 | country | Israel | verified | https://archive.israel21c.org/israeli-startup-raises-50m-to-stop-app-based-cyberattacks/ |
+| founding_country | Israel | likely | https://archive.israel21c.org/israeli-startup-raises-50m-to-stop-app-based-cyberattacks/ — Israeli-founded per Israeli press describing it as an Israeli company; reviewer to confirm the quote says so of the company. |
 | founded_year | 2022 | likely | https://archive.israel21c.org/israeli-startup-raises-50m-to-stop-app-based-cyberattacks/ |
 | founder | Nadav Czerninski (Co-Founder & CEO) | likely | https://archive.israel21c.org/israeli-startup-raises-50m-to-stop-app-based-cyberattacks/ |
 | founder | Gal Elbaz (Co-Founder & CTO) | likely | https://archive.israel21c.org/israeli-startup-raises-50m-to-stop-app-based-cyberattacks/ |

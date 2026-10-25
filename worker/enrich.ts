@@ -36,7 +36,7 @@ export function blankRow(i: EnrichInput): V2StartupRow {
   return {
     id: i.checkId, name: i.name, website: i.website,
     description: null, value_proposition: null, industry: null,
-    founded_year: null, country: i.country, city: null,
+    founded_year: null, country: i.country, city: null, founding_country: null, israel_rnd_center: null,
     employee_count: null, employee_range: null, growth_trend: null,
     // A founder the user named is an anchor for the entity filter and a
     // LinkedIn lookup; it is shown only if a source backs it.

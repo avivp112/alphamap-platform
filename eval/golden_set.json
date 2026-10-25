@@ -9,7 +9,8 @@
     "STATUS: human-reviewed batch of 2 (Apex, Fresha) remains final/reviewed. A second, NOT-yet-human-reviewed batch of 10 (listed in the v3 schema_note above) was added by Claude in this session, covering hard-case categories not in the first batch: non_us (Israel/Wiz & Fiverr, UK/Wise, Germany/Celonis, India/Zepto), rebrand_domain_change (Wise, Shortcut), series_a_start (Wiz, Celonis), stealth_no_data (Safe Superintelligence, Thinking Machines Lab), went_public (Fiverr, Wise), and common_name (Bolt, Mercury, Shortcut). All 10 need the same hybrid human review (city/country/founded_year/every funding round) before counting as final; reviewed_by_human is false on every one. The remaining target-batch companies continue in follow-up sessions.",
     "v3 (this batch): added 10 more companies (bolt-checkout, wiz-security, fiverr, wise-transferwise, celonis, zepto, shortcut-software, safe-superintelligence, mercury-technologies, thinking-machines-lab), Claude-researched only (reviewed_by_human: false on all), same primary-sourcing rules as v2. Two new optional structural fields introduced and used where relevant: is_public_company ({value, confidence, source_url, notes}) to test the public/private boundary explicitly, and hard_case_notes (free-text) for hard-case context that does not fit an existing field (e.g. dual-HQ ambiguity, name-collision disambiguation, bootstrapped-to-Series-A narratives). Also introduced, used only where applicable: rebrand_notes (reused from v2 Fresha pattern), funding_rounds_excluded_unknown (reused from v2), ipo_status (zepto only, for a pending-not-yet-listed IPO case), and acquisition (wiz-security only, for an announced-but-not-closed M&A exit that is NOT a going-public event).",
     "Batch 3 (2026-10-20): Claude-researched from search-result summaries only (pages could not be opened from the research sandbox), so every value needs the human review before it counts; confidence was set conservatively — 'verified' only where two independent direct-reporting sources agreed. New optional fields: batch (number), arr_usd ({value, as_of, confidence, source_url, notes}) for revenue scoring, and funding_rounds_excluded_unknown is now honoured by eval/score.ts (an extracted round matching one of them is neither right nor wrong). Round type 'Unknown' marks a round whose letter the sources contradict.",
-    "Batch 4 (2026-10-25): ten companies, Claude-researched from search-result summaries (pages could not be opened from the research sandbox), reviewed_by_human: false on all. Fills hard cases the first 22 lacked: Germany (Black Forest Labs, Parloa, Helsing), France (Mistral AI), India (Sarvam AI), UK (Synthesia, Wayve), a rebrand with a domain change (Vercel, ex-ZEIT), and two recent listings (eToro, Klarna). Rounds announced in euros carry amount_usd converted at the announcement month's rate, with the euro figure in notes. Review sheet: eval/review/batch4.md."
+    "Batch 4 (2026-10-25): ten companies, Claude-researched from search-result summaries (pages could not be opened from the research sandbox), reviewed_by_human: false on all. Fills hard cases the first 22 lacked: Germany (Black Forest Labs, Parloa, Helsing), France (Mistral AI), India (Sarvam AI), UK (Synthesia, Wayve), a rebrand with a domain change (Vercel, ex-ZEIT), and two recent listings (eToro, Klarna). Rounds announced in euros carry amount_usd converted at the announcement month's rate, with the euro figure in notes. Review sheet: eval/review/batch4.md.",
+    "2026-10-25 — location policy (owner's decision, the Dealroom model): `country`/`city` are the headquarters TODAY; the new `founding_country` is where the company was founded (scored as its own field). Israeli-founded companies now headquartered abroad (Wiz, Cyera, Upwind, HiBob) carry founding_country Israel. Upwind's country moved from Israel to United States on that rule."
   ],
   "companies": [
     {
@@ -518,6 +519,12 @@
         "confidence": "verified",
         "source_url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204425000027/googexhibit99131825.htm"
       },
+      "founding_country": {
+        "value": "Israel",
+        "confidence": "likely",
+        "source_url": "https://www.calcalistech.com/ctech/articles/0,7340,L-3880455,00.html",
+        "notes": "Founded in Tel Aviv in 2020; HQ moved to New York (see hard_case_notes)."
+      },
       "founded_year": {
         "value": 2020,
         "confidence": "verified",
@@ -673,6 +680,12 @@
         "value": "Israel",
         "confidence": "verified",
         "source_url": "https://www.sec.gov/Archives/edgar/data/1762301/000110465920041146/tm203275-1_20f.htm"
+      },
+      "founding_country": {
+        "value": "Israel",
+        "confidence": "verified",
+        "source_url": "https://www.sec.gov/Archives/edgar/data/1762301/000110465920041146/tm203275-1_20f.htm",
+        "notes": "Founded in Tel Aviv per its SEC 20-F."
       },
       "founded_year": {
         "value": 2010,
@@ -995,6 +1008,12 @@
         "value": "Germany",
         "confidence": "verified",
         "source_url": "https://techcrunch.com/2016/06/07/celonis-takes-27-5m-led-by-accel-83north-to-grow-the-market-for-big-data-process-mining"
+      },
+      "founding_country": {
+        "value": "Germany",
+        "confidence": "likely",
+        "source_url": "https://techcrunch.com/2016/06/07/celonis-takes-27-5m-led-by-accel-83north-to-grow-the-market-for-big-data-process-mining",
+        "notes": "Founded in Munich in 2011 as a TUM spin-off."
       },
       "founded_year": {
         "value": 2011,
@@ -1820,6 +1839,12 @@
         "confidence": "verified",
         "source_url": "https://techcrunch.com/2025/12/11/port-raises-100m-at-800m-valuation-to-take-on-spotifys-backstage"
       },
+      "founding_country": {
+        "value": "Israel",
+        "confidence": "likely",
+        "source_url": "https://www.calcalistech.com/ctechnews/article/r1vronkjt",
+        "notes": "Israeli-founded per Israeli press describing it as an Israeli company; reviewer to confirm the quote says so of the company."
+      },
       "founded_year": {
         "value": 2022,
         "confidence": "unknown",
@@ -1912,6 +1937,12 @@
         "value": "Israel",
         "confidence": "verified",
         "source_url": "https://en.globes.co.il/en/article-israeli-edge-ai-chipmaker-hailo-raises-136m-1001387010"
+      },
+      "founding_country": {
+        "value": "Israel",
+        "confidence": "likely",
+        "source_url": "https://en.globes.co.il/en/article-israeli-edge-ai-chipmaker-hailo-raises-136m-1001387010",
+        "notes": "Israeli-founded per Israeli press describing it as an Israeli company; reviewer to confirm the quote says so of the company."
       },
       "founded_year": {
         "value": 2017,
@@ -2010,6 +2041,12 @@
         "value": "United States",
         "confidence": "likely",
         "source_url": "https://www.securityweek.com/cyera-raises-400-million-at-9-billion-valuation/"
+      },
+      "founding_country": {
+        "value": "Israel",
+        "confidence": "likely",
+        "source_url": "https://en.globes.co.il/en/article-1001512567",
+        "notes": "Founded and built in Israel; HQ now New York (see hard_case_notes)."
       },
       "founded_year": {
         "value": 2021,
@@ -2121,6 +2158,12 @@
         "confidence": "verified",
         "source_url": "https://en.globes.co.il/en/article-1001514443"
       },
+      "founding_country": {
+        "value": "Israel",
+        "confidence": "likely",
+        "source_url": "https://en.globes.co.il/en/article-1001514443",
+        "notes": "Israeli-founded per Israeli press describing it as an Israeli company; reviewer to confirm the quote says so of the company."
+      },
       "founded_year": {
         "value": 2015,
         "confidence": "verified",
@@ -2224,14 +2267,21 @@
       "reviewed_by_human": false,
       "website": "https://www.upwind.io",
       "city": {
-        "confidence": "unknown",
-        "notes": "HQ not established in this pass."
+        "value": "San Francisco",
+        "confidence": "likely",
+        "source_url": "https://en.globes.co.il/en/article-israeli-cybersecurity-co-upwind-raises-100m-report-1001493613"
       },
       "country": {
+        "value": "United States",
+        "confidence": "likely",
+        "source_url": "https://en.globes.co.il/en/article-israeli-cybersecurity-co-upwind-raises-100m-report-1001493613",
+        "notes": "HQ in San Francisco with the R&D centre in Tel Aviv (Globes 2024; company profiles). Changed 2026-10-25 under the HQ-now rule; founding_country carries Israel."
+      },
+      "founding_country": {
         "value": "Israel",
         "confidence": "likely",
         "source_url": "https://en.globes.co.il/en/article-1001495634",
-        "notes": "Open (2026-10-25): Globes (2024) describes a San Francisco headquarters with the R&D centre in Tel Aviv, and Upwind's profiles say the same. Reviewer to decide between Israel, United States and unknown."
+        "notes": "Founded in 2022 by four Israeli entrepreneurs; R&D in Tel Aviv, HQ San Francisco."
       },
       "founded_year": {
         "value": 2022,
@@ -2333,6 +2383,12 @@
         "confidence": "unknown",
         "notes": "Founded in Israel; Wikipedia lists a US HQ."
       },
+      "founding_country": {
+        "value": "Israel",
+        "confidence": "likely",
+        "source_url": "https://www.calcalistech.com/ctechnews/article/h1tsdarqge",
+        "notes": "Founded in Tel Aviv in 2014; HQ disputed (Israel vs US), so `country` stays unknown."
+      },
       "founded_year": {
         "value": 2014,
         "confidence": "likely",
@@ -2408,6 +2464,12 @@
         "value": "United Kingdom",
         "confidence": "likely",
         "source_url": "https://www.hibob.com/about/"
+      },
+      "founding_country": {
+        "value": "Israel",
+        "confidence": "likely",
+        "source_url": "https://en.wikipedia.org/wiki/HiBob",
+        "notes": "Founded in Tel Aviv; HQ London per its own site."
       },
       "founded_year": {
         "value": 2015,
@@ -2498,6 +2560,12 @@
         "confidence": "verified",
         "source_url": "https://www.timesofisrael.com/israels-aidoc-raises-110m-for-ai-tech-that-reads-imaging-scans/"
       },
+      "founding_country": {
+        "value": "Israel",
+        "confidence": "likely",
+        "source_url": "https://www.timesofisrael.com/israels-aidoc-raises-110m-for-ai-tech-that-reads-imaging-scans/",
+        "notes": "Israeli-founded per Israeli press describing it as an Israeli company; reviewer to confirm the quote says so of the company."
+      },
       "founded_year": {
         "value": 2016,
         "confidence": "verified",
@@ -2579,6 +2647,12 @@
       "country": {
         "confidence": "unknown"
       },
+      "founding_country": {
+        "value": "Israel",
+        "confidence": "likely",
+        "source_url": "https://en.globes.co.il/en/article-1001419790",
+        "notes": "Founded in Tel Aviv in 2016; HQ New York vs Tel Aviv not scored."
+      },
       "founded_year": {
         "value": 2016,
         "confidence": "verified",
@@ -2629,6 +2703,12 @@
         "value": "Israel",
         "confidence": "verified",
         "source_url": "https://archive.israel21c.org/israeli-startup-raises-50m-to-stop-app-based-cyberattacks/"
+      },
+      "founding_country": {
+        "value": "Israel",
+        "confidence": "likely",
+        "source_url": "https://archive.israel21c.org/israeli-startup-raises-50m-to-stop-app-based-cyberattacks/",
+        "notes": "Israeli-founded per Israeli press describing it as an Israeli company; reviewer to confirm the quote says so of the company."
       },
       "founded_year": {
         "value": 2022,
@@ -3522,6 +3602,12 @@
         "confidence": "verified",
         "source_url": "https://en.wikipedia.org/wiki/EToro"
       },
+      "founding_country": {
+        "value": "Israel",
+        "confidence": "verified",
+        "source_url": "https://en.wikipedia.org/wiki/EToro",
+        "notes": "Founded in Tel Aviv in 2007 (Wikipedia, Renaissance Capital)."
+      },
       "founded_year": {
         "value": 2007,
         "confidence": "verified",
@@ -3579,6 +3665,12 @@
         "value": "Sweden",
         "confidence": "verified",
         "source_url": "https://en.wikipedia.org/wiki/Klarna"
+      },
+      "founding_country": {
+        "value": "Sweden",
+        "confidence": "verified",
+        "source_url": "https://en.wikipedia.org/wiki/Klarna",
+        "notes": "Founded in Stockholm in 2005."
       },
       "founded_year": {
         "value": 2005,

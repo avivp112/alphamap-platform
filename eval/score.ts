@@ -25,6 +25,8 @@ export interface GoldenRound {
 export interface GoldenCompany {
   id: string; name: string; website?: string;
   city?: GoldenField<string>; country?: GoldenField<string>; founded_year?: GoldenField<number>;
+  /** Where it was founded, beside the HQ `country` (lib/enrichment/origin.ts). */
+  founding_country?: GoldenField<string>;
   founders?: GoldenFounder[]; funding_rounds?: GoldenRound[];
   /** Rounds that probably happened but have no primary source: not scored either way. */
   funding_rounds_excluded_unknown?: Array<Omit<GoldenRound, "confidence"> & { confidence?: Confidence }>;
@@ -41,6 +43,7 @@ export interface PipelineOutput {
   city: string | null;
   country: string | null;
   founded_year: number | null;
+  founding_country?: string | null;
   founders: Array<{ name: string }>;
   rounds: Array<{ round_type: string; amount_raised: number | null; date: string | null }>;
   employee_range: string | null;
@@ -48,7 +51,7 @@ export interface PipelineOutput {
 }
 
 export interface FieldStats { scored: number; produced: number; correct: number }
-export const FIELDS = ["city", "country", "founded_year", "founders", "funding_rounds", "employee_range", "arr_usd"] as const;
+export const FIELDS = ["city", "country", "founding_country", "founded_year", "founders", "funding_rounds", "employee_range", "arr_usd"] as const;
 export type Field = (typeof FIELDS)[number];
 export type Scoreboard = Record<Field, FieldStats>;
 
@@ -164,6 +167,7 @@ export function scoreCompany(board: Scoreboard, g: GoldenCompany, out: PipelineO
   return {
     city: scoreScalar(board.city, g.city, out.city),
     country: scoreScalar(board.country, g.country, out.country),
+    founding_country: scoreScalar(board.founding_country, g.founding_country, out.founding_country),
     founded_year: scoreScalar(board.founded_year, g.founded_year, out.founded_year),
     founders: scoreFounders(board.founders, g.founders, out.founders),
     funding_rounds: scoreRounds(board.funding_rounds, g, out.rounds),

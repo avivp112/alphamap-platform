@@ -168,6 +168,7 @@ Website: https://www.etoro.com · hard cases: went_public, non_us
 |---|---|---|---|
 | city | — | unknown | Bnei Brak (current Wikipedia) vs Tel Aviv (older coverage). |
 | country | Israel | verified | https://en.wikipedia.org/wiki/EToro |
+| founding_country | Israel | verified | https://en.wikipedia.org/wiki/EToro |
 | founded_year | 2007 | verified | https://www.renaissancecapital.com/Profile/ETOR/eToro/IPO |
 | public company | yes | verified | https://www.renaissancecapital.com/Profile/ETOR/eToro/IPO |
 | founder | Yoni Assia (Co-Founder & CEO) | verified | https://en.wikipedia.org/wiki/EToro |
@@ -184,6 +185,7 @@ Website: https://www.klarna.com · hard cases: went_public, non_us
 |---|---|---|---|
 | city | Stockholm | verified | https://en.wikipedia.org/wiki/Klarna |
 | country | Sweden | verified | https://en.wikipedia.org/wiki/Klarna |
+| founding_country | Sweden | verified | https://en.wikipedia.org/wiki/Klarna |
 | founded_year | 2005 | verified | https://en.wikipedia.org/wiki/Klarna |
 | public company | yes | verified | https://fortune.com/2025/09/10/klarna-ipo-2025-stock-debut-nyse-shares-rise-15-percent-wall-street-investors |
 | founder | Sebastian Siemiatkowski (Co-Founder & CEO) | verified | https://en.wikipedia.org/wiki/Klarna |

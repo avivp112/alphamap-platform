@@ -360,6 +360,7 @@ export function mergeProfileExtractions(base: V2ProfileExtraction, extra: V2Prof
   for (const key of [
     "website", "description", "description_source_ids", "value_proposition", "value_proposition_source_ids",
     "industry", "founded_year", "sector_name", "sub_sector_name", "linkedin_url", "facebook_url", "instagram_url",
+    "founding_country", "israel_rnd_center",
   ] as const) {
     if (p[key] === undefined && e[key] !== undefined) (p as Record<string, unknown>)[key] = e[key];
   }
