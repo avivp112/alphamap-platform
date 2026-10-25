@@ -43,7 +43,7 @@ Website: https://hailo.ai · hard cases: common_name, non_us
 
 ## Cyera (`cyera`)
 
-Website: — (to fill in) · hard cases: non_us
+Website: https://www.cyera.com (confirmed 2026-10-25: the company's own llms.txt is on cyera.com; cyera.io is used for its email addresses) · hard cases: non_us
 
 > Like Wiz: founded and built in Israel, described as New York-based in its 2025-26 round coverage (one aggregator says San Francisco). Website deliberately left empty for the reviewer to confirm (cyera.io vs cyera.com) — a wrong anchor would mis-test the pipeline.
 
@@ -75,7 +75,7 @@ Website: https://www.catonetworks.com · hard cases: non_us
 | founder | Shlomo Kramer (Co-Founder & CEO) | verified | https://en.globes.co.il/en/article-1001514443 |
 | founder | Gur Shatz (Co-Founder) | verified | https://en.globes.co.il/en/article-1001514443 |
 | round | Series E $130M · 2020-11-17, valuation $1.00B | verified | https://techcrunch.com/2020/11/17/cato-network-snags-100m-series-e-on-1b-valuation-as-cloud-wide-area-networking-thrives/ · https://pulse2.com/cato-networks-130-million-funding-and-over-1-billion-valuation/amp/ |
-| round | Series F $200M · 2021-10, lead Lightspeed Venture Partners, valuation $2.50B | likely | https://investing.com/news/stock-market-news/cato-networks-secures-238-million-funding-plans-2024-ipo-93CH-3178860 |
+| round | Series F $200M · 2021-10, lead Lightspeed Venture Partners, valuation $2.50B | verified | https://en.globes.co.il/en/article-1001387843 · https://www.futuriom.com/articles/news/cato-networks-scores-200-million-on-2-5-billion-valuation/2021/10 — confirmed 2026-10-25; only some outlets use the letter F |
 | round | Private round $238M · 2023-09-20, lead Lightspeed Venture Partners, valuation $3.00B | verified | https://fintech.global/2023/09/20/cato-networks-clinches-238m-investment-at-over-3bn-valuation/ · https://www.agbi.com/article/israeli-cybersecurity-startup-cato-networks-raises-238m/ |
 | round | Series G $359M · 2025-06, lead Vitruvian Partners, valuation $4.80B | verified | https://en.globes.co.il/en/article-1001514443 · https://www.channele2e.com/brief/cato-networks-raises-359m-to-expand-ai-sase |
 | not scored | Series A-D — · 2015-2019 | unknown | Early rounds not traced in this pass. |
@@ -90,7 +90,7 @@ Website: https://www.upwind.io · hard cases: non_us
 | Field | Value | Confidence | Source |
 |---|---|---|---|
 | city | — | unknown | HQ not established in this pass. |
-| country | Israel | likely | https://en.globes.co.il/en/article-1001495634 |
+| country | Israel | likely | https://en.globes.co.il/en/article-1001495634 — open: Globes (2024) and company profiles place the HQ in San Francisco with R&D in Tel Aviv: https://en.globes.co.il/en/article-israeli-cybersecurity-co-upwind-raises-100m-report-1001493613 |
 | founded_year | 2022 | verified | https://calcalistech.com/ctechnews/article/hkxgq11pwjl |
 | founder | Amiram Shachar (Co-Founder & CEO) | verified | https://en.globes.co.il/en/article-1001495634 |
 | founder | Liran Polak (Co-Founder) | likely | https://calcalistech.com/ctechnews/article/hkxgq11pwjl |

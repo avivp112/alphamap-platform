@@ -8,7 +8,8 @@
     "hard_case_tags follow the v2 spec's categories (Section 6 / issue 13): common_name, non_us, rebrand_domain_change, series_a_start, stealth_no_data, went_public.",
     "STATUS: human-reviewed batch of 2 (Apex, Fresha) remains final/reviewed. A second, NOT-yet-human-reviewed batch of 10 (listed in the v3 schema_note above) was added by Claude in this session, covering hard-case categories not in the first batch: non_us (Israel/Wiz & Fiverr, UK/Wise, Germany/Celonis, India/Zepto), rebrand_domain_change (Wise, Shortcut), series_a_start (Wiz, Celonis), stealth_no_data (Safe Superintelligence, Thinking Machines Lab), went_public (Fiverr, Wise), and common_name (Bolt, Mercury, Shortcut). All 10 need the same hybrid human review (city/country/founded_year/every funding round) before counting as final; reviewed_by_human is false on every one. The remaining target-batch companies continue in follow-up sessions.",
     "v3 (this batch): added 10 more companies (bolt-checkout, wiz-security, fiverr, wise-transferwise, celonis, zepto, shortcut-software, safe-superintelligence, mercury-technologies, thinking-machines-lab), Claude-researched only (reviewed_by_human: false on all), same primary-sourcing rules as v2. Two new optional structural fields introduced and used where relevant: is_public_company ({value, confidence, source_url, notes}) to test the public/private boundary explicitly, and hard_case_notes (free-text) for hard-case context that does not fit an existing field (e.g. dual-HQ ambiguity, name-collision disambiguation, bootstrapped-to-Series-A narratives). Also introduced, used only where applicable: rebrand_notes (reused from v2 Fresha pattern), funding_rounds_excluded_unknown (reused from v2), ipo_status (zepto only, for a pending-not-yet-listed IPO case), and acquisition (wiz-security only, for an announced-but-not-closed M&A exit that is NOT a going-public event).",
-    "Batch 3 (2026-10-20): Claude-researched from search-result summaries only (pages could not be opened from the research sandbox), so every value needs the human review before it counts; confidence was set conservatively — 'verified' only where two independent direct-reporting sources agreed. New optional fields: batch (number), arr_usd ({value, as_of, confidence, source_url, notes}) for revenue scoring, and funding_rounds_excluded_unknown is now honoured by eval/score.ts (an extracted round matching one of them is neither right nor wrong). Round type 'Unknown' marks a round whose letter the sources contradict."
+    "Batch 3 (2026-10-20): Claude-researched from search-result summaries only (pages could not be opened from the research sandbox), so every value needs the human review before it counts; confidence was set conservatively — 'verified' only where two independent direct-reporting sources agreed. New optional fields: batch (number), arr_usd ({value, as_of, confidence, source_url, notes}) for revenue scoring, and funding_rounds_excluded_unknown is now honoured by eval/score.ts (an extracted round matching one of them is neither right nor wrong). Round type 'Unknown' marks a round whose letter the sources contradict.",
+    "Batch 4 (2026-10-25): ten companies, Claude-researched from search-result summaries (pages could not be opened from the research sandbox), reviewed_by_human: false on all. Fills hard cases the first 22 lacked: Germany (Black Forest Labs, Parloa, Helsing), France (Mistral AI), India (Sarvam AI), UK (Synthesia, Wayve), a rebrand with a domain change (Vercel, ex-ZEIT), and two recent listings (eToro, Klarna). Rounds announced in euros carry amount_usd converted at the announcement month's rate, with the euro figure in notes. Review sheet: eval/review/batch4.md."
   ],
   "companies": [
     {
@@ -1999,6 +2000,7 @@
       ],
       "hard_case_notes": "Like Wiz: founded and built in Israel, described as New York-based in its 2025-26 round coverage (one aggregator says San Francisco). Website deliberately left empty for the reviewer to confirm (cyera.io vs cyera.com) — a wrong anchor would mis-test the pipeline.",
       "reviewed_by_human": false,
+      "website": "https://www.cyera.com",
       "city": {
         "value": "New York",
         "confidence": "likely",
@@ -2157,11 +2159,13 @@
           "date": "2021-10",
           "lead_investor": "Lightspeed Venture Partners",
           "valuation_usd": 2500000000,
-          "confidence": "likely",
+          "confidence": "verified",
           "source_urls": [
+            "https://en.globes.co.il/en/article-1001387843",
+            "https://www.futuriom.com/articles/news/cato-networks-scores-200-million-on-2-5-billion-valuation/2021/10",
             "https://investing.com/news/stock-market-news/cato-networks-secures-238-million-funding-plans-2024-ipo-93CH-3178860"
           ],
-          "notes": "Only one source calls it Series F."
+          "notes": "Amount, date, lead and valuation confirmed by Globes and Futuriom (2026-10-25). Only some outlets call it Series F; Globes gives no letter."
         },
         {
           "type": "Private round",
@@ -2226,7 +2230,8 @@
       "country": {
         "value": "Israel",
         "confidence": "likely",
-        "source_url": "https://en.globes.co.il/en/article-1001495634"
+        "source_url": "https://en.globes.co.il/en/article-1001495634",
+        "notes": "Open (2026-10-25): Globes (2024) describes a San Francisco headquarters with the R&D centre in Tel Aviv, and Upwind's profiles say the same. Reviewer to decide between Israel, United States and unknown."
       },
       "founded_year": {
         "value": 2022,
@@ -2688,6 +2693,925 @@
           "notes": "Total ~$78-80M."
         }
       ]
+    },
+    {
+      "id": "black-forest-labs",
+      "name": "Black Forest Labs",
+      "aka": [
+        "BFL"
+      ],
+      "batch": 4,
+      "hard_case_tags": [
+        "non_us"
+      ],
+      "hard_case_notes": "Founded in 2024 by the creators of Stable Diffusion (ex-Stability AI). Over $450M raised in about four rounds, but only the $31M first round and the $300M Series B were announced; the round in between is described as an unannounced a16z-led Series A. One directory places the company in Zürich; the press says Freiburg.",
+      "reviewed_by_human": false,
+      "website": "https://bfl.ai",
+      "city": {
+        "value": "Freiburg",
+        "confidence": "likely",
+        "source_url": "https://sifted.eu/articles/black-forest-labs-300m-series-b"
+      },
+      "country": {
+        "value": "Germany",
+        "confidence": "verified",
+        "source_url": "https://sifted.eu/articles/black-forest-labs-300m-series-b"
+      },
+      "founded_year": {
+        "value": 2024,
+        "confidence": "verified",
+        "source_url": "https://www.deutsche-startups.de/2025/12/01/dealmonitor-black-forest-labs-unicorn/?amp=1"
+      },
+      "founders": [
+        {
+          "name": "Robin Rombach",
+          "title": "Co-Founder & CEO",
+          "confidence": "likely",
+          "source_url": "https://www.deutsche-startups.de/2025/12/01/dealmonitor-black-forest-labs-unicorn/?amp=1"
+        },
+        {
+          "name": "Patrick Esser",
+          "title": "Co-Founder",
+          "confidence": "likely",
+          "source_url": "https://www.deutsche-startups.de/2025/12/01/dealmonitor-black-forest-labs-unicorn/?amp=1"
+        },
+        {
+          "name": "Andreas Blattmann",
+          "title": "Co-Founder",
+          "confidence": "likely",
+          "source_url": "https://www.deutsche-startups.de/2025/12/01/dealmonitor-black-forest-labs-unicorn/?amp=1"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Seed",
+          "amount_usd": 31000000,
+          "date": "2024-08",
+          "lead_investor": "Andreessen Horowitz",
+          "valuation_usd": null,
+          "confidence": "likely",
+          "source_urls": [
+            "https://t3n.de/news/?p=1709702"
+          ],
+          "notes": "Reported as $31M (some say €28M) from a16z, General Catalyst, Mätch VC and angels. One later report calls the a16z-led round a Series A, so the letter is uncertain."
+        },
+        {
+          "type": "Series B",
+          "amount_usd": 300000000,
+          "date": "2025-12-01",
+          "lead_investor": "AMP / Salesforce Ventures (co-leads)",
+          "valuation_usd": 3250000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://sifted.eu/articles/black-forest-labs-300m-series-b",
+            "https://pulse2.com/black-forest-labs-300-million-series-b-at-3-25-billion-valuation-raised-to-advance-frontier-visual-intelligence/amp/"
+          ]
+        }
+      ],
+      "funding_rounds_excluded_unknown": [
+        {
+          "type": "Series A",
+          "amount_usd": null,
+          "date": "2025",
+          "confidence": "unknown",
+          "notes": "Unannounced a16z-led round between the seed and the Series B (Pulse 2.0); amount never disclosed."
+        }
+      ]
+    },
+    {
+      "id": "parloa",
+      "name": "Parloa",
+      "aka": [],
+      "batch": 4,
+      "hard_case_tags": [
+        "non_us"
+      ],
+      "hard_case_notes": "Berlin conversational-AI company. Founding year 2018 per the company and Vestbee; Dealroom says 2017. The Series A was $21M at first close and $27M after a second close.",
+      "reviewed_by_human": false,
+      "website": "https://www.parloa.com",
+      "city": {
+        "value": "Berlin",
+        "confidence": "verified",
+        "source_url": "https://techcrunch.com/2026/01/15/parloa-triples-its-valuation-in-8-months-to-3b-with-350m-raise"
+      },
+      "country": {
+        "value": "Germany",
+        "confidence": "verified",
+        "source_url": "https://techcrunch.com/2026/01/15/parloa-triples-its-valuation-in-8-months-to-3b-with-350m-raise"
+      },
+      "founded_year": {
+        "value": 2018,
+        "confidence": "likely",
+        "source_url": "https://www.vestbee.com/insights/articles/parloa-raises-350-m",
+        "notes": "Dealroom lists 2017; the company and Vestbee say 2018."
+      },
+      "founders": [
+        {
+          "name": "Malte Kosub",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://techcrunch.com/2026/01/15/parloa-triples-its-valuation-in-8-months-to-3b-with-350m-raise"
+        },
+        {
+          "name": "Stefan Ostwald",
+          "title": "Co-Founder & CTO",
+          "confidence": "verified",
+          "source_url": "https://techcrunch.com/2026/01/15/parloa-triples-its-valuation-in-8-months-to-3b-with-350m-raise"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Series A",
+          "amount_usd": 21000000,
+          "date": "2023",
+          "lead_investor": "EQT Ventures",
+          "valuation_usd": null,
+          "confidence": "likely",
+          "source_urls": [
+            "https://www.parloa.com/?p=23798"
+          ],
+          "notes": "$21M first close; a second close took the Series A to $27M. Either figure should match within the pipeline's own dedup; scored against the first close."
+        },
+        {
+          "type": "Series B",
+          "amount_usd": 66000000,
+          "date": "2024-04",
+          "lead_investor": "Altimeter Capital",
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://podwise.ai/episodes/1137683",
+            "https://siliconcanals.com/?p=63417"
+          ]
+        },
+        {
+          "type": "Series C",
+          "amount_usd": 120000000,
+          "date": "2025-05",
+          "lead_investor": "Durable Capital Partners / Altimeter Capital / General Catalyst (co-leads)",
+          "valuation_usd": 1000000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.silicon.co.uk/press-release/parloa-raises-120m-series-c-to-reinvent-customer-service-with-agentic-ai",
+            "https://www.startbase.com/news/parloa-wird-unicorn-120-mio-us-dollar-finanzierungsrunde/"
+          ],
+          "notes": "Reuters dates it July 2025; most coverage May 2025."
+        },
+        {
+          "type": "Series D",
+          "amount_usd": 350000000,
+          "date": "2026-01-15",
+          "lead_investor": "General Catalyst",
+          "valuation_usd": 3000000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://techcrunch.com/2026/01/15/parloa-triples-its-valuation-in-8-months-to-3b-with-350m-raise",
+            "https://finance.yahoo.com/news/german-ai-startup-parloa-triples-135110599.html"
+          ]
+        }
+      ],
+      "funding_rounds_excluded_unknown": [
+        {
+          "type": "Seed",
+          "amount_usd": 4000000,
+          "date": "2022-05",
+          "confidence": "unknown",
+          "notes": "Only aggregators (Seedtable) report a ~$4M seed; no primary announcement found."
+        }
+      ]
+    },
+    {
+      "id": "helsing",
+      "name": "Helsing",
+      "aka": [
+        "Helsing AI"
+      ],
+      "batch": 4,
+      "hard_case_tags": [
+        "non_us"
+      ],
+      "hard_case_notes": "Munich defence-AI company. All rounds were announced in euros except the 2026 Series E. The Series E lead is disputed (Dragoneer per Seedtable and Latham; Goldman Sachs Alternatives per Bloomberg); the company's own release names no lead.",
+      "reviewed_by_human": false,
+      "website": "https://helsing.ai",
+      "city": {
+        "value": "Munich",
+        "confidence": "verified",
+        "source_url": "https://www.munich-startup.de/en/news/helsing-raises-450-million-euros-in-series-c"
+      },
+      "country": {
+        "value": "Germany",
+        "confidence": "verified",
+        "source_url": "https://www.munich-startup.de/en/news/helsing-raises-450-million-euros-in-series-c"
+      },
+      "founded_year": {
+        "value": 2021,
+        "confidence": "verified",
+        "source_url": "https://en.wikipedia.org/wiki/Helsing_(company)"
+      },
+      "founders": [
+        {
+          "name": "Torsten Reil",
+          "title": "Co-Founder & Co-CEO",
+          "confidence": "verified",
+          "source_url": "https://en.wikipedia.org/wiki/Helsing_(company)"
+        },
+        {
+          "name": "Gundbert Scherf",
+          "title": "Co-Founder & Co-CEO",
+          "confidence": "verified",
+          "source_url": "https://en.wikipedia.org/wiki/Helsing_(company)"
+        },
+        {
+          "name": "Niklas Köhler",
+          "title": "Co-Founder & President",
+          "confidence": "verified",
+          "source_url": "https://en.wikipedia.org/wiki/Helsing_(company)"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Series A",
+          "amount_usd": 116000000,
+          "date": "2021-11",
+          "lead_investor": "Prima Materia",
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://en.wikipedia.org/wiki/Helsing_(company)",
+            "https://tech.eu/2025/06/17/helsing-raises-600-million-elevating-valuation-to-eur12bn/"
+          ],
+          "notes": "€103M. Announced in euros; amount_usd converted at the rate of the announcement month (eval tolerance is ±10%)."
+        },
+        {
+          "type": "Series B",
+          "amount_usd": 223000000,
+          "date": "2023-09",
+          "lead_investor": "General Catalyst",
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://en.wikipedia.org/wiki/Helsing_(company)",
+            "https://siliconcanals.com/german-defence-ai-startup-helsing-secures-e450m/"
+          ],
+          "notes": "€209M. Announced in euros; amount_usd converted at the rate of the announcement month (eval tolerance is ±10%)."
+        },
+        {
+          "type": "Series C",
+          "amount_usd": 487000000,
+          "date": "2024-07",
+          "lead_investor": "General Catalyst",
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.munich-startup.de/en/news/helsing-raises-450-million-euros-in-series-c",
+            "https://siliconcanals.com/german-defence-ai-startup-helsing-secures-e450m/"
+          ],
+          "notes": "€450M; valuation reported ~€4.5B pre-money / €4.9B (Bloomberg), not scored. Announced in euros; amount_usd converted at the rate of the announcement month (eval tolerance is ±10%)."
+        },
+        {
+          "type": "Series D",
+          "amount_usd": 694000000,
+          "date": "2025-06-17",
+          "lead_investor": "Prima Materia",
+          "valuation_usd": 13800000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://tech.eu/2025/06/17/helsing-raises-600-million-elevating-valuation-to-eur12bn/",
+            "https://www.munich-startup.de/en/news/helsing-secures-additional-600-million-euros"
+          ],
+          "notes": "€600M at ~€12B. Announced in euros; amount_usd converted at the rate of the announcement month (eval tolerance is ±10%)."
+        },
+        {
+          "type": "Series E",
+          "amount_usd": 1800000000,
+          "date": "2026-07-13",
+          "lead_investor": null,
+          "valuation_usd": 18000000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://helsing.ai/newsroom/helsing-raises-1-8bn-in-series-e",
+            "https://thenextweb.com/news/helsing-1-8-billion-series-e-18-billion-valuation"
+          ],
+          "notes": "Lead disputed (Dragoneer vs Goldman Sachs Alternatives); left null."
+        }
+      ]
+    },
+    {
+      "id": "sarvam-ai",
+      "name": "Sarvam AI",
+      "aka": [
+        "Sarvam"
+      ],
+      "batch": 4,
+      "hard_case_tags": [
+        "non_us"
+      ],
+      "hard_case_notes": "Bengaluru generative-AI company founded mid-2023 by the AI4Bharat founders. The December 2023 $41M is described by TechCrunch as spanning a seed and a Series A, by others as one Series A. A June 2026 Series B first close of $234M (of a $300M target) is reported by Indian press only.",
+      "reviewed_by_human": false,
+      "website": "https://www.sarvam.ai",
+      "city": {
+        "value": "Bengaluru",
+        "confidence": "verified",
+        "source_url": "https://techcrunch.com/2023/12/06/indias-sarvam-ai-raises-41-million-from-lightspeed-khosla-peak-xv"
+      },
+      "country": {
+        "value": "India",
+        "confidence": "verified",
+        "source_url": "https://techcrunch.com/2023/12/06/indias-sarvam-ai-raises-41-million-from-lightspeed-khosla-peak-xv"
+      },
+      "founded_year": {
+        "value": 2023,
+        "confidence": "verified",
+        "source_url": "https://inc42.com/?p=430515"
+      },
+      "founders": [
+        {
+          "name": "Vivek Raghavan",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://inc42.com/?p=430515"
+        },
+        {
+          "name": "Pratyush Kumar",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://inc42.com/?p=430515"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Series A",
+          "amount_usd": 41000000,
+          "date": "2023-12-07",
+          "lead_investor": "Lightspeed",
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://sarvam.ai/blogs/announcing-series-a",
+            "https://techcrunch.com/2023/12/06/indias-sarvam-ai-raises-41-million-from-lightspeed-khosla-peak-xv"
+          ],
+          "notes": "Company calls it its Series A; TechCrunch says the $41M spans seed + Series A. A pipeline writing one $41M round is correct; two rounds summing to $41M is a known ambiguity."
+        }
+      ],
+      "funding_rounds_excluded_unknown": [
+        {
+          "type": "Series B",
+          "amount_usd": 234000000,
+          "date": "2026-06",
+          "confidence": "unknown",
+          "notes": "First close of a $300M Series B at $1.5B led by HCLTech/Bessemer, per exchange4media; not confirmed by the company in this pass."
+        }
+      ]
+    },
+    {
+      "id": "synthesia",
+      "name": "Synthesia",
+      "aka": [],
+      "batch": 4,
+      "hard_case_tags": [
+        "non_us"
+      ],
+      "hard_case_notes": "London AI-video company. Series E lead is GV.",
+      "reviewed_by_human": false,
+      "website": "https://www.synthesia.io",
+      "city": {
+        "value": "London",
+        "confidence": "verified",
+        "source_url": "https://en.wikipedia.org/wiki/Synthesia_(company)"
+      },
+      "country": {
+        "value": "United Kingdom",
+        "confidence": "verified",
+        "source_url": "https://en.wikipedia.org/wiki/Synthesia_(company)"
+      },
+      "founded_year": {
+        "value": 2017,
+        "confidence": "verified",
+        "source_url": "https://en.wikipedia.org/wiki/Synthesia_(company)"
+      },
+      "founders": [
+        {
+          "name": "Victor Riparbelli",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://en.wikipedia.org/wiki/Synthesia_(company)"
+        },
+        {
+          "name": "Steffen Tjerrild",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://en.wikipedia.org/wiki/Synthesia_(company)"
+        },
+        {
+          "name": "Lourdes Agapito",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://en.wikipedia.org/wiki/Synthesia_(company)"
+        },
+        {
+          "name": "Matthias Niessner",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://en.wikipedia.org/wiki/Synthesia_(company)"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Series A",
+          "amount_usd": 12500000,
+          "date": "2021-04-21",
+          "lead_investor": "FirstMark Capital",
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.uclb.com/2021/04/21/synthesia-announces-12-5m-series-a-to-replace-cameras-with-code-and-scale-their-ai-video-generation-platform/",
+            "https://globalventuring.com/university/synthesia-visualises-12-5m-series-a/?format=md"
+          ]
+        },
+        {
+          "type": "Series B",
+          "amount_usd": 50000000,
+          "date": "2021-12-08",
+          "lead_investor": "Kleiner Perkins",
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://techcrunch.com/2021/12/08/synthesia-raises-50m-to-leverage-synthetic-avatars-for-corporate-training-and-more/embed"
+          ]
+        },
+        {
+          "type": "Series C",
+          "amount_usd": 90000000,
+          "date": "2023-06",
+          "lead_investor": "Accel / NVentures (co-leads)",
+          "valuation_usd": 1000000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.ldv.co/blog/congratulations-to-synthesia-on-their-90m-series-c-led-by-accel-at-a-1b-valuation"
+          ],
+          "notes": "One aggregator lists $180M for 2023; that is the 2025 Series D."
+        },
+        {
+          "type": "Series D",
+          "amount_usd": 180000000,
+          "date": "2025-01",
+          "lead_investor": "NEA",
+          "valuation_usd": 2100000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.verdict.co.uk/synthesia-180m-funding-for-ai/",
+            "https://siliconcanals.com/london-unicorn-synthesia-secures-174-5m/"
+          ]
+        },
+        {
+          "type": "Series E",
+          "amount_usd": 200000000,
+          "date": "2026-01-26",
+          "lead_investor": "GV",
+          "valuation_usd": 4000000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.uclb.com/2026/01/27/synthesia-increases-valuation-to-4bn-powering-the-uks-ai-ambition/",
+            "https://www.lw.com/en/news/2026/01/latham-watkins-advises-synthesia-on-us200-million-series-e-and-secondary-transaction"
+          ]
+        }
+      ],
+      "funding_rounds_excluded_unknown": [
+        {
+          "type": "Seed",
+          "amount_usd": null,
+          "date": "2017-2020",
+          "confidence": "unknown",
+          "notes": "Seed-stage funding (LDV Capital, Seedcamp, MMC) not traced to a dated announcement."
+        }
+      ]
+    },
+    {
+      "id": "wayve",
+      "name": "Wayve",
+      "aka": [
+        "Wayve Technologies"
+      ],
+      "batch": 4,
+      "hard_case_tags": [
+        "non_us"
+      ],
+      "hard_case_notes": "London autonomous-driving company. Founded by Alex Kendall and Amar Shah; Shah left in 2020. The Series D (Feb 2026) has a further $300M milestone-based commitment from Uber on top of the $1.2B — the round is $1.2B, not $1.5B.",
+      "reviewed_by_human": false,
+      "website": "https://wayve.ai",
+      "city": {
+        "value": "London",
+        "confidence": "verified",
+        "source_url": "https://en.wikipedia.org/wiki/Wayve"
+      },
+      "country": {
+        "value": "United Kingdom",
+        "confidence": "verified",
+        "source_url": "https://en.wikipedia.org/wiki/Wayve"
+      },
+      "founded_year": {
+        "value": 2017,
+        "confidence": "verified",
+        "source_url": "https://en.wikipedia.org/wiki/Wayve"
+      },
+      "founders": [
+        {
+          "name": "Alex Kendall",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://en.wikipedia.org/wiki/Wayve"
+        },
+        {
+          "name": "Amar Shah",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://en.wikipedia.org/wiki/Wayve"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Series A",
+          "amount_usd": 20000000,
+          "date": "2019-11",
+          "lead_investor": "Eclipse Ventures",
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.intelligenttransport.com/?p=92462",
+            "https://en.wikipedia.org/wiki/Wayve"
+          ]
+        },
+        {
+          "type": "Series B",
+          "amount_usd": 200000000,
+          "date": "2022-01",
+          "lead_investor": "Eclipse Ventures",
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://pymnts.com/?p=1224834",
+            "https://en.wikipedia.org/wiki/Wayve"
+          ]
+        },
+        {
+          "type": "Series C",
+          "amount_usd": 1050000000,
+          "date": "2024-05-07",
+          "lead_investor": "SoftBank Group",
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://sifted.eu/articles/wayve-1bn-raise-nvidia-microsoft-softbank-news",
+            "https://coverager.com/wayve-raises-1-05-billion/"
+          ]
+        },
+        {
+          "type": "Series D",
+          "amount_usd": 1200000000,
+          "date": "2026-02-25",
+          "lead_investor": "Eclipse / Balderton / SoftBank Vision Fund 2 (co-leads)",
+          "valuation_usd": 8600000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.uktech.news/ai/wayve-series-d-20260225",
+            "https://autotechinsight.spglobal.com/news/5286893/wayve-secures-12-billion-in-series-d-to-expand-autonomous-driving-ai-platform"
+          ]
+        }
+      ],
+      "funding_rounds_excluded_unknown": [
+        {
+          "type": "Seed",
+          "amount_usd": null,
+          "date": "2018",
+          "confidence": "unknown",
+          "notes": "Seed from Compound and Firstminute Capital; amount not traced."
+        }
+      ]
+    },
+    {
+      "id": "vercel",
+      "name": "Vercel",
+      "aka": [
+        "ZEIT"
+      ],
+      "batch": 4,
+      "hard_case_tags": [
+        "rebrand_domain_change"
+      ],
+      "hard_case_notes": "Founded as ZEIT (zeit.co), renamed Vercel (vercel.com) on 2020-04-21 together with its Series A announcement. Founding year conflicts: Wikipedia 2015, the company's own blog 'In 2016, we started'. Argentine founder, San Francisco HQ.",
+      "reviewed_by_human": false,
+      "website": "https://vercel.com",
+      "city": {
+        "value": "San Francisco",
+        "confidence": "verified",
+        "source_url": "https://en.wikipedia.org/wiki/Vercel"
+      },
+      "country": {
+        "value": "United States",
+        "confidence": "verified",
+        "source_url": "https://en.wikipedia.org/wiki/Vercel"
+      },
+      "founded_year": {
+        "confidence": "unknown",
+        "notes": "2015 (Wikipedia, timelines) vs 2016 (the company's own ZEIT-is-now-Vercel post)."
+      },
+      "founders": [
+        {
+          "name": "Guillermo Rauch",
+          "title": "Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://en.wikipedia.org/wiki/Vercel"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Series A",
+          "amount_usd": 21000000,
+          "date": "2020-04-21",
+          "lead_investor": "Accel / CRV (co-leads)",
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://vercel.com/blog/zeit-is-now-vercel",
+            "https://sdtimes.com/softwaredev/vercel-raises-21-million-to-transform-javascript-front-end-development"
+          ]
+        },
+        {
+          "type": "Series B",
+          "amount_usd": 40000000,
+          "date": "2020-12-16",
+          "lead_investor": "GV",
+          "valuation_usd": null,
+          "confidence": "likely",
+          "source_urls": [
+            "https://www.alexanderjarvis.com/vercel-pitch-deck-to-raise-40m-series-b-round/"
+          ],
+          "notes": "One timeline dates it June 2020."
+        },
+        {
+          "type": "Series C",
+          "amount_usd": 102000000,
+          "date": "2021-06",
+          "lead_investor": "Bedrock Capital",
+          "valuation_usd": 1100000000,
+          "confidence": "likely",
+          "source_urls": [
+            "https://en.wikipedia.org/wiki/Vercel"
+          ]
+        },
+        {
+          "type": "Series D",
+          "amount_usd": 150000000,
+          "date": "2021-11",
+          "lead_investor": "GGV Capital",
+          "valuation_usd": 2500000000,
+          "confidence": "likely",
+          "source_urls": [
+            "https://news.crunchbase.com/cloud/vercels-cloud-web-applications-funding-valuation-accel/"
+          ]
+        },
+        {
+          "type": "Series E",
+          "amount_usd": 250000000,
+          "date": "2024-05",
+          "lead_investor": "Accel",
+          "valuation_usd": 3250000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.nasdaq.com/articles/vercels-valuation-jumps-325b-after-250m-series-e",
+            "https://latamlist.com/argentine-unicorn-vercel-secures-250m-series-e/"
+          ]
+        },
+        {
+          "type": "Series F",
+          "amount_usd": 300000000,
+          "date": "2025-09",
+          "lead_investor": "Accel / GIC (co-leads)",
+          "valuation_usd": 9300000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://en.wikipedia.org/wiki/Vercel"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mistral-ai",
+      "name": "Mistral AI",
+      "aka": [
+        "Mistral"
+      ],
+      "batch": 4,
+      "hard_case_tags": [
+        "non_us",
+        "common_name"
+      ],
+      "hard_case_notes": "Paris. Every round announced in euros. 'Mistral' is also a wind, a French warship class and other companies.",
+      "reviewed_by_human": false,
+      "website": "https://mistral.ai",
+      "city": {
+        "value": "Paris",
+        "confidence": "verified",
+        "source_url": "https://www.orrick.com/en/News/2025/09/Orrick-conseille-Mistral-AI-dans-le-cadre-de-sa-levee-de-fonds-en-Serie-C"
+      },
+      "country": {
+        "value": "France",
+        "confidence": "verified",
+        "source_url": "https://www.orrick.com/en/News/2025/09/Orrick-conseille-Mistral-AI-dans-le-cadre-de-sa-levee-de-fonds-en-Serie-C"
+      },
+      "founded_year": {
+        "value": 2023,
+        "confidence": "verified",
+        "source_url": "https://www.orrick.com/en/News/2025/09/Orrick-conseille-Mistral-AI-dans-le-cadre-de-sa-levee-de-fonds-en-Serie-C"
+      },
+      "founders": [
+        {
+          "name": "Arthur Mensch",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://www.orrick.com/en/News/2025/09/Orrick-conseille-Mistral-AI-dans-le-cadre-de-sa-levee-de-fonds-en-Serie-C"
+        },
+        {
+          "name": "Guillaume Lample",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://www.orrick.com/en/News/2025/09/Orrick-conseille-Mistral-AI-dans-le-cadre-de-sa-levee-de-fonds-en-Serie-C"
+        },
+        {
+          "name": "Timothée Lacroix",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://www.orrick.com/en/News/2025/09/Orrick-conseille-Mistral-AI-dans-le-cadre-de-sa-levee-de-fonds-en-Serie-C"
+        }
+      ],
+      "funding_rounds": [
+        {
+          "type": "Seed",
+          "amount_usd": 113000000,
+          "date": "2023-06",
+          "lead_investor": "Lightspeed Venture Partners",
+          "valuation_usd": null,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.orrick.com/en/News/2025/09/Orrick-conseille-Mistral-AI-dans-le-cadre-de-sa-levee-de-fonds-en-Serie-C",
+            "https://www.longtermwiki.com/funding-rounds/mistral-ai-series-c"
+          ],
+          "notes": "€105M. Announced in euros; amount_usd converted at the rate of the announcement month (eval tolerance is ±10%)."
+        },
+        {
+          "type": "Series A",
+          "amount_usd": 415000000,
+          "date": "2023-12",
+          "lead_investor": "Andreessen Horowitz",
+          "valuation_usd": null,
+          "confidence": "likely",
+          "source_urls": [
+            "https://www.orrick.com/en/News/2025/09/Orrick-conseille-Mistral-AI-dans-le-cadre-de-sa-levee-de-fonds-en-Serie-C"
+          ],
+          "notes": "€385M. Lead per press at the time, not re-confirmed in this pass. Announced in euros; amount_usd converted at the rate of the announcement month (eval tolerance is ±10%)."
+        },
+        {
+          "type": "Series B",
+          "amount_usd": 640000000,
+          "date": "2024-06",
+          "lead_investor": "General Catalyst",
+          "valuation_usd": 6200000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://www.orrick.com/en/News/2025/09/Orrick-conseille-Mistral-AI-dans-le-cadre-de-sa-levee-de-fonds-en-Serie-C",
+            "https://www.longtermwiki.com/funding-rounds/mistral-ai-series-c"
+          ],
+          "notes": "€600M. Announced in euros; amount_usd converted at the rate of the announcement month (eval tolerance is ±10%)."
+        },
+        {
+          "type": "Series C",
+          "amount_usd": 2000000000,
+          "date": "2025-09",
+          "lead_investor": "ASML",
+          "valuation_usd": 13700000000,
+          "confidence": "verified",
+          "source_urls": [
+            "https://sifted.eu/articles/mistral-confirms-series-c-asml",
+            "https://www.orrick.com/en/News/2025/09/Orrick-conseille-Mistral-AI-dans-le-cadre-de-sa-levee-de-fonds-en-Serie-C"
+          ],
+          "notes": "€1.7B at €11.7B post-money; ASML put in €1.3B. Announced in euros; amount_usd converted at the rate of the announcement month (eval tolerance is ±10%)."
+        }
+      ]
+    },
+    {
+      "id": "etoro",
+      "name": "eToro",
+      "aka": [
+        "RetailFX",
+        "eToro Group"
+      ],
+      "batch": 4,
+      "hard_case_tags": [
+        "went_public",
+        "non_us"
+      ],
+      "hard_case_notes": "Public on Nasdaq (ETOR) since 2025-05-14 after an earlier SPAC attempt was abandoned in 2022. Originally RetailFX. Headquarters given as Bnei Brak (current Wikipedia) or Tel Aviv (older coverage) — city not scored. The pipeline should mark it public.",
+      "reviewed_by_human": false,
+      "website": "https://www.etoro.com",
+      "city": {
+        "confidence": "unknown",
+        "notes": "Bnei Brak (current Wikipedia) vs Tel Aviv (older coverage)."
+      },
+      "country": {
+        "value": "Israel",
+        "confidence": "verified",
+        "source_url": "https://en.wikipedia.org/wiki/EToro"
+      },
+      "founded_year": {
+        "value": 2007,
+        "confidence": "verified",
+        "source_url": "https://www.renaissancecapital.com/Profile/ETOR/eToro/IPO"
+      },
+      "is_public_company": {
+        "value": true,
+        "confidence": "verified",
+        "source_url": "https://www.renaissancecapital.com/Profile/ETOR/eToro/IPO",
+        "notes": "Nasdaq: ETOR, priced at $52 on 2025-05-13, trading from 2025-05-14."
+      },
+      "founders": [
+        {
+          "name": "Yoni Assia",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://en.wikipedia.org/wiki/EToro"
+        },
+        {
+          "name": "Ronen Assia",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://en.wikipedia.org/wiki/EToro"
+        },
+        {
+          "name": "David Ring",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://en.wikipedia.org/wiki/EToro"
+        }
+      ],
+      "funding_rounds": []
+    },
+    {
+      "id": "klarna",
+      "name": "Klarna",
+      "aka": [
+        "Klarna Group",
+        "Klarna Bank AB"
+      ],
+      "batch": 4,
+      "hard_case_tags": [
+        "went_public",
+        "non_us"
+      ],
+      "hard_case_notes": "Public on the NYSE (KLAR) since 2025-09-10. Long private funding history (2005-2022) deliberately not scored here; the test is that the pipeline recognises a listed company.",
+      "reviewed_by_human": false,
+      "website": "https://www.klarna.com",
+      "city": {
+        "value": "Stockholm",
+        "confidence": "verified",
+        "source_url": "https://en.wikipedia.org/wiki/Klarna"
+      },
+      "country": {
+        "value": "Sweden",
+        "confidence": "verified",
+        "source_url": "https://en.wikipedia.org/wiki/Klarna"
+      },
+      "founded_year": {
+        "value": 2005,
+        "confidence": "verified",
+        "source_url": "https://en.wikipedia.org/wiki/Klarna"
+      },
+      "is_public_company": {
+        "value": true,
+        "confidence": "verified",
+        "source_url": "https://fortune.com/2025/09/10/klarna-ipo-2025-stock-debut-nyse-shares-rise-15-percent-wall-street-investors",
+        "notes": "NYSE: KLAR from 2025-09-10."
+      },
+      "founders": [
+        {
+          "name": "Sebastian Siemiatkowski",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://en.wikipedia.org/wiki/Klarna"
+        },
+        {
+          "name": "Niklas Adalberth",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://en.wikipedia.org/wiki/Klarna"
+        },
+        {
+          "name": "Victor Jacobsson",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://en.wikipedia.org/wiki/Klarna"
+        }
+      ],
+      "funding_rounds": []
     }
   ]
 }
