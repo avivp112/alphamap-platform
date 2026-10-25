@@ -42,6 +42,7 @@ import {
 } from "../../lib/supabase";
 import { useWatchlistMembership, addToWatchlist, removeFromWatchlist, watchlistErrorMessage } from "../../lib/watchlist";
 import { exportRows, type ExportColumn, type ExportFormat } from "../../lib/exportData";
+import { originFacts, type OriginFacts } from "../../lib/origin";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -81,6 +82,15 @@ const PLACE_PLACEHOLDER_RE = /^\s*<?\s*(unknown|n\/?a|none|null|undefined|tbd|-|
 function placeLabel(city: string | null | undefined, country: string | null | undefined): string | null {
   const parts = [city, country].filter((p): p is string => !!p && !PLACE_PLACEHOLDER_RE.test(p));
   return parts.length > 0 ? parts.join(", ") : null;
+}
+
+/** "Founded in Israel · R&D centre in Israel" — only what adds to the HQ (src/lib/origin.ts). */
+function originNote(o: OriginFacts, t: (k: string, o?: Record<string, unknown>) => string): string | null {
+  const parts = [
+    o.foundedIn ? t("startups.origin.foundedIn", { country: o.foundedIn }) : null,
+    o.rndInIsrael ? t("startups.origin.rndInIsrael") : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
 }
 
 function fmt(usd: number | null | undefined): string {
@@ -1015,8 +1025,10 @@ function CompanySocialRow({ startup }: { startup: Startup }) {
 
 // ── Shared tab primitives ─────────────────────────────────────────────────────
 
-function StatCard({ icon: Icon, label, value, accent = "#F59E0B", onClick }: {
+function StatCard({ icon: Icon, label, value, accent = "#F59E0B", onClick, note }: {
   icon: React.ElementType; label: string; value: string; accent?: string; onClick?: () => void;
+  /** A second, quieter line under the value. */
+  note?: string | null;
 }) {
   const Tag = onClick ? "button" : "div";
   return (
@@ -1034,6 +1046,7 @@ function StatCard({ icon: Icon, label, value, accent = "#F59E0B", onClick }: {
       <span className={`text-sm font-bold truncate ${onClick ? "text-[#0F172A] underline decoration-gray-300 underline-offset-2" : "text-gray-900"}`}>
         {value}
       </span>
+      {note && <span className="text-[10px] font-medium text-gray-500 leading-snug -mt-1">{note}</span>}
     </Tag>
   );
 }
@@ -1162,6 +1175,7 @@ function OverviewTab({
 }) {
   const { t } = useTranslation();
   const location = placeLabel(startup.city, startup.country) ?? "—";
+  const origin = originNote(originFacts(startup), t);
   const sector = classifyIndustry(startup.industry);
   const sectorName = startup.sector?.name ?? sector.parent;
   // A company's stored tags (startup_sub_sectors) can be several, from any
@@ -1189,7 +1203,7 @@ function OverviewTab({
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard icon={Calendar}  label="Founded"     value={startup.founded_year ? String(startup.founded_year) : "—"} accent="#F59E0B" />
-        <StatCard icon={MapPin}    label="Location"    value={location} accent="#0e7490" />
+        <StatCard icon={MapPin}    label={origin ? t("startups.origin.headquarters") : "Location"} value={location} accent="#0e7490" note={origin} />
         <StatCard icon={Users}     label="Employees"   value={employeeValue} accent="#6d28d7" />
         <StatCard
           icon={Briefcase} label="Sector" value={sectorName} accent="#be185d"
@@ -2030,6 +2044,7 @@ function TearsheetModal({
   const roundType   = (detail ? latestLiveRound?.round_type : startup.latest_round_type) ?? null;
   const roundStyle  = roundType ? (ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]) : null;
   const location    = placeLabel(live.city, live.country);
+  const origin      = originNote(originFacts(live), t);
 
   const sortedRounds = useMemo(
     () => [...(detail?.funding_rounds ?? [])].sort(
@@ -2265,6 +2280,12 @@ function TearsheetModal({
               <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[11px] text-[#0F172A]/60">
                 {location && (
                   <span className="flex items-center gap-1"><MapPin className="w-3 h-3 flex-none" />{location}</span>
+                )}
+                {origin && (
+                  <>
+                    <span className="text-[#0F172A]/30">·</span>
+                    <span>{origin}</span>
+                  </>
                 )}
                 {live.founded_year && (
                   <>
@@ -3176,6 +3197,8 @@ export function Startups() {
   // pair so the two never silently AND together into an empty result.
   const [subSectorTag, setSubSectorTag] = useState("");
   const [countryFilter, setCountry]     = useState("");
+  // HQ, founding country or R&D centre in Israel (startups_market.israel_related).
+  const [israelRelated, setIsraelRelated] = useState(false);
   const [stageStep, setStageStep]       = useState<StageStep>("all");
   const [headcountStep, setHeadcount]   = useState<HeadcountStep>("all");
   const [momentumFilter, setMomentum]   = useState(false);
@@ -3406,7 +3429,7 @@ export function Startups() {
     setSearchParams((p) => { p.delete("city"); return p; });
   }
   function clearAll() {
-    setSearch(""); setParentSector(""); setSubSector(""); setSubSectorTag(""); setCountry("");
+    setSearch(""); setParentSector(""); setSubSector(""); setSubSectorTag(""); setCountry(""); setIsraelRelated(false);
     setStageStep("all"); setHeadcount("all"); setMomentum(false); setDensity("all");
     setFundedWithinDays(null);
     clearCityFilter();
@@ -3441,7 +3464,7 @@ export function Startups() {
   }
 
   function applyQuickQuestion(q: QuickQuestion) {
-    setSearch(""); setParentSector(q.parentSector ?? ""); setSubSector(""); setSubSectorTag(""); setCountry("");
+    setSearch(""); setParentSector(q.parentSector ?? ""); setSubSector(""); setSubSectorTag(""); setCountry(""); setIsraelRelated(false);
     setStageStep(q.stageStep ?? "all"); setHeadcount(q.headcountStep ?? "all");
     setMomentum(q.momentum ?? false); setDensity(q.density ?? "all");
     setFundedWithinDays(q.fundedWithinDays ?? null);
@@ -3450,6 +3473,7 @@ export function Startups() {
 
   const activeFilterCount = [
     search, parentSector, subSector, subSectorTag, countryFilter, cityFilter,
+    israelRelated ? "1" : "",
     stageStep !== "all" ? "1" : "",
     headcountStep !== "all" ? "1" : "",
     momentumFilter ? "1" : "",
@@ -3470,6 +3494,7 @@ export function Startups() {
       if (parentSector && subSector) f.sectorSubKeywords = keywordsForSub(parentSector, subSector);
     }
     if (countryFilter) f.country = countryFilter;
+    if (israelRelated) f.israelRelated = true;
     if (cityFilter) f.city = cityFilter;
     if (stageStep !== "all") {
       const step = STAGE_STEPS.find((st) => st.value === stageStep);
@@ -3485,7 +3510,7 @@ export function Startups() {
     if (fundedWithinDays != null) f.fundedWithinDays = fundedWithinDays;
     if (passedIds.size > 0) f.excludeStartupIds = Array.from(passedIds);
     return f;
-  }, [debouncedSearch, parentSector, subSector, subSectorTag, countryFilter, cityFilter, stageStep, headcountStep, momentumFilter, densityFilter, fundedWithinDays, passedIds]);
+  }, [debouncedSearch, parentSector, subSector, subSectorTag, countryFilter, israelRelated, cityFilter, stageStep, headcountStep, momentumFilter, densityFilter, fundedWithinDays, passedIds]);
 
   // Any filter change starts the user back on page 1.
   useEffect(() => { setPage(1); }, [filters]);
@@ -3615,7 +3640,17 @@ export function Startups() {
               )}
 
               <FilterAccordion title={t("startups.countries")} defaultOpen={false}
-                badge={countryFilter ? <FilterBadge>{countryFilter}</FilterBadge> : undefined}>
+                badge={countryFilter || israelRelated
+                  ? <FilterBadge>{[israelRelated ? t("startups.origin.israelRelated") : null, countryFilter || null].filter(Boolean).join(" · ")}</FilterBadge>
+                  : undefined}>
+                <label className="flex items-start gap-2 mb-3 px-1 cursor-pointer select-none">
+                  <input type="checkbox" checked={israelRelated} onChange={(e) => setIsraelRelated(e.target.checked)}
+                    className="mt-0.5 accent-[#0F172A]" />
+                  <span>
+                    <span className="block text-xs font-semibold text-gray-700">{t("startups.origin.israelRelated")}</span>
+                    <span className="block text-[10px] text-gray-400 leading-snug">{t("startups.origin.israelRelatedHint")}</span>
+                  </span>
+                </label>
                 <CountryFilterList countries={countries} value={countryFilter} onChange={setCountry} />
               </FilterAccordion>
 

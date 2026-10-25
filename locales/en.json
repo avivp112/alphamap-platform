@@ -275,6 +275,13 @@
   },
   "startups": {
     "allCountries": "All Countries",
+    "origin": {
+      "headquarters": "Headquarters",
+      "foundedIn": "Founded in {{country}}",
+      "rndInIsrael": "R&D centre in Israel",
+      "israelRelated": "Israel-related",
+      "israelRelatedHint": "Headquartered, founded or with an R&D centre in Israel, as a cited source states"
+    },
     "deepLinkMissing": "This company's profile isn't available yet — it appears here after the next data refresh.",
     "noMatches": "No matches",
     "fundingTimeline": "Funding Timeline",

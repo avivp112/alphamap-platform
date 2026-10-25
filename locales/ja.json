@@ -272,6 +272,13 @@
   },
   "startups": {
     "allCountries": "すべての国",
+    "origin": {
+      "headquarters": "本社",
+      "foundedIn": "創業地: {{country}}",
+      "rndInIsrael": "イスラエルに研究開発拠点",
+      "israelRelated": "イスラエル関連",
+      "israelRelatedHint": "本社・創業地・研究開発拠点のいずれかがイスラエル(出典あり)"
+    },
     "noMatches": "該当なし",
     "fundingTimeline": "資金調達タイムライン",
     "cumulativeRaised": "累計調達額",

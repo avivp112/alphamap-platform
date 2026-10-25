@@ -272,6 +272,13 @@
   },
   "startups": {
     "allCountries": "Todos los países",
+    "origin": {
+      "headquarters": "Sede",
+      "foundedIn": "Fundada en {{country}}",
+      "rndInIsrael": "Centro de I+D en Israel",
+      "israelRelated": "Vinculada a Israel",
+      "israelRelatedHint": "Con sede, fundada o con un centro de I+D en Israel, según una fuente citada"
+    },
     "noMatches": "Sin coincidencias",
     "fundingTimeline": "Cronología de financiación",
     "cumulativeRaised": "Capital acumulado",

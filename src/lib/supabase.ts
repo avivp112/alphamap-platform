@@ -239,6 +239,9 @@ export interface Startup extends CompanySocialLinks {
   leadership: Leader[] | null;
   country: string | null;
   city: string | null;
+  /** Where it was founded, beside the HQ in country (migration 20261104000000; src/lib/origin.ts). */
+  founding_country?: string | null;
+  israel_rnd_center?: boolean | null;
   founders: Founder[] | null;
   created_at: string;
   updated_at: string;
@@ -360,6 +363,11 @@ export interface StartupListRow {
   // funding data, etc.) — powers the Private Market page's default sort,
   // best-documented companies first.
   completeness_score: number;
+  // From startups_market only (migration 20261105000000) — absent on the
+  // startups_search fallback.
+  founding_country?: string | null;
+  israel_rnd_center?: boolean | null;
+  israel_related?: boolean;
 }
 
 export interface StartupSearchFilters {
@@ -376,6 +384,8 @@ export interface StartupSearchFilters {
   // independent of what either company's own main sector is.
   subSectorTag?: string;
   country?: string;
+  /** HQ, founding country or R&D centre in Israel (startups_market.israel_related). */
+  israelRelated?: boolean;
   city?: string;
   stageRoundTypes?: RoundType[];
   headcountMin?: number;
@@ -412,6 +422,7 @@ function applyStartupSearchFilters(
   }
   if (filters.subSectorTag) q = q.contains("sub_sector_names", [filters.subSectorTag]);
   if (filters.country) q = q.eq("country", filters.country);
+  if (filters.israelRelated) q = q.eq("israel_related", true);
   if (filters.city) q = q.or(`city.ilike.%${filters.city}%,country.ilike.%${filters.city}%`);
   if (filters.stageRoundTypes && filters.stageRoundTypes.length > 0) {
     q = q.in("latest_round_type", filters.stageRoundTypes);
@@ -440,8 +451,12 @@ function applyStartupSearchFilters(
 let marketViewMissing = false;
 const MARKET_VIEW = "startups_market";
 
-function isMissingRelation(error: { code?: string; message?: string } | null): boolean {
+export function isMissingRelation(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false;
+  // A missing COLUMN (42703: the Israel-related filter before migration
+  // 20261105000000) is not a missing view — falling back would swap the
+  // curated list for every company on file.
+  if (error.code === "42703" || /column .* does not exist/i.test(error.message ?? "")) return false;
   return error.code === "PGRST205" || error.code === "42P01" || /does not exist|could not find the table/i.test(error.message ?? "");
 }
 

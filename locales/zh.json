@@ -272,6 +272,13 @@
   },
   "startups": {
     "allCountries": "所有国家",
+    "origin": {
+      "headquarters": "总部",
+      "foundedIn": "创立于{{country}}",
+      "rndInIsrael": "在以色列设有研发中心",
+      "israelRelated": "与以色列相关",
+      "israelRelatedHint": "总部、创立地或研发中心位于以色列(有引用来源)"
+    },
     "noMatches": "无匹配结果",
     "fundingTimeline": "融资时间线",
     "cumulativeRaised": "累计融资额",
