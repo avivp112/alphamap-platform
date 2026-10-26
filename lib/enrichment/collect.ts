@@ -18,7 +18,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import {
   verifyDomainMatch, webSearch, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, fetchArticleTexts,
-  type SearchProviderState,
+  searchMostlyFailed, type SearchProviderState,
 } from "./searchProviders.ts";
 import { filterByEntity, deriveIdentityKeywords, nameQualifiersOnOwnSite, type EntityAnchors } from "./entity.ts";
 import { buildLabeledSources, mergeDuplicateResults, type RawSearchResult, type LabeledSource } from "./sources.ts";
@@ -371,6 +371,12 @@ export async function collectCompany(
   if (ctx.update && kept.length === 0) {
     console.log("    💤  Nothing new about this company since the last check — no Claude call.");
     return { outcome: "no_change" };
+  }
+  // Most searches failed (network, timeouts, 5xx): an outage, not "nothing
+  // about this company" — reported as such, so the run tries it again.
+  if (searchMostlyFailed(searchState) && kept.length < 2 && websiteRaw.length === 0) {
+    console.log(`    📡  search_unavailable — ${searchState.searchFailures}/${searchState.searchAttempts} searches failed (network). Not judged; it will be tried again.`);
+    return { outcome: "error", reason: "search_unavailable" };
   }
   if (!ctx.update && kept.length < 2 && websiteRaw.length === 0) {
     console.log(`    🔍  low_evidence — fewer than 2 results survived entity filtering, and no website fetch. Skipping Claude calls.`);

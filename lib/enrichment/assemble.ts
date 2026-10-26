@@ -33,7 +33,61 @@ const sourceText = (s: LabeledSource) => `${s.title ?? ""} ${s.content} ${s.url}
 
 export type RoundGroundingDrop =
   | "investor_not_in_source" | "investor_amount_not_in_source" | "round_source_url_not_in_sources" | "round_date_from_article"
-  | "valuation_not_stated_as_valuation";
+  | "valuation_not_stated_as_valuation" | "round_type_not_stated";
+
+/**
+ * How a source states each round type. A type is kept only when the round's
+ * own quotes, or the passage around its amount, say it (owner's review,
+ * 2026-10-26: Biotia's "$9M financing" became "Growth", Azumo's "$30M in
+ * funding" became "Series B"). Otherwise the round is written as "Unknown".
+ */
+const TYPE_STATED: Partial<Record<string, RegExp>> = {
+  "Pre-Seed": /\bpre[- ]?seed\b/i,
+  "Seed": /\bseed\b/i,
+  "Series A": /\bseries[- ]a\b/i,
+  "Series B": /\bseries[- ]b\b/i,
+  "Series C": /\bseries[- ]c\b/i,
+  "Series D": /\bseries[- ]d\b/i,
+  "Series E": /\bseries[- ]e\b/i,
+  "Series F+": /\bseries[- ][f-z]\b|\blate[- ]stage (round|funding|financing)/i,
+  "Growth": /\bgrowth[- ](round|equity|financing|funding|investment|capital)\b|\bgrowth[- ]stage (round|funding|financing)\b/i,
+  "Venture Debt": /\bventure debt\b/i,
+  "Debt": /\bdebt\b|\bcredit (facility|line)\b|\bloans?\b|\bnotes? offering\b|\bfinancing facility\b/i,
+  "Secondary": /\bsecondary\b|\btender offer\b/i,
+  "Bridge": /\bbridge\b/i,
+  "Convertible Note": /\bconvertible\b|\bSAFE\b|\bnotes?\b/,
+  "PE Buyout": /\bbuyout\b|\btake[- ]private\b|\bacquired by\b/i,
+  "Grant": /\bgrants?\b/i,
+  "Acquired": /\bacqui(red|res|sition)\b|\bmerg(ed|er)\b/i,
+  "IPO": /\bIPO\b|\binitial public offering\b|\blisted on\b/i,
+};
+
+/** The text a round's type may be read from: its quotes, and ~400 characters around its amount in the cited source. */
+function roundTypeEvidence(round: V2Round, byId: Map<string, LabeledSource>): string {
+  const parts: string[] = [];
+  for (const ev of [round.amount_raised, round.valuation, round.announcement_date, round.lead_investor]) {
+    if (!ev?.evidence_quote) continue;
+    parts.push(ev.evidence_quote);
+    const src = ev.source_id ? byId.get(ev.source_id) : undefined;
+    if (!src) continue;
+    const text = `${src.title ?? ""}\n${src.content}`;
+    const at = text.indexOf(ev.evidence_quote.slice(0, 40));
+    if (at >= 0) parts.push(text.slice(Math.max(0, at - 400), at + ev.evidence_quote.length + 400));
+    // A headline that reports this amount names its round: "Biotia raises $8M Series A".
+    if (src.title && round.amount_raised?.value != null && extractNumbersFromText(src.title).some((n) => Math.abs(n - round.amount_raised!.value) / round.amount_raised!.value < 0.01)) parts.push(src.title);
+  }
+  return parts.join("\n");
+}
+
+/** The round's type when a source states it; "Unknown" when nothing does. */
+export function groundRoundType(round: V2Round, sources: LabeledSource[]): { round_type: string; stated: boolean } {
+  const type = normalizeRoundType(round.round_type);
+  if (type === "Unknown" || type === "Other") return { round_type: type, stated: true };
+  const re = TYPE_STATED[type];
+  if (!re) return { round_type: type, stated: true };
+  const byId = new Map(sources.map((s) => [s.source_id, s]));
+  return re.test(roundTypeEvidence(round, byId)) ? { round_type: type, stated: true } : { round_type: "Unknown", stated: false };
+}
 
 // A valuation's quote must call the figure a valuation — "bringing total
 // funding to $65.5 million" or "sold with $318,000 ARR" is not one.
@@ -139,9 +193,13 @@ export function groundRoundDetails(
     }
   }
 
+  const typed = groundRoundType(round, sources);
+  if (!typed.stated) dropped.push("round_type_not_stated");
+
   return {
     round: {
       ...round,
+      round_type: typed.round_type,
       valuation,
       is_valuation_estimated: valuation ? round.is_valuation_estimated : undefined,
       announcement_date: announcementDate,

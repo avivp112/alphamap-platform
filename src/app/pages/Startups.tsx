@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { stageLabel, sectorLabel, SECTOR_TAXONOMY, PARENT_BY_SUB_SECTOR, STAGE_STEPS, type StageStep } from "../../lib/taxonomy";
+import { stageLabel, sectorLabel, roundTypeLabel, SECTOR_TAXONOMY, PARENT_BY_SUB_SECTOR, STAGE_STEPS, type StageStep } from "../../lib/taxonomy";
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router";
 import {
@@ -1310,7 +1310,7 @@ function VerticalFundingTimeline({ rounds }: { rounds: FundingRound[] }) {
                     <div className="flex items-center gap-2 flex-wrap">
                       {r.round_type && (
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${ROUND_STYLE[r.round_type] ?? ROUND_STYLE["Other"]}`}>
-                          {r.round_type}
+                          {roundTypeLabel(r.round_type)}
                         </span>
                       )}
                       {r.announcement_date && (
@@ -1376,7 +1376,7 @@ function FundingValuationTab({ startup, sortedRounds, fundingHistoryComplete }: 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <StatCard icon={DollarSign} label="Total Raised"     value={raised ? fmt(raised) : "—"} accent="#F59E0B" />
         <StatCard icon={TrendingUp} label="Latest Valuation" value={fmt(latestRound?.valuation)} accent="#0e7490" />
-        <StatCard icon={Clock}      label="Last Round Type"  value={latestRound?.round_type ?? "—"} accent="#6d28d7" />
+        <StatCard icon={Clock}      label="Last Round Type"  value={latestRound?.round_type ? roundTypeLabel(latestRound.round_type) : "—"} accent="#6d28d7" />
       </div>
 
       {sortedRounds.length >= 2 && <FundingTimeline rounds={sortedRounds} />}
@@ -2318,7 +2318,7 @@ function TearsheetModal({
               instead of squeezing or overlapping anything. */}
           <div className="flex items-center flex-wrap gap-2 mt-3">
             {roundType && roundStyle && (
-              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap bg-white/70`} style={{ border: "1px solid rgba(15,23,42,0.12)" }}>{roundType}</span>
+              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap bg-white/70`} style={{ border: "1px solid rgba(15,23,42,0.12)" }}>{roundTypeLabel(roundType)}</span>
             )}
             <button
               onClick={onSave}
@@ -2923,7 +2923,7 @@ function StartupCard({
             )}
           </div>
           {roundType && (
-            <span className={`flex-none text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]}`}>{roundType}</span>
+            <span className={`flex-none text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]}`}>{roundTypeLabel(roundType)}</span>
           )}
         </div>
         {cardDescription && (
@@ -3024,7 +3024,7 @@ function StartupTableRow({
         </div>
       </td>
       <td className="py-3.5 px-4">
-        {roundType && roundStyle ? <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${roundStyle}`}>{roundType}</span> : <span className="text-xs text-gray-300">—</span>}
+        {roundType && roundStyle ? <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${roundStyle}`}>{roundTypeLabel(roundType)}</span> : <span className="text-xs text-gray-300">—</span>}
       </td>
       <td className="py-3.5 px-4 text-xs text-gray-500">{placeLabel(startup.city, startup.country) ?? "—"}</td>
       <td className="py-3.5 px-4 text-sm font-bold text-[#0F172A]">{fmt(startup.latest_valuation)}</td>

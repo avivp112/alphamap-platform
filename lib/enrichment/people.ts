@@ -170,6 +170,18 @@ export function cleanPeople<T extends { name: string }>(people: T[]): T[] {
 }
 
 /**
+ * A leadership entry needs a real role (owner's review, 2026-10-26: BETA got
+ * "Joe Pagett — Employee (Department/Title not specified)"). No role, or a
+ * placeholder / non-leadership one, and the person is not listed.
+ */
+export function isLeadershipRole(role: string | null | undefined): boolean {
+  const r = (role ?? "").trim();
+  if (!r) return false;
+  if (/\b(not specified|unspecified|unknown|n\/a|none|employee|staff|team member|member of|intern|contractor|volunteer|student|candidate)\b/i.test(r)) return false;
+  return /\b(chief|c[a-z]o|ceo|cto|cfo|coo|cmo|cpo|cro|ciso|president|founder|co-?founder|owner|chair(?:man|woman|person)?|director|head|vp|vice[- ]president|svp|evp|general manager|gm|managing|partner|principal|lead|executive|officer|board|advisor|scientist)\b/i.test(r);
+}
+
+/**
  * A "founder" whose bio says they were hired or appointed, and nothing
  * about founding (GreyNoise's "Ash Devata, CEO — was hired as CEO"), is
  * leadership, not a founder. A plain "CEO" title alone proves nothing —

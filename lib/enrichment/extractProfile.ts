@@ -29,6 +29,7 @@ import { formatSourcesForPrompt, type LabeledSource } from "./sources";
 import { debugDumpJson } from "./debugDump";
 import { checkHeadcountClaim, type HeadcountDropReason } from "./headcount";
 import { checkFoundingCountry, checkIsraelRnd, type OriginDrop } from "./origin";
+import { isLeadershipRole } from "./people";
 
 export interface SectorTaxonomy {
   parentNames: string[];
@@ -359,7 +360,8 @@ ${context}`;
 // ── Response processing (pure, testable without any live call) ──────────
 
 export type DropReasonCode =
-  | "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found" | HeadcountDropReason | OriginDrop;
+  | "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found" | HeadcountDropReason | OriginDrop
+  | "leader_without_role";
 
 export interface DroppedField {
   field: string;
@@ -496,7 +498,11 @@ export function processProfileExtractionResponse(
     instagram_url: verifyMaterial("profile.instagram_url", i.profile?.instagram_url, sourceLookup, dropped, true),
   };
 
-  const leadership: V2Leader[] = ensureArray<V2Leader>(i.leadership).map((l, idx) => ({
+  const leadership: V2Leader[] = ensureArray<V2Leader>(i.leadership).filter((l) => {
+    if (isLeadershipRole(l?.role)) return true;
+    dropped.push({ field: "leadership", reason: "leader_without_role" });
+    return false;
+  }).map((l, idx) => ({
     ...l,
     linkedin_url: verifyMaterial(`leadership[${idx}].linkedin_url`, l.linkedin_url, sourceLookup, dropped, true),
   }));

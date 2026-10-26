@@ -57,6 +57,15 @@ export interface SearchProviderState {
   websitePagesDuplicate: number;
   /** Per-company disk cache (searchCache.ts) — a hit costs no API call. */
   cache?: SearchCache;
+  /** Search calls made, and those that failed (network error, timeout, HTTP 5xx) — not "no results". */
+  searchAttempts?: number;
+  searchFailures?: number;
+}
+
+/** Most of this company's searches failed: an outage, not a company with nothing about it. */
+export function searchMostlyFailed(state: SearchProviderState): boolean {
+  const attempts = state.searchAttempts ?? 0, failures = state.searchFailures ?? 0;
+  return failures >= 3 && failures / Math.max(attempts, 1) >= 0.3;
 }
 
 export function createSearchProviderState(): SearchProviderState {
@@ -119,6 +128,7 @@ export async function serperSearch(
   const cacheKey = `serper:${query}`;
   const cached = state.cache?.get<RawSearchResult[]>(cacheKey);
   if (cached) return cached.map((r) => ({ ...r, query_label: queryLabel }));
+  state.searchAttempts = (state.searchAttempts ?? 0) + 1;
   try {
     const res = await fetch("https://google.serper.dev/search", {
       method: "POST",
@@ -134,6 +144,7 @@ export async function serperSearch(
     }
     if (!res.ok) {
       const body = await res.text().catch(() => "");
+      if (res.status >= 500) state.searchFailures = (state.searchFailures ?? 0) + 1;
       console.warn(`    ⚠️  Serper HTTP ${res.status}` + (body ? ` — ${body.slice(0, 200)}` : ""));
       return [];
     }
@@ -144,6 +155,7 @@ export async function serperSearch(
     state.cache?.set(cacheKey, results);
     return results;
   } catch (err) {
+    state.searchFailures = (state.searchFailures ?? 0) + 1;
     console.warn(`    ⚠️  Serper threw: ${String(err)}`);
     return [];
   }
@@ -181,6 +193,7 @@ export async function serperNewsSearch(
   const cacheKey = `serper_news:${query}`;
   const cached = state.cache?.get<RawSearchResult[]>(cacheKey);
   if (cached) return cached.map((r) => ({ ...r, query_label: queryLabel }));
+  state.searchAttempts = (state.searchAttempts ?? 0) + 1;
   try {
     const res = await fetch("https://google.serper.dev/news", {
       method: "POST",
@@ -196,6 +209,7 @@ export async function serperNewsSearch(
     }
     if (!res.ok) {
       const body = await res.text().catch(() => "");
+      if (res.status >= 500) state.searchFailures = (state.searchFailures ?? 0) + 1;
       console.warn(`    ⚠️  Serper News HTTP ${res.status}` + (body ? ` — ${body.slice(0, 200)}` : ""));
       return [];
     }
@@ -206,6 +220,7 @@ export async function serperNewsSearch(
     state.cache?.set(cacheKey, results);
     return results;
   } catch (err) {
+    state.searchFailures = (state.searchFailures ?? 0) + 1;
     console.warn(`    ⚠️  Serper News threw: ${String(err)}`);
     return [];
   }
@@ -237,6 +252,7 @@ export async function tavilySearch(
   const cacheKey = `tavily:${query}`;
   const cached = state.cache?.get<RawSearchResult[]>(cacheKey);
   if (cached) return cached.map((r) => ({ ...r, query_label: queryLabel }));
+  state.searchAttempts = (state.searchAttempts ?? 0) + 1;
   if (state.tavilyExhausted) return [];
   try {
     const res = await fetch("https://api.tavily.com/search", {
@@ -246,6 +262,7 @@ export async function tavilySearch(
     });
 
     if (res.status === 401 || res.status === 402 || res.status === 432) {
+      if (res.status >= 500) state.searchFailures = (state.searchFailures ?? 0) + 1;
       console.warn(`    ⚠️  Tavily HTTP ${res.status} — disabling Tavily fallback for the rest of this run.`);
       state.tavilyExhausted = true;
       return [];
@@ -267,6 +284,7 @@ export async function tavilySearch(
     state.cache?.set(cacheKey, results);
     return results;
   } catch (err) {
+    state.searchFailures = (state.searchFailures ?? 0) + 1;
     console.warn(`    ⚠️  Tavily threw: ${String(err)}`);
     return [];
   }

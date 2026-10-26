@@ -336,7 +336,6 @@ export async function writeCollected(
   );
   const competitorsAdded = competitors.length - existingCompetitors.length;
   if (!sameJson(competitors, row.competitors ?? [])) patch.competitors = competitors;
-  if (!sameJson([...refresh].sort(), [...(row.refresh_fields ?? [])].sort())) patch.refresh_fields = [...refresh];
 
   // Acquisitions & IP
   const acquisitions = appendNew(
@@ -348,15 +347,23 @@ export async function writeCollected(
     (a) => normalizeForMatch(a.company_name ?? ""),
   );
   if (acquisitions.length !== (row.acquisitions?.length ?? 0)) patch.acquisitions = acquisitions;
-  if (row.patent_count == null && market.patent_summary.patent_count != null) patch.patent_count = market.patent_summary.patent_count;
-  if (!row.patent_fields?.length && market.patent_summary.patent_fields.length) patch.patent_fields = market.patent_summary.patent_fields;
-  const patentKey = (p: { title: string; patent_number?: string | null }) => (p.patent_number ? `#${p.patent_number}` : normalizeForMatch(p.title ?? ""));
-  const patents = appendNew(
-    row.patents ?? [],
-    market.patents.map((p) => ({ title: p.title, patent_number: p.patent_number ?? null, filing_date: p.filing_date ?? null, url: p.url ?? null, summary: p.summary ?? null })),
-    patentKey,
-  );
-  if (patents.length > (row.patents?.length ?? 0)) patch.patents = patents;
+  const newPatents = market.patents.map((p) => ({ title: p.title, patent_number: p.patent_number ?? null, filing_date: p.filing_date ?? null, url: p.url ?? null, summary: p.summary ?? null }));
+  if (refresh.has("patents")) {
+    // Patents on file came from before the ownership check (patents.ts): this
+    // run's verified list replaces them, count and fields included.
+    if (!sameJson(newPatents, row.patents ?? [])) patch.patents = newPatents;
+    if (market.patent_summary.patent_count !== row.patent_count) patch.patent_count = market.patent_summary.patent_count;
+    if (!sameJson(market.patent_summary.patent_fields, row.patent_fields ?? [])) patch.patent_fields = market.patent_summary.patent_fields;
+    refresh.delete("patents");
+  } else {
+    if (row.patent_count == null && market.patent_summary.patent_count != null) patch.patent_count = market.patent_summary.patent_count;
+    if (!row.patent_fields?.length && market.patent_summary.patent_fields.length) patch.patent_fields = market.patent_summary.patent_fields;
+    const patentKey = (p: { title: string; patent_number?: string | null }) => (p.patent_number ? `#${p.patent_number}` : normalizeForMatch(p.title ?? ""));
+    const patents = appendNew(row.patents ?? [], newPatents, patentKey);
+    if (patents.length > (row.patents?.length ?? 0)) patch.patents = patents;
+  }
+  // Every field marked for collecting again that this run rewrote has left the list.
+  if (!sameJson([...refresh].sort(), [...(row.refresh_fields ?? [])].sort())) patch.refresh_fields = [...refresh];
   const techStack = [...new Set([...(row.tech_stack ?? []), ...(market.technology.tech_stack ?? [])])];
   if (techStack.length > (row.tech_stack?.length ?? 0)) patch.tech_stack = techStack;
   for (const key of ["github_url", "huggingface_url"] as const) {

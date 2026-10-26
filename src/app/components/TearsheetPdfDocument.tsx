@@ -17,6 +17,7 @@ import React from "react";
 import { Document, Page, View, Text } from "@react-pdf/renderer";
 import type { Startup, AlphaScore, MatchScoreResult, FundingRound } from "../../lib/supabase";
 import { pdfStyles as s, COLORS, ROUND_HEX } from "../../lib/pdfStyles";
+import { roundTypeLabel } from "../../lib/taxonomy";
 
 function initials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
@@ -181,7 +182,7 @@ export function TearsheetPdfDocument({
                   <View key={r.id} style={isLast ? s.tableRowLast : s.tableRow}>
                     <View style={{ flex: 1, padding: 6 }}>
                       <Text style={[s.roundBadge, { color: roundColor, backgroundColor: `${roundColor}18` }]}>
-                        {r.round_type ?? "Other"}
+                        {roundTypeLabel(r.round_type)}
                       </Text>
                     </View>
                     <Text style={s.tableCell}>{fmtDate(r.announcement_date)}</Text>

@@ -2,7 +2,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { ExternalLink, Users, Banknote, Building2, Landmark, LineChart, AlertTriangle, Linkedin } from "lucide-react";
 import { fmtUsd } from "../../lib/dealFeed";
-import { sectorLabel, stageLabel } from "../../lib/taxonomy";
+import { sectorLabel, stageLabel, roundTypeLabel } from "../../lib/taxonomy";
 import type { CheckProfile, InvestorFact, ProfilePerson, Sourced } from "../../lib/companyCheck";
 import { cleanNarrative } from "../../../lib/enrichment/narrative";
 
@@ -158,7 +158,7 @@ export function CheckProfileView({ profile, investors, pendingReview = false }: 
                   <div className="w-24 flex-none text-xs tabular-nums text-gray-500">{r.date ?? k("noDate")}</div>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-x-2">
-                      <span className="text-sm font-semibold text-[#0F172A]">{stageLabel(r.round_type, t)}</span>
+                      <span className="text-sm font-semibold text-[#0F172A]">{r.round_type === "Unknown" ? roundTypeLabel(r.round_type) : stageLabel(r.round_type, t)}</span>
                       {r.amount != null && <span className="text-sm font-bold tabular-nums text-[#0F172A]">{fmtUsd(r.amount)}</span>}
                       <SourceLink url={r.source_url} />
                     </div>

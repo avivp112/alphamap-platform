@@ -97,7 +97,7 @@ let anthropic: Anthropic;
 
 type ProcessStatus =
   | "success" | "partial" | "rejected" | "removed_public" | "no_data"
-  | "low_evidence" | "error" | "error_incomplete_extraction" | "no_change";
+  | "low_evidence" | "error" | "error_incomplete_extraction" | "no_change" | "search_unavailable";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -248,6 +248,11 @@ async function enrichCompany(
     if (!DRY_RUN) seen.save();
     return;
   }
+  // An outage is not a verdict on the company: not stamped (see "settled"), so it is tried again.
+  if (collected.outcome === "error" && collected.reason === "search_unavailable") {
+    summary.tally.search_unavailable++;
+    return;
+  }
   if (collected.outcome !== "collected") {
     summary.tally[collected.outcome]++;
     return;
@@ -361,7 +366,7 @@ async function main() {
   else console.log(`Processing ${queue.length} of ${eligibleQueue.length} eligible companies (Tier 1: ${tier1.length}, Tier 2: ${tier2.length}, Tier 3: ${tier3.length}).\n`);
 
   const summary: RunSummary = {
-    tally: { success: 0, partial: 0, rejected: 0, removed_public: 0, no_data: 0, low_evidence: 0, error: 0, error_incomplete_extraction: 0, no_change: 0 },
+    tally: { success: 0, partial: 0, rejected: 0, removed_public: 0, no_data: 0, low_evidence: 0, error: 0, error_incomplete_extraction: 0, no_change: 0, search_unavailable: 0 },
     droppedByReason: new Map(),
     totalRoundsInserted: 0, totalRoundsUpdated: 0, totalFieldsPatched: 0, totalNewsAdded: 0, totalCompetitorsAdded: 0, deepDives: 0,
     totalInputTokens: 0, totalOutputTokens: 0, totalCostUsd: 0,
@@ -393,11 +398,11 @@ async function main() {
     const row = queue[i];
     const elapsedMin = (Date.now() - runStartedAt) / 60_000;
     const t = summary.tally;
-    console.log(`📍 [${i + 1}/${queue.length}] ${elapsedMin.toFixed(0)} min | $${summary.totalCostUsd.toFixed(2)} so far | ✅ ${t.success} 🟠 ${t.partial} 🚫 ${t.rejected} 🔍 ${t.low_evidence + t.no_data} 💥 ${t.error}${UPDATE ? ` 💤 ${t.no_change}` : ""}`);
-    const errorsBefore = summary.tally.error + summary.tally.error_incomplete_extraction;
+    console.log(`📍 [${i + 1}/${queue.length}] ${elapsedMin.toFixed(0)} min | $${summary.totalCostUsd.toFixed(2)} so far | ✅ ${t.success} 🟠 ${t.partial} 🚫 ${t.rejected} 🔍 ${t.low_evidence + t.no_data} 💥 ${t.error}${t.search_unavailable ? ` 📡 ${t.search_unavailable}` : ""}${UPDATE ? ` 💤 ${t.no_change}` : ""}`);
+    const errorsBefore = summary.tally.error + summary.tally.error_incomplete_extraction + summary.tally.search_unavailable;
     const noChangeBefore = summary.tally.no_change;
     await processCompany(row, roundsByStartup.get(row.id) ?? [], taxonomy, startupByDomain, summary);
-    consecutiveErrors = summary.tally.error + summary.tally.error_incomplete_extraction > errorsBefore ? consecutiveErrors + 1 : 0;
+    consecutiveErrors = summary.tally.error + summary.tally.error_incomplete_extraction + summary.tally.search_unavailable > errorsBefore ? consecutiveErrors + 1 : 0;
     if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
       console.error(`\n⛔  ${consecutiveErrors} companies in a row failed — this looks systemic (API key, credits, provider outage), not company-specific. Stopping so the rest of the queue isn't burned. Fix the cause and re-run; it continues from here.`);
       break;

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   parseSerperResponse, parseSerperNewsResponse, parseTavilyResponse, looksLikeRealContent,
-  mergeSearchResults,
+  mergeSearchResults, searchMostlyFailed, createSearchProviderState,
 } from "./searchProviders";
 import type { RawSearchResult } from "./sources";
 
@@ -108,5 +108,16 @@ describe("mergeSearchResults -- Serper and Tavily combine, not one replacing the
   it("returns Serper's results unchanged when Tavily found nothing new", () => {
     const serper = [result("https://techcrunch.com/apex")];
     expect(mergeSearchResults(serper, [])).toEqual(serper);
+  });
+});
+
+describe("searchMostlyFailed — an outage is not 'nothing about this company' (AIfection, 2026-10-26)", () => {
+  it("is true when most searches threw", () => {
+    expect(searchMostlyFailed({ ...createSearchProviderState(), searchAttempts: 5, searchFailures: 3 })).toBe(true);
+  });
+  it("is false for a few stray failures, or none", () => {
+    expect(searchMostlyFailed({ ...createSearchProviderState(), searchAttempts: 20, searchFailures: 2 })).toBe(false);
+    expect(searchMostlyFailed({ ...createSearchProviderState(), searchAttempts: 20, searchFailures: 4 })).toBe(false);
+    expect(searchMostlyFailed(createSearchProviderState())).toBe(false);
   });
 });

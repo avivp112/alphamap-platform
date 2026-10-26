@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { foundersFromText, personMentionedIn, cleanPeople } from "./people";
+import { foundersFromText, personMentionedIn, cleanPeople, isLeadershipRole } from "./people";
 import { parseLinkedInPersonResult } from "./linkedin";
 
 describe("foundersFromText — 'founded by' sentences about THIS company", () => {
@@ -49,5 +49,19 @@ describe("personMentionedIn / cleanPeople", () => {
   it("drops single-name entries and duplicates", () => {
     expect(cleanPeople([{ name: "Shannon" }, { name: "Alex Viall" }, { name: "Viall" }, { name: "alex viall" }, { name: "Spencer Gareiss" }]).map((p) => p.name))
       .toEqual(["Alex Viall", "Spencer Gareiss"]);
+  });
+});
+
+describe("isLeadershipRole — a leader needs a real role (BETA, 2026-10-26)", () => {
+  it("drops a placeholder or a non-leadership role", () => {
+    expect(isLeadershipRole("Employee (Department/Title not specified)")).toBe(false);
+    expect(isLeadershipRole("")).toBe(false);
+    expect(isLeadershipRole(null)).toBe(false);
+    expect(isLeadershipRole("Software Engineer")).toBe(false);
+  });
+  it("keeps executives", () => {
+    for (const r of ["CEO (Co-Founder)", "Chief Technology Officer", "VP Engineering", "Head of Product", "President", "Managing Director", "General Manager, EMEA"]) {
+      expect(isLeadershipRole(r)).toBe(true);
+    }
   });
 });
