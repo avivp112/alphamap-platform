@@ -69,7 +69,7 @@ function builder(table: string) {
       calls.push({ ...state });
       const rows = (tables[table] ?? []).filter((r) => state.filters.every(([k, v]) => (r as Record<string, unknown>)[k] === v || k === "id"));
       // An insert answers with its new row's id, as .insert().select("id").single() does.
-      const data = state.op === "select" ? rows : state.op === "insert" ? { id: `${table}-new` } : null;
+      const data = state.op === "select" ? rows : state.op === "insert" ? { id: `${table}-new`, run_id: "run-test" } : null;
       return Promise.resolve({ data, error: null }).then(res, rej);
     },
   };
@@ -84,6 +84,8 @@ const fakeSupabase = {
   },
 };
 vi.mock("./bulk_enrich_all.ts", () => ({ initV1Context: async () => {}, supabase: fakeSupabase }));
+// The write path itself is under test here; the Phase 1 gate (writeGate.ts) is tested on its own.
+vi.mock("../lib/enrichment/writeGate.ts", () => ({ assertEnrichmentWritesAllowed: () => {} }));
 
 const SERIES_A = "Ghost (ghost.org), the open source publishing platform, raised a $10 million Series A led by Accel.";
 const NEW_CEO = "Ghost (ghost.org) appointed Jane Roe as CEO; founder John O'Nolan becomes chair.";

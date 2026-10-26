@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { stageLabel, sectorLabel, roundTypeLabel, SECTOR_TAXONOMY, PARENT_BY_SUB_SECTOR, STAGE_STEPS, type StageStep } from "../../lib/taxonomy";
+import { equityRaised, debtRaised } from "../../lib/capital";
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router";
 import {
@@ -1356,7 +1357,8 @@ function VerticalFundingTimeline({ rounds }: { rounds: FundingRound[] }) {
 function FundingValuationTab({ startup, sortedRounds, fundingHistoryComplete }: { startup: Startup; sortedRounds: FundingRound[]; fundingHistoryComplete?: boolean | null }) {
   const { t } = useTranslation();
   const latestRound = sortedRounds[sortedRounds.length - 1] ?? null;
-  const raised = sortedRounds.reduce((sum, r) => sum + (r.amount_raised ?? 0), 0);
+  const raised = equityRaised(sortedRounds);
+  const debt = debtRaised(sortedRounds);
   const arrMilestones = (startup.arr_milestones ?? []).filter((m) => m && typeof m.arr === "number");
   const valuationBenchmarks = (startup.valuation_benchmarks ?? []).filter((v) => v && typeof v.valuation === "number");
   const revenueEstimate = startup.revenue_estimate;
@@ -1373,8 +1375,9 @@ function FundingValuationTab({ startup, sortedRounds, fundingHistoryComplete }: 
           </p>
         </div>
       )}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className={`grid grid-cols-1 ${debt ? "sm:grid-cols-4" : "sm:grid-cols-3"} gap-3`}>
         <StatCard icon={DollarSign} label="Total Raised"     value={raised ? fmt(raised) : "—"} accent="#F59E0B" />
+        {debt > 0 && <StatCard icon={DollarSign} label="Debt" value={fmt(debt)} accent="#71717A" />}
         <StatCard icon={TrendingUp} label="Latest Valuation" value={fmt(latestRound?.valuation)} accent="#0e7490" />
         <StatCard icon={Clock}      label="Last Round Type"  value={latestRound?.round_type ? roundTypeLabel(latestRound.round_type) : "—"} accent="#6d28d7" />
       </div>
@@ -1536,7 +1539,7 @@ function CapTableTab({ startup }: { startup: Startup }) {
     [startup.funding_rounds],
   );
   const totalRaised = useMemo(
-    () => (startup.funding_rounds ?? []).reduce((sum, r) => sum + (r.amount_raised ?? 0), 0),
+    () => equityRaised(startup.funding_rounds ?? []),
     [startup.funding_rounds],
   );
 

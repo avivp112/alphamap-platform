@@ -28,6 +28,7 @@ import { existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
+import { assertEnrichmentWritesAllowed } from "../lib/enrichment/writeGate.ts";
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 const __dir = dirname(fileURLToPath(import.meta.url));
 const envPath = join(__dir, "..", ".env");
@@ -43,6 +44,7 @@ if (!process.env.TAVILY_API_KEY) {
 let BATCH_SIZE = Number(process.env.BATCH_SIZE ?? 50);
 let DELAY_MS   = Number(process.env.DELAY_MS   ?? 15_000);
 const DRY_RUN         = process.env.DRY_RUN !== "false";      // safe default: dry run
+assertEnrichmentWritesAllowed("enrich_funding_rounds", !DRY_RUN);
 const TARGET_COMPANY  = process.env.TARGET_COMPANY?.trim() ?? null; // force a single company
 
 const supabase  = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);

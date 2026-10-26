@@ -65,11 +65,10 @@ describe("buildDeepDiveQueries", () => {
     expect(qs.some((q) => q.query.includes("John O'Nolan"))).toBe(true);
   });
 
-  it("competitors: alternatives / vs / comparison-site queries", () => {
+  it("competitors: sentences that say who it competes with — never 'alternatives' / 'similar companies' lists (Chalice, 2026-10-26)", () => {
     const qs = buildDeepDiveQueries("competitors", ctx).map((q) => q.query);
-    expect(qs).toContain('"Ghost" alternatives');
-    expect(qs).toContain('"Ghost" vs');
-    expect(qs.some((q) => q.includes("site:g2.com"))).toBe(true);
+    expect(qs.some((q) => q.includes('"competes with"'))).toBe(true);
+    expect(qs.some((q) => /alternatives|similar companies|site:g2\.com|site:crunchbase\.com/.test(q))).toBe(false);
   });
 
   it("profile: LinkedIn and Crunchbase company pages (headcount + HQ), founders, team size", () => {

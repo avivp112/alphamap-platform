@@ -25,6 +25,7 @@ import { buildLabeledSources, mergeDuplicateResults, type RawSearchResult, type 
 import { extractProfile, type SectorTaxonomy } from "./extractProfile.ts";
 import { extractFunding, roundToRoundLike } from "./extractFunding.ts";
 import { extractMarket, normalizeUrlForMatch } from "./extractMarket.ts";
+import { lookupEpoPatents, type CompanyIdentity, type EpoPatentResult } from "./epoPatents.ts";
 import { detectGaps, buildDeepDiveQueries, hasNoFinancingRounds, type DeepDiveSection } from "./deepDive.ts";
 import {
   groundRoundDetails, rejectRound, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
@@ -55,11 +56,11 @@ export interface V2StartupRow {
   employee_count: number | null; employee_range: string | null; growth_trend: string | null;
   founders: Array<{ name: string; title?: string; bio?: string; linkedin_url?: string; had_prior_exit?: boolean; elite_background?: boolean; notable_pedigree?: boolean }> | null;
   leadership: Array<{ name: string; role: string; bio?: string; linkedin_url?: string; joined_date?: string; had_prior_exit?: boolean; elite_background?: boolean; notable_pedigree?: boolean }> | null;
-  competitors: Array<{ name: string; website?: string | null; how_it_competes: string; startup_id?: string | null }> | null;
+  competitors: Array<{ name: string; website?: string | null; how_it_competes: string; startup_id?: string | null; source_url?: string | null }> | null;
   acquisitions: Array<{ company_name: string; website?: string | null; acquired_date?: string | null; amount?: number | null; description?: string | null; acquired_startup_id?: string | null }> | null;
   news: Array<{ title: string; url: string; source?: string | null; published_date?: string | null; summary?: string | null; image_url?: string | null }> | null;
   patent_count: number | null; patent_fields: string[] | null;
-  patents: Array<{ title: string; patent_number?: string | null; filing_date?: string | null; url?: string | null; summary?: string | null }> | null;
+  patents: Array<{ title: string; patent_number?: string | null; filing_date?: string | null; url?: string | null; summary?: string | null; source?: string | null }> | null;
   tech_stack: string[] | null; github_url: string | null; huggingface_url: string | null;
   arr_milestones: Array<{ arr: number; date?: string | null; source?: string | null; confidence?: string | null }> | null;
   revenue_estimate: { range_low?: number | null; range_high?: number | null; as_of_date?: string | null; source?: string | null; confidence?: string | null } | null;
@@ -145,6 +146,8 @@ export interface CollectContext {
   recordCost: (model: string, usage: ExtractionUsage) => void;
   /** Progress, for a user watching one company (the check worker). */
   onStage?: (stage: CollectStage, detail?: Record<string, unknown>) => void;
+  /** The company's patents from the EPO register (epoPatents.ts); tests pass a stand-in. */
+  patentLookup?: (company: CompanyIdentity) => Promise<EpoPatentResult | null>;
 }
 
 export type CollectStage = "searching" | "reading" | "extracting" | "deep_dive" | "people" | "validating";
@@ -184,6 +187,8 @@ export interface CollectedCompany {
   domain: string | null;
   /** This run's verified values and quotes: what a weakly attributed claim must match (narrative.ts). */
   verifiedFacts?: VerifiedFact[];
+  /** True when market.patents is the EPO register's list for the company (possibly empty); false = not looked up. */
+  patentsFromRegister?: boolean;
 }
 
 export type CollectResult =
@@ -212,9 +217,9 @@ export async function runAllSearches(name: string, anchor: string, state: Search
     ["founders",     `"${name}"${anchor} founder CEO co-founder CTO`],
     ["team",         `"${name}"${anchor} employees team size headcount hiring`],
     ["linkedin",     `site:linkedin.com/company "${name}"`],
-    ["competitors",  `"${name}"${anchor} competitors alternatives vs rivals "compared to" market landscape`],
+    // Sentences that say who it competes with — not "alternatives" lists (competitorEvidence.ts).
+    ["competitors",  `"${name}"${anchor} "competes with" OR "competitors include" OR "rival" OR "competing with"`],
     ["acquisitions", `"${name}"${anchor} acquires OR acquired OR acquisition`],
-    ["patents",      `"${name}"${anchor} patent OR patents OR site:patents.google.com`],
     ["financials",   `"${name}"${anchor} ARR "annual recurring revenue" OR revenue estimate OR valued at OR valuation milestone`],
     // (the separate "tech stack" query was dropped: careers/engineering
     // pages fetched from the company's own site carry that, for free)
@@ -770,10 +775,28 @@ export async function collectCompany(
   const cityConfidence = profile.profile.city ? computeFieldConfidence([{ source_type: sourceTypeFor(profile.profile.city.source_id) ?? "model_inferred" }]) : 0;
   const countryConfidence = profile.profile.country ? computeFieldConfidence([{ source_type: sourceTypeFor(profile.profile.country.source_id) ?? "model_inferred" }]) : 0;
 
+  // ── Stage 8b: patents — the EPO register only (epoPatents.ts) ───────────
+  let patentsFromRegister = false;
+  try {
+    const register = await (ctx.patentLookup ?? lookupEpoPatents)({
+      name: row.name,
+      countries: [validation.accepted.country ?? row.country, profile.profile.founding_country?.value ?? row.founding_country],
+    });
+    if (register) {
+      patentsFromRegister = true;
+      market.patents = register.patents;
+      market.patent_summary = { patent_count: register.familyCount, patent_fields: [] };
+      for (const r of register.rejected) bump(stats.droppedByReason, r.reason);
+      console.log(`    📜  EPO register: ${register.patents.length} patent famil(ies) with ${row.name} as applicant${register.rejected.length ? `, ${register.rejected.length} publication(s) of other applicants set aside` : ""}.`);
+    }
+  } catch (e) {
+    console.warn(`    ⚠️  EPO register lookup failed (${e instanceof Error ? e.message : String(e)}) — patents left as they are.`);
+  }
+
   return {
     outcome: "collected",
     profile, funding, market, allSources, sourceById, sourceTypeFor, sourceUrlFor,
     linkedinFounders, linkedinLeaders, existingRefs, validation, plan,
-    cityConfidence, countryConfidence, domain, verifiedFacts,
+    cityConfidence, countryConfidence, domain, verifiedFacts, patentsFromRegister,
   };
 }

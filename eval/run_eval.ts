@@ -152,6 +152,9 @@ async function runV2(company: GoldenCompany, anthropic: Anthropic, taxonomy: Sec
       rounds: p.funding.rounds.map((r) => ({ round_type: r.round_type, amount_raised: r.amount, date: r.date })),
       employee_range: p.overview.employee_range,
       arr_usd: arr?.arr ?? null,
+      competitors: c.market.competitors.map((x) => x.name),
+      // Patents come only from the EPO register: not looked up (no EPO keys) is not "none".
+      patents: c.patentsFromRegister ? c.market.patents.map((x) => x.patent_number).filter((n): n is string => !!n) : undefined,
     }, "collected", p.sources_count);
   } finally {
     searchState.cache?.save();
@@ -247,6 +250,7 @@ async function main() {
     const usd = (n: number | null) => (n == null ? "?" : n >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : `$${(n / 1e6).toFixed(1)}M`);
     for (const r of out.rounds) console.log(`      · ${r.round_type} ${usd(r.amount_raised)} ${r.date ?? "(no date)"}`);
     for (const r of (company.funding_rounds ?? []).filter((g) => g.confidence !== "unknown")) console.log(`      ✓ golden: ${r.type} ${usd(r.amount_usd)} ${r.date ?? "(no date)"}`);
+    console.log(`    round types (${fields.round_type}) · competitors=${out.competitors?.join(", ") || "—"} (${fields.competitors}) · patents=${out.patents?.join(", ") ?? "not looked up"} (${fields.patents})`);
     console.log("");
   }
 
@@ -259,7 +263,7 @@ async function main() {
   for (const field of FIELDS) {
     const s = board[field];
     const row = { coverage: pct(s.correct, s.scored), precision: pct(s.correct, s.produced), wrong_write_rate: pct(s.produced - s.correct, s.produced), scored: s.scored };
-    console.log(`${field.padEnd(16)}${row.coverage.padEnd(12)}${row.precision.padEnd(12)}${row.wrong_write_rate.padEnd(14)}${s.scored}`);
+    console.log(`${field.padEnd(16)}${row.coverage.padEnd(12)}${row.precision.padEnd(12)}${row.wrong_write_rate.padEnd(14)}${s.scored}${s.unjudged ? `  (${s.unjudged} unjudged)` : ""}`);
     summary[field] = row;
   }
   console.log("═".repeat(62));

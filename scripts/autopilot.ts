@@ -23,11 +23,13 @@ import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { search as duckSearch } from "duck-duck-scrape";
 
+import { assertEnrichmentWritesAllowed } from "../lib/enrichment/writeGate.ts";
 // ── Configuration ─────────────────────────────────────────────────────────────
 const BATCH_SIZE = Number(process.env.BATCH_SIZE ?? 100); // default: full watchlist run
 const DELAY_MS   = Number(process.env.DELAY_MS   ?? 45_000); // 45 s between companies
 const STALE_DAYS = Number(process.env.STALE_DAYS ?? 7);
 const DRY_RUN    = process.env.DRY_RUN === "true";
+assertEnrichmentWritesAllowed("autopilot", !DRY_RUN);
 
 // ── Env-var guard ─────────────────────────────────────────────────────────────
 for (const key of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "ANTHROPIC_API_KEY"]) {

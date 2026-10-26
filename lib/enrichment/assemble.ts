@@ -25,7 +25,7 @@ import { termAppearsIn, normalizeUrlForMatch, type V2MarketExtraction, type V2Ne
 import { namesCompany } from "./headcount";
 import type { V2Round, V2FundingExtraction } from "./extractFunding";
 import type { V2ProfileExtraction, V2Founder, V2Leader } from "./extractProfile";
-import type { LabeledSource } from "./sources";
+import { classifySourceType, type LabeledSource } from "./sources";
 
 const sourceText = (s: LabeledSource) => `${s.title ?? ""} ${s.content} ${s.url}`;
 
@@ -79,13 +79,24 @@ function roundTypeEvidence(round: V2Round, byId: Map<string, LabeledSource>): st
   return parts.join("\n");
 }
 
-/** The round's type when a source states it; "Unknown" when nothing does. */
+const EQUITY_LABELS = new Set(["Pre-Seed", "Seed", "Series A", "Series B", "Series C", "Series D", "Series E", "Series F+", "Growth", "Bridge", "Unknown", "Other"]);
+
+/**
+ * The round's type when a source states it; "Unknown" when nothing does.
+ * Money the round's own quotes call a loan, credit facility or venture debt
+ * is debt, whatever equity label the model gave it — unless the same quotes
+ * also state that equity round ("a $50M Series B and a $20M credit line").
+ */
 export function groundRoundType(round: V2Round, sources: LabeledSource[]): { round_type: string; stated: boolean } {
   const type = normalizeRoundType(round.round_type);
+  const byId = new Map(sources.map((s) => [s.source_id, s]));
+  const quotes = [round.amount_raised, round.valuation, round.announcement_date, round.lead_investor].map((e) => e?.evidence_quote ?? "").join("\n");
+  if (EQUITY_LABELS.has(type) && TYPE_STATED["Debt"]!.test(quotes) && !(TYPE_STATED[type]?.test(quotes))) {
+    return { round_type: TYPE_STATED["Venture Debt"]!.test(quotes) ? "Venture Debt" : "Debt", stated: true };
+  }
   if (type === "Unknown" || type === "Other") return { round_type: type, stated: true };
   const re = TYPE_STATED[type];
   if (!re) return { round_type: type, stated: true };
-  const byId = new Map(sources.map((s) => [s.source_id, s]));
   return re.test(roundTypeEvidence(round, byId)) ? { round_type: type, stated: true } : { round_type: "Unknown", stated: false };
 }
 
@@ -213,7 +224,7 @@ export function groundRoundDetails(
 
 // ── Rounds not written at all ────────────────────────────────────────────
 
-export type RoundRejection = "round_without_substance" | "round_from_job_posting" | "round_raised_by_another_company";
+export type RoundRejection = "round_without_substance" | "round_from_job_posting" | "round_raised_by_another_company" | "round_only_from_data_platform";
 
 const JOB_POSTING_URL_RE = /\/(j|job|jobs|careers?|vacanc(?:y|ies)|openings?|positions?)\/|(?:lever\.co|greenhouse\.io|workable\.com|ashbyhq\.com|indeed\.\w+|glassdoor\.\w+)\//i;
 const RAISER_RE = /(?:^|[.;:!?]\s+|\s—\s|,\s+)([A-Z][\p{L}\d.&'’-]*(?:\s+[A-Z][\p{L}\d.&'’-]*){0,3})\s+(?:has\s+|have\s+|just\s+)?(?:[Rr]ais(?:ed|es)|[Ss]ecur(?:ed|es)|[Cc]los(?:ed|es)|[Ll]ands|[Bb]ags|[Nn]abs)\b/u;
@@ -227,7 +238,9 @@ const NOT_A_RAISER = /^(The|It|This|That|Its|Their|Our|We|They|He|She|Company|St
  *   - sourced from a job posting (Hirist's "Series B" came from another
  *     company's job ad on Hirist's own job board);
  *   - the quote names someone else as the raiser ("Contentsquare raised a
- *     $500M Series E" is not Hotjar's round).
+ *     $500M Series E" is not Hotjar's round);
+ *   - every source it cites is a data platform (owner, 2026-10-26: BETA's
+ *     $169M debt round came from app.dealroom.co alone).
  */
 export function rejectRound(round: V2Round, companyName: string, sources: LabeledSource[]): RoundRejection | null {
   const type = normalizeRoundType(round.round_type);
@@ -241,6 +254,7 @@ export function rejectRound(round: V2Round, companyName: string, sources: Labele
     .concat(round.source_url ?? undefined)
     .filter((u): u is string => !!u);
   if (cited.length > 0 && cited.every((u) => JOB_POSTING_URL_RE.test(u))) return "round_from_job_posting";
+  if (cited.length > 0 && cited.every((u) => classifySourceType(u) === "aggregator_snippet")) return "round_only_from_data_platform";
   const quote = round.amount_raised?.evidence_quote ?? "";
   const raiser = quote.match(RAISER_RE)?.[1];
   const bareName = companyName.replace(/\.(io|ai|com|co|app|so|dev|net)$/i, "");

@@ -120,10 +120,11 @@ export function buildDeepDiveQueries(section: DeepDiveSection, ctx: QueryContext
       ];
     case "competitors":
       return [
-        q("competitors_alternatives", `"${name}" alternatives`),
-        q("competitors_vs", `"${name}" vs`),
-        q("competitors_lists", `"${name}" competitors similar companies site:g2.com OR site:capterra.com OR site:crunchbase.com OR site:cbinsights.com OR site:tracxn.com OR site:owler.com`),
-        ...(domain ? [q("competitors_domain", `"${domain}" competitors OR alternatives`)] : []),
+        // Sentences that say who it competes with; "alternatives" and "similar
+        // companies" lists are not evidence (competitorEvidence.ts, 2026-10-26).
+        q("competitors_competes", `"${name}" "competes with" OR "competing with" OR "rival to"`),
+        q("competitors_named", `"${name}"${anchor} "competitors include" OR "competitors such as" OR "competes against"`),
+        ...(domain ? [q("competitors_domain", `"${domain}" "competes with" OR competitor`)] : []),
       ];
     case "news":
       return [

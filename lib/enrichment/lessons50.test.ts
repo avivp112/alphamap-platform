@@ -9,7 +9,6 @@ import { validateEnrichment, checkHeadcountOutlier, cityExistsInCountry } from "
 import { countryFromLocationQuote, isRegionNotCity } from "./location";
 import { foundersFromText, cleanPeople, isFounderEntry } from "./people";
 import { samePersonName } from "./linkedin";
-import { nearPatentWord, patentCountStated } from "./extractMarket";
 import { filterCrossSectorTags } from "./extractProfile";
 import { filterByEntity, nameQualifiersOnOwnSite } from "./entity";
 import { findListingStatement } from "./listing";
@@ -133,15 +132,6 @@ describe("people", () => {
     expect(isFounderEntry({ title: "CEO & Co-Founder" })).toBe(true);
     expect(isFounderEntry({ bio: "Mitchell Stewart is a co-founder of Guru." })).toBe(true);
     expect(isFounderEntry({ title: "CEO" })).toBe(true);
-  });
-});
-
-describe("patents", () => {
-  it("needs a patent title next to the word 'patent', and a count stated as a count", () => {
-    expect(nearPatentWord("Contact", "Pricing Docs Contact Login")).toBe(false);
-    expect(nearPatentWord("Dynamic overlay ad-insertion", "GumGum granted two patents for dynamic overlay ad-insertion within video streams")).toBe(true);
-    expect(patentCountStated(120, "The company holds over 120 technology patents.")).toBe(true);
-    expect(patentCountStated(1, "Contact us about our product.")).toBe(false);
   });
 });
 

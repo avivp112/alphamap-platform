@@ -13,6 +13,7 @@
  */
 
 import type { SourceType } from "./sourceTypes";
+import { isDataPlatformUrl } from "./dataPlatforms";
 
 export type Provider = "serper" | "tavily" | "jina" | "tavily_extract" | "cheerio";
 
@@ -66,7 +67,9 @@ export function classifySourceType(url: string, companyDomain?: string | null): 
     if (bareHost(host) === domain || bareHost(host).endsWith(`.${domain}`)) return "company_site";
   }
   if (REGISTRY_HOSTS.has(host) || REGISTRY_HOSTS.has(bareHost(host))) return "registry";
-  if (AGGREGATOR_HOSTS.has(host) || AGGREGATOR_HOSTS.has(bareHost(host))) return "aggregator_snippet";
+  // Every data platform in dataPlatforms.ts, subdomains included: BETA's $169M
+  // debt round came from app.dealroom.co, which the host list alone missed.
+  if (AGGREGATOR_HOSTS.has(host) || AGGREGATOR_HOSTS.has(bareHost(host)) || isDataPlatformUrl(url)) return "aggregator_snippet";
   if (PRESS_RELEASE_HOSTS.has(host) || PRESS_RELEASE_HOSTS.has(bareHost(host))) return "press_release";
   return "news";
 }

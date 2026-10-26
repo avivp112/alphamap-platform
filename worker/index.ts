@@ -31,6 +31,7 @@ import { writeCollected, newWriteSummary, BULK_THRESHOLDS } from "../lib/enrichm
 import { loadSectorTaxonomy, type SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { isDistinctiveName } from "../lib/enrichment/entity.ts";
 import { PermanentError } from "./retry.ts";
+import { PHASE1_PASSED } from "../lib/enrichment/writeGate.ts";
 
 let cfg: WorkerConfig;
 try {
@@ -62,7 +63,9 @@ const execute: Execute = async (row, meter) => {
     return runDeepen(row, {
       loadCompany: (id) => loadCompany(db, id),
       collect: async (c, onStage) => runCollection(c.row, c.rounds, { anthropic, model: cfg.enrichModel, taxonomy: await taxonomy(), meter, onStage }),
-      applyDirectWrites: (id, w) => applyDirectWrites(db, id, w),
+      // Until v2 passes Phase 1 nothing is written without an admin (lib/enrichment/writeGate.ts):
+      // what would have been written directly goes into the proposal instead.
+      applyDirectWrites: async (id, w) => (PHASE1_PASSED ? applyDirectWrites(db, id, w) : []),
       dryRunWrite: async (r, c) => writeCollected(r, c, {
         db, dryRun: true, update: false, verbose: false, thresholds: BULK_THRESHOLDS,
         taxonomy: await taxonomy(), startupByDomain: await domainIndex(db), seen: null,

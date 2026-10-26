@@ -70,7 +70,9 @@ describe("rounds that are not written", () => {
 
   it("drops a round that is only a label — no amount, valuation or investor (HomeLane's Series F+)", () => {
     expect(rejectRound(round({ round_type: "Series F+", announcement_date: { value: "2025-09-02", source_id: "S1", evidence_quote: "Sep 2, 2025" } }), "HomeLane", sources)).toBe("round_without_substance");
-    expect(rejectRound(round({ round_type: "Acquired", announcement_date: { value: "2022-06-03", source_id: "S1", evidence_quote: "x" } }), "Hitch Works", sources)).toBeNull();
+    expect(rejectRound(round({ round_type: "Acquired", announcement_date: { value: "2022-06-03", source_id: "S3", evidence_quote: "x" } }), "Hitch Works", sources)).toBeNull();
+    // ...but not when CB Insights is its only source (data platform only, 2026-10-26).
+    expect(rejectRound(round({ round_type: "Acquired", announcement_date: { value: "2022-06-03", source_id: "S1", evidence_quote: "x" } }), "Hitch Works", sources)).toBe("round_only_from_data_platform");
   });
   it("drops a round read off a job posting (Hirist's 'Series B' was another company's job ad)", () => {
     expect(rejectRound(round({ round_type: "Series B", amount_raised: { value: 20_500_000, source_id: "S2", evidence_quote: "raised $20.5M Series B" }, lead_investor: { value: "Asia Impact", source_id: "S2", evidence_quote: "led by Asia Impact" } }), "Hirist", sources))

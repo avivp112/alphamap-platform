@@ -46,7 +46,9 @@ function builder(table: string) {
     delete: () => { state.op = "delete"; return b; },
     then: (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) => {
       calls.push({ ...state });
-      return Promise.resolve({ data: state.op === "select" ? (tables[table] ?? []) : null, error: null }).then(res, rej);
+      // An insert answers with its new row's id (and enrichment_runs with its run_id), as .insert().select().single() does.
+      const data = state.op === "select" ? (tables[table] ?? []) : state.op === "insert" ? { id: `${table}-new`, run_id: "run-test" } : null;
+      return Promise.resolve({ data, error: null }).then(res, rej);
     },
   };
   return b;
@@ -63,6 +65,8 @@ const fakeSupabase = {
 };
 
 vi.mock("./bulk_enrich_all.ts", () => ({ initV1Context: async () => {}, supabase: fakeSupabase }));
+// The write path itself is under test here; the Phase 1 gate (writeGate.ts) is tested on its own.
+vi.mock("../lib/enrichment/writeGate.ts", () => ({ assertEnrichmentWritesAllowed: () => {} }));
 
 // ── Fake web ────────────────────────────────────────────────────────────
 const SITE = "Ghost is an independent open source publishing platform for newsletters and paid membership subscriptions. Creators use Ghost publishing to run newsletters and grow membership revenue. Founded in 2013 by John O'Nolan and Hannah Wolfe. Ghost publishing powers thousands of newsletters with membership and subscriptions built in.";
@@ -79,7 +83,10 @@ function serperResults(q: string) {
     return [r("https://sifted.eu/articles/ghost-profile", "Inside Ghost", "Ghost (ghost.org) is headquartered in London, United Kingdom, and runs as a non-profit foundation.")];
   }
   if (q.includes("competitors") || q.includes("alternatives") || q.includes(" vs")) {
-    return [r("https://zapier.com/blog/ghost-alternatives", "Best Ghost alternatives", "Top alternatives to Ghost (ghost.org) for newsletters: Substack and Beehiiv both offer paid newsletters and membership.")];
+    return [
+      r("https://zapier.com/blog/ghost-alternatives", "Best Ghost alternatives", "Top alternatives to Ghost (ghost.org) for newsletters: Substack, Medium and Beehiiv both offer paid newsletters and membership."),
+      r("https://www.niemanlab.org/2025/ghost-newsletters", "Ghost bets on paid newsletters", "Ghost (ghost.org) competes with Substack and Beehiiv for paid newsletters and membership."),
+    ];
   }
   return [
     r("https://techcrunch.com/2014/03/15/ghost-raises-seed", "Ghost raises $2M", "Ghost (ghost.org), the 10-person publishing startup, raised a $2 million seed round led by Y Combinator with SV Angel participating. Ghost now powers 70,000 publishers."),
@@ -171,11 +178,14 @@ const createMock = vi.fn(async (req: { tools: Array<{ name: string }>; messages:
     };
   } else if (tool === "save_market_extraction") {
     const zap = sid(prompt, "zapier.com");
+    const nl = sid(prompt, "niemanlab.org/2025/ghost-newsletters");
+    const said = "Ghost (ghost.org) competes with Substack and Beehiiv for paid newsletters";
     input = {
-      competitors: zap ? [
-        { name: "Substack", how_it_competes: "Paid newsletter platform.", source_ids: [zap] },
-        { name: "Beehiiv", how_it_competes: "Newsletter platform.", source_ids: [zap] },
-        { name: "Medium", how_it_competes: "Not in any source.", source_ids: [zap] },
+      competitors: zap && nl ? [
+        { name: "Substack", how_it_competes: "Paid newsletter platform.", source_ids: [nl], source_id: nl, evidence_quote: said },
+        { name: "Beehiiv", how_it_competes: "Newsletter platform.", source_ids: [nl], source_id: nl, evidence_quote: said },
+        // Named only on an "alternatives" list: not a competitor (competitorEvidence.ts).
+        { name: "Medium", how_it_competes: "Blogging platform.", source_ids: [zap], source_id: zap, evidence_quote: "Top alternatives to Ghost (ghost.org) for newsletters: Substack, Medium" },
       ] : [],
       news: [
         { title: "Ghost joins the fediverse", url: "https://www.theverge.com/2024/ghost-activitypub", source: "The Verge", published_date: "2024-03-01" },
@@ -232,6 +242,14 @@ describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
     const news = p.news as Array<{ url: string; image_url: string; published_date: string }>;
     expect(news.map((n) => n.url)).toEqual(["https://www.niemanlab.org/2025/ghost-6", "https://www.theverge.com/2024/ghost-activitypub"]);
     expect(news[0].image_url).toBe("https://www.niemanlab.org/img/hero.jpg");
+  });
+
+  it("registers the run and records every write under its run_id, so it can be undone (2026-10-26)", () => {
+    expect(calls.some((c) => c.table === "enrichment_runs" && c.op === "insert")).toBe(true);
+    const changes = calls.filter((c) => c.table === "field_changes" && c.op === "insert").flatMap((c) => c.payload as Array<{ field: string; run_id: string; old_value: unknown }>);
+    expect(changes.find((r) => r.field === "competitors")).toMatchObject({ run_id: "run-test", old_value: null });
+    expect(changes.find((r) => r.field === "funding_rounds.r-1.lead_investor")).toMatchObject({ run_id: "run-test", old_value: null });
+    expect(calls.some((c) => c.table === "enrichment_runs" && c.op === "update")).toBe(true);
   });
 
   it("fills the Seed round already on file instead of inserting a duplicate; drops the unevidenced Series A", () => {

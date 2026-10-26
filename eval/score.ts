@@ -14,6 +14,7 @@
 // =============================================================================
 
 import { samePersonName } from "../lib/enrichment/linkedin.ts";
+import { patentDigits } from "../lib/enrichment/patents.ts";
 
 export type Confidence = "verified" | "likely" | "unknown";
 export interface GoldenField<T> { value: T | null; confidence: Confidence; source_url?: string; notes?: string }
@@ -33,6 +34,19 @@ export interface GoldenCompany {
   employee_range?: GoldenField<string>; github_url?: string | null; huggingface_url?: string | null;
   /** Latest annual recurring revenue a primary source states (batch 3 on). */
   arr_usd?: GoldenField<number> & { as_of?: string | null };
+  /**
+   * Competitors a primary source says compete with the company (2026-10-26).
+   * names: judged right; not_competitors: judged wrong (partners, customers,
+   * "similar companies" a data platform lists). A name in neither is left
+   * unjudged and reported, so the list can grow — never counted either way.
+   */
+  competitors?: { names: string[]; not_competitors?: string[]; confidence: Confidence; source_urls?: string[]; notes?: string };
+  /**
+   * The company's patents per the EPO register / Espacenet, as publication
+   * numbers (any publication of a family counts). none: the register shows
+   * none — every patent output is then wrong.
+   */
+  patents?: { numbers: string[]; none?: boolean; confidence: Confidence; source_url?: string; notes?: string };
   reviewed_by_human?: boolean;
   hard_case_tags?: string[];
 }
@@ -48,10 +62,15 @@ export interface PipelineOutput {
   rounds: Array<{ round_type: string; amount_raised: number | null; date: string | null }>;
   employee_range: string | null;
   arr_usd?: number | null;
+  /** Competitor names written (undefined: the pipeline does not produce them). */
+  competitors?: string[];
+  /** Patent publication numbers written. */
+  patents?: string[];
 }
 
-export interface FieldStats { scored: number; produced: number; correct: number }
-export const FIELDS = ["city", "country", "founding_country", "founded_year", "founders", "funding_rounds", "employee_range", "arr_usd"] as const;
+/** unjudged: produced values the golden set neither confirms nor rejects (competitors only) — reported, not scored. */
+export interface FieldStats { scored: number; produced: number; correct: number; unjudged?: number }
+export const FIELDS = ["city", "country", "founding_country", "founded_year", "founders", "funding_rounds", "round_type", "employee_range", "arr_usd", "competitors", "patents"] as const;
 export type Field = (typeof FIELDS)[number];
 export type Scoreboard = Record<Field, FieldStats>;
 
@@ -116,6 +135,28 @@ export function roundsDayGap(g: GoldenRound, e: { amount_raised?: number | null;
 // Greedy injective matching, closest first: one extracted round satisfies at
 // most one golden round — otherwise a round between two real ones would
 // "cover" both and hide the duplicate-round bug (Apex) this exists to catch.
+export function matchRounds(verified: GoldenRound[], extracted: PipelineOutput["rounds"]): Array<[GoldenRound, number]> {
+  const used = new Set<number>();
+  const order = verified.map((gr) => {
+    let best = Infinity;
+    extracted.forEach((er) => { const g = roundsDayGap(gr, er); if (g !== null && g < best) best = g; });
+    return { gr, best };
+  }).sort((a, b) => a.best - b.best);
+  const pairs: Array<[GoldenRound, number]> = [];
+  for (const { gr } of order) {
+    let idx = -1, gap = Infinity;
+    extracted.forEach((er, i) => {
+      if (used.has(i)) return;
+      const g = roundsDayGap(gr, er);
+      if (g !== null && g < gap) { gap = g; idx = i; }
+    });
+    if (idx < 0) continue;
+    used.add(idx);
+    pairs.push([gr, idx]);
+  }
+  return pairs;
+}
+
 function scoreRounds(s: FieldStats, g: GoldenCompany, extracted: PipelineOutput["rounds"]): FieldResult {
   const golden = g.funding_rounds;
   const verified = (golden ?? []).filter((r) => r.confidence !== "unknown");
@@ -128,30 +169,70 @@ function scoreRounds(s: FieldStats, g: GoldenCompany, extracted: PipelineOutput[
     ...(g.funding_rounds_excluded_unknown ?? []).map((r) => ({ ...r, confidence: "unknown" as const })),
   ];
   s.scored += verified.length;
-  const used = new Set<number>();
-  const order = verified.map((gr) => {
-    let best = Infinity;
-    extracted.forEach((er) => { const g = roundsDayGap(gr, er); if (g !== null && g < best) best = g; });
-    return { gr, best };
-  }).sort((a, b) => a.best - b.best);
-  let correct = 0;
-  for (const { gr } of order) {
-    let idx = -1, gap = Infinity;
-    extracted.forEach((er, i) => {
-      if (used.has(i)) return;
-      const g = roundsDayGap(gr, er);
-      if (g !== null && g < gap) { gap = g; idx = i; }
-    });
-    if (idx < 0) continue;
-    used.add(idx);
-    correct++;
-  }
+  const pairs = matchRounds(verified, extracted);
+  const used = new Set(pairs.map(([, i]) => i));
+  const correct = pairs.length;
   const ignored = extracted.filter((er, i) => !used.has(i) && unknown.some((ur) => roundsDayGap(ur, er) !== null)).length;
   // A hallucinated or duplicate round is produced-but-not-correct.
   s.produced += extracted.length - ignored;
   s.correct += correct;
   return extracted.length === 0 ? "missing" : correct === verified.length && extracted.length === verified.length ? "correct" : "wrong";
 }
+
+/**
+ * Round type (2026-10-26: Biotia's "$9M financing" written as "Growth",
+ * Azumo's "$30M in funding" as "Series B"): judged on the rounds matched to a
+ * verified golden round by amount and date. "Unknown" is missing, not wrong;
+ * debt written as an equity round, or the reverse, is wrong.
+ */
+function scoreRoundTypes(s: FieldStats, g: GoldenCompany, extracted: PipelineOutput["rounds"]): FieldResult {
+  const verified = (g.funding_rounds ?? []).filter((r) => r.confidence !== "unknown" && r.type);
+  if (verified.length === 0) return "excluded";
+  const pairs = matchRounds(verified, extracted);
+  let produced = 0, correct = 0;
+  for (const [gr, i] of pairs) {
+    s.scored++;
+    const t = extracted[i].round_type;
+    if (!t || canonType(t) === "unknown" || canonType(t) === "other") continue;
+    produced++;
+    if (canonType(t) === canonType(gr.type)) correct++;
+  }
+  s.produced += produced;
+  s.correct += correct;
+  return pairs.length === 0 ? "excluded" : produced === 0 ? "missing" : correct === produced ? "correct" : "wrong";
+}
+
+/** Competitors: a name the golden list confirms is right, one it rejects is wrong, any other is unjudged. */
+function scoreCompetitors(s: FieldStats, g: GoldenCompany, extracted: string[] | undefined): FieldResult {
+  const golden = g.competitors;
+  if (!golden || golden.confidence === "unknown" || extracted === undefined) return "excluded";
+  const same = (a: string, b: string) => normalizeCompany(a) === normalizeCompany(b);
+  s.scored += golden.names.length;
+  let produced = 0, correct = 0, unjudged = 0;
+  for (const name of extracted) {
+    if (golden.names.some((n) => same(n, name))) { produced++; correct++; }
+    else if ((golden.not_competitors ?? []).some((n) => same(n, name))) produced++;
+    else unjudged++;
+  }
+  s.produced += produced;
+  s.correct += correct;
+  s.unjudged = (s.unjudged ?? 0) + unjudged;
+  return produced === 0 ? (extracted.length === 0 ? "missing" : "excluded") : correct === produced ? "correct" : "wrong";
+}
+
+/** Patents: a number of a family the register gives the company is right; any other is wrong. */
+function scorePatents(s: FieldStats, g: GoldenCompany, extracted: string[] | undefined): FieldResult {
+  const golden = g.patents;
+  if (!golden || golden.confidence === "unknown" || extracted === undefined) return "excluded";
+  const known = new Set(golden.numbers.map(patentDigits));
+  s.scored += golden.numbers.length;
+  s.produced += extracted.length;
+  const correct = golden.none ? 0 : extracted.filter((n) => known.has(patentDigits(n))).length;
+  s.correct += correct;
+  return extracted.length === 0 ? (golden.none ? "correct" : "missing") : correct === extracted.length ? "correct" : "wrong";
+}
+
+const normalizeCompany = (name: string) => normalize(name).replace(/,?\s*\b(inc|llc|ltd|limited|corp|corporation|gmbh|plc|co)\b\.?$/, "").replace(/[^a-z0-9]/g, "");
 
 /** ARR: the latest figure within ±20% of the golden one (revenue is stated loosely: "~$10M ARR"). */
 function scoreArr(s: FieldStats, golden: GoldenCompany["arr_usd"], extracted: number | null | undefined): FieldResult {
@@ -171,8 +252,11 @@ export function scoreCompany(board: Scoreboard, g: GoldenCompany, out: PipelineO
     founded_year: scoreScalar(board.founded_year, g.founded_year, out.founded_year),
     founders: scoreFounders(board.founders, g.founders, out.founders),
     funding_rounds: scoreRounds(board.funding_rounds, g, out.rounds),
+    round_type: scoreRoundTypes(board.round_type, g, out.rounds),
     employee_range: scoreScalar(board.employee_range, g.employee_range, out.employee_range),
     arr_usd: scoreArr(board.arr_usd, g.arr_usd, out.arr_usd),
+    competitors: scoreCompetitors(board.competitors, g, out.competitors),
+    patents: scorePatents(board.patents, g, out.patents),
   };
 }
 
@@ -211,6 +295,17 @@ export function foundedAfterFirstRound(out: PipelineOutput): boolean {
 
 export interface Phase1Check { rule: string; pass: boolean; detail: string }
 
+/**
+ * Pass bars for the fields the 2026-10-26 run got wrong (owner, 2026-10-26):
+ * the share of written values that are right, over at least `min` values the
+ * golden set can judge.
+ */
+export const PHASE1_BARS = {
+  round_type: { threshold: 0.95, min: 20 },
+  competitors: { threshold: 0.9, min: 20 },
+  patents: { threshold: 0.98, min: 10 },
+} as const;
+
 export function phase1Checks(board: Scoreboard, facts: { locationMismatches: number; duplicateRounds: number; foundedAfterRound: number }): Phase1Check[] {
   const precision = (fs: FieldStats[]) => {
     const produced = fs.reduce((n, f) => n + f.produced, 0);
@@ -218,11 +313,22 @@ export function phase1Checks(board: Scoreboard, facts: { locationMismatches: num
   };
   const loc = precision([board.city, board.country, board.founded_year]);
   const rounds = precision([board.funding_rounds]);
+  // The three fields the 2026-10-26 run got wrong: each needs enough judged
+  // values to mean something, then its own bar.
+  const bar = (rule: string, fs: FieldStats, min: number, threshold: number): Phase1Check => {
+    const p = fs.produced ? fs.correct / fs.produced : null;
+    const judged = `${fs.produced} judged${fs.unjudged ? `, ${fs.unjudged} unjudged` : ""}`;
+    if (fs.produced < min) return { rule, pass: false, detail: `only ${judged} — at least ${min} needed (add to eval/golden_set.json)` };
+    return { rule, pass: p! >= threshold, detail: `${(p! * 100).toFixed(1)}% (${judged})` };
+  };
   return [
     { rule: "zero city/country mismatches", pass: facts.locationMismatches === 0, detail: `${facts.locationMismatches} wrong` },
     { rule: "zero duplicate rounds", pass: facts.duplicateRounds === 0, detail: `${facts.duplicateRounds} duplicate pair(s)` },
     { rule: "zero founded_year after the first round", pass: facts.foundedAfterRound === 0, detail: `${facts.foundedAfterRound} company(ies)` },
     { rule: "precision ≥ 95% on location and founded year", pass: loc != null && loc >= 0.95, detail: loc == null ? "nothing produced" : `${(loc * 100).toFixed(1)}%` },
     { rule: "precision ≥ 90% on round amounts", pass: rounds != null && rounds >= 0.9, detail: rounds == null ? "nothing produced" : `${(rounds * 100).toFixed(1)}%` },
+    bar(`precision ≥ ${PHASE1_BARS.round_type.threshold * 100}% on round type`, board.round_type, PHASE1_BARS.round_type.min, PHASE1_BARS.round_type.threshold),
+    bar(`precision ≥ ${PHASE1_BARS.competitors.threshold * 100}% on competitors`, board.competitors, PHASE1_BARS.competitors.min, PHASE1_BARS.competitors.threshold),
+    bar(`precision ≥ ${PHASE1_BARS.patents.threshold * 100}% on patents`, board.patents, PHASE1_BARS.patents.min, PHASE1_BARS.patents.threshold),
   ];
 }

@@ -18,6 +18,7 @@ import { Document, Page, View, Text } from "@react-pdf/renderer";
 import type { Startup, AlphaScore, MatchScoreResult, FundingRound } from "../../lib/supabase";
 import { pdfStyles as s, COLORS, ROUND_HEX } from "../../lib/pdfStyles";
 import { roundTypeLabel } from "../../lib/taxonomy";
+import { equityRaised } from "../../lib/capital";
 
 function initials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
@@ -63,7 +64,7 @@ export function TearsheetPdfDocument({
     (a: FundingRound, b: FundingRound) => (a.announcement_date ?? "").localeCompare(b.announcement_date ?? ""),
   );
   const latestRound = sortedRounds[sortedRounds.length - 1] ?? null;
-  const totalRaised = sortedRounds.reduce((sum, r) => sum + (r.amount_raised ?? 0), 0);
+  const totalRaised = equityRaised(sortedRounds);
 
   const tierColor = alphaScore ? COLORS.tier[alphaScore.tier] : COLORS.gray400;
   const tierBg = alphaScore ? COLORS.tierBg[alphaScore.tier] : COLORS.gray50;

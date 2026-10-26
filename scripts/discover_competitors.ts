@@ -64,6 +64,7 @@ import { existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
+import { assertEnrichmentWritesAllowed } from "../lib/enrichment/writeGate.ts";
 // ── Bootstrap: load .env for local dev ─────────────────────────────────────
 const __dir   = dirname(fileURLToPath(import.meta.url));
 const envPath = join(__dir, "..", ".env");
@@ -71,6 +72,7 @@ if (existsSync(envPath)) config({ path: envPath });
 
 // ── Configuration ────────────────────────────────────────────────────────
 const DRY_RUN      = process.env.DRY_RUN !== "false"; // safe default: dry run
+assertEnrichmentWritesAllowed("discover_competitors", !DRY_RUN);
 const BATCH_SIZE    = Number(process.env.BATCH_SIZE ?? 25);
 const MIN_MENTIONS  = Number(process.env.MIN_MENTIONS ?? 1);
 const DELAY_MS       = Number(process.env.DELAY_MS ?? 20_000);

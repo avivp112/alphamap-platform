@@ -52,11 +52,13 @@ import { openSearchCache } from "../lib/enrichment/searchCache.ts";
 import { ACTIVE_DAYS, QUIET_DAYS, SeenUrls, isUpdateDue } from "../lib/enrichment/update.ts";
 import { websiteDomain, type DomainOwner } from "../lib/enrichment/websiteValidation.ts";
 
+import { assertEnrichmentWritesAllowed } from "../lib/enrichment/writeGate.ts";
 // ── Configuration (ground rule 3: same env vars as v1) ──────────────────
 const BATCH_SIZE     = Number(process.env.BATCH_SIZE     ?? 9999);
 const OFFSET         = Number(process.env.OFFSET         ?? 0);
 const DELAY_MS       = Number(process.env.DELAY_MS       ?? 20_000);
 const DRY_RUN        = process.env.DRY_RUN               !== "false";
+assertEnrichmentWritesAllowed("bulk_enrich_v2", !DRY_RUN);
 const MAX_TIER       = Number(process.env.MAX_TIER       ?? 3);
 // VERBOSE=true prints the full candidate value + evidence per field, not
 // just the field names, in both dry and real runs.
@@ -233,7 +235,7 @@ async function enrichCompany(
     summary.tally.removed_public++;
     if (!DRY_RUN) {
       const { error: changeErr } = await supabase.from("field_changes").insert({
-        startup_id: row.id, field: "status", old_value: row.status, new_value: "ipo", source_url: null,
+        startup_id: row.id, field: "status", old_value: row.status, new_value: "ipo", source_url: null, run_id: runId,
       });
       if (changeErr) console.warn(`    ⚠️  field_changes insert failed: ${changeErr.message}`);
       const { error } = await supabase.from("startups").update({ status: "ipo" }).eq("id", row.id);
@@ -261,8 +263,22 @@ async function enrichCompany(
   // ── Stage 10: write (lib/enrichment/writeCompany.ts) ───────────────────
   await writeCollected(row, collected, {
     db: supabase, dryRun: DRY_RUN, update: UPDATE, verbose: VERBOSE, thresholds: THRESHOLDS,
-    taxonomy, startupByDomain, seen,
+    taxonomy, startupByDomain, seen, runId,
   }, summary);
+}
+
+// This run's enrichment_runs row: every write is recorded under it in
+// field_changes, so the run can be undone as a whole (scripts/undo_run.ts).
+let runId: string | null = null;
+
+async function registerRun(): Promise<string> {
+  const { data, error } = await supabase.from("enrichment_runs").insert({
+    pipeline: "v2", run_kind: "bulk", dry_run: false, git_sha: process.env.GIT_SHA ?? null,
+    profile_model: PROFILE_MODEL, funding_model: FUNDING_MODEL,
+    thresholds: { MIN_PROFILE_CONFIDENCE, MIN_FUNDING_CONFIDENCE, MARKET_MODEL, MODE: UPDATE ? "update" : "full" },
+  }).select("run_id").single();
+  if (error || !data) throw new Error(`could not register the run in enrichment_runs (${error?.message ?? "no row"}) — nothing written, since the run could not be undone`);
+  return (data as { run_id: string }).run_id;
 }
 
 async function main() {
@@ -298,6 +314,10 @@ async function main() {
   if (!process.env.TAVILY_API_KEY) console.warn("⚠️  TAVILY_API_KEY is not set — Tavily search/fallback is disabled for this entire run.");
   if (!process.env.SERP_KEY && !process.env.TAVILY_API_KEY) {
     console.warn("⚠️  Neither search provider is configured — every company will run on website-page content ONLY (no funding/news/competitor search results at all).");
+  }
+  if (!DRY_RUN) {
+    runId = await registerRun();
+    console.log(`🧾  run_id ${runId} — undo everything this run writes: RUN_ID=${runId} npx tsx scripts/undo_run.ts`);
   }
   console.log(`🗂️   Sector taxonomy: ${taxonomy.parentNames.length} sectors, ${taxonomy.subNames.length} sub-sectors loaded\n`);
 
@@ -422,6 +442,13 @@ async function main() {
 
   if (!DRY_RUN && (summary.totalFieldsPatched > 0 || summary.totalRoundsInserted > 0 || summary.totalRoundsUpdated > 0)) {
     await refreshSearch();
+  }
+
+  if (runId) {
+    const { error } = await supabase.from("enrichment_runs").update({
+      finished_at: new Date().toISOString(), companies_count: Object.values(summary.tally).reduce((n, c) => n + c, 0), total_cost_usd: summary.totalCostUsd,
+    }).eq("run_id", runId);
+    if (error) console.warn(`⚠️  enrichment_runs not closed: ${error.message}`);
   }
 
   console.log(`\n${"═".repeat(62)}`);

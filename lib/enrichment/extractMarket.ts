@@ -1,7 +1,9 @@
 /**
  * lib/enrichment/extractMarket.ts — the third extraction call: competitors
- * (with a short overview of each), acquisitions, news, patents, and
- * technology. These used to ride along inside the profile call, which also
+ * (with a short overview of each), acquisitions, news and technology.
+ * Patents are not read from the web at all (owner, 2026-10-26): they come
+ * from the EPO register only (epoPatents.ts), so `patents` here is always
+ * empty and collect.ts fills it. These used to ride along inside the profile call, which also
  * carries the overview, founders, leadership, and headcount -- one very
  * large schema for a single Haiku call. Real DRY_RUN=false runs showed the
  * cost of that: competitors and news came back [] for well-known companies
@@ -14,7 +16,6 @@
  * fetched, so nothing can enter that no source mentions:
  *   - competitor / acquisition: its name must appear in a fetched source.
  *   - news: its URL must be one of the fetched source URLs.
- *   - patent: its URL, patent number, or title must appear in a source.
  *   - tech_stack: each technology must appear in a source.
  *   - github_url / huggingface_url: verifyEvidence (verbatim URL), as before.
  */
@@ -25,7 +26,7 @@ import { verifyEvidence, normalizeForMatch, type EvidenceSource } from "./eviden
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
 import { debugDumpJson } from "./debugDump";
 import { competitorRelation, type RelationDrop } from "./competitorRelation";
-import { checkPatent, countStatedForCompany, statedForCompany, patentDigits, type PatentDrop } from "./patents";
+import { competitorEvidenceProblem, type CompetitorEvidenceDrop } from "./competitorEvidence";
 
 export interface EvidencedValue<T> {
   value: T;
@@ -33,10 +34,15 @@ export interface EvidencedValue<T> {
   evidence_quote: string;
 }
 
-export interface V2Competitor { name: string; website?: string; how_it_competes: string; source_ids?: string[] }
+export interface V2Competitor {
+  name: string; website?: string; how_it_competes: string; source_ids?: string[];
+  /** The ONE primary source that says they compete, and its verbatim sentence (competitorEvidence.ts). */
+  source_id?: string; evidence_quote?: string;
+}
 export interface V2Acquisition { company_name: string; website?: string; acquired_date?: string; amount?: number; description?: string; source_ids?: string[] }
 export interface V2NewsItem { title: string; url: string; source?: string; published_date?: string; summary?: string; image_url?: string }
-export interface V2PatentRecord { title: string; patent_number?: string; filing_date?: string; url?: string; summary?: string }
+/** A patent from the EPO register (epoPatents.ts) — the only source of patents. */
+export interface V2PatentRecord { title: string; patent_number?: string; filing_date?: string | null; url?: string; summary?: string; source?: "epo" }
 export interface V2Technology {
   tech_stack?: string[];
   github_url?: EvidencedValue<string>;
@@ -52,26 +58,6 @@ export interface V2MarketExtraction {
   technology: V2Technology;
 }
 
-const escapeForRe = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-/** `term` appears within ~250 characters of the word "patent". */
-export function nearPatentWord(term: string, text: string): boolean {
-  if (!term.trim()) return false;
-  const re = new RegExp(escapeForRe(term.trim()), "gi");
-  for (const m of text.matchAll(re)) {
-    const window = text.slice(Math.max(0, m.index! - 250), m.index! + m[0].length + 250);
-    if (/patent/i.test(window)) return true;
-  }
-  return false;
-}
-
-/** The text states `count` patents: "120 patents", "over 120 technology patents", "patents: 6". */
-export function patentCountStated(count: number, text: string): boolean {
-  const n = `(?:${count}|${count.toLocaleString("en-US")})`;
-  return new RegExp(`\\b${n}\\+?\\s+(?:[A-Za-z-]+\\s+){0,3}patents?\\b`, "i").test(text) ||
-    new RegExp(`\\bpatents?\\b[^.\\d]{0,25}\\b${n}\\b`, "i").test(text);
-}
-
 export function emptyMarketExtraction(): V2MarketExtraction {
   return {
     competitors: [], acquisitions: [], news: [],
@@ -82,9 +68,9 @@ export function emptyMarketExtraction(): V2MarketExtraction {
 
 export type MarketDropReason =
   | "competitor_not_in_source" | "competitor_is_self" | "acquisition_not_in_source"
-  | "news_url_not_in_sources" | "news_is_profile_page" | "patent_not_in_source" | "patent_count_not_stated"
+  | "news_url_not_in_sources" | "news_is_profile_page" | "patent_not_from_register"
   | "tech_not_in_source" | "competitor_is_acquisition" | "acquisition_is_self" | "news_date_not_in_source" | "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found"
-  | PatentDrop | RelationDrop;
+  | RelationDrop | CompetitorEvidenceDrop;
 
 export interface MarketDroppedField { field: string; reason: MarketDropReason }
 
@@ -111,13 +97,13 @@ function materialField(valueSchema: Record<string, unknown>, description: string
 function marketExtractionTool() {
   return {
     name: "save_market_extraction",
-    description: "Save the competitors, acquisitions, news, patents, and technology for a private tech company.",
+    description: "Save the competitors, acquisitions, news, and technology for a private tech company.",
     input_schema: {
       type: "object" as const,
       properties: {
         competitors: {
           type: "array",
-          description: "4-6 DIRECT competitors named in the research, most direct first.",
+          description: "Up to 6 DIRECT competitors that a source explicitly says compete with the company, most direct first. [] when no source says so.",
           items: {
             type: "object" as const,
             properties: {
@@ -125,8 +111,10 @@ function marketExtractionTool() {
               website: { type: "string", description: "Competitor's root domain, only if it appears in a source." },
               how_it_competes: { type: "string", description: "2-3 sentences: who this competitor is (what it sells, to whom) and specifically how it overlaps with the company — never where it was listed, ranked or compared, and never a data platform (Crunchbase, PitchBook, Tracxn, CB Insights, Dealroom, LinkedIn, G2 and the like)." },
               source_ids: { type: "array", items: { type: "string" }, description: "Every [Sx]/[Wx] id that names this competitor." },
+              source_id: { type: "string", description: "The ONE [Sx]/[Wx] source that says, in its own words, that this company competes with the company — the company's own site, a press release or an article. Never a data platform or a 'similar companies' / 'alternatives' / 'top N' list." },
+              evidence_quote: { type: "string", description: "5-40 words copied VERBATIM from that source, naming this competitor and saying they compete (\"competes with\", \"rival\", \"competitor\")." },
             },
-            required: ["name", "how_it_competes", "source_ids"],
+            required: ["name", "how_it_competes", "source_ids", "source_id", "evidence_quote"],
           },
         },
         acquisitions: {
@@ -159,24 +147,6 @@ function marketExtractionTool() {
             required: ["title", "url"],
           },
         },
-        patent_summary: {
-          type: "object" as const,
-          properties: {
-            patent_count: { type: "integer", description: "Only if a source states a count." },
-            patent_fields: { type: "array", items: { type: "string" } },
-          },
-        },
-        patents: {
-          type: "array",
-          items: {
-            type: "object" as const,
-            properties: {
-              title: { type: "string" }, patent_number: { type: "string" }, filing_date: { type: "string" },
-              url: { type: "string" }, summary: { type: "string" },
-            },
-            required: ["title"],
-          },
-        },
         technology: {
           type: "object" as const,
           properties: {
@@ -193,16 +163,15 @@ function marketExtractionTool() {
 
 export function buildMarketExtractionRequest(companyName: string, sources: LabeledSource[], today = new Date().toISOString().slice(0, 10)) {
   const context = formatSourcesForPrompt(sources);
-  const prompt = `You are a market research analyst. From the labeled research below, extract the competitors, acquisitions, news coverage, patents, and technology of the company "${companyName}". Today's date is ${today}.
+  const prompt = `You are a market research analyst. From the labeled research below, extract the competitors, acquisitions, news coverage, and technology of the company "${companyName}". Today's date is ${today}.
 
 RULES:
-1. COMPETITORS — find 4-6 DIRECT competitors. Real evidence includes: "alternatives to ${companyName}" / "${companyName} vs X" pages, G2/Capterra/Crunchbase "similar companies" or "top competitors" lists, market-landscape articles that group ${companyName} with named peers, and ${companyName}'s own comparison pages. A company named alongside ${companyName} in such a source IS a competitor for this purpose. For each, write 2-3 sentences: who the competitor is and exactly how it overlaps with ${companyName} — what each sells and to whom; never where it was listed, ranked or compared, and never a data platform (Crunchbase, PitchBook, Tracxn, CB Insights, Dealroom, LinkedIn, G2 and the like). Those lists are how you FIND a competitor, never what you write about it. Never list ${companyName} itself, a parent company, an investor, a customer, a partner it works with, or a platform it runs on or integrates into — those are relationships, not competitors. Only name competitors that actually appear in the sources (cite them in source_ids) — never add a well-known company from your own knowledge that no source mentions.
+1. COMPETITORS — only companies a source EXPLICITLY says compete with ${companyName}: "${companyName} competes with X", "X, a rival of ${companyName}", "${companyName}'s competitors include X", or ${companyName}'s own comparison page. The source must be ${companyName}'s own website, a press release or a news article. A "similar companies", "alternatives", "top N" or "X vs Y" list on a data platform (LeadIQ, Crunchbase, Tracxn, PitchBook, CB Insights, Dealroom, ZoomInfo and the like) or a review site (G2, Capterra and the like) is NOT evidence — a company named only there is not a competitor. Give each one's source_id and a verbatim evidence_quote that names it and says they compete. Fewer, or none, is correct when no source says so. For each, write 2-3 sentences: who the competitor is and exactly how it overlaps with ${companyName} — what each sells and to whom; never where it was listed, ranked or compared, and never a data platform. Never list ${companyName} itself, a parent company, an investor, a customer, a partner it works with, or a platform it runs on or integrates into — those are relationships, not competitors. Only name competitors that actually appear in the sources (cite them in source_ids) — never add a well-known company from your own knowledge that no source mentions.
 2. NEWS — include EVERY article in the sources that is about ${companyName} (funding, product launches, partnerships, acquisitions, executive hires, awards, interviews), up to 8, most recent first. Use the article URL exactly as it appears in that source's header line. A source's "Source:" and "Date:" lines give the publication and date. Do NOT list the company's own website pages ([W#] sources) or directory/profile pages (Crunchbase, LinkedIn, PitchBook, Tracxn, CB Insights profiles) as news.
 3. ACQUISITIONS — only companies ${companyName} itself bought. If ${companyName} was acquired BY someone, that is not an acquisition here.
-4. PATENTS — only patents ASSIGNED TO ${companyName} itself: a source must name ${companyName} as the assignee/owner or say ${companyName} holds that patent. Never list patents from a patent landscape, a gazette or a list of other companies' patents, and never a patent of an investor, partner or customer. Each needs its patent number (or a patents.google.com URL with it). patent_summary.patent_count only if a source states ${companyName}'s own count. Never infer.
-5. TECHNOLOGY — only technologies a source names (job posts, careers pages, engineering blogs, GitHub). Never infer from the sector.
-6. Never construct or guess a URL — every URL you output must appear verbatim in a source.
-7. Scan EVERY source below for each category, not just the ones whose label matches it. An empty list is correct only after that check.
+4. TECHNOLOGY — only technologies a source names (job posts, careers pages, engineering blogs, GitHub). Never infer from the sector.
+5. Never construct or guess a URL — every URL you output must appear verbatim in a source.
+6. Scan EVERY source below for each category, not just the ones whose label matches it. An empty list is correct only after that check.
 
 Labeled research (each source is tagged [S#] for a search result or [W#] for a fetched website page):
 ${context}`;
@@ -227,12 +196,6 @@ export function termAppearsIn(term: string, text: string): boolean {
   const t = norm(term);
   if (!t) return false;
   return ` ${norm(text)} `.includes(` ${t} `);
-}
-
-/** The company's own domain, from its fetched website pages ([W#] sources). */
-function ownDomain(sources: LabeledSource[]): string | null {
-  const w = sources.find((s) => s.source_id.startsWith("W"));
-  try { return w ? new URL(w.url).hostname.replace(/^www\./, "") : null; } catch { return null; }
 }
 
 function sourceText(s: LabeledSource): string {
@@ -336,6 +299,9 @@ export function processMarketExtractionResponse(
     if (key === selfKey) { dropped.push({ field: "competitors", reason: "competitor_is_self" }); return false; }
     if (isAcquired(c.name)) { dropped.push({ field: "competitors", reason: "competitor_is_acquisition" }); return false; }
     if (!nameIsGrounded(c.name, c.source_ids, sources)) { dropped.push({ field: "competitors", reason: "competitor_not_in_source" }); return false; }
+    // A primary source must say they compete — not a data platform's "similar companies" (competitorEvidence.ts).
+    const evidence = competitorEvidenceProblem(c, sources);
+    if (evidence) { dropped.push({ field: "competitors", reason: evidence }); return false; }
     // Its own explanation says partner, customer, investor or host platform (competitorRelation.ts).
     const relation = competitorRelation(c.name, c.how_it_competes, companyName);
     if (relation) { dropped.push({ field: "competitors", reason: relation }); return false; }
@@ -367,34 +333,11 @@ export function processMarketExtractionResponse(
     if (news.length >= 8) break;
   }
 
-  // A patent is the company's only when a source ties its number to the
-  // company (patents.ts): not every patent on a gazette or landscape page.
-  const patentCtx = { companyName, domain: ownDomain(sources) };
-  const seenPatents = new Set<string>();
+  // Patents a model reads off a page are never kept (the 2026-10-26 run gave
+  // 1AHEAD Snap's patent off an article): only the EPO register's (epoPatents.ts).
+  if (ensureArray(i.patents).length || i.patent_summary?.patent_count != null) dropped.push({ field: "patents", reason: "patent_not_from_register" });
   const patents: V2PatentRecord[] = [];
-  for (const p of ensureArray<V2PatentRecord>(i.patents)) {
-    if (!p?.title) continue;
-    const checked = checkPatent(p, sources, patentCtx);
-    if (!checked.patent) { dropped.push({ field: "patents", reason: checked.drop }); continue; }
-    const key = patentDigits(checked.patent.patent_number!);
-    if (seenPatents.has(key)) continue;
-    seenPatents.add(key);
-    patents.push(checked.patent);
-  }
-
-  // A patent count must be stated as a count ("holds over 120 patents"),
-  // never taken from the length of a list — and stated for THIS company.
-  const count = i.patent_summary?.patent_count ?? null;
-  const countStated = count != null && count > 0 && countStatedForCompany(count, sources, patentCtx);
-  if (count != null && !countStated) dropped.push({ field: "patent_summary.patent_count", reason: "patent_count_not_stated" });
-  // Fields: near the word "patent" AND the company's name — not a gazette's category headings.
-  const patentFields = (patents.length > 0 || countStated)
-    ? ensureArray<string>(i.patent_summary?.patent_fields).filter((f) => sources.some((s) => nearPatentWord(f, sourceText(s))) && statedForCompany(f, sources, patentCtx))
-    : [];
-  const patentSummary = {
-    patent_count: countStated ? count : null,
-    patent_fields: patentFields,
-  };
+  const patentSummary = { patent_count: null, patent_fields: [] as string[] };
 
   const techStack = ensureArray<string>(i.technology?.tech_stack).filter((t) => {
     if (typeof t !== "string" || !t.trim()) return false;

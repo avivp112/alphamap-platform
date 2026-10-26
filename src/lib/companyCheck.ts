@@ -87,7 +87,7 @@ export interface CheckProfile {
     linkedin_url: string | null;
   };
   people: { founders: ProfilePerson[]; leadership: ProfilePerson[] };
-  funding: { rounds: ProfileRound[]; total_raised: number | null; history_complete: boolean | null };
+  funding: { rounds: ProfileRound[]; total_raised: number | null; total_debt?: number | null; history_complete: boolean | null };
   sources_count: number;
 }
 

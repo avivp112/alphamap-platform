@@ -147,6 +147,9 @@ export function CheckProfileView({ profile, investors, pendingReview = false }: 
               {profile.funding.total_raised != null && (
                 <span className="text-2xl font-black tabular-nums text-[#0F172A]">{fmtUsd(profile.funding.total_raised)}</span>
               )}
+              {profile.funding.total_debt != null && (
+                <span className="text-sm font-bold tabular-nums text-zinc-500">+ {fmtUsd(profile.funding.total_debt)} debt</span>
+              )}
               <span className="text-xs text-gray-500">
                 {k("roundsFound", { count: rounds.length })}
                 {profile.funding.history_complete !== true && ` · ${k("mayBeIncomplete")}`}

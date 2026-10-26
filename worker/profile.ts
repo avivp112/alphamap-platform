@@ -19,7 +19,7 @@ import { samePersonName } from "../lib/enrichment/linkedin.ts";
 import { mergePeople, decideHeadcountUpdate } from "../lib/enrichment/write.ts";
 import { computeFieldConfidence, meetsProfileThreshold } from "../lib/enrichment/confidence.ts";
 import { BULK_THRESHOLDS } from "../lib/enrichment/writeCompany.ts";
-import { computeTotalRaised } from "../lib/enrichment/rounds.ts";
+import { computeTotalRaised, computeDebtRaised } from "../lib/enrichment/rounds.ts";
 import { countryFromLocationQuote } from "../lib/enrichment/location.ts";
 import { MAJOR_CITIES } from "../lib/enrichment/majorCities.ts";
 import { normalizeIsoDate } from "../lib/enrichment/assemble.ts";
@@ -82,7 +82,7 @@ export interface CheckProfile {
     linkedin_url: string | null;
   };
   people: { founders: ProfilePerson[]; leadership: ProfilePerson[] };
-  funding: { rounds: ProfileRound[]; total_raised: number | null; history_complete: boolean | null };
+  funding: { rounds: ProfileRound[]; total_raised: number | null; total_debt?: number | null; history_complete: boolean | null };
   /** How many sources the research read. */
   sources_count: number;
 }
@@ -165,6 +165,7 @@ export function buildProfile(c: CollectedCompany, companyName: string): CheckPro
     }))
     .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
   const total = computeTotalRaised(plan.inserts);
+  const debt = computeDebtRaised(plan.inserts);
 
   return {
     overview: {
@@ -179,7 +180,7 @@ export function buildProfile(c: CollectedCompany, companyName: string): CheckPro
       linkedin_url: profile.profile.linkedin_url?.value ?? null,
     },
     people: { founders: allFounders.map(person), leadership: allLeaders.map(person) },
-    funding: { rounds, total_raised: total > 0 ? total : null, history_complete: funding.funding_history_complete ?? null },
+    funding: { rounds, total_raised: total > 0 ? total : null, total_debt: debt > 0 ? debt : null, history_complete: funding.funding_history_complete ?? null },
     sources_count: c.allSources.length,
   };
 }

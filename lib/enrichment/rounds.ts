@@ -262,11 +262,27 @@ const EXCLUDED_FROM_TOTAL_RAISED = new Set<CanonicalRoundType>([
   "Secondary", "IPO", "Acquired", "PE Buyout",
 ]);
 
-/** Recomputes Total Raised from a deduped round list — never from a model-returned total (issue 5). */
+/**
+ * Debt is borrowed, not raised (owner, 2026-10-26): BETA's $169M Export-Import
+ * Bank loan was reported as "total raised $169.0M". Debt rounds are marked
+ * apart (funding_rounds.capital_type, migration 20261107000000) and summed
+ * apart (computeDebtRaised).
+ */
+export type CapitalKind = "equity" | "debt" | "not_capital";
+const DEBT_TYPES = new Set<CanonicalRoundType>(["Debt", "Venture Debt"]);
+
+export function capitalKind(roundType: string | null | undefined): CapitalKind {
+  const type = normalizeRoundType(roundType);
+  if (DEBT_TYPES.has(type)) return "debt";
+  return EXCLUDED_FROM_TOTAL_RAISED.has(type) ? "not_capital" : "equity";
+}
+
+/** Recomputes Total Raised (equity) from a deduped round list — never from a model-returned total (issue 5). */
 export function computeTotalRaised(rounds: RoundLike[]): number {
-  return rounds.reduce((sum, r) => {
-    const type = normalizeRoundType(r.round_type);
-    if (EXCLUDED_FROM_TOTAL_RAISED.has(type)) return sum;
-    return sum + (r.amount_raised ?? 0);
-  }, 0);
+  return rounds.reduce((sum, r) => (capitalKind(r.round_type) === "equity" ? sum + (r.amount_raised ?? 0) : sum), 0);
+}
+
+/** Debt taken on (loans, credit facilities, venture debt) — shown beside Total Raised, never inside it. */
+export function computeDebtRaised(rounds: RoundLike[]): number {
+  return rounds.reduce((sum, r) => (capitalKind(r.round_type) === "debt" ? sum + (r.amount_raised ?? 0) : sum), 0);
 }

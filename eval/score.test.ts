@@ -79,8 +79,56 @@ describe("Phase 1 rules", () => {
     b.country = { scored: 10, produced: 10, correct: 9 };
     b.funding_rounds = { scored: 20, produced: 10, correct: 9 };
     const c = phase1Checks(b, { locationMismatches: 1, duplicateRounds: 0, foundedAfterRound: 0 });
-    expect(c.map((x) => x.pass)).toEqual([false, true, true, true, true]);
+    expect(c.map((x) => x.pass)).toEqual([false, true, true, true, true, false, false, false]);
     expect(c[3].detail).toBe("95.0%");
+  });
+  it("round type, competitors and patents each need enough judged values, then their own bar", () => {
+    const b = newScoreboard();
+    b.round_type = { scored: 30, produced: 25, correct: 24 };        // 96% of 25
+    b.competitors = { scored: 40, produced: 12, correct: 12, unjudged: 9 };   // too few judged
+    b.patents = { scored: 15, produced: 12, correct: 11 };            // 91.7% < 98%
+    const c = phase1Checks(b, { locationMismatches: 0, duplicateRounds: 0, foundedAfterRound: 0 }).slice(5);
+    expect(c.map((x) => x.pass)).toEqual([true, false, false]);
+    expect(c[1].detail).toBe("only 12 judged, 9 unjudged — at least 20 needed (add to eval/golden_set.json)");
+  });
+});
+
+describe("the fields the 2026-10-26 run got wrong", () => {
+  it("round type: a stated Series A written as Growth is wrong; written as Unknown it is missing, not wrong", () => {
+    const biotia: GoldenCompany = { id: "biotia", name: "Biotia", funding_rounds: [{ type: "Series A", amount_usd: 8_000_000, date: "2023-03", confidence: "verified" }] };
+    const b = newScoreboard();
+    expect(scoreCompany(b, biotia, out({ rounds: [{ round_type: "Growth", amount_raised: 8_000_000, date: "2023-03-14" }] })).round_type).toBe("wrong");
+    expect(scoreCompany(b, biotia, out({ rounds: [{ round_type: "Unknown", amount_raised: 8_000_000, date: "2023-03-14" }] })).round_type).toBe("missing");
+    expect(b.round_type).toEqual({ scored: 2, produced: 1, correct: 0 });
+  });
+
+  it("round type: BETA's $169M loan written as an equity series is wrong", () => {
+    const beta: GoldenCompany = { id: "beta", name: "BETA Technologies", funding_rounds: [{ type: "Debt", amount_usd: 169_000_000, date: "2024-10", confidence: "verified" }] };
+    const b = newScoreboard();
+    expect(scoreCompany(b, beta, out({ rounds: [{ round_type: "Series C", amount_raised: 169_000_000, date: "2024-10-01" }] })).round_type).toBe("wrong");
+    expect(scoreCompany(b, beta, out({ rounds: [{ round_type: "Debt", amount_raised: 169_000_000, date: "2024-10-01" }] })).round_type).toBe("correct");
+  });
+
+  it("competitors: Chalice's Cognitiv is right, LeadIQ's Powerlytics is wrong, an unlisted name is unjudged", () => {
+    const chalice: GoldenCompany = { id: "chalice", name: "Chalice", competitors: { names: ["Cognitiv"], not_competitors: ["Powerlytics", "Algocraft", "Index Exchange"], confidence: "verified" } };
+    const b = newScoreboard();
+    expect(scoreCompany(b, chalice, out({ competitors: ["Cognitiv, Inc.", "Powerlytics", "The Trade Desk"] })).competitors).toBe("wrong");
+    expect(b.competitors).toEqual({ scored: 1, produced: 2, correct: 1, unjudged: 1 });
+  });
+
+  it("patents: 1AHEAD's own patent is right, Snap's is wrong; with none on the register, any patent is wrong", () => {
+    const ahead: GoldenCompany = { id: "1ahead", name: "1AHEAD Technologies", patents: { numbers: ["US 11,756,357 B2"], confidence: "verified" } };
+    const b = newScoreboard();
+    expect(scoreCompany(b, ahead, out({ patents: ["US11756357B2", "US10102680B2"] })).patents).toBe("wrong");
+    expect(b.patents).toEqual({ scored: 1, produced: 2, correct: 1 });
+    const none: GoldenCompany = { id: "as0001", name: "AS0001", patents: { numbers: [], none: true, confidence: "verified" } };
+    expect(scoreCompany(newScoreboard(), none, out({ patents: ["US10169814B2"] })).patents).toBe("wrong");
+    expect(scoreCompany(newScoreboard(), none, out({ patents: [] })).patents).toBe("correct");
+  });
+
+  it("a pipeline that does not produce competitors or patents is not scored on them", () => {
+    const chalice: GoldenCompany = { id: "chalice", name: "Chalice", competitors: { names: ["Cognitiv"], confidence: "verified" } };
+    expect(scoreCompany(newScoreboard(), chalice, out()).competitors).toBe("excluded");
   });
 });
 

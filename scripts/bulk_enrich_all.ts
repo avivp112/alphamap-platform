@@ -145,6 +145,7 @@ import { fileURLToPath, pathToFileURL } from "url";
 import { dirname, join } from "path";
 import * as cheerio from "cheerio";
 
+import { assertEnrichmentWritesAllowed } from "../lib/enrichment/writeGate.ts";
 const __dir = dirname(fileURLToPath(import.meta.url));
 
 // ── Configuration ─────────────────────────────────────────────────────────────
@@ -157,6 +158,7 @@ const BATCH_SIZE     = Number(process.env.BATCH_SIZE     ?? 9999);  // all by de
 const OFFSET         = Number(process.env.OFFSET         ?? 0);     // skip first N (for resume)
 const DELAY_MS       = Number(process.env.DELAY_MS       ?? 20_000); // 20 s between companies
 const DRY_RUN        = process.env.DRY_RUN               !== "false"; // safe default: dry run
+assertEnrichmentWritesAllowed("bulk_enrich_all", !DRY_RUN);
 const MIN_CONFIDENCE = Number(process.env.MIN_CONFIDENCE ?? 40);     // skip writes below this
 const MAX_TIER       = Number(process.env.MAX_TIER       ?? 3);     // 2 = skip complete companies
 const MODEL           = process.env.ENRICH_MODEL ?? "claude-haiku-4-5-20251001";

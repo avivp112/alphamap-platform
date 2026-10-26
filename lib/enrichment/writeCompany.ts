@@ -23,9 +23,10 @@ import { countryFromLocationQuote } from "./location.ts";
 import { retireReplacedExecutives } from "./update.ts";
 import { MAJOR_CITIES } from "./majorCities.ts";
 import { normalizeForMatch } from "./evidence.ts";
-import { computeTotalRaised } from "./rounds.ts";
+import { computeTotalRaised, computeDebtRaised } from "./rounds.ts";
 import { computeFieldConfidence, meetsProfileThreshold } from "./confidence.ts";
 import { roundFieldEvidence } from "./roundProvenance.ts";
+import { startupChanges, roundInsertChange, roundUpdateChanges, type FieldChangeRow } from "./runChanges.ts";
 import { cleanNarrative, verifierFrom } from "./narrative.ts";
 import {
   decideScalarWrite, decideHeadcountUpdate, mergePeople, appendDatedFigures, fillScalarIfNull, type CandidateValue,
@@ -71,6 +72,8 @@ export interface WriteContext {
   startupByDomain: Map<string, DomainOwner>;
   /** The pages this run read, so a later update skips them (bulk only). */
   seen?: { add(urls: string[]): void; save(): void } | null;
+  /** enrichment_runs.run_id: every write is recorded in field_changes under it (runChanges.ts). */
+  runId?: string | null;
 }
 
 /** The run totals Stage 10 adds to (the bulk run's RunSummary has these). */
@@ -109,6 +112,13 @@ export async function writeCollected(
   summary: WriteSummary,
 ): Promise<WriteOutcome> {
   const { db: supabase, dryRun: DRY_RUN, update: UPDATE, verbose: VERBOSE, thresholds: THRESHOLDS, taxonomy, startupByDomain, seen } = ctx;
+  const runId = ctx.runId ?? null;
+  // What this run wrote, so it can be undone by run_id (runChanges.ts).
+  const recordChanges = async (rows: FieldChangeRow[]) => {
+    if (rows.length === 0) return;
+    const { error } = await supabase.from("field_changes").insert(rows);
+    if (error) console.warn(`    ⚠️  field_changes insert failed (${rows.map((r) => r.field).join(", ")}): ${error.message}`);
+  };
   const MIN_PROFILE_CONFIDENCE = THRESHOLDS.minProfileConfidence;
   const {
     profile, funding, market, allSources, sourceById, sourceTypeFor, sourceUrlFor,
@@ -331,10 +341,16 @@ export async function writeCollected(
   else refresh.add("competitors");
   const competitors = appendNew(
     existingCompetitors,
-    market.competitors.map((c) => ({ name: c.name, website: c.website ?? null, how_it_competes: c.how_it_competes, startup_id: crossLink(c.website) })),
+    market.competitors.map((c) => ({ name: c.name, website: c.website ?? null, how_it_competes: c.how_it_competes, startup_id: crossLink(c.website), source_url: sourceUrlFor(c.source_id) })),
     (c) => normalizeForMatch(c.name ?? ""), MAX_COMPETITORS,
   );
   const competitorsAdded = competitors.length - existingCompetitors.length;
+  // Each new competitor's provenance: the primary source that says they compete (competitorEvidence.ts).
+  for (const c of market.competitors) {
+    if (c.source_id && c.evidence_quote && competitors.some((x) => normalizeForMatch(x.name ?? "") === normalizeForMatch(c.name)) && !existingCompetitors.some((x) => normalizeForMatch(x?.name ?? "") === normalizeForMatch(c.name))) {
+      provenance("market.competitors", c.name, { source_id: c.source_id, evidence_quote: c.evidence_quote });
+    }
+  }
   if (!sameJson(competitors, row.competitors ?? [])) patch.competitors = competitors;
 
   // Acquisitions & IP
@@ -347,20 +363,17 @@ export async function writeCollected(
     (a) => normalizeForMatch(a.company_name ?? ""),
   );
   if (acquisitions.length !== (row.acquisitions?.length ?? 0)) patch.acquisitions = acquisitions;
-  const newPatents = market.patents.map((p) => ({ title: p.title, patent_number: p.patent_number ?? null, filing_date: p.filing_date ?? null, url: p.url ?? null, summary: p.summary ?? null }));
-  if (refresh.has("patents")) {
-    // Patents on file came from before the ownership check (patents.ts): this
-    // run's verified list replaces them, count and fields included.
-    if (!sameJson(newPatents, row.patents ?? [])) patch.patents = newPatents;
+  // Patents: the EPO register's list only (epoPatents.ts). When the register
+  // was consulted, its list replaces what is on file — patents earlier runs
+  // read off web pages included (1AHEAD's Snap patent, AS0001's gazette ones);
+  // when it was not (no EPO keys, a common name), patents are left alone.
+  if (collected.patentsFromRegister) {
+    const registerPatents = market.patents.map((p) => ({ title: p.title, patent_number: p.patent_number ?? null, filing_date: p.filing_date ?? null, url: p.url ?? null, summary: null, source: "epo" }));
+    if (!sameJson(registerPatents, row.patents ?? [])) patch.patents = registerPatents;
     if (market.patent_summary.patent_count !== row.patent_count) patch.patent_count = market.patent_summary.patent_count;
-    if (!sameJson(market.patent_summary.patent_fields, row.patent_fields ?? [])) patch.patent_fields = market.patent_summary.patent_fields;
+    // Fields were only ever read off pages.
+    if (row.patent_fields?.length) patch.patent_fields = [];
     refresh.delete("patents");
-  } else {
-    if (row.patent_count == null && market.patent_summary.patent_count != null) patch.patent_count = market.patent_summary.patent_count;
-    if (!row.patent_fields?.length && market.patent_summary.patent_fields.length) patch.patent_fields = market.patent_summary.patent_fields;
-    const patentKey = (p: { title: string; patent_number?: string | null }) => (p.patent_number ? `#${p.patent_number}` : normalizeForMatch(p.title ?? ""));
-    const patents = appendNew(row.patents ?? [], newPatents, patentKey);
-    if (patents.length > (row.patents?.length ?? 0)) patch.patents = patents;
   }
   // Every field marked for collecting again that this run rewrote has left the list.
   if (!sameJson([...refresh].sort(), [...(row.refresh_fields ?? [])].sort())) patch.refresh_fields = [...refresh];
@@ -532,7 +545,8 @@ export async function writeCollected(
         ({ error } = await supabase.from("startups").update(patch).eq("id", row.id));
       }
       if (error) console.warn(`    ⚠️  Profile patch failed: ${error.message}`);
-      else if (typeof patch.website === "string") {
+      else await recordChanges(startupChanges(row.id, row as unknown as Record<string, unknown>, patch, runId));
+      if (!error && typeof patch.website === "string") {
         const d = websiteDomain(patch.website);
         if (d) startupByDomain.set(d, { id: row.id, name: row.name });
       }
@@ -550,7 +564,7 @@ export async function writeCollected(
       const { error: provenanceErr } = await supabase.from("field_provenance").insert({
         startup_id: row.id, field: fw.field, value: fw.value, source_url: sourceById.get(fw.source_id)?.url,
         source_type: fw.source_type, evidence_quote: fw.evidence_quote,
-        confidence: computeFieldConfidence([{ source_type: fw.source_type }]),
+        confidence: computeFieldConfidence([{ source_type: fw.source_type }]), run_id: runId,
       });
       if (provenanceErr) console.warn(`    ⚠️  field_provenance insert failed (${fw.field}): ${provenanceErr.message}`);
     };
@@ -578,7 +592,7 @@ export async function writeCollected(
     }
 
     for (const round of plan.inserts) {
-      const { data: inserted, error: roundErr } = await supabase.from("funding_rounds").insert({
+      const roundRow = {
         startup_id: row.id, round_type: round.round_type,
         amount_raised: round.amount_raised ?? null, valuation: round.valuation ?? null,
         is_valuation_estimated: round.valuation != null ? (round.is_valuation_estimated ?? null) : null,
@@ -586,11 +600,15 @@ export async function writeCollected(
         lead_investor: round.lead_investor ?? null,
         investors: round.other_investors && round.other_investors.length > 0 ? round.other_investors : null,
         investor_amounts: round.investor_amounts && round.investor_amounts.length > 0 ? round.investor_amounts : null,
-      }).select("id").single();
+      };
+      const { data: inserted, error: roundErr } = await supabase.from("funding_rounds").insert(roundRow).select("id").single();
       if (roundErr) console.warn(`    ⚠️  Round insert failed (${round.round_type}): ${roundErr.message}`);
       else {
         summary.totalRoundsInserted++;
-        if (inserted?.id) await roundProvenance(inserted.id as string, round);
+        if (inserted?.id) {
+          await roundProvenance(inserted.id as string, round);
+          await recordChanges([roundInsertChange(row.id, inserted.id as string, roundRow, runId)]);
+        }
       }
     }
     for (const u of plan.updates) {
@@ -599,6 +617,8 @@ export async function writeCollected(
       else {
         summary.totalRoundsUpdated++;
         await roundProvenance(u.id, u.patch);
+        const before = (existingRefs.find((r) => r.id === u.id) ?? {}) as Record<string, unknown>;
+        await recordChanges(roundUpdateChanges(row.id, u.id, before, u.patch, runId));
       }
     }
 
@@ -634,10 +654,12 @@ export async function writeCollected(
   summary.tally[anyWrite ? "success" : "partial"]++;
 
   const totalRaised = computeTotalRaised([...existingRefs, ...plan.inserts]);
+  const totalDebt = computeDebtRaised([...existingRefs, ...plan.inserts]);
   const parts = [
     `${fieldsPatched} field(s)`,
     `rounds +${plan.inserts.length} new / ${plan.updates.length} filled${plan.conflicts.length ? ` / ${plan.conflicts.length} conflict(s)` : ""}`,
     totalRaised > 0 ? `total raised $${(totalRaised / 1e6).toFixed(1)}M` : null,
+    totalDebt > 0 ? `debt $${(totalDebt / 1e6).toFixed(1)}M` : null,
     `${competitorsAdded > 0 ? `+${competitorsAdded}` : 0} competitor(s)`,
     `${newsAdded > 0 ? `+${newsAdded}` : 0} news`,
     headcountPoints.length ? `${headcountPoints.length} headcount point(s)` : null,

@@ -11,7 +11,7 @@ const raw: RawSearchResult[] = [
   },
   {
     url: "https://techcrunch.com/2024/05/01/ghost-launches-activitypub/", title: "Ghost launches ActivityPub support", provider: "serper", query_label: "news",
-    content: "Source: TechCrunch — Date: 2024-05-01 — Ghost, the open source publishing platform, launched ActivityPub support.",
+    content: "Source: TechCrunch — Date: 2024-05-01 — Ghost, the open source publishing platform, launched ActivityPub support. Ghost competes with Substack and Beehiiv for paid newsletters.",
   },
   {
     url: "https://www.crunchbase.com/organization/ghost", title: "Ghost - Crunchbase Company Profile", provider: "serper", query_label: "profile",
@@ -34,7 +34,8 @@ describe("buildMarketExtractionRequest", () => {
     expect(req.tool_choice).toEqual({ type: "tool", name: "save_market_extraction" });
     const text = req.messages[0].content as string;
     expect(text).toContain("Today's date is 2026-10-05");
-    expect(text).toContain("alternatives to Ghost");
+    expect(text).toContain("EXPLICITLY says compete with Ghost");
+    expect(text).toContain("LeadIQ");
     expect(text).toContain("never add a well-known company from your own knowledge");
   });
 });
@@ -56,16 +57,18 @@ describe("normalizeUrlForMatch", () => {
 });
 
 describe("processMarketExtractionResponse", () => {
-  it("keeps competitors named in a source and drops ones only the model knows about", () => {
+  it("keeps a competitor an article says competes, and drops one only the model knows about or only an 'alternatives' list names", () => {
     const { result, dropped } = processMarketExtractionResponse({
       competitors: [
-        { name: "Substack", how_it_competes: "Newsletter platform.", source_ids: ["S1"] },
-        { name: "Medium", how_it_competes: "Blogging platform.", source_ids: ["S1"] }, // not in any source
+        { name: "Substack", how_it_competes: "Newsletter platform.", source_ids: ["S2"], source_id: "S2", evidence_quote: "Ghost competes with Substack and Beehiiv for paid newsletters" },
+        { name: "Medium", how_it_competes: "Blogging platform.", source_ids: ["S1"], source_id: "S1", evidence_quote: "Medium" }, // not in any source
+        { name: "WordPress.com", how_it_competes: "Blogging platform.", source_ids: ["S1"], source_id: "S1", evidence_quote: "The best Ghost alternatives include Substack, WordPress.com, and Beehiiv" },
       ],
       news: [],
     }, sources, "Ghost");
     expect(result.competitors.map((c) => c.name)).toEqual(["Substack"]);
     expect(dropped).toContainEqual({ field: "competitors", reason: "competitor_not_in_source" });
+    expect(dropped).toContainEqual({ field: "competitors", reason: "competitor_from_listing" });
   });
 
   it("never lists the company as its own competitor", () => {
@@ -97,11 +100,13 @@ describe("processMarketExtractionResponse", () => {
     expect(result.technology.tech_stack).toEqual(["Node.js", "MySQL"]);
   });
 
-  it("keeps a patent whose number appears in a source", () => {
-    const { result } = processMarketExtractionResponse({
-      competitors: [], news: [], patents: [{ title: "Publishing system", patent_number: "US1234567B2" }, { title: "Teleportation device", patent_number: "US9999999" }],
+  it("keeps no patent read off a page, even one whose number is in a source — patents come from the EPO register only (2026-10-26)", () => {
+    const { result, dropped } = processMarketExtractionResponse({
+      competitors: [], news: [], patents: [{ title: "Publishing system", patent_number: "US1234567B2" }], patent_summary: { patent_count: 3, patent_fields: ["Publishing"] },
     }, sources, "Ghost");
-    expect(result.patents.map((p) => p.patent_number)).toEqual(["US1234567B2"]);
+    expect(result.patents).toEqual([]);
+    expect(result.patent_summary).toEqual({ patent_count: null, patent_fields: [] });
+    expect(dropped).toContainEqual({ field: "patents", reason: "patent_not_from_register" });
   });
 
   it("does not crash when the model collapses a one-item list into a bare object", () => {
@@ -137,7 +142,10 @@ describe("news dates must come from the source (Glamsquad: a 2014 press release 
 describe("a company it acquired is never also listed as a competitor", () => {
   it("drops the competitor, keeps the acquisition", () => {
     const { result, dropped } = processMarketExtractionResponse({
-      competitors: [{ name: "Substack", how_it_competes: "x", source_ids: ["S1"] }, { name: "Beehiiv", how_it_competes: "y", source_ids: ["S1"] }],
+      competitors: [
+        { name: "Substack", how_it_competes: "x", source_ids: ["S2"], source_id: "S2", evidence_quote: "Ghost competes with Substack and Beehiiv for paid newsletters" },
+        { name: "Beehiiv", how_it_competes: "y", source_ids: ["S2"], source_id: "S2", evidence_quote: "Ghost competes with Substack and Beehiiv for paid newsletters" },
+      ],
       acquisitions: [{ company_name: "Beehiiv", source_ids: ["S1"] }],
       news: [],
     }, sources, "Ghost");
