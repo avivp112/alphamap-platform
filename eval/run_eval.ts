@@ -54,7 +54,7 @@
  * JINA_API_KEY) — loaded via the same initV1Context() v1 itself uses.
  */
 
-import { readFileSync, writeFileSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import Anthropic from "@anthropic-ai/sdk";
@@ -73,6 +73,8 @@ import {
   FIELDS, newScoreboard, pct, scoreCompany, duplicateRounds, foundedAfterFirstRound, phase1Checks,
   type GoldenSet, type GoldenCompany, type PipelineOutput, type FieldResult, type Field,
 } from "./score.ts";
+
+import { toCsv, parseCsv, mergeRows, competitorKey, COMPETITOR_COLUMNS, type SheetRow } from "./reviewSheet.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const STORE_EVIDENCE = process.env.STORE_EVIDENCE === "true";
@@ -153,6 +155,7 @@ async function runV2(company: GoldenCompany, anthropic: Anthropic, taxonomy: Sec
       employee_range: p.overview.employee_range,
       arr_usd: arr?.arr ?? null,
       competitors: c.market.competitors.map((x) => x.name),
+      competitor_sources: c.market.competitors.map((x) => ({ name: x.name, source_url: c.sourceUrlFor(x.source_id), quote: x.evidence_quote ?? null })),
       // Patents come only from the EPO register: not looked up (no EPO keys) is not "none".
       patents: c.patentsFromRegister ? c.market.patents.map((x) => x.patent_number).filter((n): n is string => !!n) : undefined,
     }, "collected", p.sources_count);
@@ -279,6 +282,28 @@ async function main() {
   }
 
   const file = PIPELINE === "v1" ? "baseline.json" : "v2_results.json";
+  // Competitors v2 found that the golden set does not judge yet, for the
+  // companies under review: the owner marks them (eval/reviewSheet.ts).
+  const toReview: SheetRow[] = [];
+  for (const company of companies) {
+    const g = company.competitors;
+    const found = perCompany[company.id]?.output?.competitor_sources ?? [];
+    if (!g) continue;
+    const known = [...g.names, ...(g.not_competitors ?? [])].map((n) => competitorKey({ company_id: company.id, competitor: n }));
+    for (const c of found) {
+      const row = { company_id: company.id, company: company.name, competitor: c.name, source_url: c.source_url ?? "", quote: c.quote ?? "", mark: "" };
+      if (!known.includes(competitorKey(row))) toReview.push(row);
+    }
+  }
+  if (toReview.length) {
+    const sheet = join(__dir, "review", "competitors_review.csv");
+    mkdirSync(dirname(sheet), { recursive: true });
+    const existing = existsSync(sheet) ? parseCsv(readFileSync(sheet, "utf8")) : [];
+    const merged = mergeRows(existing, toReview, competitorKey);
+    writeFileSync(sheet, toCsv(COMPETITOR_COLUMNS, merged));
+    console.log(`📝  ${merged.length - existing.length} competitor(s) to mark in eval/review/competitors_review.csv ("נכון" / "לא נכון"), then: npx tsx eval/import_review.ts`);
+  }
+
   writeFileSync(join(__dir, file), JSON.stringify({
     pipeline: PIPELINE, generated_at: new Date().toISOString(), companies_scored: companies.length, unreviewed,
     settings: PIPELINE === "v2" ? { model: ENRICH_MODEL, articles_to_read: ARTICLES_TO_READ, deep_dive: DEEP_DIVE, tech_gate: TECH_GATE } : undefined,

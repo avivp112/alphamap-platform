@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { stageLabel, sectorLabel, roundTypeLabel, SECTOR_TAXONOMY, PARENT_BY_SUB_SECTOR, STAGE_STEPS, type StageStep } from "../../lib/taxonomy";
 import { equityRaised, debtRaised } from "../../lib/capital";
+import { visibleCompetitors } from "../../lib/competitors";
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router";
 import {
@@ -38,7 +39,7 @@ import {
   fetchUserMandate, logInteraction, fetchPassedStartupIds, fetchMatchScores, fetchLookalikes,
   fetchUserWebhook, syncStartupToCrm,
   type Startup, type FundingRound, type RoundType, type AlphaScore, type HeadcountPoint,
-  type StartupListRow, type StartupSearchFilters, type Competitor, type ScoreHistoryPoint,
+  type StartupListRow, type StartupSearchFilters, type ScoreHistoryPoint,
   type NewsItem, type PassReason, type MatchScoreResult, type LookalikeResult,
 } from "../../lib/supabase";
 import { useWatchlistMembership, addToWatchlist, removeFromWatchlist, watchlistErrorMessage } from "../../lib/watchlist";
@@ -1687,13 +1688,9 @@ function TalentGrowthTab({
 // pipeline's fill-null write policy. Handles both the structured object shape
 // and the legacy plain-string shape (rows written before the format landed).
 
-function normalizeCompetitor(c: Competitor | string): Competitor {
-  if (typeof c === "string") return { name: c, how_it_competes: "", website: null, startup_id: null };
-  return c;
-}
-
 function CompetitorsMarketTab({ startup, onNavigate }: { startup: Startup; onNavigate: (id: string) => void }) {
-  const competitors = (startup.competitors ?? []).filter(Boolean).map(normalizeCompetitor);
+  // Unverified entries an earlier run wrote stay hidden until the next enrichment (src/lib/competitors.ts).
+  const competitors = visibleCompetitors(startup.competitors);
   const companyName = startup.name;
 
   if (competitors.length === 0) {
@@ -1971,7 +1968,7 @@ function tabsWithData(s: Startup): Set<TearsheetTab> {
   if (funding) tabs.add("funding");
   if (buildInvestorSchedule(rounds).length > 0) tabs.add("captable");
   if (talent) tabs.add("talent");
-  if (has(s.competitors)) tabs.add("competitors");
+  if (visibleCompetitors(s.competitors).length > 0) tabs.add("competitors");
   if (acquisitions) tabs.add("acquisitions");
   if ((s.news ?? []).some((n) => n && n.url && n.title)) tabs.add("news");
   return tabs;

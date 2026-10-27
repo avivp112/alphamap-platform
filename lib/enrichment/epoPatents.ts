@@ -210,12 +210,26 @@ async function opsToken(key: string, secret: string, f: typeof fetch): Promise<s
  * empty list because the register was down.
  */
 export async function lookupEpoPatents(company: CompanyIdentity, opts: EpoLookupOptions = {}): Promise<EpoPatentResult | null> {
+  if (!isDistinctiveName(company.name)) return null;
+  const found = await searchEpoPublications(applicantQuery(company.name), opts);
+  if (!found) return null;
+  const result = companyPatents(found.publications, company);
+  // A count from part of the register would be a wrong count.
+  return found.complete ? result : { ...result, familyCount: null };
+}
+
+/**
+ * Every publication the register returns for a CQL query, up to 400 — or null
+ * without EPO keys. Also used to build the golden set's patents for a human
+ * to judge (eval/patent_register_review.ts), apart from companyPatents()'s match.
+ */
+export async function searchEpoPublications(cql: string, opts: EpoLookupOptions = {}): Promise<{ publications: EpoPublication[]; total: number; complete: boolean } | null> {
   const key = opts.key ?? process.env.EPO_OPS_KEY?.trim();
   const secret = opts.secret ?? process.env.EPO_OPS_SECRET?.trim();
-  if (!key || !secret || !isDistinctiveName(company.name)) return null;
+  if (!key || !secret) return null;
   const f = opts.fetch ?? fetch;
   const auth = await opsToken(key, secret, f);
-  const q = new URLSearchParams({ q: applicantQuery(company.name) }).toString();
+  const q = new URLSearchParams({ q: cql }).toString();
   const publications: EpoPublication[] = [];
   let total = 0;
   for (let start = 1; start <= MAX_PUBLICATIONS; start += PAGE) {
@@ -231,7 +245,5 @@ export async function lookupEpoPatents(company: CompanyIdentity, opts: EpoLookup
     publications.push(...page.publications);
     if (page.publications.length < PAGE || publications.length >= page.total) break;
   }
-  const result = companyPatents(publications, company);
-  // A count from part of the register would be a wrong count.
-  return publications.length < total ? { ...result, familyCount: null } : result;
+  return { publications, total, complete: publications.length >= total };
 }

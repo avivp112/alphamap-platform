@@ -6,6 +6,7 @@
  *
  *   a startups column     put back the value it replaced
  *   a round it inserted   deleted (with its field_provenance rows)
+ *   a round it deleted    put back, with its id (a cleanup run)
  *   a round field filled  emptied again
  *
  * A value someone changed after the run is left alone and reported. Several
@@ -107,8 +108,9 @@ async function undo() {
       if (a.kind === "skip" && a.reason === "out_of_scope") continue;
       if (a.kind === "restore_startup_field") console.log(`• ${name(a.startup_id)} — ${a.field}: ${short(a.written)}  →  ${short(a.value)}`);
       else if (a.kind === "delete_round") console.log(`• ${name(a.startup_id)} — delete round ${a.round.round_type ?? "?"} ${a.round.amount_raised ?? ""} (${a.round.source_url ?? "no source"})`);
+      else if (a.kind === "restore_round") console.log(`• ${name(a.startup_id)} — put back round ${a.round.round_type ?? "?"} ${a.round.amount_raised ?? ""}`);
       else if (a.kind === "restore_round_field") console.log(`• ${name(a.startup_id)} — round ${a.round_id}: ${a.column} → ${short(a.value)}`);
-      else console.log(`  ↷ ${name(a.startup_id)} — ${a.field}: left alone (${a.reason === "changed_since" ? "changed after the run" : "round already deleted"})`);
+      else console.log(`  ↷ ${name(a.startup_id)} — ${a.field}: left alone (${a.reason === "changed_since" ? "changed after the run" : a.reason === "round_back" ? "the round is there again" : "round already deleted"})`);
       if (DRY_RUN) continue;
       if (a.kind === "restore_startup_field") {
         const { error: e } = await db.from("startups").update({ [a.field]: a.value }).eq("id", a.startup_id);
@@ -117,6 +119,10 @@ async function undo() {
         const { error: e } = await db.from("funding_rounds").delete().eq("id", a.round_id);
         if (e) console.warn(`  ⚠️  ${e.message}`);
         await db.from("field_provenance").delete().eq("startup_id", a.startup_id).like("field", `funding_rounds.${a.round_id}.%`);
+      } else if (a.kind === "restore_round") {
+        const { capital_type: _generated, ...row } = a.round;
+        const { error: e } = await db.from("funding_rounds").insert({ ...row, id: a.round_id });
+        if (e) console.warn(`  ⚠️  ${e.message}`);
       } else if (a.kind === "restore_round_field") {
         const { error: e } = await db.from("funding_rounds").update({ [a.column]: a.value }).eq("id", a.round_id);
         if (e) console.warn(`  ⚠️  ${e.message}`);
@@ -131,9 +137,9 @@ async function undo() {
   const out = `undo_run_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`;
   writeFileSync(out, ["run_id,startup_id,action,field,current_value,restored_value", ...report.map(({ run, action: a }) => [
     run, a.startup_id, a.kind === "skip" ? `skip:${a.reason}` : a.kind,
-    a.kind === "restore_round_field" ? `funding_rounds.${a.round_id}.${a.column}` : a.kind === "delete_round" ? `funding_rounds.${a.round_id}` : a.field,
+    a.kind === "restore_round_field" ? `funding_rounds.${a.round_id}.${a.column}` : a.kind === "delete_round" || a.kind === "restore_round" ? `funding_rounds.${a.round_id}` : a.field,
     a.kind === "restore_startup_field" ? a.written : a.kind === "delete_round" ? a.round : "",
-    a.kind === "restore_startup_field" || a.kind === "restore_round_field" ? a.value : "",
+    a.kind === "restore_startup_field" || a.kind === "restore_round_field" ? a.value : a.kind === "restore_round" ? a.round : "",
   ].map(cell).join(","))].join("\n"));
   console.log(`\n${DRY_RUN ? "Would undo" : "Undone"}: ${done.length} change(s) — ${done.filter((r) => r.action.kind === "delete_round").length} round(s) deleted. Left alone (changed after the run): ${kept.length}.`);
   console.log(`Every action: ${out}`);

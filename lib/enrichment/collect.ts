@@ -56,7 +56,7 @@ export interface V2StartupRow {
   employee_count: number | null; employee_range: string | null; growth_trend: string | null;
   founders: Array<{ name: string; title?: string; bio?: string; linkedin_url?: string; had_prior_exit?: boolean; elite_background?: boolean; notable_pedigree?: boolean }> | null;
   leadership: Array<{ name: string; role: string; bio?: string; linkedin_url?: string; joined_date?: string; had_prior_exit?: boolean; elite_background?: boolean; notable_pedigree?: boolean }> | null;
-  competitors: Array<{ name: string; website?: string | null; how_it_competes: string; startup_id?: string | null; source_url?: string | null }> | null;
+  competitors: Array<{ name: string; website?: string | null; how_it_competes: string; startup_id?: string | null; source_url?: string | null; unverified?: boolean }> | null;
   acquisitions: Array<{ company_name: string; website?: string | null; acquired_date?: string | null; amount?: number | null; description?: string | null; acquired_startup_id?: string | null }> | null;
   news: Array<{ title: string; url: string; source?: string | null; published_date?: string | null; summary?: string | null; image_url?: string | null }> | null;
   patent_count: number | null; patent_fields: string[] | null;

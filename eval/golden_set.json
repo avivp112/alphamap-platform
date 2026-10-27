@@ -11,7 +11,8 @@
     "Batch 3 (2026-10-20): Claude-researched from search-result summaries only (pages could not be opened from the research sandbox), so every value needs the human review before it counts; confidence was set conservatively — 'verified' only where two independent direct-reporting sources agreed. New optional fields: batch (number), arr_usd ({value, as_of, confidence, source_url, notes}) for revenue scoring, and funding_rounds_excluded_unknown is now honoured by eval/score.ts (an extracted round matching one of them is neither right nor wrong). Round type 'Unknown' marks a round whose letter the sources contradict.",
     "Batch 4 (2026-10-25): ten companies, Claude-researched from search-result summaries (pages could not be opened from the research sandbox), reviewed_by_human: false on all. Fills hard cases the first 22 lacked: Germany (Black Forest Labs, Parloa, Helsing), France (Mistral AI), India (Sarvam AI), UK (Synthesia, Wayve), a rebrand with a domain change (Vercel, ex-ZEIT), and two recent listings (eToro, Klarna). Rounds announced in euros carry amount_usd converted at the announcement month's rate, with the euro figure in notes. Review sheet: eval/review/batch4.md.",
     "2026-10-25 — location policy (owner's decision, the Dealroom model): `country`/`city` are the headquarters TODAY; the new `founding_country` is where the company was founded (scored as its own field). Israeli-founded companies now headquartered abroad (Wiz, Cyera, Upwind, HiBob) carry founding_country Israel. Upwind's country moved from Israel to United States on that rule.",
-    "2026-10-26 (owner): three fields are now scored, each with its own Phase 1 bar (eval/score.ts PHASE1_BARS). round_type: judged on rounds matched to a verified golden round by amount and date — the existing funding_rounds[].type is the truth (debt rounds are typed Debt / Venture Debt); 'Unknown' output is missing, not wrong. competitors: {names, not_competitors, confidence, source_urls} — names a primary source says compete with the company; not_competitors partners, customers, investors and 'similar companies' a data platform lists; a name in neither is unjudged. patents: {numbers, none, confidence, source_url} — publication numbers from the EPO register / Espacenet where the company is applicant (any publication of a family counts); none: true when the register shows none. Companies without these two fields are not scored on them; the bars fail until enough companies carry them."
+    "2026-10-26 (owner): three fields are now scored, each with its own Phase 1 bar (eval/score.ts PHASE1_BARS). round_type: judged on rounds matched to a verified golden round by amount and date — the existing funding_rounds[].type is the truth (debt rounds are typed Debt / Venture Debt); 'Unknown' output is missing, not wrong. competitors: {names, not_competitors, confidence, source_urls} — names a primary source says compete with the company; not_competitors partners, customers, investors and 'similar companies' a data platform lists; a name in neither is unjudged. patents: {numbers, none, confidence, source_url} — publication numbers from the EPO register / Espacenet where the company is applicant (any publication of a family counts); none: true when the register shows none. Companies without these two fields are not scored on them; the bars fail until enough companies carry them.",
+    "2026-10-27 (owner): competitors are judged on 20 companies (those carrying `competitors`), precision only — is every competitor v2 finds really one; no coverage. eval/run_eval.ts writes each unjudged competitor it finds to eval/review/competitors_review.csv with its source and quote; the owner marks נכון / לא נכון; eval/import_review.ts moves the marks here. Patents come from the EPO register: eval/patent_register_review.ts lists every publication for each company's name, the owner marks which are the company's (owner or filer), and eval/import_review.ts writes `patents` for each company whose rows are all marked."
   ],
   "companies": [
     {
@@ -174,7 +175,13 @@
       },
       "github_url": null,
       "huggingface_url": null,
-      "production_bug_notes": "AlphaMap's live DB showed 'Growth (Jun 2026)' and 'Series D (Apr 2026)' as two $200M/$2.3B rows and flagged them for merging as a duplicate. Verified research shows the REAL Series D was Sept 2025 (not Apr 2026) at a ~$1B valuation, and the Jun 2026 round is a genuinely separate, later, third $200M raise at $2.3B. The production data's 'Apr 2026' date for 'Series D' matches no real event found — it appears to be a hallucinated/mis-dated entry, not a legitimate duplicate of the June round. The correct fix is 6 distinct rounds with correct dates, not a 2-into-1 merge."
+      "production_bug_notes": "AlphaMap's live DB showed 'Growth (Jun 2026)' and 'Series D (Apr 2026)' as two $200M/$2.3B rows and flagged them for merging as a duplicate. Verified research shows the REAL Series D was Sept 2025 (not Apr 2026) at a ~$1B valuation, and the Jun 2026 round is a genuinely separate, later, third $200M raise at $2.3B. The production data's 'Apr 2026' date for 'Series D' matches no real event found — it appears to be a hallucinated/mis-dated entry, not a legitimate duplicate of the June round. The correct fix is 6 distinct rounds with correct dates, not a 2-into-1 merge.",
+      "competitors": {
+        "names": [],
+        "not_competitors": [],
+        "confidence": "verified",
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+      }
     },
     {
       "id": "fresha",
@@ -322,7 +329,13 @@
           "title": "How a Dubai tech executive built a $1B beauty platform in London and convinced KKR to back it with $80M",
           "url": "https://techfundingnews.com/beauty-techs-quiet-giant-just-became-a-unicorn-fresha-raises-80m-from-kkr-at-1b-valuation/"
         }
-      ]
+      ],
+      "competitors": {
+        "names": [],
+        "not_competitors": [],
+        "confidence": "verified",
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+      }
     },
     {
       "id": "bolt-checkout",
@@ -496,6 +509,12 @@
         "confidence": "verified",
         "source_url": "https://techcrunch.com/2024/08/24/the-fallout-after-bolts-aggressive-fundraising-attempt-has-been-wild/",
         "notes": "Remains private. TechCrunch reported a dramatic internal valuation markdown and a contentious, aggressive 2024 fundraising attempt rather than any move toward an IPO."
+      },
+      "competitors": {
+        "names": [],
+        "not_competitors": [],
+        "confidence": "verified",
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
       }
     },
     {
@@ -660,6 +679,12 @@
         "confidence": "verified",
         "source_url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204425000027/googexhibit99131825.htm",
         "notes": "Never completed an IPO. Agreed in March 2025 to be acquired by Google/Alphabet for $32B in cash rather than going public (one outlet framed this as a pivot 'from IPO dreams' to acquisition); once closed, Wiz becomes part of Google Cloud, not a separate public company."
+      },
+      "competitors": {
+        "names": [],
+        "not_competitors": [],
+        "confidence": "verified",
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
       }
     },
     {
@@ -1144,6 +1169,12 @@
         "confidence": "likely",
         "source_url": "https://www.munich-startup.de/en/85260/celonis-expands-series-d-round/",
         "notes": "No primary IPO or listing announcement found as of this research pass; multiple 2024-2025 secondary-market commentary (Forge, PitchBook-style trackers) describes Celonis as still privately held, with a lower secondary-market valuation (~$7-8B) than its last primary round (~$13B). Absence-of-evidence confidence, hence 'likely' not 'verified'."
+      },
+      "competitors": {
+        "names": [],
+        "not_competitors": [],
+        "confidence": "verified",
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
       }
     },
     {
@@ -1331,6 +1362,12 @@
         "confidence": "verified",
         "source_url": "https://www.sebi.gov.in/sebi_data/commondocs/jun-2026/Zepto%20Limited%20-%20abridged_p.pdf",
         "notes": "Not yet listed despite SEBI IPO approval — see ipo_status."
+      },
+      "competitors": {
+        "names": [],
+        "not_competitors": [],
+        "confidence": "verified",
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
       }
     },
     {
@@ -1454,6 +1491,12 @@
         "confidence": "likely",
         "source_url": "https://getlatka.com/companies/shortcut.com",
         "notes": "No funding or exit event found since the January 2020 Series B; secondary press describes it as an independent, apparently-profitable private company generating ~$21M revenue as of 2024, with no acquisition or IPO traced in this pass."
+      },
+      "competitors": {
+        "names": [],
+        "not_competitors": [],
+        "confidence": "verified",
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
       }
     },
     {
@@ -1703,6 +1746,12 @@
         "confidence": "likely",
         "source_url": "https://techcrunch.com/2025/03/26/fintech-mercury-lands-300m-in-sequoia-led-series-c-doubles-valuation-to-3-5b/",
         "notes": "Remains private as of its March 2025 Series C; no IPO announcement found."
+      },
+      "competitors": {
+        "names": [],
+        "not_competitors": [],
+        "confidence": "verified",
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
       }
     },
     {
@@ -1913,7 +1962,13 @@
           "date": "2022",
           "notes": "Implied ~$5M by the Series A total ($23M); one profile says $7M in Nov 2022. No primary announcement found."
         }
-      ]
+      ],
+      "competitors": {
+        "names": [],
+        "not_competitors": [],
+        "confidence": "verified",
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+      }
     },
     {
       "id": "hailo-ai",
@@ -2018,7 +2073,13 @@
           "date": "2018-2019",
           "notes": "~$28M before the Series B by subtraction ($224M total after C); individual rounds not traced to primary sources."
         }
-      ]
+      ],
+      "competitors": {
+        "names": [],
+        "not_competitors": [],
+        "confidence": "verified",
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+      }
     },
     {
       "id": "cyera",
@@ -2134,7 +2195,13 @@
           "date": "2026-06",
           "notes": "$300M at $12B per one aggregator (multiples.vc) only."
         }
-      ]
+      ],
+      "competitors": {
+        "names": [],
+        "not_competitors": [],
+        "confidence": "verified",
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+      }
     },
     {
       "id": "cato-networks",
@@ -2252,6 +2319,12 @@
         "confidence": "likely",
         "source_url": "https://www.bolsamania.com/nota-de-prensa_print/mercados/cato-networks-surpasses-350-million-arr-with-43-yoy-growth-in-2025--21809566.html",
         "notes": "Company release: 2025 ARR 'surpassed $350 million'. Globes: $250M at end of 2024."
+      },
+      "competitors": {
+        "names": [],
+        "not_competitors": [],
+        "confidence": "verified",
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
       }
     },
     {
@@ -2361,7 +2434,13 @@
           "date": "2022",
           "notes": "~$30M implied by the $430M total; not traced."
         }
-      ]
+      ],
+      "competitors": {
+        "names": [],
+        "not_competitors": [],
+        "confidence": "verified",
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+      }
     },
     {
       "id": "coralogix",
@@ -2439,7 +2518,13 @@
           "date": "2014-2021",
           "notes": "Not traced."
         }
-      ]
+      ],
+      "competitors": {
+        "names": [],
+        "not_competitors": [],
+        "confidence": "verified",
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+      }
     },
     {
       "id": "hibob",
@@ -2536,7 +2621,13 @@
           "date": "2015-2020",
           "notes": "Not traced."
         }
-      ]
+      ],
+      "competitors": {
+        "names": [],
+        "not_competitors": [],
+        "confidence": "verified",
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+      }
     },
     {
       "id": "aidoc",
@@ -2620,7 +2711,13 @@
           "date": "2025-07",
           "notes": "$150M reported = $110M equity + $40M credit line per CB Insights; no primary source."
         }
-      ]
+      ],
+      "competitors": {
+        "names": [],
+        "not_competitors": [],
+        "confidence": "verified",
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+      }
     },
     {
       "id": "pagaya",
@@ -2773,7 +2870,13 @@
           ],
           "notes": "Total ~$78-80M."
         }
-      ]
+      ],
+      "competitors": {
+        "names": [],
+        "not_competitors": [],
+        "confidence": "verified",
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+      }
     },
     {
       "id": "black-forest-labs",
@@ -2857,7 +2960,13 @@
           "confidence": "unknown",
           "notes": "Unannounced a16z-led round between the seed and the Series B (Pulse 2.0); amount never disclosed."
         }
-      ]
+      ],
+      "competitors": {
+        "names": [],
+        "not_competitors": [],
+        "confidence": "verified",
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+      }
     },
     {
       "id": "parloa",
@@ -2959,7 +3068,13 @@
           "confidence": "unknown",
           "notes": "Only aggregators (Seedtable) report a ~$4M seed; no primary announcement found."
         }
-      ]
+      ],
+      "competitors": {
+        "names": [],
+        "not_competitors": [],
+        "confidence": "verified",
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+      }
     },
     {
       "id": "helsing",
@@ -3075,7 +3190,13 @@
           ],
           "notes": "Lead disputed (Dragoneer vs Goldman Sachs Alternatives); left null."
         }
-      ]
+      ],
+      "competitors": {
+        "names": [],
+        "not_competitors": [],
+        "confidence": "verified",
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+      }
     },
     {
       "id": "sarvam-ai",

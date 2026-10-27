@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { startupChanges, roundInsertChange, roundUpdateChanges, planUndo, type FieldChangeRow } from "./runChanges";
+import { startupChanges, roundInsertChange, roundUpdateChanges, roundDeleteChange, planUndo, type FieldChangeRow } from "./runChanges";
 
 // What the 2026-10-26 run wrote, as it is recorded from now on.
 const RUN = "run-2026-10-26";
@@ -53,5 +53,12 @@ describe("a run is undone by its run_id (owner, 2026-10-26)", () => {
     expect(planUndo(changes, edited, SCOPE)).toContainEqual({ kind: "skip", startup_id: "chalice", field: "competitors", reason: "changed_since" });
     const gone = { ...now, rounds: new Map([...now.rounds].filter(([id]) => id !== "r-beta")) };
     expect(planUndo(changes, gone, SCOPE)).toContainEqual({ kind: "skip", startup_id: "beta", field: "funding_rounds.r-beta", reason: "round_gone" });
+  });
+
+  it("puts back a round the legacy cleanup deleted — BETA's Dealroom debt round, if the owner undoes the cleanup", () => {
+    const cleanup = [roundDeleteChange("beta", "r-beta", { id: "r-beta", ...betaRound }, "run-cleanup")];
+    const after = { ...now, rounds: new Map([...now.rounds].filter(([id]) => id !== "r-beta")) };
+    expect(planUndo(cleanup, after, SCOPE)).toEqual([{ kind: "restore_round", startup_id: "beta", round_id: "r-beta", round: { id: "r-beta", ...betaRound } }]);
+    expect(planUndo(cleanup, now, SCOPE)).toEqual([{ kind: "skip", startup_id: "beta", field: "funding_rounds.r-beta", reason: "round_back" }]);
   });
 });

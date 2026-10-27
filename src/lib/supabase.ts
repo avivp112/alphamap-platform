@@ -153,6 +153,10 @@ export interface Competitor {
   website?: string | null;
   how_it_competes: string;
   startup_id?: string | null;
+  /** The primary source that says they compete (enrichment v2, 2026-10-26 on). */
+  source_url?: string | null;
+  /** Written before sources were required and not checked since: hidden until the next enrichment replaces it (src/lib/competitors.ts). */
+  unverified?: boolean;
 }
 
 // One entry per investor whose SPECIFIC dollar contribution to a round is

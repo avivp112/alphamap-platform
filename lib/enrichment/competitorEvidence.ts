@@ -11,7 +11,9 @@
  *
  * Kept only when:
  *   1. the cited source is primary — the company's own site, a press
- *      release, a filing, or an article (news) — and not a data platform
+ *      release, a filing, or an article in a trusted outlet (trustedNews.ts:
+ *      the journalist or a quote from the company says they compete) — and
+ *      not a data platform
  *      (dataPlatforms.ts, subdomains included) or a review / comparison
  *      directory (LISTING_SITES), and not an "alternatives" / "competitors"
  *      / "similar companies" / "X vs Y" / "top N" listing page anywhere but
@@ -25,10 +27,11 @@
 import { normalizeForMatch } from "./evidence";
 import { isDataPlatformUrl, isListingSiteUrl } from "./dataPlatforms";
 import type { LabeledSource } from "./sources";
+import { isTrustedNewsUrl } from "./trustedNews";
 
 export type CompetitorEvidenceDrop =
   | "competitor_no_evidence" | "competitor_quote_not_in_source" | "competitor_quote_not_explicit"
-  | "competitor_from_data_platform" | "competitor_from_listing";
+  | "competitor_from_data_platform" | "competitor_from_listing" | "competitor_news_not_trusted";
 
 const PRIMARY = new Set(["company_site", "press_release", "registry", "news", "manual"]);
 
@@ -39,7 +42,17 @@ const LISTING_PATH = /\/(alternatives?|competitors?|similar|compare|comparison|v
 // "competes with", "a competitor", "rival", "versus", "goes up against", "an alternative to".
 const COMPETES = /\b(compet(?:e|es|ed|ing|itor|itors|ition|itive)|rivals?|rivalry|versus|vs\.?|goes? (?:up )?against|takes? on|head[- ]to[- ]head|challenger to|an alternative to|alternative to)\b/i;
 // "listed as a similar company" is a listing's words, not a statement of competition.
-const LISTING_WORDS = /\b(similar compan(?:y|ies)|listed (?:as|among|alongside)|companies like|is (?:also )?listed)\b/i;
+const LISTING_WORDS = /\b(similar compan(?:y|ies)|listed (?:as|among|alongside)|companies like|is (?:also )?listed|(?:named|identified|included|featured|mentioned|appears?) (?:as|among|in) (?:an? |the )?(?:list of )?(?:similar|alternatives?|top alternatives))\b/i;
+
+/**
+ * An explanation already on file that says where the competitor was found:
+ * a data platform's "similar companies" or an "alternatives" list ("Powerlytics
+ * is listed as a similar company to Chalice AI"). Used to clean what earlier
+ * runs wrote, which kept no source (scripts/clean_legacy_market_data.ts).
+ */
+export function explanationIsListing(text: string): boolean {
+  return LISTING_WORDS.test(text) || /\b(top|best) (?:\d+ )?alternatives\b|\balternatives? (?:list|page)s?\b/i.test(text);
+}
 
 /** "E Ink Corporation" → "e ink": a quote names a company without its legal form. */
 const coreName = (name: string) => normalizeForMatch(name.replace(/,?\s*\b(inc|incorporated|llc|ltd|limited|corp|corporation|gmbh|plc|co)\b\.?$/i, ""));
@@ -64,6 +77,7 @@ export function competitorEvidenceProblem(c: CompetitorClaim, sources: LabeledSo
   if (!src) return "competitor_no_evidence";
   if (isDataPlatformUrl(src.url) || src.source_type === "aggregator_snippet") return "competitor_from_data_platform";
   if (!PRIMARY.has(src.source_type) || isListingPage(src)) return "competitor_from_listing";
+  if (src.source_type === "news" && !isTrustedNewsUrl(src.url)) return "competitor_news_not_trusted";
   const quote = normalizeForMatch(c.evidence_quote);
   if (!normalizeForMatch(sourceText(src)).includes(quote)) return "competitor_quote_not_in_source";
   if (!` ${quote} `.includes(` ${coreName(c.name)} `) || !COMPETES.test(c.evidence_quote) || LISTING_WORDS.test(c.evidence_quote)) return "competitor_quote_not_explicit";

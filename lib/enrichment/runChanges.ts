@@ -9,6 +9,8 @@
  *                       old_value = what was on file, new_value = what the run wrote
  *   new round           field = "funding_rounds.<id>", old_value = null,
  *                       new_value = the inserted row
+ *   deleted round       field = "funding_rounds.<id>", old_value = the row,
+ *                       new_value = null (a cleanup; undo puts it back)
  *   filled round field  field = "funding_rounds.<id>.<column>"
  *
  * planUndo() turns a run's rows into what undoing it means, and refuses a
@@ -33,6 +35,10 @@ export function startupChanges(startupId: string, before: Record<string, unknown
   return Object.entries(patch).map(([field, value]) => ({ startup_id: startupId, field, old_value: json(before[field]), new_value: json(value), run_id: runId }));
 }
 
+export function roundDeleteChange(startupId: string, roundId: string, row: Record<string, unknown>, runId: string | null): FieldChangeRow {
+  return { startup_id: startupId, field: `funding_rounds.${roundId}`, old_value: row, new_value: null, source_url: (row.source_url as string | null) ?? null, run_id: runId };
+}
+
 export function roundInsertChange(startupId: string, roundId: string, row: Record<string, unknown>, runId: string | null): FieldChangeRow {
   return { startup_id: startupId, field: `funding_rounds.${roundId}`, old_value: null, new_value: row, source_url: (row.source_url as string | null) ?? null, run_id: runId };
 }
@@ -51,8 +57,9 @@ export type UndoScope = string;
 export type UndoAction =
   | { kind: "restore_startup_field"; startup_id: string; field: string; value: unknown; written: unknown }
   | { kind: "delete_round"; startup_id: string; round_id: string; round: Record<string, unknown> }
+  | { kind: "restore_round"; startup_id: string; round_id: string; round: Record<string, unknown> }
   | { kind: "restore_round_field"; startup_id: string; round_id: string; column: string; value: unknown }
-  | { kind: "skip"; startup_id: string; field: string; reason: "changed_since" | "round_gone" | "out_of_scope" };
+  | { kind: "skip"; startup_id: string; field: string; reason: "changed_since" | "round_gone" | "round_back" | "out_of_scope" };
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
@@ -77,6 +84,12 @@ export function planUndo(changes: FieldChangeRow[], now: CurrentState, scope: Un
   for (const c of changes) {
     if (!inScope(c.field, scope)) { actions.push({ kind: "skip", startup_id: c.startup_id, field: c.field, reason: "out_of_scope" }); continue; }
     const parts = c.field.split(".");
+    if (parts[0] === "funding_rounds" && parts.length === 2 && c.new_value == null) {
+      // A round the run deleted: put back as it was, unless a round with its id is there again.
+      if (now.rounds.has(parts[1])) { actions.push({ kind: "skip", startup_id: c.startup_id, field: c.field, reason: "round_back" }); continue; }
+      actions.push({ kind: "restore_round", startup_id: c.startup_id, round_id: parts[1], round: c.old_value as Record<string, unknown> });
+      continue;
+    }
     if (parts[0] === "funding_rounds" && parts.length === 2) {
       const round = now.rounds.get(parts[1]);
       if (!round) { actions.push({ kind: "skip", startup_id: c.startup_id, field: c.field, reason: "round_gone" }); continue; }

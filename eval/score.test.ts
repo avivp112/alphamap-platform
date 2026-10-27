@@ -113,7 +113,7 @@ describe("the fields the 2026-10-26 run got wrong", () => {
     const chalice: GoldenCompany = { id: "chalice", name: "Chalice", competitors: { names: ["Cognitiv"], not_competitors: ["Powerlytics", "Algocraft", "Index Exchange"], confidence: "verified" } };
     const b = newScoreboard();
     expect(scoreCompany(b, chalice, out({ competitors: ["Cognitiv, Inc.", "Powerlytics", "The Trade Desk"] })).competitors).toBe("wrong");
-    expect(b.competitors).toEqual({ scored: 1, produced: 2, correct: 1, unjudged: 1 });
+    expect(b.competitors).toEqual({ scored: 0, produced: 2, correct: 1, unjudged: 1 });   // precision only: no coverage
   });
 
   it("patents: 1AHEAD's own patent is right, Snap's is wrong; with none on the register, any patent is wrong", () => {

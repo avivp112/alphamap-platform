@@ -66,6 +66,8 @@ export interface PipelineOutput {
   competitors?: string[];
   /** Patent publication numbers written. */
   patents?: string[];
+  /** Where each competitor was found, for the review sheet. */
+  competitor_sources?: Array<{ name: string; source_url: string | null; quote: string | null }>;
 }
 
 /** unjudged: produced values the golden set neither confirms nor rejects (competitors only) — reported, not scored. */
@@ -202,12 +204,16 @@ function scoreRoundTypes(s: FieldStats, g: GoldenCompany, extracted: PipelineOut
   return pairs.length === 0 ? "excluded" : produced === 0 ? "missing" : correct === produced ? "correct" : "wrong";
 }
 
-/** Competitors: a name the golden list confirms is right, one it rejects is wrong, any other is unjudged. */
+/**
+ * Competitors — precision only (owner, 2026-10-27: is every competitor found
+ * really one). A name the golden list confirms is right, one it rejects is
+ * wrong, any other is unjudged and goes to eval/review/competitors_review.csv.
+ * No coverage: the golden list is what was judged, not every competitor.
+ */
 function scoreCompetitors(s: FieldStats, g: GoldenCompany, extracted: string[] | undefined): FieldResult {
   const golden = g.competitors;
   if (!golden || golden.confidence === "unknown" || extracted === undefined) return "excluded";
   const same = (a: string, b: string) => normalizeCompany(a) === normalizeCompany(b);
-  s.scored += golden.names.length;
   let produced = 0, correct = 0, unjudged = 0;
   for (const name of extracted) {
     if (golden.names.some((n) => same(n, name))) { produced++; correct++; }

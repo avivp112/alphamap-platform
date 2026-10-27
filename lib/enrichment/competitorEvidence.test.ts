@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { competitorEvidenceProblem, isListingPage } from "./competitorEvidence";
+import { competitorEvidenceProblem, isListingPage, explanationIsListing } from "./competitorEvidence";
 import { buildLabeledSources, classifySourceType, type RawSearchResult } from "./sources";
 
 const raw: RawSearchResult[] = [
@@ -12,6 +12,8 @@ const raw: RawSearchResult[] = [
     content: "Chalice Custom Algorithms is an early rival to Cognitiv in custom bidding for programmatic buyers. Powerlytics is listed as a similar company." },
   { url: "https://www.prnewswire.com/news-releases/1ahead-glo-launch.html", title: "1AHEAD Technologies launches GLO", provider: "serper", query_label: "news",
     content: "CHARLOTTE, N.C. — 1AHEAD Technologies' GLO product directly competes with Ring in AI-driven entry management." },
+  { url: "https://adtech-insider-blog.net/2025/chalice-custom-bidding", title: "Custom bidding players", provider: "serper", query_label: "competitors",
+    content: "Chalice competes with Cognitiv for programmatic buyers who want custom bidding." },
   { url: "https://www.example-news.com/ai-adtech/top-10-chalice-alternatives", title: "Top 10 Chalice Alternatives in 2026", provider: "serper", query_label: "competitors",
     content: "1. Cognitiv competes with Chalice on custom bidding. 2. Powerlytics." },
 ];
@@ -50,6 +52,17 @@ describe("a competitor needs a primary source that says it competes (run of 2026
     expect(classifySourceType("https://flanders.dealroom.co/companies/beta_air_1")).toBe("aggregator_snippet");
     expect(classifySourceType("https://leadiq.com/c/chalice-ai/5f36ed2fa0cf8ca20b588f2e")).toBe("aggregator_snippet");
     expect(classifySourceType("https://www.adexchanger.com/x")).toBe("news");
+  });
+
+  it("an article counts only in a trusted outlet — the same sentence on an unknown blog does not (owner, 2026-10-26)", () => {
+    expect(competitorEvidenceProblem({ name: "Cognitiv", source_id: id("adtech-insider-blog"), evidence_quote: "Chalice competes with Cognitiv for programmatic buyers" }, sources))
+      .toBe("competitor_news_not_trusted");
+  });
+
+  it("reads where an explanation on file says the competitor was found — the run's Powerlytics and Algocraft", () => {
+    expect(explanationIsListing("Powerlytics is listed as a similar company to Chalice AI in the advertising services space. Both operate in the programmatic advertising and custom algorithm domain.")).toBe(true);
+    expect(explanationIsListing("Algocraft is identified as a similar company to Chalice AI in the custom algorithm and advertising services sector.")).toBe(true);
+    expect(explanationIsListing("Cognitiv is a competitor in the custom bidding category for programmatic advertising. Like Chalice Custom Algorithms, it provides AI-driven bidding solutions.")).toBe(false);
   });
 
   it("does not treat the company's own comparison page as a listing", () => {
