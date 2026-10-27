@@ -6,7 +6,8 @@
  *   patents      every patent read off the web goes, with its count and
  *                fields; a patent from the EPO register (source "epo") stays.
  *   competitors  deleted only when its own explanation says it came from a
- *                "similar companies" / "alternatives" list, or describes a
+ *                "similar companies" / "alternatives" list or names the data
+ *                platform it was read on, or describes a
  *                partner, customer, investor or host platform; any other
  *                competitor without a verified source stays, marked
  *                unverified — the site labels it (owner, 2026-10-27).
@@ -23,6 +24,7 @@
 
 import { competitorRelation } from "./competitorRelation";
 import { explanationIsListing } from "./competitorEvidence";
+import { clauseProblem } from "./narrative";
 import { groundRoundType, isUnstatedEvent } from "./assemble";
 import { classifySourceType, type LabeledSource } from "./sources";
 import { extractNumbersFromText } from "./evidence";
@@ -54,6 +56,15 @@ export function planPatentCleanup(row: PatentRowState): { patch: Partial<PatentR
 export interface StoredCompetitor { name?: string; how_it_competes?: string | null; source_url?: string | null; unverified?: boolean; [k: string]: unknown }
 export type CompetitorCleanup = "deleted_listing" | "deleted_relationship" | "marked_unverified";
 
+/**
+ * An explanation that names a data platform says where the competitor was
+ * found: DarkOwl's KELA "as confirmed by Owler's competitor listing" (trial
+ * of 2026-10-27). Unless the competitor, or the company, is that platform.
+ */
+function namesDataPlatform(explanation: string, competitorName: string, companyName: string): boolean {
+  return explanation.split(/(?<=[.!?;])\s+/).some((clause) => clauseProblem(clause, { selfName: companyName, subjectName: competitorName }) === "data_platform");
+}
+
 export function planCompetitorCleanup(list: Array<StoredCompetitor | string | null> | null, companyName: string): {
   competitors: Array<StoredCompetitor | string>; changes: Array<{ name: string; action: CompetitorCleanup; explanation: string }>;
 } {
@@ -64,7 +75,7 @@ export function planCompetitorCleanup(list: Array<StoredCompetitor | string | nu
     const c: StoredCompetitor = typeof raw === "string" ? { name: raw, how_it_competes: "" } : raw;
     const name = c.name ?? "";
     const explanation = c.how_it_competes ?? "";
-    if (explanation && explanationIsListing(explanation)) { changes.push({ name, action: "deleted_listing", explanation }); continue; }
+    if (explanation && (explanationIsListing(explanation) || namesDataPlatform(explanation, name, companyName))) { changes.push({ name, action: "deleted_listing", explanation }); continue; }
     if (explanation && name && competitorRelation(name, explanation, companyName)) { changes.push({ name, action: "deleted_relationship", explanation }); continue; }
     if (c.source_url || c.unverified) { competitors.push(raw); continue; }
     changes.push({ name, action: "marked_unverified", explanation });

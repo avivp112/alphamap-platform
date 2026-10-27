@@ -33,6 +33,19 @@ describe("competitors: listing finds and relationships go, the rest stays, marke
     expect(r.competitors).toEqual([{ ...chalice[0], unverified: true }]);
   });
 
+  it("DarkOwl (trial, 2026-10-27): KELA 'as confirmed by Owler's competitor listing' is deleted; Intelliagg, with no platform named, is kept unverified", () => {
+    const r = planCompetitorCleanup([
+      { name: "KELA", how_it_competes: "Direct competitor in darknet threat intelligence and dark web monitoring, serving similar cybersecurity and threat research customers as confirmed by Owler's competitor listing." },
+      { name: "Intelliagg", how_it_competes: "Competitor in dark web intelligence and threat research tools, positioned as an alternative darknet data and monitoring solution." },
+    ], "DarkOwl");
+    expect(r.changes.map((c) => [c.name, c.action])).toEqual([["KELA", "deleted_listing"], ["Intelliagg", "marked_unverified"]]);
+  });
+
+  it("a competitor that is itself a data platform may be named — PitchBook for Grata", () => {
+    const r = planCompetitorCleanup([{ name: "PitchBook", how_it_competes: "PitchBook sells private-market data to investors, overlapping with Grata's deal sourcing." }], "Grata");
+    expect(r.changes[0].action).toBe("marked_unverified");
+  });
+
   it("Biotia: Twist Bioscience, a partner, is deleted", () => {
     const r = planCompetitorCleanup([{ name: "Twist Bioscience", how_it_competes: "Twist Bioscience partners with Biotia to provide sequencing-based diagnostic solutions." }], "Biotia, Inc.");
     expect(r.changes[0].action).toBe("deleted_relationship");
