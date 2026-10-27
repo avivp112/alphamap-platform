@@ -8,8 +8,8 @@
  *   competitors  deleted only when its own explanation says it came from a
  *                "similar companies" / "alternatives" list, or describes a
  *                partner, customer, investor or host platform; any other
- *                competitor without a verified source is hidden (unverified),
- *                not deleted, until the next enrichment replaces it.
+ *                competitor without a verified source stays, marked
+ *                unverified — the site labels it (owner, 2026-10-27).
  *   rounds       (the 2026-10-26 run's) a round whose every source is a data
  *                platform is deleted; a type no source states becomes
  *                "Unknown" (debt the source calls debt becomes Debt); the
@@ -52,7 +52,7 @@ export function planPatentCleanup(row: PatentRowState): { patch: Partial<PatentR
 // ── Competitors ──────────────────────────────────────────────────────────────
 
 export interface StoredCompetitor { name?: string; how_it_competes?: string | null; source_url?: string | null; unverified?: boolean; [k: string]: unknown }
-export type CompetitorCleanup = "deleted_listing" | "deleted_relationship" | "hidden_unverified";
+export type CompetitorCleanup = "deleted_listing" | "deleted_relationship" | "marked_unverified";
 
 export function planCompetitorCleanup(list: Array<StoredCompetitor | string | null> | null, companyName: string): {
   competitors: Array<StoredCompetitor | string>; changes: Array<{ name: string; action: CompetitorCleanup; explanation: string }>;
@@ -67,7 +67,7 @@ export function planCompetitorCleanup(list: Array<StoredCompetitor | string | nu
     if (explanation && explanationIsListing(explanation)) { changes.push({ name, action: "deleted_listing", explanation }); continue; }
     if (explanation && name && competitorRelation(name, explanation, companyName)) { changes.push({ name, action: "deleted_relationship", explanation }); continue; }
     if (c.source_url || c.unverified) { competitors.push(raw); continue; }
-    changes.push({ name, action: "hidden_unverified", explanation });
+    changes.push({ name, action: "marked_unverified", explanation });
     competitors.push({ ...c, unverified: true });
   }
   return { competitors, changes };

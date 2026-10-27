@@ -327,12 +327,14 @@ export async function writeCollected(
   // none, it stays as stored (the site hides the offending part).
   const freshExplanation = new Map(market.competitors.map((c) => [normalizeForMatch(c.name), c.how_it_competes]));
   let staleExplanations = 0;
-  // A competitor an earlier run wrote without a verified source was hidden
-  // (scripts/clean_legacy_market_data.ts) until this, the next enrichment:
-  // it leaves now, and only what this run verified takes its place.
-  const unverifiedDropped = (reconciled.competitors as NonNullable<V2StartupRow["competitors"]>).filter((c) => c?.unverified).length;
-  if (unverifiedDropped) console.log(`    🧹  ${unverifiedDropped} unverified competitor(s) from earlier runs removed — replaced only by competitors a primary source names.`);
-  const existingCompetitors = (reconciled.competitors as NonNullable<V2StartupRow["competitors"]>).filter((c) => !c?.unverified).map((c) => {
+  // A competitor an earlier run wrote without a verified source is marked
+  // unverified (scripts/clean_legacy_market_data.ts) and stays, labelled on
+  // the site; when this run verifies the same competitor, its sourced entry
+  // replaces the old one.
+  const verifiedNow = new Set(market.competitors.map((c) => normalizeForMatch(c.name)));
+  const replacedUnverified = (reconciled.competitors as NonNullable<V2StartupRow["competitors"]>).filter((c) => c?.unverified && verifiedNow.has(normalizeForMatch(c.name ?? ""))).length;
+  if (replacedUnverified) console.log(`    ✅  ${replacedUnverified} unverified competitor(s) now verified by a primary source.`);
+  const existingCompetitors = (reconciled.competitors as NonNullable<V2StartupRow["competitors"]>).filter((c) => !(c?.unverified && verifiedNow.has(normalizeForMatch(c.name ?? "")))).map((c) => {
     const opts = { selfName: row.name, subjectName: c?.name, isVerified: verifierFrom(collected.verifiedFacts ?? []) };
     if (!c?.how_it_competes || cleanNarrative(c.how_it_competes, opts) === c.how_it_competes) return c;
     const fresh = freshExplanation.get(normalizeForMatch(c.name ?? ""));

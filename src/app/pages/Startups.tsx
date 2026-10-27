@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { stageLabel, sectorLabel, roundTypeLabel, SECTOR_TAXONOMY, PARENT_BY_SUB_SECTOR, STAGE_STEPS, type StageStep } from "../../lib/taxonomy";
-import { equityRaised, debtRaised } from "../../lib/capital";
+import { equityRaised, debtRaised, capitalKind } from "../../lib/capital";
 import { visibleCompetitors } from "../../lib/competitors";
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router";
@@ -472,7 +472,8 @@ function buildTimelineData(rounds: FundingRound[]): TimelinePoint[] {
     .sort((a, b) => (a.announcement_date ?? "").localeCompare(b.announcement_date ?? ""));
   let cum = 0;
   return sorted.map((r) => {
-    cum += r.amount_raised! / 1e6;
+    // The cumulative line is equity raised: debt, a secondary, an acquisition or an IPO adds nothing (src/lib/capital.ts).
+    if (capitalKind(r.round_type) === "equity") cum += r.amount_raised! / 1e6;
     return {
       year: new Date(r.announcement_date!).getFullYear(),
       date: r.announcement_date!,
@@ -1689,7 +1690,8 @@ function TalentGrowthTab({
 // and the legacy plain-string shape (rows written before the format landed).
 
 function CompetitorsMarketTab({ startup, onNavigate }: { startup: Startup; onNavigate: (id: string) => void }) {
-  // Unverified entries an earlier run wrote stay hidden until the next enrichment (src/lib/competitors.ts).
+  const { t } = useTranslation();
+  // Competitors no verified source backs yet are shown, labelled and muted (src/lib/competitors.ts).
   const competitors = visibleCompetitors(startup.competitors);
   const companyName = startup.name;
 
@@ -1706,13 +1708,18 @@ function CompetitorsMarketTab({ startup, onNavigate }: { startup: Startup; onNav
         return (
           <div
             key={`${c.name}-${idx}`}
-            className={`flex flex-col gap-1.5 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3.5 ${linked ? "cursor-pointer hover:border-cyan-300 hover:bg-cyan-50/40 transition-colors" : ""}`}
+            className={`flex flex-col gap-1.5 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3.5 ${c.unverified ? "opacity-60 border-dashed" : ""} ${linked ? "cursor-pointer hover:border-cyan-300 hover:bg-cyan-50/40 transition-colors" : ""}`}
             onClick={linked ? () => onNavigate(c.startup_id as string) : undefined}
           >
             <div className="flex items-center gap-2">
               <CompanyLogo name={c.name} website={c.website} size={22} rounded="rounded-md" />
               <span className="text-sm font-bold text-gray-900 truncate">{c.name}</span>
               {linked && <span className="text-[10px] font-semibold text-cyan-700 bg-cyan-100 rounded-full px-2 py-0.5 flex-none">Tracked ↗</span>}
+              {c.unverified && (
+                <span title={t("startups.competitorUnverifiedHint")} className="text-[10px] font-semibold text-gray-500 bg-gray-200 rounded-full px-2 py-0.5 flex-none">
+                  {t("startups.competitorUnverified")}
+                </span>
+              )}
             </div>
             {cleanNarrative(c.how_it_competes, { selfName: companyName, subjectName: c.name }) && (
               <p className="text-xs text-gray-600 leading-relaxed">{cleanNarrative(c.how_it_competes, { selfName: companyName, subjectName: c.name })}</p>

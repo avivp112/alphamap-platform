@@ -298,6 +298,8 @@
     "leadership": "管理团队",
     "investorDataRequiresFilling": "投资方数据待补全",
     "fundingIncomplete": "融资历史可能不完整。",
+    "competitorUnverified": "未验证",
+    "competitorUnverifiedHint": "尚无经过验证的来源表明二者存在竞争——可信度低。",
     "totalRaised": "累计融资额",
     "investorSchedule": "投资方明细",
     "growthTrend": "增长趋势",

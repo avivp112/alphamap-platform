@@ -10,7 +10,7 @@
  *   competitors  deleted when its explanation says it came from a "similar
  *                companies" / "alternatives" list, or describes a partner,
  *                customer, investor or host platform; any other one without a
- *                verified source is hidden (unverified) until the next enrichment.
+ *                verified source stays, marked unverified (labelled on the site).
  *   rounds       those the 2026-10-26 run inserted: deleted when every source
  *                is a data platform; a type no source states becomes "Unknown";
  *                the amount stays when it has a source; an acquisition,
@@ -109,7 +109,7 @@ async function startupRows(): Promise<Row[]> {
       const c = planCompetitorCleanup(s.competitors, s.name);
       if (c.changes.length) {
         patchOf(s.id).competitors = c.competitors;
-        for (const ch of c.changes) changes.push({ company: s.name, startup_id: s.id, kind: `competitor_${ch.action}`, detail: ch.name, before: ch.explanation, after: ch.action === "hidden_unverified" ? "(hidden)" : "(deleted)" });
+        for (const ch of c.changes) changes.push({ company: s.name, startup_id: s.id, kind: `competitor_${ch.action}`, detail: ch.name, before: ch.explanation, after: ch.action === "marked_unverified" ? "(shown, labelled Unverified)" : "(deleted)" });
       }
     }
   }
@@ -157,7 +157,7 @@ async function startupRows(): Promise<Row[]> {
     patents_removed: "Patents read off the web — removed",
     competitor_deleted_listing: "Competitors from a similar/alternatives list — deleted",
     competitor_deleted_relationship: "Competitors that are a partner/customer/investor/platform — deleted",
-    competitor_hidden_unverified: "Competitors without a verified source — hidden until the next enrichment",
+    competitor_marked_unverified: "Competitors without a verified source — kept, labelled \"Unverified\" on the site",
     round_deleted_platform_only: "Rounds whose only source is a data platform — deleted",
     round_deleted_event_unstated: "Acquisition / secondary / buyout rows no source states — deleted (as Unknown they would count as equity)",
     round_type_unstated: "Round types no source states — set to Unknown",

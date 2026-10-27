@@ -298,6 +298,8 @@
     "leadership": "Equipo directivo",
     "investorDataRequiresFilling": "Faltan datos de inversores",
     "fundingIncomplete": "El historial de financiación puede estar incompleto.",
+    "competitorUnverified": "No verificado",
+    "competitorUnverifiedHint": "Ninguna fuente verificada indica aún que compiten: confianza baja.",
     "totalRaised": "Capital total captado",
     "investorSchedule": "Calendario de inversores",
     "growthTrend": "Tendencia de crecimiento",

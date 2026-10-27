@@ -18,8 +18,11 @@ const tables: Record<string, unknown[]> = {
     id: "st-1", name: "Ghost", website: "https://ghost.org", description: null, value_proposition: null, industry: null,
     founded_year: null, country: null, city: null, employee_count: null, employee_range: null, growth_trend: null,
     founders: null, leadership: null, acquisitions: null, news: null, patent_count: null, patent_fields: null,
-    // Hidden by the legacy cleanup (Chalice's LeadIQ "similar company" kind): the next enrichment removes it.
-    competitors: [{ name: "Medium", how_it_competes: "Medium is listed as a similar company to Ghost.", website: null, startup_id: null, unverified: true }],
+    // Marked unverified by the legacy cleanup: Substack is verified by this run (its sourced entry replaces it), Medium stays as it is.
+    competitors: [
+      { name: "Substack", how_it_competes: "Newsletter platform.", website: null, startup_id: null, unverified: true },
+      { name: "Medium", how_it_competes: "Blogging platform.", website: null, startup_id: null, unverified: true },
+    ],
     patents: null, tech_stack: null, github_url: null, huggingface_url: null, arr_milestones: null, revenue_estimate: null,
     valuation_benchmarks: null, linkedin_url: null, facebook_url: null, instagram_url: null, sector_id: null,
     funding_history_complete: null, status: "active", last_enriched_at: null, is_manually_verified: false,
@@ -238,9 +241,11 @@ describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
     expect(p.sector_id).toBe("sec-1");
   });
 
-  it("writes grounded competitors only — an unverified one on file leaves — and news with og:image, newest first", () => {
+  it("writes grounded competitors only — an unverified one on file stays unless this run verifies it — and news with og:image, newest first", () => {
     const p = startupPatch();
-    expect((p.competitors as Array<{ name: string }>).map((c) => c.name)).toEqual(["Substack", "Beehiiv"]);
+    const comps = p.competitors as Array<{ name: string; unverified?: boolean; source_url?: string | null }>;
+    expect(comps.map((c) => [c.name, !!c.unverified])).toEqual([["Medium", true], ["Substack", false], ["Beehiiv", false]]);
+    expect(comps.find((c) => c.name === "Substack")?.source_url).toBe("https://www.niemanlab.org/2025/ghost-newsletters");
     const news = p.news as Array<{ url: string; image_url: string; published_date: string }>;
     expect(news.map((n) => n.url)).toEqual(["https://www.niemanlab.org/2025/ghost-6", "https://www.theverge.com/2024/ghost-activitypub"]);
     expect(news[0].image_url).toBe("https://www.niemanlab.org/img/hero.jpg");
@@ -249,7 +254,7 @@ describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
   it("registers the run and records every write under its run_id, so it can be undone (2026-10-26)", () => {
     expect(calls.some((c) => c.table === "enrichment_runs" && c.op === "insert")).toBe(true);
     const changes = calls.filter((c) => c.table === "field_changes" && c.op === "insert").flatMap((c) => c.payload as Array<{ field: string; run_id: string; old_value: unknown }>);
-    expect(changes.find((r) => r.field === "competitors")).toMatchObject({ run_id: "run-test", old_value: [{ name: "Medium", unverified: true }] });
+    expect(changes.find((r) => r.field === "competitors")).toMatchObject({ run_id: "run-test", old_value: [{ name: "Substack", unverified: true }, { name: "Medium", unverified: true }] });
     expect(changes.find((r) => r.field === "funding_rounds.r-1.lead_investor")).toMatchObject({ run_id: "run-test", old_value: null });
     expect(calls.some((c) => c.table === "enrichment_runs" && c.op === "update")).toBe(true);
   });

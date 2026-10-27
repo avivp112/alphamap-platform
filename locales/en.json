@@ -321,6 +321,8 @@
     "leadership": "Leadership",
     "investorDataRequiresFilling": "Investor data requires filling",
     "fundingIncomplete": "Funding history may be incomplete.",
+    "competitorUnverified": "Unverified",
+    "competitorUnverifiedHint": "No verified source says they compete yet — low confidence.",
     "totalRaised": "Total Raised",
     "investorSchedule": "Investor Schedule",
     "growthTrend": "Growth Trend",

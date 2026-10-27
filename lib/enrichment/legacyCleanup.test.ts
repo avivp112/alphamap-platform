@@ -17,7 +17,7 @@ describe("patents: everything read off the web goes; the EPO register's stay (ow
   });
 });
 
-describe("competitors: listing finds and relationships go, the rest is hidden until the next enrichment", () => {
+describe("competitors: listing finds and relationships go, the rest stays, marked unverified", () => {
   const chalice = [
     { name: "Cognitiv", how_it_competes: "Cognitiv is a competitor in the custom bidding category for programmatic advertising. Like Chalice Custom Algorithms, it provides AI-driven bidding solutions." },
     { name: "Index Exchange", how_it_competes: "Index Exchange is an SSP (supply-side platform) that competes with Chalice's containerized RTB approach. Zillow piloted Chalice's custom AI models embedded within Index Exchange's infrastructure, showing how Chalice's intelligence can be integrated into SSP platforms." },
@@ -25,10 +25,10 @@ describe("competitors: listing finds and relationships go, the rest is hidden un
     { name: "Algocraft", how_it_competes: "Algocraft is identified as a similar company to Chalice AI in the custom algorithm and advertising services sector." },
   ];
 
-  it("Chalice (2026-10-26): Powerlytics and Algocraft deleted, Index Exchange deleted as a host platform, Cognitiv hidden", () => {
+  it("Chalice (2026-10-26): Powerlytics and Algocraft deleted, Index Exchange deleted as a host platform, Cognitiv marked unverified", () => {
     const r = planCompetitorCleanup(chalice, "Chalice Custom Algorithms, Inc.");
     expect(r.changes.map((c) => [c.name, c.action])).toEqual([
-      ["Cognitiv", "hidden_unverified"], ["Index Exchange", "deleted_relationship"], ["Powerlytics", "deleted_listing"], ["Algocraft", "deleted_listing"],
+      ["Cognitiv", "marked_unverified"], ["Index Exchange", "deleted_relationship"], ["Powerlytics", "deleted_listing"], ["Algocraft", "deleted_listing"],
     ]);
     expect(r.competitors).toEqual([{ ...chalice[0], unverified: true }]);
   });
@@ -39,7 +39,7 @@ describe("competitors: listing finds and relationships go, the rest is hidden un
     expect(r.competitors).toEqual([]);
   });
 
-  it("leaves a sourced competitor, and one already hidden, as they are", () => {
+  it("leaves a sourced competitor, and one already marked, as they are", () => {
     const sourced = { name: "Ring", how_it_competes: "Ring makes video doorbells.", source_url: "https://www.prnewswire.com/x" };
     const hidden = { name: "Nest", how_it_competes: "Nest makes doorbells.", unverified: true };
     expect(planCompetitorCleanup([sourced, hidden], "1AHEAD Technologies")).toEqual({ competitors: [sourced, hidden], changes: [] });

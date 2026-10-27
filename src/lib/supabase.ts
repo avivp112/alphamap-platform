@@ -155,8 +155,10 @@ export interface Competitor {
   startup_id?: string | null;
   /** The primary source that says they compete (enrichment v2, 2026-10-26 on). */
   source_url?: string | null;
-  /** Written before sources were required and not checked since: hidden until the next enrichment replaces it (src/lib/competitors.ts). */
+  /** Written before sources were required and not checked since: shown with an "Unverified" label (src/lib/competitors.ts). */
   unverified?: boolean;
+  /** A verification run could not confirm it: not shown. */
+  hidden?: boolean;
 }
 
 // One entry per investor whose SPECIFIC dollar contribution to a round is
