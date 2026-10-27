@@ -28,7 +28,7 @@ import { extractMarket, normalizeUrlForMatch } from "./extractMarket.ts";
 import { lookupEpoPatents, type CompanyIdentity, type EpoPatentResult } from "./epoPatents.ts";
 import { detectGaps, buildDeepDiveQueries, hasNoFinancingRounds, type DeepDiveSection } from "./deepDive.ts";
 import {
-  groundRoundDetails, rejectRound, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
+  groundRoundDetails, isUnstatedEvent, rejectRound, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
   type ExistingRoundRef,
 } from "./assemble.ts";
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
@@ -717,10 +717,16 @@ export async function collectCompany(
     bump(stats.droppedByReason, why);
     return false;
   });
-  const newRoundLikes: RoundLike[] = keptRounds.map((r) => {
+  const newRoundLikes: RoundLike[] = keptRounds.flatMap((r) => {
     const grounded = groundRoundDetails(r, allSources);
     for (const reason of grounded.dropped) bump(stats.droppedByReason, reason);
-    return roundToRoundLike(grounded.round);
+    // An acquisition / secondary / buyout no source states is not written as an "Unknown" round (assemble.ts).
+    if (isUnstatedEvent(r.round_type, grounded.round.round_type)) {
+      console.log(`    🚫  ${r.round_type} not written (round_event_not_stated)`);
+      bump(stats.droppedByReason, "round_event_not_stated");
+      return [];
+    }
+    return [roundToRoundLike(grounded.round)];
   });
 
   ctx.onStage?.("validating");

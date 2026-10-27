@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { groundRoundType, rejectRound } from "./assemble";
+import { groundRoundType, rejectRound, isUnstatedEvent } from "./assemble";
 import { capitalKind, computeTotalRaised, computeDebtRaised } from "./rounds";
 import { buildLabeledSources } from "./sources";
 import type { V2Round } from "./extractFunding";
@@ -65,5 +65,14 @@ describe("debt is marked and summed apart from equity (BETA, 2026-10-26)", () =>
     const s = buildLabeledSources([{ url: "https://news.example.com/b", title: "x", provider: "serper", query_label: "funding",
       content: "Acme raised a $50 million Series B and a $20 million credit line." }]);
     expect(groundRoundType({ round_type: "Series B", amount_raised: ev(50_000_000, "S1", "Acme raised a $50 million Series B and a $20 million credit line") }, s).round_type).toBe("Series B");
+  });
+});
+
+describe("an event no source states is not written as an Unknown round (DarkOwl, Actian — 2026-10-26)", () => {
+  it("an unstated Acquired / Secondary is dropped; an unstated Series A becomes Unknown as before", () => {
+    expect(isUnstatedEvent("Acquired", "Unknown")).toBe(true);
+    expect(isUnstatedEvent("Secondary", "Unknown")).toBe(true);
+    expect(isUnstatedEvent("Acquired", "Acquired")).toBe(false);
+    expect(isUnstatedEvent("Series A", "Unknown")).toBe(false);
   });
 });

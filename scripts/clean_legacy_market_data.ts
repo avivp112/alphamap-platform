@@ -13,7 +13,8 @@
  *                verified source is hidden (unverified) until the next enrichment.
  *   rounds       those the 2026-10-26 run inserted: deleted when every source
  *                is a data platform; a type no source states becomes "Unknown";
- *                the amount stays when it has a source. Each round's source
+ *                the amount stays when it has a source; an acquisition,
+ *                secondary or buyout row no source states is deleted. Each round's source
  *                page is fetched to look for the type, as enrichment does.
  *
  * DRY_RUN (the default) changes nothing: a report, SAMPLE=n examples per kind,
@@ -144,7 +145,7 @@ async function startupRows(): Promise<Row[]> {
       roundPlans.push({ round: r, plan });
       const company = byId.get(r.startup_id)?.name ?? r.startup_id;
       const label = `${r.round_type ?? "?"} ${r.amount_raised ?? ""} (${r.source_url ?? "no source"})`;
-      if (plan.action === "delete") changes.push({ company, startup_id: r.startup_id, kind: "round_deleted_platform_only", detail: label, before: r, after: "(deleted)" });
+      if (plan.action === "delete") changes.push({ company, startup_id: r.startup_id, kind: plan.reason === "round_event_not_stated" ? "round_deleted_event_unstated" : "round_deleted_platform_only", detail: label, before: r, after: "(deleted)" });
       else changes.push({ company, startup_id: r.startup_id, kind: plan.patch.round_type ? "round_type_unstated" : "round_amount_unsourced", detail: `${label} — ${plan.notes.join("; ")}`, before: { round_type: r.round_type, amount_raised: r.amount_raised }, after: plan.patch });
     }
   }
@@ -158,6 +159,7 @@ async function startupRows(): Promise<Row[]> {
     competitor_deleted_relationship: "Competitors that are a partner/customer/investor/platform — deleted",
     competitor_hidden_unverified: "Competitors without a verified source — hidden until the next enrichment",
     round_deleted_platform_only: "Rounds whose only source is a data platform — deleted",
+    round_deleted_event_unstated: "Acquisition / secondary / buyout rows no source states — deleted (as Unknown they would count as equity)",
     round_type_unstated: "Round types no source states — set to Unknown",
     round_amount_unsourced: "Round amounts with no source — removed",
   };

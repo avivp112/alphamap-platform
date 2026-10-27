@@ -62,6 +62,18 @@ const TYPE_STATED: Partial<Record<string, RegExp>> = {
   "IPO": /\bIPO\b|\binitial public offering\b|\blisted on\b/i,
 };
 
+/**
+ * An acquisition, a secondary, a buyout or an IPO is an event, not money the
+ * company raised. When no source states it, it cannot become an "Unknown"
+ * round — that would count its amount as equity in Total Raised (DarkOwl's
+ * "Acquired" row was DarkOwl buying Skurio's assets; Actian's "Secondary"
+ * came from Wikipedia). It is not written at all.
+ */
+const NOT_CAPITAL_EVENTS = new Set(["Acquired", "Secondary", "PE Buyout", "IPO"]);
+export function isUnstatedEvent(originalType: string | null | undefined, groundedType: string): boolean {
+  return NOT_CAPITAL_EVENTS.has(normalizeRoundType(originalType)) && normalizeRoundType(groundedType) !== normalizeRoundType(originalType);
+}
+
 /** The text a round's type may be read from: its quotes, and ~400 characters around its amount in the cited source. */
 function roundTypeEvidence(round: V2Round, byId: Map<string, LabeledSource>): string {
   const parts: string[] = [];

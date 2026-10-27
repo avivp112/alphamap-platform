@@ -13,7 +13,9 @@
  *   rounds       (the 2026-10-26 run's) a round whose every source is a data
  *                platform is deleted; a type no source states becomes
  *                "Unknown" (debt the source calls debt becomes Debt); the
- *                amount stays when it has a source.
+ *                amount stays when it has a source. An acquisition, secondary,
+ *                buyout or IPO no source states is deleted, not made "Unknown"
+ *                — an Unknown round counts as equity raised.
  *
  * Pure; scripts/clean_legacy_market_data.ts does the reads, the page fetches
  * and the writes. Tested with the run's own companies (legacyCleanup.test.ts).
@@ -21,7 +23,7 @@
 
 import { competitorRelation } from "./competitorRelation";
 import { explanationIsListing } from "./competitorEvidence";
-import { groundRoundType } from "./assemble";
+import { groundRoundType, isUnstatedEvent } from "./assemble";
 import { classifySourceType, type LabeledSource } from "./sources";
 import { extractNumbersFromText } from "./evidence";
 import type { V2Round } from "./extractFunding";
@@ -83,7 +85,7 @@ export interface RoundEvidence { column: string; source_url: string | null; evid
 export interface Page { title: string; text: string }
 
 export type RoundCleanup =
-  | { action: "delete"; reason: "round_only_from_data_platform" }
+  | { action: "delete"; reason: "round_only_from_data_platform" | "round_event_not_stated" }
   | { action: "update"; patch: { round_type?: string; amount_raised?: null }; notes: string[] }
   | { action: "keep" };
 
@@ -132,6 +134,8 @@ export function planRoundCleanup(round: StoredRound, evidence: RoundEvidence[], 
     lead_investor: round.lead_investor ? quoteFor("lead_investor", round.lead_investor) as V2Round["lead_investor"] : undefined,
   };
   const typed = groundRoundType(v2, sources);
+  // An unstated acquisition / secondary / buyout would become equity as "Unknown": deleted instead (assemble.ts isUnstatedEvent).
+  if (isUnstatedEvent(round.round_type, typed.round_type)) return { action: "delete", reason: "round_event_not_stated" };
   // "Unknown" and "Other" are one label to the round-type normaliser.
   if (normalizeRoundType(typed.round_type) !== normalizeRoundType(round.round_type ?? "Unknown")) {
     patch.round_type = typed.round_type;

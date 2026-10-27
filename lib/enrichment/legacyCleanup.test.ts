@@ -91,4 +91,18 @@ describe("rounds of 2026-10-26", () => {
     expect(planRoundCleanup({ id: "r6", round_type: "Unknown", amount_raised: 5_000_000, source_url: null }, [], new Map()))
       .toEqual({ action: "update", patch: { amount_raised: null }, notes: ["amount has no source"] });
   });
+
+  it("DarkOwl's 'Acquired' row — DarkOwl bought Skurio's assets — is deleted, not made an Unknown (equity) round", () => {
+    const url = "https://www.darkowl.com/press-releases/darkowl-purchases-certain-assets-of-skurio-ltd";
+    expect(planRoundCleanup({ id: "r7", round_type: "Acquired", amount_raised: null, source_url: url }, [],
+      new Map([[url, { title: "DarkOwl Purchases Certain Assets of Skurio Ltd", text: "DarkOwl, a leader in darknet intelligence, today announced it has purchased certain assets of Skurio Ltd." }]])))
+      .toEqual({ action: "delete", reason: "round_event_not_stated" });
+  });
+
+  it("Actian's 'Secondary' from Wikipedia is deleted when the page says nothing of a secondary", () => {
+    const url = "https://en.wikipedia.org/wiki/Actian";
+    expect(planRoundCleanup({ id: "r8", round_type: "Secondary", amount_raised: 150_000_000, source_url: url }, [],
+      new Map([[url, { title: "Actian - Wikipedia", text: "Actian Corporation is an American software company. In 2018 HCL Technologies and Sumeru Equity Partners bought Actian for $330 million." }]])))
+      .toEqual({ action: "delete", reason: "round_event_not_stated" });
+  });
 });
