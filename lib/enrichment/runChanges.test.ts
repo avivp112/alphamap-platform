@@ -61,4 +61,12 @@ describe("a run is undone by its run_id (owner, 2026-10-26)", () => {
     expect(planUndo(cleanup, after, SCOPE)).toEqual([{ kind: "restore_round", startup_id: "beta", round_id: "r-beta", round: { id: "r-beta", ...betaRound } }]);
     expect(planUndo(cleanup, now, SCOPE)).toEqual([{ kind: "skip", startup_id: "beta", field: "funding_rounds.r-beta", reason: "round_back" }]);
   });
+
+  it("a deleted round's investor links travel with it, so the undo puts them back too", () => {
+    const links = [{ id: "l1", round_id: "r-dk", investor_id: "inv-five-elms", is_lead: true }];
+    const cleanup = [roundDeleteChange("darkowl", "r-dk", { id: "r-dk", round_type: "Growth", amount_raised: 8_000_000, _investor_links: links }, "run-cleanup")];
+    const [action] = planUndo(cleanup, { startups: new Map(), rounds: new Map() }, SCOPE);
+    expect(action).toMatchObject({ kind: "restore_round", round_id: "r-dk", round: { _investor_links: links } });
+  });
 });
+

@@ -120,9 +120,14 @@ async function undo() {
         if (e) console.warn(`  ⚠️  ${e.message}`);
         await db.from("field_provenance").delete().eq("startup_id", a.startup_id).like("field", `funding_rounds.${a.round_id}.%`);
       } else if (a.kind === "restore_round") {
-        const { capital_type: _generated, ...row } = a.round;
+        // The round as it was, then the investor links its deletion took with it.
+        const { capital_type: _generated, _investor_links: links, ...row } = a.round as Record<string, unknown> & { _investor_links?: Array<Record<string, unknown>> };
         const { error: e } = await db.from("funding_rounds").insert({ ...row, id: a.round_id });
         if (e) console.warn(`  ⚠️  ${e.message}`);
+        else if (links?.length) {
+          const { error: le } = await db.from("funding_round_investors").insert(links);
+          if (le) console.warn(`  ⚠️  investor links of round ${a.round_id}: ${le.message}`);
+        }
       } else if (a.kind === "restore_round_field") {
         const { error: e } = await db.from("funding_rounds").update({ [a.column]: a.value }).eq("id", a.round_id);
         if (e) console.warn(`  ⚠️  ${e.message}`);
