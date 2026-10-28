@@ -154,7 +154,7 @@ async function startupRows(): Promise<Row[]> {
     for (const r of ofRun) {
       // A round whose source page could not be opened: listed, to read again once enrichment may run (owner, 2026-10-27).
       const own = [r.source_url, ...(evidence.get(r.id) ?? []).map((e) => e.source_url)].filter((u): u is string => !!u && pages.has(u));
-      const failed = own.filter((u) => pages.get(u) === null);
+      const failed = [...new Set(own.filter((u) => pages.get(u) === null))];
       if (failed.length) unread.push({ company: byId.get(r.startup_id)?.name ?? r.startup_id, startup_id: r.startup_id, round_id: r.id, round_type: r.round_type, amount_raised: r.amount_raised, urls: failed });
       const plan = planRoundCleanup(r, evidence.get(r.id) ?? [], pages);
       if (plan.action === "keep") continue;
