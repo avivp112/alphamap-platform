@@ -27,6 +27,7 @@ import { formatSourcesForPrompt, type LabeledSource } from "./sources";
 import { debugDumpJson } from "./debugDump";
 import { competitorRelation, type RelationDrop } from "./competitorRelation";
 import { competitorEvidenceProblem, type CompetitorEvidenceDrop } from "./competitorEvidence";
+import { isDataPlatformUrl } from "./dataPlatforms";
 
 export interface EvidencedValue<T> {
   value: T;
@@ -218,11 +219,10 @@ export function normalizeUrlForMatch(url: string): string {
   }
 }
 
-const PROFILE_PAGE_HOSTS = ["crunchbase.com", "linkedin.com", "pitchbook.com", "tracxn.com", "cbinsights.com", "dealroom.co", "zoominfo.com", "owler.com"];
-
+/** A company profile page, not news: any data platform (dataPlatforms.ts), or LinkedIn. */
 function isProfilePageUrl(url: string): boolean {
   const n = normalizeUrlForMatch(url);
-  return PROFILE_PAGE_HOSTS.some((h) => n.startsWith(h) || n.includes(`.${h}`));
+  return isDataPlatformUrl(url) || n.startsWith("linkedin.com") || n.includes(".linkedin.com");
 }
 
 // ── News dates ───────────────────────────────────────────────────────────

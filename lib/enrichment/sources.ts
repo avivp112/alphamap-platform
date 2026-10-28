@@ -22,14 +22,10 @@ const REGISTRY_HOSTS = new Set([
   "find-and-update.company-information.service.gov.uk", "companieshouse.gov.uk",
 ]);
 
-const AGGREGATOR_HOSTS = new Set([
-  "crunchbase.com", "www.crunchbase.com", "news.crunchbase.com",
-  "pitchbook.com", "www.pitchbook.com",
-  "linkedin.com", "www.linkedin.com",
-  "tracxn.com", "www.tracxn.com",
-  "cbinsights.com", "www.cbinsights.com",
-  "dealroom.co", "www.dealroom.co",
-]);
+// LinkedIn is not a data platform (a company's text may name it) but its
+// pages are profiles, never a primary source. Every data platform comes from
+// the one list in dataPlatforms.ts (isDataPlatformUrl below).
+const AGGREGATOR_HOSTS = new Set(["linkedin.com", "www.linkedin.com"]);
 
 const PRESS_RELEASE_HOSTS = new Set([
   "prnewswire.com", "www.prnewswire.com",

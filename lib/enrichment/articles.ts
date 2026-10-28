@@ -14,11 +14,13 @@
 
 import type { RawSearchResult } from "./sources";
 import { namesCompany } from "./headcount";
+import { isDataPlatformUrl } from "./dataPlatforms";
 
+// Not articles: social and job sites, patent pages, review sites — and every
+// data platform in dataPlatforms.ts (checked with isDataPlatformUrl).
 const SKIP_HOSTS = [
-  "crunchbase.com", "linkedin.com", "pitchbook.com", "tracxn.com", "cbinsights.com", "dealroom.co", "zoominfo.com",
-  "owler.com", "g2.com", "capterra.com", "facebook.com", "instagram.com", "x.com", "twitter.com", "youtube.com",
-  "reddit.com", "tiktok.com", "patents.google.com", "glassdoor.com", "indeed.com", "apollo.io", "rocketreach.co",
+  "linkedin.com", "g2.com", "capterra.com", "facebook.com", "instagram.com", "x.com", "twitter.com", "youtube.com",
+  "reddit.com", "tiktok.com", "patents.google.com", "glassdoor.com", "indeed.com",
 ];
 
 function hostOf(url: string): string | null {
@@ -40,7 +42,7 @@ export function pickArticlesToRead(
     if (r.provider !== "serper" && r.provider !== "tavily") return;
     const host = hostOf(r.url);
     if (!host) return;
-    if (SKIP_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))) return;
+    if (SKIP_HOSTS.some((h) => host === h || host.endsWith(`.${h}`)) || isDataPlatformUrl(r.url)) return;
     if (companyDomain && (host === companyDomain || host.endsWith(`.${companyDomain}`))) return;
     const key = `${host}${(() => { try { return new URL(r.url).pathname.replace(/\/+$/, ""); } catch { return ""; } })()}`;
     if (seen.has(key)) return;
