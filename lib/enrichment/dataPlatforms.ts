@@ -55,6 +55,7 @@ export const DATA_PLATFORMS: DataPlatform[] = [
   { name: "LeadIQ", domains: ["leadiq.com"] },
   { name: "SignalHire", domains: ["signalhire.com"] },
   { name: "Clay.com", domains: ["clay.com"] },
+  { name: "PremierAlts", aliases: ["Premier Alts", "premieralts.com"], domains: ["premieralts.com"] },
 ];
 
 /**

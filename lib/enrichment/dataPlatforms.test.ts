@@ -13,10 +13,12 @@ const MET = [
   { name: "RocketReach", url: "https://rocketreach.co/biotia-management_b5c1", said: "according to RocketReach" },
   { name: "GetLatka", url: "https://getlatka.com/companies/apify", said: "per GetLatka" },
   { name: "LeadIQ", url: "https://leadiq.com/c/chalice-ai/5f36ed2fa0cf8ca20b588f2e", said: "listed on LeadIQ" },
+  // SaveSage's $1M Pre-Seed came from here alone (cleanup, 2026-10-28).
+  { name: "PremierAlts", url: "https://www.premieralts.com/companies/savesage-club/valuation", said: "per PremierAlts" },
 ];
 
 describe("one list of data platforms, used by every rule (dataPlatforms.ts)", () => {
-  it("lists Owler, RocketReach, GetLatka and LeadIQ with their sites", () => {
+  it("lists Owler, RocketReach, GetLatka, LeadIQ and PremierAlts with their sites", () => {
     for (const p of MET) {
       expect(DATA_PLATFORMS.some((d) => d.name === p.name), p.name).toBe(true);
       expect(isDataPlatformUrl(p.url), p.url).toBe(true);
