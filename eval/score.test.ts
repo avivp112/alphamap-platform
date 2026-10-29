@@ -169,3 +169,12 @@ describe("a duplicate is one round written twice, not two real rounds (eval run 
   });
 });
 
+
+describe("a year-only round is scored as that year (Wayve's 2019 Series A, eval of 2026-10-29)", () => {
+  it("'2019' matches a round of November 2019; '2019-01-01' as a day would not", async () => {
+    const { roundsDayGap } = await import("./score");
+    const golden = { type: "Series A", amount_usd: 20_000_000, date: "2019-11", confidence: "high" } as Parameters<typeof roundsDayGap>[0];
+    expect(roundsDayGap(golden, { amount_raised: 20_000_000, date: "2019" })).not.toBeNull();
+    expect(roundsDayGap(golden, { amount_raised: 20_000_000, date: "2019-01-01" })).toBeNull();
+  });
+});

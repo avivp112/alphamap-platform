@@ -22,6 +22,8 @@ export interface GoldenFounder { name: string; title?: string; confidence: Confi
 export interface GoldenRound {
   type: string; amount_usd: number | null; date: string | null;
   lead_investor?: string | null; valuation_usd?: number | null; confidence: Confidence;
+  /** Where the round was verified (rounds the owner marked on the review sheet). */
+  source_url?: string;
 }
 export interface GoldenCompany {
   id: string; name: string; website?: string;
@@ -59,7 +61,7 @@ export interface PipelineOutput {
   founded_year: number | null;
   founding_country?: string | null;
   founders: Array<{ name: string }>;
-  rounds: Array<{ round_type: string; amount_raised: number | null; date: string | null }>;
+  rounds: Array<{ round_type: string; amount_raised: number | null; date: string | null; lead_investor?: string | null; source_url?: string | null }>;
   employee_range: string | null;
   arr_usd?: number | null;
   /** Competitor names written (undefined: the pipeline does not produce them). */
@@ -146,8 +148,9 @@ export function roundsDayGap(g: GoldenRound, e: { amount_raised?: number | null;
   if (g.amount_usd == null || e.amount_raised == null) return null;
   if (Math.abs(e.amount_raised - g.amount_usd) / g.amount_usd > 0.1) return null;
   if (!g.date || !e.date) return 0;   // an amount match with no date on one side cannot be disproved
-  const gDate = new Date(g.date.length === 4 ? `${g.date}-06-15` : g.date.length === 7 ? `${g.date}-15` : g.date);
-  const diffDays = Math.abs(gDate.getTime() - new Date(e.date).getTime()) / 86_400_000;
+  // A year- or month-only date (golden or extracted) is read as its middle.
+  const mid = (d: string) => new Date(d.length === 4 ? `${d}-06-15` : d.length === 7 ? `${d}-15` : d);
+  const diffDays = Math.abs(mid(g.date).getTime() - mid(e.date).getTime()) / 86_400_000;
   return diffDays <= 270 ? diffDays : null;
 }
 

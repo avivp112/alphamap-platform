@@ -13,7 +13,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { sanitizeModelOutput, ensureArray } from "./sanitize";
-import { verifyEvidence, type EvidenceSource } from "./evidence";
+import { verifyEvidence, datePrecision, type EvidenceSource } from "./evidence";
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
 import { normalizeRoundType, type RoundLike } from "./rounds";
 import { debugDumpJson } from "./debugDump";
@@ -84,6 +84,7 @@ export function roundToRoundLike(round: V2Round): RoundLike {
     amount_raised: round.amount_raised?.value ?? null,
     valuation: round.valuation?.value ?? null,
     announcement_date: round.announcement_date?.value ?? null,
+    announcement_date_precision: round.announcement_date?.value ? datePrecision(round.announcement_date.value, round.announcement_date.evidence_quote) : null,
     lead_investor: round.lead_investor?.value ?? null,
     other_investors: round.other_investors ?? null,
     source_url: round.source_url ?? null,

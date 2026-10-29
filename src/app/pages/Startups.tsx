@@ -1318,15 +1318,19 @@ function VerticalFundingTimeline({ rounds }: { rounds: FundingRound[] }) {
                       )}
                       {r.announcement_date && (
                         <span className="text-xs text-gray-400">
-                          {new Date(r.announcement_date).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
+                          {r.announcement_date_precision === "year"
+                            ? r.announcement_date.slice(0, 4)
+                            : new Date(r.announcement_date).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
                         </span>
                       )}
                     </div>
                     <div className="flex flex-wrap gap-3">
-                      {r.amount_raised && (
+                      {r.amount_raised ? (
                         <span className="text-xs text-gray-500">
                           <span className="font-bold text-gray-900">{fmt(r.amount_raised)}</span> raised
                         </span>
+                      ) : (
+                        <span className="text-xs text-gray-400">{t("startups.amountNotDisclosed")}</span>
                       )}
                       {r.valuation && (
                         <span className="text-xs text-gray-500">

@@ -53,3 +53,19 @@ describe("the owner's review sheets (2026-10-27)", () => {
     expect(companies[0].patents).toBeUndefined();
   });
 });
+
+describe("rounds v2 found that the golden set lacks (owner, 2026-10-29)", () => {
+  it("'נכון' adds a verified golden round with its source, once; 'לא נכון' adds nothing", async () => {
+    const { applyRoundMarks } = await import("./reviewSheet");
+    const companies = [{ id: "aidoc", name: "Aidoc", funding_rounds: [{ type: "Series D", amount_usd: 110_000_000, date: "2022-06", confidence: "verified" as const }] }];
+    const rows = [
+      { company_id: "aidoc", company: "Aidoc", round_type: "Series C", amount_usd: "66000000", date: "2021-07-19", lead_investor: "", source_url: "https://www.aidoc.com/about/news/series-c", mark: "נכון" },
+      { company_id: "aidoc", company: "Aidoc", round_type: "Seed", amount_usd: "4000000", date: "2016-10-01", lead_investor: "", source_url: "", mark: "לא נכון" },
+      { company_id: "aidoc", company: "Aidoc", round_type: "Other", amount_usd: "190000000", date: "", lead_investor: "", source_url: "", mark: "" },
+    ];
+    const r = applyRoundMarks(companies, rows);
+    expect(r).toEqual({ applied: 2, unmarked: 1, unreadable: [] });
+    applyRoundMarks(companies, rows);
+    expect(companies[0].funding_rounds.map((x) => [x.type, x.amount_usd])).toEqual([["Series D", 110_000_000], ["Series C", 66_000_000]]);
+  });
+});

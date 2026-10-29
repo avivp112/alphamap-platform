@@ -196,3 +196,14 @@ describe("verifyEvidence — end to end", () => {
     expect(verifyEvidence(claim, withUrl).verified).toBe(false);
   });
 });
+
+describe("a date is only as precise as its quote (Wayve's 2019 Series A came out '2019-01-01', eval of 2026-10-29)", () => {
+  it("day, month or year", async () => {
+    const { datePrecision } = await import("./evidence");
+    expect(datePrecision("2019-01-01", "Wayve raised a $20 million Series A in 2019")).toBe("year");
+    expect(datePrecision("2019-11-01", "In November 2019, Wayve raised $20 million")).toBe("month");
+    expect(datePrecision("2019-11-01", "LONDON, Nov. 1, 2019 — Wayve today raised")).toBe("day");
+    expect(datePrecision("2019-11-19", "anything")).toBe("day");
+    expect(datePrecision("2024-05-01", "publication date of https://example.com/a")).toBe("day");
+  });
+});

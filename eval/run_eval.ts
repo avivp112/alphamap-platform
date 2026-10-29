@@ -48,6 +48,10 @@
  *   npx tsx eval/run_eval.ts                 # v1, score only, no DB writes at all
  *   STORE_EVIDENCE=true npx tsx eval/run_eval.ts   # v1, also write enrichment_runs/enrichment_evidence
  *   PIPELINE=v2 npx tsx eval/run_eval.ts     # v2, no writes; ONLY=<golden id>[,...] for a few
+ *   V2_COMPONENTS=baseline PIPELINE=v2 npx tsx eval/run_eval.ts   # the core alone → eval/v2_results_baseline.json
+ *   V2_COMPONENTS=all PIPELINE=v2 npx tsx eval/run_eval.ts        # every component on → eval/v2_results_all.json
+ *   npx tsx eval/compare_runs.ts eval/v2_results_baseline.json eval/v2_results_all.json
+ *   (components: lib/enrichment/components.ts)
  *
  * Needs the same env vars as bulk_enrich_all.ts (SUPABASE_URL,
  * SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY, SERP_KEY, TAVILY_API_KEY,
@@ -63,6 +67,7 @@ import {
   type EnrichmentResult,
 } from "../scripts/bulk_enrich_all.ts";
 import { collectCompany, newCollectStats } from "../lib/enrichment/collect.ts";
+import { componentStates } from "../lib/enrichment/components.ts";
 import { loadSectorTaxonomy as loadV2Taxonomy, type SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { createSearchProviderState, searchCalls } from "../lib/enrichment/searchProviders.ts";
 import { openSearchCache } from "../lib/enrichment/searchCache.ts";
@@ -70,11 +75,11 @@ import { blankRow } from "../worker/enrich.ts";
 import { buildProfile } from "../worker/profile.ts";
 import { cachedCallCostUsd } from "../worker/config.ts";
 import {
-  FIELDS, newScoreboard, pct, scoreCompany, duplicateRounds, foundedAfterFirstRound, phase1Checks, hintGain,
+  FIELDS, newScoreboard, pct, scoreCompany, duplicateRounds, foundedAfterFirstRound, phase1Checks, hintGain, matchRounds, roundsDayGap,
   type GoldenSet, type GoldenCompany, type PipelineOutput, type FieldResult, type Field,
 } from "./score.ts";
 
-import { toCsv, parseCsv, mergeRows, competitorKey, COMPETITOR_COLUMNS, type SheetRow } from "./reviewSheet.ts";
+import { toCsv, parseCsv, mergeRows, competitorKey, roundKey, COMPETITOR_COLUMNS, ROUND_COLUMNS, type SheetRow } from "./reviewSheet.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const STORE_EVIDENCE = process.env.STORE_EVIDENCE === "true";
@@ -151,7 +156,8 @@ async function runV2(company: GoldenCompany, anthropic: Anthropic, taxonomy: Sec
       city: p.overview.city?.value ?? null, country: p.overview.country?.value ?? null, founded_year: p.overview.founded_year?.value ?? null,
       founding_country: p.overview.founding_country?.value ?? null,
       founders: p.people.founders.map((f) => ({ name: f.name })),
-      rounds: p.funding.rounds.map((r) => ({ round_type: r.round_type, amount_raised: r.amount, date: r.date })),
+      // A year-only date is scored as that year, never as January 1st (owner, 2026-10-29).
+      rounds: p.funding.rounds.map((r) => ({ round_type: r.round_type, amount_raised: r.amount, date: datedAs(r.date, r.date_precision), lead_investor: r.lead_investor, source_url: r.source_url })),
       employee_range: p.overview.employee_range,
       arr_usd: arr?.arr ?? null,
       competitors: c.market.competitors.map((x) => x.name),
@@ -168,6 +174,13 @@ async function runV2(company: GoldenCompany, anthropic: Anthropic, taxonomy: Sec
   }
 }
 
+const COMPONENTS = componentStates();
+const COMPONENTS_LABEL = (process.env.V2_COMPONENTS ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+/** "2019-01-01" stated as a year → "2019"; as a month → "2019-11": the golden set's own partial-date form. */
+const datedAs = (date: string | null, precision: string | null | undefined) =>
+  !date ? null : precision === "year" ? date.slice(0, 4) : precision === "month" ? date.slice(0, 7) : date;
+
 async function main() {
   await initV1Context();
   if (PIPELINE === "v1") await loadSectorTaxonomy();
@@ -177,7 +190,9 @@ async function main() {
   const golden: GoldenSet = JSON.parse(readFileSync(join(__dir, "golden_set.json"), "utf8"));
   const companies = golden.companies.filter((c) => !ONLY.length || ONLY.includes(c.id.toLowerCase()) || ONLY.includes(c.name.toLowerCase()));
   const unreviewed = companies.filter((c) => !c.reviewed_by_human).length;
-  console.log(`Pipeline ${PIPELINE} on ${companies.length} golden-set companies${unreviewed ? ` (${unreviewed} not yet reviewed by a human)` : ""}.\n`);
+  console.log(`Pipeline ${PIPELINE} on ${companies.length} golden-set companies${unreviewed ? ` (${unreviewed} not yet reviewed by a human)` : ""}.`);
+  if (PIPELINE === "v2") console.log(`Components (V2_COMPONENTS=${process.env.V2_COMPONENTS ?? "default"}): ${Object.entries(COMPONENTS).map(([n, on]) => `${n} ${on ? "on" : "off"}`).join(" · ")}`);
+  console.log("");
 
   let runId: string | null = null;
   if (STORE_EVIDENCE && PIPELINE === "v1") {
@@ -297,7 +312,8 @@ async function main() {
     console.log("   reviewed golden set (50+). Treat these numbers as a direction, not a verdict.\n");
   }
 
-  const file = PIPELINE === "v1" ? "baseline.json" : "v2_results.json";
+  // One file per component setting, so a baseline run and an all-on run sit side by side (eval/compare_runs.ts).
+  const file = PIPELINE === "v1" ? "baseline.json" : `v2_results${COMPONENTS_LABEL ? `_${COMPONENTS_LABEL}` : ""}.json`;
   // Competitors v2 found that the golden set does not judge yet, for the
   // companies under review: the owner marks them (eval/reviewSheet.ts).
   const toReview: SheetRow[] = [];
@@ -311,6 +327,27 @@ async function main() {
       if (!known.includes(competitorKey(row))) toReview.push(row);
     }
   }
+  // Rounds v2 found that match no golden round (owner, 2026-10-29): the owner
+  // marks whether each is real — a real one joins the golden set.
+  const roundsToReview: SheetRow[] = [];
+  for (const company of companies) {
+    const verified = (company.funding_rounds ?? []).filter((r) => r.confidence !== "unknown");
+    const unknown = [...(company.funding_rounds ?? []).filter((r) => r.confidence === "unknown"), ...(company.funding_rounds_excluded_unknown ?? []).map((r) => ({ ...r, confidence: "unknown" as const }))];
+    const out = perCompany[company.id]?.output?.rounds ?? [];
+    const matched = new Set(matchRounds(verified, out).map(([, i]) => i));
+    out.forEach((r, i) => {
+      if (matched.has(i) || unknown.some((u) => roundsDayGap(u, r) !== null)) return;
+      roundsToReview.push({ company_id: company.id, company: company.name, round_type: r.round_type, amount_usd: r.amount_raised == null ? "" : String(r.amount_raised), date: r.date ?? "", lead_investor: r.lead_investor ?? "", source_url: r.source_url ?? "", mark: "" });
+    });
+  }
+  if (roundsToReview.length) {
+    const sheet = join(__dir, "review", "rounds_review.csv");
+    mkdirSync(dirname(sheet), { recursive: true });
+    const existing = existsSync(sheet) ? parseCsv(readFileSync(sheet, "utf8")) : [];
+    const merged = mergeRows(existing, roundsToReview, roundKey);
+    writeFileSync(sheet, toCsv(ROUND_COLUMNS, merged));
+    console.log(`📝  ${merged.length - existing.length} round(s) to mark in eval/review/rounds_review.csv ("נכון" / "לא נכון"), then: npx tsx eval/import_review.ts`);
+  }
   if (toReview.length) {
     const sheet = join(__dir, "review", "competitors_review.csv");
     mkdirSync(dirname(sheet), { recursive: true });
@@ -322,7 +359,7 @@ async function main() {
 
   writeFileSync(join(__dir, file), JSON.stringify({
     pipeline: PIPELINE, generated_at: new Date().toISOString(), companies_scored: companies.length, unreviewed,
-    settings: PIPELINE === "v2" ? { model: ENRICH_MODEL, articles_to_read: ARTICLES_TO_READ, deep_dive: DEEP_DIVE, tech_gate: TECH_GATE } : undefined,
+    settings: PIPELINE === "v2" ? { model: ENRICH_MODEL, articles_to_read: ARTICLES_TO_READ, deep_dive: DEEP_DIVE, tech_gate: TECH_GATE, components: COMPONENTS, components_setting: process.env.V2_COMPONENTS ?? null } : undefined,
     fields: summary, phase1: checks, hints: PIPELINE === "v2" ? hintTotals : undefined, round_dates: roundDates,
     cost: PIPELINE === "v2" && ran ? { total_usd: totalCost, per_company_usd: totalCost / ran, seconds_per_company: totalSeconds / ran } : undefined,
     // Per company, so a human can see WHY a field scored the way it did without re-running.

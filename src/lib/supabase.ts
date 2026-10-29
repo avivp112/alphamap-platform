@@ -174,6 +174,8 @@ export interface FundingRound {
   valuation: number | null;
   is_valuation_estimated: boolean | null;
   announcement_date: string | null;
+  /** How much of announcement_date a source states; "year" = only the year (stored YYYY-01-01). */
+  announcement_date_precision?: "day" | "month" | "year" | null;
   source_url: string | null;
   lead_investor: string | null;
   investors: string[] | null;

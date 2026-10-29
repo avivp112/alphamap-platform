@@ -9,6 +9,10 @@
 //     competitor v2 found for the 20 companies under review that the golden
 //     set does not judge yet — mark "נכון" or "לא נכון". Precision only: is
 //     each competitor found really a competitor.
+//   eval/review/rounds_review.csv        written by eval/run_eval.ts (owner,
+//     2026-10-29): every round v2 found that matches no golden round, with
+//     its source — mark "נכון" (a real round the golden set lacks: it joins
+//     the golden set) or "לא נכון" (stays a wrong write).
 //   eval/review/patents_review.csv       written by eval/patent_register_review.ts:
 //     every publication the EPO register returns for the company's name —
 //     mark "של החברה" or "לא של החברה" (the company is the owner or the filer).
@@ -22,6 +26,7 @@ import { patentDigits } from "../lib/enrichment/patents.ts";
 export type SheetRow = Record<string, string>;
 
 export const COMPETITOR_COLUMNS = ["company_id", "company", "competitor", "source_url", "quote", "mark"] as const;
+export const ROUND_COLUMNS = ["company_id", "company", "round_type", "amount_usd", "date", "lead_investor", "source_url", "mark"] as const;
 export const PATENT_COLUMNS = ["company_id", "company", "publication", "title", "applicants", "family_id", "mark"] as const;
 
 export const MARK_YES = new Set(["נכון", "של החברה", "כן", "yes", "correct", "y", "v", "✓"]);
@@ -71,6 +76,7 @@ export function mergeRows(existing: SheetRow[], incoming: SheetRow[], key: (r: S
 
 export const competitorKey = (r: SheetRow) => `${r.company_id}|${normalizeName(r.competitor)}`;
 export const patentKey = (r: SheetRow) => `${r.company_id}|${r.publication}`;
+export const roundKey = (r: SheetRow) => `${r.company_id}|${r.amount_usd}|${(r.date ?? "").slice(0, 7)}|${r.amount_usd ? "" : (r.round_type ?? "").toLowerCase()}`;
 
 const normalizeName = (n: string) => (n ?? "").toLowerCase().replace(/,?\s*\b(inc|llc|ltd|limited|corp|corporation|gmbh|plc|co)\b\.?$/, "").replace(/[^\p{L}\p{N}]/gu, "");
 
@@ -129,6 +135,25 @@ export function applyPatentMarks(companies: GoldenCompany[], rows: SheetRow[]): 
     g.patents = { numbers, ...(numbers.length === 0 ? { none: true } : {}), confidence: "verified", source_url: "https://worldwide.espacenet.com", notes: "EPO register (DOCDB) — ownership marked by the owner" };
     result.applied += list.length;
     result.companies.push(g.name);
+  }
+  return result;
+}
+
+/** Marked rounds: "נכון" → a verified golden round (the source the owner checked); "לא נכון" stays a wrong write. */
+export function applyRoundMarks(companies: GoldenCompany[], rows: SheetRow[]): MarkResult {
+  const result: MarkResult = { applied: 0, unmarked: 0, unreadable: [] };
+  for (const r of rows) {
+    const verdict = readMark(r.mark ?? "");
+    if (verdict === null) { result.unmarked++; continue; }
+    if (verdict === "unreadable") { result.unreadable.push(`${r.company}: ${r.round_type} ${r.amount_usd} ${r.date} — "${r.mark}"`); continue; }
+    const g = companies.find((c) => c.id === r.company_id);
+    if (!g) { result.unreadable.push(`unknown company_id ${r.company_id}`); continue; }
+    result.applied++;
+    if (!verdict) continue;
+    const amount = r.amount_usd ? Number(r.amount_usd) : null;
+    const rounds = (g.funding_rounds ??= []);
+    if (rounds.some((x) => x.amount_usd === amount && (x.date ?? "").slice(0, 7) === (r.date ?? "").slice(0, 7))) continue;
+    rounds.push({ type: r.round_type, amount_usd: amount, date: r.date || null, lead_investor: r.lead_investor || null, confidence: "verified", ...(r.source_url ? { source_url: r.source_url } : {}) });
   }
   return result;
 }

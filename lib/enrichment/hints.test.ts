@@ -32,18 +32,21 @@ describe("a data platform's round is a hint to search for, never a fact (owner, 
     const sources = buildLabeledSources([
       { url: darkowl.source_url!, title: "DarkOwl", content: "Growth $8M Five Elms", provider: "serper", query_label: "hint_raise" },
       { url: "https://www.prnewswire.com/news-releases/darkowl-secures-8-million-growth-investment.html", title: "DarkOwl Secures $8 Million Growth Investment from Five Elms Capital",
-        content: "DENVER — DarkOwl, a leader in darknet intelligence, today announced it has secured an $8 million growth investment. The round was led by Five Elms Capital.", provider: "serper", query_label: "hint_raise" },
+        content: "DENVER, May 14, 2024 /PRNewswire/ — DarkOwl, a leader in darknet intelligence, today announced it has secured an $8 million growth investment. The round was led by Five Elms Capital.", provider: "serper", query_label: "hint_raise" },
     ]);
     const r = confirmHint(darkowl, sources, "DarkOwl");
     expect(r?.source_url).toBe("https://www.prnewswire.com/news-releases/darkowl-secures-8-million-growth-investment.html");
     expect(r?.amount_raised).toMatchObject({ value: 8_000_000, source_id: "S2" });
     expect(r?.lead_investor?.value).toBe("Five Elms Capital");
+    expect(r?.announcement_date).toMatchObject({ value: "2024-05-14", source_id: "S2" });   // the press release's dateline, not the platform's
   });
 
   it("an SEC Form D's 'Total Amount Sold' confirms the amount", () => {
     const sources = buildLabeledSources([{ url: "https://www.sec.gov/Archives/edgar/data/1700000/000170000024000001/xslFormDX01/primary_doc.xml", title: "SEC FORM D — DarkOwl, LLC",
-      content: "Issuer: DarkOwl, LLC. Total Offering Amount $8,000,000. Total Amount Sold $8,000,000.", provider: "serper", query_label: "hint_form_d" }]);
-    expect(confirmHint(darkowl, sources, "DarkOwl")?.amount_raised?.evidence_quote).toBe("Total Amount Sold $8,000,000");
+      content: "Issuer: DarkOwl, LLC. Date of First Sale: 2024-04-30. Total Offering Amount $8,000,000. Total Amount Sold $8,000,000.", provider: "serper", query_label: "hint_form_d" }]);
+    const r = confirmHint(darkowl, sources, "DarkOwl");
+    expect(r?.amount_raised?.evidence_quote).toBe("Total Amount Sold $8,000,000");
+    expect(r?.announcement_date?.value).toBe("2024-04-30");
   });
 
   it("another platform repeating it confirms nothing — Apify's GetLatka rounds stay hints", () => {
@@ -98,3 +101,15 @@ describe("only a primary source confirms a hint (eval run of 2026-10-29)", () =>
   });
 });
 
+
+describe("a confirmed hint takes its date from the source that confirmed it (owner, 2026-10-29)", () => {
+  const tml: RoundHint = { round_type: "Seed", amount_raised: 2_000_000_000, announcement_date: null, lead_investor: null, source_url: "https://tracxn.com/d/companies/thinking-machines-lab" };
+  it("the confirming sentence's own date", () => {
+    const sources = buildLabeledSources([{ url: "https://techcrunch.com/2025/07/15/thinking-machines", title: "", content: "In July 2025, Thinking Machines Lab raised $2 billion in a seed round led by Andreessen Horowitz.", provider: "serper", query_label: "hint_raise" }]);
+    expect(confirmHint(tml, sources, "Thinking Machines Lab")?.announcement_date?.value).toBe("2025-07-01");
+  });
+  it("a source with no date of its own confirms nothing — the round stays a hint, never written undated", () => {
+    const sources = buildLabeledSources([{ url: "https://techcrunch.com/thinking-machines", title: "", content: "Thinking Machines Lab raised $2 billion in a seed round led by Andreessen Horowitz.", provider: "serper", query_label: "hint_raise" }]);
+    expect(confirmHint(tml, sources, "Thinking Machines Lab")).toBeNull();
+  });
+});

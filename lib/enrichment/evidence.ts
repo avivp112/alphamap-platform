@@ -125,6 +125,33 @@ function dateMentions(text: string): DateMention[] {
   return out;
 }
 
+export type DatePrecision = "day" | "month" | "year";
+
+/**
+ * How much of an ISO date its quote states (owner, 2026-10-29): "October 15,
+ * 2024" → day, "October 2024" → month, "in 2019" → year. A year-only round
+ * is stored as YYYY-01-01 (the schema's convention) and must never be shown
+ * or scored as January 1st — Wayve's 2019 Series A came out "2019-01-01".
+ * A quote that names no date (a dateline read off the article) is the day.
+ */
+export function datePrecision(isoDate: string, quote: string | null | undefined): DatePrecision {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  if (d !== 1) return "day";
+  const mentions = dateMentions(quote ?? "");
+  if (mentions.some((x) => x.y === y && x.m === m && x.d === 1)) return "day";
+  if (mentions.some((x) => x.y === y && x.m === m && x.d == null)) return "month";
+  if (m === 1 && new RegExp(`(^|[^\\d])${y}([^\\d]|$)`).test(quote ?? "")) return "year";
+  return "day";
+}
+
+/** The date a sentence itself states — day or month known — as ISO with its precision, or null. */
+export function dateInSentence(sentence: string): { iso: string; precision: DatePrecision } | null {
+  const mentions = dateMentions(sentence);
+  const x = mentions.find((mention) => mention.d != null) ?? mentions[0];
+  if (!x) return null;
+  return { iso: `${x.y}-${String(x.m).padStart(2, "0")}-${String(x.d ?? 1).padStart(2, "0")}`, precision: x.d != null ? "day" : "month" };
+}
+
 /** The first full calendar date (day known) written in `text`, as YYYY-MM-DD, or null. */
 export function parseFullDate(text: string): string | null {
   const x = dateMentions(text).find((mention) => mention.d != null);

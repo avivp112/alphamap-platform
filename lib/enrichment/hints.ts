@@ -20,7 +20,8 @@
  * writeCompany.ts stores the hints. Tested in hints.test.ts.
  */
 
-import { extractNumbersFromText, normalizeForMatch } from "./evidence";
+import { extractNumbersFromText, normalizeForMatch, dateInSentence, parseFullDate } from "./evidence";
+import { announcementDateFromSource } from "./assemble";
 import { namesCompany } from "./headcount";
 import { classifySourceType, type LabeledSource } from "./sources";
 import { isListingSiteUrl } from "./dataPlatforms";
@@ -96,9 +97,13 @@ export function canConfirm(s: Pick<LabeledSource, "url" | "source_type">): boole
 /**
  * The hint as a round with a primary source, or null when none confirms it:
  * a source that names the company and, in one sentence, states the amount
- * beside a raise (or a Form D's "Total Amount Sold"). The lead investor is
- * kept only when the same source names it; the type and date are left to
- * the usual grounding (assemble.ts), which reads them from this source.
+ * beside a raise (or a Form D's "Total Amount Sold"). The date comes from
+ * that same source (owner, 2026-10-29) — the confirming sentence, else the
+ * article's own dateline, else a Form D's date of first sale — never from
+ * the platform; a source with no date confirms nothing, and the round stays
+ * a hint (the 2026-10-29 eval wrote Thinking Machines', Cyera's and eToro's
+ * confirmed rounds undated). The lead investor is kept only when the same
+ * source names it; the type is left to the usual grounding (assemble.ts).
  */
 export function confirmHint(h: RoundHint, sources: LabeledSource[], companyName: string): V2Round | null {
   if (h.amount_raised == null || h.amount_raised <= 0) return null;
@@ -115,15 +120,33 @@ export function confirmHint(h: RoundHint, sources: LabeledSource[], companyName:
       quote = sentences(text).find((sen) => sen.length <= 400 && RAISE.test(sen) && nearAmount(sen, h.amount_raised!));
     }
     if (!quote) continue;
+    const date = confirmingDate(h, s, quote, text);
+    if (!date) continue;
     const leadQuote = h.lead_investor ? sentences(text).find((sen) => sen.length <= 400 && normalizeForMatch(sen).includes(normalizeForMatch(h.lead_investor!))) : undefined;
     return {
       round_type: h.round_type ?? "Unknown",
       amount_raised: { value: h.amount_raised, source_id: s.source_id, evidence_quote: quote.trim() },
+      announcement_date: { value: date.iso, source_id: s.source_id, evidence_quote: date.quote },
       ...(leadQuote ? { lead_investor: { value: h.lead_investor!, source_id: s.source_id, evidence_quote: leadQuote.trim() } } : {}),
       source_url: s.url,
     };
   }
   return null;
+}
+
+const FORM_D_DATE = /(?:date of first sale|signature date)[^0-9a-z]{0,12}([^\n|]{6,30})/i;
+
+/** The date the confirming source gives the round: its sentence, its dateline, or a Form D's first sale. */
+function confirmingDate(h: RoundHint, s: LabeledSource, quote: string, text: string): { iso: string; quote: string } | null {
+  const inSentence = dateInSentence(quote);
+  if (inSentence) return { iso: inSentence.iso, quote: quote.trim() };
+  if (classifySourceType(s.url) === "registry") {
+    const m = text.match(FORM_D_DATE);
+    const iso = m ? parseFullDate(m[1]) : null;
+    return iso ? { iso, quote: m![0].trim() } : null;
+  }
+  const iso = announcementDateFromSource({ round_type: h.round_type ?? "Unknown", amount_raised: { value: h.amount_raised!, source_id: s.source_id, evidence_quote: quote } }, s);
+  return iso ? { iso, quote: `publication date of ${s.url}` } : null;
 }
 
 /**

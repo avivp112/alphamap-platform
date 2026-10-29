@@ -29,13 +29,14 @@ import { lookupEpoPatents, type CompanyIdentity, type EpoPatentResult } from "./
 import { hintFromRound, hintQueries, confirmHint, hintKey, type RoundHint } from "./hints.ts";
 import { detectGaps, buildDeepDiveQueries, hasNoFinancingRounds, type DeepDiveSection } from "./deepDive.ts";
 import {
-  groundRoundDetails, isUnstatedEvent, rejectRound, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
+  groundRoundDetails, isUnstatedEvent, incompleteRound, rejectRound, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
   type ExistingRoundRef,
 } from "./assemble.ts";
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
 import { pickArticlesToRead } from "./articles.ts";
 import { runTechGate, shouldSkipAsNonTech, type TechGateVerdict } from "./techGate.ts";
-import { personMentionedIn, groundFounders, founderNamesNotExtracted } from "./people.ts";
+import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted } from "./people.ts";
+import { componentOn } from "./components.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
@@ -403,7 +404,7 @@ export async function collectCompany(
   // ── Stage 3b: read the most useful articles in full (Jina; Tavily when Jina cannot) ──
   // A snippet stops at ~600 characters; the full funding announcement has
   // the exact date, every investor, headcount and the "About" boilerplate.
-  if (ctx.articlesToRead > 0) {
+  if (ctx.articlesToRead > 0 && componentOn("full_articles")) {
     const toRead = pickArticlesToRead(kept, row.name, domain, ctx.articlesToRead);
     const texts = (await fetchArticleTexts(toRead.map((r) => r.url), searchState)).map((t) => t.text);
     let read = 0;
@@ -486,7 +487,7 @@ export async function collectCompany(
 
   // ── Stage 9: deep dive into whichever sections came back thin ──────────
   // (an update fills gaps with its own few searches instead)
-  if (ctx.deepDive && !ctx.update) {
+  if (ctx.deepDive && !ctx.update && componentOn("deep_dive")) {
     const firstPassRounds: RoundLike[] = [...existingRefs, ...funding.funding_rounds.map(roundToRoundLike)];
     const gaps = detectGaps({
       rounds: firstPassRounds,
@@ -618,8 +619,22 @@ export async function collectCompany(
   // one: in snippets it caught "Los Angeles" and "Cyberstarts' Gili Raanan".
   // Such sentences still ground an extracted founder (groundFounders) and are
   // reported here as names the extraction did not give.
-  const textOnly = founderNamesNotExtracted(profile.profile.founders ?? [], allSources, row.name);
-  if (textOnly.length > 0) console.log(`    👥  Named as founder in a sentence but not extracted with evidence — not added: ${textOnly.join(", ")}`);
+  // The old behaviour stays behind a switch (components.ts), off, to measure it.
+  if (componentOn("founders_from_sentences")) {
+    const textFounders: string[] = [];
+    for (const src of allSources) {
+      for (const f of foundersFromText(src.content, row.name, { url: src.url, title: src.title })) {
+        const founders = profile.profile.founders ?? [];
+        if (founders.some((x) => x?.name && samePersonName(x.name, f.name))) continue;
+        profile.profile.founders = [...founders, { name: f.name, title: f.title }];
+        textFounders.push(`${f.name} [${src.source_id}]`);
+      }
+    }
+    if (textFounders.length > 0) console.log(`    👥  Founders from "founded by" sentences: ${textFounders.join(", ")}`);
+  } else {
+    const textOnly = founderNamesNotExtracted(profile.profile.founders ?? [], allSources, row.name);
+    if (textOnly.length > 0) console.log(`    👥  Named as founder in a sentence but not extracted with evidence — not added: ${textOnly.join(", ")}`);
+  }
 
   // People found or enriched from LinkedIn search results: profile URL, plus
   // education / prior employers / elite unit read from the public snippet
@@ -635,7 +650,7 @@ export async function collectCompany(
       notable_pedigree: facts.eliteSchool ? true : undefined,
     };
   };
-  if (ctx.deepDive && (!ctx.update || gapFillDue)) {
+  if (ctx.deepDive && (!ctx.update || gapFillDue) && componentOn("linkedin_people")) {
     const knownFounders = [
       ...(profile.profile.founders ?? []).map((f) => ({ name: f.name, linkedin_url: f.linkedin_url?.value, bio: f.bio })),
       ...(row.founders ?? []),
@@ -732,7 +747,7 @@ export async function collectCompany(
   const confirmedHints: Array<RoundHint & { confirmed_source_url: string }> = [];
   let hintSourceCount = 0;
   for (const h of [...hints.values()].slice(0, MAX_HINTS_SEARCHED)) {
-    if (ctx.hintSearch === false || h.amount_raised == null) { roundHints.push(h); continue; }
+    if (ctx.hintSearch === false || !componentOn("hints") || h.amount_raised == null) { roundHints.push(h); continue; }
     const found: RawSearchResult[] = [];
     for (const [label, q] of hintQueries(row.name, h)) found.push(...await webSearch(q, label, searchState));
     const labelled: LabeledSource[] = mergeDuplicateResults(found).results.map((raw) => ({ ...raw, source_id: `H${++hintSourceCount}`, source_type: classifySourceType(raw.url, domain) }));
@@ -766,7 +781,14 @@ export async function collectCompany(
       bump(stats.droppedByReason, "round_event_not_stated");
       return [];
     }
-    return [roundToRoundLike(grounded.round)];
+    const like = roundToRoundLike(grounded.round);
+    const incomplete = incompleteRound(like);
+    if (incomplete) {
+      console.log(`    🚫  ${like.round_type} not written (${incomplete})`);
+      bump(stats.droppedByReason, incomplete);
+      return [];
+    }
+    return [like];
   });
 
   ctx.onStage?.("validating");
@@ -823,7 +845,7 @@ export async function collectCompany(
 
   // ── Stage 8b: patents — the EPO register only (epoPatents.ts) ───────────
   let patentsFromRegister = false;
-  try {
+  if (componentOn("epo_patents")) try {
     const register = await (ctx.patentLookup ?? lookupEpoPatents)({
       name: row.name,
       countries: [validation.accepted.country ?? row.country, profile.profile.founding_country?.value ?? row.founding_country],

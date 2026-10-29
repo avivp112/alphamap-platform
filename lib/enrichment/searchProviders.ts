@@ -41,6 +41,7 @@ import type { Provider, RawSearchResult } from "./sources";
 import { websiteDomain } from "./websiteValidation";
 import type { SearchCache } from "./searchCache";
 import { cleanArticleText } from "./articles";
+import { componentOn } from "./components";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -366,7 +367,7 @@ export interface SearchOptions {
  *   - both failed → Tavily, only if a TAVILY_API_KEY is set (last resort).
  */
 async function searchWithBackup(primary: SearchOutcome, jinaQuery: string, tavilyQuery: string, queryLabel: string, state: SearchProviderState, opts: SearchOptions): Promise<RawSearchResult[]> {
-  if (!primary.failed && !opts.deep) return primary.results;
+  if ((!primary.failed && !opts.deep) || !componentOn("search_backup")) return primary.results;
   const jina = await jinaSearch(jinaQuery, queryLabel, state);
   if (primary.failed && !jina.failed && jina.results.length) console.log(`    🔁  Serper could not answer "${queryLabel}" — Jina Search did (${jina.results.length} result(s)).`);
   let merged = mergeSearchResults(primary.results, jina.results);
@@ -531,6 +532,7 @@ async function fetchViaSerperScrape(url: string, state: SearchProviderState): Pr
 async function readPage(url: string, state: SearchProviderState): Promise<{ text: string; provider: Provider } | null> {
   const viaJina = await fetchViaJinaReader(url, state);
   if (viaJina) return { text: viaJina, provider: "jina" };
+  if (!componentOn("search_backup")) return null;
   const viaSerper = await fetchViaSerperScrape(url, state);
   return viaSerper ? { text: viaSerper, provider: "serper_scrape" } : null;
 }
@@ -605,7 +607,7 @@ export async function fetchArticleTexts(urls: string[], state: SearchProviderSta
     if (cached) { out[i] = typeof cached === "string" ? { text: cached, provider: "jina" } : cached; return; }
     const jinaText = usable(await fetchViaJinaReader(url, state));
     if (jinaText) { out[i] = { text: jinaText, provider: "jina" }; return; }
-    const serperText = usable(await fetchViaSerperScrape(url, state));
+    const serperText = componentOn("search_backup") ? usable(await fetchViaSerperScrape(url, state)) : null;
     if (serperText) out[i] = { text: serperText, provider: "serper_scrape" };
     else unread.push(i);
   }));

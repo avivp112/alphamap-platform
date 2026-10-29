@@ -274,6 +274,24 @@ export function rejectRound(round: V2Round, companyName: string, sources: Labele
   return null;
 }
 
+export type IncompleteRoundRejection = "round_without_amount_incomplete" | "round_other_without_date";
+
+/**
+ * Grounded rounds that are still not written (owner, 2026-10-29):
+ *   - no amount, unless the source states the type, the date and the lead
+ *     investor — then it is written and shown as "amount not disclosed"
+ *     (Upwind's "Series C" with nothing else was not a round it raised);
+ *   - an "Other" round with no date — an untyped, undated figure is more
+ *     often a total or a tender than a round (Wiz's "$500M", HiBob's
+ *     "$166M" in the 2026-10-29 eval run).
+ */
+export function incompleteRound(r: RoundLike): IncompleteRoundRejection | null {
+  const type = normalizeRoundType(r.round_type);
+  if (r.amount_raised == null && (GENERIC_TYPES.has(type) || !r.announcement_date || !r.lead_investor)) return "round_without_amount_incomplete";
+  if (type === "Other" && !r.announcement_date) return "round_other_without_date";
+  return null;
+}
+
 // ── Round write planning ─────────────────────────────────────────────────
 
 const NAMED_STAGES = new Set([
@@ -345,7 +363,10 @@ function fillRound(target: RoundLike, incoming: RoundLike): Record<string, unkno
     patch.valuation = incoming.valuation;
     patch.is_valuation_estimated = incoming.is_valuation_estimated ?? null;
   }
-  if (!target.announcement_date && incoming.announcement_date) patch.announcement_date = incoming.announcement_date;
+  if (!target.announcement_date && incoming.announcement_date) {
+    patch.announcement_date = incoming.announcement_date;
+    patch.announcement_date_precision = incoming.announcement_date_precision ?? null;
+  }
   if (!target.lead_investor && incoming.lead_investor) patch.lead_investor = incoming.lead_investor;
   if (!target.source_url && incoming.source_url) patch.source_url = incoming.source_url;
   if (!target.investor_amounts?.length && incoming.investor_amounts?.length) patch.investor_amounts = incoming.investor_amounts;

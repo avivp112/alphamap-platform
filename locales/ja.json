@@ -300,6 +300,7 @@
     "fundingIncomplete": "資金調達履歴は不完全な可能性があります。",
     "competitorUnverified": "未検証",
     "competitorUnverifiedHint": "競合であることを示す検証済みの情報源はまだありません（信頼度：低）。",
+    "amountNotDisclosed": "金額非公開",
     "totalRaised": "累計調達額",
     "investorSchedule": "投資家一覧",
     "growthTrend": "成長トレンド",

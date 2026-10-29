@@ -205,3 +205,19 @@ describe("planRoundWrites — late-stage rounds (Series F+ bucket)", () => {
     expect(plan.inserts[0].lead_investor).toBe("Vitruvian Partners");
   });
 });
+
+describe("rounds still not written after grounding (owner, 2026-10-29)", () => {
+  it("no amount: written only with a stated type, a date and a lead investor — Upwind's bare 'Series C' is not", async () => {
+    const { incompleteRound } = await import("./assemble");
+    expect(incompleteRound({ round_type: "Series C", amount_raised: null })).toBe("round_without_amount_incomplete");
+    expect(incompleteRound({ round_type: "Series B", amount_raised: null, announcement_date: "2025-03-04" })).toBe("round_without_amount_incomplete");
+    expect(incompleteRound({ round_type: "Unknown", amount_raised: null, announcement_date: "2025-03-04", lead_investor: "Index Ventures" })).toBe("round_without_amount_incomplete");
+    expect(incompleteRound({ round_type: "Series B", amount_raised: null, announcement_date: "2025-03-04", lead_investor: "Index Ventures" })).toBeNull();
+  });
+  it("an 'Other' round with no date is not written — Wiz's untyped '$500M', HiBob's '$166M'", async () => {
+    const { incompleteRound } = await import("./assemble");
+    expect(incompleteRound({ round_type: "Other", amount_raised: 166_000_000 })).toBe("round_other_without_date");
+    expect(incompleteRound({ round_type: "Other", amount_raised: 166_000_000, announcement_date: "2024-01-01" })).toBeNull();
+    expect(incompleteRound({ round_type: "Series C", amount_raised: 100_000_000 })).toBeNull();
+  });
+});

@@ -300,6 +300,7 @@
     "fundingIncomplete": "El historial de financiación puede estar incompleto.",
     "competitorUnverified": "No verificado",
     "competitorUnverifiedHint": "Ninguna fuente verificada indica aún que compiten: confianza baja.",
+    "amountNotDisclosed": "Importe no divulgado",
     "totalRaised": "Capital total captado",
     "investorSchedule": "Calendario de inversores",
     "growthTrend": "Tendencia de crecimiento",

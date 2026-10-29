@@ -628,6 +628,7 @@ export async function writeCollected(
         amount_raised: round.amount_raised ?? null, valuation: round.valuation ?? null,
         is_valuation_estimated: round.valuation != null ? (round.is_valuation_estimated ?? null) : null,
         announcement_date: round.announcement_date ?? null, source_url: round.source_url ?? null,
+        announcement_date_precision: round.announcement_date ? (round.announcement_date_precision ?? null) : null,
         lead_investor: round.lead_investor ?? null,
         investors: round.other_investors && round.other_investors.length > 0 ? round.other_investors : null,
         investor_amounts: round.investor_amounts && round.investor_amounts.length > 0 ? round.investor_amounts : null,

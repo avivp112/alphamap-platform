@@ -46,6 +46,8 @@ export interface ProfileRound {
   amount: number | null;
   valuation: number | null;
   date: string | null;
+  /** How much of `date` a source states: "year" means only the year (stored YYYY-01-01). */
+  date_precision?: "day" | "month" | "year" | null;
   lead_investor: string | null;
   investors: string[];
   source_url: string | null;
@@ -159,6 +161,7 @@ export function buildProfile(c: CollectedCompany, companyName: string): CheckPro
       amount: r.amount_raised ?? null,
       valuation: r.valuation ?? null,
       date: normalizeIsoDate(r.announcement_date) ?? null,
+      date_precision: r.announcement_date ? (r.announcement_date_precision ?? null) : null,
       lead_investor: r.lead_investor ?? null,
       investors: r.other_investors ?? [],
       source_url: r.source_url ?? null,
