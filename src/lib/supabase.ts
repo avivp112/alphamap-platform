@@ -8,6 +8,7 @@ import {
 } from "./companyCheck";
 import { documentPath, type CrmCompany, type CrmDocument, type DealTerm } from "./crm";
 
+import { countryFilterOr } from "./countryFilter";
 const rawUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
@@ -411,6 +412,7 @@ function applyStartupSearchFilters(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   query: any,
   filters: StartupSearchFilters,
+  relation: string = MARKET_VIEW,
 ) {
   let q = query;
   if (filters.search) {
@@ -427,7 +429,12 @@ function applyStartupSearchFilters(
     q = q.or(filters.sectorSubKeywords.map((k) => `industry.ilike.%${k.replace(/[%,]/g, "")}%`).join(","));
   }
   if (filters.subSectorTag) q = q.contains("sub_sector_names", [filters.subSectorTag]);
-  if (filters.country) q = q.eq("country", filters.country);
+  if (filters.country) {
+    // "Israel" also lists companies founded in Israel (src/lib/countryFilter.ts) —
+    // on startups_market, which carries founding_country.
+    const byOrigin = relation === MARKET_VIEW ? countryFilterOr(filters.country) : null;
+    q = byOrigin ? q.or(byOrigin) : q.eq("country", filters.country);
+  }
   if (filters.israelRelated) q = q.eq("israel_related", true);
   if (filters.city) q = q.or(`city.ilike.%${filters.city}%,country.ilike.%${filters.city}%`);
   if (filters.stageRoundTypes && filters.stageRoundTypes.length > 0) {
@@ -482,7 +489,7 @@ export async function fetchStartupsPage(
   const from = (page - 1) * STARTUPS_PAGE_SIZE;
   const to = from + STARTUPS_PAGE_SIZE - 1;
   const { data, error } = await fromMarket((relation) =>
-    applyStartupSearchFilters(supabase.from(relation).select("*"), filters)
+    applyStartupSearchFilters(supabase.from(relation).select("*"), filters, relation)
       .order("completeness_score", { ascending: false })
       .order("updated_at", { ascending: false })
       .range(from, to),
@@ -502,7 +509,7 @@ export async function fetchStartupsForExport(filters: StartupSearchFilters): Pro
   for (let from = 0; from < EXPORT_ROW_CAP; from += batchSize) {
     const to = Math.min(from + batchSize, EXPORT_ROW_CAP) - 1;
     const { data, error } = await fromMarket((relation) =>
-      applyStartupSearchFilters(supabase.from(relation).select("*"), filters)
+      applyStartupSearchFilters(supabase.from(relation).select("*"), filters, relation)
         .order("completeness_score", { ascending: false })
         .order("updated_at", { ascending: false })
         .range(from, to),
@@ -517,7 +524,7 @@ export async function fetchStartupsForExport(filters: StartupSearchFilters): Pro
 
 export async function fetchStartupsCount(filters: StartupSearchFilters): Promise<number> {
   const { count, error } = await fromMarket((relation) =>
-    applyStartupSearchFilters(supabase.from(relation).select("id", { count: "exact", head: true }), filters),
+    applyStartupSearchFilters(supabase.from(relation).select("id", { count: "exact", head: true }), filters, relation),
   );
   if (error) throw error;
   return count ?? 0;

@@ -121,3 +121,13 @@ describe("searchMostlyFailed — an outage is not 'nothing about this company' (
     expect(searchMostlyFailed(createSearchProviderState())).toBe(false);
   });
 });
+
+describe("a failed fetch says why (eval run of 2026-10-29: Serper 'fetch failed' almost everywhere)", () => {
+  it("names the network cause", async () => {
+    const { describeFetchError } = await import("./searchProviders");
+    const err = Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNRESET" } });
+    expect(describeFetchError(err)).toBe("fetch failed (ECONNRESET)");
+    expect(describeFetchError(new TypeError("fetch failed"))).toBe("fetch failed");
+  });
+});
+

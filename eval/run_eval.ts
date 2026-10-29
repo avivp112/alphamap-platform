@@ -202,6 +202,8 @@ async function main() {
   const raw: Record<string, EnrichmentResult | null> = {};
   let locationMismatches = 0, duplicates = 0, foundedAfterRound = 0, totalCost = 0, totalSeconds = 0, ran = 0;
   const hintTotals = { confirmed: 0, confirmed_matching_golden: 0, kept: 0, kept_matching_golden: 0 };
+  // A round with no date is a gap the user sees too (owner, 2026-10-29).
+  const roundDates = { rounds: 0, undated: 0 };
 
   for (const company of companies) {
     console.log(`── ${company.name} (${company.id}) ──`);
@@ -251,6 +253,8 @@ async function main() {
     if (fields.city === "wrong" || fields.country === "wrong") locationMismatches++;
     duplicates += dups.length;
     if (afterRound) foundedAfterRound++;
+    roundDates.rounds += out.rounds.length;
+    roundDates.undated += out.rounds.filter((r) => !r.date).length;
     const gain = hintGain(company, out.hints);
     for (const k of Object.keys(hintTotals) as Array<keyof typeof hintTotals>) hintTotals[k] += gain[k];
     perCompany[company.id] = { output, ...extra, fields, duplicates: dups, founded_after_round: afterRound, hints: gain };
@@ -277,6 +281,7 @@ async function main() {
     console.log(`${field.padEnd(16)}${row.coverage.padEnd(12)}${row.precision.padEnd(12)}${row.wrong_write_rate.padEnd(14)}${s.scored}${s.unjudged ? `  (${s.unjudged} unjudged)` : ""}`);
     summary[field] = row;
   }
+  console.log(`rounds written without a date: ${roundDates.undated} of ${roundDates.rounds} (${pct(roundDates.undated, roundDates.rounds)})`);
   console.log("═".repeat(62));
   const checks = phase1Checks(board, { locationMismatches, duplicateRounds: duplicates, foundedAfterRound });
   console.log("Phase 1 rules (docs/enrichment_v2_spec.md §7):");
@@ -318,7 +323,7 @@ async function main() {
   writeFileSync(join(__dir, file), JSON.stringify({
     pipeline: PIPELINE, generated_at: new Date().toISOString(), companies_scored: companies.length, unreviewed,
     settings: PIPELINE === "v2" ? { model: ENRICH_MODEL, articles_to_read: ARTICLES_TO_READ, deep_dive: DEEP_DIVE, tech_gate: TECH_GATE } : undefined,
-    fields: summary, phase1: checks, hints: PIPELINE === "v2" ? hintTotals : undefined,
+    fields: summary, phase1: checks, hints: PIPELINE === "v2" ? hintTotals : undefined, round_dates: roundDates,
     cost: PIPELINE === "v2" && ran ? { total_usd: totalCost, per_company_usd: totalCost / ran, seconds_per_company: totalSeconds / ran } : undefined,
     // Per company, so a human can see WHY a field scored the way it did without re-running.
     per_company: perCompany,

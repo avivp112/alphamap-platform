@@ -35,7 +35,7 @@ import {
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
 import { pickArticlesToRead } from "./articles.ts";
 import { runTechGate, shouldSkipAsNonTech, type TechGateVerdict } from "./techGate.ts";
-import { foundersFromText, personMentionedIn, groundFounders } from "./people.ts";
+import { personMentionedIn, groundFounders, founderNamesNotExtracted } from "./people.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
@@ -613,19 +613,13 @@ export async function collectCompany(
     }
   }
 
-  // Founders stated outright in the research — "GoCo.io, Inc. was founded
-  // in 2015 by Jason J. Wang, Michael Gugel, and Nir Leibovich." — with the
-  // company as the sentence's subject (lib/enrichment/people.ts).
-  const textFounders: string[] = [];
-  for (const src of allSources) {
-    for (const f of foundersFromText(src.content, row.name, { url: src.url, title: src.title })) {
-      const founders = profile.profile.founders ?? [];
-      if (founders.some((x) => x?.name && samePersonName(x.name, f.name))) continue;
-      profile.profile.founders = [...founders, { name: f.name, title: f.title }];
-      textFounders.push(`${f.name} [${src.source_id}]`);
-    }
-  }
-  if (textFounders.length > 0) console.log(`    👥  Founders from "founded by" sentences: ${textFounders.join(", ")}`);
+  // A founder comes only from the extraction, with its evidence, like every
+  // field (owner, 2026-10-29) — a "founded by" sentence alone no longer adds
+  // one: in snippets it caught "Los Angeles" and "Cyberstarts' Gili Raanan".
+  // Such sentences still ground an extracted founder (groundFounders) and are
+  // reported here as names the extraction did not give.
+  const textOnly = founderNamesNotExtracted(profile.profile.founders ?? [], allSources, row.name);
+  if (textOnly.length > 0) console.log(`    👥  Named as founder in a sentence but not extracted with evidence — not added: ${textOnly.join(", ")}`);
 
   // People found or enriched from LinkedIn search results: profile URL, plus
   // education / prior employers / elite unit read from the public snippet

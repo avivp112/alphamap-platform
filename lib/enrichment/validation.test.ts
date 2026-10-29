@@ -233,3 +233,19 @@ describe("checkNarratives with this run's verified facts", () => {
     expect(checkNarratives({ description: text }, "Brev").texts.description).toBeUndefined();
   });
 });
+
+describe("the headquarters the company declares, not a regional office (owner, 2026-10-29)", () => {
+  it("drops a US / satellite office — HiBob's 'US headquarters in New York', Oligo's 'New York satellite office'", async () => {
+    const { isRegionalOfficeQuote } = await import("./validation");
+    expect(isRegionalOfficeQuote("In 2018 HiBob opened its US headquarters in New York.", "New York")).toBe(true);
+    expect(isRegionalOfficeQuote("from our headquarters in Tel Aviv, and in our New York and Palo Alto satellite offices", "New York")).toBe(true);
+    expect(isRegionalOfficeQuote("Aidoc has offices in New York and Tel Aviv.", "New York")).toBe(true);
+  });
+  it("keeps the declared headquarters", async () => {
+    const { isRegionalOfficeQuote } = await import("./validation");
+    expect(isRegionalOfficeQuote("Oligo Security is headquartered in Tel Aviv.", "Tel Aviv")).toBe(false);
+    expect(isRegionalOfficeQuote("from our headquarters in Tel Aviv, and in our New York and Palo Alto satellite offices", "Tel Aviv")).toBe(false);
+    expect(isRegionalOfficeQuote("New York-based Mercury raised $300 million.", "New York")).toBe(false);
+  });
+});
+

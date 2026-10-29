@@ -12,7 +12,8 @@
     "Batch 4 (2026-10-25): ten companies, Claude-researched from search-result summaries (pages could not be opened from the research sandbox), reviewed_by_human: false on all. Fills hard cases the first 22 lacked: Germany (Black Forest Labs, Parloa, Helsing), France (Mistral AI), India (Sarvam AI), UK (Synthesia, Wayve), a rebrand with a domain change (Vercel, ex-ZEIT), and two recent listings (eToro, Klarna). Rounds announced in euros carry amount_usd converted at the announcement month's rate, with the euro figure in notes. Review sheet: eval/review/batch4.md.",
     "2026-10-25 — location policy (owner's decision, the Dealroom model): `country`/`city` are the headquarters TODAY; the new `founding_country` is where the company was founded (scored as its own field). Israeli-founded companies now headquartered abroad (Wiz, Cyera, Upwind, HiBob) carry founding_country Israel. Upwind's country moved from Israel to United States on that rule.",
     "2026-10-26 (owner): three fields are now scored, each with its own Phase 1 bar (eval/score.ts PHASE1_BARS). round_type: judged on rounds matched to a verified golden round by amount and date — the existing funding_rounds[].type is the truth (debt rounds are typed Debt / Venture Debt); 'Unknown' output is missing, not wrong. competitors: {names, not_competitors, confidence, source_urls} — names a primary source says compete with the company; not_competitors partners, customers, investors and 'similar companies' a data platform lists; a name in neither is unjudged. patents: {numbers, none, confidence, source_url} — publication numbers from the EPO register / Espacenet where the company is applicant (any publication of a family counts); none: true when the register shows none. Companies without these two fields are not scored on them; the bars fail until enough companies carry them.",
-    "2026-10-27 (owner): competitors are judged on 20 companies (those carrying `competitors`), precision only — is every competitor v2 finds really one; no coverage. eval/run_eval.ts writes each unjudged competitor it finds to eval/review/competitors_review.csv with its source and quote; the owner marks נכון / לא נכון; eval/import_review.ts moves the marks here. Patents come from the EPO register: eval/patent_register_review.ts lists every publication for each company's name, the owner marks which are the company's (owner or filer), and eval/import_review.ts writes `patents` for each company whose rows are all marked."
+    "2026-10-27 (owner): competitors are judged on 20 companies (those carrying `competitors`), precision only — is every competitor v2 finds really one; no coverage. eval/run_eval.ts writes each unjudged competitor it finds to eval/review/competitors_review.csv with its source and quote; the owner marks נכון / לא נכון; eval/import_review.ts moves the marks here. Patents come from the EPO register: eval/patent_register_review.ts lists every publication for each company's name, the owner marks which are the company's (owner or filer), and eval/import_review.ts writes `patents` for each company whose rows are all marked.",
+    "2026-10-29 (owner) — dual headquarters (Israel and New York): city/country are the CURRENT headquarters the company declares on its own site or in an official release, never a regional / US office; founding_country is the country of founding or of the R&D centre. Port, HiBob, Aidoc and Oligo carry review_request: dual_hq for the owner's check."
   ],
   "companies": [
     {
@@ -1882,7 +1883,7 @@
         "value": "Tel Aviv",
         "confidence": "likely",
         "source_url": "https://www.calcalistech.com/ctechnews/article/r1vronkjt",
-        "notes": "Israeli press; some directories list New York."
+        "notes": "No source found that names New York as Port's headquarters; Israeli press and its listings say Tel Aviv. The eval run of 2026-10-29 gave New York."
       },
       "country": {
         "value": "Israel",
@@ -1968,7 +1969,8 @@
         "not_competitors": [],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
-      }
+      },
+      "review_request": "dual_hq (owner, 2026-10-29): city/country = the HQ the company declares on its site or in an official release; founding_country = where it was founded / its R&D centre. Please confirm."
     },
     {
       "id": "hailo-ai",
@@ -2544,7 +2546,8 @@
       "city": {
         "value": "London",
         "confidence": "likely",
-        "source_url": "https://www.hibob.com/about/"
+        "source_url": "https://www.hibob.com/about/",
+        "notes": "HiBob's site calls New York its \"US headquarters\" (a regional office); Wikipedia and its About page point to London. The eval run of 2026-10-29 gave New York."
       },
       "country": {
         "value": "United Kingdom",
@@ -2627,7 +2630,8 @@
         "not_competitors": [],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
-      }
+      },
+      "review_request": "dual_hq (owner, 2026-10-29): city/country = the HQ the company declares on its site or in an official release; founding_country = where it was founded / its R&D centre. Please confirm."
     },
     {
       "id": "aidoc",
@@ -2644,8 +2648,9 @@
       "website": "https://www.aidoc.com",
       "city": {
         "value": "Tel Aviv",
-        "confidence": "verified",
-        "source_url": "https://www.timesofisrael.com/israels-aidoc-raises-110m-for-ai-tech-that-reads-imaging-scans/"
+        "confidence": "likely",
+        "source_url": "https://www.timesofisrael.com/israels-aidoc-raises-110m-for-ai-tech-that-reads-imaging-scans/",
+        "notes": "Most sources say Tel Aviv with a New York office (142 W 57th St); the company's own site was not checked. The eval run of 2026-10-29 gave New York."
       },
       "country": {
         "value": "Israel",
@@ -2717,7 +2722,8 @@
         "not_competitors": [],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
-      }
+      },
+      "review_request": "dual_hq (owner, 2026-10-29): city/country = the HQ the company declares on its site or in an official release; founding_country = where it was founded / its R&D centre. Please confirm."
     },
     {
       "id": "pagaya",
@@ -2794,13 +2800,14 @@
       "website": "https://www.oligo.security",
       "city": {
         "value": "Tel Aviv",
-        "confidence": "likely",
-        "source_url": "https://archive.israel21c.org/israeli-startup-raises-50m-to-stop-app-based-cyberattacks/"
+        "confidence": "verified",
+        "source_url": "https://www.oligo.security/company/about",
+        "notes": "Its own About page: \"our headquarters in Tel Aviv, and ... our New York and Palo Alto satellite offices\". The eval run of 2026-10-29 gave New York."
       },
       "country": {
         "value": "Israel",
         "confidence": "verified",
-        "source_url": "https://archive.israel21c.org/israeli-startup-raises-50m-to-stop-app-based-cyberattacks/"
+        "source_url": "https://www.oligo.security/company/about"
       },
       "founding_country": {
         "value": "Israel",
@@ -2876,7 +2883,8 @@
         "not_competitors": [],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
-      }
+      },
+      "review_request": "dual_hq (owner, 2026-10-29): city/country = the HQ the company declares on its site or in an official release; founding_country = where it was founded / its R&D centre. Please confirm."
     },
     {
       "id": "black-forest-labs",

@@ -118,6 +118,21 @@ export function parseSerperResponse(data: SerperResponse, queryLabel: string): R
   }));
 }
 
+/**
+ * What a failed fetch really was: "fetch failed (ECONNRESET)", not just
+ * "fetch failed" (eval run of 2026-10-29: Serper "fetch failed" for almost
+ * every company — the cause says whether it is the network, DNS or TLS).
+ */
+export function describeFetchError(err: unknown): string {
+  const e = err as { message?: string; cause?: { code?: string; message?: string; errno?: number } };
+  const cause = e?.cause?.code ?? e?.cause?.message;
+  return `${e?.message ?? String(err)}${cause ? ` (${cause})` : ""}`;
+}
+
+/** A network failure (no HTTP answer) worth one more try after a pause. */
+const NETWORK_RETRIES = 2;
+const networkBackoffMs = (attempt: number) => 1500 * (attempt + 1);
+
 export async function serperSearch(
   query: string,
   queryLabel: string,
@@ -155,8 +170,12 @@ export async function serperSearch(
     state.cache?.set(cacheKey, results);
     return results;
   } catch (err) {
+    if (attempt < NETWORK_RETRIES) {
+      await sleep(networkBackoffMs(attempt));
+      return serperSearch(query, queryLabel, state, attempt + 1);
+    }
     state.searchFailures = (state.searchFailures ?? 0) + 1;
-    console.warn(`    ⚠️  Serper threw: ${String(err)}`);
+    console.warn(`    ⚠️  Serper threw: ${describeFetchError(err)} — after ${NETWORK_RETRIES} retries`);
     return [];
   }
 }
@@ -220,8 +239,12 @@ export async function serperNewsSearch(
     state.cache?.set(cacheKey, results);
     return results;
   } catch (err) {
+    if (attempt < NETWORK_RETRIES) {
+      await sleep(networkBackoffMs(attempt));
+      return serperNewsSearch(query, queryLabel, state, attempt + 1);
+    }
     state.searchFailures = (state.searchFailures ?? 0) + 1;
-    console.warn(`    ⚠️  Serper News threw: ${String(err)}`);
+    console.warn(`    ⚠️  Serper News threw: ${describeFetchError(err)} — after ${NETWORK_RETRIES} retries`);
     return [];
   }
 }
@@ -285,7 +308,7 @@ export async function tavilySearch(
     return results;
   } catch (err) {
     state.searchFailures = (state.searchFailures ?? 0) + 1;
-    console.warn(`    ⚠️  Tavily threw: ${String(err)}`);
+    console.warn(`    ⚠️  Tavily threw: ${describeFetchError(err)}`);
     return [];
   }
 }
@@ -436,7 +459,7 @@ async function fetchViaJinaReader(url: string, state: SearchProviderState): Prom
     }
     return text;
   } catch (err) {
-    console.warn(`    ⚠️  Jina Reader threw for ${url}: ${String(err)} — Tavily may read it instead.`);
+    console.warn(`    ⚠️  Jina Reader threw for ${url}: ${describeFetchError(err)} — Tavily may read it instead.`);
     return null;
   }
 }

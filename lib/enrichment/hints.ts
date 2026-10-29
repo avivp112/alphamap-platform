@@ -25,6 +25,7 @@ import { namesCompany } from "./headcount";
 import { classifySourceType, type LabeledSource } from "./sources";
 import { isListingSiteUrl } from "./dataPlatforms";
 import { isTrustedNewsUrl } from "./trustedNews";
+import { isNotPrimaryUrl } from "./primarySources";
 import type { V2Round } from "./extractFunding";
 
 export interface RoundHint {
@@ -79,20 +80,14 @@ const FORM_D_SOLD = /total\s+amount\s+sold[^\d$]{0,20}\$?\s?([\d,]+)/i;
 const sentences = (text: string) => text.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/);
 const nearAmount = (sentence: string, amount: number) => extractNumbersFromText(sentence).some((n) => Math.abs(n - amount) / amount < 0.01);
 
-// Social networks and video sites: anyone can post there (eval run of
-// 2026-10-29: SSI's "$2B Series A", Thinking Machines' "$5B" and HiBob's
-// round were "confirmed" by Instagram posts, Zepto's $350M by a Facebook post).
-const SOCIAL = /(^|\.)(instagram\.com|facebook\.com|fb\.com|x\.com|twitter\.com|tiktok\.com|threads\.net|reddit\.com|youtube\.com|youtu\.be|medium\.com|quora\.com|pinterest\.com|linkedin\.com)$/i;
-
 /**
- * A source that may confirm a hint — a primary source only: the company's own
- * site, a press release, a filing / registry, or an article in a trusted
- * outlet (trustedNews.ts). Never a data platform, a directory or a social post.
+ * A source that may confirm a hint — a primary source only (primarySources.ts):
+ * the company's own site, a press release through an official wire, a
+ * register / filing, or an article in a trusted outlet (trustedNews.ts).
+ * Never a data platform, a directory, a social post or a PR-content site.
  */
 export function canConfirm(s: Pick<LabeledSource, "url" | "source_type">): boolean {
-  let host = "";
-  try { host = new URL(s.url).hostname.toLowerCase(); } catch { return false; }
-  if (SOCIAL.test(host) || isListingSiteUrl(s.url)) return false;
+  if (isNotPrimaryUrl(s.url) || isListingSiteUrl(s.url)) return false;
   const t = s.source_type ?? classifySourceType(s.url);
   if (t === "company_site" || t === "press_release" || t === "registry") return true;
   return t === "news" && isTrustedNewsUrl(s.url);

@@ -72,7 +72,32 @@ export type ValidationRuleCode =
   | "city_country_mismatch" | "founded_after_first_round" | "founded_out_of_range"
   | "headcount_outlier" | "valuation_below_round" | "round_date_invalid"
   | "stage_order" | "profile_country_conflict" | "city_not_a_city"
-  | "narrative_data_platform" | "narrative_source_talk";
+  | "narrative_data_platform" | "narrative_source_talk" | "city_is_regional_office";
+
+/**
+ * A quote about a regional or second office is not the headquarters (owner,
+ * 2026-10-29: city/country = the HQ the company declares). The eval run of
+ * 2026-10-29 gave Oligo, Port, Aidoc and HiBob "New York" — Oligo's own site
+ * says "our headquarters in Tel Aviv, and our New York and Palo Alto satellite
+ * offices"; HiBob "opened its US headquarters in New York".
+ */
+const REGIONAL_OFFICE_RE = /\b(u\.?s\.?|us-based|american|north american|americas|emea|european|europe|uk|apac|asia(?:-pacific)?|regional|satellite|second|new|international|global sales)\s+(headquarters|hq|head office|office|offices|base|hub|presence)\b/i;
+const OFFICE_ONLY_RE = /\b(offices?|branch(?:es)?|presence)\s+in\b/i;
+const HQ_WORD_RE = /\b(headquarter(?:s|ed)?|hq|head office|based in|-based)\b/i;
+
+export function isRegionalOfficeQuote(quote: string | null | undefined, city: string | null | undefined): boolean {
+  if (!quote || !city) return false;
+  const esc = city.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // "headquarters in Tel Aviv", "Tel Aviv-based", "headquartered in Tel Aviv": the HQ, unless a regional word qualifies it.
+  const declared = new RegExp(`(?<!(?:u\\.?s\\.?|american|regional|european|uk|emea|apac|satellite|second|new)\\s)(headquarter(?:s|ed)?|hq|head office)(?:\\s+(?:is|are))?\\s+(?:located\\s+)?in\\s+${esc}\\b|\\b${esc}-based\\b`, "i");
+  if (declared.test(quote)) return false;
+  // A regional / second office phrase within a few words of the city.
+  const at = quote.toLowerCase().indexOf(city.toLowerCase());
+  if (at < 0) return false;
+  const near = quote.slice(Math.max(0, at - 60), at + city.length + 60);
+  if (REGIONAL_OFFICE_RE.test(near)) return true;
+  return OFFICE_ONLY_RE.test(near) && !HQ_WORD_RE.test(quote);
+}
 
 export interface ValidationIssue {
   rule: ValidationRuleCode;
@@ -360,6 +385,17 @@ export function validateEnrichment(input: ValidateEnrichmentInput): ValidateEnri
       rule: "city_not_a_city",
       fields: sameLine ? ["profile.city", "profile.country"] : ["profile.city"],
       message: `"${acceptedCity}" is a state/region/country, not a city${sameLine ? " — the country from the same line is dropped too" : ""}.`,
+      action: sameLine ? "drop_both" : "drop_field",
+    });
+    acceptedCity = null;
+    if (sameLine) acceptedCountry = null;
+  }
+  if (acceptedCity && isRegionalOfficeQuote(input.extracted.city_quote, acceptedCity)) {
+    const sameLine = !!input.extracted.city_quote && input.extracted.city_quote === input.extracted.country_quote;
+    issues.push({
+      rule: "city_is_regional_office",
+      fields: sameLine ? ["profile.city", "profile.country"] : ["profile.city"],
+      message: `"${acceptedCity}" is a regional / second office in its quote, not the headquarters the company declares.`,
       action: sameLine ? "drop_both" : "drop_field",
     });
     acceptedCity = null;

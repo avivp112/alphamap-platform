@@ -18,6 +18,10 @@ COPY supabase/functions/_shared/check-limits.ts supabase/functions/_shared/compa
 COPY supabase/functions/sourcing-crawl/parse.ts ./supabase/functions/sourcing-crawl/
 COPY supabase/functions/_shared/crawl-policy.ts ./supabase/functions/_shared/
 COPY tsconfig.json ./
+# The golden-set evaluation can run here too, writing nothing to the database:
+#   fly ssh console -a alphamap-check-worker -C "sh -c 'cd /app && PIPELINE=v2 npx tsx eval/run_eval.ts'"
+COPY eval ./eval
+COPY scripts ./scripts
 
 # Not root.
 RUN useradd --create-home --uid 10001 worker && chown -R worker /app

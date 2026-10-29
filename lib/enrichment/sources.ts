@@ -14,6 +14,7 @@
 
 import type { SourceType } from "./sourceTypes";
 import { isDataPlatformUrl } from "./dataPlatforms";
+import { isPressWireUrl } from "./primarySources";
 
 export type Provider = "serper" | "tavily" | "jina" | "tavily_extract" | "cheerio";
 
@@ -27,11 +28,6 @@ const REGISTRY_HOSTS = new Set([
 // the one list in dataPlatforms.ts (isDataPlatformUrl below).
 const AGGREGATOR_HOSTS = new Set(["linkedin.com", "www.linkedin.com"]);
 
-const PRESS_RELEASE_HOSTS = new Set([
-  "prnewswire.com", "www.prnewswire.com",
-  "businesswire.com", "www.businesswire.com",
-  "globenewswire.com", "www.globenewswire.com",
-]);
 
 function hostnameOf(url: string): string | null {
   try {
@@ -66,7 +62,8 @@ export function classifySourceType(url: string, companyDomain?: string | null): 
   // Every data platform in dataPlatforms.ts, subdomains included: BETA's $169M
   // debt round came from app.dealroom.co, which the host list alone missed.
   if (AGGREGATOR_HOSTS.has(host) || AGGREGATOR_HOSTS.has(bareHost(host)) || isDataPlatformUrl(url)) return "aggregator_snippet";
-  if (PRESS_RELEASE_HOSTS.has(host) || PRESS_RELEASE_HOSTS.has(bareHost(host))) return "press_release";
+  // Official wires only (primarySources.ts).
+  if (isPressWireUrl(url)) return "press_release";
   return "news";
 }
 

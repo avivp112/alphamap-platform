@@ -53,7 +53,7 @@ describe("patents come only from the EPO register, as the company's own (run of 
       doc("WO", "2019152024", "A1", "Film-based lightguide", ["AZUMO INC [US]"], "62625091", "20190808"),
       doc("US", "8917962", "B1", "Method of manufacturing a light input coupler", ["AZUMO INC [US]", "SMITH, JOHN [US]"], "47750221", "20141223"),
     ]));
-    const r = companyPatents(publications, { name: "Azumo, Inc." });
+    const r = companyPatents(publications, { name: "Azumo, Inc.", countries: ["United States"] });
     expect(r.familyCount).toBe(2);
     expect(r.patents.map((p) => p.patent_number)).toEqual(["US11442213B2", "US8917962B1"]);
   });
@@ -66,8 +66,8 @@ describe("patents come only from the EPO register, as the company's own (run of 
 
   it("matches the applicant as a whole name — a longer name that contains it is another company", () => {
     const pub: EpoPublication = { number: "US1A1", title: "x", publicationDate: null, filingDate: null, familyId: "1", applicants: [{ name: "BETA AIR LLC", country: "US" }] };
-    expect(applicantMatch(pub, { name: "BETA AIR LLC" })).toBeNull();
-    expect(applicantMatch({ ...pub, applicants: [{ name: "BETA AIR SUPPLY CO", country: "US" }] }, { name: "BETA AIR LLC" })).toBe("epo_applicant_not_the_company");
+    expect(applicantMatch(pub, { name: "BETA AIR LLC", countries: ["United States"] })).toBeNull();
+    expect(applicantMatch({ ...pub, applicants: [{ name: "BETA AIR SUPPLY CO", country: "US" }] }, { name: "BETA AIR LLC", countries: ["United States"] })).toBe("epo_applicant_not_the_company");
   });
 
   it("reads OPS's single-record shape and the applicant country tag", () => {
@@ -90,6 +90,12 @@ describe("patents come only from the EPO register, as the company's own (run of 
     expect(applicantMatch(jp, { name: "Zepto", countries: ["India"] })).toBe("epo_applicant_other_country");
     expect(applicantMatch({ ...jp, number: "IN202141000001A" }, { name: "Zepto", countries: ["India"] })).toBeNull();
     expect(applicantMatch({ ...jp, number: "WO2024000001A1" }, { name: "Zepto", countries: ["India"] })).toBeNull();
+  });
+
+  it("a name alone is never enough — a company whose country is unknown gets no patents (owner, 2026-10-29)", () => {
+    const pub: EpoPublication = { number: "US11442213B2", title: "x", publicationDate: null, filingDate: null, familyId: "1", applicants: [{ name: "AZUMO INC", country: "US" }] };
+    expect(applicantMatch(pub, { name: "Azumo, Inc." })).toBe("epo_company_country_unknown");
+    expect(applicantMatch(pub, { name: "Azumo, Inc.", countries: [null, undefined] })).toBe("epo_company_country_unknown");
   });
 });
 

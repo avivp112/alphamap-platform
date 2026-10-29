@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { foundersFromText, personMentionedIn, cleanPeople, isLeadershipRole } from "./people";
+import { foundersFromText, personMentionedIn, cleanPeople, isLeadershipRole, founderNamesNotExtracted } from "./people";
 import { parseLinkedInPersonResult } from "./linkedin";
 
 describe("foundersFromText — 'founded by' sentences about THIS company", () => {
@@ -75,6 +75,14 @@ describe("founders read from 'founded by' snippets (eval run of 2026-10-29)", ()
   });
   it("someone of another organisation named in passing is not a founder — 'Cyberstarts' Gili Raanan'", () => {
     expect(foundersFromText("Cyera was founded by Cyberstarts' Gili Raanan and Tamar Bar-Ilan.", "Cyera").map((f) => f.name)).toEqual(["Tamar Bar-Ilan"]);
+  });
+});
+
+describe("a founder comes only from the extraction, with evidence (owner, 2026-10-29)", () => {
+  it("a 'founded by' sentence alone adds no one — Thinking Machines' extra names are only reported", () => {
+    const sources = [{ url: "https://www.builtinsf.com/articles/thinking-machines-lab", title: "Thinking Machines Lab", content: "Thinking Machines Lab was founded by Mira Murati and John Schulman." }];
+    expect(founderNamesNotExtracted([{ name: "Mira Murati" }], sources, "Thinking Machines Lab")).toEqual(["John Schulman"]);
+    expect(founderNamesNotExtracted([{ name: "Mira Murati" }, { name: "John Schulman" }], sources, "Thinking Machines Lab")).toEqual([]);
   });
 });
 

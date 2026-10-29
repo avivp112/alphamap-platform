@@ -13,9 +13,10 @@
  * EPO OPS serves DOCDB, its worldwide collection (US, EP, WO, ... — see
  * supabase/functions/ingest-epo-ops). A publication is the company's only when
  * one of its APPLICANTS (the owner / filer, as the register records it) is the
- * company: the same name once legal forms are set aside, and — when the
- * register gives the applicant's country and we know the company's — the same
- * country. The number, title and dates are the register's own, never a
+ * company: the same name once legal forms are set aside, AND the same country
+ * — the applicant's country tag, or, without one, a filing office that fits
+ * (the company's country, US, EP or WO). A company whose country is unknown
+ * gets no patents: a name alone is never enough. The number, title and dates are the register's own, never a
  * page's. A name many companies share ("Apex", "Zero") is not looked up at
  * all: no patents is better than another company's patents.
  *
@@ -54,7 +55,7 @@ export interface EpoPatentResult {
   rejected: Array<{ number: string; reason: EpoRejection }>;
 }
 
-export type EpoRejection = "epo_applicant_not_the_company" | "epo_applicant_other_country";
+export type EpoRejection = "epo_applicant_not_the_company" | "epo_applicant_other_country" | "epo_company_country_unknown";
 
 // ── OPS JSON (the same traps ingest-epo-ops documents) ───────────────────────
 
@@ -150,12 +151,14 @@ export function applicantMatch(pub: EpoPublication, company: CompanyIdentity): E
   const named = pub.applicants.filter((a) => keys.has(nameKey(a.name)));
   if (named.length === 0) return "epo_applicant_not_the_company";
   const countries = (company.countries ?? []).filter((c): c is string => !!c);
+  // A name alone never makes a patent the company's: its country must match too (owner, 2026-10-29).
+  if (countries.length === 0) return "epo_company_country_unknown";
   const tagged = named.filter((a) => a.country);
-  if (countries.length && tagged.length && !tagged.some((a) => countries.some((c) => sameCountry(a.country!, c)))) return "epo_applicant_other_country";
+  if (tagged.length && !tagged.some((a) => countries.some((c) => sameCountry(a.country!, c)))) return "epo_applicant_other_country";
   // No country on the applicant: the office it was filed at must fit — the
   // company's own country, or the US / European / international (PCT) route.
   // Zepto (India) got five Japanese publications of a Japanese "ZEPTO" (eval run, 2026-10-29).
-  if (countries.length && !tagged.length) {
+  if (!tagged.length) {
     const office = pub.number.slice(0, 2).toUpperCase();
     if (!["US", "EP", "WO"].includes(office) && !countries.some((c) => sameCountry(office, c))) return "epo_applicant_other_country";
   }

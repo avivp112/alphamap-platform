@@ -155,6 +155,26 @@ export function foundersFromText(
   return out;
 }
 
+/**
+ * Names a "founded by" sentence gives that the extraction did not — reported,
+ * never added (owner, 2026-10-29: a founder comes only from the extraction,
+ * with its evidence, like every field).
+ */
+export function founderNamesNotExtracted(
+  extracted: Array<{ name?: string | null } | null | undefined>,
+  sources: Array<{ url: string; title?: string; content: string }>,
+  companyName: string,
+): string[] {
+  const out: string[] = [];
+  for (const src of sources) {
+    for (const f of foundersFromText(src.content, companyName, { url: src.url, title: src.title })) {
+      if (extracted.some((x) => x?.name && samePersonName(x.name, f.name))) continue;
+      if (!out.some((t) => samePersonName(t, f.name))) out.push(f.name);
+    }
+  }
+  return out;
+}
+
 export function personMentionedIn(name: string, text: string): boolean {
   const tokens = fold(name).toLowerCase().split(/[^a-z]+/).filter((t) => t.length > 1);
   if (tokens.length < 2) return false;
