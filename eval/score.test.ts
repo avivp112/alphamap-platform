@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { newScoreboard, scoreCompany, duplicateRounds, foundedAfterFirstRound, phase1Checks, normalize, type GoldenCompany, type PipelineOutput } from "./score";
+import { newScoreboard, scoreCompany, duplicateRounds, foundedAfterFirstRound, phase1Checks, normalize, hintGain, type GoldenCompany, type PipelineOutput } from "./score";
 
 const v = <T,>(value: T) => ({ value, confidence: "verified" as const });
 const apex: GoldenCompany = {
@@ -138,5 +138,15 @@ describe("founders — one person, two spellings", () => {
     const port: GoldenCompany = { id: "port", name: "Port", founders: [{ name: "Yonatan Boguslavski", confidence: "verified" }, { name: "Zohar Einy", confidence: "verified" }] };
     scoreCompany(b, port, out({ founders: [{ name: "Yonatan Boguslavsky" }] }));
     expect(b.founders).toEqual({ scored: 2, produced: 1, correct: 1 });
+  });
+});
+
+describe("what the hints added (owner, 2026-10-28)", () => {
+  it("counts a confirmed hint matching a golden round as a round gained, and a kept one as still to find", () => {
+    const darkowl: GoldenCompany = { id: "darkowl", name: "DarkOwl", funding_rounds: [{ type: "Growth", amount_usd: 8_000_000, date: "2024-05", confidence: "verified" }] };
+    expect(hintGain(darkowl, {
+      confirmed: [{ round_type: "Growth", amount_raised: 8_000_000, date: "2024-05-14", source_url: "https://www.prnewswire.com/x" }],
+      kept: [{ round_type: "Seed", amount_raised: 160_000, date: null, source_url: "https://getlatka.com/companies/apify" }],
+    })).toEqual({ confirmed: 1, confirmed_matching_golden: 1, kept: 1, kept_matching_golden: 0 });
   });
 });

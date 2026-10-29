@@ -21,11 +21,12 @@ import {
   searchMostlyFailed, type SearchProviderState,
 } from "./searchProviders.ts";
 import { filterByEntity, deriveIdentityKeywords, nameQualifiersOnOwnSite, type EntityAnchors } from "./entity.ts";
-import { buildLabeledSources, mergeDuplicateResults, type RawSearchResult, type LabeledSource } from "./sources.ts";
+import { buildLabeledSources, mergeDuplicateResults, classifySourceType, type RawSearchResult, type LabeledSource } from "./sources.ts";
 import { extractProfile, type SectorTaxonomy } from "./extractProfile.ts";
-import { extractFunding, roundToRoundLike } from "./extractFunding.ts";
+import { extractFunding, roundToRoundLike, type V2Round } from "./extractFunding.ts";
 import { extractMarket, normalizeUrlForMatch } from "./extractMarket.ts";
 import { lookupEpoPatents, type CompanyIdentity, type EpoPatentResult } from "./epoPatents.ts";
+import { hintFromRound, hintQueries, confirmHint, hintKey, type RoundHint } from "./hints.ts";
 import { detectGaps, buildDeepDiveQueries, hasNoFinancingRounds, type DeepDiveSection } from "./deepDive.ts";
 import {
   groundRoundDetails, isUnstatedEvent, rejectRound, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
@@ -148,6 +149,10 @@ export interface CollectContext {
   onStage?: (stage: CollectStage, detail?: Record<string, unknown>) => void;
   /** The company's patents from the EPO register (epoPatents.ts); tests pass a stand-in. */
   patentLookup?: (company: CompanyIdentity) => Promise<EpoPatentResult | null>;
+  /** Hints earlier runs stored for this company (data_hints, status open): searched for again (hints.ts). */
+  openHints?: () => Promise<RoundHint[]>;
+  /** Search for a primary source of each platform-only round (default on; three searches per hint at most). */
+  hintSearch?: boolean;
 }
 
 export type CollectStage = "searching" | "reading" | "extracting" | "deep_dive" | "people" | "validating";
@@ -189,6 +194,10 @@ export interface CollectedCompany {
   verifiedFacts?: VerifiedFact[];
   /** True when market.patents is the EPO register's list for the company (possibly empty); false = not looked up. */
   patentsFromRegister?: boolean;
+  /** Rounds only a data platform states that no primary source confirmed: stored as hints, never written (hints.ts). */
+  roundHints?: RoundHint[];
+  /** Hints a primary source confirmed this run: written as rounds with that source; earlier ones get status confirmed. */
+  confirmedHints?: Array<RoundHint & { confirmed_source_url: string }>;
 }
 
 export type CollectResult =
@@ -207,6 +216,9 @@ const EMPTY_FUNDING_OUTCOME: NonNullable<Awaited<ReturnType<typeof extractFundin
 // query (founders + HQ + headcount + acquisitions + patents + social links
 // in a single Google query) split into focused ones, one per section the
 // company page shows. Each result keeps its query_label for evidence dumps.
+/** Hints searched per company and run (three searches each at most); the rest wait for the next run. */
+const MAX_HINTS_SEARCHED = 3;
+
 export async function runAllSearches(name: string, anchor: string, state: SearchProviderState): Promise<RawSearchResult[]> {
   const queries: Array<[string, string]> = [
     // history/amounts/backers (three overlapping funding queries) merged
@@ -705,18 +717,52 @@ export async function collectCompany(
     }
   }
 
-  const sourceById = new Map(allSources.map((s) => [s.source_id, s]));
-  const sourceTypeFor = (sourceId: string | undefined): SourceType | undefined => (sourceId ? sourceById.get(sourceId)?.source_type : undefined);
-  const sourceUrlFor = (sourceId: string | undefined): string | null => (sourceId ? sourceById.get(sourceId)?.url ?? null : null);
-
   // ── Round grounding: co-investors / per-investor amounts / source URL ──
+  const platformOnly: V2Round[] = [];
   const keptRounds = funding.funding_rounds.filter((r) => {
     const why = rejectRound(r, row.name, allSources);
     if (!why) return true;
+    if (why === "round_only_from_data_platform") { platformOnly.push(r); return false; }
     console.log(`    🚫  ${r.round_type} not written (${why})`);
     bump(stats.droppedByReason, why);
     return false;
   });
+
+  // ── Stage 5b: hints — a round only a data platform states (hints.ts) ──
+  // Searched for in primary sources; confirmed → written with that source
+  // alone; not found → kept as a hint (data_hints), never written.
+  const hints = new Map<string, RoundHint>();
+  for (const r of platformOnly) { const h = hintFromRound(r, allSources); hints.set(hintKey(h), h); }
+  for (const h of (await ctx.openHints?.().catch(() => [] as RoundHint[])) ?? []) if (!hints.has(hintKey(h))) hints.set(hintKey(h), h);
+  const roundHints: RoundHint[] = [];
+  const confirmedHints: Array<RoundHint & { confirmed_source_url: string }> = [];
+  let hintSourceCount = 0;
+  for (const h of [...hints.values()].slice(0, MAX_HINTS_SEARCHED)) {
+    if (ctx.hintSearch === false || h.amount_raised == null) { roundHints.push(h); continue; }
+    const found: RawSearchResult[] = [];
+    for (const [label, q] of hintQueries(row.name, h)) found.push(...await webSearch(q, label, searchState));
+    const labelled: LabeledSource[] = mergeDuplicateResults(found).results.map((raw) => ({ ...raw, source_id: `H${++hintSourceCount}`, source_type: classifySourceType(raw.url, domain) }));
+    const candidate = confirmHint(h, labelled, row.name);
+    // A confirmed round still passes every rule a round passes (raiser named, not a job post ...).
+    const confirmed = candidate && !rejectRound(candidate, row.name, [...allSources, ...labelled]) ? candidate : null;
+    if (!confirmed) {
+      roundHints.push(h);
+      console.log(`    💡  Hint kept, not written: ${h.round_type ?? "round"} ${h.amount_raised ?? ""} — only ${h.source_url ?? "a data platform"} states it`);
+      bump(stats.droppedByReason, "round_kept_as_hint");
+      continue;
+    }
+    const src = labelled.find((x) => x.source_id === confirmed.amount_raised?.source_id)!;
+    allSources = [...allSources, src];
+    keptRounds.push(confirmed);
+    confirmedHints.push({ ...h, confirmed_source_url: src.url });
+    console.log(`    ✅  Hint confirmed by a primary source: ${h.round_type ?? "round"} ${h.amount_raised} — ${src.url}`);
+    bump(stats.droppedByReason, "round_confirmed_from_hint");
+  }
+  for (const h of [...hints.values()].slice(MAX_HINTS_SEARCHED)) roundHints.push(h);
+
+  const sourceById = new Map(allSources.map((s) => [s.source_id, s]));
+  const sourceTypeFor = (sourceId: string | undefined): SourceType | undefined => (sourceId ? sourceById.get(sourceId)?.source_type : undefined);
+  const sourceUrlFor = (sourceId: string | undefined): string | null => (sourceId ? sourceById.get(sourceId)?.url ?? null : null);
   const newRoundLikes: RoundLike[] = keptRounds.flatMap((r) => {
     const grounded = groundRoundDetails(r, allSources);
     for (const reason of grounded.dropped) bump(stats.droppedByReason, reason);
@@ -803,6 +849,6 @@ export async function collectCompany(
     outcome: "collected",
     profile, funding, market, allSources, sourceById, sourceTypeFor, sourceUrlFor,
     linkedinFounders, linkedinLeaders, existingRefs, validation, plan,
-    cityConfidence, countryConfidence, domain, verifiedFacts, patentsFromRegister,
+    cityConfidence, countryConfidence, domain, verifiedFacts, patentsFromRegister, roundHints, confirmedHints,
   };
 }

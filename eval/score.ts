@@ -68,6 +68,23 @@ export interface PipelineOutput {
   patents?: string[];
   /** Where each competitor was found, for the review sheet. */
   competitor_sources?: Array<{ name: string; source_url: string | null; quote: string | null }>;
+  /** Rounds only a data platform stated (lib/enrichment/hints.ts): confirmed by a primary source, or kept as hints. */
+  hints?: { confirmed: HintedRound[]; kept: HintedRound[] };
+}
+
+export interface HintedRound { round_type: string | null; amount_raised: number | null; date: string | null; source_url: string | null }
+
+/**
+ * What the hints added (owner, 2026-10-28: "measure on the golden set how many
+ * rounds this adds"): confirmed hints that match a verified golden round are
+ * rounds gained; ones that match none are wrong writes; kept hints that match
+ * a golden round are rounds a primary-source search still has to find.
+ */
+export function hintGain(g: GoldenCompany, hints: PipelineOutput["hints"]): { confirmed: number; confirmed_matching_golden: number; kept: number; kept_matching_golden: number } {
+  const verified = (g.funding_rounds ?? []).filter((r) => r.confidence !== "unknown");
+  const matches = (h: HintedRound) => verified.some((gr) => roundsDayGap(gr, { amount_raised: h.amount_raised, date: h.date }) !== null);
+  const c = hints?.confirmed ?? [], k = hints?.kept ?? [];
+  return { confirmed: c.length, confirmed_matching_golden: c.filter(matches).length, kept: k.length, kept_matching_golden: k.filter(matches).length };
 }
 
 /** unjudged: produced values the golden set neither confirms nor rejects (competitors only) — reported, not scored. */

@@ -27,6 +27,7 @@ import { computeTotalRaised, computeDebtRaised } from "./rounds.ts";
 import { computeFieldConfidence, meetsProfileThreshold } from "./confidence.ts";
 import { roundFieldEvidence } from "./roundProvenance.ts";
 import { startupChanges, roundInsertChange, roundUpdateChanges, type FieldChangeRow } from "./runChanges.ts";
+import { hintKey, type RoundHint } from "./hints.ts";
 import { cleanNarrative, verifierFrom } from "./narrative.ts";
 import {
   decideScalarWrite, decideHeadcountUpdate, mergePeople, appendDatedFigures, fillScalarIfNull, type CandidateValue,
@@ -103,6 +104,28 @@ export interface WriteOutcome {
   tags: string[];
   newsAdded: number;
   competitorsAdded: number;
+}
+
+let warnedNoHintsTable = false;
+
+/** Stores this run's open hints and closes the ones a primary source confirmed (data_hints, migration 20261110000000). */
+async function saveHints(db: SupabaseClient, startupId: string, collected: CollectedCompany, runId: string | null): Promise<void> {
+  const now = new Date().toISOString();
+  const row = (h: RoundHint, status: "open" | "confirmed", confirmedUrl: string | null) => ({
+    startup_id: startupId, kind: "funding_round", hint_key: hintKey(h), status, confirmed_source_url: confirmedUrl,
+    value: { round_type: h.round_type, amount_raised: h.amount_raised, announcement_date: h.announcement_date, lead_investor: h.lead_investor },
+    source_url: h.source_url, last_seen_at: now, searched_at: now, run_id: runId,
+  });
+  const rows = [
+    ...(collected.roundHints ?? []).map((h) => row(h, "open", null)),
+    ...(collected.confirmedHints ?? []).map((h) => row(h, "confirmed", h.confirmed_source_url)),
+  ];
+  if (rows.length === 0) return;
+  const { error } = await db.from("data_hints").upsert(rows, { onConflict: "startup_id,kind,hint_key" });
+  if (error && !warnedNoHintsTable) {
+    warnedNoHintsTable = true;
+    console.warn(`    ⚠️  data_hints not saved (${error.message}) — apply migration 20261110000000.`);
+  }
 }
 
 export async function writeCollected(
@@ -537,6 +560,7 @@ export async function writeCollected(
   }
 
   if (DRY_RUN) {
+    if (collected.roundHints?.length) console.log(`    [DRY] Would keep ${collected.roundHints.length} hint(s) in data_hints (not written as data)`);
     console.log(`    [DRY] Would patch: ${Object.keys(patch).join(", ") || "(nothing)"}`);
     console.log(`    [DRY] Would insert ${plan.inserts.length} new round(s): ${plan.inserts.map((r) => r.round_type).join(", ") || "none"} | fill ${plan.updates.length} existing round(s)`);
     if (headcountPoints.length > 0) console.log(`    [DRY] Would upsert headcount_history: ${headcountPoints.map((p) => `${p.count}@${p.date}`).join(", ")}`);
@@ -628,6 +652,10 @@ export async function writeCollected(
         await recordChanges(roundUpdateChanges(row.id, u.id, before, u.patch, runId));
       }
     }
+
+    // Hints (hints.ts): rounds only a data platform states — kept for the next
+    // run to search again, never written as data; confirmed ones are closed.
+    await saveHints(supabase, row.id, collected, runId);
 
     await supabase.from("startups").update({ last_enriched_at: new Date().toISOString() }).eq("id", row.id);
     // Every page this run sent to Claude: a later update skips them.

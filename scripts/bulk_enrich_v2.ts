@@ -53,6 +53,7 @@ import { ACTIVE_DAYS, QUIET_DAYS, SeenUrls, isUpdateDue } from "../lib/enrichmen
 import { websiteDomain, type DomainOwner } from "../lib/enrichment/websiteValidation.ts";
 
 import { assertEnrichmentWritesAllowed } from "../lib/enrichment/writeGate.ts";
+import type { RoundHint } from "../lib/enrichment/hints.ts";
 // ── Configuration (ground rule 3: same env vars as v1) ──────────────────
 const BATCH_SIZE     = Number(process.env.BATCH_SIZE     ?? 9999);
 const OFFSET         = Number(process.env.OFFSET         ?? 0);
@@ -229,6 +230,11 @@ async function enrichCompany(
       return ((prov ?? []) as Array<{ source_url: string | null }>).map((p) => p.source_url);
     },
     recordCost: (model, usage) => recordCost(summary, model, usage),
+    // Hints earlier runs kept for this company: searched for again (lib/enrichment/hints.ts).
+    openHints: async () => {
+      const { data } = await supabase.from("data_hints").select("id, value, source_url").eq("startup_id", row.id).eq("kind", "funding_round").eq("status", "open");
+      return ((data ?? []) as Array<{ id: string; value: Omit<RoundHint, "source_url" | "id">; source_url: string | null }>).map((h) => ({ ...h.value, source_url: h.source_url, id: h.id }));
+    },
   }, summary, searchState);
 
   if (collected.outcome === "public") {

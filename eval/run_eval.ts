@@ -70,7 +70,7 @@ import { blankRow } from "../worker/enrich.ts";
 import { buildProfile } from "../worker/profile.ts";
 import { cachedCallCostUsd } from "../worker/config.ts";
 import {
-  FIELDS, newScoreboard, pct, scoreCompany, duplicateRounds, foundedAfterFirstRound, phase1Checks,
+  FIELDS, newScoreboard, pct, scoreCompany, duplicateRounds, foundedAfterFirstRound, phase1Checks, hintGain,
   type GoldenSet, type GoldenCompany, type PipelineOutput, type FieldResult, type Field,
 } from "./score.ts";
 
@@ -158,6 +158,10 @@ async function runV2(company: GoldenCompany, anthropic: Anthropic, taxonomy: Sec
       competitor_sources: c.market.competitors.map((x) => ({ name: x.name, source_url: c.sourceUrlFor(x.source_id), quote: x.evidence_quote ?? null })),
       // Patents come only from the EPO register: not looked up (no EPO keys) is not "none".
       patents: c.patentsFromRegister ? c.market.patents.map((x) => x.patent_number).filter((n): n is string => !!n) : undefined,
+      hints: {
+        confirmed: (c.confirmedHints ?? []).map((h) => ({ round_type: h.round_type, amount_raised: h.amount_raised, date: h.announcement_date, source_url: h.confirmed_source_url })),
+        kept: (c.roundHints ?? []).map((h) => ({ round_type: h.round_type, amount_raised: h.amount_raised, date: h.announcement_date, source_url: h.source_url })),
+      },
     }, "collected", p.sources_count);
   } finally {
     searchState.cache?.save();
@@ -193,9 +197,11 @@ async function main() {
   const perCompany: Record<string, {
     output: PipelineOutput | null; outcome?: string; fields?: Record<Field, FieldResult>;
     duplicates?: Array<[number, number]>; founded_after_round?: boolean; cost_usd?: number; seconds?: number; searches?: number;
+    hints?: ReturnType<typeof hintGain>;
   }> = {};
   const raw: Record<string, EnrichmentResult | null> = {};
   let locationMismatches = 0, duplicates = 0, foundedAfterRound = 0, totalCost = 0, totalSeconds = 0, ran = 0;
+  const hintTotals = { confirmed: 0, confirmed_matching_golden: 0, kept: 0, kept_matching_golden: 0 };
 
   for (const company of companies) {
     console.log(`── ${company.name} (${company.id}) ──`);
@@ -245,7 +251,9 @@ async function main() {
     if (fields.city === "wrong" || fields.country === "wrong") locationMismatches++;
     duplicates += dups.length;
     if (afterRound) foundedAfterRound++;
-    perCompany[company.id] = { output, ...extra, fields, duplicates: dups, founded_after_round: afterRound };
+    const gain = hintGain(company, out.hints);
+    for (const k of Object.keys(hintTotals) as Array<keyof typeof hintTotals>) hintTotals[k] += gain[k];
+    perCompany[company.id] = { output, ...extra, fields, duplicates: dups, founded_after_round: afterRound, hints: gain };
 
     console.log(`    city="${out.city ?? "—"}" (${fields.city}) country="${out.country ?? "—"}" (${fields.country}) founded-in="${out.founding_country ?? "—"}" (${fields.founding_country}) founded=${out.founded_year ?? "—"} (${fields.founded_year})`);
     console.log(`    founders=${out.founders.map((f) => f.name).join(", ") || "—"} (${fields.founders})`);
@@ -274,6 +282,9 @@ async function main() {
   console.log("Phase 1 rules (docs/enrichment_v2_spec.md §7):");
   for (const c of checks) console.log(`  ${c.pass ? "✅" : "❌"} ${c.rule} — ${c.detail}`);
   if (PIPELINE === "v2" && ran) {
+    console.log(`\nHints (rounds only a data platform states — lib/enrichment/hints.ts):`);
+    console.log(`  confirmed by a primary source and written: ${hintTotals.confirmed} — matching a golden round: ${hintTotals.confirmed_matching_golden}, matching none (wrong writes): ${hintTotals.confirmed - hintTotals.confirmed_matching_golden}`);
+    console.log(`  kept as hints, not written: ${hintTotals.kept} — of which real golden rounds still to find: ${hintTotals.kept_matching_golden}`);
     console.log(`\nCost: $${totalCost.toFixed(3)} total, $${(totalCost / ran).toFixed(4)} per company · time: ${(totalSeconds / ran).toFixed(0)} s per company`);
   }
   if (companies.length < 50 || unreviewed) {
@@ -307,7 +318,7 @@ async function main() {
   writeFileSync(join(__dir, file), JSON.stringify({
     pipeline: PIPELINE, generated_at: new Date().toISOString(), companies_scored: companies.length, unreviewed,
     settings: PIPELINE === "v2" ? { model: ENRICH_MODEL, articles_to_read: ARTICLES_TO_READ, deep_dive: DEEP_DIVE, tech_gate: TECH_GATE } : undefined,
-    fields: summary, phase1: checks,
+    fields: summary, phase1: checks, hints: PIPELINE === "v2" ? hintTotals : undefined,
     cost: PIPELINE === "v2" && ran ? { total_usd: totalCost, per_company_usd: totalCost / ran, seconds_per_company: totalSeconds / ran } : undefined,
     // Per company, so a human can see WHY a field scored the way it did without re-running.
     per_company: perCompany,
