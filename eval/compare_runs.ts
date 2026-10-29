@@ -34,10 +34,33 @@ const on = (r: Run) => Object.entries(r.settings?.components ?? {}).filter(([, v
 console.log(`A: ${aPath}\n   components on: ${on(a)}`);
 console.log(`B: ${bPath}\n   components on: ${on(b)}\n`);
 
-console.log(`${"field".padEnd(16)}${"precision A → B".padEnd(20)}${"coverage A → B".padEnd(20)}scored`);
+// A field is worse when B's precision is lower. A difference that one or two
+// companies make is marked "possible noise" (owner, 2026-10-29): search
+// results and model answers vary between runs on their own.
+const NOISE_COMPANIES = 2;
+const num = (p: string | undefined) => (p == null || !/\d/.test(p) ? null : parseFloat(p));
+const changedCompanies = (field: string) => Object.keys(b.per_company).filter((id) => {
+  const fa = a.per_company[id]?.fields?.[field], fb = b.per_company[id]?.fields?.[field];
+  return fa !== fb && !(fa == null && fb == null);
+});
+const worseFields: string[] = [];
+console.log(`${"field".padEnd(16)}${"precision A → B".padEnd(20)}${"coverage A → B".padEnd(20)}${"scored".padEnd(10)}verdict`);
 for (const field of Object.keys(b.fields)) {
   const fa = a.fields[field], fb = b.fields[field];
-  console.log(`${field.padEnd(16)}${`${fa?.precision ?? "—"} → ${fb.precision}`.padEnd(20)}${`${fa?.coverage ?? "—"} → ${fb.coverage}`.padEnd(20)}${fa?.scored ?? "—"} / ${fb.scored}`);
+  const pa = num(fa?.precision), pb = num(fb.precision);
+  const changed = changedCompanies(field);
+  let verdict = "";
+  if (pa != null && pb != null && pb !== pa) {
+    verdict = pb < pa ? "worse" : "better";
+    if (pb < pa) worseFields.push(field);
+    verdict += ` (${changed.length} compan${changed.length === 1 ? "y" : "ies"} changed${changed.length <= NOISE_COMPANIES ? " — possible noise" : ""})`;
+  }
+  console.log(`${field.padEnd(16)}${`${fa?.precision ?? "—"} → ${fb.precision}`.padEnd(20)}${`${fa?.coverage ?? "—"} → ${fb.coverage}`.padEnd(20)}${`${fa?.scored ?? "—"} / ${fb.scored}`.padEnd(10)}${verdict}`);
+}
+if (worseFields.length) {
+  const added = Object.entries(b.settings?.components ?? {}).filter(([k, v]) => v && !a.settings?.components?.[k]).map(([k]) => k);
+  console.log(`\nWorse with B: ${worseFields.join(", ")}. To find the component, run the core with each one alone, then compare each to A:`);
+  for (const c of added) console.log(`  V2_COMPONENTS=baseline,${c}=on PIPELINE=v2 npx tsx eval/run_eval.ts && npx tsx eval/compare_runs.ts ${aPath} eval/v2_results_baseline-${c.replace(/_/g, "-")}-on.json`);
 }
 console.log("\nPhase 1 rules (A → B):");
 for (const rb of b.phase1) {
