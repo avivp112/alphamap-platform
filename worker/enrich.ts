@@ -15,7 +15,7 @@
 // =============================================================================
 
 import Anthropic from "@anthropic-ai/sdk";
-import { createSearchProviderState } from "../lib/enrichment/searchProviders.ts";
+import { createSearchProviderState, searchCalls } from "../lib/enrichment/searchProviders.ts";
 import { collectCompany, newCollectStats, type CollectResult, type CollectStage, type V2StartupRow, type V2FundingRoundRow } from "../lib/enrichment/collect.ts";
 import type { SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { cachedCallCostUsd } from "./config.ts";
@@ -82,6 +82,6 @@ export async function runCollection(row: V2StartupRow, rounds: V2FundingRoundRow
     }, newCollectStats(), searchState);
   } finally {
     // Counted even when the run fails half way (the library counts calls that returned results).
-    deps.meter.searchCalls += searchState.serperCallCount + searchState.tavilyCallCount;
+    deps.meter.searchCalls += searchCalls(searchState);
   }
 }

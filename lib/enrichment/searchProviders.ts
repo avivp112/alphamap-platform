@@ -11,11 +11,13 @@
  * parser with no JS execution and weaker anti-bot handling than a real
  * rendering proxy. Jina is primary for Stage 2 again.
  *
- * Provider order (owner's decision, 2026-10-20): Jina reads pages and
- * articles, Serper searches. Tavily is used only to go deeper (the Stage 9
- * deep dive) or when Jina is unavailable — then Tavily search joins Serper
- * and Tavily Extract reads what Jina could not. cheerio is not used for
- * reading at all. Same endpoints, same retry/
+ * Provider order (owner's decision, 2026-10-20; Serper and Jina back each
+ * other up, 2026-10-29): Serper searches and Jina reads pages and articles.
+ * Each is the other's backup — a search Serper could not answer (network
+ * error, HTTP error) goes to Jina Search; a page Jina could not read goes to
+ * Serper's scrape endpoint. Going deeper (the Stage 9 deep dive), Jina Search
+ * joins Serper. Tavily is only a last resort, when both failed and a
+ * TAVILY_API_KEY is set. cheerio is not used for reading at all. Same endpoints, same retry/
  * backoff behavior as v1's private serperSearch/tavilySearch/
  * fetchViaJinaReader/fetchCompanyWebsite/verifyDomainMatch (duplicated
  * rather than imported — v1 is frozen, same reasoning as sanitize.ts).
@@ -57,6 +59,9 @@ export interface SearchProviderState {
   websitePagesDuplicate: number;
   /** Per-company disk cache (searchCache.ts) — a hit costs no API call. */
   cache?: SearchCache;
+  /** Jina Search answers (Serper's backup / deep-dive partner) and Serper scrape reads (Jina Reader's backup). */
+  jinaSearchCallCount?: number;
+  serperScrapeCount?: number;
   /** Search calls made, and those that failed (network error, timeout, HTTP 5xx) — not "no results". */
   searchAttempts?: number;
   searchFailures?: number;
@@ -66,6 +71,11 @@ export interface SearchProviderState {
 export function searchMostlyFailed(state: SearchProviderState): boolean {
   const attempts = state.searchAttempts ?? 0, failures = state.searchFailures ?? 0;
   return failures >= 3 && failures / Math.max(attempts, 1) >= 0.3;
+}
+
+/** Paid search/read calls in a state: Serper (search, news, scrape), Jina Search, Tavily. */
+export function searchCalls(state: SearchProviderState): number {
+  return state.serperCallCount + state.tavilyCallCount + (state.jinaSearchCallCount ?? 0) + (state.serperScrapeCount ?? 0);
 }
 
 export function createSearchProviderState(): SearchProviderState {
@@ -133,19 +143,23 @@ export function describeFetchError(err: unknown): string {
 const NETWORK_RETRIES = 2;
 const networkBackoffMs = (attempt: number) => 1500 * (attempt + 1);
 
-export async function serperSearch(
-  query: string,
-  queryLabel: string,
-  state: SearchProviderState,
-  attempt = 0,
-): Promise<RawSearchResult[]> {
-  if (!process.env.SERP_KEY) return [];
-  const cacheKey = `serper:${query}`;
+/** A search's results, and whether the provider failed to answer (as opposed to answering "nothing"). */
+export interface SearchOutcome { results: RawSearchResult[]; failed: boolean }
+
+export async function serperSearch(query: string, queryLabel: string, state: SearchProviderState): Promise<RawSearchResult[]> {
+  return (await serperCall("search", query, queryLabel, state)).results;
+}
+
+/** Serper's /search or /news, with its retries. failed: no usable answer (network error, HTTP error, no key). */
+async function serperCall(endpoint: "search" | "news", query: string, queryLabel: string, state: SearchProviderState, attempt = 0): Promise<SearchOutcome> {
+  const name = endpoint === "news" ? "Serper News" : "Serper";
+  if (!process.env.SERP_KEY) return { results: [], failed: true };
+  const cacheKey = `${endpoint === "news" ? "serper_news" : "serper"}:${query}`;
   const cached = state.cache?.get<RawSearchResult[]>(cacheKey);
-  if (cached) return cached.map((r) => ({ ...r, query_label: queryLabel }));
+  if (cached) return { results: cached.map((r) => ({ ...r, query_label: queryLabel })), failed: false };
   state.searchAttempts = (state.searchAttempts ?? 0) + 1;
   try {
-    const res = await fetch("https://google.serper.dev/search", {
+    const res = await fetch(`https://google.serper.dev/${endpoint}`, {
       method: "POST",
       headers: { "X-API-KEY": process.env.SERP_KEY, "Content-Type": "application/json" },
       body: JSON.stringify({ q: query, num: 10, autocorrect: false }),
@@ -153,30 +167,30 @@ export async function serperSearch(
 
     if (res.status === 429 && attempt < 3) {
       const wait = 10_000 * 2 ** attempt;
-      console.warn(`    ⚠️  Serper 429 — waiting ${wait / 1000}s (retry ${attempt + 1}/3)…`);
+      console.warn(`    ⚠️  ${name} 429 — waiting ${wait / 1000}s (retry ${attempt + 1}/3)…`);
       await sleep(wait);
-      return serperSearch(query, queryLabel, state, attempt + 1);
+      return serperCall(endpoint, query, queryLabel, state, attempt + 1);
     }
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       if (res.status >= 500) state.searchFailures = (state.searchFailures ?? 0) + 1;
-      console.warn(`    ⚠️  Serper HTTP ${res.status}` + (body ? ` — ${body.slice(0, 200)}` : ""));
-      return [];
+      console.warn(`    ⚠️  ${name} HTTP ${res.status}` + (body ? ` — ${body.slice(0, 200)}` : ""));
+      return { results: [], failed: true };
     }
 
-    const data = await res.json() as SerperResponse;
-    const results = parseSerperResponse(data, queryLabel);
+    const data = await res.json();
+    const results = endpoint === "news" ? parseSerperNewsResponse(data as SerperNewsResponse, queryLabel) : parseSerperResponse(data as SerperResponse, queryLabel);
     if (results.length > 0) state.serperCallCount++;
     state.cache?.set(cacheKey, results);
-    return results;
+    return { results, failed: false };
   } catch (err) {
     if (attempt < NETWORK_RETRIES) {
       await sleep(networkBackoffMs(attempt));
-      return serperSearch(query, queryLabel, state, attempt + 1);
+      return serperCall(endpoint, query, queryLabel, state, attempt + 1);
     }
     state.searchFailures = (state.searchFailures ?? 0) + 1;
-    console.warn(`    ⚠️  Serper threw: ${describeFetchError(err)} — after ${NETWORK_RETRIES} retries`);
-    return [];
+    console.warn(`    ⚠️  ${name} threw: ${describeFetchError(err)} — after ${NETWORK_RETRIES} retries`);
+    return { results: [], failed: true };
   }
 }
 
@@ -202,50 +216,71 @@ export function parseSerperNewsResponse(data: SerperNewsResponse, queryLabel: st
   }));
 }
 
-export async function serperNewsSearch(
-  query: string,
-  queryLabel: string,
-  state: SearchProviderState,
-  attempt = 0,
-): Promise<RawSearchResult[]> {
-  if (!process.env.SERP_KEY) return [];
-  const cacheKey = `serper_news:${query}`;
+export async function serperNewsSearch(query: string, queryLabel: string, state: SearchProviderState): Promise<RawSearchResult[]> {
+  return (await serperCall("news", query, queryLabel, state)).results;
+}
+
+// ── Jina Search (Serper's backup, and its partner going deeper) ─────────────
+
+interface JinaSearchResponse {
+  data?: Array<{ title?: string; url?: string; description?: string; content?: string; date?: string }> | null;
+}
+
+export function parseJinaSearchResponse(data: JinaSearchResponse, queryLabel: string): RawSearchResult[] {
+  return (data.data ?? []).filter((r) => r.url).slice(0, 8).map((r) => ({
+    url: r.url!,
+    title: r.title ?? "",
+    content: [r.date ? `Date: ${r.date}` : "", r.description || r.content || ""].filter(Boolean).join(" — ").slice(0, 600),
+    provider: "jina_search" as const,
+    query_label: queryLabel,
+  }));
+}
+
+/** The domains a query restricts itself to ("site:linkedin.com/company" → linkedin.com). */
+export function siteDomains(query: string): string[] {
+  return [...query.matchAll(/\bsite:([a-z0-9.-]+\.[a-z]{2,})/gi)].map((m) => m[1].toLowerCase().replace(/^www\./, ""));
+}
+
+/** Keep only results on the query's site: domains — a backup engine may not honour the operator. */
+export function onSites(results: RawSearchResult[], domains: string[]): RawSearchResult[] {
+  if (domains.length === 0) return results;
+  return results.filter((r) => {
+    let host = "";
+    try { host = new URL(r.url).hostname.toLowerCase().replace(/^www\./, ""); } catch { return false; }
+    return domains.some((d) => host === d || host.endsWith(`.${d}`));
+  });
+}
+
+export async function jinaSearch(query: string, queryLabel: string, state: SearchProviderState): Promise<SearchOutcome> {
+  if (!process.env.JINA_API_KEY || jinaDisabled()) return { results: [], failed: true };
+  const cacheKey = `jina_search:${query}`;
   const cached = state.cache?.get<RawSearchResult[]>(cacheKey);
-  if (cached) return cached.map((r) => ({ ...r, query_label: queryLabel }));
+  if (cached) return { results: cached.map((r) => ({ ...r, query_label: queryLabel })), failed: false };
   state.searchAttempts = (state.searchAttempts ?? 0) + 1;
   try {
-    const res = await fetch("https://google.serper.dev/news", {
-      method: "POST",
-      headers: { "X-API-KEY": process.env.SERP_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ q: query, num: 10, autocorrect: false }),
-    });
-
-    if (res.status === 429 && attempt < 3) {
-      const wait = 10_000 * 2 ** attempt;
-      console.warn(`    ⚠️  Serper News 429 — waiting ${wait / 1000}s (retry ${attempt + 1}/3)…`);
-      await sleep(wait);
-      return serperNewsSearch(query, queryLabel, state, attempt + 1);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), JINA_TIMEOUT_MS * 2);
+    const res = await fetch(`https://s.jina.ai/?q=${encodeURIComponent(query)}`, {
+      signal: controller.signal,
+      headers: { Accept: "application/json", Authorization: `Bearer ${process.env.JINA_API_KEY}`, "X-Respond-With": "no-content" },
+    }).finally(() => clearTimeout(timer));
+    if (res.status === 402 || res.status === 401) {
+      disableJina(res.status);
+      return { results: [], failed: true };
     }
     if (!res.ok) {
-      const body = await res.text().catch(() => "");
       if (res.status >= 500) state.searchFailures = (state.searchFailures ?? 0) + 1;
-      console.warn(`    ⚠️  Serper News HTTP ${res.status}` + (body ? ` — ${body.slice(0, 200)}` : ""));
-      return [];
+      console.warn(`    ⚠️  Jina Search HTTP ${res.status}`);
+      return { results: [], failed: true };
     }
-
-    const data = await res.json() as SerperNewsResponse;
-    const results = parseSerperNewsResponse(data, queryLabel);
-    if (results.length > 0) state.serperCallCount++;
+    const results = onSites(parseJinaSearchResponse(await res.json() as JinaSearchResponse, queryLabel), siteDomains(query));
+    if (results.length > 0) state.jinaSearchCallCount = (state.jinaSearchCallCount ?? 0) + 1;
     state.cache?.set(cacheKey, results);
-    return results;
+    return { results, failed: false };
   } catch (err) {
-    if (attempt < NETWORK_RETRIES) {
-      await sleep(networkBackoffMs(attempt));
-      return serperNewsSearch(query, queryLabel, state, attempt + 1);
-    }
     state.searchFailures = (state.searchFailures ?? 0) + 1;
-    console.warn(`    ⚠️  Serper News threw: ${describeFetchError(err)} — after ${NETWORK_RETRIES} retries`);
-    return [];
+    console.warn(`    ⚠️  Jina Search threw: ${describeFetchError(err)}`);
+    return { results: [], failed: true };
   }
 }
 
@@ -313,56 +348,47 @@ export async function tavilySearch(
   }
 }
 
-/** Stage 1 -> Stage 4: Serper first, unconditionally; Tavily only when Serper returned nothing. */
-/** Pure: Serper's own results first (primary), then any Tavily result whose URL Serper didn't already return -- never a duplicate of the same source under two different provider labels. */
+/** Pure: the first provider's results, then any of the second's whose URL the first did not already return — never one source under two provider labels. */
 export function mergeSearchResults(serperResults: RawSearchResult[], tavilyResults: RawSearchResult[]): RawSearchResult[] {
   const seenUrls = new Set(serperResults.map((r) => r.url));
   return [...serperResults, ...tavilyResults.filter((r) => !seenUrls.has(r.url))];
 }
 
-/**
- * Serper is the search engine. Tavily search joins it, merged alongside
- * Serper's results (never replacing them), only when going deeper — the
- * Stage 9 deep dive — or while Jina is unavailable (see the header).
- */
 export interface SearchOptions {
-  /** A Stage 9 deep-dive search: Tavily joins Serper. */
+  /** A Stage 9 deep-dive search: Jina Search joins Serper. */
   deep?: boolean;
 }
 
-/** Tavily search joins Serper: when going deeper, or while Jina is down. */
-export function tavilyJoins(opts: SearchOptions = {}): boolean {
-  return !!opts.deep || jinaDisabled() !== null;
+/**
+ * Serper searches; Jina Search backs it up and goes deeper with it:
+ *   - Serper failed to answer (network, HTTP error) → Jina Search answers;
+ *   - a deep-dive search → Jina Search joins, merged after Serper's results;
+ *   - both failed → Tavily, only if a TAVILY_API_KEY is set (last resort).
+ */
+async function searchWithBackup(primary: SearchOutcome, jinaQuery: string, tavilyQuery: string, queryLabel: string, state: SearchProviderState, opts: SearchOptions): Promise<RawSearchResult[]> {
+  if (!primary.failed && !opts.deep) return primary.results;
+  const jina = await jinaSearch(jinaQuery, queryLabel, state);
+  if (primary.failed && !jina.failed && jina.results.length) console.log(`    🔁  Serper could not answer "${queryLabel}" — Jina Search did (${jina.results.length} result(s)).`);
+  let merged = mergeSearchResults(primary.results, jina.results);
+  if (primary.failed && jina.failed && !state.tavilyExhausted) {
+    merged = mergeSearchResults(merged, onSites(await tavilySearch(tavilyQuery, queryLabel, state), siteDomains(tavilyQuery)));
+  }
+  return merged;
 }
 
 export async function webSearch(query: string, queryLabel: string, state: SearchProviderState, opts: SearchOptions = {}): Promise<RawSearchResult[]> {
-  const serperResults = await serperSearch(query, queryLabel, state);
-  // A site:-restricted query (LinkedIn, Crunchbase, Google Patents) normally
-  // returns only a few hits; Tavily's general search can't honor site: and
-  // only adds unrelated pages at a cost — 54 Tavily calls in a 20-company run.
-  if (/\bsite:/i.test(query)) return serperResults;
-  if (!tavilyJoins(opts)) return serperResults;
-
-  const tavilyResults = await tavilySearch(query, queryLabel, state);
-  return mergeSearchResults(serperResults, tavilyResults);
+  return searchWithBackup(await serperCall("search", query, queryLabel, state), query, query, queryLabel, state, opts);
 }
 
 /**
- * Same collaboration shape as webSearch(), but for the "news" query
- * specifically: Serper's dedicated News API (recency/news-scoped by
- * nature, so it gets a plain "name + anchor news" query, not the
- * site:-heavy query built for general web search) is primary; Tavily
- * (general search, the site:-heavy query) joins it on the same terms as
- * webSearch.
+ * The "news" query: Serper's dedicated News API (a plain "name + anchor news"
+ * query) first; Jina Search backs it up and joins going deeper with the
+ * general query, on the same terms as webSearch.
  */
 export async function newsSearch(
-  newsQuery: string, tavilyQuery: string, queryLabel: string, state: SearchProviderState, opts: SearchOptions = {},
+  newsQuery: string, generalQuery: string, queryLabel: string, state: SearchProviderState, opts: SearchOptions = {},
 ): Promise<RawSearchResult[]> {
-  const newsResults = await serperNewsSearch(newsQuery, queryLabel, state);
-  if (!tavilyJoins(opts)) return newsResults;
-
-  const tavilyResults = await tavilySearch(tavilyQuery, queryLabel, state);
-  return mergeSearchResults(newsResults, tavilyResults);
+  return searchWithBackup(await serperCall("news", newsQuery, queryLabel, state), generalQuery, generalQuery, queryLabel, state, opts);
 }
 
 // ── Domain verification (Stage 0) ──────────────────────────────────────────
@@ -443,25 +469,70 @@ async function fetchViaJinaReader(url: string, state: SearchProviderState): Prom
 
     const res = await fetch(`https://r.jina.ai/${url}`, { signal: controller.signal, headers }).finally(() => clearTimeout(timer));
     if (res.status === 402 || res.status === 401) {
-      jinaDisabledReason = res.status === 402 ? "HTTP 402 — out of credit" : "HTTP 401 — JINA_API_KEY rejected";
-      jinaDisabledAt = Date.now();
-      console.warn(`    ⛔  Jina Reader ${jinaDisabledReason}. Switched off for ${JINA_RETRY_AFTER_MS / 60_000} minutes — Tavily now reads pages and articles and joins Serper's searches (it costs more). Top up Jina (jina.ai) or fix JINA_API_KEY in .env.`);
+      disableJina(res.status);
       return null;
     }
     if (!res.ok) {
-      console.warn(`    ⚠️  Jina Reader HTTP ${res.status} for ${url} — Tavily may read it instead.`);
+      console.warn(`    ⚠️  Jina Reader HTTP ${res.status} for ${url} — Serper may read it instead.`);
       return null;
     }
     const text = (await res.text()).trim();
     if (!text) {
-      console.warn(`    ⚠️  Jina Reader returned empty content for ${url} — Tavily may read it instead.`);
+      console.warn(`    ⚠️  Jina Reader returned empty content for ${url} — Serper may read it instead.`);
       return null;
     }
     return text;
   } catch (err) {
-    console.warn(`    ⚠️  Jina Reader threw for ${url}: ${describeFetchError(err)} — Tavily may read it instead.`);
+    console.warn(`    ⚠️  Jina Reader threw for ${url}: ${describeFetchError(err)} — Serper may read it instead.`);
     return null;
   }
+}
+
+/** Jina said out of credit / bad key: Reader and Search both stop for a while (one account, one credit). */
+function disableJina(status: number): void {
+  if (jinaDisabled()) return;
+  jinaDisabledReason = status === 402 ? "HTTP 402 — out of credit" : "HTTP 401 — JINA_API_KEY rejected";
+  jinaDisabledAt = Date.now();
+  console.warn(`    ⛔  Jina ${jinaDisabledReason}. Switched off for ${JINA_RETRY_AFTER_MS / 60_000} minutes — Serper now reads pages and articles, and Serper's failed searches have no backup. Top up Jina (jina.ai) or fix JINA_API_KEY in .env.`);
+}
+
+// ── Serper scrape (Jina Reader's backup) ───────────────────────────────────
+
+export function parseSerperScrape(data: { text?: string; markdown?: string } | null | undefined): string | null {
+  const text = (data?.markdown || data?.text || "").trim();
+  return text || null;
+}
+
+async function fetchViaSerperScrape(url: string, state: SearchProviderState): Promise<string | null> {
+  if (!process.env.SERP_KEY) return null;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), JINA_TIMEOUT_MS * 2);
+    const res = await fetch("https://scrape.serper.dev", {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "X-API-KEY": process.env.SERP_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ url, includeMarkdown: true }),
+    }).finally(() => clearTimeout(timer));
+    if (!res.ok) {
+      console.warn(`    ⚠️  Serper scrape HTTP ${res.status} for ${url}`);
+      return null;
+    }
+    const text = parseSerperScrape(await res.json() as { text?: string; markdown?: string });
+    if (text) state.serperScrapeCount = (state.serperScrapeCount ?? 0) + 1;
+    return text;
+  } catch (err) {
+    console.warn(`    ⚠️  Serper scrape threw for ${url}: ${describeFetchError(err)}`);
+    return null;
+  }
+}
+
+/** Jina Reader first; Serper scrape when Jina could not read it. */
+async function readPage(url: string, state: SearchProviderState): Promise<{ text: string; provider: Provider } | null> {
+  const viaJina = await fetchViaJinaReader(url, state);
+  if (viaJina) return { text: viaJina, provider: "jina" };
+  const viaSerper = await fetchViaSerperScrape(url, state);
+  return viaSerper ? { text: viaSerper, provider: "serper_scrape" } : null;
 }
 
 /** Tavily Extract, one call for several pages: each page's text by URL. Empty when Tavily is out or fails. */
@@ -516,10 +587,10 @@ export function isNearDuplicatePage(a: string, b: string, threshold = 0.8): bool
 }
 
 /**
- * Full text of third-party articles: Jina Reader first; whatever Jina could
- * not read (it is down, or the page refused it) goes to Tavily Extract in
- * one call. Cleaned of images/link targets. null for an article neither
- * read — the caller keeps the search snippet it already has.
+ * Full text of third-party articles: Jina Reader first, Serper scrape for
+ * what Jina could not read (it is down, or the page refused it), Tavily
+ * Extract last if a key is set. Cleaned of images/link targets. null for an
+ * article none read — the caller keeps the search snippet it already has.
  */
 export async function fetchArticleTexts(urls: string[], state: SearchProviderState): Promise<Array<{ text: string | null; provider: Provider | null }>> {
   const out: Array<{ text: string | null; provider: Provider | null }> = urls.map(() => ({ text: null, provider: null }));
@@ -532,8 +603,10 @@ export async function fetchArticleTexts(urls: string[], state: SearchProviderSta
   await Promise.all(urls.map(async (url, i) => {
     const cached = state.cache?.get<{ text: string; provider: Provider } | string>(`article:${url}`);
     if (cached) { out[i] = typeof cached === "string" ? { text: cached, provider: "jina" } : cached; return; }
-    const text = usable(await fetchViaJinaReader(url, state));
-    if (text) out[i] = { text, provider: "jina" };
+    const jinaText = usable(await fetchViaJinaReader(url, state));
+    if (jinaText) { out[i] = { text: jinaText, provider: "jina" }; return; }
+    const serperText = usable(await fetchViaSerperScrape(url, state));
+    if (serperText) out[i] = { text: serperText, provider: "serper_scrape" };
     else unread.push(i);
   }));
   if (unread.length > 0) {
@@ -552,9 +625,9 @@ export async function fetchArticleTexts(urls: string[], state: SearchProviderSta
  * exist" — each one its own [W#] source (not concatenated into one blob
  * like v1), so a quote can be traced to exactly which page it came from.
  * Jina Reader reads each candidate path (a real rendering proxy: handles
- * JS-rendered pages and basic anti-bot measures). Tavily Extract reads them
- * instead, in one call, only when Jina is down for the run or got nothing
- * usable from the whole site — not for every guessed path that 404s.
+ * JS-rendered pages and basic anti-bot measures); Serper scrape reads a path
+ * Jina could not. Tavily Extract, in one call, only when both got nothing
+ * usable from the whole site and a key is set.
  * Everything is checked against looksLikeRealContent(), so a generic 404
  * page isn't counted as a real source whichever provider fetched it.
  */
@@ -572,11 +645,11 @@ export async function fetchCompanyWebsitePages(
   for (const url of urls) {
     const cachedPage = state.cache?.get<{ content: string; provider: Provider }>(`page:${url}`);
     if (cachedPage) { fetched.set(url, { ...cachedPage, cached: true }); continue; }
-    const viaJina = await fetchViaJinaReader(url, state);
-    if (viaJina && looksLikeRealContent(viaJina)) fetched.set(url, { content: viaJina, provider: "jina", cached: false });
+    const read = await readPage(url, state);
+    if (read && looksLikeRealContent(read.text)) fetched.set(url, { content: read.text, provider: read.provider, cached: false });
   }
   if (fetched.size === 0) {
-    // Jina is down, or this site gives it nothing: Tavily Extract, one call.
+    // Neither Jina nor Serper got anything from this site: Tavily Extract, one call.
     const extracted = await tavilyExtractPages(urls, state);
     for (const url of urls) {
       const text = extractedFor(extracted, url);

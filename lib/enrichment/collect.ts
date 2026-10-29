@@ -239,7 +239,7 @@ export async function runAllSearches(name: string, anchor: string, state: Search
   const [searchBatches, newsResults] = await Promise.all([
     Promise.all(queries.map(([label, q]) => webSearch(q, label, state))),
     // Serper's News endpoint is primary for news; the site:-heavy query is
-    // only used if Tavily has to supplement (see newsSearch()).
+    // only used if Jina Search has to back it up (see newsSearch()).
     newsSearch(
       `"${name}"${anchor} news`,
       `"${name}"${anchor} news 2025 2026 site:techcrunch.com OR site:venturebeat.com OR site:prnewswire.com OR site:businesswire.com OR site:forbes.com OR site:sifted.eu launch funding announcement`,
@@ -262,7 +262,7 @@ async function runUpdateSearches(
   return batches.flat();
 }
 
-const WEBSITE_PROVIDERS = new Set(["jina", "tavily_extract", "cheerio"]);
+const WEBSITE_PROVIDERS = new Set(["jina", "tavily_extract", "cheerio", "serper_scrape"]);
 const isWebsiteResult = (r: RawSearchResult) => WEBSITE_PROVIDERS.has(r.provider);
 
 function logExtraction(label: string, companyName: string, outcome: { stopReason: string | null; outputTokens: number }): void {

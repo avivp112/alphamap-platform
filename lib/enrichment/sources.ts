@@ -16,7 +16,7 @@ import type { SourceType } from "./sourceTypes";
 import { isDataPlatformUrl } from "./dataPlatforms";
 import { isPressWireUrl } from "./primarySources";
 
-export type Provider = "serper" | "tavily" | "jina" | "tavily_extract" | "cheerio";
+export type Provider = "serper" | "tavily" | "jina" | "tavily_extract" | "cheerio" | "jina_search" | "serper_scrape";
 
 const REGISTRY_HOSTS = new Set([
   "sec.gov", "www.sec.gov", "efts.sec.gov",
@@ -82,7 +82,7 @@ export interface LabeledSource extends RawSearchResult {
   source_type: SourceType;
 }
 
-const WEBSITE_PROVIDERS = new Set<Provider>(["jina", "tavily_extract", "cheerio"]);
+const WEBSITE_PROVIDERS = new Set<Provider>(["jina", "tavily_extract", "cheerio", "serper_scrape"]);
 
 /**
  * Assigns "S1", "S2", ... to search-engine results and "W1", "W2", ... to

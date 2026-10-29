@@ -135,6 +135,8 @@ interface RunSummary {
   websitePagesSkippedThin: number;
   serperCalls: number;
   tavilyCalls: number;
+  jinaSearchCalls: number;
+  serperScrapes: number;
   totalCacheReadTokens: number;
   searchCacheHits: number;
   articlesRead: number;
@@ -203,6 +205,8 @@ async function processCompany(
     summary.websitePagesSkippedThin += searchState.websitePagesSkippedThin;
     summary.serperCalls += searchState.serperCallCount;
     summary.tavilyCalls += searchState.tavilyCallCount;
+    summary.jinaSearchCalls += searchState.jinaSearchCallCount ?? 0;
+    summary.serperScrapes += searchState.serperScrapeCount ?? 0;
     summary.websitePagesDuplicate += searchState.websitePagesDuplicate;
     summary.searchCacheHits += searchState.cache?.hits ?? 0;
     if (searchState.cache?.hits) console.log(`    ♻️   ${searchState.cache.hits} search/page result(s) reused from the local cache (no API cost)`);
@@ -396,7 +400,7 @@ async function main() {
     droppedByReason: new Map(),
     totalRoundsInserted: 0, totalRoundsUpdated: 0, totalFieldsPatched: 0, totalNewsAdded: 0, totalCompetitorsAdded: 0, deepDives: 0,
     totalInputTokens: 0, totalOutputTokens: 0, totalCostUsd: 0,
-    websitePagesFetched: 0, websitePagesSkippedThin: 0, serperCalls: 0, tavilyCalls: 0,
+    websitePagesFetched: 0, websitePagesSkippedThin: 0, serperCalls: 0, tavilyCalls: 0, jinaSearchCalls: 0, serperScrapes: 0,
     totalCacheReadTokens: 0, searchCacheHits: 0, articlesRead: 0, websitePagesDuplicate: 0, earlyRejected: 0, duplicateResultsMerged: 0,
   };
 
@@ -477,7 +481,7 @@ async function main() {
   console.log(`  tokens (in/out)              ${summary.totalInputTokens.toLocaleString()} / ${summary.totalOutputTokens.toLocaleString()}`);
   console.log(`  claude cost (est.)           $${summary.totalCostUsd.toFixed(2)}  (search API cost is separate)`);
   if (jinaDisabled()) console.log(`  ⛔ Jina Reader was switched off mid-run (${jinaDisabled()}) — top up Jina and re-run the affected companies for full articles.`);
-  console.log(`  website pages: ${summary.websitePagesFetched} real / ${summary.websitePagesSkippedThin} thin-404 / ${summary.websitePagesDuplicate} duplicate skipped  |  serper calls: ${summary.serperCalls}  |  tavily calls: ${summary.tavilyCalls}`);
+  console.log(`  website pages: ${summary.websitePagesFetched} real / ${summary.websitePagesSkippedThin} thin-404 / ${summary.websitePagesDuplicate} duplicate skipped  |  serper calls: ${summary.serperCalls}  |  jina search (Serper backup): ${summary.jinaSearchCalls}  |  serper scrape (Jina backup): ${summary.serperScrapes}  |  tavily calls: ${summary.tavilyCalls}`);
   console.log("  dropped/flagged by reason code:");
   for (const [reason, count] of summary.droppedByReason) {
     console.log(`    ${reason.padEnd(32)} ${count}`);

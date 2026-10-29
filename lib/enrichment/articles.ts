@@ -39,7 +39,7 @@ export function pickArticlesToRead(
   const seen = new Set<string>();
   const scored: Array<{ r: RawSearchResult; score: number; i: number }> = [];
   results.forEach((r, i) => {
-    if (r.provider !== "serper" && r.provider !== "tavily") return;
+    if (r.provider !== "serper" && r.provider !== "tavily" && r.provider !== "jina_search") return;
     const host = hostOf(r.url);
     if (!host) return;
     if (SKIP_HOSTS.some((h) => host === h || host.endsWith(`.${h}`)) || isDataPlatformUrl(r.url)) return;

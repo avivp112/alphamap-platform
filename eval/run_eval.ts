@@ -64,7 +64,7 @@ import {
 } from "../scripts/bulk_enrich_all.ts";
 import { collectCompany, newCollectStats } from "../lib/enrichment/collect.ts";
 import { loadSectorTaxonomy as loadV2Taxonomy, type SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
-import { createSearchProviderState } from "../lib/enrichment/searchProviders.ts";
+import { createSearchProviderState, searchCalls } from "../lib/enrichment/searchProviders.ts";
 import { openSearchCache } from "../lib/enrichment/searchCache.ts";
 import { blankRow } from "../worker/enrich.ts";
 import { buildProfile } from "../worker/profile.ts";
@@ -133,8 +133,8 @@ async function runV2(company: GoldenCompany, anthropic: Anthropic, taxonomy: Sec
   const row = blankRow({ checkId: `eval-${company.id}`, name: company.name, website: company.website ?? null, country: null, founder: null });
   const done = (output: PipelineOutput | null, outcome: string, sources = 0): V2Run => ({
     output, outcome, sources,
-    searches: searchState.serperCallCount + searchState.tavilyCallCount,
-    costUsd: llmCost + (searchState.serperCallCount + searchState.tavilyCallCount) * SEARCH_COST_USD,
+    searches: searchCalls(searchState),
+    costUsd: llmCost + searchCalls(searchState) * SEARCH_COST_USD,
     seconds: (Date.now() - started) / 1000,
   });
   try {
