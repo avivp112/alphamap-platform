@@ -4,7 +4,6 @@ android
 ios
 cache
 dataset
-eval
 .git
 *.docx
 public/*.mp4
