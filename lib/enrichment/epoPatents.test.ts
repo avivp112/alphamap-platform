@@ -84,4 +84,12 @@ describe("patents come only from the EPO register, as the company's own (run of 
     expect(await lookupEpoPatents({ name: "Apex" }, { key: "k", secret: "s", fetch: never })).toBeNull();
     expect(await lookupEpoPatents({ name: "Azumo, Inc." }, { key: "", secret: "", fetch: never })).toBeNull();
   });
+
+  it("an applicant with no country is the company's only through a fitting office — Zepto (India) and a Japanese 'ZEPTO'", () => {
+    const jp: EpoPublication = { number: "JP2017074554A", title: "x", publicationDate: null, filingDate: null, familyId: "1", applicants: [{ name: "ZEPTO", country: null }] };
+    expect(applicantMatch(jp, { name: "Zepto", countries: ["India"] })).toBe("epo_applicant_other_country");
+    expect(applicantMatch({ ...jp, number: "IN202141000001A" }, { name: "Zepto", countries: ["India"] })).toBeNull();
+    expect(applicantMatch({ ...jp, number: "WO2024000001A1" }, { name: "Zepto", countries: ["India"] })).toBeNull();
+  });
 });
+

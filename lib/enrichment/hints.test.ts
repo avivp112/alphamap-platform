@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hintFromRound, hintQueries, confirmHint, hintKey, amountWords, hintsFromDeletedRounds, type RoundHint } from "./hints";
+import { hintFromRound, hintQueries, confirmHint, hintKey, amountWords, hintsFromDeletedRounds, canConfirm, type RoundHint } from "./hints";
 import { buildLabeledSources } from "./sources";
 
 const darkowl: RoundHint = {
@@ -81,3 +81,20 @@ describe("the rounds the 2026-10-28 cleanup deleted become hints (owner, 2026-10
     expect(hintsFromDeletedRounds(changes).map((h) => [h.startup_id, h.round_type, h.amount_raised])).toEqual([["darkowl", "Growth", 8_000_000], ["apify", "Seed", 160_000]]);
   });
 });
+
+describe("only a primary source confirms a hint (eval run of 2026-10-29)", () => {
+  const sources = (url: string, text: string) => buildLabeledSources([{ url, title: "", content: text, provider: "serper", query_label: "hint_raise" }], "ssi.inc");
+  it("an Instagram or Facebook post confirms nothing — SSI's '$2B Series A', Zepto's $350M", () => {
+    const ssi: RoundHint = { round_type: "Series A", amount_raised: 2_000_000_000, announcement_date: null, lead_investor: null, source_url: "https://tracxn.com/d/companies/ssi" };
+    expect(confirmHint(ssi, sources("https://www.instagram.com/p/DIbhIebiJqm/", "Safe Superintelligence raises $2 billion in Series A funding."), "Safe Superintelligence Inc.")).toBeNull();
+    const zepto: RoundHint = { round_type: "Growth", amount_raised: 350_000_000, announcement_date: null, lead_investor: null, source_url: "https://tracxn.com/d/companies/zepto" };
+    expect(confirmHint(zepto, sources("https://www.facebook.com/SocialSamosa/posts/965807418907040/", "Zepto has raised $350 million in a fresh round."), "Zepto")).toBeNull();
+  });
+  it("a blog or a niche site outside the trusted outlets confirms nothing; the company's site, a press wire or a trusted outlet does", () => {
+    expect(canConfirm({ url: "https://everything-pr.com/mira-murati-thinking-machines-valuation", source_type: "news" })).toBe(false);
+    expect(canConfirm({ url: "https://www.cyera.com/blog/cheers-to-our-300-million-series-c-round", source_type: "company_site" })).toBe(true);
+    expect(canConfirm({ url: "https://www.prnewswire.com/news-releases/x.html", source_type: "press_release" })).toBe(true);
+    expect(canConfirm({ url: "https://www.calcalistech.com/ctechnews/article/1zb4tfyot", source_type: "news" })).toBe(true);
+  });
+});
+

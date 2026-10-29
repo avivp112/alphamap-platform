@@ -292,7 +292,11 @@ const canonType = (t: string) => t.toLowerCase().replace(/[^a-z0-9]/g, "");
  * Pairs of output rounds that are one real round written twice: the same type
  * within 9 months, or the same amount (±10%) within 9 months.
  */
-export function duplicateRounds(rounds: PipelineOutput["rounds"]): Array<[number, number]> {
+export function duplicateRounds(rounds: PipelineOutput["rounds"], golden?: GoldenCompany): Array<[number, number]> {
+  // Two rounds the golden set holds as two real rounds are not one written twice
+  // (Apex's $200M Series C, D and Growth, five months apart — eval run 2026-10-29).
+  const matchedTo = new Map<number, GoldenRound>();
+  for (const [gr, i] of matchRounds((golden?.funding_rounds ?? []).filter((r) => r.confidence !== "unknown"), rounds)) matchedTo.set(i, gr);
   const pairs: Array<[number, number]> = [];
   for (let i = 0; i < rounds.length; i++) {
     for (let j = i + 1; j < rounds.length; j++) {
@@ -303,7 +307,7 @@ export function duplicateRounds(rounds: PipelineOutput["rounds"]): Array<[number
       const sameType = canonType(a.round_type) === canonType(b.round_type) && canonType(a.round_type) !== "other";
       const sameAmount = a.amount_raised != null && b.amount_raised != null && a.amount_raised > 0
         && Math.abs(a.amount_raised - b.amount_raised) / Math.max(a.amount_raised, b.amount_raised) <= 0.1;
-      if (sameType || sameAmount) pairs.push([i, j]);
+      if ((sameType || sameAmount) && !(matchedTo.has(i) && matchedTo.has(j) && matchedTo.get(i) !== matchedTo.get(j))) pairs.push([i, j]);
     }
   }
   return pairs;

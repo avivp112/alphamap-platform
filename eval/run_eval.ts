@@ -246,7 +246,7 @@ async function main() {
     // No output still counts: every golden value becomes "missing" (coverage drops, precision does not).
     const out: PipelineOutput = output ?? { city: null, country: null, founded_year: null, founders: [], rounds: [], employee_range: null, arr_usd: null };
     const fields = scoreCompany(board, company, out);
-    const dups = duplicateRounds(out.rounds);
+    const dups = duplicateRounds(out.rounds, company);
     const afterRound = foundedAfterFirstRound(out);
     if (fields.city === "wrong" || fields.country === "wrong") locationMismatches++;
     duplicates += dups.length;

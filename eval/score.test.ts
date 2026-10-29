@@ -150,3 +150,22 @@ describe("what the hints added (owner, 2026-10-28)", () => {
     })).toEqual({ confirmed: 1, confirmed_matching_golden: 1, kept: 1, kept_matching_golden: 0 });
   });
 });
+
+describe("a duplicate is one round written twice, not two real rounds (eval run of 2026-10-29)", () => {
+  it("Apex's three $200M rounds, each matching its own golden round, are not duplicates", () => {
+    const apexGolden: GoldenCompany = { id: "apex", name: "Apex", funding_rounds: [
+      { type: "Series C", amount_usd: 200_000_000, date: "2025-04", confidence: "verified" },
+      { type: "Series D", amount_usd: 200_000_000, date: "2025-09", confidence: "verified" },
+      { type: "Growth", amount_usd: 200_000_000, date: "2026-06-05", confidence: "verified" },
+    ] };
+    const rounds = [
+      { round_type: "Series E", amount_raised: 200_000_000, date: "2026-06-05" },
+      { round_type: "Series D", amount_raised: 200_000_000, date: "2025-09-12" },
+      { round_type: "Series C", amount_raised: 200_000_000, date: "2025-04-28" },
+    ];
+    expect(duplicateRounds(rounds)).toHaveLength(2);
+    expect(duplicateRounds(rounds, apexGolden)).toEqual([]);
+    expect(duplicateRounds([...rounds, { round_type: "Series D", amount_raised: 200_000_000, date: "2025-10-01" }], apexGolden)).not.toEqual([]);
+  });
+});
+

@@ -17,6 +17,7 @@
 
 import { namesCompany } from "./headcount";
 import { samePersonName } from "./linkedin";
+import { MAJOR_CITIES } from "./majorCities";
 
 const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "");
 const NAME_RE = /^[A-Z][\p{L}'’.-]*(?:\s+[A-Z][\p{L}'’.-]*){1,3}$/u;
@@ -50,12 +51,29 @@ function namesAfterBy(rest: string): string[] {
   // B, raised $8M ... angel investors C, D" are A and B — not C and D
   // (huskeys.io, 2026-10-18: a missed sentence break made the angels founders).
   const names: string[] = [];
-  for (const part of list.split(/,\s*(?:and\s+)?|\s+and\s+|\s*&\s*/)) {
-    const name = cleanPersonName(part.trim().replace(/[.,]+$/, ""));
+  for (const raw of list.split(/,\s*(?:and\s+)?|\s+and\s+|\s*&\s*/)) {
+    let part = raw.trim().replace(/[.,]+$/, "");
+    // "Cyberstarts' Gili Raanan": someone of another organisation (an investor's
+    // partner), named in passing — not a founder (eval run, 2026-10-29).
+    if (/^\p{Lu}[\p{L}\d.&-]*['’]s?\s+\p{Lu}/u.test(part)) continue;
+    // "OpenAI CTO Mira Murati": a role at another organisation in front of the name.
+    part = part.replace(ORG_ROLE_PREFIX_RE, "");
+    const name = cleanPersonName(part);
+    // "…founded by A and B, Los Angeles": a place after the names, not a person (Apex, 2026-10-29).
+    if (isPlaceName(name)) continue;
     if (!looksLikePersonName(name)) break;
     names.push(name);
   }
   return names.slice(0, 5);
+}
+
+// "former OpenAI CTO", "Google DeepMind researcher": an organisation and a role in front of a name.
+const ORG_ROLE_PREFIX_RE = /^(?:(?:former|ex-?)\s+)?(?:\p{Lu}[\p{L}\d.&-]*\s+){1,3}(?:ceo|cto|coo|cfo|cmo|cpo|chief \w+ officer|vp|head of \w+|researcher|engineer|executive|director|partner|founder|co-?founder)\s+(?=\p{Lu})/iu;
+
+/** A city name ("Los Angeles", "San Francisco"), never a person. */
+function isPlaceName(name: string): boolean {
+  const n = name.trim().toLowerCase();
+  return MAJOR_CITIES.has(n) || /^(new york|silicon valley|bay area|tel aviv|london|berlin|paris)\b/.test(n);
 }
 
 // A role or relation written in front of a name: "CEO Adi Tatarko",

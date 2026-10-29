@@ -152,6 +152,13 @@ export function applicantMatch(pub: EpoPublication, company: CompanyIdentity): E
   const countries = (company.countries ?? []).filter((c): c is string => !!c);
   const tagged = named.filter((a) => a.country);
   if (countries.length && tagged.length && !tagged.some((a) => countries.some((c) => sameCountry(a.country!, c)))) return "epo_applicant_other_country";
+  // No country on the applicant: the office it was filed at must fit — the
+  // company's own country, or the US / European / international (PCT) route.
+  // Zepto (India) got five Japanese publications of a Japanese "ZEPTO" (eval run, 2026-10-29).
+  if (countries.length && !tagged.length) {
+    const office = pub.number.slice(0, 2).toUpperCase();
+    if (!["US", "EP", "WO"].includes(office) && !countries.some((c) => sameCountry(office, c))) return "epo_applicant_other_country";
+  }
   return null;
 }
 

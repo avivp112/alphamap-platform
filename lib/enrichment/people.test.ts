@@ -65,3 +65,16 @@ describe("isLeadershipRole — a leader needs a real role (BETA, 2026-10-26)", (
     }
   });
 });
+
+describe("founders read from 'founded by' snippets (eval run of 2026-10-29)", () => {
+  it("a place after the names is not a founder — Apex's 'Los Angeles'", () => {
+    expect(foundersFromText("Apex was founded by Ian Cinnamon and Max Benassi, Los Angeles, Calif.", "Apex").map((f) => f.name)).toEqual(["Ian Cinnamon", "Max Benassi"]);
+  });
+  it("a role at another company in front of the name is dropped — 'OpenAI CTO Mira Murati' is Mira Murati", () => {
+    expect(foundersFromText("Thinking Machines Lab was founded by former OpenAI CTO Mira Murati, San Francisco.", "Thinking Machines Lab").map((f) => f.name)).toEqual(["Mira Murati"]);
+  });
+  it("someone of another organisation named in passing is not a founder — 'Cyberstarts' Gili Raanan'", () => {
+    expect(foundersFromText("Cyera was founded by Cyberstarts' Gili Raanan and Tamar Bar-Ilan.", "Cyera").map((f) => f.name)).toEqual(["Tamar Bar-Ilan"]);
+  });
+});
+
