@@ -116,3 +116,25 @@ export function confirmHint(h: RoundHint, sources: LabeledSource[], companyName:
   }
   return null;
 }
+
+/**
+ * Rounds a cleanup deleted because only a data platform stated them, as hints
+ * (owner, 2026-10-29): the legacy cleanup of 2026-10-28 removed DarkOwl's
+ * Dealroom "$8M Growth" and Apify's GetLatka seeds; as hints, the next
+ * enrichment searches for a primary source. A deleted acquisition / secondary
+ * row is not a hint — it was deleted because no source states it at all.
+ */
+export function hintsFromDeletedRounds(changes: Array<{ startup_id: string; field: string; old_value: unknown; new_value: unknown }>): Array<RoundHint & { startup_id: string }> {
+  const out: Array<RoundHint & { startup_id: string }> = [];
+  for (const c of changes) {
+    if (!/^funding_rounds\.[^.]+$/.test(c.field) || c.new_value != null || !c.old_value) continue;
+    const r = c.old_value as { round_type?: string | null; amount_raised?: number | null; announcement_date?: string | null; lead_investor?: string | null; source_url?: string | null };
+    if (!r.source_url || classifySourceType(r.source_url) !== "aggregator_snippet") continue;
+    if (/^(acquired|secondary|pe buyout|ipo)$/i.test(r.round_type ?? "")) continue;
+    out.push({
+      startup_id: c.startup_id, round_type: r.round_type ?? null, amount_raised: r.amount_raised ?? null,
+      announcement_date: r.announcement_date ?? null, lead_investor: r.lead_investor ?? null, source_url: r.source_url,
+    });
+  }
+  return out;
+}

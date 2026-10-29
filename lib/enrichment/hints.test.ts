@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hintFromRound, hintQueries, confirmHint, hintKey, amountWords, type RoundHint } from "./hints";
+import { hintFromRound, hintQueries, confirmHint, hintKey, amountWords, hintsFromDeletedRounds, type RoundHint } from "./hints";
 import { buildLabeledSources } from "./sources";
 
 const darkowl: RoundHint = {
@@ -66,5 +66,18 @@ describe("a data platform's round is a hint to search for, never a fact (owner, 
   it("one key per round: the amount and the month", () => {
     expect(hintKey(darkowl)).toBe("round:8000000:2024-05:");
     expect(hintKey({ ...darkowl, announcement_date: "2024-05-20" })).toBe(hintKey(darkowl));
+  });
+});
+
+describe("the rounds the 2026-10-28 cleanup deleted become hints (owner, 2026-10-29)", () => {
+  it("DarkOwl's Dealroom round and Apify's GetLatka seed become hints; the deleted Acquired / Secondary rows do not", () => {
+    const changes = [
+      { startup_id: "darkowl", field: "funding_rounds.r1", new_value: null, old_value: { round_type: "Growth", amount_raised: 8_000_000, announcement_date: null, lead_investor: "Five Elms Capital", source_url: "https://app.dealroom.co/news/note/darkowl-closes-8m-growth-round-led-by-five-elms-capital" } },
+      { startup_id: "apify", field: "funding_rounds.r2", new_value: null, old_value: { round_type: "Seed", amount_raised: 160_000, source_url: "https://getlatka.com/companies/apify" } },
+      { startup_id: "darkowl", field: "funding_rounds.r3", new_value: null, old_value: { round_type: "Acquired", source_url: "https://www.darkowl.com/press-releases/darkowl-purchases-certain-assets-of-skurio-ltd" } },
+      { startup_id: "actian", field: "funding_rounds.r4", new_value: null, old_value: { round_type: "Secondary", amount_raised: 150_000_000, source_url: "https://en.wikipedia.org/wiki/Actian" } },
+      { startup_id: "biotia", field: "funding_rounds.r5.round_type", new_value: "Unknown", old_value: "Growth" },
+    ];
+    expect(hintsFromDeletedRounds(changes).map((h) => [h.startup_id, h.round_type, h.amount_raised])).toEqual([["darkowl", "Growth", 8_000_000], ["apify", "Seed", 160_000]]);
   });
 });
