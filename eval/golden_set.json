@@ -513,7 +513,9 @@
       },
       "competitors": {
         "names": [],
-        "not_competitors": [],
+        "not_competitors": [
+          "Amazon"
+        ],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
       }
@@ -1365,10 +1367,15 @@
         "notes": "Not yet listed despite SEBI IPO approval — see ipo_status."
       },
       "competitors": {
-        "names": [],
+        "names": [
+          "Blinkit"
+        ],
         "not_competitors": [],
         "confidence": "verified",
-        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts.",
+        "source_urls": [
+          "https://www.reuters.com/world/india/indian-grocery-startup-zepto-raises-new-funds-900-million-valuation-2022-05-02/"
+        ]
       }
     },
     {
@@ -1993,10 +2000,16 @@
         }
       ],
       "competitors": {
-        "names": [],
+        "names": [
+          "OpsLevel",
+          "Compass"
+        ],
         "not_competitors": [],
         "confidence": "verified",
-        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts.",
+        "source_urls": [
+          "https://www.port.io/glossary/developer-experience"
+        ]
       },
       "review_request": "hq_not_declared (owner, 2026-11-01): city/country = a headquarters the company declares on its site or in its own release; none here, so empty is correct. offices = the offices its site lists. founding_country unchanged. Owner to confirm.",
       "offices": [],
@@ -2369,10 +2382,15 @@
         "notes": "Company release: 2025 ARR 'surpassed $350 million'. Globes: $250M at end of 2024."
       },
       "competitors": {
-        "names": [],
+        "names": [
+          "Fortinet"
+        ],
         "not_competitors": [],
         "confidence": "verified",
-        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts.",
+        "source_urls": [
+          "https://www.catonetworks.com/blog/the-pop-smackdown-cato-vs-competitorswhich-will-dominate-your-network/"
+        ]
       }
     },
     {
@@ -2484,10 +2502,15 @@
         }
       ],
       "competitors": {
-        "names": [],
+        "names": [
+          "Wiz"
+        ],
         "not_competitors": [],
         "confidence": "verified",
-        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts.",
+        "source_urls": [
+          "https://www.upwind.io/feed/upwind-wins-big-at-cloud-security-showdown-hosted-by-tamnoon-analyst-james-berthoty"
+        ]
       }
     },
     {
@@ -2584,10 +2607,17 @@
         }
       ],
       "competitors": {
-        "names": [],
+        "names": [
+          "Datadog",
+          "New Relic",
+          "Splunk"
+        ],
         "not_competitors": [],
         "confidence": "verified",
-        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts.",
+        "source_urls": [
+          "https://techcrunch.com/2026/06/03/coralogix-raises-200m-in-race-to-build-the-monitoring-layer-for-ai-agents/"
+        ]
       }
     },
     {
@@ -2696,10 +2726,19 @@
         }
       ],
       "competitors": {
-        "names": [],
+        "names": [
+          "Rippling",
+          "BambooHR",
+          "Namely",
+          "Gusto",
+          "Workday"
+        ],
         "not_competitors": [],
         "confidence": "verified",
-        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts.",
+        "source_urls": [
+          "https://www.hibob.com/blog/hibob-vs-namely-vs-rippling/"
+        ]
       },
       "review_request": "dual_hq (owner, 2026-10-29): city/country = the HQ the company declares on its site or in an official release; founding_country = where it was founded / its R&D centre. Please confirm."
     },
@@ -2807,10 +2846,15 @@
         }
       ],
       "competitors": {
-        "names": [],
+        "names": [
+          "Zebra Medical Vision"
+        ],
         "not_competitors": [],
         "confidence": "verified",
-        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts.",
+        "source_urls": [
+          "https://venturebeat.com/ai/aidoc-raises-27-million-for-ai-head-chest-abdomen-and-spine-tests"
+        ]
       },
       "review_request": "hq_not_declared (owner, 2026-11-01): city/country = a headquarters the company declares on its site or in its own release; none here, so empty is correct. offices = the offices its site lists. founding_country unchanged. Owner to confirm.",
       "offices": [
@@ -3309,10 +3353,17 @@
         }
       ],
       "competitors": {
-        "names": [],
+        "names": [
+          "Anduril",
+          "Boeing"
+        ],
         "not_competitors": [],
         "confidence": "verified",
-        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts.",
+        "source_urls": [
+          "https://www.cnbc.com/2026/07/13/helsing-fund-raise-defense-18-billion.html",
+          "https://thenextweb.com/news/boeing-ghost-bat-upgrades-germany-helsing-drone"
+        ]
       }
     },
     {

@@ -71,7 +71,7 @@ export function isListingPage(source: Pick<LabeledSource, "url" | "title" | "sou
 export interface CompetitorClaim { name: string; source_id?: string; evidence_quote?: string }
 
 /** null when a primary source explicitly says the competitor competes with the company; otherwise why not. */
-export function competitorEvidenceProblem(c: CompetitorClaim, sources: LabeledSource[]): CompetitorEvidenceDrop | null {
+export function competitorEvidenceProblem(c: CompetitorClaim, sources: LabeledSource[], companyName?: string): CompetitorEvidenceDrop | null {
   if (!c.source_id || !c.evidence_quote?.trim()) return "competitor_no_evidence";
   const src = sources.find((s) => s.source_id === c.source_id);
   if (!src) return "competitor_no_evidence";
@@ -81,5 +81,18 @@ export function competitorEvidenceProblem(c: CompetitorClaim, sources: LabeledSo
   const quote = normalizeForMatch(c.evidence_quote);
   if (!normalizeForMatch(sourceText(src)).includes(quote)) return "competitor_quote_not_in_source";
   if (!` ${quote} `.includes(` ${coreName(c.name)} `) || !COMPETES.test(c.evidence_quote) || LISTING_WORDS.test(c.evidence_quote)) return "competitor_quote_not_explicit";
+  if (companyName && !quoteIsAboutTheCompany(c.evidence_quote, companyName, src.source_type === "company_site")) return "competitor_quote_not_explicit";
   return null;
+}
+
+/**
+ * The quote says the COMPANY competes (owner, 2026-11-01): Bolt's own blog
+ * "…competes with big names like Amazon" was about the merchants Bolt helps
+ * compete with Amazon, not Bolt. The quote names the company — or, on its
+ * own site, speaks as "we / our / us / let's" — and is not "helps … compete".
+ */
+export function quoteIsAboutTheCompany(quote: string, companyName: string | null, ownSite: boolean): boolean {
+  if (/\bhelp(?:s|ed|ing)?\b[^.]{0,60}\bcompete\b/i.test(quote)) return false;
+  if (companyName && ` ${normalizeForMatch(quote)} `.includes(` ${coreName(companyName)} `)) return true;
+  return ownSite && /\b(we|we're|our|us|let's|let us)\b/i.test(quote);
 }

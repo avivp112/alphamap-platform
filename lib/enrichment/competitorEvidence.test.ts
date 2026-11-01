@@ -69,3 +69,15 @@ describe("a competitor needs a primary source that says it competes (run of 2026
     expect(isListingPage({ url: "https://ghost.org/vs/substack/", title: "Ghost vs Substack", source_type: "company_site" })).toBe(false);
   });
 });
+
+describe("the quote says the COMPANY competes (owner, 2026-11-01: Bolt's blog '…competes with big names like Amazon' was about its merchants)", () => {
+  it("names the company, or speaks as 'we / let's' on its own site; never 'helps … compete'", async () => {
+    const { quoteIsAboutTheCompany } = await import("./competitorEvidence");
+    expect(quoteIsAboutTheCompany("competes with big names like Amazon", "Bolt", true)).toBe(false);
+    expect(quoteIsAboutTheCompany("Bolt helps independent retailers compete with Amazon", "Bolt", true)).toBe(false);
+    expect(quoteIsAboutTheCompany("Let's look at the competition—first, the heavyweight hardware contender, Fortinet.", "Cato Networks", true)).toBe(true);
+    expect(quoteIsAboutTheCompany("Rippling competes with HiBob, Namely, BambooHR, Gusto, and Workday in the HR space.", "HiBob", true)).toBe(true);
+    expect(quoteIsAboutTheCompany("Port vs Compass · Port vs Cortex · Port vs OpsLevel", "Port", true)).toBe(true);
+    expect(quoteIsAboutTheCompany("competes with big names like Amazon", "Bolt", false)).toBe(false);
+  });
+});

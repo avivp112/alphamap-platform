@@ -300,7 +300,7 @@ export function processMarketExtractionResponse(
     if (isAcquired(c.name)) { dropped.push({ field: "competitors", reason: "competitor_is_acquisition" }); return false; }
     if (!nameIsGrounded(c.name, c.source_ids, sources)) { dropped.push({ field: "competitors", reason: "competitor_not_in_source" }); return false; }
     // A primary source must say they compete — not a data platform's "similar companies" (competitorEvidence.ts).
-    const evidence = competitorEvidenceProblem(c, sources);
+    const evidence = competitorEvidenceProblem(c, sources, companyName);
     if (evidence) { dropped.push({ field: "competitors", reason: evidence }); return false; }
     // Its own explanation says partner, customer, investor or host platform (competitorRelation.ts).
     const relation = competitorRelation(c.name, c.how_it_competes, companyName);
