@@ -29,7 +29,7 @@ import { lookupEpoPatents, type CompanyIdentity, type EpoPatentResult } from "./
 import { hintFromRound, hintQueries, confirmHint, hintKey, type RoundHint } from "./hints.ts";
 import { detectGaps, buildDeepDiveQueries, hasNoFinancingRounds, type DeepDiveSection } from "./deepDive.ts";
 import {
-  groundRoundDetails, isUnstatedEvent, incompleteRound, rejectRound, roundSourceStandings, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
+  groundRoundDetails, isUnstatedEvent, incompleteRound, absorbAmountlessRounds, rejectRound, roundSourceStandings, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
   type ExistingRoundRef,
 } from "./assemble.ts";
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
@@ -847,6 +847,9 @@ export async function collectCompany(
   }
 
   // ── Stage 6: validation (city/country/founded_year/headcount/rounds) ──
+  // A no-amount round on the date of one with an amount is that round (assemble.ts).
+  const absorbed = absorbAmountlessRounds(newRoundLikes);
+  newRoundLikes.splice(0, newRoundLikes.length, ...absorbed);
   const roughPlan = planRoundWrites(existingRefs, newRoundLikes);
   const validation = validateEnrichment({
     existing: {

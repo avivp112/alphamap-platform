@@ -68,6 +68,7 @@ import {
 } from "../scripts/bulk_enrich_all.ts";
 import { collectCompany, newCollectStats } from "../lib/enrichment/collect.ts";
 import { componentStates } from "../lib/enrichment/components.ts";
+import { roundSourceStanding, hostOf } from "../lib/enrichment/roundSources.ts";
 import { loadSectorTaxonomy as loadV2Taxonomy, type SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { createSearchProviderState, searchCalls } from "../lib/enrichment/searchProviders.ts";
 import { openSearchCache } from "../lib/enrichment/searchCache.ts";
@@ -181,6 +182,14 @@ const COMPONENTS_LABEL = (process.env.V2_COMPONENTS ?? "").trim().toLowerCase().
 /** "2019-01-01" stated as a year → "2019"; as a month → "2019-11": the golden set's own partial-date form. */
 const datedAs = (date: string | null, precision: string | null | undefined) =>
   !date ? null : precision === "year" ? date.slice(0, 4) : precision === "month" ? date.slice(0, 7) : date;
+
+/** A source worth the owner's check: the company's own site, or an allowed outlet of tiers 1–3. */
+function reviewableSource(url: string | null | undefined, website: string | null | undefined): boolean {
+  if (!url) return false;
+  const domain = (website ?? "").replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0].toLowerCase();
+  const standing = roundSourceStanding(url, { isCompanySite: !!domain && (hostOf(url) === domain || !!hostOf(url)?.endsWith(`.${domain}`)) });
+  return standing.kind === "allowed" && standing.tier <= 3;
+}
 
 async function main() {
   await initV1Context();
@@ -345,6 +354,8 @@ async function main() {
     const matched = new Set(matchRounds(verified, out).map(([, i]) => i));
     out.forEach((r, i) => {
       if (matched.has(i) || unknown.some((u) => roundsDayGap(u, r) !== null) || isEvent(r.round_type)) return;
+      // Only rounds from the company's site or the press of tiers 1–3 (owner, 2026-11-01).
+      if (!reviewableSource(r.source_url, company.website)) return;
       roundsToReview.push({ company_id: company.id, company: company.name, round_type: r.round_type, amount_usd: r.amount_raised == null ? "" : String(r.amount_raised), date: r.date ?? "", lead_investor: r.lead_investor ?? "", source_url: r.source_url ?? "", mark: "" });
     });
   }
@@ -367,7 +378,9 @@ async function main() {
   if (roundsToReview.length) {
     const sheet = join(__dir, "review", "rounds_review.csv");
     mkdirSync(dirname(sheet), { recursive: true });
-    const existing = existsSync(sheet) ? parseCsv(readFileSync(sheet, "utf8")) : [];
+    // Rows already marked stay; unmarked ones from a source no longer allowed go.
+    const existing = (existsSync(sheet) ? parseCsv(readFileSync(sheet, "utf8")) : [])
+      .filter((r) => r.mark?.trim() || reviewableSource(r.source_url, companies.find((c) => c.id === r.company_id)?.website));
     const merged = mergeRows(existing, roundsToReview, roundKey);
     writeFileSync(sheet, toCsv(ROUND_COLUMNS, merged));
     console.log(`📝  ${merged.length - existing.length} round(s) to mark in eval/review/rounds_review.csv ("נכון" / "לא נכון"), then: npx tsx eval/import_review.ts`);

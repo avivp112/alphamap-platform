@@ -158,9 +158,38 @@ export function groundRoundType(round: V2Round, sources: LabeledSource[]): { rou
     if (named.length === 1) return { round_type: named[0], stated: true };
     return { round_type: type, stated: true };
   }
+  // The amount's own sentence or headline names another round: that one
+  // (owner, 2026-11-01 — Forbes' "Synthesia raises $50 million in Series B"
+  // was written "Seed", read off the platform's label or a "seed" nearby).
+  if ((NAMED_LABELS as readonly string[]).includes(type)) {
+    const named = statedRoundLabels(amountSentenceAndHeadline(round, byId));
+    if (named.length === 1 && named[0] !== type) return { round_type: named[0], stated: true };
+  }
   const re = TYPE_STATED[type];
   if (!re) return { round_type: type, stated: true };
   return re.test(roundTypeEvidence(round, byId)) ? { round_type: type, stated: true } : { round_type: "Unknown", stated: false };
+}
+
+/**
+ * A round with no amount on the same date (±31 days) as one with an amount is
+ * that round, not another (owner, 2026-11-01: Sarvam got "Seed $41M" and
+ * "Series A, no amount", both 2023-12-07). It is folded in: its named type
+ * replaces a generic one, its lead / investors fill what is missing.
+ */
+export function absorbAmountlessRounds(rounds: RoundLike[]): RoundLike[] {
+  const out = rounds.map((r) => ({ ...r }));
+  const gone = new Set<number>();
+  out.forEach((r, i) => {
+    if (r.amount_raised != null || !r.announcement_date) return;
+    const j = out.findIndex((o, k) => k !== i && !gone.has(k) && o.amount_raised != null && (daysApart(o.announcement_date, r.announcement_date) ?? 99) <= 31);
+    if (j < 0) return;
+    const t = out[j];
+    if (GENERIC_TYPES.has(normalizeRoundType(t.round_type)) && !GENERIC_TYPES.has(normalizeRoundType(r.round_type))) t.round_type = r.round_type;
+    if (!t.lead_investor && r.lead_investor) t.lead_investor = r.lead_investor;
+    if (!t.other_investors?.length && r.other_investors?.length) t.other_investors = r.other_investors;
+    gone.add(i);
+  });
+  return out.filter((_, i) => !gone.has(i));
 }
 
 // A valuation's quote must call the figure a valuation — "bringing total

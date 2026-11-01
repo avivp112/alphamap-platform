@@ -249,3 +249,28 @@ describe("an untyped round takes the one label its own sentence or headline name
     expect(statedRoundLabels("a $2M pre-seed round")).toEqual(["Pre-Seed"]);
   });
 });
+
+describe("the type the amount's own sentence or headline names wins (Synthesia, eval of 2026-11-01)", () => {
+  it("'Seed' read near the figure becomes the headline's 'Series B'", async () => {
+    const { groundRoundType } = await import("./assemble");
+    const { buildLabeledSources } = await import("./sources");
+    const sources = buildLabeledSources([{ url: "https://www.forbes.com/sites/x/2021/12/08/synthesia", title: "AI Video Platform Synthesia Raises $50 Million In Series B",
+      content: "After a seed round in 2019, the company grew fast. Synthesia has raised $50 million led by Kleiner Perkins and GV.", provider: "serper", query_label: "hint_raise" }]);
+    expect(groundRoundType({ round_type: "Seed", amount_raised: { value: 50_000_000, source_id: "S1", evidence_quote: "Synthesia has raised $50 million led by Kleiner Perkins and GV" } }, sources).round_type).toBe("Series B");
+  });
+});
+
+describe("a no-amount round on the date of one with an amount is that round (Sarvam, eval of 2026-11-01)", () => {
+  it("folds in: named type over generic, lead filled", async () => {
+    const { absorbAmountlessRounds } = await import("./assemble");
+    const out = absorbAmountlessRounds([
+      { round_type: "Other", amount_raised: 41_000_000, announcement_date: "2023-12-07" },
+      { round_type: "Series A", amount_raised: null, announcement_date: "2023-12-07", lead_investor: "Lightspeed" },
+      { round_type: "Series B", amount_raised: null, announcement_date: "2025-03-01", lead_investor: "Nvidia" },
+    ]);
+    expect(out).toEqual([
+      { round_type: "Series A", amount_raised: 41_000_000, announcement_date: "2023-12-07", lead_investor: "Lightspeed" },
+      { round_type: "Series B", amount_raised: null, announcement_date: "2025-03-01", lead_investor: "Nvidia" },
+    ]);
+  });
+});
