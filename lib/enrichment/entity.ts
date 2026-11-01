@@ -76,6 +76,16 @@ export interface EntityAnchors {
    * organisation word after the name in a result's title marks a namesake.
    */
   ownQualifiers?: string[];
+  /**
+   * Set when none of this company's results was a namesake (namesakeSeen):
+   * the full name with its suffix ("Mistral AI") then names this company.
+   */
+  fullNameTrusted?: boolean;
+}
+
+/** True when a verdict was a namesake company: then "<Name> AI" in the press may be that company. */
+export function isNamesakeDrop(reason: EntityDropReason | undefined): boolean {
+  return reason === "namesake_domain" || reason === "namesake_profile" || reason === "namesake_qualified_name";
 }
 
 // Generic web/business vocabulary that says nothing about which company a
@@ -202,7 +212,7 @@ export interface SearchResultLike {
   snippet?: string;
 }
 
-export type EntityMatchKind = "domain_url" | "domain_mention" | "founder_mention" | "verified_profile_url" | "identity_keywords" | "distinctive_name";
+export type EntityMatchKind = "domain_url" | "domain_mention" | "founder_mention" | "verified_profile_url" | "identity_keywords" | "full_name_mention" | "distinctive_name";
 export type EntityDropReason =
   | "not_distinctive_name" | "country_contradiction" | "no_entity_match" | "namesake_domain" | "namesake_profile"
   | "name_not_mentioned" | "namesake_qualified_name" | "multi_company_page";
@@ -328,6 +338,15 @@ export function filterByEntity(
     }
   }
 
+  // The full name with its suffix, written as one phrase, names this company
+  // even when the bare word is a dictionary word (owner, 2026-11-01: "Mistral
+  // AI raises..." was dropped as the wind — 61 of 71 results) — but only when
+  // no namesake company surfaced in this company's results: the press calls
+  // Glean (glean.com) "Glean AI" too, and Glean AI got its valuation.
+  if (anchors.fullNameTrusted && !isDistinctiveName(companyName) && fullNameWithSuffix(companyName) && mentionsPhrase(text, companyName)) {
+    return { kept: true, matched: "full_name_mention" };
+  }
+
   // No positive anchor match — fall back to "is the bare name specific
   // enough to trust on its own".
   if (!isDistinctiveName(companyName)) {
@@ -379,4 +398,16 @@ export function filterResultsByEntity(
     else dropped.push({ result, drop_reason: verdict.drop_reason ?? "no_entity_match" });
   }
   return { kept, dropped, status: kept.length < 2 ? "low_evidence" : "ok" };
+}
+
+/** "Mistral AI", "Black Forest Labs": a name that carries a suffix (AI, Labs, Technologies ...) beside a root of 4+ letters. */
+function fullNameWithSuffix(name: string): boolean {
+  const stripped = name.trim().replace(SUFFIXES_TO_STRIP, "").replace(/\s+/g, " ").trim();
+  return stripped.length >= 4 && stripped.toLowerCase() !== name.trim().toLowerCase().replace(/[.,]+$/, "");
+}
+
+/** The whole name as one phrase, on word boundaries ("mistral ai", not "mistral air"). */
+function mentionsPhrase(text: string, name: string): boolean {
+  const phrase = name.trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${phrase}($|[^\\p{L}\\p{N}])`, "u").test(text);
 }

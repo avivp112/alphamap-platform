@@ -238,3 +238,14 @@ describe("an untyped figure its source calls debt is debt (Celonis' $600M credit
     expect(r.round_type).toBe("Debt");
   });
 });
+
+describe("an untyped round takes the one label its own sentence or headline names (Sarvam, Synthesia, eval of 2026-11-01)", () => {
+  it("'Other' becomes Series A from the sentence; two labels in the sentence stay Other", async () => {
+    const { groundRoundType, statedRoundLabels } = await import("./assemble");
+    const { buildLabeledSources } = await import("./sources");
+    const sources = buildLabeledSources([{ url: "https://inc42.com/buzz/sarvam", title: "Sarvam AI Raises $41 Mn In Series A Funding", content: "Bengaluru-based Sarvam AI has raised $41 million led by Lightspeed. The startup was founded in 2023.", provider: "serper", query_label: "funding" }]);
+    expect(groundRoundType({ round_type: "Other", amount_raised: { value: 41_000_000, source_id: "S1", evidence_quote: "Sarvam AI has raised $41 million led by Lightspeed" } }, sources).round_type).toBe("Series A");
+    expect(statedRoundLabels("after its Seed, the company raised a Series A")).toEqual(["Seed", "Series A"]);
+    expect(statedRoundLabels("a $2M pre-seed round")).toEqual(["Pre-Seed"]);
+  });
+});

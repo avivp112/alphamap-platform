@@ -92,6 +92,32 @@ function roundTypeEvidence(round: V2Round, byId: Map<string, LabeledSource>): st
   return parts.join("\n");
 }
 
+const NAMED_LABELS = ["Pre-Seed", "Seed", "Series A", "Series B", "Series C", "Series D", "Series E", "Series F+", "Growth"] as const;
+
+/** The round labels a text names ("Pre-Seed" is not also "Seed"). */
+export function statedRoundLabels(text: string): string[] {
+  const found = NAMED_LABELS.filter((l) => TYPE_STATED[l]!.test(text));
+  return found.includes("Pre-Seed") ? found.filter((l) => l !== "Seed") : [...found];
+}
+
+/** The sentence its amount quote sits in, and a headline of the same source that reports the amount. */
+function amountSentenceAndHeadline(round: V2Round, byId: Map<string, LabeledSource>): string {
+  const ev = round.amount_raised;
+  if (!ev?.evidence_quote) return "";
+  const src = ev.source_id ? byId.get(ev.source_id) : undefined;
+  const parts = [ev.evidence_quote];
+  if (src) {
+    const at = src.content.indexOf(ev.evidence_quote.slice(0, 40));
+    if (at >= 0) {
+      const start = Math.max(src.content.lastIndexOf(". ", at) + 1, src.content.lastIndexOf("\n", at) + 1, 0);
+      const ends = [". ", "\n"].map((d) => src.content.indexOf(d, at + ev.evidence_quote.length)).filter((i) => i >= 0);
+      parts.push(src.content.slice(start, ends.length ? Math.min(...ends) + 1 : undefined));
+    }
+    if (src.title && extractNumbersFromText(src.title).some((n) => Math.abs(n - ev.value) / ev.value < 0.01)) parts.push(src.title);
+  }
+  return parts.join("\n");
+}
+
 /** True when a debt word sits right beside the figure: "$600 million credit facility", "a debt facility of $600M". */
 export function debtNextToAmount(text: string, amount: number): boolean {
   for (const m of text.matchAll(/(\d[\d,]*\.?\d*)\s*(thousand|million|billion|mn|bn|k|m|b)?\b/gi)) {
@@ -124,7 +150,14 @@ export function groundRoundType(round: V2Round, sources: LabeledSource[]): { rou
   if ((type === "Unknown" || type === "Other") && round.amount_raised?.value != null && debtNextToAmount(roundTypeEvidence(round, byId), round.amount_raised.value)) {
     return { round_type: /\bventure debt\b/i.test(roundTypeEvidence(round, byId)) ? "Venture Debt" : "Debt", stated: true };
   }
-  if (type === "Unknown" || type === "Other") return { round_type: type, stated: true };
+  // The model left the type out, but the amount's own sentence or a headline
+  // reporting this amount names exactly one round (owner, 2026-11-01:
+  // Sarvam's "Series A", Synthesia's "Series B" came out "Other").
+  if (type === "Unknown" || type === "Other") {
+    const named = statedRoundLabels(amountSentenceAndHeadline(round, byId));
+    if (named.length === 1) return { round_type: named[0], stated: true };
+    return { round_type: type, stated: true };
+  }
   const re = TYPE_STATED[type];
   if (!re) return { round_type: type, stated: true };
   return re.test(roundTypeEvidence(round, byId)) ? { round_type: type, stated: true } : { round_type: "Unknown", stated: false };

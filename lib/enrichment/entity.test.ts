@@ -182,3 +182,22 @@ describe("filterResultsByEntity", () => {
     expect(out.status).toBe("ok");
   });
 });
+
+describe("the full name with its suffix names the company (Mistral AI, eval of 2026-11-01: 61 of 71 results dropped as the wind)", () => {
+  it("'Mistral AI raises' is kept; a bare 'mistral' is not; a namesake domain still is not", async () => {
+    const { filterByEntity } = await import("./entity");
+    const a = { domain: "mistral.ai", identityKeywords: ["frontier", "models", "open-weight"], fullNameTrusted: true };
+    expect(filterByEntity({ url: "https://techcrunch.com/2024/06/11/mistral", title: "Paris-based Mistral AI raises $640M", snippet: "Mistral AI, the French startup, raised $640 million in a Series B." }, a, "Mistral AI").kept).toBe(true);
+    expect(filterByEntity({ url: "https://weather.example/mistral", title: "The mistral wind returns", snippet: "A strong mistral blew across Provence." }, a, "Mistral AI").kept).toBe(false);
+    expect(filterByEntity({ url: "https://news.example/x", title: "Mistral Air expands routes", snippet: "Mistral Air, the Italian airline" }, a, "Mistral AI").kept).toBe(false);
+  });
+});
+
+describe("…but not once a namesake surfaced (Glean AI / Glean)", () => {
+  it("without fullNameTrusted the full name alone is not enough", async () => {
+    const { filterByEntity, isNamesakeDrop } = await import("./entity");
+    expect(filterByEntity({ url: "https://x.com/a", snippet: "Glean AI brings intelligence to your drive" }, {}, "Glean AI").kept).toBe(false);
+    expect(isNamesakeDrop("namesake_domain")).toBe(true);
+    expect(isNamesakeDrop("not_distinctive_name")).toBe(false);
+  });
+});

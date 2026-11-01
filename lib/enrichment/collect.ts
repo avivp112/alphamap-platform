@@ -20,7 +20,7 @@ import {
   verifyDomainMatch, webSearch, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, fetchArticleTexts,
   searchMostlyFailed, type SearchProviderState,
 } from "./searchProviders.ts";
-import { filterByEntity, deriveIdentityKeywords, nameQualifiersOnOwnSite, type EntityAnchors } from "./entity.ts";
+import { filterByEntity, deriveIdentityKeywords, nameQualifiersOnOwnSite, isNamesakeDrop, type EntityAnchors } from "./entity.ts";
 import { buildLabeledSources, mergeDuplicateResults, classifySourceType, type RawSearchResult, type LabeledSource } from "./sources.ts";
 import { extractProfile, type SectorTaxonomy } from "./extractProfile.ts";
 import { extractFunding, roundToRoundLike, type V2Round } from "./extractFunding.ts";
@@ -380,6 +380,8 @@ export async function collectCompany(
     filterByEntity({ url: r.url, title: r.title, snippet: r.content }, a, row.name).kept;
 
   const searchOnly = allRaw.filter((r) => !isWebsiteResult(r));
+  // The full name ("Mistral AI") is trusted only when no namesake surfaced (entity.ts).
+  anchors.fullNameTrusted = !searchOnly.some((r) => isNamesakeDrop(filterByEntity({ url: r.url, title: r.title, snippet: r.content }, anchors, row.name).drop_reason));
   const kept = searchOnly.filter((r) => passesEntity(r, anchors));
   // Website pages are never entity-filtered — fetched from the company's
   // own domain, so there's no "wrong company" risk.
