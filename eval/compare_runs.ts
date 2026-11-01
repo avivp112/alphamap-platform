@@ -39,21 +39,23 @@ console.log(`B: ${bPath}\n   components on: ${on(b)}\n`);
 // results and model answers vary between runs on their own.
 const NOISE_COMPANIES = 2;
 const num = (p: string | undefined) => (p == null || !/\d/.test(p) ? null : parseFloat(p));
-const changedCompanies = (field: string) => Object.keys(b.per_company).filter((id) => {
-  const fa = a.per_company[id]?.fields?.[field], fb = b.per_company[id]?.fields?.[field];
-  return fa !== fb && !(fa == null && fb == null);
-});
+// Precision falls only where B wrote something wrong that A did not: a
+// company going from "missing" to "correct" is coverage, not a precision
+// change — the noise test counts the companies that turned wrong.
+const turnedWrong = (field: string) => Object.keys(b.per_company).filter((id) =>
+  b.per_company[id]?.fields?.[field] === "wrong" && a.per_company[id]?.fields?.[field] !== "wrong");
+const turnedRight = (field: string) => Object.keys(b.per_company).filter((id) =>
+  a.per_company[id]?.fields?.[field] === "wrong" && b.per_company[id]?.fields?.[field] !== "wrong");
 const worseFields: string[] = [];
 console.log(`${"field".padEnd(16)}${"precision A → B".padEnd(20)}${"coverage A → B".padEnd(20)}${"scored".padEnd(10)}verdict`);
 for (const field of Object.keys(b.fields)) {
   const fa = a.fields[field], fb = b.fields[field];
   const pa = num(fa?.precision), pb = num(fb.precision);
-  const changed = changedCompanies(field);
   let verdict = "";
   if (pa != null && pb != null && pb !== pa) {
-    verdict = pb < pa ? "worse" : "better";
+    const moved = pb < pa ? turnedWrong(field) : turnedRight(field);
+    verdict = `${pb < pa ? "worse" : "better"} (${moved.length} compan${moved.length === 1 ? "y" : "ies"} turned ${pb < pa ? "wrong" : "right"}${moved.length ? `: ${moved.join(", ")}` : ""}${moved.length <= NOISE_COMPANIES ? " — possible noise" : ""})`;
     if (pb < pa) worseFields.push(field);
-    verdict += ` (${changed.length} compan${changed.length === 1 ? "y" : "ies"} changed${changed.length <= NOISE_COMPANIES ? " — possible noise" : ""})`;
   }
   console.log(`${field.padEnd(16)}${`${fa?.precision ?? "—"} → ${fb.precision}`.padEnd(20)}${`${fa?.coverage ?? "—"} → ${fb.coverage}`.padEnd(20)}${`${fa?.scored ?? "—"} / ${fb.scored}`.padEnd(10)}${verdict}`);
 }
