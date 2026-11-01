@@ -41,6 +41,8 @@ import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePerso
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
 import { validateEnrichment, checkNarratives } from "./validation.ts";
+import { hqStatementsIn, decideHeadquarters, statementKind, articleDate, countryOfCity } from "./headquarters.ts";
+import { countryFromLocationQuote } from "./location.ts";
 import type { VerifiedFact } from "./narrative.ts";
 import { computeTotalRaised, normalizeRoundType, type RoundLike } from "./rounds.ts";
 import { computeFieldConfidence } from "./confidence.ts";
@@ -805,6 +807,39 @@ export async function collectCompany(
   });
 
   ctx.onStage?.("validating");
+  // ── Headquarters: the company's own declaration, else the latest in the
+  // press of tiers 1–3; press of the last two years that disagrees leaves it
+  // empty and both cities become offices (headquarters.ts, owner 2026-11-01).
+  {
+    const statements = allSources.flatMap((s) => hqStatementsIn(s, row.name));
+    const mc = profile.profile.city;
+    const mcSource = mc ? sourceById.get(mc.source_id) : undefined;
+    const mcKind = mcSource ? statementKind(mcSource) : null;
+    if (mc && mcSource && mcKind && /\b(headquarter(?:s|ed)?|hq|head office|based in|-based)\b/i.test(mc.evidence_quote) && !statements.some((s) => s.city.toLowerCase() === mc.value.toLowerCase() && s.source_id === mc.source_id)) {
+      statements.push({ city: mc.value, quote: mc.evidence_quote, source_id: mc.source_id, url: mcSource.url, kind: mcKind, date: mcKind === "company" && mcSource.source_type === "company_site" ? null : articleDate(mcSource) });
+    }
+    const hq = decideHeadquarters(statements);
+    if (hq.kind === "declared") {
+      const st = hq.statement;
+      const sameAsModel = !!mc && mc.value.toLowerCase() === st.city.toLowerCase();
+      const country = sameAsModel && profile.profile.country && profile.profile.country.evidence_quote === mc!.evidence_quote
+        ? profile.profile.country
+        : (() => { const c = countryFromLocationQuote(st.quote, st.city) ?? countryOfCity(st.city); return c ? { value: c, source_id: st.source_id, evidence_quote: st.quote } : undefined; })();
+      if (!sameAsModel) console.log(`    🏢  Headquarters ${st.city} — ${st.kind === "company" ? "the company's own declaration" : `the latest press declaration (${st.date ?? "undated"})`}: ${st.url}`);
+      profile.profile.city = sameAsModel ? mc : { value: st.city, source_id: st.source_id, evidence_quote: st.quote };
+      profile.profile.country = country;
+    } else if (hq.kind === "conflict") {
+      console.log(`    🏢  Headquarters left empty — the press of the last two years disagrees: ${hq.cities.map((c) => `${c.city} (${c.url})`).join(" vs ")}. Both are offices.`);
+      profile.profile.city = undefined;
+      profile.profile.country = undefined;
+      const offices = profile.profile.offices ?? [];
+      for (const c of hq.cities) {
+        if (!offices.some((o) => o.city.toLowerCase() === c.city.toLowerCase())) offices.push({ city: c.city, ...(countryOfCity(c.city) ? { country: countryOfCity(c.city)! } : {}), source_id: c.source_id, evidence_quote: c.quote });
+      }
+      profile.profile.offices = offices;
+    }
+  }
+
   // ── Stage 6: validation (city/country/founded_year/headcount/rounds) ──
   const roughPlan = planRoundWrites(existingRefs, newRoundLikes);
   const validation = validateEnrichment({
@@ -819,6 +854,8 @@ export async function collectCompany(
       country: profile.profile.country?.value ?? null,
       country_source_type: sourceTypeFor(profile.profile.country?.source_id) ?? null,
       city_source_type: sourceTypeFor(profile.profile.city?.source_id) ?? null,
+      city_source_url: sourceUrlFor(profile.profile.city?.source_id),
+      country_source_url: sourceUrlFor(profile.profile.country?.source_id),
       employee_count: profile.metrics.employee_count?.value ?? null,
       city_quote: profile.profile.city?.evidence_quote ?? null,
       country_quote: profile.profile.country?.evidence_quote ?? null,
