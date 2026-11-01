@@ -82,6 +82,8 @@ export interface CheckProfile {
     /** Where it was founded, when that differs from — or confirms — the HQ (lib/enrichment/origin.ts). */
     founding_country?: Sourced<string> | null;
     israel_rnd_center?: Sourced<boolean> | null;
+    /** Offices the company's own site lists, shown when no headquarters is declared (owner, 2026-11-01). */
+    offices?: Array<{ city: string; country: string | null; source_url: string | null }>;
     headcount: Sourced<number> | null;
     employee_range: string | null;
     linkedin_url: string | null;
@@ -183,6 +185,7 @@ export function buildProfile(c: CollectedCompany, companyName: string): CheckPro
       sub_sectors: [...new Set([profile.profile.sub_sector_name, ...(profile.profile.sub_sector_names ?? [])].filter((s): s is string => !!s))],
       founded_year: founded,
       city, country, founding_country, israel_rnd_center, headcount,
+      offices: (profile.profile.offices ?? []).map((o) => ({ city: o.city, country: o.country ?? null, source_url: c.sourceUrlFor(o.source_id) })),
       employee_range: profile.metrics.employee_range ?? null,
       linkedin_url: profile.profile.linkedin_url?.value ?? null,
     },

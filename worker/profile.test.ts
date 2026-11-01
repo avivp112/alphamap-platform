@@ -37,7 +37,7 @@ function collected(over: { city?: string; cityType?: SourceType; cityConfidence?
   const validation = validateEnrichment({
     existing: { founded_year: null, country: { value: null, is_manually_verified: false }, employee_count: null },
     extracted: {
-      founded_year: 2023, city: over.city ?? null, country: "Israel", country_source_type: "press_release",
+      founded_year: 2023, city: over.city ?? null, country: "Israel", country_source_type: "press_release", city_source_type: over.cityType ?? "press_release",
       employee_count: over.employees ?? null, city_quote: over.city ? `based in ${over.city}` : null, country_quote: "Tel Aviv, Israel-based Nuova",
     },
     rounds,

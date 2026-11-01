@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { formatOriginal } from "../../../lib/enrichment/currency";
+import { officesLabel } from "../../lib/offices";
 import { stageLabel, sectorLabel, roundTypeLabel, SECTOR_TAXONOMY, PARENT_BY_SUB_SECTOR, STAGE_STEPS, type StageStep } from "../../lib/taxonomy";
 import { equityRaised, debtRaised, capitalKind } from "../../lib/capital";
 import { visibleCompetitors } from "../../lib/competitors";
@@ -1180,7 +1181,10 @@ function OverviewTab({
   onFilterBySubSectorTag: (tag: string) => void;
 }) {
   const { t } = useTranslation();
-  const location = placeLabel(startup.city, startup.country) ?? "—";
+  const hq = placeLabel(startup.city, startup.country);
+  // No headquarters declared: the offices the company's site lists (owner, 2026-11-01).
+  const offices = hq ? null : officesLabel(startup.offices);
+  const location = hq ?? offices ?? "—";
   const origin = originNote(originFacts(startup), t);
   const sector = classifyIndustry(startup.industry);
   const sectorName = startup.sector?.name ?? sector.parent;
@@ -1212,7 +1216,7 @@ function OverviewTab({
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard icon={Calendar}  label="Founded"     value={startup.founded_year ? String(startup.founded_year) : "—"} accent="#F59E0B" />
-        <StatCard icon={MapPin}    label={origin ? t("startups.origin.headquarters") : "Location"} value={location} accent="#0e7490" note={origin} />
+        <StatCard icon={MapPin}    label={offices ? t("startups.offices") : origin ? t("startups.origin.headquarters") : "Location"} value={location} accent="#0e7490" note={origin} />
         <StatCard icon={Users}     label="Employees"   value={employeeValue} accent="#6d28d7" />
         <StatCard
           icon={Briefcase} label="Sector" value={sectorName} accent="#be185d"

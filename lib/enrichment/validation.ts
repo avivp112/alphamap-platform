@@ -72,7 +72,19 @@ export type ValidationRuleCode =
   | "city_country_mismatch" | "founded_after_first_round" | "founded_out_of_range"
   | "headcount_outlier" | "valuation_below_round" | "round_date_invalid"
   | "stage_order" | "profile_country_conflict" | "city_not_a_city"
-  | "narrative_data_platform" | "narrative_source_talk" | "city_is_regional_office";
+  | "narrative_data_platform" | "narrative_source_talk" | "city_is_regional_office" | "hq_not_declared";
+
+/**
+ * The headquarters is set only when the company declares one, on its own
+ * site or in its own release (owner, 2026-11-01): "headquartered in",
+ * "HQ", "head office", "based in", "<city>-based". Port, Aidoc and SSI list
+ * offices — New York and Tel Aviv, Palo Alto and Tel Aviv — and declare no
+ * headquarters: their city and country stay empty, the offices are shown
+ * instead (startups.offices).
+ */
+export function declaresHeadquarters(quote: string | null | undefined, sourceType: SourceType | null | undefined): boolean {
+  return !!quote && HQ_WORD_RE.test(quote) && (sourceType === "company_site" || sourceType === "press_release");
+}
 
 /**
  * A quote about a regional or second office is not the headquarters (owner,
@@ -342,6 +354,7 @@ export interface ValidateEnrichmentInput {
     city?: string | null;
     country?: string | null;
     country_source_type?: SourceType | null;
+    city_source_type?: SourceType | null;
     /** Evidence quotes, used to drop a country read off the same "HQ: Delaware, United States" line as a non-city. */
     city_quote?: string | null;
     country_quote?: string | null;
@@ -400,6 +413,15 @@ export function validateEnrichment(input: ValidateEnrichmentInput): ValidateEnri
     });
     acceptedCity = null;
     if (sameLine) acceptedCountry = null;
+  }
+  // (Checked when the caller passes the quotes — every run does; a bare value check does not.)
+  if (acceptedCity && input.extracted.city_quote !== undefined && !declaresHeadquarters(input.extracted.city_quote, input.extracted.city_source_type)) {
+    issues.push({ rule: "hq_not_declared", fields: ["profile.city"], message: `"${acceptedCity}" is not a headquarters the company declares on its site or in its own release.`, action: "drop_field" });
+    acceptedCity = null;
+  }
+  if (acceptedCountry && input.extracted.country_quote !== undefined && !declaresHeadquarters(input.extracted.country_quote, input.extracted.country_source_type)) {
+    issues.push({ rule: "hq_not_declared", fields: ["profile.country"], message: `"${acceptedCountry}" is not the country of a headquarters the company declares.`, action: "drop_field" });
+    acceptedCountry = null;
   }
   const cityCountryIssue = checkCityCountryMismatch(acceptedCity, acceptedCountry);
   if (cityCountryIssue) {

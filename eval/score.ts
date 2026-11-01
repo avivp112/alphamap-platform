@@ -17,7 +17,11 @@ import { samePersonName } from "../lib/enrichment/linkedin.ts";
 import { patentDigits } from "../lib/enrichment/patents.ts";
 
 export type Confidence = "verified" | "likely" | "unknown";
-export interface GoldenField<T> { value: T | null; confidence: Confidence; source_url?: string; notes?: string }
+export interface GoldenField<T> {
+  value: T | null; confidence: Confidence; source_url?: string; notes?: string;
+  /** The company declares no headquarters (owner, 2026-11-01: Port, Aidoc, SSI): empty is correct, any value is wrong. */
+  not_declared?: boolean;
+}
 export interface GoldenFounder { name: string; title?: string; confidence: Confidence; source_url?: string }
 export interface GoldenRound {
   type: string; amount_usd: number | null; date: string | null;
@@ -123,6 +127,11 @@ export function normalize(s: string | null | undefined): string {
 export type FieldResult = "correct" | "wrong" | "missing" | "excluded";
 
 function scoreScalar(s: FieldStats, golden: GoldenField<string | number> | undefined, extracted: unknown): FieldResult {
+  if (golden?.not_declared) {
+    s.scored++; s.produced++;
+    if (extracted == null || extracted === "") { s.correct++; return "correct"; }
+    return "wrong";
+  }
   if (!golden || golden.confidence === "unknown" || golden.value == null) return "excluded";
   s.scored++;
   if (extracted == null || extracted === "") return "missing";   // lowers coverage, not precision

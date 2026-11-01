@@ -123,6 +123,8 @@ export interface V2Leader extends PersonQualityTags {
   joined_date?: string;
 }
 
+export interface V2Office { city: string; country?: string; source_id: string; evidence_quote: string }
+
 export interface V2Profile {
   website?: EvidencedValue<string>;
   description?: string;
@@ -137,6 +139,8 @@ export interface V2Profile {
   founding_country?: EvidencedValue<string>;
   /** States an R&D / development centre in Israel. */
   israel_rnd_center?: EvidencedValue<boolean>;
+  /** Offices the company's own site lists (owner, 2026-11-01) — not the headquarters. */
+  offices?: V2Office[];
   founders?: V2Founder[];
   sector_name?: string;
   sub_sector_name?: string;
@@ -233,8 +237,22 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
             value_proposition_source_ids: { type: "array", items: { type: "string" } },
             industry: { type: "string", description: "Primary tech sector (e.g. 'AI & ML', 'Cybersecurity', 'FinTech')." },
             founded_year: materialField({ type: "integer" }, "Year the company was incorporated. Never infer from an article's publish date or a funding round's date — only from an explicit founding-year statement."),
-            country: materialField({ type: "string" }, "HQ country full name. Must come from the SAME source and the SAME sentence/address as `city` — never combine a city from one source with a country from another."),
-            city: materialField({ type: "string" }, "HQ city. Must come from the SAME source and the SAME sentence/address as `country`."),
+            country: materialField({ type: "string" }, "HQ country full name — ONLY when a source DECLARES the headquarters ('headquartered in', 'HQ', 'head office', 'based in', '<city>-based'). A list of offices or locations is NOT a headquarters: put those in `offices`. Must come from the SAME source and the SAME sentence/address as `city` — never combine a city from one source with a country from another."),
+            city: materialField({ type: "string" }, "HQ city — ONLY when a source DECLARES it the headquarters (see `country`). Must come from the SAME source and the SAME sentence/address as `country`."),
+            offices: {
+              type: "array",
+              description: "Every office / location the company's OWN website ([W] sources) lists — 'Locations: New York, Tel Aviv', 'offices in Palo Alto and Tel Aviv'. Only from [W] sources; never from a news article, a job board or a data platform. Separate from the HQ fields.",
+              items: {
+                type: "object" as const,
+                properties: {
+                  city: { type: "string" },
+                  country: { type: "string", description: "Country full name, if the page states it or the city is unambiguous." },
+                  source_id: { type: "string" },
+                  evidence_quote: { type: "string", description: "Verbatim, 3-40 words, naming the city." },
+                },
+                required: ["city", "source_id", "evidence_quote"],
+              },
+            },
             founding_country: materialField({ type: "string" }, "Country full name where the company was FOUNDED — may differ from the HQ `country` (e.g. founded in Israel, HQ now in New York). Only from a quote that says it of the company: 'founded in Tel Aviv', 'the Israeli startup', 'started in Berlin'. Never from a founder's nationality, army unit or university, a customer, or an office."),
             israel_rnd_center: materialField({ type: "boolean" }, "TRUE only if a source states the company has its R&D / development / engineering centre or team in Israel (e.g. 'headquartered in New York with R&D in Tel Aviv'). A sales office does not count. Omit otherwise."),
             founders: {
@@ -419,6 +437,29 @@ function verifyOrigin<T extends string | boolean>(
 }
 
 /**
+ * Offices: only from the company's own site, the quote real and naming the
+ * city; one entry per city (owner, 2026-11-01).
+ */
+export function verifyOffices(raw: unknown, sources: LabeledSource[], dropped: DroppedField[]): V2Office[] | undefined {
+  const byId = new Map(sources.map((s) => [s.source_id, s]));
+  const out: V2Office[] = [];
+  ensureArray<V2Office>(raw).forEach((o, idx) => {
+    const field = `profile.offices[${idx}]`;
+    if (!o?.city || !o.source_id || !o.evidence_quote) return;
+    const src = byId.get(o.source_id);
+    if (!src) { dropped.push({ field, reason: "source_not_found" }); return; }
+    if (src.source_type !== "company_site") { dropped.push({ field, reason: "office_not_from_company_site" }); return; }
+    if (!quoteMatchesSource(o.evidence_quote, src.content).matched || !o.evidence_quote.toLowerCase().includes(o.city.toLowerCase())) {
+      dropped.push({ field, reason: "evidence_mismatch" });
+      return;
+    }
+    if (out.some((x) => x.city.toLowerCase() === o.city.toLowerCase())) return;
+    out.push({ city: o.city.trim(), ...(o.country ? { country: o.country.trim() } : {}), source_id: o.source_id, evidence_quote: o.evidence_quote });
+  });
+  return out.length ? out : undefined;
+}
+
+/**
  * is_public_company gets its own check rather than reusing verifyMaterial:
  * the claimed value is a boolean, and valueAppearsInQuote (string/number only
  * — would throw on a boolean) has no way to confirm "true" is literally in
@@ -486,6 +527,7 @@ export function processProfileExtractionResponse(
     city: verifyMaterial("profile.city", i.profile?.city, sourceLookup, dropped),
     founding_country: verifyOrigin("profile.founding_country", i.profile?.founding_country, sourceLookup, dropped),
     israel_rnd_center: verifyOrigin("profile.israel_rnd_center", i.profile?.israel_rnd_center, sourceLookup, dropped),
+    offices: verifyOffices(i.profile?.offices, sources, dropped),
     founders: ensureArray<V2Founder>(i.profile?.founders).map((f, idx) => ({
       ...f,
       linkedin_url: verifyMaterial(`profile.founders[${idx}].linkedin_url`, f.linkedin_url, sourceLookup, dropped, true),

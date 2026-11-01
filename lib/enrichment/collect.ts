@@ -818,6 +818,7 @@ export async function collectCompany(
       city: profile.profile.city?.value ?? null,
       country: profile.profile.country?.value ?? null,
       country_source_type: sourceTypeFor(profile.profile.country?.source_id) ?? null,
+      city_source_type: sourceTypeFor(profile.profile.city?.source_id) ?? null,
       employee_count: profile.metrics.employee_count?.value ?? null,
       city_quote: profile.profile.city?.evidence_quote ?? null,
       country_quote: profile.profile.country?.evidence_quote ?? null,

@@ -85,7 +85,7 @@ function serperResults(q: string) {
     ];
   }
   if (q.includes("employees team size headquarters")) {
-    return [r("https://sifted.eu/articles/ghost-profile", "Inside Ghost", "Ghost (ghost.org) is headquartered in London, United Kingdom, and runs as a non-profit foundation.")];
+    return [r("https://ghost.org/about/press/", "Ghost press", "Ghost (ghost.org) is headquartered in London, United Kingdom, and runs as a non-profit foundation.")];   // the HQ the company itself declares (owner, 2026-11-01)
   }
   if (q.includes("competitors") || q.includes("alternatives") || q.includes(" vs")) {
     return [
@@ -137,7 +137,7 @@ const createMock = vi.fn(async (req: { tools: Array<{ name: string }>; messages:
   const tc = sid(prompt, "ghost-raises-seed");
   const w1 = sid(prompt, "ghost.org");
   const li = sid(prompt, "linkedin.com/company");
-  const hq = sid(prompt, "sifted.eu");
+  const hq = sid(prompt, "ghost.org/about/press");
 
   if (tool === "classify_company") {
     input = prompt.includes('"Ghia"')

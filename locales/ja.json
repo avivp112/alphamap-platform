@@ -301,6 +301,7 @@
     "competitorUnverified": "未検証",
     "competitorUnverifiedHint": "競合であることを示す検証済みの情報源はまだありません（信頼度：低）。",
     "amountNotDisclosed": "金額非公開",
+    "offices": "オフィス",
     "amountConvertedHint": "その年の平均レートで米ドルに換算（概算）",
     "totalRaised": "累計調達額",
     "investorSchedule": "投資家一覧",

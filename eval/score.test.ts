@@ -198,3 +198,15 @@ describe("an event the golden set does not list is not a wrong round (Wiz's $32B
     expect([board.funding_rounds.correct, board.funding_rounds.produced]).toEqual([1, 1]);
   });
 });
+
+describe("a headquarters the company does not declare (Port, Aidoc, SSI — owner, 2026-11-01)", () => {
+  it("empty is correct, a city is wrong", async () => {
+    const { scoreCompany, newScoreboard } = await import("./score");
+    const company = { id: "aidoc", name: "Aidoc", city: { value: null, confidence: "verified" as const, not_declared: true }, country: { value: null, confidence: "verified" as const, not_declared: true } };
+    const blank = { country: null, founded_year: null, founders: [], rounds: [], employee_range: null };
+    const a = newScoreboard();
+    expect(scoreCompany(a, company, { ...blank, city: null }).city).toBe("correct");
+    const b = newScoreboard();
+    expect(scoreCompany(b, company, { ...blank, city: "New York City", country: "United States" }).city).toBe("wrong");
+  });
+});

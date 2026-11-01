@@ -253,6 +253,8 @@ export interface Startup extends CompanySocialLinks {
   city: string | null;
   /** Where it was founded, beside the HQ in country (migration 20261104000000; src/lib/origin.ts). */
   founding_country?: string | null;
+  /** Offices the company's own site lists; shown when no HQ is declared (migration 20261115000000). */
+  offices?: Array<{ city: string; country?: string | null; source_url?: string | null }> | null;
   israel_rnd_center?: boolean | null;
   founders: Founder[] | null;
   created_at: string;
@@ -435,8 +437,8 @@ function applyStartupSearchFilters(
   }
   if (filters.subSectorTag) q = q.contains("sub_sector_names", [filters.subSectorTag]);
   if (filters.country) {
-    // "Israel" also lists companies founded in Israel (src/lib/countryFilter.ts) —
-    // on startups_market, which carries founding_country.
+    // A country lists HQ, offices and founding country (src/lib/countryFilter.ts) —
+    // on startups_market, which carries founding_country and office_countries.
     const byOrigin = relation === MARKET_VIEW ? countryFilterOr(filters.country) : null;
     q = byOrigin ? q.or(byOrigin) : q.eq("country", filters.country);
   }

@@ -218,6 +218,14 @@ export async function writeCollected(
     patch.founding_country = origin.value;
     provenance("profile.founding_country", origin.value, origin);
   }
+  // Offices the company's own site lists (owner, 2026-11-01): replaced as a
+  // whole when this run read them — the site is their only source.
+  const offices = profile.profile.offices ?? [];
+  if (offices.length > 0) {
+    patch.offices = offices.map((o) => ({ city: o.city, country: o.country ?? null, source_url: sourceUrlFor(o.source_id) }));
+    patch.office_countries = [...new Set(offices.map((o) => o.country).filter((c): c is string => !!c))];
+    provenance("profile.offices", patch.offices, offices[0]);
+  }
   const rnd = profile.profile.israel_rnd_center;
   if (rnd?.value === true && row.israel_rnd_center == null
     && meetsProfileThreshold(computeFieldConfidence([{ source_type: sourceTypeFor(rnd.source_id) ?? "model_inferred" }]), THRESHOLDS)) {
