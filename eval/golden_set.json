@@ -1740,6 +1740,14 @@
             "https://techcrunch.com/2025/03/26/fintech-mercury-lands-300m-in-sequoia-led-series-c-doubles-valuation-to-3-5b/"
           ],
           "notes": "Described as a mix of primary and secondary funding per TechCrunch; full primary-vs-secondary split not disclosed."
+        },
+        {
+          "type": "Series D",
+          "amount_usd": 200000000,
+          "date": "2026-05-20",
+          "confidence": "verified",
+          "source_url": "https://www.cnbc.com/2026/05/20/fintech-mercury-valuation-fundraise-bank-charter.html",
+          "notes": "Owner, 2026-11-01: marked correct on the review sheet (source of tier 1–3 or the company's own site)."
         }
       ],
       "total_raised_usd_reported": {
@@ -2204,6 +2212,14 @@
             "https://www.weil.com/articles/weil-advised-blackstone-in-400m-series-f-funding-for-cyera"
           ],
           "notes": "WSJ reported it in progress on 2025-12-17; announcement date per SiliconANGLE (Jan 8) — confirm."
+        },
+        {
+          "type": "",
+          "amount_usd": 600000000,
+          "date": "2026-06-10",
+          "confidence": "verified",
+          "source_url": "https://www.cyera.com/blog/building-the-trust-layer-for-enterprise-ai",
+          "notes": "Owner, 2026-11-01: marked correct on the review sheet (source of tier 1–3 or the company's own site). Round type not stated — amount only (type not scored)."
         }
       ],
       "funding_rounds_excluded_unknown": [
@@ -2327,6 +2343,14 @@
             "https://www.channele2e.com/brief/cato-networks-raises-359m-to-expand-ai-sase"
           ],
           "notes": "Co-led with ION Crossover; later extended to $409M."
+        },
+        {
+          "type": "Series A",
+          "amount_usd": 20000000,
+          "date": "2015-06",
+          "confidence": "verified",
+          "source_url": "https://www.catonetworks.com/news/globes-israeli-network-security-co-cato-networks-raises-30m/",
+          "notes": "Owner, 2026-11-01: marked correct on the review sheet (source of tier 1–3 or the company's own site)."
         }
       ],
       "funding_rounds_excluded_unknown": [
@@ -2533,6 +2557,22 @@
             "https://fintech.global/2025/06/18/coralogix-raises-115m-to-scale-ai-observability-tools/"
           ],
           "notes": "Valuation 'above $1B'."
+        },
+        {
+          "type": "Series B",
+          "amount_usd": 25000000,
+          "date": "2020-09-30",
+          "confidence": "verified",
+          "source_url": "https://techcrunch.com/2020/09/30/coralogix-lands-25m-series-b-to-rethink-log-analysis-and-monitoring/",
+          "notes": "Owner, 2026-11-01: marked correct on the review sheet (source of tier 1–3 or the company's own site)."
+        },
+        {
+          "type": "",
+          "amount_usd": 200000000,
+          "date": "2026-06-03",
+          "confidence": "verified",
+          "source_url": "https://www.globenewswire.com/news-release/2026/06/03/3306135/0/en/coralogix-raises-200m-to-scale-the-observability-backbone-for-the-age-of-ai.html",
+          "notes": "Owner, 2026-11-01: marked correct on the review sheet (source of tier 1–3 or the company's own site). Round type not stated — amount only (type not scored)."
         }
       ],
       "funding_rounds_excluded_unknown": [
@@ -2637,6 +2677,14 @@
             "https://techcrunch.com/2022/08/17/hr-startup-hibobs-valuation-surges-50-to-2-45b-on-a-150m-raise",
             "https://www.peoplematters.in/news/funding-investment/hibob-raises-150-million-series-d-up-round-led-by-general-atlantic-34906"
           ]
+        },
+        {
+          "type": "Series A",
+          "amount_usd": 26500000,
+          "date": null,
+          "confidence": "verified",
+          "source_url": "https://www.hibob.com/about",
+          "notes": "Owner, 2026-11-01: marked correct on the review sheet (source of tier 1–3 or the company's own site)."
         }
       ],
       "funding_rounds_excluded_unknown": [
@@ -2726,6 +2774,22 @@
             "https://www.timesofisrael.com/israels-aidoc-raises-110m-for-ai-tech-that-reads-imaging-scans/"
           ],
           "notes": "Co-led with Alpha Intelligence Capital. Total $250M."
+        },
+        {
+          "type": "Series A",
+          "amount_usd": 7000000,
+          "date": "2017-04",
+          "confidence": "verified",
+          "source_url": "https://venturebeat.com/ai/aidoc-raises-27-million-for-ai-head-chest-abdomen-and-spine-tests",
+          "notes": "Owner, 2026-11-01: marked correct on the review sheet (source of tier 1–3 or the company's own site)."
+        },
+        {
+          "type": "Series B",
+          "amount_usd": 27000000,
+          "date": "2019-04-17",
+          "confidence": "verified",
+          "source_url": "https://www.forbes.com/sites/ayurellahornmuller/2019/04/17/ai-healthcare-startup-aidoc-raises-27-million/",
+          "notes": "Owner, 2026-11-01: marked correct on the review sheet (source of tier 1–3 or the company's own site)."
         }
       ],
       "funding_rounds_excluded_unknown": [
@@ -2913,6 +2977,14 @@
             "https://archive.israel21c.org/israeli-startup-raises-50m-to-stop-app-based-cyberattacks/"
           ],
           "notes": "Total ~$78-80M."
+        },
+        {
+          "type": "Series C",
+          "amount_usd": 60000000,
+          "date": "2026-08-04",
+          "confidence": "verified",
+          "source_url": "https://www.calcalistech.com/ctechnews/article/ryr00n81umg",
+          "notes": "Owner, 2026-11-01: marked correct on the review sheet (source of tier 1–3 or the company's own site)."
         }
       ],
       "competitors": {
