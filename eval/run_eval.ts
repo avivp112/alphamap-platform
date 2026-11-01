@@ -75,7 +75,7 @@ import { blankRow } from "../worker/enrich.ts";
 import { buildProfile } from "../worker/profile.ts";
 import { cachedCallCostUsd } from "../worker/config.ts";
 import {
-  FIELDS, newScoreboard, pct, scoreCompany, duplicateRounds, foundedAfterFirstRound, phase1Checks, hintGain, matchRounds, roundsDayGap, isFatalProviderError,
+  FIELDS, newScoreboard, pct, scoreCompany, duplicateRounds, foundedAfterFirstRound, phase1Checks, hintGain, matchRounds, roundsDayGap, isFatalProviderError, isEvent,
   type GoldenSet, type GoldenCompany, type PipelineOutput, type FieldResult, type Field,
 } from "./score.ts";
 
@@ -343,7 +343,7 @@ async function main() {
     const out = perCompany[company.id]?.output?.rounds ?? [];
     const matched = new Set(matchRounds(verified, out).map(([, i]) => i));
     out.forEach((r, i) => {
-      if (matched.has(i) || unknown.some((u) => roundsDayGap(u, r) !== null)) return;
+      if (matched.has(i) || unknown.some((u) => roundsDayGap(u, r) !== null) || isEvent(r.round_type)) return;
       roundsToReview.push({ company_id: company.id, company: company.name, round_type: r.round_type, amount_usd: r.amount_raised == null ? "" : String(r.amount_raised), date: r.date ?? "", lead_investor: r.lead_investor ?? "", source_url: r.source_url ?? "", mark: "" });
     });
   }

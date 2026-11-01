@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { formatOriginal } from "../../../lib/enrichment/currency";
 import { stageLabel, sectorLabel, roundTypeLabel, SECTOR_TAXONOMY, PARENT_BY_SUB_SECTOR, STAGE_STEPS, type StageStep } from "../../lib/taxonomy";
 import { equityRaised, debtRaised, capitalKind } from "../../lib/capital";
 import { visibleCompetitors } from "../../lib/competitors";
@@ -1325,9 +1326,16 @@ function VerticalFundingTimeline({ rounds }: { rounds: FundingRound[] }) {
                       )}
                     </div>
                     <div className="flex flex-wrap gap-3">
-                      {r.amount_raised ? (
+                      {r.amount_raised || r.amount_original ? (
                         <span className="text-xs text-gray-500">
-                          <span className="font-bold text-gray-900">{fmt(r.amount_raised)}</span> raised
+                          {r.amount_currency && r.amount_original ? (
+                            <span className="font-bold text-gray-900" title={t("startups.amountConvertedHint")}>
+                              {formatOriginal(r.amount_original, r.amount_currency)}
+                              {r.amount_raised ? <span className="font-normal text-gray-500"> (~{fmt(r.amount_raised)})</span> : null}
+                            </span>
+                          ) : (
+                            <span className="font-bold text-gray-900">{fmt(r.amount_raised)}</span>
+                          )} raised
                         </span>
                       ) : (
                         <span className="text-xs text-gray-400">{t("startups.amountNotDisclosed")}</span>

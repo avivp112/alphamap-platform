@@ -14,6 +14,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { sanitizeModelOutput, ensureArray } from "./sanitize";
 import { verifyEvidence, datePrecision, type EvidenceSource } from "./evidence";
+import { currencyOfAmount, toUsd } from "./currency";
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
 import { normalizeRoundType, type RoundLike } from "./rounds";
 import { debugDumpJson } from "./debugDump";
@@ -72,6 +73,16 @@ export interface V2FundingExtraction {
 
 /** Flattens a verified V2Round down to the plain shape rounds.ts/validation.ts operate on — called by the orchestrator AFTER evidence verification has already dropped whatever didn't check out. */
 export function roundToRoundLike(round: V2Round): RoundLike {
+  // A figure the source writes in another currency is kept as written and
+  // converted to a USD estimate (currency.ts, owner 2026-11-01).
+  const year = round.announcement_date?.value ? Number(round.announcement_date.value.slice(0, 4)) : null;
+  const inUsd = (ev: V2Round["amount_raised"]) => {
+    if (!ev) return { usd: null, original: null, currency: null };
+    const currency = currencyOfAmount(ev.value, ev.evidence_quote) ?? "USD";
+    return currency === "USD" ? { usd: ev.value, original: null, currency: null } : { usd: toUsd(ev.value, currency, year), original: ev.value, currency };
+  };
+  const amount = inUsd(round.amount_raised);
+  const valuation = inUsd(round.valuation);
   return {
     // Normalized, not the raw model string: a real DRY_RUN run against
     // production data produced "Venture" and "Venture Debt" for round_type
@@ -81,8 +92,9 @@ export function roundToRoundLike(round: V2Round): RoundLike {
     // than trust the raw string ever reaching rounds.ts's dedup or a DB
     // insert unnormalized.
     round_type: normalizeRoundType(round.round_type),
-    amount_raised: round.amount_raised?.value ?? null,
-    valuation: round.valuation?.value ?? null,
+    amount_raised: amount.usd,
+    ...(amount.currency ? { amount_original: amount.original, amount_currency: amount.currency } : {}),
+    valuation: valuation.usd,
     announcement_date: round.announcement_date?.value ?? null,
     announcement_date_precision: round.announcement_date?.value ? datePrecision(round.announcement_date.value, round.announcement_date.evidence_quote) : null,
     lead_investor: round.lead_investor?.value ?? null,
@@ -128,8 +140,8 @@ function fundingExtractionTool() {
             type: "object" as const,
             properties: {
               round_type: { type: "string", enum: ROUND_TYPE_ENUM },
-              amount_raised: materialField({ type: "number" }, "USD raised in THIS round as a plain integer ($50M -> 50000000). Omit the whole field if unknown — never guess a figure."),
-              valuation: materialField({ type: "number" }, "Post-money valuation in USD as a plain integer. Omit if unconfirmed."),
+              amount_raised: materialField({ type: "number" }, "Amount raised in THIS round as a plain integer, in the currency its quote states — never converted ($50M -> 50000000; €102.5 million -> 102500000). The quote must contain the figure with its currency sign or word. Omit the whole field if unknown — never guess a figure."),
+              valuation: materialField({ type: "number" }, "Post-money valuation as a plain integer, in the currency its quote states (never converted). Omit if unconfirmed."),
               is_valuation_estimated: { type: "boolean", description: "true if the valuation was estimated/inferred rather than officially disclosed." },
               announcement_date: materialField({ type: "string" }, "YYYY-MM-DD, or YYYY-MM-01 if only the year+month is known, or YYYY-01-01 if only the year is known."),
               lead_investor: materialField({ type: "string" }, "Full name of the lead investor for THIS round. Omit if unknown — never guess from a later round's investor list."),

@@ -194,7 +194,11 @@ function scoreRounds(s: FieldStats, g: GoldenCompany, extracted: PipelineOutput[
   const pairs = matchRounds(verified, extracted);
   const used = new Set(pairs.map(([, i]) => i));
   const correct = pairs.length;
-  const ignored = extracted.filter((er, i) => !used.has(i) && unknown.some((ur) => roundsDayGap(ur, er) !== null)).length;
+  // An event (acquisition, IPO, secondary, buyout) the golden set does not
+  // list is not a wrong funding round either (Wiz's $32B acquisition, eval of
+  // 2026-11-01): the golden rounds are money raised; events are judged only
+  // where the golden set lists them (Wise's secondaries, its listing).
+  const ignored = extracted.filter((er, i) => !used.has(i) && (unknown.some((ur) => roundsDayGap(ur, er) !== null) || isEvent(er.round_type))).length;
   // A hallucinated or duplicate round is produced-but-not-correct.
   s.produced += extracted.length - ignored;
   s.correct += correct;
@@ -367,4 +371,9 @@ export function phase1Checks(board: Scoreboard, facts: { locationMismatches: num
 export function isFatalProviderError(err: unknown): boolean {
   const text = String((err as { message?: string })?.message ?? err);
   return /credit balance is too low|authentication_error|invalid x-api-key|permission_error/i.test(text);
+}
+
+/** Not money the company raised: an acquisition, an IPO / listing, a secondary sale, a buyout. */
+export function isEvent(roundType: string | null | undefined): boolean {
+  return /^(acquired|ipo|secondary|pe buyout)$/i.test((roundType ?? "").trim());
 }

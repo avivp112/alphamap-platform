@@ -138,15 +138,26 @@ const FORM_D_DATE = /(?:date of first sale|signature date)[^0-9a-z]{0,12}([^\n|]
 
 /** The date the confirming source gives the round: its sentence, its dateline, or a Form D's first sale. */
 function confirmingDate(h: RoundHint, s: LabeledSource, quote: string, text: string): { iso: string; quote: string } | null {
-  const inSentence = dateInSentence(quote);
+  // A search result's own "Source: … — Date: … —" prefix is the article's date, not the sentence's.
+  const inSentence = dateInSentence(quote.replace(/^(?:\s*(?:Source|Date):[^—]*—)+\s*/, ""));
   if (inSentence) return { iso: inSentence.iso, quote: quote.trim() };
   if (classifySourceType(s.url) === "registry") {
     const m = text.match(FORM_D_DATE);
     const iso = m ? parseFullDate(m[1]) : null;
     return iso ? { iso, quote: m![0].trim() } : null;
   }
+  // An article's own date dates the round only when its headline announces
+  // the raise — Fortune's February 2026 profile of Black Forest Labs merely
+  // mentioned the $300M round of December 2025 (eval of 2026-11-01).
+  if (!headlineAnnounces(s.title, h.amount_raised!)) return null;
   const iso = announcementDateFromSource({ round_type: h.round_type ?? "Unknown", amount_raised: { value: h.amount_raised!, source_id: s.source_id, evidence_quote: quote } }, s);
   return iso ? { iso, quote: `publication date of ${s.url}` } : null;
+}
+
+/** A headline that reports this raise: a raise word and the amount ("Hailo raises $136M ..."). */
+export function headlineAnnounces(title: string | null | undefined, amount: number): boolean {
+  if (!title || !RAISE.test(title)) return false;
+  return extractNumbersFromText(title).some((n) => Math.abs(n - amount) / amount < 0.01);
 }
 
 /**

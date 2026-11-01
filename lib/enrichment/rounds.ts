@@ -110,6 +110,9 @@ export interface RoundLike {
   /** How much of announcement_date a source states: a year-only round is YYYY-01-01 with "year" (funding_rounds.announcement_date_precision). */
   announcement_date_precision?: "day" | "month" | "year" | null;
   lead_investor?: string | null;
+  /** The figure and currency the source states, when not USD; amount_raised is then the USD estimate (currency.ts). */
+  amount_original?: number | null;
+  amount_currency?: string | null;
   other_investors?: string[] | null;
   source_url?: string | null;
   is_valuation_estimated?: boolean | null;

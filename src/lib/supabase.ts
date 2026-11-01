@@ -171,6 +171,9 @@ export interface FundingRound {
   startup_id: string;
   round_type: RoundType | null;
   amount_raised: number | null;
+  /** The figure and currency the source states, when not USD; amount_raised is then a USD estimate. */
+  amount_original?: number | null;
+  amount_currency?: string | null;
   valuation: number | null;
   is_valuation_estimated: boolean | null;
   announcement_date: string | null;

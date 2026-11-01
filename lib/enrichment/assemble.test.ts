@@ -221,3 +221,20 @@ describe("rounds still not written after grounding (owner, 2026-10-29)", () => {
     expect(incompleteRound({ round_type: "Series C", amount_raised: 100_000_000 })).toBeNull();
   });
 });
+
+describe("an untyped figure its source calls debt is debt (Celonis' $600M credit facility, eval of 2026-11-01)", () => {
+  it("a debt word beside the figure", async () => {
+    const { debtNextToAmount } = await import("./assemble");
+    const text = "Celonis secures $1 billion in financing: a $400 million Series D extension and a $600 million credit facility.";
+    expect(debtNextToAmount(text, 600_000_000)).toBe(true);
+    expect(debtNextToAmount(text, 400_000_000)).toBe(false);
+    expect(debtNextToAmount("a debt facility of $50M from HSBC", 50_000_000)).toBe(true);
+  });
+  it("an 'Other' round grounded on that quote becomes Debt", async () => {
+    const { groundRoundType } = await import("./assemble");
+    const { buildLabeledSources } = await import("./sources");
+    const sources = buildLabeledSources([{ url: "https://www.celonis.com/news/press/x", title: "Celonis secures $1 billion", content: "Celonis secures $1 billion in financing: a $400 million Series D extension and a $600 million credit facility.", provider: "serper", query_label: "funding" }]);
+    const r = groundRoundType({ round_type: "Other", amount_raised: { value: 600_000_000, source_id: "S1", evidence_quote: "a $400 million Series D extension and a $600 million" } }, sources);   // the quote alone does not say debt; the words beside the figure do
+    expect(r.round_type).toBe("Debt");
+  });
+});

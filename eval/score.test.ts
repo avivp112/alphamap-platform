@@ -187,3 +187,14 @@ describe("a run whose provider ran out of credit stops (run of 2026-11-01: 25 of
     expect(isFatalProviderError(new TypeError("fetch failed"))).toBe(false);
   });
 });
+
+describe("an event the golden set does not list is not a wrong round (Wiz's $32B acquisition, eval of 2026-11-01)", () => {
+  it("an unmatched acquisition is left out of 'produced'", async () => {
+    const { scoreCompany, newScoreboard } = await import("./score");
+    const board = newScoreboard();
+    const company = { id: "wiz", name: "Wiz", funding_rounds: [{ type: "Series C", amount_usd: 250_000_000, date: "2021-10", confidence: "verified" as const }] };
+    scoreCompany(board, company, { city: null, country: null, founded_year: null, founders: [], employee_range: null,
+      rounds: [{ round_type: "Series C", amount_raised: 250_000_000, date: "2021-10" }, { round_type: "Acquired", amount_raised: 32_000_000_000, date: "2025-03-18" }] });
+    expect([board.funding_rounds.correct, board.funding_rounds.produced]).toEqual([1, 1]);
+  });
+});

@@ -301,6 +301,7 @@
     "competitorUnverified": "未验证",
     "competitorUnverifiedHint": "尚无经过验证的来源表明二者存在竞争——可信度低。",
     "amountNotDisclosed": "金额未披露",
+    "amountConvertedHint": "按当年平均汇率折算为美元（估算）",
     "totalRaised": "累计融资额",
     "investorSchedule": "投资方明细",
     "growthTrend": "增长趋势",

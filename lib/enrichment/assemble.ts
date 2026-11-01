@@ -91,6 +91,18 @@ function roundTypeEvidence(round: V2Round, byId: Map<string, LabeledSource>): st
   return parts.join("\n");
 }
 
+/** True when a debt word sits right beside the figure: "$600 million credit facility", "a debt facility of $600M". */
+export function debtNextToAmount(text: string, amount: number): boolean {
+  for (const m of text.matchAll(/(\d[\d,]*\.?\d*)\s*(thousand|million|billion|mn|bn|k|m|b)?\b/gi)) {
+    const scale = m[2] ? ({ thousand: 1e3, k: 1e3, million: 1e6, mn: 1e6, m: 1e6, billion: 1e9, bn: 1e9, b: 1e9 } as Record<string, number>)[m[2].toLowerCase()] ?? 1 : 1;
+    if (Math.abs(parseFloat(m[1].replace(/,/g, "")) * scale - amount) / amount > 0.005) continue;
+    const after = text.slice(m.index! + m[0].length, m.index! + m[0].length + 40);
+    const before = text.slice(Math.max(0, m.index! - 40), m.index!);
+    if (/^\W{0,3}(\w+\s){0,3}(credit (facility|line)|debt|loans?|term loan|financing facility)\b/i.test(after) || /\b(credit (facility|line)|debt( financing| facility)?|loans?|term loan) (of|worth|totall?ing)\s*\W{0,2}$/i.test(before)) return true;
+  }
+  return false;
+}
+
 const EQUITY_LABELS = new Set(["Pre-Seed", "Seed", "Series A", "Series B", "Series C", "Series D", "Series E", "Series F+", "Growth", "Bridge", "Unknown", "Other"]);
 
 /**
@@ -105,6 +117,11 @@ export function groundRoundType(round: V2Round, sources: LabeledSource[]): { rou
   const quotes = [round.amount_raised, round.valuation, round.announcement_date, round.lead_investor].map((e) => e?.evidence_quote ?? "").join("\n");
   if (EQUITY_LABELS.has(type) && TYPE_STATED["Debt"]!.test(quotes) && !(TYPE_STATED[type]?.test(quotes))) {
     return { round_type: TYPE_STATED["Venture Debt"]!.test(quotes) ? "Venture Debt" : "Debt", stated: true };
+  }
+  // An untyped figure that its own source calls debt is debt (owner, 2026-11-01:
+  // Celonis' $600M credit facility of 2022 was written as an "Other" round).
+  if ((type === "Unknown" || type === "Other") && round.amount_raised?.value != null && debtNextToAmount(roundTypeEvidence(round, byId), round.amount_raised.value)) {
+    return { round_type: /\bventure debt\b/i.test(roundTypeEvidence(round, byId)) ? "Venture Debt" : "Debt", stated: true };
   }
   if (type === "Unknown" || type === "Other") return { round_type: type, stated: true };
   const re = TYPE_STATED[type];
@@ -358,7 +375,10 @@ export interface RoundWritePlan {
 /** Fills only the empty fields of `target` from `incoming` — never overwrites a value already present. */
 function fillRound(target: RoundLike, incoming: RoundLike): Record<string, unknown> {
   const patch: Record<string, unknown> = {};
-  if (target.amount_raised == null && incoming.amount_raised != null) patch.amount_raised = incoming.amount_raised;
+  if (target.amount_raised == null && incoming.amount_raised != null) {
+    patch.amount_raised = incoming.amount_raised;
+    if (incoming.amount_currency) { patch.amount_original = incoming.amount_original ?? null; patch.amount_currency = incoming.amount_currency; }
+  }
   if (target.valuation == null && incoming.valuation != null) {
     patch.valuation = incoming.valuation;
     patch.is_valuation_estimated = incoming.is_valuation_estimated ?? null;

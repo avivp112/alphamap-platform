@@ -44,6 +44,9 @@ export interface ProfilePerson {
 export interface ProfileRound {
   round_type: string;
   amount: number | null;
+  /** The figure and currency the source states, when not USD; `amount` is then the USD estimate. */
+  amount_original?: number | null;
+  amount_currency?: string | null;
   valuation: number | null;
   date: string | null;
   /** How much of `date` a source states: "year" means only the year (stored YYYY-01-01). */
@@ -159,6 +162,7 @@ export function buildProfile(c: CollectedCompany, companyName: string): CheckPro
     .map((r) => ({
       round_type: r.round_type,
       amount: r.amount_raised ?? null,
+      ...(r.amount_currency ? { amount_original: r.amount_original ?? null, amount_currency: r.amount_currency } : {}),
       valuation: r.valuation ?? null,
       date: normalizeIsoDate(r.announcement_date) ?? null,
       date_precision: r.announcement_date ? (r.announcement_date_precision ?? null) : null,

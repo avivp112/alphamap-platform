@@ -113,3 +113,17 @@ describe("a confirmed hint takes its date from the source that confirmed it (own
     expect(confirmHint(tml, sources, "Thinking Machines Lab")).toBeNull();
   });
 });
+
+describe("an article's date dates a confirmed hint only when its headline announces the raise (Black Forest Labs, eval of 2026-11-01)", () => {
+  const bfl: RoundHint = { round_type: "Series B", amount_raised: 300_000_000, announcement_date: null, lead_investor: null, source_url: "https://tracxn.com/d/companies/black-forest-labs" };
+  it("a later profile that mentions the round confirms nothing", () => {
+    const sources = buildLabeledSources([{ url: "https://fortune.com/2026/02/17/ai-startup-that-has-quietly-become-one-of-europes-most-valuable-companies/", title: "The AI startup that has quietly become one of Europe's most valuable companies",
+      content: "Date: Feb 17, 2026 — Black Forest Labs raised $300 million at a $3.25 billion valuation.", provider: "serper", query_label: "hint_raise" }]);
+    expect(confirmHint(bfl, sources, "Black Forest Labs")).toBeNull();
+  });
+  it("the announcement itself dates it", async () => {
+    const { headlineAnnounces } = await import("./hints");
+    expect(headlineAnnounces("Black Forest Labs raises $300M Series B at $3.25B valuation", 300_000_000)).toBe(true);
+    expect(headlineAnnounces("The AI startup that has quietly become one of Europe's most valuable companies", 300_000_000)).toBe(false);
+  });
+});

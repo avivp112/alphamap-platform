@@ -626,6 +626,7 @@ export async function writeCollected(
       const roundRow = {
         startup_id: row.id, round_type: round.round_type,
         amount_raised: round.amount_raised ?? null, valuation: round.valuation ?? null,
+        amount_original: round.amount_currency ? (round.amount_original ?? null) : null, amount_currency: round.amount_currency ?? null,
         is_valuation_estimated: round.valuation != null ? (round.is_valuation_estimated ?? null) : null,
         announcement_date: round.announcement_date ?? null, source_url: round.source_url ?? null,
         announcement_date_precision: round.announcement_date ? (round.announcement_date_precision ?? null) : null,
