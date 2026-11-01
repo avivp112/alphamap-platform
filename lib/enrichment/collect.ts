@@ -239,6 +239,9 @@ export async function runAllSearches(name: string, anchor: string, state: Search
     ["competitors",  `"${name}"${anchor} "competes with" OR "competitors include" OR "rival" OR "competing with"`],
     ["acquisitions", `"${name}"${anchor} acquires OR acquired OR acquisition`],
     ["financials",   `"${name}"${anchor} ARR "annual recurring revenue" OR revenue estimate OR valued at OR valuation milestone`],
+    // The press's own HQ phrase ("Tel Aviv-based Hailo") — without the domain
+    // anchor, which news articles rarely carry (owner, 2026-11-01; headquarters.ts).
+    ...(componentOn("hq_search") ? [["headquarters", `"${name}" "headquartered in" OR "based in" OR "-based" startup`] as [string, string]] : []),
     // (the separate "tech stack" query was dropped: careers/engineering
     // pages fetched from the company's own site carry that, for free)
   ];

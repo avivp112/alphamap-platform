@@ -38,6 +38,10 @@ export const V2_COMPONENTS = {
     on: true, since: "2026-10-29",
     what: "Stage 5b — searches a primary source for a round only a data platform states",
   },
+  hq_search: {
+    on: true, since: "2026-11-01",
+    what: "one more search for the press's own headquarters phrase (\"Tel Aviv-based Hailo\"), without the domain anchor",
+  },
   search_backup: {
     on: true, since: "2026-10-29",
     what: "Jina Search answers a search Serper could not; Serper scrape reads a page Jina could not",
