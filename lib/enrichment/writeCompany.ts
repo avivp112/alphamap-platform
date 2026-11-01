@@ -659,6 +659,12 @@ export async function writeCollected(
     // run to search again, never written as data; confirmed ones are closed.
     await saveHints(supabase, row.id, collected, runId);
 
+    // Domains on no list that a round came from: the owner's weekly review list (roundSources.ts).
+    for (const d of new Map((collected.unlistedDomains ?? []).map((x) => [x.domain, x])).values()) {
+      const { error: domErr } = await supabase.rpc("note_source_domain", { p_domain: d.domain, p_url: d.url, p_startup_id: row.id });
+      if (domErr) console.warn(`    ⚠️  source_domain_review (${d.domain}): ${domErr.message}`);
+    }
+
     await supabase.from("startups").update({ last_enriched_at: new Date().toISOString() }).eq("id", row.id);
     // Every page this run sent to Claude: a later update skips them.
     seen?.add(allSources.map((src) => src.url));

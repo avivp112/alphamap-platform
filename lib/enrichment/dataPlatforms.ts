@@ -56,6 +56,11 @@ export const DATA_PLATFORMS: DataPlatform[] = [
   { name: "SignalHire", domains: ["signalhire.com"] },
   { name: "Clay.com", domains: ["clay.com"] },
   { name: "PremierAlts", aliases: ["Premier Alts", "premieralts.com"], domains: ["premieralts.com"] },
+  // Sites that copy the platforms' rounds (the 2026-11-01 review sheet).
+  { name: "Multiples", aliases: ["multiples.vc"], caseSensitive: true, domains: ["multiples.vc"] },
+  { name: "parsers.vc", domains: ["parsers.vc"] },
+  { name: "FundedIQ", aliases: ["fundediq.co"], domains: ["fundediq.co"] },
+  { name: "startup-map.cologne", domains: ["startup-map.cologne"] },
 ];
 
 /**

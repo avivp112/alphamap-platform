@@ -65,12 +65,12 @@ describe("LinkedIn: an accelerator is not where someone studied", () => {
 
 describe("rounds that are not written", () => {
   const src = (id: string, url: string): LabeledSource => ({ source_id: id, url, title: "", content: "", provider: "serper", query_label: "q", source_type: "news" } as unknown as LabeledSource);
-  const sources = [src("S1", "https://www.cbinsights.com/company/homelane/financials"), src("S2", "https://www.hirist.tech/j/agrim-senior-business-analyst-1653090"), src("S3", "https://mycodelesswebsite.com/hotjar-statistics")];
+  const sources = [src("S1", "https://www.cbinsights.com/company/homelane/financials"), src("S2", "https://www.hirist.tech/j/agrim-senior-business-analyst-1653090"), src("S3", "https://mycodelesswebsite.com/hotjar-statistics"), src("S4", "https://techcrunch.com/2022/06/03/hitch-works-acquired")];
   const round = (r: Partial<V2Round>): V2Round => ({ round_type: "Seed", ...r });
 
   it("drops a round that is only a label — no amount, valuation or investor (HomeLane's Series F+)", () => {
     expect(rejectRound(round({ round_type: "Series F+", announcement_date: { value: "2025-09-02", source_id: "S1", evidence_quote: "Sep 2, 2025" } }), "HomeLane", sources)).toBe("round_without_substance");
-    expect(rejectRound(round({ round_type: "Acquired", announcement_date: { value: "2022-06-03", source_id: "S3", evidence_quote: "x" } }), "Hitch Works", sources)).toBeNull();
+    expect(rejectRound(round({ round_type: "Acquired", announcement_date: { value: "2022-06-03", source_id: "S4", evidence_quote: "x" } }), "Hitch Works", sources)).toBeNull();
     // ...but not when CB Insights is its only source (data platform only, 2026-10-26).
     expect(rejectRound(round({ round_type: "Acquired", announcement_date: { value: "2022-06-03", source_id: "S1", evidence_quote: "x" } }), "Hitch Works", sources)).toBe("round_only_from_data_platform");
   });
@@ -81,8 +81,8 @@ describe("rounds that are not written", () => {
   it("drops a round the quote says someone else raised (Contentsquare's $500M was not Hotjar's)", () => {
     expect(rejectRound(round({ round_type: "Series E", amount_raised: { value: 500_000_000, source_id: "S3", evidence_quote: "In 2021, Contentsquare raised a $500M Series E and bought Hotjar." } }), "Hotjar", sources))
       .toBe("round_raised_by_another_company");
-    expect(rejectRound(round({ round_type: "Seed", amount_raised: { value: 8_000_000, source_id: "S3", evidence_quote: "Highlight raised an $8M seed round led by Afore" } }), "Highlight.io", sources)).toBeNull();
-    expect(rejectRound(round({ round_type: "Seed", amount_raised: { value: 3_000_000, source_id: "S3", evidence_quote: "The company raised $3M" } }), "Hoppscotch", sources)).toBeNull();
+    expect(rejectRound(round({ round_type: "Seed", amount_raised: { value: 8_000_000, source_id: "S4", evidence_quote: "Highlight raised an $8M seed round led by Afore" } }), "Highlight.io", sources)).toBeNull();
+    expect(rejectRound(round({ round_type: "Seed", amount_raised: { value: 3_000_000, source_id: "S4", evidence_quote: "The company raised $3M" } }), "Hoppscotch", sources)).toBeNull();
   });
 });
 

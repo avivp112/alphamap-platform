@@ -164,6 +164,7 @@ async function runV2(company: GoldenCompany, anthropic: Anthropic, taxonomy: Sec
       competitor_sources: c.market.competitors.map((x) => ({ name: x.name, source_url: c.sourceUrlFor(x.source_id), quote: x.evidence_quote ?? null })),
       // Patents come only from the EPO register: not looked up (no EPO keys) is not "none".
       patents: c.patentsFromRegister ? c.market.patents.map((x) => x.patent_number).filter((n): n is string => !!n) : undefined,
+      unlisted_domains: c.unlistedDomains ?? [],
       hints: {
         confirmed: (c.confirmedHints ?? []).map((h) => ({ round_type: h.round_type, amount_raised: h.amount_raised, date: h.announcement_date, source_url: h.confirmed_source_url })),
         kept: (c.roundHints ?? []).map((h) => ({ round_type: h.round_type, amount_raised: h.amount_raised, date: h.announcement_date, source_url: h.source_url })),
@@ -346,6 +347,22 @@ async function main() {
       if (matched.has(i) || unknown.some((u) => roundsDayGap(u, r) !== null) || isEvent(r.round_type)) return;
       roundsToReview.push({ company_id: company.id, company: company.name, round_type: r.round_type, amount_usd: r.amount_raised == null ? "" : String(r.amount_raised), date: r.date ?? "", lead_investor: r.lead_investor ?? "", source_url: r.source_url ?? "", mark: "" });
     });
+  }
+  // Domains on no list that rounds came from (roundSources.ts): allow / deny / ignore.
+  const domainCounts = new Map<string, { seen: number; company: string; url: string }>();
+  for (const company of companies) {
+    for (const d of new Map((perCompany[company.id]?.output?.unlisted_domains ?? []).map((x) => [x.domain, x])).values()) {
+      const e = domainCounts.get(d.domain);
+      if (e) e.seen++; else domainCounts.set(d.domain, { seen: 1, company: company.name, url: d.url });
+    }
+  }
+  if (domainCounts.size) {
+    const sheet = join(__dir, "review", "domains_review.csv");
+    mkdirSync(dirname(sheet), { recursive: true });
+    const rows = [...domainCounts].sort((x, y) => y[1].seen - x[1].seen).map(([domain, e]) => ({ domain, companies: String(e.seen), example_company: e.company, example_url: e.url, decision: "" }));
+    const existing = existsSync(sheet) ? parseCsv(readFileSync(sheet, "utf8")) : [];
+    writeFileSync(sheet, toCsv(["domain", "companies", "example_company", "example_url", "decision"], mergeRows(existing, rows, (r) => r.domain)));
+    console.log(`🌐  ${domainCounts.size} unlisted source domain(s) in eval/review/domains_review.csv — mark "מותר" / "אסור" / "להתעלם"`);
   }
   if (roundsToReview.length) {
     const sheet = join(__dir, "review", "rounds_review.csv");

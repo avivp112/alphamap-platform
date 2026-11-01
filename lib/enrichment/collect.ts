@@ -29,7 +29,7 @@ import { lookupEpoPatents, type CompanyIdentity, type EpoPatentResult } from "./
 import { hintFromRound, hintQueries, confirmHint, hintKey, type RoundHint } from "./hints.ts";
 import { detectGaps, buildDeepDiveQueries, hasNoFinancingRounds, type DeepDiveSection } from "./deepDive.ts";
 import {
-  groundRoundDetails, isUnstatedEvent, incompleteRound, rejectRound, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
+  groundRoundDetails, isUnstatedEvent, incompleteRound, rejectRound, roundSourceStandings, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
   type ExistingRoundRef,
 } from "./assemble.ts";
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
@@ -199,6 +199,8 @@ export interface CollectedCompany {
   roundHints?: RoundHint[];
   /** Hints a primary source confirmed this run: written as rounds with that source; earlier ones get status confirmed. */
   confirmedHints?: Array<RoundHint & { confirmed_source_url: string }>;
+  /** Domains on no list (roundSources.ts) that a round came from: for the owner's review list. */
+  unlistedDomains?: Array<{ domain: string; url: string }>;
 }
 
 export type CollectResult =
@@ -728,10 +730,19 @@ export async function collectCompany(
 
   // ── Round grounding: co-investors / per-investor amounts / source URL ──
   const platformOnly: V2Round[] = [];
+  const unlistedDomains: Array<{ domain: string; url: string }> = [];
   const keptRounds = funding.funding_rounds.filter((r) => {
     const why = rejectRound(r, row.name, allSources);
     if (!why) return true;
-    if (why === "round_only_from_data_platform") { platformOnly.push(r); return false; }
+    if (why === "round_only_from_data_platform" || why === "round_source_not_listed") {
+      platformOnly.push(r);
+      // An unlisted domain goes to the owner's review list (roundSources.ts).
+      for (const s of roundSourceStandings(r, allSources)) {
+        if (s.kind === "unlisted") unlistedDomains.push({ domain: s.domain, url: s.url });
+      }
+      if (why === "round_source_not_listed") bump(stats.droppedByReason, why);
+      return false;
+    }
     console.log(`    🚫  ${r.round_type} not written (${why})`);
     bump(stats.droppedByReason, why);
     return false;
@@ -865,6 +876,6 @@ export async function collectCompany(
     outcome: "collected",
     profile, funding, market, allSources, sourceById, sourceTypeFor, sourceUrlFor,
     linkedinFounders, linkedinLeaders, existingRefs, validation, plan,
-    cityConfidence, countryConfidence, domain, verifiedFacts, patentsFromRegister, roundHints, confirmedHints,
+    cityConfidence, countryConfidence, domain, verifiedFacts, patentsFromRegister, roundHints, confirmedHints, unlistedDomains,
   };
 }

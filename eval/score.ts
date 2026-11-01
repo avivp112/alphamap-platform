@@ -72,6 +72,8 @@ export interface PipelineOutput {
   competitor_sources?: Array<{ name: string; source_url: string | null; quote: string | null }>;
   /** Rounds only a data platform stated (lib/enrichment/hints.ts): confirmed by a primary source, or kept as hints. */
   hints?: { confirmed: HintedRound[]; kept: HintedRound[] };
+  /** Domains on no list that a round came from (lib/enrichment/roundSources.ts). */
+  unlisted_domains?: Array<{ domain: string; url: string }>;
 }
 
 export interface HintedRound { round_type: string | null; amount_raised: number | null; date: string | null; source_url: string | null }

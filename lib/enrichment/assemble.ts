@@ -26,6 +26,7 @@ import { namesCompany } from "./headcount";
 import type { V2Round, V2FundingExtraction } from "./extractFunding";
 import type { V2ProfileExtraction, V2Founder, V2Leader } from "./extractProfile";
 import { classifySourceType, type LabeledSource } from "./sources";
+import { roundSourceStanding, type SourceStanding } from "./roundSources";
 
 const sourceText = (s: LabeledSource) => `${s.title ?? ""} ${s.content} ${s.url}`;
 
@@ -253,7 +254,7 @@ export function groundRoundDetails(
 
 // ── Rounds not written at all ────────────────────────────────────────────
 
-export type RoundRejection = "round_without_substance" | "round_from_job_posting" | "round_raised_by_another_company" | "round_only_from_data_platform";
+export type RoundRejection = "round_without_substance" | "round_from_job_posting" | "round_raised_by_another_company" | "round_only_from_data_platform" | "round_source_not_listed";
 
 const JOB_POSTING_URL_RE = /\/(j|job|jobs|careers?|vacanc(?:y|ies)|openings?|positions?)\/|(?:lever\.co|greenhouse\.io|workable\.com|ashbyhq\.com|indeed\.\w+|glassdoor\.\w+)\//i;
 const RAISER_RE = /(?:^|[.;:!?]\s+|\s—\s|,\s+)([A-Z][\p{L}\d.&'’-]*(?:\s+[A-Z][\p{L}\d.&'’-]*){0,3})\s+(?:has\s+|have\s+|just\s+)?(?:[Rr]ais(?:ed|es)|[Ss]ecur(?:ed|es)|[Cc]los(?:ed|es)|[Ll]ands|[Bb]ags|[Nn]abs)\b/u;
@@ -269,7 +270,10 @@ const NOT_A_RAISER = /^(The|It|This|That|Its|Their|Our|We|They|He|She|Company|St
  *   - the quote names someone else as the raiser ("Contentsquare raised a
  *     $500M Series E" is not Hotjar's round);
  *   - every source it cites is a data platform (owner, 2026-10-26: BETA's
- *     $169M debt round came from app.dealroom.co alone).
+ *     $169M debt round came from app.dealroom.co alone);
+ *   - none of its sources is on the allowed list (roundSources.ts, owner
+ *     2026-11-01): multiples.vc, fundediq.co, parsers.vc, Wikipedia — kept as
+ *     a hint, and an unlisted domain goes to the owner's review list.
  */
 export function rejectRound(round: V2Round, companyName: string, sources: LabeledSource[]): RoundRejection | null {
   const type = normalizeRoundType(round.round_type);
@@ -283,11 +287,14 @@ export function rejectRound(round: V2Round, companyName: string, sources: Labele
     .concat(round.source_url ?? undefined)
     .filter((u): u is string => !!u);
   if (cited.length > 0 && cited.every((u) => JOB_POSTING_URL_RE.test(u))) return "round_from_job_posting";
-  if (cited.length > 0 && cited.every((u) => classifySourceType(u) === "aggregator_snippet")) return "round_only_from_data_platform";
+  const standings = roundSourceStandings(round, sources);
+  const allowedSomewhere = standings.length === 0 || standings.some((s) => s.kind === "allowed");
+  if (!allowedSomewhere && standings.every((s) => s.kind === "denied")) return "round_only_from_data_platform";
   const quote = round.amount_raised?.evidence_quote ?? "";
   const raiser = quote.match(RAISER_RE)?.[1];
   const bareName = companyName.replace(/\.(io|ai|com|co|app|so|dev|net)$/i, "");
   if (raiser && !NOT_A_RAISER.test(raiser) && !namesCompany(raiser, companyName) && !namesCompany(raiser, bareName)) return "round_raised_by_another_company";
+  if (!allowedSomewhere) return "round_source_not_listed";
   return null;
 }
 
@@ -307,6 +314,20 @@ export function incompleteRound(r: RoundLike): IncompleteRoundRejection | null {
   if (r.amount_raised == null && (GENERIC_TYPES.has(type) || !r.announcement_date || !r.lead_investor)) return "round_without_amount_incomplete";
   if (type === "Other" && !r.announcement_date) return "round_other_without_date";
   return null;
+}
+
+/** Where each source a round cites stands (roundSources.ts): its quotes' sources, else its source_url. */
+export function roundSourceStandings(round: V2Round, sources: LabeledSource[]): Array<SourceStanding & { url: string }> {
+  const byId = new Map(sources.map((s) => [s.source_id, s]));
+  const byUrl = new Map(sources.map((s) => [s.url, s]));
+  const cited = [round.amount_raised, round.lead_investor, round.valuation, round.announcement_date]
+    .map((f) => (f?.source_id ? byId.get(f.source_id) : undefined))
+    .filter((s): s is LabeledSource => !!s);
+  const urls = cited.length ? [...new Set(cited.map((s) => s.url))] : round.source_url ? [round.source_url] : [];
+  return urls.map((url) => ({
+    url,
+    ...roundSourceStanding(url, { isCompanySite: byUrl.get(url)?.source_type === "company_site" || cited.find((s) => s.url === url)?.source_type === "company_site", leadInvestor: round.lead_investor?.value }),
+  }));
 }
 
 // ── Round write planning ─────────────────────────────────────────────────

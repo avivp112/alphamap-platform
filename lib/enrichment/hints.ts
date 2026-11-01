@@ -25,8 +25,7 @@ import { announcementDateFromSource } from "./assemble";
 import { namesCompany } from "./headcount";
 import { classifySourceType, type LabeledSource } from "./sources";
 import { isListingSiteUrl } from "./dataPlatforms";
-import { isTrustedNewsUrl } from "./trustedNews";
-import { isNotPrimaryUrl } from "./primarySources";
+import { roundSourceStanding } from "./roundSources";
 import type { V2Round } from "./extractFunding";
 
 export interface RoundHint {
@@ -82,16 +81,15 @@ const sentences = (text: string) => text.replace(/\s+/g, " ").split(/(?<=[.!?])\
 const nearAmount = (sentence: string, amount: number) => extractNumbersFromText(sentence).some((n) => Math.abs(n - amount) / amount < 0.01);
 
 /**
- * A source that may confirm a hint — a primary source only (primarySources.ts):
- * the company's own site, a press release through an official wire, a
- * register / filing, or an article in a trusted outlet (trustedNews.ts).
- * Never a data platform, a directory, a social post or a PR-content site.
+ * A source that may confirm a hint: one on the allowed list for rounds
+ * (roundSources.ts, owner 2026-11-01) — the company's own site, the lead
+ * investor's, an official wire, a register, or the listed press. Never a data
+ * platform, a directory, a social post, Wikipedia or an unlisted site.
  */
-export function canConfirm(s: Pick<LabeledSource, "url" | "source_type">): boolean {
-  if (isNotPrimaryUrl(s.url) || isListingSiteUrl(s.url)) return false;
+export function canConfirm(s: Pick<LabeledSource, "url" | "source_type">, leadInvestor?: string | null): boolean {
+  if (isListingSiteUrl(s.url)) return false;
   const t = s.source_type ?? classifySourceType(s.url);
-  if (t === "company_site" || t === "press_release" || t === "registry") return true;
-  return t === "news" && isTrustedNewsUrl(s.url);
+  return roundSourceStanding(s.url, { isCompanySite: t === "company_site", leadInvestor }).kind === "allowed";
 }
 
 /**
@@ -108,7 +106,7 @@ export function canConfirm(s: Pick<LabeledSource, "url" | "source_type">): boole
 export function confirmHint(h: RoundHint, sources: LabeledSource[], companyName: string): V2Round | null {
   if (h.amount_raised == null || h.amount_raised <= 0) return null;
   for (const s of sources) {
-    if (!canConfirm(s)) continue;
+    if (!canConfirm(s, h.lead_investor)) continue;
     const text = `${s.title ?? ""}. ${s.content}`;
     if (!namesCompany(text, companyName)) continue;
     // A filing counts by what was sold, never by what was offered.
