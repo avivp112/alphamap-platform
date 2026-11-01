@@ -274,3 +274,11 @@ describe("a no-amount round on the date of one with an amount is that round (Sar
     ]);
   });
 });
+
+describe("'an E round' names Series E (Coralogix's release, eval of 2026-11-01)", () => {
+  it("reads the letter, never 'a round'", async () => {
+    const { statedRoundLabels } = await import("./assemble");
+    expect(statedRoundLabels("Coralogix raises $115M E round at $1B valuation; the company closed an E round")).toEqual(["Series E"]);
+    expect(statedRoundLabels("Hailo raised a round of $120 million")).toEqual([]);
+  });
+});

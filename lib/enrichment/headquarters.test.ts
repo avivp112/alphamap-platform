@@ -33,3 +33,14 @@ describe("the headquarters (owner, 2026-11-01): the company's declaration, else 
     expect(declaresHeadquarters("offices in Tel Aviv", "company_site", null)).toBe(false);
   });
 });
+
+describe("the HQ phrase must be about THIS company (Fresha's blog gave 'Paris', an investor's HQ — eval of 2026-11-01)", () => {
+  it("another company's '<city>-based' or 'headquartered in' in the same sentence is not the company's", () => {
+    const s = buildLabeledSources([{ url: "https://www.fresha.com/blog/general-atlantic-lead-100m-in-freshas-future", title: "",
+      content: "Fresha raised $100 million led by General Atlantic, with Paris-based Partech joining the round.", provider: "jina", query_label: "website" }], "fresha.com")[0];
+    expect(hqStatementsIn(s, "Fresha")).toEqual([]);
+    const own = buildLabeledSources([{ url: "https://www.fresha.com/about", title: "", content: "We are headquartered in London, with teams across Europe.", provider: "jina", query_label: "website" }], "fresha.com")[0];
+    expect(hqStatementsIn(own, "Fresha")).toMatchObject([{ city: "London", kind: "company" }]);
+    expect(hqStatementsIn(src("https://techcrunch.com/x", "Hailo, headquartered in Tel Aviv, raised $120 million."), "Hailo")).toMatchObject([{ city: "Tel Aviv" }]);
+  });
+});

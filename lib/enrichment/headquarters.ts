@@ -74,16 +74,40 @@ export function hqStatementsIn(s: LabeledSource, companyName: string): HqStateme
   const out: HqStatement[] = [];
   for (const sentence of sentencesOf(`${s.title ?? ""}. ${s.content}`)) {
     if (sentence.length > 400 || !HQ_WORD.test(sentence)) continue;
-    // About this company: its name, or its own page.
-    if (!namesCompany(sentence, companyName) && s.source_type !== "company_site") continue;
     for (const m of sentence.matchAll(CITY_RE)) {
       const city = title(m[2].toLowerCase());
-      const near = sentence.slice(Math.max(0, m.index! - 40), m.index! + m[0].length + 40);
-      if (!HQ_WORD.test(near) || isRegionalOfficeQuote(sentence, city)) continue;
+      if (!saysOfCompany(sentence, m.index! + m[1].length, city, companyName, s.source_type === "company_site") || isRegionalOfficeQuote(sentence, city)) continue;
       if (!out.some((o) => o.city === city)) out.push({ city, quote: sentence.trim(), source_id: s.source_id, url: s.url, kind, date });
     }
   }
   return out;
+}
+
+/**
+ * The HQ phrase is about THIS company, not another one in the same sentence
+ * (owner, 2026-11-01: Fresha's own blog post about its round gave "Paris" —
+ * the HQ of an investor it named):
+ *   "<City>-based <Company>"        — the company right after "-based",
+ *   "<Company>, the <City>-based startup" — or in apposition just before;
+ *   "<Company>, headquartered in <City>" / "<Company> is based in <City>"
+ *                                     — the company just before the phrase;
+ *   on its own site, "we are / our headquarters" also counts.
+ */
+function saysOfCompany(sentence: string, at: number, city: string, companyName: string, ownSite: boolean): boolean {
+  const after = sentence.slice(at + city.length);
+  const based = after.match(/^-based\s+(.{0,60})/i);
+  if (based) {
+    if (namesCompany(based[1].split(/[,;(]/)[0], companyName)) return true;
+    // "Mistral AI, the Paris-based startup": the company in apposition just before.
+    const pre = sentence.slice(Math.max(0, at - 60), at);
+    return /,\s*(?:the|a|an)\s+$/i.test(pre) && namesCompany(pre, companyName);
+  }
+  const before = sentence.slice(Math.max(0, at - 90), at);
+  const phrase = before.match(/(headquarter(?:s|ed)?|hq|head office|based)\s+(?:is\s+|are\s+)?(?:located\s+)?in\s+$/i);
+  if (!phrase) return false;
+  const lead = before.slice(0, phrase.index).split(/[;:]|\.\s/).pop() ?? "";
+  if (namesCompany(lead, companyName)) return true;
+  return ownSite && /\b(we|we're|we are|our)\b/i.test(lead);
 }
 
 const DAY = 86_400_000;

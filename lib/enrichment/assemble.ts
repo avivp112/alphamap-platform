@@ -96,7 +96,9 @@ const NAMED_LABELS = ["Pre-Seed", "Seed", "Series A", "Series B", "Series C", "S
 
 /** The round labels a text names ("Pre-Seed" is not also "Seed"). */
 export function statedRoundLabels(text: string): string[] {
-  const found = NAMED_LABELS.filter((l) => TYPE_STATED[l]!.test(text));
+  // "an E round", "its D round" (Coralogix's GlobeNewswire release, 2026-11-01) — never "a round".
+  const letter = [...text.matchAll(/\b(?:an?|its|the)\s+([B-F])[- ]round\b/g)].map((m) => `Series ${m[1]}`);
+  const found = NAMED_LABELS.filter((l) => TYPE_STATED[l]!.test(text) || letter.includes(l) || (l === "Series F+" && letter.includes("Series F")));
   return found.includes("Pre-Seed") ? found.filter((l) => l !== "Seed") : [...found];
 }
 

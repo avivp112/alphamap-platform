@@ -122,8 +122,10 @@ export function confirmHint(h: RoundHint, sources: LabeledSource[], companyName:
     if (!date) continue;
     const leadQuote = h.lead_investor ? sentences(text).find((sen) => sen.length <= 400 && normalizeForMatch(sen).includes(normalizeForMatch(h.lead_investor!))) : undefined;
     return {
-      // The type is read from the confirming source, never the platform's label (owner, 2026-11-01).
-      round_type: "Unknown",
+      // The platform's label is only a candidate: grounding keeps it only when
+      // the confirming source states it, and the amount's own sentence or
+      // headline overrides it (assemble.ts groundRoundType).
+      round_type: h.round_type ?? "Unknown",
       amount_raised: { value: h.amount_raised, source_id: s.source_id, evidence_quote: quote.trim() },
       announcement_date: { value: date.iso, source_id: s.source_id, evidence_quote: date.quote },
       ...(leadQuote ? { lead_investor: { value: h.lead_investor!, source_id: s.source_id, evidence_quote: leadQuote.trim() } } : {}),
