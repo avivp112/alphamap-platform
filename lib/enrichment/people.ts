@@ -312,3 +312,8 @@ export function groundFounders<T extends { name: string }>(
   }
   return { kept, dropped };
 }
+
+/** "Prof. Matt Niessner" → "Matt Niessner", "Dr. Elad Walach" → "Elad Walach" (owner, 2026-11-01: a founder's name, no title). */
+export function stripHonorific(name: string): string {
+  return name.replace(/^\s*((prof|professor|dr|doctor|mr|mrs|ms|sir|dame)\.?\s+)+/i, "").trim();
+}

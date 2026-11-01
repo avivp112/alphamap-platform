@@ -42,6 +42,7 @@ import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
 import { validateEnrichment, checkNarratives } from "./validation.ts";
 import { hqStatementsIn, decideHeadquarters, statementKind, articleDate, countryOfCity } from "./headquarters.ts";
+import { stripHonorific } from "./people.ts";
 import { countryFromLocationQuote } from "./location.ts";
 import type { VerifiedFact } from "./narrative.ts";
 import { computeTotalRaised, normalizeRoundType, type RoundLike } from "./rounds.ts";
@@ -625,11 +626,16 @@ export async function collectCompany(
   // one: in snippets it caught "Los Angeles" and "Cyberstarts' Gili Raanan".
   // Such sentences still ground an extracted founder (groundFounders) and are
   // reported here as names the extraction did not give.
-  // The old behaviour stays behind a switch (components.ts), off, to measure it.
+  // A "founded by" sentence adds a founder only on the company's own site or
+  // in the press of tiers 1–3 (owner, 2026-11-01), its name without an
+  // honorific; the name filters (no place, no organisation) are foundersFromText's.
   if (componentOn("founders_from_sentences")) {
     const textFounders: string[] = [];
     for (const src of allSources) {
-      for (const f of foundersFromText(src.content, row.name, { url: src.url, title: src.title })) {
+      if (!statementKind(src)) continue;
+      for (const raw of foundersFromText(src.content, row.name, { url: src.url, title: src.title })) {
+        const f = { ...raw, name: stripHonorific(raw.name) };
+        if (!f.name.includes(" ")) continue;
         const founders = profile.profile.founders ?? [];
         if (founders.some((x) => x?.name && samePersonName(x.name, f.name))) continue;
         profile.profile.founders = [...founders, { name: f.name, title: f.title }];

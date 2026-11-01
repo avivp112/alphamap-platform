@@ -27,8 +27,8 @@ export const V2_COMPONENTS = {
     what: "Stage 9b — founders' and leaders' LinkedIn profiles, bios from the public snippet, founder discovery",
   },
   founders_from_sentences: {
-    on: false, since: "2026-10-08",
-    what: "adds a founder from a \"founded by\" sentence without extraction evidence (off by the owner, 2026-10-29)",
+    on: true, since: "2026-10-08",
+    what: "adds a founder a \"founded by\" sentence names — only on the company's site or in the press of tiers 1–3 (owner, 2026-11-01; off 2026-10-29 – 11-01)",
   },
   epo_patents: {
     on: true, since: "2026-10-26",

@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import { componentStates, componentOn, V2_COMPONENT_NAMES } from "./components";
 
 describe("one switch per v2 component (owner, 2026-10-29)", () => {
-  it("defaults: everything on except founders from sentences", () => {
+  it("defaults: everything on (founders from sentences back on, restricted — owner, 2026-11-01)", () => {
     const s = componentStates("");
-    expect(V2_COMPONENT_NAMES.filter((n) => !s[n])).toEqual(["founders_from_sentences"]);
+    expect(V2_COMPONENT_NAMES.filter((n) => !s[n])).toEqual([]);
   });
   it("baseline turns every component off, all turns every one on", () => {
     expect(Object.values(componentStates("baseline")).every((v) => !v)).toBe(true);

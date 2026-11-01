@@ -86,3 +86,12 @@ describe("a founder comes only from the extraction, with evidence (owner, 2026-1
   });
 });
 
+
+describe("a founder's name has no title (owner, 2026-11-01: 'Prof. Matt Niessner')", () => {
+  it("strips honorifics", async () => {
+    const { stripHonorific } = await import("./people");
+    expect(stripHonorific("Prof. Matt Niessner")).toBe("Matt Niessner");
+    expect(stripHonorific("Dr Elad Walach")).toBe("Elad Walach");
+    expect(stripHonorific("Drew Houston")).toBe("Drew Houston");
+  });
+});
