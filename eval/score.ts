@@ -64,7 +64,7 @@ export interface PipelineOutput {
   country: string | null;
   founded_year: number | null;
   founding_country?: string | null;
-  founders: Array<{ name: string }>;
+  founders: Array<{ name: string; has_bio?: boolean }>;
   rounds: Array<{ round_type: string; amount_raised: number | null; date: string | null; lead_investor?: string | null; source_url?: string | null }>;
   employee_range: string | null;
   arr_usd?: number | null;

@@ -75,7 +75,12 @@ export interface WriteContext {
   seen?: { add(urls: string[]): void; save(): void } | null;
   /** enrichment_runs.run_id: every write is recorded in field_changes under it (runChanges.ts). */
   runId?: string | null;
+  /** A partial wet run (writeGate.ts PILOT_FIELDS): only these startups columns are written, nothing else. */
+  pilotFields?: readonly string[];
 }
+
+/** One field of a pilot: what is on file, what the run writes, and its source. */
+export interface PilotChange { field: string; before: unknown; after: unknown; source_url: string | null; quote: string | null }
 
 /** The run totals Stage 10 adds to (the bulk run's RunSummary has these). */
 export interface WriteSummary {
@@ -104,6 +109,8 @@ export interface WriteOutcome {
   tags: string[];
   newsAdded: number;
   competitorsAdded: number;
+  /** A pilot run: each field written (or, dry, that would be), before and after. */
+  pilot?: PilotChange[];
 }
 
 let warnedNoHintsTable = false;
@@ -545,6 +552,38 @@ export async function writeCollected(
 
   if (profile.metrics.employee_range) setIfChanged("employee_range", fillScalarIfNull(row.employee_range, profile.metrics.employee_range), row.employee_range);
   if (profile.metrics.growth_trend) setIfChanged("growth_trend", profile.metrics.growth_trend, row.growth_trend);
+
+  // ── A partial wet run: only the pilot's fields, nothing else is touched ──
+  // (no rounds, people, tags, news, hints, headcount, score or timestamps).
+  if (ctx.pilotFields) {
+    const allowed = new Set(ctx.pilotFields);
+    for (const k of Object.keys(patch)) if (!allowed.has(k)) delete patch[k];
+    const writes = fieldWrites.filter((fw) => allowed.has(fw.field.replace(/^profile\./, "")));
+    const pilot: PilotChange[] = Object.keys(patch).map((k) => {
+      const fw = writes.find((w) => w.field === `profile.${k}`);
+      return { field: k, before: (row as unknown as Record<string, unknown>)[k] ?? null, after: patch[k], source_url: fw ? sourceById.get(fw.source_id)?.url ?? null : null, quote: fw?.evidence_quote ?? null };
+    });
+    for (const c of pilot) console.log(`    ${DRY_RUN ? "[DRY] would write" : "✏️  writing"} ${c.field}: ${JSON.stringify(c.before)} → ${JSON.stringify(c.after)}  (${c.source_url ?? "no source"})`);
+    if (!pilot.length) console.log("    🟠 pilot: nothing to write for its fields");
+    if (!DRY_RUN && pilot.length) {
+      const { error } = await supabase.from("startups").update(patch).eq("id", row.id);
+      if (error) console.warn(`    ⚠️  Pilot patch failed: ${error.message}`);
+      else {
+        await recordChanges(startupChanges(row.id, row as unknown as Record<string, unknown>, patch, runId));
+        for (const fw of writes) {
+          const { error: provErr } = await supabase.from("field_provenance").insert({
+            startup_id: row.id, field: fw.field, value: fw.value, source_url: sourceById.get(fw.source_id)?.url,
+            source_type: fw.source_type, evidence_quote: fw.evidence_quote,
+            confidence: computeFieldConfidence([{ source_type: fw.source_type }]), run_id: runId,
+          });
+          if (provErr) console.warn(`    ⚠️  field_provenance insert failed (${fw.field}): ${provErr.message}`);
+        }
+      }
+    }
+    summary.totalFieldsPatched += pilot.length;
+    summary.tally[pilot.length ? "success" : "partial"]++;
+    return { anyWrite: pilot.length > 0, patch, roundInserts: [], roundUpdates: [], headcountPoints: [], tags: [], newsAdded: 0, competitorsAdded: 0, pilot };
+  }
 
   const fieldsPatched = Object.keys(patch).length;
 

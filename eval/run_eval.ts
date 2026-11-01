@@ -156,7 +156,7 @@ async function runV2(company: GoldenCompany, anthropic: Anthropic, taxonomy: Sec
     return done({
       city: p.overview.city?.value ?? null, country: p.overview.country?.value ?? null, founded_year: p.overview.founded_year?.value ?? null,
       founding_country: p.overview.founding_country?.value ?? null,
-      founders: p.people.founders.map((f) => ({ name: f.name })),
+      founders: p.people.founders.map((f) => ({ name: f.name, has_bio: !!f.bio })),
       // A year-only date is scored as that year, never as January 1st (owner, 2026-10-29).
       rounds: p.funding.rounds.map((r) => ({ round_type: r.round_type, amount_raised: r.amount, date: datedAs(r.date, r.date_precision), lead_investor: r.lead_investor, source_url: r.source_url })),
       employee_range: p.overview.employee_range,
@@ -229,6 +229,8 @@ async function main() {
   const hintTotals = { confirmed: 0, confirmed_matching_golden: 0, kept: 0, kept_matching_golden: 0 };
   // A round with no date is a gap the user sees too (owner, 2026-10-29).
   const roundDates = { rounds: 0, undated: 0 };
+  // Does every founder written get a bio? (owner, 2026-11-01)
+  const founderBios = { founders: 0, with_bio: 0 };
 
   for (const company of companies) {
     console.log(`── ${company.name} (${company.id}) ──`);
@@ -292,7 +294,9 @@ async function main() {
     perCompany[company.id] = { output, ...extra, fields, duplicates: dups, founded_after_round: afterRound, hints: gain };
 
     console.log(`    city="${out.city ?? "—"}" (${fields.city}) country="${out.country ?? "—"}" (${fields.country}) founded-in="${out.founding_country ?? "—"}" (${fields.founding_country}) founded=${out.founded_year ?? "—"} (${fields.founded_year})`);
-    console.log(`    founders=${out.founders.map((f) => f.name).join(", ") || "—"} (${fields.founders})`);
+    console.log(`    founders=${out.founders.map((f) => f.name).join(", ") || "—"} (${fields.founders})${out.founders.length ? ` · with a bio: ${out.founders.filter((f) => f.has_bio).length}/${out.founders.length}` : ""}`);
+    founderBios.founders += out.founders.length;
+    founderBios.with_bio += out.founders.filter((f) => f.has_bio).length;
     console.log(`    rounds=${out.rounds.length} (golden: ${(company.funding_rounds ?? []).filter((r) => r.confidence !== "unknown").length} verified; ${fields.funding_rounds})${dups.length ? ` ⚠️ ${dups.length} duplicate pair(s)` : ""}${afterRound ? " ⚠️ founded after first round" : ""}`);
     const usd = (n: number | null) => (n == null ? "?" : n >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : `$${(n / 1e6).toFixed(1)}M`);
     for (const r of out.rounds) console.log(`      · ${r.round_type} ${usd(r.amount_raised)} ${r.date ?? "(no date)"}`);
@@ -314,6 +318,7 @@ async function main() {
     summary[field] = row;
   }
   console.log(`rounds written without a date: ${roundDates.undated} of ${roundDates.rounds} (${pct(roundDates.undated, roundDates.rounds)})`);
+  console.log(`founders written with a bio: ${founderBios.with_bio} of ${founderBios.founders} (${pct(founderBios.with_bio, founderBios.founders)})`);
   console.log("═".repeat(62));
   const checks = phase1Checks(board, { locationMismatches, duplicateRounds: duplicates, foundedAfterRound });
   console.log("Phase 1 rules (docs/enrichment_v2_spec.md §7):");

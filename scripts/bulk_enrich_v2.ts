@@ -52,14 +52,16 @@ import { openSearchCache } from "../lib/enrichment/searchCache.ts";
 import { ACTIVE_DAYS, QUIET_DAYS, SeenUrls, isUpdateDue } from "../lib/enrichment/update.ts";
 import { websiteDomain, type DomainOwner } from "../lib/enrichment/websiteValidation.ts";
 
-import { assertEnrichmentWritesAllowed } from "../lib/enrichment/writeGate.ts";
+import { assertEnrichmentWritesAllowed, PILOT_FIELDS } from "../lib/enrichment/writeGate.ts";
+import { writeFileSync } from "fs";
 import type { RoundHint } from "../lib/enrichment/hints.ts";
 // ── Configuration (ground rule 3: same env vars as v1) ──────────────────
 const BATCH_SIZE     = Number(process.env.BATCH_SIZE     ?? 9999);
 const OFFSET         = Number(process.env.OFFSET         ?? 0);
 const DELAY_MS       = Number(process.env.DELAY_MS       ?? 20_000);
 const DRY_RUN        = process.env.DRY_RUN               !== "false";
-assertEnrichmentWritesAllowed("bulk_enrich_v2", !DRY_RUN);
+// PILOT=true: the partial wet run (writeGate.ts) — only PILOT_FIELDS, only the companies in ONLY=<ids>.
+const PILOT          = process.env.PILOT                 === "true";
 const MAX_TIER       = Number(process.env.MAX_TIER       ?? 3);
 // VERBOSE=true prints the full candidate value + evidence per field, not
 // just the field names, in both dry and real runs.
@@ -82,6 +84,11 @@ const UPDATE_QUIET_DAYS = Number(process.env.UPDATE_QUIET_DAYS ?? QUIET_DAYS);
 // Stop the run after this many failures in a row (systemic problem guard).
 const MAX_CONSECUTIVE_ERRORS = Number(process.env.MAX_CONSECUTIVE_ERRORS ?? 5);
 const ONLY = (process.env.ONLY ?? "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean);
+assertEnrichmentWritesAllowed("bulk_enrich_v2", !DRY_RUN, PILOT ? { fields: PILOT_FIELDS, companies: ONLY.length } : undefined);
+if (PILOT && ONLY.length === 0) { console.error("⛔  PILOT=true needs ONLY=<company ids> (scripts/pilot_sample.ts writes them)."); process.exit(1); }
+// Every pilot field written — or, dry, that would be — before and after (the owner's report).
+const PILOT_REPORT = process.env.PILOT_REPORT ?? `pilot_report_${DRY_RUN ? "dry" : "write"}.csv`;
+const pilotRows: Array<Record<string, string>> = [];
 // Kept for parity/visibility only -- v2 gates per field (issue 9), never on
 // one whole-company score. Printed in the run header, never read.
 const MIN_CONFIDENCE = Number(process.env.MIN_CONFIDENCE ?? 40);
@@ -194,7 +201,7 @@ async function processCompany(
     // provider outage) stops the run instead, see MAX_CONSECUTIVE_ERRORS.
     const settled = (["rejected", "low_evidence", "no_data", "removed_public", "error", "error_incomplete_extraction", "no_change"] as const)
       .some((k) => summary.tally[k] > before[k]);
-    if (settled && !DRY_RUN) {
+    if (settled && !DRY_RUN && !PILOT) {
       const { error } = await supabase.from("startups").update({ last_enriched_at: new Date().toISOString() }).eq("id", row.id);
       if (error) console.warn(`    ⚠️  last_enriched_at update failed: ${error.message}`);
     }
@@ -243,6 +250,7 @@ async function enrichCompany(
 
   if (collected.outcome === "public") {
     summary.tally.removed_public++;
+    if (PILOT) { console.log("    [PILOT] Public company — not archived in a pilot (status is not a pilot field)."); return; }
     if (!DRY_RUN) {
       const { error: changeErr } = await supabase.from("field_changes").insert({
         startup_id: row.id, field: "status", old_value: row.status, new_value: "ipo", source_url: null, run_id: runId,
@@ -257,7 +265,7 @@ async function enrichCompany(
   }
   if (collected.outcome === "no_change") {
     summary.tally.no_change++;
-    if (!DRY_RUN) seen.save();
+    if (!DRY_RUN && !PILOT) seen.save();
     return;
   }
   // An outage is not a verdict on the company: not stamped (see "settled"), so it is tried again.
@@ -271,10 +279,15 @@ async function enrichCompany(
   }
 
   // ── Stage 10: write (lib/enrichment/writeCompany.ts) ───────────────────
-  await writeCollected(row, collected, {
+  const outcome = await writeCollected(row, collected, {
     db: supabase, dryRun: DRY_RUN, update: UPDATE, verbose: VERBOSE, thresholds: THRESHOLDS,
-    taxonomy, startupByDomain, seen, runId,
+    taxonomy, startupByDomain, seen: PILOT ? null : seen, runId,
+    ...(PILOT ? { pilotFields: PILOT_FIELDS } : {}),
   }, summary);
+  for (const c of outcome?.pilot ?? []) {
+    pilotRows.push({ company_id: row.id, company: row.name, field: c.field, before: c.before == null ? "" : String(c.before), after: String(c.after), source_url: c.source_url ?? "", quote: c.quote ?? "" });
+  }
+  if (PILOT && !(outcome?.pilot ?? []).length) pilotRows.push({ company_id: row.id, company: row.name, field: "(nothing)", before: "", after: "", source_url: "", quote: "" });
 }
 
 // This run's enrichment_runs row: every write is recorded under it in
@@ -285,7 +298,7 @@ async function registerRun(): Promise<string> {
   const { data, error } = await supabase.from("enrichment_runs").insert({
     pipeline: "v2", run_kind: "bulk", dry_run: false, git_sha: process.env.GIT_SHA ?? null,
     profile_model: PROFILE_MODEL, funding_model: FUNDING_MODEL,
-    thresholds: { MIN_PROFILE_CONFIDENCE, MIN_FUNDING_CONFIDENCE, MARKET_MODEL, MODE: UPDATE ? "update" : "full" },
+    thresholds: { MIN_PROFILE_CONFIDENCE, MIN_FUNDING_CONFIDENCE, MARKET_MODEL, MODE: PILOT ? "pilot" : UPDATE ? "update" : "full", ...(PILOT ? { PILOT_FIELDS, companies: ONLY.length } : {}) },
   }).select("run_id").single();
   if (error || !data) throw new Error(`could not register the run in enrichment_runs (${error?.message ?? "no row"}) — nothing written, since the run could not be undone`);
   return (data as { run_id: string }).run_id;
@@ -487,6 +500,12 @@ async function main() {
     console.log(`    ${reason.padEnd(32)} ${count}`);
   }
   console.log("═".repeat(62));
+  if (PILOT) {
+    const cols = ["company_id", "company", "field", "before", "after", "source_url", "quote"];
+    const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    writeFileSync(PILOT_REPORT, "\uFEFF" + [cols.join(","), ...pilotRows.map((r) => cols.map((c) => cell(r[c] ?? "")).join(","))].join("\r\n") + "\r\n");
+    console.log(`📝  Pilot report: ${PILOT_REPORT} — ${pilotRows.filter((r) => r.field !== "(nothing)").length} field(s) ${DRY_RUN ? "that would be written" : "written"} for ${new Set(pilotRows.map((r) => r.company_id)).size} compan(ies).${runId ? ` Undo: RUN_ID=${runId} npx tsx scripts/undo_run.ts` : ""}`);
+  }
 }
 
 const isDirectlyInvoked = !!process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
