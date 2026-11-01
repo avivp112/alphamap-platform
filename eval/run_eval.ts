@@ -75,7 +75,7 @@ import { blankRow } from "../worker/enrich.ts";
 import { buildProfile } from "../worker/profile.ts";
 import { cachedCallCostUsd } from "../worker/config.ts";
 import {
-  FIELDS, newScoreboard, pct, scoreCompany, duplicateRounds, foundedAfterFirstRound, phase1Checks, hintGain, matchRounds, roundsDayGap,
+  FIELDS, newScoreboard, pct, scoreCompany, duplicateRounds, foundedAfterFirstRound, phase1Checks, hintGain, matchRounds, roundsDayGap, isFatalProviderError,
   type GoldenSet, type GoldenCompany, type PipelineOutput, type FieldResult, type Field,
 } from "./score.ts";
 
@@ -256,6 +256,13 @@ async function main() {
         console.log(`    outcome=${r.outcome} · ${r.sources} sources · ${r.searches} searches · $${r.costUsd.toFixed(4)} · ${r.seconds.toFixed(0)} s`);
       } catch (err) {
         console.error(`    ❌  v2 collection threw: ${String(err)}`);
+        // Out of credit / key rejected: every later company would fail too and
+        // score as "missing" — a run of 2026-11-01 lost 25 of 32 companies that
+        // way. Stop without writing results, so no broken run is ever compared.
+        if (isFatalProviderError(err)) {
+          console.error(`\n⛔  Stopped: a provider is out of credit or rejected its key — nothing written (eval/${PIPELINE === "v1" ? "baseline.json" : `v2_results${COMPONENTS_LABEL ? `_${COMPONENTS_LABEL}` : ""}.json`} unchanged). Top up / fix the key and run this setting again; searches already made are cached.`);
+          process.exit(1);
+        }
         extra = { outcome: "error" };
       }
     }

@@ -178,3 +178,12 @@ describe("a year-only round is scored as that year (Wayve's 2019 Series A, eval 
     expect(roundsDayGap(golden, { amount_raised: 20_000_000, date: "2019-01-01" })).toBeNull();
   });
 });
+
+describe("a run whose provider ran out of credit stops (run of 2026-11-01: 25 of 32 companies lost)", () => {
+  it("Anthropic's credit error and a rejected key are fatal; a network blip is not", async () => {
+    const { isFatalProviderError } = await import("./score");
+    expect(isFatalProviderError(new Error('400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}'))).toBe(true);
+    expect(isFatalProviderError(new Error('401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}'))).toBe(true);
+    expect(isFatalProviderError(new TypeError("fetch failed"))).toBe(false);
+  });
+});

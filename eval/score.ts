@@ -362,3 +362,9 @@ export function phase1Checks(board: Scoreboard, facts: { locationMismatches: num
     bar(`precision ≥ ${PHASE1_BARS.patents.threshold * 100}% on patents`, board.patents, PHASE1_BARS.patents.min, PHASE1_BARS.patents.threshold),
   ];
 }
+
+/** An error no retry fixes — Anthropic out of credit, a key rejected: the eval stops rather than score every later company "missing". */
+export function isFatalProviderError(err: unknown): boolean {
+  const text = String((err as { message?: string })?.message ?? err);
+  return /credit balance is too low|authentication_error|invalid x-api-key|permission_error/i.test(text);
+}
