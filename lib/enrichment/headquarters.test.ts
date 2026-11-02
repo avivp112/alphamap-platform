@@ -77,6 +77,11 @@ describe("the headquarters (owner, 2026-11-01): the company's declaration, else 
     expect(contactPageAddresses({ url: "https://soda.io/about", also_urls: ["https://soda.io/company", "https://soda.io/contact"], content: "Soda Data NV\nRue Picard 7 / 100 1000 Brussels, Belgium", source_type: "company_site", source_id: "W2" }))
       .toMatchObject([{ city: "Brussels" }]);
   });
+  it("a street named after a city is not the city ('46430 Fremont Blvd')", () => {
+    const page = { url: "https://enervenue.com/contact", content: "Visit us\n46430 Fremont Blvd", source_type: "company_site" as const, source_id: "W3" };
+    expect(contactPageAddresses(page)).toEqual([]);
+    expect(contactPageAddresses({ ...page, content: "46430 Fremont Blvd\nFremont, CA 94538" })).toMatchObject([{ city: "Fremont" }]);
+  });
   it("one street address on the Contact page is the headquarters (owner, 2026-11-02); a list of offices is not one", () => {
     const page = (content: string, url = "https://kets-quantum.com/contact") => ({ url, content, source_type: "company_site" as const, source_id: "W3" });
     expect(contactPageAddresses(page("Get in touch\nKETS Quantum Security\nUnit DX, St Philips Central, Bristol BS2 0QR\nhello@kets-quantum.com")))

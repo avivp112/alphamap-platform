@@ -203,6 +203,8 @@ export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type
     if (line.length > 250 || !ADDRESS_HINT.test(line)) continue;
     for (const m of line.matchAll(CITY_RE)) {
       const city = title(m[2].toLowerCase());
+      // A street named after a city is not the city ("46430 Fremont Blvd": EnerVenue, model check 2026-11-02).
+      if (/^\s+(blvd|boulevard|st|street|ave|avenue|rd|road|way|drive|dr|lane|ln|place|pl|parkway|pkwy|highway|hwy)\b\.?/i.test(line.slice(m.index! + m[0].length))) continue;
       if (isRegionalOfficeQuote(line, city)) continue;
       if (!out.some((o) => sameCity(o.city, city))) out.push({ city, quote: line, source_id: s.source_id, url: s.url, kind: "company", date: null });
     }

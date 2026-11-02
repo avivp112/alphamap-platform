@@ -896,7 +896,8 @@ export async function collectCompany(
       const page = await readPageCached(root + path, searchState);
       if (!page) { misses++; continue; }
       misses = 0;
-      const fingerprint = page.text.replace(/\s+/g, " ").slice(0, 2000);
+      // Jina puts the page's own URL and title on top: compare the body (Carbeniumtec's six copies).
+      const fingerprint = page.text.replace(/^(Title|URL Source|Published Time|Markdown Content):.*$/gim, "").replace(/\s+/g, " ").trim().slice(0, 2000);
       if (seenPages.has(fingerprint)) continue;
       seenPages.add(fingerprint);
       const f = legalFacts(page.text, row.name);
