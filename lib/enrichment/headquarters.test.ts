@@ -38,6 +38,17 @@ describe("the headquarters (owner, 2026-11-01): the company's declaration, else 
     // The company's own declaration still wins.
     expect(decideHeadquarters([st("New York", "company", null)], "2026-11-02", sites)).toMatchObject({ kind: "declared", statement: { city: "New York" } });
   });
+  it("'Headquartered in <city>, …, <Company>'s team' — the company's own release (Photonic, dry run 2026-11-02)", () => {
+    const s = src("https://www.globenewswire.com/news-release/2026/05/12/3293143/0/en/photonic-inc-closes.html",
+      "Headquartered in Vancouver, British Columbia, with operations in the United States and United Kingdom,Photonic’s team of 160+ experts is advancing quantum technologies.");
+    expect(hqStatementsIn(s, "Photonic")).toMatchObject([{ city: "Vancouver" }]);
+    // Another company as the subject is not the company's HQ.
+    expect(hqStatementsIn(src("https://www.globenewswire.com/x", "Headquartered in Toronto, investor BCI backed Photonic in 2023."), "Photonic")).toEqual([]);
+  });
+  it("the page /contact rendered counts as the Contact page (Soda's /contact is its /about)", () => {
+    expect(contactPageAddresses({ url: "https://soda.io/about", also_urls: ["https://soda.io/company", "https://soda.io/contact"], content: "Soda Data NV\nRue Picard 7 / 100 1000 Brussels, Belgium", source_type: "company_site", source_id: "W2" }))
+      .toMatchObject([{ city: "Brussels" }]);
+  });
   it("one street address on the Contact page is the headquarters (owner, 2026-11-02); a list of offices is not one", () => {
     const page = (content: string, url = "https://kets-quantum.com/contact") => ({ url, content, source_type: "company_site" as const, source_id: "W3" });
     expect(contactPageAddresses(page("Get in touch\nKETS Quantum Security\nUnit DX, St Philips Central, Bristol BS2 0QR\nhello@kets-quantum.com")))

@@ -75,6 +75,8 @@ export interface RawSearchResult {
   provider: Provider;
   /** Which query produced this, e.g. "history", "amounts", "backers", "profile", "website" — matches v1's section labels. */
   query_label: string;
+  /** Website pages only: other paths that rendered this same page (/contact → /about). */
+  also_urls?: string[];
 }
 
 export interface LabeledSource extends RawSearchResult {

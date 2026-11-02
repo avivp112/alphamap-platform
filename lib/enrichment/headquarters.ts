@@ -134,6 +134,16 @@ function saysOfCompany(sentence: string, at: number, city: string, companyName: 
   if (!phrase) return false;
   const lead = before.slice(0, phrase.index).split(/[;:]|\.\s/).pop() ?? "";
   if (namesCompany(lead, companyName)) return true;
+  // "Headquartered in Vancouver, British Columbia, with operations in the US and UK, Photonic's team…":
+  // the sentence opens with the phrase and the company is its subject, right after (Photonic's own
+  // release on GlobeNewswire, dry run 2026-11-02).
+  if (!lead.trim() && /^(headquartered|based)\s+in\s+$/i.test(phrase[0])) {
+    const rest = sentence.slice(at + city.length, at + city.length + 160);
+    // A later clause that STARTS with the company's name (possessive allowed) — not "investor X backed Photonic".
+    const n = companyName.trim().split(/\s+/).length;
+    const subject = rest.split(/[,;]\s*/).find((part, i) => i > 0 && namesCompany(part.trim().split(/\s+/).slice(0, n).join(" ").replace(/[’']s$/i, ""), companyName));
+    if (subject) return true;
+  }
   return ownSite && /\b(we|we're|we are|our)\b/i.test(lead);
 }
 
@@ -147,8 +157,9 @@ const ADDRESS_HINT = /(\b\d{1,5}\s+\p{L}{3,}|\p{L}{3,}\.?\s+\d{1,5}\b|\b[A-Z]{1,
  * the word. Lines that name a city on the list and carry a street number or
  * a postcode; a regional office's line is not counted.
  */
-export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type" | "content" | "source_id">): HqStatement[] {
-  if (s.source_type !== "company_site" || !/\/contact/i.test(s.url)) return [];
+export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type" | "content" | "source_id" | "also_urls">): HqStatement[] {
+  // The Contact page — or the page /contact rendered (Soda's /contact is its /about: dry run 2026-11-02).
+  if (s.source_type !== "company_site" || ![s.url, ...(s.also_urls ?? [])].some((u) => /\/contact/i.test(u))) return [];
   const out: HqStatement[] = [];
   for (const raw of s.content.split(/\n+/)) {
     const line = raw.trim();

@@ -570,7 +570,11 @@ function extractedFor(extracted: Map<string, string>, url: string): string | und
   return undefined;
 }
 
-export interface FetchedPage { url: string; content: string; provider: Provider }
+export interface FetchedPage {
+  url: string; content: string; provider: Provider;
+  /** Pages of the site that rendered this same page (/contact → /about): the Contact page rule reads them (headquarters.ts). */
+  also_urls?: string[];
+}
 
 function shingles(text: string, size = 5): Set<string> {
   const words = text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean);
@@ -676,6 +680,7 @@ export async function fetchCompanyWebsitePages(
     const duplicateOf = pages.find((p) => isNearDuplicatePage(p.content, capped));
     if (duplicateOf) {
       state.websitePagesDuplicate++;
+      duplicateOf.also_urls = [...(duplicateOf.also_urls ?? []), url];
       console.log(`    ♻️   ${url} is the same page as ${duplicateOf.url} — not sent twice.`);
       continue;
     }

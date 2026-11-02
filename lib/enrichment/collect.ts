@@ -378,7 +378,7 @@ export async function collectCompany(
 
   const allRaw: RawSearchResult[] = [
     ...searchResults,
-    ...websitePages.map((p) => ({ url: p.url, content: p.content, provider: p.provider, query_label: "website" })),
+    ...websitePages.map((p) => ({ url: p.url, content: p.content, provider: p.provider, query_label: "website", ...(p.also_urls ? { also_urls: p.also_urls } : {}) })),
   ];
 
   if (allRaw.length === 0 && ctx.update) {
@@ -915,6 +915,10 @@ export async function collectCompany(
       statedFoundingCountry: profile.profile.founding_country?.value ?? null,
     });
     const reg = findings[0];
+    if (!reg) {
+      const known = (profile.profile.founders ?? []).map((f) => f.name).filter(Boolean);
+      console.log(`    🏛️   Registers: no certain match (name + number / office city${known.length ? ` / founders ${known.join(", ")}` : " — no founder known to match against"}).`);
+    }
     if (reg) {
       const source: LabeledSource = { url: reg.url, title: `${reg.entity} — register`, content: reg.quote, provider: "registry", query_label: "register", source_id: `R${allSources.length + 1}`, source_type: "registry" };
       allSources.push(source);
