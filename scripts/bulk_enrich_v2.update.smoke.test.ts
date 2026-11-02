@@ -101,7 +101,8 @@ const fakeFetch = vi.fn(async (input: string | URL, init?: RequestInit) => {
     const items = [
       { link: "https://www.theverge.com/2024/ghost-activitypub", title: "Ghost joins the fediverse", snippet: "Ghost (ghost.org) adds ActivityPub.", date: "Mar 1, 2024", source: "The Verge" },
       { link: "https://techcrunch.com/2026/09/01/ghost-series-a", title: "Ghost raises $10M Series A", snippet: SERIES_A, date: "Sep 1, 2026", source: "TechCrunch" },
-      { link: "https://www.niemanlab.org/2026/ghost-new-ceo", title: "Ghost names Jane Roe CEO", snippet: NEW_CEO, date: "Sep 10, 2026", source: "Nieman Lab" },
+      // On an allowed outlet: a bio is kept only from an allowed source (owner, 2026-11-02).
+      { link: "https://techcrunch.com/2026/09/10/ghost-new-ceo", title: "Ghost names Jane Roe CEO", snippet: NEW_CEO, date: "Sep 10, 2026", source: "TechCrunch" },
     ];
     return json(url.endsWith("/news") ? { news: items } : { organic: items });
   }
@@ -123,7 +124,7 @@ const createMock = vi.fn(async (req: { tools: Array<{ name: string }>; messages:
     input = {
       is_public_company: false, is_tech_company: false, // an update never rejects on this
       profile: {},
-      leadership: [{ name: "Jane Roe", role: "CEO", bio: "Jane Roe was appointed CEO of Ghost." }],
+      leadership: [{ name: "Jane Roe", role: "CEO", bio: "Jane Roe was appointed CEO of Ghost.", ...(sid(prompt, "ghost-new-ceo") ? { bio_source_ids: [sid(prompt, "ghost-new-ceo")] } : {}) }],
       metrics: {},
     };
   } else if (tool === "save_funding_extraction") {

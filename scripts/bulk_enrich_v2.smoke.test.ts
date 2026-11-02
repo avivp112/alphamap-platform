@@ -90,12 +90,13 @@ function serperResults(q: string) {
   if (q.includes("competitors") || q.includes("alternatives") || q.includes(" vs")) {
     return [
       r("https://zapier.com/blog/ghost-alternatives", "Best Ghost alternatives", "Top alternatives to Ghost (ghost.org) for newsletters: Substack, Medium and Beehiiv both offer paid newsletters and membership."),
-      r("https://www.niemanlab.org/2025/ghost-newsletters", "Ghost bets on paid newsletters", "Ghost (ghost.org) competes with Substack and Beehiiv for paid newsletters and membership."),
+      r("https://www.fastcompany.com/2025/ghost-newsletters", "Ghost bets on paid newsletters", "Ghost (ghost.org) competes with Substack and Beehiiv for paid newsletters and membership."),
     ];
   }
   return [
     r("https://techcrunch.com/2014/03/15/ghost-raises-seed", "Ghost raises $2M", "Ghost (ghost.org), the 10-person publishing startup, raised a $2 million seed round led by Y Combinator with SV Angel participating. Ghost now powers 70,000 publishers."),
-    r("https://www.linkedin.com/company/ghost-foundation", "Ghost | LinkedIn", "Ghost (ghost.org) open source publishing platform. Ghost has 60 employees."),
+    // The headcount on the company's own page: LinkedIn is never a source (owner, 2026-11-02).
+    r("https://www.theverge.com/2025/ghost-team", "Ghost's small team", "Ghost (ghost.org) open source publishing platform. Ghost has 60 employees."),
     r("https://techcrunch.com/ghost-robotics-raises", "Ghost Robotics raises $100M", "Ghost Robotics builds legged quadruped robots for defense."),
   ];
 }
@@ -103,7 +104,7 @@ function serperResults(q: string) {
 function newsResults() {
   return [
     { link: "https://www.theverge.com/2024/ghost-activitypub", title: "Ghost joins the fediverse", snippet: "Ghost, the open source newsletter and publishing platform, adds ActivityPub.", date: "Mar 1, 2024", source: "The Verge" },
-    { link: "https://www.niemanlab.org/2025/ghost-6", title: "Ghost 6.0 launches", snippet: "Ghost launches version 6 for newsletters and membership publishing.", date: "Aug 5, 2025", source: "Nieman Lab" },
+    { link: "https://www.fastcompany.com/2025/ghost-6", title: "Ghost 6.0 launches", snippet: "Ghost launches version 6 for newsletters and membership publishing.", date: "Aug 5, 2025", source: "Fast Company" },
   ];
 }
 
@@ -117,7 +118,7 @@ const fakeFetch = vi.fn(async (input: string | URL, init?: RequestInit) => {
   if (url.startsWith("https://r.jina.ai/")) {
     return url.endsWith("ghost.org") ? new Response(SITE, { status: 200 }) : new Response("", { status: 404 });
   }
-  if (url.includes("theverge.com") || url.includes("niemanlab.org")) {
+  if (url.includes("theverge.com") || url.includes("fastcompany.com")) {
     return new Response(`<html><head><meta property="og:image" content="/img/hero.jpg"></head></html>`, { status: 200, headers: { "content-type": "text/html" } });
   }
   return new Response("", { status: 404 });
@@ -136,7 +137,7 @@ const createMock = vi.fn(async (req: { tools: Array<{ name: string }>; messages:
   let input: Record<string, unknown> = {};
   const tc = sid(prompt, "ghost-raises-seed");
   const w1 = sid(prompt, "ghost.org");
-  const li = sid(prompt, "linkedin.com/company");
+  const li = sid(prompt, "theverge.com/2025/ghost-team");
   const hq = sid(prompt, "ghost.org/about/press");
 
   if (tool === "classify_company") {
@@ -183,7 +184,7 @@ const createMock = vi.fn(async (req: { tools: Array<{ name: string }>; messages:
     };
   } else if (tool === "save_market_extraction") {
     const zap = sid(prompt, "zapier.com");
-    const nl = sid(prompt, "niemanlab.org/2025/ghost-newsletters");
+    const nl = sid(prompt, "fastcompany.com/2025/ghost-newsletters");
     const said = "Ghost (ghost.org) competes with Substack and Beehiiv for paid newsletters";
     input = {
       competitors: zap && nl ? [
@@ -194,7 +195,7 @@ const createMock = vi.fn(async (req: { tools: Array<{ name: string }>; messages:
       ] : [],
       news: [
         { title: "Ghost joins the fediverse", url: "https://www.theverge.com/2024/ghost-activitypub", source: "The Verge", published_date: "2024-03-01" },
-        { title: "Ghost 6.0 launches", url: "https://www.niemanlab.org/2025/ghost-6", source: "Nieman Lab", published_date: "2025-08-05" },
+        { title: "Ghost 6.0 launches", url: "https://www.fastcompany.com/2025/ghost-6", source: "Fast Company", published_date: "2025-08-05" },
         { title: "Invented", url: "https://made-up.com/ghost" },
       ].filter((n) => prompt.includes(n.url) || n.url.includes("made-up")),
     };
@@ -245,10 +246,10 @@ describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
     const p = startupPatch();
     const comps = p.competitors as Array<{ name: string; unverified?: boolean; source_url?: string | null }>;
     expect(comps.map((c) => [c.name, !!c.unverified])).toEqual([["Medium", true], ["Substack", false], ["Beehiiv", false]]);
-    expect(comps.find((c) => c.name === "Substack")?.source_url).toBe("https://www.niemanlab.org/2025/ghost-newsletters");
+    expect(comps.find((c) => c.name === "Substack")?.source_url).toBe("https://www.fastcompany.com/2025/ghost-newsletters");
     const news = p.news as Array<{ url: string; image_url: string; published_date: string }>;
-    expect(news.map((n) => n.url)).toEqual(["https://www.niemanlab.org/2025/ghost-6", "https://www.theverge.com/2024/ghost-activitypub"]);
-    expect(news[0].image_url).toBe("https://www.niemanlab.org/img/hero.jpg");
+    expect(news.map((n) => n.url)).toEqual(["https://www.fastcompany.com/2025/ghost-6", "https://www.theverge.com/2024/ghost-activitypub"]);
+    expect(news[0].image_url).toBe("https://www.fastcompany.com/img/hero.jpg");
   });
 
   it("registers the run and records every write under its run_id, so it can be undone (2026-10-26)", () => {
@@ -280,17 +281,11 @@ describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
     expect(hc).not.toContain(70000);
   });
 
-  it("attaches the founder's personal LinkedIn /in/ profile, not a namesake's", () => {
-    const founders = startupPatch().founders as Array<{ name: string; linkedin_url?: string }>;
-    expect(founders.find((f) => f.name === "John O'Nolan")?.linkedin_url).toBe("https://www.linkedin.com/in/johnonolan");
-    expect(founders.find((f) => f.name === "Hannah Wolfe")?.linkedin_url).toBeUndefined();
-  });
-
-  it("adds education / prior experience from the LinkedIn snippet to the bio, and the elite-school flag", () => {
-    const founders = startupPatch().founders as Array<{ name: string; bio?: string; notable_pedigree?: boolean }>;
+  it("LinkedIn is never a source (owner, 2026-11-02): no profile is looked up, no bio comes from a LinkedIn snippet", () => {
+    const founders = startupPatch().founders as Array<{ name: string; linkedin_url?: string; bio?: string }>;
     const john = founders.find((f) => f.name === "John O'Nolan");
-    expect(john?.bio).toBe("Previously at WordPress. Studied at Stanford University.");
-    expect(john?.notable_pedigree).toBe(true);
+    expect(john?.linkedin_url).toBeUndefined();
+    expect(john?.bio ?? "").not.toContain("Studied at Stanford");
   });
 
   it("tags the sub-sector, writes provenance, refreshes startups_search", () => {

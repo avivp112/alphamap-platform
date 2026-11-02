@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import { componentStates, componentOn, V2_COMPONENT_NAMES } from "./components";
 
 describe("one switch per v2 component (owner, 2026-10-29)", () => {
-  it("defaults: everything on but profile_hints (off by the owner, 2026-11-02: 0 of 7 confirmed)", () => {
+  it("defaults: everything on but linkedin_people (LinkedIn is never a source) and profile_hints (0 of 7 confirmed) — owner, 2026-11-02", () => {
     const s = componentStates("");
-    expect(V2_COMPONENT_NAMES.filter((n) => !s[n])).toEqual(["profile_hints"]);
+    expect(V2_COMPONENT_NAMES.filter((n) => !s[n]).sort()).toEqual(["linkedin_people", "profile_hints"]);
   });
   it("baseline turns every component off, all turns every one on", () => {
     expect(Object.values(componentStates("baseline")).every((v) => !v)).toBe(true);

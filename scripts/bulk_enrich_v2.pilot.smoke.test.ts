@@ -12,6 +12,9 @@
  * against a round already on file, and every write the run makes.
  */
 import { describe, it, expect, vi, beforeAll } from "vitest";
+import { mkdtempSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 
 type Call = { table: string; op: string; payload: unknown; filters: Array<[string, unknown]> };
 const calls: Call[] = [];
@@ -217,6 +220,11 @@ describe("PILOT=true: only HQ, founded year and founding country are written (ow
     process.env.PILOT = "true";
     process.env.ONLY = "st-1";
     process.env.PILOT_REPORT = "/tmp/pilot_report_test.csv";
+    // The four fields open by the owner's review (≥20 marked, ≥90% correct — fieldReview.ts).
+    const tracker = join(mkdtempSync(join(tmpdir(), "review-")), "tracker.csv");
+    writeFileSync(tracker, ["id,field,company,value,source_url,verdict,source_of_mark",
+      ...["hq_city", "hq_country", "founded_year", "founding_country"].flatMap((f) => Array.from({ length: 20 }, (_, i) => `${f}.${i},${f},Co,v,,correct,test`))].join("\n"));
+    process.env.FIELD_REVIEW_TRACKER = tracker;
     process.env.SEARCH_CACHE = "false";
     process.env.DELAY_MS = "0";
     process.env.REFRESH_EVERY = "1";

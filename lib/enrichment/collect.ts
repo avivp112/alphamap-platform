@@ -42,7 +42,7 @@ import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
 import { validateEnrichment, checkNarratives } from "./validation.ts";
 import { hqStatementsIn, decideHeadquarters, statementKind, articleDate, countryOfCity, contactPageAddresses, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, type HqStatement } from "./headquarters.ts";
-import { profileSourceAllowed } from "./roundSources.ts";
+import { profileSourceAllowed, roundSourceStanding } from "./roundSources.ts";
 import { aboutParagraph, aboutIsOf, factsFromAbout, legalFacts, type LegalFacts } from "./companyFacts.ts";
 import { checkFoundingCountry } from "./origin.ts";
 import { namesCompany } from "./headcount.ts";
@@ -756,7 +756,8 @@ export async function collectCompany(
     const like = roundToRoundLike(r);
     return [like.lead_investor, ...(like.other_investors ?? [])].filter((n): n is string => !!n);
   });
-  const grounded = groundFounders(profile.profile.founders ?? [], allSources, row.name, roundInvestors);
+  // Only an allowed source grounds a founder (owner, 2026-11-02: the list applies to every field).
+  const grounded = groundFounders(profile.profile.founders ?? [], allSources.filter((s) => profileSourceAllowed(s)), row.name, roundInvestors);
   for (const d of grounded.dropped) {
     console.log(`    👤  ${d.name} not kept as a founder (${d.reason === "founder_is_investor" ? "named among the investors" : "no source says they founded this company"}).`);
     bump(stats.droppedByReason, d.reason);
@@ -1017,19 +1018,37 @@ export async function collectCompany(
     (profile.profile as Record<string, unknown>)[key] = undefined;
   }
 
-  // ── Employee range: from an allowed source, or the company's own LinkedIn company page as the
-  // search engine shows it ("Company size: 51-200 employees") — owner, 2026-11-02.
+  // ── The allowed sources apply to every field (owner, 2026-11-02): the company's own site or
+  // release, a register, the press of tiers 1–3 (rounds: 1–4, roundSources.ts). LinkedIn,
+  // data platforms and unlisted sites are never the source of a written value.
   {
-    const r = profile.metrics.employee_range;
-    const s = r ? sourceById.get(r.source_id) : undefined;
-    const slug = s?.url.match(/linkedin\.com\/company\/([^/?#]+)/i)?.[1]?.toLowerCase().replace(/[^a-z0-9]/g, "") ?? "";
-    const own = row.name.toLowerCase().replace(/[^a-z0-9]/g, "");
-    const ownLinkedIn = !!slug && own.length >= 3 && (slug.includes(own) || own.includes(slug));
-    if (r && !(s && (profileSourceAllowed(s) || ownLinkedIn))) {
-      console.log(`    🚫  employee_range "${r.value}" not written — its source is neither allowed nor the company's own LinkedIn page: ${s?.url ?? r.source_id}`);
-      bump(stats.droppedByReason, "employee_range_source_not_listed");
-      profile.metrics.employee_range = undefined;
+    const allowedId = (id?: string | null) => { const src = id ? sourceById.get(id) : undefined; return !!src && profileSourceAllowed(src); };
+    const drop = (what: string, reason: string, url?: string) => { console.log(`    🚫  ${what} not written — ${url ? `its source is not on the allowed list: ${url}` : "no allowed source"}`); bump(stats.droppedByReason, reason); };
+    // Size: employee count and range.
+    for (const key of ["employee_range", "employee_count"] as const) {
+      const v = profile.metrics[key] as { value: unknown; source_id: string } | undefined;
+      if (v && !allowedId(v.source_id)) { drop(`${key} ${JSON.stringify(v.value)}`, `${key}_source_not_listed`, sourceById.get(v.source_id)?.url); profile.metrics[key] = undefined; }
     }
+    // Bios: kept only when one of their sources is allowed.
+    for (const person of [...(profile.profile.founders ?? []), ...profile.leadership] as Array<{ name: string; bio?: string; bio_source_ids?: string[] }>) {
+      if (person.bio && !(person.bio_source_ids ?? []).some((id) => allowedId(id))) {
+        drop(`bio of ${person.name}`, "bio_source_not_listed", (person.bio_source_ids ?? []).map((id) => sourceById.get(id)?.url).filter(Boolean)[0]);
+        person.bio = undefined;
+      }
+    }
+    // Competitors: the sentence that says they compete comes from an allowed source.
+    market.competitors = market.competitors.filter((c) => {
+      if (allowedId(c.source_id)) return true;
+      drop(`competitor ${c.name}`, "competitor_source_not_listed", c.source_id ? sourceById.get(c.source_id)?.url : undefined);
+      return false;
+    });
+    // News: an article of an allowed outlet (tiers 1–4) or the company's own site.
+    market.news = market.news.filter((n) => {
+      const standing = roundSourceStanding(n.url, { isCompanySite: classifySourceType(n.url, domain) === "company_site" });
+      if (standing.kind === "allowed") return true;
+      drop(`news "${n.title.slice(0, 60)}"`, "news_source_not_listed", n.url);
+      return false;
+    });
   }
 
   // ── Registers: founded year and founding country, a certain match beats any article ──

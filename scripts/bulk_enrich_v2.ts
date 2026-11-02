@@ -54,6 +54,7 @@ import { ACTIVE_DAYS, QUIET_DAYS, SeenUrls, isUpdateDue } from "../lib/enrichmen
 import { websiteDomain, type DomainOwner } from "../lib/enrichment/websiteValidation.ts";
 
 import { assertEnrichmentWritesAllowed, PILOT_FIELDS } from "../lib/enrichment/writeGate.ts";
+import { openColumns } from "../lib/enrichment/fieldReview.ts";
 import { writeFileSync } from "fs";
 import type { RoundHint } from "../lib/enrichment/hints.ts";
 // ── Configuration (ground rule 3: same env vars as v1) ──────────────────
@@ -86,6 +87,14 @@ const UPDATE_QUIET_DAYS = Number(process.env.UPDATE_QUIET_DAYS ?? QUIET_DAYS);
 const MAX_CONSECUTIVE_ERRORS = Number(process.env.MAX_CONSECUTIVE_ERRORS ?? 5);
 const ONLY = (process.env.ONLY ?? "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean);
 assertEnrichmentWritesAllowed("bulk_enrich_v2", !DRY_RUN, PILOT ? { fields: PILOT_FIELDS, companies: ONLY.length } : undefined);
+// A field opens for writing when the owner marked ≥20 of its values, ≥90% correct
+// (eval/field_review_tracker.csv — owner, 2026-11-02). A dry run shows every pilot field.
+const OPEN_PILOT_FIELDS: string[] = !PILOT ? [] : DRY_RUN ? [...PILOT_FIELDS] : PILOT_FIELDS.filter((f) => openColumns().includes(f));
+if (PILOT && !DRY_RUN) {
+  const closed = PILOT_FIELDS.filter((f) => !OPEN_PILOT_FIELDS.includes(f));
+  console.log(`🔓  Open for writing: ${OPEN_PILOT_FIELDS.join(", ") || "none"}${closed.length ? ` · still closed (fewer than 20 marked or under 90%): ${closed.join(", ")} — npx tsx scripts/field_review_status.ts` : ""}`);
+  if (!OPEN_PILOT_FIELDS.length) { console.error("⛔  No pilot field is open for writing yet — nothing to write."); process.exit(1); }
+}
 if (PILOT && ONLY.length === 0) { console.error("⛔  PILOT=true needs ONLY=<company ids> (scripts/pilot_sample.ts writes them)."); process.exit(1); }
 // Every pilot field written — or, dry, that would be — before and after (the owner's report).
 const PILOT_REPORT = process.env.PILOT_REPORT ?? `pilot_report_${DRY_RUN ? "dry" : "write"}.csv`;
@@ -284,7 +293,7 @@ async function enrichCompany(
   const outcome = await writeCollected(row, collected, {
     db: supabase, dryRun: DRY_RUN, update: UPDATE, verbose: VERBOSE, thresholds: THRESHOLDS,
     taxonomy, startupByDomain, seen: PILOT ? null : seen, runId,
-    ...(PILOT ? { pilotFields: PILOT_FIELDS } : {}),
+    ...(PILOT ? { pilotFields: OPEN_PILOT_FIELDS } : {}),
   }, summary);
   for (const c of outcome?.pilot ?? []) {
     pilotRows.push({ company_id: row.id, company: row.name, field: c.field, before: c.before == null ? "" : String(c.before), after: String(c.after), source_url: c.source_url ?? "", quote: c.quote ?? "" });

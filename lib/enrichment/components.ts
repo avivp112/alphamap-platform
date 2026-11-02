@@ -23,7 +23,7 @@ export const V2_COMPONENTS = {
     what: "Stage 9 — targeted searches and extra extraction calls for sections that came back thin",
   },
   linkedin_people: {
-    on: true, since: "2026-10-08",
+    on: false, since: "2026-10-08", // off by the owner, 2026-11-02: LinkedIn is never a source for any field
     what: "Stage 9b — founders' and leaders' LinkedIn profiles, bios from the public snippet, founder discovery",
   },
   founders_from_sentences: {
