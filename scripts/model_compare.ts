@@ -67,17 +67,41 @@ function flatten(c: Awaited<ReturnType<typeof collectCompany>>, name: string): F
   if (c.outcome !== "collected") return { outcome: { value: c.outcome, source: "" } };
   const p = buildProfile(c, name);
   const src = (id?: string | null) => (id ? c.sourceUrlFor(id) ?? "" : "");
-  const usd = (n: number | null) => (n == null ? "?" : n >= 1e9 ? `$${+(n / 1e9).toFixed(2)}B` : `$${+(n / 1e6).toFixed(1)}M`);
-  return {
-    city: { value: p.overview.city?.value ?? "", source: p.overview.city?.source_url ?? "" },
-    country: { value: p.overview.country?.value ?? "", source: p.overview.country?.source_url ?? "" },
-    founded_year: { value: p.overview.founded_year?.value != null ? String(p.overview.founded_year.value) : "", source: p.overview.founded_year?.source_url ?? "" },
-    founding_country: { value: p.overview.founding_country?.value ?? "", source: p.overview.founding_country?.source_url ?? "" },
-    founders: { value: p.people.founders.map((f) => f.name).join("; "), source: (c.profile.profile.founders ?? []).map((f) => `${f.name}: ${f.grounded_url ?? ((f.bio_source_ids ?? []).map((id) => src(id)).filter(Boolean)[0] ?? "no source")}`).join(" | ") },
-    rounds: { value: p.funding.rounds.map((r) => `${r.round_type} ${usd(r.amount)} ${r.date ?? "(no date)"}`).join("; "), source: p.funding.rounds.map((r) => r.source_url ?? "").filter(Boolean).join(" ") },
-    competitors: { value: c.market.competitors.map((x) => x.name).join("; "), source: c.market.competitors.map((x) => src(x.source_id)).filter(Boolean).join(" ") },
-    employee_range: { value: p.overview.employee_range ?? "", source: src(c.profile.metrics.employee_range?.source_id) },
-  };
+  const usd = (n: number | null | undefined) => (n == null ? "?" : n >= 1e9 ? `$${+(n / 1e9).toFixed(2)}B` : `$${+(n / 1e6).toFixed(1)}M`);
+  const cut = (t: string | null | undefined, n = 300) => (t ?? "").replace(/\s+/g, " ").trim().slice(0, n);
+  const out: Fields = {};
+  const put = (key: string, value: string, source = "") => { if (value) out[key] = { value, source }; };
+  // A full v2 search, one row per value with its source (owner, 2026-11-02).
+  put("description", cut(p.overview.description, 600));
+  put("value_proposition", cut(p.overview.value_proposition, 300));
+  put("sector", [p.overview.sector, ...(p.overview.sub_sectors ?? [])].filter(Boolean).join(" / "));
+  put("city", p.overview.city?.value ?? "", p.overview.city?.source_url ?? "");
+  put("country", p.overview.country?.value ?? "", p.overview.country?.source_url ?? "");
+  for (const o of p.overview.offices ?? []) put(`office: ${o.city}`, [o.city, o.country].filter(Boolean).join(", "), o.source_url ?? "");
+  put("founded_year", p.overview.founded_year?.value != null ? String(p.overview.founded_year.value) : "", p.overview.founded_year?.source_url ?? "");
+  put("founding_country", p.overview.founding_country?.value ?? "", p.overview.founding_country?.source_url ?? "");
+  put("employees", p.overview.headcount?.value != null ? String(p.overview.headcount.value) : "", p.overview.headcount?.source_url ?? "");
+  put("employee_range", p.overview.employee_range ?? "", src(c.profile.metrics.employee_range?.source_id));
+  const founderSrc = new Map((c.profile.profile.founders ?? []).map((f) => [f.name, f]));
+  for (const f of p.people.founders) {
+    const raw = founderSrc.get(f.name);
+    put(`founder: ${f.name}`, [f.title, f.bio ? `BIO: ${cut(f.bio, 400)}` : "no bio"].filter(Boolean).join(" — "),
+      [raw?.grounded_url ? `founded: ${raw.grounded_url}` : "", ...(raw?.bio_source_ids ?? []).map((id) => `bio: ${src(id)}`), f.linkedin_url ?? ""].filter(Boolean).join(" "));
+  }
+  for (const l of p.people.leadership) put(`leader: ${l.name}`, [l.title, l.bio ? `BIO: ${cut(l.bio, 300)}` : ""].filter(Boolean).join(" — "), l.linkedin_url ?? "");
+  for (const r of p.funding.rounds) {
+    const original = r.amount_original != null && r.amount_currency ? ` (${r.amount_currency} ${r.amount_original.toLocaleString()})` : "";
+    put(`round: ${r.round_type} ${r.date ?? "(no date)"}`, `${r.round_type} ${usd(r.amount)}${original} ${r.date ?? "(no date)"}${r.date_precision && r.date_precision !== "day" ? ` [${r.date_precision}]` : ""}${r.lead_investor ? ` · lead ${r.lead_investor}` : ""}${r.investors?.length ? ` · ${r.investors.join(", ")}` : ""}`, r.source_url ?? "");
+  }
+  for (const h of c.roundHints ?? []) put(`hint (not written): ${h.round_type} ${usd(h.amount_raised)}`, `${h.round_type} ${usd(h.amount_raised)} ${h.announcement_date ?? ""} — only a data platform states it`, h.source_url ?? "");
+  for (const x of c.market.competitors) put(`competitor: ${x.name}`, cut(x.evidence_quote ?? x.how_it_competes, 250), src(x.source_id));
+  for (const n of c.market.news) put(`news: ${cut(n.title, 80)}`, `${n.published_date ?? "(no date)"} — ${cut(n.title, 160)}`, n.url);
+  for (const pt of c.market.patents) put(`patent: ${pt.patent_number ?? pt.title}`, `${pt.patent_number ?? ""} ${cut(pt.title, 120)} ${pt.filing_date ?? ""}`.trim(), pt.url ?? "");
+  for (const a of c.market.acquisitions) put(`acquisition: ${a.company_name}`, `${a.company_name} ${a.acquired_date ?? ""} ${a.amount ? usd(a.amount) : ""}`.trim(), (a.source_ids ?? []).map((id) => src(id)).join(" "));
+  put("tech_stack", (c.market.technology.tech_stack ?? []).join(", "));
+  for (const m of c.funding.arr_milestones ?? []) put(`arr: ${m.date ?? ""}`, `${usd(m.arr)} ${m.date ?? ""}`, src((m as { source_id?: string }).source_id));
+  for (const v of c.funding.valuation_benchmarks ?? []) put(`valuation: ${(v as { date?: string }).date ?? ""}`, `${usd((v as { valuation?: number }).valuation)} ${(v as { date?: string }).date ?? ""}`, src((v as { source_id?: string }).source_id));
+  return out;
 }
 
 async function draw(): Promise<PilotCandidate[]> {
