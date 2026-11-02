@@ -19,8 +19,12 @@
  *      ("נכון" / "לא נכון"); with two models, the rows where they differ
  *      come first. model_compare.json keeps everything.
  *
- *   npx tsx scripts/model_compare.ts
- *   MODELS=claude-haiku-4-5-20251001,claude-haiku-5-5 SEED=<the same seed> npx tsx scripts/model_compare.ts
+ *   npx tsx scripts/model_compare.ts                       # a new draw of 10
+ *   REPEAT=true npx tsx scripts/model_compare.ts           # the same 10 again (model_compare_companies.json)
+ *   REPEAT=true MODELS=claude-haiku-4-5-20251001,claude-haiku-5-5 npx tsx scripts/model_compare.ts
+ *
+ * A repeat reads the same cached searches (30 days), so only the model's
+ * answers can change between runs, and it costs only Claude's calls.
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -47,7 +51,13 @@ if (!url || !key || !process.env.ANTHROPIC_API_KEY) { console.error("SUPABASE_UR
 const MODELS = (process.env.MODELS ?? "claude-haiku-5-5").split(",").map((m) => m.trim()).filter(Boolean);
 const SIZE = Number(process.env.SIZE ?? 10);
 const SEED = Number(process.env.SEED ?? Date.now() % 100000);
-const ONLY = (process.env.ONLY ?? "").split(",").map((v) => v.trim()).filter(Boolean);
+// REPEAT=true: the companies of the last draw again, from model_compare_companies.json.
+const REPEAT = process.env.REPEAT === "true";
+const LAST_DRAW = "model_compare_companies.json";
+if (REPEAT && !existsSync(LAST_DRAW)) { console.error(`REPEAT=true needs ${LAST_DRAW} from an earlier run (it is written next to the logs).`); process.exit(1); }
+const ONLY = REPEAT
+  ? (JSON.parse(readFileSync(LAST_DRAW, "utf8")).companies as Array<{ id: string }>).map((c) => c.id)
+  : (process.env.ONLY ?? "").split(",").map((v) => v.trim()).filter(Boolean);
 const db = createClient(url, key, { auth: { persistSession: false } });
 
 type Fields = Record<string, { value: string; source: string }>;
@@ -76,7 +86,9 @@ async function draw(): Promise<PilotCandidate[]> {
   if (ONLY.length) {
     const { data, error } = await db.from("startups").select(cols).in("id", ONLY);
     if (error) throw error;
-    return (data ?? []) as PilotCandidate[];
+    // In the order given, so a repeat lists them as the first run did.
+    const byId = new Map(((data ?? []) as PilotCandidate[]).map((c) => [c.id, c]));
+    return ONLY.map((id) => byId.get(id)).filter((c): c is PilotCandidate => !!c);
   }
   for (let from = 0; ; from += 1000) {
     const { data, error } = await db.from("startups").select(cols).not("website", "is", null).neq("status", "ipo").range(from, from + 999);
@@ -87,7 +99,8 @@ async function draw(): Promise<PilotCandidate[]> {
   // Not the golden set, not an earlier pilot draw.
   const golden = new Set((JSON.parse(readFileSync(join(__dir, "..", "eval", "golden_set.json"), "utf8")).companies as Array<{ name: string }>).map((g) => g.name.trim().toLowerCase()));
   const earlier = new Set<string>();
-  for (const f of ["pilot_companies.json", "model_compare_companies.json"]) {
+  // (Only the pilot's companies: a new draw may differ from the last one, which REPEAT reruns.)
+  for (const f of ["pilot_companies.json"]) {
     if (existsSync(f)) for (const c of (JSON.parse(readFileSync(f, "utf8")).companies ?? []) as Array<{ id: string }>) earlier.add(c.id);
   }
   return drawPilotSample(rows.filter((r) => !golden.has(r.name.trim().toLowerCase()) && !earlier.has(r.id)), { size: SIZE, minThin: 3, minIsraeli: 3, seed: SEED });
@@ -95,8 +108,8 @@ async function draw(): Promise<PilotCandidate[]> {
 
 (async () => {
   const companies = await draw();
-  writeFileSync("model_compare_companies.json", JSON.stringify({ seed: SEED, drawn_at: new Date().toISOString(), companies }, null, 2));
-  console.log(`Model check — ${companies.length} random companies (seed ${SEED}), models: ${MODELS.join(", ")}. Nothing is written to the database.\n`);
+  if (!REPEAT) writeFileSync(LAST_DRAW, JSON.stringify({ seed: SEED, drawn_at: new Date().toISOString(), companies }, null, 2));
+  console.log(`Model check — ${companies.length} ${REPEAT ? "companies of the last draw, again" : `random companies (seed ${SEED})`}, models: ${MODELS.join(", ")}. Nothing is written to the database.\n`);
   for (const c of companies) console.log(`  ${c.name.padEnd(32)} ${(c.website ?? "").padEnd(34)} on file: ${c.city ?? "—"}, ${c.country ?? "—"}, founded ${c.founded_year ?? "—"}`);
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -144,6 +157,8 @@ async function draw(): Promise<PilotCandidate[]> {
     }
   }
   rows.sort((a, b) => (b[b.length - 1] === "yes" ? 1 : 0) - (a[a.length - 1] === "yes" ? 1 : 0));
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
+  writeFileSync(`model_compare_${stamp}.csv`, "\uFEFF" + [header, ...rows].map((r) => r.map((v) => cell(String(v))).join(",")).join("\r\n") + "\r\n");
   writeFileSync("model_compare.csv", "﻿" + [header, ...rows].map((r) => r.map((v) => cell(String(v))).join(",")).join("\r\n") + "\r\n");
   writeFileSync("model_compare.json", JSON.stringify({ seed: SEED, models: MODELS, companies, found: Object.fromEntries([...found].map(([id, m]) => [id, Object.fromEntries(m)])), usage: Object.fromEntries([...meters].map(([m, u]) => [m, u.toJSON()])) }, null, 2));
 
@@ -155,5 +170,5 @@ async function draw(): Promise<PilotCandidate[]> {
     console.log(`  longest prompt: ${u.maxPromptTokens.toLocaleString()} tokens · calls over ${LONG_PROMPT_TOKENS.toLocaleString()}: ${u.callsOverLong}${u.callsOverLong ? "  ⚠️  billed at Haiku 5.5's long-prompt rate" : " ✅"}`);
   }
   const differing = rows.filter((r) => r[r.length - 1] === "yes").length;
-  console.log(`\n📝  model_compare.csv — ${rows.length} value(s) to mark ("נכון" / "לא נכון")${MODELS.length > 1 ? `, ${differing} where the models differ (first)` : ""}. Re-run another model on the same companies: MODELS=<model> SEED=${SEED} npx tsx scripts/model_compare.ts`);
+  console.log(`\n📝  model_compare.csv — ${rows.length} value(s) to mark ("נכון" / "לא נכון")${MODELS.length > 1 ? `, ${differing} where the models differ (first)` : ""}. The same companies again: REPEAT=true npx tsx scripts/model_compare.ts (MODELS=<a,b> for both models).`);
 })().catch((e) => { console.error(e); process.exit(1); });
