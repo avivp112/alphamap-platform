@@ -32,6 +32,7 @@ import { openSearchCache } from "../lib/enrichment/searchCache.ts";
 import { drawPilotSample, type PilotCandidate } from "../lib/enrichment/pilotSample.ts";
 import { UsageMeter } from "../lib/enrichment/models.ts";
 import { buildProfile } from "../worker/profile.ts";
+import { profileSourceAllowed } from "../lib/enrichment/roundSources.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 if (existsSync(join(__dir, "..", ".env"))) config({ path: join(__dir, "..", ".env") });
@@ -82,6 +83,8 @@ function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V2Startu
   if (c.outcome !== "collected") return [];
   const p = buildProfile(c, row.name);
   const src = (id?: string | null) => (id ? c.sourceUrlFor(id) ?? "" : "");
+  /** The first of these sources that is on the allowed list (field review run 1 showed LinkedIn first). */
+  const allowedId = (ids?: string[]) => (ids ?? []).find((id) => { const x = c.sourceById.get(id); return !!x && profileSourceAllowed(x); });
   const quoteOf = (id?: string | null) => (id ? (c.sourceById.get(id)?.content ?? "").replace(/\s+/g, " ").slice(0, 200) : "");
   const usd = (n: number | null | undefined) => (n == null ? "amount not disclosed" : n >= 1e9 ? `$${+(n / 1e9).toFixed(2)}B` : `$${+(n / 1e6).toFixed(1)}M`);
   const out: Value[] = [];
@@ -105,9 +108,13 @@ function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V2Startu
   const onFileFounders = new Set(((row.founders ?? []) as Array<{ name?: string }>).map((f) => (f.name ?? "").toLowerCase()));
   for (const f of c.profile.profile.founders ?? []) {
     if (!onFileFounders.has(f.name.toLowerCase())) add("founder", `${f.name}${f.title ? ` — ${f.title}` : ""}`, "", f.grounded_url ?? "");
-    if (f.bio) add("founder_bio", `${f.name}: ${f.bio}`, "", (f.bio_source_ids ?? []).map((id) => src(id)).filter(Boolean)[0] ?? "", quoteOf(f.bio_source_ids?.[0]));
+    if (f.bio) { const id = allowedId(f.bio_source_ids); add("founder_bio", `${f.name}: ${f.bio}`, "", src(id), quoteOf(id)); }
   }
-  for (const l of c.profile.leadership) add("leader", `${l.name} — ${l.role}${l.bio ? ` · ${l.bio}` : ""}`, "", (l.bio_source_ids ?? []).map((id) => src(id)).filter(Boolean)[0] ?? "");
+  for (const l of c.profile.leadership) {
+    // The source shown is an allowed one: the bio's, else the first allowed page that names the person.
+    const id = allowedId(l.bio_source_ids) ?? c.allSources.find((x) => profileSourceAllowed(x) && `${x.title ?? ""} ${x.content}`.includes(l.name.split(" ").pop() ?? l.name))?.source_id;
+    add("leader", `${l.name} — ${l.role}${l.bio ? ` · ${l.bio}` : ""}`, "", src(id));
+  }
   for (const r of c.plan.inserts) {
     const original = r.amount_original != null && r.amount_currency && r.amount_currency !== "USD" ? ` (${r.amount_currency} ${r.amount_original.toLocaleString()})` : "";
     add("round", `${r.round_type} ${usd(r.amount_raised)}${original} · ${r.announcement_date ?? "no date"}${r.announcement_date_precision && r.announcement_date_precision !== "day" ? ` (${r.announcement_date_precision})` : ""}${r.lead_investor ? ` · lead ${r.lead_investor}` : ""}`, "", r.source_url ?? "");

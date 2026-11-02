@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hqStatementsIn, decideHeadquarters, contactPageAddresses, quoteSaysHqOf, hqBelongsToAnother, type HqStatement } from "./headquarters";
+import { hqStatementsIn, decideHeadquarters, contactPageAddresses, quoteSaysHqOf, hqBelongsToAnother, canonicalCity, type HqStatement } from "./headquarters";
 import { buildLabeledSources } from "./sources";
 import { declaresHeadquarters, validateEnrichment } from "./validation";
 
@@ -96,6 +96,10 @@ describe("the headquarters (owner, 2026-11-01): the company's declaration, else 
     // Not the Contact page, or no street on the line.
     expect(contactPageAddresses(page("Unit DX, Bristol BS2 0QR", "https://kets-quantum.com/about"))).toEqual([]);
     expect(contactPageAddresses(page("We work with teams in Bristol and beyond."))).toEqual([]);
+  });
+  it("Bangalore and Bengaluru are one city — no 'conflict' between them (Unacademy, field review run 1)", () => {
+    expect(canonicalCity("Bangalore")).toBe(canonicalCity("Bengaluru"));
+    expect(decideHeadquarters([st("Bangalore", "press", "2025-09-02"), st("Bengaluru", "press", "2026-01-10")], "2026-11-02")).toMatchObject({ kind: "declared" });
   });
   it("validation accepts an HQ declared in the press of tiers 1–3, not in an unlisted site", () => {
     expect(declaresHeadquarters("Tel Aviv-based Hailo", "news", "https://techcrunch.com/x")).toBe(true);

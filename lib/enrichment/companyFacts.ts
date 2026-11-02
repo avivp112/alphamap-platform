@@ -83,16 +83,21 @@ export function legalFacts(text: string, companyName: string): LegalFacts {
   const entityRe = new RegExp(`\\b((?:[\\p{Lu}][\\p{L}\\d&.'-]*\\s+){0,5}${LEGAL_SUFFIX})(?=[\\s,.;)]|$)`, "gu");
   for (const m of flat.matchAll(entityRe)) {
     const cand = m[1].trim();
-    if (nameWords.some((w) => cand.toLowerCase().includes(w))) { out.legalName = cand; out.quote = flat.slice(Math.max(0, m.index! - 60), m.index! + cand.length + 160).trim(); break; }
+    if (nameWords.some((w) => cand.toLowerCase().includes(w))) { out.legalName = cand.replace(/\b(\p{L}+)\s+\1\b/giu, "$1"); out.quote = flat.slice(Math.max(0, m.index! - 60), m.index! + cand.length + 160).trim(); break; }
   }
   const num = flat.match(/\b(?:company|registration|registered|reg\.?|corporate)\s*(?:number|no\.?|nr\.?|#|id)\s*[:.]?\s*([A-Z]{0,2}\d{6,10})\b/i)
     ?? flat.match(/\b(HRB\s?\d{3,7})\b/)
     ?? flat.match(/(?:ח\.?פ\.?|מספר חברה)\s*:?\s*(5\d{8})\b/)
     ?? flat.match(/\bcompany\s+(?:registered\s+)?in\s+[^.]{0,40}?\b(?:with\s+)?(?:number|no\.?)\s*[:.]?\s*(\d{6,10})\b/i);
   if (num) out.companyNumber = num[1].replace(/\s+/g, "");
-  const office = flat.match(new RegExp(`registered\\s+(?:office|address)[^.]{0,20}?(?:is\\s+|at\\s+|:\\s*)([^.]{5,160}?\\b${CITY}\\b[^.]{0,60})`, "i"));
-  if (office) {
-    out.registeredCity = title(office[2].toLowerCase());
+  const office = flat.match(new RegExp(`registered\\s+(?:office|address)[^.]{0,20}?(?:is\\s+|at\\s+|:\\s*)([^.]{5,220})`, "i"));
+  // The city of the address — not a street named after a city ("164-182 Oxford Street, London":
+  // Kraken's registered office is in London — field review run 1).
+  const officeCity = office && [...office[1].matchAll(new RegExp(`\\b${CITY}\\b`, "gi"))]
+    .filter((m) => !/^\\s+(street|st|road|rd|avenue|ave|lane|ln|way|blvd|boulevard|drive|dr|place|pl|square|sq|house|court|park)\\b/i.test(office[1].slice(m.index! + m[0].length)))
+    .map((m) => m[1]).pop();
+  if (office && officeCity) {
+    out.registeredCity = title(officeCity.toLowerCase());
     out.quote = out.quote ? `${out.quote} … registered office: ${office[1].trim()}` : `registered office: ${office[1].trim()}`;
   }
   return out;

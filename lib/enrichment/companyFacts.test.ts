@@ -27,6 +27,11 @@ describe("the legal pages (owner, 2026-11-02 — coverage b)", () => {
     const kets = "KETS Quantum Security Ltd, registered in England, company no. 10239876. Registered office: Unit DX, St Philips, Bristol BS2 0QR.";
     expect(legalFacts(kets, "KETS Quantum Security")).toMatchObject({ legalName: "KETS Quantum Security Ltd", companyNumber: "10239876", registeredCity: "Bristol" });
   });
+  it("a street named after a city is not the registered city; a doubled word is dropped (field review run 1)", () => {
+    const kraken = "Kraken Technologies Limited, company number 12014731. Registered office: Uk House, 4th Floor, 164-182 Oxford Street, London, United Kingdom, W1D 1NN.";
+    expect(legalFacts(kraken, "Kraken Technologies")).toMatchObject({ registeredCity: "London", companyNumber: "12014731" });
+    expect(legalFacts("Leverate Leverate Technological Trading Ltd. operates this site.", "Leverate").legalName).toBe("Leverate Technological Trading Ltd.");
+  });
   it("an Israeli company number (ח.פ.)", () => {
     expect(legalFacts("גארדז סייבר בע\"מ, ח.פ. 516588902", "Guardz").companyNumber).toBe("516588902");
   });

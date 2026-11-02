@@ -219,7 +219,14 @@ export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type
 }
 
 const DAY = 86_400_000;
-const sameCity = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+/** One city under its two names ("Bangalore" / "Bengaluru": Unacademy's "conflict" — field review run 1). */
+const CITY_ALIASES: Record<string, string> = {
+  bangalore: "bengaluru", gurgaon: "gurugram", bombay: "mumbai", "new york city": "new york", nyc: "new york",
+  "tel aviv-yafo": "tel aviv", "tel aviv yafo": "tel aviv", "be'er sheva": "beer sheva", beersheba: "beer sheva",
+  "ra'anana": "raanana", "petach tikva": "petah tikva", "seongnam-si": "seongnam",
+};
+export const canonicalCity = (c: string) => { const k = c.trim().toLowerCase(); return CITY_ALIASES[k] ?? k; };
+const sameCity = (a: string, b: string) => canonicalCity(a) === canonicalCity(b);
 
 /**
  * The headquarters from every statement, by the owner's order (header).

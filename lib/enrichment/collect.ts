@@ -41,7 +41,7 @@ import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePerso
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
 import { validateEnrichment, checkNarratives } from "./validation.ts";
-import { hqStatementsIn, decideHeadquarters, statementKind, articleDate, countryOfCity, contactPageAddresses, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, type HqStatement } from "./headquarters.ts";
+import { hqStatementsIn, decideHeadquarters, statementKind, articleDate, countryOfCity, contactPageAddresses, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, canonicalCity, type HqStatement } from "./headquarters.ts";
 import { profileSourceAllowed, roundSourceStanding } from "./roundSources.ts";
 import { aboutParagraph, aboutIsOf, factsFromAbout, legalFacts, type LegalFacts } from "./companyFacts.ts";
 import { checkFoundingCountry } from "./origin.ts";
@@ -909,7 +909,7 @@ export async function collectCompany(
       console.log(`    ⚖️   ${root + path}: ${[legal.legalName && `legal name ${legal.legalName}`, legal.companyNumber && `company no. ${legal.companyNumber}`, legal.registeredCity && `registered office in ${legal.registeredCity}`].filter(Boolean).join(", ")}`);
       if (f.registeredCity) {
         const offices = profile.profile.offices ?? [];
-        if (!offices.some((o) => o.city.toLowerCase() === f.registeredCity!.toLowerCase())) {
+        if (!offices.some((o) => canonicalCity(o.city) === canonicalCity(f.registeredCity!))) {
           offices.push({ city: f.registeredCity, ...(countryOfCity(f.registeredCity) ? { country: countryOfCity(f.registeredCity)! } : {}), source_id: src.source_id, evidence_quote: f.quote ?? f.registeredCity });
         }
         profile.profile.offices = offices;
@@ -987,7 +987,7 @@ export async function collectCompany(
       profile.profile.country = undefined;
       const offices = profile.profile.offices ?? [];
       for (const c of hq.cities) {
-        if (!offices.some((o) => o.city.toLowerCase() === c.city.toLowerCase())) offices.push({ city: c.city, ...(countryOfCity(c.city) ? { country: countryOfCity(c.city)! } : {}), source_id: c.source_id, evidence_quote: c.quote });
+        if (!offices.some((o) => canonicalCity(o.city) === canonicalCity(c.city))) offices.push({ city: c.city, ...(countryOfCity(c.city) ? { country: countryOfCity(c.city)! } : {}), source_id: c.source_id, evidence_quote: c.quote });
       }
       profile.profile.offices = offices;
     } else if (hq.kind === "none" && mc && hqBelongsToAnother(mc.evidence_quote, mc.value, row.name)) {
@@ -1036,6 +1036,14 @@ export async function collectCompany(
         person.bio = undefined;
       }
     }
+    // Leaders: kept only when an allowed source names them (field review run 1: leaders from a
+    // Google redirect, from LinkedIn, or with no source at all).
+    const allowedTexts = allSources.filter((x) => profileSourceAllowed(x)).map((x) => `${x.title ?? ""} ${x.content}`);
+    profile.leadership = profile.leadership.filter((l) => {
+      if (allowedTexts.some((t) => personMentionedIn(l.name, t))) return true;
+      drop(`leader ${l.name}`, "leader_source_not_listed");
+      return false;
+    });
     // Competitors: the sentence that says they compete comes from an allowed source.
     market.competitors = market.competitors.filter((c) => {
       if (allowedId(c.source_id)) return true;
