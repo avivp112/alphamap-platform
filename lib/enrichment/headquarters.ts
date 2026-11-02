@@ -199,10 +199,16 @@ export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type
   if (s.source_type !== "company_site" || ![s.url, ...(s.also_urls ?? [])].some((u) => /\/contact/i.test(u))) return [];
   const out: HqStatement[] = [];
   for (const raw of s.content.split(/\n+/)) {
-    const line = raw.trim();
+    // Markdown images and links are not addresses: drop images, keep a link's text only
+    // ("![Image 4: … return to main Palo Alto Networks site](…)" on Koi's page — 2026-11-02).
+    const line = raw.replace(/!\[[^\]]*\]\([^)]*\)/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/https?:\/\/\S+/g, " ").trim();
     if (line.length > 250 || !ADDRESS_HINT.test(line)) continue;
     for (const m of line.matchAll(CITY_RE)) {
       const city = title(m[2].toLowerCase());
+      // An address names the city before a comma, a postcode, a state code or the line's end —
+      // not inside a name ("Palo Alto Networks", "Tel Aviv University").
+      const rest = line.slice(m.index! + m[0].length);
+      if (!/^\s*($|[,;|·–-]|\(|\d|[A-Z]{1,2}\d|[A-Z]{2}\b)/.test(rest)) continue;
       // A street named after a city is not the city ("46430 Fremont Blvd": EnerVenue, model check 2026-11-02).
       if (/^\s+(blvd|boulevard|st|street|ave|avenue|rd|road|way|drive|dr|lane|ln|place|pl|parkway|pkwy|highway|hwy)\b\.?/i.test(line.slice(m.index! + m[0].length))) continue;
       if (isRegionalOfficeQuote(line, city)) continue;

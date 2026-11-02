@@ -77,6 +77,12 @@ describe("the headquarters (owner, 2026-11-01): the company's declaration, else 
     expect(contactPageAddresses({ url: "https://soda.io/about", also_urls: ["https://soda.io/company", "https://soda.io/contact"], content: "Soda Data NV\nRue Picard 7 / 100 1000 Brussels, Belgium", source_type: "company_site", source_id: "W2" }))
       .toMatchObject([{ city: "Brussels" }]);
   });
+  it("a link to another company's site is not an address (Koi's 'return to main Palo Alto Networks site')", () => {
+    const page = { url: "https://koi.security/contact", content: "![Image 4: white arrow icon pointing left to return to main Palo Alto Networks site](https://www.paloaltonetworks.com/x)", source_type: "company_site" as const, source_id: "W2" };
+    expect(contactPageAddresses(page)).toEqual([]);
+    expect(contactPageAddresses({ ...page, content: "Visit Palo Alto Networks, 3000 Tannery Way" })).toEqual([]);
+    expect(contactPageAddresses({ ...page, content: "Koi Security, 3 Rothschild Blvd, Tel Aviv, Israel" })).toMatchObject([{ city: "Tel Aviv" }]);
+  });
   it("a street named after a city is not the city ('46430 Fremont Blvd')", () => {
     const page = { url: "https://enervenue.com/contact", content: "Visit us\n46430 Fremont Blvd", source_type: "company_site" as const, source_id: "W3" };
     expect(contactPageAddresses(page)).toEqual([]);
