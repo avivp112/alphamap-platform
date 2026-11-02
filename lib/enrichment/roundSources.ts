@@ -144,6 +144,19 @@ export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean
   return { kind: "unlisted", domain: reviewDomain(url) ?? host };
 }
 
+/**
+ * The sources the pilot's fields — HQ city/country, founded year, founding
+ * country — may be written from (owner, 2026-11-02): the company's own site or
+ * release, a register, or the press of tiers 1–3. The 10-company dry run of
+ * 2026-11-02 took KETS's founding year from Tracxn, Soda's founding country
+ * from SourceForge and Mentat's year from a Tracxn list of mood-tracker apps.
+ */
+export function profileSourceAllowed(s: { url: string; source_type?: string | null }): boolean {
+  if (s.source_type === "company_site" || s.source_type === "press_release" || s.source_type === "registry") return true;
+  const standing = roundSourceStanding(s.url);
+  return standing.kind === "allowed" && standing.tier <= 3;
+}
+
 /** Provenance confidence for a round value: lowered for EIN Presswire / tier 4 alone. */
 export function roundSourceConfidence(base: number, standing: SourceStanding): number {
   return standing.kind === "allowed" && standing.lowConfidence ? Math.min(base, 60) : base;

@@ -95,6 +95,14 @@ const ENTRIES: Array<[string, string]> = [
   ["zurich", "Switzerland"], ["geneva", "Switzerland"], ["lausanne", "Switzerland"], ["basel", "Switzerland"],
   ["porto", "Portugal"],
   ["cape town", "South Africa"], ["johannesburg", "South Africa"], ["durban", "South Africa"],
+  // Gaps the 10-company dry run of 2026-11-02 surfaced (pilot sample's HQs).
+  ["be'er sheva", "Israel"], ["beersheba", "Israel"], ["raanana", "Israel"], ["ra'anana", "Israel"],
+  ["bnei brak", "Israel"], ["petah tikva", "Israel"], ["petach tikva", "Israel"], ["rehovot", "Israel"],
+  ["kfar saba", "Israel"], ["hod hasharon", "Israel"], ["yokneam", "Israel"], ["netanya", "Israel"],
+  ["rosh haayin", "Israel"], ["caesarea", "Israel"], ["modiin", "Israel"], ["nazareth", "Israel"],
+  ["san mateo", "United States"], ["milwaukee", "United States"], ["redwood city", "United States"],
+  ["coquitlam", "Canada"], ["burnaby", "Canada"],
+  ["newcastle", "United Kingdom"], ["newcastle", "Australia"], ["freiburg", "Germany"],
 ];
 
 export const MAJOR_CITIES: Map<string, Set<string>> = (() => {

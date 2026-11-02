@@ -17,6 +17,8 @@ export interface TechGateVerdict {
   is_tech_company: boolean;
   confidence: "high" | "medium" | "low";
   reason: string;
+  /** false when the homepage shows another business than the description on file (a parked domain, a casino…). */
+  site_matches_description?: boolean;
 }
 
 export function buildTechGateRequest(companyName: string, homepageText: string, description: string | null, industry: string | null) {
@@ -38,6 +40,7 @@ export function buildTechGateRequest(companyName: string, homepageText: string, 
           is_tech_company: { type: "boolean", description: "TRUE for any company whose core product or competitive edge is its own technology/software/R&D (broad category — AI/ML, fintech, biotech, hardware, marketplaces and platforms run on their own app/software, etc. all count)." },
           confidence: { type: "string", enum: ["high", "medium", "low"] },
           reason: { type: "string", description: "One short sentence." },
+          site_matches_description: { type: "boolean", description: "FALSE when the homepage text is about a different business than the description on file — a parked or sold domain, a casino, an unrelated company. TRUE when they describe the same business, or when there is no description to compare." },
         },
         required: ["is_tech_company", "confidence", "reason"],
       },

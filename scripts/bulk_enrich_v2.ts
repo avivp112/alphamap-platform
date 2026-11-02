@@ -89,6 +89,9 @@ if (PILOT && ONLY.length === 0) { console.error("⛔  PILOT=true needs ONLY=<com
 // Every pilot field written — or, dry, that would be — before and after (the owner's report).
 const PILOT_REPORT = process.env.PILOT_REPORT ?? `pilot_report_${DRY_RUN ? "dry" : "write"}.csv`;
 const pilotRows: Array<Record<string, string>> = [];
+// Websites to fix (owner, 2026-11-02): another business on the site, or none of it readable.
+// Always in website_review.csv; noted in the website_review table on a wet run.
+const websiteRows: Array<Record<string, string>> = [];
 // Kept for parity/visibility only -- v2 gates per field (issue 9), never on
 // one whole-company score. Printed in the run header, never read.
 const MIN_CONFIDENCE = Number(process.env.MIN_CONFIDENCE ?? 40);
@@ -241,6 +244,11 @@ async function enrichCompany(
       return ((prov ?? []) as Array<{ source_url: string | null }>).map((p) => p.source_url);
     },
     recordCost: (model, usage) => recordCost(summary, model, usage),
+    onWebsiteIssue: (reason, detail) => {
+      websiteRows.push({ company_id: row.id, company: row.name, website: row.website ?? "", reason, detail });
+      if (!DRY_RUN) void supabase.rpc("note_website_issue", { p_startup_id: row.id, p_website: row.website, p_reason: reason, p_detail: detail })
+        .then(({ error }) => { if (error) console.warn(`    ⚠️  website_review not noted (${error.message}) — run migration 20261116000000`); });
+    },
     // Hints earlier runs kept for this company: searched for again (lib/enrichment/hints.ts).
     openHints: async () => {
       const { data } = await supabase.from("data_hints").select("id, value, source_url").eq("startup_id", row.id).eq("kind", "funding_round").eq("status", "open");
@@ -500,6 +508,12 @@ async function main() {
     console.log(`    ${reason.padEnd(32)} ${count}`);
   }
   console.log("═".repeat(62));
+  if (websiteRows.length) {
+    const wcols = ["company_id", "company", "website", "reason", "detail"];
+    const wcell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    writeFileSync("website_review.csv", "\uFEFF" + [wcols.join(","), ...websiteRows.map((r) => wcols.map((c) => wcell(r[c] ?? "")).join(","))].join("\r\n") + "\r\n");
+    console.log(`🛠️   ${websiteRows.length} website(s) to fix in website_review.csv${DRY_RUN ? "" : " (and the website_review table)"}.`);
+  }
   if (PILOT) {
     const cols = ["company_id", "company", "field", "before", "after", "source_url", "quote"];
     const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);

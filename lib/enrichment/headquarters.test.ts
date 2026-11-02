@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hqStatementsIn, decideHeadquarters, type HqStatement } from "./headquarters";
+import { hqStatementsIn, decideHeadquarters, contactPageAddresses, type HqStatement } from "./headquarters";
 import { buildLabeledSources } from "./sources";
 import { declaresHeadquarters } from "./validation";
 
@@ -37,6 +37,15 @@ describe("the headquarters (owner, 2026-11-01): the company's declaration, else 
     expect(decideHeadquarters([st("Tel Aviv", "press", "2022-06-16")], "2026-11-02", ["Tel Aviv", "tel aviv"])).toMatchObject({ kind: "declared" });
     // The company's own declaration still wins.
     expect(decideHeadquarters([st("New York", "company", null)], "2026-11-02", sites)).toMatchObject({ kind: "declared", statement: { city: "New York" } });
+  });
+  it("one street address on the Contact page is the headquarters (owner, 2026-11-02); a list of offices is not one", () => {
+    const page = (content: string, url = "https://kets-quantum.com/contact") => ({ url, content, source_type: "company_site" as const, source_id: "W3" });
+    expect(contactPageAddresses(page("Get in touch\nKETS Quantum Security\nUnit DX, St Philips Central, Bristol BS2 0QR\nhello@kets-quantum.com")))
+      .toMatchObject([{ city: "Bristol", kind: "company" }]);
+    expect(contactPageAddresses(page("Offices\n1674 Broadway, New York, NY 10019\nHamasger 34, Tel Aviv"))).toHaveLength(2);
+    // Not the Contact page, or no street on the line.
+    expect(contactPageAddresses(page("Unit DX, Bristol BS2 0QR", "https://kets-quantum.com/about"))).toEqual([]);
+    expect(contactPageAddresses(page("We work with teams in Bristol and beyond."))).toEqual([]);
   });
   it("validation accepts an HQ declared in the press of tiers 1–3, not in an unlisted site", () => {
     expect(declaresHeadquarters("Tel Aviv-based Hailo", "news", "https://techcrunch.com/x")).toBe(true);

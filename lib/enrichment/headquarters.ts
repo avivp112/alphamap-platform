@@ -86,6 +86,31 @@ export function hqStatementsIn(s: LabeledSource, companyName: string): HqStateme
 }
 
 /**
+ * HQ_DEBUG=true: every sentence of a source that has an HQ word, and why it
+ * did or did not become a statement — the diagnosis the owner asked for
+ * (2026-11-02: Guardz "Tel Aviv", Flyworks "Beer Sheva" rejected).
+ */
+export function diagnoseHq(s: LabeledSource, companyName: string): string[] {
+  const kind = statementKind(s);
+  const out: string[] = [];
+  for (const sentence of sentencesOf(`${s.title ?? ""}. ${s.content}`)) {
+    if (sentence.length > 400 || !HQ_WORD.test(sentence)) continue;
+    if (!namesCompany(sentence, companyName) && !(s.source_type === "company_site")) continue;
+    const cities = [...sentence.matchAll(CITY_RE)];
+    let verdict: string;
+    if (!kind) verdict = `source not allowed (${roundSourceStanding(s.url).kind})`;
+    else if (!cities.length) verdict = "no city from the list in the sentence";
+    else verdict = cities.map((m) => {
+      const city = title(m[2].toLowerCase());
+      if (isRegionalOfficeQuote(sentence, city)) return `${city}: regional office`;
+      return saysOfCompany(sentence, m.index! + m[1].length, city, companyName, s.source_type === "company_site") ? `${city}: ACCEPTED (${kind})` : `${city}: not said of the company`;
+    }).join("; ");
+    out.push(`[${s.source_id}] ${s.url} — ${verdict}\n        "${sentence.trim().slice(0, 220)}"`);
+  }
+  return out;
+}
+
+/**
  * The HQ phrase is about THIS company, not another one in the same sentence
  * (owner, 2026-11-01: Fresha's own blog post about its round gave "Paris" —
  * the HQ of an investor it named):
@@ -110,6 +135,31 @@ function saysOfCompany(sentence: string, at: number, city: string, companyName: 
   const lead = before.slice(0, phrase.index).split(/[;:]|\.\s/).pop() ?? "";
   if (namesCompany(lead, companyName)) return true;
   return ownSite && /\b(we|we're|we are|our)\b/i.test(lead);
+}
+
+// A street address on the line: "1674 Broadway", "Hamasger 34", a postcode
+// ("BS1 6QH", "94105", "6789141").
+const ADDRESS_HINT = /(\b\d{1,5}\s+\p{L}{3,}|\p{L}{3,}\.?\s+\d{1,5}\b|\b[A-Z]{1,2}\d[A-Z\d]?\s\d[A-Z]{2}\b|\b\d{5}(?:-\d{4})?\b|\b\d{7}\b)/u;
+
+/**
+ * The cities of the street addresses the company's Contact page gives
+ * (owner, 2026-11-02): one address there is the headquarters, even without
+ * the word. Lines that name a city on the list and carry a street number or
+ * a postcode; a regional office's line is not counted.
+ */
+export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type" | "content" | "source_id">): HqStatement[] {
+  if (s.source_type !== "company_site" || !/\/contact/i.test(s.url)) return [];
+  const out: HqStatement[] = [];
+  for (const raw of s.content.split(/\n+/)) {
+    const line = raw.trim();
+    if (line.length > 250 || !ADDRESS_HINT.test(line)) continue;
+    for (const m of line.matchAll(CITY_RE)) {
+      const city = title(m[2].toLowerCase());
+      if (isRegionalOfficeQuote(line, city)) continue;
+      if (!out.some((o) => sameCity(o.city, city))) out.push({ city, quote: line, source_id: s.source_id, url: s.url, kind: "company", date: null });
+    }
+  }
+  return out;
 }
 
 const DAY = 86_400_000;

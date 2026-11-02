@@ -16,7 +16,7 @@ import type { SourceType } from "./sourceTypes";
 import { isDataPlatformUrl } from "./dataPlatforms";
 import { isPressWireUrl } from "./primarySources";
 
-export type Provider = "serper" | "tavily" | "jina" | "tavily_extract" | "cheerio" | "jina_search" | "serper_scrape";
+export type Provider = "serper" | "tavily" | "jina" | "tavily_extract" | "cheerio" | "jina_search" | "serper_scrape" | "registry";
 
 const REGISTRY_HOSTS = new Set([
   "sec.gov", "www.sec.gov", "efts.sec.gov",

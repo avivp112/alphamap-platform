@@ -236,7 +236,7 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
             value_proposition: { type: "string", description: "1-2 sentences: the company's distinct positioning, in its own terms — never naming a data platform or where a fact was read. Omit if not clearly supported." },
             value_proposition_source_ids: { type: "array", items: { type: "string" } },
             industry: { type: "string", description: "Primary tech sector (e.g. 'AI & ML', 'Cybersecurity', 'FinTech')." },
-            founded_year: materialField({ type: "integer" }, "Year the company was incorporated. Never infer from an article's publish date or a funding round's date — only from an explicit founding-year statement."),
+            founded_year: materialField({ type: "integer" }, "Year the company was incorporated. Never infer from an article's publish date or a funding round's date — only from an explicit founding-year statement. Cite the company's own site or a news article when one states it — a data platform, directory or comparison site (Crunchbase, Tracxn, SourceForge…) is never accepted as the source."),
             country: materialField({ type: "string" }, "HQ country full name — ONLY when a source DECLARES the headquarters ('headquartered in', 'HQ', 'head office', 'based in', '<city>-based'). A list of offices or locations is NOT a headquarters: put those in `offices`. Must come from the SAME source and the SAME sentence/address as `city` — never combine a city from one source with a country from another."),
             city: materialField({ type: "string" }, "HQ city — ONLY when a source DECLARES it the headquarters (see `country`). Must come from the SAME source and the SAME sentence/address as `country`."),
             offices: {
@@ -253,7 +253,7 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
                 required: ["city", "source_id", "evidence_quote"],
               },
             },
-            founding_country: materialField({ type: "string" }, "Country full name where the company was FOUNDED — may differ from the HQ `country` (e.g. founded in Israel, HQ now in New York). Only from a quote that says it of the company: 'founded in Tel Aviv', 'the Israeli startup', 'started in Berlin'. Never from a founder's nationality, army unit or university, a customer, or an office."),
+            founding_country: materialField({ type: "string" }, "Country full name where the company was FOUNDED — may differ from the HQ `country` (e.g. founded in Israel, HQ now in New York). Only from a quote that says it of the company: 'founded in Tel Aviv', 'the Israeli startup', 'started in Berlin'. Never from a founder's nationality, army unit or university, a customer, or an office. Cite the company's own site or a news article — a data platform, directory or comparison site is never accepted as the source."),
             israel_rnd_center: materialField({ type: "boolean" }, "TRUE only if a source states the company has its R&D / development / engineering centre or team in Israel (e.g. 'headquartered in New York with R&D in Tel Aviv'). A sales office does not count. Omit otherwise."),
             founders: {
               type: "array",

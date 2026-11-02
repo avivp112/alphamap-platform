@@ -41,7 +41,9 @@ import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePerso
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
 import { validateEnrichment, checkNarratives } from "./validation.ts";
-import { hqStatementsIn, decideHeadquarters, statementKind, articleDate, countryOfCity } from "./headquarters.ts";
+import { hqStatementsIn, decideHeadquarters, statementKind, articleDate, countryOfCity, contactPageAddresses, diagnoseHq, type HqStatement } from "./headquarters.ts";
+import { profileSourceAllowed } from "./roundSources.ts";
+import { lookupRegisters, nodeRegisterIo, type RegisterContext, type RegisterFinding } from "./registers.ts";
 import { stripHonorific } from "./people.ts";
 import { countryFromLocationQuote } from "./location.ts";
 import type { VerifiedFact } from "./narrative.ts";
@@ -153,6 +155,10 @@ export interface CollectContext {
   onStage?: (stage: CollectStage, detail?: Record<string, unknown>) => void;
   /** The company's patents from the EPO register (epoPatents.ts); tests pass a stand-in. */
   patentLookup?: (company: CompanyIdentity) => Promise<EpoPatentResult | null>;
+  /** The website on file shows another business, or none of it could be read (owner, 2026-11-02: "website to fix" list). */
+  onWebsiteIssue?: (reason: "content_mismatch" | "unreadable", detail: string) => void;
+  /** Company registers (registers.ts); tests pass a stand-in. */
+  registerLookup?: (ctx: RegisterContext) => Promise<RegisterFinding[]>;
   /** Hints earlier runs stored for this company (data_hints, status open): searched for again (hints.ts). */
   openHints?: () => Promise<RoundHint[]>;
   /** Search for a primary source of each platform-only round (default on; three searches per hint at most). */
@@ -281,6 +287,15 @@ function logExtraction(label: string, companyName: string, outcome: { stopReason
   }
 }
 
+/** HQ_DEBUG=true — why each HQ sentence did or did not count (owner, 2026-11-02). */
+function logHqDiagnosis(sources: LabeledSource[], name: string, statements: HqStatement[], contact: HqStatement[], modelCity: { value: string; source_id: string; evidence_quote: string } | undefined): void {
+  console.log(`    🔬  HQ diagnosis for ${name}:`);
+  for (const s of sources) for (const line of diagnoseHq(s, name)) console.log(`        ${line}`);
+  console.log(`        Contact-page addresses: ${contact.length ? contact.map((c) => `${c.city} ("${c.quote.slice(0, 80)}")`).join(" | ") : "none"}`);
+  console.log(`        Model's city: ${modelCity ? `${modelCity.value} [${modelCity.source_id}] "${modelCity.evidence_quote.slice(0, 160)}"` : "none"}`);
+  console.log(`        Statements kept: ${statements.length ? statements.map((s) => `${s.city} (${s.kind}, ${s.date ?? "undated"})`).join(", ") : "none"}`);
+}
+
 function bump(map: Map<string, number>, key: string): void {
   map.set(key, (map.get(key) ?? 0) + 1);
 }
@@ -313,6 +328,10 @@ export async function collectCompany(
   // The homepage is fetched first so a clearly non-tech company is
   // rejected before paying for ~11 searches and three extraction calls.
   const websitePages = ctx.update ? [] : await fetchCompanyWebsitePages(effectiveWebsite, searchState);
+  if (effectiveWebsite && !ctx.update && websitePages.length === 0) {
+    console.log(`    🛠️   No page of ${effectiveWebsite} could be read — listed as a website to fix.`);
+    ctx.onWebsiteIssue?.("unreadable", `No page of ${effectiveWebsite} could be read (Jina Reader and Serper scrape both failed).`);
+  }
   if (ctx.techGate && !ctx.update) {
     // The verdict is cached with the search results, so seeing the same
     // company again (a re-run, the next cycle) costs nothing.
@@ -321,9 +340,15 @@ export async function collectCompany(
       ? { verdict: cachedVerdict, inputTokens: 0, outputTokens: 0 }
       : await runTechGate(row.name, websitePages[0]?.content ?? "", row.description, row.industry, { client: ctx.anthropic, model: ctx.models.enrich });
     if (!cachedVerdict) searchState.cache?.set("techgate", gate.verdict);
+    if (gate.verdict?.site_matches_description === false && !shouldSkipAsNonTech(gate.verdict)) {
+      console.log(`    🛠️   The site shows another business than the description on file — listed as a website to fix: ${gate.verdict.reason}`);
+      ctx.onWebsiteIssue?.("content_mismatch", gate.verdict.reason);
+    }
     ctx.recordCost(ctx.models.enrich, gate);
     if (shouldSkipAsNonTech(gate.verdict)) {
       console.log(`    🚫  REJECTED before searching — not a technology company: ${gate.verdict!.reason}`);
+      // A site that shows another business than the company's own description is a website to fix.
+      if (gate.verdict!.site_matches_description === false) ctx.onWebsiteIssue?.("content_mismatch", gate.verdict!.reason);
       stats.earlyRejected++;
       return { outcome: "rejected" };
     }
@@ -821,6 +846,13 @@ export async function collectCompany(
   // empty and both cities become offices (headquarters.ts, owner 2026-11-01).
   {
     const statements = allSources.flatMap((s) => hqStatementsIn(s, row.name));
+    // One street address on the Contact page is the headquarters (owner, 2026-11-02).
+    const contact = allSources.flatMap((s) => contactPageAddresses(s));
+    if (contact.length === 1 && !statements.some((s) => s.kind === "company")) {
+      console.log(`    🏢  The Contact page gives one address — ${contact[0].city}: "${contact[0].quote.slice(0, 120)}"`);
+      statements.push(contact[0]);
+    }
+    if (process.env.HQ_DEBUG === "true") logHqDiagnosis(allSources, row.name, statements, contact, profile.profile.city);
     const mc = profile.profile.city;
     const mcSource = mc ? sourceById.get(mc.source_id) : undefined;
     const mcKind = mcSource ? statementKind(mcSource) : null;
@@ -850,6 +882,48 @@ export async function collectCompany(
       console.log(`    🏢  Headquarters left empty — the company's site lists ${hq.cities.join(", ")} without naming one, and no press declaration is from the last two years. They stay offices.`);
       profile.profile.city = undefined;
       profile.profile.country = undefined;
+    }
+  }
+
+  // ── HQ, founded year, founding country: only from allowed sources ─────
+  // (owner, 2026-11-02 — roundSources.ts profileSourceAllowed).
+  for (const key of ["city", "country", "founded_year", "founding_country"] as const) {
+    const f = profile.profile[key] as { value: unknown; source_id: string } | undefined;
+    if (!f) continue;
+    const s = sourceById.get(f.source_id);
+    if (s && profileSourceAllowed(s)) continue;
+    console.log(`    🚫  ${key} ${JSON.stringify(f.value)} not written — its source is not on the allowed list: ${s?.url ?? f.source_id}`);
+    bump(stats.droppedByReason, "profile_source_not_listed");
+    (profile.profile as Record<string, unknown>)[key] = undefined;
+  }
+
+  // ── Registers: founded year and founding country, a certain match beats any article ──
+  if (componentOn("registers") && !ctx.update) {
+    const siteSources = allSources.filter((s) => s.source_type === "company_site");
+    const siteCities = [
+      ...allSources.flatMap((s) => contactPageAddresses(s)).map((c) => c.city),
+      ...(profile.profile.offices ?? []).map((o) => o.city),
+      ...(profile.profile.city && sourceById.get(profile.profile.city.source_id)?.source_type === "company_site" ? [profile.profile.city.value] : []),
+    ];
+    // (Tests never reach a real register: they pass a stand-in or get none.)
+    const lookup = ctx.registerLookup ?? (process.env.VITEST ? async () => [] : (c: RegisterContext) => lookupRegisters(c, nodeRegisterIo(), (m) => console.warn(`    ⚠️  ${m}`)));
+    const findings = await lookup({
+      name: row.name,
+      siteText: siteSources.map((s) => s.content).join("\n"),
+      siteCities,
+      statedFoundingCountry: profile.profile.founding_country?.value ?? null,
+    });
+    const reg = findings[0];
+    if (reg) {
+      const source: LabeledSource = { url: reg.url, title: `${reg.entity} — register`, content: reg.quote, provider: "registry", query_label: "register", source_id: `R${allSources.length + 1}`, source_type: "registry" };
+      allSources.push(source);
+      sourceById.set(source.source_id, source);
+      const before = { year: profile.profile.founded_year?.value ?? null, country: profile.profile.founding_country?.value ?? null };
+      if (reg.founded_year) profile.profile.founded_year = { value: reg.founded_year, source_id: source.source_id, evidence_quote: reg.quote } as typeof profile.profile.founded_year;
+      profile.profile.founding_country = { value: reg.founding_country, source_id: source.source_id, evidence_quote: reg.quote } as typeof profile.profile.founding_country;
+      const disagree = [before.year != null && reg.founded_year && before.year !== reg.founded_year ? `year ${before.year} → ${reg.founded_year}` : null,
+        before.country && before.country !== reg.founding_country ? `country ${before.country} → ${reg.founding_country}` : null].filter(Boolean);
+      console.log(`    🏛️   Register ${reg.register}: ${reg.entity} (${reg.number}) — ${reg.match}. Founded ${reg.founded_year ?? "?"}, ${reg.founding_country}${disagree.length ? ` — overrides the articles: ${disagree.join(", ")}` : ""}`);
     }
   }
 

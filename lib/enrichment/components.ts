@@ -42,6 +42,10 @@ export const V2_COMPONENTS = {
     on: true, since: "2026-11-01",
     what: "one more search for the press's own headquarters phrase (\"Tel Aviv-based Hailo\"), without the domain anchor",
   },
+  registers: {
+    on: true, since: "2026-11-02",
+    what: "founded year and founding country from Companies House, the Israeli registrar and SEC Form D, on a certain match only — beats any article (registers.ts)",
+  },
   search_backup: {
     on: true, since: "2026-10-29",
     what: "Jina Search answers a search Serper could not; Serper scrape reads a page Jina could not",
