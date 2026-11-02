@@ -508,7 +508,7 @@ async function main() {
     console.log(`    ${reason.padEnd(32)} ${count}`);
   }
   console.log("═".repeat(62));
-  if (websiteRows.length) {
+  if (websiteRows.length && !process.env.VITEST) {
     const wcols = ["company_id", "company", "website", "reason", "detail"];
     const wcell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
     writeFileSync("website_review.csv", "\uFEFF" + [wcols.join(","), ...websiteRows.map((r) => wcols.map((c) => wcell(r[c] ?? "")).join(","))].join("\r\n") + "\r\n");
