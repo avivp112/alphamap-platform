@@ -7,12 +7,17 @@
  *   US      SEC Form D (EDGAR full-text search, SEC_USER_AGENT)
  *
  * A register counts only on a CERTAIN match between its entity and the
- * company — the same name (legal suffixes aside) AND one more tie:
- *   UK  the company's own site gives the company number or the registered postcode;
- *   IL  the company number is on the site, or the registered city is a city
- *       of an address the site gives;
- *   US  the site gives the issuer's street or ZIP.
- * With a certain match the register beats any article.
+ * company — the name AND one more tie:
+ *   - the same name (legal suffixes aside): the company number on the site,
+ *     the registered city among the site's offices, a known founder among
+ *     the register's people (UK officers, Form D related persons), or —
+ *     UK — the registered postcode / — US — the issuer's street or ZIP on the site;
+ *   - the name plus ONE generic word ("GUARDZ CYBER LTD" for Guardz — Cyber,
+ *     Technologies, Labs, Security, AI…; owner, 2026-11-02): only a strong
+ *     tie — a known founder among the people, the company number on the
+ *     site, or the registered city among the site's offices.
+ * A city alone, without the name, never counts. With a certain match the
+ * register beats any article.
  *
  * Form D's year is the US entity's: an Israeli or European startup that set
  * up a Delaware parent later would get the wrong year and country. So Form D
@@ -42,6 +47,8 @@ export interface RegisterContext {
   siteText: string;
   /** Cities of the addresses / offices the company's own site gives. */
   siteCities: string[];
+  /** Founders this run already knows (grounded): matched against the register's people. */
+  founders?: string[];
   /** A founding country an allowed source states, if any (guards Form D). */
   statedFoundingCountry?: string | null;
 }
@@ -52,16 +59,48 @@ export interface RegisterIo {
   env?: Record<string, string | undefined>;
 }
 
-const SUFFIX = /\b(limited|ltd|plc|llp|inc|incorporated|corp|corporation|co|company|llc|l\.l\.c|gmbh|ag|sa|sas|bv|b\.v|technologies|technology|בע"?מ|בעמ)\b\.?/gi;
+const SUFFIX = /\b(limited|ltd|plc|llp|inc|incorporated|corp|corporation|co|company|llc|l\.l\.c|gmbh|ag|sa|sas|bv|b\.v|בע"?מ|בעמ)\b\.?/gi;
 /** "KETS QUANTUM SECURITY LTD" and "KETS Quantum Security" → "kets quantum security". */
 export function legalName(name: string): string {
   return name.toLowerCase().replace(/&/g, " and ").replace(SUFFIX, " ").replace(/[^\p{L}\p{N} ]/gu, " ").replace(/\s+/g, " ").trim();
 }
-/** Same name, legal suffixes aside — and the words "technologies" dropped on both sides. */
+/** Same name, legal suffixes aside. */
 export function sameEntityName(a: string, b: string): boolean {
   const x = legalName(a), y = legalName(b);
   return x.length >= 2 && x === y;
 }
+
+/** Words a register name may add to the company's name (or the other way round) — with a strong tie only. */
+export const GENERIC_WORDS = new Set(["cyber", "technologies", "technology", "tech", "labs", "lab", "security", "ai", "software", "systems", "solutions", "group", "holdings", "global", "digital", "data", "networks", "io", "hq"]);
+
+/** "exact": the same name; "plus_one": one side adds one generic word ("GUARDZ CYBER LTD" / "Guardz"). */
+export function nameMatch(registerName: string, companyName: string): "exact" | "plus_one" | null {
+  const x = legalName(registerName), y = legalName(companyName);
+  if (x.length < 2 || y.length < 2) return null;
+  if (x === y) return "exact";
+  const [long, short] = x.split(" ").length > y.split(" ").length ? [x.split(" "), y.split(" ")] : [y.split(" "), x.split(" ")];
+  if (long.length !== short.length + 1) return null;
+  for (let i = 0; i < long.length; i++) {
+    if (GENERIC_WORDS.has(long[i]) && [...long.slice(0, i), ...long.slice(i + 1)].join(" ") === short.join(" ")) return "plus_one";
+  }
+  return null;
+}
+
+const personTokens = (n: string) => n.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z ]/g, " ").split(/\s+/).filter((t) => t.length > 1);
+/** A known founder among the register's people: the founder's first and last names both in one person's name ("SHACHAR, Amiram"). */
+export function founderAmong(founders: string[] | undefined, people: string[]): string | null {
+  for (const f of founders ?? []) {
+    const ft = personTokens(f);
+    if (ft.length < 2) continue;
+    const [first, last] = [ft[0], ft[ft.length - 1]];
+    const hit = people.find((p) => { const pt = new Set(personTokens(p)); return pt.has(first) && pt.has(last); });
+    if (hit) return `${f} (${hit})`;
+  }
+  return null;
+}
+const cityAmong = (city: string | null | undefined, cities: string[]) =>
+  !!city && cities.some((c) => c.trim().toLowerCase() === city.trim().toLowerCase());
+
 const digits = (s: string) => s.replace(/\D/g, "");
 const squash = (s: string) => s.toLowerCase().replace(/\s+/g, "");
 
@@ -69,23 +108,27 @@ const squash = (s: string) => s.toLowerCase().replace(/\s+/g, "");
 
 interface ChItem { title?: string; company_number?: string; company_status?: string; date_of_creation?: string; address?: { postal_code?: string; locality?: string }; address_snippet?: string }
 
-export function matchCompaniesHouse(items: ChItem[], ctx: RegisterContext): RegisterFinding | null {
+/** `officers`: company number → its officers' names (fetched for the candidates by name). */
+export function matchCompaniesHouse(items: ChItem[], ctx: RegisterContext, officers: Record<string, string[]> = {}): RegisterFinding | null {
   const site = squash(ctx.siteText);
   for (const it of items) {
-    if (!it.title || !it.company_number || !it.date_of_creation || !sameEntityName(it.title, ctx.name)) continue;
+    const kind = it.title ? nameMatch(it.title, ctx.name) : null;
+    if (!kind || !it.company_number || !it.date_of_creation) continue;
     if (it.company_status && /dissolved|converted|closed/i.test(it.company_status)) continue;
-    const num = it.company_number.toLowerCase();
+    const num = it.company_number.toLowerCase(), bare = num.replace(/^0+/, "");
     const postcode = it.address?.postal_code ? squash(it.address.postal_code) : "";
-    const tie = site.includes(num) || site.includes(num.replace(/^0+/, "")) && num.replace(/^0+/, "").length >= 6
-      ? `the site gives company number ${it.company_number}`
-      : postcode.length >= 5 && site.includes(postcode) ? `the site gives the registered postcode ${it.address!.postal_code}` : null;
+    const founder = founderAmong(ctx.founders, officers[it.company_number] ?? []);
+    const tie = founder ? `a known founder is an officer: ${founder}`
+      : site.includes(num) || (bare.length >= 6 && site.includes(bare)) ? `the site gives company number ${it.company_number}`
+      : cityAmong(it.address?.locality, ctx.siteCities) ? `registered in ${it.address!.locality}, an office on the site`
+      : kind === "exact" && postcode.length >= 5 && site.includes(postcode) ? `the site gives the registered postcode ${it.address!.postal_code}` : null;
     if (!tie) continue;
     return {
-      register: "uk_companies_house", entity: it.title, number: it.company_number,
+      register: "uk_companies_house", entity: it.title!, number: it.company_number,
       founded_year: Number(it.date_of_creation.slice(0, 4)) || null, founding_country: "United Kingdom",
       url: `https://find-and-update.company-information.service.gov.uk/company/${it.company_number}`,
       quote: `${it.title}, company number ${it.company_number}, incorporated on ${it.date_of_creation}${it.address_snippet ? `, registered office ${it.address_snippet}` : ""}`,
-      match: tie,
+      match: `${kind === "exact" ? "same name" : "name plus one generic word"}; ${tie}`,
     };
   }
   return null;
@@ -94,9 +137,18 @@ export function matchCompaniesHouse(items: ChItem[], ctx: RegisterContext): Regi
 async function lookupCompaniesHouse(ctx: RegisterContext, io: RegisterIo): Promise<RegisterFinding | null> {
   const key = io.env?.COMPANIES_HOUSE_API_KEY;
   if (!key) return null;
-  const auth = `Basic ${Buffer.from(`${key}:`).toString("base64")}`;
-  const res = await io.fetchJson(`https://api.company-information.service.gov.uk/search/companies?q=${encodeURIComponent(ctx.name)}&items_per_page=20`, { Authorization: auth }) as { items?: ChItem[] };
-  return matchCompaniesHouse(res.items ?? [], ctx);
+  const headers = { Authorization: `Basic ${Buffer.from(`${key}:`).toString("base64")}` };
+  const res = await io.fetchJson(`https://api.company-information.service.gov.uk/search/companies?q=${encodeURIComponent(ctx.name)}&items_per_page=20`, headers) as { items?: ChItem[] };
+  const items = res.items ?? [];
+  // The officers of the candidates by name, when there is a founder to look for (three at most).
+  const officers: Record<string, string[]> = {};
+  if (ctx.founders?.length) {
+    for (const it of items.filter((i) => i.title && i.company_number && nameMatch(i.title, ctx.name)).slice(0, 3)) {
+      const o = await io.fetchJson(`https://api.company-information.service.gov.uk/company/${it.company_number}/officers?items_per_page=50`, headers).catch(() => null) as { items?: Array<{ name?: string }> } | null;
+      officers[it.company_number!] = (o?.items ?? []).map((x) => x.name ?? "").filter(Boolean);
+    }
+  }
+  return matchCompaniesHouse(items, ctx, officers);
 }
 
 // ── Israel: the Registrar of Companies on data.gov.il ───────────────────────
@@ -125,19 +177,21 @@ export function matchIlRegistrar(rows: Array<Record<string, unknown>>, ctx: Regi
     const english = field(row, "אנגלית");
     const number = field(row, "מספר חברה");
     const incorporated = field(row, "התאגדות");
-    if (!english || !number || !sameEntityName(english, ctx.name)) continue;
-    if (/מחוק|פורק|dissolved/i.test(field(row, "סטטוס"))) continue;
+    const kind = english ? nameMatch(english, ctx.name) : null;
+    if (!kind || !number) continue;
+    if (/מחוק|פורק|מחוסל|dissolved/i.test(field(row, "סטטוס"))) continue;
     const city = heCity(field(row, "עיר"));
-    const numberOnSite = number.length >= 8 && siteDigits.includes(number);
-    const cityOnSite = !!city && ctx.siteCities.some((c) => c.trim().toLowerCase() === city.toLowerCase());
-    if (!numberOnSite && !cityOnSite) continue;
+    // (The registrar's open data lists no directors: the people tie is UK / US only.)
+    const tie = number.length >= 8 && siteDigits.includes(number) ? `the site gives company number ${number}`
+      : cityAmong(city, ctx.siteCities) ? `registered in ${city}, an office on the site` : null;
+    if (!tie) continue;
     const year = Number((incorporated.match(/\b(19|20)\d{2}\b/) ?? [])[0]) || null;
     return {
       register: "il_registrar", entity: english, number,
       founded_year: year, founding_country: "Israel",
       url: `https://data.gov.il/dataset/ica_companies/resource/${IL_REGISTRAR_RESOURCE}?q=${number}`,
       quote: `${english} (${field(row, "שם חברה")}), company number ${number}, incorporated ${incorporated}${city ? `, ${city}` : ""}`,
-      match: numberOnSite ? `the site gives company number ${number}` : `registered in ${city}, a city of the site's addresses`,
+      match: `${kind === "exact" ? "same name" : "name plus one generic word"}; ${tie}`,
     };
   }
   return null;
@@ -152,7 +206,7 @@ async function lookupIlRegistrar(ctx: RegisterContext, io: RegisterIo): Promise<
 
 const tag = (xml: string, name: string) => xml.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`))?.[1]?.trim() ?? null;
 
-export interface FormDIssuer { entityName: string; cik: string; jurisdiction: string | null; year: number | null; street: string | null; city: string | null; zip: string | null }
+export interface FormDIssuer { entityName: string; cik: string; jurisdiction: string | null; year: number | null; street: string | null; city: string | null; zip: string | null; people: string[] }
 
 export function parseFormDIssuer(xml: string): FormDIssuer | null {
   const issuer = tag(xml, "primaryIssuer");
@@ -165,23 +219,28 @@ export function parseFormDIssuer(xml: string): FormDIssuer | null {
     entityName: name, cik, jurisdiction: tag(issuer, "jurisdictionOfInc"),
     year: Number(tag(yearBlock, "value")) || null,
     street: tag(address, "street1"), city: tag(address, "city"), zip: tag(address, "zipCode"),
+    people: [...(tag(xml, "relatedPersonsList") ?? "").matchAll(/<relatedPersonName>([\s\S]*?)<\/relatedPersonName>/g)]
+      .map((m) => [tag(m[1], "firstName"), tag(m[1], "middleName"), tag(m[1], "lastName")].filter(Boolean).join(" ")).filter(Boolean),
   };
 }
 
 export function matchFormD(issuer: FormDIssuer, ctx: RegisterContext, url: string): RegisterFinding | null {
-  if (!sameEntityName(issuer.entityName, ctx.name) || !issuer.year) return null;
+  const kind = nameMatch(issuer.entityName, ctx.name);
+  if (!kind || !issuer.year) return null;
   if (ctx.statedFoundingCountry && !/united states|^us$|^usa$/i.test(ctx.statedFoundingCountry)) return null;
   const site = ctx.siteText.toLowerCase();
   const zip = issuer.zip?.slice(0, 5);
-  const tie = issuer.street && issuer.street.length >= 6 && site.includes(issuer.street.toLowerCase())
-    ? `the site gives the issuer's street, ${issuer.street}`
-    : zip && zip.length === 5 && new RegExp(`\\b${zip}\\b`).test(site) ? `the site gives the issuer's ZIP ${zip}` : null;
+  const founder = founderAmong(ctx.founders, issuer.people);
+  const tie = founder ? `a known founder is a related person: ${founder}`
+    : cityAmong(issuer.city, ctx.siteCities) ? `the issuer is in ${issuer.city}, an office on the site`
+    : kind === "exact" && issuer.street && issuer.street.length >= 6 && site.includes(issuer.street.toLowerCase()) ? `the site gives the issuer's street, ${issuer.street}`
+    : kind === "exact" && zip && zip.length === 5 && new RegExp(`\\b${zip}\\b`).test(site) ? `the site gives the issuer's ZIP ${zip}` : null;
   if (!tie) return null;
   return {
     register: "us_sec_form_d", entity: issuer.entityName, number: issuer.cik,
     founded_year: issuer.year, founding_country: "United States", url,
-    quote: `${issuer.entityName} (CIK ${issuer.cik}), incorporated ${issuer.year}${issuer.jurisdiction ? ` in ${issuer.jurisdiction}` : ""}, ${[issuer.street, issuer.city, issuer.zip].filter(Boolean).join(", ")}`,
-    match: tie,
+    quote: `${issuer.entityName} (CIK ${issuer.cik}), incorporated ${issuer.year}${issuer.jurisdiction ? ` in ${issuer.jurisdiction}` : ""}, ${[issuer.street, issuer.city, issuer.zip].filter(Boolean).join(", ")}${founder ? `; related person ${founder}` : ""}`,
+    match: `${kind === "exact" ? "same name" : "name plus one generic word"}; ${tie}`,
   };
 }
 

@@ -911,6 +911,7 @@ export async function collectCompany(
       name: row.name,
       siteText: siteSources.map((s) => s.content).join("\n"),
       siteCities,
+      founders: (profile.profile.founders ?? []).map((f) => f.name).filter(Boolean),
       statedFoundingCountry: profile.profile.founding_country?.value ?? null,
     });
     const reg = findings[0];

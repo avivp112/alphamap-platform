@@ -12,7 +12,7 @@
  *   npx tsx scripts/registers_probe.ts
  *   npx tsx scripts/registers_probe.ts "Guardz" "KETS Quantum Security"
  */
-import { IL_REGISTRAR_RESOURCE, legalName } from "../lib/enrichment/registers.ts";
+import { IL_REGISTRAR_RESOURCE, legalName, nameMatch, parseFormDIssuer } from "../lib/enrichment/registers.ts";
 
 const NAMES = process.argv.slice(2).length ? process.argv.slice(2)
   : ["Flyworks", "Guardz", "Soda", "Mentat", "KETS Quantum Security", "OfBusiness", "Carbon Masters", "Photonic", "Crossmint"];
@@ -34,6 +34,11 @@ async function main() {
       const r = await get(`https://api.company-information.service.gov.uk/search/companies?q=${encodeURIComponent(name)}&items_per_page=5`, { Authorization: `Basic ${Buffer.from(`${ch}:`).toString("base64")}` });
       const items = r.status === 200 ? (JSON.parse(r.body).items ?? []) as Array<Record<string, any>> : [];
       console.log(`   UK  HTTP ${r.status}: ${items.map((i) => `${i.title} #${i.company_number} ${i.date_of_creation} ${i.company_status} ${i.address?.postal_code ?? ""}`).join(" | ") || "nothing"}`);
+      for (const i of items.filter((x) => x.title && nameMatch(x.title, name)).slice(0, 2)) {
+        const o = await get(`https://api.company-information.service.gov.uk/company/${i.company_number}/officers?items_per_page=20`, { Authorization: `Basic ${Buffer.from(`${ch}:`).toString("base64")}` });
+        const names = o.status === 200 ? ((JSON.parse(o.body).items ?? []) as Array<{ name?: string }>).map((x) => x.name).join("; ") : `HTTP ${o.status}`;
+        console.log(`        officers of ${i.title}: ${names || "none"}`);
+      }
     } catch (e) { console.log(`   UK  failed: ${why(e)}`); }
     try {
       const r = await get(`https://data.gov.il/api/3/action/datastore_search?resource_id=${IL_REGISTRAR_RESOURCE}&q=${encodeURIComponent(legalName(name))}&limit=5`);
@@ -45,6 +50,17 @@ async function main() {
       const r = await get(`https://efts.sec.gov/LATEST/search-index?q=${encodeURIComponent(`"${legalName(name)}"`)}&forms=D`, { "User-Agent": ua });
       const hits = r.status === 200 ? (JSON.parse(r.body).hits?.hits ?? []) as Array<{ _source?: { display_names?: string[]; biz_locations?: string[]; file_date?: string } }> : [];
       console.log(`   US  HTTP ${r.status}: ${hits.slice(0, 3).map((h) => `${h._source?.display_names?.[0]} ${h._source?.biz_locations?.[0] ?? ""} ${h._source?.file_date ?? ""}`).join(" | ") || "nothing"}`);
+      // The Form D itself for names that match: the year, the address and the related persons.
+      const seen = new Set<string>();
+      for (const h of hits as Array<{ _source?: { ciks?: string[]; adsh?: string; display_names?: string[] } }>) {
+        const cik = h._source?.ciks?.[0]?.replace(/^0+/, ""), adsh = h._source?.adsh?.replace(/-/g, "");
+        if (!cik || !adsh || seen.has(cik) || !nameMatch((h._source?.display_names?.[0] ?? "").replace(/\s*\(CIK.*$/, ""), name)) continue;
+        seen.add(cik);
+        const d = await get(`https://www.sec.gov/Archives/edgar/data/${cik}/${adsh}/primary_doc.xml`, { "User-Agent": ua });
+        const f = d.status === 200 ? parseFormDIssuer(d.body) : null;
+        console.log(`        Form D ${cik}: ${f ? `${f.entityName}, incorporated ${f.year ?? "over five years ago"} in ${f.jurisdiction ?? "?"}, ${[f.street, f.city, f.zip].filter(Boolean).join(", ")} — related persons: ${f.people.join("; ") || "none"}` : `HTTP ${d.status}`}`);
+        if (seen.size >= 2) break;
+      }
     } catch (e) { console.log(`   US  failed: ${why(e)}`); }
   }
   console.log("\n── Sites that could not be read");

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { matchCompaniesHouse, matchIlRegistrar, matchFormD, parseFormDIssuer, sameEntityName, lookupRegisters, type RegisterContext } from "./registers";
+import { matchCompaniesHouse, matchIlRegistrar, matchFormD, parseFormDIssuer, sameEntityName, nameMatch, founderAmong, lookupRegisters, type RegisterContext } from "./registers";
 import { profileSourceAllowed } from "./roundSources";
 
 const ctx = (over: Partial<RegisterContext> = {}): RegisterContext => ({ name: "KETS Quantum Security", siteText: "", siteCities: [], ...over });
@@ -38,6 +38,36 @@ describe("registers (owner, 2026-11-02): a certain match only — the name AND o
     expect(matchFormD(issuer, c, "https://sec")).toMatchObject({ founded_year: 2021, founding_country: "United States" });
     expect(matchFormD(issuer, { ...c, statedFoundingCountry: "Israel" }, "https://sec")).toBeNull();
     expect(matchFormD(issuer, { ...c, siteText: "Crossmint, payments for AI agents" }, "https://sec")).toBeNull();
+  });
+
+  it("the name plus one generic word (owner, 2026-11-02 — GUARDZ CYBER LTD in the probe) needs a strong tie", () => {
+    expect(nameMatch("GUARDZ CYBER LTD", "Guardz")).toBe("plus_one");
+    expect(nameMatch("FLYWORKS LTD", "Flyworks Technologies")).toBe("plus_one");
+    expect(nameMatch("SODA BUBBLE LABS LTD", "Soda")).toBeNull(); // two words more
+    expect(nameMatch("SODA INVESTMENTS LTD", "Soda")).toBeNull(); // not a generic word
+    const row = { "מספר חברה": "516588902", "שם באנגלית": "GUARDZ CYBER LTD", "שם חברה": "גארדז סייבר בע\"מ", "סטטוס חברה": "פעילה", "תאריך התאגדות": "29/03/2022", "שם עיר": "גבעתיים" };
+    // The probe: registered in Givatayim, the site says Tel Aviv — no tie, no match.
+    expect(matchIlRegistrar([row], ctx({ name: "Guardz", siteCities: ["Tel Aviv"] }))).toBeNull();
+    expect(matchIlRegistrar([row], ctx({ name: "Guardz", siteCities: ["Givatayim"] }))).toMatchObject({ founded_year: 2022, match: expect.stringContaining("name plus one generic word") });
+    expect(matchIlRegistrar([row], ctx({ name: "Guardz", siteText: "© Guardz Cyber Ltd 516588902" }))).toMatchObject({ match: expect.stringContaining("company number") });
+  });
+
+  it("a known founder among the register's people — a tie for the same name, and a strong one for name plus one word", () => {
+    expect(founderAmong(["Rodrigo Fernández Touza"], ["FERNANDEZ TOUZA, Rodrigo"])).toMatch(/Rodrigo/);
+    expect(founderAmong(["Dor Eisner"], ["EISNER, Michal"])).toBeNull();
+    const item = { title: "GUARDZ CYBER LTD", company_number: "14000001", company_status: "active", date_of_creation: "2022-04-01", address: { postal_code: "EC1A 1BB", locality: "London" } };
+    expect(matchCompaniesHouse([item], ctx({ name: "Guardz", founders: ["Dor Eisner"] }), { "14000001": ["EISNER, Dor"] })).toMatchObject({ match: expect.stringContaining("officer") });
+    // Name plus one word: the postcode alone is not a strong tie.
+    expect(matchCompaniesHouse([item], ctx({ name: "Guardz", siteText: "London EC1A 1BB" }))).toBeNull();
+  });
+
+  it("Form D: Crossmint's related persons tie it although its Orlando address is not on the site", () => {
+    const withPeople = xml.replace("</primaryIssuer>", "</primaryIssuer><relatedPersonsList><relatedPersonInfo><relatedPersonName><firstName>Rodrigo</firstName><lastName>Fernandez Touza</lastName></relatedPersonName></relatedPersonInfo></relatedPersonsList>");
+    const issuer = parseFormDIssuer(withPeople)!;
+    expect(issuer.people).toEqual(["Rodrigo Fernandez Touza"]);
+    expect(matchFormD(issuer, ctx({ name: "Crossmint", siteCities: ["Miami", "Madrid"], founders: ["Rodrigo Fernández Touza"] }), "https://sec"))
+      .toMatchObject({ match: expect.stringContaining("related person") });
+    expect(matchFormD(issuer, ctx({ name: "Crossmint", siteCities: ["Miami"], founders: ["Alfonso Gómez-Jordana"] }), "https://sec")).toBeNull();
   });
 
   it("a register that fails is skipped, never an error", async () => {
