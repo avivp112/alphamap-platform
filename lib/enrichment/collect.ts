@@ -937,7 +937,12 @@ export async function collectCompany(
       allSources.push(source);
       sourceById.set(source.source_id, source);
       const before = { year: profile.profile.founded_year?.value ?? null, country: profile.profile.founding_country?.value ?? null };
-      if (reg.founded_year) profile.profile.founded_year = { value: reg.founded_year, source_id: source.source_id, evidence_quote: reg.quote } as typeof profile.profile.founded_year;
+      // A register gives the year of incorporation; a company can be founded earlier and
+      // incorporated later (Carbeniumtec: founded 2020, incorporated 2022 — owner, 2026-11-02).
+      // An earlier founding year from an allowed source stands; otherwise the register's year.
+      const earlierFounding = before.year != null && reg.founded_year != null && before.year < reg.founded_year;
+      if (reg.founded_year && !earlierFounding) profile.profile.founded_year = { value: reg.founded_year, source_id: source.source_id, evidence_quote: reg.quote } as typeof profile.profile.founded_year;
+      else if (earlierFounding) console.log(`    🏛️   Founded ${before.year} kept — the register's ${reg.founded_year} is the later incorporation.`);
       profile.profile.founding_country = { value: reg.founding_country, source_id: source.source_id, evidence_quote: reg.quote } as typeof profile.profile.founding_country;
       const disagree = [before.year != null && reg.founded_year && before.year !== reg.founded_year ? `year ${before.year} → ${reg.founded_year}` : null,
         before.country && before.country !== reg.founding_country ? `country ${before.country} → ${reg.founding_country}` : null].filter(Boolean);
