@@ -21,6 +21,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { requestFor } from "./models.ts";
 import { sanitizeModelOutput, ensureArray } from "./sanitize";
 import { verifyEvidence, normalizeForMatch, type EvidenceSource } from "./evidence";
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
@@ -380,7 +381,7 @@ export async function extractMarket(
 ): Promise<{ extraction: ProcessedMarketExtraction; stopReason: string | null; inputTokens: number; outputTokens: number; cacheWriteTokens: number; cacheReadTokens: number }> {
   const request = (options.request ?? buildMarketExtractionRequest(companyName, sources)) as ReturnType<typeof buildMarketExtractionRequest>;
   debugDumpJson(companyName, "market_sources", sources);
-  const msg = await options.client.messages.create({ ...request, model: options.model });
+  const msg = await options.client.messages.create(requestFor(request, options.model));
 
   const tool = msg.content.find((b) => b.type === "tool_use");
   if (!tool || tool.type !== "tool_use") {

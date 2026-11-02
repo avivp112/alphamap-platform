@@ -12,6 +12,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { requestFor } from "./models.ts";
 
 export interface TechGateVerdict {
   is_tech_company: boolean;
@@ -67,7 +68,7 @@ export async function runTechGate(
 ): Promise<{ verdict: TechGateVerdict | null; inputTokens: number; outputTokens: number }> {
   if (!homepageText && !description) return { verdict: null, inputTokens: 0, outputTokens: 0 };
   const request = buildTechGateRequest(companyName, homepageText, description, industry);
-  const msg = await options.client.messages.create({ ...request, model: options.model });
+  const msg = await options.client.messages.create(requestFor(request, options.model));
   const tool = msg.content.find((b) => b.type === "tool_use");
   const input = tool && tool.type === "tool_use" ? (tool.input as Partial<TechGateVerdict>) : null;
   const verdict = input && typeof input.is_tech_company === "boolean"

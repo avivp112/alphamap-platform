@@ -22,6 +22,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { requestFor } from "./models.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sanitizeModelOutput, ensureArray } from "./sanitize";
 import { verifyEvidence, quoteMatchesSource, type EvidenceSource } from "./evidence";
@@ -616,7 +617,7 @@ export async function extractProfile(
 ): Promise<{ extraction: ProcessedProfileExtraction; stopReason: string | null; inputTokens: number; outputTokens: number; cacheWriteTokens: number; cacheReadTokens: number } | null> {
   const request = (options.request ?? buildProfileExtractionRequest(companyName, sources, options.taxonomy)) as ReturnType<typeof buildProfileExtractionRequest>;
   debugDumpJson(companyName, "profile_sources", sources);
-  const msg = await options.client.messages.create({ ...request, model: options.model });
+  const msg = await options.client.messages.create(requestFor(request, options.model));
 
   // No fallback defaults that make a truncated/missing response look valid
   // (the lesson from Phase 0's funding_rounds=0% investigation): a

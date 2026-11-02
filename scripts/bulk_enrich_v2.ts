@@ -38,6 +38,7 @@
  *   DRY_RUN=false BATCH_SIZE=10 npx tsx scripts/bulk_enrich_v2.ts   # apply writes, small batch
  */
 
+import { callCostUsd, UsageMeter, LONG_PROMPT_TOKENS } from "../lib/enrichment/models.ts";
 import Anthropic from "@anthropic-ai/sdk";
 import { pathToFileURL } from "url";
 
@@ -155,16 +156,9 @@ interface RunSummary {
   duplicateResultsMerged: number;
 }
 
-// $/token by model (ground rule 3: keep cost/token tracking), per call.
-const PRICING: Record<string, { input: number; output: number }> = {
-  "claude-haiku-4-5": { input: 1 / 1_000_000, output: 5 / 1_000_000 },
-  "claude-haiku-4-5-20251001": { input: 1 / 1_000_000, output: 5 / 1_000_000 },
-  "claude-sonnet-5": { input: 3 / 1_000_000, output: 15 / 1_000_000 },
-  "claude-sonnet-5-5": { input: 3 / 1_000_000, output: 15 / 1_000_000 },
-};
-
-// Prompt-cache pricing: a cache write bills 1.25x the input rate (5-minute
-// TTL), a cache read 0.1x — see lib/enrichment/sharedExtraction.ts.
+// Claude's cost from the tokens each call reports, by model (lib/enrichment/models.ts:
+// Haiku 4.5, and Haiku 5.5's two rate cards — 100K-token prompts and under, and longer).
+const LLM = new UsageMeter();
 function recordCost(
   summary: RunSummary, model: string,
   usage: { inputTokens: number; outputTokens: number; cacheWriteTokens?: number; cacheReadTokens?: number },
@@ -173,8 +167,8 @@ function recordCost(
   summary.totalInputTokens += usage.inputTokens + write + read;
   summary.totalOutputTokens += usage.outputTokens;
   summary.totalCacheReadTokens += read;
-  const pricing = PRICING[model] ?? PRICING["claude-haiku-4-5-20251001"];
-  summary.totalCostUsd += (usage.inputTokens + write * 1.25 + read * 0.1) * pricing.input + usage.outputTokens * pricing.output;
+  summary.totalCostUsd += callCostUsd(model, usage);
+  LLM.add(model, usage);
 }
 
 
@@ -500,7 +494,8 @@ async function main() {
   console.log(`  duplicate results merged     ${summary.duplicateResultsMerged}  (not sent to Claude twice)`);
   console.log(`  fields patched               ${summary.totalFieldsPatched}`);
   console.log(`  tokens (in/out)              ${summary.totalInputTokens.toLocaleString()} / ${summary.totalOutputTokens.toLocaleString()}`);
-  console.log(`  claude cost (est.)           $${summary.totalCostUsd.toFixed(2)}  (search API cost is separate)`);
+  console.log(`  claude cost                  $${summary.totalCostUsd.toFixed(2)}  (from the tokens each call reported; search API cost is separate)`);
+  console.log(`  longest prompt               ${LLM.maxPromptTokens.toLocaleString()} tokens · calls over ${LONG_PROMPT_TOKENS.toLocaleString()}: ${LLM.callsOverLong}${LLM.callsOverLong ? "  ⚠️  billed at Haiku 5.5's long-prompt rate" : ""}`);
   if (jinaDisabled()) console.log(`  ⛔ Jina Reader was switched off mid-run (${jinaDisabled()}) — top up Jina and re-run the affected companies for full articles.`);
   console.log(`  website pages: ${summary.websitePagesFetched} real / ${summary.websitePagesSkippedThin} thin-404 / ${summary.websitePagesDuplicate} duplicate skipped  |  serper calls: ${summary.serperCalls}  |  jina search (Serper backup): ${summary.jinaSearchCalls}  |  serper scrape (Jina backup): ${summary.serperScrapes}  |  tavily calls: ${summary.tavilyCalls}`);
   console.log("  dropped/flagged by reason code:");

@@ -12,6 +12,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { requestFor } from "./models.ts";
 import { sanitizeModelOutput, ensureArray } from "./sanitize";
 import { verifyEvidence, datePrecision, type EvidenceSource } from "./evidence";
 import { currencyOfAmount, toUsd } from "./currency";
@@ -368,7 +369,7 @@ export async function extractFunding(
 ): Promise<{ extraction: ProcessedFundingExtraction; stopReason: string | null; inputTokens: number; outputTokens: number; cacheWriteTokens: number; cacheReadTokens: number } | null> {
   const request = (options.request ?? buildFundingExtractionRequest(companyName, sources)) as ReturnType<typeof buildFundingExtractionRequest>;
   debugDumpJson(companyName, "funding_sources", sources);
-  const msg = await options.client.messages.create({ ...request, model: options.model });
+  const msg = await options.client.messages.create(requestFor(request, options.model));
 
   const tool = msg.content.find((b) => b.type === "tool_use");
   if (!tool || tool.type !== "tool_use") {

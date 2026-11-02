@@ -12,10 +12,11 @@
 import { readFileSync } from "fs";
 
 interface Run {
-  settings?: { components?: Record<string, boolean> };
   fields: Record<string, { coverage: string; precision: string; wrong_write_rate: string; scored: number }>;
   phase1: Array<{ rule: string; pass: boolean; detail: string }>;
-  cost?: { total_usd: number; per_company_usd: number; seconds_per_company: number };
+  cost?: { total_usd: number; per_company_usd: number; seconds_per_company: number; claude_per_company_usd?: number };
+  llm?: { model: string; calls: number; inputTokens: number; outputTokens: number; cacheWriteTokens: number; cacheReadTokens: number; costUsd: number; maxPromptTokens: number; callsOverLong: number };
+  settings?: { model?: string; components?: Record<string, boolean> };
   per_company: Record<string, {
     output: { city: string | null; country: string | null; founders: Array<{ name: string }>; rounds: Array<{ round_type: string; amount_raised: number | null; date: string | null }> } | null;
     fields?: Record<string, string>;
@@ -69,6 +70,20 @@ for (const rb of b.phase1) {
   const ra = a.phase1.find((r) => r.rule === rb.rule);
   console.log(`  ${ra?.pass ? "✅" : "❌"} → ${rb.pass ? "✅" : "❌"}  ${rb.rule} — ${ra?.detail ?? "—"} → ${rb.detail}`);
 }
+// A model change (owner, 2026-11-02): Claude's own cost per company, from the tokens each call
+// reported, and the 100K check; then whether any field with a Phase 1 threshold lost precision.
+if (a.llm || b.llm) {
+  const per = (r: Run) => r.cost?.claude_per_company_usd != null ? `$${r.cost.claude_per_company_usd.toFixed(4)}` : "—";
+  console.log(`\nClaude: ${a.llm?.model ?? a.settings?.model ?? "A"} → ${b.llm?.model ?? b.settings?.model ?? "B"}`);
+  console.log(`  cost per company (reported tokens): ${per(a)} → ${per(b)}`);
+  console.log(`  tokens in / out: ${a.llm ? `${(a.llm.inputTokens + a.llm.cacheWriteTokens + a.llm.cacheReadTokens).toLocaleString()} / ${a.llm.outputTokens.toLocaleString()}` : "—"} → ${b.llm ? `${(b.llm.inputTokens + b.llm.cacheWriteTokens + b.llm.cacheReadTokens).toLocaleString()} / ${b.llm.outputTokens.toLocaleString()}` : "—"}`);
+  console.log(`  longest prompt: ${a.llm?.maxPromptTokens?.toLocaleString() ?? "—"} → ${b.llm?.maxPromptTokens?.toLocaleString() ?? "—"} tokens · calls over 100K: ${a.llm?.callsOverLong ?? "—"} → ${b.llm?.callsOverLong ?? "—"}`);
+}
+const THRESHOLDED = ["city", "country", "founded_year", "funding_rounds", "round_type", "competitors", "patents"];
+const lower = THRESHOLDED.filter((f) => { const pa = num(a.fields[f]?.precision), pb = num(b.fields[f]?.precision); return pa != null && pb != null && pb < pa; });
+console.log(lower.length
+  ? `\n⚠️  Precision lower in B on a field with a Phase 1 threshold: ${lower.map((f) => `${f} (${a.fields[f].precision} → ${b.fields[f].precision}; ${turnedWrong(f).length} compan${turnedWrong(f).length === 1 ? "y" : "ies"} turned wrong${turnedWrong(f).length <= NOISE_COMPANIES ? " — possible noise" : ""})`).join(", ")} — the owner decides.`
+  : "\n✅  Precision equal or better in B on every field with a Phase 1 threshold.");
 if (a.cost && b.cost) console.log(`\nCost per company: $${a.cost.per_company_usd.toFixed(4)} → $${b.cost.per_company_usd.toFixed(4)} · time: ${a.cost.seconds_per_company.toFixed(0)} s → ${b.cost.seconds_per_company.toFixed(0)} s`);
 
 console.log("\nPer company — what B has that A does not (+), and A has that B does not (−):");

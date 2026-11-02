@@ -74,7 +74,7 @@ import { createSearchProviderState, searchCalls } from "../lib/enrichment/search
 import { openSearchCache } from "../lib/enrichment/searchCache.ts";
 import { blankRow } from "../worker/enrich.ts";
 import { buildProfile } from "../worker/profile.ts";
-import { cachedCallCostUsd } from "../worker/config.ts";
+import { callCostUsd, knownModel, UsageMeter, LONG_PROMPT_TOKENS } from "../lib/enrichment/models.ts";
 import {
   FIELDS, newScoreboard, pct, scoreCompany, duplicateRounds, foundedAfterFirstRound, phase1Checks, hintGain, matchRounds, roundsDayGap, isFatalProviderError, isEvent,
   type GoldenSet, type GoldenCompany, type PipelineOutput, type FieldResult, type Field,
@@ -129,11 +129,14 @@ function fromV1(r: EnrichmentResult): PipelineOutput {
   };
 }
 
-interface V2Run { output: PipelineOutput | null; outcome: string; costUsd: number; seconds: number; searches: number; sources: number }
+interface V2Run { output: PipelineOutput | null; outcome: string; costUsd: number; seconds: number; searches: number; sources: number; llm?: ReturnType<UsageMeter["toJSON"]> }
+/** Every Claude call of the run: tokens, cost, the longest prompt (Haiku 5.5's 100K rate card). */
+const LLM = new UsageMeter();
 
 async function runV2(company: GoldenCompany, anthropic: Anthropic, taxonomy: SectorTaxonomy): Promise<V2Run> {
   const started = Date.now();
   let llmCost = 0;
+  const companyLlm = new UsageMeter();
   const searchState = createSearchProviderState();
   searchState.cache = openSearchCache(`eval-${company.id}`);
   const row = blankRow({ checkId: `eval-${company.id}`, name: company.name, website: company.website ?? null, country: null, founder: null });
@@ -141,6 +144,7 @@ async function runV2(company: GoldenCompany, anthropic: Anthropic, taxonomy: Sec
     output, outcome, sources,
     searches: searchCalls(searchState),
     costUsd: llmCost + searchCalls(searchState) * SEARCH_COST_USD,
+    llm: companyLlm.toJSON(),
     seconds: (Date.now() - started) / 1000,
   });
   try {
@@ -148,7 +152,8 @@ async function runV2(company: GoldenCompany, anthropic: Anthropic, taxonomy: Sec
       anthropic,
       models: { enrich: ENRICH_MODEL, profile: ENRICH_MODEL, funding: ENRICH_MODEL, market: ENRICH_MODEL },
       update: false, deepDive: DEEP_DIVE, techGate: TECH_GATE, articlesToRead: ARTICLES_TO_READ, verbose: VERBOSE, seen: null,
-      recordCost: (model, usage) => { llmCost += cachedCallCostUsd(model, usage); },
+      // Claude's cost from the tokens each call reports (lib/enrichment/models.ts).
+      recordCost: (model, usage) => { llmCost += callCostUsd(model, usage); companyLlm.add(model, usage); LLM.add(model, usage); },
     }, newCollectStats(), searchState);
     if (c.outcome !== "collected") return done(null, c.outcome);
     const p = buildProfile(c, company.name);
@@ -177,7 +182,9 @@ async function runV2(company: GoldenCompany, anthropic: Anthropic, taxonomy: Sec
 }
 
 const COMPONENTS = componentStates();
-const COMPONENTS_LABEL = (process.env.V2_COMPONENTS ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+// EVAL_LABEL names the results file (eval/v2_results_<label>.json) — e.g. one per model on the
+// same day (owner, 2026-11-02: Haiku 5.5 against Haiku 4.5); else the components setting does.
+const COMPONENTS_LABEL = (process.env.EVAL_LABEL ?? process.env.V2_COMPONENTS ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 /** "2019-01-01" stated as a year → "2019"; as a month → "2019-11": the golden set's own partial-date form. */
 const datedAs = (date: string | null, precision: string | null | undefined) =>
@@ -263,7 +270,7 @@ async function main() {
       try {
         const r = await withoutWrites("v2 collection", () => runV2(company, anthropic, v2Taxonomy!));
         output = r.output;
-        extra = { outcome: r.outcome, cost_usd: r.costUsd, seconds: r.seconds, searches: r.searches };
+        extra = { outcome: r.outcome, cost_usd: r.costUsd, seconds: r.seconds, searches: r.searches, llm: r.llm } as typeof extra;
         totalCost += r.costUsd; totalSeconds += r.seconds; ran++;
         console.log(`    outcome=${r.outcome} · ${r.sources} sources · ${r.searches} searches · $${r.costUsd.toFixed(4)} · ${r.seconds.toFixed(0)} s`);
       } catch (err) {
@@ -328,6 +335,8 @@ async function main() {
     console.log(`  confirmed by a primary source and written: ${hintTotals.confirmed} — matching a golden round: ${hintTotals.confirmed_matching_golden}, matching none (wrong writes): ${hintTotals.confirmed - hintTotals.confirmed_matching_golden}`);
     console.log(`  kept as hints, not written: ${hintTotals.kept} — of which real golden rounds still to find: ${hintTotals.kept_matching_golden}`);
     console.log(`\nCost: $${totalCost.toFixed(3)} total, $${(totalCost / ran).toFixed(4)} per company · time: ${(totalSeconds / ran).toFixed(0)} s per company`);
+    console.log(`Claude (${ENRICH_MODEL}${knownModel(ENRICH_MODEL) ? "" : " — no price on file, priced as Haiku 4.5"}): $${LLM.costUsd.toFixed(4)} total, $${(LLM.costUsd / ran).toFixed(4)} per company, from ${LLM.calls} calls' reported tokens (in ${LLM.inputTokens.toLocaleString()}, cache write ${LLM.cacheWriteTokens.toLocaleString()}, cache read ${LLM.cacheReadTokens.toLocaleString()}, out ${LLM.outputTokens.toLocaleString()})`);
+    console.log(`Longest prompt: ${LLM.maxPromptTokens.toLocaleString()} tokens · calls over ${LONG_PROMPT_TOKENS.toLocaleString()}: ${LLM.callsOverLong}${LLM.callsOverLong ? "  ⚠️  those are billed at Haiku 5.5's long-prompt rate ($0.50 / $2.50)" : " ✅"}`);
   }
   if (companies.length < 50 || unreviewed) {
     console.log(`\n⚠️  ${companies.length} companies${unreviewed ? `, ${unreviewed} not yet reviewed by a human` : ""} — Phase 1 is judged only on the full,`);
@@ -403,7 +412,8 @@ async function main() {
     pipeline: PIPELINE, generated_at: new Date().toISOString(), companies_scored: companies.length, unreviewed,
     settings: PIPELINE === "v2" ? { model: ENRICH_MODEL, articles_to_read: ARTICLES_TO_READ, deep_dive: DEEP_DIVE, tech_gate: TECH_GATE, components: COMPONENTS, components_setting: process.env.V2_COMPONENTS ?? null } : undefined,
     fields: summary, phase1: checks, hints: PIPELINE === "v2" ? hintTotals : undefined, round_dates: roundDates,
-    cost: PIPELINE === "v2" && ran ? { total_usd: totalCost, per_company_usd: totalCost / ran, seconds_per_company: totalSeconds / ran } : undefined,
+    cost: PIPELINE === "v2" && ran ? { total_usd: totalCost, per_company_usd: totalCost / ran, seconds_per_company: totalSeconds / ran, claude_usd: LLM.costUsd, claude_per_company_usd: LLM.costUsd / ran } : undefined,
+    llm: PIPELINE === "v2" ? { model: ENRICH_MODEL, priced: knownModel(ENRICH_MODEL), ...LLM.toJSON() } : undefined,
     // Per company, so a human can see WHY a field scored the way it did without re-running.
     per_company: perCompany,
     raw_results: PIPELINE === "v1" ? raw : undefined,

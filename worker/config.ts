@@ -2,6 +2,8 @@
 // (Railway / Fly.io). SUPABASE_SERVICE_ROLE_KEY lives ONLY there: the web app
 // and the Edge Functions never hand it to a browser.
 
+import { callCostUsd } from "../lib/enrichment/models.ts";
+
 export interface WorkerConfig {
   supabaseUrl: string;
   serviceKey: string;
@@ -74,10 +76,9 @@ export function llmCostUsd(model: string, inputTokens: number, outputTokens: num
   return inputTokens * p.input + outputTokens * p.output;
 }
 
-/** With prompt caching, as the bulk run prices it: a cache write bills 1.25x input, a read 0.1x. */
+/** With prompt caching, from the call's reported usage (lib/enrichment/models.ts — Haiku 5.5's two rate cards included). */
 export function cachedCallCostUsd(
   model: string, u: { inputTokens: number; outputTokens: number; cacheWriteTokens?: number; cacheReadTokens?: number },
 ): number {
-  const p = MODEL_PRICING[model] ?? MODEL_PRICING["claude-haiku-4-5-20251001"];
-  return (u.inputTokens + (u.cacheWriteTokens ?? 0) * 1.25 + (u.cacheReadTokens ?? 0) * 0.1) * p.input + u.outputTokens * p.output;
+  return callCostUsd(model, u);
 }
