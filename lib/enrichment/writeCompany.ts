@@ -550,7 +550,12 @@ export async function writeCollected(
     bump(summary.droppedByReason, "on_file_contradiction_fixed");
   }
 
-  if (profile.metrics.employee_range) setIfChanged("employee_range", fillScalarIfNull(row.employee_range, profile.metrics.employee_range), row.employee_range);
+  // A range is written only with its source (owner, 2026-11-02).
+  const range = profile.metrics.employee_range;
+  if (range?.value && range.source_id) {
+    setIfChanged("employee_range", fillScalarIfNull(row.employee_range, range.value), row.employee_range);
+    if (row.employee_range == null) provenance("metrics.employee_range", range.value, range);
+  }
   if (profile.metrics.growth_trend) setIfChanged("growth_trend", profile.metrics.growth_trend, row.growth_trend);
 
   // ── A partial wet run: only the pilot's fields, nothing else is touched ──

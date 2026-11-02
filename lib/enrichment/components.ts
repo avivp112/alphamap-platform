@@ -46,6 +46,18 @@ export const V2_COMPONENTS = {
     on: true, since: "2026-11-02",
     what: "founded year and founding country from Companies House, the Israeli registrar and SEC Form D, on a certain match only — beats any article (registers.ts)",
   },
+  press_about: {
+    on: true, since: "2026-11-02",
+    what: "the \"About <Company>\" paragraph of its own press releases (wires, its press page): HQ and founding year as the company's own declaration — two searches, two pages read",
+  },
+  legal_pages: {
+    on: true, since: "2026-11-02",
+    what: "its Terms / Privacy / Legal / Imprint pages: legal name (anchors the registers), company number, registered office (an office, not the HQ)",
+  },
+  profile_hints: {
+    on: true, since: "2026-11-02",
+    what: "an HQ / founding year / founding country only a data platform states is not written, but searched for once in an allowed source that confirms it",
+  },
   search_backup: {
     on: true, since: "2026-10-29",
     what: "Jina Search answers a search Serper could not; Serper scrape reads a page Jina could not",

@@ -70,6 +70,13 @@ describe("registers (owner, 2026-11-02): a certain match only — the name AND o
     expect(matchFormD(issuer, ctx({ name: "Crossmint", siteCities: ["Miami"], founders: ["Alfonso Gómez-Jordana"] }), "https://sec")).toBeNull();
   });
 
+  it("the legal name from its legal pages anchors the match (Anonymised is ID Ward Limited)", () => {
+    const item = { title: "ID WARD LIMITED", company_number: "10848384", company_status: "active", date_of_creation: "2017-06-29", address: { postal_code: "WC2A 2JR", locality: "London" } };
+    expect(matchCompaniesHouse([item], ctx({ name: "Anonymised", siteText: "company number 10848384" }))).toBeNull();
+    expect(matchCompaniesHouse([item], ctx({ name: "Anonymised", legalName: "ID Ward Limited", siteText: "company number 10848384" })))
+      .toMatchObject({ founded_year: 2017, match: expect.stringContaining("same name") });
+  });
+
   it("a register that fails is skipped, never an error", async () => {
     const io = { env: { COMPANIES_HOUSE_API_KEY: "k" }, fetchJson: async () => { throw new Error("HTTP 500"); }, fetchText: async () => "" };
     const logs: string[] = [];

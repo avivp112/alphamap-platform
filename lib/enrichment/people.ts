@@ -295,19 +295,20 @@ export function groundFounders<T extends { name: string }>(
   sources: FounderSource[],
   companyName: string,
   investorNames: string[],
-): { kept: T[]; dropped: Array<{ name: string; reason: FounderDropReason }> } {
-  const kept: T[] = [];
+): { kept: Array<T & { grounded_url?: string }>; dropped: Array<{ name: string; reason: FounderDropReason }> } {
+  const kept: Array<T & { grounded_url?: string }> = [];
   const dropped: Array<{ name: string; reason: FounderDropReason }> = [];
   for (const f of founders) {
     if (!f?.name) continue;
     if (investorNames.some((n) => n && samePersonName(n, f.name))) { dropped.push({ name: f.name, reason: "founder_is_investor" }); continue; }
-    const grounded = sources.some((src) => {
+    // The source that grounds the founder is kept with it (owner, 2026-11-02: every value with its source).
+    const grounded = sources.find((src) => {
       const text = `${src.title ?? ""}\n${src.content}`;
       if (foundersFromText(text, companyName, { url: src.url, title: src.title }).some((x) => samePersonName(x.name, f.name))) return true;
       const own = src.source_type === "company_site";
       return sentencesOf(text).some((s) => sentenceGroundsFounder(s, f.name, companyName, own));
     });
-    if (grounded) kept.push(f);
+    if (grounded) kept.push({ ...f, grounded_url: grounded.url });
     else dropped.push({ name: f.name, reason: "founder_not_grounded" });
   }
   return { kept, dropped };

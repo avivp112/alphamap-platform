@@ -17,7 +17,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import {
-  verifyDomainMatch, webSearch, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, fetchArticleTexts,
+  verifyDomainMatch, webSearch, readPageCached, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, fetchArticleTexts,
   searchMostlyFailed, type SearchProviderState,
 } from "./searchProviders.ts";
 import { filterByEntity, deriveIdentityKeywords, nameQualifiersOnOwnSite, isNamesakeDrop, type EntityAnchors } from "./entity.ts";
@@ -43,6 +43,8 @@ import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResult
 import { validateEnrichment, checkNarratives } from "./validation.ts";
 import { hqStatementsIn, decideHeadquarters, statementKind, articleDate, countryOfCity, contactPageAddresses, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, type HqStatement } from "./headquarters.ts";
 import { profileSourceAllowed } from "./roundSources.ts";
+import { aboutParagraph, aboutIsOf, factsFromAbout, legalFacts, type LegalFacts } from "./companyFacts.ts";
+import { checkFoundingCountry } from "./origin.ts";
 import { lookupRegisters, nodeRegisterIo, type RegisterContext, type RegisterFinding } from "./registers.ts";
 import { stripHonorific } from "./people.ts";
 import { countryFromLocationQuote } from "./location.ts";
@@ -840,12 +842,102 @@ export async function collectCompany(
     return [like];
   });
 
+  // ── Coverage (owner, 2026-11-02): facts the company states about itself, and
+  // a targeted search behind a value only a data platform gave. Each behind a switch.
+  const extraStatements: HqStatement[] = [];
+  const newSource = (url: string, content: string, title: string, label: string): LabeledSource => {
+    const src: LabeledSource = { url, title, content, provider: "serper", query_label: label, source_id: `X${allSources.length + 1}`, source_type: classifySourceType(url, domain) };
+    allSources.push(src);
+    sourceById.set(src.source_id, src);
+    return src;
+  };
+  const allowedFact = (f: { source_id: string } | undefined) => !!f && !!sourceById.get(f.source_id) && profileSourceAllowed(sourceById.get(f.source_id)!);
+
+  // a. The "About <Company>" paragraph of its own press releases.
+  if (componentOn("press_about") && !ctx.update) {
+    const wires = `"About ${row.name}" (site:prnewswire.com OR site:businesswire.com OR site:globenewswire.com)`;
+    const hits = [
+      ...(await webSearch(wires, "press_about", searchState)),
+      ...(domain ? await webSearch(`"About ${row.name}" site:${domain}`, "press_about", searchState) : []),
+    ].filter((r, i, xs) => xs.findIndex((x) => x.url === r.url) === i)
+      .filter((r) => /prnewswire\.com|businesswire\.com|globenewswire\.com/.test(r.url) || (domain && r.url.includes(domain)));
+    for (const hit of hits.slice(0, 2)) {
+      const page = await readPageCached(hit.url, searchState);
+      const para = page && aboutParagraph(page.text, row.name);
+      if (!para || !aboutIsOf(para, row.name)) continue;
+      const facts = factsFromAbout(para, row.name);
+      if (!facts.city && !facts.foundedYear) continue;
+      const src = newSource(hit.url, para, hit.title ?? `About ${row.name}`, "press_about");
+      if (src.source_type !== "company_site") src.source_type = "press_release";
+      const date = articleDate({ url: hit.url, content: page!.text });
+      console.log(`    📣  About ${row.name} (${hit.url}): ${[facts.city && `HQ ${facts.city}`, facts.foundedYear && `founded ${facts.foundedYear}`].filter(Boolean).join(", ")}`);
+      if (facts.city) extraStatements.push({ city: facts.city, quote: facts.cityQuote!, source_id: src.source_id, url: hit.url, kind: "company", date });
+      if (facts.foundedYear && !allowedFact(profile.profile.founded_year)) {
+        profile.profile.founded_year = { value: facts.foundedYear, source_id: src.source_id, evidence_quote: facts.yearQuote! } as typeof profile.profile.founded_year;
+      }
+      break;
+    }
+  }
+
+  // b. Its legal pages: legal name, company number, registered office (an office only).
+  let legal: LegalFacts = {};
+  if (componentOn("legal_pages") && !ctx.update && effectiveWebsite) {
+    const root = (effectiveWebsite.startsWith("http") ? effectiveWebsite : `https://${effectiveWebsite}`).replace(/\/+$/, "");
+    for (const path of ["/terms", "/privacy", "/legal", "/imprint", "/terms-of-service", "/privacy-policy"]) {
+      const page = await readPageCached(root + path, searchState);
+      if (!page) continue;
+      const f = legalFacts(page.text, row.name);
+      if (!f.legalName && !f.companyNumber && !f.registeredCity) continue;
+      legal = { ...f, ...legal };
+      const src = newSource(root + path, f.quote ?? "", `${row.name} — legal`, "legal_pages");
+      src.source_type = "company_site";
+      console.log(`    ⚖️   ${root + path}: ${[legal.legalName && `legal name ${legal.legalName}`, legal.companyNumber && `company no. ${legal.companyNumber}`, legal.registeredCity && `registered office in ${legal.registeredCity}`].filter(Boolean).join(", ")}`);
+      if (f.registeredCity) {
+        const offices = profile.profile.offices ?? [];
+        if (!offices.some((o) => o.city.toLowerCase() === f.registeredCity!.toLowerCase())) {
+          offices.push({ city: f.registeredCity, ...(countryOfCity(f.registeredCity) ? { country: countryOfCity(f.registeredCity)! } : {}), source_id: src.source_id, evidence_quote: f.quote ?? f.registeredCity });
+        }
+        profile.profile.offices = offices;
+      }
+      if (legal.legalName && legal.companyNumber && legal.registeredCity) break;
+    }
+  }
+
+  // d. A value only a data platform gives: one targeted search for an allowed source that states it.
+  if (componentOn("profile_hints") && !ctx.update) {
+    const pc = profile.profile;
+    const checks: Array<[string, string]> = [];
+    if (pc.city && !allowedFact(pc.city)) checks.push(["city", `"${row.name}" "${pc.city.value}" headquartered OR "based in" OR "${pc.city.value}-based"`]);
+    if (pc.founded_year && !allowedFact(pc.founded_year)) checks.push(["founded_year", `"${row.name}" founded ${pc.founded_year.value}`]);
+    if (pc.founding_country && !allowedFact(pc.founding_country)) checks.push(["founding_country", `"${row.name}" founded ${pc.founding_country.value}`]);
+    for (const [field, q] of checks.slice(0, 3)) {
+      const results = (await webSearch(q, "profile_hint", searchState)).filter((r) => profileSourceAllowed({ url: r.url, source_type: classifySourceType(r.url, domain) }));
+      let confirmed: string | null = null;
+      for (const r of results) {
+        const text = `${r.title ?? ""}. ${r.content}`;
+        if (field === "city") {
+          const src0 = { ...r, source_id: "tmp", source_type: classifySourceType(r.url, domain) } as LabeledSource;
+          const st = hqStatementsIn(src0, row.name).find((x) => x.city.toLowerCase() === pc.city!.value.toLowerCase());
+          if (st) { const src = newSource(r.url, r.content, r.title ?? "", "profile_hint"); extraStatements.push({ ...st, source_id: src.source_id }); confirmed = r.url; break; }
+        } else if (field === "founded_year") {
+          const y = String(pc.founded_year!.value);
+          const sent = text.split(/(?<=[.!?])\s+/).find((x) => x.includes(y) && /\b(founded|established|started|launched)\b/i.test(x) && namesCompany(x, row.name));
+          if (sent) { const src = newSource(r.url, r.content, r.title ?? "", "profile_hint"); pc.founded_year = { value: pc.founded_year!.value, source_id: src.source_id, evidence_quote: sent.trim() } as typeof pc.founded_year; confirmed = r.url; break; }
+        } else {
+          const sent = text.split(/(?<=[.!?])\s+/).find((x) => namesCompany(x, row.name) && !checkFoundingCountry(pc.founding_country!.value, x));
+          if (sent) { const src = newSource(r.url, r.content, r.title ?? "", "profile_hint"); pc.founding_country = { value: pc.founding_country!.value, source_id: src.source_id, evidence_quote: sent.trim() } as typeof pc.founding_country; confirmed = r.url; break; }
+        }
+      }
+      console.log(`    💡  ${field} hint "${field === "city" ? pc.city?.value : field === "founded_year" ? pc.founded_year?.value : pc.founding_country?.value}": ${confirmed ? `confirmed by ${confirmed}` : "no allowed source confirms it — not written"}`);
+    }
+  }
+
   ctx.onStage?.("validating");
   // ── Headquarters: the company's own declaration, else the latest in the
   // press of tiers 1–3; press of the last two years that disagrees leaves it
   // empty and both cities become offices (headquarters.ts, owner 2026-11-01).
   {
-    const statements = allSources.flatMap((s) => hqStatementsIn(s, row.name));
+    const statements = [...allSources.flatMap((s) => hqStatementsIn(s, row.name)), ...extraStatements.filter((x, i, xs) => xs.findIndex((y) => y.city === x.city && y.source_id === x.source_id) === i)];
     // One street address on the Contact page is the headquarters (owner, 2026-11-02).
     const contact = allSources.flatMap((s) => contactPageAddresses(s));
     if (contact.length === 1 && !statements.some((s) => s.kind === "company")) {
@@ -922,9 +1014,10 @@ export async function collectCompany(
     const lookup = ctx.registerLookup ?? (process.env.VITEST ? async () => [] : (c: RegisterContext) => lookupRegisters(c, nodeRegisterIo(), (m) => console.warn(`    ⚠️  ${m}`)));
     const findings = await lookup({
       name: row.name,
-      siteText: siteSources.map((s) => s.content).join("\n"),
+      siteText: [...siteSources.map((s) => s.content), legal.companyNumber ? `company number ${legal.companyNumber}` : ""].join("\n"),
       siteCities,
       founders: (profile.profile.founders ?? []).map((f) => f.name).filter(Boolean),
+      legalName: legal.legalName ?? null,
       statedFoundingCountry: profile.profile.founding_country?.value ?? null,
     });
     const reg = findings[0];

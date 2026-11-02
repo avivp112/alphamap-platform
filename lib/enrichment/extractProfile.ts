@@ -113,6 +113,8 @@ export interface V2Founder extends PersonQualityTags {
   bio?: string;
   bio_source_ids?: string[];
   linkedin_url?: EvidencedValue<string>;
+  /** The source that states this person founded the company (people.ts groundFounders). */
+  grounded_url?: string;
 }
 
 export interface V2Leader extends PersonQualityTags {
@@ -160,7 +162,8 @@ export interface V2HeadcountPoint {
 
 export interface V2Metrics {
   employee_count?: EvidencedValue<number>;
-  employee_range?: string;
+  /** With its source and quote (owner, 2026-11-02): a range without a source is never written. */
+  employee_range?: EvidencedValue<string>;
   growth_trend?: string;
   headcount_history?: V2HeadcountPoint[];
 }
@@ -316,7 +319,7 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
           type: "object" as const,
           properties: {
             employee_count: materialField({ type: "integer" }, "Most recent stated number of EMPLOYEES of this company ('45 employees', 'the 45-person team', 'team of 45'). Never a count of users, customers, developers, or downloads; never one end of a range ('51-100 employees' goes to employee_range, not here). The quote must name the company unless it comes from its own website. Never estimate."),
-            employee_range: { type: "string", description: "Best-fit bracket (e.g. '51-200') when a source only gives a range." },
+            employee_range: materialField({ type: "string" }, "The size bracket a source states for this company ('51-200 employees', 'Company size: 11-50'), written as in the quote (e.g. '51-200'). Only when a source states a range; never estimated from a count."),
             growth_trend: { type: "string", description: "12-month headcount direction, if determinable from headcount_history." },
             headcount_history: {
               type: "array",
@@ -583,7 +586,7 @@ export function processProfileExtractionResponse(
 
   const metrics: V2Metrics = {
     employee_count: employeeCount,
-    employee_range: i.metrics?.employee_range,
+    employee_range: verifyMaterial("metrics.employee_range", i.metrics?.employee_range, sourceLookup, dropped),
     growth_trend: i.metrics?.growth_trend,
     headcount_history: headcountHistory,
   };

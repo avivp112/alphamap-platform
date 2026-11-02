@@ -188,7 +188,7 @@ export function buildProfile(c: CollectedCompany, companyName: string): CheckPro
       founded_year: founded,
       city, country, founding_country, israel_rnd_center, headcount,
       offices: (profile.profile.offices ?? []).map((o) => ({ city: o.city, country: o.country ?? null, source_url: c.sourceUrlFor(o.source_id) })),
-      employee_range: profile.metrics.employee_range ?? null,
+      employee_range: profile.metrics.employee_range?.value ?? null,
       linkedin_url: profile.profile.linkedin_url?.value ?? null,
     },
     people: { founders: allFounders.map(person), leadership: allLeaders.map(person) },

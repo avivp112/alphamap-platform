@@ -47,6 +47,8 @@ export interface RegisterContext {
   siteText: string;
   /** Cities of the addresses / offices the company's own site gives. */
   siteCities: string[];
+  /** The legal name its own legal pages give ("ID Ward Limited" for Anonymised): matched as the name too. */
+  legalName?: string | null;
   /** Founders this run already knows (grounded): matched against the register's people. */
   founders?: string[];
   /** A founding country an allowed source states, if any (guards Form D). */
@@ -98,6 +100,11 @@ export function founderAmong(founders: string[] | undefined, people: string[]): 
   }
   return null;
 }
+/** The register's name against the company's name and its legal name; the better match wins. */
+export function nameMatchAny(registerName: string, ctx: Pick<RegisterContext, "name" | "legalName">): "exact" | "plus_one" | null {
+  const kinds = [ctx.name, ctx.legalName].filter((n): n is string => !!n).map((n) => nameMatch(registerName, n));
+  return kinds.includes("exact") ? "exact" : kinds.includes("plus_one") ? "plus_one" : null;
+}
 const cityAmong = (city: string | null | undefined, cities: string[]) =>
   !!city && cities.some((c) => c.trim().toLowerCase() === city.trim().toLowerCase());
 
@@ -112,7 +119,7 @@ interface ChItem { title?: string; company_number?: string; company_status?: str
 export function matchCompaniesHouse(items: ChItem[], ctx: RegisterContext, officers: Record<string, string[]> = {}): RegisterFinding | null {
   const site = squash(ctx.siteText);
   for (const it of items) {
-    const kind = it.title ? nameMatch(it.title, ctx.name) : null;
+    const kind = it.title ? nameMatchAny(it.title, ctx) : null;
     if (!kind || !it.company_number || !it.date_of_creation) continue;
     if (it.company_status && /dissolved|converted|closed/i.test(it.company_status)) continue;
     const num = it.company_number.toLowerCase(), bare = num.replace(/^0+/, "");
@@ -138,12 +145,15 @@ async function lookupCompaniesHouse(ctx: RegisterContext, io: RegisterIo): Promi
   const key = io.env?.COMPANIES_HOUSE_API_KEY;
   if (!key) return null;
   const headers = { Authorization: `Basic ${Buffer.from(`${key}:`).toString("base64")}` };
-  const res = await io.fetchJson(`https://api.company-information.service.gov.uk/search/companies?q=${encodeURIComponent(ctx.name)}&items_per_page=20`, headers) as { items?: ChItem[] };
-  const items = res.items ?? [];
+  const items: ChItem[] = [];
+  for (const q of [ctx.name, ctx.legalName].filter((n): n is string => !!n)) {
+    const res = await io.fetchJson(`https://api.company-information.service.gov.uk/search/companies?q=${encodeURIComponent(q)}&items_per_page=20`, headers) as { items?: ChItem[] };
+    for (const it of res.items ?? []) if (!items.some((x) => x.company_number === it.company_number)) items.push(it);
+  }
   // The officers of the candidates by name, when there is a founder to look for (three at most).
   const officers: Record<string, string[]> = {};
   if (ctx.founders?.length) {
-    for (const it of items.filter((i) => i.title && i.company_number && nameMatch(i.title, ctx.name)).slice(0, 3)) {
+    for (const it of items.filter((i) => i.title && i.company_number && nameMatchAny(i.title, ctx)).slice(0, 3)) {
       const o = await io.fetchJson(`https://api.company-information.service.gov.uk/company/${it.company_number}/officers?items_per_page=50`, headers).catch(() => null) as { items?: Array<{ name?: string }> } | null;
       officers[it.company_number!] = (o?.items ?? []).map((x) => x.name ?? "").filter(Boolean);
     }
@@ -177,7 +187,7 @@ export function matchIlRegistrar(rows: Array<Record<string, unknown>>, ctx: Regi
     const english = field(row, "אנגלית");
     const number = field(row, "מספר חברה");
     const incorporated = field(row, "התאגדות");
-    const kind = english ? nameMatch(english, ctx.name) : null;
+    const kind = english ? nameMatchAny(english, ctx) : null;
     if (!kind || !number) continue;
     if (/מחוק|פורק|מחוסל|dissolved/i.test(field(row, "סטטוס"))) continue;
     const city = heCity(field(row, "עיר"));
@@ -198,8 +208,12 @@ export function matchIlRegistrar(rows: Array<Record<string, unknown>>, ctx: Regi
 }
 
 async function lookupIlRegistrar(ctx: RegisterContext, io: RegisterIo): Promise<RegisterFinding | null> {
-  const res = await io.fetchJson(`https://data.gov.il/api/3/action/datastore_search?resource_id=${IL_REGISTRAR_RESOURCE}&q=${encodeURIComponent(legalName(ctx.name))}&limit=50`) as { result?: { records?: Array<Record<string, unknown>> } };
-  return matchIlRegistrar(res.result?.records ?? [], ctx);
+  const rows: Array<Record<string, unknown>> = [];
+  for (const q of [ctx.name, ctx.legalName].filter((n): n is string => !!n)) {
+    const res = await io.fetchJson(`https://data.gov.il/api/3/action/datastore_search?resource_id=${IL_REGISTRAR_RESOURCE}&q=${encodeURIComponent(legalName(q))}&limit=50`) as { result?: { records?: Array<Record<string, unknown>> } };
+    rows.push(...(res.result?.records ?? []));
+  }
+  return matchIlRegistrar(rows, ctx);
 }
 
 // ── US: SEC Form D ──────────────────────────────────────────────────────────
@@ -225,7 +239,7 @@ export function parseFormDIssuer(xml: string): FormDIssuer | null {
 }
 
 export function matchFormD(issuer: FormDIssuer, ctx: RegisterContext, url: string): RegisterFinding | null {
-  const kind = nameMatch(issuer.entityName, ctx.name);
+  const kind = nameMatchAny(issuer.entityName, ctx);
   if (!kind || !issuer.year) return null;
   if (ctx.statedFoundingCountry && !/united states|^us$|^usa$/i.test(ctx.statedFoundingCountry)) return null;
   const site = ctx.siteText.toLowerCase();

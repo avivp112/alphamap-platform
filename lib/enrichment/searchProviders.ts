@@ -537,6 +537,15 @@ async function readPage(url: string, state: SearchProviderState): Promise<{ text
   return viaSerper ? { text: viaSerper, provider: "serper_scrape" } : null;
 }
 
+/** One page's text, cached with the company's searches (press releases, legal pages — companyFacts.ts). */
+export async function readPageCached(url: string, state: SearchProviderState): Promise<{ text: string; provider: Provider } | null> {
+  const hit = state.cache?.get<{ content: string; provider: Provider }>(`page:${url}`);
+  if (hit) return { text: hit.content, provider: hit.provider };
+  const read = await readPage(url, state);
+  if (read) state.cache?.set(`page:${url}`, { content: read.text, provider: read.provider });
+  return read;
+}
+
 /** Tavily Extract, one call for several pages: each page's text by URL. Empty when Tavily is out or fails. */
 async function tavilyExtractPages(urls: string[], state: SearchProviderState): Promise<Map<string, string>> {
   const out = new Map<string, string>();
