@@ -862,7 +862,10 @@ export async function collectCompany(
     const hq = decideHeadquarters(statements, undefined, (profile.profile.offices ?? []).map((o) => o.city));
     if (hq.kind === "declared") {
       const st = hq.statement;
-      const sameAsModel = !!mc && mc.value.toLowerCase() === st.city.toLowerCase();
+      // The model's own quote stands only when it cites the statement's source: the same city
+      // from a denied page (Anonymised's London from prospeo.io, model check 2026-11-02) would
+      // otherwise carry the HQ to the source check and drop it there.
+      const sameAsModel = !!mc && mc.value.toLowerCase() === st.city.toLowerCase() && mc.source_id === st.source_id;
       const country = sameAsModel && profile.profile.country && profile.profile.country.evidence_quote === mc!.evidence_quote
         ? profile.profile.country
         : (() => { const c = countryFromLocationQuote(st.quote, st.city) ?? countryOfCity(st.city); return c ? { value: c, source_id: st.source_id, evidence_quote: st.quote } : undefined; })();
@@ -884,6 +887,10 @@ export async function collectCompany(
       profile.profile.country = undefined;
     }
   }
+
+  // Names without honorifics ("Dr. …", "… 님"), whatever found them.
+  profile.profile.founders = profile.profile.founders?.map((f) => ({ ...f, name: stripHonorific(f.name) }));
+  profile.leadership = profile.leadership.map((l) => ({ ...l, name: stripHonorific(l.name) }));
 
   // ── HQ, founded year, founding country: only from allowed sources ─────
   // (owner, 2026-11-02 — roundSources.ts profileSourceAllowed).

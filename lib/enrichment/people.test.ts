@@ -92,6 +92,7 @@ describe("a founder's name has no title (owner, 2026-11-01: 'Prof. Matt Niessner
     const { stripHonorific } = await import("./people");
     expect(stripHonorific("Prof. Matt Niessner")).toBe("Matt Niessner");
     expect(stripHonorific("Dr Elad Walach")).toBe("Elad Walach");
+    expect(stripHonorific("Kiwon Lee 님")).toBe("Kiwon Lee"); // Ybrain, model check 2026-11-02
     expect(stripHonorific("Drew Houston")).toBe("Drew Houston");
   });
 });

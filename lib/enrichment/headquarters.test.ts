@@ -45,6 +45,11 @@ describe("the headquarters (owner, 2026-11-01): the company's declaration, else 
     // Another company as the subject is not the company's HQ.
     expect(hqStatementsIn(src("https://www.globenewswire.com/x", "Headquartered in Toronto, investor BCI backed Photonic in 2023."), "Photonic")).toEqual([]);
   });
+  it("the apposition is the noun right before ', a <City>-based' — not a company named earlier (EnerVenue / Avid Group, model check 2026-11-02)", () => {
+    const s1 = src("https://www.globenewswire.com/news-release/2024/08/27/x.html", "EnerVenue signed a master supply agreement with Avid Group, a Perth-based energy installer.");
+    expect(hqStatementsIn(s1, "EnerVenue")).toEqual([]);
+    expect(hqStatementsIn(src("https://www.reuters.com/x", "Mistral AI, the Paris-based startup, raised €600 million."), "Mistral AI")).toMatchObject([{ city: "Paris" }]);
+  });
   it("the page /contact rendered counts as the Contact page (Soda's /contact is its /about)", () => {
     expect(contactPageAddresses({ url: "https://soda.io/about", also_urls: ["https://soda.io/company", "https://soda.io/contact"], content: "Soda Data NV\nRue Picard 7 / 100 1000 Brussels, Belgium", source_type: "company_site", source_id: "W2" }))
       .toMatchObject([{ city: "Brussels" }]);

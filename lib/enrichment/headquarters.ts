@@ -125,9 +125,15 @@ function saysOfCompany(sentence: string, at: number, city: string, companyName: 
   const based = after.match(/^-based\s+(.{0,60})/i);
   if (based) {
     if (namesCompany(based[1].split(/[,;(]/)[0], companyName)) return true;
-    // "Mistral AI, the Paris-based startup": the company in apposition just before.
-    const pre = sentence.slice(Math.max(0, at - 60), at);
-    return /,\s*(?:the|a|an)\s+$/i.test(pre) && namesCompany(pre, companyName);
+    // "Mistral AI, the Paris-based startup": the company in apposition just before —
+    // the words right before ", a", not anywhere earlier ("EnerVenue … with Avid Group,
+    // a Perth-based …" is Avid Group's HQ: model check of 2026-11-02).
+    const pre = sentence.slice(Math.max(0, at - 80), at);
+    const appo = pre.match(/([^,;:()]*),\s*(?:the|a|an)\s+$/i);
+    if (!appo) return false;
+    const n = companyName.trim().split(/\s+/).length;
+    const words = appo[1].trim().split(/\s+/);
+    return namesCompany(words.slice(-n).join(" "), companyName);
   }
   const before = sentence.slice(Math.max(0, at - 90), at);
   const phrase = before.match(/(headquarter(?:s|ed)?|hq|head office|based)\s+(?:is\s+|are\s+)?(?:located\s+)?in\s+$/i);

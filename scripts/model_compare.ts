@@ -73,7 +73,7 @@ function flatten(c: Awaited<ReturnType<typeof collectCompany>>, name: string): F
     country: { value: p.overview.country?.value ?? "", source: p.overview.country?.source_url ?? "" },
     founded_year: { value: p.overview.founded_year?.value != null ? String(p.overview.founded_year.value) : "", source: p.overview.founded_year?.source_url ?? "" },
     founding_country: { value: p.overview.founding_country?.value ?? "", source: p.overview.founding_country?.source_url ?? "" },
-    founders: { value: p.people.founders.map((f) => f.name).join("; "), source: "" },
+    founders: { value: p.people.founders.map((f) => f.name).join("; "), source: [...new Set((c.profile.profile.founders ?? []).flatMap((f) => (f.bio_source_ids ?? []).map((id) => src(id))).filter(Boolean))].join(" ") },
     rounds: { value: p.funding.rounds.map((r) => `${r.round_type} ${usd(r.amount)} ${r.date ?? "(no date)"}`).join("; "), source: p.funding.rounds.map((r) => r.source_url ?? "").filter(Boolean).join(" ") },
     competitors: { value: c.market.competitors.map((x) => x.name).join("; "), source: c.market.competitors.map((x) => src(x.source_id)).filter(Boolean).join(" ") },
     employee_range: { value: p.overview.employee_range ?? "", source: "" },

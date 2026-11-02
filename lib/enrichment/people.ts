@@ -315,5 +315,6 @@ export function groundFounders<T extends { name: string }>(
 
 /** "Prof. Matt Niessner" → "Matt Niessner", "Dr. Elad Walach" → "Elad Walach" (owner, 2026-11-01: a founder's name, no title). */
 export function stripHonorific(name: string): string {
-  return name.replace(/^\s*((prof|professor|dr|doctor|mr|mrs|ms|sir|dame)\.?\s+)+/i, "").trim();
+  // "Kiwon Lee 님" (Ybrain, model check 2026-11-02): Korean / Japanese honorific suffixes too.
+  return name.replace(/^\s*((prof|professor|dr|doctor|mr|mrs|ms|sir|dame)\.?\s+)+/i, "").replace(/\s*(님|씨|さん|様|先生|氏)\s*$/u, "").trim();
 }
