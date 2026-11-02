@@ -383,7 +383,7 @@ ${context}`;
 
 export type DropReasonCode =
   | "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found" | HeadcountDropReason | OriginDrop
-  | "leader_without_role";
+  | "leader_without_role" | "office_not_from_company_site";
 
 export interface DroppedField {
   field: string;

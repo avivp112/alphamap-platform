@@ -362,6 +362,8 @@ export interface ValidateEnrichmentInput {
     country_source_type?: SourceType | null;
     city_source_type?: SourceType | null;
     city_source_url?: string | null;
+    /** The HQ decision (headquarters.ts) took this city — a Contact-page address, an About paragraph: declared already. */
+    hq_decided?: boolean;
     country_source_url?: string | null;
     /** Evidence quotes, used to drop a country read off the same "HQ: Delaware, United States" line as a non-city. */
     city_quote?: string | null;
@@ -423,11 +425,11 @@ export function validateEnrichment(input: ValidateEnrichmentInput): ValidateEnri
     if (sameLine) acceptedCountry = null;
   }
   // (Checked when the caller passes the quotes — every run does; a bare value check does not.)
-  if (acceptedCity && input.extracted.city_quote !== undefined && !declaresHeadquarters(input.extracted.city_quote, input.extracted.city_source_type, input.extracted.city_source_url)) {
+  if (acceptedCity && !input.extracted.hq_decided && input.extracted.city_quote !== undefined && !declaresHeadquarters(input.extracted.city_quote, input.extracted.city_source_type, input.extracted.city_source_url)) {
     issues.push({ rule: "hq_not_declared", fields: ["profile.city"], message: `"${acceptedCity}" is not a headquarters the company declares on its site or in its own release.`, action: "drop_field" });
     acceptedCity = null;
   }
-  if (acceptedCountry && input.extracted.country_quote !== undefined && !declaresHeadquarters(input.extracted.country_quote, input.extracted.country_source_type, input.extracted.country_source_url)) {
+  if (acceptedCountry && !input.extracted.hq_decided && input.extracted.country_quote !== undefined && !declaresHeadquarters(input.extracted.country_quote, input.extracted.country_source_type, input.extracted.country_source_url)) {
     issues.push({ rule: "hq_not_declared", fields: ["profile.country"], message: `"${acceptedCountry}" is not the country of a headquarters the company declares.`, action: "drop_field" });
     acceptedCountry = null;
   }

@@ -160,7 +160,12 @@ function saysOfCompany(sentence: string, at: number, city: string, companyName: 
   const phrase = before.match(/(headquarter(?:s|ed)?|hq|head office|based)\s+(?:is\s+|are\s+)?(?:located\s+)?in\s+$/i);
   if (!phrase) return false;
   const lead = before.slice(0, phrase.index).split(/[;:]|\.\s/).pop() ?? "";
-  if (namesCompany(lead, companyName)) return true;
+  // The subject is the words right before the phrase ("EnerVenue, headquartered in", "EnerVenue is
+  // based in") — not a company named earlier in the sentence ("EnerVenue … with Avid Group,
+  // headquartered in Perth": model check 2026-11-02).
+  const clauses = lead.replace(/[,\s]+$/, "").split(/[,;(]/).map((c) => c.trim()).filter(Boolean);
+  const subject = (clauses[clauses.length - 1] ?? "").split(/\s+/).slice(-(companyName.trim().split(/\s+/).length + 2)).join(" ");
+  if (namesCompany(subject, companyName)) return true;
   // "Headquartered in Vancouver, British Columbia, with operations in the US and UK, Photonic's team…":
   // the sentence opens with the phrase and the company is its subject, right after (Photonic's own
   // release on GlobeNewswire, dry run 2026-11-02).

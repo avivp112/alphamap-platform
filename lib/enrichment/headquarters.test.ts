@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { hqStatementsIn, decideHeadquarters, contactPageAddresses, quoteSaysHqOf, hqBelongsToAnother, type HqStatement } from "./headquarters";
 import { buildLabeledSources } from "./sources";
-import { declaresHeadquarters } from "./validation";
+import { declaresHeadquarters, validateEnrichment } from "./validation";
 
 const src = (url: string, content: string, title = "") => buildLabeledSources([{ url, title, content, provider: "serper", query_label: "overview" }], "hailo.ai")[0];
 
@@ -57,6 +57,17 @@ describe("the headquarters (owner, 2026-11-01): the company's declaration, else 
     expect(quoteSaysHqOf("Fremont-based EnerVenue makes nickel-hydrogen batteries.", "Fremont", "EnerVenue", false)).toBe(true);
     expect(hqBelongsToAnother("Fremont-based EnerVenue makes batteries.", "Fremont", "EnerVenue")).toBe(false);
     expect(hqBelongsToAnother("Headquarters: Fremont, California", "Fremont", "EnerVenue")).toBe(false);
+  });
+  it("'<Other>, headquartered in <City>' is the other company's HQ, even when the company is named earlier", () => {
+    expect(hqStatementsIn(src("https://www.globenewswire.com/news-release/2024/08/27/x.html", "EnerVenue today announced a supply agreement with Avid Group, headquartered in Perth, to expand in Australia."), "EnerVenue")).toEqual([]);
+    expect(hqStatementsIn(src("https://www.globenewswire.com/news-release/2024/08/27/x.html", "EnerVenue, headquartered in Fremont, makes nickel-hydrogen batteries."), "EnerVenue")).toMatchObject([{ city: "Fremont" }]);
+    expect(hqStatementsIn(src("https://www.reuters.com/x", "Mistral AI is headquartered in Paris."), "Mistral AI")).toMatchObject([{ city: "Paris" }]);
+  });
+  it("validation takes the HQ the decision took, without an HQ word in its quote (Anonymised's Contact page)", () => {
+    const v = validateEnrichment({ existing: { founded_year: null, country: { value: null, is_manually_verified: false }, employee_count: null },
+      extracted: { founded_year: null, city: "London", country: "United Kingdom", city_quote: "7 Bell Yard, London WC2A 2JR", country_quote: "7 Bell Yard, London WC2A 2JR", city_source_type: "company_site", country_source_type: "company_site", hq_decided: true, employee_count: null },
+      rounds: [], totalRaisedUsd: null } as never);
+    expect(v.accepted.city).toBe("London");
   });
   it("the page /contact rendered counts as the Contact page (Soda's /contact is its /about)", () => {
     expect(contactPageAddresses({ url: "https://soda.io/about", also_urls: ["https://soda.io/company", "https://soda.io/contact"], content: "Soda Data NV\nRue Picard 7 / 100 1000 Brussels, Belgium", source_type: "company_site", source_id: "W2" }))

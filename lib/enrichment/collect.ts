@@ -45,6 +45,7 @@ import { hqStatementsIn, decideHeadquarters, statementKind, articleDate, country
 import { profileSourceAllowed } from "./roundSources.ts";
 import { aboutParagraph, aboutIsOf, factsFromAbout, legalFacts, type LegalFacts } from "./companyFacts.ts";
 import { checkFoundingCountry } from "./origin.ts";
+import { namesCompany } from "./headcount.ts";
 import { lookupRegisters, nodeRegisterIo, type RegisterContext, type RegisterFinding } from "./registers.ts";
 import { stripHonorific } from "./people.ts";
 import { countryFromLocationQuote } from "./location.ts";
@@ -845,6 +846,9 @@ export async function collectCompany(
   // ── Coverage (owner, 2026-11-02): facts the company states about itself, and
   // a targeted search behind a value only a data platform gave. Each behind a switch.
   const extraStatements: HqStatement[] = [];
+  // The HQ the decision took (a Contact-page address, an About paragraph): validation does not ask
+  // its quote for an HQ word again (Anonymised's "7 Bell Yard, London" — model check 2026-11-02).
+  let hqDecided = false;
   const newSource = (url: string, content: string, title: string, label: string): LabeledSource => {
     const src: LabeledSource = { url, title, content, provider: "serper", query_label: label, source_id: `X${allSources.length + 1}`, source_type: classifySourceType(url, domain) };
     allSources.push(src);
@@ -883,9 +887,18 @@ export async function collectCompany(
   let legal: LegalFacts = {};
   if (componentOn("legal_pages") && !ctx.update && effectiveWebsite) {
     const root = (effectiveWebsite.startsWith("http") ? effectiveWebsite : `https://${effectiveWebsite}`).replace(/\/+$/, "");
+    // A site that answers every path with its home page (Moon Active, Carbeniumtec: model check
+    // 2026-11-02) is read once; two unreadable paths in a row end the search (EnerVenue's 404s).
+    const seenPages = new Set<string>();
+    let misses = 0;
     for (const path of ["/terms", "/privacy", "/legal", "/imprint", "/terms-of-service", "/privacy-policy"]) {
+      if (misses >= 2) break;
       const page = await readPageCached(root + path, searchState);
-      if (!page) continue;
+      if (!page) { misses++; continue; }
+      misses = 0;
+      const fingerprint = page.text.replace(/\s+/g, " ").slice(0, 2000);
+      if (seenPages.has(fingerprint)) continue;
+      seenPages.add(fingerprint);
       const f = legalFacts(page.text, row.name);
       if (!f.legalName && !f.companyNumber && !f.registeredCity) continue;
       legal = { ...f, ...legal };
@@ -964,6 +977,7 @@ export async function collectCompany(
         : (() => { const c = countryFromLocationQuote(st.quote, st.city) ?? countryOfCity(st.city); return c ? { value: c, source_id: st.source_id, evidence_quote: st.quote } : undefined; })();
       if (!sameAsModel) console.log(`    🏢  Headquarters ${st.city} — ${st.kind === "company" ? "the company's own declaration" : `the latest press declaration (${st.date ?? "undated"})`}: ${st.url}`);
       profile.profile.city = sameAsModel ? mc : { value: st.city, source_id: st.source_id, evidence_quote: st.quote };
+      hqDecided = true;
       profile.profile.country = country;
     } else if (hq.kind === "conflict") {
       console.log(`    🏢  Headquarters left empty — the press of the last two years disagrees: ${hq.cities.map((c) => `${c.city} (${c.url})`).join(" vs ")}. Both are offices.`);
@@ -1061,6 +1075,7 @@ export async function collectCompany(
       country_source_type: sourceTypeFor(profile.profile.country?.source_id) ?? null,
       city_source_type: sourceTypeFor(profile.profile.city?.source_id) ?? null,
       city_source_url: sourceUrlFor(profile.profile.city?.source_id),
+      hq_decided: hqDecided,
       country_source_url: sourceUrlFor(profile.profile.country?.source_id),
       employee_count: profile.metrics.employee_count?.value ?? null,
       city_quote: profile.profile.city?.evidence_quote ?? null,

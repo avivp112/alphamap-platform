@@ -303,6 +303,10 @@ export function groundFounders<T extends { name: string }>(
     if (investorNames.some((n) => n && samePersonName(n, f.name))) { dropped.push({ name: f.name, reason: "founder_is_investor" }); continue; }
     // The source that grounds the founder is kept with it (owner, 2026-11-02: every value with its source).
     const grounded = sources.find((src) => {
+      // Another company's LinkedIn page ("linkedin.com/company/ceragem" for Ybrain) never grounds one.
+      const li = src.url.match(/linkedin\.com\/company\/([^/?#]+)/i)?.[1]?.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const ownSlug = companyName.toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (li && ownSlug.length >= 3 && !li.includes(ownSlug) && !ownSlug.includes(li)) return false;
       const text = `${src.title ?? ""}\n${src.content}`;
       if (foundersFromText(text, companyName, { url: src.url, title: src.title }).some((x) => samePersonName(x.name, f.name))) return true;
       const own = src.source_type === "company_site";

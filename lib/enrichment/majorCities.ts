@@ -100,7 +100,7 @@ const ENTRIES: Array<[string, string]> = [
   ["bnei brak", "Israel"], ["petah tikva", "Israel"], ["petach tikva", "Israel"], ["rehovot", "Israel"],
   ["kfar saba", "Israel"], ["hod hasharon", "Israel"], ["yokneam", "Israel"], ["netanya", "Israel"],
   ["rosh haayin", "Israel"], ["caesarea", "Israel"], ["modiin", "Israel"], ["nazareth", "Israel"],
-  ["san mateo", "United States"], ["milwaukee", "United States"], ["redwood city", "United States"],
+  ["san mateo", "United States"], ["milwaukee", "United States"], ["redwood city", "United States"], ["fremont", "United States"], ["tulsa", "United States"], ["san antonio", "United States"], ["tucson", "United States"],
   ["coquitlam", "Canada"], ["burnaby", "Canada"],
   ["newcastle", "United Kingdom"], ["newcastle", "Australia"], ["freiburg", "Germany"],
 ];
