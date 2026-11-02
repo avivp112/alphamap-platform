@@ -37,6 +37,8 @@ export interface HqStatement {
 export type HqDecision =
   | { kind: "declared"; statement: HqStatement }
   | { kind: "conflict"; cities: HqStatement[] }
+  /** The company's site lists several offices, no HQ, and the press declaring one is older than two years. */
+  | { kind: "site_offices"; cities: string[] }
   | { kind: "none" };
 
 const HQ_WORD = /\b(headquarter(?:s|ed)?|hq|head office|based in|-based)\b/i;
@@ -113,14 +115,25 @@ function saysOfCompany(sentence: string, at: number, city: string, companyName: 
 const DAY = 86_400_000;
 const sameCity = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
-/** The headquarters from every statement, by the owner's order (header). */
-export function decideHeadquarters(statements: HqStatement[], today = new Date().toISOString().slice(0, 10)): HqDecision {
+/**
+ * The headquarters from every statement, by the owner's order (header).
+ *
+ * `siteOfficeCities`: the offices the company's own site lists. When it lists
+ * two or more without naming a headquarters, and no press declaration is from
+ * the last two years, the headquarters stays empty — an old article does not
+ * outweigh what the site shows today (owner, 2026-11-02: Aidoc's site lists
+ * New York and Tel Aviv; a 2022 WSJ "Tel Aviv-based" does not decide it). An
+ * undated article is not shown to be recent, so it counts as old.
+ */
+export function decideHeadquarters(statements: HqStatement[], today = new Date().toISOString().slice(0, 10), siteOfficeCities: string[] = []): HqDecision {
   const latestFirst = (xs: HqStatement[]) => [...xs].sort((a, b) => (b.date ?? "9999").localeCompare(a.date ?? "9999"));
   const company = latestFirst(statements.filter((s) => s.kind === "company"));
   if (company.length) return { kind: "declared", statement: company[0] };
   const press = latestFirst(statements.filter((s) => s.kind === "press"));
-  if (!press.length) return { kind: "none" };
   const recent = press.filter((s) => s.date && Date.parse(today) - Date.parse(s.date) <= 730 * DAY);
+  const siteCities = siteOfficeCities.filter((c, i) => siteOfficeCities.findIndex((d) => sameCity(c, d)) === i);
+  if (siteCities.length >= 2 && !recent.length) return { kind: "site_offices", cities: siteCities };
+  if (!press.length) return { kind: "none" };
   const pool = recent.length ? recent : press;
   const cities = pool.filter((s, i) => pool.findIndex((t) => sameCity(t.city, s.city)) === i);
   if (cities.length > 1) return { kind: "conflict", cities };

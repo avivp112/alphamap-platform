@@ -827,7 +827,7 @@ export async function collectCompany(
     if (mc && mcSource && mcKind && /\b(headquarter(?:s|ed)?|hq|head office|based in|-based)\b/i.test(mc.evidence_quote) && !statements.some((s) => s.city.toLowerCase() === mc.value.toLowerCase() && s.source_id === mc.source_id)) {
       statements.push({ city: mc.value, quote: mc.evidence_quote, source_id: mc.source_id, url: mcSource.url, kind: mcKind, date: mcKind === "company" && mcSource.source_type === "company_site" ? null : articleDate(mcSource) });
     }
-    const hq = decideHeadquarters(statements);
+    const hq = decideHeadquarters(statements, undefined, (profile.profile.offices ?? []).map((o) => o.city));
     if (hq.kind === "declared") {
       const st = hq.statement;
       const sameAsModel = !!mc && mc.value.toLowerCase() === st.city.toLowerCase();
@@ -846,6 +846,10 @@ export async function collectCompany(
         if (!offices.some((o) => o.city.toLowerCase() === c.city.toLowerCase())) offices.push({ city: c.city, ...(countryOfCity(c.city) ? { country: countryOfCity(c.city)! } : {}), source_id: c.source_id, evidence_quote: c.quote });
       }
       profile.profile.offices = offices;
+    } else if (hq.kind === "site_offices") {
+      console.log(`    🏢  Headquarters left empty — the company's site lists ${hq.cities.join(", ")} without naming one, and no press declaration is from the last two years. They stay offices.`);
+      profile.profile.city = undefined;
+      profile.profile.country = undefined;
     }
   }
 

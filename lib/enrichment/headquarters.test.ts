@@ -27,6 +27,17 @@ describe("the headquarters (owner, 2026-11-01): the company's declaration, else 
     expect(decideHeadquarters([st("Tel Aviv", "press", "2019-01-10"), st("New York", "press", "2026-02-01")], "2026-11-01")).toMatchObject({ kind: "declared", statement: { city: "New York" } });
     expect(decideHeadquarters([], "2026-11-01")).toEqual({ kind: "none" });
   });
+  it("the site lists several offices, no HQ, and the press is older than two years → empty (owner, 2026-11-02: Aidoc)", () => {
+    const sites = ["New York", "Tel Aviv"];
+    // Aidoc: a 2022 (or undated) "Tel Aviv-based" does not outweigh the site of today.
+    expect(decideHeadquarters([st("Tel Aviv", "press", "2022-06-16")], "2026-11-02", sites)).toEqual({ kind: "site_offices", cities: sites });
+    expect(decideHeadquarters([st("Tel Aviv", "press", null)], "2026-11-02", sites)).toMatchObject({ kind: "site_offices" });
+    // Recent press still decides; one office on the site is not "several".
+    expect(decideHeadquarters([st("Tel Aviv", "press", "2026-03-01")], "2026-11-02", sites)).toMatchObject({ kind: "declared", statement: { city: "Tel Aviv" } });
+    expect(decideHeadquarters([st("Tel Aviv", "press", "2022-06-16")], "2026-11-02", ["Tel Aviv", "tel aviv"])).toMatchObject({ kind: "declared" });
+    // The company's own declaration still wins.
+    expect(decideHeadquarters([st("New York", "company", null)], "2026-11-02", sites)).toMatchObject({ kind: "declared", statement: { city: "New York" } });
+  });
   it("validation accepts an HQ declared in the press of tiers 1–3, not in an unlisted site", () => {
     expect(declaresHeadquarters("Tel Aviv-based Hailo", "news", "https://techcrunch.com/x")).toBe(true);
     expect(declaresHeadquarters("Tel Aviv-based Hailo", "news", "https://devops.com/x")).toBe(false);
