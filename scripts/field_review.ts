@@ -9,7 +9,8 @@
  *   3. Writes field_review/run_<n>.csv — per field, every value that WOULD be
  *      written (an empty field filled, or a new founder / round / competitor /
  *      patent / news item), with its source and quote.
- *   4. Prints, first, 3 random values of each field, numbered, for the owner to
+ *   4. Prints, first, random values of each field — up to 8 of a simple field (HQ city /
+ *      country, founded year, founding country, offices), up to 5 of a complex one — numbered, for the owner to
  *      mark — the marks go to eval/field_review_tracker.csv, and
  *      scripts/field_review_status.ts says which fields are open for writing:
  *      at least 20 values marked, at least 90% of them correct (a round: its
@@ -165,8 +166,17 @@ function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V2Startu
   console.log(`\n${"═".repeat(62)}\nTo mark (run ${runNo}) — answer "<number> נכון" / "<number> לא נכון" (a round: amount AND date):\n`);
   let n = 0;
   const sample: Array<Value & { id: string }> = [];
+  // Owner, 2026-11-02: simple fields up to 8 values a run, complex fields up to 5 — and, in the first
+  // run, the three values of the 10-company dry run (EnerVenue, Moon Active, Ybrain).
+  const SIMPLE: Field[] = ["hq_city", "hq_country", "founded_year", "founding_country", "office"];
+  const carried: Value[] = runNo === 1 ? [
+    { company_id: "243359ee-f289-4d31-8744-3c2264c752fa", company: "EnerVenue", field: "founding_country", value: "United States", on_file: "", source_url: "https://www.sec.gov/Archives/edgar/data/1899212/000189921221000002/primary_doc.xml", quote: "EnerVenue Holdings, Ltd. (CIK 0001899212), incorporated 2020 — related person Yi Cui" },
+    { company_id: "10146787-c5ff-4c74-b375-bc6cbde3f5ca", company: "Moon Active", field: "founding_country", value: "Israel", on_file: "", source_url: "https://www.calcalistech.com/ctechnews/article/bjq8i7ffj", quote: "" },
+    { company_id: "396393a1-4bf1-466b-b450-a7137877a3ce", company: "Ybrain", field: "founded_year", value: "2013", on_file: "", source_url: "https://www.prnewswire.com/news-releases/ybrains-stress-management-solution-pola-named-ces-2022-innovation-award-honoree-301426238.html", quote: "About Ybrain … founded 2013" },
+  ] : [];
   for (const f of REVIEW_FIELDS) {
-    const pick = shuffle(values.filter((v) => v.field === f), SEED + REVIEW_FIELDS.indexOf(f)).slice(0, 3);
+    const size = SIMPLE.includes(f) ? 8 : 5;
+    const pick = [...carried.filter((v) => v.field === f), ...shuffle(values.filter((v) => v.field === f), SEED + REVIEW_FIELDS.indexOf(f)).slice(0, size)];
     if (!pick.length) { console.log(`[${f}] — none this run`); continue; }
     console.log(`[${f}]`);
     for (const v of pick) {

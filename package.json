@@ -10,7 +10,7 @@
     "cap:build": "npm run build && npx cap sync",
     "cap:ios": "npx cap open ios",
     "cap:android": "npx cap open android",
-    "typecheck:enrich": "tsc --noEmit --allowImportingTsExtensions --moduleResolution bundler --module esnext --target es2022 --skipLibCheck --esModuleInterop --resolveJsonModule --types node scripts/bulk_enrich_v2.ts eval/run_eval.ts eval/compare_runs.ts scripts/model_compare.ts scripts/registers_backfill.ts scripts/registers_probe.ts scripts/pilot_sample.ts worker/index.ts"
+    "typecheck:enrich": "tsc --noEmit --allowImportingTsExtensions --moduleResolution bundler --module esnext --target es2022 --skipLibCheck --esModuleInterop --resolveJsonModule --types node scripts/bulk_enrich_v2.ts eval/run_eval.ts eval/compare_runs.ts scripts/model_compare.ts scripts/registers_backfill.ts scripts/registers_probe.ts scripts/pilot_sample.ts scripts/field_review.ts scripts/field_review_status.ts worker/index.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.54.0",

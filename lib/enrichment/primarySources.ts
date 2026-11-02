@@ -13,7 +13,7 @@
  */
 
 /** Official press-release wires. */
-export const PRESS_WIRE_DOMAINS = ["prnewswire.com", "businesswire.com", "globenewswire.com", "accesswire.com", "einpresswire.com"];
+export const PRESS_WIRE_DOMAINS = ["prnewswire.com", "businesswire.com", "globenewswire.com", "accesswire.com", "einpresswire.com", "newswire.com"];
 
 /**
  * Social networks, video sites, blogging platforms and PR-content sites:
@@ -24,7 +24,7 @@ export const PRESS_WIRE_DOMAINS = ["prnewswire.com", "businesswire.com", "globen
 export const NOT_PRIMARY_DOMAINS = [
   "instagram.com", "facebook.com", "fb.com", "x.com", "twitter.com", "tiktok.com", "threads.net", "reddit.com",
   "youtube.com", "youtu.be", "linkedin.com", "pinterest.com", "quora.com", "medium.com", "substack.com",
-  "everything-pr.com", "openpr.com", "prlog.org", "issuewire.com", "newswire.com", "pr.com",
+  "everything-pr.com", "openpr.com", "prlog.org", "issuewire.com", "pr.com",
 ];
 
 const hostOf = (url: string): string | null => {

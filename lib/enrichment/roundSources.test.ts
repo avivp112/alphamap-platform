@@ -15,6 +15,10 @@ describe("a round is written only from an allowed source (owner, 2026-11-01: the
   it("tiers, subdomains included; EIN Presswire and tier 4 count with lower confidence", () => {
     expect(roundSourceStanding("https://www.globenewswire.com/news-release/2026/06/03/x.html")).toMatchObject({ kind: "allowed", tier: 1, lowConfidence: false });
     expect(roundSourceStanding("https://www.einpresswire.com/article/1")).toMatchObject({ kind: "allowed", tier: 1, lowConfidence: true });
+    // newswire.com and Accesswire: the company's own release, below its site (owner, 2026-11-02 — Koi's founders).
+    expect(roundSourceStanding("https://www.newswire.com/news/koi-raises-48m-22637208")).toMatchObject({ kind: "allowed", tier: 1, lowConfidence: true });
+    expect(roundSourceStanding("https://www.accesswire.com/1/x")).toMatchObject({ kind: "allowed", tier: 1, lowConfidence: true });
+    expect(roundSourceStanding("https://www.prnewswire.com/news-releases/x.html")).toMatchObject({ kind: "allowed", tier: 1, lowConfidence: false });
     expect(roundSourceStanding("https://www.cnbc.com/2026/05/20/x.html")).toMatchObject({ kind: "allowed", tier: 2 });
     expect(roundSourceStanding("https://en.globes.co.il/en/article-x")).toMatchObject({ kind: "allowed", tier: 3 });
     expect(roundSourceStanding("https://www.calcalistech.com/ctechnews/article/x")).toMatchObject({ kind: "allowed", tier: 3 });

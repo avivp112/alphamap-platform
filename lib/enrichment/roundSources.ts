@@ -31,7 +31,7 @@ export type SourceTier = 1 | 2 | 3 | 4;
 /** Wires and registers (tier 1 beside the company's and the investor's own sites). */
 export const TIER1_DOMAINS = [
   // Official press wires
-  "prnewswire.com", "businesswire.com", "globenewswire.com", "accesswire.com", "einpresswire.com",
+  "prnewswire.com", "businesswire.com", "globenewswire.com", "accesswire.com", "einpresswire.com", "newswire.com",
   // Registers and filings
   "sec.gov", "find-and-update.company-information.service.gov.uk", "companieshouse.gov.uk", "data.gov.il",
   "maya.tase.co.il", "handelsregister.de", "unternehmensregister.de", "infogreffe.fr", "mca.gov.in",
@@ -77,7 +77,9 @@ export const TIER4_DOMAINS = [
 ];
 
 /** Lower confidence even though allowed. */
-export const LOW_CONFIDENCE_DOMAINS = ["einpresswire.com"];
+// The company publishes on these wires itself — allowed, below its own site (owner, 2026-11-02:
+// newswire.com, EIN Presswire, Accesswire).
+export const LOW_CONFIDENCE_DOMAINS = ["einpresswire.com", "accesswire.com", "newswire.com"];
 
 /** Never a source for a round, beside every data platform (dataPlatforms.ts). */
 export const DENIED_DOMAINS = [
@@ -87,7 +89,7 @@ export const DENIED_DOMAINS = [
   "linkedin.com", "facebook.com", "fb.com", "instagram.com", "x.com", "twitter.com", "youtube.com", "youtu.be", "tiktok.com",
   "threads.net", "reddit.com", "medium.com", "substack.com", "quora.com", "pinterest.com",
   // Content / sponsored-PR sites
-  "everything-pr.com", "openpr.com", "prlog.org", "issuewire.com", "newswire.com", "pr.com",
+  "everything-pr.com", "openpr.com", "prlog.org", "issuewire.com", "pr.com",
 ];
 
 export function hostOf(url: string): string | null {
