@@ -52,7 +52,7 @@ export function factsFromAbout(paragraph: string, companyName: string): AboutFac
         // company" — not "…, partnering with Perth-based Avid Group".
         const at = s.toLowerCase().indexOf(`${m[1].toLowerCase()}-based`);
         const basedOther = /-based/i.test(m[0])
-          && !namesCompany(s.slice(at + m[1].length + 7, at + m[1].length + 7 + 40), companyName)
+          && !namesCompany(s.slice(at + m[1].length + 7).split(/[,;(]/)[0].split(/\s+/).slice(0, companyName.trim().split(/\s+/).length + 3).join(" ").replace(/\S+[’']s\b/g, ""), companyName)
           && !new RegExp(`^\\W*${esc(companyName.trim())}\\b[^,;]{0,25}\\b(?:is|was)\\s+(?:a|an|the)\\s+$`, "i").test(s.slice(0, at));
         if (!basedOther && !isRegionalOfficeQuote(s, city)) { out.city = city; out.cityQuote = s.trim(); }
       }

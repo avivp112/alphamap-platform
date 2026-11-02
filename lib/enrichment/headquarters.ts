@@ -145,7 +145,12 @@ function saysOfCompany(sentence: string, at: number, city: string, companyName: 
   const after = sentence.slice(at + city.length);
   const based = after.match(/^-based\s+(.{0,60})/i);
   if (based) {
-    if (namesCompany(based[1].split(/[,;(]/)[0], companyName)) return true;
+    // The company is the noun right after "-based" ("Tel Aviv-based Hailo", "Tel Aviv-based chipmaker
+    // Hailo") — within its name's length plus three words, not as a possessive further on ("The
+    // Perth-based energy solutions provider plans to install EnerVenue's …": model check 2026-11-02).
+    const nWords = companyName.trim().split(/\s+/).length;
+    const head = based[1].split(/[,;(]/)[0].split(/\s+/).slice(0, nWords + 3).join(" ");
+    if (namesCompany(head, companyName) && !new RegExp(`${companyName.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[’']s\\b`, "i").test(head)) return true;
     // "Mistral AI, the Paris-based startup": the company in apposition just before —
     // the words right before ", a", not anywhere earlier ("EnerVenue … with Avid Group,
     // a Perth-based …" is Avid Group's HQ: model check of 2026-11-02).

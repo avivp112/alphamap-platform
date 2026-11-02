@@ -63,6 +63,10 @@ describe("the headquarters (owner, 2026-11-01): the company's declaration, else 
     expect(hqStatementsIn(src("https://www.globenewswire.com/news-release/2024/08/27/x.html", "EnerVenue, headquartered in Fremont, makes nickel-hydrogen batteries."), "EnerVenue")).toMatchObject([{ city: "Fremont" }]);
     expect(hqStatementsIn(src("https://www.reuters.com/x", "Mistral AI is headquartered in Paris."), "Mistral AI")).toMatchObject([{ city: "Paris" }]);
   });
+  it("'The Perth-based energy solutions provider plans to install EnerVenue's …' is not EnerVenue's HQ (its GlobeNewswire release)", () => {
+    expect(hqStatementsIn(src("https://www.globenewswire.com/news-release/2024/08/27/x.html", "The Perth-based energy solutions provider plans to install EnerVenue's high-efficiency batteries."), "EnerVenue")).toEqual([]);
+    expect(hqStatementsIn(src("https://techcrunch.com/x", "Tel Aviv-based chipmaker Hailo raised $136 million."), "Hailo")).toMatchObject([{ city: "Tel Aviv" }]);
+  });
   it("validation takes the HQ the decision took, without an HQ word in its quote (Anonymised's Contact page)", () => {
     const v = validateEnrichment({ existing: { founded_year: null, country: { value: null, is_manually_verified: false }, employee_count: null },
       extracted: { founded_year: null, city: "London", country: "United Kingdom", city_quote: "7 Bell Yard, London WC2A 2JR", country_quote: "7 Bell Yard, London WC2A 2JR", city_source_type: "company_site", country_source_type: "company_site", hq_decided: true, employee_count: null },

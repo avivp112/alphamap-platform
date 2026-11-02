@@ -1016,6 +1016,21 @@ export async function collectCompany(
     (profile.profile as Record<string, unknown>)[key] = undefined;
   }
 
+  // ── Employee range: from an allowed source, or the company's own LinkedIn company page as the
+  // search engine shows it ("Company size: 51-200 employees") — owner, 2026-11-02.
+  {
+    const r = profile.metrics.employee_range;
+    const s = r ? sourceById.get(r.source_id) : undefined;
+    const slug = s?.url.match(/linkedin\.com\/company\/([^/?#]+)/i)?.[1]?.toLowerCase().replace(/[^a-z0-9]/g, "") ?? "";
+    const own = row.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const ownLinkedIn = !!slug && own.length >= 3 && (slug.includes(own) || own.includes(slug));
+    if (r && !(s && (profileSourceAllowed(s) || ownLinkedIn))) {
+      console.log(`    🚫  employee_range "${r.value}" not written — its source is neither allowed nor the company's own LinkedIn page: ${s?.url ?? r.source_id}`);
+      bump(stats.droppedByReason, "employee_range_source_not_listed");
+      profile.metrics.employee_range = undefined;
+    }
+  }
+
   // ── Registers: founded year and founding country, a certain match beats any article ──
   if (componentOn("registers") && !ctx.update) {
     const siteSources = allSources.filter((s) => s.source_type === "company_site");

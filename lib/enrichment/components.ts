@@ -55,7 +55,7 @@ export const V2_COMPONENTS = {
     what: "its Terms / Privacy / Legal / Imprint pages: legal name (anchors the registers), company number, registered office (an office, not the HQ)",
   },
   profile_hints: {
-    on: true, since: "2026-11-02",
+    on: false, since: "2026-11-02", // off by the owner, 2026-11-02: 0 of 7 confirmed on the 10-company check
     what: "an HQ / founding year / founding country only a data platform states is not written, but searched for once in an allowed source that confirms it",
   },
   search_backup: {
