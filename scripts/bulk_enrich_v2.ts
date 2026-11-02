@@ -97,7 +97,7 @@ const websiteRows: Array<Record<string, string>> = [];
 // one whole-company score. Printed in the run header, never read.
 const MIN_CONFIDENCE = Number(process.env.MIN_CONFIDENCE ?? 40);
 
-const ENRICH_MODEL  = process.env.ENRICH_MODEL  ?? "claude-haiku-4-5-20251001";
+const ENRICH_MODEL  = process.env.ENRICH_MODEL  ?? "claude-haiku-5-5"; // owner, 2026-11-02 (was claude-haiku-4-5-20251001)
 const PROFILE_MODEL = process.env.PROFILE_MODEL ?? ENRICH_MODEL;
 const FUNDING_MODEL = process.env.FUNDING_MODEL ?? ENRICH_MODEL;
 const MARKET_MODEL  = process.env.MARKET_MODEL  ?? ENRICH_MODEL;

@@ -86,6 +86,27 @@ export function hqStatementsIn(s: LabeledSource, companyName: string): HqStateme
 }
 
 /**
+ * The model's own HQ quote says it of THIS company — the same test as the
+ * statements read from the text. EnerVenue's own release gave "Perth" from
+ * "… with Avid Group, a Perth-based …" (model check 2026-11-02): the HQ word
+ * was there, but it was Avid Group's.
+ */
+export function quoteSaysHqOf(quote: string, city: string, companyName: string, ownSite: boolean): boolean {
+  const at = quote.toLowerCase().indexOf(city.trim().toLowerCase());
+  if (at < 0) return false;
+  return saysOfCompany(quote, at, quote.slice(at, at + city.trim().length), companyName, ownSite);
+}
+
+/** "<City>-based <another company>": the model's quote gives someone else's HQ. */
+export function hqBelongsToAnother(quote: string, city: string, companyName: string): boolean {
+  const at = quote.toLowerCase().indexOf(city.trim().toLowerCase());
+  if (at < 0) return false;
+  const c = quote.slice(at, at + city.trim().length);
+  if (!/^-based\s/i.test(quote.slice(at + c.length))) return false;
+  return !saysOfCompany(quote, at, c, companyName, false);
+}
+
+/**
  * HQ_DEBUG=true: every sentence of a source that has an HQ word, and why it
  * did or did not become a statement — the diagnosis the owner asked for
  * (2026-11-02: Guardz "Tel Aviv", Flyworks "Beer Sheva" rejected).

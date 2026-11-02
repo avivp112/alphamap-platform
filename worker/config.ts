@@ -59,8 +59,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     pollMs: Number(env.POLL_MS ?? 2000),
     leaseSeconds: Number(env.LEASE_SECONDS ?? 120),
     maxRunMs: Number(env.MAX_RUN_MS ?? 15 * 60_000),
-    gateModel: env.GATE_MODEL?.trim() || "claude-haiku-4-5-20251001",
-    enrichModel: env.ENRICH_MODEL?.trim() || "claude-haiku-4-5-20251001",
+    gateModel: env.GATE_MODEL?.trim() || "claude-haiku-5-5",
+    enrichModel: env.ENRICH_MODEL?.trim() || "claude-haiku-5-5",
     searchCostUsd: Number(env.SEARCH_COST_USD ?? 0.001),
   };
 }

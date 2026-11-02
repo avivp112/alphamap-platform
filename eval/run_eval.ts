@@ -87,7 +87,7 @@ const STORE_EVIDENCE = process.env.STORE_EVIDENCE === "true";
 const PIPELINE = process.env.PIPELINE === "v2" ? "v2" : "v1";
 const ONLY = (process.env.ONLY ?? "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean);
 // v2 run settings — the bulk run's own defaults.
-const ENRICH_MODEL = process.env.ENRICH_MODEL ?? "claude-haiku-4-5-20251001";
+const ENRICH_MODEL = process.env.ENRICH_MODEL ?? "claude-haiku-5-5"; // owner, 2026-11-02 (was claude-haiku-4-5-20251001)
 const ARTICLES_TO_READ = Number(process.env.ARTICLES_TO_READ ?? 4);
 const DEEP_DIVE = process.env.DEEP_DIVE !== "false";
 const TECH_GATE = process.env.TECH_GATE !== "false";

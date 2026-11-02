@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hqStatementsIn, decideHeadquarters, contactPageAddresses, type HqStatement } from "./headquarters";
+import { hqStatementsIn, decideHeadquarters, contactPageAddresses, quoteSaysHqOf, hqBelongsToAnother, type HqStatement } from "./headquarters";
 import { buildLabeledSources } from "./sources";
 import { declaresHeadquarters } from "./validation";
 
@@ -49,6 +49,14 @@ describe("the headquarters (owner, 2026-11-01): the company's declaration, else 
     const s1 = src("https://www.globenewswire.com/news-release/2024/08/27/x.html", "EnerVenue signed a master supply agreement with Avid Group, a Perth-based energy installer.");
     expect(hqStatementsIn(s1, "EnerVenue")).toEqual([]);
     expect(hqStatementsIn(src("https://www.reuters.com/x", "Mistral AI, the Paris-based startup, raised €600 million."), "Mistral AI")).toMatchObject([{ city: "Paris" }]);
+  });
+  it("the model's own HQ quote must be about the company (EnerVenue's 'Avid Group, a Perth-based …')", () => {
+    const q = "EnerVenue signed a master supply agreement with Avid Group, a Perth-based energy installer.";
+    expect(quoteSaysHqOf(q, "Perth", "EnerVenue", false)).toBe(false);
+    expect(hqBelongsToAnother(q, "Perth", "EnerVenue")).toBe(true);
+    expect(quoteSaysHqOf("Fremont-based EnerVenue makes nickel-hydrogen batteries.", "Fremont", "EnerVenue", false)).toBe(true);
+    expect(hqBelongsToAnother("Fremont-based EnerVenue makes batteries.", "Fremont", "EnerVenue")).toBe(false);
+    expect(hqBelongsToAnother("Headquarters: Fremont, California", "Fremont", "EnerVenue")).toBe(false);
   });
   it("the page /contact rendered counts as the Contact page (Soda's /contact is its /about)", () => {
     expect(contactPageAddresses({ url: "https://soda.io/about", also_urls: ["https://soda.io/company", "https://soda.io/contact"], content: "Soda Data NV\nRue Picard 7 / 100 1000 Brussels, Belgium", source_type: "company_site", source_id: "W2" }))

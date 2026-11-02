@@ -12,6 +12,7 @@
 // unverified until v2 passes Phase 1.
 // =============================================================================
 
+import { stripHonorific } from "../lib/enrichment/people.ts";
 import type { CollectedCompany } from "../lib/enrichment/collect.ts";
 import type { EvidencedValue } from "../lib/enrichment/extractProfile.ts";
 import { cleanPeople, isFounderEntry, cleanFounderTitle } from "../lib/enrichment/people.ts";
@@ -146,7 +147,8 @@ export function buildProfile(c: CollectedCompany, companyName: string): CheckPro
   })));
   const founders = founderCandidates.filter(isFounderEntry);
   const demoted = founderCandidates.filter((f) => !isFounderEntry(f));
-  const linkedinFounders = c.linkedinFounders.map((f) => ({ name: f.name, title: f.title, bio: f.bio, linkedin_url: f.linkedin_url }));
+  // LinkedIn names carry honorifics too ("Kiwon Lee 님", Ybrain — model check 2026-11-02).
+  const linkedinFounders = c.linkedinFounders.map((f) => ({ name: stripHonorific(f.name), title: f.title, bio: f.bio, linkedin_url: f.linkedin_url }));
   const knownNames = founders.map((f) => f.name);
   const allFounders = cleanPeople(mergePeople([], [...founders, ...linkedinFounders]
     .map((f) => ({ ...f, name: knownNames.find((n) => samePersonName(n, f.name)) ?? f.name }))));
@@ -157,7 +159,7 @@ export function buildProfile(c: CollectedCompany, companyName: string): CheckPro
     ...demoted.filter((d) => !leaders.some((l) => samePersonName(l.name, d.name))),
   ])).filter((l) => !allFounders.some((f) => samePersonName(f.name, l.name)));
   const person = (p: { name: string; title?: string | null; bio?: string; linkedin_url?: string }): ProfilePerson => ({
-    name: p.name, title: p.title || null, bio: p.bio || null, linkedin_url: p.linkedin_url || null,
+    name: stripHonorific(p.name), title: p.title || null, bio: p.bio || null, linkedin_url: p.linkedin_url || null,
   });
 
   const rounds: ProfileRound[] = plan.inserts

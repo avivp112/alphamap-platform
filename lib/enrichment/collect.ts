@@ -41,7 +41,7 @@ import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePerso
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
 import { validateEnrichment, checkNarratives } from "./validation.ts";
-import { hqStatementsIn, decideHeadquarters, statementKind, articleDate, countryOfCity, contactPageAddresses, diagnoseHq, type HqStatement } from "./headquarters.ts";
+import { hqStatementsIn, decideHeadquarters, statementKind, articleDate, countryOfCity, contactPageAddresses, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, type HqStatement } from "./headquarters.ts";
 import { profileSourceAllowed } from "./roundSources.ts";
 import { lookupRegisters, nodeRegisterIo, type RegisterContext, type RegisterFinding } from "./registers.ts";
 import { stripHonorific } from "./people.ts";
@@ -856,7 +856,8 @@ export async function collectCompany(
     const mc = profile.profile.city;
     const mcSource = mc ? sourceById.get(mc.source_id) : undefined;
     const mcKind = mcSource ? statementKind(mcSource) : null;
-    if (mc && mcSource && mcKind && /\b(headquarter(?:s|ed)?|hq|head office|based in|-based)\b/i.test(mc.evidence_quote) && !statements.some((s) => s.city.toLowerCase() === mc.value.toLowerCase() && s.source_id === mc.source_id)) {
+    if (mc && mcSource && mcKind && /\b(headquarter(?:s|ed)?|hq|head office|based in|-based)\b/i.test(mc.evidence_quote)
+      && quoteSaysHqOf(mc.evidence_quote, mc.value, row.name, mcSource.source_type === "company_site") && !statements.some((s) => s.city.toLowerCase() === mc.value.toLowerCase() && s.source_id === mc.source_id)) {
       statements.push({ city: mc.value, quote: mc.evidence_quote, source_id: mc.source_id, url: mcSource.url, kind: mcKind, date: mcKind === "company" && mcSource.source_type === "company_site" ? null : articleDate(mcSource) });
     }
     const hq = decideHeadquarters(statements, undefined, (profile.profile.offices ?? []).map((o) => o.city));
@@ -881,6 +882,11 @@ export async function collectCompany(
         if (!offices.some((o) => o.city.toLowerCase() === c.city.toLowerCase())) offices.push({ city: c.city, ...(countryOfCity(c.city) ? { country: countryOfCity(c.city)! } : {}), source_id: c.source_id, evidence_quote: c.quote });
       }
       profile.profile.offices = offices;
+    } else if (hq.kind === "none" && mc && hqBelongsToAnother(mc.evidence_quote, mc.value, row.name)) {
+      console.log(`    🚫  city "${mc.value}" not written — its quote gives another company's headquarters: "${mc.evidence_quote.slice(0, 140)}"`);
+      bump(stats.droppedByReason, "hq_of_another_company");
+      profile.profile.city = undefined;
+      if (profile.profile.country?.evidence_quote === mc.evidence_quote) profile.profile.country = undefined;
     } else if (hq.kind === "site_offices") {
       console.log(`    🏢  Headquarters left empty — the company's site lists ${hq.cities.join(", ")} without naming one, and no press declaration is from the last two years. They stay offices.`);
       profile.profile.city = undefined;
