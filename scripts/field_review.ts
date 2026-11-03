@@ -143,16 +143,19 @@ function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V2Startu
   const taxonomy = await loadSectorTaxonomy(db);
   const meter = new UsageMeter();
   const values: Value[] = [];
+  const roleChecks: NonNullable<ReturnType<typeof newCollectStats>["roleChecks"]> = [];
   for (const row of (rows ?? []) as V2StartupRow[]) {
     console.log(`── ${row.name} (${row.website}) ──`);
     const state = createSearchProviderState();
     state.cache = openSearchCache(row.id);
+    const stats = newCollectStats();
     try {
       const c = await collectCompany(row, ((rounds ?? []) as V2FundingRoundRow[]).filter((r) => r.startup_id === row.id), taxonomy, {
         anthropic, models: { enrich: MODEL, profile: MODEL, funding: MODEL, market: MODEL },
         update: false, deepDive: true, techGate: true, articlesToRead: 4, verbose: false, seen: null,
         recordCost: (m, u) => meter.add(m, u),
-      }, newCollectStats(), state);
+      }, stats, state);
+      roleChecks.push(...(stats.roleChecks ?? []));
       const v = wouldWrite(c, row);
       values.push(...v);
       console.log(`    → ${c.outcome}: ${v.length} value(s) would be written`);
@@ -195,6 +198,11 @@ function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V2Startu
 
   const per = REVIEW_FIELDS.map((f) => `${f} ${values.filter((v) => v.field === f).length}`).join(" · ");
   console.log(`\n${"═".repeat(62)}\nWould be written: ${values.length} value(s) — ${per}`);
+  // The leaders' title rule (owner, 2026-11-03): how much it costs.
+  const by = (o: string) => roleChecks.filter((r) => r.outcome === o);
+  const lost = [...by("kept_without_title"), ...by("dropped")];
+  console.log(`Leaders' titles: ${roleChecks.length} checked — ${by("verified_card").length} verified on the site's card, ${by("verified_text").length} beside the name in a source, ${by("kept_without_title").length} kept as "Leadership team", ${by("dropped").length} dropped`);
+  for (const r of shuffle(lost, SEED).slice(0, 5)) console.log(`    · ${r.company}: ${r.name} — "${r.title}" → ${r.outcome === "dropped" ? "dropped" : "Leadership team"}${r.page ? ` (${r.page})` : ""}`);
   console.log(`Claude: $${meter.costUsd.toFixed(4)} ($${(meter.costUsd / Math.max(1, drawn.length)).toFixed(4)} a company) · longest prompt ${meter.maxPromptTokens.toLocaleString()} tokens · over 100K: ${meter.callsOverLong}`);
   console.log(`📝  ${DIR}/run_${runNo}.csv (all values) · ${DIR}/run_${runNo}_sample.csv (the ${sample.length} to mark)`);
 })().catch((e) => { console.error(e); process.exit(1); });

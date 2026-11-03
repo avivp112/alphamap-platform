@@ -17,7 +17,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import {
-  verifyDomainMatch, webSearch, readPageCached, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, fetchArticleTexts,
+  verifyDomainMatch, webSearch, readPageCached, fetchPageHtml, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, fetchArticleTexts,
   searchMostlyFailed, type SearchProviderState,
 } from "./searchProviders.ts";
 import { filterByEntity, deriveIdentityKeywords, nameQualifiersOnOwnSite, isNamesakeDrop, type EntityAnchors } from "./entity.ts";
@@ -35,14 +35,14 @@ import {
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
 import { pickArticlesToRead } from "./articles.ts";
 import { runTechGate, shouldSkipAsNonTech, type TechGateVerdict } from "./techGate.ts";
-import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported } from "./people.ts";
+import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, personCardsInHtml } from "./people.ts";
 import { componentOn } from "./components.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
 import { validateEnrichment, checkNarratives } from "./validation.ts";
 import { hqStatementsIn, decideHeadquarters, statementKind, articleDate, countryOfCity, contactPageAddresses, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, canonicalCity, type HqStatement } from "./headquarters.ts";
-import { profileSourceAllowed, roundSourceStanding } from "./roundSources.ts";
+import { profileSourceAllowed, roundSourceStanding, unwrapRedirect } from "./roundSources.ts";
 import { aboutParagraph, aboutIsOf, factsFromAbout, legalFacts, releasePointsTo, type LegalFacts } from "./companyFacts.ts";
 import { checkFoundingCountry } from "./origin.ts";
 import { namesCompany } from "./headcount.ts";
@@ -189,9 +189,11 @@ export interface CollectStats {
   articlesRead: number;
   earlyRejected: number;
   duplicateResultsMerged: number;
+  /** Leaders the title rule touched (owner, 2026-11-03): dropped, or kept without a title. */
+  roleChecks?: Array<{ company: string; name: string; title: string; outcome: "verified_card" | "verified_text" | "kept_without_title" | "dropped"; page?: string }>;
 }
 
-export const newCollectStats = (): CollectStats => ({ droppedByReason: new Map(), deepDives: 0, articlesRead: 0, earlyRejected: 0, duplicateResultsMerged: 0 });
+export const newCollectStats = (): CollectStats => ({ droppedByReason: new Map(), deepDives: 0, articlesRead: 0, earlyRejected: 0, duplicateResultsMerged: 0, roleChecks: [] });
 
 type ProfileResult = NonNullable<Awaited<ReturnType<typeof extractProfile>>>["extraction"]["result"];
 type FundingResult = NonNullable<Awaited<ReturnType<typeof extractFunding>>>["extraction"]["result"];
@@ -1071,14 +1073,40 @@ export async function collectCompany(
     // Leaders: kept only when an allowed source names them (field review run 1: leaders from a
     // Google redirect, from LinkedIn, or with no source at all).
     const allowedTexts = allSources.filter((x) => profileSourceAllowed(x)).map((x) => `${x.title ?? ""} ${x.content}`);
-    profile.leadership = profile.leadership.filter((l) => {
-      if (!allowedTexts.some((t) => personMentionedIn(l.name, t))) { drop(`leader ${l.name}`, "leader_source_not_listed"); return false; }
-      // The title too: each of its roles beside the name in an allowed source (field review runs 1–2).
-      if (roleSupported(l.name, l.role ?? "", allowedTexts, peopleNames.filter((n) => n !== l.name))) return true;
-      console.log(`    🚫  leader ${l.name} not written — no allowed source gives the title "${l.role}"`);
+    // The title too (owner, 2026-11-03): on the company's own pages, the person's card by the
+    // HTML's structure; elsewhere, the role beside the name. Not verified, but the person is on
+    // the team / leadership page: kept, without a title ("Leadership team"). Otherwise dropped.
+    const teamPage = (u: string) => { try { return /\/(team|about|company|leadership|management|people|our-team|who-we-are)\b/i.test(new URL(u).pathname); } catch { return false; } };
+    const htmlCache = new Map<string, string | null>();
+    const keptLeaders: typeof profile.leadership = [];
+    for (const l of profile.leadership) {
+      if (!allowedTexts.some((t) => personMentionedIn(l.name, t))) { drop(`leader ${l.name}`, "leader_source_not_listed"); continue; }
+      const others = peopleNames.filter((n) => n !== l.name);
+      const role = l.role ?? "";
+      const onPages = websitePages.filter((p) => personMentionedIn(l.name, p.content));
+      let outcome: "verified_card" | "verified_text" | null = null;
+      for (const p of onPages.slice(0, 3)) {
+        if (!htmlCache.has(p.url)) htmlCache.set(p.url, ctx.update ? null : await fetchPageHtml(p.url, searchState));
+        const html = htmlCache.get(p.url);
+        const cards = html ? personCardsInHtml(html, l.name, others) : [];
+        if (cards.some((c) => roleSupported(l.name, role, [c]))) { outcome = "verified_card"; break; }
+      }
+      if (!outcome && roleSupported(l.name, role, allowedTexts, others)) outcome = "verified_text";
+      const team = onPages.find((p) => teamPage(p.url) || (p.also_urls ?? []).some(teamPage));
+      const record = (o: "verified_card" | "verified_text" | "kept_without_title" | "dropped") => stats.roleChecks?.push({ company: row.name, name: l.name, title: role, outcome: o, page: team?.url ?? onPages[0]?.url });
+      if (outcome) { record(outcome); keptLeaders.push(l); continue; }
+      if (team) {
+        console.log(`    🏷️   leader ${l.name}: the title "${role}" is not verified — kept as "Leadership team" (${team.url})`);
+        bump(stats.droppedByReason, "leader_title_removed");
+        record("kept_without_title");
+        keptLeaders.push({ ...l, role: "Leadership team" });
+        continue;
+      }
+      console.log(`    🚫  leader ${l.name} not written — no allowed source gives the title "${role}"`);
       bump(stats.droppedByReason, "leader_title_unsupported");
-      return false;
-    });
+      record("dropped");
+    }
+    profile.leadership = keptLeaders;
     // Competitors: the sentence that says they compete comes from an allowed source.
     market.competitors = market.competitors.filter((c) => {
       if (allowedId(c.source_id)) return true;
@@ -1096,7 +1124,8 @@ export async function collectCompany(
     });
     const keptNews: typeof market.news = [];
     let hintSearches = 0;
-    for (const n of market.news) {
+    for (const raw of market.news) {
+      const n = { ...raw, url: unwrapRedirect(raw.url) };
       const standing = newsStanding(n.url);
       if (standing.kind === "allowed") { keptNews.push(n); continue; }
       // A hint-only site (owner, 2026-11-03): its headline is searched for in an allowed source.

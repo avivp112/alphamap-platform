@@ -99,6 +99,8 @@ export const DENIED_DOMAINS = [
   "threads.net", "reddit.com", "medium.com", "substack.com", "quora.com", "pinterest.com",
   // Content / sponsored-PR sites
   "everything-pr.com", "openpr.com", "prlog.org", "issuewire.com",
+  // A redirect whose target cannot be read
+  "google.com",
   // Blogs and newsletters (owner, 2026-11-03 — field review run 2)
   "reboot-hub.com", "neatnettricks.com", "stacksync.com", "revenuememo.com",
 ];
@@ -142,6 +144,19 @@ export function syndicatedFrom(content: string | null | undefined): string | nul
   const m = content.match(ORIGINAL_ON);
   const name = m?.[1]?.trim().toLowerCase().replace(/^the\s+/, "");
   return name ? OUTLET_NAMES[name] ?? OUTLET_NAMES[`the ${name}`] ?? null : null;
+}
+
+/**
+ * A Google redirect ("google.com/url?q=https://…") is the page it points to; one whose target
+ * cannot be read (an encoded token — field review run 1, Avenda) stays as it is, and is refused.
+ */
+export function unwrapRedirect(url: string): string {
+  try {
+    const u = new URL(url);
+    if (!/(^|\.)google\.[a-z.]+$/.test(u.hostname) || u.pathname !== "/url") return url;
+    const target = u.searchParams.get("url") ?? u.searchParams.get("q") ?? "";
+    return /^https?:\/\//.test(target) ? target : url;
+  } catch { return url; }
 }
 
 export function hostOf(url: string): string | null {

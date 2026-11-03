@@ -497,6 +497,37 @@ function disableJina(status: number): void {
   console.warn(`    ⛔  Jina ${jinaDisabledReason}. Switched off for ${JINA_RETRY_AFTER_MS / 60_000} minutes — Serper now reads pages and articles, and Serper's failed searches have no backup. Top up Jina (jina.ai) or fix JINA_API_KEY in .env.`);
 }
 
+/**
+ * A page's HTML, for its structure (a team page's cards — owner, 2026-11-03): Jina Reader
+ * rendering it (scripts run), or a plain request when Jina cannot. Cached like a page.
+ */
+export async function fetchPageHtml(url: string, state: SearchProviderState): Promise<string | null> {
+  const key = `html:${url}`;
+  const cached = state.cache?.get<{ html: string }>(key);
+  if (cached) return cached.html;
+  let html: string | null = null;
+  if (!jinaDisabled()) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), JINA_TIMEOUT_MS);
+      const headers: Record<string, string> = { Accept: "text/plain", "X-Return-Format": "html" };
+      if (process.env.JINA_API_KEY) headers.Authorization = `Bearer ${process.env.JINA_API_KEY}`;
+      const res = await fetch(`https://r.jina.ai/${url}`, { signal: controller.signal, headers }).finally(() => clearTimeout(timer));
+      if (res.ok) html = (await res.text()).trim() || null;
+    } catch { /* the plain request below */ }
+  }
+  if (!html) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), JINA_TIMEOUT_MS);
+      const res = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "Mozilla/5.0 (compatible; AlphaMapBot/1.0)", Accept: "text/html" } }).finally(() => clearTimeout(timer));
+      if (res.ok && /html/i.test(res.headers.get("content-type") ?? "html")) html = (await res.text()).trim() || null;
+    } catch { /* no HTML */ }
+  }
+  if (html) state.cache?.set(key, { html });
+  return html;
+}
+
 // ── Serper scrape (Jina Reader's backup) ───────────────────────────────────
 
 export function parseSerperScrape(data: { text?: string; markdown?: string } | null | undefined): string | null {

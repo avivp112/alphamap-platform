@@ -130,3 +130,25 @@ describe("roles beside the name; bio sentences about the person (owner, 2026-11-
     expect(supportedBio("Amit Sharma is the founder and CEO of CData Software. CData describes itself as a company founded by technologists.", [cdata], "Amit Sharma")).toBeNull();
   });
 });
+
+describe("a person's card on a team page, by the HTML (owner, 2026-11-03)", () => {
+  const grid = `<html><body><section class="team">
+    <div class="card"><img src="m.jpg"><h3>Michael Puscar</h3><p class="role">Co-Founder &amp; CEO</p></div>
+    <div class="card"><img src="j.jpg"><h3>Jane Roe</h3><p class="role">CTO</p></div>
+    <div class="card"><img src="k.jpg"><h3>Kim Lee</h3><p class="role">VP Sales</p></div>
+  </section></body></html>`;
+  it("the card holds the person's own title only — even when the next person was not extracted", async () => {
+    const { personCardsInHtml, roleSupported } = await import("./people");
+    const cards = personCardsInHtml(grid, "Michael Puscar");
+    expect(cards).toEqual(["michael puscar co-founder & ceo"]);
+    expect(cards.some((c) => roleSupported("Michael Puscar", "CTO", [c]))).toBe(false);
+    expect(cards.some((c) => roleSupported("Michael Puscar", "Co-Founder & CEO", [c]))).toBe(true);
+    expect(personCardsInHtml(grid, "Jane Roe").some((c) => roleSupported("Jane Roe", "Chief Technology Officer", [c]))).toBe(true);
+  });
+  it("name and title in plain sibling divs; the name not on the page", async () => {
+    const { personCardsInHtml } = await import("./people");
+    const plain = `<body><div><div><div>Liron Bitan</div><div>VP R&amp;D</div></div><div><div>Kristina Cross</div><div>VP Sales</div></div></div></body>`;
+    expect(personCardsInHtml(plain, "Liron Bitan")).toEqual(["liron bitan vp r&d"]);
+    expect(personCardsInHtml(plain, "Nobody Here")).toEqual([]);
+  });
+});

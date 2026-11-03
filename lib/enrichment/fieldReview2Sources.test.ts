@@ -73,3 +73,13 @@ describe("a hint's headline found in an allowed source", () => {
     expect(sameHeadline("Online Healthcare Booking Platform DocPlanner Raises $20M", "DocPlanner acquires MyDr")).toBe(false);
   });
 });
+
+import { unwrapRedirect } from "./roundSources";
+describe("a Google redirect (field review run 1, Avenda)", () => {
+  it("is the page it points to; an unreadable one is refused", () => {
+    expect(unwrapRedirect("https://www.google.com/url?q=https://techcrunch.com/2022/08/25/x/&sa=U")).toBe("https://techcrunch.com/2022/08/25/x/");
+    const token = "https://www.google.com/url?opi=89978449&q=CAESngEB6zswFastak&sa=U";
+    expect(unwrapRedirect(token)).toBe(token);
+    expect(roundSourceStanding(token).kind).toBe("denied");
+  });
+});

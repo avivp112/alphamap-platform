@@ -15,6 +15,7 @@
  *     duplicates of the same person.
  */
 
+import * as cheerio from "cheerio";
 import { namesCompany } from "./headcount";
 import { samePersonName } from "./linkedin";
 import { MAJOR_CITIES } from "./majorCities";
@@ -380,6 +381,48 @@ export function roleSupported(personName: string, roleText: string, sourceTexts:
     }
   }
   return false;
+}
+
+/**
+ * The person's card on a page, by the HTML's structure (owner, 2026-11-03): from the element
+ * that holds the name, up to the element that is one of a row of alike siblings (the cards of
+ * a team grid) — never one holding another known person's name, never more than 500
+ * characters. The text of each card found; empty when the name is not on the page.
+ */
+export function personCardsInHtml(html: string, personName: string, otherPeople: string[] = []): string[] {
+  const $ = cheerio.load(html);
+  $("script, style, noscript, svg, head").remove();
+  // Elements are separate words ("<h3>Liron Bitan</h3><p>VP R&D</p>" is not "Bitanvp").
+  $("body *").each((_, el) => { $(el).prepend(" ").append(" "); });
+  const norm = (t: string) => fold(t).toLowerCase().replace(/\s+/g, " ").trim();
+  const tokens = norm(personName).split(/[^a-z]+/).filter((t) => t.length > 1);
+  if (tokens.length < 2) return [];
+  const nameRe = new RegExp(`\\b${tokens[0]}\\b[^a-z]+(?:[a-z.]+[^a-z]+){0,2}${tokens[tokens.length - 1]}\\b`);
+  const otherRes = otherPeople.map((n) => norm(n).split(/[^a-z]+/).filter((t) => t.length > 1))
+    .filter((t) => t.length >= 2 && !(t[0] === tokens[0] && t[t.length - 1] === tokens[tokens.length - 1]))
+    .map((t) => new RegExp(`\\b${t[0]}\\b[^a-z]+(?:[a-z.]+[^a-z]+){0,2}${t[t.length - 1]}\\b`));
+  const textOf = (el: cheerio.Cheerio<any>) => norm(el.text());
+  const cards: string[] = [];
+  // The innermost elements whose text holds the name.
+  const holders = $("body *").filter((_, el) => nameRe.test(textOf($(el))) && !$(el).children().toArray().some((c) => nameRe.test(textOf($(c)))));
+  holders.each((_, el) => {
+    let node = $(el);
+    for (let depth = 0; depth < 8; depth++) {
+      const parent = node.parent();
+      if (!parent.length || parent.is("body, html")) break;
+      const tag = (node.prop("tagName") ?? "").toString();
+      const cls = node.attr("class") ?? "";
+      const alike = node.siblings().toArray().filter((sib) => (($(sib).prop("tagName") ?? "").toString() === tag) && ($(sib).attr("class") ?? "") === cls);
+      // One card of a row of alike cards, and more than the name alone.
+      if (alike.length > 0 && textOf(node).length > norm(personName).length + 2) break;
+      const pText = textOf(parent);
+      if (pText.length > 500 || otherRes.some((r) => r.test(pText))) break;
+      node = parent;
+    }
+    const t = textOf(node);
+    if (t.length <= 500 && !cards.includes(t)) cards.push(t);
+  });
+  return cards;
 }
 
 const PERSON_PRONOUN = /\b(he|she|his|her|him|they|their|them)\b/i;
