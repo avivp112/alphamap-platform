@@ -96,3 +96,13 @@ describe("a founder's name has no title (owner, 2026-11-01: 'Prof. Matt Niessner
     expect(stripHonorific("Drew Houston")).toBe("Drew Houston");
   });
 });
+
+describe("a bio keeps only the sentences its sources support (owner, 2026-11-03 — field review run 1)", () => {
+  it("drops 'described as founded by a veteran' when no source says it, keeps what the source says", async () => {
+    const { supportedBio } = await import("./people");
+    const source = "Raycho Raychev. Founder and CEO, EnduroSat. Raychev founded EnduroSat in 2015 in Sofia.";
+    expect(supportedBio("Raycho Raychev is the founder and CEO of EnduroSat. He founded the company in 2015, and it is described as founded by a veteran.", [source], "Raycho Raychev"))
+      .toBe("Raycho Raychev is the founder and CEO of EnduroSat.");
+    expect(supportedBio("He previously led SpaceX launches.", [source], "Raycho Raychev")).toBeNull();
+  });
+});

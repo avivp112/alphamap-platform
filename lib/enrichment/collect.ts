@@ -35,7 +35,7 @@ import {
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
 import { pickArticlesToRead } from "./articles.ts";
 import { runTechGate, shouldSkipAsNonTech, type TechGateVerdict } from "./techGate.ts";
-import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted } from "./people.ts";
+import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio } from "./people.ts";
 import { componentOn } from "./components.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
@@ -1029,12 +1029,22 @@ export async function collectCompany(
       const v = profile.metrics[key] as { value: unknown; source_id: string } | undefined;
       if (v && !allowedId(v.source_id)) { drop(`${key} ${JSON.stringify(v.value)}`, `${key}_source_not_listed`, sourceById.get(v.source_id)?.url); profile.metrics[key] = undefined; }
     }
-    // Bios: kept only when one of their sources is allowed.
+    // Bios: kept only when one of their sources is allowed, and only the sentences those
+    // allowed sources support (supportedBio — owner, 2026-11-03).
     for (const person of [...(profile.profile.founders ?? []), ...profile.leadership] as Array<{ name: string; bio?: string; bio_source_ids?: string[] }>) {
-      if (person.bio && !(person.bio_source_ids ?? []).some((id) => allowedId(id))) {
+      if (!person.bio) continue;
+      const allowedIds = (person.bio_source_ids ?? []).filter((id) => allowedId(id));
+      if (!allowedIds.length) {
         drop(`bio of ${person.name}`, "bio_source_not_listed", (person.bio_source_ids ?? []).map((id) => sourceById.get(id)?.url).filter(Boolean)[0]);
         person.bio = undefined;
+        continue;
       }
+      const kept = supportedBio(person.bio, allowedIds.map((id) => { const x = sourceById.get(id)!; return `${x.title ?? ""} ${x.content}`; }), person.name);
+      if (kept !== person.bio) {
+        console.log(`    ✂️   bio of ${person.name}: ${kept ? "a sentence no source supports was removed" : "no sentence its sources support — not written"}`);
+        bump(stats.droppedByReason, kept ? "bio_sentence_unsupported" : "bio_unsupported");
+      }
+      person.bio = kept ?? undefined;
     }
     // Leaders: kept only when an allowed source names them (field review run 1: leaders from a
     // Google redirect, from LinkedIn, or with no source at all).

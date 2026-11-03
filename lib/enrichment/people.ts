@@ -323,3 +323,31 @@ export function stripHonorific(name: string): string {
   // "Kiwon Lee 님" (Ybrain, model check 2026-11-02): Korean / Japanese honorific suffixes too.
   return name.replace(/^\s*((prof|professor|dr|doctor|mr|mrs|ms|sir|dame)\.?\s+)+/i, "").replace(/\s*(님|씨|さん|様|先生|氏)\s*$/u, "").trim();
 }
+
+const BIO_STOPWORDS = new Set(["about", "after", "also", "among", "before", "being", "company", "where", "which", "while", "their", "there", "these", "those", "under", "since", "through", "within", "years", "other", "into", "from", "with", "that", "this", "have", "were", "will", "been", "more", "most", "such", "they", "them", "then", "than", "when", "what", "over", "both", "each", "only", "very", "well", "previously", "currently", "serves", "served", "including"]);
+const stem = (w: string) => w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").slice(0, 5);
+
+/**
+ * A bio keeps only the sentences its sources support (owner, 2026-11-02 — field review run 1:
+ * Raycho Raychev's bio said "described as founded by a veteran", which no source says). A
+ * sentence stays when every number and every capitalised name in it appears in the sources,
+ * and at least two thirds of its other content words do (by stem). Null when nothing stays.
+ */
+export function supportedBio(bio: string, sourceTexts: string[], personName: string): string | null {
+  const text = sourceTexts.join(" \n ");
+  const hay = text.toLowerCase();
+  const stems = new Set((text.match(/[\p{L}\p{N}]{4,}/gu) ?? []).map(stem));
+  const own = new Set(personName.toLowerCase().split(/\s+/));
+  const kept = bio.split(/(?<=[.!?])\s+/).filter((sentence) => {
+    const words: string[] = [...(sentence.match(/[\p{L}\p{N}][\p{L}\p{N}'&.-]*/gu) ?? [])];
+    const numbers = words.filter((w) => /^\d{2,}/.test(w));
+    if (numbers.some((n) => !hay.includes(n.replace(/[.,]$/, "")))) return false;
+    const names = words.slice(1).filter((w) => /^\p{Lu}/u.test(w) && !own.has(w.toLowerCase()) && w.length > 2);
+    if (names.some((n) => !hay.includes(n.toLowerCase().replace(/[.,']+$/, "")))) return false;
+    const content = words.filter((w) => w.length >= 5 && !/^\p{Lu}/u.test(w) && !/^\d/.test(w) && !BIO_STOPWORDS.has(w.toLowerCase()));
+    if (!content.length) return true;
+    const missing = content.filter((w) => !stems.has(stem(w))).length;
+    return missing / content.length <= 1 / 3;
+  });
+  return kept.length ? kept.join(" ") : null;
+}
