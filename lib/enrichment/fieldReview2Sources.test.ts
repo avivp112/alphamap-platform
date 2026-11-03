@@ -115,3 +115,13 @@ describe("domain decisions, groups a–f (owner, 2026-11-03 — runs 1–2)", ()
       expect(roundSourceStanding(u).kind).toBe("denied");
   });
 });
+
+import { dateFromUrl } from "./evidence";
+describe("an article's date from its own address (field review run 3: Masttro, Laminar)", () => {
+  it("Business Wire and /YYYY/MM/DD/ paths", () => {
+    expect(dateFromUrl("https://www.businesswire.com/news/home/20250106423930/en/Masttro-Appoints-Jay-McNamara")).toBe("2025-01-06");
+    expect(dateFromUrl("https://www.businesswire.com/news/home/20220602005058/en/Laminar-Doubles-Funding")).toBe("2022-06-02");
+    expect(dateFromUrl("https://techcrunch.com/2021/09/29/gamitee-becomes-joyned/")).toBe("2021-09-29");
+    expect(dateFromUrl("https://www.insightpartners.com/ideas/israeli-data-security-startup-laminar/")).toBeNull();
+  });
+});

@@ -203,6 +203,9 @@ function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V2Startu
   const lost = [...by("kept_without_title"), ...by("dropped")];
   console.log(`Leaders' titles: ${roleChecks.length} checked — ${by("verified_card").length} verified on the site's card, ${by("verified_text").length} beside the name in a source, ${by("kept_without_title").length} kept as "Leadership team", ${by("dropped").length} dropped`);
   for (const r of shuffle(lost, SEED).slice(0, 5)) console.log(`    · ${r.company}: ${r.name} — "${r.title}" → ${r.outcome === "dropped" ? "dropped" : "Leadership team"}${r.page ? ` (${r.page})` : ""}`);
+  // The cards, a separate line (owner, 2026-11-03): their first test against real sites.
+  console.log(`Team-page cards: ${roleChecks.filter((r) => r.card && !r.card.startsWith("not named")).length} leader(s) named on the site's pages — ${by("verified_card").length} verified by their card; ${roleChecks.filter((r) => r.card?.startsWith("no HTML")).length} without HTML, ${roleChecks.filter((r) => r.card?.startsWith("no card")).length} without a card found, ${roleChecks.filter((r) => r.card?.includes("without the title")).length} with a card lacking the title`);
+  for (const r of roleChecks.filter((x) => x.card && !x.card.startsWith("not named")).slice(0, 8)) console.log(`    · ${r.company}: ${r.name} ("${r.title}") — ${r.card}`);
   console.log(`Claude: $${meter.costUsd.toFixed(4)} ($${(meter.costUsd / Math.max(1, drawn.length)).toFixed(4)} a company) · longest prompt ${meter.maxPromptTokens.toLocaleString()} tokens · over 100K: ${meter.callsOverLong}`);
   console.log(`📝  ${DIR}/run_${runNo}.csv (all values) · ${DIR}/run_${runNo}_sample.csv (the ${sample.length} to mark)`);
 })().catch((e) => { console.error(e); process.exit(1); });

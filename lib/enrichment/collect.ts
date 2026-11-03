@@ -190,7 +190,7 @@ export interface CollectStats {
   earlyRejected: number;
   duplicateResultsMerged: number;
   /** Leaders the title rule touched (owner, 2026-11-03): dropped, or kept without a title. */
-  roleChecks?: Array<{ company: string; name: string; title: string; outcome: "verified_card" | "verified_text" | "kept_without_title" | "dropped"; page?: string }>;
+  roleChecks?: Array<{ company: string; name: string; title: string; outcome: "verified_card" | "verified_text" | "kept_without_title" | "dropped"; page?: string; card?: string }>;
 }
 
 export const newCollectStats = (): CollectStats => ({ droppedByReason: new Map(), deepDives: 0, articlesRead: 0, earlyRejected: 0, duplicateResultsMerged: 0, roleChecks: [] });
@@ -825,7 +825,7 @@ export async function collectCompany(
     const confirmed = candidate && !rejectRound(candidate, row.name, [...allSources, ...labelled]) ? candidate : null;
     if (!confirmed) {
       roundHints.push(h);
-      console.log(`    💡  Hint kept, not written: ${h.round_type ?? "round"} ${h.amount_raised ?? ""} — only ${h.source_url ?? "a data platform"} states it`);
+      console.log(`    💡  Hint kept, not written: ${h.round_type ?? "round"} ${h.amount_raised ?? ""} — ${h.cited_url && h.cited_url !== h.source_url ? `cited from ${h.cited_url}` : `only ${h.source_url ?? "a data platform"} states it`}; no allowed source confirmed it with its amount and date`);
       bump(stats.droppedByReason, "round_kept_as_hint");
       continue;
     }
@@ -1085,15 +1085,18 @@ export async function collectCompany(
       const role = l.role ?? "";
       const onPages = websitePages.filter((p) => personMentionedIn(l.name, p.content));
       let outcome: "verified_card" | "verified_text" | null = null;
+      // Why no card verified it — the first test against real sites (owner, 2026-11-03).
+      let cardNote = onPages.length ? "" : "not named on the site's pages read";
       for (const p of onPages.slice(0, 3)) {
         if (!htmlCache.has(p.url)) htmlCache.set(p.url, ctx.update ? null : await fetchPageHtml(p.url, searchState));
         const html = htmlCache.get(p.url);
         const cards = html ? personCardsInHtml(html, l.name, others) : [];
-        if (cards.some((c) => roleSupported(l.name, role, [c]))) { outcome = "verified_card"; break; }
+        if (cards.some((c) => roleSupported(l.name, role, [c]))) { outcome = "verified_card"; cardNote = `card on ${p.url}`; break; }
+        cardNote = !html ? `no HTML for ${p.url}` : !cards.length ? `no card found on ${p.url}` : `card on ${p.url} without the title: "${cards[0].slice(0, 80)}"`;
       }
       if (!outcome && roleSupported(l.name, role, allowedTexts, others)) outcome = "verified_text";
       const team = onPages.find((p) => teamPage(p.url) || (p.also_urls ?? []).some(teamPage));
-      const record = (o: "verified_card" | "verified_text" | "kept_without_title" | "dropped") => stats.roleChecks?.push({ company: row.name, name: l.name, title: role, outcome: o, page: team?.url ?? onPages[0]?.url });
+      const record = (o: "verified_card" | "verified_text" | "kept_without_title" | "dropped") => stats.roleChecks?.push({ company: row.name, name: l.name, title: role, outcome: o, page: team?.url ?? onPages[0]?.url, card: cardNote });
       if (outcome) { record(outcome); keptLeaders.push(l); continue; }
       if (team) {
         console.log(`    🏷️   leader ${l.name}: the title "${role}" is not verified — kept as "Leadership team" (${team.url})`);

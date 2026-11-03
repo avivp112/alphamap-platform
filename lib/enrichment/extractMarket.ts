@@ -23,7 +23,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { requestFor } from "./models.ts";
 import { sanitizeModelOutput, ensureArray } from "./sanitize";
-import { verifyEvidence, normalizeForMatch, type EvidenceSource } from "./evidence";
+import { verifyEvidence, normalizeForMatch, dateFromUrl, type EvidenceSource } from "./evidence";
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
 import { debugDumpJson } from "./debugDump";
 import { competitorRelation, type RelationDrop } from "./competitorRelation";
@@ -255,6 +255,7 @@ export function newsDateIsGrounded(date: string, source: { url: string; title?: 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
   const text = `${source.title ?? ""} ${source.content} ${source.url}`;
   if (datesIn(text).includes(date)) return true;
+  if (dateFromUrl(source.url) === date) return true;
   const ym = date.slice(0, 7).replace("-", "/");
   if (source.url.includes(`/${ym}/`)) return true;
   const rel = text.toLowerCase().match(/\b(\d+|an?|one)\s+(hour|day|week|month)s?\s+ago\b/);
@@ -330,6 +331,8 @@ export function processMarketExtractionResponse(
       dropped.push({ field: "news.published_date", reason: "news_date_not_in_source" });
       publishedDate = undefined;
     }
+    // No date from the model: the article's own address may give it (Business Wire, /YYYY/MM/DD/).
+    if (!publishedDate) publishedDate = dateFromUrl(src.url) ?? undefined;
     news.push({ ...n, url: src.url, published_date: publishedDate });
     if (news.length >= 8) break;
   }

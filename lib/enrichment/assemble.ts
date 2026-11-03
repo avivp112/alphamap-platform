@@ -19,7 +19,7 @@
  *     sections are unioned by identity.
  */
 
-import { normalizeForMatch, extractNumbersFromText, parseFullDate } from "./evidence";
+import { normalizeForMatch, extractNumbersFromText, parseFullDate, dateFromUrl } from "./evidence";
 import { investorNamesMatch, normalizeRoundType, type RoundLike } from "./rounds";
 import { termAppearsIn, normalizeUrlForMatch, type V2MarketExtraction, type V2NewsItem } from "./extractMarket";
 import { namesCompany } from "./headcount";
@@ -228,7 +228,7 @@ export function announcementDateFromSource(round: V2Round, source: LabeledSource
     source.content.match(/Published Time:\s*(\S+)/i)?.[1],
     source.content.match(/Date:\s*([^—|\n]{6,40})/)?.[1],
     source.content.match(/([A-Z][a-z]{2,9}\.? \d{1,2}(?:st|nd|rd|th)?,? \d{4})\s*\/\s*(?:PRNewswire|Business Wire|GLOBE NEWSWIRE|EINPresswire)/i)?.[1],
-    source.url.match(/\/(\d{4})\/(\d{2})\/(\d{2})\//)?.slice(1, 4).join("-"),
+    dateFromUrl(source.url),
   ];
   for (const c of candidates) {
     const iso = c ? parseFullDate(c) : null;

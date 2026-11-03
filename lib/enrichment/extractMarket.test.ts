@@ -134,7 +134,8 @@ describe("news dates must come from the source (Glamsquad: a 2014 press release 
       news: [{ title: "Ghost launches ActivityPub support", url: "https://techcrunch.com/2024/05/01/ghost-launches-activitypub/", published_date: "2011-05-05" }],
     }, sources, "Ghost");
     expect(result.news).toHaveLength(1);
-    expect(result.news[0].published_date).toBeUndefined();
+    // The model's date is dropped; the article's own address gives the right one (field review run 3).
+    expect(result.news[0].published_date).toBe("2024-05-01");
     expect(dropped).toContainEqual({ field: "news.published_date", reason: "news_date_not_in_source" });
   });
 });

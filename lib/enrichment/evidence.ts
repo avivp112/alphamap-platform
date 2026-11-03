@@ -265,3 +265,15 @@ export function verifyEvidence(
 
   return { verified: true, similarity };
 }
+
+/**
+ * The date an article's own address gives: /2023/03/09/ paths, and Business Wire's
+ * /news/home/20230309005187/ (field review run 3: Masttro's and Laminar's releases had no date).
+ */
+export function dateFromUrl(url: string): string | null {
+  const ymd = url.match(/\/(\d{4})\/(\d{2})\/(\d{2})\//) ?? url.match(/businesswire\.[a-z.]+\/news\/home\/(\d{4})(\d{2})(\d{2})\d{3,}/i);
+  if (!ymd) return null;
+  const [y, m, d] = [+ymd[1], +ymd[2], +ymd[3]];
+  if (y < 1990 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return null;
+  return `${ymd[1]}-${ymd[2]}-${ymd[3]}`;
+}

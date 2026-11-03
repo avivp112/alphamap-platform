@@ -35,6 +35,8 @@ export interface RoundHint {
   lead_investor: string | null;
   /** The platform page the round was read on. */
   source_url: string | null;
+  /** The page its amount was read from, when another than source_url. */
+  cited_url?: string | null;
   /** data_hints.id when the hint was stored by an earlier run. */
   id?: string;
 }
@@ -53,6 +55,9 @@ export function hintFromRound(r: V2Round, sources: LabeledSource[]): RoundHint {
     announcement_date: r.announcement_date?.value ?? null,
     lead_investor: r.lead_investor?.value ?? null,
     source_url: r.source_url ?? cited.find((u): u is string => !!u) ?? null,
+    // The page the amount was read from (field review run 3: Masttro's round named Business
+    // Wire as its source, but its amount came from nasdaq.com).
+    ...(cited[0] && cited[0] !== (r.source_url ?? cited[0]) ? { cited_url: cited[0] } : {}),
   };
 }
 

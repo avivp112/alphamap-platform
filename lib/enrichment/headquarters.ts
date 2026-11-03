@@ -19,7 +19,7 @@
 import { MAJOR_CITIES } from "./majorCities";
 import { isRegionalOfficeQuote } from "./validation";
 import { isDirectoryPage, roundSourceStanding } from "./roundSources";
-import { parseFullDate } from "./evidence";
+import { parseFullDate, dateFromUrl } from "./evidence";
 import { namesCompany } from "./headcount";
 import type { LabeledSource } from "./sources";
 
@@ -61,7 +61,7 @@ export function articleDate(s: Pick<LabeledSource, "url" | "content">): string |
   const c = [
     s.content.match(/Published Time:\s*(\S+)/i)?.[1],
     s.content.match(/Date:\s*([^—|\n]{6,40})/)?.[1],
-    s.url.match(/\/(\d{4})\/(\d{2})\/(\d{2})\//)?.slice(1, 4).join("-"),
+    dateFromUrl(s.url),
   ];
   for (const x of c) { const iso = x ? parseFullDate(x) : null; if (iso) return iso; }
   const ym = s.url.match(/\/(20\d{2})\/(\d{2})\//);
