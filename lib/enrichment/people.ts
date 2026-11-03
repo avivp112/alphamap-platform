@@ -21,7 +21,7 @@ import { MAJOR_CITIES } from "./majorCities";
 
 const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "");
 const NAME_RE = /^[A-Z][\p{L}'’.-]*(?:\s+[A-Z][\p{L}'’.-]*){1,3}$/u;
-const NOT_A_PERSON = /\b(inc|llc|ltd|corp|capital|ventures|partners|labs|technologies|university|group|holdings|fund|foundation|team|engineers|google|microsoft|amazon|meta|apple|money|bank|banking|payments?|finance|financial|media|systems|software|digital|global|networks?|solutions|studios?|games|investments?|management|consulting|insurance)\b/i;
+const NOT_A_PERSON = /\b(inc|llc|ltd|corp|capital|ventures|partners|labs|technologies|university|group|holdings|fund|foundation|team|engineers|google|microsoft|amazon|meta|apple|money|bank|banking|payments?|finance|financial|media|systems|software|digital|global|networks?|solutions|studios?|games|investments?|management|consulting|insurance|healthcare|health|medical|imaging|pharma|pharmaceuticals?|therapeutics|biotech|electric|electronics|industries|motors|energy|robotics|aerospace|semiconductors?|instruments|devices)\b/i;
 // Sentence words that end up glued to a name when a sentence break is
 // missed ("Mark Spera.  However").
 const NOT_A_NAME_TOKEN = new Set(["however", "the", "and", "but", "this", "its", "their", "while", "after", "before", "since", "today", "also", "together", "both", "who", "which"]);

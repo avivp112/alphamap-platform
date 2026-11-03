@@ -43,7 +43,7 @@ import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResult
 import { validateEnrichment, checkNarratives } from "./validation.ts";
 import { hqStatementsIn, decideHeadquarters, statementKind, articleDate, countryOfCity, contactPageAddresses, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, canonicalCity, type HqStatement } from "./headquarters.ts";
 import { profileSourceAllowed, roundSourceStanding } from "./roundSources.ts";
-import { aboutParagraph, aboutIsOf, factsFromAbout, legalFacts, type LegalFacts } from "./companyFacts.ts";
+import { aboutParagraph, aboutIsOf, factsFromAbout, legalFacts, releasePointsTo, type LegalFacts } from "./companyFacts.ts";
 import { checkFoundingCountry } from "./origin.ts";
 import { namesCompany } from "./headcount.ts";
 import { lookupRegisters, nodeRegisterIo, type RegisterContext, type RegisterFinding } from "./registers.ts";
@@ -870,6 +870,13 @@ export async function collectCompany(
       const page = await readPageCached(hit.url, searchState);
       const para = page && aboutParagraph(page.text, row.name);
       if (!para || !aboutIsOf(para, row.name)) continue;
+      // A namesake's release (field review run 2: "Streak", a Singapore trading app, for
+      // streak.com; "Mutiny", a Los Angeles gaming agency, for mutinyhq.com): the release
+      // must point to the company's own site, or its About paragraph is not used.
+      if (!releasePointsTo(page!.text, domain)) {
+        console.log(`    🧭  About ${row.name} (${hit.url}) does not point to ${domain || "the company's site"} — a namesake's release, not used.`);
+        continue;
+      }
       const facts = factsFromAbout(para, row.name);
       if (!facts.city && !facts.foundedYear) continue;
       const src = newSource(hit.url, para, hit.title ?? `About ${row.name}`, "press_about");

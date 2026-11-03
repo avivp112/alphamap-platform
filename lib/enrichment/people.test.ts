@@ -3,6 +3,9 @@ import { foundersFromText, personMentionedIn, cleanPeople, isLeadershipRole, fou
 import { parseLinkedInPersonResult } from "./linkedin";
 
 describe("foundersFromText — 'founded by' sentences about THIS company", () => {
+  it("an organisation is never a founder (field review run 2: Insightec)", () => {
+    expect(foundersFromText("Insightec was founded in 1999 by GE Healthcare and Elbit Medical Imaging.", "Insightec")).toEqual([]);
+  });
   it("reads the founders from a subject sentence (real GoCo / Glints quotes)", () => {
     expect(foundersFromText("GoCo.io, Inc. was founded in 2015 by Jason J. Wang, Michael Gugel, and Nir Leibovich.", "GoCo").map((f) => f.name))
       .toEqual(["Jason J. Wang", "Michael Gugel", "Nir Leibovich"]);

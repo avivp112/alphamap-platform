@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { aboutParagraph, factsFromAbout, legalFacts, aboutIsOf } from "./companyFacts";
+import { aboutParagraph, factsFromAbout, legalFacts, aboutIsOf, releasePointsTo } from "./companyFacts";
 
 describe("the About paragraph of the company's own press release (owner, 2026-11-02 — coverage a)", () => {
   const release = `Guardz raises $56M Series B\n\nTEL AVIV, Israel, May 5, 2025 /PRNewswire/ -- Guardz announced today ...\n\nAbout Guardz\nGuardz is a Tel Aviv-based cybersecurity company founded in 2022 that protects small businesses. The company also has an office in Miami.\n\nMedia Contact\npress@guardz.com`;
@@ -34,5 +34,17 @@ describe("the legal pages (owner, 2026-11-02 — coverage b)", () => {
   });
   it("an Israeli company number (ח.פ.)", () => {
     expect(legalFacts("גארדז סייבר בע\"מ, ח.פ. 516588902", "Guardz").companyNumber).toBe("516588902");
+  });
+});
+
+describe("a namesake's press release (field review run 2)", () => {
+  it("is used only when it points to the company's own domain", () => {
+    const streak = "About Streak\nStreak is a Singapore-based company that envisions bringing institutional-quality algorithmic trading. For more information visit www.streak.tech";
+    expect(releasePointsTo(streak, "streak.com")).toBe(false);
+    expect(releasePointsTo("Learn more at https://www.mutiny.gg/about", "mutinyhq.com")).toBe(false);
+    expect(releasePointsTo("Visit www.insightec.com.", "insightec.com")).toBe(true);
+    expect(releasePointsTo("Contact: press@insightec.com", "https://www.insightec.com/")).toBe(true);
+    expect(releasePointsTo("Visit getstreak.com or streak.com.sg", "streak.com")).toBe(false);
+    expect(releasePointsTo("Visit streak.com", null)).toBe(false);
   });
 });

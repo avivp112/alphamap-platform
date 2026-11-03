@@ -124,7 +124,7 @@ function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V2Startu
   const onFilePatents = new Set(((row.patents ?? []) as Array<{ patent_number?: string }>).map((x) => x.patent_number));
   for (const pt of c.market.patents) if (!onFilePatents.has(pt.patent_number)) add("patent", `${pt.patent_number ?? ""} ${pt.title}`.trim(), "", pt.url ?? "");
   const onFileNews = new Set(((row.news ?? []) as Array<{ url?: string }>).map((x) => x.url));
-  for (const n of c.market.news) if (!onFileNews.has(n.url)) add("news", `${n.published_date ?? "no date"} — ${n.title}`, "", n.url);
+  for (const n of c.market.news) if (!onFileNews.has(n.url)) add("news", `${n.published_date || "no date"} — ${n.title}`, "", n.url);
   return out;
 }
 

@@ -106,4 +106,15 @@ export function legalFacts(text: string, companyName: string): LegalFacts {
 /** True when a press release's About paragraph is about this company (its name opens the paragraph). */
 export const aboutIsOf = (paragraph: string, companyName: string) => namesCompany(paragraph.split(/\s+/).slice(0, 12).join(" "), companyName);
 
+/**
+ * A press release points to the company when its text names the company's own
+ * domain ("www.streak.com", "https://insightec.com/…"). No domain known: never.
+ */
+export function releasePointsTo(text: string, domain: string | null | undefined): boolean {
+  const d = (domain ?? "").toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "");
+  if (!d) return false;
+  const esc = d.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^a-z0-9.-])(www\\.)?${esc}(?![a-z0-9-]|\\.[a-z])`, "i").test(text);
+}
+
 export const yearIn = (s: string) => Number((s.match(YEAR) ?? [])[1]) || null;
