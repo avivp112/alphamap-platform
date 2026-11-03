@@ -42,3 +42,34 @@ describe("source decisions after field review run 2", () => {
     expect(unlinked.source_type).toBe("news");
   });
 });
+
+describe("domain decisions of 2026-11-03 (rejected-domains table, run 2)", () => {
+  it("new tiers, pcmag's regional editions, the rejected blogs", () => {
+    for (const u of ["https://www.nosh.com/pr/2024/05/14/x", "https://gameworldobserver.com/2022/07/07/x", "https://www.channele2e.com/news/x", "https://www.pymnts.com/x", "https://www.venturecapitaljournal.com/x"])
+      expect(roundSourceStanding(u)).toMatchObject({ kind: "allowed", tier: 4 });
+    expect(roundSourceStanding("https://au.pcmag.com/browsers/94724/x")).toMatchObject({ kind: "allowed", tier: 3 });
+    for (const u of ["https://reboot-hub.com/blogs/x", "https://www.neatnettricks.com/x", "https://www.stacksync.com/blog/x", "https://www.revenuememo.com/p/x"])
+      expect(roundSourceStanding(u)).toMatchObject({ kind: "denied", why: "denied_domain" });
+  });
+  it("finsmes and the like are hints only", () => {
+    expect(roundSourceStanding("https://www.finsmes.com/category/spain/page/46")).toEqual({ kind: "denied", why: "hint_only" });
+    expect(roundSourceStanding("https://techfundingnews.com/us-based-npcx-nets-3m/")).toEqual({ kind: "denied", why: "hint_only" });
+  });
+  it("Yahoo Finance: allowed only as a republication of an allowed source it names", () => {
+    const y = "https://finance.yahoo.com/technology/ai/articles/lexisnexis-names-valqari-no-3-113100977.html";
+    expect(roundSourceStanding(y, { content: "CHICAGO, Oct. 1, 2026 /PRNewswire/ -- LexisNexis named Valqari…" })).toMatchObject({ kind: "allowed", tier: 1, why: "republished_from:prnewswire.com" });
+    expect(roundSourceStanding(y, { content: "SAN FRANCISCO, Oct. 1 (Reuters) - OfferUp raised…" })).toMatchObject({ kind: "allowed", tier: 2 });
+    expect(roundSourceStanding(y, { content: "OfferUp raised $120M.\n\nRead the original article on Business Insider" })).toMatchObject({ kind: "allowed", tier: 2 });
+    expect(roundSourceStanding(y, { content: "Tyga's giveaway on DitchIt, a fresh rival to OfferUp. According to Reuters, …" })).toMatchObject({ kind: "denied" });
+    expect(roundSourceStanding(y, { content: "Originally published on Benzinga." })).toMatchObject({ kind: "denied" });
+    expect(roundSourceStanding(y)).toMatchObject({ kind: "denied" });
+  });
+});
+
+import { sameHeadline } from "./collect";
+describe("a hint's headline found in an allowed source", () => {
+  it("same story, other words around it", () => {
+    expect(sameHeadline("Online Healthcare Booking Platform DocPlanner Raises $20M", "DocPlanner raises $20M for its online healthcare booking platform – TechCrunch")).toBe(true);
+    expect(sameHeadline("Online Healthcare Booking Platform DocPlanner Raises $20M", "DocPlanner acquires MyDr")).toBe(false);
+  });
+});

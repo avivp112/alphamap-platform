@@ -35,7 +35,7 @@ import {
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
 import { pickArticlesToRead } from "./articles.ts";
 import { runTechGate, shouldSkipAsNonTech, type TechGateVerdict } from "./techGate.ts";
-import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio } from "./people.ts";
+import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported } from "./people.ts";
 import { componentOn } from "./components.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
@@ -96,6 +96,18 @@ export interface ExtractionUsage { inputTokens: number; outputTokens: number; ca
 
 /** What the bulk script's globals were, passed in. */
 /** The columns of startups / funding_rounds a collection reads (V2StartupRow, V2FundingRoundRow). */
+/** Two headlines of the same story: most of the shorter one's content words are in the other. */
+export function sameHeadline(a: string, b: string): boolean {
+  const words = (s: string) => new Set(s.toLowerCase().replace(/[^\p{L}\p{N}$ ]/gu, " ").split(/\s+/).filter((w) => w.length > 2));
+  const [x, y] = [words(a), words(b)];
+  const [small, big] = x.size <= y.size ? [x, y] : [y, x];
+  if (small.size < 3) return false;
+  let hit = 0;
+  for (const w of small) if (big.has(w)) hit++;
+  return hit / small.size >= 0.7;
+}
+const hostOfUrl = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u; } };
+
 export const V2_STARTUP_COLUMNS =
   "id, name, website, description, value_proposition, industry, founded_year, country, city, founding_country, israel_rnd_center, refresh_fields, employee_count, employee_range, growth_trend, founders, leadership, competitors, acquisitions, news, patent_count, patent_fields, patents, tech_stack, github_url, huggingface_url, arr_milestones, revenue_estimate, valuation_benchmarks, linkedin_url, facebook_url, instagram_url, sector_id, funding_history_complete, status, last_enriched_at, is_manually_verified";
 export const V2_ROUND_COLUMNS =
@@ -1040,6 +1052,7 @@ export async function collectCompany(
     }
     // Bios: kept only when one of their sources is allowed, and only the sentences those
     // allowed sources support (supportedBio — owner, 2026-11-03).
+    const peopleNames = [...(profile.profile.founders ?? []), ...profile.leadership].map((p) => p.name).filter(Boolean);
     for (const person of [...(profile.profile.founders ?? []), ...profile.leadership] as Array<{ name: string; bio?: string; bio_source_ids?: string[] }>) {
       if (!person.bio) continue;
       const allowedIds = (person.bio_source_ids ?? []).filter((id) => allowedId(id));
@@ -1048,7 +1061,7 @@ export async function collectCompany(
         person.bio = undefined;
         continue;
       }
-      const kept = supportedBio(person.bio, allowedIds.map((id) => { const x = sourceById.get(id)!; return `${x.title ?? ""} ${x.content}`; }), person.name);
+      const kept = supportedBio(person.bio, allowedIds.map((id) => { const x = sourceById.get(id)!; return `${x.title ?? ""} ${x.content}`; }), person.name, peopleNames.filter((n) => n !== person.name));
       if (kept !== person.bio) {
         console.log(`    ✂️   bio of ${person.name}: ${kept ? "a sentence no source supports was removed" : "no sentence its sources support — not written"}`);
         bump(stats.droppedByReason, kept ? "bio_sentence_unsupported" : "bio_unsupported");
@@ -1059,8 +1072,11 @@ export async function collectCompany(
     // Google redirect, from LinkedIn, or with no source at all).
     const allowedTexts = allSources.filter((x) => profileSourceAllowed(x)).map((x) => `${x.title ?? ""} ${x.content}`);
     profile.leadership = profile.leadership.filter((l) => {
-      if (allowedTexts.some((t) => personMentionedIn(l.name, t))) return true;
-      drop(`leader ${l.name}`, "leader_source_not_listed");
+      if (!allowedTexts.some((t) => personMentionedIn(l.name, t))) { drop(`leader ${l.name}`, "leader_source_not_listed"); return false; }
+      // The title too: each of its roles beside the name in an allowed source (field review runs 1–2).
+      if (roleSupported(l.name, l.role ?? "", allowedTexts, peopleNames.filter((n) => n !== l.name))) return true;
+      console.log(`    🚫  leader ${l.name} not written — no allowed source gives the title "${l.role}"`);
+      bump(stats.droppedByReason, "leader_title_unsupported");
       return false;
     });
     // Competitors: the sentence that says they compete comes from an allowed source.
@@ -1073,15 +1089,30 @@ export async function collectCompany(
     // The company's investors, found now or on file: their own sites are allowed.
     const knownInvestors = [...roundInvestors, ...existingRounds.flatMap((r) => [r.lead_investor, ...(r.investors ?? [])])];
     // News: an article of an allowed outlet (tiers 1–4) or the company's own site.
-    market.news = market.news.filter((n) => {
-      const standing = roundSourceStanding(n.url, {
-        isCompanySite: classifySourceType(n.url, domain) === "company_site" || sourceByUrl(n.url)?.source_type === "company_site",
-        investors: knownInvestors,
-      });
-      if (standing.kind === "allowed") return true;
-      drop(`news "${n.title.slice(0, 60)}"`, "news_source_not_listed", n.url);
-      return false;
+    const newsStanding = (url: string, content?: string) => roundSourceStanding(url, {
+      isCompanySite: classifySourceType(url, domain) === "company_site" || sourceByUrl(url)?.source_type === "company_site",
+      investors: knownInvestors,
+      content: content ?? sourceByUrl(url)?.content,
     });
+    const keptNews: typeof market.news = [];
+    let hintSearches = 0;
+    for (const n of market.news) {
+      const standing = newsStanding(n.url);
+      if (standing.kind === "allowed") { keptNews.push(n); continue; }
+      // A hint-only site (owner, 2026-11-03): its headline is searched for in an allowed source.
+      if (standing.kind === "denied" && standing.why === "hint_only" && hintSearches < 2 && !ctx.update) {
+        hintSearches++;
+        const found = (await webSearch(`"${n.title.slice(0, 90)}"`, "news_hint", searchState))
+          .find((r) => r.url !== n.url && sameHeadline(r.title ?? "", n.title) && newsStanding(r.url, r.content).kind === "allowed");
+        if (found) {
+          console.log(`    ✅  news "${n.title.slice(0, 60)}" — a hint from ${hostOfUrl(n.url)}, confirmed by ${found.url}`);
+          keptNews.push({ ...n, url: found.url });
+          continue;
+        }
+      }
+      drop(`news "${n.title.slice(0, 60)}"`, standing.kind === "denied" && standing.why === "hint_only" ? "news_hint_not_confirmed" : "news_source_not_listed", n.url);
+    }
+    market.news = keptNews;
   }
 
   // ── Registers: founded year and founding country, a certain match beats any article ──

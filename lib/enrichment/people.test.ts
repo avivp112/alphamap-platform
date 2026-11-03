@@ -109,3 +109,24 @@ describe("a bio keeps only the sentences its sources support (owner, 2026-11-03 
     expect(supportedBio("He previously led SpaceX launches.", [source], "Raycho Raychev")).toBeNull();
   });
 });
+
+describe("roles beside the name; bio sentences about the person (owner, 2026-11-03 — field review run 2)", () => {
+  it("a leader's title is checked against the source", async () => {
+    const { roleSupported } = await import("./people");
+    const npcx = "Our team. Michael Puscar, Co-Founder & CEO. Michael is a serial entrepreneur, investor, technologist and published data scientist. Jane Roe, CTO. Jane leads engineering at NPCx and previously built game engines for many studios over a long career.";
+    expect(roleSupported("Michael Puscar", "Chief Technology Officer", [npcx], ["Jane Roe"])).toBe(false);
+    expect(roleSupported("Michael Puscar", "Co-Founder & CEO", [npcx], ["Jane Roe"])).toBe(true);
+    expect(roleSupported("Michael Puscar", "CTO", ["Michael Puscar\nCo-Founder & CEO\nJane Roe\nCTO"], ["Jane Roe"])).toBe(false);
+    expect(roleSupported("Jane Roe", "CTO", ["Michael Puscar\nCo-Founder & CEO\nJane Roe\nCTO"], ["Michael Puscar"])).toBe(true);
+    expect(roleSupported("Sumit Jain", "Co-Founder & CEO, Unacademy Test Prep", ["Sumit Jain, CEO of Unacademy Test Prep, said the unit will grow."])).toBe(false);
+    expect(roleSupported("Kristina Cross", "VP Sales, North America", ["Kristina Cross — VP Sales, North America"])).toBe(true);
+    expect(roleSupported("Liron Bitan", "Head of R&D", ["Liron Bitan"])).toBe(true);
+  });
+  it("a bio keeps only sentences about the person, with roles the source gives", async () => {
+    const { supportedBio } = await import("./people");
+    const calcalist = "IBM is acquiring Israeli data observability startup Databand.ai in July 2022. Founded in 2018 by CEO Josh Benamram, Victor Shafran, and CTO Evgeny Shulman.";
+    expect(supportedBio("Databand was acquired by IBM in July 2022.", [calcalist], "Josh Benamram")).toBeNull();
+    const cdata = "CData Software. Leadership: Amit Sharma, Chief Executive Officer. CData is a company founded by technologists to serve innovators.";
+    expect(supportedBio("Amit Sharma is the founder and CEO of CData Software. CData describes itself as a company founded by technologists.", [cdata], "Amit Sharma")).toBeNull();
+  });
+});

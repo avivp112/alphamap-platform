@@ -333,12 +333,69 @@ const stem = (w: string) => w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").slice
  * sentence stays when every number and every capitalised name in it appears in the sources,
  * and at least two thirds of its other content words do (by stem). Null when nothing stays.
  */
-export function supportedBio(bio: string, sourceTexts: string[], personName: string): string | null {
+const ROLES: Array<[RegExp, RegExp]> = [
+  [/\b(vp|vice[- ]president)\b/i, /\b(vp|vice[- ]president)\b/i],
+  [/\bceo\b|chief executive/i, /\bceo\b|chief executive/i],
+  [/\bcto\b|chief technology|chief technical/i, /\bcto\b|chief technolog|chief technical/i],
+  [/\bcoo\b|chief operating/i, /\bcoo\b|chief operating/i],
+  [/\bcfo\b|chief financial/i, /\bcfo\b|chief financial/i],
+  [/\bcmo\b|chief marketing/i, /\bcmo\b|chief marketing/i],
+  [/\bcpo\b|chief product/i, /\bcpo\b|chief product/i],
+  [/\bcro\b|chief revenue/i, /\bcro\b|chief revenue/i],
+  [/founder|\bfounded\b/i, /founder|\bfounded\b/i],
+  [/\bchair(man|woman|person)?\b/i, /\bchair/i],
+];
+
+/**
+ * Every role a title or sentence gives a person (CEO, CTO, founder, VP…) is written beside
+ * their name in one of the sources (field review runs 1–2: "Co-Founder & CEO, Unacademy Test
+ * Prep", NPCx's CEO as "CTO", CData's CEO as "founder"). Beside: from 80 characters before
+ * the name to 150 after it. A title without a known role passes.
+ */
+export function roleSupported(personName: string, roleText: string, sourceTexts: string[], otherPeople: string[] = []): boolean {
+  // "Co-Founder & CEO" asks for both.
+  const wanted = ROLES.filter(([inTitle]) => inTitle.test(roleText));
+  if (!wanted.length) return true;
+  const tokens = fold(personName).toLowerCase().split(/[^a-z]+/).filter((t) => t.length > 1);
+  if (tokens.length < 2) return false;
+  const re = new RegExp(`\\b${tokens[0]}\\b[^a-z]+(?:[a-z.]+[^a-z]+){0,2}${tokens[tokens.length - 1]}\\b`, "g");
+  const own = new Set(tokens);
+  const others = [...new Set(otherPeople.flatMap((n) => fold(n).toLowerCase().split(/[^a-z]+/).filter((t) => t.length > 2 && !own.has(t))))];
+  for (const raw of sourceTexts) {
+    const text = fold(raw).toLowerCase();
+    for (const m of text.matchAll(re)) {
+      const at = m.index ?? 0;
+      let before = text.slice(Math.max(0, at - 80), at);
+      let after = text.slice(at + m[0].length, at + m[0].length + 150);
+      // Another person's name ends the window: on a team page the next card's title is theirs.
+      for (const t of others) {
+        const wre = new RegExp(`\\b${t}\\b`);
+        const a = after.search(wre);
+        if (a >= 0) after = after.slice(0, a);
+        const b = [...before.matchAll(new RegExp(`\\b${t}\\b`, "g"))].pop();
+        if (b?.index !== undefined) before = before.slice(b.index + t.length);
+      }
+      const window = before + m[0] + after;
+      if (wanted.every(([, inSource]) => inSource.test(window))) return true;
+    }
+  }
+  return false;
+}
+
+const PERSON_PRONOUN = /\b(he|she|his|her|him|they|their|them)\b/i;
+
+export function supportedBio(bio: string, sourceTexts: string[], personName: string, otherPeople: string[] = []): string | null {
   const text = sourceTexts.join(" \n ");
   const hay = text.toLowerCase();
   const stems = new Set((text.match(/[\p{L}\p{N}]{4,}/gu) ?? []).map(stem));
   const own = new Set(personName.toLowerCase().split(/\s+/));
+  const nameParts = personName.toLowerCase().split(/\s+/).filter((w) => w.length > 1);
   const kept = bio.split(/(?<=[.!?])\s+/).filter((sentence) => {
+    // About the person (field review run 2: "Databand was acquired by IBM in July 2022.").
+    const lower = sentence.toLowerCase();
+    if (!nameParts.some((w) => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(lower)) && !PERSON_PRONOUN.test(sentence)) return false;
+    // Its roles beside the person's name in a source.
+    if (!roleSupported(personName, sentence, sourceTexts, otherPeople)) return false;
     const words: string[] = [...(sentence.match(/[\p{L}\p{N}][\p{L}\p{N}'&.-]*/gu) ?? [])];
     const numbers = words.filter((w) => /^\d{2,}/.test(w));
     if (numbers.some((n) => !hay.includes(n.replace(/[.,]$/, "")))) return false;

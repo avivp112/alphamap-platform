@@ -390,7 +390,7 @@ export function roundSourceStandings(round: V2Round, sources: LabeledSource[]): 
   const urls = cited.length ? [...new Set(cited.map((s) => s.url))] : round.source_url ? [round.source_url] : [];
   return urls.map((url) => ({
     url,
-    ...roundSourceStanding(url, { isCompanySite: byUrl.get(url)?.source_type === "company_site" || cited.find((s) => s.url === url)?.source_type === "company_site", leadInvestor: round.lead_investor?.value }),
+    ...roundSourceStanding(url, { isCompanySite: byUrl.get(url)?.source_type === "company_site" || cited.find((s) => s.url === url)?.source_type === "company_site", leadInvestor: round.lead_investor?.value, content: byUrl.get(url)?.content }),
   }));
 }
 

@@ -86,10 +86,10 @@ const nearAmount = (sentence: string, amount: number) => extractNumbersFromText(
  * investor's, an official wire, a register, or the listed press. Never a data
  * platform, a directory, a social post, Wikipedia or an unlisted site.
  */
-export function canConfirm(s: Pick<LabeledSource, "url" | "source_type">, leadInvestor?: string | null): boolean {
+export function canConfirm(s: Pick<LabeledSource, "url" | "source_type"> & { content?: string }, leadInvestor?: string | null): boolean {
   if (isListingSiteUrl(s.url)) return false;
   const t = s.source_type ?? classifySourceType(s.url);
-  return roundSourceStanding(s.url, { isCompanySite: t === "company_site", leadInvestor }).kind === "allowed";
+  return roundSourceStanding(s.url, { isCompanySite: t === "company_site", leadInvestor, content: s.content }).kind === "allowed";
 }
 
 /**

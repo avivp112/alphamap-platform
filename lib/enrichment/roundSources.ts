@@ -63,6 +63,8 @@ export const TIER3_DOMAINS = [
   "afr.com", "smartcompany.com.au", "startupdaily.net", "betakit.com", "theglobeandmail.com",
   // United States, regional
   "geekwire.com", // owner, 2026-11-03
+  // Technology, its regional editions too (au.pcmag.com…) — owner, 2026-11-03
+  "pcmag.com",
 ];
 
 export const TIER4_DOMAINS = [
@@ -80,6 +82,7 @@ export const TIER4_DOMAINS = [
   "freightwaves.com",
   // Owner, 2026-11-03 (field review run 2)
   "gamesbeat.com", "techtarget.com", "siliconangle.com", "bankinfosecurity.com", "biospace.com",
+  "nosh.com", "gameworldobserver.com", "channele2e.com", "pymnts.com", "venturecapitaljournal.com",
 ];
 
 /** Lower confidence even though allowed. */
@@ -96,7 +99,50 @@ export const DENIED_DOMAINS = [
   "threads.net", "reddit.com", "medium.com", "substack.com", "quora.com", "pinterest.com",
   // Content / sponsored-PR sites
   "everything-pr.com", "openpr.com", "prlog.org", "issuewire.com",
+  // Blogs and newsletters (owner, 2026-11-03 — field review run 2)
+  "reboot-hub.com", "neatnettricks.com", "stacksync.com", "revenuememo.com",
 ];
+
+/**
+ * A hint only, never a source (owner, 2026-11-03): what these state is searched for in an
+ * allowed source — a round through hints.ts, a news item through its headline.
+ */
+export const HINT_ONLY_DOMAINS = ["finsmes.com", "techfundingnews.com", "thesaasnews.com", "refreshmiami.com"];
+
+/**
+ * Sites that republish others' articles (owner, 2026-11-03): allowed only when the article
+ * is a republication of an allowed source that the article itself names — the wire's
+ * dateline ("/PRNewswire/", "(BUSINESS WIRE)"), "(Reuters) -", or "Originally published on
+ * TechCrunch" / "Read the original article on Business Insider". The original's standing is
+ * the republication's.
+ */
+export const SYNDICATION_HOSTS = ["finance.yahoo.com"];
+const ORIGINAL_MARKS: Array<[RegExp, string]> = [
+  [/\/\s*PRNewswire\s*\/|\bPR Newswire\b/i, "prnewswire.com"],
+  [/\(\s*BUSINESS WIRE\s*\)|\bBusiness Wire\b/, "businesswire.com"],
+  [/\(?\s*GLOBE NEWSWIRE\s*\)?|\bGlobeNewswire\b/, "globenewswire.com"],
+  [/\bACCESSWIRE\b|\bAccesswire\b/, "accesswire.com"],
+  [/\/\s*EINPresswire\.com\s*\/|\bEIN Presswire\b/i, "einpresswire.com"],
+  [/\(Reuters\)\s*[-–—]/, "reuters.com"],
+];
+const OUTLET_NAMES: Record<string, string> = {
+  "techcrunch": "techcrunch.com", "business insider": "businessinsider.com", "insider": "businessinsider.com", "fortune": "fortune.com",
+  "forbes": "forbes.com", "cnbc": "cnbc.com", "reuters": "reuters.com", "bloomberg": "bloomberg.com", "axios": "axios.com",
+  "the verge": "theverge.com", "fast company": "fastcompany.com", "inc.": "inc.com", "inc": "inc.com", "venturebeat": "venturebeat.com",
+  "wired": "wired.com", "the wall street journal": "wsj.com", "financial times": "ft.com", "pymnts": "pymnts.com", "pymnts.com": "pymnts.com",
+  "geekwire": "geekwire.com", "siliconangle": "siliconangle.com", "fierce healthcare": "fiercehealthcare.com", "fierce biotech": "fiercebiotech.com",
+};
+const ORIGINAL_ON = /(?:originally (?:published|appeared|posted) (?:on|in|at|by)|read the original article on|this article first appeared (?:on|in))\s+\[?(?:the\s+)?([A-Za-z][\w .&'-]{1,40}?)\]?(?=\s*(?:\(|\.|,|\n|$))/im;
+
+/** The allowed outlet a republished article names as its original, or null. */
+export function syndicatedFrom(content: string | null | undefined): string | null {
+  if (!content) return null;
+  const head = content.slice(0, 4000);
+  for (const [re, d] of ORIGINAL_MARKS) if (re.test(head)) return d;
+  const m = content.match(ORIGINAL_ON);
+  const name = m?.[1]?.trim().toLowerCase().replace(/^the\s+/, "");
+  return name ? OUTLET_NAMES[name] ?? OUTLET_NAMES[`the ${name}`] ?? null : null;
+}
 
 export function hostOf(url: string): string | null {
   try { return new URL(url.startsWith("http") ? url : `https://${url}`).hostname.toLowerCase().replace(/^www\./, ""); } catch { return null; }
@@ -147,12 +193,18 @@ export function isDirectoryPage(url: string): boolean {
   try { return NOT_ARTICLE_PATH.test(new URL(url.startsWith("http") ? url : `https://${url}`).pathname); } catch { return false; }
 }
 
-export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean; leadInvestor?: string | null; investors?: Array<string | null | undefined> } = {}): SourceStanding {
+export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean; leadInvestor?: string | null; investors?: Array<string | null | undefined>; content?: string | null } = {}): SourceStanding {
   const host = hostOf(url);
   if (!host) return { kind: "denied", why: "no_host" };
   if (opts.isCompanySite) return { kind: "allowed", tier: 1, lowConfidence: false, why: "company_site" };
   if (isDataPlatformUrl(url)) return { kind: "denied", why: "data_platform" };
   if (onList(host, DENIED_DOMAINS)) return { kind: "denied", why: "denied_domain" };
+  if (onList(host, HINT_ONLY_DOMAINS)) return { kind: "denied", why: "hint_only" };
+  if (onList(host, SYNDICATION_HOSTS)) {
+    const original = syndicatedFrom(opts.content);
+    const standing = original ? roundSourceStanding(`https://${original}/`) : null;
+    return standing?.kind === "allowed" ? { ...standing, why: `republished_from:${original}` } : { kind: "denied", why: "republished_without_allowed_original" };
+  }
   if (onList(host, TIER1_DOMAINS) || isRegionalWireHost(host)) return { kind: "allowed", tier: 1, lowConfidence: onList(host, LOW_CONFIDENCE_DOMAINS), why: "wire_or_register" };
   // A directory page of an allowed outlet is refused; of an unlisted one it stays unlisted (domain review).
   if (isDirectoryPage(url) && (onList(host, TIER2_DOMAINS) || onList(host, TIER3_DOMAINS) || onList(host, TIER4_DOMAINS) ||
@@ -173,11 +225,11 @@ export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean
  * 2026-11-02 took KETS's founding year from Tracxn, Soda's founding country
  * from SourceForge and Mentat's year from a Tracxn list of mood-tracker apps.
  */
-export function profileSourceAllowed(s: { url: string; source_type?: string | null }): boolean {
+export function profileSourceAllowed(s: { url: string; source_type?: string | null; content?: string | null }): boolean {
   if (s.source_type === "company_site" || s.source_type === "registry") return true;
   if (isDirectoryPage(s.url)) return false;
   if (s.source_type === "press_release") return true;
-  const standing = roundSourceStanding(s.url);
+  const standing = roundSourceStanding(s.url, { content: s.content });
   return standing.kind === "allowed" && standing.tier <= 3;
 }
 
