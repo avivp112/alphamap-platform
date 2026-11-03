@@ -48,11 +48,11 @@ const CITY_RE = new RegExp(`(^|[^\\p{L}])(${CITY_NAMES.map(esc).join("|")})(?=$|
 const title = (s: string) => s.replace(/\b\p{L}/gu, (c) => c.toUpperCase());
 
 /** Who speaks: the company itself, the allowed press, or neither (never read). */
-export function statementKind(s: Pick<LabeledSource, "url" | "source_type"> & { content?: string }): "company" | "press" | null {
+export function statementKind(s: Pick<LabeledSource, "url" | "source_type"> & { content?: string; title?: string }): "company" | "press" | null {
   if (s.source_type === "company_site") return "company";
   if (isDirectoryPage(s.url)) return null;
   if (s.source_type === "press_release") return "company";
-  const standing = roundSourceStanding(s.url, { content: s.content });
+  const standing = roundSourceStanding(s.url, { content: s.content, headline: s.title });
   return standing.kind === "allowed" && standing.tier <= 3 ? "press" : null;
 }
 

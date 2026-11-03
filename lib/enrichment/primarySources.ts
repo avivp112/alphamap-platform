@@ -13,7 +13,7 @@
  */
 
 /** Official press-release wires. */
-export const PRESS_WIRE_DOMAINS = ["prnewswire.com", "businesswire.com", "globenewswire.com", "accesswire.com", "einpresswire.com", "newswire.com", "pr.com"];
+export const PRESS_WIRE_DOMAINS = ["prnewswire.com", "businesswire.com", "globenewswire.com", "accesswire.com", "einpresswire.com", "newswire.com", "pr.com", "businesswireindia.com", "prweb.com"];
 
 /**
  * Social networks, video sites, blogging platforms and PR-content sites:

@@ -32,7 +32,7 @@ export type SourceTier = 1 | 2 | 3 | 4;
 /** Wires and registers (tier 1 beside the company's and the investor's own sites). */
 export const TIER1_DOMAINS = [
   // Official press wires
-  "prnewswire.com", "businesswire.com", "globenewswire.com", "accesswire.com", "einpresswire.com", "newswire.com", "pr.com",
+  "prnewswire.com", "businesswire.com", "globenewswire.com", "accesswire.com", "einpresswire.com", "newswire.com", "pr.com", "businesswireindia.com", "prweb.com",
   // Registers and filings
   "sec.gov", "find-and-update.company-information.service.gov.uk", "companieshouse.gov.uk", "data.gov.il",
   "maya.tase.co.il", "handelsregister.de", "unternehmensregister.de", "infogreffe.fr", "mca.gov.in",
@@ -65,6 +65,8 @@ export const TIER3_DOMAINS = [
   "geekwire.com", // owner, 2026-11-03
   // Technology, its regional editions too (au.pcmag.com…) — owner, 2026-11-03
   "pcmag.com",
+  // Owner, 2026-11-03 (rejected-domains table, runs 1–2)
+  "seenews.com", "aninews.in", "thehansindia.com", "dbusiness.com", "prolificnorth.co.uk",
 ];
 
 export const TIER4_DOMAINS = [
@@ -83,12 +85,14 @@ export const TIER4_DOMAINS = [
   // Owner, 2026-11-03 (field review run 2)
   "gamesbeat.com", "techtarget.com", "siliconangle.com", "bankinfosecurity.com", "biospace.com",
   "nosh.com", "gameworldobserver.com", "channele2e.com", "pymnts.com", "venturecapitaljournal.com",
+  "financemagnates.com", "fxnewsgroup.com", "defensedaily.com", "electronicsweekly.com", "paymentsdive.com", "industrialcyber.co",
+  "roboticsandautomationnews.com", "globalaginvesting.com", "decrypt.co",
 ];
 
 /** Lower confidence even though allowed. */
 // The company publishes on these wires itself — allowed, below its own site (owner, 2026-11-02:
 // newswire.com, EIN Presswire, Accesswire; 2026-11-03: pr.com).
-export const LOW_CONFIDENCE_DOMAINS = ["einpresswire.com", "accesswire.com", "newswire.com", "pr.com"];
+export const LOW_CONFIDENCE_DOMAINS = ["einpresswire.com", "accesswire.com", "newswire.com", "pr.com", "businesswireindia.com", "prweb.com"];
 
 /** Never a source for a round, beside every data platform (dataPlatforms.ts). */
 export const DENIED_DOMAINS = [
@@ -103,13 +107,20 @@ export const DENIED_DOMAINS = [
   "google.com",
   // Blogs and newsletters (owner, 2026-11-03 — field review run 2)
   "reboot-hub.com", "neatnettricks.com", "stacksync.com", "revenuememo.com",
+  "asiatechdaily.com", "aithority.com", "technews180.com", "automationtoday.net", "theindustryspread.com", "ajuniorvc.com",
+  "clinchbase.com", "aibase.com", "simplywall.st", "beehiiv.com",
+  // Company databases, directories, job boards (owner, 2026-11-03)
+  "highperformr.ai", "siliconvalleyinvestclub.com", "startupintros.com", "shortlistjobs.com", "thecompanycheck.com", "getlatka.com",
+  "rootdata.com", "traderknows.com", "chemxplore.com", "qubevents.com", "multiples.vc", "altss.com", "gritt.io", "inven.ai",
+  "gamecompanies.com", "builtinnyc.com", "startupblink.com",
 ];
 
 /**
  * A hint only, never a source (owner, 2026-11-03): what these state is searched for in an
  * allowed source — a round through hints.ts, a news item through its headline.
  */
-export const HINT_ONLY_DOMAINS = ["finsmes.com", "techfundingnews.com", "thesaasnews.com", "refreshmiami.com"];
+export const HINT_ONLY_DOMAINS = ["finsmes.com", "techfundingnews.com", "thesaasnews.com", "refreshmiami.com",
+  "defenseandmunitions.com", "tectonicdefense.com", "enlit.world", "cyprusshippingnews.com", "uktechnews.info"];
 
 /**
  * Sites that republish others' articles (owner, 2026-11-03): allowed only when the article
@@ -118,7 +129,7 @@ export const HINT_ONLY_DOMAINS = ["finsmes.com", "techfundingnews.com", "thesaas
  * TechCrunch" / "Read the original article on Business Insider". The original's standing is
  * the republication's.
  */
-export const SYNDICATION_HOSTS = ["finance.yahoo.com"];
+export const SYNDICATION_HOSTS = ["finance.yahoo.com", "tradingview.com", "financialcontent.com"];
 const ORIGINAL_MARKS: Array<[RegExp, string]> = [
   [/\/\s*PRNewswire\s*\/|\bPR Newswire\b/i, "prnewswire.com"],
   [/\(\s*BUSINESS WIRE\s*\)|\bBusiness Wire\b/, "businesswire.com"],
@@ -208,7 +219,27 @@ export function isDirectoryPage(url: string): boolean {
   try { return NOT_ARTICLE_PATH.test(new URL(url.startsWith("http") ? url : `https://${url}`).pathname); } catch { return false; }
 }
 
-export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean; leadInvestor?: string | null; investors?: Array<string | null | undefined>; content?: string | null } = {}): SourceStanding {
+/**
+ * A party to the event — the acquirer, a partner, an authority — announcing it on its own
+ * official site (owner, 2026-11-03: Akamai on LayerX, Honeywell on SCADAfence, EDAP on
+ * Avenda, esd.ny.gov on Kraken). The page is a release (a news / press / investor path or
+ * host), and the site's name is a word of its headline, or the site is a government's.
+ */
+const RELEASE_PATH = /\/(news|newsroom|press|press-releases?|news-releases?|media|media-center|esd-media-center|releases?)(\/|-|$)/i;
+export function isPartyRelease(url: string, headline: string | null | undefined): boolean {
+  const host = hostOf(url);
+  if (!host) return false;
+  let path = "";
+  try { path = new URL(url.startsWith("http") ? url : `https://${url}`).pathname; } catch { return false; }
+  const releaseHost = /^(investors?|ir|news|press|media|newsroom)\./.test(host);
+  if (!RELEASE_PATH.test(path) && !releaseHost) return false;
+  if (/\.gov(\.[a-z]{2})?$|\.gov\.[a-z]{2}$|\.gc\.ca$|\.europa\.eu$/.test(host)) return true;
+  const label = (reviewDomain(url) ?? host).split(".")[0];
+  const words = new Set((headline ?? "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3));
+  return label.split("-").some((part, i) => (i === 0 || part.length >= 4) && part.length >= 3 && words.has(part));
+}
+
+export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean; leadInvestor?: string | null; investors?: Array<string | null | undefined>; content?: string | null; headline?: string | null } = {}): SourceStanding {
   const host = hostOf(url);
   if (!host) return { kind: "denied", why: "no_host" };
   if (opts.isCompanySite) return { kind: "allowed", tier: 1, lowConfidence: false, why: "company_site" };
@@ -230,6 +261,8 @@ export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean
   if (onList(host, TIER2_DOMAINS)) return { kind: "allowed", tier: 2, lowConfidence: false, why: "tier2_press" };
   if (onList(host, TIER3_DOMAINS)) return { kind: "allowed", tier: 3, lowConfidence: false, why: "tier3_press" };
   if (onList(host, TIER4_DOMAINS)) return { kind: "allowed", tier: 4, lowConfidence: true, why: "tier4_press" };
+  // Tier 1 for the event itself; the profile's fields take it as tier 2 (profileSourceAllowed).
+  if (isPartyRelease(url, opts.headline)) return { kind: "allowed", tier: 1, lowConfidence: false, why: "party_release" };
   return { kind: "unlisted", domain: reviewDomain(url) ?? host };
 }
 
@@ -240,12 +273,14 @@ export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean
  * 2026-11-02 took KETS's founding year from Tracxn, Soda's founding country
  * from SourceForge and Mentat's year from a Tracxn list of mood-tracker apps.
  */
-export function profileSourceAllowed(s: { url: string; source_type?: string | null; content?: string | null }): boolean {
+export function profileSourceAllowed(s: { url: string; source_type?: string | null; content?: string | null; title?: string | null }): boolean {
   if (s.source_type === "company_site" || s.source_type === "registry") return true;
   if (isDirectoryPage(s.url)) return false;
   if (s.source_type === "press_release") return true;
-  const standing = roundSourceStanding(s.url, { content: s.content });
-  return standing.kind === "allowed" && standing.tier <= 3;
+  const standing = roundSourceStanding(s.url, { content: s.content, headline: s.title });
+  // A party's release counts as tier 2 for the profile (owner, 2026-11-03): still within 1–3.
+  const tier = standing.kind === "allowed" && standing.why === "party_release" ? 2 : standing.kind === "allowed" ? standing.tier : 99;
+  return tier <= 3;
 }
 
 /** Provenance confidence for a round value: lowered for EIN Presswire / tier 4 alone. */

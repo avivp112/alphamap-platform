@@ -83,3 +83,35 @@ describe("a Google redirect (field review run 1, Avenda)", () => {
     expect(roundSourceStanding(token).kind).toBe("denied");
   });
 });
+
+import { isPartyRelease } from "./roundSources";
+describe("domain decisions, groups a–f (owner, 2026-11-03 — runs 1–2)", () => {
+  it("a. a party to the deal on its own official site: tier 1 for the event, allowed for the profile", () => {
+    const akamai = "https://www.akamai.com/newsroom/press-release/akamai-completes-acquisition-of-secure-enterprise-browser-provider-layerx";
+    expect(roundSourceStanding(akamai, { headline: "Akamai Completes Acquisition of Secure Enterprise Browser Provider LayerX" })).toMatchObject({ kind: "allowed", tier: 1, why: "party_release" });
+    expect(isPartyRelease("https://www.honeywell.com/us/en/news/press-releases/2023/07/honeywell-to-acquire-scadafence", "Honeywell To Acquire Scadafence")).toBe(true);
+    expect(isPartyRelease("https://investor.edap-tms.com/news-releases/news-release-details/x", "EDAP and Avenda Health Launch World's First AI-Assisted Focal")).toBe(true);
+    expect(isPartyRelease("https://esd.ny.gov/esd-media-center/press-releases/empire-state-development-announces-kraken", "Empire State Development Announces Energy Software Platform Kraken")).toBe(true);
+    expect(profileSourceAllowed({ url: akamai, source_type: "news", title: "Akamai Completes Acquisition of LayerX" })).toBe(true);
+    // Not a release, or the site is not named in the headline: still unlisted.
+    expect(isPartyRelease("https://www.akamai.com/products/x", "Akamai buys LayerX")).toBe(false);
+    expect(isPartyRelease("https://somebrand.com/news/x", "Akamai Completes Acquisition of LayerX")).toBe(false);
+  });
+  it("b. wires at low confidence; republishers only with an allowed original", () => {
+    expect(roundSourceStanding("https://www.businesswireindia.com/unacademy-conducts-aarambh-2024-89552.html")).toMatchObject({ kind: "allowed", tier: 1, lowConfidence: true });
+    expect(roundSourceStanding("https://www.prweb.com/releases/x-302016311.html")).toMatchObject({ kind: "allowed", tier: 1, lowConfidence: true });
+    expect(roundSourceStanding("https://www.tradingview.com/news/financewire:d7752dcc1094b:0-leverate/").kind).toBe("denied");
+    expect(roundSourceStanding("https://www.tradingview.com/news/x/", { content: "TEL AVIV, Israel, Oct. 1, 2026 /PRNewswire/ -- Leverate…" })).toMatchObject({ kind: "allowed", tier: 1 });
+    expect(roundSourceStanding("https://markets.financialcontent.com/startribune/article/zexprwire-2026-1-2-x").kind).toBe("denied");
+  });
+  it("c–f. tiers, hints and denials", () => {
+    for (const u of ["https://www.financemagnates.com/x", "https://fxnewsgroup.com/x", "https://www.defensedaily.com/x", "https://www.electronicsweekly.com/x", "https://www.paymentsdive.com/news/x", "https://industrialcyber.co/x", "https://roboticsandautomationnews.com/x", "https://globalaginvesting.com/x", "https://decrypt.co/242366/x"])
+      expect(roundSourceStanding(u)).toMatchObject({ kind: "allowed", tier: 4 });
+    for (const u of ["https://seenews.com/news/x", "https://www.aninews.in/news/x", "https://www.thehansindia.com/x", "https://www.dbusiness.com/x", "https://www.prolificnorth.co.uk/news/x"])
+      expect(roundSourceStanding(u)).toMatchObject({ kind: "allowed", tier: 3 });
+    for (const u of ["https://www.defenseandmunitions.com/news/x", "https://www.tectonicdefense.com/x", "https://www.enlit.world/x", "https://cyprusshippingnews.com/x", "https://www.uktechnews.info/2021/11/08/x"])
+      expect(roundSourceStanding(u)).toEqual({ kind: "denied", why: "hint_only" });
+    for (const u of ["https://asiatechdaily.com/x", "https://simplywall.st/x", "https://rss.beehiiv.com/podcasts/x.xml", "https://www.highperformr.ai/company/cognology", "https://startupintros.com/orgs/dscvr", "https://shortlistjobs.com/companies/x"])
+      expect(roundSourceStanding(u).kind).toBe("denied");
+  });
+});

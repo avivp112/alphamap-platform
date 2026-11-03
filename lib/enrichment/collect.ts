@@ -1117,22 +1117,23 @@ export async function collectCompany(
     // The company's investors, found now or on file: their own sites are allowed.
     const knownInvestors = [...roundInvestors, ...existingRounds.flatMap((r) => [r.lead_investor, ...(r.investors ?? [])])];
     // News: an article of an allowed outlet (tiers 1–4) or the company's own site.
-    const newsStanding = (url: string, content?: string) => roundSourceStanding(url, {
+    const newsStanding = (url: string, content?: string, headline?: string) => roundSourceStanding(url, {
       isCompanySite: classifySourceType(url, domain) === "company_site" || sourceByUrl(url)?.source_type === "company_site",
       investors: knownInvestors,
       content: content ?? sourceByUrl(url)?.content,
+      headline: headline ?? sourceByUrl(url)?.title,
     });
     const keptNews: typeof market.news = [];
     let hintSearches = 0;
     for (const raw of market.news) {
       const n = { ...raw, url: unwrapRedirect(raw.url) };
-      const standing = newsStanding(n.url);
+      const standing = newsStanding(n.url, undefined, n.title);
       if (standing.kind === "allowed") { keptNews.push(n); continue; }
       // A hint-only site (owner, 2026-11-03): its headline is searched for in an allowed source.
       if (standing.kind === "denied" && standing.why === "hint_only" && hintSearches < 2 && !ctx.update) {
         hintSearches++;
         const found = (await webSearch(`"${n.title.slice(0, 90)}"`, "news_hint", searchState))
-          .find((r) => r.url !== n.url && sameHeadline(r.title ?? "", n.title) && newsStanding(r.url, r.content).kind === "allowed");
+          .find((r) => r.url !== n.url && sameHeadline(r.title ?? "", n.title) && newsStanding(r.url, r.content, r.title).kind === "allowed");
         if (found) {
           console.log(`    ✅  news "${n.title.slice(0, 60)}" — a hint from ${hostOfUrl(n.url)}, confirmed by ${found.url}`);
           keptNews.push({ ...n, url: found.url });

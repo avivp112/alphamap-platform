@@ -10,7 +10,8 @@ describe("a round is written only from an allowed source (owner, 2026-11-01: the
       expect(roundSourceStanding(u).kind).toBe("denied");
     }
     expect(roundSourceStanding("https://turboanglerstack3.lol/2026/10/29/hailo-ai-funding")).toEqual({ kind: "unlisted", domain: "turboanglerstack3.lol" });
-    expect(roundSourceStanding("https://siliconvalleyinvestclub.com/companies/mercury/")).toEqual({ kind: "unlisted", domain: "siliconvalleyinvestclub.com" });
+    // Owner, 2026-11-03: siliconvalleyinvestclub.com is now denied explicitly (a company database).
+    expect(roundSourceStanding("https://siliconvalleyinvestclub.com/companies/mercury/")).toMatchObject({ kind: "denied" });
   });
   it("tiers, subdomains included; EIN Presswire and tier 4 count with lower confidence", () => {
     expect(roundSourceStanding("https://www.globenewswire.com/news-release/2026/06/03/x.html")).toMatchObject({ kind: "allowed", tier: 1, lowConfidence: false });
@@ -40,7 +41,7 @@ describe("a round is written only from an allowed source (owner, 2026-11-01: the
   });
   it("a round only unlisted sources state is not written — kept as a hint", () => {
     const sources = buildLabeledSources([
-      { url: "https://siliconvalleyinvestclub.com/companies/mercury/", title: "Mercury", content: "Mercury raised $100 million led by Natixis.", provider: "serper", query_label: "funding" },
+      { url: "https://devops.com/mercury-raises-100m", title: "Mercury", content: "Mercury raised $100 million led by Natixis.", provider: "serper", query_label: "funding" },
       { url: "https://www.cnbc.com/2026/05/20/mercury.html", title: "Mercury raises $200M", content: "Mercury raised $200 million in a Series D.", provider: "serper", query_label: "funding" },
     ]);
     expect(rejectRound({ round_type: "Other", amount_raised: { value: 100_000_000, source_id: "S1", evidence_quote: "Mercury raised $100 million" } }, "Mercury", sources)).toBe("round_source_not_listed");
