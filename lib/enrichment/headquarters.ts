@@ -18,7 +18,7 @@
 
 import { MAJOR_CITIES } from "./majorCities";
 import { isRegionalOfficeQuote } from "./validation";
-import { roundSourceStanding } from "./roundSources";
+import { isDirectoryPage, roundSourceStanding } from "./roundSources";
 import { parseFullDate } from "./evidence";
 import { namesCompany } from "./headcount";
 import type { LabeledSource } from "./sources";
@@ -49,7 +49,9 @@ const title = (s: string) => s.replace(/\b\p{L}/gu, (c) => c.toUpperCase());
 
 /** Who speaks: the company itself, the allowed press, or neither (never read). */
 export function statementKind(s: Pick<LabeledSource, "url" | "source_type">): "company" | "press" | null {
-  if (s.source_type === "company_site" || s.source_type === "press_release") return "company";
+  if (s.source_type === "company_site") return "company";
+  if (isDirectoryPage(s.url)) return null;
+  if (s.source_type === "press_release") return "company";
   const standing = roundSourceStanding(s.url);
   return standing.kind === "allowed" && standing.tier <= 3 ? "press" : null;
 }

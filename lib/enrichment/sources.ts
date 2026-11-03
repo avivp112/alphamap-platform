@@ -154,3 +154,35 @@ export function mergeDuplicateResults(results: RawSearchResult[]): { results: Ra
   }
   return { results: out, merged };
 }
+
+/**
+ * Hosts where site builders keep a company's files (Webflow, Squarespace, Wix, HubSpot…).
+ * Shared by many companies, so a file there is the company's only when its own site links to it.
+ */
+const SITE_FILE_HOSTS = /(^|\.)(website-files\.com|squarespace-cdn\.com|wixstatic\.com|hubspotusercontent[\w-]*\.net|hubfs\.net|ctfassets\.net|framerusercontent\.com|cloudfront\.net|amazonaws\.com|filesusr\.com|sanity\.io)$/i;
+
+/**
+ * A file the company's own site links to, kept on its site builder's CDN, is part of the
+ * company's site (owner, 2026-11-03 — field review run 2: Nomad's ADV brochure on
+ * cdn.prod.website-files.com). Sources are marked in place; returns how many.
+ */
+export function markCompanyLinkedFiles(sources: LabeledSource[], sitePages: Array<{ content: string }>): number {
+  const siteText = sitePages.map((p) => p.content).join("\n");
+  if (!siteText) return 0;
+  let n = 0;
+  for (const s of sources) {
+    if (s.source_type === "company_site") continue;
+    const host = hostnameOf(s.url);
+    if (!host || !SITE_FILE_HOSTS.test(host)) continue;
+    const bare = s.url.replace(/[?#].*$/, "");
+    const variants = [bare, encodeURI(decodeURISafe(bare)), decodeURISafe(bare)];
+    if (!variants.some((v) => v && siteText.includes(v))) continue;
+    s.source_type = "company_site";
+    n++;
+  }
+  return n;
+}
+
+function decodeURISafe(u: string): string {
+  try { return decodeURI(u); } catch { return u; }
+}

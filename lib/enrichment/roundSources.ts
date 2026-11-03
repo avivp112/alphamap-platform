@@ -25,13 +25,14 @@
  */
 
 import { isDataPlatformUrl } from "./dataPlatforms";
+import { isRegionalWireHost } from "./primarySources";
 
 export type SourceTier = 1 | 2 | 3 | 4;
 
 /** Wires and registers (tier 1 beside the company's and the investor's own sites). */
 export const TIER1_DOMAINS = [
   // Official press wires
-  "prnewswire.com", "businesswire.com", "globenewswire.com", "accesswire.com", "einpresswire.com", "newswire.com",
+  "prnewswire.com", "businesswire.com", "globenewswire.com", "accesswire.com", "einpresswire.com", "newswire.com", "pr.com",
   // Registers and filings
   "sec.gov", "find-and-update.company-information.service.gov.uk", "companieshouse.gov.uk", "data.gov.il",
   "maya.tase.co.il", "handelsregister.de", "unternehmensregister.de", "infogreffe.fr", "mca.gov.in",
@@ -40,6 +41,7 @@ export const TIER1_DOMAINS = [
 export const TIER2_DOMAINS = [
   "reuters.com", "bloomberg.com", "ft.com", "wsj.com", "cnbc.com", "forbes.com", "fortune.com", "businessinsider.com",
   "axios.com", "theinformation.com", "techcrunch.com", "venturebeat.com", "wired.com", "theverge.com", "fastcompany.com", "inc.com",
+  "telegraph.co.uk", // owner, 2026-11-03
 ];
 
 export const TIER3_DOMAINS = [
@@ -59,6 +61,8 @@ export const TIER3_DOMAINS = [
   "wamda.com", "zawya.com", "techcabal.com", "disrupt-africa.com",
   // Australia and Canada
   "afr.com", "smartcompany.com.au", "startupdaily.net", "betakit.com", "theglobeandmail.com",
+  // United States, regional
+  "geekwire.com", // owner, 2026-11-03
 ];
 
 export const TIER4_DOMAINS = [
@@ -74,12 +78,14 @@ export const TIER4_DOMAINS = [
   "defensenews.com", "breakingdefense.com", "spacenews.com",
   // Logistics
   "freightwaves.com",
+  // Owner, 2026-11-03 (field review run 2)
+  "gamesbeat.com", "techtarget.com", "siliconangle.com", "bankinfosecurity.com", "biospace.com",
 ];
 
 /** Lower confidence even though allowed. */
 // The company publishes on these wires itself — allowed, below its own site (owner, 2026-11-02:
-// newswire.com, EIN Presswire, Accesswire).
-export const LOW_CONFIDENCE_DOMAINS = ["einpresswire.com", "accesswire.com", "newswire.com"];
+// newswire.com, EIN Presswire, Accesswire; 2026-11-03: pr.com).
+export const LOW_CONFIDENCE_DOMAINS = ["einpresswire.com", "accesswire.com", "newswire.com", "pr.com"];
 
 /** Never a source for a round, beside every data platform (dataPlatforms.ts). */
 export const DENIED_DOMAINS = [
@@ -89,7 +95,7 @@ export const DENIED_DOMAINS = [
   "linkedin.com", "facebook.com", "fb.com", "instagram.com", "x.com", "twitter.com", "youtube.com", "youtu.be", "tiktok.com",
   "threads.net", "reddit.com", "medium.com", "substack.com", "quora.com", "pinterest.com",
   // Content / sponsored-PR sites
-  "everything-pr.com", "openpr.com", "prlog.org", "issuewire.com", "pr.com",
+  "everything-pr.com", "openpr.com", "prlog.org", "issuewire.com",
 ];
 
 export function hostOf(url: string): string | null {
@@ -132,14 +138,28 @@ export type SourceStanding =
  * Where a round's source stands. `isCompanySite` comes from sources.ts (the
  * company's verified domain); `leadInvestor` lets the investor's own site count.
  */
-export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean; leadInvestor?: string | null } = {}): SourceStanding {
+/**
+ * A directory or profile page, not an article (field review run 2: Docplanner's HQ came from
+ * eu-startups.com/directory/docplanner) — never a source, even on an allowed outlet.
+ */
+const NOT_ARTICLE_PATH = /\/(?:directory|directories|company-directory|startup-directory|company-profile|profiles?|rankings?)(?:\/|$)|\/(?:companies|company|startups?|organi[sz]ations?)\/[^/]+\/?$/i;
+export function isDirectoryPage(url: string): boolean {
+  try { return NOT_ARTICLE_PATH.test(new URL(url.startsWith("http") ? url : `https://${url}`).pathname); } catch { return false; }
+}
+
+export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean; leadInvestor?: string | null; investors?: Array<string | null | undefined> } = {}): SourceStanding {
   const host = hostOf(url);
   if (!host) return { kind: "denied", why: "no_host" };
   if (opts.isCompanySite) return { kind: "allowed", tier: 1, lowConfidence: false, why: "company_site" };
   if (isDataPlatformUrl(url)) return { kind: "denied", why: "data_platform" };
   if (onList(host, DENIED_DOMAINS)) return { kind: "denied", why: "denied_domain" };
-  if (onList(host, TIER1_DOMAINS)) return { kind: "allowed", tier: 1, lowConfidence: onList(host, LOW_CONFIDENCE_DOMAINS), why: "wire_or_register" };
-  if (isInvestorSite(url, opts.leadInvestor)) return { kind: "allowed", tier: 1, lowConfidence: false, why: "investor_site" };
+  if (onList(host, TIER1_DOMAINS) || isRegionalWireHost(host)) return { kind: "allowed", tier: 1, lowConfidence: onList(host, LOW_CONFIDENCE_DOMAINS), why: "wire_or_register" };
+  // A directory page of an allowed outlet is refused; of an unlisted one it stays unlisted (domain review).
+  if (isDirectoryPage(url) && (onList(host, TIER2_DOMAINS) || onList(host, TIER3_DOMAINS) || onList(host, TIER4_DOMAINS) ||
+    [opts.leadInvestor, ...(opts.investors ?? [])].some((inv) => isInvestorSite(url, inv)))) return { kind: "denied", why: "directory_page" };
+  // The site of the round's lead or of any investor of the company (owner: investors' sites
+  // are allowed — field review run 2: Blumberg Capital on Databand's acquisition).
+  if ([opts.leadInvestor, ...(opts.investors ?? [])].some((inv) => isInvestorSite(url, inv))) return { kind: "allowed", tier: 1, lowConfidence: false, why: "investor_site" };
   if (onList(host, TIER2_DOMAINS)) return { kind: "allowed", tier: 2, lowConfidence: false, why: "tier2_press" };
   if (onList(host, TIER3_DOMAINS)) return { kind: "allowed", tier: 3, lowConfidence: false, why: "tier3_press" };
   if (onList(host, TIER4_DOMAINS)) return { kind: "allowed", tier: 4, lowConfidence: true, why: "tier4_press" };
@@ -154,7 +174,9 @@ export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean
  * from SourceForge and Mentat's year from a Tracxn list of mood-tracker apps.
  */
 export function profileSourceAllowed(s: { url: string; source_type?: string | null }): boolean {
-  if (s.source_type === "company_site" || s.source_type === "press_release" || s.source_type === "registry") return true;
+  if (s.source_type === "company_site" || s.source_type === "registry") return true;
+  if (isDirectoryPage(s.url)) return false;
+  if (s.source_type === "press_release") return true;
   const standing = roundSourceStanding(s.url);
   return standing.kind === "allowed" && standing.tier <= 3;
 }

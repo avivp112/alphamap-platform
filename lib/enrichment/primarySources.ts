@@ -13,7 +13,7 @@
  */
 
 /** Official press-release wires. */
-export const PRESS_WIRE_DOMAINS = ["prnewswire.com", "businesswire.com", "globenewswire.com", "accesswire.com", "einpresswire.com", "newswire.com"];
+export const PRESS_WIRE_DOMAINS = ["prnewswire.com", "businesswire.com", "globenewswire.com", "accesswire.com", "einpresswire.com", "newswire.com", "pr.com"];
 
 /**
  * Social networks, video sites, blogging platforms and PR-content sites:
@@ -24,7 +24,7 @@ export const PRESS_WIRE_DOMAINS = ["prnewswire.com", "businesswire.com", "globen
 export const NOT_PRIMARY_DOMAINS = [
   "instagram.com", "facebook.com", "fb.com", "x.com", "twitter.com", "tiktok.com", "threads.net", "reddit.com",
   "youtube.com", "youtu.be", "linkedin.com", "pinterest.com", "quora.com", "medium.com", "substack.com",
-  "everything-pr.com", "openpr.com", "prlog.org", "issuewire.com", "pr.com",
+  "everything-pr.com", "openpr.com", "prlog.org", "issuewire.com",
 ];
 
 const hostOf = (url: string): string | null => {
@@ -32,9 +32,16 @@ const hostOf = (url: string): string | null => {
 };
 const on = (host: string, list: string[]) => list.some((d) => host === d || host.endsWith(`.${d}`));
 
+/**
+ * The wires' regional sites count as the wire (field review run 2: prnewswire.co.uk was
+ * refused): prnewswire.co.uk, prnewswire.com.au, businesswire.de, globenewswire.fr…
+ */
+const REGIONAL_WIRE = /(^|\.)(prnewswire|businesswire|globenewswire)\.(?:[a-z]{2}|(?:co|com)\.[a-z]{2})$/;
+export const isRegionalWireHost = (host: string) => REGIONAL_WIRE.test(host);
+
 export function isPressWireUrl(url: string): boolean {
   const h = hostOf(url);
-  return !!h && on(h, PRESS_WIRE_DOMAINS);
+  return !!h && (on(h, PRESS_WIRE_DOMAINS) || isRegionalWireHost(h));
 }
 
 export function isNotPrimaryUrl(url: string): boolean {

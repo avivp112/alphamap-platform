@@ -21,7 +21,7 @@ import {
   searchMostlyFailed, type SearchProviderState,
 } from "./searchProviders.ts";
 import { filterByEntity, deriveIdentityKeywords, nameQualifiersOnOwnSite, isNamesakeDrop, type EntityAnchors } from "./entity.ts";
-import { buildLabeledSources, mergeDuplicateResults, classifySourceType, type RawSearchResult, type LabeledSource } from "./sources.ts";
+import { buildLabeledSources, markCompanyLinkedFiles, mergeDuplicateResults, classifySourceType, type RawSearchResult, type LabeledSource } from "./sources.ts";
 import { extractProfile, type SectorTaxonomy } from "./extractProfile.ts";
 import { extractFunding, roundToRoundLike, type V2Round } from "./extractFunding.ts";
 import { extractMarket, normalizeUrlForMatch } from "./extractMarket.ts";
@@ -473,6 +473,7 @@ export async function collectCompany(
   // public / non-tech — in which case the other two calls are never made.
   ctx.onStage?.("extracting");
   let allSources: LabeledSource[] = buildLabeledSources(usableResults, domain);
+  markCompanyLinkedFiles(allSources, websitePages);
   const shared = (kind: ExtractionKind) => buildSharedExtractionRequest(kind, row.name, allSources, { taxonomy });
   const profileOutcome = await extractProfile(row.name, allSources, { client: ctx.anthropic, model: ctx.models.profile, taxonomy, request: shared("profile") });
   if (!profileOutcome) {
@@ -598,6 +599,7 @@ export async function collectCompany(
         // Appended after the first-pass sources, so every first-pass S#/W#
         // id stays exactly the same and the new ones continue the sequence.
         allSources = buildLabeledSources([...usableResults, ...deepUnique], domain);
+        markCompanyLinkedFiles(allSources, websitePages);
         const deepSources = allSources.slice(usableResults.length);
         const forSections = (...sections: DeepDiveSection[]) =>
           deepSources.filter((s) => sections.some((sec) => sectionsByUrl.get(normalizeUrlForMatch(s.url))?.has(sec)));
@@ -1067,9 +1069,15 @@ export async function collectCompany(
       drop(`competitor ${c.name}`, "competitor_source_not_listed", c.source_id ? sourceById.get(c.source_id)?.url : undefined);
       return false;
     });
+    const sourceByUrl = (u: string) => allSources.find((x) => x.url === u);
+    // The company's investors, found now or on file: their own sites are allowed.
+    const knownInvestors = [...roundInvestors, ...existingRounds.flatMap((r) => [r.lead_investor, ...(r.investors ?? [])])];
     // News: an article of an allowed outlet (tiers 1–4) or the company's own site.
     market.news = market.news.filter((n) => {
-      const standing = roundSourceStanding(n.url, { isCompanySite: classifySourceType(n.url, domain) === "company_site" });
+      const standing = roundSourceStanding(n.url, {
+        isCompanySite: classifySourceType(n.url, domain) === "company_site" || sourceByUrl(n.url)?.source_type === "company_site",
+        investors: knownInvestors,
+      });
       if (standing.kind === "allowed") return true;
       drop(`news "${n.title.slice(0, 60)}"`, "news_source_not_listed", n.url);
       return false;
