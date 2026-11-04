@@ -59,3 +59,10 @@ export function fieldStatus(marks: Mark[]): FieldStatus[] {
 export function openColumns(marks: Mark[] = readMarks()): string[] {
   return fieldStatus(marks).filter((s) => s.open).flatMap((s) => FIELD_COLUMNS[s.field] ?? []);
 }
+
+/** At most this many values of one company in a field's sample (owner, 2026-11-04: Constructor's patents). */
+export const PER_COMPANY = 2;
+export function capPerCompany<T extends { company_id: string }>(xs: T[], cap: number): T[] {
+  const seen = new Map<string, number>();
+  return xs.filter((x) => { const n = seen.get(x.company_id) ?? 0; if (n >= cap) return false; seen.set(x.company_id, n + 1); return true; });
+}

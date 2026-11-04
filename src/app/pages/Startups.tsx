@@ -3,6 +3,7 @@ import { formatOriginal } from "../../../lib/enrichment/currency";
 import { officesLabel } from "../../lib/offices";
 import { stageLabel, sectorLabel, roundTypeLabel, SECTOR_TAXONOMY, PARENT_BY_SUB_SECTOR, STAGE_STEPS, type StageStep } from "../../lib/taxonomy";
 import { equityRaised, debtRaised, capitalKind } from "../../lib/capital";
+import { visiblePatents } from "../../lib/patentList";
 import { visibleCompetitors } from "../../lib/competitors";
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router";
@@ -1766,9 +1767,12 @@ function AcquisitionsIPTab({ startup, onNavigate }: { startup: Startup; onNaviga
   const { t } = useTranslation();
   const acquisitions = (startup.acquisitions ?? []).filter(Boolean);
   const hasPatents = (startup.patent_count ?? 0) > 0;
-  const patents = (startup.patents ?? []).filter((p) => p && p.title);
+  const allPatents = (startup.patents ?? []).filter((p) => p && p.title);
+  // More than 10: the total and the 5 latest, with "show all" (owner, 2026-11-04).
+  const [showAllPatents, setShowAllPatents] = useState(false);
+  const { shown: patents, total: patentTotal, collapsed: patentsCollapsed } = visiblePatents(allPatents, showAllPatents);
 
-  if (acquisitions.length === 0 && !hasPatents && patents.length === 0) {
+  if (acquisitions.length === 0 && !hasPatents && allPatents.length === 0) {
     return <MissingDataState message="No acquisitions or patents have been found for this company." />;
   }
 
@@ -1797,6 +1801,7 @@ function AcquisitionsIPTab({ startup, onNavigate }: { startup: Startup; onNaviga
           <div className="flex items-center gap-2 mb-3">
             <Award className="w-4 h-4 text-gray-400" />
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Individual Patents</h3>
+            <span className="text-[10px] text-gray-400">{patentTotal > patents.length ? `${patents.length} latest of ${patentTotal}` : patentTotal}</span>
           </div>
           <div className="space-y-2">
             {patents.map((p, idx) => {
@@ -1826,6 +1831,14 @@ function AcquisitionsIPTab({ startup, onNavigate }: { startup: Startup; onNaviga
               );
             })}
           </div>
+          {patentTotal > 10 && (
+            <button
+              type="button" onClick={() => setShowAllPatents((v) => !v)}
+              className="mt-3 text-xs font-semibold text-[#6d28d7] hover:underline"
+            >
+              {patentsCollapsed ? `Show all ${patentTotal} patents` : "Show the 5 latest"}
+            </button>
+          )}
         </div>
       )}
       {acquisitions.length > 0 && (

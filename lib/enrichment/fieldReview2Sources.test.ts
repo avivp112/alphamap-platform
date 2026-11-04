@@ -125,3 +125,35 @@ describe("an article's date from its own address (field review run 3: Masttro, L
     expect(dateFromUrl("https://www.insightpartners.com/ideas/israeli-data-security-startup-laminar/")).toBeNull();
   });
 });
+
+import { isOwnNewsroom } from "./roundSources";
+describe("domain decisions of 2026-11-04 (run 3)", () => {
+  it("new tier 4 outlets; tipranks and directories denied", () => {
+    for (const u of ["https://www.phocuswire.com/x", "https://www.constructiondive.com/news/x/561872/", "https://www.datacenterdynamics.com/en/news/x/", "https://www.gamedeveloper.com/production/x", "https://www.wealthmanagement.com/x"])
+      expect(roundSourceStanding(u)).toMatchObject({ kind: "allowed", tier: 4 });
+    for (const u of ["https://www.tipranks.com/news/x", "https://neuron.com/companies/1/x", "https://telescoped.com/company/x", "https://ecosystem.andorra-startup.com/companies/civdrone", "https://builtin.com/job/x/1"])
+      expect(roundSourceStanding(u).kind).toBe("denied");
+  });
+  it("the company's own newsroom on mynewsdesk: tier 1, low confidence; another's newsroom: no", () => {
+    expect(isOwnNewsroom("https://www.mynewsdesk.com/uk/bastion-uk/pressreleases/larian-studios-announces-divinity-3421371", "Larian Studios")).toBe(false);
+    expect(isOwnNewsroom("https://www.mynewsdesk.com/se/larian/pressreleases/x-1", "Larian Studios")).toBe(true);
+    expect(roundSourceStanding("https://www.mynewsdesk.com/se/larian/pressreleases/x-1", { companyName: "Larian Studios" })).toMatchObject({ kind: "allowed", tier: 1, lowConfidence: true });
+    expect(roundSourceStanding("https://www.mynewsdesk.com/se/larian/pressreleases/x-1").kind).toBe("unlisted");
+  });
+  it("nasdaq.com's press releases: only with an allowed original", () => {
+    const n = "https://www.nasdaq.com/press-release/masttro-secures-$43-million-growth-equity-investment-led-by-ftv-capital-2023-03-09";
+    expect(roundSourceStanding(n).kind).toBe("denied");
+    expect(roundSourceStanding(n, { content: "NEW YORK--(BUSINESS WIRE)--Masttro, the global wealth platform…" })).toMatchObject({ kind: "allowed", tier: 1 });
+    expect(roundSourceStanding("https://www.nasdaq.com/articles/x").kind).toBe("unlisted");
+  });
+});
+
+import { statesAmount } from "./assemble";
+describe("a round without an amount its own source states (field review run 3: Forward Financing)", () => {
+  it("the headline or address states a sum", () => {
+    expect(statesAmount("https://www.forwardfinancing.com/forward-announces-expanded-450-million-credit-facility/")).toBe(true);
+    expect(statesAmount("Acme raises $12M Series A")).toBe(true);
+    expect(statesAmount("https://www.forwardfinancing.com/forward-announces-new-credit-facility/")).toBe(false);
+    expect(statesAmount("Acme closes Series A led by Accel")).toBe(false);
+  });
+});

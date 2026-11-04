@@ -318,7 +318,7 @@ export function groundRoundDetails(
 
 // ── Rounds not written at all ────────────────────────────────────────────
 
-export type RoundRejection = "round_without_substance" | "round_from_job_posting" | "round_raised_by_another_company" | "round_only_from_data_platform" | "round_source_not_listed";
+export type RoundRejection = "round_without_substance" | "round_from_job_posting" | "round_raised_by_another_company" | "round_only_from_data_platform" | "round_source_not_listed" | "round_amount_stated_but_missing";
 
 const JOB_POSTING_URL_RE = /\/(j|job|jobs|careers?|vacanc(?:y|ies)|openings?|positions?)\/|(?:lever\.co|greenhouse\.io|workable\.com|ashbyhq\.com|indeed\.\w+|glassdoor\.\w+)\//i;
 const RAISER_RE = /(?:^|[.;:!?]\s+|\s—\s|,\s+)([A-Z][\p{L}\d.&'’-]*(?:\s+[A-Z][\p{L}\d.&'’-]*){0,3})\s+(?:has\s+|have\s+|just\s+)?(?:[Rr]ais(?:ed|es)|[Ss]ecur(?:ed|es)|[Cc]los(?:ed|es)|[Ll]ands|[Bb]ags|[Nn]abs)\b/u;
@@ -351,7 +351,7 @@ export function rejectRound(round: V2Round, companyName: string, sources: Labele
     .concat(round.source_url ?? undefined)
     .filter((u): u is string => !!u);
   if (cited.length > 0 && cited.every((u) => JOB_POSTING_URL_RE.test(u))) return "round_from_job_posting";
-  const standings = roundSourceStandings(round, sources);
+  const standings = roundSourceStandings(round, sources, companyName);
   const allowedSomewhere = standings.length === 0 || standings.some((s) => s.kind === "allowed");
   if (!allowedSomewhere && standings.every((s) => s.kind === "denied")) return "round_only_from_data_platform";
   const quote = round.amount_raised?.evidence_quote ?? "";
@@ -359,7 +359,19 @@ export function rejectRound(round: V2Round, companyName: string, sources: Labele
   const bareName = companyName.replace(/\.(io|ai|com|co|app|so|dev|net)$/i, "");
   if (raiser && !NOT_A_RAISER.test(raiser) && !namesCompany(raiser, companyName) && !namesCompany(raiser, bareName)) return "round_raised_by_another_company";
   if (!allowedSomewhere) return "round_source_not_listed";
+  // No amount, while its own source's headline or address states one (field review run 3:
+  // Forward Financing's "expanded-450-million-credit-facility" written as "amount not disclosed").
+  if (round.amount_raised?.value == null && type !== "Acquired" && type !== "IPO") {
+    const src = round.source_url ? sources.find((x) => x.url === round.source_url) : undefined;
+    if (statesAmount(`${src?.title ?? ""} ${round.source_url ?? ""}`)) return "round_amount_stated_but_missing";
+  }
   return null;
+}
+
+/** A headline or address that states a sum: "$450M", "450 million", "450-million". */
+export function statesAmount(text: string): boolean {
+  const t = text.replace(/[-_/]+/g, " ");
+  return /(?:[$€£]\s?\d[\d.,]*\s?(?:k|m|mm|bn|b|million|billion)?\b)|\b\d[\d.,]*\s?(?:million|billion|mln|bn)\b/i.test(t);
 }
 
 export type IncompleteRoundRejection = "round_without_amount_incomplete" | "round_other_without_date";
@@ -381,7 +393,7 @@ export function incompleteRound(r: RoundLike): IncompleteRoundRejection | null {
 }
 
 /** Where each source a round cites stands (roundSources.ts): its quotes' sources, else its source_url. */
-export function roundSourceStandings(round: V2Round, sources: LabeledSource[]): Array<SourceStanding & { url: string }> {
+export function roundSourceStandings(round: V2Round, sources: LabeledSource[], companyName?: string): Array<SourceStanding & { url: string }> {
   const byId = new Map(sources.map((s) => [s.source_id, s]));
   const byUrl = new Map(sources.map((s) => [s.url, s]));
   const cited = [round.amount_raised, round.lead_investor, round.valuation, round.announcement_date]
@@ -390,7 +402,7 @@ export function roundSourceStandings(round: V2Round, sources: LabeledSource[]): 
   const urls = cited.length ? [...new Set(cited.map((s) => s.url))] : round.source_url ? [round.source_url] : [];
   return urls.map((url) => ({
     url,
-    ...roundSourceStanding(url, { isCompanySite: byUrl.get(url)?.source_type === "company_site" || cited.find((s) => s.url === url)?.source_type === "company_site", leadInvestor: round.lead_investor?.value, content: byUrl.get(url)?.content, headline: byUrl.get(url)?.title }),
+    ...roundSourceStanding(url, { isCompanySite: byUrl.get(url)?.source_type === "company_site" || cited.find((s) => s.url === url)?.source_type === "company_site", leadInvestor: round.lead_investor?.value, content: byUrl.get(url)?.content, headline: byUrl.get(url)?.title, companyName }),
   }));
 }
 

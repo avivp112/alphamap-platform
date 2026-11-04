@@ -773,7 +773,7 @@ export async function collectCompany(
     return [like.lead_investor, ...(like.other_investors ?? [])].filter((n): n is string => !!n);
   });
   // Only an allowed source grounds a founder (owner, 2026-11-02: the list applies to every field).
-  const grounded = groundFounders(profile.profile.founders ?? [], allSources.filter((s) => profileSourceAllowed(s)), row.name, roundInvestors);
+  const grounded = groundFounders(profile.profile.founders ?? [], allSources.filter((s) => profileSourceAllowed(s, row.name)), row.name, roundInvestors);
   for (const d of grounded.dropped) {
     console.log(`    👤  ${d.name} not kept as a founder (${d.reason === "founder_is_investor" ? "named among the investors" : "no source says they founded this company"}).`);
     bump(stats.droppedByReason, d.reason);
@@ -795,7 +795,7 @@ export async function collectCompany(
     if (why === "round_only_from_data_platform" || why === "round_source_not_listed") {
       platformOnly.push(r);
       // An unlisted domain goes to the owner's review list (roundSources.ts).
-      for (const s of roundSourceStandings(r, allSources)) {
+      for (const s of roundSourceStandings(r, allSources, row.name)) {
         if (s.kind === "unlisted") unlistedDomains.push({ domain: s.domain, url: s.url });
       }
       if (why === "round_source_not_listed") bump(stats.droppedByReason, why);
@@ -872,7 +872,7 @@ export async function collectCompany(
     sourceById.set(src.source_id, src);
     return src;
   };
-  const allowedFact = (f: { source_id: string } | undefined) => !!f && !!sourceById.get(f.source_id) && profileSourceAllowed(sourceById.get(f.source_id)!);
+  const allowedFact = (f: { source_id: string } | undefined) => !!f && !!sourceById.get(f.source_id) && profileSourceAllowed(sourceById.get(f.source_id)!, row.name);
 
   // a. The "About <Company>" paragraph of its own press releases.
   if (componentOn("press_about") && !ctx.update) {
@@ -1035,7 +1035,7 @@ export async function collectCompany(
     const f = profile.profile[key] as { value: unknown; source_id: string } | undefined;
     if (!f) continue;
     const s = sourceById.get(f.source_id);
-    if (s && profileSourceAllowed(s)) continue;
+    if (s && profileSourceAllowed(s, row.name)) continue;
     console.log(`    🚫  ${key} ${JSON.stringify(f.value)} not written — its source is not on the allowed list: ${s?.url ?? f.source_id}`);
     bump(stats.droppedByReason, "profile_source_not_listed");
     (profile.profile as Record<string, unknown>)[key] = undefined;
@@ -1045,7 +1045,7 @@ export async function collectCompany(
   // release, a register, the press of tiers 1–3 (rounds: 1–4, roundSources.ts). LinkedIn,
   // data platforms and unlisted sites are never the source of a written value.
   {
-    const allowedId = (id?: string | null) => { const src = id ? sourceById.get(id) : undefined; return !!src && profileSourceAllowed(src); };
+    const allowedId = (id?: string | null) => { const src = id ? sourceById.get(id) : undefined; return !!src && profileSourceAllowed(src, row.name); };
     const drop = (what: string, reason: string, url?: string) => { console.log(`    🚫  ${what} not written — ${url ? `its source is not on the allowed list: ${url}` : "no allowed source"}`); bump(stats.droppedByReason, reason); };
     // Size: employee count and range.
     for (const key of ["employee_range", "employee_count"] as const) {
@@ -1072,7 +1072,7 @@ export async function collectCompany(
     }
     // Leaders: kept only when an allowed source names them (field review run 1: leaders from a
     // Google redirect, from LinkedIn, or with no source at all).
-    const allowedTexts = allSources.filter((x) => profileSourceAllowed(x)).map((x) => `${x.title ?? ""} ${x.content}`);
+    const allowedTexts = allSources.filter((x) => profileSourceAllowed(x, row.name)).map((x) => `${x.title ?? ""} ${x.content}`);
     // The title too (owner, 2026-11-03): on the company's own pages, the person's card by the
     // HTML's structure; elsewhere, the role beside the name. Not verified, but the person is on
     // the team / leadership page: kept, without a title ("Leadership team"). Otherwise dropped.
@@ -1125,6 +1125,7 @@ export async function collectCompany(
       investors: knownInvestors,
       content: content ?? sourceByUrl(url)?.content,
       headline: headline ?? sourceByUrl(url)?.title,
+      companyName: row.name,
     });
     const keptNews: typeof market.news = [];
     let hintSearches = 0;

@@ -85,6 +85,7 @@ export const TIER4_DOMAINS = [
   // Owner, 2026-11-03 (field review run 2)
   "gamesbeat.com", "techtarget.com", "siliconangle.com", "bankinfosecurity.com", "biospace.com",
   "nosh.com", "gameworldobserver.com", "channele2e.com", "pymnts.com", "venturecapitaljournal.com",
+  "phocuswire.com", "constructiondive.com", "datacenterdynamics.com", "gamedeveloper.com", "wealthmanagement.com",
   "financemagnates.com", "fxnewsgroup.com", "defensedaily.com", "electronicsweekly.com", "paymentsdive.com", "industrialcyber.co",
   "roboticsandautomationnews.com", "globalaginvesting.com", "decrypt.co",
 ];
@@ -113,6 +114,9 @@ export const DENIED_DOMAINS = [
   "highperformr.ai", "siliconvalleyinvestclub.com", "startupintros.com", "shortlistjobs.com", "thecompanycheck.com", "getlatka.com",
   "rootdata.com", "traderknows.com", "chemxplore.com", "qubevents.com", "multiples.vc", "altss.com", "gritt.io", "inven.ai",
   "gamecompanies.com", "builtinnyc.com", "startupblink.com",
+  // Owner, 2026-11-04 (run 3)
+  "tipranks.com", "neuron.com", "telescoped.com", "cyberdb.co", "andorra-startup.com", "growthlist.co", "builtin.com",
+  "workology.com", "avahr.com", "compono.com", "resumeoptimizerpro.com",
 ];
 
 /**
@@ -130,6 +134,26 @@ export const HINT_ONLY_DOMAINS = ["finsmes.com", "techfundingnews.com", "thesaas
  * the republication's.
  */
 export const SYNDICATION_HOSTS = ["finance.yahoo.com", "tradingview.com", "financialcontent.com"];
+/** Republishers on part of a site only (owner, 2026-11-04): nasdaq.com's press releases. */
+const SYNDICATION_PATHS: Array<[string, RegExp]> = [["nasdaq.com", /^\/press-release\//]];
+
+/**
+ * A company's own newsroom on a newsroom service (owner, 2026-11-04): mynewsdesk.com/<country>/<newsroom>/…
+ * counts as the company's release — tier 1, low confidence — when the newsroom is the company's
+ * (its name's words in the newsroom's slug). Larian's announcement in Bastion UK's (a PR
+ * agency's) newsroom is not.
+ */
+export function isOwnNewsroom(url: string, companyName: string | null | undefined): boolean {
+  if (!companyName) return false;
+  const host = hostOf(url);
+  if (!host || !(host === "mynewsdesk.com" || host.endsWith(".mynewsdesk.com"))) return false;
+  let segs: string[] = [];
+  try { segs = new URL(url).pathname.split("/").filter(Boolean); } catch { return false; }
+  const slug = (/^[a-z]{2}$/.test(segs[0] ?? "") ? segs[1] : segs[0]) ?? "";
+  const words = companyName.toLowerCase().replace(/\b(inc|ltd|llc|gmbh|ag|ab|as|oy|studios?|group|technologies)\b\.?/g, " ").split(/[^a-z0-9]+/).filter((w) => w.length >= 3);
+  const slugWords = slug.toLowerCase().split(/[^a-z0-9]+/);
+  return words.length > 0 && words.every((w) => slugWords.includes(w));
+}
 const ORIGINAL_MARKS: Array<[RegExp, string]> = [
   [/\/\s*PRNewswire\s*\/|\bPR Newswire\b/i, "prnewswire.com"],
   [/\(\s*BUSINESS WIRE\s*\)|\bBusiness Wire\b/, "businesswire.com"],
@@ -239,14 +263,15 @@ export function isPartyRelease(url: string, headline: string | null | undefined)
   return label.split("-").some((part, i) => (i === 0 || part.length >= 4) && part.length >= 3 && words.has(part));
 }
 
-export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean; leadInvestor?: string | null; investors?: Array<string | null | undefined>; content?: string | null; headline?: string | null } = {}): SourceStanding {
+export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean; leadInvestor?: string | null; investors?: Array<string | null | undefined>; content?: string | null; headline?: string | null; companyName?: string | null } = {}): SourceStanding {
   const host = hostOf(url);
   if (!host) return { kind: "denied", why: "no_host" };
   if (opts.isCompanySite) return { kind: "allowed", tier: 1, lowConfidence: false, why: "company_site" };
   if (isDataPlatformUrl(url)) return { kind: "denied", why: "data_platform" };
   if (onList(host, DENIED_DOMAINS)) return { kind: "denied", why: "denied_domain" };
   if (onList(host, HINT_ONLY_DOMAINS)) return { kind: "denied", why: "hint_only" };
-  if (onList(host, SYNDICATION_HOSTS)) {
+  if (isOwnNewsroom(url, opts.companyName)) return { kind: "allowed", tier: 1, lowConfidence: true, why: "own_newsroom" };
+  if (onList(host, SYNDICATION_HOSTS) || SYNDICATION_PATHS.some(([d, re]) => onList(host, [d]) && re.test(new URL(url.startsWith("http") ? url : `https://${url}`).pathname))) {
     const original = syndicatedFrom(opts.content);
     const standing = original ? roundSourceStanding(`https://${original}/`) : null;
     return standing?.kind === "allowed" ? { ...standing, why: `republished_from:${original}` } : { kind: "denied", why: "republished_without_allowed_original" };
@@ -273,11 +298,11 @@ export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean
  * 2026-11-02 took KETS's founding year from Tracxn, Soda's founding country
  * from SourceForge and Mentat's year from a Tracxn list of mood-tracker apps.
  */
-export function profileSourceAllowed(s: { url: string; source_type?: string | null; content?: string | null; title?: string | null }): boolean {
+export function profileSourceAllowed(s: { url: string; source_type?: string | null; content?: string | null; title?: string | null }, companyName?: string | null): boolean {
   if (s.source_type === "company_site" || s.source_type === "registry") return true;
   if (isDirectoryPage(s.url)) return false;
   if (s.source_type === "press_release") return true;
-  const standing = roundSourceStanding(s.url, { content: s.content, headline: s.title });
+  const standing = roundSourceStanding(s.url, { content: s.content, headline: s.title, companyName });
   // A party's release counts as tier 2 for the profile (owner, 2026-11-03): still within 1–3.
   const tier = standing.kind === "allowed" && standing.why === "party_release" ? 2 : standing.kind === "allowed" ? standing.tier : 99;
   return tier <= 3;

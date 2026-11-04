@@ -33,6 +33,7 @@ import { drawPilotSample, type PilotCandidate } from "../lib/enrichment/pilotSam
 import { UsageMeter } from "../lib/enrichment/models.ts";
 import { buildProfile } from "../worker/profile.ts";
 import { profileSourceAllowed } from "../lib/enrichment/roundSources.ts";
+import { capPerCompany, PER_COMPANY } from "../lib/enrichment/fieldReview.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 if (existsSync(join(__dir, "..", ".env"))) config({ path: join(__dir, "..", ".env") });
@@ -186,7 +187,7 @@ function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V2Startu
   ] : [];
   for (const f of REVIEW_FIELDS) {
     const size = SIMPLE.includes(f) ? 8 : 5;
-    const pick = [...carried.filter((v) => v.field === f), ...shuffle(values.filter((v) => v.field === f), SEED + REVIEW_FIELDS.indexOf(f)).slice(0, size)];
+    const pick = [...carried.filter((v) => v.field === f), ...capPerCompany(shuffle(values.filter((v) => v.field === f), SEED + REVIEW_FIELDS.indexOf(f)), PER_COMPANY).slice(0, size)];
     if (!pick.length) { console.log(`[${f}] — none this run`); continue; }
     console.log(`[${f}]`);
     for (const v of pick) {
