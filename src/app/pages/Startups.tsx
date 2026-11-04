@@ -1273,14 +1273,29 @@ function OverviewTab({
         </div>
       )}
 
-      {startup.leadership && startup.leadership.length > 0 && (
+      {(startup.leadership ?? []).some((l) => l.group !== "board") && (
         <div>
           <div className="flex items-center gap-2 mb-3">
             <Briefcase className="w-4 h-4 text-gray-400" />
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("startups.leadership")}</h3>
           </div>
           <div className="flex flex-col gap-2">
-            {startup.leadership.map((l, i) => (
+            {(startup.leadership ?? []).filter((l) => l.group !== "board").map((l, i) => (
+              <PersonRow key={i} name={l.name} subtitle={l.role} bio={l.bio} linkedinUrl={l.linkedin_url} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* The board, apart from the management (owner, 2026-11-04). */}
+      {(startup.leadership ?? []).some((l) => l.group === "board") && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Briefcase className="w-4 h-4 text-gray-400" />
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Board</h3>
+          </div>
+          <div className="flex flex-col gap-2">
+            {(startup.leadership ?? []).filter((l) => l.group === "board").map((l, i) => (
               <PersonRow key={i} name={l.name} subtitle={l.role} bio={l.bio} linkedinUrl={l.linkedin_url} />
             ))}
           </div>
@@ -1687,7 +1702,7 @@ function TalentGrowthTab({
         </div>
         {startup.leadership && startup.leadership.length > 0 ? (
           <div className="flex flex-col gap-2">
-            {startup.leadership.map((l, i) => (
+            {startup.leadership.filter((l) => l.group !== "board").map((l, i) => (
               <PersonRow key={i} name={l.name} subtitle={l.role} bio={l.bio} linkedinUrl={l.linkedin_url} truncate />
             ))}
           </div>

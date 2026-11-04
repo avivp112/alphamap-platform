@@ -86,6 +86,20 @@ const sentences = (text: string) => text.replace(/\s+/g, " ").split(/(?<=[.!?])\
 const nearAmount = (sentence: string, amount: number) => extractNumbersFromText(sentence).some((n) => Math.abs(n - amount) / amount < 0.01);
 
 /**
+ * The same raise in another currency (owner, 2026-11-04 — field review run 4: Mollie's Series C,
+ * €665M on a platform, "800 million USD" on its own site): a sentence that names the hint's round
+ * type and states an amount within what a currency change makes of it (0.7–1.45×). The amount
+ * written is the source's own.
+ */
+const NAMED_STAGE = /^(Pre-Seed|Seed|Series [A-Z]\+?)$/;
+function sameRaiseOtherCurrency(sentence: string, h: RoundHint): number | null {
+  if (!h.round_type || !NAMED_STAGE.test(h.round_type) || h.amount_raised == null) return null;
+  if (!new RegExp(`\\b${h.round_type.replace(/[+]/g, "\\+")}\\b`, "i").test(sentence)) return null;
+  const n = extractNumbersFromText(sentence).find((x) => x / h.amount_raised! >= 0.7 && x / h.amount_raised! <= 1.45 && x >= 100_000);
+  return n ?? null;
+}
+
+/**
  * A source that may confirm a hint: one on the allowed list for rounds
  * (roundSources.ts, owner 2026-11-01) — the company's own site, the lead
  * investor's, an official wire, a register, or the listed press. Never a data
@@ -122,8 +136,15 @@ export function confirmHint(h: RoundHint, sources: LabeledSource[], companyName:
     } else {
       quote = sentences(text).find((sen) => sen.length <= 400 && RAISE.test(sen) && nearAmount(sen, h.amount_raised!));
     }
+    let amount = h.amount_raised;
+    if (!quote && classifySourceType(s.url) !== "registry") {
+      for (const sen of sentences(text)) {
+        const other = sen.length <= 400 && RAISE.test(sen) ? sameRaiseOtherCurrency(sen, h) : null;
+        if (other) { quote = sen; amount = other; break; }
+      }
+    }
     if (!quote) continue;
-    const date = confirmingDate(h, s, quote, text);
+    const date = confirmingDate({ ...h, amount_raised: amount }, s, quote, text);
     if (!date) continue;
     const leadQuote = h.lead_investor ? sentences(text).find((sen) => sen.length <= 400 && normalizeForMatch(sen).includes(normalizeForMatch(h.lead_investor!))) : undefined;
     return {
@@ -131,7 +152,7 @@ export function confirmHint(h: RoundHint, sources: LabeledSource[], companyName:
       // the confirming source states it, and the amount's own sentence or
       // headline overrides it (assemble.ts groundRoundType).
       round_type: h.round_type ?? "Unknown",
-      amount_raised: { value: h.amount_raised, source_id: s.source_id, evidence_quote: quote.trim() },
+      amount_raised: { value: amount, source_id: s.source_id, evidence_quote: quote.trim() },
       announcement_date: { value: date.iso, source_id: s.source_id, evidence_quote: date.quote },
       ...(leadQuote ? { lead_investor: { value: h.lead_investor!, source_id: s.source_id, evidence_quote: leadQuote.trim() } } : {}),
       source_url: s.url,

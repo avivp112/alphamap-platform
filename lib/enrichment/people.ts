@@ -451,3 +451,34 @@ export function supportedBio(bio: string, sourceTexts: string[], personName: str
   });
   return kept.length ? kept.join(" ") : null;
 }
+
+/**
+ * A person's role at THIS company (owner, 2026-11-04 — field review run 4, InfiniGrow's
+ * "Board & Advisor; Founder & CMO, StreamElements"):
+ *   - an advisor (advisor, advisory board) is not kept at all;
+ *   - a board member is kept apart, as "Chairman" or "Board member" — never with a role at
+ *     another company;
+ *   - any other role keeps only its parts that are not a role at another company: "Founder,
+ *     Sisense" never makes anyone a founder here. Nothing left: null.
+ */
+export function roleAtCompany(role: string | null | undefined, companyName: string): { kind: "advisor" | "board" | "leader"; role: string | null } {
+  const raw = (role ?? "").trim();
+  const ownName = fold(companyName).toLowerCase().replace(/\b(inc|ltd|llc|corp|gmbh|ag|bv)\b\.?/g, " ").trim();
+  // Parts: "A; B", "A | B", "A · B".
+  const parts = raw.split(/\s*(?:;|\||·)\s*/).filter(Boolean);
+  const elsewhere = (part: string) => {
+    const m = part.match(/(?:,|\bat\b|\bof\b|@)\s*([A-Z][\w.&' -]{1,40})$/);
+    if (!m) return false;
+    const org = fold(m[1]).toLowerCase().trim();
+    if (/^(the )?(board|company|directors|advisors|advisory board)$/.test(org)) return false;
+    return !(org.includes(ownName) || ownName.includes(org));
+  };
+  const own = parts.filter((p) => !elsewhere(p));
+  const text = own.join("; ");
+  if (/\badvis(?:or|er|ory)\b/i.test(text) || (!own.length && /\badvis(?:or|er|ory)\b/i.test(raw))) return { kind: "advisor", role: null };
+  const executive = /\b(ceo|cto|coo|cfo|cmo|cpo|cro|chief|founder|co-?founder|president|vp|vice president|head|director of|general manager|managing director)\b/i.test(text);
+  if (!executive && /\b(chair(?:man|woman|person)?|board)\b/i.test(text)) {
+    return { kind: "board", role: /\bchair/i.test(text) ? "Chairman" : "Board member" };
+  }
+  return { kind: "leader", role: own.length ? text : null };
+}

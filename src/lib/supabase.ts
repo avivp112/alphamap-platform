@@ -81,6 +81,8 @@ export interface PersonQualityTags {
 export interface Leader extends PersonQualityTags {
   name: string;
   role: string;
+  /** "board": a board member, shown apart from the management. */
+  group?: "board" | null;
   linkedin_url?: string | null;
   // When this person joined, if known — feeds the Recency & Activity pillar
   // ("a C-level hire in the last 30-90 days"). Best-effort; omitted far

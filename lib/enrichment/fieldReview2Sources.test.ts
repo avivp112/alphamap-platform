@@ -168,3 +168,41 @@ describe("a round dated by an article about another event (field review run 4: S
     expect(announcementDateFromSource(round, raise, "2026-11-04")).toBe("2022-04-05");
   });
 });
+
+import { roleAtCompany } from "./people";
+import { confirmHint } from "./hints";
+import { drawReviewSample, missingFieldCount, targetedCount, type PilotCandidate } from "./pilotSample";
+describe("owner's decisions after field review run 4 (2026-11-04)", () => {
+  it("advisors out; the board apart; roles at other companies never kept", () => {
+    expect(roleAtCompany("Board & Advisor; Founder & CMO, StreamElements", "InfiniGrow").kind).toBe("advisor");
+    expect(roleAtCompany("Advisory Board", "InfiniGrow").kind).toBe("advisor");
+    expect(roleAtCompany("Chairman of the Board", "Trobix Bio")).toEqual({ kind: "board", role: "Chairman" });
+    expect(roleAtCompany("Board Member; CEO, SimilarWeb", "InfiniGrow")).toEqual({ kind: "board", role: "Board member" });
+    expect(roleAtCompany("Founder, Sisense", "InfiniGrow")).toEqual({ kind: "leader", role: null });
+    expect(roleAtCompany("Co-Founder & CEO", "Anchor")).toEqual({ kind: "leader", role: "Co-Founder & CEO" });
+    expect(roleAtCompany("Chief Financial Officer", "d.light")).toEqual({ kind: "leader", role: "Chief Financial Officer" });
+    expect(roleAtCompany("Founder & Chairman", "Trobix Bio").kind).toBe("leader");
+  });
+  it("Mollie: the same Series C in another currency, from a page already read", () => {
+    const hint = { round_type: "Series C", amount_raised: 665_000_000, announcement_date: null, lead_investor: null, source_url: "https://siliconvalleyinvestclub.com/companies/mollie/tear-sheet.pdf" };
+    const page = { source_id: "S7", url: "https://www.mollie.com/news/mollie-series-c", title: "Mollie raises 800 million USD in Series C funding round", content: "Published Time: 2021-06-22T08:00:00Z. Amsterdam, 22 June 2021 — Mollie raises 800 million USD in a Series C funding round led by Blackstone Growth.", provider: "jina", query_label: "news", source_type: "company_site" } as never;
+    const r = confirmHint(hint, [page], "Mollie");
+    expect(r?.amount_raised?.value).toBe(800_000_000);
+    expect(r?.announcement_date?.value).toBe("2021-06-22");
+    // A different stage, or an amount no currency explains: not the same raise.
+    expect(confirmHint({ ...hint, round_type: "Series B" }, [page], "Mollie")).toBeNull();
+    expect(confirmHint({ ...hint, amount_raised: 90_000_000 }, [page], "Mollie")).toBeNull();
+  });
+  it("the review's draw: 8 targeted of 15, under half of 30; targeted = covered and missing ≥3 fields", () => {
+    expect(targetedCount(15)).toBe(8);
+    expect(targetedCount(30)).toBe(13);
+    const mk = (id: string, full: boolean): PilotCandidate => ({ id, name: id, website: `${id}.com`, description: "x", city: full ? "X" : null, country: null, founded_year: full ? 2020 : null, founding_country: full ? "X" : null, founders: full ? [{}] : [], competitors: [] });
+    expect(missingFieldCount(mk("a", false))).toBe(5);
+    const rows = [...Array.from({ length: 20 }, (_, i) => mk(`t${i}`, false)), ...Array.from({ length: 20 }, (_, i) => mk(`f${i}`, true))];
+    const covered = new Set(rows.map((r) => r.id));
+    const s = drawReviewSample(rows, covered, { size: 15, targeted: 8, seed: 1 });
+    expect(s).toHaveLength(15);
+    expect(s.filter((c) => c.why.includes("targeted"))).toHaveLength(8);
+    expect(s.filter((c) => c.why.includes("targeted")).every((c) => c.id.startsWith("t"))).toBe(true);
+  });
+});

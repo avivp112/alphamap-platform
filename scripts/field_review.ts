@@ -29,10 +29,10 @@ import { collectCompany, newCollectStats, V2_STARTUP_COLUMNS, V2_ROUND_COLUMNS, 
 import { loadSectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { createSearchProviderState } from "../lib/enrichment/searchProviders.ts";
 import { openSearchCache } from "../lib/enrichment/searchCache.ts";
-import { drawPilotSample, type PilotCandidate } from "../lib/enrichment/pilotSample.ts";
+import { drawReviewSample, targetedCount, type PilotCandidate } from "../lib/enrichment/pilotSample.ts";
 import { UsageMeter } from "../lib/enrichment/models.ts";
 import { buildProfile } from "../worker/profile.ts";
-import { profileSourceAllowed } from "../lib/enrichment/roundSources.ts";
+import { profileSourceAllowed, roundSourceStanding } from "../lib/enrichment/roundSources.ts";
 import { capPerCompany, PER_COMPANY } from "../lib/enrichment/fieldReview.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -64,7 +64,7 @@ function shuffle<T>(xs: T[], seed: number): T[] {
 async function drawCompanies(): Promise<PilotCandidate[]> {
   const rows: PilotCandidate[] = [];
   for (let from = 0; ; from += 1000) {
-    const { data, error } = await db.from("startups").select("id, name, website, description, city, country, founded_year, founding_country, status")
+    const { data, error } = await db.from("startups").select("id, name, website, description, city, country, founded_year, founding_country, status, founders, competitors")
       .not("website", "is", null).neq("status", "ipo").range(from, from + 999);
     if (error) throw error;
     rows.push(...((data ?? []) as PilotCandidate[]));
@@ -76,7 +76,17 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
     if (existsSync(f)) for (const c of (JSON.parse(readFileSync(f, "utf8")).companies ?? []) as Array<{ id: string }>) seen.add(c.id);
   }
   const golden = new Set((JSON.parse(readFileSync(join(__dir, "..", "eval", "golden_set.json"), "utf8")).companies as Array<{ name: string }>).map((g) => g.name.trim().toLowerCase()));
-  return drawPilotSample(rows.filter((r) => !seen.has(r.id) && !golden.has(r.name.trim().toLowerCase())), { size: SIZE, minThin: 3, minIsraeli: 3, seed: SEED });
+  // Companies an allowed press source covers: a round on file whose source is allowed.
+  const covered = new Set<string>();
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db.from("funding_rounds").select("startup_id, source_url").not("source_url", "is", null).range(from, from + 999);
+    if (error) throw error;
+    for (const r of (data ?? []) as Array<{ startup_id: string; source_url: string }>) if (roundSourceStanding(r.source_url).kind === "allowed") covered.add(r.startup_id);
+    if (!data || data.length < 1000) break;
+  }
+  const sample = drawReviewSample(rows.filter((r) => !seen.has(r.id) && !golden.has(r.name.trim().toLowerCase())), covered, { size: SIZE, targeted: targetedCount(SIZE), seed: SEED });
+  console.log(`Draw: ${sample.filter((c) => c.why.includes("targeted")).length} targeted (fields short of marks), ${sample.filter((c) => !c.why.includes("targeted")).length} random.`);
+  return sample;
 }
 
 /** Every value this collection would write for the company, by field. */
@@ -112,6 +122,7 @@ function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V2Startu
     if (f.bio) { const id = allowedId(f.bio_source_ids); add("founder_bio", `${f.name}: ${f.bio}`, "", src(id), quoteOf(id)); }
   }
   for (const l of c.profile.leadership) {
+    if (l.group === "board") continue; // the board is apart from the management (owner, 2026-11-04)
     // The source shown is an allowed one: the bio's, else the first allowed page that names the person.
     const id = allowedId(l.bio_source_ids) ?? c.allSources.find((x) => profileSourceAllowed(x) && `${x.title ?? ""} ${x.content}`.includes(l.name.split(" ").pop() ?? l.name))?.source_id;
     add("leader", `${l.name} — ${l.role}${l.bio ? ` · ${l.bio}` : ""}`, "", src(id));

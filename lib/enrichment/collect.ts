@@ -35,7 +35,7 @@ import {
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
 import { pickArticlesToRead } from "./articles.ts";
 import { runTechGate, shouldSkipAsNonTech, type TechGateVerdict } from "./techGate.ts";
-import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, personCardsInHtml } from "./people.ts";
+import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, personCardsInHtml, roleAtCompany } from "./people.ts";
 import { componentOn } from "./components.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
@@ -820,7 +820,8 @@ export async function collectCompany(
     const found: RawSearchResult[] = [];
     for (const [label, q] of hintQueries(row.name, h)) found.push(...await webSearch(q, label, searchState));
     const labelled: LabeledSource[] = mergeDuplicateResults(found).results.map((raw) => ({ ...raw, source_id: `H${++hintSourceCount}`, source_type: classifySourceType(raw.url, domain) }));
-    const candidate = confirmHint(h, labelled, row.name);
+    // The pages already read count too: Mollie's own "Series C" page was a source of this run.
+    const candidate = confirmHint(h, [...labelled, ...allSources], row.name);
     // A confirmed round still passes every rule a round passes (raiser named, not a job post ...).
     const confirmed = candidate && !rejectRound(candidate, row.name, [...allSources, ...labelled]) ? candidate : null;
     if (!confirmed) {
@@ -829,8 +830,9 @@ export async function collectCompany(
       bump(stats.droppedByReason, "round_kept_as_hint");
       continue;
     }
-    const src = labelled.find((x) => x.source_id === confirmed.amount_raised?.source_id)!;
-    allSources = [...allSources, src];
+    const fromLabelled = labelled.find((x) => x.source_id === confirmed.amount_raised?.source_id);
+    const src = fromLabelled ?? allSources.find((x) => x.source_id === confirmed.amount_raised?.source_id)!;
+    if (fromLabelled) allSources = [...allSources, src];
     keptRounds.push(confirmed);
     confirmedHints.push({ ...h, confirmed_source_url: src.url });
     console.log(`    ✅  Hint confirmed by a primary source: ${h.round_type ?? "round"} ${h.amount_raised} — ${src.url}`);
@@ -1025,6 +1027,13 @@ export async function collectCompany(
     }
   }
 
+  // "Founder, Sisense" never makes anyone a founder of this company (owner, 2026-11-04).
+  profile.profile.founders = profile.profile.founders?.filter((f) => {
+    if (!f.title || roleAtCompany(f.title, row.name).role !== null) return true;
+    console.log(`    🚫  founder ${f.name} not written — the title "${f.title}" is at another company`);
+    bump(stats.droppedByReason, "founder_of_another_company");
+    return false;
+  });
   // Names without honorifics ("Dr. …", "… 님"), whatever found them.
   profile.profile.founders = profile.profile.founders?.map((f) => ({ ...f, name: stripHonorific(f.name) }));
   profile.leadership = profile.leadership.map((l) => ({ ...l, name: stripHonorific(l.name) }));
@@ -1051,6 +1060,24 @@ export async function collectCompany(
     for (const key of ["employee_range", "employee_count"] as const) {
       const v = profile.metrics[key] as { value: unknown; source_id: string } | undefined;
       if (v && !allowedId(v.source_id)) { drop(`${key} ${JSON.stringify(v.value)}`, `${key}_source_not_listed`, sourceById.get(v.source_id)?.url); profile.metrics[key] = undefined; }
+    }
+    // The current headcount only from a source of the last two years (owner, 2026-11-04 — field
+    // review run 4: Argus's "more than 70 people" from Continental's 2017 release). An older dated
+    // figure is a point of the headcount history at its own date; an undated article's, nothing.
+    const count = profile.metrics.employee_count;
+    if (count) {
+      const s = sourceById.get(count.source_id);
+      const ownPage = s?.source_type === "company_site" && !s.url.match(/\/(news|blog|press|insights)\//i);
+      const date = s && !ownPage ? articleDate(s) : null;
+      const cutoff = new Date(Date.now() - 2 * 365.25 * 86_400_000).toISOString().slice(0, 10);
+      if (!ownPage && (!date || date < cutoff)) {
+        if (date && count.value > 0) {
+          profile.metrics.headcount_history = [...(profile.metrics.headcount_history ?? []), { date, employee_count: count.value, source_id: count.source_id, evidence_quote: count.evidence_quote, point_type: "press_reported" as const }];
+        }
+        console.log(`    🕰️   employee_count ${count.value} not the current headcount — ${date ? `its source is of ${date}; kept as a history point` : "its source is undated"}`);
+        bump(stats.droppedByReason, date ? "employee_count_dated_old" : "employee_count_undated");
+        profile.metrics.employee_count = undefined;
+      }
     }
     // Bios: kept only when one of their sources is allowed, and only the sentences those
     // allowed sources support (supportedBio — owner, 2026-11-03).
@@ -1079,8 +1106,13 @@ export async function collectCompany(
     const teamPage = (u: string) => { try { return /\/(team|about|company|leadership|management|people|our-team|who-we-are)\b/i.test(new URL(u).pathname); } catch { return false; } };
     const htmlCache = new Map<string, string | null>();
     const keptLeaders: typeof profile.leadership = [];
-    for (const l of profile.leadership) {
+    for (const raw of profile.leadership) {
+      // Advisors out; the board apart; roles at other companies removed (owner, 2026-11-04).
+      const cls = roleAtCompany(raw.role, row.name);
+      if (cls.kind === "advisor") { console.log(`    🚫  ${raw.name} not written — an advisor ("${raw.role}")`); bump(stats.droppedByReason, "advisor_not_kept"); continue; }
+      const l = { ...raw, role: cls.role ?? "" };
       if (!allowedTexts.some((t) => personMentionedIn(l.name, t))) { drop(`leader ${l.name}`, "leader_source_not_listed"); continue; }
+      if (cls.kind === "board") { console.log(`    🏛️   ${l.name}: board — "${cls.role}"${cls.role !== raw.role ? ` (was "${raw.role}")` : ""}`); keptLeaders.push({ ...l, group: "board" }); continue; }
       const others = peopleNames.filter((n) => n !== l.name);
       const role = l.role ?? "";
       const onPages = websitePages.filter((p) => personMentionedIn(l.name, p.content));
@@ -1091,10 +1123,10 @@ export async function collectCompany(
         if (!htmlCache.has(p.url)) htmlCache.set(p.url, ctx.update ? null : await fetchPageHtml(p.url, searchState));
         const html = htmlCache.get(p.url);
         const cards = html ? personCardsInHtml(html, l.name, others) : [];
-        if (cards.some((c) => roleSupported(l.name, role, [c]))) { outcome = "verified_card"; cardNote = `card on ${p.url}`; break; }
+        if (role && cards.some((c) => roleSupported(l.name, role, [c]))) { outcome = "verified_card"; cardNote = `card on ${p.url}`; break; }
         cardNote = !html ? `no HTML for ${p.url}` : !cards.length ? `no card found on ${p.url}` : `card on ${p.url} without the title: "${cards[0].slice(0, 80)}"`;
       }
-      if (!outcome && roleSupported(l.name, role, allowedTexts, others)) outcome = "verified_text";
+      if (!outcome && role && roleSupported(l.name, role, allowedTexts, others)) outcome = "verified_text";
       const team = onPages.find((p) => teamPage(p.url) || (p.also_urls ?? []).some(teamPage));
       const record = (o: "verified_card" | "verified_text" | "kept_without_title" | "dropped") => stats.roleChecks?.push({ company: row.name, name: l.name, title: role, outcome: o, page: team?.url ?? onPages[0]?.url, card: cardNote });
       if (outcome) { record(outcome); keptLeaders.push(l); continue; }

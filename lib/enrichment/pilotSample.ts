@@ -8,6 +8,7 @@
 export interface PilotCandidate {
   id: string; name: string; website: string | null; description: string | null;
   city: string | null; country: string | null; founded_year: number | null; founding_country: string | null; status?: string | null;
+  founders?: unknown[] | null; competitors?: unknown[] | null;
 }
 
 /** Thin: no description, or neither a city nor a founded year on file. */
@@ -30,4 +31,33 @@ export function drawPilotSample(rows: PilotCandidate[], opts: { size: number; mi
   take(pool.filter((r) => isThin(r) && !picked.has(r.id)), Math.max(0, opts.minThin - [...picked.values()].filter(isThin).length));
   take(pool, opts.size - picked.size);
   return [...picked.values()].map((c) => ({ ...c, why: [isIsraeli(c) ? "israeli" : "", isThin(c) ? "thin" : ""].filter(Boolean).concat(isIsraeli(c) || isThin(c) ? [] : ["random"]) }));
+}
+
+/**
+ * How many of the fields still short of marks a company would fill (owner, 2026-11-04): an empty
+ * HQ, founded year, founding country, founders or competitors — the review shows a value only
+ * where the field is empty on file.
+ */
+export function missingFieldCount(c: PilotCandidate): number {
+  return [!c.city, !c.founded_year, !c.founding_country, !(c.founders ?? []).length, !(c.competitors ?? []).length].filter(Boolean).length;
+}
+
+/** The targeted share of a review run (owner, 2026-11-04): 8 of 15; of a larger run, under half. */
+export const targetedCount = (size: number) => (size <= 15 ? Math.min(8, size) : Math.floor(size * 0.45));
+
+/**
+ * The review's draw (owner, 2026-11-04): `targeted` companies picked for the fields short of
+ * marks — covered by an allowed press source (`covered`) and missing at least 3 of those fields,
+ * most missing first — and the rest at random (drawPilotSample), so the precision measured
+ * still reflects small companies.
+ */
+export function drawReviewSample(rows: PilotCandidate[], covered: Set<string>, opts: { size: number; targeted: number; seed: number }): Array<PilotCandidate & { why: string[] }> {
+  const pool = shuffled(rows.filter((r) => r.website), opts.seed);
+  const targeted = pool.filter((r) => covered.has(r.id) && missingFieldCount(r) >= 3)
+    .sort((a, b) => missingFieldCount(b) - missingFieldCount(a))
+    .slice(0, opts.targeted)
+    .map((c) => ({ ...c, why: ["targeted"] }));
+  const taken = new Set(targeted.map((t) => t.id));
+  const random = drawPilotSample(pool.filter((r) => !taken.has(r.id)), { size: opts.size - targeted.length, minThin: 2, minIsraeli: 2, seed: opts.seed + 1 });
+  return [...targeted, ...random];
 }

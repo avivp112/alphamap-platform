@@ -105,7 +105,7 @@ export interface WriteOutcome {
   patch: Record<string, unknown>;
   roundInserts: CollectedCompany["plan"]["inserts"];
   roundUpdates: CollectedCompany["plan"]["updates"];
-  headcountPoints: Array<{ date: string; count: number }>;
+  headcountPoints: Array<{ date: string; count: number; pointType?: string }>;
   tags: string[];
   newsAdded: number;
   competitorsAdded: number;
@@ -494,10 +494,10 @@ export async function writeCollected(
 
   // Talent & growth: headcount (issue 6's guard + validation's outlier check)
   const totalRaisedEstimate = computeTotalRaised([...existingRefs, ...plan.inserts]);
-  const headcountPoints: Array<{ date: string; count: number }> = [];
+  const headcountPoints: Array<{ date: string; count: number; pointType?: string }> = [];
   for (const h of profile.metrics.headcount_history ?? []) {
     const date = normalizeIsoDate(h.date);
-    if (date && h.employee_count > 0 && !headcountPoints.some((p) => p.date === date)) headcountPoints.push({ date, count: h.employee_count });
+    if (date && h.employee_count > 0 && !headcountPoints.some((p) => p.date === date)) headcountPoints.push({ date, count: h.employee_count, pointType: h.point_type ?? "press_reported" });
   }
   const acceptedHeadcount = validation.accepted.employee_count;
   if (acceptedHeadcount != null && profile.metrics.employee_count) {
@@ -517,7 +517,7 @@ export async function writeCollected(
       // date only — never re-stamped as today's headcount.
       const today = new Date().toISOString().slice(0, 10);
       const staleDuplicate = headcountPoints.some((p) => p.count === candidate.value && (Date.now() - new Date(p.date).getTime()) / 86_400_000 > 180);
-      if (!staleDuplicate && !headcountPoints.some((p) => p.date === today)) headcountPoints.push({ date: today, count: candidate.value });
+      if (!staleDuplicate && !headcountPoints.some((p) => p.date === today)) headcountPoints.push({ date: today, count: candidate.value, pointType: headcountDecision.pointType });
     } else {
       console.log(`    ⚠️  Headcount change rejected (point_type=${headcountDecision.pointType}): ${row.employee_count} -> ${candidate.value} not strongly enough evidenced.`);
     }
@@ -667,10 +667,10 @@ export async function writeCollected(
     // recorded_date is what the Talent & Growth chart and the score read,
     // so a backfilled point carries its own date there too, not "now".
     for (const p of headcountPoints) {
-      const { error: hcErr } = await supabase.from("headcount_history").upsert(
-        { startup_id: row.id, employee_count: p.count, snapshot_date: p.date, recorded_date: `${p.date}T00:00:00Z` },
-        { onConflict: "startup_id,snapshot_date" },
-      );
+      const base = { startup_id: row.id, employee_count: p.count, snapshot_date: p.date, recorded_date: `${p.date}T00:00:00Z` };
+      let { error: hcErr } = await supabase.from("headcount_history").upsert({ ...base, point_type: p.pointType ?? "observed" }, { onConflict: "startup_id,snapshot_date" });
+      // Before migration 20261117000000 the column is missing: the point is still written.
+      if (hcErr && /point_type/.test(hcErr.message)) ({ error: hcErr } = await supabase.from("headcount_history").upsert(base, { onConflict: "startup_id,snapshot_date" }));
       if (hcErr) console.warn(`    ⚠️  headcount_history upsert failed (${p.date}): ${hcErr.message}`);
     }
 

@@ -96,7 +96,7 @@ function serperResults(q: string) {
   return [
     r("https://techcrunch.com/2014/03/15/ghost-raises-seed", "Ghost raises $2M", "Ghost (ghost.org), the 10-person publishing startup, raised a $2 million seed round led by Y Combinator with SV Angel participating. Ghost now powers 70,000 publishers."),
     // The headcount on the company's own page: LinkedIn is never a source (owner, 2026-11-02).
-    r("https://www.theverge.com/2025/ghost-team", "Ghost's small team", "Ghost (ghost.org) open source publishing platform. Ghost has 60 employees."),
+    r("https://www.theverge.com/2025/10/14/ghost-team", "Ghost's small team", "Ghost (ghost.org) open source publishing platform. Ghost has 60 employees."),
     r("https://techcrunch.com/ghost-robotics-raises", "Ghost Robotics raises $100M", "Ghost Robotics builds legged quadruped robots for defense."),
   ];
 }
@@ -137,7 +137,7 @@ const createMock = vi.fn(async (req: { tools: Array<{ name: string }>; messages:
   let input: Record<string, unknown> = {};
   const tc = sid(prompt, "ghost-raises-seed");
   const w1 = sid(prompt, "ghost.org");
-  const li = sid(prompt, "theverge.com/2025/ghost-team");
+  const li = sid(prompt, "theverge.com/2025/10/14/ghost-team");
   const hq = sid(prompt, "ghost.org/about/press");
 
   if (tool === "classify_company") {

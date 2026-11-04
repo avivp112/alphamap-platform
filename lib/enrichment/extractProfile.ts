@@ -120,6 +120,8 @@ export interface V2Founder extends PersonQualityTags {
 export interface V2Leader extends PersonQualityTags {
   name: string;
   role: string;
+  /** "board": a board member, shown apart from the management (owner, 2026-11-04). */
+  group?: "board";
   bio?: string;
   bio_source_ids?: string[];
   linkedin_url?: EvidencedValue<string>;
@@ -158,6 +160,8 @@ export interface V2HeadcountPoint {
   employee_count: number;
   source_id: string;
   evidence_quote: string;
+  /** "press_reported": an article's dated figure, never the current headcount (owner, 2026-11-04). */
+  point_type?: "observed" | "press_reported" | "model_estimate";
 }
 
 export interface V2Metrics {
