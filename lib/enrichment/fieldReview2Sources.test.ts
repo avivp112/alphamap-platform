@@ -157,3 +157,14 @@ describe("a round without an amount its own source states (field review run 3: F
     expect(statesAmount("Acme closes Series A led by Accel")).toBe(false);
   });
 });
+
+import { announcementDateFromSource } from "./assemble";
+describe("a round dated by an article about another event (field review run 4: Speedb)", () => {
+  it("the publication date counts only when the headline announces the raise", () => {
+    const round = { round_type: "Other", amount_raised: { value: 4_000_000, source_id: "S1", evidence_quote: "Speedb raised $4 million in 2022" } } as never;
+    const acquisition = { source_id: "S1", url: "https://siliconangle.com/2024/03/21/redis-acquires-storage-engine-startup-speedb/", title: "Redis acquires storage engine startup Speedb to enhance its open-source database", content: "Published Time: 2024-03-21. Speedb, which raised $4 million, …", provider: "serper", query_label: "news", source_type: "news" } as never;
+    expect(announcementDateFromSource(round, acquisition, "2026-11-04")).toBeNull();
+    const raise = { source_id: "S1", url: "https://siliconangle.com/2022/04/05/speedb-raises-4m/", title: "Speedb raises $4M for its RocksDB replacement", content: "Published Time: 2022-04-05.", provider: "serper", query_label: "news", source_type: "news" } as never;
+    expect(announcementDateFromSource(round, raise, "2026-11-04")).toBe("2022-04-05");
+  });
+});

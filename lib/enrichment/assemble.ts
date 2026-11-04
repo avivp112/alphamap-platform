@@ -216,7 +216,10 @@ function shiftIsoDate(iso: string, days: number): string {
 }
 
 export function announcementDateFromSource(round: V2Round, source: LabeledSource, today = new Date().toISOString().slice(0, 10)): string | null {
-  const head = `${source.title ?? ""} ${source.content.slice(0, 700)}`;
+  // The article's own date dates the round only when its headline announces the raise
+  // (field review run 4: Speedb's 2022 $4M dated by SiliconANGLE's 2024 story of its acquisition).
+  // No headline known: the opening of the text stands in for it.
+  const head = source.title?.trim() ? source.title : `${source.content.slice(0, 700)}`;
   if (!RAISE_RE.test(head)) return null;
   const type = normalizeRoundType(round.round_type);
   const amount = round.amount_raised?.value;
