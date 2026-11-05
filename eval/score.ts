@@ -99,6 +99,10 @@ export interface PipelineOutput {
   hints?: { confirmed: HintedRound[]; kept: HintedRound[] };
   /** Domains on no list that a round came from (lib/enrichment/roundSources.ts). */
   unlisted_domains?: Array<{ domain: string; url: string }>;
+  /** Where each scalar came from, so a wrong value can be traced without re-running (owner, 2026-11-05). */
+  scalar_sources?: Partial<Record<"city" | "country" | "founded_year" | "founding_country", { source_url: string | null; quote: string | null }>>;
+  /** Every search of the run: label, query, provider, and whether the cache answered (eval/search_audit.ts). */
+  search_log?: Array<{ label: string; query: string; provider: string; cached: boolean }>;
 }
 
 export interface HintedRound { round_type: string | null; amount_raised: number | null; date: string | null; source_url: string | null }
@@ -219,10 +223,14 @@ export function matchRounds(verified: GoldenRound[], extracted: PipelineOutput["
   return pairs;
 }
 
-function scoreRounds(s: FieldStats, g: GoldenCompany, extracted: PipelineOutput["rounds"]): FieldResult {
+/**
+ * How one company's extracted rounds line up with the golden set: which are matched to a verified
+ * round, which are left out of judgement (matches a round the golden set could not source, an event,
+ * or — for a judged-only entry — anything it neither verifies nor marks wrong), and which are wrong.
+ */
+export function roundBreakdown(g: GoldenCompany, extracted: PipelineOutput["rounds"]) {
   const golden = g.funding_rounds;
   const verified = (golden ?? []).filter((r) => r.confidence !== "unknown");
-  if (verified.length === 0 && !(g.judged_only && (g.funding_rounds_wrong ?? []).length)) return "excluded";
   // A round that matches one the golden set could not source (2023 Wiz Series
   // D) is neither right nor wrong: left out of "produced" rather than counted
   // as a wrong write. Only rounds no verified golden round takes.
@@ -230,18 +238,30 @@ function scoreRounds(s: FieldStats, g: GoldenCompany, extracted: PipelineOutput[
     ...(golden ?? []).filter((r) => r.confidence === "unknown"),
     ...(g.funding_rounds_excluded_unknown ?? []).map((r) => ({ ...r, confidence: "unknown" as const })),
   ];
-  s.scored += verified.length;
   const pairs = matchRounds(verified, extracted);
   const used = new Set(pairs.map(([, i]) => i));
-  const correct = pairs.length;
   // An event (acquisition, IPO, secondary, buyout) the golden set does not
   // list is not a wrong funding round either (Wiz's $32B acquisition, eval of
   // 2026-11-01): the golden rounds are money raised; events are judged only
   // where the golden set lists them (Wise's secondaries, its listing).
   const wrong = (g.funding_rounds_wrong ?? []).map((r) => ({ ...r, confidence: r.confidence ?? ("verified" as const) }));
-  const ignored = extracted.filter((er, i) => !used.has(i) && (unknown.some((ur) => roundsDayGap(ur, er) !== null) || isEvent(er.round_type)
-    // A judged-only entry knows only its verified and wrong rounds; any other produced round is unjudged.
-    || (g.judged_only && !wrong.some((wr) => roundsDayGap(wr, er) !== null)))).length;
+  const ignoredIdx = new Set<number>();
+  extracted.forEach((er, i) => {
+    if (used.has(i)) return;
+    if (unknown.some((ur) => roundsDayGap(ur, er) !== null) || isEvent(er.round_type)
+      // A judged-only entry knows only its verified and wrong rounds; any other produced round is unjudged.
+      || (g.judged_only && !wrong.some((wr) => roundsDayGap(wr, er) !== null))) ignoredIdx.add(i);
+  });
+  const wrongIdx = extracted.map((_, i) => i).filter((i) => !used.has(i) && !ignoredIdx.has(i));
+  return { verified, pairs, used, ignored: ignoredIdx.size, wrongIdx };
+}
+
+function scoreRounds(s: FieldStats, g: GoldenCompany, extracted: PipelineOutput["rounds"]): FieldResult {
+  const verified = (g.funding_rounds ?? []).filter((r) => r.confidence !== "unknown");
+  if (verified.length === 0 && !(g.judged_only && (g.funding_rounds_wrong ?? []).length)) return "excluded";
+  const { pairs, ignored } = roundBreakdown(g, extracted);
+  const correct = pairs.length;
+  s.scored += verified.length;
   // A hallucinated or duplicate round is produced-but-not-correct.
   s.produced += extracted.length - ignored;
   s.correct += correct;

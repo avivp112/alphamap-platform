@@ -74,6 +74,7 @@ import { createSearchProviderState, searchCalls } from "../lib/enrichment/search
 import { openSearchCache } from "../lib/enrichment/searchCache.ts";
 import { blankRow } from "../worker/enrich.ts";
 import { buildProfile } from "../worker/profile.ts";
+import { wrongValues, wrongValuesText, wrongValuesCsv } from "./wrongValues.ts";
 import { callCostUsd, knownModel, UsageMeter, LONG_PROMPT_TOKENS } from "../lib/enrichment/models.ts";
 import {
   FIELDS, newScoreboard, pct, scoreCompany, duplicateRounds, foundedAfterFirstRound, phase1Checks, hintGain, matchRounds, roundsDayGap, isFatalProviderError, isEvent,
@@ -139,6 +140,7 @@ async function runV2(company: GoldenCompany, anthropic: Anthropic, taxonomy: Sec
   const companyLlm = new UsageMeter();
   const searchState = createSearchProviderState();
   searchState.cache = openSearchCache(`eval-${company.id}`);
+  searchState.queryLog = [];
   const row = blankRow({ checkId: `eval-${company.id}`, name: company.name, website: company.website ?? null, country: null, founder: null });
   const done = (output: PipelineOutput | null, outcome: string, sources = 0): V2Run => ({
     output, outcome, sources,
@@ -171,6 +173,8 @@ async function runV2(company: GoldenCompany, anthropic: Anthropic, taxonomy: Sec
       // Patents come only from the EPO register: not looked up (no EPO keys) is not "none".
       patents: c.patentsFromRegister ? c.market.patents.map((x) => x.patent_number).filter((n): n is string => !!n) : undefined,
       unlisted_domains: c.unlistedDomains ?? [],
+      scalar_sources: Object.fromEntries((["city", "country", "founded_year", "founding_country"] as const).map((f) => [f, { source_url: p.overview[f]?.source_url ?? null, quote: p.overview[f]?.quote ?? null }])),
+      search_log: searchState.queryLog,
       hints: {
         confirmed: (c.confirmedHints ?? []).map((h) => ({ round_type: h.round_type, amount_raised: h.amount_raised, date: h.announcement_date, source_url: h.confirmed_source_url })),
         kept: (c.roundHints ?? []).map((h) => ({ round_type: h.round_type, amount_raised: h.amount_raised, date: h.announcement_date, source_url: h.source_url })),
@@ -198,17 +202,35 @@ function reviewableSource(url: string | null | undefined, website: string | null
   return standing.kind === "allowed" && standing.tier <= 3;
 }
 
+/**
+ * RESCORE=true (owner, 2026-11-05): scores the output a finished run stored (eval/v2_results_<label>.json)
+ * against the CURRENT golden set — no search, no model, no database, no cost. After the owner marks a
+ * value or adds a company, the numbers update without paying for the run again. A company the stored
+ * run does not hold is listed and skipped, never guessed.
+ */
+const RESCORE = process.env.RESCORE === "true";
+const RESULTS_FILE = PIPELINE === "v1" ? "baseline.json" : `v2_results${COMPONENTS_LABEL ? `_${COMPONENTS_LABEL}` : ""}.json`;
+
 async function main() {
-  await initV1Context();
-  if (PIPELINE === "v1") await loadSectorTaxonomy();
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const v2Taxonomy = PIPELINE === "v2" ? await loadV2Taxonomy(supabase) : null;
+  const stored: { per_company?: Record<string, { output: PipelineOutput | null; outcome?: string; cost_usd?: number; seconds?: number }>; generated_at?: string } | null = RESCORE
+    ? (existsSync(join(__dir, RESULTS_FILE)) ? JSON.parse(readFileSync(join(__dir, RESULTS_FILE), "utf8")) : null) : null;
+  if (RESCORE && !stored?.per_company) { console.error(`RESCORE=true: eval/${RESULTS_FILE} not found or holds no per-company output. Run the evaluation first (EVAL_LABEL names the file).`); process.exit(1); }
+  if (!RESCORE) await initV1Context();
+  if (PIPELINE === "v1" && !RESCORE) await loadSectorTaxonomy();
+  const anthropic = RESCORE ? (null as unknown as Anthropic) : new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const v2Taxonomy = PIPELINE === "v2" && !RESCORE ? await loadV2Taxonomy(supabase) : null;
 
   const golden: GoldenSet = JSON.parse(readFileSync(join(__dir, "golden_set.json"), "utf8"));
   const inSet = golden.companies.filter((c) => !ONLY.length || ONLY.includes(c.id.toLowerCase()) || ONLY.includes(c.name.toLowerCase()));
   // A company without a website does not enter the golden set (owner, 2026-11-05): searching by name
   // alone would be an unfair measurement. The import tool copies the website by company id.
-  const companies = inSet.filter((c) => c.website);
+  let companies = inSet.filter((c) => c.website);
+  if (RESCORE) {
+    const missing = companies.filter((c) => !stored!.per_company![c.id]);
+    companies = companies.filter((c) => stored!.per_company![c.id]);
+    console.log(`RESCORE: scoring the stored run of ${stored!.generated_at ?? "?"} (eval/${RESULTS_FILE}) against the current golden set — nothing is searched or paid for.`);
+    if (missing.length) console.log(`  ${missing.length} golden compan${missing.length === 1 ? "y is" : "ies are"} not in that run and skipped: ${missing.map((c) => c.name).join(", ")}`);
+  }
   for (const c of inSet.filter((x) => !x.website)) console.warn(`  ⚠️  ${c.name}: no website in the golden set — skipped. Run eval/import_field_review.ts to fill it by company id.`);
   const unreviewed = companies.filter((c) => !c.reviewed_by_human).length;
   console.log(`Pipeline ${PIPELINE} on ${companies.length} golden-set companies${unreviewed ? ` (${unreviewed} not yet reviewed by a human)` : ""}.`);
@@ -270,6 +292,11 @@ async function main() {
           console.log(`    ℹ️   No existing startups row matched "${company.name}" — skipping evidence storage (extraction was still scored).`);
         }
       }
+    } else if (RESCORE) {
+      const st = stored!.per_company![company.id];
+      output = st.output;
+      extra = { outcome: st.outcome, cost_usd: st.cost_usd, seconds: st.seconds } as typeof extra;
+      totalCost += st.cost_usd ?? 0; totalSeconds += st.seconds ?? 0; ran++;
     } else {
       try {
         const r = await withoutWrites("v2 collection", () => runV2(company, anthropic, v2Taxonomy!));
@@ -334,19 +361,26 @@ async function main() {
   const checks = phase1Checks(board, { locationMismatches, duplicateRounds: duplicates, foundedAfterRound });
   console.log("Phase 1 rules (docs/enrichment_v2_spec.md §7):");
   for (const c of checks) console.log(`  ${c.pass ? "✅" : "❌"} ${c.rule} — ${c.detail}`);
+  const wrongRows = companies.flatMap((c) => { const o = perCompany[c.id]?.output; return o ? wrongValues(c, o) : []; });
+  console.log(`\nValues counted wrong: ${wrongRows.length}`);
+  console.log(wrongValuesText(wrongRows));
   if (PIPELINE === "v2" && ran) {
     console.log(`\nHints (rounds only a data platform states — lib/enrichment/hints.ts):`);
     console.log(`  confirmed by a primary source and written: ${hintTotals.confirmed} — matching a golden round: ${hintTotals.confirmed_matching_golden}, matching none (wrong writes): ${hintTotals.confirmed - hintTotals.confirmed_matching_golden}`);
     console.log(`  kept as hints, not written: ${hintTotals.kept} — of which real golden rounds still to find: ${hintTotals.kept_matching_golden}`);
-    console.log(`\nCost: $${totalCost.toFixed(3)} total, $${(totalCost / ran).toFixed(4)} per company · time: ${(totalSeconds / ran).toFixed(0)} s per company`);
-    console.log(`Claude (${ENRICH_MODEL}${knownModel(ENRICH_MODEL) ? "" : " — no price on file, priced as Haiku 4.5"}): $${LLM.costUsd.toFixed(4)} total, $${(LLM.costUsd / ran).toFixed(4)} per company, from ${LLM.calls} calls' reported tokens (in ${LLM.inputTokens.toLocaleString()}, cache write ${LLM.cacheWriteTokens.toLocaleString()}, cache read ${LLM.cacheReadTokens.toLocaleString()}, out ${LLM.outputTokens.toLocaleString()})`);
-    console.log(`Longest prompt: ${LLM.maxPromptTokens.toLocaleString()} tokens · calls over ${LONG_PROMPT_TOKENS.toLocaleString()}: ${LLM.callsOverLong}${LLM.callsOverLong ? "  ⚠️  those are billed at Haiku 5.5's long-prompt rate ($0.50 / $2.50)" : " ✅"}`);
+    console.log(`\n${RESCORE ? "Cost of the stored run" : "Cost"}: $${totalCost.toFixed(3)} total, $${(totalCost / ran).toFixed(4)} per company · time: ${(totalSeconds / ran).toFixed(0)} s per company`);
+    if (!RESCORE) console.log(`Claude (${ENRICH_MODEL}${knownModel(ENRICH_MODEL) ? "" : " — no price on file, priced as Haiku 4.5"}): $${LLM.costUsd.toFixed(4)} total, $${(LLM.costUsd / ran).toFixed(4)} per company, from ${LLM.calls} calls' reported tokens (in ${LLM.inputTokens.toLocaleString()}, cache write ${LLM.cacheWriteTokens.toLocaleString()}, cache read ${LLM.cacheReadTokens.toLocaleString()}, out ${LLM.outputTokens.toLocaleString()})`);
+    if (!RESCORE) console.log(`Longest prompt: ${LLM.maxPromptTokens.toLocaleString()} tokens · calls over ${LONG_PROMPT_TOKENS.toLocaleString()}: ${LLM.callsOverLong}${LLM.callsOverLong ? "  ⚠️  those are billed at Haiku 5.5's long-prompt rate ($0.50 / $2.50)" : " ✅"}`);
   }
   if (companies.length < 50 || unreviewed) {
     console.log(`\n⚠️  ${companies.length} companies${unreviewed ? `, ${unreviewed} not yet reviewed by a human` : ""} — Phase 1 is judged only on the full,`);
     console.log("   reviewed golden set (50+). Treat these numbers as a direction, not a verdict.\n");
   }
 
+  const wrongFile = join(__dir, `wrong_values${COMPONENTS_LABEL ? `_${COMPONENTS_LABEL}` : ""}.csv`);
+  writeFileSync(wrongFile, wrongValuesCsv(wrongRows));
+  console.log(`\n📄  ${wrongRows.length} wrong value(s) with their sources: ${wrongFile}`);
+  if (RESCORE) { console.log("RESCORE: nothing else written (the stored run and the review sheets are untouched)."); return; }
   // One file per component setting, so a baseline run and an all-on run sit side by side (eval/compare_runs.ts).
   const file = PIPELINE === "v1" ? "baseline.json" : `v2_results${COMPONENTS_LABEL ? `_${COMPONENTS_LABEL}` : ""}.json`;
   // Competitors v2 found that the golden set does not judge yet, for the

@@ -268,8 +268,11 @@ export async function runAllSearches(name: string, anchor: string, state: Search
     // (the separate "tech stack" query was dropped: careers/engineering
     // pages fetched from the company's own site carry that, for free)
   ];
+  // SEARCH_SKIP=acquisitions,financials — leaves those core queries out, to measure what they add on the
+  // golden set (owner, 2026-11-05: search is ~60% of the cost). Unset in every normal run.
+  const skip = new Set((process.env.SEARCH_SKIP ?? "").split(",").map((x) => x.trim()).filter(Boolean));
   const [searchBatches, newsResults] = await Promise.all([
-    Promise.all(queries.map(([label, q]) => webSearch(q, label, state))),
+    Promise.all(queries.filter(([label]) => !skip.has(label)).map(([label, q]) => webSearch(q, label, state))),
     // Serper's News endpoint is primary for news; the site:-heavy query is
     // only used if Jina Search has to back it up (see newsSearch()).
     newsSearch(

@@ -60,6 +60,8 @@ export interface SearchProviderState {
   websitePagesDuplicate: number;
   /** Per-company disk cache (searchCache.ts) — a hit costs no API call. */
   cache?: SearchCache;
+  /** Every search of the run, when set: label, query, provider and whether the cache answered (eval/search_audit.ts). */
+  queryLog?: Array<{ label: string; query: string; provider: string; cached: boolean }>;
   /** Jina Search answers (Serper's backup / deep-dive partner) and Serper scrape reads (Jina Reader's backup). */
   jinaSearchCallCount?: number;
   serperScrapeCount?: number;
@@ -69,6 +71,10 @@ export interface SearchProviderState {
 }
 
 /** Most of this company's searches failed: an outage, not a company with nothing about it. */
+function logQuery(state: SearchProviderState, provider: string, label: string, query: string, cached: boolean): void {
+  state.queryLog?.push({ label, query, provider, cached });
+}
+
 export function searchMostlyFailed(state: SearchProviderState): boolean {
   const attempts = state.searchAttempts ?? 0, failures = state.searchFailures ?? 0;
   return failures >= 3 && failures / Math.max(attempts, 1) >= 0.3;
@@ -157,6 +163,7 @@ async function serperCall(endpoint: "search" | "news", query: string, queryLabel
   if (!process.env.SERP_KEY) return { results: [], failed: true };
   const cacheKey = `${endpoint === "news" ? "serper_news" : "serper"}:${query}`;
   const cached = state.cache?.get<RawSearchResult[]>(cacheKey);
+  logQuery(state, endpoint === "news" ? "serper_news" : "serper", queryLabel, query, !!cached);
   if (cached) return { results: cached.map((r) => ({ ...r, query_label: queryLabel })), failed: false };
   state.searchAttempts = (state.searchAttempts ?? 0) + 1;
   try {
@@ -256,6 +263,7 @@ export async function jinaSearch(query: string, queryLabel: string, state: Searc
   if (!process.env.JINA_API_KEY || jinaDisabled()) return { results: [], failed: true };
   const cacheKey = `jina_search:${query}`;
   const cached = state.cache?.get<RawSearchResult[]>(cacheKey);
+  logQuery(state, "jina_search", queryLabel, query, !!cached);
   if (cached) return { results: cached.map((r) => ({ ...r, query_label: queryLabel })), failed: false };
   state.searchAttempts = (state.searchAttempts ?? 0) + 1;
   try {
@@ -310,6 +318,7 @@ export async function tavilySearch(
 ): Promise<RawSearchResult[]> {
   const cacheKey = `tavily:${query}`;
   const cached = state.cache?.get<RawSearchResult[]>(cacheKey);
+  logQuery(state, "tavily", queryLabel, query, !!cached);
   if (cached) return cached.map((r) => ({ ...r, query_label: queryLabel }));
   state.searchAttempts = (state.searchAttempts ?? 0) + 1;
   if (state.tavilyExhausted) return [];
