@@ -121,3 +121,10 @@ export function readReplay(path = process.env.FIELD_REVIEW_REPLAY ?? REPLAY): Ma
 export function countedMarks(marks: Mark[] = readMarks(), replay: Map<string, boolean> = readReplay()): Mark[] {
   return marks.filter((m) => replay.get(m.id) !== false);
 }
+
+/** Rows of the tracker whose columns are not the seven (an unquoted comma shifts the verdict). */
+export function malformedRows(path = process.env.FIELD_REVIEW_TRACKER ?? TRACKER): Array<{ line: number; id: string; columns: number }> {
+  if (!existsSync(path)) return [];
+  const [, ...rows] = parseCsv(readFileSync(path, "utf8").replace(/^\ufeff/, ""));
+  return rows.map((r, i) => ({ line: i + 2, id: r[0], columns: r.length, verdict: r[5] })).filter((r) => r.columns !== 7 || !["correct", "wrong"].includes(r.verdict ?? ""));
+}

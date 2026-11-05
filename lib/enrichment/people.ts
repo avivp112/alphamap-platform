@@ -34,7 +34,10 @@ function badNameToken(t: string): boolean {
 }
 
 /** A person's name: 2-4 capitalized tokens, no organisation words, no sentence words. */
-function looksLikePersonName(p: string): boolean {
+/** An organisation, not a person ("GE Healthcare", "Elbit Medical Imaging"). */
+export const isOrganisationName = (name: string) => NOT_A_PERSON.test(name);
+
+export function looksLikePersonName(p: string): boolean {
   return NAME_RE.test(p) && !NOT_A_PERSON.test(p) && !p.split(/\s+/).some(badNameToken);
 }
 const SUBJECT_GAP_WORDS = new Set(["was", "is", "were", "has", "been", "originally", "officially", "which", "that", "first", "initially", "a", "an", "the"]);

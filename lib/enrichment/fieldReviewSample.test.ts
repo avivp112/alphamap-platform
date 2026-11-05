@@ -27,3 +27,28 @@ describe("the marks counted against the current rules (owner, 2026-11-04)", () =
     expect(counted.map((x) => x.id)).toEqual(["1", "3", "4"]);
   });
 });
+
+import { malformedRows } from "./fieldReview";
+import { judgeMark } from "./markRules";
+describe("the tracker and the rules-only judgment of a mark (owner, 2026-11-04)", () => {
+  it("every row of the tracker has seven columns and a verdict (run 1's 1.35 was read as wrong by a comma)", () => {
+    expect(malformedRows()).toEqual([]);
+  });
+  const m = (field: string, value: string, source_url = "", company = "X") => ({ id: "t", field, company, value, source_url, verdict: "wrong" as const, source_of_mark: "" });
+  it("a mark leaves the count only when a rule rejects its value", () => {
+    expect(judgeMark(m("leader", "Gil Hirsch — Board & Advisor; Founder & CMO, StreamElements", "https://infinigrow.com/company", "InfiniGrow"), { domain: "infinigrow.com" }).produced).toBe(false);
+    expect(judgeMark(m("leader", "Kristina Cross — VP Sales", "https://incredosugar.com/about", "Incredo"), { domain: "incredosugar.com" }).produced).toBe(true);
+    expect(judgeMark(m("leader", "Paul Thomas — CEO")).produced).toBe(false); // no source
+    expect(judgeMark(m("founder", "GE Healthcare — Founder", "https://insightec.com/x", "Insightec")).produced).toBe(false);
+    expect(judgeMark(m("round", "Debt amount not disclosed · 2024-09-19", "https://www.forwardfinancing.com/forward-announces-expanded-450-million-credit-facility/")).produced).toBe(false);
+    expect(judgeMark(m("round", "Other $4M · 2024-03-21", "https://siliconangle.com/2024/03/21/redis-acquires-storage-engine-startup-speedb/")).produced).toBe(false);
+    expect(judgeMark(m("round", "Other $4M · 2022-04-05", "https://siliconangle.com/2022/04/05/speedb-raises-4m/")).produced).toBe(true);
+    // The register page of a company is never a "directory"; a patent is never judged by its source.
+    expect(judgeMark(m("founded_year", "2019", "https://find-and-update.company-information.service.gov.uk/company/12014731")).produced).toBe(true);
+    expect(judgeMark(m("patent", "EP4381061A1 Systems", "https://worldwide.espacenet.com/patent/search?q=pn%3DEP4381061A1")).produced).toBe(true);
+    // A republisher is judged by its text, which is not stored: it stays.
+    expect(judgeMark(m("leader", "Ran Strauss — CEO & Co-Founder", "https://www.tradingview.com/news/financewire:d7752dcc1094b:0-leverate/")).produced).toBe(true);
+    // A company database is denied outright.
+    expect(judgeMark(m("founded_year", "2015", "https://startupintros.com/orgs/braincheck")).produced).toBe(false);
+  });
+});

@@ -198,7 +198,7 @@ export function absorbAmountlessRounds(rounds: RoundLike[]): RoundLike[] {
 // funding to $65.5 million" or "sold with $318,000 ARR" is not one.
 const VALUATION_WORD_RE = /\b(valu(?:e|ed|ation|ing)|post-?money|pre-?money|worth|unicorn|market cap)/i;
 
-const RAISE_RE = /\b(rais(e|es|ed|ing)|secur(e|es|ed)|clos(e|es|ed)|lands|nabs|bags|announc(e|es|ed) .{0,40}(funding|round|investment))\b/i;
+export const RAISE_RE = /\b(rais(e|es|ed|ing)|secur(e|es|ed)|clos(e|es|ed)|lands|nabs|bags|announc(e|es|ed) .{0,40}(funding|round|investment))\b/i;
 
 /**
  * The publication date of the article that ANNOUNCED this round — used as
