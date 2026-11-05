@@ -31,8 +31,10 @@ const marks = readMarks();
 function loadIds(): Map<string, string> {
   const dir = process.env.REVIEW_DIR ?? "field_review";
   const files = [...(existsSync(dir) ? readdirSync(dir).filter((f) => /\.csv$/.test(f)).map((f) => join(dir, f)) : []), ...(process.env.ID_FILES ?? "").split(",").filter(Boolean)];
-  const rows = files.flatMap((f) => parseCsvText(readFileSync(f, "utf8").replace(/^﻿/, "")));
-  return companyIdsFromCsv(rows);
+  // Each file has its own header row, so each is read on its own.
+  const ids = new Map<string, string>();
+  for (const f of files) for (const [k, v] of companyIdsFromCsv(parseCsvText(readFileSync(f, "utf8").replace(/^\uFEFF/, "")))) if (!ids.has(k)) ids.set(k, v);
+  return ids;
 }
 
 (async () => {

@@ -83,3 +83,11 @@ describe("the same company under different spellings finds its id", () => {
     expect(nameKey("Café Ünit, Inc.")).toBe("cafeunitinc");
   });
 });
+
+describe("files with different column layouts are each read by their own header", () => {
+  it("the id column is found in every file, not only the first", () => {
+    const a = companyIdsFromCsv([["id", "field", "company", "company_id"], ["1", "x", "Alpha", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]]);
+    const b = companyIdsFromCsv([["company", "id", "company_id"], ["Moon Active", "2", "10146787-c5ff-4c74-b375-bc6cbde3f5ca"]]);
+    expect(a.size + b.size).toBe(2);
+  });
+});
