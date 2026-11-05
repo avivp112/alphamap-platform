@@ -76,3 +76,11 @@ describe("quotes skip page chrome", () => {
     expect(quoteFor(nav, { field: "city", value: "London" })).toBe("The company is based in London, England.");
   });
 });
+
+describe("a corrected value with alternatives", () => {
+  it("v1.N=New York|Munich keeps both as accepted values", () => {
+    const c: GoldenCompany = { id: "c", name: "Celonis", city: v("Munich"), founders: [] };
+    const a = applyVerdict([c], sheetValues([c]), ["v1.1=New York|Munich"]).companies[0];
+    expect(a.city).toMatchObject({ value: "New York", alternatives: ["Munich"], confidence: "verified" });
+  });
+});

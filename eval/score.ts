@@ -21,8 +21,10 @@ export interface GoldenField<T> {
   value: T | null; confidence: Confidence; source_url?: string; notes?: string;
   /** The company declares no headquarters (owner, 2026-11-01: Port, Aidoc, SSI): empty is correct, any value is wrong. */
   not_declared?: boolean;
+  /** Other accepted values (owner, 2026-11-05): a company with two real headquarters, "Munich" and "New York". Any of them is correct. */
+  alternatives?: string[];
 }
-export interface GoldenFounder { name: string; title?: string; confidence: Confidence; source_url?: string }
+export interface GoldenFounder { name: string; title?: string; confidence: Confidence; source_url?: string; /** other spellings of the same person (Hebrew transliterations) */ aka?: string[] }
 export interface GoldenRound {
   type: string; amount_usd: number | null; date: string | null;
   lead_investor?: string | null; valuation_usd?: number | null; confidence: Confidence;
@@ -71,6 +73,8 @@ export interface GoldenCompany {
    * entries written before this was introduced).
    */
   reviewed_fields?: string[];
+  /** The founders list is complete: a person the pipeline names who is not on it is wrong. Absent: unlisted people are unjudged. */
+  founders_complete?: boolean;
   hard_case_tags?: string[];
 }
 export interface GoldenSet { version: number; companies: GoldenCompany[] }
@@ -134,6 +138,7 @@ const ALIASES: Record<string, string> = {
 function samePerson(a: string, b: string): boolean {
   return normalize(a) === normalize(b) || samePersonName(a, b);
 }
+const isGoldenPerson = (g: GoldenFounder, name: string) => [g.name, ...(g.aka ?? [])].some((n) => samePerson(n, name));
 
 export function normalize(s: string | null | undefined): string {
   const n = (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -153,21 +158,28 @@ function scoreScalar(s: FieldStats, golden: GoldenField<string | number> | undef
   s.scored++;
   if (extracted == null || extracted === "") return "missing";   // lowers coverage, not precision
   s.produced++;
-  if (normalize(String(extracted)) === normalize(String(golden.value))) { s.correct++; return "correct"; }
+  const accepted = [golden.value, ...(golden.alternatives ?? [])].map((v) => normalize(String(v)));
+  if (accepted.includes(normalize(String(extracted)))) { s.correct++; return "correct"; }
   return "wrong";
 }
 
-// Coverage denominator = golden founders (was each real founder found);
-// precision denominator = extracted founders (of everyone NAMED a founder, how
-// many are real).
-function scoreFounders(s: FieldStats, golden: GoldenFounder[] | undefined, extracted: Array<{ name: string }>): FieldResult {
-  const verified = (golden ?? []).filter((f) => f.confidence !== "unknown");
+// Coverage denominator = golden founders (was each real founder found). The golden set does not
+// always list every founder (Hailo without Rami Feig, Coralogix without Yoni Farin), so a person the
+// pipeline names who is not listed is UNJUDGED (owner, 2026-11-05), not wrong — unless the entry says
+// `founders_complete: true`, when an unlisted person is a wrong one. Precision counts judged people only.
+function scoreFounders(s: FieldStats, g: GoldenCompany, extracted: Array<{ name: string }>): FieldResult {
+  const verified = (g.founders ?? []).filter((f) => f.confidence !== "unknown");
   if (verified.length === 0) return "excluded";
+  const matched = extracted.filter((f) => verified.some((v) => isGoldenPerson(v, f.name)));
+  const unlisted = extracted.length - matched.length;
+  const judged = g.founders_complete ? extracted.length : matched.length;
   s.scored += verified.length;
-  s.produced += extracted.length;
-  const correct = extracted.filter((f) => verified.some((g) => samePerson(g.name, f.name))).length;
-  s.correct += correct;
-  return extracted.length === 0 ? "missing" : correct === extracted.length && correct === verified.length ? "correct" : "wrong";
+  s.produced += judged;
+  s.correct += matched.length;
+  if (!g.founders_complete && unlisted) s.unjudged = (s.unjudged ?? 0) + unlisted;
+  const found = verified.filter((v) => extracted.some((f) => isGoldenPerson(v, f.name))).length;
+  if (g.founders_complete && unlisted) return "wrong";
+  return extracted.length === 0 || found < verified.length ? "missing" : "correct";
 }
 
 // The same real-world round: amount within ±10% and dates within ~9 months.
@@ -318,7 +330,7 @@ export function scoreCompany(board: Scoreboard, g: GoldenCompany, out: PipelineO
     founding_country: ifReviewed(["founding_country"], () => scoreScalar(board.founding_country, g.founding_country, out.founding_country)),
     founded_year: ifReviewed(["founded_year"], () => scoreScalar(board.founded_year, g.founded_year, out.founded_year)),
     // An entry built from marks lists only some founders: the field is not scored there.
-    founders: ifReviewed(["founders"], () => (g.judged_only ? "excluded" : scoreFounders(board.founders, g.founders, out.founders))),
+    founders: ifReviewed(["founders"], () => (g.judged_only ? "excluded" : scoreFounders(board.founders, g, out.founders))),
     funding_rounds: ifReviewed(["rounds", "funding_rounds"], () => scoreRounds(board.funding_rounds, g, out.rounds)),
     round_type: ifReviewed(["rounds", "funding_rounds"], () => scoreRoundTypes(board.round_type, g, out.rounds)),
     employee_range: ifReviewed(["employee_range"], () => scoreScalar(board.employee_range, g.employee_range, out.employee_range)),

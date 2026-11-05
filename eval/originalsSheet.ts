@@ -57,7 +57,8 @@ export function sheetCsv(values: SheetValue[]): string {
  * Applies the owner's verdict: the numbers he names are wrong, every other value is correct.
  * A wrong city/country/year/founding country becomes "unknown" with a note (it is no golden truth);
  * a wrong founder is removed. Every sheet field the company has is then listed in `reviewed_fields`.
- * "v1.4=London" gives the right value: it is kept as the golden value (verified, with a note); a
+ * "v1.4=New York|Munich" keeps both as accepted values (the first is the main one; a company with two
+ * headquarters). "v1.4=London" gives the right value: it is kept as the golden value (verified, with a note); a
  * founder's replacement is the corrected name. Unknown numbers are returned, not guessed.
  */
 export function applyVerdict(companies: GoldenCompany[], values: SheetValue[], wrong: string[]): { companies: GoldenCompany[]; unknown: string[]; wrongApplied: number } {
@@ -79,14 +80,15 @@ export function applyVerdict(companies: GoldenCompany[], values: SheetValue[], w
       const fix = fixes.get(v.id);
       if (v.field === "founder") {
         if (!fix) { dropPersons.add(v.person!); continue; }
-        renamed.set(v.person!, fix);
+        renamed.set(v.person!, fix.split("|")[0].trim());
         continue;
       }
       const cur = next[v.field] as { value: unknown; confidence: string; notes?: string };
       const note = fix ? `owner corrected "${v.value}" to "${fix}" on the check sheet (${v.id}, 2026-11-05)` : `owner marked the value "${v.value}" wrong on the check sheet (${v.id}, 2026-11-05)`;
+      const [main, ...alts] = (fix ?? "").split("|").map((x) => x.trim()).filter(Boolean);
       (next as Record<string, unknown>)[v.field] = {
         ...cur, notes: [cur.notes, note].filter(Boolean).join(" · "),
-        ...(fix ? { value: v.field === "founded_year" && /^\d{4}$/.test(fix) ? Number(fix) : fix, confidence: "verified" } : { confidence: "unknown" }),
+        ...(main ? { value: v.field === "founded_year" && /^\d{4}$/.test(main) ? Number(main) : main, confidence: "verified", ...(alts.length ? { alternatives: alts } : {}) } : { confidence: "unknown" }),
       };
     }
     if (dropPersons.size || renamed.size) next.founders = (g.founders ?? []).map((p, i) => (renamed.has(i) ? { ...p, name: renamed.get(i)! } : p)).filter((_, i) => !dropPersons.has(i));

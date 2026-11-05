@@ -19,7 +19,7 @@ describe("scoreCompany", () => {
   it("counts right, wrong and missing separately; unknown golden values are excluded", () => {
     const b = newScoreboard();
     const r = scoreCompany(b, apex, out({ city: "Los Angeles", country: "USA", founded_year: 2021, founders: [{ name: "Ian Cinnamon" }] }));
-    expect(r).toMatchObject({ city: "correct", country: "correct", founded_year: "wrong", founders: "wrong", funding_rounds: "missing", employee_range: "excluded" });
+    expect(r).toMatchObject({ city: "correct", country: "correct", founded_year: "wrong", founders: "missing", funding_rounds: "missing", employee_range: "excluded" });
     expect(b.founded_year).toEqual({ scored: 1, produced: 1, correct: 0 });
     expect(b.founders).toEqual({ scored: 2, produced: 1, correct: 1 });
     expect(b.funding_rounds).toEqual({ scored: 2, produced: 0, correct: 0 });   // the unknown Seed is not scored
@@ -235,5 +235,37 @@ describe("reviewed_fields — a golden value counts only when its field was revi
     expect(r.city).toBe("wrong");
     expect(b.city.scored).toBe(1);
     expect(b.country.scored).toBe(0);
+  });
+});
+
+describe("two headquarters, unlisted founders, spellings (owner, 2026-11-05)", () => {
+  const celonis: GoldenCompany = { id: "celonis", name: "Celonis", city: { value: "New York", alternatives: ["Munich"], confidence: "verified" } };
+  it("any accepted value of a company with two headquarters is correct", () => {
+    for (const c of ["New York", "Munich"]) {
+      const b = newScoreboard();
+      expect(scoreCompany(b, celonis, out({ city: c })).city).toBe("correct");
+    }
+    expect(scoreCompany(newScoreboard(), celonis, out({ city: "Berlin" })).city).toBe("wrong");
+  });
+  const hailo: GoldenCompany = { id: "hailo", name: "Hailo", founders: [{ name: "Orr Danon", confidence: "verified" }, { name: "Avi Baum", confidence: "verified" }] };
+  it("a founder the pipeline finds who is not in the golden set is unjudged, not wrong", () => {
+    const b = newScoreboard();
+    const r = scoreCompany(b, hailo, out({ founders: [{ name: "Orr Danon" }, { name: "Avi Baum" }, { name: "Rami Feig" }] }));
+    expect(r.founders).toBe("correct");
+    expect(b.founders).toMatchObject({ scored: 2, produced: 2, correct: 2, unjudged: 1 });
+  });
+  it("a golden founder not found lowers coverage; with founders_complete an unlisted person is wrong", () => {
+    const b = newScoreboard();
+    expect(scoreCompany(b, hailo, out({ founders: [{ name: "Orr Danon" }] })).founders).toBe("missing");
+    expect(b.founders).toMatchObject({ scored: 2, produced: 1, correct: 1 });
+    const b2 = newScoreboard();
+    const r = scoreCompany(b2, { ...hailo, founders_complete: true }, out({ founders: [{ name: "Orr Danon" }, { name: "Avi Baum" }, { name: "Rami Feig" }] }));
+    expect(r.founders).toBe("wrong");
+    expect(b2.founders).toMatchObject({ produced: 3, correct: 2 });
+  });
+  it("another spelling listed as aka is the same person", () => {
+    const upwind: GoldenCompany = { id: "u", name: "Upwind", founders: [{ name: "Tal Zuri", aka: ["Tal Tzur"], confidence: "verified" }] };
+    const b = newScoreboard();
+    expect(scoreCompany(b, upwind, out({ founders: [{ name: "Tal Tzur" }] })).founders).toBe("correct");
   });
 });
