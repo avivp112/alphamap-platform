@@ -21,7 +21,9 @@ export const PHASE1_PASSED = false;
  * country — for a hand-picked list of at most PILOT_MAX_COMPANIES companies
  * (scripts/pilot_sample.ts), after a DRY_RUN report the owner approved.
  */
-export const PILOT_FIELDS = ["city", "country", "founded_year", "founding_country"] as const;
+// News (owner, 2026-11-04): opened by the field review (20 marked, 95%) — its own write path:
+// the new articles appended to startups.news, undone by run_id like every pilot write.
+export const PILOT_FIELDS = ["city", "country", "founded_year", "founding_country", "news"] as const;
 export const PILOT_MAX_COMPANIES = 25;
 
 export interface PilotRequest { fields: readonly string[]; companies: number }

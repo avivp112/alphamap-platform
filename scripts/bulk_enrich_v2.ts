@@ -89,9 +89,12 @@ const ONLY = (process.env.ONLY ?? "").split(",").map((v) => v.trim().toLowerCase
 assertEnrichmentWritesAllowed("bulk_enrich_v2", !DRY_RUN, PILOT ? { fields: PILOT_FIELDS, companies: ONLY.length } : undefined);
 // A field opens for writing when the owner marked ≥20 of its values, ≥90% correct
 // (eval/field_review_tracker.csv — owner, 2026-11-02). A dry run shows every pilot field.
-const OPEN_PILOT_FIELDS: string[] = !PILOT ? [] : DRY_RUN ? [...PILOT_FIELDS] : PILOT_FIELDS.filter((f) => openColumns().includes(f));
+// FIELDS=news: only these pilot fields, dry or wet (owner, 2026-11-04: the news write path alone).
+const PILOT_ONLY_FIELDS = (process.env.FIELDS ?? "").split(",").map((f) => f.trim()).filter(Boolean);
+const PILOT_ASKED: string[] = !PILOT ? [] : PILOT_ONLY_FIELDS.length ? PILOT_FIELDS.filter((f) => PILOT_ONLY_FIELDS.includes(f)) : [...PILOT_FIELDS];
+const OPEN_PILOT_FIELDS: string[] = !PILOT ? [] : DRY_RUN ? PILOT_ASKED : PILOT_ASKED.filter((f) => openColumns().includes(f));
 if (PILOT && !DRY_RUN) {
-  const closed = PILOT_FIELDS.filter((f) => !OPEN_PILOT_FIELDS.includes(f));
+  const closed = PILOT_ASKED.filter((f) => !OPEN_PILOT_FIELDS.includes(f));
   console.log(`🔓  Open for writing: ${OPEN_PILOT_FIELDS.join(", ") || "none"}${closed.length ? ` · still closed (fewer than 20 marked or under 90%): ${closed.join(", ")} — npx tsx scripts/field_review_status.ts` : ""}`);
   if (!OPEN_PILOT_FIELDS.length) { console.error("⛔  No pilot field is open for writing yet — nothing to write."); process.exit(1); }
 }

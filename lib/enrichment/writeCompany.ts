@@ -564,9 +564,15 @@ export async function writeCollected(
     const allowed = new Set(ctx.pilotFields);
     for (const k of Object.keys(patch)) if (!allowed.has(k)) delete patch[k];
     const writes = fieldWrites.filter((fw) => allowed.has(fw.field.replace(/^profile\./, "")));
-    const pilot: PilotChange[] = Object.keys(patch).map((k) => {
+    const pilot: PilotChange[] = Object.keys(patch).flatMap((k): PilotChange[] => {
+      // News: one line per article added (the whole list is written, and undone, as one value).
+      if (k === "news") {
+        const onFile = new Set(((row.news ?? []) as Array<{ url?: string }>).map((n) => n.url));
+        return ((patch.news ?? []) as Array<{ url: string; title: string; published_date?: string | null }>).filter((n) => !onFile.has(n.url))
+          .map((n) => ({ field: "news", before: null, after: `${n.published_date || "no date"} — ${n.title}`, source_url: n.url, quote: null }));
+      }
       const fw = writes.find((w) => w.field === `profile.${k}`);
-      return { field: k, before: (row as unknown as Record<string, unknown>)[k] ?? null, after: patch[k], source_url: fw ? sourceById.get(fw.source_id)?.url ?? null : null, quote: fw?.evidence_quote ?? null };
+      return [{ field: k, before: (row as unknown as Record<string, unknown>)[k] ?? null, after: patch[k], source_url: fw ? sourceById.get(fw.source_id)?.url ?? null : null, quote: fw?.evidence_quote ?? null }];
     });
     for (const c of pilot) console.log(`    ${DRY_RUN ? "[DRY] would write" : "✏️  writing"} ${c.field}: ${JSON.stringify(c.before)} → ${JSON.stringify(c.after)}  (${c.source_url ?? "no source"})`);
     if (!pilot.length) console.log("    🟠 pilot: nothing to write for its fields");
