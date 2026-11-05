@@ -3,7 +3,8 @@
  * eval/originals_sheet.ts — check sheet for the original golden companies (owner, 2026-11-05).
  *
  *   npx tsx eval/originals_sheet.ts                       # prints the sheet, writes eval/originals_sheet.csv
- *   WRONG="v1.4,v1.17" WRITE=true npx tsx eval/originals_sheet.ts   # applies the verdict to golden_set.json
+ *   WRONG="v1.4=London,v1.17" WRITE=true npx tsx eval/originals_sheet.ts   # applies the verdict to golden_set.json
+ *   (v1.4=London: the right value, kept; v1.17: no value, becomes "unknown")
  *
  * The quote is the sentence of the source page (read through Jina) that carries the value; where the
  * page cannot be read, the golden entry's own note, else "(none)". Nothing is written to the database.

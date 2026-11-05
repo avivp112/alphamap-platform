@@ -57,11 +57,14 @@ export function sheetCsv(values: SheetValue[]): string {
  * Applies the owner's verdict: the numbers he names are wrong, every other value is correct.
  * A wrong city/country/year/founding country becomes "unknown" with a note (it is no golden truth);
  * a wrong founder is removed. Every sheet field the company has is then listed in `reviewed_fields`.
- * Unknown numbers are returned, not guessed.
+ * "v1.4=London" gives the right value: it is kept as the golden value (verified, with a note); a
+ * founder's replacement is the corrected name. Unknown numbers are returned, not guessed.
  */
 export function applyVerdict(companies: GoldenCompany[], values: SheetValue[], wrong: string[]): { companies: GoldenCompany[]; unknown: string[]; wrongApplied: number } {
   const ids = new Set(values.map((v) => v.id));
-  const wrongSet = new Set(wrong.map((w) => w.trim()).filter(Boolean));
+  const entries = wrong.map((w) => w.trim()).filter(Boolean).map((w) => { const i = w.indexOf("="); return i < 0 ? [w, ""] as const : [w.slice(0, i).trim(), w.slice(i + 1).trim()] as const; });
+  const wrongSet = new Set(entries.map(([id]) => id));
+  const fixes = new Map(entries.filter(([, val]) => val).map(([id, val]) => [id, val]));
   const unknown = [...wrongSet].filter((w) => !ids.has(w));
   let wrongApplied = 0;
   const out = companies.map((g) => {
@@ -69,14 +72,24 @@ export function applyVerdict(companies: GoldenCompany[], values: SheetValue[], w
     if (!mine.length) return g;
     const next: GoldenCompany = { ...g };
     const dropPersons = new Set<number>();
+    const renamed = new Map<number, string>();
     for (const v of mine) {
       if (!wrongSet.has(v.id)) continue;
       wrongApplied++;
-      if (v.field === "founder") { dropPersons.add(v.person!); continue; }
+      const fix = fixes.get(v.id);
+      if (v.field === "founder") {
+        if (!fix) { dropPersons.add(v.person!); continue; }
+        renamed.set(v.person!, fix);
+        continue;
+      }
       const cur = next[v.field] as { value: unknown; confidence: string; notes?: string };
-      (next as Record<string, unknown>)[v.field] = { ...cur, confidence: "unknown", notes: [cur.notes, `owner marked the value "${v.value}" wrong on the check sheet (${v.id}, 2026-11-05)`].filter(Boolean).join(" · ") };
+      const note = fix ? `owner corrected "${v.value}" to "${fix}" on the check sheet (${v.id}, 2026-11-05)` : `owner marked the value "${v.value}" wrong on the check sheet (${v.id}, 2026-11-05)`;
+      (next as Record<string, unknown>)[v.field] = {
+        ...cur, notes: [cur.notes, note].filter(Boolean).join(" · "),
+        ...(fix ? { value: v.field === "founded_year" && /^\d{4}$/.test(fix) ? Number(fix) : fix, confidence: "verified" } : { confidence: "unknown" }),
+      };
     }
-    if (dropPersons.size) next.founders = (g.founders ?? []).filter((_, i) => !dropPersons.has(i));
+    if (dropPersons.size || renamed.size) next.founders = (g.founders ?? []).map((p, i) => (renamed.has(i) ? { ...p, name: renamed.get(i)! } : p)).filter((_, i) => !dropPersons.has(i));
     const listed = new Set(next.reviewed_fields ?? []);
     for (const v of mine) listed.add(v.field === "founder" ? "founders" : v.field);
     next.reviewed_fields = [...listed];
