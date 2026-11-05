@@ -48,6 +48,8 @@ describe("the tracker and the rules-only judgment of a mark (owner, 2026-11-04)"
     expect(judgeMark(m("patent", "EP4381061A1 Systems", "https://worldwide.espacenet.com/patent/search?q=pn%3DEP4381061A1")).produced).toBe(true);
     // A republisher is judged by its text, which is not stored: it stays.
     expect(judgeMark(m("leader", "Ran Strauss — CEO & Co-Founder", "https://www.tradingview.com/news/financewire:d7752dcc1094b:0-leverate/")).produced).toBe(true);
+    // An unlisted site may be an investor's: judged only for profile fields, never for news.
+    expect(judgeMark(m("news", "Laminar Emerges from Stealth with $32 Million Series A", "https://www.insightpartners.com/ideas/israeli-data-security-startup-laminar/", "Laminar"), { domain: "laminarsecurity.com" }).produced).toBe(true);
     // A company database is denied outright.
     expect(judgeMark(m("founded_year", "2015", "https://startupintros.com/orgs/braincheck")).produced).toBe(false);
   });

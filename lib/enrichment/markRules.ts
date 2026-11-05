@@ -55,7 +55,8 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
     } else if (mark.field === "news" || mark.field === "competitor" || mark.field === "round") {
       const standing = roundSourceStanding(url, { companyName: company, isCompanySite: ownSite });
       if (standing.kind === "denied" && standing.why !== "republished_without_allowed_original") return out(`source not allowed (${standing.why})`);
-      if (standing.kind === "unlisted" && ctx.domain) return out("source not listed");
+      // An unlisted site may be an investor's or a party's own release, which the stored value alone
+      // cannot show (Laminar's news on its investor Insight Partners' site, run 3): it stays.
     }
   }
 
