@@ -896,11 +896,15 @@ export async function collectCompany(
         continue;
       }
       const facts = factsFromAbout(para, row.name);
-      if (!facts.city && !facts.foundedYear) continue;
+      if (!facts.city && !facts.foundedYear && !facts.employees) continue;
       const src = newSource(hit.url, para, hit.title ?? `About ${row.name}`, "press_about");
       if (src.source_type !== "company_site") src.source_type = "press_release";
       const date = articleDate({ url: hit.url, content: page!.text });
-      console.log(`    📣  About ${row.name} (${hit.url}): ${[facts.city && `HQ ${facts.city}`, facts.foundedYear && `founded ${facts.foundedYear}`].filter(Boolean).join(", ")}`);
+      console.log(`    📣  About ${row.name} (${hit.url}): ${[facts.city && `HQ ${facts.city}`, facts.foundedYear && `founded ${facts.foundedYear}`, facts.employees && `${facts.employees} employees`].filter(Boolean).join(", ")}`);
+      // The company's own statement of its size; the recency rule below keeps it only if the release is of the last two years.
+      if (facts.employees && !allowedFact(profile.metrics.employee_count as { source_id: string } | undefined)) {
+        profile.metrics.employee_count = { value: facts.employees, source_id: src.source_id, evidence_quote: facts.employeesQuote! } as typeof profile.metrics.employee_count;
+      }
       if (facts.city) extraStatements.push({ city: facts.city, quote: facts.cityQuote!, source_id: src.source_id, url: hit.url, kind: "company", date });
       if (facts.foundedYear && !allowedFact(profile.profile.founded_year)) {
         profile.profile.founded_year = { value: facts.foundedYear, source_id: src.source_id, evidence_quote: facts.yearQuote! } as typeof profile.profile.founded_year;

@@ -206,3 +206,13 @@ describe("owner's decisions after field review run 4 (2026-11-04)", () => {
     expect(s.filter((c) => c.why.includes("targeted")).every((c) => c.id.startsWith("t"))).toBe(true);
   });
 });
+
+describe("domains of 2026-11-05", () => {
+  it("csoonline and thequantuminsider are tier 4; bci.ca only as the company's own investor", () => {
+    expect(roundSourceStanding("https://www.csoonline.com/article/1/x")).toMatchObject({ kind: "allowed", tier: 4 });
+    expect(roundSourceStanding("https://thequantuminsider.com/2025/01/01/x/")).toMatchObject({ kind: "allowed", tier: 4 });
+    expect(roundSourceStanding("https://www.bci.ca/news/x").kind).toBe("unlisted");
+    expect(roundSourceStanding("https://www.bci.ca/news/x", { investors: ["Accel", "British Columbia Investment Management Corporation"] })).toMatchObject({ kind: "allowed", tier: 1, why: "investor_site" });
+    expect(roundSourceStanding("https://www.bci.ca/news/x", { investors: ["Accel"] }).kind).toBe("unlisted");
+  });
+});

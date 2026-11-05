@@ -88,6 +88,8 @@ export const TIER4_DOMAINS = [
   "phocuswire.com", "constructiondive.com", "datacenterdynamics.com", "gamedeveloper.com", "wealthmanagement.com",
   "financemagnates.com", "fxnewsgroup.com", "defensedaily.com", "electronicsweekly.com", "paymentsdive.com", "industrialcyber.co",
   "roboticsandautomationnews.com", "globalaginvesting.com", "decrypt.co",
+  // Owner, 2026-11-05
+  "csoonline.com", "thequantuminsider.com",
 ];
 
 /** Lower confidence even though allowed. */
@@ -215,9 +217,18 @@ const INVESTOR_WORDS = /\b(ventures?|capital|partners?|vc|fund|funds|management|
  * "fiveelms.com" for Five Elms Capital, "accel.com" for Accel: the domain's
  * name is the investor's name (its distinctive words, joined).
  */
+/**
+ * Investors whose site is not named like them (owner, 2026-11-05): bci.ca is the site of BCI
+ * (British Columbia Investment Management Corporation) — tier 1, but only as the investor of
+ * the company itself, like any investor's site.
+ */
+const INVESTOR_DOMAIN_ALIASES: Record<string, RegExp> = { "bci.ca": /\bBCI\b|British Columbia Investment/i };
+
 export function isInvestorSite(url: string, investor: string | null | undefined): boolean {
   const host = hostOf(url);
   if (!host || !investor) return false;
+  const alias = Object.entries(INVESTOR_DOMAIN_ALIASES).find(([d]) => host === d || host.endsWith(`.${d}`));
+  if (alias) return alias[1].test(investor);
   const label = host.split(".").slice(-2)[0].replace(/-/g, "");
   const full = investor.toLowerCase().replace(/[^a-z0-9& ]/g, " ");
   const core = full.replace(INVESTOR_WORDS, " ").replace(/\s+/g, "");

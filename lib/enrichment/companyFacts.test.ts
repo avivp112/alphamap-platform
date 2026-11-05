@@ -48,3 +48,15 @@ describe("a namesake's press release (field review run 2)", () => {
     expect(releasePointsTo("Visit streak.com", null)).toBe(false);
   });
 });
+
+describe("the headcount a press release states about its company (owner, 2026-11-05)", () => {
+  it("an exact figure counts; 'more than', a range or an estimate does not", () => {
+    expect(factsFromAbout("Acme is a Boston-based software company with 120 employees.", "Acme").employees).toBe(120);
+    expect(factsFromAbout("Acme, founded in 2018, has a team of 85 and serves 400 customers.", "Acme").employees).toBe(85);
+    expect(factsFromAbout("Argus is headquartered in Tel Aviv, Israel, has a team of more than 70 people.", "Argus").employees).toBeUndefined();
+    expect(factsFromAbout("Acme has over 200 employees worldwide.", "Acme").employees).toBeUndefined();
+    expect(factsFromAbout("Acme employs 50-100 people.", "Acme").employees).toBeUndefined();
+    expect(factsFromAbout("Acme has 300+ employees.", "Acme").employees).toBeUndefined();
+    expect(factsFromAbout("Acme serves 2,000 customers and 14 countries.", "Acme").employees).toBeUndefined();
+  });
+});

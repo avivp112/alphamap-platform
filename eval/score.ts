@@ -52,7 +52,17 @@ export interface GoldenCompany {
    * numbers (any publication of a family counts). none: the register shows
    * none — every patent output is then wrong.
    */
-  patents?: { numbers: string[]; none?: boolean; confidence: Confidence; source_url?: string; notes?: string };
+  patents?: { numbers: string[]; none?: boolean; confidence: Confidence; source_url?: string; notes?: string;
+    /** Publication numbers the owner judged NOT the company's (judged_only entries). */
+    not_numbers?: string[] };
+  /**
+   * An entry built from the owner's field-review marks (eval/import_field_review.ts, 2026-11-05): it
+   * holds only the values the owner judged, so a produced round or patent that is in neither the
+   * verified nor the wrong list is unjudged — left out of "produced", not counted as a wrong write.
+   */
+  judged_only?: boolean;
+  /** Rounds the owner judged wrong (judged_only entries): a produced round matching one is a wrong write. */
+  funding_rounds_wrong?: Array<Omit<GoldenRound, "confidence"> & { confidence?: Confidence }>;
   reviewed_by_human?: boolean;
   hard_case_tags?: string[];
 }
@@ -209,7 +219,10 @@ function scoreRounds(s: FieldStats, g: GoldenCompany, extracted: PipelineOutput[
   // list is not a wrong funding round either (Wiz's $32B acquisition, eval of
   // 2026-11-01): the golden rounds are money raised; events are judged only
   // where the golden set lists them (Wise's secondaries, its listing).
-  const ignored = extracted.filter((er, i) => !used.has(i) && (unknown.some((ur) => roundsDayGap(ur, er) !== null) || isEvent(er.round_type))).length;
+  const wrong = (g.funding_rounds_wrong ?? []).map((r) => ({ ...r, confidence: r.confidence ?? ("verified" as const) }));
+  const ignored = extracted.filter((er, i) => !used.has(i) && (unknown.some((ur) => roundsDayGap(ur, er) !== null) || isEvent(er.round_type)
+    // A judged-only entry knows only its verified and wrong rounds; any other produced round is unjudged.
+    || (g.judged_only && !wrong.some((wr) => roundsDayGap(wr, er) !== null)))).length;
   // A hallucinated or duplicate round is produced-but-not-correct.
   s.produced += extracted.length - ignored;
   s.correct += correct;
@@ -267,10 +280,13 @@ function scorePatents(s: FieldStats, g: GoldenCompany, extracted: string[] | und
   if (!golden || golden.confidence === "unknown" || extracted === undefined) return "excluded";
   const known = new Set(golden.numbers.map(patentDigits));
   s.scored += golden.numbers.length;
-  s.produced += extracted.length;
-  const correct = golden.none ? 0 : extracted.filter((n) => known.has(patentDigits(n))).length;
+  // A judged-only entry: only the numbers it lists as the company's or as not (owner, 2026-11-05).
+  const notKnown = new Set((golden.not_numbers ?? []).map(patentDigits));
+  const judged = g.judged_only ? extracted.filter((n) => known.has(patentDigits(n)) || notKnown.has(patentDigits(n))) : extracted;
+  s.produced += judged.length;
+  const correct = golden.none ? 0 : judged.filter((n) => known.has(patentDigits(n))).length;
   s.correct += correct;
-  return extracted.length === 0 ? (golden.none ? "correct" : "missing") : correct === extracted.length ? "correct" : "wrong";
+  return judged.length === 0 ? (golden.none ? "correct" : extracted.length === 0 ? "missing" : "excluded") : correct === judged.length ? "correct" : "wrong";
 }
 
 const normalizeCompany = (name: string) => normalize(name).replace(/,?\s*\b(inc|llc|ltd|limited|corp|corporation|gmbh|plc|co)\b\.?$/, "").replace(/[^a-z0-9]/g, "");

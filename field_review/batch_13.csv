@@ -1,0 +1,13 @@
+﻿id,field,company,value,source_url,quote,company_id
+w13.1,hq_city,Ghost,London,https://ghost.org/about/press/,"Ghost (ghost.org) is headquartered in London, United Kingdom",st-1
+w13.2,hq_country,Ghost,United Kingdom,https://ghost.org/about/press/,"Ghost (ghost.org) is headquartered in London, United Kingdom",st-1
+w13.3,founded_year,Ghost,2013,https://ghost.org,Founded in 2013 by John O'Nolan and Hannah Wolfe,st-1
+w13.4,employee_count,Ghost,60,https://www.theverge.com/2025/10/14/ghost-team,Ghost has 60 employees,st-1
+w13.5,founder,Ghost,John O'Nolan — CEO,https://ghost.org,,st-1
+w13.6,founder,Ghost,Hannah Wolfe — COO,https://ghost.org,,st-1
+w13.7,competitor,Ghost,Beehiiv,https://www.fastcompany.com/2025/ghost-newsletters,,st-1
+w13.8,news,Ghost,2025-08-05 — Ghost 6.0 launches,https://www.fastcompany.com/2025/ghost-6,,st-1
+w13.9,news,Ghost,2024-03-01 — Ghost joins the fediverse,https://www.theverge.com/2024/ghost-activitypub,,st-1
+w13.10,round,Ghost,"Seed filled: {""lead_investor"":""Y Combinator"",""source_url"":""https://techcrunch.com/2014/03/15/ghost-raises-seed"",""investors"":[""SV Angel""]}",,,st-1
+w13.11,headcount_history,Ghost,10 on 2014-03-15 (press_reported),,,st-1
+w13.12,headcount_history,Ghost,60 on 2026-11-05 (observed),,,st-1

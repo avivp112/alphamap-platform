@@ -8,7 +8,9 @@
 export interface PilotCandidate {
   id: string; name: string; website: string | null; description: string | null;
   city: string | null; country: string | null; founded_year: number | null; founding_country: string | null; status?: string | null;
-  founders?: unknown[] | null; competitors?: unknown[] | null;
+  founders?: unknown[] | null; competitors?: unknown[] | null; leadership?: unknown[] | null; patents?: unknown[] | null;
+  /** Rounds on file (funding_rounds), when counted. */
+  rounds_on_file?: number;
 }
 
 /** Thin: no description, or neither a city nor a founded year on file. */
@@ -34,12 +36,22 @@ export function drawPilotSample(rows: PilotCandidate[], opts: { size: number; mi
 }
 
 /**
- * How many of the fields still short of marks a company would fill (owner, 2026-11-04): an empty
- * HQ, founded year, founding country, founders or competitors — the review shows a value only
- * where the field is empty on file.
+ * The fields a review run can be pointed at (FOCUS=competitors,rounds,…), each with whether the
+ * company is short of it: empty on file, so a value found would be one the review can mark.
  */
-export function missingFieldCount(c: PilotCandidate): number {
-  return [!c.city, !c.founded_year, !c.founding_country, !(c.founders ?? []).length, !(c.competitors ?? []).length].filter(Boolean).length;
+export const FOCUS_FIELDS: Record<string, (c: PilotCandidate) => boolean> = {
+  hq: (c) => !c.city, city: (c) => !c.city, founded_year: (c) => !c.founded_year, founding_country: (c) => !c.founding_country,
+  founders: (c) => !(c.founders ?? []).length, founder: (c) => !(c.founders ?? []).length,
+  competitors: (c) => !(c.competitors ?? []).length, competitor: (c) => !(c.competitors ?? []).length,
+  leadership: (c) => !(c.leadership ?? []).length, leader: (c) => !(c.leadership ?? []).length,
+  patents: (c) => !(c.patents ?? []).length, patent: (c) => !(c.patents ?? []).length,
+  rounds: (c) => (c.rounds_on_file ?? 0) < 2, round: (c) => (c.rounds_on_file ?? 0) < 2,
+};
+const DEFAULT_FOCUS = ["city", "founded_year", "founding_country", "founders", "competitors"];
+
+/** How many of the focused fields (default: HQ, founded year, founding country, founders, competitors) the company is short of. */
+export function missingFieldCount(c: PilotCandidate, focus: readonly string[] = DEFAULT_FOCUS): number {
+  return focus.filter((f) => FOCUS_FIELDS[f]?.(c)).length;
 }
 
 /** The targeted share of a review run (owner, 2026-11-04): 8 of 15; of a larger run, under half. */
@@ -51,10 +63,13 @@ export const targetedCount = (size: number) => (size <= 15 ? Math.min(8, size) :
  * most missing first — and the rest at random (drawPilotSample), so the precision measured
  * still reflects small companies.
  */
-export function drawReviewSample(rows: PilotCandidate[], covered: Set<string>, opts: { size: number; targeted: number; seed: number }): Array<PilotCandidate & { why: string[] }> {
+export function drawReviewSample(rows: PilotCandidate[], covered: Set<string>, opts: { size: number; targeted: number; seed: number; focus?: readonly string[] }): Array<PilotCandidate & { why: string[] }> {
   const pool = shuffled(rows.filter((r) => r.website), opts.seed);
-  const targeted = pool.filter((r) => covered.has(r.id) && missingFieldCount(r) >= 3)
-    .sort((a, b) => missingFieldCount(b) - missingFieldCount(a))
+  // A run pointed at fields (FOCUS) takes any company short of one of them; the default needs three.
+  const focus = opts.focus?.length ? opts.focus : DEFAULT_FOCUS;
+  const need = opts.focus?.length ? 1 : 3;
+  const targeted = pool.filter((r) => covered.has(r.id) && missingFieldCount(r, focus) >= need)
+    .sort((a, b) => missingFieldCount(b, focus) - missingFieldCount(a, focus))
     .slice(0, opts.targeted)
     .map((c) => ({ ...c, why: ["targeted"] }));
   const taken = new Set(targeted.map((t) => t.id));

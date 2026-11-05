@@ -312,16 +312,32 @@ One PR per phase. A phase is done only when all its criteria pass. v1 stays runn
 - [ ] Evidence is stored in `enrichment_evidence`, and `REEXTRACT_FROM_RUN` works.
 - [ ] Baseline metrics for the current v1 script are recorded in `eval/baseline.json`.
 
-**Phase 1 — Accuracy core (issues 1–6)**
-- [ ] `bulk_enrich_v2.ts` exists, with shared logic in `lib/enrichment/`.
+**Phase 1 — Accuracy core (issues 1–6)** — amended by the owner, 2026-11-05: the criteria that block the `PHASE1_PASSED` flag, and those that move to "before more than 100 companies".
+
+Blocking the flag:
+- [x] `bulk_enrich_v2.ts` exists, with shared logic in `lib/enrichment/`.
+- [ ] The golden set holds at least 50 verified companies (32 on 2026-11-05; the companies of the field-review runs join it, `eval/import_field_review.ts`).
 - [ ] Golden set: zero city/country mismatches.
 - [ ] Golden set: zero duplicate rounds. APEX has a single $200M round, and Total Raised is recomputed.
 - [ ] Golden set: zero cases of `founded_year` after the first round.
-- [ ] Golden set: precision ≥ 95% on location and founded year, ≥ 90% on written round amounts. If a target is missed, prefer lower coverage over wrong values.
-- [ ] Every accepted material value has a `field_provenance` row with URL and verified quote.
+- [ ] Golden set precision, as `eval/score.ts` `PHASE1_BARS` encodes it: round type ≥ 95% (at least 20 judged), competitors ≥ 90% (20), patents ≥ 98% (10), and location / founded year ≥ 95%, written round amounts ≥ 90%. If a target is missed, prefer lower coverage over wrong values.
+- [x] Every written value has a `field_provenance` row with URL and quote (the write path records it; checked end to end by the batch reports).
+- [x] No field is written unless it is open in the tracker (section 7a).
+
+Before moving beyond 100 companies (do not block the flag):
 - [ ] Parity report: every Section 2 field is produced by v2, and any coverage drop vs v1 is fully explained by reason codes.
 - [ ] `audit_existing.ts` runs on the full database in `DRY_RUN`, and its CSV is reviewed manually before a real run.
-- [ ] Headcount chart: real x-axis dates, and "Live data" only with observed points.
+- [ ] Headcount chart: real x-axis dates, and "Live data" only with observed points (migration `20261117000000_headcount_point_type.sql` adds `point_type`).
+
+Deferred, not blocking: founder bios (the field stays closed until it reaches 90%); employee count and range are written only from allowed sources of the last two years (the company's own pages, its releases) — if none is found, the field stays empty.
+
+**7a. Writing to the database — the field gate and the rollout ladder (owner, 2026-11-05)**
+
+- `PHASE1_PASSED` is changed by hand, by the owner, after reading a passing evaluation report. No script changes it.
+- **The tracker is the gate.** A review field (`lib/enrichment/writeUnits.ts`) is written only when it is open in `eval/field_review_tracker.csv`: at least 20 marked values, at least 90% correct, counted against the current rules (`scripts/field_review_replay.ts`). This holds in a pilot and in a wide run alike — `PHASE1_PASSED=true` does not lift it — and `writeCollected` throws on a wet write that is not given the open fields. A field with no marks is never written. Columns that are not review fields (description, sector, tags, acquisitions, ARR…) are not written until the review covers them.
+- Each run starts as `DRY_RUN`, which previews exactly what a wet run would write (`ALL_FIELDS=true` shows everything found). A wet run records every write under a `run_id` (`field_changes`, `field_provenance`), undone by `RUN_ID=<id> npx tsx scripts/undo_run.ts`.
+- Every batch ends with a numbered report (`lib/enrichment/batchReport.ts`): value, company, source, quote, the undo command. The owner names the wrong numbers; `scripts/mark_batch.ts` enters them, and every other value, in the tracker. A batch is a pilot of at most 25 companies (`scripts/pilot_sample.ts`).
+- **Ladder:** a dry report approved by the owner → a batch of 5 companies → batches of 5 until 25 → after the owner sets the flag, 100, then 1,000, then everything, each rise after a report and a manual check. A mistake: undo by `run_id`, a corrected rule with a test from the real example, and a re-run of the same company.
 
 **Phase 2 — Safety and differentiation (issues 7–12)**
 - [ ] The script never deletes rows from `startups`.

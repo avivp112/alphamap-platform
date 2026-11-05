@@ -34,3 +34,23 @@ describe("the tracker is the gate (owner, 2026-11-05)", () => {
     expect(enrichmentWriteRefusal("bulk", true, false, { fields: ["news", "description"], companies: 5 })).toMatch(/description/);
   });
 });
+
+import { drawReviewSample, missingFieldCount, FOCUS_FIELDS, type PilotCandidate } from "./pilotSample";
+describe("FOCUS: a review run pointed at the fields short of marks (owner, 2026-11-05)", () => {
+  const co = (id: string, o: Partial<PilotCandidate> = {}): PilotCandidate => ({ id, name: id, website: `${id}.com`, description: "x", city: "X", country: "Y", founded_year: 2020, founding_country: "Y", founders: [{}], competitors: [{}], leadership: [{}], patents: [{}], rounds_on_file: 3, ...o });
+  it("counts only the focused fields", () => {
+    const c = co("a", { competitors: [], patents: [], rounds_on_file: 0 });
+    expect(missingFieldCount(c, ["competitors", "rounds"])).toBe(2);
+    expect(missingFieldCount(c, ["leadership"])).toBe(0);
+    expect(Object.keys(FOCUS_FIELDS)).toEqual(expect.arrayContaining(["competitors", "rounds", "patents", "leadership", "founded_year", "founding_country"]));
+  });
+  it("the targeted share takes companies short of any focused field; the rest stays random", () => {
+    const rows = [...Array.from({ length: 10 }, (_, i) => co(`short${i}`, { competitors: [] })), ...Array.from({ length: 20 }, (_, i) => co(`full${i}`))];
+    const covered = new Set(rows.map((r) => r.id));
+    const s = drawReviewSample(rows, covered, { size: 15, targeted: 8, seed: 3, focus: ["competitors"] });
+    expect(s.filter((c) => c.why.includes("targeted"))).toHaveLength(8);
+    expect(s.filter((c) => c.why.includes("targeted")).every((c) => c.id.startsWith("short"))).toBe(true);
+    // Without FOCUS the default needs three missing fields: these companies miss one, so none is targeted.
+    expect(drawReviewSample(rows, covered, { size: 15, targeted: 8, seed: 3 }).filter((c) => c.why.includes("targeted"))).toHaveLength(0);
+  });
+});

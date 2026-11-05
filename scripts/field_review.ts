@@ -29,7 +29,7 @@ import { collectCompany, newCollectStats, V2_STARTUP_COLUMNS, V2_ROUND_COLUMNS, 
 import { loadSectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { createSearchProviderState } from "../lib/enrichment/searchProviders.ts";
 import { openSearchCache } from "../lib/enrichment/searchCache.ts";
-import { drawReviewSample, targetedCount, type PilotCandidate } from "../lib/enrichment/pilotSample.ts";
+import { drawReviewSample, targetedCount, FOCUS_FIELDS, type PilotCandidate } from "../lib/enrichment/pilotSample.ts";
 import { UsageMeter } from "../lib/enrichment/models.ts";
 import { buildProfile } from "../worker/profile.ts";
 import { profileSourceAllowed, roundSourceStanding } from "../lib/enrichment/roundSources.ts";
@@ -61,7 +61,7 @@ function shuffle<T>(xs: T[], seed: number): T[] {
 async function drawCompanies(): Promise<PilotCandidate[]> {
   const rows: PilotCandidate[] = [];
   for (let from = 0; ; from += 1000) {
-    const { data, error } = await db.from("startups").select("id, name, website, description, city, country, founded_year, founding_country, status, founders, competitors")
+    const { data, error } = await db.from("startups").select("id, name, website, description, city, country, founded_year, founding_country, status, founders, competitors, leadership, patents")
       .not("website", "is", null).neq("status", "ipo").range(from, from + 999);
     if (error) throw error;
     rows.push(...((data ?? []) as PilotCandidate[]));
@@ -75,14 +75,24 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
   const golden = new Set((JSON.parse(readFileSync(join(__dir, "..", "eval", "golden_set.json"), "utf8")).companies as Array<{ name: string }>).map((g) => g.name.trim().toLowerCase()));
   // Companies an allowed press source covers: a round on file whose source is allowed.
   const covered = new Set<string>();
+  const roundCount = new Map<string, number>();
   for (let from = 0; ; from += 1000) {
     const { data, error } = await db.from("funding_rounds").select("startup_id, source_url").not("source_url", "is", null).range(from, from + 999);
     if (error) throw error;
-    for (const r of (data ?? []) as Array<{ startup_id: string; source_url: string }>) if (roundSourceStanding(r.source_url).kind === "allowed") covered.add(r.startup_id);
+    for (const r of (data ?? []) as Array<{ startup_id: string; source_url: string }>) {
+      roundCount.set(r.startup_id, (roundCount.get(r.startup_id) ?? 0) + 1);
+      if (roundSourceStanding(r.source_url).kind === "allowed") covered.add(r.startup_id);
+    }
     if (!data || data.length < 1000) break;
   }
-  const sample = drawReviewSample(rows.filter((r) => !seen.has(r.id) && !golden.has(r.name.trim().toLowerCase())), covered, { size: SIZE, targeted: targetedCount(SIZE), seed: SEED });
-  console.log(`Draw: ${sample.filter((c) => c.why.includes("targeted")).length} targeted (fields short of marks), ${sample.filter((c) => !c.why.includes("targeted")).length} random.`);
+  // FOCUS=competitors,rounds,patents,leadership,founded_year,founding_country,hq,founders points the
+  // targeted share at companies short of those fields (owner, 2026-11-05).
+  const FOCUS = (process.env.FOCUS ?? "").split(",").map((f) => f.trim()).filter(Boolean);
+  const unknownFocus = FOCUS.filter((f) => !(f in FOCUS_FIELDS));
+  if (unknownFocus.length) { console.error(`FOCUS: unknown field(s) ${unknownFocus.join(", ")} — use ${Object.keys(FOCUS_FIELDS).join(", ")}.`); process.exit(1); }
+  const withRounds = rows.map((r) => ({ ...r, rounds_on_file: roundCount.get(r.id) ?? 0 }));
+  const sample = drawReviewSample(withRounds.filter((r) => !seen.has(r.id) && !golden.has(r.name.trim().toLowerCase())), covered, { size: SIZE, targeted: targetedCount(SIZE), seed: SEED, focus: FOCUS });
+  console.log(`Draw: ${sample.filter((c) => c.why.includes("targeted")).length} targeted (${FOCUS.length ? `short of ${FOCUS.join(", ")}` : "fields short of marks"}), ${sample.filter((c) => !c.why.includes("targeted")).length} random.`);
   return sample;
 }
 

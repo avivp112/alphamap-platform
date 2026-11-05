@@ -35,7 +35,7 @@ export function aboutParagraph(text: string, companyName: string): string | null
   return i ? i[1].replace(/\s+/g, " ").trim() : null;
 }
 
-export interface AboutFacts { city?: string; cityQuote?: string; foundedYear?: number; yearQuote?: string }
+export interface AboutFacts { city?: string; cityQuote?: string; foundedYear?: number; yearQuote?: string; employees?: number; employeesQuote?: string }
 
 const sentences = (t: string) => t.split(/(?<=[.!?])\s+/);
 
@@ -55,6 +55,17 @@ export function factsFromAbout(paragraph: string, companyName: string): AboutFac
           && !namesCompany(s.slice(at + m[1].length + 7).split(/[,;(]/)[0].split(/\s+/).slice(0, companyName.trim().split(/\s+/).length + 3).join(" ").replace(/\S+[’']s\b/g, ""), companyName)
           && !new RegExp(`^\\W*${esc(companyName.trim())}\\b[^,;]{0,25}\\b(?:is|was)\\s+(?:a|an|the)\\s+$`, "i").test(s.slice(0, at));
         if (!basedOther && !isRegionalOfficeQuote(s, city)) { out.city = city; out.cityQuote = s.trim(); }
+      }
+    }
+    // Headcount the company states about itself (owner, 2026-11-05: employee fields need an allowed
+    // source): an exact figure only — "a team of 120", "120 employees" — never "more than 70", a
+    // range or an estimate. Its date is the release's, judged by the recency rule.
+    if (!out.employees) {
+      const m = s.match(/\b(?:team of|employs|staff of|workforce of)\s+(\d{1,3}(?:,\d{3})?)(?!\s*(?:\+|-|–|to)\s*\d)\b(?!\+)/i)
+        ?? s.match(/(?<!(?:more than|over|nearly|almost|around|approximately|about|up to|under|and|to)\s)(?<![-–~\d])\b(\d{1,3}(?:,\d{3})?)\s+(?:employees|team members|people|staff members)\b(?!\s*(?:and|or)\b)/i);
+      const n = m ? Number(m[1].replace(/,/g, "")) : 0;
+      if (m && n >= 2 && !/\b(?:more than|over|nearly|almost|around|approximately|about|up to|under)\s+\d/i.test(s.slice(Math.max(0, (m.index ?? 0) - 16), (m.index ?? 0) + m[0].length)) && !/\d\+/.test(m[0])) {
+        out.employees = n; out.employeesQuote = s.trim();
       }
     }
     if (!out.foundedYear) {
