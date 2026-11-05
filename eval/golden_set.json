@@ -3994,6 +3994,544 @@
         }
       ],
       "funding_rounds": []
+    },
+    {
+      "id": "anonymised",
+      "name": "Anonymised",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "founded_year": {
+        "value": 2020,
+        "confidence": "verified",
+        "source_url": "https://www.anonymised.io/about-us"
+      },
+      "founders": [
+        {
+          "name": "Denys Demchenko",
+          "confidence": "verified",
+          "source_url": "https://rocketreach.co/anonymised-management_b7779f92c53cd5de"
+        }
+      ]
+    },
+    {
+      "id": "moon-active",
+      "name": "Moon Active",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "founding_country": {
+        "value": "Israel",
+        "confidence": "verified",
+        "source_url": "https://www.calcalistech.com/ctechnews/article/bjq8i7ffj"
+      },
+      "founders": [
+        {
+          "name": "Samuel Albin",
+          "confidence": "verified",
+          "source_url": "https://siliconvalleyinvestclub.com/companies/moonactive/"
+        }
+      ]
+    },
+    {
+      "id": "kraken-technologies",
+      "name": "Kraken Technologies",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "founded_year": {
+        "value": 2019,
+        "confidence": "verified",
+        "source_url": "https://find-and-update.company-information.service.gov.uk/company/12014731"
+      },
+      "founding_country": {
+        "value": "United Kingdom",
+        "confidence": "verified",
+        "source_url": "https://find-and-update.company-information.service.gov.uk/company/12014731"
+      }
+    },
+    {
+      "id": "unacademy",
+      "name": "Unacademy",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "founded_year": {
+        "value": 2015,
+        "confidence": "verified",
+        "source_url": "https://unacademy.com/about"
+      },
+      "competitors": {
+        "names": [
+          "Byju's"
+        ],
+        "confidence": "verified",
+        "source_urls": [
+          "https://techcrunch.com/2019/06/26/india-unacademy-seriesd/"
+        ]
+      }
+    },
+    {
+      "id": "mojia-bio",
+      "name": "Mojia Bio",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "funding_rounds": [
+        {
+          "type": "Series A",
+          "amount_usd": 14900000,
+          "date": "2020-11-05",
+          "lead_investor": "Bits x Bites",
+          "confidence": "verified",
+          "source_url": "https://agfundernews.com/bits-x-bites-raises-30m-for-new-china-fund-backs-mojia-bio"
+        }
+      ]
+    },
+    {
+      "id": "latitude",
+      "name": "Latitude",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "funding_rounds": [
+        {
+          "type": "Series A",
+          "amount_usd": 35000000,
+          "date": "2026-09-09",
+          "lead_investor": "Oak HC/FT",
+          "confidence": "verified",
+          "source_url": "https://www.businesswire.com/news/home/20260908626656/en/Latitude-Raises-%2435M-Series-A-to-Connect-Stablecoin-Payments-to-Local-Rails-Worldwide"
+        }
+      ]
+    },
+    {
+      "id": "reveal-technology",
+      "name": "Reveal Technology",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "patents": {
+        "numbers": [
+          "USD1141133S",
+          "US2021041867A1"
+        ],
+        "confidence": "verified"
+      }
+    },
+    {
+      "id": "ybrain",
+      "name": "Ybrain",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "founded_year": {
+        "value": 2013,
+        "confidence": "verified",
+        "source_url": "https://www.prnewswire.com/news-releases/ybrains-stress-management-solution-pola-named-ces-2022-innovation-award-honoree-301426238.html"
+      }
+    },
+    {
+      "id": "lupovis",
+      "name": "Lupovis",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "founded_year": {
+        "value": 2021,
+        "confidence": "verified",
+        "source_url": "https://find-and-update.company-information.service.gov.uk/company/SC698811"
+      },
+      "founding_country": {
+        "value": "United Kingdom",
+        "confidence": "verified",
+        "source_url": "https://find-and-update.company-information.service.gov.uk/company/SC698811"
+      },
+      "founders": [
+        {
+          "name": "Xavier Bellekens",
+          "title": "Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://www.eu-startups.com/2021/11/scottish-cyber-startup-lupovis-raises-over-e700k-for-their-cyber-security-solution-which-makes-the-hunter-the-hunted/"
+        }
+      ]
+    },
+    {
+      "id": "enervenue",
+      "name": "EnerVenue",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "founding_country": {
+        "value": "United States",
+        "confidence": "verified",
+        "source_url": "https://www.sec.gov/Archives/edgar/data/1899212/000189921221000002/primary_doc.xml"
+      }
+    },
+    {
+      "id": "avenda-health",
+      "name": "Avenda Health",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "funding_rounds": [
+        {
+          "type": "Series B",
+          "amount_usd": 10000000,
+          "date": "2022-08-25",
+          "lead_investor": null,
+          "confidence": "verified",
+          "source_url": "https://www.prnewswire.com/news-releases/avenda-health-raises-10m-in-series-b-innovating-detection-and-treatment-for-prostate-cancer-care-301612250.html"
+        }
+      ],
+      "patents": {
+        "numbers": [
+          "US20240105311A1",
+          "US2020345419A1"
+        ],
+        "confidence": "verified"
+      }
+    },
+    {
+      "id": "scadafence",
+      "name": "SCADAfence",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "patents": {
+        "numbers": [
+          "US2021359897A1"
+        ],
+        "confidence": "verified"
+      }
+    },
+    {
+      "id": "mocklab",
+      "name": "MockLab",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "city": {
+        "value": "London",
+        "confidence": "verified",
+        "source_url": "https://www.prnewswire.com/news-releases/up9-acquires-london-based-mocklab-creator-of-worlds-most-popular-open-source-api-mocking-project-wiremock-301441288.html"
+      },
+      "country": {
+        "value": "United Kingdom",
+        "confidence": "verified",
+        "source_url": "https://www.prnewswire.com/news-releases/up9-acquires-london-based-mocklab-creator-of-worlds-most-popular-open-source-api-mocking-project-wiremock-301441288.html"
+      }
+    },
+    {
+      "id": "mutiny",
+      "name": "Mutiny",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "funding_rounds_wrong": [
+        {
+          "type": "Other",
+          "amount_usd": 3000000,
+          "date": "2019-10-02",
+          "lead_investor": null,
+          "confidence": "verified",
+          "source_url": "https://techcrunch.com/2019/10/02/mutiny-startup-battlefield/"
+        }
+      ]
+    },
+    {
+      "id": "streak",
+      "name": "Streak",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "founded_year": {
+        "value": 2011,
+        "confidence": "verified",
+        "source_url": "https://streak.com/about"
+      }
+    },
+    {
+      "id": "cdata",
+      "name": "CData",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "founding_country": {
+        "value": "United States",
+        "confidence": "verified",
+        "source_url": "https://www.sec.gov/Archives/edgar/data/1808159/000180815920000001/primary_doc.xml"
+      }
+    },
+    {
+      "id": "insightec",
+      "name": "Insightec",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "patents": {
+        "numbers": [
+          "US2011034800A1",
+          "US2003181806A1",
+          "WO2025141544A1"
+        ],
+        "confidence": "verified"
+      }
+    },
+    {
+      "id": "incredo",
+      "name": "Incredo",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "patents": {
+        "numbers": [
+          "EP4391831A1"
+        ],
+        "confidence": "verified"
+      }
+    },
+    {
+      "id": "offerup",
+      "name": "OfferUp",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "funding_rounds": [
+        {
+          "type": "Other",
+          "amount_usd": 120000000,
+          "date": "2020-03-25",
+          "lead_investor": "OLX Group",
+          "confidence": "verified",
+          "source_url": "https://techcrunch.com/2020/03/25/online-marketplace-offerup-raises-120m-acquires-top-competitor-letgo/"
+        }
+      ]
+    },
+    {
+      "id": "valqari",
+      "name": "Valqari",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "patents": {
+        "numbers": [
+          "EP3850562A1"
+        ],
+        "confidence": "verified"
+      }
+    },
+    {
+      "id": "stability-ai",
+      "name": "Stability AI",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "city": {
+        "value": "London",
+        "confidence": "verified",
+        "source_url": "https://stability.ai/news-updates/stability-ai-announces-101-million-in-funding-for-open-source-artificial-intelligence"
+      },
+      "country": {
+        "value": "United Kingdom",
+        "confidence": "verified",
+        "source_url": "https://stability.ai/news-updates/stability-ai-announces-101-million-in-funding-for-open-source-artificial-intelligence"
+      },
+      "founded_year": {
+        "value": 2019,
+        "confidence": "verified",
+        "source_url": "https://find-and-update.company-information.service.gov.uk/company/12295325"
+      },
+      "founding_country": {
+        "value": "United Kingdom",
+        "confidence": "verified",
+        "source_url": "https://find-and-update.company-information.service.gov.uk/company/12295325"
+      },
+      "founders": [
+        {
+          "name": "Emad Mostaque",
+          "title": "Founder",
+          "confidence": "verified",
+          "source_url": "https://www.forbes.com/sites/kenrickcai/2024/03/22/stability-ai-founder-emad-mostaque-plans-to-resign-as-ceo-sources-say/"
+        }
+      ]
+    },
+    {
+      "id": "civdrone",
+      "name": "CivDrone",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "founders": [
+        {
+          "name": "Tom Yeshurun",
+          "title": "CEO & Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://www.calcalistech.com/ctech/articles/0,7340,L-3769005,00.html"
+        }
+      ]
+    },
+    {
+      "id": "constructor-technology-ag",
+      "name": "Constructor Technology AG",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "patents": {
+        "numbers": [
+          "US20260120440A1",
+          "US20260330987A1",
+          "US20260087937A1",
+          "US20250083703A1",
+          "US20240289846A1"
+        ],
+        "confidence": "verified"
+      }
+    },
+    {
+      "id": "argus-cyber",
+      "name": "Argus Cyber",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "founding_country": {
+        "value": "Israel",
+        "confidence": "verified",
+        "source_url": "https://www.prnewswire.com/news-releases/boosting-cyber-security-competence-continental-acquires-argus-cyber-security-300549260.html"
+      }
+    },
+    {
+      "id": "trobix-bio",
+      "name": "Trobix Bio",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "founding_country": {
+        "value": "Israel",
+        "confidence": "verified",
+        "source_url": "https://www.globenewswire.com/news-release/2023/03/30/2637334/0/en/trobix-bio-raises-3-million-from-chartered-group-to-advance-precision-microbiome-oncology-therapeutics.html"
+      },
+      "founders": [
+        {
+          "name": "Adi Elkeles",
+          "title": "CEO & Co-Founder",
+          "confidence": "verified",
+          "source_url": "https://www.prnewswire.com/il/news-releases/trobix-bio-completed-series-a-funding-by-a-leading-japanese-singapore-fund-836452748.html"
+        }
+      ],
+      "patents": {
+        "numbers": [
+          "EP4381061A1",
+          "WO2024052907A1"
+        ],
+        "confidence": "verified"
+      }
+    },
+    {
+      "id": "infinigrow",
+      "name": "InfiniGrow",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "founding_country": {
+        "value": "Israel",
+        "confidence": "verified",
+        "source_url": "https://data.gov.il/dataset/ica_companies/resource/f004176c-b85f-4542-8901-7b3176f9a054?q=515531382"
+      }
+    },
+    {
+      "id": "genda",
+      "name": "Genda",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "founders": [
+        {
+          "name": "Shai Levy",
+          "title": "Co-Founder & CTO",
+          "confidence": "verified",
+          "source_url": "https://www.gendatech.com/blog/interview-with-erez-dror-why-was-genda-developed"
+        },
+        {
+          "name": "Erez Dror",
+          "title": "Co-Founder & CEO",
+          "confidence": "verified",
+          "source_url": "https://www.gendatech.com/blog/interview-with-erez-dror-why-was-genda-developed"
+        }
+      ]
+    },
+    {
+      "id": "speedb",
+      "name": "Speedb",
+      "judged_only": true,
+      "reviewed_by_human": true,
+      "hard_case_tags": [
+        "field_review"
+      ],
+      "funding_rounds_wrong": [
+        {
+          "type": "Other",
+          "amount_usd": 4000000,
+          "date": "2024-03-21",
+          "lead_investor": null,
+          "confidence": "verified",
+          "source_url": "https://siliconangle.com/2024/03/21/redis-acquires-storage-engine-startup-speedb-enhance-open-source-database/"
+        }
+      ]
     }
   ]
 }

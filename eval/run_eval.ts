@@ -206,6 +206,14 @@ async function main() {
 
   const golden: GoldenSet = JSON.parse(readFileSync(join(__dir, "golden_set.json"), "utf8"));
   const companies = golden.companies.filter((c) => !ONLY.length || ONLY.includes(c.id.toLowerCase()) || ONLY.includes(c.name.toLowerCase()));
+  // Companies imported from the field review carry no website (eval/import_field_review.ts): it is
+  // read from the database by name, in memory only — a run without a site would be unfair to them.
+  for (const c of companies.filter((x) => !x.website)) {
+    const { data } = await supabase.from("startups").select("website").ilike("name", c.name.replace(/[%_]/g, "\\$&")).limit(1);
+    const site = (data ?? [])[0]?.website as string | null | undefined;
+    if (site) c.website = site.startsWith("http") ? site : `https://${site}`;
+    else console.warn(`  ⚠️  ${c.name}: no website in the golden set or the database — searched by name only.`);
+  }
   const unreviewed = companies.filter((c) => !c.reviewed_by_human).length;
   console.log(`Pipeline ${PIPELINE} on ${companies.length} golden-set companies${unreviewed ? ` (${unreviewed} not yet reviewed by a human)` : ""}.`);
   if (PIPELINE === "v2") console.log(`Components (V2_COMPONENTS=${process.env.V2_COMPONENTS ?? "default"}): ${Object.entries(COMPONENTS).map(([n, on]) => `${n} ${on ? "on" : "off"}`).join(" · ")}`);
