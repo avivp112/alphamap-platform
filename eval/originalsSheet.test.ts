@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sheetValues, sheetText, applyVerdict } from "./originalsSheet";
+import { sheetValues, sheetText, applyVerdict, quoteFor } from "./originalsSheet";
 import { newScoreboard, scoreCompany, type GoldenCompany } from "./score";
 
 const v = <T,>(value: T, extra = {}) => ({ value, confidence: "verified" as const, source_url: "https://x.test/a", ...extra });
@@ -56,5 +56,16 @@ describe("check sheet for the originals", () => {
     const after = applyVerdict([acme], sheetValues([acme]), []).companies[0];
     const b2 = newScoreboard();
     expect(scoreCompany(b2, after, out).city).toBe("wrong");
+  });
+});
+
+describe("quotes for the check sheet", () => {
+  const page = "Title: Apex raises URL Source: https://x.test Published Time: 2022-10-24 Markdown Content: Apex is a startup in Los Angeles. The company was founded in 2022 by two engineers. Funding came later in 2022.";
+  it("skips Jina's header and takes the founding sentence for a year", () => {
+    expect(quoteFor(page, { field: "founded_year", value: "2022" })).toBe("The company was founded in 2022 by two engineers.");
+  });
+  it("finds a city and a founder's surname", () => {
+    expect(quoteFor(page, { field: "city", value: "Los Angeles" })).toContain("startup in Los Angeles");
+    expect(quoteFor("Ann Smith founded it. Other text.", { field: "founder", value: "Ann Smith (CEO)" })).toBe("Ann Smith founded it.");
   });
 });

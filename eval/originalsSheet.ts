@@ -97,3 +97,18 @@ export function applyVerdict(companies: GoldenCompany[], values: SheetValue[], w
   });
   return { companies: out, unknown, wrongApplied };
 }
+
+/**
+ * The sentence of the page that carries the value (a person: the surname). Jina's header (Title /
+ * URL Source / Published Time) is cut off first; a year counts only in a sentence about founding.
+ */
+export function quoteFor(text: string, v: Pick<SheetValue, "field" | "value">): string {
+  const needle = (v.field === "founder" ? v.value.split(" (")[0].split(/\s+/).pop()! : v.value).toLowerCase();
+  if (!needle || needle.length < 2) return "";
+  const body = text.includes("Markdown Content:") ? text.slice(text.indexOf("Markdown Content:") + 17) : text;
+  const foundingWord = /\b(?:found(?:ed|ers?)|established|launched|started|since|incorporated|began)\b/i;
+  const s = body.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/).find((x) =>
+    x.toLowerCase().includes(needle) && !/URL Source:|Published Time:/.test(x) && (v.field !== "founded_year" || foundingWord.test(x)));
+  return s ? s.slice(0, 320).trim() : "";
+}
+

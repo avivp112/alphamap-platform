@@ -13,7 +13,7 @@ import { config } from "dotenv";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import { sheetValues, sheetText, sheetCsv, applyVerdict, type SheetValue } from "./originalsSheet.ts";
+import { sheetValues, sheetText, sheetCsv, applyVerdict, quoteFor } from "./originalsSheet.ts";
 import type { GoldenSet } from "./score.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -28,14 +28,6 @@ async function page(url: string): Promise<string> {
     const res = await fetch(`https://r.jina.ai/${url}`, { headers, signal: AbortSignal.timeout(30_000) });
     return res.ok ? await res.text() : "";
   } catch { return ""; }
-}
-
-/** The sentence of the page that carries the value (a person: the surname). */
-export function quoteFor(text: string, v: Pick<SheetValue, "field" | "value">): string {
-  const needle = (v.field === "founder" ? v.value.split(" (")[0].split(/\s+/).pop()! : v.value).toLowerCase();
-  if (!needle || needle.length < 2) return "";
-  const s = text.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/).find((x) => x.toLowerCase().includes(needle));
-  return s ? s.slice(0, 320).trim() : "";
 }
 
 (async () => {
