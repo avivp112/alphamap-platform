@@ -13,6 +13,8 @@
  * eval report — never by a script.
  */
 
+import { WRITABLE_FIELDS } from "./writeUnits";
+
 export const PHASE1_PASSED = false;
 
 /**
@@ -21,9 +23,9 @@ export const PHASE1_PASSED = false;
  * country — for a hand-picked list of at most PILOT_MAX_COMPANIES companies
  * (scripts/pilot_sample.ts), after a DRY_RUN report the owner approved.
  */
-// News (owner, 2026-11-04): opened by the field review (20 marked, 95%) — its own write path:
-// the new articles appended to startups.news, undone by run_id like every pilot write.
-export const PILOT_FIELDS = ["city", "country", "founded_year", "founding_country", "news"] as const;
+// Owner, 2026-11-05: the pilot writes any review field the tracker has opened, and only those
+// (writeUnits.ts) — the tracker is the gate, not a fixed list. News was the first to open.
+export const PILOT_FIELDS: readonly string[] = WRITABLE_FIELDS;
 export const PILOT_MAX_COMPANIES = 25;
 
 export interface PilotRequest { fields: readonly string[]; companies: number }

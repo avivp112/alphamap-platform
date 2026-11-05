@@ -7,19 +7,18 @@
  */
 
 import { existsSync, readFileSync } from "fs";
+import { FIELD_COLUMNS } from "./writeUnits";
 
 export const MIN_MARKED = 20;
 export const MIN_CORRECT = 0.9;
 export const TRACKER = "eval/field_review_tracker.csv";
 
 /** A reviewed field → the startups column(s) the pilot writes for it (scalar fields only, for now). */
-export const FIELD_COLUMNS: Record<string, string[]> = {
-  hq_city: ["city"], hq_country: ["country"], founded_year: ["founded_year"], founding_country: ["founding_country"],
-  employee_range: ["employee_range"], employee_count: ["employee_count"], office: ["offices", "office_countries"],
-  news: ["news"],
-};
+export { FIELD_COLUMNS };
 
 export interface Mark { id: string; field: string; company: string; value: string; source_url: string; verdict: "correct" | "wrong"; source_of_mark: string }
+
+export function parseCsvText(text: string): string[][] { return parseCsv(text); }
 
 function parseCsv(text: string): string[][] {
   const rows: string[][] = []; let row: string[] = []; let cell = ""; let q = false;
@@ -56,9 +55,14 @@ export function fieldStatus(marks: Mark[]): FieldStatus[] {
   });
 }
 
-/** The startups columns open for writing by the review (scalar fields). */
+/** The startups columns open for writing by the review. */
 export function openColumns(marks: Mark[] = countedMarks()): string[] {
   return fieldStatus(marks).filter((s) => s.open).flatMap((s) => FIELD_COLUMNS[s.field] ?? []);
+}
+
+/** The review fields open for writing: ≥20 marked, ≥90% correct, against the current rules. */
+export function openFieldNames(marks: Mark[] = countedMarks()): string[] {
+  return fieldStatus(marks).filter((s) => s.open).map((s) => s.field);
 }
 
 /** At most this many values of one company in a field's sample (owner, 2026-11-04: Constructor's patents). */

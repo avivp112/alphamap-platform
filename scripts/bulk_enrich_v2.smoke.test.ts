@@ -6,6 +6,10 @@
  * calls, the Stage 9 deep dive, evidence/grounding drops, round planning
  * against a round already on file, and every write the run makes.
  */
+import { WRITABLE_FIELDS } from "../lib/enrichment/writeUnits";
+import { mkdtempSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { describe, it, expect, vi, beforeAll } from "vitest";
 
 type Call = { table: string; op: string; payload: unknown; filters: Array<[string, unknown]> };
@@ -71,7 +75,10 @@ const fakeSupabase = {
 
 vi.mock("./bulk_enrich_all.ts", () => ({ initV1Context: async () => {}, supabase: fakeSupabase }));
 // The write path itself is under test here; the Phase 1 gate (writeGate.ts) is tested on its own.
-vi.mock("../lib/enrichment/writeGate.ts", () => ({ assertEnrichmentWritesAllowed: () => {} }));
+vi.mock("../lib/enrichment/writeGate.ts", async () => {
+  const { WRITABLE_FIELDS } = await import("../lib/enrichment/writeUnits.ts");
+  return { assertEnrichmentWritesAllowed: () => {}, PILOT_FIELDS: WRITABLE_FIELDS };
+});
 
 // ── Fake web ────────────────────────────────────────────────────────────
 const SITE = "Ghost is an independent open source publishing platform for newsletters and paid membership subscriptions. Creators use Ghost publishing to run newsletters and grow membership revenue. Founded in 2013 by John O'Nolan and Hannah Wolfe. Ghost publishing powers thousands of newsletters with membership and subscriptions built in.";
@@ -211,6 +218,11 @@ vi.mock("@anthropic-ai/sdk", () => ({ default: class { messages = { create: crea
 describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
   beforeAll(async () => {
     process.env.DRY_RUN = "false";
+    // Every field open in the tracker (≥20 marked, ≥90% correct): the write path is under test, not the gate.
+    const tracker = join(mkdtempSync(join(tmpdir(), "review-")), "tracker.csv");
+    writeFileSync(tracker, ["id,field,company,value,source_url,verdict,source_of_mark",
+      ...WRITABLE_FIELDS.flatMap((f) => Array.from({ length: 20 }, (_, i) => `${f}.${i},${f},Co,v,,correct,test`))].join("\n"));
+    process.env.FIELD_REVIEW_TRACKER = tracker;
     process.env.SEARCH_CACHE = "false";
     process.env.DELAY_MS = "0";
     process.env.REFRESH_EVERY = "1";
@@ -239,7 +251,8 @@ describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
     expect(p.employee_count).toBe(60);
     expect(p.city).toBe("London");
     expect(p.country).toBe("United Kingdom");
-    expect(p.sector_id).toBe("sec-1");
+    // The sector is not a review field: the tracker does not open it, so it is held back (owner, 2026-11-05).
+    expect(p.sector_id).toBeUndefined();
   });
 
   it("writes grounded competitors only — an unverified one on file stays unless this run verifies it — and news with og:image, newest first", () => {
@@ -288,8 +301,8 @@ describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
     expect(john?.bio ?? "").not.toContain("Studied at Stanford");
   });
 
-  it("tags the sub-sector, writes provenance, refreshes startups_search", () => {
-    expect(calls.some((c) => c.table === "startup_sub_sectors" && c.op === "upsert")).toBe(true);
+  it("writes provenance, refreshes startups_search; the sub-sector tags are held back (no review field)", () => {
+    expect(calls.some((c) => c.table === "startup_sub_sectors" && c.op === "upsert")).toBe(false);
     expect(calls.filter((c) => c.table === "field_provenance").length).toBeGreaterThan(0);
     expect(rpcCalls).toContain("refresh_startups_search");
   });

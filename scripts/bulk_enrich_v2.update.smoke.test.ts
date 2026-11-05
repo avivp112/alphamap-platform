@@ -10,6 +10,8 @@
  *     only last_enriched_at is stamped.
  *   - Fresh Co: checked 5 days ago — not due, never processed.
  */
+import { writeFileSync } from "fs";
+import { WRITABLE_FIELDS } from "../lib/enrichment/writeUnits";
 import { describe, it, expect, vi, beforeAll } from "vitest";
 import { mkdtempSync } from "fs";
 import { tmpdir } from "os";
@@ -85,7 +87,10 @@ const fakeSupabase = {
 };
 vi.mock("./bulk_enrich_all.ts", () => ({ initV1Context: async () => {}, supabase: fakeSupabase }));
 // The write path itself is under test here; the Phase 1 gate (writeGate.ts) is tested on its own.
-vi.mock("../lib/enrichment/writeGate.ts", () => ({ assertEnrichmentWritesAllowed: () => {} }));
+vi.mock("../lib/enrichment/writeGate.ts", async () => {
+  const { WRITABLE_FIELDS } = await import("../lib/enrichment/writeUnits.ts");
+  return { assertEnrichmentWritesAllowed: () => {}, PILOT_FIELDS: WRITABLE_FIELDS };
+});
 
 const SERIES_A = "Ghost (ghost.org), the open source publishing platform, raised a $10 million Series A led by Accel.";
 const NEW_CEO = "Ghost (ghost.org) appointed Jane Roe as CEO; founder John O'Nolan becomes chair.";
@@ -145,6 +150,11 @@ vi.mock("@anthropic-ai/sdk", () => ({ default: class { messages = { create: crea
 
 describe("bulk_enrich_v2 MODE=update end to end (all I/O faked)", () => {
   beforeAll(async () => {
+    // Every field open in the tracker (≥20 marked, ≥90% correct): the write path is under test, not the gate.
+    const tracker = join(mkdtempSync(join(tmpdir(), "review-")), "tracker.csv");
+    writeFileSync(tracker, ["id,field,company,value,source_url,verdict,source_of_mark",
+      ...WRITABLE_FIELDS.flatMap((f) => Array.from({ length: 20 }, (_, i) => `${f}.${i},${f},Co,v,,correct,test`))].join("\n"));
+    process.env.FIELD_REVIEW_TRACKER = tracker;
     Object.assign(process.env, {
       MODE: "update", DRY_RUN: "false", SEARCH_CACHE: "false", DELAY_MS: "0", REFRESH_EVERY: "0",
       SERP_KEY: "test", TAVILY_API_KEY: "test", SEEN_URLS_DIR: mkdtempSync(join(tmpdir(), "seen-")),

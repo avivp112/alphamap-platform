@@ -54,8 +54,9 @@ import { ACTIVE_DAYS, QUIET_DAYS, SeenUrls, isUpdateDue } from "../lib/enrichmen
 import { websiteDomain, type DomainOwner } from "../lib/enrichment/websiteValidation.ts";
 
 import { assertEnrichmentWritesAllowed, PILOT_FIELDS } from "../lib/enrichment/writeGate.ts";
-import { openColumns } from "../lib/enrichment/fieldReview.ts";
-import { writeFileSync } from "fs";
+import { openFieldNames } from "../lib/enrichment/fieldReview.ts";
+import { writeFileSync, mkdirSync, readdirSync } from "fs";
+import { numberValues, renderBatchReport, batchCsv } from "../lib/enrichment/batchReport.ts";
 import type { RoundHint } from "../lib/enrichment/hints.ts";
 // ── Configuration (ground rule 3: same env vars as v1) ──────────────────
 const BATCH_SIZE     = Number(process.env.BATCH_SIZE     ?? 9999);
@@ -87,20 +88,24 @@ const UPDATE_QUIET_DAYS = Number(process.env.UPDATE_QUIET_DAYS ?? QUIET_DAYS);
 const MAX_CONSECUTIVE_ERRORS = Number(process.env.MAX_CONSECUTIVE_ERRORS ?? 5);
 const ONLY = (process.env.ONLY ?? "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean);
 assertEnrichmentWritesAllowed("bulk_enrich_v2", !DRY_RUN, PILOT ? { fields: PILOT_FIELDS, companies: ONLY.length } : undefined);
-// A field opens for writing when the owner marked ≥20 of its values, ≥90% correct
-// (eval/field_review_tracker.csv — owner, 2026-11-02). A dry run shows every pilot field.
-// FIELDS=news: only these pilot fields, dry or wet (owner, 2026-11-04: the news write path alone).
-const PILOT_ONLY_FIELDS = (process.env.FIELDS ?? "").split(",").map((f) => f.trim()).filter(Boolean);
-const PILOT_ASKED: string[] = !PILOT ? [] : PILOT_ONLY_FIELDS.length ? PILOT_FIELDS.filter((f) => PILOT_ONLY_FIELDS.includes(f)) : [...PILOT_FIELDS];
-const OPEN_PILOT_FIELDS: string[] = !PILOT ? [] : DRY_RUN ? PILOT_ASKED : PILOT_ASKED.filter((f) => openColumns().includes(f));
-if (PILOT && !DRY_RUN) {
-  const closed = PILOT_ASKED.filter((f) => !OPEN_PILOT_FIELDS.includes(f));
-  console.log(`🔓  Open for writing: ${OPEN_PILOT_FIELDS.join(", ") || "none"}${closed.length ? ` · still closed (fewer than 20 marked or under 90%): ${closed.join(", ")} — npx tsx scripts/field_review_status.ts` : ""}`);
-  if (!OPEN_PILOT_FIELDS.length) { console.error("⛔  No pilot field is open for writing yet — nothing to write."); process.exit(1); }
+// The tracker is the gate (owner, 2026-11-05). A field is written only when it is open in
+// eval/field_review_tracker.csv — at least 20 values marked, at least 90% correct against the
+// current rules — in a pilot and in a wide run alike; PHASE1_PASSED does not lift it, and a field
+// with no marks is never written. A dry run shows what a wet run would write (the open fields);
+// ALL_FIELDS=true shows everything it found. FIELDS=news,competitor narrows any run to those fields.
+const FIELDS_ASKED = (process.env.FIELDS ?? "").split(",").map((f) => f.trim()).filter(Boolean);
+const ASKED: string[] = FIELDS_ASKED.length ? PILOT_FIELDS.filter((f) => FIELDS_ASKED.includes(f)) : [...PILOT_FIELDS];
+const OPEN_NOW = openFieldNames();
+const SHOW_ALL = DRY_RUN && process.env.ALL_FIELDS === "true";
+const OPEN_FIELDS: string[] = SHOW_ALL ? ASKED : ASKED.filter((f) => OPEN_NOW.includes(f));
+{
+  const closed = ASKED.filter((f) => !OPEN_FIELDS.includes(f));
+  console.log(`🔓  ${DRY_RUN ? "Would be written" : "Open for writing"}: ${OPEN_FIELDS.join(", ") || "none"}${closed.length ? ` · closed (fewer than 20 marked or under 90%): ${closed.join(", ")} — npx tsx scripts/field_review_status.ts` : ""}`);
+  if (!DRY_RUN && !OPEN_FIELDS.length) { console.error("⛔  No field is open for writing — nothing to write."); process.exit(1); }
 }
 if (PILOT && ONLY.length === 0) { console.error("⛔  PILOT=true needs ONLY=<company ids> (scripts/pilot_sample.ts writes them)."); process.exit(1); }
 // Every pilot field written — or, dry, that would be — before and after (the owner's report).
-const PILOT_REPORT = process.env.PILOT_REPORT ?? `pilot_report_${DRY_RUN ? "dry" : "write"}.csv`;
+const PILOT_REPORT = process.env.PILOT_REPORT ?? `${PILOT ? "pilot" : "run"}_report_${DRY_RUN ? "dry" : "write"}.csv`;
 const pilotRows: Array<Record<string, string>> = [];
 // Websites to fix (owner, 2026-11-02): another business on the site, or none of it readable.
 // Always in website_review.csv; noted in the website_review table on a wet run.
@@ -296,7 +301,7 @@ async function enrichCompany(
   const outcome = await writeCollected(row, collected, {
     db: supabase, dryRun: DRY_RUN, update: UPDATE, verbose: VERBOSE, thresholds: THRESHOLDS,
     taxonomy, startupByDomain, seen: PILOT ? null : seen, runId,
-    ...(PILOT ? { pilotFields: OPEN_PILOT_FIELDS } : {}),
+    openFields: OPEN_FIELDS, pilot: PILOT,
   }, summary);
   for (const c of outcome?.pilot ?? []) {
     pilotRows.push({ company_id: row.id, company: row.name, field: c.field, before: c.before == null ? "" : String(c.before), after: String(c.after), source_url: c.source_url ?? "", quote: c.quote ?? "" });
@@ -521,10 +526,17 @@ async function main() {
     writeFileSync("website_review.csv", "\uFEFF" + [wcols.join(","), ...websiteRows.map((r) => wcols.map((c) => wcell(r[c] ?? "")).join(","))].join("\r\n") + "\r\n");
     console.log(`🛠️   ${websiteRows.length} website(s) to fix in website_review.csv${DRY_RUN ? "" : " (and the website_review table)"}.`);
   }
-  if (PILOT) {
+  if (PILOT || pilotRows.length > 0) {
     const cols = ["company_id", "company", "field", "before", "after", "source_url", "quote"];
     const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
     writeFileSync(PILOT_REPORT, "\uFEFF" + [cols.join(","), ...pilotRows.map((r) => cols.map((c) => cell(r[c] ?? "")).join(","))].join("\r\n") + "\r\n");
+    // The numbered report of this batch (owner, 2026-11-05): the owner answers with the wrong numbers.
+    mkdirSync("field_review", { recursive: true });
+    const batchNo = readdirSync("field_review").filter((f) => /^batch_\d+\.csv$/.test(f)).length + 1;
+    const numbered = numberValues(pilotRows.filter((r) => r.field !== "(nothing)").map((r) => ({ company_id: r.company_id, company: r.company, field: r.field, value: r.after, source_url: r.source_url, quote: r.quote })), batchNo, DRY_RUN ? "d" : "w");
+    const batchPath = `field_review/batch_${batchNo}.csv`;
+    if (!DRY_RUN && numbered.length) writeFileSync(batchPath, batchCsv(numbered));
+    if (numbered.length) console.log("\n" + renderBatchReport(numbered, { batchNo, runId, dry: DRY_RUN, csvPath: DRY_RUN ? undefined : batchPath }));
     console.log(`📝  Pilot report: ${PILOT_REPORT} — ${pilotRows.filter((r) => r.field !== "(nothing)").length} field(s) ${DRY_RUN ? "that would be written" : "written"} for ${new Set(pilotRows.map((r) => r.company_id)).size} compan(ies).${runId ? ` Undo: RUN_ID=${runId} npx tsx scripts/undo_run.ts` : ""}`);
   }
 }

@@ -34,6 +34,7 @@ import {
 } from "./write.ts";
 import { validateWebsiteCandidate, websiteDomain, type DomainOwner } from "./websiteValidation.ts";
 import { sourceTypeRank, type SourceType } from "./sourceTypes.ts";
+import { restrictPatch, writesRounds, writesBios, writesHeadcount, fieldOfColumn, withoutBio } from "./writeUnits.ts";
 
 // Upper bounds on the additive list sections, so repeated runs can't grow
 // them without limit. Entries already on file are never removed.
@@ -75,8 +76,14 @@ export interface WriteContext {
   seen?: { add(urls: string[]): void; save(): void } | null;
   /** enrichment_runs.run_id: every write is recorded in field_changes under it (runChanges.ts). */
   runId?: string | null;
-  /** A partial wet run (writeGate.ts PILOT_FIELDS): only these startups columns are written, nothing else. */
-  pilotFields?: readonly string[];
+  /**
+   * The review fields open for writing (writeUnits.ts; the tracker is the gate — owner, 2026-11-05).
+   * Given, only these fields are written — in a pilot and in a wide run alike. Not given (a dry-run
+   * preview of everything), nothing may be written.
+   */
+  openFields?: readonly string[];
+  /** A pilot: besides the fields, no tags, hints, domains, timestamps or score are written. */
+  pilot?: boolean;
 }
 
 /** One field of a pilot: what is on file, what the run writes, and its source. */
@@ -152,8 +159,16 @@ export async function writeCollected(
   const MIN_PROFILE_CONFIDENCE = THRESHOLDS.minProfileConfidence;
   const {
     profile, funding, market, allSources, sourceById, sourceTypeFor, sourceUrlFor,
-    linkedinFounders, linkedinLeaders, existingRefs, validation, plan, cityConfidence, countryConfidence,
+    linkedinFounders, linkedinLeaders, existingRefs, validation, plan: fullPlan, cityConfidence, countryConfidence,
   } = collected;
+  const OPEN = ctx.openFields;
+  const PILOT = !!ctx.pilot;
+  if (!DRY_RUN && !OPEN) throw new Error("writeCollected: a wet write needs the open fields (ctx.openFields) — the tracker is the gate.");
+  // Rounds only when the rounds field is open (a held-back round is counted for the report).
+  const roundsHeldBack = OPEN && !writesRounds(OPEN) ? fullPlan.inserts.length + fullPlan.updates.length : 0;
+  const plan = OPEN && !writesRounds(OPEN) ? { ...fullPlan, inserts: [], updates: [] } : fullPlan;
+  // Bios (and the tags read off them) only when the bios field is open.
+  const keepBio = <T extends Record<string, unknown>>(person: T): T => (!OPEN || writesBios(OPEN) ? person : withoutBio(person));
 
   // ── Stage 10: write ──────────────────────────────────────────────────────
   const patch: Record<string, unknown> = {};
@@ -294,7 +309,7 @@ export async function writeCollected(
   }
 
   // Leadership & founders (additive merge, never destructive)
-  const founderCandidates = cleanPeople((profile.profile.founders ?? []).map((f) => ({
+  const founderCandidates = cleanPeople((profile.profile.founders ?? []).map((f) => keepBio({
     name: f.name, title: cleanFounderTitle(f.title, row.name), bio: f.bio, linkedin_url: f.linkedin_url?.value,
     had_prior_exit: f.had_prior_exit, elite_background: f.elite_background, notable_pedigree: f.notable_pedigree,
   })));
@@ -305,7 +320,7 @@ export async function writeCollected(
     console.log(`    👤  ${f.name} ("${f.title}") is not stated to be a founder — kept in leadership only.`);
     bump(summary.droppedByReason, "founder_not_stated_as_founder");
   }
-  const allFounderInputs = [...cleanFounders, ...linkedinFounders];
+  const allFounderInputs = [...cleanFounders, ...linkedinFounders.map((f) => keepBio(f))];
   if (allFounderInputs.length > 0) {
     // mergePeople matches exact names; align LinkedIn names (accents,
     // middle names) to the spelling already in use before merging.
@@ -315,15 +330,15 @@ export async function writeCollected(
     // (A cleaned title can be null; the founders column takes it as is.)
     setIfChanged("founders", cleanPeople(mergePeople(row.founders ?? [], aligned as NonNullable<V2StartupRow["founders"]>)), row.founders);
   }
-  const cleanLeadership = cleanPeople((profile.leadership ?? []).map((l) => ({
+  const cleanLeadership = cleanPeople((profile.leadership ?? []).map((l) => keepBio({
     name: l.name, role: l.role, bio: l.bio, linkedin_url: l.linkedin_url?.value, joined_date: l.joined_date,
     had_prior_exit: l.had_prior_exit, elite_background: l.elite_background, notable_pedigree: l.notable_pedigree,
   })));
   const allLeaderInputs = [
     ...cleanLeadership,
-    ...linkedinLeaders.map((l) => ({ ...l, role: l.role ?? "" })),
+    ...linkedinLeaders.map((l) => keepBio({ ...l, role: l.role ?? "" })),
     ...demotedFounders.filter((f) => !cleanLeadership.some((l) => samePersonName(l.name, f.name)))
-      .map((f) => ({ name: f.name, role: f.title ?? "", bio: f.bio, linkedin_url: f.linkedin_url })),
+      .map((f) => keepBio({ name: f.name, role: f.title ?? "", bio: f.bio, linkedin_url: f.linkedin_url })),
   ];
   if (allLeaderInputs.length > 0) {
     const knownLeaderNames = [...(row.leadership ?? []).map((l) => l?.name), ...cleanLeadership.map((l) => l.name)].filter((n): n is string => !!n);
@@ -389,7 +404,7 @@ export async function writeCollected(
     market.competitors.map((c) => ({ name: c.name, website: c.website ?? null, how_it_competes: c.how_it_competes, startup_id: crossLink(c.website), source_url: sourceUrlFor(c.source_id) })),
     (c) => normalizeForMatch(c.name ?? ""), MAX_COMPETITORS,
   );
-  const competitorsAdded = competitors.length - existingCompetitors.length;
+  let competitorsAdded = competitors.length - existingCompetitors.length;
   // Each new competitor's provenance: the primary source that says they compete (competitorEvidence.ts).
   for (const c of market.competitors) {
     if (c.source_id && c.evidence_quote && competitors.some((x) => normalizeForMatch(x.name ?? "") === normalizeForMatch(c.name)) && !existingCompetitors.some((x) => normalizeForMatch(x?.name ?? "") === normalizeForMatch(c.name))) {
@@ -493,7 +508,7 @@ export async function writeCollected(
   }
 
   // Talent & growth: headcount (issue 6's guard + validation's outlier check)
-  const totalRaisedEstimate = computeTotalRaised([...existingRefs, ...plan.inserts]);
+  const totalRaisedEstimate = computeTotalRaised([...existingRefs, ...fullPlan.inserts]);
   const headcountPoints: Array<{ date: string; count: number; pointType?: string }> = [];
   for (const h of profile.metrics.headcount_history ?? []) {
     const date = normalizeIsoDate(h.date);
@@ -543,7 +558,7 @@ export async function writeCollected(
   const finalHeadcount = (patch.employee_count as number | undefined) ?? row.employee_count;
   const { data: hcOnFile } = await supabase.from("headcount_history").select("id, employee_count, snapshot_date").eq("startup_id", row.id);
   const badHeadcountOnFile = ((hcOnFile ?? []) as Array<{ id: string; employee_count: number; snapshot_date: string }>).filter((h) =>
-    !!checkHeadcountOutlier(h.employee_count, totalRaisedEstimate, foundedForChecks) || (finalHeadcount != null && finalHeadcount > 0 && h.employee_count > finalHeadcount * 10),
+    (!OPEN || writesHeadcount(OPEN)) && !!checkHeadcountOutlier(h.employee_count, totalRaisedEstimate, foundedForChecks) || (finalHeadcount != null && finalHeadcount > 0 && h.employee_count > finalHeadcount * 10),
   );
   for (const h of badHeadcountOnFile) {
     console.log(`    🧹  On file: headcount point ${h.employee_count}@${h.snapshot_date} is implausible next to ${finalHeadcount ?? "the funding"} — ${DRY_RUN ? "would remove" : "removing"}.`);
@@ -558,42 +573,64 @@ export async function writeCollected(
   }
   if (profile.metrics.growth_trend) setIfChanged("growth_trend", profile.metrics.growth_trend, row.growth_trend);
 
-  // ── A partial wet run: only the pilot's fields, nothing else is touched ──
-  // (no rounds, people, tags, news, hints, headcount, score or timestamps).
-  if (ctx.pilotFields) {
-    const allowed = new Set(ctx.pilotFields);
-    for (const k of Object.keys(patch)) if (!allowed.has(k)) delete patch[k];
-    const writes = fieldWrites.filter((fw) => allowed.has(fw.field.replace(/^profile\./, "")));
-    const pilot: PilotChange[] = Object.keys(patch).flatMap((k): PilotChange[] => {
-      // News: one line per article added (the whole list is written, and undone, as one value).
+  // ── The tracker is the gate (owner, 2026-11-05) ──
+  // Only the review fields open in eval/field_review_tracker.csv are written — in a pilot and in a
+  // wide run alike, PHASE1_PASSED or not. What is held back is named in the report. A pilot also
+  // writes no tags, hints, domains, timestamps or score.
+  const reportLines: PilotChange[] = [];
+  if (OPEN) {
+    const cut = restrictPatch(patch, OPEN);
+    for (const k of Object.keys(patch)) delete patch[k];
+    Object.assign(patch, cut.patch);
+    for (let i = fieldWrites.length - 1; i >= 0; i--) {
+      if (!(fieldWrites[i].field.replace(/^(profile|metrics)\./, "") in patch)) fieldWrites.splice(i, 1);
+    }
+    if (!writesHeadcount(OPEN)) headcountPoints.length = 0;
+    if (!patch.news) newsAdded = 0;
+    if (!patch.competitors) competitorsAdded = 0;
+    tagSectorIds.length = 0;
+    const notOpen = [...new Set(cut.heldBack.map((c) => fieldOfColumn(c)).filter((f): f is string => !!f))];
+    const untracked = cut.heldBack.filter((c) => !fieldOfColumn(c));
+    if (notOpen.length || roundsHeldBack || untracked.length) {
+      console.log(`    ⏸️   held back — field not open: ${[...notOpen, ...(roundsHeldBack ? [`round (${roundsHeldBack})`] : [])].join(", ") || "—"}${untracked.length ? ` · not in the review: ${untracked.join(", ")}` : ""}`);
+    }
+    // One line per value written (or, dry, that would be).
+    const rowOf = row as unknown as Record<string, unknown>;
+    const newOf = <T,>(next: unknown, prev: unknown, same: (a: T, b: T) => boolean): T[] =>
+      ((next ?? []) as T[]).filter((n) => !((prev ?? []) as T[]).some((p) => p && same(p, n)));
+    for (const k of Object.keys(patch)) {
+      const fw = fieldWrites.find((w) => w.field.replace(/^(profile|metrics)\./, "") === k);
+      const one = (field: string, after: string, source_url: string | null, quote: string | null = null) => reportLines.push({ field, before: null, after, source_url, quote });
       if (k === "news") {
-        const onFile = new Set(((row.news ?? []) as Array<{ url?: string }>).map((n) => n.url));
-        return ((patch.news ?? []) as Array<{ url: string; title: string; published_date?: string | null }>).filter((n) => !onFile.has(n.url))
-          .map((n) => ({ field: "news", before: null, after: `${n.published_date || "no date"} — ${n.title}`, source_url: n.url, quote: null }));
-      }
-      const fw = writes.find((w) => w.field === `profile.${k}`);
-      return [{ field: k, before: (row as unknown as Record<string, unknown>)[k] ?? null, after: patch[k], source_url: fw ? sourceById.get(fw.source_id)?.url ?? null : null, quote: fw?.evidence_quote ?? null }];
-    });
-    for (const c of pilot) console.log(`    ${DRY_RUN ? "[DRY] would write" : "✏️  writing"} ${c.field}: ${JSON.stringify(c.before)} → ${JSON.stringify(c.after)}  (${c.source_url ?? "no source"})`);
-    if (!pilot.length) console.log("    🟠 pilot: nothing to write for its fields");
-    if (!DRY_RUN && pilot.length) {
-      const { error } = await supabase.from("startups").update(patch).eq("id", row.id);
-      if (error) console.warn(`    ⚠️  Pilot patch failed: ${error.message}`);
-      else {
-        await recordChanges(startupChanges(row.id, row as unknown as Record<string, unknown>, patch, runId));
-        for (const fw of writes) {
-          const { error: provErr } = await supabase.from("field_provenance").insert({
-            startup_id: row.id, field: fw.field, value: fw.value, source_url: sourceById.get(fw.source_id)?.url,
-            source_type: fw.source_type, evidence_quote: fw.evidence_quote,
-            confidence: computeFieldConfidence([{ source_type: fw.source_type }]), run_id: runId,
-          });
-          if (provErr) console.warn(`    ⚠️  field_provenance insert failed (${fw.field}): ${provErr.message}`);
+        for (const n of newOf<{ url?: string; title: string; published_date?: string | null }>(patch.news, rowOf.news, (a, b) => a.url === b.url)) one("news", `${n.published_date || "no date"} — ${n.title}`, n.url ?? null);
+      } else if (k === "founders") {
+        for (const f of newOf<{ name: string; title?: string | null; bio?: string | null }>(patch.founders, rowOf.founders, (a, b) => samePersonName(a.name ?? "", b.name))) {
+          const grounded = (profile.profile.founders ?? []).find((g) => samePersonName(g.name, f.name)) as { grounded_url?: string | null } | undefined;
+          one("founder", `${f.name}${f.title ? ` — ${f.title}` : ""}`, grounded?.grounded_url ?? null);
+          if (f.bio) one("founder_bio", `${f.name}: ${f.bio}`, grounded?.grounded_url ?? null);
         }
+      } else if (k === "leadership") {
+        for (const l of newOf<{ name: string; role?: string | null; bio?: string | null }>(patch.leadership, rowOf.leadership, (a, b) => samePersonName(a.name ?? "", b.name))) one("leader", `${l.name} — ${l.role ?? ""}${l.bio ? ` · ${l.bio}` : ""}`, null);
+      } else if (k === "competitors") {
+        for (const c of newOf<{ name: string; source_url?: string | null }>(patch.competitors, rowOf.competitors, (a, b) => normalizeForMatch(a.name ?? "") === normalizeForMatch(b.name))) one("competitor", c.name, c.source_url ?? null);
+      } else if (k === "patents") {
+        for (const pt of newOf<{ patent_number?: string | null; title: string; url?: string | null }>(patch.patents, rowOf.patents, (a, b) => a.patent_number === b.patent_number)) one("patent", `${pt.patent_number ?? ""} ${pt.title}`.trim(), pt.url ?? null);
+      } else if (k === "offices") {
+        for (const o of newOf<{ city: string; country?: string | null; source_url?: string | null }>(patch.offices, rowOf.offices, (a, b) => a.city === b.city && (a.country ?? null) === (b.country ?? null))) one("office", [o.city, o.country].filter(Boolean).join(", "), o.source_url ?? null);
+      } else if (k === "office_countries" || k === "patent_count" || k === "patent_fields") {
+        // Derived from offices / patents: written beside them, not a value of their own.
+      } else {
+        reportLines.push({ field: fieldOfColumn(k) ?? k, before: rowOf[k] ?? null, after: patch[k], source_url: fw ? sourceById.get(fw.source_id)?.url ?? null : null, quote: fw?.evidence_quote ?? null });
       }
     }
-    summary.totalFieldsPatched += pilot.length;
-    summary.tally[pilot.length ? "success" : "partial"]++;
-    return { anyWrite: pilot.length > 0, patch, roundInserts: [], roundUpdates: [], headcountPoints: [], tags: [], newsAdded: 0, competitorsAdded: 0, pilot };
+    for (const r of plan.inserts) {
+      const amount = r.amount_raised == null ? "amount not disclosed" : `$${+(r.amount_raised / 1e6).toFixed(1)}M`;
+      reportLines.push({ field: "round", before: null, after: `${r.round_type} ${amount} · ${r.announcement_date ?? "no date"}${r.lead_investor ? ` · lead ${r.lead_investor}` : ""}`, source_url: r.source_url ?? null, quote: null });
+    }
+    for (const u of plan.updates) reportLines.push({ field: "round", before: "(on file)", after: `${u.round_type} filled: ${JSON.stringify(u.patch)}`, source_url: null, quote: null });
+    for (const h of headcountPoints) reportLines.push({ field: "headcount_history", before: null, after: `${h.count} on ${h.date} (${h.pointType ?? "observed"})`, source_url: null, quote: null });
+    for (const c of reportLines) console.log(`    ${DRY_RUN ? "[DRY] would write" : "✏️  writing"} ${c.field}: ${c.before == null ? "" : `${JSON.stringify(c.before)} → `}${typeof c.after === "string" ? c.after : JSON.stringify(c.after)}  (${c.source_url ?? "no source"})`);
+    if (!reportLines.length) console.log("    🟠 nothing to write for the open fields");
   }
 
   const fieldsPatched = Object.keys(patch).length;
@@ -715,22 +752,21 @@ export async function writeCollected(
 
     // Hints (hints.ts): rounds only a data platform states — kept for the next
     // run to search again, never written as data; confirmed ones are closed.
-    await saveHints(supabase, row.id, collected, runId);
+    if (!PILOT) await saveHints(supabase, row.id, collected, runId);
 
     // Domains on no list that a round came from: the owner's weekly review list (roundSources.ts).
-    for (const d of new Map((collected.unlistedDomains ?? []).map((x) => [x.domain, x])).values()) {
+    for (const d of PILOT ? [] : new Map((collected.unlistedDomains ?? []).map((x) => [x.domain, x])).values()) {
       const { error: domErr } = await supabase.rpc("note_source_domain", { p_domain: d.domain, p_url: d.url, p_startup_id: row.id });
       if (domErr) console.warn(`    ⚠️  source_domain_review (${d.domain}): ${domErr.message}`);
     }
 
-    await supabase.from("startups").update({ last_enriched_at: new Date().toISOString() }).eq("id", row.id);
+    if (!PILOT) await supabase.from("startups").update({ last_enriched_at: new Date().toISOString() }).eq("id", row.id);
     // Every page this run sent to Claude: a later update skips them.
-    seen?.add(allSources.map((src) => src.url));
-    seen?.save();
+    if (!PILOT) { seen?.add(allSources.map((src) => src.url)); seen?.save(); }
     // Marks the company as written by v2; the Private Market page always
     // lists such companies (migration 20261010000000). A separate update,
     // so a database without that column yet still gets last_enriched_at.
-    if (Object.keys(patch).length > 0 || plan.inserts.length > 0 || plan.updates.length > 0) {
+    if (!PILOT && (Object.keys(patch).length > 0 || plan.inserts.length > 0 || plan.updates.length > 0)) {
       const { error: markErr } = await supabase.from("startups").update({ enriched_v2_at: new Date().toISOString() }).eq("id", row.id);
       if (markErr && !warnedNoEnrichedV2Column) {
         warnedNoEnrichedV2Column = true;
@@ -738,7 +774,7 @@ export async function writeCollected(
       }
     }
 
-    const { data: scoreData } = await supabase.rpc("calculate_alphamap_score", { p_startup_id: row.id });
+    const { data: scoreData } = PILOT ? { data: null } : await supabase.rpc("calculate_alphamap_score", { p_startup_id: row.id });
     const score = scoreData as { score?: number; tier?: string } | null;
     if (score?.score != null) {
       await supabase.from("alphamap_score_history").upsert(
@@ -769,6 +805,7 @@ export async function writeCollected(
   console.log(`    ${anyWrite ? "✅" : "🟠"} ${parts.join(" | ")}`);
   return {
     anyWrite, patch, roundInserts: plan.inserts, roundUpdates: plan.updates,
-    headcountPoints, tags: tagNames, newsAdded, competitorsAdded: Math.max(0, competitorsAdded),
+    headcountPoints, tags: OPEN ? [] : tagNames, newsAdded, competitorsAdded: Math.max(0, competitorsAdded),
+    ...(OPEN ? { pilot: reportLines } : {}),
   };
 }
