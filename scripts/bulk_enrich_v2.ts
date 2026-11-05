@@ -531,10 +531,11 @@ async function main() {
     const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
     writeFileSync(PILOT_REPORT, "\uFEFF" + [cols.join(","), ...pilotRows.map((r) => cols.map((c) => cell(r[c] ?? "")).join(","))].join("\r\n") + "\r\n");
     // The numbered report of this batch (owner, 2026-11-05): the owner answers with the wrong numbers.
-    mkdirSync("field_review", { recursive: true });
-    const batchNo = readdirSync("field_review").filter((f) => /^batch_\d+\.csv$/.test(f)).length + 1;
+    const batchDir = process.env.BATCH_DIR ?? "field_review";
+    mkdirSync(batchDir, { recursive: true });
+    const batchNo = readdirSync(batchDir).filter((f) => /^batch_\d+\.csv$/.test(f)).length + 1;
     const numbered = numberValues(pilotRows.filter((r) => r.field !== "(nothing)").map((r) => ({ company_id: r.company_id, company: r.company, field: r.field, value: r.after, source_url: r.source_url, quote: r.quote })), batchNo, DRY_RUN ? "d" : "w");
-    const batchPath = `field_review/batch_${batchNo}.csv`;
+    const batchPath = `${batchDir}/batch_${batchNo}.csv`;
     if (!DRY_RUN && numbered.length) writeFileSync(batchPath, batchCsv(numbered));
     if (numbered.length) console.log("\n" + renderBatchReport(numbered, { batchNo, runId, dry: DRY_RUN, csvPath: DRY_RUN ? undefined : batchPath }));
     console.log(`📝  Pilot report: ${PILOT_REPORT} — ${pilotRows.filter((r) => r.field !== "(nothing)").length} field(s) ${DRY_RUN ? "that would be written" : "written"} for ${new Set(pilotRows.map((r) => r.company_id)).size} compan(ies).${runId ? ` Undo: RUN_ID=${runId} npx tsx scripts/undo_run.ts` : ""}`);

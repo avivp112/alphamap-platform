@@ -80,7 +80,7 @@ describe("Phase 1 rules", () => {
     b.funding_rounds = { scored: 20, produced: 10, correct: 9 };
     const c = phase1Checks(b, { locationMismatches: 1, duplicateRounds: 0, foundedAfterRound: 0 });
     expect(c.map((x) => x.pass)).toEqual([false, true, true, true, true, false, false, false]);
-    expect(c[3].detail).toBe("95.0%");
+    expect(c[3].detail).toBe("95.0% (19/20 judged)");
   });
   it("round type, competitors and patents each need enough judged values, then their own bar", () => {
     const b = newScoreboard();
@@ -208,5 +208,32 @@ describe("a headquarters the company does not declare (Port, Aidoc, SSI — owne
     expect(scoreCompany(a, company, { ...blank, city: null }).city).toBe("correct");
     const b = newScoreboard();
     expect(scoreCompany(b, company, { ...blank, city: "New York City", country: "United States" }).city).toBe("wrong");
+  });
+});
+
+describe("reviewed_fields — a golden value counts only when its field was reviewed (owner, 2026-11-05)", () => {
+  const wrongOut = out({ city: "Paris", country: "France", founded_year: 1999, founders: [{ name: "Nobody Known" }] as never, rounds: [] });
+  it("without reviewed_fields every field is scored", () => {
+    const b = newScoreboard();
+    scoreCompany(b, apex, wrongOut);
+    expect(b.city.scored).toBe(1);
+    expect(b.founded_year.scored).toBe(1);
+  });
+  it("a field not listed is excluded: nothing scored, no matter what the pipeline produced", () => {
+    const b = newScoreboard();
+    const r = scoreCompany(b, { ...apex, reviewed_fields: ["rounds"] }, wrongOut);
+    expect(r.city).toBe("excluded");
+    expect(r.country).toBe("excluded");
+    expect(r.founded_year).toBe("excluded");
+    expect(r.founders).toBe("excluded");
+    expect(b.city.scored).toBe(0);
+    expect(b.founders.scored).toBe(0);
+  });
+  it("a listed field is still scored", () => {
+    const b = newScoreboard();
+    const r = scoreCompany(b, { ...apex, reviewed_fields: ["city"] }, wrongOut);
+    expect(r.city).toBe("wrong");
+    expect(b.city.scored).toBe(1);
+    expect(b.country.scored).toBe(0);
   });
 });

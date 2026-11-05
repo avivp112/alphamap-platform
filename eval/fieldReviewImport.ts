@@ -67,6 +67,11 @@ export function goldenFromMarks(company: string, marks: Mark[]): ImportResult | 
     g.patents = { numbers: patents, ...(notPatents.length ? { not_numbers: notPatents } : {}), confidence: "verified" };
     counts.patent = patents.length + notPatents.length;
   }
+  // The fields the owner has verified here (score.ts reviewed_fields); founders are listed in the
+  // entry but not scored — it holds only the ones he marked.
+  const reviewed = [g.city && "city", g.country && "country", g.founded_year && "founded_year", g.founding_country && "founding_country",
+    (g.funding_rounds || g.funding_rounds_wrong) && "rounds", g.competitors && "competitors", g.patents && "patents"].filter((f): f is string => !!f);
+  g.reviewed_fields = reviewed;
   return Object.keys(counts).length ? { company: g, counts } : null;
 }
 

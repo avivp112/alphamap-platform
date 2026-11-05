@@ -64,6 +64,13 @@ export interface GoldenCompany {
   /** Rounds the owner judged wrong (judged_only entries): a produced round matching one is a wrong write. */
   funding_rounds_wrong?: Array<Omit<GoldenRound, "confidence"> & { confidence?: Confidence }>;
   reviewed_by_human?: boolean;
+  /**
+   * The fields the owner has verified for this company (2026-11-05): city, country, founded_year,
+   * founding_country, founders, rounds, competitors, patents, employee_range, arr_usd. A value
+   * counts as verified — is scored — only when its field is listed. Absent: every field counts (the
+   * entries written before this was introduced).
+   */
+  reviewed_fields?: string[];
   hard_case_tags?: string[];
 }
 export interface GoldenSet { version: number; companies: GoldenCompany[] }
@@ -203,7 +210,7 @@ export function matchRounds(verified: GoldenRound[], extracted: PipelineOutput["
 function scoreRounds(s: FieldStats, g: GoldenCompany, extracted: PipelineOutput["rounds"]): FieldResult {
   const golden = g.funding_rounds;
   const verified = (golden ?? []).filter((r) => r.confidence !== "unknown");
-  if (verified.length === 0) return "excluded";
+  if (verified.length === 0 && !(g.judged_only && (g.funding_rounds_wrong ?? []).length)) return "excluded";
   // A round that matches one the golden set could not source (2023 Wiz Series
   // D) is neither right nor wrong: left out of "produced" rather than counted
   // as a wrong write. Only rounds no verified golden round takes.
@@ -302,18 +309,22 @@ function scoreArr(s: FieldStats, golden: GoldenCompany["arr_usd"], extracted: nu
 }
 
 export function scoreCompany(board: Scoreboard, g: GoldenCompany, out: PipelineOutput): Record<Field, FieldResult> {
+  // A golden value is verified only when its field is in reviewed_fields (owner, 2026-11-05).
+  const reviewed = (...names: string[]) => !g.reviewed_fields || names.some((n) => g.reviewed_fields!.includes(n));
+  const ifReviewed = (names: string[], score: () => FieldResult): FieldResult => (reviewed(...names) ? score() : "excluded");
   return {
-    city: scoreScalar(board.city, g.city, out.city),
-    country: scoreScalar(board.country, g.country, out.country),
-    founding_country: scoreScalar(board.founding_country, g.founding_country, out.founding_country),
-    founded_year: scoreScalar(board.founded_year, g.founded_year, out.founded_year),
-    founders: scoreFounders(board.founders, g.founders, out.founders),
-    funding_rounds: scoreRounds(board.funding_rounds, g, out.rounds),
-    round_type: scoreRoundTypes(board.round_type, g, out.rounds),
-    employee_range: scoreScalar(board.employee_range, g.employee_range, out.employee_range),
-    arr_usd: scoreArr(board.arr_usd, g.arr_usd, out.arr_usd),
-    competitors: scoreCompetitors(board.competitors, g, out.competitors),
-    patents: scorePatents(board.patents, g, out.patents),
+    city: ifReviewed(["city"], () => scoreScalar(board.city, g.city, out.city)),
+    country: ifReviewed(["country"], () => scoreScalar(board.country, g.country, out.country)),
+    founding_country: ifReviewed(["founding_country"], () => scoreScalar(board.founding_country, g.founding_country, out.founding_country)),
+    founded_year: ifReviewed(["founded_year"], () => scoreScalar(board.founded_year, g.founded_year, out.founded_year)),
+    // An entry built from marks lists only some founders: the field is not scored there.
+    founders: ifReviewed(["founders"], () => (g.judged_only ? "excluded" : scoreFounders(board.founders, g.founders, out.founders))),
+    funding_rounds: ifReviewed(["rounds", "funding_rounds"], () => scoreRounds(board.funding_rounds, g, out.rounds)),
+    round_type: ifReviewed(["rounds", "funding_rounds"], () => scoreRoundTypes(board.round_type, g, out.rounds)),
+    employee_range: ifReviewed(["employee_range"], () => scoreScalar(board.employee_range, g.employee_range, out.employee_range)),
+    arr_usd: ifReviewed(["arr_usd"], () => scoreArr(board.arr_usd, g.arr_usd, out.arr_usd)),
+    competitors: ifReviewed(["competitors"], () => scoreCompetitors(board.competitors, g, out.competitors)),
+    patents: ifReviewed(["patents"], () => scorePatents(board.patents, g, out.patents)),
   };
 }
 
@@ -372,6 +383,7 @@ export function phase1Checks(board: Scoreboard, facts: { locationMismatches: num
     const produced = fs.reduce((n, f) => n + f.produced, 0);
     return produced ? fs.reduce((n, f) => n + f.correct, 0) / produced : null;
   };
+  const judgedOf = (fs: FieldStats[]) => { const p = fs.reduce((n, f) => n + f.produced, 0); return `${fs.reduce((n, f) => n + f.correct, 0)}/${p}`; };
   const loc = precision([board.city, board.country, board.founded_year]);
   const rounds = precision([board.funding_rounds]);
   // The three fields the 2026-10-26 run got wrong: each needs enough judged
@@ -386,8 +398,8 @@ export function phase1Checks(board: Scoreboard, facts: { locationMismatches: num
     { rule: "zero city/country mismatches", pass: facts.locationMismatches === 0, detail: `${facts.locationMismatches} wrong` },
     { rule: "zero duplicate rounds", pass: facts.duplicateRounds === 0, detail: `${facts.duplicateRounds} duplicate pair(s)` },
     { rule: "zero founded_year after the first round", pass: facts.foundedAfterRound === 0, detail: `${facts.foundedAfterRound} company(ies)` },
-    { rule: "precision ≥ 95% on location and founded year", pass: loc != null && loc >= 0.95, detail: loc == null ? "nothing produced" : `${(loc * 100).toFixed(1)}%` },
-    { rule: "precision ≥ 90% on round amounts", pass: rounds != null && rounds >= 0.9, detail: rounds == null ? "nothing produced" : `${(rounds * 100).toFixed(1)}%` },
+    { rule: "precision ≥ 95% on location and founded year", pass: loc != null && loc >= 0.95, detail: loc == null ? "nothing judged" : `${(loc * 100).toFixed(1)}% (${judgedOf([board.city, board.country, board.founded_year])} judged)` },
+    { rule: "precision ≥ 90% on round amounts", pass: rounds != null && rounds >= 0.9, detail: rounds == null ? "nothing judged" : `${(rounds * 100).toFixed(1)}% (${judgedOf([board.funding_rounds])} judged)` },
     bar(`precision ≥ ${PHASE1_BARS.round_type.threshold * 100}% on round type`, board.round_type, PHASE1_BARS.round_type.min, PHASE1_BARS.round_type.threshold),
     bar(`precision ≥ ${PHASE1_BARS.competitors.threshold * 100}% on competitors`, board.competitors, PHASE1_BARS.competitors.min, PHASE1_BARS.competitors.threshold),
     bar(`precision ≥ ${PHASE1_BARS.patents.threshold * 100}% on patents`, board.patents, PHASE1_BARS.patents.min, PHASE1_BARS.patents.threshold),

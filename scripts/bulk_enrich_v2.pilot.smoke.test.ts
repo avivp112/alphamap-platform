@@ -225,6 +225,7 @@ describe("PILOT=true: only HQ, founded year and founding country are written (ow
     writeFileSync(tracker, ["id,field,company,value,source_url,verdict,source_of_mark",
       ...["hq_city", "hq_country", "founded_year", "founding_country"].flatMap((f) => Array.from({ length: 20 }, (_, i) => `${f}.${i},${f},Co,v,,correct,test`))].join("\n"));
     process.env.FIELD_REVIEW_TRACKER = tracker;
+    process.env.BATCH_DIR = join(mkdtempSync(join(tmpdir(), "out-")), "field_review");
     process.env.SEARCH_CACHE = "false";
     process.env.DELAY_MS = "0";
     process.env.REFRESH_EVERY = "1";

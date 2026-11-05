@@ -324,13 +324,13 @@ async function main() {
   console.log("═".repeat(62));
   console.log(`${PIPELINE === "v1" ? "PHASE 0 BASELINE — v1 (bulk_enrich_all.ts)" : "v2 (lib/enrichment/collect.ts)"} vs eval/golden_set.json`);
   console.log("═".repeat(62));
-  console.log(`${"field".padEnd(16)}${"coverage".padEnd(12)}${"precision".padEnd(12)}${"wrong-write".padEnd(14)}scored`);
-  const summary: Record<string, { coverage: string; precision: string; wrong_write_rate: string; scored: number }> = {};
+  console.log(`${"field".padEnd(16)}${"coverage".padEnd(12)}${"precision (correct/judged)".padEnd(30)}${"wrong-write".padEnd(14)}scored`);
+  const summary: Record<string, { coverage: string; precision: string; wrong_write_rate: string; scored: number; judged?: number; correct?: number }> = {};
   for (const field of FIELDS) {
     const s = board[field];
     const row = { coverage: pct(s.correct, s.scored), precision: pct(s.correct, s.produced), wrong_write_rate: pct(s.produced - s.correct, s.produced), scored: s.scored };
-    console.log(`${field.padEnd(16)}${row.coverage.padEnd(12)}${row.precision.padEnd(12)}${row.wrong_write_rate.padEnd(14)}${s.scored}${s.unjudged ? `  (${s.unjudged} unjudged)` : ""}`);
-    summary[field] = row;
+    console.log(`${field.padEnd(16)}${row.coverage.padEnd(12)}${`${row.precision} (${s.correct}/${s.produced})`.padEnd(30)}${row.wrong_write_rate.padEnd(14)}${s.scored}${s.unjudged ? `  (${s.unjudged} unjudged)` : ""}`);
+    summary[field] = { ...row, judged: s.produced, correct: s.correct };
   }
   console.log(`rounds written without a date: ${roundDates.undated} of ${roundDates.rounds} (${pct(roundDates.undated, roundDates.rounds)})`);
   console.log(`founders written with a bio: ${founderBios.with_bio} of ${founderBios.founders} (${pct(founderBios.with_bio, founderBios.founders)})`);

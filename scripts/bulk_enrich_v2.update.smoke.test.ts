@@ -155,6 +155,10 @@ describe("bulk_enrich_v2 MODE=update end to end (all I/O faked)", () => {
     writeFileSync(tracker, ["id,field,company,value,source_url,verdict,source_of_mark",
       ...WRITABLE_FIELDS.flatMap((f) => Array.from({ length: 20 }, (_, i) => `${f}.${i},${f},Co,v,,correct,test`))].join("\n"));
     process.env.FIELD_REVIEW_TRACKER = tracker;
+    // Reports and batch files go to a temp dir, never into the repository.
+    const outDir = mkdtempSync(join(tmpdir(), "out-"));
+    process.env.BATCH_DIR = join(outDir, "field_review");
+    process.env.PILOT_REPORT = join(outDir, "report.csv");
     Object.assign(process.env, {
       MODE: "update", DRY_RUN: "false", SEARCH_CACHE: "false", DELAY_MS: "0", REFRESH_EVERY: "0",
       SERP_KEY: "test", TAVILY_API_KEY: "test", SEEN_URLS_DIR: mkdtempSync(join(tmpdir(), "seen-")),

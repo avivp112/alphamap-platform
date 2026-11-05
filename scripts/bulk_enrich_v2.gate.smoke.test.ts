@@ -223,6 +223,10 @@ describe("the tracker is the gate: a wide wet run with only news open (all I/O f
     writeFileSync(tracker, ["id,field,company,value,source_url,verdict,source_of_mark",
       ...["news"].flatMap((f) => Array.from({ length: 20 }, (_, i) => `${f}.${i},${f},Co,v,,correct,test`))].join("\n"));
     process.env.FIELD_REVIEW_TRACKER = tracker;
+    // Reports and batch files go to a temp dir, never into the repository.
+    const outDir = mkdtempSync(join(tmpdir(), "out-"));
+    process.env.BATCH_DIR = join(outDir, "field_review");
+    process.env.PILOT_REPORT = join(outDir, "report.csv");
     process.env.SEARCH_CACHE = "false";
     process.env.DELAY_MS = "0";
     process.env.REFRESH_EVERY = "1";

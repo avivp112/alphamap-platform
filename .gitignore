@@ -18,3 +18,10 @@ logs/
 
 # scripts/bulk_enrich_v2.ts search cache (lib/enrichment/searchCache.ts)
 cache/
+
+# Run artifacts (the owner's batch files and reports stay on his machine)
+field_review/batch_*.csv
+field_review/run_*.csv
+*_report_dry.csv
+*_report_write.csv
+website_review.csv

@@ -182,7 +182,12 @@
         "not_competitors": [],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
-      }
+      },
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "fresha",
@@ -336,7 +341,12 @@
         "not_competitors": [],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
-      }
+      },
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "bolt-checkout",
@@ -518,7 +528,12 @@
         ],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
-      }
+      },
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "wiz-security",
@@ -688,7 +703,12 @@
         "not_competitors": [],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
-      }
+      },
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "fiverr",
@@ -831,7 +851,12 @@
         "confidence": "verified",
         "source_url": "https://www.sec.gov/Archives/edgar/data/1762301/000110465920041146/tm203275-1_20f.htm",
         "notes": "Listed on NYSE as FVRR since 2019-06-13; files annual reports on Form 20-F as a foreign private issuer."
-      }
+      },
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "wise-transferwise",
@@ -1012,7 +1037,12 @@
         "confidence": "verified",
         "source_url": "https://newsroom.wise.com/en-CEU/216920-wise-lists-on-the-london-stock-exchange/",
         "notes": "Direct listing on the LSE main market, 2021-07-07, ticker WISE."
-      }
+      },
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "celonis",
@@ -1178,7 +1208,12 @@
         "not_competitors": [],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
-      }
+      },
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "zepto",
@@ -1376,7 +1411,12 @@
         "source_urls": [
           "https://www.reuters.com/world/india/indian-grocery-startup-zepto-raises-new-funds-900-million-valuation-2022-05-02/"
         ]
-      }
+      },
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "shortcut-software",
@@ -1505,7 +1545,12 @@
         "not_competitors": [],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
-      }
+      },
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "safe-superintelligence",
@@ -1636,7 +1681,12 @@
         }
       ],
       "offices_note": "To confirm on ssi.inc (owner review).",
-      "review_request": "hq_not_declared (owner, 2026-11-01): city/country = a headquarters the company declares on its site or in its own release; none here, so empty is correct. offices = the offices its site lists. founding_country unchanged. Owner to confirm."
+      "review_request": "hq_not_declared (owner, 2026-11-01): city/country = a headquarters the company declares on its site or in its own release; none here, so empty is correct. offices = the offices its site lists. founding_country unchanged. Owner to confirm.",
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "mercury-technologies",
@@ -1785,7 +1835,12 @@
         "not_competitors": [],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
-      }
+      },
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "thinking-machines-lab",
@@ -1892,7 +1947,12 @@
         "confidence": "verified",
         "source_url": "https://techcrunch.com/2025/07/15/mira-muratis-thinking-machines-lab-is-worth-12b-in-seed-round/",
         "notes": "Private company; no IPO or acquisition found as of this research pass."
-      }
+      },
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "port-io",
@@ -2013,7 +2073,12 @@
       },
       "review_request": "hq_not_declared (owner, 2026-11-01): city/country = a headquarters the company declares on its site or in its own release; none here, so empty is correct. offices = the offices its site lists. founding_country unchanged. Owner to confirm.",
       "offices": [],
-      "offices_note": "port.io/company lists no offices (owner, 2026-11-01)."
+      "offices_note": "port.io/company lists no offices (owner, 2026-11-01).",
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "hailo-ai",
@@ -2124,7 +2189,12 @@
         "not_competitors": [],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
-      }
+      },
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "cyera",
@@ -2254,7 +2324,12 @@
         "not_competitors": [],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
-      }
+      },
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "cato-networks",
@@ -2391,7 +2466,12 @@
         "source_urls": [
           "https://www.catonetworks.com/blog/the-pop-smackdown-cato-vs-competitorswhich-will-dominate-your-network/"
         ]
-      }
+      },
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "upwind-security",
@@ -2511,7 +2591,12 @@
         "source_urls": [
           "https://www.upwind.io/feed/upwind-wins-big-at-cloud-security-showdown-hosted-by-tamnoon-analyst-james-berthoty"
         ]
-      }
+      },
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "coralogix",
@@ -2618,7 +2703,12 @@
         "source_urls": [
           "https://techcrunch.com/2026/06/03/coralogix-raises-200m-in-race-to-build-the-monitoring-layer-for-ai-agents/"
         ]
-      }
+      },
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "hibob",
@@ -2740,7 +2830,12 @@
           "https://www.hibob.com/blog/hibob-vs-namely-vs-rippling/"
         ]
       },
-      "review_request": "dual_hq (owner, 2026-10-29): city/country = the HQ the company declares on its site or in an official release; founding_country = where it was founded / its R&D centre. Please confirm."
+      "review_request": "dual_hq (owner, 2026-10-29): city/country = the HQ the company declares on its site or in an official release; founding_country = where it was founded / its R&D centre. Please confirm.",
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "aidoc",
@@ -2868,6 +2963,11 @@
           "country": "Israel",
           "source_url": "https://www.aidoc.com/about/contact/"
         }
+      ],
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
       ]
     },
     {
@@ -2927,7 +3027,12 @@
           "source_url": "https://en.globes.co.il/en/article-1001419790"
         }
       ],
-      "funding_rounds": []
+      "funding_rounds": [],
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "oligo-security",
@@ -3037,7 +3142,12 @@
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
       },
-      "review_request": "dual_hq (owner, 2026-10-29): city/country = the HQ the company declares on its site or in an official release; founding_country = where it was founded / its R&D centre. Please confirm."
+      "review_request": "dual_hq (owner, 2026-10-29): city/country = the HQ the company declares on its site or in an official release; founding_country = where it was founded / its R&D centre. Please confirm.",
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "black-forest-labs",
@@ -3127,7 +3237,12 @@
         "not_competitors": [],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
-      }
+      },
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "parloa",
@@ -3235,7 +3350,12 @@
         "not_competitors": [],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
-      }
+      },
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "helsing",
@@ -3364,7 +3484,12 @@
           "https://www.cnbc.com/2026/07/13/helsing-fund-raise-defense-18-billion.html",
           "https://thenextweb.com/news/boeing-ghost-bat-upgrades-germany-helsing-drone"
         ]
-      }
+      },
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "sarvam-ai",
@@ -3431,6 +3556,11 @@
           "confidence": "unknown",
           "notes": "First close of a $300M Series B at $1.5B led by HCLTech/Bessemer, per exchange4media; not confirmed by the company in this pass."
         }
+      ],
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
       ]
     },
     {
@@ -3554,6 +3684,11 @@
           "confidence": "unknown",
           "notes": "Seed-stage funding (LDV Capital, Seedcamp, MMC) not traced to a dated announcement."
         }
+      ],
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
       ]
     },
     {
@@ -3656,6 +3791,11 @@
           "confidence": "unknown",
           "notes": "Seed from Compound and Firstminute Capital; amount not traced."
         }
+      ],
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
       ]
     },
     {
@@ -3763,6 +3903,11 @@
             "https://en.wikipedia.org/wiki/Vercel"
           ]
         }
+      ],
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
       ]
     },
     {
@@ -3866,6 +4011,11 @@
           ],
           "notes": "€1.7B at €11.7B post-money; ASML put in €1.3B. Announced in euros; amount_usd converted at the rate of the announcement month (eval tolerance is ±10%)."
         }
+      ],
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
       ]
     },
     {
@@ -3929,7 +4079,12 @@
           "source_url": "https://en.wikipedia.org/wiki/EToro"
         }
       ],
-      "funding_rounds": []
+      "funding_rounds": [],
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "klarna",
@@ -3993,7 +4148,12 @@
           "source_url": "https://en.wikipedia.org/wiki/Klarna"
         }
       ],
-      "funding_rounds": []
+      "funding_rounds": [],
+      "reviewed_fields": [
+        "rounds",
+        "competitors",
+        "patents"
+      ]
     },
     {
       "id": "anonymised",
