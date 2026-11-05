@@ -1,4 +1,4 @@
-import { companyIdsFromCsv, withWebsites } from "./fieldReviewImport.ts";
+import { companyIdsFromCsv, withWebsites, nameKey } from "./fieldReviewImport.ts";
 import { describe, it, expect } from "vitest";
 import { goldenFromMarks, newGoldenEntries, parseRoundValue, slug } from "./fieldReviewImport";
 import { scoreCompany, newScoreboard } from "./score";
@@ -64,13 +64,22 @@ describe("websites are copied by company id, and a company without one stays out
     expect(ids.has("bolt")).toBe(false);
   });
   it("keeps a company whose row has a website and takes it from that id", () => {
-    const { kept, dropped } = withWebsites([cand("Acme")], new Map([["acme", ID1]]), new Map([[ID1, "acme.com"], [ID2, "other.com"]]));
+    const { kept, dropped } = withWebsites([cand("Acme")], new Map([[nameKey("acme"), ID1]]), new Map([[ID1, "acme.com"], [ID2, "other.com"]]));
     expect(dropped).toHaveLength(0);
     expect(kept[0].company).toMatchObject({ website: "https://acme.com", company_id: ID1 });
   });
   it("drops a company with no id, and one whose row has no website", () => {
-    const { kept, dropped } = withWebsites([cand("Acme"), cand("Bolt"), cand("Cyan")], new Map([["acme", ID1], ["bolt", ID2]]), new Map([[ID1, null], [ID2, "bolt.io"]]));
+    const { kept, dropped } = withWebsites([cand("Acme"), cand("Bolt"), cand("Cyan")], new Map([[nameKey("acme"), ID1], [nameKey("bolt"), ID2]]), new Map([[ID1, null], [ID2, "bolt.io"]]));
     expect(kept.map((k) => k.company.name)).toEqual(["Bolt"]);
     expect(dropped.map((d) => [d.company.name, d.reason.split(" (")[0]])).toEqual([["Acme", "no website in the database"], ["Cyan", "no company id in the review files"]]);
+  });
+});
+
+describe("the same company under different spellings finds its id", () => {
+  it("case, spacing, punctuation and accents do not matter", () => {
+    const ids = companyIdsFromCsv([["company", "company_id"], ["Moon  Active", "10146787-c5ff-4c74-b375-bc6cbde3f5ca"]]);
+    expect(ids.get(nameKey("moon active "))).toBe("10146787-c5ff-4c74-b375-bc6cbde3f5ca");
+    expect(ids.get(nameKey("Moon-Active"))).toBeDefined();
+    expect(nameKey("Café Ünit, Inc.")).toBe("cafeunitinc");
   });
 });
