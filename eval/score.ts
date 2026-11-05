@@ -30,7 +30,7 @@ export interface GoldenRound {
   source_url?: string;
 }
 export interface GoldenCompany {
-  id: string; name: string; website?: string;
+  id: string; name: string; website?: string; /** startups.id the website was copied from (eval/import_field_review.ts) */ company_id?: string;
   city?: GoldenField<string>; country?: GoldenField<string>; founded_year?: GoldenField<number>;
   /** Where it was founded, beside the HQ `country` (lib/enrichment/origin.ts). */
   founding_country?: GoldenField<string>;

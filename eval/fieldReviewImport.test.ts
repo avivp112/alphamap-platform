@@ -1,3 +1,4 @@
+import { companyIdsFromCsv, withWebsites } from "./fieldReviewImport.ts";
 import { describe, it, expect } from "vitest";
 import { goldenFromMarks, newGoldenEntries, parseRoundValue, slug } from "./fieldReviewImport";
 import { scoreCompany, newScoreboard } from "./score";
@@ -51,5 +52,25 @@ describe("field-review marks as golden entries (owner, 2026-11-05)", () => {
     const board = newScoreboard();
     scoreCompany(board, trobix, { city: null, country: null, founded_year: null, founders: [], rounds: [], employee_range: null, patents: ["EP4381061A1", "WO2024052907A1"] } as never);
     expect(board.patents).toMatchObject({ produced: 1, correct: 1 });
+  });
+});
+
+describe("websites are copied by company id, and a company without one stays out", () => {
+  const ID1 = "11111111-1111-1111-1111-111111111111", ID2 = "22222222-2222-2222-2222-222222222222";
+  const cand = (name: string) => ({ company: { id: name.toLowerCase(), name } as never, counts: {} });
+  it("reads ids from a csv with company and company_id columns", () => {
+    const ids = companyIdsFromCsv([["id", "company", "company_id"], ["1.1", "Acme", ID1], ["1.2", "Bolt", "not-an-id"]]);
+    expect(ids.get("acme")).toBe(ID1);
+    expect(ids.has("bolt")).toBe(false);
+  });
+  it("keeps a company whose row has a website and takes it from that id", () => {
+    const { kept, dropped } = withWebsites([cand("Acme")], new Map([["acme", ID1]]), new Map([[ID1, "acme.com"], [ID2, "other.com"]]));
+    expect(dropped).toHaveLength(0);
+    expect(kept[0].company).toMatchObject({ website: "https://acme.com", company_id: ID1 });
+  });
+  it("drops a company with no id, and one whose row has no website", () => {
+    const { kept, dropped } = withWebsites([cand("Acme"), cand("Bolt"), cand("Cyan")], new Map([["acme", ID1], ["bolt", ID2]]), new Map([[ID1, null], [ID2, "bolt.io"]]));
+    expect(kept.map((k) => k.company.name)).toEqual(["Bolt"]);
+    expect(dropped.map((d) => [d.company.name, d.reason.split(" (")[0]])).toEqual([["Acme", "no website in the database"], ["Cyan", "no company id in the review files"]]);
   });
 });

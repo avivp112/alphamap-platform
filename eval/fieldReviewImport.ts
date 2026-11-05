@@ -81,3 +81,32 @@ export function newGoldenEntries(marks: Mark[], existing: Array<{ name: string; 
   const companies = [...new Set(marks.filter((m) => IMPORTABLE_ID.test(m.id)).map((m) => m.company))];
   return companies.filter((c) => !have.has(norm(c))).map((c) => goldenFromMarks(c, marks)).filter((r): r is ImportResult => !!r);
 }
+
+/** name (lower-case) → startups.id from CSV rows that have both a `company` and a `company_id` column. */
+export function companyIdsFromCsv(rows: string[][]): Map<string, string> {
+  const out = new Map<string, string>();
+  const header = rows[0]?.map((h) => h.trim().toLowerCase()) ?? [];
+  const ci = header.indexOf("company"), ii = header.indexOf("company_id");
+  if (ci < 0 || ii < 0) return out;
+  for (const r of rows.slice(1)) {
+    const name = (r[ci] ?? "").trim(), id = (r[ii] ?? "").trim();
+    if (name && /^[0-9a-f-]{36}$/i.test(id) && !out.has(name.toLowerCase())) out.set(name.toLowerCase(), id);
+  }
+  return out;
+}
+
+/**
+ * Keeps the companies whose id is known AND whose database row has a website, and copies that website
+ * (by id, never by name) into the entry. The rest are returned with the reason they stay out.
+ */
+export function withWebsites(candidates: ImportResult[], ids: Map<string, string>, sites: Map<string, string | null>): { kept: ImportResult[]; dropped: Array<ImportResult & { reason: string }> } {
+  const kept: ImportResult[] = []; const dropped: Array<ImportResult & { reason: string }> = [];
+  for (const c of candidates) {
+    const id = ids.get(c.company.name.toLowerCase());
+    if (!id) { dropped.push({ ...c, reason: "no company id in the review files" }); continue; }
+    const site = (sites.get(id) ?? "").trim();
+    if (!site) { dropped.push({ ...c, reason: `no website in the database (id ${id})` }); continue; }
+    kept.push({ ...c, company: { ...c.company, company_id: id, website: /^https?:\/\//i.test(site) ? site : `https://${site}` } });
+  }
+  return { kept, dropped };
+}
