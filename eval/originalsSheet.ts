@@ -108,7 +108,7 @@ export function quoteFor(text: string, v: Pick<SheetValue, "field" | "value">): 
   const body = text.includes("Markdown Content:") ? text.slice(text.indexOf("Markdown Content:") + 17) : text;
   const foundingWord = /\b(?:found(?:ed|ers?)|established|launched|started|since|incorporated|began)\b/i;
   const s = body.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/).find((x) =>
-    x.toLowerCase().includes(needle) && !/URL Source:|Published Time:/.test(x) && (v.field !== "founded_year" || foundingWord.test(x)));
+    x.toLowerCase().includes(needle) && !/URL Source:|Published Time:|Reject All|Accept All/.test(x) && (x.match(/\]\(/g) ?? []).length < 2 && (v.field !== "founded_year" || foundingWord.test(x)));
   return s ? s.slice(0, 320).trim() : "";
 }
 

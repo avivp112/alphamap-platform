@@ -69,3 +69,10 @@ describe("quotes for the check sheet", () => {
     expect(quoteFor("Ann Smith founded it. Other text.", { field: "founder", value: "Ann Smith (CEO)" })).toBe("Ann Smith founded it.");
   });
 });
+
+describe("quotes skip page chrome", () => {
+  it("a sentence made of navigation links is not a quote", () => {
+    const nav = "Reject All Accept All [News](https://a.test/) * [Events](https://a.test/e) * London. The company is based in London, England.";
+    expect(quoteFor(nav, { field: "city", value: "London" })).toBe("The company is based in London, England.");
+  });
+});
