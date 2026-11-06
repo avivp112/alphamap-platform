@@ -64,6 +64,8 @@ const domainOf = (website: string | null | undefined) => {
   }
   writeFileSync(REPLAY, "﻿" + lines.join("\r\n") + "\r\n");
 
+  const competitors = marks.filter((m) => m.field === "competitor");
+  console.log(`Competitor marks judged by their stored quote: ${competitors.filter((m) => quoteOf(m, quotes)).length} of ${competitors.length} have a quote in field_review/*.csv (the rest cannot be judged and stay).`);
   const gone = marks.filter((m) => !judged.get(m.id)!.produced);
   console.log(`${marks.length} mark(s) judged by the rules at ${commit || "this checkout"}: ${gone.length} no longer produced, ${marks.length - gone.length} stay.\n`);
   for (const m of gone) console.log(`  ${m.id.padEnd(6)} ${m.field.padEnd(16)} ${m.verdict.padEnd(8)} ${m.company}: ${m.value.slice(0, 60)}  ← ${judged.get(m.id)!.rule}`);
