@@ -24,7 +24,8 @@ describe("manual golden rounds", () => {
     const once = applyManualRounds([hibob, cato], MANUAL_ROUNDS);
     const twice = applyManualRounds(once.companies, MANUAL_ROUNDS);
     expect(twice.companies).toEqual(once.companies);
-    expect(twice.report.every((l) => l.startsWith("="))).toBe(true);
+    // (entries for companies not passed here are reported as "✗ … not in the golden set")
+    expect(twice.report.filter((l) => !l.startsWith("✗")).every((l) => l.startsWith("="))).toBe(true);
   });
   it("names a company that is not in the set instead of failing", () => {
     const e: ManualRound = { company_id: "nope", type: "Seed", amount_usd: 1, date: null, source_url: "x" };
