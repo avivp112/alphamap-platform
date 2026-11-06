@@ -364,9 +364,16 @@ export function rejectRound(round: V2Round, companyName: string, sources: Labele
   if (!allowedSomewhere) return "round_source_not_listed";
   // No amount, while its own source's headline or address states one (field review run 3:
   // Forward Financing's "expanded-450-million-credit-facility" written as "amount not disclosed").
+  // Every source the round cites counts, not only its own source_url (owner, 2026-11-06: Parloa's
+  // "…valued-at-3-billion-with-350m-series-d" was written without an amount because the check looked
+  // at source_url alone, and a quote's source is often another record of the same article).
   if (round.amount_raised?.value == null && type !== "Acquired" && type !== "IPO") {
-    const src = round.source_url ? sources.find((x) => x.url === round.source_url) : undefined;
-    if (statesAmount(`${src?.title ?? ""} ${round.source_url ?? ""}`)) return "round_amount_stated_but_missing";
+    const urlKey = (u: string) => u.replace(/[?#].*$/, "").replace(/\/+$/, "").toLowerCase();
+    const citedSources = new Map<string, LabeledSource>();
+    for (const f of [round.lead_investor, round.valuation, round.announcement_date]) { const x = f?.source_id ? byId.get(f.source_id) : undefined; if (x) citedSources.set(x.source_id, x); }
+    if (round.source_url) for (const x of sources) if (urlKey(x.url) === urlKey(round.source_url)) citedSources.set(x.source_id, x);
+    const states = [...citedSources.values()].some((x) => statesAmount(`${x.title ?? ""} ${x.url}`)) || (!!round.source_url && statesAmount(round.source_url));
+    if (states) return "round_amount_stated_but_missing";
   }
   return null;
 }

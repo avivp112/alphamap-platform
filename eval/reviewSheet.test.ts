@@ -69,3 +69,23 @@ describe("rounds v2 found that the golden set lacks (owner, 2026-10-29)", () => 
     expect(companies[0].funding_rounds.map((x) => [x.type, x.amount_usd])).toEqual([["Series D", 110_000_000], ["Series C", 66_000_000]]);
   });
 });
+
+import { dedupeRoundRows, sameRound, type SheetRow } from "./reviewSheet";
+describe("the same round twice on the sheet (owner, 2026-11-06: Mistral, Mercury)", () => {
+  const row = (o: Partial<SheetRow>): SheetRow => ({ company_id: "mistral-ai", company: "Mistral AI", round_type: "Series D", amount_usd: "3480000000", date: "", lead_investor: "", source_url: "x", mark: "", ...o });
+  it("Mistral: the undated row and the dated row of one Series D are one round — the dated one stays", () => {
+    const rows = [row({}), row({ date: "2026-09-08", lead_investor: "Samsung Electronics" })];
+    expect(sameRound(rows[0], rows[1])).toBe(true);
+    expect(dedupeRoundRows(rows)).toEqual([rows[1]]);
+  });
+  it("Mercury: a row without an amount on the date of one with an amount goes", () => {
+    const rows = [row({ company_id: "m", amount_usd: "200000000", date: "2026-05-20" }), row({ company_id: "m", amount_usd: "", date: "2026-05-20" })];
+    expect(dedupeRoundRows(rows)).toEqual([rows[0]]);
+  });
+  it("a marked row is never removed (its unmarked twin is), and dated rounds of another month stay apart", () => {
+    const marked = row({ mark: "נכון" });
+    expect(dedupeRoundRows([marked, row({ date: "2026-09-08" })])).toEqual([marked]);
+    const rows = [row({ date: "2026-09-08" }), row({ date: "2026-01-08" })];
+    expect(dedupeRoundRows(rows)).toEqual(rows);
+  });
+});

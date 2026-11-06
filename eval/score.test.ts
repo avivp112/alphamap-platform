@@ -269,3 +269,23 @@ describe("two headquarters, unlisted founders, spellings (owner, 2026-11-05)", (
     expect(scoreCompany(b, upwind, out({ founders: [{ name: "Tal Tzur" }] })).founders).toBe("correct");
   });
 });
+
+describe("a round without an amount on the type and date of a golden round is unjudged (owner, 2026-11-06)", () => {
+  const mercury: GoldenCompany = { id: "m", name: "Mercury", funding_rounds: [
+    { type: "Series C", amount_usd: 300_000_000, date: "2025-03-26", confidence: "verified" },
+    { type: "Series D", amount_usd: 200_000_000, date: "2026-05-20", confidence: "verified" },
+  ] };
+  it("Mercury's 'Series D, no amount, 2026-05-20' is not a wrong write", () => {
+    const b = newScoreboard();
+    scoreCompany(b, mercury, out({ rounds: [{ round_type: "Series C", amount_raised: 300_000_000, date: "2025-03-26" }, { round_type: "Series D", amount_raised: null, date: "2026-05-20" }] }));
+    expect(b.funding_rounds).toMatchObject({ scored: 2, produced: 1, correct: 1, unjudged: 1 });
+  });
+  it("another type, another date, or a round on no golden round stays wrong", () => {
+    for (const r of [{ round_type: "Series E", amount_raised: null, date: "2026-05-20" }, { round_type: "Series D", amount_raised: null, date: "2026-09-01" }]) {
+      const b = newScoreboard();
+      scoreCompany(b, mercury, out({ rounds: [r] }));
+      expect(b.funding_rounds.produced).toBe(1);
+      expect(b.funding_rounds.correct).toBe(0);
+    }
+  });
+});

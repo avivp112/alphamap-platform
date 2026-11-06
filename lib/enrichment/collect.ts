@@ -26,7 +26,7 @@ import { extractProfile, type SectorTaxonomy } from "./extractProfile.ts";
 import { extractFunding, roundToRoundLike, type V2Round } from "./extractFunding.ts";
 import { extractMarket, normalizeUrlForMatch } from "./extractMarket.ts";
 import { lookupEpoPatents, type CompanyIdentity, type EpoPatentResult } from "./epoPatents.ts";
-import { hintFromRound, hintQueries, confirmHint, hintKey, type RoundHint } from "./hints.ts";
+import { hintFromRound, hintQueries, confirmHint, hintKey, recoverMissingAmount, type RoundHint } from "./hints.ts";
 import { detectGaps, buildDeepDiveQueries, hasNoFinancingRounds, type DeepDiveSection } from "./deepDive.ts";
 import {
   groundRoundDetails, isUnstatedEvent, incompleteRound, absorbAmountlessRounds, rejectRound, roundSourceStandings, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
@@ -46,7 +46,7 @@ import { profileSourceAllowed, roundSourceStanding, unwrapRedirect } from "./rou
 import { aboutParagraph, aboutIsOf, factsFromAbout, legalFacts, releasePointsTo, type LegalFacts } from "./companyFacts.ts";
 import { checkFoundingCountry } from "./origin.ts";
 import { namesCompany } from "./headcount.ts";
-import { lookupRegisters, nodeRegisterIo, type RegisterContext, type RegisterFinding } from "./registers.ts";
+import { lookupRegisters, nodeRegisterIo, registerDecides, type RegisterContext, type RegisterFinding } from "./registers.ts";
 import { stripHonorific } from "./people.ts";
 import { countryFromLocationQuote } from "./location.ts";
 import type { VerifiedFact } from "./narrative.ts";
@@ -792,7 +792,25 @@ export async function collectCompany(
   // ── Round grounding: co-investors / per-investor amounts / source URL ──
   const platformOnly: V2Round[] = [];
   const unlistedDomains: Array<{ domain: string; url: string }> = [];
-  const keptRounds = funding.funding_rounds.filter((r) => {
+  // A round written without an amount whose own sources state one gets it back (hints.ts
+  // recoverMissingAmount); two different sums in them is "ambiguous" and the round is not written.
+  const withAmounts: V2Round[] = [];
+  for (const r of funding.funding_rounds) {
+    const rec = recoverMissingAmount(r, allSources, row.name);
+    if (rec?.kind === "ambiguous") {
+      console.log(`    🚫  ${r.round_type} not written (round_amount_ambiguous: its sources state ${rec.candidates.join(" and ")})`);
+      bump(stats.droppedByReason, "round_amount_ambiguous");
+      continue;
+    }
+    if (rec?.kind === "recovered") {
+      console.log(`    🔧  ${r.round_type}: amount ${rec.amount} read back from its source — "${rec.quote.slice(0, 100)}"`);
+      bump(stats.droppedByReason, "round_amount_recovered");
+      withAmounts.push({ ...r, amount_raised: { value: rec.amount, source_id: rec.source_id, evidence_quote: rec.quote } });
+      continue;
+    }
+    withAmounts.push(r);
+  }
+  const keptRounds = withAmounts.filter((r) => {
     const why = rejectRound(r, row.name, allSources);
     if (!why) return true;
     if (why === "round_only_from_data_platform" || why === "round_source_not_listed") {
@@ -1206,8 +1224,17 @@ export async function collectCompany(
       legalName: legal.legalName ?? null,
       statedFoundingCountry: profile.profile.founding_country?.value ?? null,
     });
-    const reg = findings[0];
-    if (!reg) {
+    // A register decides founding only for the company's own entity in its headquarters country
+    // (registers.ts registerDecides): Wiz's UK subsidiary, Upwind's, Black Forest Labs' US parent.
+    const hqCountry = profile.profile.country?.value ?? (profile.profile.city ? countryOfCity(profile.profile.city.value) : null);
+    for (const f of findings) {
+      const d = registerDecides(f, row.name, hqCountry);
+      if (d.decides) continue;
+      console.log(`    🏛️   Register ${f.register}: ${f.entity} (${f.number}) not used for founded year / founding country — ${d.why === "local_subsidiary" ? "a local subsidiary (a country in its name)" : d.why === "headquarters_unknown" ? "no headquarters decided to compare its country with" : `the headquarters is not in ${f.founding_country}`}.`);
+      bump(stats.droppedByReason, `register_${d.why}`);
+    }
+    const reg = findings.find((f) => registerDecides(f, row.name, hqCountry).decides);
+    if (!reg && !findings.length) {
       const known = (profile.profile.founders ?? []).map((f) => f.name).filter(Boolean);
       console.log(`    🏛️   Registers: no certain match (name + number / office city${known.length ? ` / founders ${known.join(", ")}` : " — no founder known to match against"}).`);
     }

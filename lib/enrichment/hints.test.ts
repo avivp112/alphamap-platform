@@ -127,3 +127,54 @@ describe("an article's date dates a confirmed hint only when its headline announ
     expect(headlineAnnounces("The AI startup that has quietly become one of Europe's most valuable companies", 300_000_000)).toBe(false);
   });
 });
+
+import { recoverMissingAmount } from "./hints";
+import { rejectRound } from "./assemble";
+import type { V2Round } from "./extractFunding";
+
+describe("a round written without an amount its own source states gets it back (owner, 2026-11-06: Parloa, Mercury)", () => {
+  const ev = (value: unknown, source_id: string, evidence_quote: string) => ({ value, source_id, evidence_quote }) as never;
+  const parloaUrl = "https://www.prnewswire.com/news-releases/parloa-valued-at-3-billion-with-350m-series-d-to-lead-agentic-ai-for-customer-experience-302662228.html";
+  const parloaSrc = () => buildLabeledSources([{ url: parloaUrl, title: "Parloa Valued at $3 Billion with $350M Series D to Lead Agentic AI for Customer Experience", provider: "serper", query_label: "funding",
+    content: "BERLIN, Jan. 15, 2026 /PRNewswire/ -- Parloa today announced it raised a $350M Series D led by General Catalyst, valuing the company at $3 billion. Parloa has raised more than $560 million in total." }]);
+  const parloa = (): V2Round => ({ round_type: "Series D", announcement_date: ev("2026-01-15", "S1", "Jan. 15, 2026"), lead_investor: ev("General Catalyst", "S1", "led by General Catalyst"), source_url: parloaUrl });
+
+  it("reads the $350M from the sentence, not the $3 billion valuation or the total", () => {
+    const r = recoverMissingAmount(parloa(), parloaSrc(), "Parloa");
+    expect(r).toMatchObject({ kind: "recovered", amount: 350_000_000, source_id: "S1" });
+    expect((r as { quote: string }).quote).toContain("$350M Series D");
+  });
+  it("two different sums in the sentences is ambiguous: the round is not written", () => {
+    const src = buildLabeledSources([{ url: parloaUrl, title: "Parloa news", provider: "serper", query_label: "funding",
+      content: "Parloa raised a $350M Series D in January. Parloa also raised a $120M Series D extension in March." }]);
+    expect(recoverMissingAmount(parloa(), src, "Parloa")).toMatchObject({ kind: "ambiguous" });
+  });
+  it("a sentence about another company's raise is not read", () => {
+    const src = buildLabeledSources([{ url: parloaUrl, title: "Industry news", provider: "serper", query_label: "funding",
+      content: "Rival Sierra raised a $350M Series D last week." }]);
+    expect(recoverMissingAmount(parloa(), src, "Parloa")).toBeNull();
+  });
+  it("a round that has its amount is left alone", () => {
+    expect(recoverMissingAmount({ ...parloa(), amount_raised: ev(350_000_000, "S1", "$350M") }, parloaSrc(), "Parloa")).toBeNull();
+  });
+  it("the headline check looks at the sources the round cites, not only its source_url", () => {
+    const withoutUrl = { ...parloa(), source_url: undefined } as V2Round;
+    expect(rejectRound(withoutUrl, "Parloa", parloaSrc())).toBe("round_amount_stated_but_missing");
+  });
+});
+
+describe("amount recovery — valuations in every wording", () => {
+  const ev = (value: unknown, source_id: string, evidence_quote: string) => ({ value, source_id, evidence_quote }) as never;
+  const url = "https://www.cnbc.com/2026/05/20/fintech-mercury-valuation-fundraise-bank-charter.html";
+  const round = (): V2Round => ({ round_type: "Series D", announcement_date: ev("2026-05-20", "S1", "May 20, 2026"), lead_investor: ev("TCV", "S1", "led by TCV"), source_url: url });
+  for (const [label, content, expected] of [
+    ["'at a $5.2 billion valuation'", "Mercury raised $200 million in Series D funding led by TCV at a $5.2 billion valuation.", 200_000_000],
+    ["'a $5.2 billion valuation'", "Mercury has closed a $200M Series D led by TCV, giving it a $5.2 billion valuation.", 200_000_000],
+    ["'valuing the company at'", "Mercury announced $200 million in Series D funding led by TCV, valuing the company at $5.2 billion.", 200_000_000],
+  ] as const) {
+    it(`reads the raise, not the valuation: ${label}`, () => {
+      const src = buildLabeledSources([{ url, title: "Mercury news", provider: "serper", query_label: "funding", content }]);
+      expect(recoverMissingAmount(round(), src, "Mercury")).toMatchObject({ kind: "recovered", amount: expected });
+    });
+  }
+});

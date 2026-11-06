@@ -81,7 +81,7 @@ import {
   type GoldenSet, type GoldenCompany, type PipelineOutput, type FieldResult, type Field,
 } from "./score.ts";
 
-import { toCsv, parseCsv, mergeRows, competitorKey, roundKey, COMPETITOR_COLUMNS, ROUND_COLUMNS, type SheetRow } from "./reviewSheet.ts";
+import { toCsv, parseCsv, mergeRows, dedupeRoundRows, competitorKey, roundKey, COMPETITOR_COLUMNS, ROUND_COLUMNS, type SheetRow } from "./reviewSheet.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const STORE_EVIDENCE = process.env.STORE_EVIDENCE === "true";
@@ -433,7 +433,7 @@ async function main() {
     // Rows already marked stay; unmarked ones from a source no longer allowed go.
     const existing = (existsSync(sheet) ? parseCsv(readFileSync(sheet, "utf8")) : [])
       .filter((r) => r.mark?.trim() || reviewableSource(r.source_url, companies.find((c) => c.id === r.company_id)?.website));
-    const merged = mergeRows(existing, roundsToReview, roundKey);
+    const merged = dedupeRoundRows(mergeRows(existing, roundsToReview, roundKey));
     writeFileSync(sheet, toCsv(ROUND_COLUMNS, merged));
     console.log(`📝  ${merged.length - existing.length} round(s) to mark in eval/review/rounds_review.csv ("נכון" / "לא נכון"), then: npx tsx eval/import_review.ts`);
   }

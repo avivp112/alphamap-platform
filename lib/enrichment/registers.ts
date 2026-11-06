@@ -283,6 +283,34 @@ export async function lookupRegisters(ctx: RegisterContext, io: RegisterIo, log:
   return out;
 }
 
+// ── Does the register decide where and when the company was founded? (owner, 2026-11-06) ──
+//
+// A register entity proves the entity exists, not that the company was founded there: Wiz Cloud
+// Limited (UK, 2021) is Wiz's British subsidiary, UPWIND SECURITY UK LTD (2024) Upwind's — both
+// Israeli companies founded in 2020 and 2022 — and a Form D is the US parent's of a German startup
+// (Black Forest Labs). So a register decides founded year and founding country only when
+//   1. its entity is not a local subsidiary — a country in its name ("UK LTD", "Deutschland GmbH")
+//      that the company's own name does not carry — and
+//   2. its country is the country of the headquarters this run decided; with no HQ decided, it
+//      decides nothing (a register match is then only evidence the entity exists).
+const COUNTRY_MARKERS = ["uk", "u.k", "usa", "us", "u.s", "u.s.a", "america", "americas", "europe", "emea", "apac", "deutschland", "germany", "france", "israel", "india", "canada", "australia", "singapore", "japan", "ireland", "netherlands", "spain", "italy", "brazil", "mexico", "sweden", "switzerland", "denmark", "norway", "finland", "poland", "uae", "china", "korea"];
+const words = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}. ]/gu, " ").split(/\s+/).map((w) => w.replace(/\.$/, "")).filter(Boolean);
+/** A country in the register entity's name that the company's own name does not have: a local subsidiary. */
+export function isLocalSubsidiary(entityName: string, companyName: string): boolean {
+  const own = new Set([...words(companyName)]);
+  return words(entityName).some((w) => COUNTRY_MARKERS.includes(w) && !own.has(w));
+}
+const COUNTRY_ALIASES: Record<string, string> = { uk: "united kingdom", "u.k.": "united kingdom", "great britain": "united kingdom", england: "united kingdom", usa: "united states", us: "united states", "u.s.": "united states", "united states of america": "united states" };
+const countryKey = (c: string | null | undefined) => { const k = (c ?? "").trim().toLowerCase(); return COUNTRY_ALIASES[k] ?? k; };
+
+export type RegisterDecision = { decides: true } | { decides: false; why: "local_subsidiary" | "headquarters_unknown" | "headquarters_elsewhere" };
+export function registerDecides(finding: Pick<RegisterFinding, "entity" | "founding_country">, companyName: string, hqCountry: string | null | undefined): RegisterDecision {
+  if (isLocalSubsidiary(finding.entity, companyName)) return { decides: false, why: "local_subsidiary" };
+  if (!hqCountry?.trim()) return { decides: false, why: "headquarters_unknown" };
+  if (countryKey(hqCountry) !== countryKey(finding.founding_country)) return { decides: false, why: "headquarters_elsewhere" };
+  return { decides: true };
+}
+
 /** Node fetch wrappers with a timeout. */
 export const nodeRegisterIo = (env: Record<string, string | undefined> = process.env): RegisterIo => ({
   env,

@@ -28,6 +28,8 @@ export interface GoldenFounder { name: string; title?: string; confidence: Confi
 export interface GoldenRound {
   type: string; amount_usd: number | null; date: string | null;
   lead_investor?: string | null; valuation_usd?: number | null; confidence: Confidence;
+  /** Investors named in the source, beyond the lead (not scored; for the owner's reference). */
+  investors?: string[];
   /** Where the round was verified (rounds the owner marked on the review sheet). */
   source_url?: string;
 }
@@ -223,6 +225,13 @@ export function matchRounds(verified: GoldenRound[], extracted: PipelineOutput["
   return pairs;
 }
 
+/** The same announcement date: both stated, the same month, and when both give the day, within 3 days. */
+export function sameRoundDate(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  if (a.length >= 10 && b.length >= 10) return Math.abs(new Date(a).getTime() - new Date(b).getTime()) / 86_400_000 <= 3;
+  return a.slice(0, 7) === b.slice(0, 7);
+}
+
 /**
  * How one company's extracted rounds line up with the golden set: which are matched to a verified
  * round, which are left out of judgement (matches a round the golden set could not source, an event,
@@ -252,15 +261,24 @@ export function roundBreakdown(g: GoldenCompany, extracted: PipelineOutput["roun
       // A judged-only entry knows only its verified and wrong rounds; any other produced round is unjudged.
       || (g.judged_only && !wrong.some((wr) => roundsDayGap(wr, er) !== null))) ignoredIdx.add(i);
   });
-  const wrongIdx = extracted.map((_, i) => i).filter((i) => !used.has(i) && !ignoredIdx.has(i));
-  return { verified, pairs, used, ignored: ignoredIdx.size, wrongIdx };
+  // A round with no amount, of the type and on the date of a verified golden round that has one, is that
+  // round with its amount missing — unjudged, neither right nor wrong (owner, 2026-11-06: Mercury's and
+  // Parloa's Series D). Whether the pipeline should have written it without an amount is its own rule.
+  const amountless = new Set<number>();
+  extracted.forEach((er, i) => {
+    if (used.has(i) || ignoredIdx.has(i) || er.amount_raised != null) return;
+    if (verified.some((gr) => gr.amount_usd != null && canonType(gr.type) === canonType(er.round_type) && canonType(er.round_type) !== "unknown" && sameRoundDate(gr.date, er.date))) amountless.add(i);
+  });
+  const wrongIdx = extracted.map((_, i) => i).filter((i) => !used.has(i) && !ignoredIdx.has(i) && !amountless.has(i));
+  return { verified, pairs, used, ignored: ignoredIdx.size + amountless.size, amountless: amountless.size, wrongIdx };
 }
 
 function scoreRounds(s: FieldStats, g: GoldenCompany, extracted: PipelineOutput["rounds"]): FieldResult {
   const verified = (g.funding_rounds ?? []).filter((r) => r.confidence !== "unknown");
   if (verified.length === 0 && !(g.judged_only && (g.funding_rounds_wrong ?? []).length)) return "excluded";
-  const { pairs, ignored } = roundBreakdown(g, extracted);
+  const { pairs, ignored, amountless } = roundBreakdown(g, extracted);
   const correct = pairs.length;
+  if (amountless) s.unjudged = (s.unjudged ?? 0) + amountless;
   s.scored += verified.length;
   // A hallucinated or duplicate round is produced-but-not-correct.
   s.produced += extracted.length - ignored;
