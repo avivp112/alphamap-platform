@@ -31,3 +31,19 @@ describe("manual golden rounds", () => {
     expect(applyManualRounds([hibob], [e]).report[0]).toContain("not in the golden set");
   });
 });
+
+describe("the rounds the owner marked on 2026-11-06", () => {
+  const upwind: GoldenCompany = { id: "upwind-security", name: "Upwind", funding_rounds: [{ type: "Series B", amount_usd: 250_000_000, date: "2026-01-29", confidence: "verified" }] };
+  const mistral: GoldenCompany = { id: "mistral-ai", name: "Mistral AI", funding_rounds: [{ type: "Series C", amount_usd: 2_000_000_000, date: "2025-09", confidence: "verified" }] };
+  it("adds Upwind's Series C and Mistral's Series D with their lead investors", () => {
+    const { companies } = applyManualRounds([upwind, mistral], MANUAL_ROUNDS);
+    expect(companies[0].funding_rounds!.find((r) => r.type === "Series C")).toMatchObject({ amount_usd: 400_000_000, date: "2026-10-28", lead_investor: "Bessemer Venture Partners" });
+    expect(companies[1].funding_rounds!.find((r) => r.type === "Series D")).toMatchObject({ amount_usd: 3_480_000_000, date: "2026-09-08", lead_investor: "Samsung Electronics" });
+  });
+  it("the review sheet's import later finds them there and adds nothing twice", async () => {
+    const { applyRoundMarks } = await import("./reviewSheet");
+    const { companies } = applyManualRounds([upwind], MANUAL_ROUNDS);
+    applyRoundMarks(companies, [{ company_id: "upwind-security", company: "Upwind", round_type: "Series C", amount_usd: "400000000", date: "2026-10-28", lead_investor: "Bessemer Venture Partners", source_url: "x", mark: "נכון" }]);
+    expect(companies[0].funding_rounds!.filter((r) => r.type === "Series C")).toHaveLength(1);
+  });
+});

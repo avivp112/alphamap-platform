@@ -22,6 +22,9 @@ export const MANUAL_ROUNDS: ManualRound[] = [
   { company_id: "hibob", type: "Other", amount_usd: 166_000_000, date: "2026-09-01", investors: ["Salesforce"], source_url: "https://siliconangle.com/2026/09/01/hr-software-startup-hibob-raises-166m-after-annualized-revenue-tops-400m/" },
   // Marked correct on the rounds sheet without a date; the owner gave the date and the wire.
   { company_id: "cato-networks", type: "Series B", amount_usd: 30_000_000, date: "2016-09-13", source_url: "https://www.globenewswire.com/news-release/2016/09/13/1060385/0/en/Cato-Networks-Secures-30M-to-Accelerate-Customer-Adoption-of-Networking-and-Security-in-the-Cloud.html" },
+  // Marked "נכון" on the rounds sheet on 2026-11-06; entered here because the marks did not reach the file in Cloud Shell.
+  { company_id: "upwind-security", type: "Series C", amount_usd: 400_000_000, date: "2026-10-28", lead_investor: "Bessemer Venture Partners", source_url: "https://techcrunch.com/2026/10/28/upwind-raises-400m-after-walking-away-from-datadog-acquisition-offer/" },
+  { company_id: "mistral-ai", type: "Series D", amount_usd: 3_480_000_000, date: "2026-09-08", lead_investor: "Samsung Electronics", source_url: "https://mistral.ai/news/mistral-makes-sovereign-open-weight-ai-to-frontier/" },
 ];
 
 const sameAmount = (a: number | null | undefined, b: number | null | undefined) => a != null && b != null && b !== 0 && Math.abs(a - b) / b <= 0.01;
