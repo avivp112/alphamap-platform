@@ -96,7 +96,8 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
       if (!q) return keep;
       const ownSite = !!ctx.domain && (() => { try { const h = new URL(url).hostname.toLowerCase().replace(/^www\./, ""); return h === ctx.domain || h.endsWith(`.${ctx.domain}`); } catch { return false; } })();
       if (isLinkList(q)) return out("a row of links, not a quote");
-      if (!quoteIsAboutTheCompany(q, company, ownSite)) return out("the quote is not about the company");
+      // Without the mark's source (a competitors-sheet mark kept none) a "we / our" on its own site cannot be recognised: not judged.
+      if (url && !quoteIsAboutTheCompany(q, company, ownSite)) return out("the quote is not about the company");
       if (!quoteLinksTheTwo(q, company, mark.value)) return out("the quote does not link the company and this competitor directly");
       return keep;
     }

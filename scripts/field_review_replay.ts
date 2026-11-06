@@ -21,7 +21,7 @@ import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { readMarks, readReplay, parseCsvText, REPLAY } from "../lib/enrichment/fieldReview.ts";
-import { quotesFromRows, quoteOf } from "../lib/enrichment/markQuotes.ts";
+import { quotesFromRows, quotesFromCompetitorSheet, quoteOf } from "../lib/enrichment/markQuotes.ts";
 import { judgeMark } from "../lib/enrichment/markRules.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -53,6 +53,8 @@ const domainOf = (website: string | null | undefined) => {
   // The quotes stored with the values (run_N.csv, batch_N.csv): a competitor's quote is judged too.
   const quotes = new Map<string, string>();
   if (existsSync("field_review")) for (const f of readdirSync("field_review").filter((x) => /\.csv$/.test(x) && !/_sample\.csv$/.test(x))) quotesFromRows(parseCsvText(readFileSync(`field_review/${f}`, "utf8").replace(/^\uFEFF/, "")), quotes);
+  // The owner's competitors sheet keeps the quote of the values he marked there (tracker ids g.c…, which kept no source).
+  if (existsSync("eval/review/competitors_review.csv")) quotesFromCompetitorSheet(parseCsvText(readFileSync("eval/review/competitors_review.csv", "utf8").replace(/^\uFEFF/, "")), quotes);
   const judged = new Map(marks.map((m) => [m.id, judgeMark(m, { domain: domains.get(m.company), quote: quoteOf(m, quotes) })]));
 
   const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);

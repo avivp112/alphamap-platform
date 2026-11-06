@@ -36,3 +36,24 @@ describe("the replay judges a competitor mark by its quote (owner, 2026-11-06)",
     expect(judgeMark(mark("HiBob", "BambooHR", "https://www.hibob.com/blog/x"), { domain: "hibob.com" })).toEqual({ produced: true });
   });
 });
+
+import { quotesFromCompetitorSheet } from "./markQuotes";
+describe("a mark from the competitors sheet kept no source: it is found by company and name (owner, 2026-11-06)", () => {
+  const sheet = [["company_id", "company", "competitor", "source_url", "quote", "mark"], ["h", "HiBob", "BambooHR", "https://www.hibob.com/blog/x", "Rippling competes with HiBob, Namely, BambooHR, Gusto, and Workday.", "y"]];
+  it("finds the quote without the source the tracker row lacks", () => {
+    const q = quotesFromCompetitorSheet(sheet);
+    expect(quoteOf({ company: "HiBob", field: "competitor", value: "BambooHR", source_url: "" }, q)).toContain("Rippling competes");
+  });
+  it("and the replay then takes the indirect HiBob mark out, as it takes out Port's row of links", () => {
+    const q = quotesFromCompetitorSheet(sheet);
+    const m = { id: "g.c7", field: "competitor", company: "HiBob", value: "BambooHR", source_url: "", verdict: "correct" as const, source_of_mark: "owner" };
+    expect(judgeMark(m, { domain: "hibob.com", quote: quoteOf(m, q) })).toMatchObject({ produced: false });
+  });
+});
+
+describe("a competitors-sheet mark without a source keeps its place when the quote speaks as 'we'", () => {
+  it("Cato's Fortinet: the quote does not name Cato and the source is unknown — it stays", () => {
+    const m = { id: "g.c9", field: "competitor", company: "Cato Networks", value: "Fortinet", source_url: "", verdict: "correct" as const, source_of_mark: "owner" };
+    expect(judgeMark(m, { quote: "Let's look at the competition—first, the heavyweight hardware contender, Fortinet." })).toEqual({ produced: true });
+  });
+});

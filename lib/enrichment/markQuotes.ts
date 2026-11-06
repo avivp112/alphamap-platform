@@ -7,6 +7,8 @@ import type { Mark } from "./fieldReview";
 
 const clean = (s: string | undefined) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 export const quoteKey = (company: string, field: string, value: string, sourceUrl: string) => [company, field, value, sourceUrl].map(clean).join("|");
+/** The same value without its source: a mark from the owner's competitors sheet (g.c…) kept no source in the tracker. */
+const looseKey = (company: string, field: string, value: string) => quoteKey(company, field, value, "");
 
 /** Rows (header first) of a review run's or batch's csv: company, field, value, source_url and quote columns. */
 export function quotesFromRows(rows: string[][], into: Map<string, string> = new Map()): Map<string, string> {
@@ -19,9 +21,27 @@ export function quotesFromRows(rows: string[][], into: Map<string, string> = new
     if (!quote) continue;
     const key = quoteKey(r[c] ?? "", r[f] ?? "", r[v] ?? "", s >= 0 ? r[s] ?? "" : "");
     if (!into.has(key)) into.set(key, quote);
+    const loose = looseKey(r[c] ?? "", r[f] ?? "", r[v] ?? "");
+    if (!into.has(loose)) into.set(loose, quote);
+  }
+  return into;
+}
+
+/** Rows (header first) of eval/review/competitors_review.csv: company, competitor, source_url, quote. */
+export function quotesFromCompetitorSheet(rows: string[][], into: Map<string, string> = new Map()): Map<string, string> {
+  const head = (rows[0] ?? []).map((h) => h.trim().toLowerCase());
+  const [c, x, s, q] = [head.indexOf("company"), head.indexOf("competitor"), head.indexOf("source_url"), head.indexOf("quote")];
+  if ([c, x, q].some((i) => i < 0)) return into;
+  for (const r of rows.slice(1)) {
+    const quote = (r[q] ?? "").trim();
+    if (!quote) continue;
+    const strict = quoteKey(r[c] ?? "", "competitor", r[x] ?? "", s >= 0 ? r[s] ?? "" : "");
+    if (!into.has(strict)) into.set(strict, quote);
+    const loose = looseKey(r[c] ?? "", "competitor", r[x] ?? "");
+    if (!into.has(loose)) into.set(loose, quote);
   }
   return into;
 }
 
 export const quoteOf = (m: Pick<Mark, "company" | "field" | "value" | "source_url">, quotes: Map<string, string>): string | null =>
-  quotes.get(quoteKey(m.company, m.field, m.value, m.source_url ?? "")) ?? null;
+  quotes.get(quoteKey(m.company, m.field, m.value, m.source_url ?? "")) ?? quotes.get(looseKey(m.company, m.field, m.value)) ?? null;
