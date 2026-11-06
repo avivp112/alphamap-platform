@@ -81,3 +81,44 @@ describe("the quote says the COMPANY competes (owner, 2026-11-01: Bolt's blog '�
     expect(quoteIsAboutTheCompany("competes with big names like Amazon", "Bolt", false)).toBe(false);
   });
 });
+
+import { quoteLinksTheTwo, isLinkList } from "./competitorEvidence";
+describe("a competitor needs a quote that links it to the company directly (owner, 2026-11-06 — competitor review sheet)", () => {
+  const links = (company: string, competitor: string, quote: string) => quoteLinksTheTwo(quote, company, competitor);
+  const hibob = "Rippling competes with HiBob, Namely, BambooHR, Gusto, and Workday in the HR space.";
+  it("HiBob: Rippling is a rival of HiBob; BambooHR, Gusto and Workday are only Rippling's other rivals", () => {
+    expect(links("HiBob", "Rippling", hibob)).toBe(true);
+    for (const x of ["BambooHR", "Gusto", "Workday", "Namely"]) expect(links("HiBob", x, hibob)).toBe(false);
+  });
+  it("the company as the subject, or a party of a comparison, links", () => {
+    expect(links("Coralogix", "Datadog", "The observability industry, where Coralogix competes with the likes of Datadog, New Relic, and Splunk")).toBe(true);
+    expect(links("Coralogix", "Splunk", "The observability industry, where Coralogix competes with the likes of Datadog, New Relic, and Splunk")).toBe(true);
+    expect(links("Zepto", "Blinkit", "Zepto competes with SoftBank-backed Blinkit in India, both of which promise 10-minute deliveries for groceries.")).toBe(true);
+    expect(links("Zepto", "Dunzo", "Zepto competes with SoftBank-backed Blinkit in India, both of which promise 10-minute deliveries for groceries. Other rivals including Dunzo,")).toBe(true);
+    expect(links("Helsing", "Anduril", "Helsing is a European rival to U.S. startup Anduril which has also received heavy backing")).toBe(true);
+    expect(links("Helsing", "Boeing", "Boeing upgrades the Ghost Bat with internal weapons and longer range as it competes with Helsing for German drone orders")).toBe(true);
+    expect(links("HiBob", "Namely", "HiBob vs Namely vs Rippling: The top choice for 2026")).toBe(true);
+    expect(links("Aidoc", "Zebra Medical Vision", "Aidoc competes with Zebra Medical Vision, which spent three years developing an end-to-end computer vision system")).toBe(true);
+  });
+  it("a quote that does not name the company is left to the 'about the company' rule", () => {
+    expect(links("Cato Networks", "Fortinet", "Let's look at the competition—first, the heavyweight hardware contender, Fortinet.")).toBe(true);
+  });
+  it("Port: a row of 'X vs Y' links is a menu, not a quote", () => {
+    expect(isLinkList("Port vs Compass · Port vs Cortex · Port vs OpsLevel · Port vs Backstage · Roadmap")).toBe(true);
+    expect(isLinkList("HiBob vs Namely vs Rippling: The top choice for 2026")).toBe(false);
+    expect(isLinkList("Zepto competes with Blinkit in India.")).toBe(false);
+  });
+  it("end to end: the HiBob and Port quotes are refused, the direct ones kept", () => {
+    const src = (url: string, type: "company_site" | "news", content: string) => buildLabeledSources([{ url, title: "t", content, provider: "serper", query_label: "competitors" }]).map((s) => ({ ...s, source_type: type }));
+    const hs = src("https://www.hibob.com/blog/hibob-vs-namely-vs-rippling/", "company_site", hibob);
+    expect(competitorEvidenceProblem({ name: "BambooHR", source_id: "S1", evidence_quote: hibob }, hs, "HiBob")).toBe("competitor_quote_not_explicit");
+    expect(competitorEvidenceProblem({ name: "Rippling", source_id: "S1", evidence_quote: hibob }, hs, "HiBob")).toBeNull();
+    const nav = "Port vs Compass · Port vs Cortex · Port vs OpsLevel · Port vs Backstage · Roadmap";
+    const ps = src("https://www.port.io/glossary/developer-experience", "company_site", nav);
+    expect(competitorEvidenceProblem({ name: "OpsLevel", source_id: "S1", evidence_quote: nav }, ps, "Port")).toBe("competitor_quote_not_explicit");
+  });
+  it("Bolt: 'competes with big names like Amazon' with no company in it is refused (already the rule; kept as a regression)", () => {
+    const s = buildLabeledSources([{ url: "https://www.bolt.com/blog/early-access-bolt-bigcommerce", title: "t", content: "…competes with big names like Amazon", provider: "serper", query_label: "competitors" }]).map((x) => ({ ...x, source_type: "company_site" as const }));
+    expect(competitorEvidenceProblem({ name: "Amazon", source_id: "S1", evidence_quote: "competes with big names like Amazon" }, s, "Bolt")).toBe("competitor_quote_not_explicit");
+  });
+});
