@@ -289,3 +289,34 @@ describe("a round without an amount on the type and date of a golden round is un
     }
   });
 });
+
+import { phase1Reviewed, phase1ReviewCounts, statedPhase1Fields } from "./score";
+describe("reviewed for Phase 1 (owner, 2026-11-05)", () => {
+  const base: GoldenCompany = {
+    id: "a", name: "A", city: v("Paris"), country: v("France"), founded_year: v(2015),
+    funding_rounds: [{ type: "Seed", amount_usd: 1_000_000, date: "2020", confidence: "verified" }],
+    competitors: { names: ["X"], confidence: "verified" } as never,
+  };
+  it("needs every Phase 1 field the entry states in reviewed_fields", () => {
+    expect(statedPhase1Fields(base)).toEqual(["city", "country", "founded_year", "rounds", "competitors"]);
+    expect(phase1Reviewed(base)).toBe(false);
+    expect(phase1Reviewed({ ...base, reviewed_fields: ["rounds", "competitors", "patents"] })).toBe(false);
+    expect(phase1Reviewed({ ...base, reviewed_fields: ["city", "country", "founded_year", "rounds", "competitors"] })).toBe(true);
+  });
+  it("a field the entry does not state needs no review, and an undeclared HQ is stated", () => {
+    const sparse: GoldenCompany = { id: "s", name: "S", country: v("Israel"), reviewed_fields: ["country"] };
+    expect(phase1Reviewed(sparse)).toBe(true);
+    expect(statedPhase1Fields({ id: "p", name: "P", city: { value: null, confidence: "verified", not_declared: true } })).toEqual(["city"]);
+  });
+  it("the general flag counts without any listed field", () => {
+    expect(phase1Reviewed({ ...base, reviewed_by_human: true })).toBe(true);
+  });
+  it("an entry that states nothing is not reviewed", () => {
+    expect(phase1Reviewed({ id: "e", name: "E", reviewed_fields: ["city"] })).toBe(false);
+  });
+  it("counts companies and, per field, how many list it", () => {
+    const c = phase1ReviewCounts([{ ...base, reviewed_fields: ["city", "country", "founded_year", "rounds", "competitors"] }, base, { ...base, reviewed_by_human: true }]);
+    expect(c).toMatchObject({ reviewed: 2, total: 3 });
+    expect(c.byField.city).toEqual({ stated: 3, reviewed: 2 });
+  });
+});

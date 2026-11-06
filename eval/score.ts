@@ -124,6 +124,37 @@ export function hintGain(g: GoldenCompany, hints: PipelineOutput["hints"]): { co
 
 /** unjudged: produced values the golden set neither confirms nor rejects (competitors only) — reported, not scored. */
 export interface FieldStats { scored: number; produced: number; correct: number; unjudged?: number }
+/**
+ * Reviewed for Phase 1 (owner, 2026-11-05): a company counts when every Phase 1 field its golden entry
+ * states — location, founded year, rounds, competitors, patents — is in its `reviewed_fields`, or when
+ * the general `reviewed_by_human` flag is true. A field the entry does not state needs no review.
+ */
+export const PHASE1_REVIEW_FIELDS = ["city", "country", "founded_year", "rounds", "competitors", "patents"] as const;
+export type Phase1ReviewField = (typeof PHASE1_REVIEW_FIELDS)[number];
+const statedValue = (f: GoldenField<unknown> | undefined) => !!f && (!!f.not_declared || (f.value != null && f.confidence !== "unknown"));
+export function statedPhase1Fields(g: GoldenCompany): Phase1ReviewField[] {
+  const out: Phase1ReviewField[] = [];
+  if (statedValue(g.city)) out.push("city");
+  if (statedValue(g.country)) out.push("country");
+  if (statedValue(g.founded_year)) out.push("founded_year");
+  if ((g.funding_rounds ?? []).some((r) => r.confidence !== "unknown")) out.push("rounds");
+  if (g.competitors && g.competitors.confidence !== "unknown") out.push("competitors");
+  if (g.patents && g.patents.confidence !== "unknown") out.push("patents");
+  return out;
+}
+export const isFieldListed = (g: GoldenCompany, f: Phase1ReviewField) => (g.reviewed_fields ?? []).some((x) => x === f || (f === "rounds" && x === "funding_rounds"));
+export function phase1Reviewed(g: GoldenCompany): boolean {
+  if (g.reviewed_by_human) return true;
+  const need = statedPhase1Fields(g);
+  return need.length > 0 && need.every((f) => isFieldListed(g, f));
+}
+/** How many companies state each Phase 1 field and how many of those list it as reviewed — the report's own answer to "was the sheet imported?". */
+export function phase1ReviewCounts(companies: GoldenCompany[]): { reviewed: number; total: number; byField: Record<Phase1ReviewField, { stated: number; reviewed: number }> } {
+  const byField = Object.fromEntries(PHASE1_REVIEW_FIELDS.map((f) => [f, { stated: 0, reviewed: 0 }])) as Record<Phase1ReviewField, { stated: number; reviewed: number }>;
+  for (const g of companies) for (const f of statedPhase1Fields(g)) { byField[f].stated++; if (g.reviewed_by_human || isFieldListed(g, f)) byField[f].reviewed++; }
+  return { reviewed: companies.filter(phase1Reviewed).length, total: companies.length, byField };
+}
+
 export const FIELDS = ["city", "country", "founding_country", "founded_year", "founders", "funding_rounds", "round_type", "employee_range", "arr_usd", "competitors", "patents"] as const;
 export type Field = (typeof FIELDS)[number];
 export type Scoreboard = Record<Field, FieldStats>;

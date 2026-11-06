@@ -77,7 +77,7 @@ import { buildProfile } from "../worker/profile.ts";
 import { wrongValues, wrongValuesText, wrongValuesCsv } from "./wrongValues.ts";
 import { callCostUsd, knownModel, UsageMeter, LONG_PROMPT_TOKENS } from "../lib/enrichment/models.ts";
 import {
-  FIELDS, newScoreboard, pct, scoreCompany, duplicateRounds, foundedAfterFirstRound, phase1Checks, hintGain, matchRounds, roundsDayGap, isFatalProviderError, isEvent,
+  FIELDS, PHASE1_REVIEW_FIELDS, phase1ReviewCounts, newScoreboard, pct, scoreCompany, duplicateRounds, foundedAfterFirstRound, phase1Checks, hintGain, matchRounds, roundsDayGap, isFatalProviderError, isEvent,
   type GoldenSet, type GoldenCompany, type PipelineOutput, type FieldResult, type Field,
 } from "./score.ts";
 
@@ -232,8 +232,9 @@ async function main() {
     if (missing.length) console.log(`  ${missing.length} golden compan${missing.length === 1 ? "y is" : "ies are"} not in that run and skipped: ${missing.map((c) => c.name).join(", ")}`);
   }
   for (const c of inSet.filter((x) => !x.website)) console.warn(`  ⚠️  ${c.name}: no website in the golden set — skipped. Run eval/import_field_review.ts to fill it by company id.`);
-  const unreviewed = companies.filter((c) => !c.reviewed_by_human).length;
-  console.log(`Pipeline ${PIPELINE} on ${companies.length} golden-set companies${unreviewed ? ` (${unreviewed} not yet reviewed by a human)` : ""}.`);
+  const reviewCounts = phase1ReviewCounts(companies);
+  const unreviewed = reviewCounts.total - reviewCounts.reviewed;
+  console.log(`Pipeline ${PIPELINE} on ${companies.length} golden-set companies — reviewed for Phase 1: ${reviewCounts.reviewed} of ${reviewCounts.total}.`);
   if (PIPELINE === "v2") console.log(`Components (V2_COMPONENTS=${process.env.V2_COMPONENTS ?? "default"}): ${Object.entries(COMPONENTS).map(([n, on]) => `${n} ${on ? "on" : "off"}`).join(" · ")}`);
   console.log("");
 
@@ -372,9 +373,11 @@ async function main() {
     if (!RESCORE) console.log(`Claude (${ENRICH_MODEL}${knownModel(ENRICH_MODEL) ? "" : " — no price on file, priced as Haiku 4.5"}): $${LLM.costUsd.toFixed(4)} total, $${(LLM.costUsd / ran).toFixed(4)} per company, from ${LLM.calls} calls' reported tokens (in ${LLM.inputTokens.toLocaleString()}, cache write ${LLM.cacheWriteTokens.toLocaleString()}, cache read ${LLM.cacheReadTokens.toLocaleString()}, out ${LLM.outputTokens.toLocaleString()})`);
     if (!RESCORE) console.log(`Longest prompt: ${LLM.maxPromptTokens.toLocaleString()} tokens · calls over ${LONG_PROMPT_TOKENS.toLocaleString()}: ${LLM.callsOverLong}${LLM.callsOverLong ? "  ⚠️  those are billed at Haiku 5.5's long-prompt rate ($0.50 / $2.50)" : " ✅"}`);
   }
-  if (companies.length < 50 || unreviewed) {
-    console.log(`\n⚠️  ${companies.length} companies${unreviewed ? `, ${unreviewed} not yet reviewed by a human` : ""} — Phase 1 is judged only on the full,`);
-    console.log("   reviewed golden set (50+). Treat these numbers as a direction, not a verdict.\n");
+  console.log(`\nReviewed for Phase 1 (every Phase 1 field the entry states is in reviewed_fields, or reviewed_by_human): ${reviewCounts.reviewed} of ${reviewCounts.total} companies.`);
+  console.log(`  by field (reviewed / stated): ${PHASE1_REVIEW_FIELDS.map((f) => `${f} ${reviewCounts.byField[f].reviewed}/${reviewCounts.byField[f].stated}`).join(" · ")}`);
+  if (reviewCounts.reviewed < 50) {
+    console.log(`\n⚠️  Only ${reviewCounts.reviewed} companies are reviewed for Phase 1 — it is judged on at least 50.`);
+    console.log("   Treat these numbers as a direction, not a verdict.\n");
   }
 
   const wrongFile = join(__dir, `wrong_values${COMPONENTS_LABEL ? `_${COMPONENTS_LABEL}` : ""}.csv`);
