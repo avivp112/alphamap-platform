@@ -81,6 +81,7 @@ import {
   type GoldenSet, type GoldenCompany, type PipelineOutput, type FieldResult, type Field,
 } from "./score.ts";
 
+import { fieldStatus, countedMarks, readReplay, TRACKER } from "../lib/enrichment/fieldReview.ts";
 import { toCsv, parseCsv, mergeRows, dedupeRoundRows, competitorKey, roundKey, COMPETITOR_COLUMNS, ROUND_COLUMNS, type SheetRow } from "./reviewSheet.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -359,7 +360,12 @@ async function main() {
   console.log(`rounds written without a date: ${roundDates.undated} of ${roundDates.rounds} (${pct(roundDates.undated, roundDates.rounds)})`);
   console.log(`founders written with a bio: ${founderBios.with_bio} of ${founderBios.founders} (${pct(founderBios.with_bio, founderBios.founders)})`);
   console.log("═".repeat(62));
-  const checks = phase1Checks(board, { locationMismatches, duplicateRounds: duplicates, foundedAfterRound });
+  // Competitors are measured by the field-review tracker (owner, 2026-11-06), counted against the current rules.
+  const trackerCompetitors = fieldStatus(countedMarks()).find((x) => x.field === "competitor");
+  const replayed = readReplay();
+  const competitorSource = `the field-review tracker (${TRACKER}), ${replayed.size ? `replayed against the current rules — ${[...replayed.values()].filter((v) => !v).length} mark(s) no longer produced, left out` : "no replay yet, every mark counts"}`;
+  const checks = phase1Checks(board, { locationMismatches, duplicateRounds: duplicates, foundedAfterRound: foundedAfterRound }, { marked: trackerCompetitors?.marked ?? 0, correct: trackerCompetitors?.correct ?? 0, source: competitorSource });
+  console.log(`competitors: Phase 1 reads the tracker, not this run — the run judged ${board.competitors.produced} competitor name(s) against the golden set (for information).`);
   console.log("Phase 1 rules (docs/enrichment_v2_spec.md §7):");
   for (const c of checks) console.log(`  ${c.pass ? "✅" : "❌"} ${c.rule} — ${c.detail}`);
   const wrongRows = companies.flatMap((c) => { const o = perCompany[c.id]?.output; return o ? wrongValues(c, o) : []; });

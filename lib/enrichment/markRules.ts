@@ -13,11 +13,14 @@ import { profileSourceAllowed, roundSourceStanding } from "./roundSources";
 import { roleAtCompany, isOrganisationName } from "./people";
 import { RAISE_RE, statesAmount } from "./assemble";
 import { dateFromUrl } from "./evidence";
+import { isLinkList, quoteIsAboutTheCompany, quoteLinksTheTwo } from "./competitorEvidence";
 import type { Mark } from "./fieldReview";
 
 export interface MarkContext {
   /** The company's own domain ("dlight.com"), when known. Without it an unlisted source is not judged. */
   domain?: string | null;
+  /** The quote stored with the value (field_review/run_N.csv): a competitor's is judged by it. */
+  quote?: string | null;
 }
 export interface MarkJudgment { produced: boolean; rule?: string }
 
@@ -85,6 +88,17 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
       if (!rest || /^[a-z…]/.test(rest)) return keep;
       const about = rest.split(/(?<=[.!?])\s+/).some((s) => parts.some((w) => s.toLowerCase().includes(w)) || /\b(he|she|his|her|they|their)\b/i.test(s));
       return about ? keep : out("not about the person");
+    }
+    case "competitor": {
+      // The quote must say, of the company, that it competes with this one (competitorEvidence.ts, owner 2026-11-06):
+      // not a row of "X vs Y" links, not a rival of a third party ("Rippling competes with HiBob, Namely, BambooHR").
+      const q = ctx.quote?.trim();
+      if (!q) return keep;
+      const ownSite = !!ctx.domain && (() => { try { const h = new URL(url).hostname.toLowerCase().replace(/^www\./, ""); return h === ctx.domain || h.endsWith(`.${ctx.domain}`); } catch { return false; } })();
+      if (isLinkList(q)) return out("a row of links, not a quote");
+      if (!quoteIsAboutTheCompany(q, company, ownSite)) return out("the quote is not about the company");
+      if (!quoteLinksTheTwo(q, company, mark.value)) return out("the quote does not link the company and this competitor directly");
+      return keep;
     }
     case "round": {
       // No amount while its own source's address states one (Forward Financing, run 3).

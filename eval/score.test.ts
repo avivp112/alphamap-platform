@@ -320,3 +320,26 @@ describe("reviewed for Phase 1 (owner, 2026-11-05)", () => {
     expect(c.byField.city).toEqual({ stated: 3, reviewed: 2 });
   });
 });
+
+import { phase1Checks as checks1 } from "./score";
+describe("the competitors bar reads the field-review tracker (owner, 2026-11-06)", () => {
+  const facts = { locationMismatches: 0, duplicateRounds: 0, foundedAfterRound: 0 };
+  const competitorsCheck = (m?: { marked: number; correct: number; source: string }) => checks1(newScoreboard(), facts, m).find((c) => c.rule.includes("competitors"))!;
+  it("passes at 20 marks and 90%, and says where the number comes from", () => {
+    const c = competitorsCheck({ marked: 20, correct: 18, source: "the field-review tracker (replayed)" });
+    expect(c.pass).toBe(true);
+    expect(c.detail).toContain("90.0% (18/20 marks)");
+    expect(c.detail).toContain("measured by the field-review tracker");
+  });
+  it("fails below 20 marks, however clean", () => {
+    const c = competitorsCheck({ marked: 19, correct: 19, source: "the tracker" });
+    expect(c.pass).toBe(false);
+    expect(c.detail).toContain("only 19 marks — at least 20 needed");
+  });
+  it("fails below 90%", () => {
+    expect(competitorsCheck({ marked: 20, correct: 17, source: "the tracker" }).pass).toBe(false);
+  });
+  it("without a tracker measure the golden-set bar is used as before", () => {
+    expect(competitorsCheck().detail).toContain("judged");
+  });
+});

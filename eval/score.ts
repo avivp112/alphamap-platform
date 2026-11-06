@@ -459,7 +459,14 @@ export const PHASE1_BARS = {
   patents: { threshold: 0.98, min: 10 },
 } as const;
 
-export function phase1Checks(board: Scoreboard, facts: { locationMismatches: number; duplicateRounds: number; foundedAfterRound: number }): Phase1Check[] {
+/**
+ * A field measured by the owner's marks of what the pipeline wrote (eval/field_review_tracker.csv, counted
+ * against the current rules) rather than by the golden set. Competitors, from 2026-11-06: the golden-set run
+ * finds too few competitors to judge, and the tracker measures the same rules on what is actually written.
+ */
+export interface TrackerMeasure { marked: number; correct: number; source: string }
+
+export function phase1Checks(board: Scoreboard, facts: { locationMismatches: number; duplicateRounds: number; foundedAfterRound: number }, competitors?: TrackerMeasure): Phase1Check[] {
   const precision = (fs: FieldStats[]) => {
     const produced = fs.reduce((n, f) => n + f.produced, 0);
     return produced ? fs.reduce((n, f) => n + f.correct, 0) / produced : null;
@@ -482,9 +489,17 @@ export function phase1Checks(board: Scoreboard, facts: { locationMismatches: num
     { rule: "precision ≥ 95% on location and founded year", pass: loc != null && loc >= 0.95, detail: loc == null ? "nothing judged" : `${(loc * 100).toFixed(1)}% (${judgedOf([board.city, board.country, board.founded_year])} judged)` },
     { rule: "precision ≥ 90% on round amounts", pass: rounds != null && rounds >= 0.9, detail: rounds == null ? "nothing judged" : `${(rounds * 100).toFixed(1)}% (${judgedOf([board.funding_rounds])} judged)` },
     bar(`precision ≥ ${PHASE1_BARS.round_type.threshold * 100}% on round type`, board.round_type, PHASE1_BARS.round_type.min, PHASE1_BARS.round_type.threshold),
-    bar(`precision ≥ ${PHASE1_BARS.competitors.threshold * 100}% on competitors`, board.competitors, PHASE1_BARS.competitors.min, PHASE1_BARS.competitors.threshold),
+    competitors
+      ? trackerBar(`precision ≥ ${PHASE1_BARS.competitors.threshold * 100}% on competitors`, competitors, PHASE1_BARS.competitors.min, PHASE1_BARS.competitors.threshold)
+      : bar(`precision ≥ ${PHASE1_BARS.competitors.threshold * 100}% on competitors`, board.competitors, PHASE1_BARS.competitors.min, PHASE1_BARS.competitors.threshold),
     bar(`precision ≥ ${PHASE1_BARS.patents.threshold * 100}% on patents`, board.patents, PHASE1_BARS.patents.min, PHASE1_BARS.patents.threshold),
   ];
+}
+
+function trackerBar(rule: string, m: TrackerMeasure, min: number, threshold: number): Phase1Check {
+  if (m.marked < min) return { rule, pass: false, detail: `only ${m.marked} marks — at least ${min} needed — measured by ${m.source}` };
+  const p = m.correct / m.marked;
+  return { rule, pass: p >= threshold, detail: `${(p * 100).toFixed(1)}% (${m.correct}/${m.marked} marks) — measured by ${m.source}` };
 }
 
 /** An error no retry fixes — Anthropic out of credit, a key rejected: the eval stops rather than score every later company "missing". */

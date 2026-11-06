@@ -16,11 +16,12 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { config } from "dotenv";
-import { existsSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import { readMarks, readReplay, REPLAY } from "../lib/enrichment/fieldReview.ts";
+import { readMarks, readReplay, parseCsvText, REPLAY } from "../lib/enrichment/fieldReview.ts";
+import { quotesFromRows, quoteOf } from "../lib/enrichment/markQuotes.ts";
 import { judgeMark } from "../lib/enrichment/markRules.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -49,7 +50,10 @@ const domainOf = (website: string | null | undefined) => {
   try { commit = execSync("git rev-parse --short HEAD").toString().trim(); } catch { /* not a checkout */ }
   const previous = readReplay();
   const today = new Date().toISOString().slice(0, 10);
-  const judged = new Map(marks.map((m) => [m.id, judgeMark(m, { domain: domains.get(m.company) })]));
+  // The quotes stored with the values (run_N.csv, batch_N.csv): a competitor's quote is judged too.
+  const quotes = new Map<string, string>();
+  if (existsSync("field_review")) for (const f of readdirSync("field_review").filter((x) => /\.csv$/.test(x) && !/_sample\.csv$/.test(x))) quotesFromRows(parseCsvText(readFileSync(`field_review/${f}`, "utf8").replace(/^\uFEFF/, "")), quotes);
+  const judged = new Map(marks.map((m) => [m.id, judgeMark(m, { domain: domains.get(m.company), quote: quoteOf(m, quotes) })]));
 
   const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   const lines = ["id,produced,replayed_at,rules,note"];
