@@ -6,8 +6,8 @@
  */
 import type { SheetRow } from "./reviewSheet.ts";
 
-export type Sheet = "competitors" | "patents" | "rounds";
-export const SHEET_FILES: Record<Sheet, string> = { competitors: "competitors_review.csv", patents: "patents_review.csv", rounds: "rounds_review.csv" };
+export type Sheet = "competitors" | "patents" | "rounds" | "v1competitors";
+export const SHEET_FILES: Record<Sheet, string> = { competitors: "competitors_review.csv", patents: "patents_review.csv", rounds: "rounds_review.csv", v1competitors: "v1_competitors_review.csv" };
 
 /** "1-9=y,12=n,15=y" → row number → "y" | "n". Throws on anything it cannot read, so nothing is half-applied. */
 export function parseMarkSpec(spec: string): Map<number, "y" | "n"> {
@@ -40,6 +40,7 @@ export function sheetListing(rows: SheetRow[], sheet: Sheet, all = false): strin
     const n = String(i + 1).padStart(3);
     const mark = r.mark?.trim() ? `  [${r.mark.trim()}]` : "";
     if (sheet === "competitors") lines.push(`${n}  ${r.competitor}${mark}`, `       source: ${r.source_url || "(none)"}`, `       quote:  ${clip(r.quote, 260) || "(none)"}`);
+    else if (sheet === "v1competitors") lines.push(`${n}  ${r.competitor}${mark}   ${r.competitor_website ? `(${r.competitor_website})` : ""}`, `       v1 says: ${clip(r.how_it_competes, 260) || "(no explanation)"}`);
     else if (sheet === "patents") lines.push(`${n}  ${r.publication}${mark}  ${clip(r.title, 90)}`, `       applicants: ${clip(r.applicants, 160) || "(none)"}`);
     else lines.push(`${n}  ${r.round_type} ${r.amount_usd || "(no amount)"} ${r.date || "(no date)"}${r.lead_investor ? ` led by ${r.lead_investor}` : ""}${mark}`, `       source: ${r.source_url || "(none)"}`);
   });
