@@ -43,6 +43,11 @@ export function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V
   for (const f of c.profile.profile.founders ?? []) {
     if (!onFileFounders.has(f.name.toLowerCase())) add("founder", `${f.name}${f.title ? ` — ${f.title}` : ""}`, "", f.grounded_url ?? "");
     if (f.bio) { const id = allowedId(f.bio_source_ids); add("founder_bio", `${f.name}: ${f.bio}`, "", src(id), quoteOf(id)); }
+    const filed = ((row.founders ?? []) as Array<{ name?: string; background?: Array<{ kind: string; organization: string }> }>).find((x) => (x.name ?? "").toLowerCase() === f.name.toLowerCase())?.background ?? [];
+    for (const b of f.background ?? []) {
+      if (filed.some((h) => h.kind === b.kind && h.organization.toLowerCase() === b.organization.toLowerCase())) continue;
+      add("founder_background", `${f.name}: ${b.kind.replace("_", " ")} — ${b.organization}${b.role ? `, ${b.role}` : ""}${b.year ? ` (${b.year})` : ""}`, "", src(b.source_id), b.evidence_quote);
+    }
   }
   for (const l of c.profile.leadership) {
     if (l.group === "board") continue; // the board is apart from the management (owner, 2026-11-04)

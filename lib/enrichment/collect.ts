@@ -27,6 +27,8 @@ import { extractFunding, roundToRoundLike, type V2Round } from "./extractFunding
 import { extractMarket, normalizeUrlForMatch } from "./extractMarket.ts";
 import { normalizeForMatch } from "./evidence.ts";
 import { competitorTierClaims, type TieredClaim } from "./competitorTiers.ts";
+import { buildBackgroundRequest, processBackgroundResponse, backgroundSearchQuery } from "./founderBackground.ts";
+import { requestFor } from "./models.ts";
 import { lookupEpoPatents, type CompanyIdentity, type EpoPatentResult } from "./epoPatents.ts";
 import { hintFromRound, hintQueries, confirmHint, hintKey, recoverMissingAmount, type RoundHint } from "./hints.ts";
 import { detectGaps, buildDeepDiveQueries, hasNoFinancingRounds, type DeepDiveSection } from "./deepDive.ts";
@@ -1071,6 +1073,33 @@ export async function collectCompany(
   // Names without honorifics ("Dr. …", "… 님"), whatever found them.
   profile.profile.founders = profile.profile.founders?.map((f) => ({ ...f, name: stripHonorific(f.name) }));
   profile.leadership = profile.leadership.map((l) => ({ ...l, name: stripHonorific(l.name) }));
+
+  // Founder background (founderBackground.ts, owner 2026-11-07): structured facts, each with a quote from an allowed
+  // source; one targeted search (extra budget) and one model call for all the founders.
+  if (componentOn("founder_background") && !ctx.update && (profile.profile.founders ?? []).length) {
+    const names = (profile.profile.founders ?? []).map((f) => f.name).filter(Boolean).slice(0, 4);
+    try {
+      for (const r of await extraSearch(backgroundSearchQuery(row.name, names), "founder_background")) newSource(r.url, r.content ?? "", r.title ?? "", "founder_background");
+      const usable = allSources.filter((x) => profileSourceAllowed(x, row.name) && names.some((n) => normalizeForMatch(x.content ?? "").includes(normalizeForMatch(n.split(" ").slice(-1)[0] ?? "")))).slice(0, 12);
+      if (usable.length) {
+        const msg = await ctx.anthropic.messages.create(requestFor(buildBackgroundRequest(row.name, names, usable), ctx.models.market));
+        ctx.recordCost(ctx.models.market, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 });
+        const tool = msg.content.find((b) => b.type === "tool_use");
+        if (tool && tool.type === "tool_use") {
+          const { kept, dropped } = processBackgroundResponse(tool.input, names, row.name, Object.fromEntries(usable.map((x) => [x.source_id, x])), (id) => allowedFact({ source_id: id }));
+          for (const d of dropped) { console.log(`    🚫  background of ${d.founder} (${d.fact.kind}: ${d.fact.organization}) not written — ${d.why}`); bump(stats.droppedByReason, `founder_background_${d.why}`); }
+          for (const k of kept) {
+            const f = (profile.profile.founders ?? []).find((x) => x.name === k.founder);
+            if (!f) continue;
+            f.background = k.facts;
+            for (const fact of k.facts) console.log(`    🎓  ${k.founder}: ${fact.kind} ${fact.organization}${fact.role ? ` (${fact.role})` : ""} — "${fact.evidence_quote.slice(0, 100)}"`);
+          }
+        }
+      }
+    } catch (e) {
+      console.log(`    ⚠️  founder background skipped: ${(e as Error).message}`);
+    }
+  }
 
   // ── HQ, founded year, founding country: only from allowed sources ─────
   // (owner, 2026-11-02 — roundSources.ts profileSourceAllowed).

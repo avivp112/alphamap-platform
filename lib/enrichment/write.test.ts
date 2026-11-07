@@ -177,3 +177,11 @@ describe("fillArrayIfEmpty / fillScalarIfNull", () => {
     expect(fillScalarIfNull("existing", "new")).toBe("existing");
   });
 });
+
+describe("mergePeople: background facts are a union by kind and organization (owner, 2026-11-07)", () => {
+  it("adds new facts to a founder on file, keeps the old ones, no duplicates", () => {
+    const f = (kind: string, organization: string) => ({ kind, organization });
+    const out = mergePeople([{ name: "A B", background: [f("exit", "X")] }], [{ name: "A B", background: [f("exit", "x"), f("education", "MIT")] }]);
+    expect(out[0].background).toEqual([f("exit", "X"), f("education", "MIT")]);
+  });
+});

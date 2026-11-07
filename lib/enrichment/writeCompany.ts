@@ -34,7 +34,7 @@ import {
 } from "./write.ts";
 import { validateWebsiteCandidate, websiteDomain, type DomainOwner } from "./websiteValidation.ts";
 import { sourceTypeRank, type SourceType } from "./sourceTypes.ts";
-import { restrictPatch, writesRounds, writesBios, writesHeadcount, writesCompetitorTier, fieldOfColumn, withoutBio } from "./writeUnits.ts";
+import { restrictPatch, writesRounds, writesBios, writesHeadcount, writesCompetitorTier, writesFounderBackground, fieldOfColumn, withoutBio } from "./writeUnits.ts";
 
 // Upper bounds on the additive list sections, so repeated runs can't grow
 // them without limit. Entries already on file are never removed.
@@ -312,6 +312,7 @@ export async function writeCollected(
   const founderCandidates = cleanPeople((profile.profile.founders ?? []).map((f) => keepBio({
     name: f.name, title: cleanFounderTitle(f.title, row.name), bio: f.bio, linkedin_url: f.linkedin_url?.value,
     had_prior_exit: f.had_prior_exit, elite_background: f.elite_background, notable_pedigree: f.notable_pedigree,
+    ...(f.background?.length && (!OPEN || writesFounderBackground(OPEN)) ? { background: f.background } : {}),
   })));
   const cleanFounders = founderCandidates.filter(isFounderEntry);
   // A hired executive the model listed as a founder stays in leadership.
@@ -610,6 +611,13 @@ export async function writeCollected(
           const grounded = (profile.profile.founders ?? []).find((g) => samePersonName(g.name, f.name)) as { grounded_url?: string | null } | undefined;
           one("founder", `${f.name}${f.title ? ` — ${f.title}` : ""}`, grounded?.grounded_url ?? null);
           if (f.bio) one("founder_bio", `${f.name}: ${f.bio}`, grounded?.grounded_url ?? null);
+        }
+        for (const f of (patch.founders ?? []) as Array<{ name: string; background?: Array<{ kind: string; organization: string; role?: string; source_id: string; evidence_quote: string }> }>) {
+          const filed = ((rowOf.founders ?? []) as Array<{ name?: string; background?: Array<{ kind: string; organization: string }> }>).find((x) => samePersonName(x.name ?? "", f.name))?.background ?? [];
+          for (const b of f.background ?? []) {
+            if (filed.some((h) => h.kind === b.kind && h.organization.toLowerCase() === b.organization.toLowerCase())) continue;
+            one("founder_background", `${f.name}: ${b.kind.replace("_", " ")} — ${b.organization}${b.role ? `, ${b.role}` : ""}`, sourceById.get(b.source_id)?.url ?? null, b.evidence_quote);
+          }
         }
       } else if (k === "leadership") {
         for (const l of newOf<{ name: string; role?: string | null; bio?: string | null }>(patch.leadership, rowOf.leadership, (a, b) => samePersonName(a.name ?? "", b.name))) one("leader", `${l.name} — ${l.role ?? ""}${l.bio ? ` · ${l.bio}` : ""}`, null);
