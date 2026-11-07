@@ -89,3 +89,18 @@ describe("the same round twice on the sheet (owner, 2026-11-06: Mistral, Mercury
     expect(dedupeRoundRows(rows)).toEqual(rows);
   });
 });
+
+import { trackerMarksFromCompetitorSheet } from "./reviewSheet";
+describe("the competitors sheet's marks reach the tracker (owner, 2026-11-06)", () => {
+  const row = (company: string, competitor: string, mark: string): SheetRow => ({ company_id: "x", company, competitor, source_url: "https://x.test", quote: "q", mark });
+  it("enters each marked value once, as s.c1, s.c2 …, with the verdict", () => {
+    const m = trackerMarksFromCompetitorSheet([row("Synthesia", "HeyGen", "y"), row("Synthesia", "Veed", "n"), row("Synthesia", "Colossyan", "")], [], "2026-11-06");
+    expect(m.map((x) => [x.id, x.value, x.verdict])).toEqual([["s.c1", "HeyGen", "correct"], ["s.c2", "Veed", "wrong"]]);
+    expect(m[0]).toMatchObject({ field: "competitor", company: "Synthesia", source_of_mark: "owner 2026-11-06 (competitors sheet)" });
+  });
+  it("skips a value the tracker already holds, and continues the numbering", () => {
+    const existing = [{ id: "g.c1", field: "competitor", company: "Zepto", value: "Blinkit" }, { id: "s.c4", field: "competitor", company: "A", value: "B" }];
+    const m = trackerMarksFromCompetitorSheet([row("Zepto", "Blinkit", "y"), row("Zepto", "Dunzo", "y")], existing, "2026-11-06");
+    expect(m.map((x) => [x.id, x.value])).toEqual([["s.c5", "Dunzo"]]);
+  });
+});

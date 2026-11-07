@@ -179,3 +179,24 @@ export function applyRoundMarks(companies: GoldenCompany[], rows: SheetRow[]): M
   }
   return result;
 }
+
+
+/**
+ * The competitors sheet's marks as tracker rows (owner, 2026-11-06): Phase 1 measures competitors by
+ * eval/field_review_tracker.csv, so a value marked on the sheet must be in the tracker too. A value the
+ * tracker already holds (same company and name) is not entered twice; ids are s.c1, s.c2 …
+ */
+export function trackerMarksFromCompetitorSheet(rows: SheetRow[], existing: Array<{ id: string; field: string; company: string; value: string }>, today: string): Array<{ id: string; field: "competitor"; company: string; value: string; source_url: string; verdict: "correct" | "wrong"; source_of_mark: string }> {
+  const have = new Set(existing.filter((m) => m.field === "competitor").map((m) => `${normalizeName(m.company)}|${normalizeName(m.value)}`));
+  let n = existing.reduce((max, m) => { const k = m.id.match(/^s\.c(\d+)$/); return k ? Math.max(max, Number(k[1])) : max; }, 0);
+  const out: ReturnType<typeof trackerMarksFromCompetitorSheet> = [];
+  for (const r of rows) {
+    const verdict = readMark(r.mark ?? "");
+    if (verdict === null || verdict === "unreadable") continue;
+    const key = `${normalizeName(r.company)}|${normalizeName(r.competitor)}`;
+    if (have.has(key)) continue;
+    have.add(key);
+    out.push({ id: `s.c${++n}`, field: "competitor", company: r.company, value: r.competitor, source_url: r.source_url ?? "", verdict: verdict ? "correct" : "wrong", source_of_mark: `owner ${today} (competitors sheet)` });
+  }
+  return out;
+}
