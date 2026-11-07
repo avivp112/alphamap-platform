@@ -143,6 +143,24 @@ const sameCountry = (code: string, country: string) => {
   return n(code) === n(country) || (!!name && n(name) === n(country));
 };
 
+/**
+ * The countries a legal form belongs to: an applicant in a form of a country the company operates in
+ * ("CYERA LTD" for an Israeli-founded company with a US head office, "CYERA INC" for the same) is its own
+ * group entity; "WAYVE LLC" for a UK company with no US presence is another company. A form with no entry
+ * here (or none at all) is not judged by this.
+ */
+const FORM_JURISDICTIONS: Record<string, string[]> = {
+  ltd: ["United Kingdom", "Israel", "Ireland", "India", "Singapore", "Hong Kong", "Australia", "New Zealand", "Canada"],
+  inc: ["United States", "Canada"], llc: ["United States"],
+  gmbh: ["Germany", "Austria", "Switzerland"], bv: ["Netherlands", "Belgium"], sa: ["France", "Spain", "Switzerland", "Belgium", "Luxembourg"],
+  pty: ["Australia"], ab: ["Sweden"], oy: ["Finland"], as: ["Norway"], aps: ["Denmark"], srl: ["Italy"], spa: ["Italy"],
+};
+
+const COUNTRY_NAME_ALIASES: Record<string, string> = { uk: "unitedkingdom", gb: "unitedkingdom", greatbritain: "unitedkingdom", england: "unitedkingdom", usa: "unitedstates", us: "unitedstates", unitedstatesofamerica: "unitedstates", il: "israel", uae: "unitedarabemirates" };
+const countryNameKey = (c: string) => { const k = c.toLowerCase().replace(/[^a-z]/g, ""); return COUNTRY_NAME_ALIASES[k] ?? k; };
+/** Two country names (or short names: UK, USA) for the same country. */
+const sameCountryName = (a: string, b: string) => countryNameKey(a) === countryNameKey(b);
+
 export interface CompanyIdentity {
   name: string; aliases?: string[]; countries?: Array<string | null | undefined>;
   /** The company's full legal name, when a register or its own legal pages give it ("WAYVE TECHNOLOGIES LTD"). */
@@ -172,8 +190,18 @@ export function applicantMatch(pub: EpoPublication, company: CompanyIdentity): E
   // name, or the trading name in the same legal form. "WAYVE LLC" and "WAYVE INC" are other companies than
   // "WAYVE TECHNOLOGIES LTD", whatever country tag they carry.
   if (company.legalName) {
-    const legalKey = nameKey(company.legalName), form = legalForm(company.legalName);
-    named = named.filter((a) => nameKey(a.name) === legalKey || !form || !legalForm(a.name) || legalForm(a.name) === form);
+    const full = (n: string) => n.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+    const form = legalForm(company.legalName);
+    const countries = (company.countries ?? []).filter((c): c is string => !!c);
+    named = named.filter((a) => {
+      // The full legal name, suffix included ("CYERA INC" is not "CYERA LTD" although both reduce to "cyera").
+      if (full(a.name) === full(company.legalName!) || !form) return true;
+      const f = legalForm(a.name);
+      if (!f || f === form) return true;
+      const places = FORM_JURISDICTIONS[f];
+      // A form of a country the company operates in is its own group entity; otherwise another company.
+      return !places || countries.some((c) => places.some((p) => sameCountryName(p, c)));
+    });
     if (named.length === 0) return "epo_applicant_other_legal_entity";
   }
   const countries = (company.countries ?? []).filter((c): c is string => !!c);

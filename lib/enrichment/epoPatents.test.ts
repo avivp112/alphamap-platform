@@ -125,3 +125,20 @@ describe("a legal name known: the applicant is the company or its trading name i
     expect(legalForm("Wayve")).toBeNull();
   });
 });
+
+describe("a group's own entities are not 'another company' (Cyera: an Israeli LTD and a US INC) — owner's marks, 2026-11-07", () => {
+  const pub = (number: string, ...applicants: Array<[string, string | null]>): Pub2 => ({ number, title: "t", publicationDate: null, filingDate: null, familyId: null, applicants: applicants.map(([name, country]) => ({ name, country })) });
+  const cyera = { name: "Cyera", legalName: "CYERA INC", countries: ["United States", "Israel"] };
+  it("an Israeli CYERA LTD and a US CYERA INC are both Cyera's", () => {
+    expect(match2(pub("US2026000001A1", ["CYERA LTD", "IL"]), cyera)).toBeNull();
+    expect(match2(pub("US2026000002A1", ["CYERA INC", "US"]), cyera)).toBeNull();
+  });
+  it("with only the US known, an untagged CYERA LTD is not accepted on its name", () => {
+    expect(match2(pub("US2026000003A1", ["CYERA LTD", null]), { name: "Cyera", legalName: "CYERA INC", countries: ["United States"] })).toBe("epo_applicant_other_legal_entity");
+  });
+  it("Wayve (UK only): LLC and INC are still other companies", () => {
+    const wayve = { name: "Wayve", legalName: "WAYVE TECHNOLOGIES LTD", countries: ["United Kingdom", "United Kingdom"] };
+    expect(match2(pub("US2015348141A1", ["WAYVE LLC", null]), wayve)).toBe("epo_applicant_other_legal_entity");
+    expect(match2(pub("US2015149302A1", ["WAYVE INC", "US"]), wayve)).toBe("epo_applicant_other_legal_entity");
+  });
+});
