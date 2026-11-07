@@ -1315,11 +1315,9 @@ function VerticalFundingTimeline({ rounds }: { rounds: FundingRound[] }) {
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex flex-col gap-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      {r.round_type && (
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${ROUND_STYLE[r.round_type] ?? ROUND_STYLE["Other"]}`}>
-                          {roundTypeLabel(r.round_type)}
-                        </span>
-                      )}
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${r.round_type ? (ROUND_STYLE[r.round_type] ?? ROUND_STYLE["Other"]) : "bg-gray-100 text-gray-500"}`}>
+                        {roundTypeLabel(r.round_type)}
+                      </span>
                       {r.announcement_date && (
                         <span className="text-xs text-gray-400">
                           {r.announcement_date_precision === "year"
@@ -1396,7 +1394,7 @@ function FundingValuationTab({ startup, sortedRounds, fundingHistoryComplete }: 
         <StatCard icon={DollarSign} label="Total Raised"     value={raised ? fmt(raised) : "—"} accent="#F59E0B" />
         {debt > 0 && <StatCard icon={DollarSign} label="Debt" value={fmt(debt)} accent="#71717A" />}
         <StatCard icon={TrendingUp} label="Latest Valuation" value={fmt(latestRound?.valuation)} accent="#0e7490" />
-        <StatCard icon={Clock}      label="Last Round Type"  value={latestRound?.round_type ? roundTypeLabel(latestRound.round_type) : "—"} accent="#6d28d7" />
+        <StatCard icon={Clock}      label="Last Round Type"  value={latestRound ? roundTypeLabel(latestRound.round_type) : "—"} accent="#6d28d7" />
       </div>
 
       {sortedRounds.length >= 2 && <FundingTimeline rounds={sortedRounds} />}

@@ -331,7 +331,8 @@ function scoreRoundTypes(s: FieldStats, g: GoldenCompany, extracted: PipelineOut
   for (const [gr, i] of pairs) {
     s.scored++;
     const t = extracted[i].round_type;
-    if (!t || canonType(t) === "unknown" || canonType(t) === "other") continue;
+    // "Unknown" (the source states no type) is missing; "Other" (a known type that is no regular series) is judged (owner, 2026-11-08).
+    if (!t || canonType(t) === "unknown") continue;
     produced++;
     if (canonType(t) === canonType(gr.type)) correct++;
   }

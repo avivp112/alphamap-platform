@@ -430,7 +430,7 @@ export type IncompleteRoundRejection = "round_without_amount_incomplete" | "roun
 export function incompleteRound(r: RoundLike): IncompleteRoundRejection | null {
   const type = normalizeRoundType(r.round_type);
   if (r.amount_raised == null && (GENERIC_TYPES.has(type) || !r.announcement_date || !r.lead_investor)) return "round_without_amount_incomplete";
-  if (type === "Other" && !r.announcement_date) return "round_other_without_date";
+  if (GENERIC_TYPES.has(type) && !r.announcement_date) return "round_other_without_date";
   return null;
 }
 

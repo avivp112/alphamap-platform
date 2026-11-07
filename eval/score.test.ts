@@ -362,3 +362,21 @@ describe("competitors are information, not a Phase 1 condition (owner, 2026-11-0
     expect(phase1Passes(checks1(board, facts, { marked: 30, correct: 30, source: "t" }))).toBe(false);
   });
 });
+
+import { scoreCompany as scoreForTypes, newScoreboard as newBoardForTypes } from "./score";
+describe("round type: Unknown is missing, Other is judged; a month date matches the same month (owner, 2026-11-08)", () => {
+  const golden = { id: "apex", name: "Apex", funding_rounds: [{ type: "Seed", amount_usd: 7_500_000, date: "2022-10-24", confidence: "high" }] } as never;
+  const out = (type: string, date = "2022-10") => ({ city: null, country: null, founded_year: null, founders: [], employee_range: null, rounds: [{ round_type: type, amount_raised: 7_500_000, date }] }) as never;
+  it("Unknown: the type is missing, not wrong — and the round itself is still right (same month)", () => {
+    const b = newBoardForTypes();
+    const r = scoreForTypes(b, golden, out("Unknown"));
+    expect(r.round_type).toBe("missing");
+    expect(r.funding_rounds).toBe("correct");
+  });
+  it("Other against a Seed: wrong", () => {
+    expect(scoreForTypes(newBoardForTypes(), golden, out("Other")).round_type).toBe("wrong");
+  });
+  it("a day three days off and a month-precision date both match the golden day", () => {
+    expect(scoreForTypes(newBoardForTypes(), golden, out("Seed", "2022-10-27")).funding_rounds).toBe("correct");
+  });
+});

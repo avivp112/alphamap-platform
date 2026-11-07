@@ -83,6 +83,17 @@ export function normalizeRoundType(raw: string | null | undefined): CanonicalRou
   return "Other";
 }
 
+/**
+ * "Unknown" is a round whose source does not say what kind it is ("emerges from stealth with $7.5M", "raised $150M");
+ * "Other" is a type the source does name that is not a regular series — strategic, crowdfunding, a token sale
+ * (owner, 2026-11-08). A model's "Other" with nothing in its evidence naming such a type is Unknown.
+ */
+const KNOWN_OTHER = /\b(strategic|crowd ?fund\w*|token (?:sale|offering)|private placement|pipe\b|revenue.based|spac\b|tender offer|corporate (?:round|investment)|equity crowdfunding)\b/i;
+export function refineRoundType(raw: string | null | undefined, evidence: string | null | undefined): CanonicalRoundType {
+  const t = normalizeRoundType(raw);
+  return t === "Other" && !KNOWN_OTHER.test(evidence ?? "") ? "Unknown" : t;
+}
+
 /** Lowercase, trim, collapse whitespace/punctuation — for comparing investor names. */
 export function normalizeInvestorName(raw: string | null | undefined): string {
   if (!raw) return "";

@@ -376,3 +376,9 @@ marking report (`lib/enrichment/reviewDefinitions.ts`).
   the headquarters country), Brreg, Wayback copies of About/Careers pages (robots.txt honoured). Form 5500 and CVR wait for the
   coverage measurement (`scripts/headcount_coverage.ts`).
 - **Promotion** (`worker/promote.ts`): refuses a real write until `PHASE1_PASSED`; after it, only the tracker's open fields.
+
+## Round types and dates (owner, 2026-11-08)
+
+- **Unknown vs Other.** `Unknown`: no source states what kind of round it is ("emerges from stealth with $7.5M"); stored as NULL, shown as "Undisclosed", counted *missing* (not wrong) in the evaluation. `Other`: a type the source names that is no regular series (strategic, crowdfunding, token sale); judged like any type. A model's "Other" with no such word in its evidence becomes `Unknown` (`refineRoundType`).
+- **A round's amount** must stand on an allowed source of its own, not just any source the round cites (Apex's $185.1M from forgeglobal.com).
+- **A date from a press article's dateline only** (`roundDates.ts`): one search for the original release (company site, wire, investor) for its day; not found → `announcement_date_precision = month`, shown as a month. In the evaluation a month date is right when the month matches. Switch `round_dates`; `DATE_SEARCHES` per company, default 3.

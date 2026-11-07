@@ -27,6 +27,7 @@ import { extractFunding, roundToRoundLike, type V2Round } from "./extractFunding
 import { extractMarket, normalizeUrlForMatch } from "./extractMarket.ts";
 import { normalizeForMatch } from "./evidence.ts";
 import { competitorTierClaims, type TieredClaim } from "./competitorTiers.ts";
+import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
 import { buildDescriptionRequest, descriptionSources, processDescription } from "./descriptionBuilder.ts";
 import { buildBackgroundRequest, processBackgroundResponse, backgroundSearchQuery } from "./founderBackground.ts";
 import { requestFor } from "./models.ts";
@@ -869,6 +870,36 @@ export async function collectCompany(
     bump(stats.droppedByReason, "round_confirmed_from_hint");
   }
   for (const h of [...hints.values()].slice(MAX_HINTS_SEARCHED)) roundHints.push(h);
+
+  // ── A round dated only by a press article's dateline (roundDates.ts, owner 2026-11-08) ──
+  // The article can trail the announcement by days: look for the original release; else keep the month.
+  if (componentOn("round_dates") && !ctx.update) {
+    let dateSearches = Math.max(0, Number(process.env.DATE_SEARCHES ?? 3) || 0);
+    let dateSourceCount = 0;
+    for (const r of keptRounds) {
+      if (!pressOnlyDate(r, allSources, row.name)) continue;
+      const articleSrc = allSources.find((x) => x.source_id === r.announcement_date!.source_id);
+      let originals: LabeledSource[] = [];
+      if (dateSearches > 0) {
+        dateSearches--;
+        const found = await webSearch(originalReleaseQuery(r, row.name, domain), "round_date", searchState);
+        originals = mergeDuplicateResults(found).results.map((raw) => ({ ...raw, source_id: `D${++dateSourceCount}`, source_type: classifySourceType(raw.url, domain) }));
+      }
+      const res = resolveRoundDate(r, originals, articleSrc, row.name);
+      if (res.kind === "original") {
+        allSources = [...allSources, res.source];
+        console.log(`    📅  ${r.round_type} ${r.amount_raised?.value ?? ""}: ${r.announcement_date!.value} was a press article's date — the original release says ${res.iso} (${res.source.url})`);
+        r.announcement_date = { value: res.iso, source_id: res.source.source_id, evidence_quote: res.quote };
+        r.announcement_date_precision = "day";
+        bump(stats.droppedByReason, "round_date_from_original");
+      } else {
+        console.log(`    📅  ${r.round_type} ${r.amount_raised?.value ?? ""}: dated by a press article only (${r.announcement_date!.value}) and no original release found — kept as ${res.month}`);
+        r.announcement_date = { ...r.announcement_date!, value: `${res.month}-01` };
+        r.announcement_date_precision = "month";
+        bump(stats.droppedByReason, "round_date_month_only");
+      }
+    }
+  }
 
   const sourceById = new Map(allSources.map((s) => [s.source_id, s]));
   const sourceTypeFor = (sourceId: string | undefined): SourceType | undefined => (sourceId ? sourceById.get(sourceId)?.source_type : undefined);
