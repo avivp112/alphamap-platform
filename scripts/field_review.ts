@@ -36,6 +36,7 @@ import { buildProfile } from "../worker/profile.ts";
 import { profileSourceAllowed, roundSourceStanding } from "../lib/enrichment/roundSources.ts";
 import { capPerCompany, PER_COMPANY } from "../lib/enrichment/fieldReview.ts";
 import { majorPressNote } from "../lib/enrichment/unlistedDomains.ts";
+import { definitionLines } from "../lib/enrichment/reviewDefinitions.ts";
 import { REVIEW_FIELDS, wouldWrite, type Field, type Value } from "../lib/enrichment/reviewValues.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -150,6 +151,7 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
 
   // First, 3 random values of each field, numbered, for the owner to mark.
   console.log(`\n${"═".repeat(62)}\nTo mark (run ${runNo}) — answer "<number> נכון" / "<number> לא נכון" (a round: amount AND date):\n`);
+  console.log(`What "correct" means for the newer fields:\n${definitionLines(REVIEW_FIELDS).join("\n")}\n`);
   let n = 0;
   const sample: Array<Value & { id: string }> = [];
   // Owner, 2026-11-02: simple fields up to 8 values a run, complex fields up to 5 — and, in the first
@@ -167,7 +169,7 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
     console.log(`[${f}]`);
     for (const v of pick) {
       n++; sample.push({ ...v, id: `${runNo}.${n}` });
-      console.log(`  ${runNo}.${n}  ${v.company}: ${v.value.slice(0, 220)}\n        source: ${v.source_url || "—"}${v.quote ? `\n        quote: "${v.quote.slice(0, 180)}"` : ""}`);
+      console.log(`  ${runNo}.${n}  ${v.company}: ${v.value.slice(0, 220)}${v.field === "description" && v.on_file ? `\n        on file (${v.on_file.slice(0, 260)})` : ""}\n        source: ${v.source_url || "—"}${v.quote ? `\n        quote: "${v.quote.slice(0, v.field === "description" || v.field === "tags" ? 420 : 180)}"` : ""}`);
     }
   }
   writeFileSync(join(DIR, `run_${runNo}_sample.csv`), "﻿" + ["id,field,company,value,source_url", ...sample.map((v) => [v.id, v.field, v.company, v.value, v.source_url].map(cell).join(","))].join("\r\n") + "\r\n");

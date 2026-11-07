@@ -25,7 +25,7 @@ export function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V
   const out: Value[] = [];
   const add = (field: Field, value: string, on_file: unknown, source_url = "", quote = "") => {
     if (!value) return;
-    out.push({ company_id: row.id, company: row.name, field, value, on_file: on_file == null ? "" : String(on_file), source_url, quote: quote.replace(/\s+/g, " ").slice(0, field === "description" ? 700 : 240) });
+    out.push({ company_id: row.id, company: row.name, field, value, on_file: on_file == null ? "" : String(on_file), source_url, quote: quote.replace(/\s+/g, " ").slice(0, field === "description" || field === "tags" ? 700 : 240) });
   };
   const fill = (field: Field, v: { value: unknown; source_url: string | null; quote: string | null } | null | undefined, onFile: unknown) => {
     if (v?.value == null || v.value === "" || (onFile != null && onFile !== "")) return; // only an empty field is filled
@@ -52,9 +52,11 @@ export function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V
     const hit = bestQuote(sitePages, `${pf.sector_name} ${pf.sub_sector_name ?? ""} ${pf.industry ?? ""}`, 1);
     add("sector", label, row.sector_id, src(hit?.id), hit?.quote ?? "");
   }
-  for (const tag of [...new Set([...(pf.sub_sector_name ? [pf.sub_sector_name] : []), ...(pf.sub_sector_names ?? [])])]) {
-    const hit = bestQuote(sitePages, tag, 1);
-    add("tags", tag, "", src(hit?.id), hit?.quote ?? "");
+  // One value per company for the tags: a single wrong tag makes the whole list not correct (owner, 2026-11-08).
+  const tagList = [...new Set([...(pf.sub_sector_name ? [pf.sub_sector_name] : []), ...(pf.sub_sector_names ?? [])])];
+  if (tagList.length) {
+    const hits = tagList.map((tag) => ({ tag, hit: bestQuote(sitePages, tag, 1) }));
+    add("tags", tagList.join(", "), "", src(hits.find((h) => h.hit)?.hit?.id), hits.map((h) => `${h.tag}: ${h.hit?.quote ?? "no sentence found"}`).join(" | "));
   }
   const range = c.profile.metrics.employee_range;
   if (range && !row.employee_range) add("employee_range", range.value, row.employee_range, src(range.source_id), range.evidence_quote);

@@ -358,3 +358,21 @@ Deferred, not blocking: founder bios (the field stays closed until it reaches 90
 - [ ] `DRY_RUN` remains the default, and resumability works exactly as in v1.
 - [ ] The end-of-run summary shows dropped fields by reason code.
 - [ ] All DB changes are additive Supabase migrations.
+
+## Review fields added 2026-11-07/08 (owner)
+
+Tracker fields: `competitor_declared`, `competitor_market`, `founder_background`, `description`, `sector`, `tags`, `employee_history`
+(a field is written only when open there: ≥20 marks, ≥90% correct). Definitions of "correct" are printed at the top of every
+marking report (`lib/enrichment/reviewDefinitions.ts`).
+
+- **Description** (`descriptionBuilder.ts`): v2's own 2–4 English sentences (what / for whom / edge), each with its sources; a
+  number or name absent from them, or a marketing word, drops the sentence; no verified "what" + "for whom" → none. Written only
+  where no description is on file; v1 text is shown beside it in the review.
+- **Headcount history** (`headcountHistory.ts`, `headcountCollect.ts`, `headcountSources.ts`): point types `registry`,
+  `plan_participants`, `site_stated`, `press_reported`, `observed`, `model_estimate`, `legacy` (every point that existed before the
+  migration: shown, never current, never "Live data"). The current number comes only from a point of the last two years; "75+"
+  stays a floor; no interpolation; jumps ≥3×, figures that do not fit the money raised and same-month duplicates are dropped; two
+  contradicting points of different types in one month are both kept. Sources wired: Companies House accounts (certain match in
+  the headquarters country), Brreg, Wayback copies of About/Careers pages (robots.txt honoured). Form 5500 and CVR wait for the
+  coverage measurement (`scripts/headcount_coverage.ts`).
+- **Promotion** (`worker/promote.ts`): refuses a real write until `PHASE1_PASSED`; after it, only the tracker's open fields.
