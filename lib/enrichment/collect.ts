@@ -1331,19 +1331,21 @@ export async function collectCompany(
   // ── Stage 8b: patents — the EPO register only (epoPatents.ts) ───────────
   let patentsFromRegister = false;
   if (componentOn("epo_patents")) try {
+    const legalName = registerLegalName ?? legal.legalName ?? null;
+    const patentCountries = [validation.accepted.country ?? row.country, profile.profile.founding_country?.value ?? row.founding_country, registerCountry];
     const register = await (ctx.patentLookup ?? lookupEpoPatents)({
       name: row.name,
       // The full legal name, from the register entity that decided or the company's own legal pages: an
       // applicant in another legal form ("WAYVE LLC") is another company.
-      legalName: registerLegalName ?? legal.legalName ?? null,
-      countries: [validation.accepted.country ?? row.country, profile.profile.founding_country?.value ?? row.founding_country, registerCountry],
+      legalName,
+      countries: patentCountries,
     });
     if (register) {
       patentsFromRegister = true;
       market.patents = register.patents;
       market.patent_summary = { patent_count: register.familyCount, patent_fields: [] };
       for (const r of register.rejected) bump(stats.droppedByReason, r.reason);
-      console.log(`    📜  EPO register: ${register.patents.length} patent famil(ies) with ${row.name} as applicant${register.rejected.length ? `, ${register.rejected.length} publication(s) of other applicants set aside` : ""}.`);
+      console.log(`    📜  EPO register: ${register.patents.length} patent famil(ies) with ${row.name} as applicant${register.rejected.length ? `, ${register.rejected.length} publication(s) of other applicants set aside (${[...register.rejected.reduce((m, r) => m.set(r.reason, (m.get(r.reason) ?? 0) + 1), new Map<string, number>())].map(([k, n]) => `${k} ×${n}`).join(", ")})` : ""}${legalName ? `; legal name "${legalName}"` : "; no legal name known"}; countries ${JSON.stringify(patentCountries)}.`);
     }
   } catch (e) {
     console.warn(`    ⚠️  EPO register lookup failed (${e instanceof Error ? e.message : String(e)}) — patents left as they are.`);
