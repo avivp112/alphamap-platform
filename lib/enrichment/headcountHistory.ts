@@ -7,15 +7,16 @@
  *   press_reported     a team-size sentence in an article or release, at its date — reported
  *   observed           a current figure read from an allowed source in the last two years
  *   model_estimate     never shown, never written as data
+ *   legacy             a point from before the types: source unknown — chart only, never current, never "Live data"
  * Rules: the current number and range come only from a point of the last two years; older points are for the chart
  * only; "75+" / "over 100" stay a lower bound; no interpolation (this module never creates a point); a jump, a
  * figure that does not fit the money raised, and two contradicting points in one month are reported.
  */
 import { checkHeadcountOutlier } from "./validation.ts";
 
-export type PointType = "registry" | "plan_participants" | "site_stated" | "press_reported" | "observed" | "model_estimate";
+export type PointType = "registry" | "plan_participants" | "site_stated" | "press_reported" | "observed" | "model_estimate" | "legacy";
 export const OFFICIAL_TYPES: PointType[] = ["registry", "plan_participants"];
-export const POINT_TYPES: PointType[] = ["registry", "plan_participants", "site_stated", "press_reported", "observed", "model_estimate"];
+export const POINT_TYPES: PointType[] = ["registry", "plan_participants", "site_stated", "press_reported", "observed", "model_estimate", "legacy"];
 
 export interface HistoryPoint {
   /** ISO date of the figure (period end, copy date, article date). */
@@ -34,14 +35,14 @@ export interface HistoryPoint {
 
 const DAY = 86_400_000;
 export const CURRENT_WINDOW_DAYS = 730;
-const rank = (t: PointType) => (OFFICIAL_TYPES.includes(t) ? 0 : t === "observed" ? 1 : t === "site_stated" ? 2 : 3);
+const rank = (t: PointType) => (OFFICIAL_TYPES.includes(t) ? 0 : t === "observed" ? 1 : t === "site_stated" ? 2 : t === "legacy" ? 4 : 3);
 
 /** Whether a point may be shown or written as data. */
 export const isData = (p: HistoryPoint) => p.type !== "model_estimate" && p.value > 0 && Number.isFinite(Date.parse(p.date));
 
 /** The point the current number and range come from: the newest of the last two years, an official one first on a tie of month. */
 export function currentPoint(points: HistoryPoint[], today: Date = new Date()): HistoryPoint | null {
-  const recent = points.filter(isData).filter((p) => { const age = (today.getTime() - Date.parse(p.date)) / DAY; return age >= -31 && age <= CURRENT_WINDOW_DAYS; });
+  const recent = points.filter(isData).filter((p) => p.type !== "legacy").filter((p) => { const age = (today.getTime() - Date.parse(p.date)) / DAY; return age >= -31 && age <= CURRENT_WINDOW_DAYS; });
   recent.sort((a, b) => Date.parse(b.date) - Date.parse(a.date) || rank(a.type) - rank(b.type));
   return recent[0] ?? null;
 }

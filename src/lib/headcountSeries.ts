@@ -10,7 +10,7 @@ import type { HeadcountPoint, HeadcountPointType } from "./supabase";
 
 export const TYPE_LABEL: Record<HeadcountPointType, string> = {
   registry: "Company register", plan_participants: "Pension plan participants (Form 5500)",
-  site_stated: "Company site", press_reported: "Press", observed: "Observed", model_estimate: "Estimate",
+  site_stated: "Company site", press_reported: "Press", observed: "Observed", model_estimate: "Estimate", legacy: "Earlier record (source not kept)",
 };
 const OFFICIAL: HeadcountPointType[] = ["registry", "plan_participants"];
 
@@ -21,7 +21,7 @@ export interface ChartPoint {
 
 export function headcountSeries(points: HeadcountPoint[]): { official: ChartPoint[]; reported: ChartPoint[]; live: boolean } {
   const shaped: ChartPoint[] = points
-    .map((p) => ({ ...p, type: (p.point_type ?? "press_reported") as HeadcountPointType }))
+    .map((p) => ({ ...p, type: (p.point_type ?? "legacy") as HeadcountPointType }))
     .filter((p) => p.type !== "model_estimate" && p.employee_count > 0)
     .map((p) => ({
       t: Date.parse(p.recorded_date), value: p.employee_count, max: p.employee_count_max ?? null, lowerBound: !!p.is_lower_bound,

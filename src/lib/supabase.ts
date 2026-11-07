@@ -682,12 +682,12 @@ export interface AlphaScore {
   reason?: string;
 }
 
-export type HeadcountPointType = "registry" | "plan_participants" | "site_stated" | "press_reported" | "observed" | "model_estimate";
+export type HeadcountPointType = "registry" | "plan_participants" | "site_stated" | "press_reported" | "observed" | "model_estimate" | "legacy";
 
 export interface HeadcountPoint {
   recorded_date: string;
   employee_count: number;
-  /** Absent before migration 20261117000000: such a point is shown as "reported". */
+  /** Absent before migration 20261117000000: shown as legacy (reported, never live). */
   point_type?: HeadcountPointType;
   source_url?: string | null;
   evidence_quote?: string | null;

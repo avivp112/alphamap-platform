@@ -12,9 +12,10 @@ describe("the headcount chart's points", () => {
     expect(headcountSeries([pt("2024-01-01", 10, "press_reported"), pt("2025-01-01", 12, "site_stated")]).live).toBe(false);
     expect(headcountSeries([pt("2025-01-01", 12, "observed")]).live).toBe(true);
   });
-  it("a point from before the migration (no type) is shown as reported, not live", () => {
-    const s = headcountSeries([pt("2024-01-01", 10)]);
-    expect(s.reported).toHaveLength(1);
+  it("a point from before the migration (no type, or legacy) is shown as reported with its own label, never live", () => {
+    const s = headcountSeries([pt("2024-01-01", 10), pt("2024-06-01", 12, "legacy")]);
+    expect(s.reported).toHaveLength(2);
+    expect(s.reported.every((p) => p.type === "legacy")).toBe(true);
     expect(s.live).toBe(false);
   });
   it("floors and ranges keep their form", () => {

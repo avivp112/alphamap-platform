@@ -18,6 +18,10 @@ describe("the current number comes only from the last two years (owner, 2026-11-
   });
 });
 
+it("a legacy point is never the current number", () => {
+  expect(currentPoint([p("2026-06-01", 90, "legacy")], today)).toBeNull();
+});
+
 describe("screening a series", () => {
   it("never creates a point (no interpolation)", () => {
     const r = screenPoints([p("2022-01-01", 10), p("2024-01-01", 30)]);
