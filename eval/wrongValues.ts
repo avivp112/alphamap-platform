@@ -2,7 +2,7 @@
  * eval/wrongValues.ts — every value the evaluation counted wrong, with what v2 wrote, what the golden
  * set says, and where v2 got it (owner, 2026-11-05). Pure: the same rules as eval/score.ts.
  */
-import { newScoreboard, scoreCompany, roundBreakdown, normalize, type GoldenCompany, type PipelineOutput } from "./score.ts";
+import { newScoreboard, scoreCompany, roundBreakdown, wrongPatents, normalize, type GoldenCompany, type PipelineOutput } from "./score.ts";
 
 export interface WrongValue { company: string; field: string; v2: string; golden: string; source_url: string; quote: string }
 
@@ -36,6 +36,10 @@ export function wrongValues(g: GoldenCompany, out: PipelineOutput): WrongValue[]
       const t = out.rounds[i].round_type;
       if (t && normalize(t) !== normalize(gr.type)) rows.push({ company: g.name, field: "round_type", v2: roundText(out.rounds[i]), golden: roundText(gr), source_url: out.rounds[i].source_url ?? "", quote: "" });
     }
+  }
+  // Patents: a number the register gave that the owner did not mark as the company's (eval/review/patents_review.csv).
+  for (const n of wrongPatents(g, out.patents)) {
+    rows.push({ company: g.name, field: "patent", v2: n, golden: `not one of the ${g.patents?.numbers.length ?? 0} number(s) marked the company's${g.patents?.not_numbers?.includes(n) ? " — marked not the company's" : ""}`, source_url: `https://worldwide.espacenet.com/patent/search?q=pn%3D${encodeURIComponent(n)}`, quote: "(the register's own record — open Espacenet for its applicants)" });
   }
   return rows;
 }

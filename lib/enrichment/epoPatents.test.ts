@@ -99,3 +99,29 @@ describe("patents come only from the EPO register, as the company's own (run of 
   });
 });
 
+
+import { applicantMatch as match2, legalForm, type EpoPublication as Pub2 } from "./epoPatents";
+describe("a legal name known: the applicant is the company or its trading name in the same legal form (owner, 2026-11-07 — Wayve)", () => {
+  const pub = (number: string, ...applicants: Array<[string, string | null]>): Pub2 => ({ number, title: "t", publicationDate: null, filingDate: null, familyId: null, applicants: applicants.map(([name, country]) => ({ name, country })) });
+  const wayve = { name: "Wayve", legalName: "WAYVE TECHNOLOGIES LTD", countries: ["United Kingdom"] };
+  it("the full legal name is the company's", () => {
+    expect(match2(pub("US2023000001A1", ["WAYVE TECHNOLOGIES LTD", "GB"]), wayve)).toBeNull();
+  });
+  it("WAYVE LLC and WAYVE INC are other companies, tagged or not", () => {
+    expect(match2(pub("US2015348141A1", ["WAYVE LLC", null]), wayve)).toBe("epo_applicant_other_legal_entity");
+    expect(match2(pub("US2015149302A1", ["WAYVE INC", "US"]), wayve)).toBe("epo_applicant_other_legal_entity");
+  });
+  it("a publication that names the company with its own legal form among others is kept", () => {
+    expect(match2(pub("EP4000000A1", ["WAYVE LLC", null], ["WAYVE TECHNOLOGIES LTD", "GB"]), wayve)).toBeNull();
+  });
+  it("without a legal name the rule is the one before: the name and the country", () => {
+    expect(match2(pub("US2015348141A1", ["WAYVE LLC", null]), { name: "Wayve", countries: ["United Kingdom"] })).toBeNull();
+  });
+  it("reads the legal form of a name", () => {
+    expect(legalForm("WAYVE TECHNOLOGIES LTD")).toBe("ltd");
+    expect(legalForm("Wayve Limited")).toBe("ltd");
+    expect(legalForm("WAYVE, INC.")).toBe("inc");
+    expect(legalForm("Wayve LLC")).toBe("llc");
+    expect(legalForm("Wayve")).toBeNull();
+  });
+});

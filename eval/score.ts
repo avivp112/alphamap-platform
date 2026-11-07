@@ -362,6 +362,16 @@ function scoreCompetitors(s: FieldStats, g: GoldenCompany, extracted: string[] |
   return produced === 0 ? (extracted.length === 0 ? "missing" : "excluded") : correct === produced ? "correct" : "wrong";
 }
 
+/** The patent numbers the pipeline wrote that the golden set does not list as the company's (the wrong ones the score counts). */
+export function wrongPatents(g: GoldenCompany, extracted: string[] | undefined): string[] {
+  const golden = g.patents;
+  if (!golden || golden.confidence === "unknown" || extracted === undefined) return [];
+  const known = new Set(golden.numbers.map(patentDigits));
+  const notKnown = new Set((golden.not_numbers ?? []).map(patentDigits));
+  const judged = g.judged_only ? extracted.filter((n) => known.has(patentDigits(n)) || notKnown.has(patentDigits(n))) : extracted;
+  return golden.none ? judged : judged.filter((n) => !known.has(patentDigits(n)));
+}
+
 /** Patents: a number of a family the register gives the company is right; any other is wrong. */
 function scorePatents(s: FieldStats, g: GoldenCompany, extracted: string[] | undefined): FieldResult {
   const golden = g.patents;
@@ -446,7 +456,8 @@ export function foundedAfterFirstRound(out: PipelineOutput): boolean {
   return years.length > 0 && out.founded_year > Math.min(...years);
 }
 
-export interface Phase1Check { rule: string; pass: boolean; detail: string }
+/** `info`: shown, not counted toward passing Phase 1 (competitors, owner 2026-11-07: the write gate already holds the field closed until it opens). */
+export interface Phase1Check { rule: string; pass: boolean; detail: string; info?: boolean }
 
 /**
  * Pass bars for the fields the 2026-10-26 run got wrong (owner, 2026-10-26):
@@ -489,9 +500,9 @@ export function phase1Checks(board: Scoreboard, facts: { locationMismatches: num
     { rule: "precision ≥ 95% on location and founded year", pass: loc != null && loc >= 0.95, detail: loc == null ? "nothing judged" : `${(loc * 100).toFixed(1)}% (${judgedOf([board.city, board.country, board.founded_year])} judged)` },
     { rule: "precision ≥ 90% on round amounts", pass: rounds != null && rounds >= 0.9, detail: rounds == null ? "nothing judged" : `${(rounds * 100).toFixed(1)}% (${judgedOf([board.funding_rounds])} judged)` },
     bar(`precision ≥ ${PHASE1_BARS.round_type.threshold * 100}% on round type`, board.round_type, PHASE1_BARS.round_type.min, PHASE1_BARS.round_type.threshold),
-    competitors
-      ? trackerBar(`precision ≥ ${PHASE1_BARS.competitors.threshold * 100}% on competitors`, competitors, PHASE1_BARS.competitors.min, PHASE1_BARS.competitors.threshold)
-      : bar(`precision ≥ ${PHASE1_BARS.competitors.threshold * 100}% on competitors`, board.competitors, PHASE1_BARS.competitors.min, PHASE1_BARS.competitors.threshold),
+    { ...(competitors
+      ? trackerBar(`precision ≥ ${PHASE1_BARS.competitors.threshold * 100}% on competitors (information — not a Phase 1 condition)`, competitors, PHASE1_BARS.competitors.min, PHASE1_BARS.competitors.threshold)
+      : bar(`precision ≥ ${PHASE1_BARS.competitors.threshold * 100}% on competitors (information — not a Phase 1 condition)`, board.competitors, PHASE1_BARS.competitors.min, PHASE1_BARS.competitors.threshold)), info: true },
     bar(`precision ≥ ${PHASE1_BARS.patents.threshold * 100}% on patents`, board.patents, PHASE1_BARS.patents.min, PHASE1_BARS.patents.threshold),
   ];
 }
@@ -501,6 +512,9 @@ function trackerBar(rule: string, m: TrackerMeasure, min: number, threshold: num
   const p = m.correct / m.marked;
   return { rule, pass: p >= threshold, detail: `${(p * 100).toFixed(1)}% (${m.correct}/${m.marked} marks) — measured by ${m.source}` };
 }
+
+/** Phase 1 passes when every counted check passes; an informational check never blocks. */
+export const phase1Passes = (checks: Phase1Check[]) => checks.filter((c) => !c.info).every((c) => c.pass);
 
 /** An error no retry fixes — Anthropic out of credit, a key rejected: the eval stops rather than score every later company "missing". */
 export function isFatalProviderError(err: unknown): boolean {

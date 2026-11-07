@@ -343,3 +343,22 @@ describe("the competitors bar reads the field-review tracker (owner, 2026-11-06)
     expect(competitorsCheck().detail).toContain("judged");
   });
 });
+
+import { phase1Passes } from "./score";
+describe("competitors are information, not a Phase 1 condition (owner, 2026-11-07)", () => {
+  const facts = { locationMismatches: 0, duplicateRounds: 0, foundedAfterRound: 0 };
+  it("the competitors line is marked informational and never blocks", () => {
+    const board = newScoreboard();
+    for (const f of ["round_type", "patents"] as const) { board[f].produced = 30; board[f].correct = 30; }
+    board.city.produced = 10; board.city.correct = 10; board.funding_rounds.produced = 10; board.funding_rounds.correct = 10;
+    const checks = checks1(board, facts, { marked: 3, correct: 0, source: "the tracker" });
+    const comp = checks.find((c) => c.rule.includes("competitors"))!;
+    expect(comp.info).toBe(true);
+    expect(comp.pass).toBe(false);
+    expect(phase1Passes(checks)).toBe(true);
+  });
+  it("another failing check still blocks", () => {
+    const board = newScoreboard();
+    expect(phase1Passes(checks1(board, facts, { marked: 30, correct: 30, source: "t" }))).toBe(false);
+  });
+});

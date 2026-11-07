@@ -68,7 +68,7 @@ if (worseFields.length) {
 console.log("\nPhase 1 rules (A → B):");
 for (const rb of b.phase1) {
   const ra = a.phase1.find((r) => r.rule === rb.rule);
-  console.log(`  ${ra?.pass ? "✅" : "❌"} → ${rb.pass ? "✅" : "❌"}  ${rb.rule} — ${ra?.detail ?? "—"} → ${rb.detail}`);
+  console.log(`  ${rb.info ? "ℹ️ " : ra?.pass ? "✅" : "❌"} → ${rb.info ? "ℹ️ " : rb.pass ? "✅" : "❌"}  ${rb.rule} — ${ra?.detail ?? "—"} → ${rb.detail}`);
 }
 // A model change (owner, 2026-11-02): Claude's own cost per company, from the tokens each call
 // reported, and the 100K check; then whether any field with a Phase 1 threshold lost precision.

@@ -30,3 +30,16 @@ describe("wrong values listing", () => {
     expect(wrongValuesText([])).toBe("No value was counted wrong.");
   });
 });
+
+describe("wrong patents are listed too (owner, 2026-11-07)", () => {
+  const wayve: GoldenCompany = { id: "wayve", name: "Wayve", patents: { numbers: ["US2023000001A1"], not_numbers: ["US2015348141A1"], confidence: "verified" } as never };
+  it("lists a number the owner did not mark as the company's, with its Espacenet link", () => {
+    const rows = wrongValues(wayve, out({ patents: ["US2023000001A1", "US2015348141A1", "US2015149302A1"] }));
+    expect(rows.map((r) => [r.field, r.v2])).toEqual([["patent", "US2015348141A1"], ["patent", "US2015149302A1"]]);
+    expect(rows[0].golden).toContain("marked not the company's");
+    expect(rows[0].source_url).toContain("espacenet.com");
+  });
+  it("lists nothing when every number is the company's", () => {
+    expect(wrongValues(wayve, out({ patents: ["US2023000001A1"] }))).toEqual([]);
+  });
+});

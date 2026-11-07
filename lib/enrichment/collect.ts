@@ -1217,6 +1217,8 @@ export async function collectCompany(
     market.news = keptNews;
   }
 
+  let registerLegalName: string | null = null;
+  let registerCountry: string | null = null;
   // ── Registers: founded year and founding country, a certain match beats any article ──
   if (componentOn("registers") && !ctx.update) {
     const siteSources = allSources.filter((s) => s.source_type === "company_site");
@@ -1245,6 +1247,7 @@ export async function collectCompany(
       bump(stats.droppedByReason, `register_${d.why}`);
     }
     const reg = findings.find((f) => registerDecides(f, row.name, hqCountry).decides);
+    if (reg) { registerLegalName = reg.entity; registerCountry = reg.founding_country; }
     if (!reg && !findings.length) {
       const known = (profile.profile.founders ?? []).map((f) => f.name).filter(Boolean);
       console.log(`    🏛️   Registers: no certain match (name + number / office city${known.length ? ` / founders ${known.join(", ")}` : " — no founder known to match against"}).`);
@@ -1330,7 +1333,10 @@ export async function collectCompany(
   if (componentOn("epo_patents")) try {
     const register = await (ctx.patentLookup ?? lookupEpoPatents)({
       name: row.name,
-      countries: [validation.accepted.country ?? row.country, profile.profile.founding_country?.value ?? row.founding_country],
+      // The full legal name, from the register entity that decided or the company's own legal pages: an
+      // applicant in another legal form ("WAYVE LLC") is another company.
+      legalName: registerLegalName ?? legal.legalName ?? null,
+      countries: [validation.accepted.country ?? row.country, profile.profile.founding_country?.value ?? row.founding_country, registerCountry],
     });
     if (register) {
       patentsFromRegister = true;

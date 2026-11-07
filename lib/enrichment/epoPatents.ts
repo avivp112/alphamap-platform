@@ -55,7 +55,7 @@ export interface EpoPatentResult {
   rejected: Array<{ number: string; reason: EpoRejection }>;
 }
 
-export type EpoRejection = "epo_applicant_not_the_company" | "epo_applicant_other_country" | "epo_company_country_unknown";
+export type EpoRejection = "epo_applicant_not_the_company" | "epo_applicant_other_country" | "epo_company_country_unknown" | "epo_applicant_other_legal_entity";
 
 // ── OPS JSON (the same traps ingest-epo-ops documents) ───────────────────────
 
@@ -143,13 +143,39 @@ const sameCountry = (code: string, country: string) => {
   return n(code) === n(country) || (!!name && n(name) === n(country));
 };
 
-export interface CompanyIdentity { name: string; aliases?: string[]; countries?: Array<string | null | undefined> }
+export interface CompanyIdentity {
+  name: string; aliases?: string[]; countries?: Array<string | null | undefined>;
+  /** The company's full legal name, when a register or its own legal pages give it ("WAYVE TECHNOLOGIES LTD"). */
+  legalName?: string | null;
+}
+
+/** The kind of company a legal suffix names: LTD / LIMITED / PLC / LLP are one, INC / CORP another, LLC, GMBH … null without a suffix. */
+export function legalForm(name: string): string | null {
+  const m = name.toLowerCase().replace(/[.,]/g, " ").trim().match(/\b(ltd|limited|plc|llp|inc|incorporated|corp|corporation|co|llc|gmbh|ag|kg|ug|bv|nv|sas|sa|sarl|pty|ab|oy|as|aps|srl|spa|bhd|בעמ)\s*$/);
+  if (!m) return null;
+  const x = m[1];
+  if (["ltd", "limited", "plc", "llp", "בעמ"].includes(x)) return "ltd";
+  if (["inc", "incorporated", "corp", "corporation", "co"].includes(x)) return "inc";
+  if (["gmbh", "ag", "kg", "ug"].includes(x)) return "gmbh";
+  if (["bv", "nv"].includes(x)) return "bv";
+  if (["sas", "sa", "sarl"].includes(x)) return "sa";
+  return x;
+}
 
 /** null when an applicant on the record is this company; otherwise why the publication is someone else's. */
 export function applicantMatch(pub: EpoPublication, company: CompanyIdentity): EpoRejection | null {
   const keys = new Set([company.name, ...(company.aliases ?? [])].map(nameKey).filter((k) => k.length >= 3));
-  const named = pub.applicants.filter((a) => keys.has(nameKey(a.name)));
+  if (company.legalName) { const k = nameKey(company.legalName); if (k.length >= 3) keys.add(k); }
+  let named = pub.applicants.filter((a) => keys.has(nameKey(a.name)));
   if (named.length === 0) return "epo_applicant_not_the_company";
+  // A legal name is known (owner, 2026-11-07 — Wayve): the applicant is the company when it carries that full
+  // name, or the trading name in the same legal form. "WAYVE LLC" and "WAYVE INC" are other companies than
+  // "WAYVE TECHNOLOGIES LTD", whatever country tag they carry.
+  if (company.legalName) {
+    const legalKey = nameKey(company.legalName), form = legalForm(company.legalName);
+    named = named.filter((a) => nameKey(a.name) === legalKey || !form || !legalForm(a.name) || legalForm(a.name) === form);
+    if (named.length === 0) return "epo_applicant_other_legal_entity";
+  }
   const countries = (company.countries ?? []).filter((c): c is string => !!c);
   // A name alone never makes a patent the company's: its country must match too (owner, 2026-10-29).
   if (countries.length === 0) return "epo_company_country_unknown";

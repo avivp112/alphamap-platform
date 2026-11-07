@@ -77,7 +77,7 @@ import { buildProfile } from "../worker/profile.ts";
 import { wrongValues, wrongValuesText, wrongValuesCsv } from "./wrongValues.ts";
 import { callCostUsd, knownModel, UsageMeter, LONG_PROMPT_TOKENS } from "../lib/enrichment/models.ts";
 import {
-  FIELDS, PHASE1_REVIEW_FIELDS, phase1ReviewCounts, newScoreboard, pct, scoreCompany, duplicateRounds, foundedAfterFirstRound, phase1Checks, hintGain, matchRounds, roundsDayGap, isFatalProviderError, isEvent,
+  FIELDS, PHASE1_REVIEW_FIELDS, phase1ReviewCounts, newScoreboard, pct, scoreCompany, duplicateRounds, foundedAfterFirstRound, phase1Checks, phase1Passes, hintGain, matchRounds, roundsDayGap, isFatalProviderError, isEvent,
   type GoldenSet, type GoldenCompany, type PipelineOutput, type FieldResult, type Field,
 } from "./score.ts";
 
@@ -367,7 +367,8 @@ async function main() {
   const checks = phase1Checks(board, { locationMismatches, duplicateRounds: duplicates, foundedAfterRound: foundedAfterRound }, { marked: trackerCompetitors?.marked ?? 0, correct: trackerCompetitors?.correct ?? 0, source: competitorSource });
   console.log(`competitors: Phase 1 reads the tracker, not this run — the run judged ${board.competitors.produced} competitor name(s) against the golden set (for information).`);
   console.log("Phase 1 rules (docs/enrichment_v2_spec.md §7):");
-  for (const c of checks) console.log(`  ${c.pass ? "✅" : "❌"} ${c.rule} — ${c.detail}`);
+  for (const c of checks) console.log(`  ${c.info ? "ℹ️ " : c.pass ? "✅" : "❌"} ${c.rule} — ${c.detail}`);
+  console.log(`  Phase 1 accuracy conditions: ${phase1Passes(checks) ? "ALL PASS ✅ — the owner reads this report and sets PHASE1_PASSED by hand" : "not all pass ❌"}`);
   const wrongRows = companies.flatMap((c) => { const o = perCompany[c.id]?.output; return o ? wrongValues(c, o) : []; });
   console.log(`\nValues counted wrong: ${wrongRows.length}`);
   console.log(wrongValuesText(wrongRows));
