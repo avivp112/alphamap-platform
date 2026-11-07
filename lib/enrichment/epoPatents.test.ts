@@ -153,12 +153,41 @@ describe("the full legal name decides (owner, 2026-11-07 — Wayve Ltd's 2015 pa
     expect(match2(pub("US2023000001A1", ["WAYVE TECHNOLOGIES LTD", "GB"]), wayve)).toBeNull();
     expect(match2(pub("US2023000002A1", ["Wayve Technologies Limited", "GB"]), wayve)).toBeNull();
   });
-  it("Cyera Ltd.: the full legal name on the record is the company even when no country is known", () => {
-    const cyera = { name: "Cyera", legalName: "Cyera Ltd.", countries: [null, null, null] };
-    expect(match2(pub("US2026000001A1", ["CYERA LTD", "IL"]), cyera)).toBeNull();
+  it("no country known: the applicant's own call to applicantMatch has nothing to anchor on", () => {
+    expect(match2(pub("US2026000001A1", ["CYERA LTD", "IL"]), { name: "Cyera", legalName: "Cyera Ltd.", countries: [null, null, null] })).toBe("epo_company_country_unknown");
   });
   it("with no country known, a name that is not the full legal name still gets nothing", () => {
     expect(match2(pub("US2026000009A1", ["CYERA INC", "US"]), { name: "Cyera", legalName: "Cyera Ltd.", countries: [null] })).toBe("epo_applicant_other_legal_entity");
     expect(match2(pub("US2026000010A1", ["CYERA LTD", "IL"]), { name: "Cyera", countries: [] })).toBe("epo_company_country_unknown");
+  });
+});
+
+import { companyPatents as patentsOf, anchorCountries } from "./epoPatents";
+describe("a legal name with no known country is anchored by its source, or by unanimity (owner, 2026-11-07)", () => {
+  const pub = (number: string, familyId: string, ...applicants: Array<[string, string | null]>): Pub2 => ({ number, title: "t", publicationDate: "2025-01-01", filingDate: null, familyId, applicants: applicants.map(([name, country]) => ({ name, country })) });
+  it("the source's country anchors: an Israeli register's name accepts CYERA LTD [IL] and refuses CYERA LTD [US]", () => {
+    const company = { name: "Cyera", legalName: "Cyera Ltd.", legalNameCountry: "Israel", countries: [null] };
+    const r = patentsOf([pub("US1A1", "f1", ["CYERA LTD", "IL"]), pub("US2A1", "f2", ["CYERA LTD", "US"])], company);
+    expect(r.patents.map((p) => p.patent_number)).toEqual(["US1A1"]);
+    expect(r.rejected.map((x) => [x.number, x.reason])).toEqual([["US2A1", "epo_applicant_other_country"]]);
+  });
+  it("no source country: accepted when every applicant carrying the name is from one country", () => {
+    const company = { name: "Cyera", legalName: "Cyera Ltd.", countries: [null, null, null] };
+    expect(patentsOf([pub("US1A1", "f1", ["CYERA LTD", "IL"]), pub("US2A1", "f2", ["CYERA LTD", "IL"])], company).patents).toHaveLength(2);
+  });
+  it("NOVA LTD of GB and of IL: nothing says which is ours, so neither is accepted", () => {
+    const company = { name: "Nova", legalName: "NOVA LTD", countries: [] };
+    const pubs = [pub("US1A1", "f1", ["NOVA LTD", "GB"]), pub("US2A1", "f2", ["NOVA LTD", "IL"])];
+    expect(anchorCountries(pubs, company)).toEqual([]);
+    const r = patentsOf(pubs, company);
+    expect(r.patents).toHaveLength(0);
+    expect(r.rejected.every((x) => x.reason === "epo_company_country_unknown")).toBe(true);
+  });
+  it("an untagged applicant carrying the name leaves the country open: not accepted", () => {
+    const company = { name: "Nova", legalName: "NOVA LTD", countries: [] };
+    expect(patentsOf([pub("US1A1", "f1", ["NOVA LTD", "IL"]), pub("US2A1", "f2", ["NOVA LTD", null])], company).patents).toHaveLength(0);
+  });
+  it("with a country known nothing changes", () => {
+    expect(patentsOf([pub("US1A1", "f1", ["NOVA LTD", "IL"])], { name: "Nova", legalName: "NOVA LTD", countries: ["Israel"] }).patents).toHaveLength(1);
   });
 });

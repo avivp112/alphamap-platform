@@ -1332,12 +1332,15 @@ export async function collectCompany(
   let patentsFromRegister = false;
   if (componentOn("epo_patents")) try {
     const legalName = registerLegalName ?? legal.legalName ?? null;
+    // The anchor: the country of the register that gave the name, else the registered office on the legal pages.
+    const legalNameCountry = registerLegalName ? registerCountry : legal.registeredCity ? countryOfCity(legal.registeredCity) ?? null : null;
     const patentCountries = [validation.accepted.country ?? row.country, profile.profile.founding_country?.value ?? row.founding_country, registerCountry];
     const register = await (ctx.patentLookup ?? lookupEpoPatents)({
       name: row.name,
       // The full legal name, from the register entity that decided or the company's own legal pages: an
       // applicant in another legal form ("WAYVE LLC") is another company.
       legalName,
+      legalNameCountry,
       countries: patentCountries,
     });
     if (register) {

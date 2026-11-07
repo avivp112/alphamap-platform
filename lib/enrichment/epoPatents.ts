@@ -165,6 +165,8 @@ export interface CompanyIdentity {
   name: string; aliases?: string[]; countries?: Array<string | null | undefined>;
   /** The company's full legal name, when a register or its own legal pages give it ("WAYVE TECHNOLOGIES LTD"). */
   legalName?: string | null;
+  /** The country of the source that gave that name: the register's, or the registered office on its legal pages. The anchor for a name that other companies share. */
+  legalNameCountry?: string | null;
 }
 
 /** The kind of company a legal suffix names: LTD / LIMITED / PLC / LLP are one, INC / CORP another, LLC, GMBH … null without a suffix. */
@@ -189,7 +191,6 @@ export function applicantMatch(pub: EpoPublication, company: CompanyIdentity): E
   // A legal name is known (owner, 2026-11-07 — Wayve): the applicant is the company when it carries that full
   // name, or the trading name in the same legal form. "WAYVE LLC" and "WAYVE INC" are other companies than
   // "WAYVE TECHNOLOGIES LTD", whatever country tag they carry.
-  let fullLegalMatch = false;
   if (company.legalName) {
     const full = (n: string) => n.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
     const legalKey = nameKey(company.legalName), aliasKeys = new Set((company.aliases ?? []).map(nameKey));
@@ -210,13 +211,10 @@ export function applicantMatch(pub: EpoPublication, company: CompanyIdentity): E
       return !places || countries.some((c) => places.some((p) => sameCountryName(p, c)));
     });
     if (named.length === 0) return "epo_applicant_other_legal_entity";
-    fullLegalMatch = named.some((a) => full(a.name) === full(company.legalName!));
   }
   const countries = (company.countries ?? []).filter((c): c is string => !!c);
   // A name alone never makes a patent the company's: its country must match too (owner, 2026-10-29).
-  // The company's own full legal name (a register's or its legal pages') on the record needs no country besides:
-  // that is the entity itself, not a name that others share.
-  if (countries.length === 0 && !fullLegalMatch) return "epo_company_country_unknown";
+  if (countries.length === 0) return "epo_company_country_unknown";
   const tagged = named.filter((a) => a.country);
   if (countries.length && tagged.length && !tagged.some((a) => countries.some((c) => sameCountry(a.country!, c)))) return "epo_applicant_other_country";
   // No country on the applicant: the office it was filed at must fit — the
@@ -232,7 +230,24 @@ export function applicantMatch(pub: EpoPublication, company: CompanyIdentity): E
 export const espacenetUrl = (number: string) => `https://worldwide.espacenet.com/patent/search?q=pn%3D${encodeURIComponent(number)}`;
 
 /** The register's publications reduced to the company's own, one per family (its latest publication). */
-export function companyPatents(publications: EpoPublication[], company: CompanyIdentity): EpoPatentResult {
+/**
+ * With the company's full legal name known but no country (owner, 2026-11-07): the country of the source that
+ * gave the name is the anchor and an applicant must be from it. With no country there either, the name is
+ * accepted only when every applicant carrying it, over all the publications, is from one country — "NOVA LTD"
+ * of GB and of IL is two companies, and nothing here says which is ours.
+ */
+export function anchorCountries(publications: EpoPublication[], company: CompanyIdentity): string[] {
+  const known = (company.countries ?? []).filter((c): c is string => !!c);
+  if (known.length || !company.legalName) return known;
+  if (company.legalNameCountry) return [company.legalNameCountry];
+  const full = (n: string) => n.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  const carriers = publications.flatMap((p) => p.applicants).filter((a) => full(a.name) === full(company.legalName!));
+  const tags = new Set(carriers.map((a) => a.country ?? ""));
+  return carriers.length > 0 && tags.size === 1 && !tags.has("") ? [[...tags][0]] : [];
+}
+
+export function companyPatents(publications: EpoPublication[], rawCompany: CompanyIdentity): EpoPatentResult {
+  const company = { ...rawCompany, countries: anchorCountries(publications, rawCompany) };
   const rejected: EpoPatentResult["rejected"] = [];
   const byFamily = new Map<string, EpoPublication>();
   for (const p of publications) {
