@@ -142,3 +142,23 @@ describe("a group's own entities are not 'another company' (Cyera: an Israeli LT
     expect(match2(pub("US2015149302A1", ["WAYVE INC", "US"]), wayve)).toBe("epo_applicant_other_legal_entity");
   });
 });
+
+describe("the full legal name decides (owner, 2026-11-07 — Wayve Ltd's 2015 patents, Cyera with no country known)", () => {
+  const pub = (number: string, ...applicants: Array<[string, string | null]>): Pub2 => ({ number, title: "t", publicationDate: null, filingDate: null, familyId: null, applicants: applicants.map(([name, country]) => ({ name, country })) });
+  const wayve = { name: "Wayve", legalName: "WAYVE TECHNOLOGIES LTD", countries: ["United Kingdom"] };
+  it("WAYVE LTD [GB] — same form, same country, but not the full legal name — is another company", () => {
+    expect(match2(pub("US2015348141A1", ["WAYVE LTD", "GB"]), wayve)).toBe("epo_applicant_other_legal_entity");
+  });
+  it("WAYVE TECHNOLOGIES LTD is the company, in any spelling of the suffix", () => {
+    expect(match2(pub("US2023000001A1", ["WAYVE TECHNOLOGIES LTD", "GB"]), wayve)).toBeNull();
+    expect(match2(pub("US2023000002A1", ["Wayve Technologies Limited", "GB"]), wayve)).toBeNull();
+  });
+  it("Cyera Ltd.: the full legal name on the record is the company even when no country is known", () => {
+    const cyera = { name: "Cyera", legalName: "Cyera Ltd.", countries: [null, null, null] };
+    expect(match2(pub("US2026000001A1", ["CYERA LTD", "IL"]), cyera)).toBeNull();
+  });
+  it("with no country known, a name that is not the full legal name still gets nothing", () => {
+    expect(match2(pub("US2026000009A1", ["CYERA INC", "US"]), { name: "Cyera", legalName: "Cyera Ltd.", countries: [null] })).toBe("epo_applicant_other_legal_entity");
+    expect(match2(pub("US2026000010A1", ["CYERA LTD", "IL"]), { name: "Cyera", countries: [] })).toBe("epo_company_country_unknown");
+  });
+});

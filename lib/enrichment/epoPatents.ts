@@ -189,13 +189,20 @@ export function applicantMatch(pub: EpoPublication, company: CompanyIdentity): E
   // A legal name is known (owner, 2026-11-07 — Wayve): the applicant is the company when it carries that full
   // name, or the trading name in the same legal form. "WAYVE LLC" and "WAYVE INC" are other companies than
   // "WAYVE TECHNOLOGIES LTD", whatever country tag they carry.
+  let fullLegalMatch = false;
   if (company.legalName) {
     const full = (n: string) => n.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+    const legalKey = nameKey(company.legalName), aliasKeys = new Set((company.aliases ?? []).map(nameKey));
     const form = legalForm(company.legalName);
     const countries = (company.countries ?? []).filter((c): c is string => !!c);
     named = named.filter((a) => {
       // The full legal name, suffix included ("CYERA INC" is not "CYERA LTD" although both reduce to "cyera").
-      if (full(a.name) === full(company.legalName!) || !form) return true;
+      if (full(a.name) === full(company.legalName!)) return true;
+      // The trading name alone when the legal name says more ("WAYVE LTD" is not "WAYVE TECHNOLOGIES LTD"):
+      // another company, even in the same legal form and country (Wayve Ltd's 2015 advertising workflows).
+      const k = nameKey(a.name);
+      if (k !== legalKey && !aliasKeys.has(k)) return false;
+      if (!form) return true;
       const f = legalForm(a.name);
       if (!f || f === form) return true;
       const places = FORM_JURISDICTIONS[f];
@@ -203,16 +210,19 @@ export function applicantMatch(pub: EpoPublication, company: CompanyIdentity): E
       return !places || countries.some((c) => places.some((p) => sameCountryName(p, c)));
     });
     if (named.length === 0) return "epo_applicant_other_legal_entity";
+    fullLegalMatch = named.some((a) => full(a.name) === full(company.legalName!));
   }
   const countries = (company.countries ?? []).filter((c): c is string => !!c);
   // A name alone never makes a patent the company's: its country must match too (owner, 2026-10-29).
-  if (countries.length === 0) return "epo_company_country_unknown";
+  // The company's own full legal name (a register's or its legal pages') on the record needs no country besides:
+  // that is the entity itself, not a name that others share.
+  if (countries.length === 0 && !fullLegalMatch) return "epo_company_country_unknown";
   const tagged = named.filter((a) => a.country);
-  if (tagged.length && !tagged.some((a) => countries.some((c) => sameCountry(a.country!, c)))) return "epo_applicant_other_country";
+  if (countries.length && tagged.length && !tagged.some((a) => countries.some((c) => sameCountry(a.country!, c)))) return "epo_applicant_other_country";
   // No country on the applicant: the office it was filed at must fit — the
   // company's own country, or the US / European / international (PCT) route.
   // Zepto (India) got five Japanese publications of a Japanese "ZEPTO" (eval run, 2026-10-29).
-  if (!tagged.length) {
+  if (!tagged.length && countries.length) {
     const office = pub.number.slice(0, 2).toUpperCase();
     if (!["US", "EP", "WO"].includes(office) && !countries.some((c) => sameCountry(office, c))) return "epo_applicant_other_country";
   }
