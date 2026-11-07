@@ -25,7 +25,7 @@ export function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V
   const out: Value[] = [];
   const add = (field: Field, value: string, on_file: unknown, source_url = "", quote = "") => {
     if (!value) return;
-    out.push({ company_id: row.id, company: row.name, field, value, on_file: on_file == null ? "" : String(on_file), source_url, quote: quote.replace(/\s+/g, " ").slice(0, 240) });
+    out.push({ company_id: row.id, company: row.name, field, value, on_file: on_file == null ? "" : String(on_file), source_url, quote: quote.replace(/\s+/g, " ").slice(0, field === "description" ? 700 : 240) });
   };
   const fill = (field: Field, v: { value: unknown; source_url: string | null; quote: string | null } | null | undefined, onFile: unknown) => {
     if (v?.value == null || v.value === "" || (onFile != null && onFile !== "")) return; // only an empty field is filled
@@ -40,9 +40,12 @@ export function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V
   const allowedPages = (ids?: string[]) => (ids ?? []).map((id) => c.sourceById.get(id)).filter((x): x is NonNullable<typeof x> => !!x && profileSourceAllowed(x, row.name)).map((x) => ({ id: x.source_id, content: x.content ?? "" }));
   const sitePages = c.allSources.filter((x) => x.source_type === "company_site" || profileSourceAllowed(x, row.name)).map((x) => ({ id: x.source_id, content: x.content ?? "" }));
   const pf = c.profile.profile;
-  if (pf.description && !row.description) {
-    const hit = bestQuote(allowedPages(pf.description_source_ids), pf.description) ?? bestQuote(sitePages, pf.description);
-    add("description", pf.description, row.description, src(hit?.id ?? allowedId(pf.description_source_ids)), hit?.quote ?? "");
+  if (pf.description) {
+    // v2's text beside the one on file (v1), whether or not it would be written (only an empty field is).
+    const sentences = pf.description_sentences ?? [];
+    const first = sentences[0];
+    add("description", pf.description, row.description ? `v1: ${row.description}` : "", src(first?.source_ids?.[0] ?? allowedId(pf.description_source_ids)),
+      sentences.map((x, i) => `(${i + 1}) [${x.source_ids.join(",")}] ${x.quote}`).join(" | "));
   }
   if (pf.sector_name && !row.sector_id) {
     const label = [pf.sector_name, pf.sub_sector_name].filter(Boolean).join(" › ");

@@ -136,6 +136,8 @@ export interface V2Profile {
   website?: EvidencedValue<string>;
   description?: string;
   description_source_ids?: string[];
+  /** v2's own description, sentence by sentence with the sources behind each (descriptionBuilder.ts). */
+  description_sentences?: Array<{ role: string; text: string; source_ids: string[]; quote: string }>;
   value_proposition?: string;
   value_proposition_source_ids?: string[];
   industry?: string;

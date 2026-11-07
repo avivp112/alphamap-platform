@@ -58,6 +58,10 @@ export const V2_COMPONENTS = {
     on: true, since: "2026-11-07",
     what: "competitors by tier (competitorTiers.ts): declared — rival sentences of the pages read, \"X vs Y\" pages of the company's and the competitor's own site; market — the model's hints, each kept only when an allowed source puts both in one market. Searches come from the extra budget (EXTRA_SEARCHES, default 4)",
   },
+  description_v2: {
+    on: true, since: "2026-11-08",
+    what: "v2's own company description (descriptionBuilder.ts): 2–4 neutral English sentences (what / for whom / edge), each with its sources; a number or name not in them, or a marketing word, drops the sentence. One extra model call per company; written only where no description is on file",
+  },
   founder_background: {
     on: true, since: "2026-11-07",
     what: "structured facts per founder (previous company and role, exit, education, military unit), each with a quote from an allowed source (founderBackground.ts); one targeted search for the founders, from the extra budget",

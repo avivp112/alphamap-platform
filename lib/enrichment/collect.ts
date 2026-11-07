@@ -27,6 +27,7 @@ import { extractFunding, roundToRoundLike, type V2Round } from "./extractFunding
 import { extractMarket, normalizeUrlForMatch } from "./extractMarket.ts";
 import { normalizeForMatch } from "./evidence.ts";
 import { competitorTierClaims, type TieredClaim } from "./competitorTiers.ts";
+import { buildDescriptionRequest, descriptionSources, processDescription } from "./descriptionBuilder.ts";
 import { buildBackgroundRequest, processBackgroundResponse, backgroundSearchQuery } from "./founderBackground.ts";
 import { requestFor } from "./models.ts";
 import { lookupEpoPatents, type CompanyIdentity, type EpoPatentResult } from "./epoPatents.ts";
@@ -1367,6 +1368,35 @@ export async function collectCompany(
   // Written text says what the company does: no data platform, no weakly
   // attributed claim this run did not verify (owner's rule 2026-10-25) —
   // here, so a check, a deepen and every run apply it.
+  // v2's own description (descriptionBuilder.ts, owner 2026-11-08): replaces the extraction's free text; without a
+  // verified "what" and "for whom" there is none. Written later only for a company with no description on file.
+  if (componentOn("description_v2") && !ctx.update) {
+    const before = profile.profile.description;
+    profile.profile.description = undefined;
+    profile.profile.description_source_ids = undefined;
+    try {
+      // Not the extra searches' pages (founders, rivals): they did not pass the entity filter the first pass did.
+      const usable = descriptionSources(allSources, (x) => profileSourceAllowed(x, row.name) && !/^(founder_background|vs_own|vs_other|market_peers)/.test(x.query_label ?? ""));
+      if (usable.length) {
+        const msg = await ctx.anthropic.messages.create(requestFor(buildDescriptionRequest(row.name, usable), ctx.models.profile));
+        ctx.recordCost(ctx.models.profile, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 });
+        const tool = msg.content.find((b) => b.type === "tool_use");
+        const built = tool && tool.type === "tool_use" ? processDescription(tool.input, row.name, Object.fromEntries(usable.map((x) => [x.source_id, x])), (id) => allowedFact({ source_id: id })) : null;
+        for (const d of built?.dropped ?? []) { console.log(`    🚫  description sentence dropped (${d.why}): "${d.text.slice(0, 90)}"`); bump(stats.droppedByReason, `description_${d.why.split(":")[0]}`); }
+        if (built) {
+          profile.profile.description = built.description;
+          profile.profile.description_source_ids = [...new Set(built.sentences.flatMap((x) => x.source_ids))];
+          profile.profile.description_sentences = built.sentences;
+          console.log(`    📝  Description (v2): ${built.sentences.length} sentence(s) — ${built.description.slice(0, 120)}…`);
+        } else {
+          console.log(`    📝  Description (v2): no verified "what" and "for whom" — none written${before ? " (the extraction's free text is not used)" : ""}.`);
+          bump(stats.droppedByReason, "description_not_verified");
+        }
+      }
+    } catch (e) {
+      console.log(`    ⚠️  description skipped: ${(e as Error).message}`);
+    }
+  }
   const verifiedFacts = collectVerifiedFacts(profile, funding);
   const narratives = checkNarratives({
     description: profile.profile.description, value_proposition: profile.profile.value_proposition,
