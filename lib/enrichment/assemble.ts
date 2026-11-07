@@ -132,6 +132,13 @@ export function debtNextToAmount(text: string, amount: number): boolean {
   return false;
 }
 
+/** Another figure of `text` than `amount` that has a debt word right beside it ("a $25 million loan from SVB"). */
+function otherFigureIsDebt(text: string, amount: number): boolean {
+  return extractNumbersFromText(text).some((n) => Math.abs(n - amount) / amount > 0.005 && debtNextToAmount(text, n));
+}
+
+const otherFigureExists = (text: string, amount: number) => extractNumbersFromText(text).some((n) => Math.abs(n - amount) / amount > 0.005 && n >= 100_000);
+
 const EQUITY_LABELS = new Set(["Pre-Seed", "Seed", "Series A", "Series B", "Series C", "Series D", "Series E", "Series F+", "Growth", "Bridge", "Unknown", "Other"]);
 
 /**
@@ -144,7 +151,22 @@ export function groundRoundType(round: V2Round, sources: LabeledSource[]): { rou
   const type = normalizeRoundType(round.round_type);
   const byId = new Map(sources.map((s) => [s.source_id, s]));
   const quotes = [round.amount_raised, round.valuation, round.announcement_date, round.lead_investor].map((e) => e?.evidence_quote ?? "").join("\n");
-  if (EQUITY_LABELS.has(type) && TYPE_STATED["Debt"]!.test(quotes) && !(TYPE_STATED[type]?.test(quotes))) {
+  // An announcement that splits one total into a loan and equity ("$115 million: a $25 million loan from SVB
+  // and $90 million in equity led by Nimble" — Reliable Robotics, owner 2026-11-06): the loan is the figure the
+  // text calls a loan, the rest is equity. A loan word in the quotes makes THIS figure debt only when it sits
+  // beside THIS figure — never because another figure in the same sentence is the loan.
+  const amount = round.amount_raised?.value ?? null;
+  const evidence = `${quotes}\n${roundTypeEvidence(round, byId)}`;
+  const loanIsAnotherFigure = amount != null && !debtNextToAmount(evidence, amount) && otherFigureIsDebt(evidence, amount);
+  if ((type === "Debt" || type === "Venture Debt") && loanIsAnotherFigure) {
+    const named = statedRoundLabels(amountSentenceAndHeadline(round, byId));
+    return { round_type: named.length === 1 ? named[0] : "Other", stated: true };
+  }
+  // The figure the text itself calls a loan is debt, whatever equity round the same text also names.
+  if (EQUITY_LABELS.has(type) && amount != null && debtNextToAmount(evidence, amount) && otherFigureExists(evidence, amount)) {
+    return { round_type: /\bventure debt\b/i.test(evidence) ? "Venture Debt" : "Debt", stated: true };
+  }
+  if (EQUITY_LABELS.has(type) && TYPE_STATED["Debt"]!.test(quotes) && !(TYPE_STATED[type]?.test(quotes)) && !loanIsAnotherFigure) {
     return { round_type: TYPE_STATED["Venture Debt"]!.test(quotes) ? "Venture Debt" : "Debt", stated: true };
   }
   // An untyped figure that its own source calls debt is debt (owner, 2026-11-01:

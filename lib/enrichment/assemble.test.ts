@@ -282,3 +282,23 @@ describe("'an E round' names Series E (Coralogix's release, eval of 2026-11-01)"
     expect(statedRoundLabels("Hailo raised a round of $120 million")).toEqual([]);
   });
 });
+
+import { groundRoundType as ground2 } from "./assemble";
+import { buildLabeledSources as sources2 } from "./sources";
+describe("an announcement that splits a total into a loan and equity (owner, 2026-11-06 — Reliable Robotics)", () => {
+  const sentence = "Reliable Robotics extended its Series D round with $115 million, including a $25 million loan from SVB and $90 million in equity led by Nimble Partners.";
+  const src = sources2([{ url: "https://techcrunch.com/2026/10/20/reliable-robotics", title: "Reliable Robotics lands $115M", content: sentence, provider: "serper", query_label: "funding" }]);
+  const round = (type: string, amount: number, quote: string) => ({ round_type: type, amount_raised: { value: amount, source_id: "S1", evidence_quote: quote } }) as never;
+  it("the $90M equity amount is not debt, whichever type the model gave it", () => {
+    for (const t of ["Other", "Unknown", "Series D", "Debt"]) expect(ground2(round(t, 90_000_000, sentence), src).round_type).not.toMatch(/debt/i);
+    expect(ground2(round("Debt", 90_000_000, sentence), src).round_type).toBe("Series D");
+  });
+  it("the $25M loan is debt, even when the model called it an equity round", () => {
+    expect(ground2(round("Series D", 25_000_000, sentence), src).round_type).toBe("Debt");
+    expect(ground2(round("Other", 25_000_000, sentence), src).round_type).toBe("Debt");
+  });
+  it("a plain credit facility is still debt", () => {
+    const s = sources2([{ url: "https://x.test/a", title: "Celonis", content: "Celonis secured a $600 million credit facility.", provider: "serper", query_label: "funding" }]);
+    expect(ground2(round("Other", 600_000_000, "Celonis secured a $600 million credit facility."), s).round_type).toBe("Debt");
+  });
+});
