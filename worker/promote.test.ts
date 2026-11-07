@@ -85,7 +85,7 @@ const job = (): PromotionJob => ({
 });
 
 const deps = (db: never, existing: { id: string; name: string } | null = null) => ({
-  db, taxonomy: async () => ({}) as never, findExisting: vi.fn(async () => existing), notify: vi.fn(async () => {}), log: () => {},
+  db, phase1Passed: true, taxonomy: async () => ({}) as never, findExisting: vi.fn(async () => existing), notify: vi.fn(async () => {}), log: () => {},
 });
 
 describe("promoteOne", () => {
@@ -151,5 +151,21 @@ describe("promoteOne — an approved update to an AlphaMap company", () => {
     expect(await promoteOne({ ...deps(db), loadCompany: vi.fn(async () => null) } as never)).toBe(true);
     expect(writeCollected).not.toHaveBeenCalled();
     expect(rpcs.at(-1)?.args).toMatchObject({ p_status: "failed" });
+  });
+});
+
+describe("the write gate (owner, 2026-11-07)", () => {
+  beforeEach(() => writeCollected.mockClear());
+  it("while Phase 1 has not passed, a real write is refused with an error, before anything is claimed", async () => {
+    const { db, rpcs } = fakeDb(job());
+    await expect(promoteOne({ ...deps(db), phase1Passed: false })).rejects.toThrow(/writing is off until enrichment v2 passes Phase 1/);
+    expect(rpcs).toEqual([]);
+    expect(writeCollected).not.toHaveBeenCalled();
+  });
+  it("by default the gate is the real constant, which is closed", async () => {
+    const { db } = fakeDb(job());
+    const { phase1Passed: _p, ...open } = deps(db);
+    await expect(promoteOne(open)).rejects.toThrow(/Phase 1/);
+    expect((await import("../lib/enrichment/writeGate")).PHASE1_PASSED).toBe(false);
   });
 });

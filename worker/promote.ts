@@ -20,6 +20,7 @@ import type { LabeledSource } from "../lib/enrichment/sources.ts";
 import type { SourceType } from "../lib/enrichment/sourceTypes.ts";
 import type { SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { writeCollected, newWriteSummary, BULK_THRESHOLDS } from "../lib/enrichment/writeCompany.ts";
+import { enrichmentWriteRefusal, PHASE1_PASSED } from "../lib/enrichment/writeGate.ts";
 import { websiteDomain, type DomainOwner } from "../lib/enrichment/websiteValidation.ts";
 
 // Not stored: lookups rebuilt from allSources, and page text Stage 10 never reads.
@@ -88,11 +89,17 @@ export interface PromoteDeps {
   findExisting: (website: string) => Promise<{ id: string; name: string } | null>;
   notify: (userId: string, title: string, body: string, link: string) => Promise<void>;
   log?: (msg: string) => void;
+  /** Tests only: the gate's state (default: lib/enrichment/writeGate.ts PHASE1_PASSED). */
+  phase1Passed?: boolean;
 }
 
 /** One approved company, written. Returns false when none is waiting. */
 export async function promoteOne(d: PromoteDeps): Promise<boolean> {
   const log = d.log ?? ((m: string) => console.log(`[worker] ${m}`));
+  // A real write is refused until enrichment v2 passes Phase 1 (owner, 2026-11-07; writeGate.ts). Checked before the
+  // claim, so an approved company stays waiting in the queue and is written once the owner sets PHASE1_PASSED.
+  const refusal = enrichmentWriteRefusal("worker/promote", true, d.phase1Passed ?? PHASE1_PASSED);
+  if (refusal) throw new Error(refusal);
   const { data, error } = await d.db.rpc("claim_check_promotion");
   if (error) throw new Error(`claim_check_promotion: ${error.message}`);
   const job = data as PromotionJob | null;

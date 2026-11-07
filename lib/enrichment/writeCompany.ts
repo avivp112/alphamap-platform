@@ -34,7 +34,7 @@ import {
 } from "./write.ts";
 import { validateWebsiteCandidate, websiteDomain, type DomainOwner } from "./websiteValidation.ts";
 import { sourceTypeRank, type SourceType } from "./sourceTypes.ts";
-import { restrictPatch, writesRounds, writesBios, writesHeadcount, writesCompetitorTier, writesFounderBackground, fieldOfColumn, withoutBio } from "./writeUnits.ts";
+import { restrictPatch, writesRounds, writesBios, writesHeadcount, writesCompetitorTier, writesFounderBackground, writesTags, fieldOfColumn, withoutBio } from "./writeUnits.ts";
 
 // Upper bounds on the additive list sections, so repeated runs can't grow
 // them without limit. Entries already on file are never removed.
@@ -591,7 +591,7 @@ export async function writeCollected(
     if (!writesHeadcount(OPEN)) headcountPoints.length = 0;
     if (!patch.news) newsAdded = 0;
     if (!patch.competitors) competitorsAdded = 0;
-    tagSectorIds.length = 0;
+    if (!writesTags(OPEN)) tagSectorIds.length = 0;
     const notOpen = [...new Set(cut.heldBack.map((c) => fieldOfColumn(c)).filter((f): f is string => !!f))];
     const untracked = cut.heldBack.filter((c) => !fieldOfColumn(c));
     if (notOpen.length || roundsHeldBack || untracked.length) {

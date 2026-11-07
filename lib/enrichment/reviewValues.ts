@@ -6,9 +6,10 @@
 import type { collectCompany, V2StartupRow } from "./collect.ts";
 import { buildProfile } from "../../worker/profile.ts";
 import { profileSourceAllowed } from "./roundSources.ts";
+import { bestQuote } from "./quoteFinder.ts";
 
 /** The fields, in the order of the report and of the tracker. */
-export const REVIEW_FIELDS = ["hq_city", "hq_country", "founded_year", "founding_country", "office", "employee_range", "employee_count", "founder", "founder_bio", "leader", "round", "competitor_declared", "competitor_market", "patent", "news", "founder_background"] as const;
+export const REVIEW_FIELDS = ["hq_city", "hq_country", "founded_year", "founding_country", "description", "sector", "tags", "office", "employee_range", "employee_count", "founder", "founder_bio", "leader", "round", "competitor_declared", "competitor_market", "patent", "news", "founder_background"] as const;
 export type Field = (typeof REVIEW_FIELDS)[number];
 export interface Value { company_id: string; company: string; field: Field; value: string; on_file: string; source_url: string; quote: string }
 
@@ -34,6 +35,24 @@ export function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V
   fill("hq_country", p.overview.country, row.country);
   fill("founded_year", p.overview.founded_year, row.founded_year);
   fill("founding_country", p.overview.founding_country, row.founding_country);
+  // Description, sector and tags (owner, 2026-11-07): the source is an allowed page; the quote is that page's own
+  // sentence nearest the value (quoteFinder.ts) — extractive, for the marker.
+  const allowedPages = (ids?: string[]) => (ids ?? []).map((id) => c.sourceById.get(id)).filter((x): x is NonNullable<typeof x> => !!x && profileSourceAllowed(x, row.name)).map((x) => ({ id: x.source_id, content: x.content ?? "" }));
+  const sitePages = c.allSources.filter((x) => x.source_type === "company_site" || profileSourceAllowed(x, row.name)).map((x) => ({ id: x.source_id, content: x.content ?? "" }));
+  const pf = c.profile.profile;
+  if (pf.description && !row.description) {
+    const hit = bestQuote(allowedPages(pf.description_source_ids), pf.description) ?? bestQuote(sitePages, pf.description);
+    add("description", pf.description, row.description, src(hit?.id ?? allowedId(pf.description_source_ids)), hit?.quote ?? "");
+  }
+  if (pf.sector_name && !row.sector_id) {
+    const label = [pf.sector_name, pf.sub_sector_name].filter(Boolean).join(" › ");
+    const hit = bestQuote(sitePages, `${pf.sector_name} ${pf.sub_sector_name ?? ""} ${pf.industry ?? ""}`, 1);
+    add("sector", label, row.sector_id, src(hit?.id), hit?.quote ?? "");
+  }
+  for (const tag of [...new Set([...(pf.sub_sector_name ? [pf.sub_sector_name] : []), ...(pf.sub_sector_names ?? [])])]) {
+    const hit = bestQuote(sitePages, tag, 1);
+    add("tags", tag, "", src(hit?.id), hit?.quote ?? "");
+  }
   const range = c.profile.metrics.employee_range;
   if (range && !row.employee_range) add("employee_range", range.value, row.employee_range, src(range.source_id), range.evidence_quote);
   const count = c.profile.metrics.employee_count;
