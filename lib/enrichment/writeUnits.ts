@@ -13,6 +13,8 @@ export const FIELD_COLUMNS: Record<string, string[]> = {
   // Added to the review before phase 1 (owner, 2026-11-07): the text, the sector and the sub-sector tags.
   description: ["description", "value_proposition"], sector: ["sector_id", "industry"], tags: [],
   employee_range: ["employee_range"], employee_count: ["employee_count"],
+  // The dated points (headcount_history table), not a column of startups.
+  employee_history: [],
   founder: ["founders"], leader: ["leadership"],
   // Two tiers of one column (owner, 2026-11-07): declared = a source says they compete; market = one market, per an allowed source.
   competitor_declared: ["competitors"], competitor_market: ["competitors"],
@@ -37,6 +39,7 @@ export const writesCompetitorTier = (open: readonly string[], tier: "declared" |
   tier === "market" ? open.includes("competitor_market") : open.includes("competitor_declared") || open.includes("competitor");
 export const writesFounderBackground = (open: readonly string[]) => open.includes("founder_background");
 export const writesTags = (open: readonly string[]) => open.includes("tags");
+export const writesEmployeeHistory = (open: readonly string[]) => open.includes("employee_history");
 export const writesHeadcount = (open: readonly string[]) => open.includes("employee_count");
 
 /**

@@ -19,6 +19,7 @@ import { fetchArticleOgImage } from "./ogImage.ts";
 import { cleanPeople, isFounderEntry, cleanFounderTitle } from "./people.ts";
 import { samePersonName } from "./linkedin.ts";
 import { checkHeadcountOutlier } from "./validation.ts";
+import { screenPoints, type HistoryPoint } from "./headcountHistory.ts";
 import { countryFromLocationQuote } from "./location.ts";
 import { retireReplacedExecutives } from "./update.ts";
 import { MAJOR_CITIES } from "./majorCities.ts";
@@ -34,7 +35,7 @@ import {
 } from "./write.ts";
 import { validateWebsiteCandidate, websiteDomain, type DomainOwner } from "./websiteValidation.ts";
 import { sourceTypeRank, type SourceType } from "./sourceTypes.ts";
-import { restrictPatch, writesRounds, writesBios, writesHeadcount, writesCompetitorTier, writesFounderBackground, writesTags, fieldOfColumn, withoutBio } from "./writeUnits.ts";
+import { restrictPatch, writesRounds, writesBios, writesHeadcount, writesCompetitorTier, writesFounderBackground, writesTags, writesEmployeeHistory, fieldOfColumn, withoutBio } from "./writeUnits.ts";
 
 // Upper bounds on the additive list sections, so repeated runs can't grow
 // them without limit. Entries already on file are never removed.
@@ -112,7 +113,7 @@ export interface WriteOutcome {
   patch: Record<string, unknown>;
   roundInserts: CollectedCompany["plan"]["inserts"];
   roundUpdates: CollectedCompany["plan"]["updates"];
-  headcountPoints: Array<{ date: string; count: number; pointType?: string }>;
+  headcountPoints: Array<{ date: string; count: number; pointType?: string; sourceUrl?: string; quote?: string; measure?: string; lowerBound?: boolean; countMax?: number }>;
   tags: string[];
   newsAdded: number;
   competitorsAdded: number;
@@ -512,10 +513,14 @@ export async function writeCollected(
 
   // Talent & growth: headcount (issue 6's guard + validation's outlier check)
   const totalRaisedEstimate = computeTotalRaised([...existingRefs, ...fullPlan.inserts]);
-  const headcountPoints: Array<{ date: string; count: number; pointType?: string }> = [];
+  const headcountPoints: Array<{ date: string; count: number; pointType?: string; sourceUrl?: string; quote?: string; measure?: string; lowerBound?: boolean; countMax?: number }> = [];
   for (const h of profile.metrics.headcount_history ?? []) {
     const date = normalizeIsoDate(h.date);
-    if (date && h.employee_count > 0 && !headcountPoints.some((p) => p.date === date)) headcountPoints.push({ date, count: h.employee_count, pointType: h.point_type ?? "press_reported" });
+    if (date && h.employee_count > 0 && !headcountPoints.some((p) => p.date === date)) headcountPoints.push({ date, count: h.employee_count, pointType: h.point_type ?? "press_reported", sourceUrl: sourceById.get(h.source_id)?.url, quote: h.evidence_quote });
+  }
+  // Points from the registers, plans and archived pages (headcountHistory.ts), screened like the rest.
+  for (const x of collected.headcountExtra ?? []) {
+    if (!headcountPoints.some((p) => p.date === x.date && p.pointType === x.type)) headcountPoints.push({ date: x.date, count: x.value, countMax: x.valueMax, pointType: x.type, sourceUrl: x.sourceUrl, quote: x.quote, measure: x.measure, lowerBound: x.lowerBound });
   }
   const acceptedHeadcount = validation.accepted.employee_count;
   if (acceptedHeadcount != null && profile.metrics.employee_count) {
@@ -556,6 +561,17 @@ export async function writeCollected(
       headcountPoints.splice(i, 1);
     }
   }
+  // Jumps and repeats within the series (headcountHistory.ts): what is dropped here is named; two points that
+  // contradict each other in one month stay, both, with their types.
+  {
+    const asPoint = (hp: (typeof headcountPoints)[number]): HistoryPoint => ({ date: hp.date, value: hp.count, valueMax: hp.countMax, lowerBound: hp.lowerBound, type: (hp.pointType ?? "observed") as HistoryPoint["type"], sourceUrl: hp.sourceUrl ?? "", quote: hp.quote, measure: hp.measure });
+    const screened = screenPoints(headcountPoints.map(asPoint), { totalRaisedUsd: totalRaisedEstimate, foundedYear: foundedForChecks });
+    for (const d of screened.dropped) {
+      const i = headcountPoints.findIndex((hp) => hp.date === d.point.date && hp.count === d.point.value && (hp.pointType ?? "observed") === d.point.type);
+      if (i >= 0) { console.log(`    ⚠️  Headcount point ${d.point.value}@${d.point.date} (${d.point.type}) dropped — ${d.why}.`); bump(summary.droppedByReason, `headcount_point_${d.why}`); headcountPoints.splice(i, 1); }
+    }
+    for (const c of screened.conflicts) console.log(`    ℹ️  Headcount points disagree in one month: ${c.a.value} (${c.a.type}) and ${c.b.value} (${c.b.type}) @ ${c.a.date.slice(0, 7)} — both kept.`);
+  }
   // The same check on points already on file — an earlier run wrote
   // Gladia's 70,000 point; it shouldn't stay on the growth chart forever.
   const finalHeadcount = (patch.employee_count as number | undefined) ?? row.employee_count;
@@ -588,7 +604,7 @@ export async function writeCollected(
     for (let i = fieldWrites.length - 1; i >= 0; i--) {
       if (!(fieldWrites[i].field.replace(/^(profile|metrics)\./, "") in patch)) fieldWrites.splice(i, 1);
     }
-    if (!writesHeadcount(OPEN)) headcountPoints.length = 0;
+    if (!writesEmployeeHistory(OPEN)) headcountPoints.length = 0;
     if (!patch.news) newsAdded = 0;
     if (!patch.competitors) competitorsAdded = 0;
     if (!writesTags(OPEN)) tagSectorIds.length = 0;
@@ -721,9 +737,12 @@ export async function writeCollected(
     // so a backfilled point carries its own date there too, not "now".
     for (const p of headcountPoints) {
       const base = { startup_id: row.id, employee_count: p.count, snapshot_date: p.date, recorded_date: `${p.date}T00:00:00Z` };
-      let { error: hcErr } = await supabase.from("headcount_history").upsert({ ...base, point_type: p.pointType ?? "observed" }, { onConflict: "startup_id,snapshot_date" });
-      // Before migration 20261117000000 the column is missing: the point is still written.
-      if (hcErr && /point_type/.test(hcErr.message)) ({ error: hcErr } = await supabase.from("headcount_history").upsert(base, { onConflict: "startup_id,snapshot_date" }));
+      let { error: hcErr } = await supabase.from("headcount_history").upsert({
+        ...base, point_type: p.pointType ?? "observed", source_url: p.sourceUrl ?? null, evidence_quote: p.quote ?? null,
+        measure: p.measure ?? null, is_lower_bound: !!p.lowerBound, employee_count_max: p.countMax ?? null,
+      }, { onConflict: "startup_id,snapshot_date,point_type" });
+      // Before migration 20261117000000 the columns are missing: the point is still written (the older day key).
+      if (hcErr && /point_type|source_url|evidence_quote|measure|is_lower_bound|employee_count_max|constraint/.test(hcErr.message)) ({ error: hcErr } = await supabase.from("headcount_history").upsert(base, { onConflict: "startup_id,snapshot_date" }));
       if (hcErr) console.warn(`    ⚠️  headcount_history upsert failed (${p.date}): ${hcErr.message}`);
     }
 

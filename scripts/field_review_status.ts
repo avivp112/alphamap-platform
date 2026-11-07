@@ -8,7 +8,7 @@
  */
 import { readMarks, readReplay, countedMarks, fieldStatus, MIN_MARKED, MIN_CORRECT, TRACKER } from "../lib/enrichment/fieldReview.ts";
 
-const ORDER = ["hq_city", "hq_country", "founded_year", "founding_country", "description", "sector", "tags", "office", "employee_range", "employee_count", "founder", "founder_bio", "leader", "round", "competitor_declared", "competitor_market", "patent", "news", "founder_background"];
+const ORDER = ["hq_city", "hq_country", "founded_year", "founding_country", "description", "sector", "tags", "office", "employee_range", "employee_count", "employee_history", "founder", "founder_bio", "leader", "round", "competitor_declared", "competitor_market", "patent", "news", "founder_background"];
 const all = readMarks();
 const replay = readReplay();
 const counted = countedMarks(all, replay);

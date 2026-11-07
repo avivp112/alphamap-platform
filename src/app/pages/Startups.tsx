@@ -10,8 +10,9 @@ import { useSearchParams, useNavigate, Link } from "react-router";
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip,
-  ResponsiveContainer, Cell,
+  ResponsiveContainer, Cell, ScatterChart, Scatter, Legend as ReLegend,
 } from "recharts";
+import { headcountSeries, pointValueText, type ChartPoint } from "../../lib/headcountSeries";
 import { Layout } from "../components/Layout";
 import { LinkedInBadge } from "../components/LinkedInBadge";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "../components/ui/hover-card";
@@ -927,24 +928,6 @@ function MatchBadge({ result }: { result: MatchScoreResult | undefined }) {
 // `headcount_history` snapshots exist for a company, the Talent & Growth tab
 // renders an explicit "Data requires filling" state rather than guessing.
 
-// Maps real HeadcountPoint rows → chart-friendly shape, choosing label precision
-// based on the overall time span so x-axis labels never look crowded.
-function realHistoryToChartPoints(
-  points: HeadcountPoint[],
-): Array<{ year: string; headcount: number }> {
-  if (points.length === 0) return [];
-  const first = new Date(points[0].recorded_date);
-  const last  = new Date(points[points.length - 1].recorded_date);
-  const spanYears = (last.getTime() - first.getTime()) / (1000 * 60 * 60 * 24 * 365);
-  return points.map((p) => {
-    const d = new Date(p.recorded_date);
-    const label = spanYears >= 2
-      ? String(d.getFullYear())
-      : d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
-    return { year: label, headcount: p.employee_count };
-  });
-}
-
 // Maps real ScoreHistoryPoint rows → chart-friendly shape, plus a per-point
 // delta vs. the previous snapshot so the chart can flag exactly where the
 // score moved up or down rather than just showing a plain trend line.
@@ -1619,7 +1602,7 @@ function TalentGrowthTab({
     fetchHeadcountHistory(startup.id).then(setRealPts).catch(() => setRealPts([]));
   }, [startup.id]);
 
-  const chartData = realPts && realPts.length >= 2 ? realHistoryToChartPoints(realPts) : null;
+  const series = realPts ? headcountSeries(realPts) : null;
   const growthPillar = alphaScore?.pillars?.growth_velocity ?? null;
 
   return (
@@ -1659,34 +1642,44 @@ function TalentGrowthTab({
           <Users className="w-4 h-4 text-gray-400" />
           <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t("startups.headcountHistory")}</h3>
         </div>
-        {chartData ? (
+        {series && (series.official.length + series.reported.length) >= 2 ? (
           <div className="bg-gray-50 border border-gray-100 rounded-[8px] p-4">
-            <div className="flex justify-end mb-2">
-              <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full border text-emerald-700 bg-emerald-50 border-emerald-200">
-                Live data
-              </span>
-            </div>
-            <div className="h-32">
+            {series.live && (
+              <div className="flex justify-end mb-2">
+                <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full border text-emerald-700 bg-emerald-50 border-emerald-200">
+                  Live data
+                </span>
+              </div>
+            )}
+            <div className="h-40">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="hcGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#0e7490" stopOpacity={0.25} />
-                      <stop offset="100%" stopColor="#0e7490" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
-                  <XAxis dataKey="year" tick={{ fill: "#9CA3AF", fontSize: 9 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: "#9CA3AF", fontSize: 9 }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtEmp(v)} />
+                <ScatterChart margin={{ top: 4, right: 8, left: -12, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                  <XAxis type="number" dataKey="t" domain={["dataMin", "dataMax"]} scale="time" tick={{ fill: "#9CA3AF", fontSize: 9 }} axisLine={false} tickLine={false}
+                    tickFormatter={(v) => String(new Date(v).getFullYear())} />
+                  <YAxis type="number" dataKey="value" tick={{ fill: "#9CA3AF", fontSize: 9 }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtEmp(v)} />
                   <ReTooltip
-                    contentStyle={{ background: "#0b1626", border: "1px solid #1a2a3f", borderRadius: 8, fontSize: 11 }}
-                    labelStyle={{ color: "#94a3b8" }}
-                    itemStyle={{ color: "#22d3ee" }}
+                    cursor={{ strokeDasharray: "3 3" }}
+                    content={({ active, payload }) => {
+                      const p = active ? (payload?.[0]?.payload as ChartPoint | undefined) : undefined;
+                      if (!p) return null;
+                      return (
+                        <div className="bg-[#0b1626] border border-[#1a2a3f] rounded-lg px-3 py-2 text-[11px] text-slate-200 max-w-[260px]">
+                          <div className="font-semibold text-cyan-300">{pointValueText(p)} employees · {p.date}</div>
+                          <div>{p.label}{p.measure ? ` · ${p.measure.replace(/_/g, " ")}` : ""}</div>
+                          {p.quote && <div className="text-slate-400 mt-1 italic">“{p.quote.slice(0, 140)}”</div>}
+                          {p.source && <div className="text-slate-400 mt-1 break-all">Source: {p.source}</div>}
+                        </div>
+                      );
+                    }}
                   />
-                  <Area type="monotone" dataKey="headcount" stroke="#0e7490" strokeWidth={1.5} fill="url(#hcGrad)" dot={false} />
-                </AreaChart>
+                  <ReLegend wrapperStyle={{ fontSize: 10 }} />
+                  <Scatter name="Official records" data={series.official} fill="#0e7490" />
+                  <Scatter name="Reported" data={series.reported} fill="#f59e0b" shape="diamond" />
+                </ScatterChart>
               </ResponsiveContainer>
             </div>
+            <p className="text-[10px] text-gray-400 mt-1">Each point is a figure a source states, at its date. Nothing is estimated between points.</p>
           </div>
         ) : (
           <MissingDataState message="No historical headcount snapshots have been recorded for this company yet — at least 2 data points are needed to plot a trend." />

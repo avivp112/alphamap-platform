@@ -64,7 +64,7 @@ export function decideScalarWrite<T>(existing: ExistingFieldState<T>, candidate:
 
 // ── Headcount update guard (issue 6) ──────────────────────────────────────
 
-export type HeadcountPointType = "observed" | "press_reported" | "model_estimate";
+export type HeadcountPointType = "registry" | "plan_participants" | "site_stated" | "press_reported" | "observed" | "model_estimate";
 
 export interface HeadcountUpdateDecision {
   /** Whether to update startups.employee_count itself. */

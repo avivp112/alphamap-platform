@@ -9,7 +9,7 @@ import { profileSourceAllowed } from "./roundSources.ts";
 import { bestQuote } from "./quoteFinder.ts";
 
 /** The fields, in the order of the report and of the tracker. */
-export const REVIEW_FIELDS = ["hq_city", "hq_country", "founded_year", "founding_country", "description", "sector", "tags", "office", "employee_range", "employee_count", "founder", "founder_bio", "leader", "round", "competitor_declared", "competitor_market", "patent", "news", "founder_background"] as const;
+export const REVIEW_FIELDS = ["hq_city", "hq_country", "founded_year", "founding_country", "description", "sector", "tags", "office", "employee_range", "employee_count", "employee_history", "founder", "founder_bio", "leader", "round", "competitor_declared", "competitor_market", "patent", "news", "founder_background"] as const;
 export type Field = (typeof REVIEW_FIELDS)[number];
 export interface Value { company_id: string; company: string; field: Field; value: string; on_file: string; source_url: string; quote: string }
 
@@ -58,6 +58,10 @@ export function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V
   const count = c.profile.metrics.employee_count;
   if (count && row.employee_count == null) add("employee_count", String(count.value), row.employee_count, src(count.source_id), count.evidence_quote);
   for (const o of p.overview.offices ?? []) add("office", [o.city, o.country].filter(Boolean).join(", "), "", o.source_url ?? "");
+  // Headcount points (owner, 2026-11-07): each with its date, type, source and quote.
+  const histLine = (value: number, date: string, type: string, lower?: boolean, max?: number) => `${value}${max ? `–${max}` : lower ? "+" : ""} employees @ ${date.slice(0, 10)} (${type})`;
+  for (const h of c.profile.metrics.headcount_history ?? []) add("employee_history", histLine(h.employee_count, h.date, h.point_type ?? "press_reported"), "", src(h.source_id), h.evidence_quote);
+  for (const h of c.headcountExtra ?? []) add("employee_history", histLine(h.value, h.date, h.type, h.lowerBound, h.valueMax), "", h.sourceUrl, h.quote ?? h.measure ?? "");
   const onFileFounders = new Set(((row.founders ?? []) as Array<{ name?: string }>).map((f) => (f.name ?? "").toLowerCase()));
   for (const f of c.profile.profile.founders ?? []) {
     if (!onFileFounders.has(f.name.toLowerCase())) add("founder", `${f.name}${f.title ? ` — ${f.title}` : ""}`, "", f.grounded_url ?? "");

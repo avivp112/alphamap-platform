@@ -206,6 +206,8 @@ export type LinkedInPersonPatch = { name: string; title?: string; role?: string;
 
 export interface CollectedCompany {
   outcome: "collected";
+  /** Headcount points from registers, plans and archived pages (headcountHistory.ts); each with its source and type. */
+  headcountExtra?: import("./headcountHistory.ts").HistoryPoint[];
   profile: ProfileResult;
   funding: FundingResult;
   market: MarketResult;

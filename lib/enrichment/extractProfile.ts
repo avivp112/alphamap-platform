@@ -163,7 +163,7 @@ export interface V2HeadcountPoint {
   source_id: string;
   evidence_quote: string;
   /** "press_reported": an article's dated figure, never the current headcount (owner, 2026-11-04). */
-  point_type?: "observed" | "press_reported" | "model_estimate";
+  point_type?: "registry" | "plan_participants" | "site_stated" | "press_reported" | "observed" | "model_estimate";
 }
 
 export interface V2Metrics {

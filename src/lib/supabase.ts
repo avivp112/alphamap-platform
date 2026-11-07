@@ -682,18 +682,32 @@ export interface AlphaScore {
   reason?: string;
 }
 
+export type HeadcountPointType = "registry" | "plan_participants" | "site_stated" | "press_reported" | "observed" | "model_estimate";
+
 export interface HeadcountPoint {
   recorded_date: string;
   employee_count: number;
+  /** Absent before migration 20261117000000: such a point is shown as "reported". */
+  point_type?: HeadcountPointType;
+  source_url?: string | null;
+  evidence_quote?: string | null;
+  measure?: string | null;
+  is_lower_bound?: boolean;
+  employee_count_max?: number | null;
 }
 
 export async function fetchHeadcountHistory(startupId: string): Promise<HeadcountPoint[]> {
   const { data, error } = await supabase
     .from("headcount_history")
-    .select("recorded_date, employee_count")
+    .select("recorded_date, employee_count, point_type, source_url, evidence_quote, measure, is_lower_bound, employee_count_max")
     .eq("startup_id", startupId)
     .order("recorded_date", { ascending: true });
-  if (error) throw error;
+  if (error) {
+    // Before the migration the new columns do not exist: the dated counts still show.
+    const older = await supabase.from("headcount_history").select("recorded_date, employee_count").eq("startup_id", startupId).order("recorded_date", { ascending: true });
+    if (older.error) throw older.error;
+    return (older.data ?? []) as HeadcountPoint[];
+  }
   return (data ?? []) as HeadcountPoint[];
 }
 

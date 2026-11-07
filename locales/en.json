@@ -334,7 +334,7 @@
     "serialFounderBonus": "Serial founder bonus:",
     "headcountHistory": "Headcount History",
     "hiring": {
-      "title": "Hiring",
+      "title": "Hiring activity",
       "noBoard": "No verified job board for this company yet. Hiring data is shown only from a board proven to be the company's own — linked from its website or matching its domain.",
       "openRoles": "Open roles",
       "new30d": "New roles · 30 days",
