@@ -46,9 +46,11 @@ export function readMarks(path = process.env.FIELD_REVIEW_TRACKER ?? TRACKER): M
 export interface FieldStatus { field: string; marked: number; correct: number; share: number | null; open: boolean }
 
 export function fieldStatus(marks: Mark[]): FieldStatus[] {
-  const fields = [...new Set(marks.map((m) => m.field))];
+  // "competitor", the tracker's field before the tiers (2026-11-07), is the declared tier.
+  const fieldOf = (m: Mark) => (m.field === "competitor" ? "competitor_declared" : m.field);
+  const fields = [...new Set(marks.map(fieldOf))];
   return fields.map((field) => {
-    const mine = marks.filter((m) => m.field === field);
+    const mine = marks.filter((m) => fieldOf(m) === field);
     const correct = mine.filter((m) => m.verdict === "correct").length;
     const share = mine.length ? correct / mine.length : null;
     return { field, marked: mine.length, correct, share, open: mine.length >= MIN_MARKED && share != null && share >= MIN_CORRECT };
@@ -88,7 +90,7 @@ const numbers = (s: string) => (s.match(/\d[\d.,]*/g) ?? []).map((n) => n.replac
 export function sameReviewValue(field: string, a: string, b: string): boolean {
   switch (field) {
     case "founded_year": case "employee_count": return numbers(a)[0] === numbers(b)[0];
-    case "hq_city": case "hq_country": case "office": case "founding_country": case "competitor": case "employee_range":
+    case "hq_city": case "hq_country": case "office": case "founding_country": case "competitor": case "competitor_declared": case "competitor_market": case "employee_range":
       return norm(a).split(",")[0].trim() === norm(b).split(",")[0].trim() || norm(a) === norm(b);
     case "founder": case "leader": case "founder_bio": return head(a) === head(b);
     case "patent": return (a.match(/^[A-Z]{2}\S+/)?.[0] ?? norm(a)) === (b.match(/^[A-Z]{2}\S+/)?.[0] ?? norm(b));

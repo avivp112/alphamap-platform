@@ -8,7 +8,7 @@ import { buildProfile } from "../../worker/profile.ts";
 import { profileSourceAllowed } from "./roundSources.ts";
 
 /** The fields, in the order of the report and of the tracker. */
-export const REVIEW_FIELDS = ["hq_city", "hq_country", "founded_year", "founding_country", "office", "employee_range", "employee_count", "founder", "founder_bio", "leader", "round", "competitor", "patent", "news"] as const;
+export const REVIEW_FIELDS = ["hq_city", "hq_country", "founded_year", "founding_country", "office", "employee_range", "employee_count", "founder", "founder_bio", "leader", "round", "competitor_declared", "competitor_market", "patent", "news", "founder_background"] as const;
 export type Field = (typeof REVIEW_FIELDS)[number];
 export interface Value { company_id: string; company: string; field: Field; value: string; on_file: string; source_url: string; quote: string }
 
@@ -55,7 +55,7 @@ export function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V
     add("round", `${r.round_type} ${usd(r.amount_raised)}${original} · ${r.announcement_date ?? "no date"}${r.announcement_date_precision && r.announcement_date_precision !== "day" ? ` (${r.announcement_date_precision})` : ""}${r.lead_investor ? ` · lead ${r.lead_investor}` : ""}`, "", r.source_url ?? "");
   }
   const onFileCompetitors = new Set(((row.competitors ?? []) as Array<{ name?: string; unverified?: boolean }>).filter((x) => !x.unverified).map((x) => (x.name ?? "").toLowerCase()));
-  for (const x of c.market.competitors) if (!onFileCompetitors.has(x.name.toLowerCase())) add("competitor", x.name, "", src(x.source_id), x.evidence_quote ?? x.how_it_competes);
+  for (const x of c.market.competitors) if (!onFileCompetitors.has(x.name.toLowerCase())) add(x.tier === "market" ? "competitor_market" : "competitor_declared", x.name, "", src(x.source_id), x.evidence_quote ?? x.how_it_competes);
   const onFilePatents = new Set(((row.patents ?? []) as Array<{ patent_number?: string }>).map((x) => x.patent_number));
   for (const pt of c.market.patents) if (!onFilePatents.has(pt.patent_number)) add("patent", `${pt.patent_number ?? ""} ${pt.title}`.trim(), "", pt.url ?? "");
   const onFileNews = new Set(((row.news ?? []) as Array<{ url?: string }>).map((x) => x.url));

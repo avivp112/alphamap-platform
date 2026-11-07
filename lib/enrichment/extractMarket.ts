@@ -38,6 +38,8 @@ export interface EvidencedValue<T> {
 
 export interface V2Competitor {
   name: string; website?: string; how_it_competes: string; source_ids?: string[];
+  /** declared: a source says they compete; market: an allowed source puts both in one market (competitorTiers.ts). Absent: declared. */
+  tier?: "declared" | "market";
   /** The ONE primary source that says they compete, and its verbatim sentence (competitorEvidence.ts). */
   source_id?: string; evidence_quote?: string;
 }
@@ -53,6 +55,8 @@ export interface V2Technology {
 
 export interface V2MarketExtraction {
   competitors: V2Competitor[];
+  /** Up to 5 names the model proposes as companies of the same market — hints only, verified by a targeted search (competitorTiers.ts). */
+  market_peers?: string[];
   acquisitions: V2Acquisition[];
   news: V2NewsItem[];
   patent_summary: { patent_count: number | null; patent_fields: string[] };
@@ -118,6 +122,11 @@ function marketExtractionTool() {
             },
             required: ["name", "how_it_competes", "source_ids", "source_id", "evidence_quote"],
           },
+        },
+        market_peers: {
+          type: "array",
+          items: { type: "string" },
+          description: "HINTS, not facts: up to 5 names of companies you know sell the same kind of product to the same customers as this company. Each is searched for afterwards and kept only if an allowed source puts both in the same market. [] when unsure — never a customer, partner, investor or parent.",
         },
         acquisitions: {
           type: "array",
@@ -356,9 +365,11 @@ export function processMarketExtractionResponse(
     return claim;
   };
 
+  const marketPeers = [...new Set(ensureArray<string>((i as { market_peers?: unknown }).market_peers).filter((n): n is string => typeof n === "string" && n.trim().length > 1 && normalizeForMatch(n) !== selfKey).map((n) => n.trim()))].slice(0, 5);
   return {
     result: {
       competitors,
+      market_peers: marketPeers,
       acquisitions,
       news,
       patent_summary: patentSummary,

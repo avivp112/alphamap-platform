@@ -34,7 +34,7 @@ import {
 } from "./write.ts";
 import { validateWebsiteCandidate, websiteDomain, type DomainOwner } from "./websiteValidation.ts";
 import { sourceTypeRank, type SourceType } from "./sourceTypes.ts";
-import { restrictPatch, writesRounds, writesBios, writesHeadcount, fieldOfColumn, withoutBio } from "./writeUnits.ts";
+import { restrictPatch, writesRounds, writesBios, writesHeadcount, writesCompetitorTier, fieldOfColumn, withoutBio } from "./writeUnits.ts";
 
 // Upper bounds on the additive list sections, so repeated runs can't grow
 // them without limit. Entries already on file are never removed.
@@ -378,13 +378,15 @@ export async function writeCollected(
   // An explanation on file that names a data platform or says where it was read
   // (narrative.ts) is replaced by this run's own for the same competitor; with
   // none, it stays as stored (the site hides the offending part).
-  const freshExplanation = new Map(market.competitors.map((c) => [normalizeForMatch(c.name), c.how_it_competes]));
+  // Each tier is written only when its own field is open in the tracker (owner, 2026-11-07).
+  const marketCompetitors = OPEN ? market.competitors.filter((c) => writesCompetitorTier(OPEN, c.tier)) : market.competitors;
+  const freshExplanation = new Map(marketCompetitors.map((c) => [normalizeForMatch(c.name), c.how_it_competes]));
   let staleExplanations = 0;
   // A competitor an earlier run wrote without a verified source is marked
   // unverified (scripts/clean_legacy_market_data.ts) and stays, labelled on
   // the site; when this run verifies the same competitor, its sourced entry
   // replaces the old one.
-  const verifiedNow = new Set(market.competitors.map((c) => normalizeForMatch(c.name)));
+  const verifiedNow = new Set(marketCompetitors.map((c) => normalizeForMatch(c.name)));
   const replacedUnverified = (reconciled.competitors as NonNullable<V2StartupRow["competitors"]>).filter((c) => c?.unverified && verifiedNow.has(normalizeForMatch(c.name ?? ""))).length;
   if (replacedUnverified) console.log(`    ✅  ${replacedUnverified} unverified competitor(s) now verified by a primary source.`);
   const existingCompetitors = (reconciled.competitors as NonNullable<V2StartupRow["competitors"]>).filter((c) => !(c?.unverified && verifiedNow.has(normalizeForMatch(c.name ?? "")))).map((c) => {
@@ -401,12 +403,12 @@ export async function writeCollected(
   else refresh.add("competitors");
   const competitors = appendNew(
     existingCompetitors,
-    market.competitors.map((c) => ({ name: c.name, website: c.website ?? null, how_it_competes: c.how_it_competes, startup_id: crossLink(c.website), source_url: sourceUrlFor(c.source_id) })),
+    marketCompetitors.map((c) => ({ name: c.name, website: c.website ?? null, how_it_competes: c.how_it_competes, startup_id: crossLink(c.website), source_url: sourceUrlFor(c.source_id), ...(c.tier === "market" ? { tier: "market" as const } : {}) })),
     (c) => normalizeForMatch(c.name ?? ""), MAX_COMPETITORS,
   );
   let competitorsAdded = competitors.length - existingCompetitors.length;
   // Each new competitor's provenance: the primary source that says they compete (competitorEvidence.ts).
-  for (const c of market.competitors) {
+  for (const c of marketCompetitors) {
     if (c.source_id && c.evidence_quote && competitors.some((x) => normalizeForMatch(x.name ?? "") === normalizeForMatch(c.name)) && !existingCompetitors.some((x) => normalizeForMatch(x?.name ?? "") === normalizeForMatch(c.name))) {
       provenance("market.competitors", c.name, { source_id: c.source_id, evidence_quote: c.evidence_quote });
     }
@@ -612,7 +614,7 @@ export async function writeCollected(
       } else if (k === "leadership") {
         for (const l of newOf<{ name: string; role?: string | null; bio?: string | null }>(patch.leadership, rowOf.leadership, (a, b) => samePersonName(a.name ?? "", b.name))) one("leader", `${l.name} — ${l.role ?? ""}${l.bio ? ` · ${l.bio}` : ""}`, null);
       } else if (k === "competitors") {
-        for (const c of newOf<{ name: string; source_url?: string | null }>(patch.competitors, rowOf.competitors, (a, b) => normalizeForMatch(a.name ?? "") === normalizeForMatch(b.name))) one("competitor", c.name, c.source_url ?? null);
+        for (const c of newOf<{ name: string; source_url?: string | null; tier?: string }>(patch.competitors, rowOf.competitors, (a, b) => normalizeForMatch(a.name ?? "") === normalizeForMatch(b.name))) one(c.tier === "market" ? "competitor_market" : "competitor_declared", c.name, c.source_url ?? null);
       } else if (k === "patents") {
         for (const pt of newOf<{ patent_number?: string | null; title: string; url?: string | null }>(patch.patents, rowOf.patents, (a, b) => a.patent_number === b.patent_number)) one("patent", `${pt.patent_number ?? ""} ${pt.title}`.trim(), pt.url ?? null);
       } else if (k === "offices") {

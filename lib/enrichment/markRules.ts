@@ -55,7 +55,7 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
         // A leader's source here is only the first allowed page that names them: no judgment on its tier.
         if (standing.kind === "allowed" && mark.field !== "leader") return out("source above tier 3 for a profile field");
       }
-    } else if (mark.field === "news" || mark.field === "competitor" || mark.field === "round") {
+    } else if (mark.field === "news" || mark.field === "competitor" || mark.field === "competitor_declared" || mark.field === "competitor_market" || mark.field === "round") {
       const standing = roundSourceStanding(url, { companyName: company, isCompanySite: ownSite });
       if (standing.kind === "denied" && standing.why !== "republished_without_allowed_original") return out(`source not allowed (${standing.why})`);
       // An unlisted site may be an investor's or a party's own release, which the stored value alone
@@ -89,7 +89,7 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
       const about = rest.split(/(?<=[.!?])\s+/).some((s) => parts.some((w) => s.toLowerCase().includes(w)) || /\b(he|she|his|her|they|their)\b/i.test(s));
       return about ? keep : out("not about the person");
     }
-    case "competitor": {
+    case "competitor": case "competitor_declared": case "competitor_market": {
       // The quote must say, of the company, that it competes with this one (competitorEvidence.ts, owner 2026-11-06):
       // not a row of "X vs Y" links, not a rival of a third party ("Rippling competes with HiBob, Namely, BambooHR").
       const q = ctx.quote?.trim();

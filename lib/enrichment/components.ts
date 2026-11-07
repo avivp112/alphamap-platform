@@ -54,6 +54,14 @@ export const V2_COMPONENTS = {
     on: true, since: "2026-11-02",
     what: "its Terms / Privacy / Legal / Imprint pages: legal name (anchors the registers), company number, registered office (an office, not the HQ)",
   },
+  competitor_tiers: {
+    on: true, since: "2026-11-07",
+    what: "competitors by tier (competitorTiers.ts): declared — rival sentences of the pages read, \"X vs Y\" pages of the company's and the competitor's own site; market — the model's hints, each kept only when an allowed source puts both in one market. Searches come from the extra budget (EXTRA_SEARCHES, default 4)",
+  },
+  founder_background: {
+    on: true, since: "2026-11-07",
+    what: "structured facts per founder (previous company and role, exit, education, military unit), each with a quote from an allowed source (founderBackground.ts); one targeted search for the founders, from the extra budget",
+  },
   profile_hints: {
     on: false, since: "2026-11-02", // off by the owner, 2026-11-02: 0 of 7 confirmed on the 10-company check
     what: "an HQ / founding year / founding country only a data platform states is not written, but searched for once in an allowed source that confirms it",

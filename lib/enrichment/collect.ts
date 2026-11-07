@@ -25,6 +25,9 @@ import { buildLabeledSources, markCompanyLinkedFiles, mergeDuplicateResults, cla
 import { extractProfile, type SectorTaxonomy } from "./extractProfile.ts";
 import { extractFunding, roundToRoundLike, type V2Round } from "./extractFunding.ts";
 import { extractMarket, normalizeUrlForMatch } from "./extractMarket.ts";
+import { normalizeForMatch } from "./evidence.ts";
+import { rivalSentenceClaims, vsPageClaims, marketPeerClaims, acceptedDeclared, type TieredClaim } from "./competitorTiers.ts";
+import { isDataPlatformUrl } from "./dataPlatforms.ts";
 import { lookupEpoPatents, type CompanyIdentity, type EpoPatentResult } from "./epoPatents.ts";
 import { hintFromRound, hintQueries, confirmHint, hintKey, recoverMissingAmount, type RoundHint } from "./hints.ts";
 import { detectGaps, buildDeepDiveQueries, hasNoFinancingRounds, type DeepDiveSection } from "./deepDive.ts";
@@ -889,6 +892,13 @@ export async function collectCompany(
   // The HQ the decision took (a Contact-page address, an About paragraph): validation does not ask
   // its quote for an HQ word again (Anonymised's "7 Bell Yard, London" — model check 2026-11-02).
   let hqDecided = false;
+  // Extra searches (EXTRA_SEARCHES, default 4, owner 2026-11-07): competitors by tier and the founders' background share them.
+  let extraSearchesLeft = Math.max(0, Number(process.env.EXTRA_SEARCHES ?? 4) || 0);
+  const extraSearch = async (query: string, label: string): Promise<RawSearchResult[]> => {
+    if (extraSearchesLeft <= 0 || ctx.update) return [];
+    extraSearchesLeft--;
+    return webSearch(query, label, searchState);
+  };
   const newSource = (url: string, content: string, title: string, label: string): LabeledSource => {
     const src: LabeledSource = { url, title, content, provider: "serper", query_label: label, source_id: `X${allSources.length + 1}`, source_type: classifySourceType(url, domain) };
     allSources.push(src);
@@ -1184,6 +1194,40 @@ export async function collectCompany(
       drop(`competitor ${c.name}`, "competitor_source_not_listed", c.source_id ? sourceById.get(c.source_id)?.url : undefined);
       return false;
     });
+    // Competitors by tier (competitorTiers.ts, owner 2026-11-07): declared — rival sentences of every page read, "X vs Y"
+    // pages of the company's own site and of the competitors' own sites; market — the model's hints, each kept only when
+    // an allowed source puts both companies in one market. The searches come from the extra budget.
+    if (componentOn("competitor_tiers") && !ctx.update) {
+      for (const c of market.competitors) c.tier ??= "declared";
+      const have = new Set([...market.competitors.map((c) => normalizeForMatch(c.name)), normalizeForMatch(row.name)]);
+      const adopt = (claims: TieredClaim[], how: string) => {
+        for (const cl of claims) {
+          const k = normalizeForMatch(cl.name);
+          if (!k || have.has(k) || market.competitors.length >= 8) continue;
+          have.add(k);
+          market.competitors.push({ name: cl.name, how_it_competes: cl.how_it_competes, source_ids: [cl.source_id], source_id: cl.source_id, evidence_quote: cl.evidence_quote, tier: cl.tier });
+          console.log(`    🥊  ${cl.tier} competitor ${cl.name} (${how}): "${cl.evidence_quote.slice(0, 110)}"`);
+          bump(stats.droppedByReason, `competitor_${cl.tier}_${how}`);
+        }
+      };
+      adopt(acceptedDeclared(rivalSentenceClaims(allSources, row.name), allSources, row.name), "sentence");
+      // "X vs Y" pages: the company's own site, and the competitors' own sites.
+      const vsResults = [
+        ...(domain ? await extraSearch(`site:${domain} vs OR versus OR alternatives`, "vs_own") : []),
+        ...(await extraSearch(`"${row.name}" vs OR versus${domain ? ` -site:${domain}` : ""}`, "vs_other")),
+      ].filter((r) => !isDataPlatformUrl(r.url));
+      const vsSources = vsResults.map((r) => newSource(r.url, r.content ?? "", r.title ?? "", "vs_page"));
+      adopt(vsPageClaims(vsResults, vsSources, row.name, domain), "vs_page");
+      // Market peers: the model's hints, searched for once, kept on an allowed source that names both in a market sentence.
+      const hints = (market.market_peers ?? []).filter((h) => !have.has(normalizeForMatch(h)));
+      if (hints.length) {
+        const found = await extraSearch(`"${row.name}" ${hints.slice(0, 5).map((h) => `"${h}"`).join(" OR ")} market OR industry OR landscape OR competitors`, "market_peers");
+        const peerSources = found.filter((r) => !isDataPlatformUrl(r.url)).map((r) => newSource(r.url, r.content ?? "", r.title ?? "", "market_peers"));
+        adopt(marketPeerClaims(hints, [...peerSources, ...allSources], row.name), "market");
+        const lost = hints.filter((h) => !have.has(normalizeForMatch(h)));
+        if (lost.length) console.log(`    💡  Market hint(s) not confirmed by an allowed source, not written: ${lost.join(", ")}`);
+      }
+    }
     const sourceByUrl = (u: string) => allSources.find((x) => x.url === u);
     // The company's investors, found now or on file: their own sites are allowed.
     const knownInvestors = [...roundInvestors, ...existingRounds.flatMap((r) => [r.lead_investor, ...(r.investors ?? [])])];

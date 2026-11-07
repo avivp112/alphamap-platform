@@ -671,6 +671,7 @@ export function mergeMarketExtractions(base: V2MarketExtraction, extra: V2Market
 
   return {
     competitors, acquisitions, news, patents,
+    market_peers: [...new Set([...(base.market_peers ?? []), ...(extra.market_peers ?? [])])].slice(0, 5),
     patent_summary: {
       patent_count: base.patent_summary.patent_count ?? extra.patent_summary.patent_count,
       patent_fields: base.patent_summary.patent_fields.length ? base.patent_summary.patent_fields : extra.patent_summary.patent_fields,
