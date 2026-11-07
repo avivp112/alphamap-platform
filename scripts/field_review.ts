@@ -29,7 +29,7 @@ import { collectCompany, newCollectStats, V2_STARTUP_COLUMNS, V2_ROUND_COLUMNS, 
 import { loadSectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { createSearchProviderState } from "../lib/enrichment/searchProviders.ts";
 import { openSearchCache } from "../lib/enrichment/searchCache.ts";
-import { drawReviewSample, targetedCount, FOCUS_FIELDS, type PilotCandidate } from "../lib/enrichment/pilotSample.ts";
+import { drawReviewSample, targetedCount, restrictCandidates, FOCUS_FIELDS, type PilotCandidate } from "../lib/enrichment/pilotSample.ts";
 import { UsageMeter } from "../lib/enrichment/models.ts";
 import { buildProfile } from "../worker/profile.ts";
 import { profileSourceAllowed, roundSourceStanding } from "../lib/enrichment/roundSources.ts";
@@ -91,7 +91,11 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
   const unknownFocus = FOCUS.filter((f) => !(f in FOCUS_FIELDS));
   if (unknownFocus.length) { console.error(`FOCUS: unknown field(s) ${unknownFocus.join(", ")} — use ${Object.keys(FOCUS_FIELDS).join(", ")}.`); process.exit(1); }
   const withRounds = rows.map((r) => ({ ...r, rounds_on_file: roundCount.get(r.id) ?? 0 }));
-  const sample = drawReviewSample(withRounds.filter((r) => !seen.has(r.id) && !golden.has(r.name.trim().toLowerCase())), covered, { size: SIZE, targeted: targetedCount(SIZE), seed: SEED, focus: FOCUS });
+  // MIN_ROUNDS=3 and/or PRESS_ONLY=true draw only companies a rival can be found for (funded, covered by allowed press).
+  const minRounds = Number(process.env.MIN_ROUNDS ?? 0), pressOnly = process.env.PRESS_ONLY === "true";
+  const pool = restrictCandidates(withRounds.filter((r) => !seen.has(r.id) && !golden.has(r.name.trim().toLowerCase())), covered, { minRounds, pressOnly });
+  if (minRounds || pressOnly) console.log(`Pool narrowed${minRounds ? ` to ≥${minRounds} rounds on file` : ""}${pressOnly ? `${minRounds ? " and" : " to"} companies an allowed press source covers` : ""}: ${pool.length} companies.`);
+  const sample = drawReviewSample(pool, covered, { size: SIZE, targeted: targetedCount(SIZE), seed: SEED, focus: FOCUS });
   console.log(`Draw: ${sample.filter((c) => c.why.includes("targeted")).length} targeted (${FOCUS.length ? `short of ${FOCUS.join(", ")}` : "fields short of marks"}), ${sample.filter((c) => !c.why.includes("targeted")).length} random.`);
   return sample;
 }

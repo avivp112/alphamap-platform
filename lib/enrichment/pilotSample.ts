@@ -76,3 +76,13 @@ export function drawReviewSample(rows: PilotCandidate[], covered: Set<string>, o
   const random = drawPilotSample(pool.filter((r) => !taken.has(r.id)), { size: opts.size - targeted.length, minThin: 2, minIsraeli: 2, seed: opts.seed + 1 });
   return [...targeted, ...random];
 }
+
+
+/**
+ * Narrows a review draw to the companies a rival can be found for (owner, 2026-11-06: 0 competitors in 30
+ * random companies): MIN_ROUNDS keeps those with at least that many rounds on file — funded companies are
+ * written about — and PRESS_ONLY those an allowed press source already covers.
+ */
+export function restrictCandidates<T extends PilotCandidate>(candidates: T[], covered: Set<string>, opts: { minRounds?: number; pressOnly?: boolean }): T[] {
+  return candidates.filter((c) => (c.rounds_on_file ?? 0) >= (opts.minRounds ?? 0) && (!opts.pressOnly || covered.has(c.id)));
+}
