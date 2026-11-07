@@ -152,3 +152,19 @@ describe("a person's card on a team page, by the HTML (owner, 2026-11-03)", () =
     expect(personCardsInHtml(plain, "Nobody Here")).toEqual([]);
   });
 });
+
+import { titleFromCard } from "./people";
+describe("a leader's title read from the site's card when the extraction gave none (owner, 2026-11-06 — Quris AI)", () => {
+  it("takes the title after the name and its credentials", () => {
+    expect(titleFromCard("Shelly Maman, PhD", "shelly maman, phd head of strategic alliances")).toBe("Head of Strategic Alliances");
+    expect(titleFromCard("Amir Bein, RD, PhD", "amir bein, rd, phd svp of biology")).toBe("SVP of Biology");
+    expect(titleFromCard("Shahar Harel", "shahar harel vp of ai")).toBe("VP of AI");
+  });
+  it("stops at the first sentence stop", () => {
+    expect(titleFromCard("Ayelet Richter", "ayelet richter vp business development & us gm. ayelet joined in 2020 from sap.")).toBe("VP Business Development & US GM");
+  });
+  it("gives nothing when the card holds no role", () => {
+    expect(titleFromCard("Jane Doe", "jane doe joined us from a bank and loves hiking")).toBeNull();
+    expect(titleFromCard("Jane Doe", "something else entirely")).toBeNull();
+  });
+});

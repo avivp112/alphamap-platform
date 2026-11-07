@@ -485,3 +485,27 @@ export function roleAtCompany(role: string | null | undefined, companyName: stri
   }
   return { kind: "leader", role: own.length ? text : null };
 }
+
+
+const CREDENTIALS = "phd|ph\\.d|md|m\\.d|mba|rd|cpa|esq|ms|msc|bsc|ma|jd|dds|dvm|pe|dr";
+const TITLE_WORD = /\b(ceo|cto|coo|cfo|cmo|cpo|cro|ciso|chief|founder|co-?founder|president|vp|svp|evp|vice president|head|director|manager|lead|officer|partner|general manager|managing director)\b/i;
+const ACRONYMS = new Set(["ceo", "cto", "coo", "cfo", "cmo", "cpo", "cro", "ciso", "vp", "svp", "evp", "gm", "us", "uk", "r&d", "ai", "hr", "it"]);
+
+/**
+ * The title a person's card gives when the extraction gave none (owner, 2026-11-06 — Quris AI's team page:
+ * "Shelly Maman, PhD  Head of Strategic Alliances"): what follows the name and its credentials, up to the
+ * first sentence stop, when it reads as a role. null when the card holds no such phrase. The card is the
+ * lower-cased text personCardsInHtml returns.
+ */
+export function titleFromCard(personName: string, card: string): string | null {
+  const tokens = fold(personName).toLowerCase().split(/[^a-z]+/).filter((t) => t.length > 1);
+  if (tokens.length < 2) return null;
+  const text = fold(card).toLowerCase().replace(/\s+/g, " ").trim();
+  const nameEnd = new RegExp(`\\b${tokens[0]}\\b[^a-z]+(?:[a-z.]+[^a-z]+){0,2}${tokens[tokens.length - 1]}\\b`).exec(text);
+  if (!nameEnd) return null;
+  let rest = text.slice(nameEnd.index + nameEnd[0].length).replace(new RegExp(`^(?:[\\s,.]*\\b(?:${CREDENTIALS})\\b)+`, "i"), "").replace(/^[\s,.:;|·•–—-]+/, "");
+  rest = rest.split(/[.;|·•\n]|\s{2,}| [-–—] /)[0].trim();
+  const words = rest.split(/\s+/).filter(Boolean);
+  if (!words.length || words.length > 9 || !TITLE_WORD.test(rest)) return null;
+  return words.map((w) => (ACRONYMS.has(w) ? w.toUpperCase() : /^(of|and|the|for|in|at|&)$/.test(w) ? w : w[0].toUpperCase() + w.slice(1))).join(" ").replace(/\bR&d\b/g, "R&D");
+}

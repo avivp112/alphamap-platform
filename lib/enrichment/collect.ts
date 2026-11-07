@@ -35,7 +35,7 @@ import {
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
 import { pickArticlesToRead } from "./articles.ts";
 import { runTechGate, shouldSkipAsNonTech, type TechGateVerdict } from "./techGate.ts";
-import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, personCardsInHtml, roleAtCompany } from "./people.ts";
+import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, personCardsInHtml, roleAtCompany, titleFromCard } from "./people.ts";
 import { componentOn } from "./components.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
@@ -1139,7 +1139,7 @@ export async function collectCompany(
       if (!allowedTexts.some((t) => personMentionedIn(l.name, t))) { drop(`leader ${l.name}`, "leader_source_not_listed"); continue; }
       if (cls.kind === "board") { console.log(`    🏛️   ${l.name}: board — "${cls.role}"${cls.role !== raw.role ? ` (was "${raw.role}")` : ""}`); keptLeaders.push({ ...l, group: "board" }); continue; }
       const others = peopleNames.filter((n) => n !== l.name);
-      const role = l.role ?? "";
+      let role = l.role ?? "";
       const onPages = websitePages.filter((p) => personMentionedIn(l.name, p.content));
       let outcome: "verified_card" | "verified_text" | null = null;
       // Why no card verified it — the first test against real sites (owner, 2026-11-03).
@@ -1148,6 +1148,17 @@ export async function collectCompany(
         if (!htmlCache.has(p.url)) htmlCache.set(p.url, ctx.update ? null : await fetchPageHtml(p.url, searchState));
         const html = htmlCache.get(p.url);
         const cards = html ? personCardsInHtml(html, l.name, others) : [];
+        // The extraction gave no title, but the site's own card does (Quris AI's "Head of Strategic Alliances").
+        if (!role) {
+          const fromCard = cards.map((c) => titleFromCard(l.name, c)).find((t): t is string => !!t);
+          const cardCls = fromCard ? roleAtCompany(fromCard, row.name) : null;
+          if (fromCard && cardCls?.kind === "leader") {
+            role = cardCls.role ?? fromCard; l.role = role; outcome = "verified_card"; cardNote = `card on ${p.url}`;
+            console.log(`    🏷️   leader ${l.name}: the title "${role}" read from the site's card (${p.url})`);
+            bump(stats.droppedByReason, "leader_title_from_card");
+            break;
+          }
+        }
         if (role && cards.some((c) => roleSupported(l.name, role, [c]))) { outcome = "verified_card"; cardNote = `card on ${p.url}`; break; }
         cardNote = !html ? `no HTML for ${p.url}` : !cards.length ? `no card found on ${p.url}` : `card on ${p.url} without the title: "${cards[0].slice(0, 80)}"`;
       }
