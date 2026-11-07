@@ -26,8 +26,7 @@ import { extractProfile, type SectorTaxonomy } from "./extractProfile.ts";
 import { extractFunding, roundToRoundLike, type V2Round } from "./extractFunding.ts";
 import { extractMarket, normalizeUrlForMatch } from "./extractMarket.ts";
 import { normalizeForMatch } from "./evidence.ts";
-import { rivalSentenceClaims, vsPageClaims, marketPeerClaims, acceptedDeclared, type TieredClaim } from "./competitorTiers.ts";
-import { isDataPlatformUrl } from "./dataPlatforms.ts";
+import { competitorTierClaims, type TieredClaim } from "./competitorTiers.ts";
 import { lookupEpoPatents, type CompanyIdentity, type EpoPatentResult } from "./epoPatents.ts";
 import { hintFromRound, hintQueries, confirmHint, hintKey, recoverMissingAmount, type RoundHint } from "./hints.ts";
 import { detectGaps, buildDeepDiveQueries, hasNoFinancingRounds, type DeepDiveSection } from "./deepDive.ts";
@@ -1210,23 +1209,13 @@ export async function collectCompany(
           bump(stats.droppedByReason, `competitor_${cl.tier}_${how}`);
         }
       };
-      adopt(acceptedDeclared(rivalSentenceClaims(allSources, row.name), allSources, row.name), "sentence");
-      // "X vs Y" pages: the company's own site, and the competitors' own sites.
-      const vsResults = [
-        ...(domain ? await extraSearch(`site:${domain} vs OR versus OR alternatives`, "vs_own") : []),
-        ...(await extraSearch(`"${row.name}" vs OR versus${domain ? ` -site:${domain}` : ""}`, "vs_other")),
-      ].filter((r) => !isDataPlatformUrl(r.url));
-      const vsSources = vsResults.map((r) => newSource(r.url, r.content ?? "", r.title ?? "", "vs_page"));
-      adopt(vsPageClaims(vsResults, vsSources, row.name, domain), "vs_page");
-      // Market peers: the model's hints, searched for once, kept on an allowed source that names both in a market sentence.
-      const hints = (market.market_peers ?? []).filter((h) => !have.has(normalizeForMatch(h)));
-      if (hints.length) {
-        const found = await extraSearch(`"${row.name}" ${hints.slice(0, 5).map((h) => `"${h}"`).join(" OR ")} market OR industry OR landscape OR competitors`, "market_peers");
-        const peerSources = found.filter((r) => !isDataPlatformUrl(r.url)).map((r) => newSource(r.url, r.content ?? "", r.title ?? "", "market_peers"));
-        adopt(marketPeerClaims(hints, [...peerSources, ...allSources], row.name), "market");
-        const lost = hints.filter((h) => !have.has(normalizeForMatch(h)));
-        if (lost.length) console.log(`    💡  Market hint(s) not confirmed by an allowed source, not written: ${lost.join(", ")}`);
-      }
+      const { claims, unconfirmedHints } = await competitorTierClaims({
+        companyName: row.name, domain, sources: allSources, hints: market.market_peers ?? [], known: have,
+        search: (q, label) => extraSearch(q, label),
+        addSource: (r, label) => newSource(r.url, r.content ?? "", r.title ?? "", label),
+      });
+      adopt(claims, "found");
+      if (unconfirmedHints.length) console.log(`    💡  Market hint(s) not confirmed by an allowed source, not written: ${unconfirmedHints.join(", ")}`);
     }
     const sourceByUrl = (u: string) => allSources.find((x) => x.url === u);
     // The company's investors, found now or on file: their own sites are allowed.

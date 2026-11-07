@@ -89,3 +89,46 @@ describe("declared claims pass the same evidence rules as the extraction's own",
     expect(acceptedDeclared(claims, s, "HiBob").map((c) => c.name)).toEqual(["Rippling"]);
   });
 });
+
+import { competitorTierClaims } from "./competitorTiers";
+describe("the tiers for one company, searches injected (owner, 2026-11-07)", () => {
+  const mk = () => {
+    const sources = srcs([{ url: "https://www.hibob.com/blog/x", content: "Rippling competes with HiBob, Namely, BambooHR." }]).map((s) => ({ ...s, source_type: "company_site" as const }));
+    const added: Array<{ url: string; label: string }> = [];
+    const queries: string[] = [];
+    let n = sources.length;
+    return {
+      sources, added, queries,
+      addSource: (r: { url: string; title?: string | null; content?: string | null }, label: string) => { added.push({ url: r.url, label }); return { source_id: `X${++n}`, url: r.url, title: r.title ?? "", content: r.content ?? r.title ?? "", provider: "serper" as const, query_label: label, source_type: label === "vs_page" && r.url.includes("hibob.com") ? "company_site" as const : "news" as const }; },
+    };
+  };
+  it("asks, in order: the company's own vs pages, the competitors' vs pages, then the hints — three searches — and finds all three kinds", async () => {
+    const m = mk();
+    const search = async (q: string, label: string) => {
+      m.queries.push(`${label}: ${q}`);
+      if (label === "vs_own") return [{ url: "https://www.hibob.com/compare/workday", title: "HiBob vs Workday" }];
+      if (label === "vs_other") return [{ url: "https://www.paylocity.com/compare/hibob", title: "Paylocity vs HiBob" }];
+      return [{ url: "https://techcrunch.com/2026/05/01/hr", title: "HR", content: "HiBob and Gusto are leading players in the mid-market HR software space." }];
+    };
+    const r = await competitorTierClaims({ companyName: "HiBob", domain: "hibob.com", sources: m.sources, hints: ["Gusto", "Zenefits"], search, addSource: m.addSource, known: new Set(["hibob"]) });
+    expect(m.queries.map((q) => q.split(":")[0])).toEqual(["vs_own", "vs_other", "market_peers"]);
+    expect(m.queries[0]).toContain("site:hibob.com");
+    expect(m.queries[1]).toContain("-site:hibob.com");
+    expect(m.queries[2]).toContain('"Gusto" OR "Zenefits"');
+    expect(r.claims.map((c) => [c.name, c.tier]).sort()).toEqual([["Gusto", "market"], ["Paylocity", "declared"], ["Rippling", "declared"], ["Workday", "declared"]].sort());
+    expect(r.unconfirmedHints).toEqual(["Zenefits"]);
+  });
+  it("with the extra budget spent (searches return nothing) only the free sentences remain", async () => {
+    const m = mk();
+    const r = await competitorTierClaims({ companyName: "HiBob", domain: "hibob.com", sources: m.sources, hints: ["Gusto"], search: async () => [], addSource: m.addSource, known: new Set(["hibob"]) });
+    expect(r.claims.map((c) => c.name)).toEqual(["Rippling"]);
+    expect(r.unconfirmedHints).toEqual(["Gusto"]);
+  });
+  it("a name already a competitor is not added twice, and a data platform's result is not read", async () => {
+    const m = mk();
+    const search = async (_q: string, label: string) => (label === "vs_other" ? [{ url: "https://www.crunchbase.com/x", title: "Rippling vs HiBob" }] : []);
+    const r = await competitorTierClaims({ companyName: "HiBob", domain: "hibob.com", sources: m.sources, hints: [], search, addSource: m.addSource, known: new Set(["hibob", "rippling"]) });
+    expect(r.claims).toEqual([]);
+    expect(m.added).toEqual([]);
+  });
+});

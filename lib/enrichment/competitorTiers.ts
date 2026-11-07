@@ -162,3 +162,37 @@ export function marketPeerClaims(hints: string[], sources: LabeledSource[], comp
 export function acceptedDeclared(claims: TieredClaim[], sources: LabeledSource[], companyName: string): TieredClaim[] {
   return claims.filter((c) => !competitorEvidenceProblem(c, sources, companyName) && quoteLinksTheTwo(c.evidence_quote, companyName, c.name));
 }
+
+
+export interface TierSearchResult { url: string; title?: string | null; content?: string | null }
+
+/**
+ * Everything the tiers add for one company (owner, 2026-11-07), searches injected so the order and the budget are
+ * testable: rival sentences of the pages read (no search); "X vs Y" pages — the company's own site, then the
+ * competitors' own sites (two searches); the model's hints, one search (kept only on an allowed source that names
+ * both in a market sentence). `search` returns [] when the extra budget is spent.
+ */
+export async function competitorTierClaims(o: {
+  companyName: string; domain: string | null; sources: LabeledSource[]; hints: string[];
+  search: (query: string, label: string) => Promise<TierSearchResult[]>;
+  addSource: (r: TierSearchResult, label: string) => LabeledSource;
+  known: Set<string>;   // normalised names already competitors
+}): Promise<{ claims: TieredClaim[]; unconfirmedHints: string[] }> {
+  const claims: TieredClaim[] = [];
+  const have = new Set(o.known);
+  const take = (list: TieredClaim[]) => { for (const c of list) { const k = normalizeForMatch(c.name); if (k && !have.has(k)) { have.add(k); claims.push(c); } } };
+  take(acceptedDeclared(rivalSentenceClaims(o.sources, o.companyName), o.sources, o.companyName));
+  const vs = [
+    ...(o.domain ? await o.search(`site:${o.domain} vs OR versus OR alternatives`, "vs_own") : []),
+    ...(await o.search(`"${o.companyName}" vs OR versus${o.domain ? ` -site:${o.domain}` : ""}`, "vs_other")),
+  ].filter((r) => !isDataPlatformUrl(r.url));
+  const vsSources = vs.map((r) => o.addSource(r, "vs_page"));
+  take(vsPageClaims(vs, vsSources, o.companyName, o.domain));
+  const hints = o.hints.filter((h) => !have.has(normalizeForMatch(h)));
+  if (hints.length) {
+    const found = (await o.search(`"${o.companyName}" ${hints.slice(0, 5).map((h) => `"${h}"`).join(" OR ")} market OR industry OR landscape OR competitors`, "market_peers")).filter((r) => !isDataPlatformUrl(r.url));
+    const peerSources = found.map((r) => o.addSource(r, "market_peers"));
+    take(marketPeerClaims(hints, [...peerSources, ...o.sources], o.companyName));
+  }
+  return { claims, unconfirmedHints: hints.filter((h) => !have.has(normalizeForMatch(h))) };
+}
