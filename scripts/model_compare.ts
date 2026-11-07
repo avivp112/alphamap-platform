@@ -27,6 +27,7 @@
  * answers can change between runs, and it costs only Claude's calls.
  */
 
+import { maxArticles } from "../lib/enrichment/articleBudget.ts";
 import { createClient } from "@supabase/supabase-js";
 import { config } from "dotenv";
 import Anthropic from "@anthropic-ai/sdk";
@@ -152,7 +153,7 @@ async function draw(): Promise<PilotCandidate[]> {
         const c = await collectCompany(row, [], taxonomy, {
           anthropic,
           models: { enrich: model, profile: model, funding: model, market: model },
-          update: false, deepDive: true, techGate: true, articlesToRead: 4, verbose: false, seen: null,
+          update: false, deepDive: true, techGate: true, articlesToRead: maxArticles(), verbose: false, seen: null,
           recordCost: (m, usage) => meters.get(model)!.add(m, usage),
         }, newCollectStats(), searchState);
         found.get(company.id)!.set(model, flatten(c, company.name));

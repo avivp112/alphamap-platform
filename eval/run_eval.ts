@@ -58,6 +58,7 @@
  * JINA_API_KEY) — loaded via the same initV1Context() v1 itself uses.
  */
 
+import { maxArticles } from "../lib/enrichment/articleBudget.ts";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
@@ -82,6 +83,7 @@ import {
 } from "./score.ts";
 
 import { fieldStatus, countedMarks, readReplay, TRACKER } from "../lib/enrichment/fieldReview.ts";
+import { majorPressNote } from "../lib/enrichment/unlistedDomains.ts";
 import { toCsv, parseCsv, mergeRows, dedupeRoundRows, competitorKey, roundKey, COMPETITOR_COLUMNS, ROUND_COLUMNS, type SheetRow } from "./reviewSheet.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -90,7 +92,7 @@ const PIPELINE = process.env.PIPELINE === "v2" ? "v2" : "v1";
 const ONLY = (process.env.ONLY ?? "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean);
 // v2 run settings — the bulk run's own defaults.
 const ENRICH_MODEL = process.env.ENRICH_MODEL ?? "claude-haiku-5-5"; // owner, 2026-11-02 (was claude-haiku-4-5-20251001)
-const ARTICLES_TO_READ = Number(process.env.ARTICLES_TO_READ ?? 4);
+const ARTICLES_TO_READ = maxArticles();
 const DEEP_DIVE = process.env.DEEP_DIVE !== "false";
 const TECH_GATE = process.env.TECH_GATE !== "false";
 const SEARCH_COST_USD = Number(process.env.SEARCH_COST_USD ?? 0.001);
@@ -436,6 +438,8 @@ async function main() {
     const existing = existsSync(sheet) ? parseCsv(readFileSync(sheet, "utf8")) : [];
     writeFileSync(sheet, toCsv(["domain", "companies", "example_company", "example_url", "decision"], mergeRows(existing, rows, (r) => r.domain)));
     console.log(`🌐  ${domainCounts.size} unlisted source domain(s) in eval/review/domains_review.csv — mark "מותר" / "אסור" / "להתעלם"`);
+    const press = majorPressNote([...domainCounts.keys()]);
+    if (press) console.log(`🗞️   ${press}`);
   }
   if (roundsToReview.length) {
     const sheet = join(__dir, "review", "rounds_review.csv");

@@ -42,6 +42,9 @@ export const TIER2_DOMAINS = [
   "reuters.com", "bloomberg.com", "ft.com", "wsj.com", "cnbc.com", "forbes.com", "fortune.com", "businessinsider.com",
   "axios.com", "theinformation.com", "techcrunch.com", "venturebeat.com", "wired.com", "theverge.com", "fastcompany.com", "inc.com",
   "telegraph.co.uk", // owner, 2026-11-03
+  // Owner, 2026-11-07
+  "nytimes.com", "washingtonpost.com", "theguardian.com", "economist.com", "apnews.com", "bbc.com", "bbc.co.uk",
+  "barrons.com", "marketwatch.com", "latimes.com",
 ];
 
 export const TIER3_DOMAINS = [

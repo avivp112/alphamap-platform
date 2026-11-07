@@ -19,6 +19,7 @@
  *   npx tsx scripts/field_review.ts            # SIZE=15
  */
 
+import { maxArticles } from "../lib/enrichment/articleBudget.ts";
 import { createClient } from "@supabase/supabase-js";
 import { config } from "dotenv";
 import Anthropic from "@anthropic-ai/sdk";
@@ -34,6 +35,7 @@ import { UsageMeter } from "../lib/enrichment/models.ts";
 import { buildProfile } from "../worker/profile.ts";
 import { profileSourceAllowed, roundSourceStanding } from "../lib/enrichment/roundSources.ts";
 import { capPerCompany, PER_COMPANY } from "../lib/enrichment/fieldReview.ts";
+import { majorPressNote } from "../lib/enrichment/unlistedDomains.ts";
 import { REVIEW_FIELDS, wouldWrite, type Field, type Value } from "../lib/enrichment/reviewValues.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -116,6 +118,7 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
   const meter = new UsageMeter();
   const values: Value[] = [];
   const roleChecks: NonNullable<ReturnType<typeof newCollectStats>["roleChecks"]> = [];
+  const unlistedSeen = new Map<string, string>();   // domains on no list that a source came from (roundSources.ts)
   for (const row of (rows ?? []) as V2StartupRow[]) {
     console.log(`── ${row.name} (${row.website}) ──`);
     const state = createSearchProviderState();
@@ -124,13 +127,14 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
     try {
       const c = await collectCompany(row, ((rounds ?? []) as V2FundingRoundRow[]).filter((r) => r.startup_id === row.id), taxonomy, {
         anthropic, models: { enrich: MODEL, profile: MODEL, funding: MODEL, market: MODEL },
-        update: false, deepDive: true, techGate: true, articlesToRead: 4, verbose: false, seen: null,
+        update: false, deepDive: true, techGate: true, articlesToRead: maxArticles(), verbose: false, seen: null,
         recordCost: (m, u) => meter.add(m, u),
       }, stats, state);
       roleChecks.push(...(stats.roleChecks ?? []));
       const v = wouldWrite(c, row);
       values.push(...v);
       console.log(`    → ${c.outcome}: ${v.length} value(s) would be written`);
+      for (const d of c.unlistedDomains ?? []) unlistedSeen.set(d.domain, d.url);
     } catch (e) {
       console.error(`    💥  ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -171,6 +175,11 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
   const per = REVIEW_FIELDS.map((f) => `${f} ${values.filter((v) => v.field === f).length}`).join(" · ");
   console.log(`\n${"═".repeat(62)}\nWould be written: ${values.length} value(s) — ${per}`);
   // The leaders' title rule (owner, 2026-11-03): how much it costs.
+  if (unlistedSeen.size) {
+    console.log(`Unlisted source domains this run (${unlistedSeen.size}): ${[...unlistedSeen.keys()].slice(0, 12).join(", ")}${unlistedSeen.size > 12 ? ", …" : ""}`);
+    const press = majorPressNote([...unlistedSeen.keys()]);
+    if (press) console.log(`🗞️   ${press}`);
+  }
   const by = (o: string) => roleChecks.filter((r) => r.outcome === o);
   const lost = [...by("kept_without_title"), ...by("dropped")];
   console.log(`Leaders' titles: ${roleChecks.length} checked — ${by("verified_card").length} verified on the site's card, ${by("verified_text").length} beside the name in a source, ${by("kept_without_title").length} kept as "Leadership team", ${by("dropped").length} dropped`);
