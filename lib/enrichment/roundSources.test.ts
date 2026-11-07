@@ -48,3 +48,24 @@ describe("a round is written only from an allowed source (owner, 2026-11-01: the
     expect(rejectRound({ round_type: "Series D", amount_raised: { value: 200_000_000, source_id: "S2", evidence_quote: "Mercury raised $200 million" } }, "Mercury", sources)).toBeNull();
   });
 });
+
+import { rejectRound as rejectRoundForAmount } from "./assemble";
+import { buildLabeledSources as labelled } from "./sources";
+describe("the amount's own source must be an allowed one (owner, 2026-11-08: Apex, forgeglobal.com)", () => {
+  const sources = labelled([
+    { url: "https://www.forgeglobal.com/apex_ipo/", title: "Apex", content: "Apex raised a $185.1M Series E.", provider: "serper", query_label: "history" },
+    { url: "https://techcrunch.com/2026/06/05/apex-raises-200m/", title: "Apex raises $200M", content: "Glade Brook Capital Partners led the round.", provider: "serper", query_label: "history" },
+  ]);
+  const [forge, tc] = sources.map((s) => s.source_id);
+  const round = (amountSource: string) => ({
+    round_type: "Series E", amount_raised: { value: 185_100_000, source_id: amountSource, evidence_quote: "$185.1M Series E" },
+    lead_investor: { value: "Glade Brook Capital Partners", source_id: tc, evidence_quote: "Glade Brook Capital Partners led the round." },
+    source_url: "https://techcrunch.com/2026/06/05/apex-raises-200m/",
+  });
+  it("an amount that stands only on an unlisted site is not written, though the lead investor's source is allowed", () => {
+    expect(rejectRoundForAmount(round(forge), "Apex", sources)).toBe("round_source_not_listed");
+  });
+  it("the same round with the amount on the allowed source is not refused for its source", () => {
+    expect(rejectRoundForAmount(round(tc), "Apex", sources)).toBeNull();
+  });
+});

@@ -384,6 +384,16 @@ export function rejectRound(round: V2Round, companyName: string, sources: Labele
   const bareName = companyName.replace(/\.(io|ai|com|co|app|so|dev|net)$/i, "");
   if (raiser && !NOT_A_RAISER.test(raiser) && !namesCompany(raiser, companyName) && !namesCompany(raiser, bareName)) return "round_raised_by_another_company";
   if (!allowedSomewhere) return "round_source_not_listed";
+  // The amount is the value most often wrong, so ITS source must be an allowed one — not just some other source the
+  // round cites (owner, 2026-11-08: Apex's "Series E $185.1M" came from forgeglobal.com, a secondary market, while
+  // the lead investor's source was allowed). A round whose amount stands only on an unlisted or denied source is not
+  // written: it goes the way of every platform-only round (a hint, searched for in a primary source).
+  const amountSource = round.amount_raised?.source_id ? byId.get(round.amount_raised.source_id) : undefined;
+  if (amountSource && amountSource.url) {
+    const st = roundSourceStanding(amountSource.url, { isCompanySite: amountSource.source_type === "company_site", leadInvestor: round.lead_investor?.value, content: amountSource.content, headline: amountSource.title, companyName });
+    if (st.kind === "denied") return "round_only_from_data_platform";
+    if (st.kind === "unlisted") return "round_source_not_listed";
+  }
   // No amount, while its own source's headline or address states one (field review run 3:
   // Forward Financing's "expanded-450-million-credit-facility" written as "amount not disclosed").
   // Every source the round cites counts, not only its own source_url (owner, 2026-11-06: Parloa's
