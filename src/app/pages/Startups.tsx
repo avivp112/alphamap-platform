@@ -4,7 +4,7 @@ import { officesLabel } from "../../lib/offices";
 import { stageLabel, sectorLabel, roundTypeLabel, SECTOR_TAXONOMY, PARENT_BY_SUB_SECTOR, STAGE_STEPS, type StageStep } from "../../lib/taxonomy";
 import { equityRaised, debtRaised, capitalKind } from "../../lib/capital";
 import { visiblePatents } from "../../lib/patentList";
-import { visibleCompetitors } from "../../lib/competitors";
+import { visibleCompetitors, splitCompetitors } from "../../lib/competitors";
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router";
 import {
@@ -1733,13 +1733,13 @@ function CompetitorsMarketTab({ startup, onNavigate }: { startup: Startup; onNav
     );
   }
 
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      {competitors.map((c, idx) => {
+  const { declared, market } = splitCompetitors(competitors);
+  const card = (c: (typeof competitors)[number], idx: number) => {
         const linked = Boolean(c.startup_id);
         return (
           <div
             key={`${c.name}-${idx}`}
+            title={c.source_url ? `Source: ${c.source_url}` : undefined}
             className={`flex flex-col gap-1.5 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3.5 ${c.unverified ? "opacity-60 border-dashed" : ""} ${linked ? "cursor-pointer hover:border-cyan-300 hover:bg-cyan-50/40 transition-colors" : ""}`}
             onClick={linked ? () => onNavigate(c.startup_id as string) : undefined}
           >
@@ -1768,7 +1768,16 @@ function CompetitorsMarketTab({ startup, onNavigate }: { startup: Startup; onNav
             )}
           </div>
         );
-      })}
+  };
+  return (
+    <div className="space-y-5">
+      {declared.length > 0 && <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{declared.map(card)}</div>}
+      {market.length > 0 && (
+        <div>
+          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Also in this market</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{market.map(card)}</div>
+        </div>
+      )}
     </div>
   );
 }

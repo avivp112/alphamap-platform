@@ -15,3 +15,8 @@ export function visibleCompetitors(list: Array<Competitor | string | null | unde
     .map((c) => (typeof c === "string" ? { name: c, how_it_competes: "", website: null, startup_id: null } : c))
     .filter((c) => !c.hidden);
 }
+
+/** Declared competitors first; the market ones apart, shown under "Also in this market" (owner, 2026-11-07). */
+export function splitCompetitors(list: Competitor[]): { declared: Competitor[]; market: Competitor[] } {
+  return { declared: list.filter((c) => c.tier !== "market"), market: list.filter((c) => c.tier === "market") };
+}

@@ -162,6 +162,8 @@ export interface Competitor {
   unverified?: boolean;
   /** A verification run could not confirm it: not shown. */
   hidden?: boolean;
+  /** declared: a source says they compete (or no tier, written before the tiers). market: an allowed source puts both in one market (owner, 2026-11-07). */
+  tier?: "declared" | "market";
 }
 
 // One entry per investor whose SPECIFIC dollar contribution to a round is
