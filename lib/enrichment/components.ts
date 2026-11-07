@@ -62,6 +62,10 @@ export const V2_COMPONENTS = {
     on: true, since: "2026-11-07",
     what: "structured facts per founder (previous company and role, exit, education, military unit), each with a quote from an allowed source (founderBackground.ts); one targeted search for the founders, from the extra budget",
   },
+  headcount_sources: {
+    on: true, since: "2026-11-08",
+    what: "headcount points with date, source, quote and type: Companies House accounts (average employees), Brreg, and team-size sentences of archived About / Careers pages on the Wayback Machine (headcountCollect.ts); robots.txt honoured, one request a second",
+  },
   profile_hints: {
     on: false, since: "2026-11-02", // off by the owner, 2026-11-02: 0 of 7 confirmed on the 10-company check
     what: "an HQ / founding year / founding country only a data platform states is not written, but searched for once in an allowed source that confirms it",

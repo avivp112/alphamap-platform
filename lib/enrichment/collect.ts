@@ -50,6 +50,8 @@ import { profileSourceAllowed, roundSourceStanding, unwrapRedirect } from "./rou
 import { aboutParagraph, aboutIsOf, factsFromAbout, legalFacts, releasePointsTo, type LegalFacts } from "./companyFacts.ts";
 import { checkFoundingCountry } from "./origin.ts";
 import { namesCompany } from "./headcount.ts";
+import { companiesHouseHeadcount, brregHeadcount, waybackHeadcount, type HeadcountIo } from "./headcountCollect.ts";
+import type { HistoryPoint } from "./headcountHistory.ts";
 import { lookupRegisters, nodeRegisterIo, registerDecides, type RegisterContext, type RegisterFinding } from "./registers.ts";
 import { stripHonorific } from "./people.ts";
 import { countryFromLocationQuote } from "./location.ts";
@@ -1283,6 +1285,7 @@ export async function collectCompany(
 
   let registerLegalName: string | null = null;
   let registerCountry: string | null = null;
+  let ukRegisterEntity: { number: string; entity: string } | null = null;
   // ── Registers: founded year and founding country, a certain match beats any article ──
   if (componentOn("registers") && !ctx.update) {
     const siteSources = allSources.filter((s) => s.source_type === "company_site");
@@ -1311,7 +1314,7 @@ export async function collectCompany(
       bump(stats.droppedByReason, `register_${d.why}`);
     }
     const reg = findings.find((f) => registerDecides(f, row.name, hqCountry).decides);
-    if (reg) { registerLegalName = reg.entity; registerCountry = reg.founding_country; }
+    if (reg) { registerLegalName = reg.entity; registerCountry = reg.founding_country; if (reg.register === "uk_companies_house") ukRegisterEntity = { number: reg.number, entity: reg.entity }; }
     if (!reg && !findings.length) {
       const known = (profile.profile.founders ?? []).map((f) => f.name).filter(Boolean);
       console.log(`    🏛️   Registers: no certain match (name + number / office city${known.length ? ` / founders ${known.join(", ")}` : " — no founder known to match against"}).`);
@@ -1418,10 +1421,26 @@ export async function collectCompany(
     console.warn(`    ⚠️  EPO register lookup failed (${e instanceof Error ? e.message : String(e)}) — patents left as they are.`);
   }
 
+  // ── Headcount points from registers and archived pages (headcountCollect.ts, owner 2026-11-08) ──
+  // Companies House only for the certain match whose country is the decided headquarters; Brreg for a Norwegian
+  // headquarters; the Wayback copies of the company's About / Careers pages for every company with a website.
+  const headcountExtra: HistoryPoint[] = [];
+  if (componentOn("headcount_sources") && !ctx.update && !process.env.VITEST) {
+    const hqNow = profile.profile.country?.value ?? (profile.profile.city ? countryOfCity(profile.profile.city.value) : null);
+    const io: HeadcountIo = { ...nodeRegisterIo(), pause: () => new Promise((r) => setTimeout(r, 1000)) };
+    const today = new Date().toISOString().slice(0, 10);
+    if (ukRegisterEntity && (hqNow ?? "").toLowerCase().replace(/^uk$/, "united kingdom") === "united kingdom") headcountExtra.push(...await companiesHouseHeadcount(ukRegisterEntity.number, ukRegisterEntity.entity, io));
+    if ((hqNow ?? "").toLowerCase() === "norway") headcountExtra.push(...await brregHeadcount(row.name, legal.legalName, io, today));
+    if (domain) headcountExtra.push(...await waybackHeadcount(domain, row.name, io));
+    if (headcountExtra.length) console.log(`    👥  Headcount points: ${headcountExtra.map((p) => `${p.value}${p.lowerBound ? "+" : ""}@${p.date} (${p.type})`).join(", ")}`);
+    else console.log("    👥  Headcount points: none from registers or archived pages.");
+  }
+
   return {
     outcome: "collected",
     profile, funding, market, allSources, sourceById, sourceTypeFor, sourceUrlFor,
     linkedinFounders, linkedinLeaders, existingRefs, validation, plan,
     cityConfidence, countryConfidence, domain, verifiedFacts, patentsFromRegister, roundHints, confirmedHints, unlistedDomains,
+    ...(headcountExtra.length ? { headcountExtra } : {}),
   };
 }
