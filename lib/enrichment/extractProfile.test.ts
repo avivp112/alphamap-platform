@@ -278,3 +278,13 @@ describe("founding country and R&D in Israel (origin.ts)", () => {
     expect(dropped).toContainEqual({ field: "profile.founding_country", reason: "evidence_mismatch" });
   });
 });
+
+import { buildProfileExtractionRequest as buildProfileReq, ALLOWED_SOURCE_RULE } from "./extractProfile";
+describe("location and founding facts name the sources they may cite (owner, 2026-11-08: Fresha)", () => {
+  it("city, country, founded_year and founding_country carry the allowed-source rule", () => {
+    const req = buildProfileReq("Fresha", [], { parentNames: [], subNames: [] });
+    const props = (req.tools[0].input_schema as { properties: { profile: { properties: Record<string, { properties?: { value?: unknown }; description: string }> } } }).properties.profile.properties;
+    for (const k of ["city", "country", "founded_year", "founding_country"]) expect(props[k].description, k).toContain("NEVER cite LinkedIn");
+    expect(ALLOWED_SOURCE_RULE).toMatch(/omit the field/);
+  });
+});
