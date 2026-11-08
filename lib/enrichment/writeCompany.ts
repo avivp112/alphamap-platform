@@ -646,7 +646,15 @@ export async function writeCollected(
           }
         }
       } else if (k === "leadership") {
-        for (const l of newOf<{ name: string; role?: string | null; bio?: string | null }>(patch.leadership, rowOf.leadership, (a, b) => samePersonName(a.name ?? "", b.name))) one("leader", `${l.name} — ${l.role ?? ""}${l.bio ? ` · ${l.bio}` : ""}`, null);
+        for (const l of newOf<{ name: string; role?: string | null; bio?: string | null }>(patch.leadership, rowOf.leadership, (a, b) => samePersonName(a.name ?? "", b.name))) {
+          // The page that names the person: the bio's allowed source, else the first allowed page that does (so the value has a source on file).
+          const ids = (profile.leadership ?? []).find((x) => samePersonName(x.name, l.name))?.bio_source_ids;
+          const src = ((ids ?? []).map((id) => sourceById.get(id)).find((x) => x && profileSourceAllowed(x, row.name)))
+            ?? allSources.find((x) => profileSourceAllowed(x, row.name) && `${x.title ?? ""} ${x.content ?? ""}`.toLowerCase().includes((l.name.trim().split(/\s+/).pop() ?? l.name).toLowerCase()));
+          const last = (l.name.trim().split(/\s+/).pop() ?? l.name).toLowerCase();
+          const quote = src ? (`${src.title ?? ""}. ${src.content ?? ""}`.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/).find((sen) => sen.length <= 300 && sen.toLowerCase().includes(last)) ?? null) : null;
+          one("leader", `${l.name} — ${l.role ?? ""}${l.bio ? ` · ${l.bio}` : ""}`, src?.url ?? null, quote);
+        }
       } else if (k === "competitors") {
         for (const c of newOf<{ name: string; source_url?: string | null; tier?: string }>(patch.competitors, rowOf.competitors, (a, b) => normalizeForMatch(a.name ?? "") === normalizeForMatch(b.name))) one(c.tier === "market" ? "competitor_market" : "competitor_declared", c.name, c.source_url ?? null);
       } else if (k === "patents") {
@@ -731,6 +739,23 @@ export async function writeCollected(
       if (provenanceErr) console.warn(`    ⚠️  field_provenance insert failed (${fw.field}): ${provenanceErr.message}`);
     };
     for (const fw of fieldWrites) await writeProvenance(fw);
+    // News, founders, leaders and patents live in jsonb lists with no source of their own: each value written gets a
+    // field_provenance row (owner, 2026-11-08), so that every value of a batch has its source on file.
+    const listKey: Record<string, (after: unknown) => string> = {
+      news: (a) => `news.${String(a).split(" — ").slice(1).join(" — ").slice(0, 120)}`,
+      founder: (a) => `founders.${String(a).split(" — ")[0]}`,
+      leader: (a) => `leadership.${String(a).split(" — ")[0]}`,
+      patent: (a) => `patents.${String(a).split(" ")[0]}`,
+    };
+    for (const rl of reportLines.filter((r) => listKey[r.field] && r.source_url)) {
+      const src = allSources.find((x) => x.url === rl.source_url);
+      const { error: lpErr } = await supabase.from("field_provenance").insert({
+        startup_id: row.id, field: listKey[rl.field](rl.after), value: rl.after, source_url: rl.source_url,
+        source_type: src?.source_type ?? (rl.field === "patent" ? "registry" : "news"), evidence_quote: rl.quote ?? (typeof rl.after === "string" ? rl.after.slice(0, 200) : null),
+        confidence: computeFieldConfidence([{ source_type: src?.source_type ?? "news" }]), run_id: runId,
+      });
+      if (lpErr) console.warn(`    ⚠️  field_provenance insert failed (${rl.field}): ${lpErr.message}`);
+    }
     // A round's amount / valuation / date / lead: field "funding_rounds.<id>.<column>".
     const roundProvenance = async (roundId: string, written: Parameters<typeof roundFieldEvidence>[0]) => {
       for (const e of roundFieldEvidence(written, funding.funding_rounds)) {

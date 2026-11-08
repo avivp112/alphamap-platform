@@ -27,3 +27,11 @@ describe("the writing batch's report (owner, 2026-11-05)", () => {
     expect(batchCsv(numberValues([v("news", "L", "a, b")], 1, "w"))).toContain('"a, b"');
   });
 });
+
+describe("the wet batch report points at the provenance check (owner, 2026-11-08)", () => {
+  it("names scripts/verify_batch.ts with the batch file and the run", () => {
+    const text = renderBatchReport([], { batchNo: 7, runId: "run-1", dry: false, csvPath: "field_review/batch_7.csv" });
+    expect(text).toContain("BATCH=field_review/batch_7.csv RUN_ID=run-1 npx tsx scripts/verify_batch.ts");
+    expect(renderBatchReport([], { batchNo: 7, runId: null, dry: true })).not.toContain("verify_batch");
+  });
+});
