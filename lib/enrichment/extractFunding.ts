@@ -75,6 +75,16 @@ export interface V2FundingExtraction {
 }
 
 /** Flattens a verified V2Round down to the plain shape rounds.ts/validation.ts operate on — called by the orchestrator AFTER evidence verification has already dropped whatever didn't check out. */
+/** A list of investor NAMES: not "existing investors", "angel investors", "a group of …" (pilot dry run 2026-11-08: "Swan's existing investors"). */
+export function investorNamesOnly(list: string[] | null | undefined): string[] | null {
+  const kept = (list ?? []).map((n) => n.trim()).filter((n) =>
+    n.length >= 2 && n.length <= 60
+    && !/\b(?:existing|current|previous|prior|new|other|several|various|undisclosed|unnamed|institutional|strategic|angel|individual|private|unidentified|participating|returning|follow-on)\s+(?:investors?|backers?|shareholders?|funds?)\b/i.test(n)
+    && !/^(?:investors?|backers?|angels?|others?|existing|a group of|group of|and others|and)\b/i.test(n)
+    && !/['’]s\s+(?:existing|current|previous)\b/i.test(n));
+  return kept.length ? kept : null;
+}
+
 export function roundToRoundLike(round: V2Round): RoundLike {
   // A figure the source writes in another currency is kept as written and
   // converted to a USD estimate (currency.ts, owner 2026-11-01).
@@ -101,7 +111,7 @@ export function roundToRoundLike(round: V2Round): RoundLike {
     announcement_date: round.announcement_date?.value ?? null,
     announcement_date_precision: round.announcement_date?.value ? (round.announcement_date_precision ?? datePrecision(round.announcement_date.value, round.announcement_date.evidence_quote)) : null,
     lead_investor: round.lead_investor?.value ?? null,
-    other_investors: round.other_investors ?? null,
+    other_investors: investorNamesOnly(round.other_investors),
     source_url: round.source_url ?? null,
     is_valuation_estimated: round.valuation ? (round.is_valuation_estimated ?? null) : null,
     investor_amounts: round.investor_amounts?.length ? round.investor_amounts : null,

@@ -1336,7 +1336,7 @@ export async function collectCompany(
         // Not a guide, and not an article about another company of the same name (newsRelevance.ts).
         const about = [profile.profile.description, profile.profile.value_proposition, profile.profile.industry, row.description].filter(Boolean).join(" ");
         const problem = newsProblem({ title: n.title, content: sourceByUrl(n.url)?.content }, row.name, about);
-        if (problem) { console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — ${problem === "explainer" ? "a guide or explainer, not news" : "about another company of the same name (a different product)"}: ${n.url}`); bump(stats.droppedByReason, `news_${problem}`); continue; }
+        if (problem) { console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — ${problem === "explainer" ? "a guide, a roundup or an explainer, not news" : problem === "not_about_the_company" ? "its headline and opening do not name the company (a passing mention)" : "about another company of the same name (a different product)"}: ${n.url}`); bump(stats.droppedByReason, `news_${problem}`); continue; }
         keptNews.push(n); continue;
       }
       // A hint-only site (owner, 2026-11-03): its headline is searched for in an allowed source.

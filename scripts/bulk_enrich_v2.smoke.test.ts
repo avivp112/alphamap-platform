@@ -281,8 +281,9 @@ describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
     expect(calls.filter((c) => c.table === "funding_rounds" && c.op === "insert")).toHaveLength(0);
     const upd = calls.find((c) => c.table === "funding_rounds" && c.op === "update")!;
     expect(upd.filters).toContainEqual(["id", "r-1"]);
+    // The lead investor has evidence behind it; the investor list has none, so it is not written as a fill (owner, 2026-11-08).
     expect(upd.payload).toEqual({
-      lead_investor: "Y Combinator", investors: ["SV Angel"],
+      lead_investor: "Y Combinator",
       source_url: "https://techcrunch.com/2014/03/15/ghost-raises-seed",
     });
   });

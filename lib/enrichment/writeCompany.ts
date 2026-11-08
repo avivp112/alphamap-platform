@@ -22,6 +22,7 @@ import { checkHeadcountOutlier } from "./validation.ts";
 import { screenPoints, type HistoryPoint } from "./headcountHistory.ts";
 import { supportedTags } from "./quoteFinder.ts";
 import { extractionPoints } from "./headcountSources.ts";
+import { stripTrackingParams } from "./newsRelevance.ts";
 import { profileSourceAllowed } from "./roundSources.ts";
 import { countryFromLocationQuote } from "./location.ts";
 import { retireReplacedExecutives } from "./update.ts";
@@ -170,7 +171,18 @@ export async function writeCollected(
   if (!DRY_RUN && !OPEN) throw new Error("writeCollected: a wet write needs the open fields (ctx.openFields) — the tracker is the gate.");
   // Rounds only when the rounds field is open (a held-back round is counted for the report).
   const roundsHeldBack = OPEN && !writesRounds(OPEN) ? fullPlan.inserts.length + fullPlan.updates.length : 0;
-  const plan = OPEN && !writesRounds(OPEN) ? { ...fullPlan, inserts: [], updates: [] } : fullPlan;
+  const planned = OPEN && !writesRounds(OPEN) ? { ...fullPlan, inserts: [], updates: [] } : fullPlan;
+  // A round on file is filled only with values that have evidence behind them (an amount, valuation, date, lead investor):
+  // an investor list has none, so it is never written as a fill (pilot dry run 2026-11-08: "Swan's existing investors").
+  const plan = {
+    ...planned,
+    updates: planned.updates.flatMap((u) => {
+      const { investors: _i, investor_amounts: _a, ...patch } = u.patch as Record<string, unknown>;
+      const material = ["amount_raised", "valuation", "announcement_date", "lead_investor"].some((k) => patch[k] != null);
+      if (!material) { bump(summary.droppedByReason, "round_fill_without_evidence"); return []; }
+      return [{ ...u, patch } as typeof u];
+    }),
+  };
   // Bios (and the tags read off them) only when the bios field is open.
   const keepBio = <T extends Record<string, unknown>>(person: T): T => (!OPEN || writesBios(OPEN) ? person : withoutBio(person));
 
@@ -470,7 +482,7 @@ export async function writeCollected(
   if (freshNews.length > 0 && existingNews.length < MAX_NEWS) {
     const toAdd = freshNews.slice(0, MAX_NEWS - existingNews.length);
     const withImages = await Promise.all(toAdd.map(async (n) => ({
-      title: n.title, url: n.url, source: n.source ?? null,
+      title: n.title, url: stripTrackingParams(n.url), source: n.source ?? null,
       // An article dated before the company existed is a wrong date, not
       // a time-travelling article — the date is dropped, the article kept.
       published_date: (() => {

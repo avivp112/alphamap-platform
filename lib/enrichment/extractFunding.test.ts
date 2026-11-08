@@ -205,3 +205,13 @@ describe("Unknown (no type stated) and Other (a known type that is no regular se
   });
   it("a named series is untouched", () => { expect(roundToRoundLike({ round_type: "Series B", amount_raised: q("x") }).round_type).toBe("Series B"); });
 });
+
+import { investorNamesOnly } from "./extractFunding";
+describe("investor lists hold names (pilot dry run 2026-11-08: Swan's \"existing investors\")", () => {
+  it("drops phrases, keeps names", () => {
+    expect(investorNamesOnly(["Swan's existing investors", "Lakestar", "angel investors", "existing investors", "Insight Partners", "Other investors", "a group of angels"])).toEqual(["Lakestar", "Insight Partners"]);
+    expect(investorNamesOnly(["Benchmark", "Conviction", "Thrive Capital", "Bond Capital"])).toEqual(["Benchmark", "Conviction", "Thrive Capital", "Bond Capital"]);
+    expect(investorNamesOnly(["existing investors"])).toBeNull();
+    expect(investorNamesOnly(null)).toBeNull();
+  });
+});

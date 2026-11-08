@@ -23,3 +23,25 @@ describe("news that is not about this company (owner, 2026-11-08, review 6)", ()
     for (const t of ["Solana raises $314M in funding led by a16z", "Tenable Plans to Acquire Vulcan Cyber", "Nym Health Announces $16.5M Series A Funding"]) expect(isExplainer(t), t).toBe(false);
   });
 });
+
+import { stripTrackingParams, namesCompanyUpFront } from "./newsRelevance";
+describe("the pilot dry run of 2026-11-08: roundups, passing mentions, tracking parameters", () => {
+  const pad = "A long article about early-stage startups, hiring, technical debt and how founders raise money in a bull market. ".repeat(8);
+  it("Lightup: a roundup and a 'lessons from founders' piece are not news about it", () => {
+    expect(newsProblem({ title: "TechCrunch+ roundup: Slashing technical debt, IPO analysis, your first comms hire", content: pad + " Lightup was mentioned once." }, "Lightup", "Lightup is a data quality platform")).toBe("explainer");
+    expect(newsProblem({ title: "Lessons from founders raising their first round in a bull market", content: pad + " Lightup was mentioned once." }, "Lightup", "Lightup is a data quality platform")).toBe("explainer");
+  });
+  it("an article whose headline and opening never name the company is a passing mention", () => {
+    expect(namesCompanyUpFront({ title: "Why founders raise early", content: pad + " Lightup said so." }, "Lightup")).toBe(false);
+    expect(newsProblem({ title: "Why founders raise early", content: pad + " Lightup said so." }, "Lightup", "a data quality platform")).toBe("not_about_the_company");
+  });
+  it("the news the dry run got right stays (headline names the company)", () => {
+    for (const [t, c] of [["Data quality startup Lightup nabs $9M in fresh funding", "Lightup"], ["Swan secures €42M to lead Embedded Banking in Europe", "Swan"], ["HeyGen Surpasses $200M ARR as AI Video Adoption Accelerates", "HeyGen"], ["Thriveni Expands Partnership with Empxtrack", "Empxtrack"], ["GetUpside rebrands as Upside, Raises $165M Series D", "Upside"]] as const)
+      expect(newsProblem({ title: t, content: pad }, c, "x y z"), t).toBeNull();
+  });
+  it("tracking parameters leave the address (Speechify's srsltid)", () => {
+    expect(stripTrackingParams("https://speechify.com/news/speechify-launches-voice-ai-assistant-ios/?srsltid=AYCX9vK7jeP")).toBe("https://speechify.com/news/speechify-launches-voice-ai-assistant-ios/");
+    expect(stripTrackingParams("https://a.com/x?id=3&utm_source=tw&utm_medium=s")).toBe("https://a.com/x?id=3");
+    expect(stripTrackingParams("not a url")).toBe("not a url");
+  });
+});
