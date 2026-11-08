@@ -14,6 +14,10 @@ import { roleAtCompany, isOrganisationName } from "./people";
 import { RAISE_RE, statesAmount } from "./assemble";
 import { dateFromUrl } from "./evidence";
 import { isLinkList, quoteIsAboutTheCompany, quoteLinksTheTwo } from "./competitorEvidence";
+import { isLegalPageUrl } from "./headquarters";
+import { looksLikeCompanyName } from "./competitorTiers";
+import { isExplainer } from "./newsRelevance";
+import { PARENT_BY_SUB_SECTOR } from "../../src/lib/taxonomy";
 import type { Mark } from "./fieldReview";
 
 export interface MarkContext {
@@ -42,6 +46,8 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
   if (url) {
     const host = (() => { try { return new URL(url).hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; } })();
     const ownSite = !!ctx.domain && (host === ctx.domain || host.endsWith(`.${ctx.domain}`));
+    // An address on a legal page is an office, never the headquarters (owner, 2026-11-08: EngFlow).
+    if ((mark.field === "hq_city" || mark.field === "hq_country") && isLegalPageUrl(url)) return out("an address on a legal page is an office");
     if (PROFILE.has(mark.field)) {
       const sourceType = ownSite ? "company_site" : classifySourceType(url, ctx.domain);
       const allowed = profileSourceAllowed({ url, source_type: sourceType }, company);
@@ -92,6 +98,8 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
     case "competitor": case "competitor_declared": case "competitor_market": {
       // The quote must say, of the company, that it competes with this one (competitorEvidence.ts, owner 2026-11-06):
       // not a row of "X vs Y" links, not a rival of a third party ("Rippling competes with HiBob, Namely, BambooHR").
+      // The name must be a company: not a category ("EDR / AV"), not a post title (review 6, 2026-11-08).
+      if (!looksLikeCompanyName(mark.value)) return out("not a company name");
       const q = ctx.quote?.trim();
       if (!q) return keep;
       const ownSite = !!ctx.domain && (() => { try { const h = new URL(url).hostname.toLowerCase().replace(/^www\./, ""); return h === ctx.domain || h.endsWith(`.${ctx.domain}`); } catch { return false; } })();
@@ -101,6 +109,23 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
       if (!quoteLinksTheTwo(q, company, mark.value)) return out("the quote does not link the company and this competitor directly");
       return keep;
     }
+    case "tags": {
+      // A tag no sentence of an allowed page supports, or "supported" by an error page (review 6, 2026-11-08).
+      const q = ctx.quote ?? "";
+      if (/no sentence found|Target URL returned error/i.test(q)) return out("a tag no sentence supports");
+      return keep;
+    }
+    case "sector": {
+      // The sector is the parent of its sub-sector (EngFlow's "DeepTech › DevOps / CI-CD").
+      const [parent, sub] = mark.value.split("›").map((x) => x.trim());
+      const real = sub ? PARENT_BY_SUB_SECTOR[sub] : undefined;
+      return real && real !== parent ? out("sector and sub-sector disagree") : keep;
+    }
+    case "news": {
+      const title = mark.value.replace(/^(?:\d{4}-\d{2}-\d{2}|no date)\s+—\s+/, "");
+      return isExplainer(title) ? out("a guide, not news") : keep;
+    }
+    case "employee_history": return judgeHeadcount(mark, ctx);
     case "round": {
       // No amount while its own source's address states one (Forward Financing, run 3).
       if (/amount not disclosed/i.test(mark.value) && url && statesAmount(url)) return out("amount stated in its source");
@@ -114,4 +139,37 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
     }
     default: return keep;
   }
+}
+
+
+// ── Headcount history (review 6, 2026-11-08) ──────────────────────────────
+const firstWordOf = (name: string) => name.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").split(/\s+/).find((w) => w.length >= 3) ?? "";
+
+/** "300+ employees @ 2025-01-30 (site_stated)": judged by its stored source, quote and type. */
+function judgeHeadcount(mark: Mark, ctx: MarkContext): MarkJudgment {
+  const m = mark.value.match(/^(\d[\d,]*)(?:[+–-]\d*)?\s+employees\s+@\s+(\S+)\s+\((\w+)\)/);
+  if (!m) return keep;
+  const [, num, date, type] = [...m];
+  let url = mark.source_url?.trim() ?? "";
+  const archived = url.match(/^https?:\/\/web\.archive\.org\/web\/\d+[a-z_]*\/(https?:\/\/.+)$/);
+  if (archived) url = archived[1];                       // a copy is judged by the page it copies
+  if (!/^\d{4}(-\d{2}){0,2}$/.test(date)) return out("a point with no date");
+  if (url) {
+    const standing = roundSourceStanding(url, { companyName: mark.company });
+    if (standing.kind === "denied") return out(`source not allowed (${standing.why})`);   // RocketReach and the like
+  }
+  const q = (ctx.quote ?? "").replace(/(\d),(\d)/g, "$1$2");
+  if (q) {
+    if (!new RegExp(`(^|[^\\d])${num.replace(/,/g, "")}([^\\d]|$)`).test(q)) return out("the number is not in the quote");
+    const w = firstWordOf(mark.company);
+    if (!(w && q.toLowerCase().includes(w)) && !/\b(?:we|our|us)\b|\bthe\b[^.]{0,40}\b(?:company|startup|firm|team|business)\b/i.test(q)) return out("the quote is not about the company");
+    // A milestone or a dated past count is not the size on the day of the copy.
+    const years = new Set([...q.matchAll(/\b(19[89]\d|20\d{2})\b/g)].map((y) => y[1]));
+    if (type === "site_stated" && /web\.archive\.org/.test(mark.source_url ?? "") && (years.size > 1 || /\b(milestone|reached|grew (?:to|from))\b/i.test(q))) return out("a milestone or a dated count, not the copy's day");
+  }
+  // The company's own site is site_stated, never press_reported.
+  let host = ""; try { host = new URL(url).hostname.toLowerCase().replace(/^www\./, ""); } catch { /* no host */ }
+  const own = (!!ctx.domain && (host === ctx.domain || host.endsWith(`.${ctx.domain}`))) || (!!firstWordOf(mark.company) && host.split(".")[0].includes(firstWordOf(mark.company)));
+  if (type === "press_reported" && own) return out("the company's own page is site_stated");
+  return keep;
 }
