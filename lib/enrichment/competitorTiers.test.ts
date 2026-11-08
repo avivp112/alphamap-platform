@@ -146,3 +146,22 @@ describe("the other side of a vs title must be a company (review 6, 2026-11-08)"
     expect(looksLikeCompanyName("SecPortal")).toBe(true);
   });
 });
+
+import { vsPageClaims as vsClaims } from "./competitorTiers";
+describe("a vs page on the competitor's own site needs a known competitor (owner, 2026-11-08: SecPortal)", () => {
+  const url = "https://secportal.io/compare/secportal-vs-vulcan-cyber";
+  const results = [{ url, title: "SecPortal vs Vulcan Cyber | Delivery Workspace vs Orchestration" }];
+  const sources = [{ source_id: "X1", url, title: results[0].title, content: "", source_type: "news_article" }] as never;
+  it("an unknown small company's page is dropped", () => {
+    expect(vsClaims(results, sources, "Vulcan Cyber", "vulcan.io", () => false)).toEqual([]);
+  });
+  it("a known company's page is kept; without the check the old behaviour stands", () => {
+    expect(vsClaims(results, sources, "Vulcan Cyber", "vulcan.io", () => true).map((c) => c.name)).toEqual(["SecPortal"]);
+    expect(vsClaims(results, sources, "Vulcan Cyber", "vulcan.io").map((c) => c.name)).toEqual(["SecPortal"]);
+  });
+  it("the company's own comparison page needs no such check", () => {
+    const own = [{ url: "https://vulcan.io/compare/vulcan-vs-kenna", title: "Vulcan Cyber vs Kenna" }];
+    const s2 = [{ source_id: "X2", url: own[0].url, title: own[0].title, content: "", source_type: "company_site" }] as never;
+    expect(vsClaims(own, s2, "Vulcan Cyber", "vulcan.io", () => false).map((c) => c.name)).toEqual(["Kenna"]);
+  });
+});

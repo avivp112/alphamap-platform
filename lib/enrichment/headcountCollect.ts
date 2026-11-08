@@ -116,14 +116,20 @@ export async function waybackHeadcount(domain: string, companyName: string, io: 
         if (firstWord && !page.toLowerCase().includes(firstWord)) continue;   // another owner of the domain
         const st = sizeStatement(page);
         if (!st) continue;
-        seenYear.add(y);
+        // The quote must carry the number and be about the company (review 6: CaPow's quote was about SolarEdge).
+        const q = st.sentence.replace(/(\d),(\d)/g, "$1$2");
+        if (!new RegExp(`(^|[^\\d])${st.value}([^\\d]|$)`).test(q)) continue;
+        if (!(firstWord && q.toLowerCase().includes(firstWord)) && !/\b(?:we|our|us)\b|\bthe\b[^.]{0,40}\b(?:company|startup|firm|team|business)\b/i.test(q)) continue;
+        // A figure the text dates to a year belongs to that year, not to the day of the copy (BrowserStack's 2014 milestone).
+        if (st.year && st.year > Number(c.ts.slice(0, 4))) continue;
+        seenYear.add(st.year ? String(st.year) : y);
         points.push({
-          date: `${c.ts.slice(0, 4)}-${c.ts.slice(4, 6)}-${c.ts.slice(6, 8)}`, value: st.value, lowerBound: st.lowerBound || undefined,
-          type: "site_stated", measure: "count_at_date", sourceUrl: `https://web.archive.org/web/${c.ts}/${c.orig}`, quote: st.sentence,
+          date: st.year ? `${st.year}-01-01` : `${c.ts.slice(0, 4)}-${c.ts.slice(4, 6)}-${c.ts.slice(6, 8)}`, value: st.value, lowerBound: st.lowerBound || undefined,
+          type: "site_stated", measure: st.year ? "count_in_year" : "count_at_date", sourceUrl: `https://web.archive.org/web/${c.ts}/${c.orig}`, quote: st.sentence,
         });
       } catch { /* copy not readable */ }
     }
     if (fetched >= max) break;
   }
-  return points.sort((a, b) => a.date.localeCompare(b.date));
+  return points.filter((p, i) => points.findIndex((x) => x.date === p.date && x.type === p.type) === i).sort((a, b) => a.date.localeCompare(b.date));
 }

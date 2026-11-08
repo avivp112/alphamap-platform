@@ -47,8 +47,19 @@ const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const CITY_RE = new RegExp(`(^|[^\\p{L}])(${CITY_NAMES.map(esc).join("|")})(?=$|[^\\p{L}])`, "giu");
 const title = (s: string) => s.replace(/\b\p{L}/gu, (c) => c.toUpperCase());
 
+/**
+ * An Impressum, Legal, Terms or Privacy page gives the registered (legal) address: an office, never the headquarters
+ * (owner, 2026-11-08 — review 6: EngFlow's "Delaware corporation based in the US at 2025 Guadalupe Street, Austin").
+ */
+export function isLegalPageUrl(url: string): boolean {
+  let path = "";
+  try { path = new URL(url.startsWith("http") ? url : `https://${url}`).pathname; } catch { return false; }
+  return /(?:^|\/)(?:impressum|imprint|legal(?:-notice|-information)?|terms(?:-(?:of-(?:service|use)|and-conditions|conditions))?|tos|privacy(?:-(?:policy|notice))?|datenschutz|agb|cookies?(?:-policy)?|disclaimer|policies|compliance)(?:\/|$|\.)/i.test(path);
+}
+
 /** Who speaks: the company itself, the allowed press, or neither (never read). */
 export function statementKind(s: Pick<LabeledSource, "url" | "source_type"> & { content?: string; title?: string }): "company" | "press" | null {
+  if (isLegalPageUrl(s.url)) return null;
   if (s.source_type === "company_site") return "company";
   if (isDirectoryPage(s.url)) return null;
   if (s.source_type === "press_release") return "company";

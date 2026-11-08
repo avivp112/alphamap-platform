@@ -382,3 +382,13 @@ marking report (`lib/enrichment/reviewDefinitions.ts`).
 - **Unknown vs Other.** `Unknown`: no source states what kind of round it is ("emerges from stealth with $7.5M"); stored as NULL, shown as "Undisclosed", counted *missing* (not wrong) in the evaluation. `Other`: a type the source names that is no regular series (strategic, crowdfunding, token sale); judged like any type. A model's "Other" with no such word in its evidence becomes `Unknown` (`refineRoundType`).
 - **A round's amount** must stand on an allowed source of its own, not just any source the round cites (Apex's $185.1M from forgeglobal.com).
 - **A date from a press article's dateline only** (`roundDates.ts`): one search for the original release (company site, wire, investor) for its day; not found → `announcement_date_precision = month`, shown as a month. In the evaluation a month date is right when the month matches. Switch `round_dates`; `DATE_SEARCHES` per company, default 3.
+
+## Review 6 rules (owner, 2026-11-08)
+
+- **HQ never from a legal page** (Impressum, Legal, Terms, Privacy…): the address is an office (`headquarters.ts isLegalPageUrl`).
+- **Headcount points** (`headcountSources.ts`): the number must be in the quote and the quote about the company; data platforms (RocketReach…) are no source; no date, no point; a figure the text dates to a year is that year's (`count_in_year`), a milestone without a year gives nothing; the company's own site is `site_stated`, anything else `press_reported`.
+- **Tags** need a sentence of an allowed page; an error/block page supports nothing (`quoteFinder.ts`).
+- **Sector** agrees with its sub-sector; the most specific category wins; DeepTech only without a specific one (`sectors.ts`).
+- **Competitors:** the other side of a "vs" title must be a company (not a category or a post title); a vs page on the competitor's own site needs a competitor known from the database or an allowed source.
+- **News** (`newsRelevance.ts`): a guide/explainer is not news; an article whose named product shares no word with the company's description is another company's.
+- **Website identity** (`websiteIdentity.ts`): if allowed press outside the site names ≥2 founders and none appears on the site, the site's people are not written.

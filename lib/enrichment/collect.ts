@@ -27,6 +27,9 @@ import { extractFunding, roundToRoundLike, type V2Round } from "./extractFunding
 import { extractMarket, normalizeUrlForMatch } from "./extractMarket.ts";
 import { normalizeForMatch } from "./evidence.ts";
 import { competitorTierClaims, type TieredClaim } from "./competitorTiers.ts";
+import { websiteLooksLikeAnotherCompany } from "./websiteIdentity.ts";
+import { newsProblem } from "./newsRelevance.ts";
+import { reconcileSector } from "./sectors.ts";
 import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
 import { buildDescriptionRequest, descriptionSources, processDescription } from "./descriptionBuilder.ts";
 import { buildBackgroundRequest, processBackgroundResponse, backgroundSearchQuery } from "./founderBackground.ts";
@@ -47,7 +50,7 @@ import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePerso
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
 import { validateEnrichment, checkNarratives } from "./validation.ts";
-import { hqStatementsIn, decideHeadquarters, statementKind, articleDate, countryOfCity, contactPageAddresses, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, canonicalCity, type HqStatement } from "./headquarters.ts";
+import { hqStatementsIn, decideHeadquarters, statementKind, isLegalPageUrl, articleDate, countryOfCity, contactPageAddresses, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, canonicalCity, type HqStatement } from "./headquarters.ts";
 import { profileSourceAllowed, roundSourceStanding, unwrapRedirect } from "./roundSources.ts";
 import { aboutParagraph, aboutIsOf, factsFromAbout, legalFacts, releasePointsTo, type LegalFacts } from "./companyFacts.ts";
 import { checkFoundingCountry } from "./origin.ts";
@@ -1143,6 +1146,21 @@ export async function collectCompany(
     const f = profile.profile[key] as { value: unknown; source_id: string } | undefined;
     if (!f) continue;
     const s = sourceById.get(f.source_id);
+    // A legal page's address is the registered office, not the headquarters: an office, never the HQ (owner, 2026-11-08).
+    if (s && (key === "city" || key === "country") && isLegalPageUrl(s.url)) {
+      console.log(`    🚫  ${key} ${JSON.stringify(f.value)} not written as the headquarters — it comes from a legal page (${s.url}); kept as an office`);
+      bump(stats.droppedByReason, "hq_from_legal_page");
+      if (key === "city") {
+        const offices = profile.profile.offices ?? [];
+        if (!offices.some((o) => canonicalCity(o.city) === canonicalCity(String(f.value)))) {
+          const ctry = profile.profile.country && sourceById.get(profile.profile.country.source_id) && isLegalPageUrl(sourceById.get(profile.profile.country.source_id)!.url) ? profile.profile.country.value : countryOfCity(String(f.value));
+          offices.push({ city: String(f.value), ...(ctry ? { country: ctry } : {}), source_id: f.source_id, evidence_quote: (f as { evidence_quote?: string }).evidence_quote ?? "" } as never);
+        }
+        profile.profile.offices = offices;
+      }
+      (profile.profile as Record<string, unknown>)[key] = undefined;
+      continue;
+    }
     if (s && profileSourceAllowed(s, row.name)) continue;
     console.log(`    🚫  ${key} ${JSON.stringify(f.value)} not written — its source is not on the allowed list: ${s?.url ?? f.source_id}`);
     bump(stats.droppedByReason, "profile_source_not_listed");
@@ -1252,6 +1270,17 @@ export async function collectCompany(
       record("dropped");
     }
     profile.leadership = keptLeaders;
+    // The website may be another company's (websiteIdentity.ts): the allowed press names founders the site never shows.
+    {
+      const siteHosts = domain ? [domain] : [];
+      const pressFounders = (profile.profile.founders ?? []).filter((f) => f.grounded_url && !siteHosts.some((d) => f.grounded_url!.includes(d))).map((f) => f.name);
+      const sitePages = allSources.filter((x) => x.source_type === "company_site").map((x) => x.content ?? "");
+      if (websiteLooksLikeAnotherCompany({ sitePages, pressFounders })) {
+        console.log(`    🚫  The website (${domain}) names none of the founders the press names (${pressFounders.join(", ")}) — it may be another company's. Its people are not written: ${profile.leadership.length} leader(s) dropped.`);
+        bump(stats.droppedByReason, "website_may_be_another_company");
+        profile.leadership = [];
+      }
+    }
     // Competitors: the sentence that says they compete comes from an allowed source.
     market.competitors = market.competitors.filter((c) => {
       if (allowedId(c.source_id)) return true;
@@ -1278,6 +1307,9 @@ export async function collectCompany(
         companyName: row.name, domain, sources: allSources, hints: market.market_peers ?? [], known: have,
         search: (q, label) => extraSearch(q, label),
         addSource: (r, label) => newSource(r.url, r.content ?? "", r.title ?? "", label),
+        // A competitor named on its own site is a competitor only if it is a company we know: an allowed source other
+        // than its own pages names it (owner, 2026-11-08: SecPortal's SEO page).
+        knownCompany: (name, host) => allSources.some((x) => !x.url.includes(host) && !/^(vs_page|vs_own|vs_other)/.test(x.query_label ?? "") && profileSourceAllowed(x, row.name) && normalizeForMatch(`${x.title ?? ""} ${x.content}`).includes(normalizeForMatch(name))),
       });
       adopt(claims, "found");
       if (unconfirmedHints.length) console.log(`    💡  Market hint(s) not confirmed by an allowed source, not written: ${unconfirmedHints.join(", ")}`);
@@ -1298,7 +1330,13 @@ export async function collectCompany(
     for (const raw of market.news) {
       const n = { ...raw, url: unwrapRedirect(raw.url) };
       const standing = newsStanding(n.url, undefined, n.title);
-      if (standing.kind === "allowed") { keptNews.push(n); continue; }
+      if (standing.kind === "allowed") {
+        // Not a guide, and not an article about another company of the same name (newsRelevance.ts).
+        const about = [profile.profile.description, profile.profile.value_proposition, profile.profile.industry, row.description].filter(Boolean).join(" ");
+        const problem = newsProblem({ title: n.title, content: sourceByUrl(n.url)?.content }, row.name, about);
+        if (problem) { console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — ${problem === "explainer" ? "a guide or explainer, not news" : "about another company of the same name (a different product)"}: ${n.url}`); bump(stats.droppedByReason, `news_${problem}`); continue; }
+        keptNews.push(n); continue;
+      }
       // A hint-only site (owner, 2026-11-03): its headline is searched for in an allowed source.
       if (standing.kind === "denied" && standing.why === "hint_only" && hintSearches < 2 && !ctx.update) {
         hintSearches++;
@@ -1399,6 +1437,14 @@ export async function collectCompany(
   // Written text says what the company does: no data platform, no weakly
   // attributed claim this run did not verify (owner's rule 2026-10-25) —
   // here, so a check, a deepen and every run apply it.
+  // The sector agrees with its sub-sector: the most specific category wins, DeepTech only without one (sectors.ts).
+  {
+    const rec = reconcileSector(profile.profile, taxonomy.parentOf);
+    if (rec.changes.length) {
+      Object.assign(profile.profile, { sector_name: rec.fields.sector_name, sub_sector_name: rec.fields.sub_sector_name, sub_sector_names: rec.fields.sub_sector_names });
+      for (const c of rec.changes) { console.log(`    🧭  Sector reconciled — ${c}`); bump(stats.droppedByReason, "sector_reconciled"); }
+    }
+  }
   // v2's own description (descriptionBuilder.ts, owner 2026-11-08): replaces the extraction's free text; without a
   // verified "what" and "for whom" there is none. Written later only for a company with no description on file.
   if (componentOn("description_v2") && !ctx.update) {

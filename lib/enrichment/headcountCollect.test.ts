@@ -62,3 +62,18 @@ describe("Wayback", () => {
     expect(await waybackHeadcount("nova.ai", "Nova AI", other)).toEqual([]);
   });
 });
+
+describe("Wayback: dated text and the quote's subject (review 6, 2026-11-08)", () => {
+  const cdx = (path: string) => [["urlkey", "timestamp", "original"], ["k", "20260117013019", `https://browserstack.com/${path}`]];
+  const io = (page: string): HeadcountIo => ({
+    fetchText: async (u) => (u.endsWith("/robots.txt") ? "" : page),
+    fetchJson: async (u) => (u.includes("%2Fcompany") || u.includes("/company") ? cdx("company") : [["h"]]),
+  });
+  it("a timeline entry dated 2014 is a 2014 point, not a 2026 one", async () => {
+    const pts = await waybackHeadcount("browserstack.com", "BrowserStack", io("<p>BrowserStack milestones: 2014 Reached the milestone of 50 employees at BrowserStack.</p>"));
+    expect(pts.map((p) => [p.date, p.value, p.measure])).toEqual([["2014-01-01", 50, "count_in_year"]]);
+  });
+  it("a sentence about another company gives nothing", async () => {
+    expect(await waybackHeadcount("capow.energy", "CaPow", io("<p>CaPow team. Fishelov co-founded SolarEdge, a company with 300+ employees.</p>"))).toEqual([]);
+  });
+});

@@ -4,6 +4,8 @@
  * Every point is { date, value, lowerBound? } — the caller adds the source and the type.
  */
 
+import { profileSourceAllowed } from "./roundSources.ts";
+
 export interface HeadcountReading { date: string; value: number; lowerBound?: boolean }
 
 /** AverageNumberEmployeesDuringPeriod (and its variants) of an iXBRL accounts document: one reading per period end. */
@@ -50,8 +52,13 @@ export function form5500Columns(header: string[]): { sponsor: number; ein: numbe
   return { sponsor, active, ein: idx(/SPONS\w*_EIN|^SF_SPONS_EIN$/i), state: idx(/SPONS\w*_US_STATE|SF_SPONS_US_STATE/i), end: idx(/PLAN_YEAR_END|TOT_.*END|^SF_PLAN_YEAR_END_DATE$/i) };
 }
 
-/** A team-size sentence on a page: "a team of 200", "150+ employees", "over 100 people". The count is a lower bound when the sentence says so. */
-export interface SizeStatement { value: number; lowerBound: boolean; sentence: string }
+/**
+ * A team-size sentence on a page: "a team of 200", "150+ employees", "over 100 people". The count is a lower bound
+ * when the sentence says so. When the sentence names ONE year ("2014 Reached the milestone of 50 employees", "we grew to
+ * 800 in 2021") the figure belongs to that year, not to the day the page was copied (owner, 2026-11-08, review 6:
+ * BrowserStack); a milestone with no year has no date and gives nothing; several years (a range) give nothing.
+ */
+export interface SizeStatement { value: number; lowerBound: boolean; sentence: string; year?: number }
 const NUM = String.raw`(\d{1,3}(?:,\d{3})+|\d{1,6})`;
 const LOWER = String.raw`(?:over|more than|\d+\+|at least|nearly|almost)`;
 const PATTERNS: RegExp[] = [
@@ -59,24 +66,47 @@ const PATTERNS: RegExp[] = [
   new RegExp(String.raw`\b(over\s+|more than\s+|about\s+|around\s+|approximately\s+|nearly\s+|almost\s+)?${NUM}(\+)?\s+(?:full[- ]time\s+)?(?:employees|team members|teammates|colleagues|staff members)\b`, "i"),
   new RegExp(String.raw`\b(?:we are|we're|with|have|has)\s+(over\s+|more than\s+|about\s+|around\s+|approximately\s+|nearly\s+)?${NUM}(\+)?\s+(?:talented\s+)?(?:people|professionals|engineers|employees)\b`, "i"),
 ];
-// A timeline entry or a past count ("2014 Reached the milestone of 50 employees", "grew to 800 in 2021") is not the
-// size on the day of the copy (review 6, 2026-11-08: BrowserStack's 2014 milestone dated 2026-01-17).
-const PAST = /\b(milestone|reached|grew (?:to|from)|surpass\w*|crossed|hit|first \d+|(?:19|20)\d{2})\b/i;
+const MILESTONE = /\b(milestone|reached|grew (?:to|from)|surpass\w*|crossed|hit|first \d+)\b/i;
 export function sizeStatement(text: string): SizeStatement | null {
   for (const sentence of text.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/)) {
-    if (PAST.test(sentence)) continue;
+    const years = [...sentence.matchAll(/\b(19[89]\d|20\d{2})\b/g)].map((y) => Number(y[1]));
+    if (new Set(years).size > 1) continue;
+    if (!years.length && MILESTONE.test(sentence)) continue;
     for (const re of PATTERNS) {
       const m = sentence.match(re);
       if (!m) continue;
       const num = m.slice(1).find((x) => x && /^\d[\d,]*$/.test(x));
       const value = Number((num ?? "").replace(/,/g, ""));
-      if (!value || value > 500000 || (value >= 1900 && value <= 2100 && !/employee|team|staff/i.test(sentence))) continue;
+      if (!value || value > 500000 || (value >= 1900 && value <= 2100)) continue;
       const qualifier = m.slice(1).find((x) => x && !/^\d[\d,]*$/.test(x));
       const lowerBound = qualifier === "+" || new RegExp(LOWER, "i").test(qualifier ?? "") || /\d\+/.test(m[0]);
       // The excerpt is centred on the match, so a long sentence still shows its number (review 6: CaPow's "300+").
       const at = Math.max(0, (m.index ?? 0) - 110);
-      return { value, lowerBound, sentence: sentence.trim().slice(at, at + 240) };
+      return { value, lowerBound, sentence: sentence.trim().slice(at, at + 240), ...(years.length ? { year: years[0] } : {}) };
     }
   }
   return null;
+}
+
+// ── A headcount point read out of an article or page by the extraction (profile.metrics.headcount_history) ──
+export interface ExtractionPoint { date: string; employee_count: number; source_id: string; evidence_quote: string; point_type?: string }
+const FIRST_PERSON = /\b(?:we|our|us)\b|\bthe\b[^.]{0,40}\b(?:company|startup|firm|team|business)\b/i;
+const firstWord = (name: string) => name.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").split(/\s+/).find((w) => w.length >= 3) ?? "";
+
+/** Why an extracted headcount point is not kept, or null (review 6, 2026-11-08). */
+export function extractionPointProblem(h: ExtractionPoint, src: { url: string; source_type?: string | null; content?: string | null; title?: string | null } | undefined, companyName: string): string | null {
+  if (!/^\d{4}(-\d{2}){0,2}$/.test(h.date ?? "")) return "undated";
+  if (!src) return "no_source";
+  if (!profileSourceAllowed(src, companyName)) return "source_not_allowed";   // a data platform (RocketReach...) is never one
+  const q = (h.evidence_quote ?? "").replace(/(\d),(\d)/g, "$1$2");
+  if (!new RegExp(`(^|[^\\d])${h.employee_count}([^\\d]|$)`).test(q)) return "number_not_in_quote";
+  const w = firstWord(companyName);
+  if (!(w && q.toLowerCase().includes(w)) && !FIRST_PERSON.test(q)) return "quote_not_about_the_company";
+  return null;
+}
+
+/** The usable points, typed by where they come from: the company's own site is site_stated, anything else press_reported. */
+export function extractionPoints(points: ExtractionPoint[] | undefined, byId: Map<string, { url: string; source_type?: string | null; content?: string | null; title?: string | null }>, companyName: string): ExtractionPoint[] {
+  return (points ?? []).filter((h) => !extractionPointProblem(h, byId.get(h.source_id), companyName))
+    .map((h) => ({ ...h, point_type: byId.get(h.source_id)?.source_type === "company_site" ? "site_stated" : (h.point_type && h.point_type !== "observed" ? h.point_type : "press_reported") }));
 }

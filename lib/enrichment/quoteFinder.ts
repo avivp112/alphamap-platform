@@ -12,8 +12,13 @@ export function sentencesOf(text: string): string[] {
   return text.replace(/\s+/g, " ").split(/(?<=[.!?])\s+(?=[A-Z0-9"“])/).map((s) => s.trim()).filter((s) => s.length >= 25 && s.length <= 400);
 }
 
+/** A fetch that returned an error or a block page, not the page (review 6: Armorblox's "Target URL returned error 403"). */
+export const isErrorPage = (content: string): boolean =>
+  /Target URL returned error \d{3}|^\s*(?:403|404|429|503)\b[^\n]{0,40}(?:forbidden|not found|too many requests|unavailable)|Access Denied|Please be advised that this page is unavailable|Just a moment\.\.\.|Attention Required! \| Cloudflare/i.test(content.slice(0, 1500));
+
 /** The sentence with the most distinct words in common with `terms` (at least `min`), or null. */
 export function bestSentence(content: string, terms: string, min = 2): string | null {
+  if (isErrorPage(content)) return null;
   const want = new Set(contentWords(terms));
   if (!want.size) return null;
   let best: { s: string; n: number } | null = null;

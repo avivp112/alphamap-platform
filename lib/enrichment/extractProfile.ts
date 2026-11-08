@@ -286,12 +286,12 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
             sector_name: {
               type: "string",
               enum: taxonomy.parentNames.length > 0 ? taxonomy.parentNames : undefined,
-              description: "The single best-fit sector from the enumerated list. Omit if genuinely uncertain — never guess.",
+              description: "The single best-fit sector from the enumerated list — the most SPECIFIC one that fits. DeepTech only for a company whose core is quantum, robotics, space, semiconductors or hard science; never for software or DevOps. Omit if genuinely uncertain — never guess.",
             },
             sub_sector_name: {
               type: "string",
               enum: taxonomy.subNames.length > 0 ? taxonomy.subNames : undefined,
-              description: "The single best-fit sub-sector, one level more specific than sector_name. Omit if genuinely uncertain.",
+              description: "The single best-fit sub-sector, one level more specific than sector_name and belonging to it. Use a '… / General' sub-sector only when no specific one fits. Omit if genuinely uncertain.",
             },
             sub_sector_names: {
               type: "array",

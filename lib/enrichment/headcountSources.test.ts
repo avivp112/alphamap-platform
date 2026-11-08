@@ -30,9 +30,13 @@ describe("Form 5500", () => {
 });
 
 describe("a team-size sentence: past counts and long sentences (review 6, 2026-11-08)", () => {
-  it("a timeline milestone or a dated past count is not today's size", () => {
-    expect(sizeStatement("2014 Reached the milestone of 50 employees")).toBeNull();
-    expect(sizeStatement("We grew to 800 employees in 2021.")).toBeNull();
+  it("a figure the text dates to a year belongs to that year (BrowserStack's 2014 milestone), not to the copy's day", () => {
+    expect(sizeStatement("2014 📈 Reached the milestone of 50 employees")).toMatchObject({ value: 50, year: 2014 });
+    expect(sizeStatement("We grew to 800 employees in 2021.")).toMatchObject({ value: 800, year: 2021 });
+  });
+  it("a milestone with no year, or several years, has no date: nothing", () => {
+    expect(sizeStatement("Reached the milestone of 50 employees")).toBeNull();
+    expect(sizeStatement("From 10 employees in 2015 to 200 employees in 2020.")).toBeNull();
   });
   it("a long sentence keeps its number in the excerpt", () => {
     const long = "Fishelov is a co-founder of a leading smart energy transfer provider that was listed on a major index, where he was responsible for strategic planning, partnerships and customer success across several markets and also leads a team of 300+ people today.";
@@ -52,5 +56,28 @@ describe("a team-size sentence", () => {
   it("customers, years and funding are not a team size", () => {
     expect(sizeStatement("Trusted by 10,000 customers in 40 countries.")).toBeNull();
     expect(sizeStatement("Founded in 2015, we raised $50 million.")).toBeNull();
+  });
+});
+
+import { extractionPointProblem, extractionPoints } from "./headcountSources";
+describe("a headcount point the extraction read (review 6, 2026-11-08)", () => {
+  const src = (url: string, type = "news_article") => ({ url, source_type: type, content: "", title: "" });
+  const pt = (o: Record<string, unknown>) => ({ date: "2021", employee_count: 800, source_id: "S1", evidence_quote: "BrowserStack grew to 800 employees across the globe", ...o });
+  it("RocketReach and other data platforms are not a source (Kitov.ai)", () => {
+    expect(extractionPointProblem(pt({ evidence_quote: "Kitov.ai employs 19 employees.", employee_count: 19 }), src("https://rocketreach.co/kitovai-management_b564ee9af639146d"), "Kitov.ai")).toBe("source_not_allowed");
+  });
+  it("a point with no date is not kept", () => {
+    expect(extractionPointProblem(pt({ date: "" }), src("https://browserstack.com/company", "company_site"), "BrowserStack")).toBe("undated");
+  });
+  it("the number must be in the quote, and the quote about the company (CaPow: a quote about SolarEdge)", () => {
+    const own = src("https://capow.energy/about", "company_site");
+    expect(extractionPointProblem(pt({ employee_count: 300, evidence_quote: "Fishelov is a Co-Founder of SolarEdge, where he was responsible for strategic planning" }), own, "CaPow")).toBe("number_not_in_quote");
+    expect(extractionPointProblem(pt({ employee_count: 300, evidence_quote: "Fishelov, co-founder of SolarEdge, now leads 300 people in sales" }), own, "CaPow")).toBe("quote_not_about_the_company");
+    expect(extractionPointProblem(pt({ employee_count: 300, evidence_quote: "CaPow now has 300 employees" }), own, "CaPow")).toBeNull();
+  });
+  it("the company's own site is site_stated, an article press_reported", () => {
+    const byId = new Map([["S1", src("https://browserstack.com/company", "company_site")], ["S2", src("https://techcrunch.com/2021/x/", "news_article")]]);
+    const out = extractionPoints([pt({}), pt({ source_id: "S2" })], byId as never, "BrowserStack");
+    expect(out.map((p) => p.point_type)).toEqual(["site_stated", "press_reported"]);
   });
 });

@@ -27,3 +27,13 @@ describe("tags need a supporting sentence", () => {
     expect(r.dropped).toEqual(["Cybersecurity / General"]);
   });
 });
+
+import { isErrorPage } from "./quoteFinder";
+describe("an error page supports nothing (review 6, 2026-11-08: Armorblox)", () => {
+  const blocked = "Source: Business Wire — Date: 42 months ago — Armorblox today announced its newest product, Graymail and Recon Attack Protection, developed to decrease the time security teams spend... [Full article text] Warning: Target URL returned error 403: Forbidden * * * Please be advised that this page is unavailable.";
+  it("is recognised, and no tag or description is quoted from it", () => {
+    expect(isErrorPage(blocked)).toBe(true);
+    expect(isErrorPage("Armorblox protects email with data security and AI.")).toBe(false);
+    expect(supportedTags(["Data Security"], [{ id: "S1", content: blocked }]).kept).toEqual([]);
+  });
+});
