@@ -17,3 +17,13 @@ describe("the sentence of a source that supports a text", () => {
     expect(bestSentence("Our cybersecurity platform protects cloud workloads for large enterprises.", "Cybersecurity")).toMatch(/cybersecurity/i);
   });
 });
+
+import { supportedTags } from "./quoteFinder";
+describe("tags need a supporting sentence", () => {
+  const pages = [{ id: "W1", content: "BrowserStack provides developer teams instant access to a cloud platform for testing websites and mobile applications. Our analytics dashboards show usage." }];
+  it("keeps the ones a sentence carries, drops the rest", () => {
+    const r = supportedTags(["Developer Tools", "Cybersecurity / General", "Analytics / BI"], pages);
+    expect(r.kept.map((k) => k.tag)).toEqual(["Developer Tools", "Analytics / BI"]);
+    expect(r.dropped).toEqual(["Cybersecurity / General"]);
+  });
+});

@@ -82,6 +82,15 @@ export function rivalSentenceClaims(sources: LabeledSource[], companyName: strin
   return out;
 }
 
+/** A name that can be a company: not a category ("EDR / AV"), not a blog title ("Prometheus for High Cardinality, Part 1"). */
+export function looksLikeCompanyName(name: string): boolean {
+  const n = name.trim();
+  if (!n || n.length > 40) return false;
+  if (/[\/,;]/.test(n) || /\bpart\s*\d+\b/i.test(n) || /\s(?:for|with|in|on|at|to|and|or|vs)\s/i.test(n) && n.split(/\s+/).length > 3) return false;
+  if (n.split(/\s+/).length > 4) return false;
+  return /\p{L}/u.test(n);
+}
+
 /** The other name of an "A vs B" / "A versus B" title that has the company on one side, or null. */
 export function vsTitleCompetitor(title: string, companyName: string): string | null {
   const t = title.trim();
@@ -93,7 +102,7 @@ export function vsTitleCompetitor(title: string, companyName: string): string | 
   const at = names.findIndex((n) => coreName(n) === coreName(companyName) || coreName(n).startsWith(coreName(companyName)));
   if (at < 0) return null;
   const other = names[at === 0 ? 1 : at - 1];
-  return other && coreName(other) !== coreName(companyName) && other.length <= 40 ? other : null;
+  return other && coreName(other) !== coreName(companyName) && looksLikeCompanyName(other) ? other : null;
 }
 
 const hostOf = (url: string) => { try { return new URL(url).hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; } };

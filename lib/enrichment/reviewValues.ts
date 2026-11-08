@@ -6,7 +6,7 @@
 import type { collectCompany, V2StartupRow } from "./collect.ts";
 import { buildProfile } from "../../worker/profile.ts";
 import { profileSourceAllowed } from "./roundSources.ts";
-import { bestQuote } from "./quoteFinder.ts";
+import { bestQuote, supportedTags } from "./quoteFinder.ts";
 
 /** The fields, in the order of the report and of the tracker. */
 export const REVIEW_FIELDS = ["hq_city", "hq_country", "founded_year", "founding_country", "description", "sector", "tags", "office", "employee_range", "employee_count", "employee_history", "founder", "founder_bio", "leader", "round", "competitor_declared", "competitor_market", "patent", "news", "founder_background"] as const;
@@ -54,9 +54,9 @@ export function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V
   }
   // One value per company for the tags: a single wrong tag makes the whole list not correct (owner, 2026-11-08).
   const tagList = [...new Set([...(pf.sub_sector_name ? [pf.sub_sector_name] : []), ...(pf.sub_sector_names ?? [])])];
-  if (tagList.length) {
-    const hits = tagList.map((tag) => ({ tag, hit: bestQuote(sitePages, tag, 1) }));
-    add("tags", tagList.join(", "), "", src(hits.find((h) => h.hit)?.hit?.id), hits.map((h) => `${h.tag}: ${h.hit?.quote ?? "no sentence found"}`).join(" | "));
+  const tagged = supportedTags(tagList, sitePages);   // a tag no sentence supports is not written
+  if (tagged.kept.length) {
+    add("tags", tagged.kept.map((k) => k.tag).join(", "), "", src(tagged.kept[0].id), tagged.kept.map((k) => `${k.tag}: ${k.quote}`).join(" | "));
   }
   const range = c.profile.metrics.employee_range;
   if (range && !row.employee_range) add("employee_range", range.value, row.employee_range, src(range.source_id), range.evidence_quote);
@@ -65,7 +65,7 @@ export function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V
   for (const o of p.overview.offices ?? []) add("office", [o.city, o.country].filter(Boolean).join(", "), "", o.source_url ?? "");
   // Headcount points (owner, 2026-11-07): each with its date, type, source and quote.
   const histLine = (value: number, date: string, type: string, lower?: boolean, max?: number) => `${value}${max ? `–${max}` : lower ? "+" : ""} employees @ ${date.slice(0, 10)} (${type})`;
-  for (const h of c.profile.metrics.headcount_history ?? []) add("employee_history", histLine(h.employee_count, h.date, h.point_type ?? "press_reported"), "", src(h.source_id), h.evidence_quote);
+  for (const h of (c.profile.metrics.headcount_history ?? []).filter((x) => /^\d{4}(-\d{2}){0,2}$/.test(x.date ?? "") && !!c.sourceById.get(x.source_id) && profileSourceAllowed(c.sourceById.get(x.source_id)!, row.name))) add("employee_history", histLine(h.employee_count, h.date, h.point_type ?? "press_reported"), "", src(h.source_id), h.evidence_quote);
   for (const h of c.headcountExtra ?? []) add("employee_history", histLine(h.value, h.date, h.type, h.lowerBound, h.valueMax), "", h.sourceUrl, h.quote ?? h.measure ?? "");
   const onFileFounders = new Set(((row.founders ?? []) as Array<{ name?: string }>).map((f) => (f.name ?? "").toLowerCase()));
   for (const f of c.profile.profile.founders ?? []) {

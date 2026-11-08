@@ -29,6 +29,19 @@ describe("Form 5500", () => {
   });
 });
 
+describe("a team-size sentence: past counts and long sentences (review 6, 2026-11-08)", () => {
+  it("a timeline milestone or a dated past count is not today's size", () => {
+    expect(sizeStatement("2014 Reached the milestone of 50 employees")).toBeNull();
+    expect(sizeStatement("We grew to 800 employees in 2021.")).toBeNull();
+  });
+  it("a long sentence keeps its number in the excerpt", () => {
+    const long = "Fishelov is a co-founder of a leading smart energy transfer provider that was listed on a major index, where he was responsible for strategic planning, partnerships and customer success across several markets and also leads a team of 300+ people today.";
+    const st = sizeStatement(long);
+    expect(st?.value).toBe(300);
+    expect(st?.sentence).toContain("300+");
+  });
+});
+
 describe("a team-size sentence", () => {
   it("reads 'a team of 200' as exact and '150+ employees' / 'over 100' as lower bounds", () => {
     expect(sizeStatement("We are a team of 200 across three offices.")).toMatchObject({ value: 200, lowerBound: false });

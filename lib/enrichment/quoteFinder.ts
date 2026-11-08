@@ -40,3 +40,18 @@ export function bestQuote(sources: Array<{ id: string; content: string }>, terms
   }
   return best ? { id: best.id, quote: best.quote } : null;
 }
+
+/**
+ * Tags a source sentence supports (owner, 2026-11-08, review 6: BrowserStack's "Cybersecurity / General", Seline's
+ * "Consumer & Media" had no sentence anywhere in the sources). A tag no sentence of an allowed page carries a word of
+ * is not written.
+ */
+export function supportedTags(tags: string[], pages: Array<{ id: string; content: string }>): { kept: Array<{ tag: string; id: string; quote: string }>; dropped: string[] } {
+  const kept: Array<{ tag: string; id: string; quote: string }> = [];
+  const dropped: string[] = [];
+  for (const tag of tags) {
+    const hit = bestQuote(pages, tag, 1);
+    if (hit) kept.push({ tag, id: hit.id, quote: hit.quote }); else dropped.push(tag);
+  }
+  return { kept, dropped };
+}

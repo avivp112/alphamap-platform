@@ -132,3 +132,17 @@ describe("the tiers for one company, searches injected (owner, 2026-11-07)", () 
     expect(m.added).toEqual([]);
   });
 });
+
+import { looksLikeCompanyName, vsTitleCompetitor as vsTitle } from "./competitorTiers";
+describe("the other side of a vs title must be a company (review 6, 2026-11-08)", () => {
+  it("a category or a blog title is not one", () => {
+    expect(vsTitle("Scylos vs. EDR / AV", "Scylos")).toBeNull();
+    expect(vsTitle("ClickHouse vs Prometheus for High Cardinality, Part 1", "ClickHouse")).toBeNull();
+  });
+  it("a company is", () => {
+    expect(vsTitle("ClickHouse vs Snowflake", "ClickHouse")).toBe("Snowflake");
+    expect(vsTitle("Aikido vs Pentera", "Pentera")).toBe("Aikido");
+    expect(looksLikeCompanyName("Amazon Web Services")).toBe(true);
+    expect(looksLikeCompanyName("SecPortal")).toBe(true);
+  });
+});

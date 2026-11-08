@@ -59,8 +59,12 @@ const PATTERNS: RegExp[] = [
   new RegExp(String.raw`\b(over\s+|more than\s+|about\s+|around\s+|approximately\s+|nearly\s+|almost\s+)?${NUM}(\+)?\s+(?:full[- ]time\s+)?(?:employees|team members|teammates|colleagues|staff members)\b`, "i"),
   new RegExp(String.raw`\b(?:we are|we're|with|have|has)\s+(over\s+|more than\s+|about\s+|around\s+|approximately\s+|nearly\s+)?${NUM}(\+)?\s+(?:talented\s+)?(?:people|professionals|engineers|employees)\b`, "i"),
 ];
+// A timeline entry or a past count ("2014 Reached the milestone of 50 employees", "grew to 800 in 2021") is not the
+// size on the day of the copy (review 6, 2026-11-08: BrowserStack's 2014 milestone dated 2026-01-17).
+const PAST = /\b(milestone|reached|grew (?:to|from)|surpass\w*|crossed|hit|first \d+|(?:19|20)\d{2})\b/i;
 export function sizeStatement(text: string): SizeStatement | null {
   for (const sentence of text.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/)) {
+    if (PAST.test(sentence)) continue;
     for (const re of PATTERNS) {
       const m = sentence.match(re);
       if (!m) continue;
@@ -69,7 +73,9 @@ export function sizeStatement(text: string): SizeStatement | null {
       if (!value || value > 500000 || (value >= 1900 && value <= 2100 && !/employee|team|staff/i.test(sentence))) continue;
       const qualifier = m.slice(1).find((x) => x && !/^\d[\d,]*$/.test(x));
       const lowerBound = qualifier === "+" || new RegExp(LOWER, "i").test(qualifier ?? "") || /\d\+/.test(m[0]);
-      return { value, lowerBound, sentence: sentence.trim().slice(0, 240) };
+      // The excerpt is centred on the match, so a long sentence still shows its number (review 6: CaPow's "300+").
+      const at = Math.max(0, (m.index ?? 0) - 110);
+      return { value, lowerBound, sentence: sentence.trim().slice(at, at + 240) };
     }
   }
   return null;

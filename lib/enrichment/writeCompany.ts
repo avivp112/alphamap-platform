@@ -20,6 +20,8 @@ import { cleanPeople, isFounderEntry, cleanFounderTitle } from "./people.ts";
 import { samePersonName } from "./linkedin.ts";
 import { checkHeadcountOutlier } from "./validation.ts";
 import { screenPoints, type HistoryPoint } from "./headcountHistory.ts";
+import { supportedTags } from "./quoteFinder.ts";
+import { profileSourceAllowed } from "./roundSources.ts";
 import { countryFromLocationQuote } from "./location.ts";
 import { retireReplacedExecutives } from "./update.ts";
 import { MAJOR_CITIES } from "./majorCities.ts";
@@ -302,7 +304,13 @@ export async function writeCollected(
     console.log(`    🏷️   Tag "${t}" dropped — it belongs to another sector and nothing in the description is about it.`);
     bump(summary.droppedByReason, "tag_outside_sector_unsupported");
   }
-  const tagNames = tagFilter.kept;
+  // A tag needs a sentence of an allowed page that carries it (quoteFinder.ts supportedTags, owner 2026-11-08).
+  const supported = supportedTags(tagFilter.kept, allSources.filter((x) => profileSourceAllowed(x, row.name)).map((x) => ({ id: x.source_id, content: x.content ?? "" })));
+  for (const t of supported.dropped) {
+    console.log(`    🏷️   Tag "${t}" dropped — no sentence of an allowed page supports it.`);
+    bump(summary.droppedByReason, "tag_unsupported");
+  }
+  const tagNames = supported.kept.map((k) => k.tag);
   const tagSectorIds: string[] = [];
   for (const tagName of tagNames) {
     const { data: tagId } = await supabase.rpc("sector_id_by_name", { p_name: tagName });
@@ -516,6 +524,8 @@ export async function writeCollected(
   const headcountPoints: Array<{ date: string; count: number; pointType?: string; sourceUrl?: string; quote?: string; measure?: string; lowerBound?: boolean; countMax?: number }> = [];
   for (const h of profile.metrics.headcount_history ?? []) {
     const date = normalizeIsoDate(h.date);
+    const hSrc = sourceById.get(h.source_id);
+    if (!hSrc || !profileSourceAllowed(hSrc, row.name)) { bump(summary.droppedByReason, "headcount_point_source_not_allowed"); continue; }
     if (date && h.employee_count > 0 && !headcountPoints.some((p) => p.date === date)) headcountPoints.push({ date, count: h.employee_count, pointType: h.point_type ?? "press_reported", sourceUrl: sourceById.get(h.source_id)?.url, quote: h.evidence_quote });
   }
   // Points from the registers, plans and archived pages (headcountHistory.ts), screened like the rest.
