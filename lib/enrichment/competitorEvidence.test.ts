@@ -146,3 +146,10 @@ describe("the competitors sheet of 2026-11-08: forums, names that are no company
     expect(pageIsAboutAnotherCompany(long, "Bolt", "bolt.com", "Bolt provides one-click checkout and payments for online stores and merchants")).toBe(true);
   });
 });
+
+describe("a company's own name may end in 's (Byju's, Domino's) — the replay of 2026-11-08 dropped Byju's as a possessive", () => {
+  it("Byju's and Domino's are companies; India's and the world's are not", () => {
+    for (const n of ["Byju's", "Domino's", "McDonald's", "Lowe's"]) expect(isCompanyName(n), n).toBe(true);
+    for (const n of ["India's", "world's", "Israel's", "the industry's"]) expect(isCompanyName(n), n).toBe(false);
+  });
+});

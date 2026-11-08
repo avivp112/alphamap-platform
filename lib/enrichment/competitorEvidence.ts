@@ -97,7 +97,8 @@ export function looksLikeCompanyName(name: string): boolean {
   const n = name.trim();
   if (!n || n.length > 40 || n.length < 2) return false;
   if (/[\/,;?!]/.test(n) || /\bpart\s*\d+\b/i.test(n)) return false;
-  if (/['’]s$/i.test(n) || /['’]s\s/i.test(n)) return false;
+  // A possessive of a place or a common noun ("India's", "world's") is no company; a company's own name may end in 's (Byju's, Domino's).
+  if (/^(?:india|china|israel|europe|america|asia|africa|germany|france|uk|us|usa|world|industry|company|market|nation|country|region|city|state|people|customers?|today|its|their|our|his|her|the)['’]s(?:\s|$)/i.test(n)) return false;
   if (/^[\d.\s,%$-]+$/.test(n) || /^\d/.test(n) || /\b\d+(?:\.\d+)?\s*(?:fps|ms|gb|mb|tb|tops|ghz|mhz|x)\b/i.test(n)) return false;
   if (/\s(?:for|with|in|on|at|to|and|or|vs|beats|why|how|what)\s/i.test(n) && n.split(/\s+/).length > 3) return false;
   if (/^(?:why|how|what|when|where|which|is|are|does|do|can)\b/i.test(n)) return false;
