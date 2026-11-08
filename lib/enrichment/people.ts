@@ -220,6 +220,8 @@ export function isLeadershipRole(role: string | null | undefined): boolean {
   const r = (role ?? "").trim();
   if (!r) return false;
   if (/\b(not specified|unspecified|unknown|n\/a|none|employee|staff|team member|member of|intern|contractor|volunteer|student|candidate)\b/i.test(r)) return false;
+  // A team / tech / project lead runs a team, not the company (Orq, pilot dry run 2026-11-08).
+  if (/\b(tech(?:nical)?|team|project|squad|dev(?:elopment)?|engineering|design|qa|scrum|product|sales|support)\s+lead(?:er)?\b/i.test(r) && !/\b(head|vp|vice|director|chief|cto|ceo|founder)\b/i.test(r)) return false;
   return /\b(chief|c[a-z]o|ceo|cto|cfo|coo|cmo|cpo|cro|ciso|president|founder|co-?founder|owner|chair(?:man|woman|person)?|director|head|vp|vice[- ]president|svp|evp|general manager|gm|managing|partner|principal|lead|executive|officer|board|advisor|scientist)\b/i.test(r);
 }
 

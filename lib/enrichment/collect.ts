@@ -1337,6 +1337,18 @@ export async function collectCompany(
         const about = [profile.profile.description, profile.profile.value_proposition, profile.profile.industry, row.description].filter(Boolean).join(" ");
         const problem = newsProblem({ title: n.title, content: sourceByUrl(n.url)?.content }, row.name, about);
         if (problem) { console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — ${problem === "explainer" ? "a guide, a roundup or an explainer, not news" : problem === "not_about_the_company" ? "its headline and opening do not name the company (a passing mention)" : "about another company of the same name (a different product)"}: ${n.url}`); bump(stats.droppedByReason, `news_${problem}`); continue; }
+        // No date, no news: it cannot be ordered or told from an old item (Empxtrack's nine undated
+        // items, pilot dry run 2026-11-08). One item per date: the same event from the company's own
+        // site and a press outlet is one story, and the outlet is kept.
+        if (!n.published_date) { console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — no date in the source: ${n.url}`); bump(stats.droppedByReason, "news_no_date"); continue; }
+        if (/\.\.\.$|…$/.test(n.title.trim())) { console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — the headline is cut off: ${n.url}`); bump(stats.droppedByReason, "news_title_cut"); continue; }
+        const twin = keptNews.findIndex((k) => k.published_date === n.published_date);
+        if (twin >= 0) {
+          const ownSite = (u: string) => classifySourceType(u, domain) === "company_site" || sourceByUrl(u)?.source_type === "company_site";
+          if (ownSite(keptNews[twin].url) && !ownSite(n.url)) keptNews[twin] = n;
+          bump(stats.droppedByReason, "news_same_day_twin");
+          continue;
+        }
         keptNews.push(n); continue;
       }
       // A hint-only site (owner, 2026-11-03): its headline is searched for in an allowed source.

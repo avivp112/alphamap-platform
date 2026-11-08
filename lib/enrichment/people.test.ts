@@ -62,6 +62,10 @@ describe("isLeadershipRole — a leader needs a real role (BETA, 2026-10-26)", (
     expect(isLeadershipRole(null)).toBe(false);
     expect(isLeadershipRole("Software Engineer")).toBe(false);
   });
+  it("a tech / team lead is not a leader (Orq, pilot dry run 2026-11-08)", () => {
+    for (const r of ["Tech Lead", "Technical Lead", "Team Lead", "Product Lead"]) expect(isLeadershipRole(r)).toBe(false);
+    expect(isLeadershipRole("Tech Lead and CTO")).toBe(true);
+  });
   it("keeps executives", () => {
     for (const r of ["CEO (Co-Founder)", "Chief Technology Officer", "VP Engineering", "Head of Product", "President", "Managing Director", "General Manager, EMEA"]) {
       expect(isLeadershipRole(r)).toBe(true);
