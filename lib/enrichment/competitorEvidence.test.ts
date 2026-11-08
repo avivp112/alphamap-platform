@@ -122,3 +122,27 @@ describe("a competitor needs a quote that links it to the company directly (owne
     expect(competitorEvidenceProblem({ name: "Amazon", source_id: "S1", evidence_quote: "competes with big names like Amazon" }, s, "Bolt")).toBe("competitor_quote_not_explicit");
   });
 });
+
+import { isUserContentUrl, looksLikeCompanyName as isCompanyName, pageIsAboutAnotherCompany } from "./competitorEvidence";
+describe("the competitors sheet of 2026-11-08: forums, names that are no company, a company of the same name", () => {
+  it("a forum or a user post is no source, even on the company's own domain (Hailo 33–36, Celonis 26)", () => {
+    for (const u of ["https://community.hailo.ai/t/high-resolution-model-compilation-hailo8-vs-hailo10h/18914", "https://community.hailo.ai/t/hailo-version-mismatch-4-23-vs-4-20/18373", "https://community.celonis.com/general-product-q-a-2/celonis-vs-camunda-5210", "https://www.reddit.com/r/devops/comments/abc/x", "https://stackoverflow.com/questions/1/x", "https://forum.example.com/thread/1"]) expect(isUserContentUrl(u), u).toBe(true);
+    for (const u of ["https://www.hibob.com/compare/bob-vs-ukg-guide/", "https://snyk.io/comparison/snyk-vs-wiz/", "https://techcrunch.com/2022/05/02/zepto-raises/", "https://www.cyera.com/compare/cyera-vs-varonis", "https://www.parloa.com/knowledge-hub/parloa-vs-decagon/"]) expect(isUserContentUrl(u), u).toBe(false);
+  });
+  it("names that are no company: a possessive, a lone common word, a version, a figure, a question, a category", () => {
+    for (const n of ["India's", "High", "4.20", "126 FPS on PC/RPi5", "Why Bob beats competitors?", "Conventional AI", "EDR / AV", "Prometheus for High Cardinality, Part 1"]) expect(isCompanyName(n), n).toBe(false);
+  });
+  it("the competitors the owner marked right are companies", () => {
+    for (const n of ["Swiggy", "Sumo Logic", "SentinelOne", "HR Cloud", "UKG", "BigID", "Snyk", "Decagon", "Rasa", "Invideo", "Fliki", "Cortex", "Jira", "Chase", "Personio", "Jellyfish", "Phorest", "Varonis", "Proofpoint", "Sentra", "camunda", "Compass", "OpsLevel", "Amazon Web Services"]) expect(isCompanyName(n), n).toBe(true);
+  });
+  it("Bolt: lovable.dev compares itself to bolt.new, not to Bolt of bolt.com", () => {
+    const bolt = "Comparing Bolt vs. Lovable. Bolt.new and Lovable are AI app builders. https://lovable.dev/bolt-vs-lovable";
+    expect(pageIsAboutAnotherCompany(bolt, "Bolt", "bolt.com", "Bolt is a one-click checkout for online stores")).toBe(true);
+    expect(pageIsAboutAnotherCompany("Comparing Bolt (bolt.com) vs. Lovable", "Bolt", "bolt.com")).toBe(false);
+  });
+  it("a comparison page that names no domain of the name is not judged; a long page that describes another product is", () => {
+    expect(pageIsAboutAnotherCompany("Phorest vs Fresha - Compare Salon & Clinic Software", "Fresha", "fresha.com", "Fresha is a booking platform for salons and spas")).toBe(false);
+    const long = "Lovable is a generator of web apps from prompts for developers and founders. ".repeat(20);
+    expect(pageIsAboutAnotherCompany(long, "Bolt", "bolt.com", "Bolt provides one-click checkout and payments for online stores and merchants")).toBe(true);
+  });
+});

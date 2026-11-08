@@ -13,7 +13,8 @@
  */
 import { normalizeForMatch } from "./evidence";
 import { isDataPlatformUrl } from "./dataPlatforms";
-import { competitorEvidenceProblem, isLinkList, isListingPage, quoteLinksTheTwo } from "./competitorEvidence";
+import { competitorEvidenceProblem, isLinkList, isListingPage, quoteLinksTheTwo, looksLikeCompanyName, isUserContentUrl, pageIsAboutAnotherCompany } from "./competitorEvidence";
+export { looksLikeCompanyName };
 import { roundSourceStanding } from "./roundSources";
 import { namesCompany } from "./headcount";
 import type { LabeledSource } from "./sources";
@@ -38,7 +39,7 @@ export function namesInList(list: string): string[] {
       .match(new RegExp(`^(${NAME})`));
     if (!m) continue;
     const name = m[1].replace(/[.,;:]+$/, "").trim();
-    if (!name || STOP.has(name.toLowerCase()) || name.length < 2) continue;
+    if (!name || STOP.has(name.toLowerCase()) || name.length < 2 || !looksLikeCompanyName(name)) continue;
     out.push(name);
   }
   return [...new Set(out)];
@@ -82,15 +83,6 @@ export function rivalSentenceClaims(sources: LabeledSource[], companyName: strin
   return out;
 }
 
-/** A name that can be a company: not a category ("EDR / AV"), not a blog title ("Prometheus for High Cardinality, Part 1"). */
-export function looksLikeCompanyName(name: string): boolean {
-  const n = name.trim();
-  if (!n || n.length > 40) return false;
-  if (/[\/,;]/.test(n) || /\bpart\s*\d+\b/i.test(n) || /\s(?:for|with|in|on|at|to|and|or|vs)\s/i.test(n) && n.split(/\s+/).length > 3) return false;
-  if (n.split(/\s+/).length > 4) return false;
-  return /\p{L}/u.test(n);
-}
-
 /** The other name of an "A vs B" / "A versus B" title that has the company on one side, or null. */
 export function vsTitleCompetitor(title: string, companyName: string): string | null {
   const t = title.trim();
@@ -112,10 +104,12 @@ const registrable = (host: string) => host.split(".").slice(-2)[0] ?? "";
  * "X vs Y" pages from search results: on the company's own site (domain given) the title names both; on the
  * competitor's own site, the domain is the competitor's name and the title names the company.
  */
-export function vsPageClaims(results: Array<{ url: string; title?: string | null; content?: string | null }>, sources: LabeledSource[], companyName: string, ownDomain: string | null, knownCompany?: (name: string, host: string) => boolean): TieredClaim[] {
+export function vsPageClaims(results: Array<{ url: string; title?: string | null; content?: string | null }>, sources: LabeledSource[], companyName: string, ownDomain: string | null, knownCompany?: (name: string, host: string) => boolean, companyDescription?: string): TieredClaim[] {
   const out: TieredClaim[] = [];
   for (const r of results) {
     const title = (r.title ?? "").trim();
+    // A forum thread or user post is not a source for a competitor, even on the company's own domain (owner, 2026-11-08: Hailo's community).
+    if (isUserContentUrl(r.url)) continue;
     const other = title ? vsTitleCompetitor(title, companyName) : null;
     if (!other) continue;
     const host = hostOf(r.url);
@@ -126,6 +120,9 @@ export function vsPageClaims(results: Array<{ url: string; title?: string | null
     // by an allowed source: a small company's SEO page does not make a competitor (owner, 2026-11-08: SecPortal).
     if (theirs && knownCompany && !knownCompany(other, host)) continue;
     const src = sources.find((s) => s.url === r.url);
+    // …and the page must be about OUR company, not one of the same name (Bolt: lovable.dev compares itself to bolt.new,
+    // the AI app builder, not to Bolt the checkout company).
+    if (theirs && pageIsAboutAnotherCompany(`${title} ${r.content ?? src?.content ?? ""} ${r.url}`, companyName, ownDomain, companyDescription)) continue;
     if (!src) continue;
     out.push({ name: other, source_id: src.source_id, evidence_quote: title, tier: "declared", how_it_competes: `${own ? companyName : other} publishes a comparison page: "${title}".` });
   }
@@ -191,6 +188,8 @@ export async function competitorTierClaims(o: {
   known: Set<string>;   // normalised names already competitors
   /** Whether a competitor named on its own site is a known company (in the database, or named by an allowed source). */
   knownCompany?: (name: string, host: string) => boolean;
+  /** What the company is, in its own words: a competitor's page that describes another product is about another company. */
+  companyDescription?: string;
 }): Promise<{ claims: TieredClaim[]; unconfirmedHints: string[] }> {
   const claims: TieredClaim[] = [];
   const have = new Set(o.known);
@@ -201,7 +200,7 @@ export async function competitorTierClaims(o: {
     ...(await o.search(`"${o.companyName}" vs OR versus${o.domain ? ` -site:${o.domain}` : ""}`, "vs_other")),
   ].filter((r) => !isDataPlatformUrl(r.url));
   const vsSources = vs.map((r) => o.addSource(r, "vs_page"));
-  take(vsPageClaims(vs, vsSources, o.companyName, o.domain, o.knownCompany));
+  take(vsPageClaims(vs, vsSources, o.companyName, o.domain, o.knownCompany, o.companyDescription));
   const hints = o.hints.filter((h) => !have.has(normalizeForMatch(h)));
   if (hints.length) {
     const found = (await o.search(`"${o.companyName}" ${hints.slice(0, 5).map((h) => `"${h}"`).join(" OR ")} market OR industry OR landscape OR competitors`, "market_peers")).filter((r) => !isDataPlatformUrl(r.url));

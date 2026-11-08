@@ -165,3 +165,29 @@ describe("a vs page on the competitor's own site needs a known competitor (owner
     expect(vsClaims(own, s2, "Vulcan Cyber", "vulcan.io", () => false).map((c) => c.name)).toEqual(["Kenna"]);
   });
 });
+
+import { vsPageClaims as vsPages, namesInList as listNames } from "./competitorTiers";
+describe("the competitors sheet of 2026-11-08 through the tiers", () => {
+  it("'India's' is not the name behind 'Swiggy, India's most valuable …'", () => {
+    expect(listNames("Swiggy, India's most valuable food delivery startup")).toEqual(["Swiggy"]);
+  });
+  it("Hailo's community threads are no vs page, even on its own domain", () => {
+    const url = "https://community.hailo.ai/t/hailo-yolov8-vs-ultralytics-yolov8/2019";
+    const results = [{ url, title: "Hailo Yolov8 vs Ultralytics Yolov8 - General Discussion" }];
+    const sources = [{ source_id: "X1", url, title: results[0].title, content: "", source_type: "company_site" }] as never;
+    expect(vsPages(results, sources, "Hailo", "hailo.ai")).toEqual([]);
+  });
+  it("Bolt: lovable.dev's page about bolt.new makes no competitor of Bolt (bolt.com)", () => {
+    const url = "https://lovable.dev/bolt-vs-lovable";
+    const results = [{ url, title: "Comparing Bolt vs. Lovable", content: "Bolt.new vs Lovable: two AI app builders." }];
+    const sources = [{ source_id: "X2", url, title: results[0].title, content: results[0].content, source_type: "news_article" }] as never;
+    expect(vsPages(results, sources, "Bolt", "bolt.com", () => true, "Bolt is a one-click checkout for online stores")).toEqual([]);
+    // the same page for a company that IS the one compared stays
+    expect(vsPages(results, sources, "Bolt", "bolt.new", () => true, "Bolt builds apps with AI").map((c) => c.name)).toEqual(["Lovable"]);
+  });
+  it("the pages the owner marked right stay (Phorest vs Fresha, Snyk vs Wiz)", () => {
+    const r = [{ url: "https://www.phorest.com/compare/phorest-vs-fresha/", title: "Phorest vs Fresha - Compare Salon & Clinic Software" }];
+    const s = [{ source_id: "X3", url: r[0].url, title: r[0].title, content: "", source_type: "news_article" }] as never;
+    expect(vsPages(r, s, "Fresha", "fresha.com", () => true, "Fresha is a booking platform for salons").map((c) => c.name)).toEqual(["Phorest"]);
+  });
+});

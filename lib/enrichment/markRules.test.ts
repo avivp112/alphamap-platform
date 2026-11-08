@@ -29,3 +29,19 @@ describe("review 6 (2026-11-08): marks the current rules no longer produce", () 
     expect(judge6(m6("news", "Vulcan Cyber", "2025-01-29 — Tenable Plans to Acquire Vulcan Cyber", "https://investors.tenable.com/news-releases/x")).produced).toBe(true);
   });
 });
+
+describe("the competitors sheet of 2026-11-08: marks the current rules no longer produce", () => {
+  const c = (company: string, name: string, url: string) => ({ ...m6("competitor_declared", company, name, url) }) as Mark;
+  it("forum threads, names that are no company", () => {
+    expect(judge6(c("Hailo", "High", "https://community.hailo.ai/t/high-resolution-model-compilation-hailo8-vs-hailo10h/18914")).produced).toBe(false);
+    expect(judge6(c("Hailo", "4.20", "https://community.hailo.ai/t/x/18373")).produced).toBe(false);
+    expect(judge6(c("Celonis", "camunda", "https://community.celonis.com/general-product-q-a-2/celonis-vs-camunda-5210")).produced).toBe(false);
+    expect(judge6(c("Zepto", "India's", "https://techcrunch.com/2022/05/02/zepto-raises/")).produced).toBe(false);
+    expect(judge6(c("HiBob", "Why Bob beats competitors?", "https://www.hibob.com/compare/bob-vs-alternatives-guide/")).produced).toBe(false);
+    expect(judge6(c("Aidoc", "Conventional AI", "https://www.aidoc.com/learn/infographic/x/")).produced).toBe(false);
+  });
+  it("the competitors marked right stay", () => {
+    expect(judge6(c("Cyera", "Varonis", "https://www.cyera.com/compare/cyera-vs-varonis")).produced).toBe(true);
+    expect(judge6(c("Zepto", "Swiggy", "https://techcrunch.com/2022/05/02/zepto-raises/")).produced).toBe(true);
+  });
+});

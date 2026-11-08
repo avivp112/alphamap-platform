@@ -167,7 +167,7 @@ function marketExtractionTool() {
           },
         },
       },
-      required: ["competitors", "news"],
+      required: ["competitors", "news", "market_peers"],
     },
   };
 }
@@ -183,6 +183,7 @@ RULES:
 4. TECHNOLOGY — only technologies a source names (job posts, careers pages, engineering blogs, GitHub). Never infer from the sector.
 5. Never construct or guess a URL — every URL you output must appear verbatim in a source.
 6. Scan EVERY source below for each category, not just the ones whose label matches it. An empty list is correct only after that check.
+7. MARKET_PEERS — separately from COMPETITORS, list up to 5 companies you know sell the same kind of product to the same kind of customer as ${companyName}, even if no source below says they compete. These are search HINTS, not facts: each is looked up afterwards and kept only if an allowed source puts both companies in one market. Never list ${companyName} itself, a customer, an investor or a platform it runs on. [] when unsure.
 
 Labeled research (each source is tagged [S#] for a search result or [W#] for a fetched website page):
 ${context}`;

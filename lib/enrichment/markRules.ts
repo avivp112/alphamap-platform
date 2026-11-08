@@ -15,7 +15,7 @@ import { RAISE_RE, statesAmount } from "./assemble";
 import { dateFromUrl } from "./evidence";
 import { isLinkList, quoteIsAboutTheCompany, quoteLinksTheTwo } from "./competitorEvidence";
 import { isLegalPageUrl } from "./headquarters";
-import { looksLikeCompanyName } from "./competitorTiers";
+import { looksLikeCompanyName, isUserContentUrl } from "./competitorEvidence";
 import { isExplainer } from "./newsRelevance";
 import { PARENT_BY_SUB_SECTOR } from "../../src/lib/taxonomy";
 import type { Mark } from "./fieldReview";
@@ -100,6 +100,7 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
       // not a row of "X vs Y" links, not a rival of a third party ("Rippling competes with HiBob, Namely, BambooHR").
       // The name must be a company: not a category ("EDR / AV"), not a post title (review 6, 2026-11-08).
       if (!looksLikeCompanyName(mark.value)) return out("not a company name");
+      if (url && isUserContentUrl(url)) return out("a forum or user post is not a source");
       const q = ctx.quote?.trim();
       if (!q) return keep;
       const ownSite = !!ctx.domain && (() => { try { const h = new URL(url).hostname.toLowerCase().replace(/^www\./, ""); return h === ctx.domain || h.endsWith(`.${ctx.domain}`); } catch { return false; } })();

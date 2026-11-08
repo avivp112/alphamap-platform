@@ -1303,12 +1303,14 @@ export async function collectCompany(
           bump(stats.droppedByReason, `competitor_${cl.tier}_${how}`);
         }
       };
+      console.log(`    💡  Market peer hint(s) from the model: ${(market.market_peers ?? []).join(", ") || "none"}`);
       const { claims, unconfirmedHints } = await competitorTierClaims({
         companyName: row.name, domain, sources: allSources, hints: market.market_peers ?? [], known: have,
         search: (q, label) => extraSearch(q, label),
         addSource: (r, label) => newSource(r.url, r.content ?? "", r.title ?? "", label),
         // A competitor named on its own site is a competitor only if it is a company we know: an allowed source other
         // than its own pages names it (owner, 2026-11-08: SecPortal's SEO page).
+        companyDescription: [profile.profile.description, profile.profile.value_proposition, row.description].filter(Boolean).join(" "),
         knownCompany: (name, host) => allSources.some((x) => !x.url.includes(host) && !/^(vs_page|vs_own|vs_other)/.test(x.query_label ?? "") && profileSourceAllowed(x, row.name) && normalizeForMatch(`${x.title ?? ""} ${x.content}`).includes(normalizeForMatch(name))),
       });
       adopt(claims, "found");
