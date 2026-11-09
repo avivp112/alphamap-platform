@@ -28,3 +28,23 @@ describe("pickBatch", () => {
     expect(pickBatch(rows, { exclude: new Set(), seed: 3 }).map((c) => c.id)).toEqual(pickBatch(rows, { exclude: new Set(), seed: 3 }).map((c) => c.id));
   });
 });
+
+describe("a batch of 25 (owner, 2026-11-09)", () => {
+  const many = [
+    ...Array.from({ length: 30 }, (_, i) => mk(100 + i, "Israel", i % 2 === 0, i % 7 === 0)),
+    ...Array.from({ length: 30 }, (_, i) => mk(200 + i, i % 2 ? "Germany" : "United Kingdom", i % 2 === 0, i % 7 === 0)),
+    ...Array.from({ length: 30 }, (_, i) => mk(300 + i, "United States", i % 2 === 0, i % 7 === 0)),
+    ...Array.from({ length: 20 }, (_, i) => mk(400 + i, "Canada", false, i % 3 === 0)),
+  ];
+  it("25 new companies with at least five Israeli, five European, five American, five thin and five data-rich", () => {
+    const out = pickBatch(many, { size: 25, exclude: new Set(["id100"]), seed: 11 });
+    expect(out).toHaveLength(25);
+    expect(new Set(out.map((c) => c.id)).size).toBe(25);
+    expect(out.map((c) => c.id)).not.toContain("id100");
+    expect(out.filter(isIsraeli).length).toBeGreaterThanOrEqual(5);
+    expect(out.filter((c) => ["Germany", "United Kingdom"].includes(c.country ?? "")).length).toBeGreaterThanOrEqual(5);
+    expect(out.filter((c) => c.country === "United States").length).toBeGreaterThanOrEqual(5);
+    expect(out.filter(isThin).length).toBeGreaterThanOrEqual(5);
+    expect(out.filter(isRich).length).toBeGreaterThanOrEqual(5);
+  });
+});

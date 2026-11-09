@@ -162,6 +162,24 @@ export function dedupeNewsEvents<T extends { title: string; url: string; publish
 /** A headline cut off: ends in a colon, comma, dash, ellipsis or a dangling connective ("Series A" is not one). */
 export const headlineLooksCut = (t: string): boolean => /(?:[:;,\u2013\u2014-]|\.\.\.|\u2026)\s*$/.test(t.trim()) || /\b(?:and|or|of|to|for|the|with)\s*$/i.test(t.trim());
 
+const FUNCTION_ENDS = new Set(["and", "or", "but", "of", "to", "for", "the", "an", "in", "on", "at", "by", "with", "from", "into", "as", "is", "are", "was", "were", "be", "been", "has", "have", "had", "will", "can", "that", "which", "its", "their", "this", "these", "than", "about", "after", "over", "under"]);
+const AUXILIARIES = new Set(["is", "are", "was", "were", "be", "been", "being", "has", "have", "had", "will", "can", "could", "would", "should", "may", "might", "must", "now", "also", "still", "just", "already", "finally"]);
+/**
+ * A headline that stops in the middle (wet batch 3: Business Insider's "Synthflow AI is bringing"; owner, 2026-11-09): fewer than five
+ * words, or ending in a preposition, conjunction, article or auxiliary, or in a verb form that follows an auxiliary ("is bringing", "has
+ * been building"). "Series A" is not a stop, and nor is a noun in "-ing" ("… for Long-Haul Trucking", "… Simulation and Coaching").
+ * This only says "check the page": a headline the page confirms whole stays (newsGate.ts).
+ */
+export function headlineIncomplete(title: string, opts: { short?: boolean } = {}): boolean {
+  const words = title.trim().replace(/[“”"']/g, "").split(/\s+/).filter(Boolean);
+  // The short-headline rule needs the page to confirm ("Quris-AI Acquires Nortis" is whole); a stored mark cannot ask it (opts.short = false).
+  if ((opts.short ?? true) && words.length < 5) return true;
+  const low = words.map((w) => w.toLowerCase().replace(/[^\p{L}\p{N}]+$/u, ""));
+  const last = low[low.length - 1];
+  if (FUNCTION_ENDS.has(last)) return true;
+  return /^\p{L}{3,}ing$/u.test(last) && AUXILIARIES.has(low[low.length - 2] ?? "");
+}
+
 const flatHost = (url: string) => { try { return new URL(url).hostname.toLowerCase().replace(/^www\./, "").replace(/[^a-z0-9]/g, ""); } catch { return ""; } };
 const SITE_WORDS = /\b(?:blog|news|newsroom|press|wire|times|post|journal|magazine|insights|updates|media)\b/i;
 
