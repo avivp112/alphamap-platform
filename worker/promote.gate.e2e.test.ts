@@ -278,3 +278,25 @@ describe("the board is its own field: the leader field opening the leadership co
     expect(board).toMatchObject({ role: "Board member", group: "board" });
   });
 });
+
+import { writeCollected, newWriteSummary, BULK_THRESHOLDS } from "../lib/enrichment/writeCompany";
+import { deserializeCollected, freshRow } from "./promote";
+
+describe("a competitor in the batch report comes with the sentence that says they compete (wet batch 3, 2026-11-09)", () => {
+  it("competitor_declared lines carry the evidence quote and its source", async () => {
+    calls = []; rpcs = [];
+    const s = stored as unknown as { market: { competitors: unknown[] }; allSources: Array<Record<string, string>> };
+    s.allSources.push({ source_id: "S97", source_type: "company_site", url: "https://ghost.org/vs/substack", title: "Ghost vs Substack", query_label: "vs" });
+    s.market.competitors = [{ name: "Substack", how_it_competes: "Paid newsletter platform.", source_ids: ["S97"], source_id: "S97", evidence_quote: "Ghost competes with Substack for paid newsletters", tier: "declared" }];
+    const out = await writeCollected(freshRow("st-q", "Ghost", "https://ghost.org"), deserializeCollected(stored), {
+      db: fakeDb as never, dryRun: true, update: false, verbose: false, thresholds: BULK_THRESHOLDS, openFields: ["competitor_declared"],
+      taxonomy: { parentNames: ["Media"], subNames: ["Publishing"] }, startupByDomain: new Map(), seen: null,
+    }, newWriteSummary());
+    const lines = (out.pilot ?? []).filter((l) => l.field === "competitor_declared");
+    expect(lines.length).toBeGreaterThan(0);
+    for (const l of lines) {
+      expect(l.source_url).toBeTruthy();
+      expect(l.quote).toMatch(/compete/i);
+    }
+  });
+});
