@@ -17,6 +17,7 @@
  *      amount and its date correct).
  *
  *   npx tsx scripts/field_review.ts            # SIZE=15
+ *   ONLY_FIELDS=description PER_FIELD=25 SIZE=30 FOCUS=description npx tsx scripts/field_review.ts   # 25 descriptions to mark in one run
  */
 
 import { maxArticles } from "../lib/enrichment/articleBudget.ts";
@@ -162,8 +163,12 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
     { company_id: "10146787-c5ff-4c74-b375-bc6cbde3f5ca", company: "Moon Active", field: "founding_country", value: "Israel", on_file: "", source_url: "https://www.calcalistech.com/ctechnews/article/bjq8i7ffj", quote: "" },
     { company_id: "396393a1-4bf1-466b-b450-a7137877a3ce", company: "Ybrain", field: "founded_year", value: "2013", on_file: "", source_url: "https://www.prnewswire.com/news-releases/ybrains-stress-management-solution-pola-named-ces-2022-innovation-award-honoree-301426238.html", quote: "About Ybrain … founded 2013" },
   ] : [];
+  // ONLY_FIELDS=description PER_FIELD=25 lists only those fields, as many values as asked (owner, 2026-11-09: 20 marks open a field in one run, not in four).
+  const ONLY = (process.env.ONLY_FIELDS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  const PER_FIELD = Number(process.env.PER_FIELD ?? 0);
   for (const f of REVIEW_FIELDS) {
-    const size = SIMPLE.includes(f) ? 8 : 5;
+    if (ONLY.length && !ONLY.includes(f)) continue;
+    const size = PER_FIELD > 0 ? PER_FIELD : SIMPLE.includes(f) ? 8 : 5;
     const pick = [...carried.filter((v) => v.field === f), ...capPerCompany(shuffle(values.filter((v) => v.field === f), SEED + REVIEW_FIELDS.indexOf(f)), PER_COMPANY).slice(0, size)];
     if (!pick.length) { console.log(`[${f}] — none this run`); continue; }
     console.log(`[${f}]`);

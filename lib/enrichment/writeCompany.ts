@@ -863,7 +863,10 @@ export async function writeCollected(
     // Marks the company as written by v2; the Private Market page always
     // lists such companies (migration 20261010000000). A separate update,
     // so a database without that column yet still gets last_enriched_at.
-    if (!PILOT && (Object.keys(patch).length > 0 || plan.inserts.length > 0 || plan.updates.length > 0)) {
+    // Only when this run wrote the description (owner, 2026-11-09): the Private Market lists every company with this stamp, whatever
+    // else it holds, and a company that got a news item or a patent is not a card worth listing. Until the description field is open
+    // and written, v2 puts no company on that page (a company the view's own bar admits — description and completeness ≥ 7 — still is).
+    if (!PILOT && typeof patch.description === "string" && patch.description.trim().length > 0) {
       const { error: markErr } = await supabase.from("startups").update({ enriched_v2_at: new Date().toISOString() }).eq("id", row.id);
       if (markErr && !warnedNoEnrichedV2Column) {
         warnedNoEnrichedV2Column = true;
