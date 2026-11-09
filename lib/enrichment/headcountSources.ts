@@ -58,6 +58,17 @@ export function form5500Columns(header: string[]): { sponsor: number; ein: numbe
  * 800 in 2021") the figure belongs to that year, not to the day the page was copied (owner, 2026-11-08, review 6:
  * BrowserStack); a milestone with no year has no date and gives nothing; several years (a range) give nothing.
  */
+/**
+ * A figure that belongs to someone's career, not to the company (review 7, 2026-11-09: CaPow's "managing a team of 300+
+ * engineers" at SolarEdge, Kitov's "CEO of Verint ... 1200 employees", Armorblox's "helping to grow Blue Jeans to 200+").
+ * Past-career wording is always one; a role title only on the company's own pages (a press sentence names its speaker).
+ */
+const BIO_STRONG = /\b(?:served as|prior to|previously|formerly|former|helping to grow|helped (?:to )?(?:grow|build|scale)|grew it from|managing a team|managed a team|led a team|leading a team|annual revenues?)\b/i;
+const BIO_ROLE = /\b(?:CEO|CTO|CFO|COO|CMO|CRO|President|Vice President|VP|Chairman|Managing Director|Co-?Founder|Founder)\b/;
+export function figureIsBiographical(sentence: string, onOwnPage: boolean): boolean {
+  return BIO_STRONG.test(sentence) || (onOwnPage && BIO_ROLE.test(sentence));
+}
+
 export interface SizeStatement { value: number; lowerBound: boolean; sentence: string; year?: number }
 const NUM = String.raw`(\d{1,3}(?:,\d{3})+|\d{1,6})`;
 const LOWER = String.raw`(?:over|more than|\d+\+|at least|nearly|almost)`;
@@ -72,6 +83,7 @@ export function sizeStatement(text: string): SizeStatement | null {
     const years = [...sentence.matchAll(/\b(19[89]\d|20\d{2})\b/g)].map((y) => Number(y[1]));
     if (new Set(years).size > 1) continue;
     if (!years.length && MILESTONE.test(sentence)) continue;
+    if (figureIsBiographical(sentence, true)) continue;
     for (const re of PATTERNS) {
       const m = sentence.match(re);
       if (!m) continue;
@@ -102,6 +114,7 @@ export function extractionPointProblem(h: ExtractionPoint, src: { url: string; s
   if (!new RegExp(`(^|[^\\d])${h.employee_count}([^\\d]|$)`).test(q)) return "number_not_in_quote";
   const w = firstWord(companyName);
   if (!(w && q.toLowerCase().includes(w)) && !FIRST_PERSON.test(q)) return "quote_not_about_the_company";
+  if (figureIsBiographical(h.evidence_quote ?? "", src.source_type === "company_site")) return "quote_is_a_career_not_the_company";
   return null;
 }
 

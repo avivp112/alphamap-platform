@@ -298,7 +298,7 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
             sub_sector_name: {
               type: "string",
               enum: taxonomy.subNames.length > 0 ? taxonomy.subNames : undefined,
-              description: "The single best-fit sub-sector, one level more specific than sector_name and belonging to it. Always a sub-sector name from the list, never the name of a sector. Use a '… / General' sub-sector only when no specific one fits (PropTech, AdTech, AgTech, Security Testing, Developer Tools and Low-Code / No-Code exist). Omit if genuinely uncertain.",
+              description: "The single best-fit sub-sector, one level more specific than sector_name and belonging to it. Always a sub-sector name from the list, never the name of a sector. Use a '… / General' sub-sector only when no specific one fits (PropTech, AdTech, AgTech, Sales Tech, Travel Tech, Security Testing, Developer Tools and Low-Code / No-Code exist). Omit if genuinely uncertain.",
             },
             sub_sector_names: {
               type: "array",

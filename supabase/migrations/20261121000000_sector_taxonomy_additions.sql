@@ -10,7 +10,9 @@ FROM (VALUES
   ('Consumer & Media',           'AdTech'),
   ('Industrial & Manufacturing', 'Industrial / General'),
   ('Industrial & Manufacturing', 'AgTech'),
-  ('Real Estate',                'PropTech')
+  ('Real Estate',                'PropTech'),
+  ('Enterprise Software',        'Sales Tech'),
+  ('Consumer & Media',           'Travel Tech')
 ) AS v(parent_name, sub_name)
 JOIN sectors p ON p.name = v.parent_name AND p.parent_id IS NULL
 ON CONFLICT (name) DO NOTHING;

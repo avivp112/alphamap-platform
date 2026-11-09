@@ -39,7 +39,7 @@ export function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V
   // Description, sector and tags (owner, 2026-11-07): the source is an allowed page; the quote is that page's own
   // sentence nearest the value (quoteFinder.ts) — extractive, for the marker.
   const allowedPages = (ids?: string[]) => (ids ?? []).map((id) => c.sourceById.get(id)).filter((x): x is NonNullable<typeof x> => !!x && profileSourceAllowed(x, row.name)).map((x) => ({ id: x.source_id, content: x.content ?? "" }));
-  const sitePages = c.allSources.filter((x) => x.source_type === "company_site" || profileSourceAllowed(x, row.name)).map((x) => ({ id: x.source_id, content: x.content ?? "" }));
+  const sitePages = c.allSources.filter((x) => x.source_type === "company_site" || profileSourceAllowed(x, row.name)).map((x) => ({ id: x.source_id, content: x.content ?? "", url: x.url }));
   const pf = c.profile.profile;
   if (pf.description) {
     // v2's text beside the one on file (v1), whether or not it would be written (only an empty field is).

@@ -4,6 +4,7 @@
  * shows the source's own sentence that carries the most of their words, so the marker can check the value.
  * Pure. An extractive quote only: it is shown to the marker, never used to verify the value.
  */
+import { isNonDescriptivePage } from "./pageKind";
 
 const STOP = new Set(["that", "this", "with", "from", "their", "which", "have", "been", "into", "also", "more", "than", "such", "about", "company", "platform", "provides", "helps", "uses", "using"]);
 export const contentWords = (s: string): string[] => (s.toLowerCase().match(/\p{L}{4,}/gu) ?? []).filter((w) => !STOP.has(w));
@@ -51,9 +52,11 @@ export function bestQuote(sources: Array<{ id: string; content: string }>, terms
  * "Consumer & Media" had no sentence anywhere in the sources). A tag no sentence of an allowed page carries a word of
  * is not written.
  */
-export function supportedTags(tags: string[], pages: Array<{ id: string; content: string }>): { kept: Array<{ tag: string; id: string; quote: string }>; dropped: string[] } {
+export function supportedTags(tags: string[], allPages: Array<{ id: string; content: string; url?: string }>): { kept: Array<{ tag: string; id: string; quote: string }>; dropped: string[] } {
   const kept: Array<{ tag: string; id: string; quote: string }> = [];
   const dropped: string[] = [];
+  // A privacy policy, terms, glossary, help article or career page supports no tag (review 7, 2026-11-09).
+  const pages = allPages.filter((p) => !isNonDescriptivePage(p.url));
   for (const tag of tags) {
     const hit = bestQuote(pages, tag, 1);
     if (hit) kept.push({ tag, id: hit.id, quote: hit.quote }); else dropped.push(tag);

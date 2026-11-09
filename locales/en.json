@@ -1029,7 +1029,9 @@
       "adTech": "AdTech",
       "industrialGeneral": "Industrial / General",
       "agTech": "AgTech",
-      "propTech": "PropTech"
+      "propTech": "PropTech",
+      "salesTech": "Sales Tech",
+      "travelTech": "Travel Tech"
     }
   },
   "profile": {

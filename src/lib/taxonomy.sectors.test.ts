@@ -19,7 +19,7 @@ describe("sectors added in review 7 (2026-11-09)", () => {
   it("the migration adds the same names", () => {
     const f = readdirSync("supabase/migrations").find((n) => n.includes("sector_taxonomy_additions"))!;
     const sql = readFileSync(`supabase/migrations/${f}`, "utf8");
-    for (const n of ["PropTech", "AdTech", "AgTech", "Security Testing", "Industrial / General", "Industrial & Manufacturing", "Real Estate"]) expect(sql).toContain(`'${n}'`);
+    for (const n of ["PropTech", "AdTech", "AgTech", "Security Testing", "Industrial / General", "Industrial & Manufacturing", "Real Estate", "Sales Tech", "Travel Tech"]) expect(sql).toContain(`'${n}'`);
   });
   it("the English labels exist", () => {
     const labels = JSON.stringify(en);
