@@ -9,6 +9,7 @@ export interface PilotCandidate {
   id: string; name: string; website: string | null; description: string | null;
   city: string | null; country: string | null; founded_year: number | null; founding_country: string | null; status?: string | null;
   founders?: unknown[] | null; competitors?: unknown[] | null; leadership?: unknown[] | null; patents?: unknown[] | null;
+  sector_id?: string | null; employee_count?: number | null; employee_range?: string | null;
   /** Rounds on file (funding_rounds), when counted. */
   rounds_on_file?: number;
 }
@@ -46,6 +47,15 @@ export const FOCUS_FIELDS: Record<string, (c: PilotCandidate) => boolean> = {
   leadership: (c) => !(c.leadership ?? []).length, leader: (c) => !(c.leadership ?? []).length,
   patents: (c) => !(c.patents ?? []).length, patent: (c) => !(c.patents ?? []).length,
   rounds: (c) => (c.rounds_on_file ?? 0) < 2, round: (c) => (c.rounds_on_file ?? 0) < 2,
+  // Review 7 (owner, 2026-11-09): the fields with few marks.
+  description: (c) => !c.description?.trim(),
+  sector: (c) => !c.sector_id,
+  employees: (c) => c.employee_count == null && !c.employee_range, employee_history: (c) => c.employee_count == null && !c.employee_range,
+  // A person on file with no bio, or nobody on file at all: a bio found would be one the review can mark.
+  team_bio: (c) => {
+    const people = [...(c.founders ?? []), ...(c.leadership ?? [])] as Array<{ bio?: string | null }>;
+    return people.length === 0 || people.some((p) => !p?.bio?.trim());
+  },
 };
 const DEFAULT_FOCUS = ["city", "founded_year", "founding_country", "founders", "competitors"];
 
