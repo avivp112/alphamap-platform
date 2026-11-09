@@ -250,3 +250,31 @@ describe("past Phase 1, a promotion writes only the fields the tracker has opene
     expect(r.logs.some((l) => /run_id run-test — undo: RUN_ID=run-test/.test(l))).toBe(true);
   });
 });
+
+describe("the board is its own field: the leader field opening the leadership column does not write board members (owner, 2026-11-09)", () => {
+  const leadershipWritten = (r: Awaited<ReturnType<typeof promoteWith>>) => {
+    const u = r.writes.filter((c) => c.table === "startups" && c.op === "update").map((c) => c.payload as { leadership?: Array<{ name: string; role?: string; group?: string }> });
+    return u.flatMap((p) => p.leadership ?? []);
+  };
+  const withPeople = () => {
+    const s = stored as unknown as { profile: { leadership: unknown[] }; allSources: Array<{ source_id: string; source_type: string; url: string; title: string; query_label: string }> };
+    s.allSources.push({ source_id: "S98", source_type: "news", url: "https://techcrunch.com/2014/03/15/ghost-raises-seed", title: "Ghost raises", query_label: "x" });
+    s.profile.leadership = [
+      { name: "Jane Roe", role: "CEO", bio_source_ids: ["S98"] },
+      { name: "Victor Lazarte", role: "Board member", group: "board", bio_source_ids: ["S98"] },
+    ];
+  };
+  it("leader open, board not: the CEO is written, the board member is not", async () => {
+    withPeople();
+    const r = await promoteWith(["leader"]);
+    const names = leadershipWritten(r).map((l) => l.name);
+    expect(names).toContain("Jane Roe");
+    expect(names).not.toContain("Victor Lazarte");
+  });
+  it("leader and board open: the board member is written, as group board", async () => {
+    withPeople();
+    const r = await promoteWith(["leader", "board"]);
+    const board = leadershipWritten(r).find((l) => l.name === "Victor Lazarte");
+    expect(board).toMatchObject({ role: "Board member", group: "board" });
+  });
+});

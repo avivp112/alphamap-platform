@@ -16,6 +16,9 @@ export const FIELD_COLUMNS: Record<string, string[]> = {
   // The dated points (headcount_history table), not a column of startups.
   employee_history: [],
   founder: ["founders"], leader: ["leadership"],
+  // The board members inside the leadership list (group "board"): their own field (owner, 2026-11-09), written only when it is open — the leader field
+  // opening the column does not write them.
+  board: [],
   // Two tiers of one column (owner, 2026-11-07): declared = a source says they compete; market = one market, per an allowed source.
   competitor_declared: ["competitors"], competitor_market: ["competitors"],
   patent: ["patents", "patent_count", "patent_fields"],
@@ -33,6 +36,7 @@ export function openColumnsOf(open: readonly string[]): Set<string> {
 }
 
 export const writesRounds = (open: readonly string[]) => open.includes("round");
+export const writesBoard = (open: readonly string[]) => open.includes("board");
 export const writesBios = (open: readonly string[]) => open.includes("founder_bio");
 /** Whether a competitor of this tier may be written: its own field is open ("competitor", the field's name before the tiers, counts as declared). */
 export const writesCompetitorTier = (open: readonly string[], tier: "declared" | "market" | undefined) =>

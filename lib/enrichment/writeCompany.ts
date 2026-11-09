@@ -39,7 +39,7 @@ import {
 } from "./write.ts";
 import { validateWebsiteCandidate, websiteDomain, type DomainOwner } from "./websiteValidation.ts";
 import { sourceTypeRank, type SourceType } from "./sourceTypes.ts";
-import { restrictPatch, writesRounds, writesBios, writesHeadcount, writesCompetitorTier, writesFounderBackground, writesTags, writesEmployeeHistory, fieldOfColumn, withoutBio } from "./writeUnits.ts";
+import { restrictPatch, writesRounds, writesBios, writesBoard, writesHeadcount, writesCompetitorTier, writesFounderBackground, writesTags, writesEmployeeHistory, fieldOfColumn, withoutBio } from "./writeUnits.ts";
 
 // Upper bounds on the additive list sections, so repeated runs can't grow
 // them without limit. Entries already on file are never removed.
@@ -352,9 +352,13 @@ export async function writeCollected(
     // (A cleaned title can be null; the founders column takes it as is.)
     setIfChanged("founders", cleanPeople(mergePeople(row.founders ?? [], aligned as NonNullable<V2StartupRow["founders"]>)), row.founders);
   }
-  const cleanLeadership = cleanPeople((profile.leadership ?? []).map((l) => keepBio({
+  // The board is its own group and its own field (owner, 2026-11-09): carried through as group "board" (it was dropped here, so board
+  // members were written as leaders with the role "Board member"), and written only when the board field is open.
+  const boardOk = !OPEN || writesBoard(OPEN);
+  const cleanLeadership = cleanPeople((profile.leadership ?? []).filter((l) => l.group !== "board" || boardOk).map((l) => keepBio({
     name: l.name, role: l.role, bio: l.bio, linkedin_url: l.linkedin_url?.value, joined_date: l.joined_date,
     had_prior_exit: l.had_prior_exit, elite_background: l.elite_background, notable_pedigree: l.notable_pedigree,
+    ...(l.group === "board" ? { group: "board" as const } : {}),
   })));
   const allLeaderInputs = [
     ...cleanLeadership,
