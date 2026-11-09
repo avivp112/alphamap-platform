@@ -50,3 +50,21 @@ describe("the description", () => {
     expect(processDescription(null, "Nuova", byId, ok)).toBeNull();
   });
 });
+
+import { MARKETING as MKT, tooOldForDescription, descriptionSources as dSources } from "./descriptionBuilder";
+describe("review 7 (7.25 AYOXXA, 2026-11-09): superlatives, and a source older than two years", () => {
+  it("'lowest sample volume' and its kind are marketing, not description", () => {
+    for (const t of ["Together with lowest sample volume in the multiplex protein arena", "the fastest platform", "the first company to", "the largest provider of", "the best tool for"]) expect(MKT.test(t)).toBe(true);
+    expect(MKT.test("Pynt offers dynamic API security testing for developers and testers")).toBe(false);
+  });
+  it("a dated article older than two years is not a source; the company's own pages and recent articles are", () => {
+    const old = { url: "https://www.prnewswire.com/news-releases/ayoxxa-biosystems-extends-series-b-284438681.html", content: "Published Time: 2015-11-04\nAYOXXA…", source_type: "press_release" as const };
+    const recent = { url: "https://example.com/2026/09/ayoxxa", content: "AYOXXA…", source_type: "news" as const };
+    const own = { url: "https://ayoxxa.com/about", content: "Published Time: 2015-01-01", source_type: "company_site" as const };
+    expect(tooOldForDescription(old, "2026-11-09")).toBe(true);
+    expect(tooOldForDescription(recent, "2026-11-09")).toBe(false);
+    expect(tooOldForDescription(own, "2026-11-09")).toBe(false);
+    const all = [old, recent, own].map((x, i) => ({ ...x, source_id: `S${i}`, title: "", provider: "serper", query_label: "x" })) as never;
+    expect((dSources(all, () => true) as Array<{ source_id: string }>).map((x) => x.source_id)).toEqual(["S2", "S1"]);
+  });
+});

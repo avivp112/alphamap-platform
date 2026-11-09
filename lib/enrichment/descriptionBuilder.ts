@@ -9,6 +9,7 @@
  * its sources comes near it. Without a "what" and a "for_whom" there is no description (missing is better than wrong).
  * The current website comes first in the prompt: it beats an old article. Pure: the model call is the caller's.
  */
+import { articleDate } from "./headquarters.ts";
 import { formatSourcesForPrompt, type LabeledSource } from "./sources.ts";
 import { bestSentence } from "./quoteFinder.ts";
 
@@ -17,7 +18,7 @@ export interface DescriptionSentence { role: SentenceRole; text: string; source_
 export interface BuiltDescription { description: string; sentences: DescriptionSentence[]; dropped: Array<{ text: string; why: string }> }
 
 /** Words that sell instead of describe. Used alone they say nothing; a sentence with one is rewritten or dropped. */
-export const MARKETING = /\b(leading|leader in|innovative|innovation|revolutionary|revolutionize[sd]?|ai-native|cutting-edge|state-of-the-art|world-class|best-in-class|next-generation|next-gen|game-chang\w+|seamless(ly)?|unparalleled|disruptive|industry-leading|pioneering|transformative|powerful|robust|end-to-end)\b/i;
+export const MARKETING = /\b(leading|leader in|innovative|innovation|revolutionary|revolutionize[sd]?|ai-native|cutting-edge|state-of-the-art|world-class|best-in-class|next-generation|next-gen|game-chang\w+|seamless(ly)?|unparalleled|disruptive|industry-leading|pioneering|transformative|powerful|robust|end-to-end|lowest|highest|best|fastest|first|largest|biggest|smallest|most|top|greatest|unmatched|unrivall?ed|premier|foremost|ultimate|market leader|number one|#1)\b/i;
 
 const norm = (s: string) => s.toLowerCase().replace(/(\d),(\d)/g, "$1$2").replace(/[^\p{L}\p{N}$%.+ ]/gu, " ").replace(/\s+/g, " ");
 const COMMON_CAPS = new Set(["the", "a", "an", "it", "its", "this", "that", "they", "their", "for", "to", "and", "in", "of", "with", "by", "on", "from", "ai", "api", "saas", "b2b", "b2c", "it", "ml", "sdk", "iot", "cloud", "ceo", "cto", "us", "usa", "eu", "uk"]);
@@ -102,8 +103,16 @@ export function descriptionTool() {
 }
 
 /** Sources for the prompt: the company's own pages first, then the allowed ones, capped. */
+export const DESCRIPTION_MAX_AGE_DAYS = 2 * 365;
+/** A dated article older than two years (owner, 2026-11-09, review 7: AYOXXA's description came from a 2015 release): not a source for what the company is now. The company's own pages are always current. */
+export function tooOldForDescription(s: Pick<LabeledSource, "url" | "content" | "source_type">, today = new Date().toISOString().slice(0, 10)): boolean {
+  if (s.source_type === "company_site") return false;
+  const d = articleDate(s);
+  return !!d && Date.parse(today) - Date.parse(d) > DESCRIPTION_MAX_AGE_DAYS * 86_400_000;
+}
+
 export function descriptionSources(all: LabeledSource[], allowed: (s: LabeledSource) => boolean, max = 14): LabeledSource[] {
-  const ok = all.filter(allowed);
+  const ok = all.filter(allowed).filter((s) => !tooOldForDescription(s));
   return [...ok.filter((s) => s.source_type === "company_site"), ...ok.filter((s) => s.source_type !== "company_site")].slice(0, max);
 }
 
@@ -116,9 +125,9 @@ SENTENCES (one per role, in this order):
 3. role "edge" (optional): what sets it apart. Include it only when a source says so; otherwise leave it out.
 
 RULES:
-- Facts only, each one stated in the sources you cite. Neutral tone, plain words. Do not use "leading", "innovative", "revolutionary", "AI-native", "cutting-edge", "world-class", "powerful", "seamless" or the like; describe what the product does instead.
+- Facts only, each one stated in the sources you cite. Neutral tone, plain words. Do not use "leading", "innovative", "revolutionary", "AI-native", "cutting-edge", "world-class", "powerful", "seamless", or superlatives such as "lowest", "best", "fastest", "first", "largest", "most"; describe what the product does instead.
 - Every sentence lists the source_ids that support it. A number or a name that is not in those sources must not appear.
-- The company's own current website comes first; prefer it to an older article. Describe the company as it is now.
+- The company's own current website comes first; prefer it to an older article, and never describe it from an article older than two years. Describe the company as it is now.
 - Do not mention funding, investors, rankings, data platforms or where a fact was read. Do not start with the company name more than once.
 - If the sources do not support a "what" and a "for_whom" sentence, return no sentences.
 

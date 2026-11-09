@@ -74,21 +74,26 @@ function mentions(quote: string, words: string[]): boolean {
 
 export type OriginDrop = "founding_country_not_stated" | "israel_rnd_not_stated";
 
+/** Armed forces and their units: "Israel Defense Forces", "Israeli military intelligence" name a nation's army, not where a company was founded. */
+const FORCES = /\b(israel(?:i)? defen[cs]e forces|idf|(?:israeli|american|british|german|french|indian|u\.s\.|us)\s+(?:army|military|navy|air force|marines?|intelligence|special forces)|unit 8200)\b/gi;
+
 /**
- * Keep a founding country only when its quote names that country (or one of
- * its cities, or its adjective) AND either says founded/started/born, or uses
- * the adjective for the company itself ("an Israeli startup").
+ * Keep a founding country only when its quote names a PLACE that stands for the country (the country itself, or one of its
+ * cities) beside a word that says founded/started/born, or uses the country's adjective for the company itself ("an Israeli
+ * startup"). The adjective alone, beside "founded", is not enough (run 7, Perception Point: "Founded in 2015 by Israeli
+ * military intelligence veterans" is the founders' nationality, not the country the company was founded in).
  */
 export function checkFoundingCountry(value: string | null | undefined, quote: string | null | undefined): OriginDrop | null {
   if (!value) return null;
   if (!quote) return "founding_country_not_stated";
-  const words = countryMentions(value);
-  if (!mentions(quote, words)) return "founding_country_not_stated";
-  if (FOUNDING_WORDS.test(quote)) return null;
+  const key = lc(value.trim());
+  const cleaned = quote.replace(FORCES, " ");
+  const places = [key, ...(key === "israel" ? ISRAELI_CITIES : [])];
+  if (mentions(cleaned, places) && FOUNDING_WORDS.test(cleaned)) return null;
   // The adjective must describe the company: "Israeli cybersecurity startup", not "an Israeli Army veteran ... the company".
-  const adjectives = DEMONYMS[lc(value.trim())] ?? [];
+  const adjectives = DEMONYMS[key] ?? [];
   const esc = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  if (adjectives.some((a) => new RegExp(`(^|[^a-z])${esc(a)}(\\s+[a-z&-]+){0,3}?\\s+${NATIONALITY_NOUNS}\\b`).test(lc(quote)))) return null;
+  if (adjectives.some((a) => new RegExp(`(^|[^a-z])${esc(a)}(\\s+[a-z&-]+){0,3}?\\s+${NATIONALITY_NOUNS}\\b`).test(lc(cleaned)))) return null;
   return "founding_country_not_stated";
 }
 

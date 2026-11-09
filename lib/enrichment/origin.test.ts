@@ -52,3 +52,19 @@ describe("Israel-related", () => {
     expect(isIsraelRelated({ country: "United States", founding_country: "United States" })).toBe(false);
   });
 });
+
+import { checkFoundingCountry as checkFC } from "./origin";
+describe("a founding country is a place, not the founders' nationality (review 7, 7.20 Perception Point, 2026-11-09)", () => {
+  it("'Founded in 2015 by Israeli military intelligence veterans' does not say where it was founded", () => {
+    expect(checkFC("Israel", "Founded in 2015 by Israeli military intelligence veterans")).toBe("founding_country_not_stated");
+    expect(checkFC("Israel", "Founded in 2015 by former Israel Defense Forces intelligence officers")).toBe("founding_country_not_stated");
+    expect(checkFC("Israel", "The company was founded by alumni of Unit 8200")).toBe("founding_country_not_stated");
+  });
+  it("a place beside 'founded', or the adjective for the company, still counts", () => {
+    expect(checkFC("Israel", "Founded this year, Tel Aviv-based Ottopia is pitching itself as a teleoperation platform")).toBeNull();
+    expect(checkFC("Israel", "Founded in 2015 in Israel, the company builds email security")).toBeNull();
+    expect(checkFC("Israel", "DENOVAI BIOTECH LTD, company number 516751294, incorporated 22/01/2023, Rehovot")).toBeNull();
+    expect(checkFC("Israel", "an Israeli cybersecurity startup that raised $20M")).toBeNull();
+    expect(checkFC("United Kingdom", "Founded in the United Kingdom in 2016, the company")).toBeNull();
+  });
+});
