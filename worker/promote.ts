@@ -98,6 +98,23 @@ export interface PromoteDeps {
 
 /** One approved company, written. Returns false when none is waiting. */
 /**
+ * This promotion's enrichment_runs row: every write of writeCollected is recorded in field_changes under it, so the promotion can be
+ * undone as a whole (scripts/undo_run.ts) — before 2026-11-09 promotions were written with no run_id and could not be. No run, no write.
+ */
+async function registerPromotionRun(db: SupabaseClient, job: PromotionJob, openFields: readonly string[]): Promise<string> {
+  const { data, error } = await db.from("enrichment_runs").insert({
+    pipeline: "v2", run_kind: "on_demand", dry_run: false, git_sha: process.env.GIT_SHA ?? null,
+    thresholds: { MODE: "promotion", check_promotion: job.id, kind: job.kind ?? "new", openFields },
+  }).select("run_id").single();
+  if (error || !data) throw new Error(`could not register the promotion in enrichment_runs (${error?.message ?? "no row"}) — nothing written, since it could not be undone`);
+  return (data as { run_id: string }).run_id;
+}
+
+async function closePromotionRun(db: SupabaseClient, runId: string): Promise<void> {
+  await db.from("enrichment_runs").update({ finished_at: new Date().toISOString(), companies_count: 1 }).eq("run_id", runId);
+}
+
+/**
  * Why approved companies are not written yet, or null. The worker loop asks this before calling promoteOne, so that waiting
  * for Phase 1 is one quiet line an hour and not an "error" every poll (Fly logs of 2026-11-09: the same refusal every two
  * seconds). promoteOne itself still refuses, as before.
@@ -136,10 +153,13 @@ export async function promoteOne(d: PromoteDeps): Promise<boolean> {
       const stored = deserializeCollected(job.collected);
       const refs = roundRefs(company.rounds);
       const collected = { ...stored, existingRefs: refs, plan: planRoundWrites(refs, newAcceptedRounds(stored.validation)) };
+      const runId = await registerPromotionRun(d.db, job, openFields);
+      log(`promotion ${job.id}: run_id ${runId} — undo: RUN_ID=${runId} npx tsx scripts/undo_run.ts`);
       await writeCollected(company.row, collected, {
-        db: d.db, dryRun: false, update: false, verbose: false, thresholds: BULK_THRESHOLDS, openFields,
+        db: d.db, dryRun: false, update: false, verbose: false, thresholds: BULK_THRESHOLDS, openFields, runId,
         taxonomy: await d.taxonomy(), startupByDomain: await domainIndex(d.db), seen: null,
       }, newWriteSummary());
+      await closePromotionRun(d.db, runId);
       const { error: refreshErr } = await d.db.rpc("refresh_startups_search");
       if (refreshErr) log(`promotion ${job.id}: search refresh failed (${refreshErr.message}) — the nightly refresh will add it`);
       await finish("written", job.startup_id, null);
@@ -156,15 +176,18 @@ export async function promoteOne(d: PromoteDeps): Promise<boolean> {
       return true;
     }
 
+    const runId = await registerPromotionRun(d.db, job, openFields);
+    log(`promotion ${job.id}: run_id ${runId} — undo: RUN_ID=${runId} npx tsx scripts/undo_run.ts`);
     const { data: startupId, error: startErr } = await d.db.rpc("start_check_promotion_write", {
       p_id: job.id, p_name: job.name, p_website: job.website,
     });
     if (startErr) throw new Error(`start_check_promotion_write: ${startErr.message}`);
 
     await writeCollected(freshRow(startupId as string, job.name, job.website), deserializeCollected(job.collected), {
-      db: d.db, dryRun: false, update: false, verbose: false, thresholds: BULK_THRESHOLDS, openFields,
+      db: d.db, dryRun: false, update: false, verbose: false, thresholds: BULK_THRESHOLDS, openFields, runId,
       taxonomy: await d.taxonomy(), startupByDomain: await domainIndex(d.db), seen: null,
     }, newWriteSummary());
+    await closePromotionRun(d.db, runId);
 
     // The Private Market search reads a materialized view.
     const { error: refreshErr } = await d.db.rpc("refresh_startups_search");
