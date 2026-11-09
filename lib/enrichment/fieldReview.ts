@@ -92,7 +92,7 @@ export function sameReviewValue(field: string, a: string, b: string): boolean {
     case "founded_year": case "employee_count": return numbers(a)[0] === numbers(b)[0];
     case "hq_city": case "hq_country": case "office": case "founding_country": case "competitor": case "competitor_declared": case "competitor_market": case "employee_range":
       return norm(a).split(",")[0].trim() === norm(b).split(",")[0].trim() || norm(a) === norm(b);
-    case "founder": case "leader": case "founder_bio": return head(a) === head(b);
+    case "founder": case "leader": case "board": case "founder_bio": return head(a) === head(b);
     case "patent": return (a.match(/^[A-Z]{2}\S+/)?.[0] ?? norm(a)) === (b.match(/^[A-Z]{2}\S+/)?.[0] ?? norm(b));
     case "news": {
       const t = (s: string) => norm(s.replace(/^(\d{4}-\d{2}-\d{2}|no date)\s+—\s+/, ""));

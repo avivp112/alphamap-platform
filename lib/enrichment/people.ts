@@ -217,12 +217,14 @@ export function cleanPeople<T extends { name: string }>(people: T[]): T[] {
  * placeholder / non-leadership one, and the person is not listed.
  */
 export function isLeadershipRole(role: string | null | undefined): boolean {
+  // A CLOSED list (owner, 2026-11-09, after the Orq "Tech Lead" and "Head of" entries): C-level, President,
+  // Founder / Co-founder, General Manager, Managing Director, VP / SVP / EVP. Lead, Manager, Director (other than
+  // Managing Director), Head of and anything else are not leaders. The board is kept apart (roleAtCompany).
   const r = (role ?? "").trim();
   if (!r) return false;
   if (/\b(not specified|unspecified|unknown|n\/a|none|employee|staff|team member|member of|intern|contractor|volunteer|student|candidate)\b/i.test(r)) return false;
-  // A team / tech / project lead runs a team, not the company (Orq, pilot dry run 2026-11-08).
-  if (/\b(tech(?:nical)?|team|project|squad|dev(?:elopment)?|engineering|design|qa|scrum|product|sales|support)\s+lead(?:er)?\b/i.test(r) && !/\b(head|vp|vice|director|chief|cto|ceo|founder)\b/i.test(r)) return false;
-  return /\b(chief|c[a-z]o|ceo|cto|cfo|coo|cmo|cpo|cro|ciso|president|founder|co-?founder|owner|chair(?:man|woman|person)?|director|head|vp|vice[- ]president|svp|evp|general manager|gm|managing|partner|principal|lead|executive|officer|board|advisor|scientist)\b/i.test(r);
+  if (/\bchief\s+of\s+staff\b/i.test(r) && !/\b(ceo|cto|cfo|coo|founder|president)\b/i.test(r)) return false;
+  return /\b(ceo|cto|cfo|coo|cmo|cpo|cro|cio|ciso|cdo|cso|cco|clo|chro|cxo|chief\b[\p{L} &,-]{0,40}\bofficer|president|founders?|co-?\s?founders?|general manager|managing director|vp|svp|evp|vice[- ]president)\b/iu.test(r);
 }
 
 /**

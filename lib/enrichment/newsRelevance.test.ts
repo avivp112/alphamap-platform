@@ -45,3 +45,67 @@ describe("the pilot dry run of 2026-11-08: roundups, passing mentions, tracking 
     expect(stripTrackingParams("not a url")).toBe("not a url");
   });
 });
+
+import { dateFromUrl, dateFromHtml, ownSiteNewsOk, eventKeys, dedupeNewsEvents, namesCompanyUpFront as upFront, newsProblem as problem } from "./newsRelevance";
+
+describe("pilot dry run 2 (owner, 2026-11-09)", () => {
+  it("a date is read from the address before a news item is dropped for having none", () => {
+    expect(dateFromUrl("https://siliconangle.com/2024/11/06/crowdstrike-acquires-cloud-security-provider-adaptive-shield/")).toBe("2024-11-06");
+    expect(dateFromUrl("https://www.businesswire.com/news/home/20240919738626/en/Adaptive-Shield-Honored")).toBe("2024-09-19");
+    expect(dateFromUrl("https://www.globenewswire.com/news-release/2026/10/21/3385717/0/en/x.html")).toBe("2026-10-21");
+    expect(dateFromUrl("https://www.freightwaves.com/news/datatruck-raises-12m")).toBeNull();
+  });
+  it("a date is read from the page's code", () => {
+    expect(dateFromHtml('<meta property="article:published_time" content="2026-01-28T09:00:00+00:00">')).toBe("2026-01-28");
+    expect(dateFromHtml('<script type="application/ld+json">{"@type":"NewsArticle","datePublished":"2025-08-13T10:00:00Z"}</script>')).toBe("2025-08-13");
+    expect(dateFromHtml('<p>Posted <time datetime="2022-11-09">Nov 9</time></p>')).toBe("2022-11-09");
+    expect(dateFromHtml("<html>no date</html>")).toBeNull();
+    expect(dateFromHtml('<meta property="article:published_time" content="2999-01-01">')).toBeNull();
+  });
+  it("a passing mention: the company is in the headline or the first paragraph (Datatruck, Swan)", () => {
+    // Datatruck d1.19: no mention up front, and with no text to read the headline alone decides.
+    expect(upFront({ title: "IT Park Ventures: The First Venture Investments in Uzbekistan's Startups", content: "" }, "Datatruck")).toBe(false);
+    expect(upFront({ title: "IT Park Ventures: The First Venture Investments in Uzbekistan's Startups", content: "IT Park Ventures made its first investments. ".repeat(20) + " Datatruck" }, "Datatruck")).toBe(false);
+    // Swan d1.40: the name is only a possessive in the headline of another company's news.
+    expect(upFront({ title: "Owen Selects Assurant to Enable Embedded Protection for Swan's Next-Generation Business Cards", content: "Owen, an insurtech, has selected Assurant to underwrite cards. ".repeat(10) }, "Swan")).toBe(false);
+    expect(upFront({ title: "Swan secures €42M", content: "" }, "Swan")).toBe(true);
+    expect(upFront({ title: "Speechify's new voice typing", content: "" }, "Speechify")).toBe(true);
+    expect(upFront({ title: "Funding roundup", content: "Datatruck, a trucking platform, raised $12M." }, "Datatruck")).toBe(true);
+    expect(problem({ title: "IT Park Ventures: The First Venture Investments", content: "" }, "Datatruck", "trucking software")).toBe("not_about_the_company");
+  });
+  it("the company's own site: news / press paths, or a blog post that names it (Appcharge)", () => {
+    expect(ownSiteNewsOk("https://empxtrack.com/news/thriveni-expands-partnership-empxtrack/", "Thriveni Expands Partnership with Empxtrack", "Empxtrack")).toBe(true);
+    expect(ownSiteNewsOk("https://www.appcharge.com/blog/epic-v-google-the-settlement-is-off-the-table", "Epic v. Google: The Settlement Is Off the Table, and That Is Good for Developers", "Appcharge")).toBe(false);
+    expect(ownSiteNewsOk("https://www.heygen.com/blog/heygen-surpasses-200m-arr", "HeyGen Surpasses $200M ARR as AI Video Adoption Accelerates", "HeyGen")).toBe(true);
+    expect(ownSiteNewsOk("https://www.swan.io/blog-posts/swan-secures-eu42m", "Swan secures €42M", "Swan")).toBe(false);
+    expect(ownSiteNewsOk("https://www.upside.com/newsroom/press-releases/x", "Forbes recognizes Upside", "Upside")).toBe(true);
+  });
+  it("one row per event: the same amount or acquisition within 7 days, or one undated (Adaptive Shield, Appcharge, HeyGen)", () => {
+    expect([...eventKeys("Appcharge Raises $58 Million in Series B Round")]).toEqual(["58m"]);
+    expect([...eventKeys("Appcharge raises $58M Series B")]).toEqual(["58m"]);
+    expect(eventKeys("CrowdStrike acquires Adaptive Shield in $300M deal").has("acquisition")).toBe(true);
+    const own = (u: string) => u.includes("glilotcapital") || u.includes("heygen.com");
+    const adaptive = dedupeNewsEvents([
+      { title: "CrowdStrike acquires cloud security provider Adaptive Shield", url: "https://siliconangle.com/a", published_date: "2024-11-06" },
+      { title: "CrowdStrike acquires Adaptive Shield in $300M deal to boost identity protection", url: "https://calcalistech.com/b", published_date: null },
+    ], own);
+    expect(adaptive).toHaveLength(1);
+    expect(adaptive[0].published_date).toBe("2024-11-06");
+    const appcharge = dedupeNewsEvents([
+      { title: "Appcharge Raises $58 Million in Series B Round Led by IVP", url: "https://businesswire.com/a", published_date: "2025-08-13" },
+      { title: "Appcharge raises $58M Series B as mobile games break from app stores", url: "https://glilotcapital.com/b", published_date: "2025-08-13" },
+    ], own);
+    expect(appcharge.map((x) => x.url)).toEqual(["https://businesswire.com/a"]);
+    // The company's own copy comes first, an outlet's second: the outlet is kept.
+    const heygen = dedupeNewsEvents([
+      { title: "HeyGen Surpasses $200M ARR as AI Video Adoption Accelerates", url: "https://www.heygen.com/blog/x", published_date: "2026-06-25" },
+      { title: "HeyGen Doubles to $200M ARR in Eight Months", url: "https://www.businesswire.com/y", published_date: "2026-06-25" },
+    ], own);
+    expect(heygen.map((x) => x.url)).toEqual(["https://www.businesswire.com/y"]);
+    // Two raises of different size, months apart, stay two.
+    expect(dedupeNewsEvents([
+      { title: "Appcharge raises $26M", url: "https://a.com/1", published_date: "2024-11-25" },
+      { title: "Appcharge raises $58M", url: "https://a.com/2", published_date: "2025-08-13" },
+    ], own)).toHaveLength(2);
+  });
+});

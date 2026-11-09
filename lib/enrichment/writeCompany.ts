@@ -30,7 +30,7 @@ import { MAJOR_CITIES } from "./majorCities.ts";
 import { normalizeForMatch } from "./evidence.ts";
 import { computeTotalRaised, computeDebtRaised } from "./rounds.ts";
 import { computeFieldConfidence, meetsProfileThreshold } from "./confidence.ts";
-import { roundFieldEvidence } from "./roundProvenance.ts";
+import { roundFieldEvidence, evidencedFillPatch } from "./roundProvenance.ts";
 import { startupChanges, roundInsertChange, roundUpdateChanges, type FieldChangeRow } from "./runChanges.ts";
 import { hintKey, type RoundHint } from "./hints.ts";
 import { cleanNarrative, verifierFrom } from "./narrative.ts";
@@ -177,9 +177,8 @@ export async function writeCollected(
   const plan = {
     ...planned,
     updates: planned.updates.flatMap((u) => {
-      const { investors: _i, investor_amounts: _a, ...patch } = u.patch as Record<string, unknown>;
-      const material = ["amount_raised", "valuation", "announcement_date", "lead_investor"].some((k) => patch[k] != null);
-      if (!material) { bump(summary.droppedByReason, "round_fill_without_evidence"); return []; }
+      const patch = evidencedFillPatch(u.patch as Record<string, unknown>, funding.funding_rounds);
+      if (!patch) { bump(summary.droppedByReason, "round_fill_without_evidence"); return []; }
       return [{ ...u, patch } as typeof u];
     }),
   };
@@ -658,14 +657,15 @@ export async function writeCollected(
           }
         }
       } else if (k === "leadership") {
-        for (const l of newOf<{ name: string; role?: string | null; bio?: string | null }>(patch.leadership, rowOf.leadership, (a, b) => samePersonName(a.name ?? "", b.name))) {
+        for (const l of newOf<{ name: string; role?: string | null; group?: string | null; bio?: string | null }>(patch.leadership, rowOf.leadership, (a, b) => samePersonName(a.name ?? "", b.name))) {
           // The page that names the person: the bio's allowed source, else the first allowed page that does (so the value has a source on file).
           const ids = (profile.leadership ?? []).find((x) => samePersonName(x.name, l.name))?.bio_source_ids;
           const src = ((ids ?? []).map((id) => sourceById.get(id)).find((x) => x && profileSourceAllowed(x, row.name)))
             ?? allSources.find((x) => profileSourceAllowed(x, row.name) && `${x.title ?? ""} ${x.content ?? ""}`.toLowerCase().includes((l.name.trim().split(/\s+/).pop() ?? l.name).toLowerCase()));
           const last = (l.name.trim().split(/\s+/).pop() ?? l.name).toLowerCase();
           const quote = src ? (`${src.title ?? ""}. ${src.content ?? ""}`.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/).find((sen) => sen.length <= 300 && sen.toLowerCase().includes(last)) ?? null) : null;
-          one("leader", `${l.name} — ${l.role ?? ""}${l.bio ? ` · ${l.bio}` : ""}`, src?.url ?? null, quote);
+          // The board is its own group, never a leader (owner, 2026-11-09): reported, marked and verified as "board".
+          one((l as { group?: string | null }).group === "board" ? "board" : "leader", `${l.name} — ${l.role ?? ""}${l.bio ? ` · ${l.bio}` : ""}`, src?.url ?? null, quote);
         }
       } else if (k === "competitors") {
         for (const c of newOf<{ name: string; source_url?: string | null; tier?: string }>(patch.competitors, rowOf.competitors, (a, b) => normalizeForMatch(a.name ?? "") === normalizeForMatch(b.name))) one(c.tier === "market" ? "competitor_market" : "competitor_declared", c.name, c.source_url ?? null);
@@ -761,6 +761,7 @@ export async function writeCollected(
       news: (a) => `news.${String(a).split(" — ").slice(1).join(" — ").slice(0, 120)}`,
       founder: (a) => `founders.${String(a).split(" — ")[0]}`,
       leader: (a) => `leadership.${String(a).split(" — ")[0]}`,
+      board: (a) => `leadership.${String(a).split(" — ")[0]}`,
       patent: (a) => `patents.${String(a).split(" ")[0]}`,
     };
     for (const rl of reportLines.filter((r) => listKey[r.field] && r.source_url)) {

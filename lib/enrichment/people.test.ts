@@ -67,8 +67,13 @@ describe("isLeadershipRole — a leader needs a real role (BETA, 2026-10-26)", (
     expect(isLeadershipRole("Tech Lead and CTO")).toBe(true);
   });
   it("keeps executives", () => {
-    for (const r of ["CEO (Co-Founder)", "Chief Technology Officer", "VP Engineering", "Head of Product", "President", "Managing Director", "General Manager, EMEA"]) {
+    for (const r of ["CEO (Co-Founder)", "Chief Technology Officer", "VP Engineering", "SVP Sales", "EVP Operations", "CISO", "President", "Managing Director", "General Manager, EMEA", "Co-founder"]) {
       expect(isLeadershipRole(r)).toBe(true);
+    }
+  });
+  it("the list is closed: Head of, Director, Manager, Lead, Chief of Staff are not leaders (owner, 2026-11-09)", () => {
+    for (const r of ["Head of Product", "Director of Engineering", "Engineering Manager", "Lead Designer", "Chief of Staff", "Partner", "Advisor", "Board member"]) {
+      expect(isLeadershipRole(r)).toBe(false);
     }
   });
 });

@@ -10,7 +10,7 @@
  */
 import { classifySourceType } from "./sources";
 import { profileSourceAllowed, roundSourceStanding } from "./roundSources";
-import { roleAtCompany, isOrganisationName } from "./people";
+import { roleAtCompany, isOrganisationName, isLeadershipRole } from "./people";
 import { RAISE_RE, statesAmount } from "./assemble";
 import { dateFromUrl } from "./evidence";
 import { isLinkList, quoteIsAboutTheCompany, quoteLinksTheTwo } from "./competitorEvidence";
@@ -28,7 +28,7 @@ export interface MarkContext {
 }
 export interface MarkJudgment { produced: boolean; rule?: string }
 
-const PROFILE = new Set(["hq_city", "hq_country", "founded_year", "founding_country", "office", "employee_range", "employee_count", "founder", "founder_bio", "leader"]);
+const PROFILE = new Set(["hq_city", "hq_country", "founded_year", "founding_country", "office", "employee_range", "employee_count", "founder", "founder_bio", "leader", "board"]);
 const keep: MarkJudgment = { produced: true };
 const out = (rule: string): MarkJudgment => ({ produced: false, rule });
 
@@ -78,6 +78,7 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
       const cls = roleAtCompany(role, company);
       if (cls.kind === "advisor") return out("an advisor");
       if (cls.kind === "board") return out("the board, kept apart");
+      if (!isLeadershipRole(cls.role ?? role) && cls.role !== "Leadership team") return out("not on the closed list of leadership roles");
       if (isOrganisationName(name)) return out("an organisation, not a person");
       return keep;
     }

@@ -23,7 +23,7 @@ export function expectedProvenance(r: Pick<BatchRow, "field" | "value">): { exac
   switch (r.field) {
     case "round": return { prefix: "funding_rounds." };
     case "news": return { exact: `news.${r.value.split(" — ").slice(1).join(" — ").slice(0, 120)}` };
-    case "leader": return { exact: `leadership.${head(r.value)}` };
+    case "leader": case "board": return { exact: `leadership.${head(r.value)}` };
     case "founder": case "founder_bio": return { exact: `founders.${head(r.value)}` };
     case "patent": return { exact: `patents.${r.value.split(" ")[0]}` };
     default: return null;

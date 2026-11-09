@@ -28,7 +28,7 @@ import { extractMarket, normalizeUrlForMatch } from "./extractMarket.ts";
 import { normalizeForMatch } from "./evidence.ts";
 import { competitorTierClaims, type TieredClaim } from "./competitorTiers.ts";
 import { websiteLooksLikeAnotherCompany } from "./websiteIdentity.ts";
-import { newsProblem } from "./newsRelevance.ts";
+import { newsProblem, ownSiteNewsOk, dateFromUrl, dateFromHtml, dedupeNewsEvents } from "./newsRelevance.ts";
 import { reconcileSector } from "./sectors.ts";
 import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
 import { buildDescriptionRequest, descriptionSources, processDescription } from "./descriptionBuilder.ts";
@@ -44,7 +44,7 @@ import {
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
 import { pickArticlesToRead } from "./articles.ts";
 import { runTechGate, shouldSkipAsNonTech, type TechGateVerdict } from "./techGate.ts";
-import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, personCardsInHtml, roleAtCompany, titleFromCard } from "./people.ts";
+import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, personCardsInHtml, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
 import { componentOn } from "./components.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
@@ -1269,7 +1269,15 @@ export async function collectCompany(
       bump(stats.droppedByReason, "leader_title_unsupported");
       record("dropped");
     }
-    profile.leadership = keptLeaders;
+    // The closed list of leadership roles holds for a title read from a card or a page too (owner, 2026-11-09):
+    // "Head of …", "Tech Lead", "Director of …" are not leaders. The board is apart; "Leadership team" is the
+    // owner's 2026-11-03 placeholder for a person on the leadership page whose title could not be verified.
+    profile.leadership = keptLeaders.filter((l) => {
+      if (l.group === "board" || l.role === "Leadership team" || isLeadershipRole(l.role)) return true;
+      console.log(`    🚫  leader ${l.name} not written — "${l.role}" is not on the closed list of leadership roles`);
+      bump(stats.droppedByReason, "leader_role_not_on_list");
+      return false;
+    });
     // The website may be another company's (websiteIdentity.ts): the allowed press names founders the site never shows.
     {
       const siteHosts = domain ? [domain] : [];
@@ -1337,17 +1345,19 @@ export async function collectCompany(
         const about = [profile.profile.description, profile.profile.value_proposition, profile.profile.industry, row.description].filter(Boolean).join(" ");
         const problem = newsProblem({ title: n.title, content: sourceByUrl(n.url)?.content }, row.name, about);
         if (problem) { console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — ${problem === "explainer" ? "a guide, a roundup or an explainer, not news" : problem === "not_about_the_company" ? "its headline and opening do not name the company (a passing mention)" : "about another company of the same name (a different product)"}: ${n.url}`); bump(stats.droppedByReason, `news_${problem}`); continue; }
-        // No date, no news: it cannot be ordered or told from an old item (Empxtrack's nine undated
-        // items, pilot dry run 2026-11-08). One item per date: the same event from the company's own
-        // site and a press outlet is one story, and the outlet is kept.
-        if (!n.published_date) { console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — no date in the source: ${n.url}`); bump(stats.droppedByReason, "news_no_date"); continue; }
+        // The company's own site: its news / press pages, or a blog post that names the company in its headline.
+        if (standing.kind === "allowed" && (classifySourceType(n.url, domain) === "company_site" || sourceByUrl(n.url)?.source_type === "company_site") && !ownSiteNewsOk(n.url, n.title, row.name)) {
+          console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — a page of the company's own site outside its news / press pages, not naming the company: ${n.url}`);
+          bump(stats.droppedByReason, "news_own_site_not_news"); continue;
+        }
         if (/\.\.\.$|…$/.test(n.title.trim())) { console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — the headline is cut off: ${n.url}`); bump(stats.droppedByReason, "news_title_cut"); continue; }
-        const twin = keptNews.findIndex((k) => k.published_date === n.published_date);
-        if (twin >= 0) {
-          const ownSite = (u: string) => classifySourceType(u, domain) === "company_site" || sourceByUrl(u)?.source_type === "company_site";
-          if (ownSite(keptNews[twin].url) && !ownSite(n.url)) keptNews[twin] = n;
-          bump(stats.droppedByReason, "news_same_day_twin");
-          continue;
+        // A date before a verdict (owner, 2026-11-09): the address, then the page's own code (article:published_time,
+        // datePublished, <time datetime>). Only when neither has one is there no date.
+        if (!n.published_date) {
+          const fromUrl = dateFromUrl(n.url);
+          const html = fromUrl || ctx.update ? null : await fetchPageHtml(n.url, searchState);
+          const found = fromUrl ?? (html ? dateFromHtml(html) : null);
+          if (found) { n.published_date = found; console.log(`    📅  news "${n.title.slice(0, 50)}" dated ${found} from ${fromUrl ? "its address" : "the page's code"}`); bump(stats.droppedByReason, "news_date_recovered"); }
         }
         keptNews.push(n); continue;
       }
@@ -1364,7 +1374,16 @@ export async function collectCompany(
       }
       drop(`news "${n.title.slice(0, 60)}"`, standing.kind === "denied" && standing.why === "hint_only" ? "news_hint_not_confirmed" : "news_source_not_listed", n.url);
     }
-    market.news = keptNews;
+    // One row per event (the same amount or acquisition within 7 days, or either undated), then no date, no news.
+    const ownSiteUrl = (u: string) => classifySourceType(u, domain) === "company_site" || sourceByUrl(u)?.source_type === "company_site";
+    const distinct = dedupeNewsEvents(keptNews, ownSiteUrl);
+    for (const x of keptNews) if (!distinct.includes(x)) { console.log(`    🚫  news "${x.title.slice(0, 60)}" not written — the same event as another item: ${x.url}`); bump(stats.droppedByReason, "news_same_event"); }
+    market.news = distinct.filter((x) => {
+      if (x.published_date) return true;
+      console.log(`    🚫  news "${x.title.slice(0, 60)}" not written — no date in its address or its page: ${x.url}`);
+      bump(stats.droppedByReason, "news_no_date");
+      return false;
+    });
   }
 
   let registerLegalName: string | null = null;
@@ -1531,7 +1550,12 @@ export async function collectCompany(
       legalNameCountry,
       countries: patentCountries,
     });
-    if (register) {
+    if (!register) {
+      // null is "not looked up", never "none" (epoPatents.ts): say why, so a missing key is not read as "no patents".
+      const why = !ctx.patentLookup && !(process.env.EPO_OPS_KEY?.trim() && process.env.EPO_OPS_SECRET?.trim()) ? "EPO_OPS_KEY / EPO_OPS_SECRET are not set in this shell" : "the name is too common to look up safely, or the register search was incomplete";
+      console.log(`    📜  EPO register: NOT looked up — ${why}. Patents are left as they are (unknown, not zero).`);
+      bump(stats.droppedByReason, "patents_not_looked_up");
+    } else {
       patentsFromRegister = true;
       market.patents = register.patents;
       market.patent_summary = { patent_count: register.familyCount, patent_fields: [] };

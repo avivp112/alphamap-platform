@@ -55,3 +55,23 @@ export function roundFieldEvidence(written: Partial<RoundLike>, extracted: V2Rou
   }
   return out;
 }
+
+/**
+ * The patch that fills a round on file, cut to what has evidence (owner, 2026-11-09 — "no value written without a source"):
+ * investor lists never fill; a material column no extracted round backs with a source and a quote is removed; with no
+ * material column left the fill is null (nothing is written).
+ */
+export function evidencedFillPatch(patch: Record<string, unknown>, extracted: V2Round[]): Record<string, unknown> | null {
+  const { investors: _i, investor_amounts: _a, ...rest } = patch;
+  const backed = new Set(roundFieldEvidence(rest as Partial<RoundLike>, extracted).map((e) => e.field as string));
+  const out: Record<string, unknown> = {};
+  let material = 0;
+  for (const [k, v] of Object.entries(rest)) {
+    if ((ROUND_MATERIAL_FIELDS as readonly string[]).includes(k)) {
+      if (v == null || v === "" || !backed.has(k)) continue;
+      material++;
+    }
+    out[k] = v;
+  }
+  return material ? out : null;
+}
