@@ -111,7 +111,7 @@ async function undo() {
       else if (a.kind === "delete_round") console.log(`• ${name(a.startup_id)} — delete round ${a.round.round_type ?? "?"} ${a.round.amount_raised ?? ""} (${a.round.source_url ?? "no source"})`);
       else if (a.kind === "restore_round") console.log(`• ${name(a.startup_id)} — put back round ${a.round.round_type ?? "?"} ${a.round.amount_raised ?? ""}`);
       else if (a.kind === "restore_round_field") console.log(`• ${name(a.startup_id)} — round ${a.round_id}: ${a.column} → ${short(a.value)}`);
-      else console.log(`  ↷ ${name(a.startup_id)} — ${a.field}: left alone (${a.reason === "changed_since" ? "changed after the run" : a.reason === "round_back" ? "the round is there again" : "round already deleted"})`);
+      else console.log(`  ↷ ${name(a.startup_id)} — ${a.field}: left alone (${a.reason === "changed_since" ? "changed after the run" : a.reason === "already_undone" ? "already back as before the run" : a.reason === "round_back" ? "the round is there again" : "round already deleted"})`);
       if (DRY_RUN) continue;
       if (a.kind === "restore_startup_field") {
         const { error: e } = await db.from("startups").update({ [a.field]: a.value }).eq("id", a.startup_id);
@@ -134,9 +134,15 @@ async function undo() {
         if (e) console.warn(`  ⚠️  ${e.message}`);
       }
     }
-    // Undoing everything: the run's field_provenance rows go with it, unless a value was changed after the run (then they stay with it).
-    if (!DRY_RUN && FIELDS.includes("all") && !report.some((r) => r.run === run.run_id && r.action.kind === "skip" && r.action.reason === "changed_since")) {
-      await db.from("field_provenance").delete().eq("run_id", run.run_id);
+    // Undoing everything: the run's field_provenance rows go with the values they were for — except those of a value someone changed
+    // after the run (wet batch 1: 14 rows stayed behind, pointing at news no longer on file).
+    if (!DRY_RUN && FIELDS.includes("all")) {
+      const kept = report.filter((r) => r.run === run.run_id && r.action.kind === "skip" && r.action.reason === "changed_since").map((r) => ({ startup: r.action.startup_id, field: (r.action as { field: string }).field }));
+      const { data: prov } = await db.from("field_provenance").select("id, startup_id, field").eq("run_id", run.run_id);
+      const colOf = (f: string) => (f.startsWith("news.") ? "news" : f.startsWith("leadership.") ? "leadership" : f.startsWith("founders.") ? "founders" : f.startsWith("patents.") ? "patents" : f.startsWith("market.competitors") ? "competitors" : f.startsWith("funding_rounds.") ? f : f.replace(/^profile\./, ""));
+      const ids = (prov ?? []).filter((p: { startup_id: string; field: string }) => !kept.some((k) => k.startup === p.startup_id && (k.field === colOf(p.field) || p.field === k.field))).map((p: { id: string }) => p.id);
+      for (let i = 0; i < ids.length; i += 200) await db.from("field_provenance").delete().in("id", ids.slice(i, i + 200));
+      if (ids.length) console.log(`  field_provenance: ${ids.length} row(s) of the run removed with the values they were for.`);
     }
     if (!DRY_RUN && FIELDS.includes("competitors")) await db.from("field_provenance").delete().eq("run_id", run.run_id).eq("field", "market.competitors");
   }

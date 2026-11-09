@@ -84,3 +84,11 @@ describe("undo scope 'all' (wet batch 1, 2026-11-09: the default left the batch'
     expect(planUndo(changes, now, ["all"]).map((a) => a.kind)).toEqual(["restore_startup_field", "restore_startup_field"]);
   });
 });
+
+describe("a value already put back is 'already_undone', not 'changed after the run'", () => {
+  it("news already null again", () => {
+    const changes = [{ startup_id: "s1", field: "news", old_value: null, new_value: [{ title: "x" }], source_url: null, run_id: "r" }] as never;
+    expect(planUndo(changes, { startups: new Map([["s1", { news: null }]]), rounds: new Map() }, ["all"])[0]).toMatchObject({ kind: "skip", reason: "already_undone" });
+    expect(planUndo(changes, { startups: new Map([["s1", { news: [{ title: "edited" }] }]]), rounds: new Map() }, ["all"])[0]).toMatchObject({ kind: "skip", reason: "changed_since" });
+  });
+});

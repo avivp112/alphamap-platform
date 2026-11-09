@@ -59,7 +59,7 @@ export type UndoAction =
   | { kind: "delete_round"; startup_id: string; round_id: string; round: Record<string, unknown> }
   | { kind: "restore_round"; startup_id: string; round_id: string; round: Record<string, unknown> }
   | { kind: "restore_round_field"; startup_id: string; round_id: string; column: string; value: unknown }
-  | { kind: "skip"; startup_id: string; field: string; reason: "changed_since" | "round_gone" | "round_back" | "out_of_scope" };
+  | { kind: "skip"; startup_id: string; field: string; reason: "changed_since" | "already_undone" | "round_gone" | "round_back" | "out_of_scope" };
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
@@ -102,12 +102,12 @@ export function planUndo(changes: FieldChangeRow[], now: CurrentState, scope: Un
       if (insertedRounds.has(parts[1])) continue;   // the whole round goes anyway
       const round = now.rounds.get(parts[1]);
       if (!round) { actions.push({ kind: "skip", startup_id: c.startup_id, field: c.field, reason: "round_gone" }); continue; }
-      if (!same(round[parts[2]], c.new_value)) { actions.push({ kind: "skip", startup_id: c.startup_id, field: c.field, reason: "changed_since" }); continue; }
+      if (!same(round[parts[2]], c.new_value)) { actions.push({ kind: "skip", startup_id: c.startup_id, field: c.field, reason: same(round[parts[2]], c.old_value) ? "already_undone" : "changed_since" }); continue; }
       actions.push({ kind: "restore_round_field", startup_id: c.startup_id, round_id: parts[1], column: parts[2], value: c.old_value });
       continue;
     }
     const current = now.startups.get(c.startup_id)?.[c.field];
-    if (!same(current, c.new_value)) { actions.push({ kind: "skip", startup_id: c.startup_id, field: c.field, reason: "changed_since" }); continue; }
+    if (!same(current, c.new_value)) { actions.push({ kind: "skip", startup_id: c.startup_id, field: c.field, reason: same(current, c.old_value) ? "already_undone" : "changed_since" }); continue; }
     actions.push({ kind: "restore_startup_field", startup_id: c.startup_id, field: c.field, value: c.old_value, written: c.new_value });
   }
   return actions;
