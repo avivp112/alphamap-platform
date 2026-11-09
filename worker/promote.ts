@@ -97,6 +97,15 @@ export interface PromoteDeps {
 }
 
 /** One approved company, written. Returns false when none is waiting. */
+/**
+ * Why approved companies are not written yet, or null. The worker loop asks this before calling promoteOne, so that waiting
+ * for Phase 1 is one quiet line an hour and not an "error" every poll (Fly logs of 2026-11-09: the same refusal every two
+ * seconds). promoteOne itself still refuses, as before.
+ */
+export function promotionHold(phase1Passed: boolean = PHASE1_PASSED): string | null {
+  return enrichmentWriteRefusal("worker/promote", true, phase1Passed);
+}
+
 export async function promoteOne(d: PromoteDeps): Promise<boolean> {
   const log = d.log ?? ((m: string) => console.log(`[worker] ${m}`));
   // A real write is refused until enrichment v2 passes Phase 1 (owner, 2026-11-07; writeGate.ts). Checked before the

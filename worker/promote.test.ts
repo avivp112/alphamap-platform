@@ -188,3 +188,13 @@ describe("past Phase 1 a promotion passes the tracker's gate (owner, 2026-11-08)
     expect(writeCollected.mock.calls[0][2]).toMatchObject({ openFields: ["news", "patent"] });
   });
 });
+
+import { promotionHold } from "./promote";
+describe("promotionHold — waiting for Phase 1 is a hold, not an error every poll (Fly logs, 2026-11-09)", () => {
+  it("holds, with the gate's reason, until Phase 1 passes", () => {
+    expect(promotionHold(false)).toMatch(/writing is off until enrichment v2 passes Phase 1/);
+  });
+  it("does not hold once Phase 1 has passed", () => {
+    expect(promotionHold(true)).toBeNull();
+  });
+});
