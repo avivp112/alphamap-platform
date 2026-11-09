@@ -24,6 +24,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { requestFor } from "./models.ts";
 import { sanitizeModelOutput, ensureArray } from "./sanitize";
 import { verifyEvidence, normalizeForMatch, dateFromUrl, type EvidenceSource } from "./evidence";
+import { sourceHeadline } from "./newsRelevance";
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
 import { debugDumpJson } from "./debugDump";
 import { competitorRelation, type RelationDrop } from "./competitorRelation";
@@ -74,7 +75,7 @@ export function emptyMarketExtraction(): V2MarketExtraction {
 
 export type MarketDropReason =
   | "competitor_not_in_source" | "competitor_is_self" | "acquisition_not_in_source"
-  | "news_url_not_in_sources" | "news_is_profile_page" | "patent_not_from_register"
+  | "news_url_not_in_sources" | "news_title_not_in_source" | "news_is_profile_page" | "patent_not_from_register"
   | "tech_not_in_source" | "competitor_is_acquisition" | "acquisition_is_self" | "news_date_not_in_source" | "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found"
   | RelationDrop | CompetitorEvidenceDrop;
 
@@ -343,7 +344,9 @@ export function processMarketExtractionResponse(
     }
     // No date from the model: the article's own address may give it (Business Wire, /YYYY/MM/DD/).
     if (!publishedDate) publishedDate = dateFromUrl(src.url) ?? undefined;
-    news.push({ ...n, url: src.url, published_date: publishedDate });
+    const headline = sourceHeadline(n.title, src);
+    if (!headline) { dropped.push({ field: "news", reason: "news_title_not_in_source" }); continue; }
+    news.push({ ...n, title: headline, url: src.url, published_date: publishedDate });
     if (news.length >= 8) break;
   }
 

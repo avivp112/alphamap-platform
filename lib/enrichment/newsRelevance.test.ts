@@ -109,3 +109,17 @@ describe("pilot dry run 2 (owner, 2026-11-09)", () => {
     ], own)).toHaveLength(2);
   });
 });
+
+import { sourceHeadline } from "./newsRelevance";
+describe("sourceHeadline — the headline is the source's (pilot dry run 4, Swan)", () => {
+  const src = { title: "Paris-based Swan raises €37 million Series B to fuel Banking-as-a-Service across Europe - EU-Startups", content: "Swan has secured a €37 million Series B investment round led by Lakestar." };
+  it("a paraphrase is replaced by the source's own title", () => {
+    expect(sourceHeadline("Swan's raises a €37m Series B to fuel the embedded banking across Europe", src)).toBe("Paris-based Swan raises €37 million Series B to fuel Banking-as-a-Service across Europe");
+  });
+  it("a title the source carries stays", () => {
+    expect(sourceHeadline("Paris-based Swan raises €37 million Series B", src)).toBe("Paris-based Swan raises €37 million Series B");
+  });
+  it("no source title to fall back on: dropped", () => {
+    expect(sourceHeadline("Something made up", { title: "", content: "unrelated" })).toBeNull();
+  });
+});

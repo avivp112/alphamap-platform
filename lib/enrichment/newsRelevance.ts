@@ -145,3 +145,17 @@ export function dedupeNewsEvents<T extends { title: string; url: string; publish
   }
   return kept;
 }
+
+/**
+ * A headline is the source's own words (pilot dry run 4, 2026-11-09: the model wrote "Swan's raises a €37m Series B to
+ * fuel the embedded banking across Europe" over eu-startups' "Paris-based Swan raises €37 million Series B…"). A title the
+ * source does not carry is replaced by the source's own title; with no title to fall back on, the item is dropped (null).
+ */
+export function sourceHeadline(modelTitle: string, source: { title?: string | null; content?: string | null }): string | null {
+  const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").replace(/\s+/g, " ").trim();
+  const t = norm(modelTitle);
+  const hay = norm(`${source.title ?? ""} ${(source.content ?? "").slice(0, 4000)}`);
+  if (t && hay.includes(t)) return modelTitle.trim();
+  const own = (source.title ?? "").replace(/\s+[|–—-]\s+[^|–—]{2,40}$/, "").trim();
+  return own.length >= 15 ? own : null;
+}
