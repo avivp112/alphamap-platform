@@ -126,7 +126,9 @@ const fakeFetch = vi.fn(async (input: string | URL, init?: RequestInit) => {
     return url.endsWith("ghost.org") ? new Response(SITE, { status: 200 }) : new Response("", { status: 404 });
   }
   if (url.includes("theverge.com") || url.includes("fastcompany.com")) {
-    return new Response(`<html><head><meta property="og:image" content="/img/hero.jpg"></head></html>`, { status: 200, headers: { "content-type": "text/html" } });
+    // A real page carries its own headline: a short or cut headline is confirmed against it (newsGate.ts).
+    const pageTitle = url.includes("ghost-activitypub") ? "Ghost joins the fediverse | The Verge" : url.includes("ghost-6") ? "Ghost 6.0 launches | Nieman Lab" : "";
+    return new Response(`<html><head><meta property="og:image" content="/img/hero.jpg">${pageTitle ? `<meta property="og:title" content="${pageTitle}">` : ""}</head></html>`, { status: 200, headers: { "content-type": "text/html" } });
   }
   return new Response("", { status: 404 });
 });

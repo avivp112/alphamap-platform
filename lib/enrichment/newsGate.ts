@@ -8,7 +8,7 @@
  *               address and in the page's code.
  *   finishNews  one row per event (same amount or acquisition within 7 days, or either undated), then no date, no news.
  */
-import { newsProblem, ownSiteNewsOk, dateFromUrl, dateFromHtml, dedupeNewsEvents, cleanHeadline, headlineLooksCut, titleFromHtml } from "./newsRelevance.ts";
+import { newsProblem, ownSiteNewsOk, dateFromUrl, dateFromHtml, dedupeNewsEvents, cleanHeadline, headlineLooksCut, headlineIncomplete, titleFromHtml } from "./newsRelevance.ts";
 
 export interface NewsItem { title: string; url: string; published_date?: string | null; title_joined?: boolean; [k: string]: unknown }
 export interface NewsDeps {
@@ -35,7 +35,8 @@ export async function judgeNews(n: NewsItem, d: NewsDeps): Promise<NewsVerdict> 
     if (!full) return { keep: false, reason: "news_title_cut", message: "the source's headline is cut off and the page does not give the whole of it" };
     title = full;
   }
-  if (headlineLooksCut(title)) {
+  // Cut off by its marks, or stopping in the middle of a sentence: the page must give the whole headline (a headline the page confirms stays).
+  if (headlineLooksCut(title) || headlineIncomplete(title)) {
     const full = titleFromHtml((await page()) ?? "", n.url);
     const a = title.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
     if (full && full.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").startsWith(a.slice(0, Math.max(12, a.length - 2)))) title = full;

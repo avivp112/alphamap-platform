@@ -148,3 +148,23 @@ describe("wet batch 1 (owner, 2026-11-09): headlines and own-site posts", () => 
     expect(ownSiteNewsOk("https://www.appcharge.com/blog/why-we-built-appcharge", "Why we built Appcharge", "Appcharge")).toBe(false);
   });
 });
+
+import { headlineIncomplete } from "./newsRelevance";
+describe("headlineIncomplete (wet batch 3, Synthflow / Business Insider, 2026-11-09)", () => {
+  it("stops in the middle: Business Insider's 'Synthflow AI is bringing'", () => {
+    expect(headlineIncomplete("Synthflow AI is bringing")).toBe(true);
+    expect(headlineIncomplete("Synthflow AI is bringing human-like voice agents to the")).toBe(true);
+    expect(headlineIncomplete("Appcharge is expanding its platform for")).toBe(true);
+    expect(headlineIncomplete("The startup has been building")).toBe(true);
+  });
+  it("whole headlines: ending in a noun in -ing, in 'Series A', or in a name", () => {
+    expect(headlineIncomplete("Datatruck Raises $12M Led by Avenue Growth Partners to Build the AI-Native Operating System for Long-Haul Trucking")).toBe(false);
+    expect(headlineIncomplete("Zenarate and HeyGen Deepen Strategic Partnership to Bring Lifelike AI Avatars to Enterprise Simulation and Coaching")).toBe(false);
+    expect(headlineIncomplete("HeyGen Secures $60M in Series A")).toBe(false);
+    expect(headlineIncomplete("Appcharge Raises $58 Million in Funding")).toBe(false);
+  });
+  it("fewer than five words is for the page to confirm, and a stored mark does not apply that part", () => {
+    expect(headlineIncomplete("Quris-AI Acquires Nortis")).toBe(true);
+    expect(headlineIncomplete("Quris-AI Acquires Nortis", { short: false })).toBe(false);
+  });
+});

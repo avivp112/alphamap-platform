@@ -680,7 +680,11 @@ export async function writeCollected(
           one((l as { group?: string | null }).group === "board" ? "board" : "leader", `${l.name} — ${l.role ?? ""}${l.bio ? ` · ${l.bio}` : ""}`, src?.url ?? null, quote);
         }
       } else if (k === "competitors") {
-        for (const c of newOf<{ name: string; source_url?: string | null; tier?: string }>(patch.competitors, rowOf.competitors, (a, b) => normalizeForMatch(a.name ?? "") === normalizeForMatch(b.name))) one(c.tier === "market" ? "competitor_market" : "competitor_declared", c.name, c.source_url ?? null);
+        for (const c of newOf<{ name: string; source_url?: string | null; tier?: string }>(patch.competitors, rowOf.competitors, (a, b) => normalizeForMatch(a.name ?? "") === normalizeForMatch(b.name))) {
+          // The sentence that says they compete, shown beside the name (wet batch 3: "Blu by BCA: Superbank" could not be judged without it).
+          const said = market.competitors.find((x) => normalizeForMatch(x.name ?? "") === normalizeForMatch(c.name));
+          one(c.tier === "market" ? "competitor_market" : "competitor_declared", c.name, c.source_url ?? (said?.source_id ? sourceById.get(said.source_id)?.url ?? null : null), said?.evidence_quote ?? null);
+        }
       } else if (k === "patents") {
         for (const pt of newOf<{ patent_number?: string | null; title: string; url?: string | null }>(patch.patents, rowOf.patents, (a, b) => a.patent_number === b.patent_number)) one("patent", `${pt.patent_number ?? ""} ${pt.title}`.trim(), pt.url ?? null);
       } else if (k === "offices") {

@@ -16,7 +16,7 @@ import { dateFromUrl } from "./evidence";
 import { isLinkList, quoteIsAboutTheCompany, quoteLinksTheTwo } from "./competitorEvidence";
 import { isLegalPageUrl } from "./headquarters";
 import { looksLikeCompanyName, isUserContentUrl } from "./competitorEvidence";
-import { isExplainer } from "./newsRelevance";
+import { isExplainer, headlineIncomplete } from "./newsRelevance";
 import { PARENT_BY_SUB_SECTOR } from "../../src/lib/taxonomy";
 import type { Mark } from "./fieldReview";
 
@@ -125,7 +125,9 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
     }
     case "news": {
       const title = mark.value.replace(/^(?:\d{4}-\d{2}-\d{2}|no date)\s+—\s+/, "");
-      return isExplainer(title) ? out("a guide, not news") : keep;
+      if (isExplainer(title)) return out("a guide, not news");
+      if (headlineIncomplete(title, { short: false })) return out("an incomplete headline");
+      return keep;
     }
     case "employee_history": return judgeHeadcount(mark, ctx);
     case "round": {

@@ -93,3 +93,27 @@ describe("wet batch 1 (owner, 2026-11-09) through the gate", () => {
     expect(kept.map((x) => x.url)).toEqual(["https://www.businesswire.com/news/home/20260625305891/en/x"]);
   });
 });
+
+describe("an incomplete headline needs the page (wet batch 3: Synthflow / Business Insider, 2026-11-09)", () => {
+  const deps = { companyName: "Synthflow", about: "voice AI agents", content: () => undefined as string | undefined, isOwnSite: () => false };
+  const bi = { title: "Synthflow AI is bringing", url: "https://www.businessinsider.com/synthflow-ai-pitch-deck-funding-voice-2025-6", published_date: "2025-06-25" };
+  it("not written when the page cannot be read", async () => {
+    expect((await judgeNews(bi, { ...deps, fetchHtml: async () => null })).keep).toBe(false);
+  });
+  it("completed from the page when it gives the whole headline", async () => {
+    const v = await judgeNews(bi, { ...deps, fetchHtml: async () => '<meta property="og:title" content="Synthflow AI is bringing human-like voice agents to the enterprise. Here is its pitch deck. | Business Insider">' });
+    expect(v.keep && v.item.title).toBe("Synthflow AI is bringing human-like voice agents to the enterprise. Here is its pitch deck.");
+  });
+  it("a short headline the page confirms stays", async () => {
+    const v = await judgeNews({ title: "Synthflow AI Raises $20M", url: "https://www.businesswire.com/news/home/20250624442670/en/x" }, { ...deps, fetchHtml: async () => '<meta property="og:title" content="Synthflow AI Raises $20M">' });
+    expect(v.keep).toBe(true);
+  });
+  it("two angles on one raise are one event: the same amount within seven days (w3.23 and w3.24)", () => {
+    const { kept } = finishNews([
+      { title: "Synthflow AI Raises $20M to Transform the $168B Global Conversational AI Market", url: "https://www.businesswire.com/news/home/20250624442670/en/x", published_date: "2025-06-24" },
+      { title: "The pitch deck Synthflow AI used to raise $20 million for its voice agents", url: "https://www.businessinsider.com/synthflow-ai-pitch-deck", published_date: "2025-06-25" },
+      { title: "Synthflow AI and AVANT Partner to Accelerate Enterprise Adoption of Agentic Voice AI", url: "https://www.businesswire.com/news/home/20260623693124/en/y", published_date: "2026-06-23" },
+    ], { isOwnSite: () => false, content: () => undefined });
+    expect(kept.map((x) => x.published_date)).toEqual(["2025-06-24", "2026-06-23"]);
+  });
+});
