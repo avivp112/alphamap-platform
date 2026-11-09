@@ -93,7 +93,8 @@ export function legalFacts(text: string, companyName: string): LegalFacts {
   const nameWords = companyName.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
   const entityRe = new RegExp(`\\b((?:[\\p{Lu}][\\p{L}\\d&.'-]*\\s+){0,5}${LEGAL_SUFFIX})(?=[\\s,.;)]|$)`, "gu");
   for (const m of flat.matchAll(entityRe)) {
-    const cand = m[1].trim();
+    // "Disclose Your Information.Datatruck Inc." (a heading glued to the name by a missing space): the name starts after the stop.
+    const cand = m[1].trim().replace(/^.*[\p{Ll}\d]\.(?=\p{Lu})/u, "");
     if (nameWords.some((w) => cand.toLowerCase().includes(w))) { out.legalName = cand.replace(/\b(\p{L}+)\s+\1\b/giu, "$1"); out.quote = flat.slice(Math.max(0, m.index! - 60), m.index! + cand.length + 160).trim(); break; }
   }
   const num = flat.match(/\b(?:company|registration|registered|reg\.?|corporate)\s*(?:number|no\.?|nr\.?|#|id)\s*[:.]?\s*([A-Z]{0,2}\d{6,10})\b/i)

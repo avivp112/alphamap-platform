@@ -60,3 +60,9 @@ describe("the headcount a press release states about its company (owner, 2026-11
     expect(factsFromAbout("Acme serves 2,000 customers and 14 countries.", "Acme").employees).toBeUndefined();
   });
 });
+
+describe("legalFacts — a heading glued to the name (Datatruck, pilot dry run 4)", () => {
+  it("keeps only the entity after the sentence stop", () => {
+    expect(legalFacts("Disclose Your Information.Datatruck Inc. operates this site.", "Datatruck").legalName).toBe("Datatruck Inc.");
+  });
+});
