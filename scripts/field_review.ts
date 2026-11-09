@@ -64,7 +64,7 @@ function shuffle<T>(xs: T[], seed: number): T[] {
 async function drawCompanies(): Promise<PilotCandidate[]> {
   const rows: PilotCandidate[] = [];
   for (let from = 0; ; from += 1000) {
-    const { data, error } = await db.from("startups").select("id, name, website, description, city, country, founded_year, founding_country, status, founders, competitors, leadership, patents")
+    const { data, error } = await db.from("startups").select("id, name, website, description, city, country, founded_year, founding_country, status, founders, competitors, leadership, patents, sector_id, employee_count, employee_range")
       .not("website", "is", null).neq("status", "ipo").range(from, from + 999);
     if (error) throw error;
     rows.push(...((data ?? []) as PilotCandidate[]));

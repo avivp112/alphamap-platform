@@ -27,3 +27,21 @@ describe("the partial wet run (owner, 2026-11-01)", () => {
     expect(enrichmentWriteRefusal("bulk", true, false)).toMatch(/Phase 1/);
   });
 });
+
+import { FOCUS_FIELDS as FOCUS7, type PilotCandidate as Cand7 } from "./pilotSample";
+describe("review 7 focus fields (owner, 2026-11-09)", () => {
+  const co = (o: Partial<Cand7>): Cand7 => ({ id: "x", name: "X", website: "https://x.com", description: "d", city: "C", country: "Y", founded_year: 2020, founding_country: "Y", ...o });
+  it("description, sector, employees: short of the field when it is empty on file", () => {
+    expect(FOCUS7.description(co({ description: "" }))).toBe(true);
+    expect(FOCUS7.description(co({}))).toBe(false);
+    expect(FOCUS7.sector(co({ sector_id: null }))).toBe(true);
+    expect(FOCUS7.sector(co({ sector_id: "s1" }))).toBe(false);
+    expect(FOCUS7.employees(co({ employee_count: null, employee_range: null }))).toBe(true);
+    expect(FOCUS7.employees(co({ employee_range: "11-50" }))).toBe(false);
+  });
+  it("team_bio: nobody on file, or a person with no bio", () => {
+    expect(FOCUS7.team_bio(co({ founders: [], leadership: [] }))).toBe(true);
+    expect(FOCUS7.team_bio(co({ founders: [{ bio: "Built X." }], leadership: [{ bio: "Ran Y." }] }))).toBe(false);
+    expect(FOCUS7.team_bio(co({ founders: [{ bio: "Built X." }], leadership: [{ bio: "" }] }))).toBe(true);
+  });
+});

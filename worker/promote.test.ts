@@ -64,6 +64,7 @@ describe("freshRow", () => {
 // A fake database: the four RPCs and the startups domain listing.
 function fakeDb(job: PromotionJob | null, opts: { startError?: string } = {}) {
   const rpcs: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const runs: unknown[] = [];
   const db = {
     rpc: vi.fn(async (name: string, args: Record<string, unknown> = {}) => {
       rpcs.push({ name, args });
@@ -71,12 +72,17 @@ function fakeDb(job: PromotionJob | null, opts: { startError?: string } = {}) {
       if (name === "start_check_promotion_write") return opts.startError ? { data: null, error: { message: opts.startError } } : { data: "new-startup", error: null };
       return { data: null, error: null };
     }),
-    from: () => {
+    from: (table: string) => {
+      // enrichment_runs: the run a promotion is written under (insert → select → single; update → eq).
+      if (table === "enrichment_runs") {
+        const r = { insert: (row: unknown) => { runs.push(row); return r; }, select: () => r, single: async () => ({ data: { run_id: "run-1" }, error: null }), update: () => ({ eq: async () => ({ error: null }) }) };
+        return r;
+      }
       const q = { select: () => q, not: () => q, order: () => q, range: async () => ({ data: [{ id: "other", name: "Other", website: "https://www.other.io" }], error: null }) };
       return q;
     },
   };
-  return { db: db as never, rpcs };
+  return { db: db as never, rpcs, runs };
 }
 
 const job = (): PromotionJob => ({
@@ -196,5 +202,15 @@ describe("promotionHold — waiting for Phase 1 is a hold, not an error every po
   });
   it("does not hold once Phase 1 has passed", () => {
     expect(promotionHold(true)).toBeNull();
+  });
+});
+
+describe("a promotion is written under its own run (owner, 2026-11-09 — so it can be undone)", () => {
+  beforeEach(() => writeCollected.mockClear());
+  it("the write stage gets the run_id, and the run records what was opened", async () => {
+    const { db, runs } = fakeDb(job());
+    await promoteOne(deps(db));
+    expect(writeCollected.mock.calls[0][2]).toMatchObject({ runId: "run-1", openFields: ["news"] });
+    expect(runs[0]).toMatchObject({ pipeline: "v2", run_kind: "on_demand", dry_run: false, thresholds: { MODE: "promotion", check_promotion: "p-1", openFields: ["news"] } });
   });
 });
