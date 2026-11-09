@@ -24,7 +24,7 @@ import { runIdentify, fetchSiteMeta } from "./identify.ts";
 import { serperSearch } from "./search.ts";
 import { runEnrichment, runCollection } from "./enrich.ts";
 import { buildProfile, investorNames } from "./profile.ts";
-import { promoteOne, serializeCollected, domainIndex } from "./promote.ts";
+import { promoteOne, promotionHold, serializeCollected, domainIndex } from "./promote.ts";
 import { runDeepen, loadCompany, applyDirectWrites } from "./deepen.ts";
 import { boardsBatch, logBoardRun } from "./boards.ts";
 import { writeCollected, newWriteSummary, BULK_THRESHOLDS } from "../lib/enrichment/writeCompany.ts";
@@ -184,6 +184,8 @@ for (const sig of ["SIGTERM", "SIGINT"] as const) {
 }
 const idle = (ms: number) => new Promise<void>((r) => { const t = setTimeout(r, ms); wake = () => { clearTimeout(t); r(); }; });
 
+let promotionHoldLoggedAt = 0;
+
 async function main() {
   console.log(`[worker] ${cfg.workerId} started (poll ${cfg.pollMs} ms, lease ${cfg.leaseSeconds} s, max run ${cfg.maxRunMs / 1000} s)`);
   while (!stopping) {
@@ -191,7 +193,11 @@ async function main() {
     try {
       worked = await processOne(queue, execute, { leaseSeconds: cfg.leaseSeconds, maxRunMs: cfg.maxRunMs, model: cfg.gateModel, cost });
       // Users' checks first; an approved company is written when none is waiting.
-      if (!worked) worked = await promoteOne({
+      const hold = worked ? null : promotionHold();
+      if (hold) {
+        // Approved companies wait for Phase 1 (writeGate.ts): said once an hour, not every poll.
+        if (Date.now() - promotionHoldLoggedAt > 3_600_000) { promotionHoldLoggedAt = Date.now(); console.log(`[worker] approved companies wait: ${hold.split(". ")[0]}.`); }
+      } else if (!worked) worked = await promoteOne({
         db, taxonomy, loadCompany: (id) => loadCompany(db, id), findExisting: (w) => queue.findExisting(w), notify: (...a) => queue.notify(...a),
       });
     } catch (e) {
