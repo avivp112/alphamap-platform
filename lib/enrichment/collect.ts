@@ -51,7 +51,7 @@ import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
 import { validateEnrichment, checkNarratives } from "./validation.ts";
 import { hqStatementsIn, decideHeadquarters, statementKind, isLegalPageUrl, articleDate, countryOfCity, contactPageAddresses, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, canonicalCity, type HqStatement } from "./headquarters.ts";
-import { profileSourceAllowed, roundSourceStanding, unwrapRedirect } from "./roundSources.ts";
+import { profileSourceAllowed, roundSourceStanding, unwrapRedirect, corroboratedInvestors } from "./roundSources.ts";
 import { aboutParagraph, aboutIsOf, factsFromAbout, legalFacts, releasePointsTo, type LegalFacts } from "./companyFacts.ts";
 import { checkFoundingCountry } from "./origin.ts";
 import { namesCompany } from "./headcount.ts";
@@ -1326,7 +1326,8 @@ export async function collectCompany(
     }
     const sourceByUrl = (u: string) => allSources.find((x) => x.url === u);
     // The company's investors, found now or on file: their own sites are allowed.
-    const knownInvestors = [...roundInvestors, ...existingRounds.flatMap((r) => [r.lead_investor, ...(r.investors ?? [])])];
+    // Only investors that an allowed source other than their own site also names (roundSources.ts corroboratedInvestors).
+    const knownInvestors = corroboratedInvestors([...roundInvestors, ...existingRounds.flatMap((r) => [r.lead_investor, ...(r.investors ?? [])])], allSources, row.name);
     // News: an article of an allowed outlet (tiers 1–4) or the company's own site.
     const newsStanding = (url: string, content?: string, headline?: string) => roundSourceStanding(url, {
       isCompanySite: classifySourceType(url, domain) === "company_site" || sourceByUrl(url)?.source_type === "company_site",

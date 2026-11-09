@@ -69,3 +69,23 @@ describe("the amount's own source must be an allowed one (owner, 2026-11-08: Ape
     expect(rejectRoundForAmount(round(tc), "Apex", sources)).toBeNull();
   });
 });
+
+import { corroboratedInvestors } from "./roundSources";
+describe("an investor's site is a source only when an allowed source elsewhere names the investor (Orq, 2026-11-09)", () => {
+  const gec = { url: "https://goldeneggcheck.com/en/orq-ai-closes-e5m-in-seed-funding/", title: "Orq.ai Closes €5M Seed Funding Led by seed + speed Ventures", content: "Golden Egg Check is among the investors in Orq.ai's seed round." };
+  const euStartups = { url: "https://www.eu-startups.com/2025/12/orq-ai-seed/", title: "Amsterdam-based Orq.ai raises €5 million seed", content: "The round was led by seed + speed Ventures and Galion.exe, with participation from Golden Egg Check." };
+  const crunchbase = { url: "https://www.crunchbase.com/organization/orq-ai", title: "Orq.ai - Crunchbase", content: "Investors: Golden Egg Check." };
+  it("named only by its own site: not corroborated, so its site is not allowed as a source", () => {
+    const inv = corroboratedInvestors(["Golden Egg Check"], [gec], "Orq");
+    expect(inv).toEqual([]);
+    expect(roundSourceStanding(gec.url, { investors: inv, headline: gec.title, companyName: "Orq" }).kind).toBe("unlisted");
+  });
+  it("named by a data platform as well: still not corroborated", () => {
+    expect(corroboratedInvestors(["Golden Egg Check"], [gec, crunchbase], "Orq")).toEqual([]);
+  });
+  it("named by an allowed outlet as well: corroborated, and its site is allowed", () => {
+    const inv = corroboratedInvestors(["Golden Egg Check", "seed + speed Ventures"], [gec, euStartups], "Orq");
+    expect(inv).toContain("Golden Egg Check");
+    expect(roundSourceStanding(gec.url, { investors: inv, headline: gec.title, companyName: "Orq" })).toMatchObject({ kind: "allowed", why: "investor_site" });
+  });
+});
