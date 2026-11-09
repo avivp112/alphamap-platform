@@ -37,16 +37,27 @@ describe.each(fixtures.news.map((f) => [`${f.batch} ${f.id} ${f.company}`, f] as
   });
 });
 
-describe("marked correct: the news gate lets every one of a company's marked values through together", () => {
-  const companies = [...new Set(fixtures.news.map((f) => f.company))];
-  it.each(companies)("%s", async (company) => {
-    const mine = fixtures.news.filter((f) => f.company === company);
+// One batch's values for one company went through the gate together when they were marked: they must again. (Two batches may mark two
+// reports of one event correct — Datatruck's $12M from FreightWaves in batch 1 and from PR Newswire in batch 2 — and a run writes one
+// of them, so batches are not mixed.) And each value, alone, must still pass the gate.
+describe("marked correct: the news gate lets every one of a batch's marked values through", () => {
+  const groups = [...new Set(fixtures.news.map((f) => `${f.batch}|${f.company}`))];
+  const depsFor = (company: string, mine: NewsFixture[]) => {
     const own = new Set(mine.filter((f) => f.own_site).map((f) => f.url));
-    const deps = { companyName: company, about: "software", content: () => undefined, isOwnSite: (u: string) => own.has(u), fetchHtml: async () => null };
+    return { companyName: company, about: "software", content: () => undefined, isOwnSite: (u: string) => own.has(u), fetchHtml: async () => null };
+  };
+  it.each(groups)("%s together", async (g) => {
+    const [batch, company] = g.split("|");
+    const mine = fixtures.news.filter((f) => f.batch === batch && f.company === company);
+    const deps = depsFor(company, mine);
     const kept = [];
     for (const f of mine) { const v = await judgeNews({ title: f.title, url: f.url, published_date: f.date }, deps); if (v.keep) kept.push(v.item); }
     const { kept: out } = finishNews(kept, deps);
     expect(out.map((x) => x.url).sort()).toEqual(mine.map((f) => f.url).sort());
+  });
+  it.each(fixtures.news.map((f) => [`${f.batch} ${f.id} ${f.company}`, f] as const))("%s alone", async (_n, f) => {
+    const v = await judgeNews({ title: f.title, url: f.url, published_date: f.date }, depsFor(f.company, [f]));
+    expect(v.keep).toBe(true);
   });
 });
 

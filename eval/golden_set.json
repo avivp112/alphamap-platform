@@ -186,7 +186,11 @@
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founders"
       ]
     },
     {
@@ -337,15 +341,24 @@
         }
       ],
       "competitors": {
-        "names": [],
+        "names": [
+          "Phorest"
+        ],
         "not_competitors": [],
         "confidence": "verified",
-        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts.",
+        "source_urls": [
+          "https://www.phorest.com/compare/phorest-vs-fresha/"
+        ]
       },
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founders"
       ]
     },
     {
@@ -524,7 +537,8 @@
       "competitors": {
         "names": [],
         "not_competitors": [
-          "Amazon"
+          "Amazon",
+          "Lovable"
         ],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
@@ -532,7 +546,11 @@
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founders"
       ]
     },
     {
@@ -699,15 +717,27 @@
         "notes": "Never completed an IPO. Agreed in March 2025 to be acquired by Google/Alphabet for $32B in cash rather than going public (one outlet framed this as a pivot 'from IPO dreams' to acquisition); once closed, Wiz becomes part of Google Cloud, not a separate public company."
       },
       "competitors": {
-        "names": [],
+        "names": [
+          "SentinelOne",
+          "Snyk"
+        ],
         "not_competitors": [],
         "confidence": "verified",
-        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts.",
+        "source_urls": [
+          "https://www.sentinelone.com/vs/wiz/",
+          "https://snyk.io/comparison/snyk-vs-wiz/"
+        ]
       },
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founding_country",
+        "founders"
       ]
     },
     {
@@ -855,7 +885,12 @@
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founding_country",
+        "founders"
       ]
     },
     {
@@ -1041,7 +1076,11 @@
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founders"
       ]
     },
     {
@@ -1059,9 +1098,13 @@
       "reviewed_by_human": false,
       "website": "https://www.celonis.com",
       "city": {
-        "value": "Munich",
+        "value": "New York",
         "confidence": "verified",
-        "source_url": "https://techcrunch.com/2016/06/07/celonis-takes-27-5m-led-by-accel-83north-to-grow-the-market-for-big-data-process-mining"
+        "source_url": "https://techcrunch.com/2016/06/07/celonis-takes-27-5m-led-by-accel-83north-to-grow-the-market-for-big-data-process-mining",
+        "notes": "owner corrected \"Munich\" to \"New York|Munich\" on the check sheet (v1.35, 2026-11-05)",
+        "alternatives": [
+          "Munich"
+        ]
       },
       "country": {
         "value": "Germany",
@@ -1205,14 +1248,21 @@
       },
       "competitors": {
         "names": [],
-        "not_competitors": [],
+        "not_competitors": [
+          "camunda"
+        ],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
       },
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founding_country",
+        "founders"
       ]
     },
     {
@@ -1237,10 +1287,10 @@
         "source_url": "https://www.sebi.gov.in/sebi_data/commondocs/jun-2026/Zepto%20Limited%20-%20abridged_p.pdf"
       },
       "founded_year": {
-        "value": 2021,
-        "confidence": "likely",
+        "value": 2020,
+        "confidence": "verified",
         "source_url": "https://www.businesstoday.in/latest/corporate/story/how-two-19-year-old-stanford-dropouts-founded-zepto-312034-2021-11-12",
-        "notes": "Sources conflict on exact month (April vs July 2021) following the KiranaKart wind-down; year is consistent across sources."
+        "notes": "Sources conflict on exact month (April vs July 2021) following the KiranaKart wind-down; year is consistent across sources. · owner corrected \"2021\" to \"2020\" on the check sheet (v1.44, 2026-11-05)"
       },
       "founders": [
         {
@@ -1403,19 +1453,28 @@
       },
       "competitors": {
         "names": [
-          "Blinkit"
+          "Blinkit",
+          "Dunzo",
+          "Swiggy"
         ],
-        "not_competitors": [],
+        "not_competitors": [
+          "India's"
+        ],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts.",
         "source_urls": [
-          "https://www.reuters.com/world/india/indian-grocery-startup-zepto-raises-new-funds-900-million-valuation-2022-05-02/"
+          "https://www.reuters.com/world/india/indian-grocery-startup-zepto-raises-new-funds-900-million-valuation-2022-05-02/",
+          "https://techcrunch.com/2022/05/02/zepto-a-10-minute-grocery-delivery-app-raises-200-million-at-900-million-valuation/"
         ]
       },
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founders"
       ]
     },
     {
@@ -1541,15 +1600,24 @@
         "notes": "No funding or exit event found since the January 2020 Series B; secondary press describes it as an independent, apparently-profitable private company generating ~$21M revenue as of 2024, with no acquisition or IPO traced in this pass."
       },
       "competitors": {
-        "names": [],
+        "names": [
+          "Jira"
+        ],
         "not_competitors": [],
         "confidence": "verified",
-        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts.",
+        "source_urls": [
+          "https://www.shortcut.com/blog/shortcut-vs-jira-choose-the-most-powerful/"
+        ]
       },
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founders"
       ]
     },
     {
@@ -1685,7 +1753,9 @@
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "founded_year",
+        "founders"
       ]
     },
     {
@@ -1831,15 +1901,24 @@
         "notes": "Remains private as of its March 2025 Series C; no IPO announcement found."
       },
       "competitors": {
-        "names": [],
+        "names": [
+          "Chase"
+        ],
         "not_competitors": [],
         "confidence": "verified",
-        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts.",
+        "source_urls": [
+          "https://mercury.com/compare/mercury-business-banking-vs-chase"
+        ]
       },
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founders"
       ]
     },
     {
@@ -1951,7 +2030,11 @@
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founders"
       ]
     },
     {
@@ -2062,13 +2145,17 @@
       "competitors": {
         "names": [
           "OpsLevel",
-          "Compass"
+          "Compass",
+          "Jellyfish",
+          "Cortex"
         ],
         "not_competitors": [],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts.",
         "source_urls": [
-          "https://www.port.io/glossary/developer-experience"
+          "https://www.port.io/glossary/developer-experience",
+          "https://www.port.io/blog/port-vs-jellyfish-engineering-intelligence",
+          "https://www.cortex.io/compare/cortex-vs-port"
         ]
       },
       "review_request": "hq_not_declared (owner, 2026-11-01): city/country = a headquarters the company declares on its site or in its own release; none here, so empty is correct. offices = the offices its site lists. founding_country unchanged. Owner to confirm.",
@@ -2077,7 +2164,9 @@
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "founding_country",
+        "founders"
       ]
     },
     {
@@ -2186,14 +2275,24 @@
       ],
       "competitors": {
         "names": [],
-        "not_competitors": [],
+        "not_competitors": [
+          "High",
+          "4.20",
+          "Ultralytics Yolov8",
+          "126 FPS on PC/RPi5"
+        ],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
       },
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founding_country",
+        "founders"
       ]
     },
     {
@@ -2320,16 +2419,53 @@
         }
       ],
       "competitors": {
-        "names": [],
+        "names": [
+          "Varonis",
+          "BigID",
+          "Proofpoint",
+          "Sentra"
+        ],
         "not_competitors": [],
         "confidence": "verified",
-        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts.",
+        "source_urls": [
+          "https://www.cyera.com/compare/cyera-vs-varonis",
+          "https://home.bigid.com/bigid-vs-cyera",
+          "https://www.proofpoint.com/us/compare/proofpoint-vs-cyera",
+          "https://sentra.io/blog/cyera-architecture-comparison"
+        ]
       },
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
-      ]
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founding_country",
+        "founders"
+      ],
+      "patents": {
+        "numbers": [
+          "US20260252531A1",
+          "US20260154605A1",
+          "US12608487B1",
+          "US20260030381A1",
+          "US20260010724A1",
+          "US12438919B1",
+          "US12407737B1",
+          "US12395507B1",
+          "US12316686B1",
+          "US12277504B1",
+          "US20240362301A1",
+          "US20240126918A1",
+          "US20230221881A1",
+          "US20230222095A1"
+        ],
+        "confidence": "verified",
+        "source_url": "https://worldwide.espacenet.com",
+        "notes": "EPO register (DOCDB) — ownership marked by the owner"
+      }
     },
     {
       "id": "cato-networks",
@@ -2439,6 +2575,14 @@
           "confidence": "verified",
           "source_url": "https://www.catonetworks.com/news/globes-israeli-network-security-co-cato-networks-raises-30m/",
           "notes": "Owner, 2026-11-01: marked correct on the review sheet (source of tier 1–3 or the company's own site)."
+        },
+        {
+          "type": "Series B",
+          "amount_usd": 30000000,
+          "date": "2016-09-13",
+          "lead_investor": null,
+          "confidence": "verified",
+          "source_url": "https://www.globenewswire.com/news-release/2016/09/13/1060385/0/en/Cato-Networks-Secures-30M-to-Accelerate-Customer-Adoption-of-Networking-and-Security-in-the-Cloud.html"
         }
       ],
       "funding_rounds_excluded_unknown": [
@@ -2470,7 +2614,12 @@
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founding_country",
+        "founders"
       ]
     },
     {
@@ -2575,6 +2724,14 @@
             "https://en.globes.co.il/en/article-1001533016"
           ],
           "notes": "Total $430M after this round."
+        },
+        {
+          "type": "Series C",
+          "amount_usd": 400000000,
+          "date": "2026-10-28",
+          "lead_investor": "Bessemer Venture Partners",
+          "confidence": "verified",
+          "source_url": "https://techcrunch.com/2026/10/28/upwind-raises-400m-after-walking-away-from-datadog-acquisition-offer/"
         }
       ],
       "funding_rounds_excluded_unknown": [
@@ -2599,7 +2756,12 @@
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founding_country",
+        "founders"
       ]
     },
     {
@@ -2699,19 +2861,24 @@
         "names": [
           "Datadog",
           "New Relic",
-          "Splunk"
+          "Splunk",
+          "Sumo Logic"
         ],
         "not_competitors": [],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts.",
         "source_urls": [
-          "https://techcrunch.com/2026/06/03/coralogix-raises-200m-in-race-to-build-the-monitoring-layer-for-ai-agents/"
+          "https://techcrunch.com/2026/06/03/coralogix-raises-200m-in-race-to-build-the-monitoring-layer-for-ai-agents/",
+          "https://coralogix.com/blog/coralogix-vs-sumo-logic-features/"
         ]
       },
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "founded_year",
+        "founding_country",
+        "founders"
       ]
     },
     {
@@ -2809,6 +2976,33 @@
           "confidence": "verified",
           "source_url": "https://www.hibob.com/about",
           "notes": "Owner, 2026-11-01: marked correct on the review sheet (source of tier 1–3 or the company's own site)."
+        },
+        {
+          "type": "Other",
+          "amount_usd": 166000000,
+          "date": "2026-09-01",
+          "lead_investor": null,
+          "confidence": "verified",
+          "source_url": "https://siliconangle.com/2026/09/01/hr-software-startup-hibob-raises-166m-after-annualized-revenue-tops-400m/",
+          "investors": [
+            "Salesforce"
+          ]
+        },
+        {
+          "type": "Other",
+          "amount_usd": 150000000,
+          "date": "2023-09-19",
+          "lead_investor": "Farallon Capital",
+          "confidence": "verified",
+          "source_url": "https://www.hibob.com/blog/hibob-new-funding-2023/"
+        },
+        {
+          "type": "Series B",
+          "amount_usd": 70000000,
+          "date": "2020-12-10",
+          "lead_investor": null,
+          "confidence": "verified",
+          "source_url": "https://www.prnewswire.com/news-releases/hibob-closes-70m-series-b-funding-round-to-significantly-expand-market-footprint-in-hr-technology-301189875.html"
         }
       ],
       "funding_rounds_excluded_unknown": [
@@ -2825,20 +3019,33 @@
           "BambooHR",
           "Namely",
           "Gusto",
-          "Workday"
+          "Workday",
+          "UKG",
+          "Personio",
+          "HR Cloud"
         ],
-        "not_competitors": [],
+        "not_competitors": [
+          "Why Bob beats competitors?"
+        ],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts.",
         "source_urls": [
-          "https://www.hibob.com/blog/hibob-vs-namely-vs-rippling/"
+          "https://www.hibob.com/blog/hibob-vs-namely-vs-rippling/",
+          "https://www.hibob.com/compare/bob-vs-ukg-guide/",
+          "https://www.personio.com/personio-vs-hibob/",
+          "https://www.hrcloud.com/hr-cloud-vs-hibob"
         ]
       },
       "review_request": "dual_hq (owner, 2026-10-29): city/country = the HQ the company declares on its site or in an official release; founding_country = where it was founded / its R&D centre. Please confirm.",
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founding_country",
+        "founders"
       ]
     },
     {
@@ -2928,6 +3135,14 @@
           "confidence": "verified",
           "source_url": "https://www.forbes.com/sites/ayurellahornmuller/2019/04/17/ai-healthcare-startup-aidoc-raises-27-million/",
           "notes": "Owner, 2026-11-01: marked correct on the review sheet (source of tier 1–3 or the company's own site)."
+        },
+        {
+          "type": "Series E",
+          "amount_usd": 150000000,
+          "date": "2026-04-29",
+          "lead_investor": "Growth Equity at Goldman Sachs Alternatives",
+          "confidence": "verified",
+          "source_url": "https://www.aidoc.com/about/news/aidoc-raises-150-million-series-e-led-by-goldman-sachs-to-scale-clinical-ai-for-earlier-safer-diagnoses/"
         }
       ],
       "funding_rounds_excluded_unknown": [
@@ -2948,7 +3163,9 @@
         "names": [
           "Zebra Medical Vision"
         ],
-        "not_competitors": [],
+        "not_competitors": [
+          "Conventional AI"
+        ],
         "confidence": "verified",
         "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts.",
         "source_urls": [
@@ -2971,7 +3188,10 @@
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "founded_year",
+        "founding_country",
+        "founders"
       ]
     },
     {
@@ -3035,7 +3255,10 @@
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "founded_year",
+        "founding_country",
+        "founders"
       ]
     },
     {
@@ -3150,7 +3373,12 @@
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founding_country",
+        "founders"
       ]
     },
     {
@@ -3245,7 +3473,11 @@
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founders"
       ]
     },
     {
@@ -3350,15 +3582,26 @@
         }
       ],
       "competitors": {
-        "names": [],
+        "names": [
+          "Decagon",
+          "Rasa"
+        ],
         "not_competitors": [],
         "confidence": "verified",
-        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts."
+        "notes": "Under the owner's competitor review (2026-10-27): filled from eval/review/competitors_review.csv by eval/import_review.ts.",
+        "source_urls": [
+          "https://www.parloa.com/knowledge-hub/parloa-vs-decagon/",
+          "https://rasa.com/vs/parloa"
+        ]
       },
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founders"
       ]
     },
     {
@@ -3492,7 +3735,11 @@
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founders"
       ]
     },
     {
@@ -3564,7 +3811,11 @@
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founders"
       ]
     },
     {
@@ -3692,8 +3943,28 @@
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
-      ]
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founders"
+      ],
+      "competitors": {
+        "names": [
+          "HeyGen",
+          "Colossyan",
+          "Veed",
+          "Invideo",
+          "Fliki"
+        ],
+        "not_competitors": [],
+        "confidence": "verified",
+        "source_urls": [
+          "https://www.synthesia.io/alternatives",
+          "https://www.synthesia.io/alternatives/synthesia-vs-invideo",
+          "https://fliki.ai/blog/synthesia-vs-fliki"
+        ]
+      }
     },
     {
       "id": "wayve",
@@ -3799,8 +4070,24 @@
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
-      ]
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founders"
+      ],
+      "patents": {
+        "numbers": [
+          "WO2026220083A1",
+          "CA3321534A1",
+          "US20250108817A1",
+          "WO2025072475A1",
+          "GB2632656A"
+        ],
+        "confidence": "verified",
+        "source_url": "https://worldwide.espacenet.com",
+        "notes": "EPO register (DOCDB) — ownership marked by the owner"
+      }
     },
     {
       "id": "vercel",
@@ -3911,7 +4198,10 @@
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founders"
       ]
     },
     {
@@ -4014,12 +4304,24 @@
             "https://www.orrick.com/en/News/2025/09/Orrick-conseille-Mistral-AI-dans-le-cadre-de-sa-levee-de-fonds-en-Serie-C"
           ],
           "notes": "€1.7B at €11.7B post-money; ASML put in €1.3B. Announced in euros; amount_usd converted at the rate of the announcement month (eval tolerance is ±10%)."
+        },
+        {
+          "type": "Series D",
+          "amount_usd": 3480000000,
+          "date": "2026-09-08",
+          "lead_investor": "Samsung Electronics",
+          "confidence": "verified",
+          "source_url": "https://mistral.ai/news/mistral-makes-sovereign-open-weight-ai-to-frontier/"
         }
       ],
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founders"
       ]
     },
     {
@@ -4087,7 +4389,11 @@
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
+        "patents",
+        "country",
+        "founded_year",
+        "founding_country",
+        "founders"
       ]
     },
     {
@@ -4156,49 +4462,12 @@
       "reviewed_fields": [
         "rounds",
         "competitors",
-        "patents"
-      ]
-    },
-    {
-      "id": "anonymised",
-      "name": "Anonymised",
-      "judged_only": true,
-      "reviewed_by_human": true,
-      "hard_case_tags": [
-        "field_review"
-      ],
-      "founded_year": {
-        "value": 2020,
-        "confidence": "verified",
-        "source_url": "https://www.anonymised.io/about-us"
-      },
-      "founders": [
-        {
-          "name": "Denys Demchenko",
-          "confidence": "verified",
-          "source_url": "https://rocketreach.co/anonymised-management_b7779f92c53cd5de"
-        }
-      ]
-    },
-    {
-      "id": "moon-active",
-      "name": "Moon Active",
-      "judged_only": true,
-      "reviewed_by_human": true,
-      "hard_case_tags": [
-        "field_review"
-      ],
-      "founding_country": {
-        "value": "Israel",
-        "confidence": "verified",
-        "source_url": "https://www.calcalistech.com/ctechnews/article/bjq8i7ffj"
-      },
-      "founders": [
-        {
-          "name": "Samuel Albin",
-          "confidence": "verified",
-          "source_url": "https://siliconvalleyinvestclub.com/companies/moonactive/"
-        }
+        "patents",
+        "city",
+        "country",
+        "founded_year",
+        "founding_country",
+        "founders"
       ]
     },
     {
@@ -4218,7 +4487,9 @@
         "value": "United Kingdom",
         "confidence": "verified",
         "source_url": "https://find-and-update.company-information.service.gov.uk/company/12014731"
-      }
+      },
+      "company_id": "69c07a2b-352f-4115-9ada-92894c8020de",
+      "website": "https://kraken.tech"
     },
     {
       "id": "unacademy",
@@ -4241,7 +4512,9 @@
         "source_urls": [
           "https://techcrunch.com/2019/06/26/india-unacademy-seriesd/"
         ]
-      }
+      },
+      "company_id": "8687fbe7-bd39-4058-a24c-7f1c4f929e9f",
+      "website": "https://unacademy.com"
     },
     {
       "id": "mojia-bio",
@@ -4260,7 +4533,9 @@
           "confidence": "verified",
           "source_url": "https://agfundernews.com/bits-x-bites-raises-30m-for-new-china-fund-backs-mojia-bio"
         }
-      ]
+      ],
+      "company_id": "934ec63e-a569-4249-8fdf-12114e928246",
+      "website": "https://mojiabio.com"
     },
     {
       "id": "latitude",
@@ -4279,7 +4554,9 @@
           "confidence": "verified",
           "source_url": "https://www.businesswire.com/news/home/20260908626656/en/Latitude-Raises-%2435M-Series-A-to-Connect-Stablecoin-Payments-to-Local-Rails-Worldwide"
         }
-      ]
+      ],
+      "company_id": "dfca6568-2308-4054-9473-9421116fd180",
+      "website": "https://latitude.xyz"
     },
     {
       "id": "reveal-technology",
@@ -4295,21 +4572,9 @@
           "US2021041867A1"
         ],
         "confidence": "verified"
-      }
-    },
-    {
-      "id": "ybrain",
-      "name": "Ybrain",
-      "judged_only": true,
-      "reviewed_by_human": true,
-      "hard_case_tags": [
-        "field_review"
-      ],
-      "founded_year": {
-        "value": 2013,
-        "confidence": "verified",
-        "source_url": "https://www.prnewswire.com/news-releases/ybrains-stress-management-solution-pola-named-ces-2022-innovation-award-honoree-301426238.html"
-      }
+      },
+      "company_id": "7f6aa69d-8b21-4039-b9bb-8831a2c177e9",
+      "website": "https://revealtech.ai"
     },
     {
       "id": "lupovis",
@@ -4336,21 +4601,9 @@
           "confidence": "verified",
           "source_url": "https://www.eu-startups.com/2021/11/scottish-cyber-startup-lupovis-raises-over-e700k-for-their-cyber-security-solution-which-makes-the-hunter-the-hunted/"
         }
-      ]
-    },
-    {
-      "id": "enervenue",
-      "name": "EnerVenue",
-      "judged_only": true,
-      "reviewed_by_human": true,
-      "hard_case_tags": [
-        "field_review"
       ],
-      "founding_country": {
-        "value": "United States",
-        "confidence": "verified",
-        "source_url": "https://www.sec.gov/Archives/edgar/data/1899212/000189921221000002/primary_doc.xml"
-      }
+      "company_id": "ff669430-04a9-4836-b4fb-9d914082e2b9",
+      "website": "https://lupovis.io"
     },
     {
       "id": "avenda-health",
@@ -4376,7 +4629,9 @@
           "US2020345419A1"
         ],
         "confidence": "verified"
-      }
+      },
+      "company_id": "65976e18-34be-4b30-9635-8da152979045",
+      "website": "https://avendahealth.com"
     },
     {
       "id": "scadafence",
@@ -4391,7 +4646,9 @@
           "US2021359897A1"
         ],
         "confidence": "verified"
-      }
+      },
+      "company_id": "f3a648f7-91e0-4d79-a8e4-d89ccf2de72b",
+      "website": "https://scadafence.com"
     },
     {
       "id": "mocklab",
@@ -4410,7 +4667,9 @@
         "value": "United Kingdom",
         "confidence": "verified",
         "source_url": "https://www.prnewswire.com/news-releases/up9-acquires-london-based-mocklab-creator-of-worlds-most-popular-open-source-api-mocking-project-wiremock-301441288.html"
-      }
+      },
+      "company_id": "14cbe3e9-d0e0-4aee-a78a-ee442af1bbf0",
+      "website": "https://wiremock.io"
     },
     {
       "id": "mutiny",
@@ -4429,7 +4688,9 @@
           "confidence": "verified",
           "source_url": "https://techcrunch.com/2019/10/02/mutiny-startup-battlefield/"
         }
-      ]
+      ],
+      "company_id": "e37cebbd-43c8-4811-9895-fdc5fa7128b5",
+      "website": "https://mutinyhq.com"
     },
     {
       "id": "streak",
@@ -4443,7 +4704,9 @@
         "value": 2011,
         "confidence": "verified",
         "source_url": "https://streak.com/about"
-      }
+      },
+      "company_id": "a9d62630-8983-42d7-a396-55d821bd48df",
+      "website": "https://streak.com"
     },
     {
       "id": "cdata",
@@ -4457,7 +4720,9 @@
         "value": "United States",
         "confidence": "verified",
         "source_url": "https://www.sec.gov/Archives/edgar/data/1808159/000180815920000001/primary_doc.xml"
-      }
+      },
+      "company_id": "258c883b-a48d-4532-bc09-a7e3c62573a6",
+      "website": "https://cdata.com"
     },
     {
       "id": "insightec",
@@ -4474,7 +4739,9 @@
           "WO2025141544A1"
         ],
         "confidence": "verified"
-      }
+      },
+      "company_id": "84eec12c-04ac-467d-ba1d-977405fa58d0",
+      "website": "https://insightec.com"
     },
     {
       "id": "incredo",
@@ -4489,7 +4756,9 @@
           "EP4391831A1"
         ],
         "confidence": "verified"
-      }
+      },
+      "company_id": "d4be6e00-e400-4b32-b1c9-27d7af949135",
+      "website": "https://incredosugar.com"
     },
     {
       "id": "offerup",
@@ -4508,7 +4777,9 @@
           "confidence": "verified",
           "source_url": "https://techcrunch.com/2020/03/25/online-marketplace-offerup-raises-120m-acquires-top-competitor-letgo/"
         }
-      ]
+      ],
+      "company_id": "94a42979-7ce9-4761-83e8-01b309fda712",
+      "website": "https://offerup.com"
     },
     {
       "id": "valqari",
@@ -4523,7 +4794,9 @@
           "EP3850562A1"
         ],
         "confidence": "verified"
-      }
+      },
+      "company_id": "30f70d5d-d0d9-4aaf-a773-5d49b0e60a51",
+      "website": "https://valqari.com"
     },
     {
       "id": "stability-ai",
@@ -4560,7 +4833,9 @@
           "confidence": "verified",
           "source_url": "https://www.forbes.com/sites/kenrickcai/2024/03/22/stability-ai-founder-emad-mostaque-plans-to-resign-as-ceo-sources-say/"
         }
-      ]
+      ],
+      "company_id": "5c622065-a4d5-4481-8dac-e81eb6fe3623",
+      "website": "https://stability.ai"
     },
     {
       "id": "civdrone",
@@ -4577,7 +4852,9 @@
           "confidence": "verified",
           "source_url": "https://www.calcalistech.com/ctech/articles/0,7340,L-3769005,00.html"
         }
-      ]
+      ],
+      "company_id": "8f9975a8-5e3b-4176-b6a9-c2e80f27e286",
+      "website": "https://civdrone.com"
     },
     {
       "id": "constructor-technology-ag",
@@ -4596,7 +4873,9 @@
           "US20240289846A1"
         ],
         "confidence": "verified"
-      }
+      },
+      "company_id": "ffcbfcbc-7daf-4471-b0d9-e4dec49e6caf",
+      "website": "https://constructor.tech"
     },
     {
       "id": "argus-cyber",
@@ -4610,7 +4889,9 @@
         "value": "Israel",
         "confidence": "verified",
         "source_url": "https://www.prnewswire.com/news-releases/boosting-cyber-security-competence-continental-acquires-argus-cyber-security-300549260.html"
-      }
+      },
+      "company_id": "3f069b87-b200-463f-be4b-607573fa5b5b",
+      "website": "https://argus-sec.com"
     },
     {
       "id": "trobix-bio",
@@ -4639,7 +4920,9 @@
           "WO2024052907A1"
         ],
         "confidence": "verified"
-      }
+      },
+      "company_id": "b3bd6707-dab5-40ec-b6de-65be1ea793eb",
+      "website": "https://trobixbio.com"
     },
     {
       "id": "infinigrow",
@@ -4653,7 +4936,9 @@
         "value": "Israel",
         "confidence": "verified",
         "source_url": "https://data.gov.il/dataset/ica_companies/resource/f004176c-b85f-4542-8901-7b3176f9a054?q=515531382"
-      }
+      },
+      "company_id": "d3df7293-3dd9-42e2-bd60-3eda8b0b1e94",
+      "website": "https://infinigrow.com"
     },
     {
       "id": "genda",
@@ -4676,7 +4961,9 @@
           "confidence": "verified",
           "source_url": "https://www.gendatech.com/blog/interview-with-erez-dror-why-was-genda-developed"
         }
-      ]
+      ],
+      "company_id": "6455ce2e-b7d1-4326-8898-f79a2dab9286",
+      "website": "https://gendatech.com"
     },
     {
       "id": "speedb",
@@ -4695,7 +4982,9 @@
           "confidence": "verified",
           "source_url": "https://siliconangle.com/2024/03/21/redis-acquires-storage-engine-startup-speedb-enhance-open-source-database/"
         }
-      ]
+      ],
+      "company_id": "e442a30c-f671-4cbb-8e09-b6a8480ff882",
+      "website": "https://speedb.io"
     }
   ]
 }
