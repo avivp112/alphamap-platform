@@ -30,3 +30,16 @@ describe("a sector the taxonomy agrees with itself about (owner, 2026-11-08, rev
     expect(reconcileSector({ sector_name: "DeepTech", sub_sector_name: "DevOps / CI-CD" }, undefined).changes).toEqual([]);
   });
 });
+
+describe("a sub-sector that is the name of a sector (review 7, x67.40)", () => {
+  const parents = ["Health & Life Sciences", "Cybersecurity", "SaaS & Dev Tools", "DeepTech"];
+  it("Health & Life Sciences › Cybersecurity is Cybersecurity, with no sub-sector to guess", () => {
+    const r = reconcileSector({ sector_name: "Health & Life Sciences", sub_sector_name: "Cybersecurity" }, parentOf, parents);
+    expect(r.fields).toMatchObject({ sector_name: "Cybersecurity", sub_sector_name: undefined });
+    expect(r.changes[0]).toMatch(/Health & Life Sciences → Cybersecurity/);
+  });
+  it("the same sector named twice just loses the repeat", () => {
+    expect(reconcileSector({ sector_name: "Cybersecurity", sub_sector_name: "Cybersecurity" }, parentOf, parents).fields).toMatchObject({ sector_name: "Cybersecurity", sub_sector_name: undefined });
+  });
+});
+

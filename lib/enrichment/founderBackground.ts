@@ -45,13 +45,46 @@ function has(text: string, term: string): boolean {
   return !!t && ` ${words(text)} `.includes(` ${t} `);
 }
 
+/**
+ * When a sentence names two founders, a fact belongs to the one it is said about (owner, 2026-11-09, review 7: Cado's
+ * AlienVault went to James Campbell; the quote was about his co-founder). The organization belongs to the nearest founder
+ * named before it in its sentence, or to the one named in parentheses right after it; two founders named together
+ * ("Gil Dabah and Ariel Shiftan, whose firm NorthBit was acquired") share it, unless the sentence says "respectively".
+ */
+export function factBelongsToFounder(quote: string, founder: string, organization: string, coFounders: string[]): boolean {
+  const others = coFounders.filter((n) => lastName(n) && lastName(n) !== lastName(founder));
+  const q = quote.replace(/\s+/g, " ");
+  const low = q.toLowerCase();
+  const names = [founder, ...others].map((n) => ({ n, key: lastName(n).toLowerCase() })).filter((x) => x.key);
+  if (!others.some((o) => low.includes(lastName(o).toLowerCase()))) return true;      // only this founder is named
+  const at = low.indexOf(words(organization).split(" ")[0]);
+  if (at < 0) return true;
+  const mentions = names.flatMap((x) => [...low.matchAll(new RegExp(`\\b${x.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"))].map((m) => ({ ...x, i: m.index ?? 0 })));
+  // Named in parentheses right after the organization: "AlienVault (Doman)".
+  const after = low.slice(at).match(/^[^()]{0,40}?\(\s*([^)]{2,40})\)/);
+  if (after) {
+    const hit = names.find((x) => after[1].includes(x.key));
+    if (hit) return hit.key === lastName(founder).toLowerCase();
+  }
+  // The sentence of the organization, up to it.
+  const start = Math.max(0, low.lastIndexOf(". ", at) + 1);
+  const before = mentions.filter((m) => m.i >= start && m.i < at).sort((a, b) => b.i - a.i);
+  if (!before.length) return true;
+  const nearest = before[0];
+  if (nearest.key === lastName(founder).toLowerCase()) return true;
+  // A pair named together shares what is said of both ("whose firm …"), unless it says "respectively".
+  if (/respective/.test(low)) return false;
+  const pair = before.some((m) => m.key === lastName(founder).toLowerCase() && nearest.i - m.i < 45) && /\b(?:whose|both|their|together)\b/.test(low.slice(nearest.i, at));
+  return pair;
+}
+
 export type FactProblem = "unknown_kind" | "no_organization" | "source_not_found" | "source_not_allowed" | "quote_not_in_source"
-  | "founder_not_in_quote" | "organization_not_in_quote" | "quote_does_not_say_it" | "is_the_company_itself";
+  | "founder_not_in_quote" | "fact_of_another_founder" | "organization_not_in_quote" | "quote_does_not_say_it" | "is_the_company_itself";
 
 /** Why a fact is rejected, or null when it holds. */
 export function factProblem(
   founder: string, companyName: string, f: BackgroundFact,
-  sources: Record<string, { content: string }>, allowed: (sourceId: string) => boolean,
+  sources: Record<string, { content: string }>, allowed: (sourceId: string) => boolean, coFounders: string[] = [],
 ): FactProblem | null {
   if (!BACKGROUND_KINDS.includes(f.kind)) return "unknown_kind";
   if (!f.organization?.trim()) return "no_organization";
@@ -61,6 +94,7 @@ export function factProblem(
   if (typeof f.evidence_quote !== "string" || !f.evidence_quote.trim() || !quoteMatchesSource(f.evidence_quote, src.content).matched) return "quote_not_in_source";
   if (!has(f.evidence_quote, lastName(founder))) return "founder_not_in_quote";
   if (!has(f.evidence_quote, f.organization)) return "organization_not_in_quote";
+  if (!factBelongsToFounder(f.evidence_quote, founder, f.organization, coFounders)) return "fact_of_another_founder";
   // The company's own founding is not a "previous" background.
   if (normalizeForMatch(f.organization) === normalizeForMatch(companyName) && f.kind !== "education") return "is_the_company_itself";
   if (!KIND_PATTERN[f.kind].test(f.evidence_quote)) return "quote_does_not_say_it";
@@ -81,7 +115,7 @@ export function processBackgroundResponse(
     if (!founder || !Array.isArray(r.facts)) continue;
     const facts: BackgroundFact[] = [];
     for (const f of r.facts) {
-      const why = factProblem(founder, companyName, f, sources, allowed);
+      const why = factProblem(founder, companyName, f, sources, allowed, founders);
       if (why) { dropped.push({ founder, fact: f, why }); continue; }
       const dup = facts.some((x) => x.kind === f.kind && normalizeForMatch(x.organization) === normalizeForMatch(f.organization));
       if (!dup) facts.push({ kind: f.kind, organization: f.organization.trim(), role: f.role?.trim() || undefined, year: Number.isFinite(f.year) ? f.year : undefined, source_id: f.source_id, evidence_quote: f.evidence_quote.trim() });

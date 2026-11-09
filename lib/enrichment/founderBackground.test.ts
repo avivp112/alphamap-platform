@@ -44,3 +44,26 @@ describe("founder background facts are verified like any field", () => {
     expect(backgroundSearchQuery("OrCam", ["Amnon Shashua", "Ziv Aviram", "Third Person"])).toBe('"Amnon Shashua" OR "Ziv Aviram" "OrCam" founder previously OR formerly OR "before founding" OR graduated OR served');
   });
 });
+
+import { factBelongsToFounder } from "./founderBackground";
+describe("a fact belongs to the founder the sentence says it of (review 7, x67.133 Cado)", () => {
+  const both = ["James Campbell", "Christopher Doman"];
+  it("Cado: AlienVault is Doman's, PwC is shared work, neither goes to Campbell by the other's name", () => {
+    const q1 = "Campbell co-founded Cado with Christopher Doman (the CTO) last April, with the concept coming out of their respective experiences working on security services together at PwC, and respectively for government organizations (Campbell) and AlienVault (Doman).";
+    expect(factBelongsToFounder(q1, "James Campbell", "AlienVault", both)).toBe(false);
+    expect(factBelongsToFounder(q1, "Christopher Doman", "AlienVault", both)).toBe(true);
+    const q2 = "Christopher Doman previously worked at AlienVault, and Campbell at PwC.";
+    expect(factBelongsToFounder(q2, "James Campbell", "AlienVault", both)).toBe(false);
+    expect(factBelongsToFounder(q2, "James Campbell", "PwC", both)).toBe(true);
+  });
+  it("Piiano: a firm of both founders, 'whose', is both of theirs", () => {
+    const q = "Founded by security experts Gil Dabah and Ariel Shiftan-whose cybersecurity firm, NorthBit, was acquired by Magic Leap in 2016";
+    const both = ["Gil Dabah", "Ariel Shiftan"];
+    expect(factBelongsToFounder(q, "Gil Dabah", "NorthBit", both)).toBe(true);
+    expect(factBelongsToFounder(q, "Ariel Shiftan", "NorthBit", both)).toBe(true);
+  });
+  it("one founder named, or no other founder: unchanged", () => {
+    expect(factBelongsToFounder("Saar Safra formerly was CTO of Ad4Ever acquired by aQuantive.", "Saar Safra", "Ad4Ever", ["Saar Safra", "Other Person"])).toBe(true);
+    expect(factBelongsToFounder("Saar Safra formerly was CTO of Ad4Ever.", "Saar Safra", "Ad4Ever", [])).toBe(true);
+  });
+});

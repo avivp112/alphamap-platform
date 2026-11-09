@@ -274,15 +274,22 @@ export async function writeCollected(
   const refresh = new Set(row.refresh_fields ?? []);
   const description = profile.profile.description;
   const valueProposition = profile.profile.value_proposition;
+  // The evidence behind the v2 description, which the sector and the industry are derived from (review 7, 2026-11-09):
+  // its sentences' sources and its own text. No such evidence, no source, no value.
+  const sents = profile.profile.description_sentences ?? [];
+  const descEvidence = sents.length && sents[0].source_ids[0] ? { source_id: sents[0].source_ids[0], evidence_quote: sents.map((x) => x.text).join(" ") } : undefined;
   if ((!row.description || refresh.has("description")) && description && description !== row.description) {
     patch.description = description;
     refresh.delete("description");
+    provenance("profile.description", description, descEvidence);
   }
-  if ((!row.value_proposition || refresh.has("value_proposition")) && valueProposition && valueProposition !== row.value_proposition) {
+  // The extraction's value proposition is free text with no source of its own: with the v2 description it is not written.
+  if (!descEvidence && (!row.value_proposition || refresh.has("value_proposition")) && valueProposition && valueProposition !== row.value_proposition) {
     patch.value_proposition = valueProposition;
     refresh.delete("value_proposition");
   }
-  if (!row.industry && profile.profile.industry) patch.industry = profile.profile.industry;
+  if (!row.industry && profile.profile.industry && descEvidence) { patch.industry = profile.profile.industry; provenance("profile.industry", profile.profile.industry, descEvidence); }
+  else if (!row.industry && profile.profile.industry) patch.industry = profile.profile.industry;   // no source: the guard below drops it
   if (!row.website && profile.profile.website) {
     const websiteResult = validateWebsiteCandidate(profile.profile.website.value, row.id, startupByDomain);
     if (websiteResult.website) {
@@ -301,7 +308,7 @@ export async function writeCollected(
 
   if (!row.sector_id && profile.profile.sector_name) {
     const { data: sid } = await supabase.rpc("sector_id_by_name", { p_name: profile.profile.sector_name });
-    if (sid) patch.sector_id = sid;
+    if (sid) { patch.sector_id = sid; provenance("profile.sector_id", profile.profile.sector_name, descEvidence); }
   }
   // Sub-sector tags (startup_sub_sectors): additive across runs, like v1.
   const proposedTags = [...new Set([
@@ -317,7 +324,7 @@ export async function writeCollected(
     bump(summary.droppedByReason, "tag_outside_sector_unsupported");
   }
   // A tag needs a sentence of an allowed page that carries it (quoteFinder.ts supportedTags, owner 2026-11-08).
-  const supported = supportedTags(tagFilter.kept, allSources.filter((x) => profileSourceAllowed(x, row.name)).map((x) => ({ id: x.source_id, content: x.content ?? "" })));
+  const supported = supportedTags(tagFilter.kept, allSources.filter((x) => profileSourceAllowed(x, row.name)).map((x) => ({ id: x.source_id, content: x.content ?? "", url: x.url })));
   for (const t of supported.dropped) {
     console.log(`    🏷️   Tag "${t}" dropped — no sentence of an allowed page supports it.`);
     bump(summary.droppedByReason, "tag_unsupported");
@@ -692,7 +699,17 @@ export async function writeCollected(
       } else if (k === "office_countries" || k === "patent_count" || k === "patent_fields") {
         // Derived from offices / patents: written beside them, not a value of their own.
       } else {
-        reportLines.push({ field: fieldOfColumn(k) ?? k, before: rowOf[k] ?? null, after: patch[k], source_url: fw ? sourceById.get(fw.source_id)?.url ?? null : null, quote: fw?.evidence_quote ?? null });
+        const sourceUrl = fw ? sourceById.get(fw.source_id)?.url ?? null : null;
+        // No source, no value (owner, 2026-11-09, review 7: a sector shown with "—" was written 12 times): a value with no
+        // source on file is not written, whatever the field.
+        if (!sourceUrl) {
+          console.log(`    🚫  ${fieldOfColumn(k) ?? k} not written — no source on file for "${String(patch[k]).slice(0, 60)}".`);
+          bump(summary.droppedByReason, "no_source_no_value");
+          delete patch[k];
+          for (let i = fieldWrites.length - 1; i >= 0; i--) if (fieldWrites[i].field.replace(/^(profile|metrics)\./, "") === k) fieldWrites.splice(i, 1);
+          continue;
+        }
+        reportLines.push({ field: fieldOfColumn(k) ?? k, before: rowOf[k] ?? null, after: patch[k], source_url: sourceUrl, quote: fw?.evidence_quote ?? null });
       }
     }
     for (const r of plan.inserts) {

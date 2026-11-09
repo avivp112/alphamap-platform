@@ -38,6 +38,24 @@ export function claims(sentence: string, companyName: string): { numbers: string
   return { numbers, names: [...new Set(names)] };
 }
 
+const VERB = /\b(?:is|are|was|were|has|have|had|provides?|offers?|builds?|develops?|makes?|sells?|helps?|lets?|enables?|allows?|delivers?|runs?|operates?|creates?|gives?|uses?|powers?|supports?|serves?|connects?|manages?|designs?|supplies|supply|automates?|protects?|detects?|secures?|monitors?|analy[sz]es?|streamlines?|simplifies|combines?|brings?|turns?|offer|build|develop|make|sell|help|let|enable|allow|deliver|run|operate|create|give|use|power|support|serve|connect|manage|design|automate|protect|detect|secure|monitor|streamline|simplify|combine|bring|turn|processes|process|handles?|includes?|tracks?|measures?|verif(?:y|ies)|identif(?:y|ies)|test(?:s)?|scans?|trains?|generates?|publishes|hosts?|stores?|syncs?|integrates?|orchestrates?|accelerates?|reduces?|improves?|replaces|facilitates?|specializ(?:es|e)|focus(?:es)?|work(?:s)?|specialises?|produces?|manufactures?|distributes?|rents?|finances?|insures?|lends|ships?|delivers|\w+(?:ates|izes|ises|ifies))\b/i;
+const DANGLING = /\b(?:and|or|for|to|the|of|with|in|on|a|an|by|that|from|at|as|its|their|which|who)$/i;
+/**
+ * A sentence that does not say what the company sells (DealHub, review 7, x67.26: a clause cut from a longer sentence).
+ * A sentence starts like one, is long enough to carry a product and its use, ends where a sentence ends, and has a verb.
+ */
+export function fragmentProblem(text: string, role = "what"): string | null {
+  const t = text.trim();
+  const words = t.split(/\s+/);
+  if (!/^[A-Z0-9"“(]/.test(t)) return "fragment_starts_lowercase";
+  if (words.length < 6) return "fragment_too_short";
+  if (!/[.!?]["”)]?$/.test(t)) return "fragment_no_end";
+  if (DANGLING.test(t.replace(/[.!?]["”)]?$/, ""))) return "fragment_dangling_word";
+  // The "what" sentence has a verb; a "for whom" one may read "Used by …" or "Built for …".
+  if (role === "what" && !VERB.test(t)) return "fragment_no_verb";
+  return null;
+}
+
 export function sentenceProblem(
   s: { role: string; text: string; source_ids: string[] }, companyName: string,
   byId: Record<string, { content: string }>, allowed: (id: string) => boolean,
@@ -50,6 +68,8 @@ export function sentenceProblem(
     if (!allowed(id)) return "source_not_allowed";
   }
   if (MARKETING.test(s.text)) return "marketing_word";
+  const frag = fragmentProblem(s.text, s.role);
+  if (frag) return frag;
   const hay = norm(s.source_ids.map((id) => byId[id].content).join(" "));
   const c = claims(s.text, companyName);
   for (const n of c.numbers) if (!hay.includes(norm(n))) return `number_not_in_sources:${n}`;
@@ -129,6 +149,7 @@ RULES:
 - Every sentence lists the source_ids that support it. A number or a name that is not in those sources must not appear.
 - The company's own current website comes first; prefer it to an older article, and never describe it from an article older than two years. Describe the company as it is now.
 - Do not mention funding, investors, rankings, data platforms or where a fact was read. Do not start with the company name more than once.
+- Every sentence is a complete sentence with a verb: it says what the company sells (or to whom), not a title, a tagline or a clause cut from a longer sentence.
 - If the sources do not support a "what" and a "for_whom" sentence, return no sentences.
 
 Labeled research:

@@ -55,6 +55,17 @@ export const DATA_PLATFORMS: DataPlatform[] = [
   { name: "LeadIQ", domains: ["leadiq.com"] },
   { name: "SignalHire", domains: ["signalhire.com"] },
   { name: "Clay.com", domains: ["clay.com"] },
+  // People-data and company-data sites that publish headcounts (review 7, 2026-11-09: crustdata, contactout, startupim).
+  { name: "Crustdata", domains: ["crustdata.com"] },
+  { name: "ContactOut", domains: ["contactout.com"] },
+  { name: "Startupim", domains: ["startupim.com"] },
+  { name: "TheOrg", aliases: ["theorg.com"], caseSensitive: true, domains: ["theorg.com"] },
+  { name: "Datanyze", domains: ["datanyze.com"] },
+  { name: "Cognism", domains: ["cognism.com"] },
+  { name: "Seamless.AI", domains: ["seamless.ai"] },
+  { name: "People Data Labs", aliases: ["peopledatalabs.com"], domains: ["peopledatalabs.com"] },
+  { name: "Glassdoor", aliases: ["glassdoor.com"], caseSensitive: true, domains: ["glassdoor.com"] },
+  { name: "indeed.com", aliases: ["indeed.com"], caseSensitive: true, domains: ["indeed.com"] },
   { name: "PremierAlts", aliases: ["Premier Alts", "premieralts.com"], domains: ["premieralts.com"] },
   // Sites that copy the platforms' rounds (the 2026-11-01 review sheet).
   { name: "Multiples", aliases: ["multiples.vc"], caseSensitive: true, domains: ["multiples.vc"] },

@@ -149,7 +149,13 @@ const createMock = vi.fn(async (req: { tools: Array<{ name: string }>; messages:
   const li = sid(prompt, "theverge.com/2025/10/14/ghost-team");
   const hq = sid(prompt, "ghost.org/about/press");
 
-  if (tool === "classify_company") {
+  if (tool === "save_description") {
+    // The description is built from the company's own page; the sector is derived from it (review 7, 2026-11-09).
+    input = { sentences: [
+      { role: "what", text: "Ghost is an independent open source publishing platform for newsletters and paid membership subscriptions.", source_ids: [w1] },
+      { role: "for_whom", text: "Creators use Ghost publishing to run newsletters and grow membership revenue.", source_ids: [w1] },
+    ] };
+  } else if (tool === "classify_company") {
     input = prompt.includes('"Ghia"')
       ? { is_tech_company: false, confidence: "high", reason: "a non-alcoholic beverage brand" }
       : { is_tech_company: true, confidence: "high", reason: "publishing software" };

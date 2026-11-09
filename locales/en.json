@@ -1022,7 +1022,16 @@
       "quantumComputing": "Quantum Computing",
       "robotics": "Robotics",
       "spaceTech": "Space Tech",
-      "semiconductors": "Semiconductors"
+      "semiconductors": "Semiconductors",
+      "industrialManufacturing": "Industrial & Manufacturing",
+      "realEstate": "Real Estate",
+      "securityTesting": "Security Testing",
+      "adTech": "AdTech",
+      "industrialGeneral": "Industrial / General",
+      "agTech": "AgTech",
+      "propTech": "PropTech",
+      "salesTech": "Sales Tech",
+      "travelTech": "Travel Tech"
     }
   },
   "profile": {

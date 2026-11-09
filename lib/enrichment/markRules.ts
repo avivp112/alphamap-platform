@@ -17,8 +17,10 @@ import { isLinkList, quoteIsAboutTheCompany, quoteLinksTheTwo } from "./competit
 import { isLegalPageUrl } from "./headquarters";
 import { looksLikeCompanyName, isUserContentUrl } from "./competitorEvidence";
 import { isExplainer, headlineIncomplete } from "./newsRelevance";
-import { PARENT_BY_SUB_SECTOR } from "../../src/lib/taxonomy";
+import { PARENT_BY_SUB_SECTOR, SECTOR_TAXONOMY } from "../../src/lib/taxonomy";
 import type { Mark } from "./fieldReview";
+import { isNonDescriptivePage } from "./pageKind";
+import { figureIsBiographical } from "./headcountSources";
 
 export interface MarkContext {
   /** The company's own domain ("dlight.com"), when known. Without it an unlisted source is not judged. */
@@ -115,12 +117,18 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
       // A tag no sentence of an allowed page supports, or "supported" by an error page (review 6, 2026-11-08).
       const q = ctx.quote ?? "";
       if (/no sentence found|Target URL returned error/i.test(q)) return out("a tag no sentence supports");
+      if (!mark.source_url?.trim()) return out("a tag with no source");
+      if (isNonDescriptivePage(mark.source_url)) return out("a policy, terms, glossary, help or careers page supports no tag");
       return keep;
     }
     case "sector": {
       // The sector is the parent of its sub-sector (EngFlow's "DeepTech › DevOps / CI-CD").
       const [parent, sub] = mark.value.split("›").map((x) => x.trim());
+      // No source, no sector (review 7: "—" was written five times).
+      if (!mark.source_url?.trim()) return out("a sector with no source");
+      if (isNonDescriptivePage(mark.source_url)) return out("a policy, terms, glossary, help or careers page supports no sector");
       const real = sub ? PARENT_BY_SUB_SECTOR[sub] : undefined;
+      if (sub && !real && sub in SECTOR_TAXONOMY) return out("the sub-sector is the name of a sector");
       return real && real !== parent ? out("sector and sub-sector disagree") : keep;
     }
     case "news": {
@@ -165,6 +173,7 @@ function judgeHeadcount(mark: Mark, ctx: MarkContext): MarkJudgment {
   const q = (ctx.quote ?? "").replace(/(\d),(\d)/g, "$1$2");
   if (q) {
     if (!new RegExp(`(^|[^\\d])${num.replace(/,/g, "")}([^\\d]|$)`).test(q)) return out("the number is not in the quote");
+    if (figureIsBiographical(ctx.quote ?? "", type === "site_stated")) return out("the figure is someone's career, not the company's");
     const w = firstWordOf(mark.company);
     if (!(w && q.toLowerCase().includes(w)) && !/\b(?:we|our|us)\b|\bthe\b[^.]{0,40}\b(?:company|startup|firm|team|business)\b/i.test(q)) return out("the quote is not about the company");
     // A milestone or a dated past count is not the size on the day of the copy.

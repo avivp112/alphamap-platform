@@ -311,14 +311,31 @@ describe("enriched_v2_at — the Private Market stamp — only when the descript
   });
   it("description open and written: the company is stamped", async () => {
     // The collection's own description builder wrote none on the fake web (no verified "what" and "for whom"): one is given.
-    const s = stored as unknown as { profile: { profile: { description?: string } } };
+    const s = stored as unknown as { profile: { profile: { description?: string; description_sentences?: unknown } }; allSources: Array<{ source_id: string; url: string }> };
     const keep = s.profile.profile.description;
-    s.profile.profile.description = "Ghost provides an open source publishing platform for newsletters and paid memberships.";
+    const keepSentences = s.profile.profile.description_sentences;
+    const site = s.allSources.find((x) => x.url.includes("ghost.org"))!;
+    const text = "Ghost provides an open source publishing platform for newsletters and paid memberships.";
+    s.profile.profile.description = text;
+    // A description comes with the sentences and sources it was built from; the sector and the industry rest on them.
+    s.profile.profile.description_sentences = [{ role: "what", text, source_ids: [site.source_id], quote: text }];
     try {
       const r = await promoteWith(["description", "news"]);
       expect(r.startupKeys).toContain("description");
       expect(r.startupKeys).toContain("enriched_v2_at");
-    } finally { s.profile.profile.description = keep; }
+    } finally { s.profile.profile.description = keep; s.profile.profile.description_sentences = keepSentences; }
+  });
+  it("a description with no source on file is not written (no source, no value)", async () => {
+    const s = stored as unknown as { profile: { profile: { description?: string; description_sentences?: unknown } } };
+    const keep = s.profile.profile.description;
+    const keepSentences = s.profile.profile.description_sentences;
+    s.profile.profile.description = "Ghost provides an open source publishing platform for newsletters and paid memberships.";
+    s.profile.profile.description_sentences = undefined;
+    try {
+      const r = await promoteWith(["description"]);
+      expect(r.startupKeys).not.toContain("description");
+      expect(r.startupKeys).not.toContain("enriched_v2_at");
+    } finally { s.profile.profile.description = keep; s.profile.profile.description_sentences = keepSentences; }
   });
   it("description open but nothing written for it: not stamped", async () => {
     const s = stored as unknown as { profile: { profile: { description?: string } } };
