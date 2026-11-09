@@ -28,7 +28,7 @@ import { extractMarket, normalizeUrlForMatch } from "./extractMarket.ts";
 import { normalizeForMatch } from "./evidence.ts";
 import { competitorTierClaims, type TieredClaim } from "./competitorTiers.ts";
 import { websiteLooksLikeAnotherCompany } from "./websiteIdentity.ts";
-import { newsProblem, ownSiteNewsOk, dateFromUrl, dateFromHtml, dedupeNewsEvents } from "./newsRelevance.ts";
+import { judgeNews, finishNews } from "./newsGate.ts";
 import { reconcileSector } from "./sectors.ts";
 import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
 import { buildDescriptionRequest, descriptionSources, processDescription } from "./descriptionBuilder.ts";
@@ -1336,30 +1336,23 @@ export async function collectCompany(
       companyName: row.name,
     });
     const keptNews: typeof market.news = [];
+    const newsDeps = {
+      companyName: row.name,
+      content: (u: string) => sourceByUrl(u)?.content,
+      isOwnSite: (u: string) => classifySourceType(u, domain) === "company_site" || sourceByUrl(u)?.source_type === "company_site",
+      fetchHtml: async (u: string) => (ctx.update ? null : await fetchPageHtml(u, searchState)),
+    };
     let hintSearches = 0;
     for (const raw of market.news) {
       const n = { ...raw, url: unwrapRedirect(raw.url) };
       const standing = newsStanding(n.url, undefined, n.title);
       if (standing.kind === "allowed") {
-        // Not a guide, and not an article about another company of the same name (newsRelevance.ts).
+        // newsGate.ts decides (guides, passing mentions, other companies' news, own-site pages, cut headlines, dates).
         const about = [profile.profile.description, profile.profile.value_proposition, profile.profile.industry, row.description].filter(Boolean).join(" ");
-        const problem = newsProblem({ title: n.title, content: sourceByUrl(n.url)?.content }, row.name, about);
-        if (problem) { console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — ${problem === "explainer" ? "a guide, a roundup or an explainer, not news" : problem === "not_about_the_company" ? "its headline and opening do not name the company (a passing mention)" : "about another company of the same name (a different product)"}: ${n.url}`); bump(stats.droppedByReason, `news_${problem}`); continue; }
-        // The company's own site: its news / press pages, or a blog post that names the company in its headline.
-        if (standing.kind === "allowed" && (classifySourceType(n.url, domain) === "company_site" || sourceByUrl(n.url)?.source_type === "company_site") && !ownSiteNewsOk(n.url, n.title, row.name)) {
-          console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — a page of the company's own site outside its news / press pages, not naming the company: ${n.url}`);
-          bump(stats.droppedByReason, "news_own_site_not_news"); continue;
-        }
-        if (/\.\.\.$|…$/.test(n.title.trim())) { console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — the headline is cut off: ${n.url}`); bump(stats.droppedByReason, "news_title_cut"); continue; }
-        // A date before a verdict (owner, 2026-11-09): the address, then the page's own code (article:published_time,
-        // datePublished, <time datetime>). Only when neither has one is there no date.
-        if (!n.published_date) {
-          const fromUrl = dateFromUrl(n.url);
-          const html = fromUrl || ctx.update ? null : await fetchPageHtml(n.url, searchState);
-          const found = fromUrl ?? (html ? dateFromHtml(html) : null);
-          if (found) { n.published_date = found; console.log(`    📅  news "${n.title.slice(0, 50)}" dated ${found} from ${fromUrl ? "its address" : "the page's code"}`); bump(stats.droppedByReason, "news_date_recovered"); }
-        }
-        keptNews.push(n); continue;
+        const v = await judgeNews(n, { ...newsDeps, about });
+        if (!v.keep) { console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — ${v.message}: ${n.url}`); bump(stats.droppedByReason, v.reason); continue; }
+        if (v.dated) { console.log(`    📅  news "${n.title.slice(0, 50)}" dated ${v.item.published_date} from ${v.dated === "address" ? "its address" : "the page's code"}`); bump(stats.droppedByReason, "news_date_recovered"); }
+        keptNews.push(v.item as typeof n); continue;
       }
       // A hint-only site (owner, 2026-11-03): its headline is searched for in an allowed source.
       if (standing.kind === "denied" && standing.why === "hint_only" && hintSearches < 2 && !ctx.update) {
@@ -1374,16 +1367,10 @@ export async function collectCompany(
       }
       drop(`news "${n.title.slice(0, 60)}"`, standing.kind === "denied" && standing.why === "hint_only" ? "news_hint_not_confirmed" : "news_source_not_listed", n.url);
     }
-    // One row per event (the same amount or acquisition within 7 days, or either undated), then no date, no news.
-    const ownSiteUrl = (u: string) => classifySourceType(u, domain) === "company_site" || sourceByUrl(u)?.source_type === "company_site";
-    const distinct = dedupeNewsEvents(keptNews, ownSiteUrl);
-    for (const x of keptNews) if (!distinct.includes(x)) { console.log(`    🚫  news "${x.title.slice(0, 60)}" not written — the same event as another item: ${x.url}`); bump(stats.droppedByReason, "news_same_event"); }
-    market.news = distinct.filter((x) => {
-      if (x.published_date) return true;
-      console.log(`    🚫  news "${x.title.slice(0, 60)}" not written — no date in its address or its page: ${x.url}`);
-      bump(stats.droppedByReason, "news_no_date");
-      return false;
-    });
+    // One row per event, then no date, no news (newsGate.ts).
+    const fin = finishNews(keptNews, newsDeps);
+    for (const x of fin.dropped) { console.log(`    🚫  news "${x.item.title.slice(0, 60)}" not written — ${x.message}: ${x.item.url}`); bump(stats.droppedByReason, x.reason); }
+    market.news = fin.kept;
   }
 
   let registerLegalName: string | null = null;

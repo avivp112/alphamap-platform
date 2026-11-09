@@ -128,13 +128,14 @@ const dayMs = 86_400_000;
  * One row per event (owner, 2026-11-09): the same amount, or the same acquisition, within 7 days — or when either has no
  * date — is one report. The one kept is dated over undated, then an outlet over the company's own site, then the first.
  */
-export function dedupeNewsEvents<T extends { title: string; url: string; published_date?: string | null }>(items: T[], isOwnSite: (url: string) => boolean): T[] {
+export function dedupeNewsEvents<T extends { title: string; url: string; published_date?: string | null }>(items: T[], isOwnSite: (url: string) => boolean, lead: (item: T) => string = () => ""): T[] {
   const kept: T[] = [];
   const rank = (x: T) => (x.published_date ? 0 : 2) + (isOwnSite(x.url) ? 1 : 0);
   for (const it of items) {
-    const keys = eventKeys(it.title);
+    // The headline and the opening of the article: Bloomberg's "HeyGen Valued at $500 Million" is the $60M Series A.
+    const keys = eventKeys(`${it.title} ${lead(it)}`);
     const i = kept.findIndex((k) => {
-      const kk = eventKeys(k.title);
+      const kk = eventKeys(`${k.title} ${lead(k)}`);
       if (![...keys].some((x) => kk.has(x))) return false;
       if (!it.published_date || !k.published_date) return true;
       return Math.abs(Date.parse(it.published_date) - Date.parse(k.published_date)) <= 7 * dayMs;
