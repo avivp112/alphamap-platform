@@ -17,7 +17,7 @@ import { isLinkList, quoteIsAboutTheCompany, quoteLinksTheTwo } from "./competit
 import { isLegalPageUrl } from "./headquarters";
 import { looksLikeCompanyName, isUserContentUrl } from "./competitorEvidence";
 import { isExplainer, headlineIncomplete } from "./newsRelevance";
-import { PARENT_BY_SUB_SECTOR } from "../../src/lib/taxonomy";
+import { PARENT_BY_SUB_SECTOR, SECTOR_TAXONOMY } from "../../src/lib/taxonomy";
 import type { Mark } from "./fieldReview";
 
 export interface MarkContext {
@@ -120,7 +120,10 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
     case "sector": {
       // The sector is the parent of its sub-sector (EngFlow's "DeepTech › DevOps / CI-CD").
       const [parent, sub] = mark.value.split("›").map((x) => x.trim());
+      // No source, no sector (review 7: "—" was written five times).
+      if (!mark.source_url?.trim()) return out("a sector with no source");
       const real = sub ? PARENT_BY_SUB_SECTOR[sub] : undefined;
+      if (sub && !real && sub in SECTOR_TAXONOMY) return out("the sub-sector is the name of a sector");
       return real && real !== parent ? out("sector and sub-sector disagree") : keep;
     }
     case "news": {

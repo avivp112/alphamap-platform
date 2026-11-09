@@ -9,10 +9,17 @@ export interface SectorFields { sector_name?: string; sub_sector_name?: string; 
 
 const isGeneral = (sub: string | undefined) => !sub || /\/\s*general$/i.test(sub.trim());
 
-export function reconcileSector<T extends SectorFields>(p: T, parentOf: Record<string, string> | undefined): { fields: T; changes: string[] } {
+export function reconcileSector<T extends SectorFields>(p: T, parentOf: Record<string, string> | undefined, parentNames: string[] = []): { fields: T; changes: string[] } {
   const out = { ...p, sub_sector_names: p.sub_sector_names ? [...p.sub_sector_names] : undefined };
   const changes: string[] = [];
   if (!parentOf) return { fields: out, changes };
+  // 0. A sub-sector that is the name of a top-level sector ("Health & Life Sciences › Cybersecurity", review 7, x67.40)
+  //    is that sector: the pair agrees with itself only if the sector is the one the sub-sector names.
+  if (out.sub_sector_name && !parentOf[out.sub_sector_name] && parentNames.includes(out.sub_sector_name)) {
+    if (out.sector_name !== out.sub_sector_name) changes.push(`sector ${out.sector_name ?? "(none)"} → ${out.sub_sector_name} (named as the sub-sector)`);
+    out.sector_name = out.sub_sector_name;
+    out.sub_sector_name = undefined;
+  }
   // 2. A specific sub-sector the company also names beats a general one (and any DeepTech without a specific one).
   const generalOrNone = isGeneral(out.sub_sector_name);
   if (generalOrNone && (out.sector_name === "DeepTech" || out.sub_sector_name)) {

@@ -20,7 +20,12 @@ describe("review 6 (2026-11-08): marks the current rules no longer produce", () 
   it("tags no sentence supports; a sector at odds with its sub-sector (6.34, 6.35, 6.30)", () => {
     expect(judge6(m6("tags", "BrowserStack", "Developer Tools, Cybersecurity / General"), { quote: "Developer Tools: BrowserStack provides … | Cybersecurity / General: no sentence found" }).produced).toBe(false);
     expect(judge6(m6("sector", "EngFlow", "DeepTech › DevOps / CI-CD")).produced).toBe(false);
-    expect(judge6(m6("sector", "BrowserStack", "SaaS & Dev Tools › Developer Tools")).produced).toBe(true);
+    expect(judge6(m6("sector", "BrowserStack", "SaaS & Dev Tools › Developer Tools", "https://www.browserstack.com/about")).produced).toBe(true);
+  });
+  it("review 7 (2026-11-09): a sector with no source is not written; a sub-sector that is a sector's name disagrees (x67.33, x67.40)", () => {
+    expect(judge6(m6("sector", "Acme", "SaaS & Dev Tools › Developer Tools")).produced).toBe(false);
+    expect(judge6(m6("sector", "Acme", "Health & Life Sciences › Cybersecurity", "https://acme.com/about")).produced).toBe(false);
+    expect(judge6(m6("sector", "Acme", "Real Estate › PropTech", "https://acme.com/about")).produced).toBe(true);
   });
   it("competitors that are not companies; a guide that is not news (6.59, 6.61, 6.73)", () => {
     expect(judge6(m6("competitor_declared", "Scylos", "EDR / AV", "https://www.scylos.com/compare/edr")).produced).toBe(false);

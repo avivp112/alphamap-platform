@@ -30,6 +30,7 @@ import { competitorTierClaims, type TieredClaim } from "./competitorTiers.ts";
 import { websiteLooksLikeAnotherCompany } from "./websiteIdentity.ts";
 import { judgeNews, finishNews } from "./newsGate.ts";
 import { reconcileSector } from "./sectors.ts";
+import { siteBelongsToAnotherCompany } from "./siteOwner.ts";
 import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
 import { buildDescriptionRequest, descriptionSources, processDescription } from "./descriptionBuilder.ts";
 import { buildBackgroundRequest, processBackgroundResponse, backgroundSearchQuery } from "./founderBackground.ts";
@@ -364,6 +365,12 @@ export async function collectCompany(
   if (effectiveWebsite && !ctx.update && websitePages.length === 0) {
     console.log(`    🛠️   No page of ${effectiveWebsite} could be read — listed as a website to fix.`);
     ctx.onWebsiteIssue?.("unreadable", `No page of ${effectiveWebsite} could be read (Jina Reader and Serper scrape both failed).`);
+  }
+  // A site that belongs to another company now (acquired, rebranded): nothing is described from it (owner, 2026-11-09).
+  const siteOwnerIssue = ctx.update ? null : siteBelongsToAnotherCompany(row.name, effectiveWebsite, websitePages);
+  if (siteOwnerIssue) {
+    console.log(`    🛠️   ${siteOwnerIssue} — no description or sector is written; listed for review.`);
+    ctx.onWebsiteIssue?.("content_mismatch", siteOwnerIssue);
   }
   if (ctx.techGate && !ctx.update) {
     // The verdict is cached with the search results, so seeing the same
@@ -1460,7 +1467,7 @@ export async function collectCompany(
   // here, so a check, a deepen and every run apply it.
   // The sector agrees with its sub-sector: the most specific category wins, DeepTech only without one (sectors.ts).
   {
-    const rec = reconcileSector(profile.profile, taxonomy.parentOf);
+    const rec = reconcileSector(profile.profile, taxonomy.parentOf, taxonomy.parentNames);
     if (rec.changes.length) {
       Object.assign(profile.profile, { sector_name: rec.fields.sector_name, sub_sector_name: rec.fields.sub_sector_name, sub_sector_names: rec.fields.sub_sector_names });
       for (const c of rec.changes) { console.log(`    🧭  Sector reconciled — ${c}`); bump(stats.droppedByReason, "sector_reconciled"); }
@@ -1468,7 +1475,11 @@ export async function collectCompany(
   }
   // v2's own description (descriptionBuilder.ts, owner 2026-11-08): replaces the extraction's free text; without a
   // verified "what" and "for whom" there is none. Written later only for a company with no description on file.
-  if (componentOn("description_v2") && !ctx.update) {
+  if (componentOn("description_v2") && !ctx.update && siteOwnerIssue) {
+    profile.profile.description = undefined;
+    profile.profile.description_source_ids = undefined;
+    bump(stats.droppedByReason, "description_company_acquired_or_rebranded");
+  } else if (componentOn("description_v2") && !ctx.update) {
     const before = profile.profile.description;
     profile.profile.description = undefined;
     profile.profile.description_source_ids = undefined;
@@ -1494,6 +1505,14 @@ export async function collectCompany(
     } catch (e) {
       console.log(`    ⚠️  description skipped: ${(e as Error).message}`);
     }
+  }
+  // A sector needs the verified description and its sources behind it (owner, 2026-11-09, review 7): a sector with no
+  // source, or one taken from a sentence about the CEO, is not written.
+  if (componentOn("description_v2") && !ctx.update && profile.profile.sector_name && !(profile.profile.description_sentences?.length)) {
+    console.log(`    🧭  Sector "${profile.profile.sector_name}" not written — no verified description to derive it from.`);
+    bump(stats.droppedByReason, "sector_without_verified_description");
+    profile.profile.sector_name = undefined;
+    profile.profile.sub_sector_name = undefined;
   }
   const verifiedFacts = collectVerifiedFacts(profile, funding);
   const narratives = checkNarratives({

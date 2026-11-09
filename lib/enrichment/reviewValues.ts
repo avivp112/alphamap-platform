@@ -48,10 +48,12 @@ export function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V
     add("description", pf.description, row.description ? `v1: ${row.description}` : "", src(first?.source_ids?.[0] ?? allowedId(pf.description_source_ids)),
       sentences.map((x, i) => `(${i + 1}) [${x.source_ids.join(",")}] ${x.quote}`).join(" | "));
   }
-  if (pf.sector_name && !row.sector_id) {
+  // The sector is derived from the verified description and the sources behind it (owner, 2026-11-09, review 7): no
+  // description, no source, no sector; the quote is that description, not a sentence nearest some keyword.
+  if (pf.sector_name && !row.sector_id && pf.description_sentences?.length) {
     const label = [pf.sector_name, pf.sub_sector_name].filter(Boolean).join(" › ");
-    const hit = bestQuote(sitePages, `${pf.sector_name} ${pf.sub_sector_name ?? ""} ${pf.industry ?? ""}`, 1);
-    add("sector", label, row.sector_id, src(hit?.id), hit?.quote ?? "");
+    const first = pf.description_sentences[0];
+    add("sector", label, row.sector_id, src(first.source_ids[0]), pf.description_sentences.map((x) => x.text).join(" "));
   }
   // One value per company for the tags: a single wrong tag makes the whole list not correct (owner, 2026-11-08).
   const tagList = [...new Set([...(pf.sub_sector_name ? [pf.sub_sector_name] : []), ...(pf.sub_sector_names ?? [])])];

@@ -26,14 +26,16 @@ import type { RoundType } from "./supabase";
 export const SECTOR_TAXONOMY: Record<string, string[]> = {
   "AI & ML":               ["AI / General", "LLMs", "Generative AI", "Computer Vision", "NLP / Speech", "AI Agents", "MLOps", "AI Infrastructure"],
   "Fintech":               ["Fintech / General", "Payments", "Banking / Neobanking", "Insurance / Insurtech", "Lending", "Crypto / Web3", "WealthTech", "RegTech"],
-  "Cybersecurity":         ["Cybersecurity / General", "Identity & Access", "Endpoint Security", "Cloud Security", "Threat Intelligence", "Zero Trust", "Data Security"],
+  "Cybersecurity":         ["Cybersecurity / General", "Identity & Access", "Endpoint Security", "Cloud Security", "Threat Intelligence", "Zero Trust", "Data Security", "Security Testing"],
   "SaaS & Dev Tools":      ["SaaS / General", "Developer Tools", "DevOps / CI-CD", "API Platforms", "Low-Code / No-Code", "Data Infrastructure"],
   "E-commerce & Retail":   ["E-commerce / General", "D2C", "Marketplaces", "Logistics / Supply Chain", "Retail Tech"],
   "Health & Life Sciences": ["Digital Health", "MedTech", "Biotech / Genomics", "Mental Health", "Healthcare SaaS"],
   "Climate & Energy":      ["CleanTech", "EnergyTech", "Carbon Markets", "Sustainability"],
   "Enterprise Software":   ["Enterprise / General", "CRM", "HR Tech", "ERP / Finance", "Analytics / BI"],
-  "Consumer & Media":      ["Consumer / General", "Social Media", "Gaming", "EdTech", "Travel & Hospitality", "Media / Content"],
+  "Consumer & Media":      ["Consumer / General", "Social Media", "Gaming", "EdTech", "Travel & Hospitality", "Media / Content", "AdTech"],
   "DeepTech":              ["DeepTech / General", "Quantum Computing", "Robotics", "Space Tech", "Semiconductors"],
+  "Industrial & Manufacturing": ["Industrial / General", "AgTech"],
+  "Real Estate":           ["PropTech"],
   "Uncategorized":         [],
 };
 
@@ -100,7 +102,14 @@ const SECTOR_SLUGS: Record<string, string> = {
   "Enterprise Software": "enterpriseSoftware",
   "Consumer & Media": "consumerMedia",
   "DeepTech": "deepTech",
+  "Industrial & Manufacturing": "industrialManufacturing",
+  "Real Estate": "realEstate",
   "Uncategorized": "uncategorized",
+  "Security Testing": "securityTesting",
+  "AdTech": "adTech",
+  "Industrial / General": "industrialGeneral",
+  "AgTech": "agTech",
+  "PropTech": "propTech",
   // AI & ML
   "AI / General": "aiGeneral",
   "LLMs": "llms",

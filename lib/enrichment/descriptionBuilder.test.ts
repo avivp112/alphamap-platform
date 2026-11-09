@@ -68,3 +68,17 @@ describe("review 7 (7.25 AYOXXA, 2026-11-09): superlatives, and a source older t
     expect((dSources(all, () => true) as Array<{ source_id: string }>).map((x) => x.source_id)).toEqual(["S2", "S1"]);
   });
 });
+
+import { fragmentProblem } from "./descriptionBuilder";
+describe("a description sentence is a sentence (review 7, x67.26 DealHub)", () => {
+  it("passes complete sentences", () => {
+    for (const t of ["Customers include automotive and electronics manufacturers in Europe.", "Wayve develops embodied AI software for autonomous driving.", "DealHub is a quote-to-revenue platform used by sales teams at software companies.", "The platform lets finance teams automate invoice approvals."]) expect(fragmentProblem(t), t).toBeNull();
+  });
+  it("drops a title, a clause, a lowercase cut, a dangling end", () => {
+    expect(fragmentProblem("Quote-to-revenue and CPQ for sales teams.")).toBe("fragment_no_verb");
+    expect(fragmentProblem("and sales proposals in one workflow.")).toBe("fragment_starts_lowercase");
+    expect(fragmentProblem("DealHub CPQ.")).toBe("fragment_too_short");
+    expect(fragmentProblem("DealHub is a revenue platform built for")).toBe("fragment_no_end");
+    expect(fragmentProblem("DealHub is a revenue platform built for the.")).toBe("fragment_dangling_word");
+  });
+});
