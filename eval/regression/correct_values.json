@@ -1,19 +1,207 @@
 {
   "_about": "Every value the owner marked CORRECT in a wet batch is kept here and must keep being produced (lib/enrichment/regression_correct_values.test.ts). scripts/mark_batch.ts appends to it; never delete an entry to make a test pass.",
   "news": [
-    { "batch": "batch_1", "id": "w1.2", "company": "Appcharge", "date": "2025-08-13", "title": "Appcharge Raises $58 Million in Series B Round Led by IVP to Scale Top Direct-to-Consumer Platform for Mobile Games", "url": "https://www.businesswire.com/news/home/20250813210482/en/Appcharge-Raises-%2458-Million-in-Series-B-Round-Led-by-IVP-to-Scale-Top-Direct-to-Consumer-Platform-for-Mobile-Games", "own_site": false },
-    { "batch": "batch_1", "id": "w1.4", "company": "Datatruck", "date": "2026-01-28", "title": "Datatruck raises $12M to build the AI-native operating system for long-haul", "url": "https://www.freightwaves.com/news/datatruck-raises-12m-to-build-the-ai-native-operating-system-for-long-haul", "own_site": false },
-    { "batch": "batch_1", "id": "w1.5", "company": "Empxtrack", "date": "2024-09-16", "title": "Thriveni Expands Partnership with Empxtrack", "url": "https://empxtrack.com/news/thriveni-expands-partnership-empxtrack/", "own_site": true },
-    { "batch": "batch_1", "id": "w1.6", "company": "Empxtrack", "date": "2022-02-10", "title": "Empxtrack Reveals HR Trends 2022", "url": "https://empxtrack.com/news/empxtrack-reveals-hr-trends-2022/", "own_site": true },
-    { "batch": "batch_1", "id": "w1.7", "company": "Empxtrack", "date": "2013-04-11", "title": "Empxtrack Inc. Automates HR Processes In The Middle East", "url": "https://empxtrack.com/news/empxtrack-automates-hr-processes-in-the-middle-east/", "own_site": true },
-    { "batch": "batch_1", "id": "w1.8", "company": "Empxtrack", "date": "2010-05-05", "title": "EmpXtrack Continues To Grow In The US Market", "url": "https://www.newswire.com/news/empxtrack-continues-to-grow-in-the-us-market-8217", "own_site": false },
-    { "batch": "batch_1", "id": "w1.9", "company": "HeyGen", "date": "2026-10-08", "title": "Ryan Serhant Partners with HeyGen to Turn His Own Face and Voice Into a Daily Content Engine", "url": "https://www.prnewswire.com/news-releases/ryan-serhant-partners-with-heygen-to-turn-his-own-face-and-voice-into-a-daily-content-engine-301000000.html", "own_site": false },
-    { "batch": "batch_1", "id": "w1.10", "company": "HeyGen", "date": "2026-06-25", "title": "HeyGen Surpasses $200M ARR as AI Video Adoption Accelerates", "url": "https://www.heygen.com/blog/heygen-surpasses-200m-arr", "own_site": true },
-    { "batch": "batch_1", "id": "w1.11", "company": "HeyGen", "date": "2025-06-03", "title": "HeyGen Launches AI Studio, a Next-Generation AI Video Editor", "url": "https://www.businesswire.com/news/home/20250603867425/en/HeyGen-Launches-AI-Studio-a-Next-Generation-AI-Video-Editor", "own_site": false },
-    { "batch": "batch_1", "id": "w1.12", "company": "HeyGen", "date": "2025-05-20", "title": "Zenarate and HeyGen Deepen Strategic Partnership to Bring Lifelike AI Avatars to Enterprise Simulation and Coaching", "url": "https://www.prnewswire.com/news-releases/zenarate-and-heygen-deepen-strategic-partnership-to-bring-lifelike-ai-avatars-to-enterprise-simulation-and-coaching-302000000.html", "own_site": false },
-    { "batch": "batch_1", "id": "w1.13", "company": "HeyGen", "date": "2024-06-20", "title": "AI Video Startup HeyGen Valued at $500 Million in Funding Round", "url": "https://www.bloomberg.com/news/articles/2024-06-20/ai-video-startup-heygen-valued-at-500-million-in-funding-round", "own_site": false }
+    {
+      "batch": "batch_1",
+      "id": "w1.2",
+      "company": "Appcharge",
+      "date": "2025-08-13",
+      "title": "Appcharge Raises $58 Million in Series B Round Led by IVP to Scale Top Direct-to-Consumer Platform for Mobile Games",
+      "url": "https://www.businesswire.com/news/home/20250813210482/en/Appcharge-Raises-%2458-Million-in-Series-B-Round-Led-by-IVP-to-Scale-Top-Direct-to-Consumer-Platform-for-Mobile-Games",
+      "own_site": false
+    },
+    {
+      "batch": "batch_1",
+      "id": "w1.4",
+      "company": "Datatruck",
+      "date": "2026-01-28",
+      "title": "Datatruck raises $12M to build the AI-native operating system for long-haul",
+      "url": "https://www.freightwaves.com/news/datatruck-raises-12m-to-build-the-ai-native-operating-system-for-long-haul",
+      "own_site": false
+    },
+    {
+      "batch": "batch_1",
+      "id": "w1.5",
+      "company": "Empxtrack",
+      "date": "2024-09-16",
+      "title": "Thriveni Expands Partnership with Empxtrack",
+      "url": "https://empxtrack.com/news/thriveni-expands-partnership-empxtrack/",
+      "own_site": true
+    },
+    {
+      "batch": "batch_1",
+      "id": "w1.6",
+      "company": "Empxtrack",
+      "date": "2022-02-10",
+      "title": "Empxtrack Reveals HR Trends 2022",
+      "url": "https://empxtrack.com/news/empxtrack-reveals-hr-trends-2022/",
+      "own_site": true
+    },
+    {
+      "batch": "batch_1",
+      "id": "w1.7",
+      "company": "Empxtrack",
+      "date": "2013-04-11",
+      "title": "Empxtrack Inc. Automates HR Processes In The Middle East",
+      "url": "https://empxtrack.com/news/empxtrack-automates-hr-processes-in-the-middle-east/",
+      "own_site": true
+    },
+    {
+      "batch": "batch_1",
+      "id": "w1.8",
+      "company": "Empxtrack",
+      "date": "2010-05-05",
+      "title": "EmpXtrack Continues To Grow In The US Market",
+      "url": "https://www.newswire.com/news/empxtrack-continues-to-grow-in-the-us-market-8217",
+      "own_site": false
+    },
+    {
+      "batch": "batch_1",
+      "id": "w1.9",
+      "company": "HeyGen",
+      "date": "2026-10-08",
+      "title": "Ryan Serhant Partners with HeyGen to Turn His Own Face and Voice Into a Daily Content Engine",
+      "url": "https://www.prnewswire.com/news-releases/ryan-serhant-partners-with-heygen-to-turn-his-own-face-and-voice-into-a-daily-content-engine-301000000.html",
+      "own_site": false
+    },
+    {
+      "batch": "batch_1",
+      "id": "w1.10",
+      "company": "HeyGen",
+      "date": "2026-06-25",
+      "title": "HeyGen Surpasses $200M ARR as AI Video Adoption Accelerates",
+      "url": "https://www.heygen.com/blog/heygen-surpasses-200m-arr",
+      "own_site": true
+    },
+    {
+      "batch": "batch_1",
+      "id": "w1.11",
+      "company": "HeyGen",
+      "date": "2025-06-03",
+      "title": "HeyGen Launches AI Studio, a Next-Generation AI Video Editor",
+      "url": "https://www.businesswire.com/news/home/20250603867425/en/HeyGen-Launches-AI-Studio-a-Next-Generation-AI-Video-Editor",
+      "own_site": false
+    },
+    {
+      "batch": "batch_1",
+      "id": "w1.12",
+      "company": "HeyGen",
+      "date": "2025-05-20",
+      "title": "Zenarate and HeyGen Deepen Strategic Partnership to Bring Lifelike AI Avatars to Enterprise Simulation and Coaching",
+      "url": "https://www.prnewswire.com/news-releases/zenarate-and-heygen-deepen-strategic-partnership-to-bring-lifelike-ai-avatars-to-enterprise-simulation-and-coaching-302000000.html",
+      "own_site": false
+    },
+    {
+      "batch": "batch_1",
+      "id": "w1.13",
+      "company": "HeyGen",
+      "date": "2024-06-20",
+      "title": "AI Video Startup HeyGen Valued at $500 Million in Funding Round",
+      "url": "https://www.bloomberg.com/news/articles/2024-06-20/ai-video-startup-heygen-valued-at-500-million-in-funding-round",
+      "own_site": false
+    },
+    {
+      "batch": "batch_2",
+      "id": "w2.2",
+      "company": "Appcharge",
+      "date": "2024-11-25",
+      "title": "Appcharge raises $26M to help gaming apps cut out Apple and Google from virtual goods revenues",
+      "url": "https://techcrunch.com/2024/11/25/appcharge-raises-26m-to-help-gaming-apps-cut-out-apple-and-google-from-virtual-goods-revenues/",
+      "own_site": false
+    },
+    {
+      "batch": "batch_2",
+      "id": "w2.3",
+      "company": "Datatruck",
+      "date": "2026-10-21",
+      "title": "Driving Profitability and Streamlining Fleet Operations: Datatruck Recognized as a Core Transportation Management Provider by Nucleus Research",
+      "url": "https://www.globenewswire.com/news-release/2026/10/21/3385717/0/en/driving-profitability-and-streamlining-fleet-operations-datatruck-recognized-as-a-core-transportation-management-provider-by-nucleus-research.html",
+      "own_site": false
+    },
+    {
+      "batch": "batch_2",
+      "id": "w2.4",
+      "company": "Datatruck",
+      "date": "2026-01-28",
+      "title": "Datatruck Raises $12M Led by Avenue Growth Partners to Build the AI-Native Operating System for Long-Haul Trucking",
+      "url": "https://www.prnewswire.com/news-releases/datatruck-raises-12m-led-by-avenue-growth-partners-to-build-the-ai-native-operating-system-for-long-haul-trucking-302672111.html",
+      "own_site": false
+    },
+    {
+      "batch": "batch_2",
+      "id": "w2.7",
+      "company": "Empxtrack",
+      "date": "2018-04-05",
+      "title": "Tushar Bhatia, Chief Architect & CEO Empxtrack, to Discuss ‘4 Pages, 4 Scrolls’ New HR Software Model with U.S. Organizations",
+      "url": "https://empxtrack.com/news/discuss-hr-software-with-united-states-organizations/",
+      "own_site": true
+    },
+    {
+      "batch": "batch_2",
+      "id": "w2.8",
+      "company": "Empxtrack",
+      "date": "2014-05-12",
+      "title": "Organizations Select Empxtrack HR Software To Drive Their Businesses Into The Future",
+      "url": "https://empxtrack.com/news/organizations-select-empxtrack-hr-software-to-drive-their-businesses-into-the-future/",
+      "own_site": true
+    },
+    {
+      "batch": "batch_2",
+      "id": "w2.10",
+      "company": "Empxtrack",
+      "date": "2013-03-12",
+      "title": "Founder of Saigun Technologies, Tushar Bhatia, to Visit USA to Present Empxtrack HR Software",
+      "url": "https://empxtrack.com/news/founder-saigun-technologies-invited-by-usa-to-present-empxtrack-hr-software/",
+      "own_site": true
+    },
+    {
+      "batch": "batch_2",
+      "id": "w2.12",
+      "company": "HeyGen",
+      "date": "2026-10-08",
+      "title": "Ryan Serhant Partners with HeyGen to Turn His Own Face and Voice Into a Daily Content Engine",
+      "url": "https://www.prnewswire.com/news-releases/ryan-serhant-partners-with-heygen-to-turn-his-own-face-and-voice-into-a-daily-content-engine-302901785.html",
+      "own_site": false
+    },
+    {
+      "batch": "batch_2",
+      "id": "w2.13",
+      "company": "HeyGen",
+      "date": "2026-06-25",
+      "title": "HeyGen Doubles to $200M ARR in Eight Months on the Rise of Identity-First AI Video",
+      "url": "https://www.businesswire.com/news/home/20260625305891/en/HeyGen-Doubles-to-%24200M-ARR-in-Eight-Months-on-the-Rise-of-Identity-First-AI-Video",
+      "own_site": false
+    },
+    {
+      "batch": "batch_2",
+      "id": "w2.15",
+      "company": "HeyGen",
+      "date": "2025-05-20",
+      "title": "Zenarate and HeyGen Deepen Strategic Partnership to Bring Lifelike AI Avatars to Enterprise Simulation and Coaching",
+      "url": "https://www.prnewswire.com/news-releases/zenarate-and-heygen-deepen-strategic-partnership-to-bring-lifelike-ai-avatars-to-enterprise-simulation-and-coaching-302460202.html",
+      "own_site": false
+    }
   ],
   "round": [
-    { "batch": "batch_1", "id": "w1.14", "company": "HeyGen", "round_type": "Series A", "fill": { "valuation": 500000000, "is_valuation_estimated": false }, "url": "https://www.bloomberg.com/news/articles/2024-06-20/ai-video-startup-heygen-valued-at-500-million-in-funding-round", "quote": "has raised $60 million in a funding round that values the company at $500 million" }
+    {
+      "batch": "batch_1",
+      "id": "w1.14",
+      "company": "HeyGen",
+      "round_type": "Series A",
+      "fill": {
+        "valuation": 500000000,
+        "is_valuation_estimated": false
+      },
+      "url": "https://www.bloomberg.com/news/articles/2024-06-20/ai-video-startup-heygen-valued-at-500-million-in-funding-round",
+      "quote": "has raised $60 million in a funding round that values the company at $500 million"
+    },
+    {
+      "batch": "batch_2",
+      "id": "w2.17",
+      "company": "HeyGen",
+      "value": "Series A filled: {\"valuation\":500000000,\"is_valuation_estimated\":false}",
+      "url": "https://www.bloomberg.com/news/articles/2024-06-20/ai-video-startup-heygen-valued-at-500-million-in-funding-round",
+      "quote": "has raised $60 million in a funding round that values the company at $500 million"
+    }
   ]
 }
