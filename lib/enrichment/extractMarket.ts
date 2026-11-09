@@ -345,7 +345,10 @@ export function processMarketExtractionResponse(
     // No date from the model: the article's own address may give it (Business Wire, /YYYY/MM/DD/).
     if (!publishedDate) publishedDate = dateFromUrl(src.url) ?? undefined;
     const headline = sourceHeadline(n.title, src);
-    if (!headline) { dropped.push({ field: "news", reason: "news_title_not_in_source" }); continue; }
+    if (!headline) {
+      console.log(`    🚫  news title not in its source — model: "${String(n.title).slice(0, 110)}" | source title: "${String(src.title ?? "").slice(0, 110)}" | ${src.url}`);
+      dropped.push({ field: "news", reason: "news_title_not_in_source" }); continue;
+    }
     news.push({ ...n, title: headline, url: src.url, published_date: publishedDate });
     if (news.length >= 8) break;
   }

@@ -155,8 +155,8 @@ export function dedupeNewsEvents<T extends { title: string; url: string; publish
   return kept;
 }
 
-/** A headline cut off: ends in a colon, comma, dash, ellipsis or a dangling word. */
-export const headlineLooksCut = (t: string): boolean => /(?:[:;,\u2013\u2014-]|\.\.\.|\u2026)\s*$/.test(t.trim()) || /\b(?:and|or|of|to|for|the|a|an|in|on|with|as)\s*$/i.test(t.trim());
+/** A headline cut off: ends in a colon, comma, dash, ellipsis or a dangling connective ("Series A" is not one). */
+export const headlineLooksCut = (t: string): boolean => /(?:[:;,\u2013\u2014-]|\.\.\.|\u2026)\s*$/.test(t.trim()) || /\b(?:and|or|of|to|for|the|with)\s*$/i.test(t.trim());
 
 const flatHost = (url: string) => { try { return new URL(url).hostname.toLowerCase().replace(/^www\./, "").replace(/[^a-z0-9]/g, ""); } catch { return ""; } };
 const SITE_WORDS = /\b(?:blog|news|newsroom|press|wire|times|post|journal|magazine|insights|updates|media)\b/i;
@@ -194,21 +194,31 @@ export function titleFromHtml(html: string, url = ""): string | null {
   return null;
 }
 
+const decodeEntities = (x: string) => x.replace(/&amp;/g, "&").replace(/&#0?39;|&apos;|&rsquo;|&lsquo;/g, "'").replace(/&quot;|&ldquo;|&rdquo;/g, '"').replace(/&nbsp;/g, " ").replace(/&#8217;|&#8216;/g, "'").replace(/&#8211;|&ndash;/g, "-").replace(/&#8212;|&mdash;/g, "-");
+const normTitle = (s: string) => decodeEntities(s).toLowerCase().replace(/[\u2018\u2019\u201b]/g, "'").replace(/[\u2013\u2014]/g, "-").replace(/[^\p{L}\p{N} ]/gu, " ").replace(/\s+/g, " ").trim();
+const titleWords = (s: string) => normTitle(s).split(" ").filter((w) => w.length >= 2);
+
 /**
  * A headline is the source's own words and the whole of them (pilot dry run 4: the model wrote "Swan's raises a €37m Series B…"
  * over eu-startups' "Paris-based Swan raises €37 million Series B…"; wet batch 1: "Driving Profitability and Streamlining
- * Fleet Operations:" was cut at the colon). The source's own title, without the site's name, is used when it carries the
- * model's; a model title the source carries whole stays; otherwise the source's title, or null (dropped).
+ * Fleet Operations:" was cut at the colon). Compared after normalisation (case, quotes, dashes, entities, the site's name):
+ *   the source's own title, when it has one that is whole, is the one kept — the model's only says what the source says;
+ *   with none, the model's title stays when the source carries most of its words (60%), and is dropped when it does not;
+ *   a cut-off title is left for the page to complete (newsGate.ts).
+ * Dropped (null) only when the source has no usable title and does not carry the model's.
  */
 export function sourceHeadline(modelTitle: string, source: { title?: string | null; content?: string | null; url?: string }): string | null {
-  const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").replace(/\s+/g, " ").trim();
-  const t = norm(modelTitle);
-  const own = cleanHeadline(source.title ?? "", source.url ?? "");
-  const ownOk = own.length >= 15 && !headlineLooksCut(own);
-  if (ownOk && t && norm(own).includes(t)) return own;
-  const hay = norm(`${source.title ?? ""} ${(source.content ?? "").slice(0, 4000)}`);
-  const cleaned = cleanHeadline(modelTitle, source.url ?? "");
-  if (t && hay.includes(t) && !headlineLooksCut(cleaned)) return cleaned;
-  if (ownOk) return own;
-  return cleaned && !headlineLooksCut(cleaned) && t && hay.includes(t) ? cleaned : (headlineLooksCut(modelTitle) && t && hay.includes(t) ? modelTitle.trim() : null);
+  const url = source.url ?? "";
+  const own = cleanHeadline(decodeEntities(source.title ?? ""), url);
+  const model = cleanHeadline(decodeEntities(modelTitle), url);
+  const ownWords = new Set(titleWords(own));
+  const modelWords = titleWords(model);
+  const overlap = modelWords.length ? modelWords.filter((w) => ownWords.has(w)).length / modelWords.length : 0;
+  // The source's own title, unless it shares next to nothing with what the model wrote (a generic page title).
+  if (own.length >= 15 && !headlineLooksCut(own) && (overlap >= 0.3 || !modelWords.length)) return own;
+  const hay = new Set(titleWords(`${source.title ?? ""} ${(source.content ?? "").slice(0, 4000)}`));
+  const words = titleWords(model);
+  const carried = words.length ? words.filter((w) => hay.has(w)).length / words.length : 0;
+  if (carried >= 0.6) return model;
+  return null;
 }
