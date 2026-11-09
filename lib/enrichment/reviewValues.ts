@@ -26,7 +26,7 @@ export function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V
   const out: Value[] = [];
   const add = (field: Field, value: string, on_file: unknown, source_url = "", quote = "") => {
     if (!value) return;
-    out.push({ company_id: row.id, company: row.name, field, value, on_file: on_file == null ? "" : String(on_file), source_url, quote: quote.replace(/\s+/g, " ").slice(0, field === "description" || field === "tags" ? 700 : 240) });
+    out.push({ company_id: row.id, company: row.name, field, value, on_file: on_file == null ? "" : String(on_file), source_url, quote: quote.replace(/\s+/g, " ").slice(0, field === "description" || field === "tags" || field === "founder_background" ? 700 : 240) });
   };
   const fill = (field: Field, v: { value: unknown; source_url: string | null; quote: string | null } | null | undefined, onFile: unknown) => {
     if (v?.value == null || v.value === "" || (onFile != null && onFile !== "")) return; // only an empty field is filled
