@@ -146,7 +146,8 @@ describe("processFundingExtractionResponse", () => {
 describe("roundToRoundLike", () => {
   it("normalizes round_type -- caught via a real DRY_RUN run where the model emitted 'Venture' and 'Venture Debt', neither force-constrained by the schema enum in practice", () => {
     const vague: V2Round = { round_type: "Venture" };
-    expect(roundToRoundLike(vague).round_type).toBe("Other");
+    // A type no source states is "Unknown", not "Other" (owner, 2026-11-08).
+    expect(roundToRoundLike(vague).round_type).toBe("Unknown");
 
     const debt: V2Round = { round_type: "Venture Debt" };
     expect(roundToRoundLike(debt).round_type).toBe("Venture Debt"); // already canonical, passes through unchanged
@@ -188,5 +189,29 @@ describe("roundToRoundLike + dedupRounds — full pipeline reproduction of the l
     expect(dedupResult.rounds).toHaveLength(2);
     expect(dedupResult.merged).toHaveLength(0);
     expect(dedupResult.needsReview).toHaveLength(1);
+  });
+});
+
+describe("Unknown (no type stated) and Other (a known type that is no regular series) — owner, 2026-11-08", () => {
+  const q = (text: string) => ({ value: 1, source_id: "S1", evidence_quote: text });
+  it("Apex: \"emerges from stealth with $7.5M\" states no type → Unknown", () => {
+    expect(roundToRoundLike({ round_type: "Other", amount_raised: { value: 7_500_000, source_id: "S1", evidence_quote: "Apex emerges from stealth with $7.5M in funding" } }).round_type).toBe("Unknown");
+  });
+  it("HiBob's $150M of 2023, with no series named → Unknown", () => {
+    expect(roundToRoundLike({ round_type: "Other", amount_raised: { value: 150_000_000, source_id: "S1", evidence_quote: "HiBob raised $150 million, led by Farallon Capital" } }).round_type).toBe("Unknown");
+  });
+  it("a type the source names that is no regular series stays Other", () => {
+    expect(roundToRoundLike({ round_type: "Other", amount_raised: { value: 5_000_000, source_id: "S1", evidence_quote: "a $5 million strategic investment from Siemens" } }).round_type).toBe("Other");
+  });
+  it("a named series is untouched", () => { expect(roundToRoundLike({ round_type: "Series B", amount_raised: q("x") }).round_type).toBe("Series B"); });
+});
+
+import { investorNamesOnly } from "./extractFunding";
+describe("investor lists hold names (pilot dry run 2026-11-08: Swan's \"existing investors\")", () => {
+  it("drops phrases, keeps names", () => {
+    expect(investorNamesOnly(["Swan's existing investors", "Lakestar", "angel investors", "existing investors", "Insight Partners", "Other investors", "a group of angels"])).toEqual(["Lakestar", "Insight Partners"]);
+    expect(investorNamesOnly(["Benchmark", "Conviction", "Thrive Capital", "Bond Capital"])).toEqual(["Benchmark", "Conviction", "Thrive Capital", "Bond Capital"]);
+    expect(investorNamesOnly(["existing investors"])).toBeNull();
+    expect(investorNamesOnly(null)).toBeNull();
   });
 });

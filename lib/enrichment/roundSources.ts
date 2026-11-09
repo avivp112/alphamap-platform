@@ -42,6 +42,9 @@ export const TIER2_DOMAINS = [
   "reuters.com", "bloomberg.com", "ft.com", "wsj.com", "cnbc.com", "forbes.com", "fortune.com", "businessinsider.com",
   "axios.com", "theinformation.com", "techcrunch.com", "venturebeat.com", "wired.com", "theverge.com", "fastcompany.com", "inc.com",
   "telegraph.co.uk", // owner, 2026-11-03
+  // Owner, 2026-11-07
+  "nytimes.com", "washingtonpost.com", "theguardian.com", "economist.com", "apnews.com", "bbc.com", "bbc.co.uk",
+  "barrons.com", "marketwatch.com", "latimes.com",
 ];
 
 export const TIER3_DOMAINS = [
@@ -322,4 +325,27 @@ export function profileSourceAllowed(s: { url: string; source_type?: string | nu
 /** Provenance confidence for a round value: lowered for EIN Presswire / tier 4 alone. */
 export function roundSourceConfidence(base: number, standing: SourceStanding): number {
   return standing.kind === "allowed" && standing.lowConfidence ? Math.min(base, 60) : base;
+}
+
+/**
+ * An investor's own site is a source only when the investor is also named by an allowed source that is not that site (owner,
+ * 2026-11-09 — Orq's seed news on goldeneggcheck.com: the article that names Golden Egg Check as an investor must not be the
+ * only thing that makes its site allowed). The investors that pass are the ones roundSourceStanding may be given.
+ */
+export function corroboratedInvestors(
+  investors: Array<string | null | undefined>,
+  sources: Array<{ url: string; content?: string | null; title?: string | null; source_type?: string | null }>,
+  companyName?: string | null,
+): string[] {
+  const flat = (s: string) => ` ${s.toLowerCase().replace(/[^a-z0-9& ]/g, " ").replace(/\s+/g, " ")} `;
+  const names = [...new Set(investors.filter((i): i is string => !!i && i.trim().length >= 3).map((i) => i.trim()))];
+  return names.filter((inv) => {
+    const needle = flat(inv).trim();
+    return sources.some((s) => {
+      if (isInvestorSite(s.url, inv)) return false;
+      const allowed = s.source_type === "company_site" || s.source_type === "registry"
+        || roundSourceStanding(s.url, { content: s.content, headline: s.title, companyName }).kind === "allowed";
+      return allowed && flat(`${s.title ?? ""} ${s.content ?? ""}`).includes(` ${needle} `);
+    });
+  });
 }

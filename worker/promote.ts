@@ -20,6 +20,8 @@ import type { LabeledSource } from "../lib/enrichment/sources.ts";
 import type { SourceType } from "../lib/enrichment/sourceTypes.ts";
 import type { SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { writeCollected, newWriteSummary, BULK_THRESHOLDS } from "../lib/enrichment/writeCompany.ts";
+import { enrichmentWriteRefusal, PHASE1_PASSED } from "../lib/enrichment/writeGate.ts";
+import { openFieldNames } from "../lib/enrichment/fieldReview.ts";
 import { websiteDomain, type DomainOwner } from "../lib/enrichment/websiteValidation.ts";
 
 // Not stored: lookups rebuilt from allSources, and page text Stage 10 never reads.
@@ -88,11 +90,22 @@ export interface PromoteDeps {
   findExisting: (website: string) => Promise<{ id: string; name: string } | null>;
   notify: (userId: string, title: string, body: string, link: string) => Promise<void>;
   log?: (msg: string) => void;
+  /** Tests only: the gate's state (default: lib/enrichment/writeGate.ts PHASE1_PASSED). */
+  phase1Passed?: boolean;
+  /** Tests only: the fields the tracker has opened (default: eval/field_review_tracker.csv, as bulk_enrich_v2 reads it). */
+  openFields?: readonly string[];
 }
 
 /** One approved company, written. Returns false when none is waiting. */
 export async function promoteOne(d: PromoteDeps): Promise<boolean> {
   const log = d.log ?? ((m: string) => console.log(`[worker] ${m}`));
+  // A real write is refused until enrichment v2 passes Phase 1 (owner, 2026-11-07; writeGate.ts). Checked before the
+  // claim, so an approved company stays waiting in the queue and is written once the owner sets PHASE1_PASSED.
+  const refusal = enrichmentWriteRefusal("worker/promote", true, d.phase1Passed ?? PHASE1_PASSED);
+  if (refusal) throw new Error(refusal);
+  // Past Phase 1 a promotion passes the same gate as bulk_enrich_v2 (owner, 2026-11-08): only the fields the tracker
+  // has opened (≥20 marks, ≥90% correct) are written; the rest is held back and named in the log.
+  const openFields = d.openFields ?? openFieldNames();
   const { data, error } = await d.db.rpc("claim_check_promotion");
   if (error) throw new Error(`claim_check_promotion: ${error.message}`);
   const job = data as PromotionJob | null;
@@ -115,7 +128,7 @@ export async function promoteOne(d: PromoteDeps): Promise<boolean> {
       const refs = roundRefs(company.rounds);
       const collected = { ...stored, existingRefs: refs, plan: planRoundWrites(refs, newAcceptedRounds(stored.validation)) };
       await writeCollected(company.row, collected, {
-        db: d.db, dryRun: false, update: false, verbose: false, thresholds: BULK_THRESHOLDS,
+        db: d.db, dryRun: false, update: false, verbose: false, thresholds: BULK_THRESHOLDS, openFields,
         taxonomy: await d.taxonomy(), startupByDomain: await domainIndex(d.db), seen: null,
       }, newWriteSummary());
       const { error: refreshErr } = await d.db.rpc("refresh_startups_search");
@@ -140,7 +153,7 @@ export async function promoteOne(d: PromoteDeps): Promise<boolean> {
     if (startErr) throw new Error(`start_check_promotion_write: ${startErr.message}`);
 
     await writeCollected(freshRow(startupId as string, job.name, job.website), deserializeCollected(job.collected), {
-      db: d.db, dryRun: false, update: false, verbose: false, thresholds: BULK_THRESHOLDS,
+      db: d.db, dryRun: false, update: false, verbose: false, thresholds: BULK_THRESHOLDS, openFields,
       taxonomy: await d.taxonomy(), startupByDomain: await domainIndex(d.db), seen: null,
     }, newWriteSummary());
 

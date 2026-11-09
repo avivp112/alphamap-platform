@@ -118,3 +118,23 @@ describe("the HQ phrase must be about THIS company (Fresha's blog gave 'Paris', 
     expect(hqStatementsIn(src("https://techcrunch.com/x", "Hailo, headquartered in Tel Aviv, raised $120 million."), "Hailo")).toMatchObject([{ city: "Tel Aviv" }]);
   });
 });
+
+import { isLegalPageUrl, hqStatementsIn as hqIn, statementKind as kindOf } from "./headquarters";
+describe("a legal page's address is an office, not the headquarters (owner, 2026-11-08: EngFlow)", () => {
+  const impressum = { source_id: "W3", source_type: "company_site", url: "https://www.engflow.com/impressum", title: "Impressum",
+    content: "EngFlow Inc. is a Delaware corporation based in the US at 2025 Guadalupe Street, Suite 260, Austin, TX 78705." } as never;
+  it("knows legal pages", () => {
+    for (const u of ["https://x.com/impressum", "https://x.com/legal", "https://x.com/terms-of-service", "https://x.com/privacy", "https://x.com/legal/terms", "https://x.com/imprint"]) expect(isLegalPageUrl(u), u).toBe(true);
+    for (const u of ["https://x.com/about", "https://x.com/contact", "https://x.com/company/team", "https://x.com/blog/legal-tech-trends"]) expect(isLegalPageUrl(u), u).toBe(false);
+  });
+  it("the impressum's 'based in … Austin' is not an HQ statement", () => {
+    expect(kindOf(impressum)).toBeNull();
+    expect(hqIn(impressum, "EngFlow")).toEqual([]);
+  });
+  it("the same sentence on the About page is", () => {
+    const about = { ...impressum, url: "https://www.engflow.com/about", title: "About", content: "EngFlow is headquartered in Austin, Texas." };
+    const legalToo = { ...about, url: "https://www.engflow.com/legal/terms" };
+    expect(hqIn(legalToo, "EngFlow")).toEqual([]);
+    expect(hqIn(about, "EngFlow").map((s: { city: string }) => s.city)).toEqual(["Austin"]);
+  });
+});

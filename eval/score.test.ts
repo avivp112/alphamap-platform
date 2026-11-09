@@ -19,7 +19,7 @@ describe("scoreCompany", () => {
   it("counts right, wrong and missing separately; unknown golden values are excluded", () => {
     const b = newScoreboard();
     const r = scoreCompany(b, apex, out({ city: "Los Angeles", country: "USA", founded_year: 2021, founders: [{ name: "Ian Cinnamon" }] }));
-    expect(r).toMatchObject({ city: "correct", country: "correct", founded_year: "wrong", founders: "wrong", funding_rounds: "missing", employee_range: "excluded" });
+    expect(r).toMatchObject({ city: "correct", country: "correct", founded_year: "wrong", founders: "missing", funding_rounds: "missing", employee_range: "excluded" });
     expect(b.founded_year).toEqual({ scored: 1, produced: 1, correct: 0 });
     expect(b.founders).toEqual({ scored: 2, produced: 1, correct: 1 });
     expect(b.funding_rounds).toEqual({ scored: 2, produced: 0, correct: 0 });   // the unknown Seed is not scored
@@ -235,5 +235,148 @@ describe("reviewed_fields — a golden value counts only when its field was revi
     expect(r.city).toBe("wrong");
     expect(b.city.scored).toBe(1);
     expect(b.country.scored).toBe(0);
+  });
+});
+
+describe("two headquarters, unlisted founders, spellings (owner, 2026-11-05)", () => {
+  const celonis: GoldenCompany = { id: "celonis", name: "Celonis", city: { value: "New York", alternatives: ["Munich"], confidence: "verified" } };
+  it("any accepted value of a company with two headquarters is correct", () => {
+    for (const c of ["New York", "Munich"]) {
+      const b = newScoreboard();
+      expect(scoreCompany(b, celonis, out({ city: c })).city).toBe("correct");
+    }
+    expect(scoreCompany(newScoreboard(), celonis, out({ city: "Berlin" })).city).toBe("wrong");
+  });
+  const hailo: GoldenCompany = { id: "hailo", name: "Hailo", founders: [{ name: "Orr Danon", confidence: "verified" }, { name: "Avi Baum", confidence: "verified" }] };
+  it("a founder the pipeline finds who is not in the golden set is unjudged, not wrong", () => {
+    const b = newScoreboard();
+    const r = scoreCompany(b, hailo, out({ founders: [{ name: "Orr Danon" }, { name: "Avi Baum" }, { name: "Rami Feig" }] }));
+    expect(r.founders).toBe("correct");
+    expect(b.founders).toMatchObject({ scored: 2, produced: 2, correct: 2, unjudged: 1 });
+  });
+  it("a golden founder not found lowers coverage; with founders_complete an unlisted person is wrong", () => {
+    const b = newScoreboard();
+    expect(scoreCompany(b, hailo, out({ founders: [{ name: "Orr Danon" }] })).founders).toBe("missing");
+    expect(b.founders).toMatchObject({ scored: 2, produced: 1, correct: 1 });
+    const b2 = newScoreboard();
+    const r = scoreCompany(b2, { ...hailo, founders_complete: true }, out({ founders: [{ name: "Orr Danon" }, { name: "Avi Baum" }, { name: "Rami Feig" }] }));
+    expect(r.founders).toBe("wrong");
+    expect(b2.founders).toMatchObject({ produced: 3, correct: 2 });
+  });
+  it("another spelling listed as aka is the same person", () => {
+    const upwind: GoldenCompany = { id: "u", name: "Upwind", founders: [{ name: "Tal Zuri", aka: ["Tal Tzur"], confidence: "verified" }] };
+    const b = newScoreboard();
+    expect(scoreCompany(b, upwind, out({ founders: [{ name: "Tal Tzur" }] })).founders).toBe("correct");
+  });
+});
+
+describe("a round without an amount on the type and date of a golden round is unjudged (owner, 2026-11-06)", () => {
+  const mercury: GoldenCompany = { id: "m", name: "Mercury", funding_rounds: [
+    { type: "Series C", amount_usd: 300_000_000, date: "2025-03-26", confidence: "verified" },
+    { type: "Series D", amount_usd: 200_000_000, date: "2026-05-20", confidence: "verified" },
+  ] };
+  it("Mercury's 'Series D, no amount, 2026-05-20' is not a wrong write", () => {
+    const b = newScoreboard();
+    scoreCompany(b, mercury, out({ rounds: [{ round_type: "Series C", amount_raised: 300_000_000, date: "2025-03-26" }, { round_type: "Series D", amount_raised: null, date: "2026-05-20" }] }));
+    expect(b.funding_rounds).toMatchObject({ scored: 2, produced: 1, correct: 1, unjudged: 1 });
+  });
+  it("another type, another date, or a round on no golden round stays wrong", () => {
+    for (const r of [{ round_type: "Series E", amount_raised: null, date: "2026-05-20" }, { round_type: "Series D", amount_raised: null, date: "2026-09-01" }]) {
+      const b = newScoreboard();
+      scoreCompany(b, mercury, out({ rounds: [r] }));
+      expect(b.funding_rounds.produced).toBe(1);
+      expect(b.funding_rounds.correct).toBe(0);
+    }
+  });
+});
+
+import { phase1Reviewed, phase1ReviewCounts, statedPhase1Fields } from "./score";
+describe("reviewed for Phase 1 (owner, 2026-11-05)", () => {
+  const base: GoldenCompany = {
+    id: "a", name: "A", city: v("Paris"), country: v("France"), founded_year: v(2015),
+    funding_rounds: [{ type: "Seed", amount_usd: 1_000_000, date: "2020", confidence: "verified" }],
+    competitors: { names: ["X"], confidence: "verified" } as never,
+  };
+  it("needs every Phase 1 field the entry states in reviewed_fields", () => {
+    expect(statedPhase1Fields(base)).toEqual(["city", "country", "founded_year", "rounds", "competitors"]);
+    expect(phase1Reviewed(base)).toBe(false);
+    expect(phase1Reviewed({ ...base, reviewed_fields: ["rounds", "competitors", "patents"] })).toBe(false);
+    expect(phase1Reviewed({ ...base, reviewed_fields: ["city", "country", "founded_year", "rounds", "competitors"] })).toBe(true);
+  });
+  it("a field the entry does not state needs no review, and an undeclared HQ is stated", () => {
+    const sparse: GoldenCompany = { id: "s", name: "S", country: v("Israel"), reviewed_fields: ["country"] };
+    expect(phase1Reviewed(sparse)).toBe(true);
+    expect(statedPhase1Fields({ id: "p", name: "P", city: { value: null, confidence: "verified", not_declared: true } })).toEqual(["city"]);
+  });
+  it("the general flag counts without any listed field", () => {
+    expect(phase1Reviewed({ ...base, reviewed_by_human: true })).toBe(true);
+  });
+  it("an entry that states nothing is not reviewed", () => {
+    expect(phase1Reviewed({ id: "e", name: "E", reviewed_fields: ["city"] })).toBe(false);
+  });
+  it("counts companies and, per field, how many list it", () => {
+    const c = phase1ReviewCounts([{ ...base, reviewed_fields: ["city", "country", "founded_year", "rounds", "competitors"] }, base, { ...base, reviewed_by_human: true }]);
+    expect(c).toMatchObject({ reviewed: 2, total: 3 });
+    expect(c.byField.city).toEqual({ stated: 3, reviewed: 2 });
+  });
+});
+
+import { phase1Checks as checks1 } from "./score";
+describe("the competitors bar reads the field-review tracker (owner, 2026-11-06)", () => {
+  const facts = { locationMismatches: 0, duplicateRounds: 0, foundedAfterRound: 0 };
+  const competitorsCheck = (m?: { marked: number; correct: number; source: string }) => checks1(newScoreboard(), facts, m).find((c) => c.rule.includes("competitors"))!;
+  it("passes at 20 marks and 90%, and says where the number comes from", () => {
+    const c = competitorsCheck({ marked: 20, correct: 18, source: "the field-review tracker (replayed)" });
+    expect(c.pass).toBe(true);
+    expect(c.detail).toContain("90.0% (18/20 marks)");
+    expect(c.detail).toContain("measured by the field-review tracker");
+  });
+  it("fails below 20 marks, however clean", () => {
+    const c = competitorsCheck({ marked: 19, correct: 19, source: "the tracker" });
+    expect(c.pass).toBe(false);
+    expect(c.detail).toContain("only 19 marks — at least 20 needed");
+  });
+  it("fails below 90%", () => {
+    expect(competitorsCheck({ marked: 20, correct: 17, source: "the tracker" }).pass).toBe(false);
+  });
+  it("without a tracker measure the golden-set bar is used as before", () => {
+    expect(competitorsCheck().detail).toContain("judged");
+  });
+});
+
+import { phase1Passes } from "./score";
+describe("competitors are information, not a Phase 1 condition (owner, 2026-11-07)", () => {
+  const facts = { locationMismatches: 0, duplicateRounds: 0, foundedAfterRound: 0 };
+  it("the competitors line is marked informational and never blocks", () => {
+    const board = newScoreboard();
+    for (const f of ["round_type", "patents"] as const) { board[f].produced = 30; board[f].correct = 30; }
+    board.city.produced = 10; board.city.correct = 10; board.funding_rounds.produced = 10; board.funding_rounds.correct = 10;
+    const checks = checks1(board, facts, { marked: 3, correct: 0, source: "the tracker" });
+    const comp = checks.find((c) => c.rule.includes("competitors"))!;
+    expect(comp.info).toBe(true);
+    expect(comp.pass).toBe(false);
+    expect(phase1Passes(checks)).toBe(true);
+  });
+  it("another failing check still blocks", () => {
+    const board = newScoreboard();
+    expect(phase1Passes(checks1(board, facts, { marked: 30, correct: 30, source: "t" }))).toBe(false);
+  });
+});
+
+import { scoreCompany as scoreForTypes, newScoreboard as newBoardForTypes } from "./score";
+describe("round type: Unknown is missing, Other is judged; a month date matches the same month (owner, 2026-11-08)", () => {
+  const golden = { id: "apex", name: "Apex", funding_rounds: [{ type: "Seed", amount_usd: 7_500_000, date: "2022-10-24", confidence: "high" }] } as never;
+  const out = (type: string, date = "2022-10") => ({ city: null, country: null, founded_year: null, founders: [], employee_range: null, rounds: [{ round_type: type, amount_raised: 7_500_000, date }] }) as never;
+  it("Unknown: the type is missing, not wrong — and the round itself is still right (same month)", () => {
+    const b = newBoardForTypes();
+    const r = scoreForTypes(b, golden, out("Unknown"));
+    expect(r.round_type).toBe("missing");
+    expect(r.funding_rounds).toBe("correct");
+  });
+  it("Other against a Seed: wrong", () => {
+    expect(scoreForTypes(newBoardForTypes(), golden, out("Other")).round_type).toBe("wrong");
+  });
+  it("a day three days off and a month-precision date both match the golden day", () => {
+    expect(scoreForTypes(newBoardForTypes(), golden, out("Seed", "2022-10-27")).funding_rounds).toBe("correct");
   });
 });

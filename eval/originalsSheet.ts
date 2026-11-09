@@ -57,7 +57,8 @@ export function sheetCsv(values: SheetValue[]): string {
  * Applies the owner's verdict: the numbers he names are wrong, every other value is correct.
  * A wrong city/country/year/founding country becomes "unknown" with a note (it is no golden truth);
  * a wrong founder is removed. Every sheet field the company has is then listed in `reviewed_fields`.
- * "v1.4=London" gives the right value: it is kept as the golden value (verified, with a note); a
+ * "v1.4=New York|Munich" keeps both as accepted values (the first is the main one; a company with two
+ * headquarters). "v1.4=London" gives the right value: it is kept as the golden value (verified, with a note); a
  * founder's replacement is the corrected name. Unknown numbers are returned, not guessed.
  */
 export function applyVerdict(companies: GoldenCompany[], values: SheetValue[], wrong: string[]): { companies: GoldenCompany[]; unknown: string[]; wrongApplied: number } {
@@ -79,14 +80,15 @@ export function applyVerdict(companies: GoldenCompany[], values: SheetValue[], w
       const fix = fixes.get(v.id);
       if (v.field === "founder") {
         if (!fix) { dropPersons.add(v.person!); continue; }
-        renamed.set(v.person!, fix);
+        renamed.set(v.person!, fix.split("|")[0].trim());
         continue;
       }
       const cur = next[v.field] as { value: unknown; confidence: string; notes?: string };
       const note = fix ? `owner corrected "${v.value}" to "${fix}" on the check sheet (${v.id}, 2026-11-05)` : `owner marked the value "${v.value}" wrong on the check sheet (${v.id}, 2026-11-05)`;
+      const [main, ...alts] = (fix ?? "").split("|").map((x) => x.trim()).filter(Boolean);
       (next as Record<string, unknown>)[v.field] = {
         ...cur, notes: [cur.notes, note].filter(Boolean).join(" · "),
-        ...(fix ? { value: v.field === "founded_year" && /^\d{4}$/.test(fix) ? Number(fix) : fix, confidence: "verified" } : { confidence: "unknown" }),
+        ...(main ? { value: v.field === "founded_year" && /^\d{4}$/.test(main) ? Number(main) : main, confidence: "verified", ...(alts.length ? { alternatives: alts } : {}) } : { confidence: "unknown" }),
       };
     }
     if (dropPersons.size || renamed.size) next.founders = (g.founders ?? []).map((p, i) => (renamed.has(i) ? { ...p, name: renamed.get(i)! } : p)).filter((_, i) => !dropPersons.has(i));
@@ -97,3 +99,18 @@ export function applyVerdict(companies: GoldenCompany[], values: SheetValue[], w
   });
   return { companies: out, unknown, wrongApplied };
 }
+
+/**
+ * The sentence of the page that carries the value (a person: the surname). Jina's header (Title /
+ * URL Source / Published Time) is cut off first; a year counts only in a sentence about founding.
+ */
+export function quoteFor(text: string, v: Pick<SheetValue, "field" | "value">): string {
+  const needle = (v.field === "founder" ? v.value.split(" (")[0].split(/\s+/).pop()! : v.value).toLowerCase();
+  if (!needle || needle.length < 2) return "";
+  const body = text.includes("Markdown Content:") ? text.slice(text.indexOf("Markdown Content:") + 17) : text;
+  const foundingWord = /\b(?:found(?:ed|ers?)|established|launched|started|since|incorporated|began)\b/i;
+  const s = body.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/).find((x) =>
+    x.toLowerCase().includes(needle) && !/URL Source:|Published Time:|Reject All|Accept All/.test(x) && (x.match(/\]\(/g) ?? []).length < 2 && (v.field !== "founded_year" || foundingWord.test(x)));
+  return s ? s.slice(0, 320).trim() : "";
+}
+

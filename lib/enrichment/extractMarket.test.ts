@@ -155,3 +155,16 @@ describe("a company it acquired is never also listed as a competitor", () => {
     expect(dropped).toContainEqual({ field: "competitors", reason: "competitor_is_acquisition" });
   });
 });
+
+import { buildMarketExtractionRequest as buildMarketReq, processMarketExtractionResponse as processMarket } from "./extractMarket";
+describe("market peers are asked for (review 6, 2026-11-08: 0 of 30 companies produced a hint)", () => {
+  it("the prompt asks for them and the schema requires the field", () => {
+    const req = buildMarketReq("Nova", []);
+    expect(req.messages[0].content as string).toMatch(/MARKET_PEERS/);
+    expect((req.tools[0].input_schema as { required: string[] }).required).toContain("market_peers");
+  });
+  it("the response's hints come through, without the company itself", () => {
+    const r = processMarket({ competitors: [], news: [], market_peers: ["Datadog", "Nova", "New Relic"] }, [], "Nova");
+    expect(r.result.market_peers).toEqual(["Datadog", "New Relic"]);
+  });
+});

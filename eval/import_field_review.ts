@@ -18,7 +18,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { readMarks, parseCsvText } from "../lib/enrichment/fieldReview.ts";
-import { newGoldenEntries, companyIdsFromCsv, withWebsites, type ImportResult } from "./fieldReviewImport.ts";
+import { newGoldenEntries, companyIdsFromCsv, nameKey, withWebsites, type ImportResult } from "./fieldReviewImport.ts";
 import type { GoldenSet } from "./score.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -31,8 +31,10 @@ const marks = readMarks();
 function loadIds(): Map<string, string> {
   const dir = process.env.REVIEW_DIR ?? "field_review";
   const files = [...(existsSync(dir) ? readdirSync(dir).filter((f) => /\.csv$/.test(f)).map((f) => join(dir, f)) : []), ...(process.env.ID_FILES ?? "").split(",").filter(Boolean)];
-  const rows = files.flatMap((f) => parseCsvText(readFileSync(f, "utf8").replace(/^﻿/, "")));
-  return companyIdsFromCsv(rows);
+  // Each file has its own header row, so each is read on its own.
+  const ids = new Map<string, string>();
+  for (const f of files) for (const [k, v] of companyIdsFromCsv(parseCsvText(readFileSync(f, "utf8").replace(/^\uFEFF/, "")))) if (!ids.has(k)) ids.set(k, v);
+  return ids;
 }
 
 (async () => {
@@ -51,7 +53,7 @@ function loadIds(): Map<string, string> {
     ...fresh,
   ];
   const sites = new Map<string, string | null>();
-  const wanted = [...new Set(candidates.map((e) => ids.get(e.company.name.toLowerCase())).filter((x): x is string => !!x))];
+  const wanted = [...new Set(candidates.map((e) => ids.get(nameKey(e.company.name))).filter((x): x is string => !!x))];
   for (let i = 0; i < wanted.length; i += 100) {
     const { data, error } = await db.from("startups").select("id, website").in("id", wanted.slice(i, i + 100));
     if (error) throw error;
@@ -60,7 +62,7 @@ function loadIds(): Map<string, string> {
   const { kept, dropped } = withWebsites(candidates, ids, sites);
 
   console.log(`Candidates ${candidates.length}: with a website ${kept.length}, still without one ${dropped.length}.`);
-  for (const d of dropped) console.log(`  ✗ ${d.company.name.padEnd(28)} ${d.reason}`);
+  for (const d of dropped) console.log(`  ✗ ${JSON.stringify(d.company.name).padEnd(30)} ${d.reason}`);
   console.log(`\nStill without a website: ${dropped.length} of ${candidates.length}.`);
   const added = kept.filter((e) => !golden.companies.some((c) => c.id === e.company.id));
   console.log(`New in the golden set: ${added.length}; golden set after: ${golden.companies.length - imported.length + kept.length} companies.`);

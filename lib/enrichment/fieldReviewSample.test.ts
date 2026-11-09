@@ -54,3 +54,19 @@ describe("the tracker and the rules-only judgment of a mark (owner, 2026-11-04)"
     expect(judgeMark(m("founded_year", "2015", "https://startupintros.com/orgs/braincheck")).produced).toBe(false);
   });
 });
+
+import { restrictCandidates } from "./pilotSample";
+describe("narrowing a review draw to companies a rival can be found for (owner, 2026-11-06)", () => {
+  const c = (id: string, rounds: number) => ({ id, name: id, website: "x", description: "d", city: null, country: null, founded_year: null, founding_country: null, rounds_on_file: rounds });
+  const all = [c("a", 0), c("b", 2), c("c", 4), c("d", 5)];
+  it("keeps companies with at least N rounds on file", () => {
+    expect(restrictCandidates(all, new Set(), { minRounds: 3 }).map((x) => x.id)).toEqual(["c", "d"]);
+  });
+  it("keeps companies an allowed press source covers", () => {
+    expect(restrictCandidates(all, new Set(["b", "d"]), { pressOnly: true }).map((x) => x.id)).toEqual(["b", "d"]);
+  });
+  it("both together, and neither leaves the pool alone", () => {
+    expect(restrictCandidates(all, new Set(["b", "d"]), { minRounds: 3, pressOnly: true }).map((x) => x.id)).toEqual(["d"]);
+    expect(restrictCandidates(all, new Set(), {}).length).toBe(4);
+  });
+});

@@ -55,7 +55,7 @@ export interface EpoPatentResult {
   rejected: Array<{ number: string; reason: EpoRejection }>;
 }
 
-export type EpoRejection = "epo_applicant_not_the_company" | "epo_applicant_other_country" | "epo_company_country_unknown";
+export type EpoRejection = "epo_applicant_not_the_company" | "epo_applicant_other_country" | "epo_company_country_unknown" | "epo_applicant_other_legal_entity";
 
 // ── OPS JSON (the same traps ingest-epo-ops documents) ───────────────────────
 
@@ -143,22 +143,84 @@ const sameCountry = (code: string, country: string) => {
   return n(code) === n(country) || (!!name && n(name) === n(country));
 };
 
-export interface CompanyIdentity { name: string; aliases?: string[]; countries?: Array<string | null | undefined> }
+/**
+ * The countries a legal form belongs to: an applicant in a form of a country the company operates in
+ * ("CYERA LTD" for an Israeli-founded company with a US head office, "CYERA INC" for the same) is its own
+ * group entity; "WAYVE LLC" for a UK company with no US presence is another company. A form with no entry
+ * here (or none at all) is not judged by this.
+ */
+const FORM_JURISDICTIONS: Record<string, string[]> = {
+  ltd: ["United Kingdom", "Israel", "Ireland", "India", "Singapore", "Hong Kong", "Australia", "New Zealand", "Canada"],
+  inc: ["United States", "Canada"], llc: ["United States"],
+  gmbh: ["Germany", "Austria", "Switzerland"], bv: ["Netherlands", "Belgium"], sa: ["France", "Spain", "Switzerland", "Belgium", "Luxembourg"],
+  pty: ["Australia"], ab: ["Sweden"], oy: ["Finland"], as: ["Norway"], aps: ["Denmark"], srl: ["Italy"], spa: ["Italy"],
+};
+
+const COUNTRY_NAME_ALIASES: Record<string, string> = { uk: "unitedkingdom", gb: "unitedkingdom", greatbritain: "unitedkingdom", england: "unitedkingdom", usa: "unitedstates", us: "unitedstates", unitedstatesofamerica: "unitedstates", il: "israel", uae: "unitedarabemirates" };
+const countryNameKey = (c: string) => { const k = c.toLowerCase().replace(/[^a-z]/g, ""); return COUNTRY_NAME_ALIASES[k] ?? k; };
+/** Two country names (or short names: UK, USA) for the same country. */
+const sameCountryName = (a: string, b: string) => countryNameKey(a) === countryNameKey(b);
+
+export interface CompanyIdentity {
+  name: string; aliases?: string[]; countries?: Array<string | null | undefined>;
+  /** The company's full legal name, when a register or its own legal pages give it ("WAYVE TECHNOLOGIES LTD"). */
+  legalName?: string | null;
+  /** The country of the source that gave that name: the register's, or the registered office on its legal pages. The anchor for a name that other companies share. */
+  legalNameCountry?: string | null;
+}
+
+/** The kind of company a legal suffix names: LTD / LIMITED / PLC / LLP are one, INC / CORP another, LLC, GMBH … null without a suffix. */
+export function legalForm(name: string): string | null {
+  const m = name.toLowerCase().replace(/[.,]/g, " ").trim().match(/\b(ltd|limited|plc|llp|inc|incorporated|corp|corporation|co|llc|gmbh|ag|kg|ug|bv|nv|sas|sa|sarl|pty|ab|oy|as|aps|srl|spa|bhd|בעמ)\s*$/);
+  if (!m) return null;
+  const x = m[1];
+  if (["ltd", "limited", "plc", "llp", "בעמ"].includes(x)) return "ltd";
+  if (["inc", "incorporated", "corp", "corporation", "co"].includes(x)) return "inc";
+  if (["gmbh", "ag", "kg", "ug"].includes(x)) return "gmbh";
+  if (["bv", "nv"].includes(x)) return "bv";
+  if (["sas", "sa", "sarl"].includes(x)) return "sa";
+  return x;
+}
 
 /** null when an applicant on the record is this company; otherwise why the publication is someone else's. */
 export function applicantMatch(pub: EpoPublication, company: CompanyIdentity): EpoRejection | null {
   const keys = new Set([company.name, ...(company.aliases ?? [])].map(nameKey).filter((k) => k.length >= 3));
-  const named = pub.applicants.filter((a) => keys.has(nameKey(a.name)));
+  if (company.legalName) { const k = nameKey(company.legalName); if (k.length >= 3) keys.add(k); }
+  let named = pub.applicants.filter((a) => keys.has(nameKey(a.name)));
   if (named.length === 0) return "epo_applicant_not_the_company";
+  // A legal name is known (owner, 2026-11-07 — Wayve): the applicant is the company when it carries that full
+  // name, or the trading name in the same legal form. "WAYVE LLC" and "WAYVE INC" are other companies than
+  // "WAYVE TECHNOLOGIES LTD", whatever country tag they carry.
+  if (company.legalName) {
+    const full = (n: string) => n.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+    const legalKey = nameKey(company.legalName), aliasKeys = new Set((company.aliases ?? []).map(nameKey));
+    const form = legalForm(company.legalName);
+    const countries = (company.countries ?? []).filter((c): c is string => !!c);
+    named = named.filter((a) => {
+      // The full legal name, suffix included ("CYERA INC" is not "CYERA LTD" although both reduce to "cyera").
+      if (full(a.name) === full(company.legalName!)) return true;
+      // The trading name alone when the legal name says more ("WAYVE LTD" is not "WAYVE TECHNOLOGIES LTD"):
+      // another company, even in the same legal form and country (Wayve Ltd's 2015 advertising workflows).
+      const k = nameKey(a.name);
+      if (k !== legalKey && !aliasKeys.has(k)) return false;
+      if (!form) return true;
+      const f = legalForm(a.name);
+      if (!f || f === form) return true;
+      const places = FORM_JURISDICTIONS[f];
+      // A form of a country the company operates in is its own group entity; otherwise another company.
+      return !places || countries.some((c) => places.some((p) => sameCountryName(p, c)));
+    });
+    if (named.length === 0) return "epo_applicant_other_legal_entity";
+  }
   const countries = (company.countries ?? []).filter((c): c is string => !!c);
   // A name alone never makes a patent the company's: its country must match too (owner, 2026-10-29).
   if (countries.length === 0) return "epo_company_country_unknown";
   const tagged = named.filter((a) => a.country);
-  if (tagged.length && !tagged.some((a) => countries.some((c) => sameCountry(a.country!, c)))) return "epo_applicant_other_country";
+  if (countries.length && tagged.length && !tagged.some((a) => countries.some((c) => sameCountry(a.country!, c)))) return "epo_applicant_other_country";
   // No country on the applicant: the office it was filed at must fit — the
   // company's own country, or the US / European / international (PCT) route.
   // Zepto (India) got five Japanese publications of a Japanese "ZEPTO" (eval run, 2026-10-29).
-  if (!tagged.length) {
+  if (!tagged.length && countries.length) {
     const office = pub.number.slice(0, 2).toUpperCase();
     if (!["US", "EP", "WO"].includes(office) && !countries.some((c) => sameCountry(office, c))) return "epo_applicant_other_country";
   }
@@ -168,7 +230,24 @@ export function applicantMatch(pub: EpoPublication, company: CompanyIdentity): E
 export const espacenetUrl = (number: string) => `https://worldwide.espacenet.com/patent/search?q=pn%3D${encodeURIComponent(number)}`;
 
 /** The register's publications reduced to the company's own, one per family (its latest publication). */
-export function companyPatents(publications: EpoPublication[], company: CompanyIdentity): EpoPatentResult {
+/**
+ * With the company's full legal name known but no country (owner, 2026-11-07): the country of the source that
+ * gave the name is the anchor and an applicant must be from it. With no country there either, the name is
+ * accepted only when every applicant carrying it, over all the publications, is from one country — "NOVA LTD"
+ * of GB and of IL is two companies, and nothing here says which is ours.
+ */
+export function anchorCountries(publications: EpoPublication[], company: CompanyIdentity): string[] {
+  const known = (company.countries ?? []).filter((c): c is string => !!c);
+  if (known.length || !company.legalName) return known;
+  if (company.legalNameCountry) return [company.legalNameCountry];
+  const full = (n: string) => n.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  const carriers = publications.flatMap((p) => p.applicants).filter((a) => full(a.name) === full(company.legalName!));
+  const tags = new Set(carriers.map((a) => a.country ?? ""));
+  return carriers.length > 0 && tags.size === 1 && !tags.has("") ? [[...tags][0]] : [];
+}
+
+export function companyPatents(publications: EpoPublication[], rawCompany: CompanyIdentity): EpoPatentResult {
+  const company = { ...rawCompany, countries: anchorCountries(publications, rawCompany) };
   const rejected: EpoPatentResult["rejected"] = [];
   const byFamily = new Map<string, EpoPublication>();
   for (const p of publications) {

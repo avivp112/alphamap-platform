@@ -82,7 +82,10 @@ export function newGoldenEntries(marks: Mark[], existing: Array<{ name: string; 
   return companies.filter((c) => !have.has(norm(c))).map((c) => goldenFromMarks(c, marks)).filter((r): r is ImportResult => !!r);
 }
 
-/** name (lower-case) → startups.id from CSV rows that have both a `company` and a `company_id` column. */
+/** nameKey(name) → startups.id from CSV rows that have both a `company` and a `company_id` column. */
+/** One key for a company name across files: case, accents, spacing and punctuation do not matter. */
+export const nameKey = (n: string) => n.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+
 export function companyIdsFromCsv(rows: string[][]): Map<string, string> {
   const out = new Map<string, string>();
   const header = rows[0]?.map((h) => h.trim().toLowerCase()) ?? [];
@@ -90,7 +93,7 @@ export function companyIdsFromCsv(rows: string[][]): Map<string, string> {
   if (ci < 0 || ii < 0) return out;
   for (const r of rows.slice(1)) {
     const name = (r[ci] ?? "").trim(), id = (r[ii] ?? "").trim();
-    if (name && /^[0-9a-f-]{36}$/i.test(id) && !out.has(name.toLowerCase())) out.set(name.toLowerCase(), id);
+    if (name && /^[0-9a-f-]{36}$/i.test(id) && !out.has(nameKey(name))) out.set(nameKey(name), id);
   }
   return out;
 }
@@ -102,7 +105,7 @@ export function companyIdsFromCsv(rows: string[][]): Map<string, string> {
 export function withWebsites(candidates: ImportResult[], ids: Map<string, string>, sites: Map<string, string | null>): { kept: ImportResult[]; dropped: Array<ImportResult & { reason: string }> } {
   const kept: ImportResult[] = []; const dropped: Array<ImportResult & { reason: string }> = [];
   for (const c of candidates) {
-    const id = ids.get(c.company.name.toLowerCase());
+    const id = ids.get(nameKey(c.company.name));
     if (!id) { dropped.push({ ...c, reason: "no company id in the review files" }); continue; }
     const site = (sites.get(id) ?? "").trim();
     if (!site) { dropped.push({ ...c, reason: `no website in the database (id ${id})` }); continue; }

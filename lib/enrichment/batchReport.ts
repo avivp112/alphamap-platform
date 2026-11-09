@@ -39,6 +39,7 @@ export function renderBatchReport(values: NumberedValue[], opts: { batchNo: numb
     lines.push(`Undo this batch (report only): RUN_ID=${opts.runId} npx tsx scripts/undo_run.ts`);
     lines.push(`Undo this batch (for real):    RUN_ID=${opts.runId} DRY_RUN=false npx tsx scripts/undo_run.ts`);
   }
+  if (!opts.dry && opts.runId && opts.csvPath) lines.push(`Verify that every value has its source on file (read only): BATCH=${opts.csvPath} RUN_ID=${opts.runId} npx tsx scripts/verify_batch.ts`);
   if (!opts.dry && opts.csvPath) lines.push(`Enter the verdicts: BATCH=${opts.csvPath} WRONG=<numbers, comma-separated> npx tsx scripts/mark_batch.ts`);
   return lines.join("\n");
 }

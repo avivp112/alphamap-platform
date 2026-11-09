@@ -310,6 +310,9 @@
     "headcountGrowth": "员工人数增长：",
     "serialFounderBonus": "连续创业者加分：",
     "headcountHistory": "员工人数变化",
+    "hiring": {
+      "title": "招聘活动"
+    },
     "patentPortfolio": "专利组合",
     "technology": "技术",
     "acquisitions": "收购记录",

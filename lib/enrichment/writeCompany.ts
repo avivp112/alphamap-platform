@@ -19,13 +19,18 @@ import { fetchArticleOgImage } from "./ogImage.ts";
 import { cleanPeople, isFounderEntry, cleanFounderTitle } from "./people.ts";
 import { samePersonName } from "./linkedin.ts";
 import { checkHeadcountOutlier } from "./validation.ts";
+import { screenPoints, type HistoryPoint } from "./headcountHistory.ts";
+import { supportedTags } from "./quoteFinder.ts";
+import { extractionPoints } from "./headcountSources.ts";
+import { stripTrackingParams, sameNewsEvent } from "./newsRelevance.ts";
+import { profileSourceAllowed } from "./roundSources.ts";
 import { countryFromLocationQuote } from "./location.ts";
 import { retireReplacedExecutives } from "./update.ts";
 import { MAJOR_CITIES } from "./majorCities.ts";
 import { normalizeForMatch } from "./evidence.ts";
 import { computeTotalRaised, computeDebtRaised } from "./rounds.ts";
 import { computeFieldConfidence, meetsProfileThreshold } from "./confidence.ts";
-import { roundFieldEvidence } from "./roundProvenance.ts";
+import { roundFieldEvidence, evidencedFillPatch } from "./roundProvenance.ts";
 import { startupChanges, roundInsertChange, roundUpdateChanges, type FieldChangeRow } from "./runChanges.ts";
 import { hintKey, type RoundHint } from "./hints.ts";
 import { cleanNarrative, verifierFrom } from "./narrative.ts";
@@ -34,7 +39,7 @@ import {
 } from "./write.ts";
 import { validateWebsiteCandidate, websiteDomain, type DomainOwner } from "./websiteValidation.ts";
 import { sourceTypeRank, type SourceType } from "./sourceTypes.ts";
-import { restrictPatch, writesRounds, writesBios, writesHeadcount, fieldOfColumn, withoutBio } from "./writeUnits.ts";
+import { restrictPatch, writesRounds, writesBios, writesHeadcount, writesCompetitorTier, writesFounderBackground, writesTags, writesEmployeeHistory, fieldOfColumn, withoutBio } from "./writeUnits.ts";
 
 // Upper bounds on the additive list sections, so repeated runs can't grow
 // them without limit. Entries already on file are never removed.
@@ -112,7 +117,7 @@ export interface WriteOutcome {
   patch: Record<string, unknown>;
   roundInserts: CollectedCompany["plan"]["inserts"];
   roundUpdates: CollectedCompany["plan"]["updates"];
-  headcountPoints: Array<{ date: string; count: number; pointType?: string }>;
+  headcountPoints: Array<{ date: string; count: number; pointType?: string; sourceUrl?: string; quote?: string; measure?: string; lowerBound?: boolean; countMax?: number }>;
   tags: string[];
   newsAdded: number;
   competitorsAdded: number;
@@ -166,7 +171,17 @@ export async function writeCollected(
   if (!DRY_RUN && !OPEN) throw new Error("writeCollected: a wet write needs the open fields (ctx.openFields) — the tracker is the gate.");
   // Rounds only when the rounds field is open (a held-back round is counted for the report).
   const roundsHeldBack = OPEN && !writesRounds(OPEN) ? fullPlan.inserts.length + fullPlan.updates.length : 0;
-  const plan = OPEN && !writesRounds(OPEN) ? { ...fullPlan, inserts: [], updates: [] } : fullPlan;
+  const planned = OPEN && !writesRounds(OPEN) ? { ...fullPlan, inserts: [], updates: [] } : fullPlan;
+  // A round on file is filled only with values that have evidence behind them (an amount, valuation, date, lead investor):
+  // an investor list has none, so it is never written as a fill (pilot dry run 2026-11-08: "Swan's existing investors").
+  const plan = {
+    ...planned,
+    updates: planned.updates.flatMap((u) => {
+      const patch = evidencedFillPatch(u.patch as Record<string, unknown>, funding.funding_rounds);
+      if (!patch) { bump(summary.droppedByReason, "round_fill_without_evidence"); return []; }
+      return [{ ...u, patch } as typeof u];
+    }),
+  };
   // Bios (and the tags read off them) only when the bios field is open.
   const keepBio = <T extends Record<string, unknown>>(person: T): T => (!OPEN || writesBios(OPEN) ? person : withoutBio(person));
 
@@ -301,7 +316,13 @@ export async function writeCollected(
     console.log(`    🏷️   Tag "${t}" dropped — it belongs to another sector and nothing in the description is about it.`);
     bump(summary.droppedByReason, "tag_outside_sector_unsupported");
   }
-  const tagNames = tagFilter.kept;
+  // A tag needs a sentence of an allowed page that carries it (quoteFinder.ts supportedTags, owner 2026-11-08).
+  const supported = supportedTags(tagFilter.kept, allSources.filter((x) => profileSourceAllowed(x, row.name)).map((x) => ({ id: x.source_id, content: x.content ?? "" })));
+  for (const t of supported.dropped) {
+    console.log(`    🏷️   Tag "${t}" dropped — no sentence of an allowed page supports it.`);
+    bump(summary.droppedByReason, "tag_unsupported");
+  }
+  const tagNames = supported.kept.map((k) => k.tag);
   const tagSectorIds: string[] = [];
   for (const tagName of tagNames) {
     const { data: tagId } = await supabase.rpc("sector_id_by_name", { p_name: tagName });
@@ -312,6 +333,7 @@ export async function writeCollected(
   const founderCandidates = cleanPeople((profile.profile.founders ?? []).map((f) => keepBio({
     name: f.name, title: cleanFounderTitle(f.title, row.name), bio: f.bio, linkedin_url: f.linkedin_url?.value,
     had_prior_exit: f.had_prior_exit, elite_background: f.elite_background, notable_pedigree: f.notable_pedigree,
+    ...(f.background?.length && (!OPEN || writesFounderBackground(OPEN)) ? { background: f.background } : {}),
   })));
   const cleanFounders = founderCandidates.filter(isFounderEntry);
   // A hired executive the model listed as a founder stays in leadership.
@@ -378,13 +400,15 @@ export async function writeCollected(
   // An explanation on file that names a data platform or says where it was read
   // (narrative.ts) is replaced by this run's own for the same competitor; with
   // none, it stays as stored (the site hides the offending part).
-  const freshExplanation = new Map(market.competitors.map((c) => [normalizeForMatch(c.name), c.how_it_competes]));
+  // Each tier is written only when its own field is open in the tracker (owner, 2026-11-07).
+  const marketCompetitors = OPEN ? market.competitors.filter((c) => writesCompetitorTier(OPEN, c.tier)) : market.competitors;
+  const freshExplanation = new Map(marketCompetitors.map((c) => [normalizeForMatch(c.name), c.how_it_competes]));
   let staleExplanations = 0;
   // A competitor an earlier run wrote without a verified source is marked
   // unverified (scripts/clean_legacy_market_data.ts) and stays, labelled on
   // the site; when this run verifies the same competitor, its sourced entry
   // replaces the old one.
-  const verifiedNow = new Set(market.competitors.map((c) => normalizeForMatch(c.name)));
+  const verifiedNow = new Set(marketCompetitors.map((c) => normalizeForMatch(c.name)));
   const replacedUnverified = (reconciled.competitors as NonNullable<V2StartupRow["competitors"]>).filter((c) => c?.unverified && verifiedNow.has(normalizeForMatch(c.name ?? ""))).length;
   if (replacedUnverified) console.log(`    ✅  ${replacedUnverified} unverified competitor(s) now verified by a primary source.`);
   const existingCompetitors = (reconciled.competitors as NonNullable<V2StartupRow["competitors"]>).filter((c) => !(c?.unverified && verifiedNow.has(normalizeForMatch(c.name ?? "")))).map((c) => {
@@ -401,12 +425,12 @@ export async function writeCollected(
   else refresh.add("competitors");
   const competitors = appendNew(
     existingCompetitors,
-    market.competitors.map((c) => ({ name: c.name, website: c.website ?? null, how_it_competes: c.how_it_competes, startup_id: crossLink(c.website), source_url: sourceUrlFor(c.source_id) })),
+    marketCompetitors.map((c) => ({ name: c.name, website: c.website ?? null, how_it_competes: c.how_it_competes, startup_id: crossLink(c.website), source_url: sourceUrlFor(c.source_id), ...(c.tier === "market" ? { tier: "market" as const } : {}) })),
     (c) => normalizeForMatch(c.name ?? ""), MAX_COMPETITORS,
   );
   let competitorsAdded = competitors.length - existingCompetitors.length;
   // Each new competitor's provenance: the primary source that says they compete (competitorEvidence.ts).
-  for (const c of market.competitors) {
+  for (const c of marketCompetitors) {
     if (c.source_id && c.evidence_quote && competitors.some((x) => normalizeForMatch(x.name ?? "") === normalizeForMatch(c.name)) && !existingCompetitors.some((x) => normalizeForMatch(x?.name ?? "") === normalizeForMatch(c.name))) {
       provenance("market.competitors", c.name, { source_id: c.source_id, evidence_quote: c.evidence_quote });
     }
@@ -430,7 +454,10 @@ export async function writeCollected(
   if (collected.patentsFromRegister) {
     const registerPatents = market.patents.map((p) => ({ title: p.title, patent_number: p.patent_number ?? null, filing_date: p.filing_date ?? null, url: p.url ?? null, summary: null, source: "epo" }));
     if (!sameJson(registerPatents, row.patents ?? [])) patch.patents = registerPatents;
-    if (market.patent_summary.patent_count !== row.patent_count) patch.patent_count = market.patent_summary.patent_count;
+    // "0 patents" is a claim of absence a name search cannot prove (wet batch 1 wrote 0 for four companies, none in the numbered
+    // report): a count is written when it is above zero, or replaces a count on file.
+    const pc = market.patent_summary.patent_count;
+    if (pc !== row.patent_count && !((pc === 0 || pc == null) && row.patent_count == null)) patch.patent_count = pc;
     // Fields were only ever read off pages.
     if (row.patent_fields?.length) patch.patent_fields = [];
     refresh.delete("patents");
@@ -452,12 +479,17 @@ export async function writeCollected(
   const existingNews = reconciled.news as NonNullable<V2StartupRow["news"]>;
   if (reconciled.notes.some((n) => n.startsWith("cleared news date"))) patch.news = existingNews;
   const existingNewsKeys = new Set(existingNews.map((n) => normalizeUrlForMatch(n.url ?? "")));
-  const freshNews = market.news.filter((n) => !existingNewsKeys.has(normalizeUrlForMatch(n.url)));
+  // Not on file by address, and not another report of an event already on file (wet batch 1 left Business Wire's "$58M Series B"
+  // on file; the next dry run offered Glilot's copy of the same news as new).
+  const onFileUrl = market.news.filter((n) => existingNewsKeys.has(normalizeUrlForMatch(n.url)));
+  const sameEventOnFile = market.news.filter((n) => !existingNewsKeys.has(normalizeUrlForMatch(n.url)) && existingNews.some((e) => sameNewsEvent({ title: n.title, published_date: n.published_date }, { title: e.title ?? "", published_date: e.published_date ?? null })));
+  const freshNews = market.news.filter((n) => !onFileUrl.includes(n) && !sameEventOnFile.includes(n));
+  if (onFileUrl.length || sameEventOnFile.length) console.log(`    📰  News found: ${market.news.length} — ${onFileUrl.length} already on file${sameEventOnFile.length ? `, ${sameEventOnFile.length} another report of an event on file (${sameEventOnFile.map((n) => `"${n.title.slice(0, 40)}"`).join(", ")})` : ""}; ${freshNews.length} new.`);
   let newsAdded = 0;
   if (freshNews.length > 0 && existingNews.length < MAX_NEWS) {
     const toAdd = freshNews.slice(0, MAX_NEWS - existingNews.length);
     const withImages = await Promise.all(toAdd.map(async (n) => ({
-      title: n.title, url: n.url, source: n.source ?? null,
+      title: n.title, url: stripTrackingParams(n.url), source: n.source ?? null,
       // An article dated before the company existed is a wrong date, not
       // a time-travelling article — the date is dropped, the article kept.
       published_date: (() => {
@@ -509,10 +541,15 @@ export async function writeCollected(
 
   // Talent & growth: headcount (issue 6's guard + validation's outlier check)
   const totalRaisedEstimate = computeTotalRaised([...existingRefs, ...fullPlan.inserts]);
-  const headcountPoints: Array<{ date: string; count: number; pointType?: string }> = [];
-  for (const h of profile.metrics.headcount_history ?? []) {
+  const headcountPoints: Array<{ date: string; count: number; pointType?: string; sourceUrl?: string; quote?: string; measure?: string; lowerBound?: boolean; countMax?: number }> = [];
+  for (const h of extractionPoints(profile.metrics.headcount_history, sourceById, row.name)) {
     const date = normalizeIsoDate(h.date);
-    if (date && h.employee_count > 0 && !headcountPoints.some((p) => p.date === date)) headcountPoints.push({ date, count: h.employee_count, pointType: h.point_type ?? "press_reported" });
+    if (date && h.employee_count > 0 && !headcountPoints.some((p) => p.date === date && p.pointType === h.point_type)) headcountPoints.push({ date, count: h.employee_count, pointType: h.point_type ?? "press_reported", sourceUrl: sourceById.get(h.source_id)?.url, quote: h.evidence_quote });
+  }
+  for (const h of profile.metrics.headcount_history ?? []) if (!extractionPoints([h], sourceById, row.name).length) bump(summary.droppedByReason, "headcount_point_not_usable");
+  // Points from the registers, plans and archived pages (headcountHistory.ts), screened like the rest.
+  for (const x of collected.headcountExtra ?? []) {
+    if (!headcountPoints.some((p) => p.date === x.date && p.pointType === x.type)) headcountPoints.push({ date: x.date, count: x.value, countMax: x.valueMax, pointType: x.type, sourceUrl: x.sourceUrl, quote: x.quote, measure: x.measure, lowerBound: x.lowerBound });
   }
   const acceptedHeadcount = validation.accepted.employee_count;
   if (acceptedHeadcount != null && profile.metrics.employee_count) {
@@ -553,6 +590,17 @@ export async function writeCollected(
       headcountPoints.splice(i, 1);
     }
   }
+  // Jumps and repeats within the series (headcountHistory.ts): what is dropped here is named; two points that
+  // contradict each other in one month stay, both, with their types.
+  {
+    const asPoint = (hp: (typeof headcountPoints)[number]): HistoryPoint => ({ date: hp.date, value: hp.count, valueMax: hp.countMax, lowerBound: hp.lowerBound, type: (hp.pointType ?? "observed") as HistoryPoint["type"], sourceUrl: hp.sourceUrl ?? "", quote: hp.quote, measure: hp.measure });
+    const screened = screenPoints(headcountPoints.map(asPoint), { totalRaisedUsd: totalRaisedEstimate, foundedYear: foundedForChecks });
+    for (const d of screened.dropped) {
+      const i = headcountPoints.findIndex((hp) => hp.date === d.point.date && hp.count === d.point.value && (hp.pointType ?? "observed") === d.point.type);
+      if (i >= 0) { console.log(`    ⚠️  Headcount point ${d.point.value}@${d.point.date} (${d.point.type}) dropped — ${d.why}.`); bump(summary.droppedByReason, `headcount_point_${d.why}`); headcountPoints.splice(i, 1); }
+    }
+    for (const c of screened.conflicts) console.log(`    ℹ️  Headcount points disagree in one month: ${c.a.value} (${c.a.type}) and ${c.b.value} (${c.b.type}) @ ${c.a.date.slice(0, 7)} — both kept.`);
+  }
   // The same check on points already on file — an earlier run wrote
   // Gladia's 70,000 point; it shouldn't stay on the growth chart forever.
   const finalHeadcount = (patch.employee_count as number | undefined) ?? row.employee_count;
@@ -585,10 +633,10 @@ export async function writeCollected(
     for (let i = fieldWrites.length - 1; i >= 0; i--) {
       if (!(fieldWrites[i].field.replace(/^(profile|metrics)\./, "") in patch)) fieldWrites.splice(i, 1);
     }
-    if (!writesHeadcount(OPEN)) headcountPoints.length = 0;
+    if (!writesEmployeeHistory(OPEN)) headcountPoints.length = 0;
     if (!patch.news) newsAdded = 0;
     if (!patch.competitors) competitorsAdded = 0;
-    tagSectorIds.length = 0;
+    if (!writesTags(OPEN)) tagSectorIds.length = 0;
     const notOpen = [...new Set(cut.heldBack.map((c) => fieldOfColumn(c)).filter((f): f is string => !!f))];
     const untracked = cut.heldBack.filter((c) => !fieldOfColumn(c));
     if (notOpen.length || roundsHeldBack || untracked.length) {
@@ -609,10 +657,26 @@ export async function writeCollected(
           one("founder", `${f.name}${f.title ? ` — ${f.title}` : ""}`, grounded?.grounded_url ?? null);
           if (f.bio) one("founder_bio", `${f.name}: ${f.bio}`, grounded?.grounded_url ?? null);
         }
+        for (const f of (patch.founders ?? []) as Array<{ name: string; background?: Array<{ kind: string; organization: string; role?: string; source_id: string; evidence_quote: string }> }>) {
+          const filed = ((rowOf.founders ?? []) as Array<{ name?: string; background?: Array<{ kind: string; organization: string }> }>).find((x) => samePersonName(x.name ?? "", f.name))?.background ?? [];
+          for (const b of f.background ?? []) {
+            if (filed.some((h) => h.kind === b.kind && h.organization.toLowerCase() === b.organization.toLowerCase())) continue;
+            one("founder_background", `${f.name}: ${b.kind.replace("_", " ")} — ${b.organization}${b.role ? `, ${b.role}` : ""}`, sourceById.get(b.source_id)?.url ?? null, b.evidence_quote);
+          }
+        }
       } else if (k === "leadership") {
-        for (const l of newOf<{ name: string; role?: string | null; bio?: string | null }>(patch.leadership, rowOf.leadership, (a, b) => samePersonName(a.name ?? "", b.name))) one("leader", `${l.name} — ${l.role ?? ""}${l.bio ? ` · ${l.bio}` : ""}`, null);
+        for (const l of newOf<{ name: string; role?: string | null; group?: string | null; bio?: string | null }>(patch.leadership, rowOf.leadership, (a, b) => samePersonName(a.name ?? "", b.name))) {
+          // The page that names the person: the bio's allowed source, else the first allowed page that does (so the value has a source on file).
+          const ids = (profile.leadership ?? []).find((x) => samePersonName(x.name, l.name))?.bio_source_ids;
+          const src = ((ids ?? []).map((id) => sourceById.get(id)).find((x) => x && profileSourceAllowed(x, row.name)))
+            ?? allSources.find((x) => profileSourceAllowed(x, row.name) && `${x.title ?? ""} ${x.content ?? ""}`.toLowerCase().includes((l.name.trim().split(/\s+/).pop() ?? l.name).toLowerCase()));
+          const last = (l.name.trim().split(/\s+/).pop() ?? l.name).toLowerCase();
+          const quote = src ? (`${src.title ?? ""}. ${src.content ?? ""}`.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/).find((sen) => sen.length <= 300 && sen.toLowerCase().includes(last)) ?? null) : null;
+          // The board is its own group, never a leader (owner, 2026-11-09): reported, marked and verified as "board".
+          one((l as { group?: string | null }).group === "board" ? "board" : "leader", `${l.name} — ${l.role ?? ""}${l.bio ? ` · ${l.bio}` : ""}`, src?.url ?? null, quote);
+        }
       } else if (k === "competitors") {
-        for (const c of newOf<{ name: string; source_url?: string | null }>(patch.competitors, rowOf.competitors, (a, b) => normalizeForMatch(a.name ?? "") === normalizeForMatch(b.name))) one("competitor", c.name, c.source_url ?? null);
+        for (const c of newOf<{ name: string; source_url?: string | null; tier?: string }>(patch.competitors, rowOf.competitors, (a, b) => normalizeForMatch(a.name ?? "") === normalizeForMatch(b.name))) one(c.tier === "market" ? "competitor_market" : "competitor_declared", c.name, c.source_url ?? null);
       } else if (k === "patents") {
         for (const pt of newOf<{ patent_number?: string | null; title: string; url?: string | null }>(patch.patents, rowOf.patents, (a, b) => a.patent_number === b.patent_number)) one("patent", `${pt.patent_number ?? ""} ${pt.title}`.trim(), pt.url ?? null);
       } else if (k === "offices") {
@@ -627,7 +691,11 @@ export async function writeCollected(
       const amount = r.amount_raised == null ? "amount not disclosed" : `$${+(r.amount_raised / 1e6).toFixed(1)}M`;
       reportLines.push({ field: "round", before: null, after: `${r.round_type} ${amount} · ${r.announcement_date ?? "no date"}${r.lead_investor ? ` · lead ${r.lead_investor}` : ""}`, source_url: r.source_url ?? null, quote: null });
     }
-    for (const u of plan.updates) reportLines.push({ field: "round", before: "(on file)", after: `${u.round_type} filled: ${JSON.stringify(u.patch)}`, source_url: null, quote: null });
+    for (const u of plan.updates) {
+      // A filled round field shows the source of the evidence it was filled from (it had "no source" in the report; the provenance row had it all along).
+      const ev = roundFieldEvidence(u.patch, funding.funding_rounds)[0];
+      reportLines.push({ field: "round", before: "(on file)", after: `${u.round_type} filled: ${JSON.stringify(u.patch)}`, source_url: ev ? sourceById.get(ev.source_id)?.url ?? null : null, quote: ev?.evidence_quote ?? null });
+    }
     for (const h of headcountPoints) reportLines.push({ field: "headcount_history", before: null, after: `${h.count} on ${h.date} (${h.pointType ?? "observed"})`, source_url: null, quote: null });
     for (const c of reportLines) console.log(`    ${DRY_RUN ? "[DRY] would write" : "✏️  writing"} ${c.field}: ${c.before == null ? "" : `${JSON.stringify(c.before)} → `}${typeof c.after === "string" ? c.after : JSON.stringify(c.after)}  (${c.source_url ?? "no source"})`);
     if (!reportLines.length) console.log("    🟠 nothing to write for the open fields");
@@ -695,6 +763,24 @@ export async function writeCollected(
       if (provenanceErr) console.warn(`    ⚠️  field_provenance insert failed (${fw.field}): ${provenanceErr.message}`);
     };
     for (const fw of fieldWrites) await writeProvenance(fw);
+    // News, founders, leaders and patents live in jsonb lists with no source of their own: each value written gets a
+    // field_provenance row (owner, 2026-11-08), so that every value of a batch has its source on file.
+    const listKey: Record<string, (after: unknown) => string> = {
+      news: (a) => `news.${String(a).split(" — ").slice(1).join(" — ").slice(0, 120)}`,
+      founder: (a) => `founders.${String(a).split(" — ")[0]}`,
+      leader: (a) => `leadership.${String(a).split(" — ")[0]}`,
+      board: (a) => `leadership.${String(a).split(" — ")[0]}`,
+      patent: (a) => `patents.${String(a).split(" ")[0]}`,
+    };
+    for (const rl of reportLines.filter((r) => listKey[r.field] && r.source_url)) {
+      const src = allSources.find((x) => x.url === rl.source_url);
+      const { error: lpErr } = await supabase.from("field_provenance").insert({
+        startup_id: row.id, field: listKey[rl.field](rl.after), value: rl.after, source_url: rl.source_url,
+        source_type: src?.source_type ?? (rl.field === "patent" ? "registry" : "news"), evidence_quote: rl.quote ?? (typeof rl.after === "string" ? rl.after.slice(0, 200) : null),
+        confidence: computeFieldConfidence([{ source_type: src?.source_type ?? "news" }]), run_id: runId,
+      });
+      if (lpErr) console.warn(`    ⚠️  field_provenance insert failed (${rl.field}): ${lpErr.message}`);
+    }
     // A round's amount / valuation / date / lead: field "funding_rounds.<id>.<column>".
     const roundProvenance = async (roundId: string, written: Parameters<typeof roundFieldEvidence>[0]) => {
       for (const e of roundFieldEvidence(written, funding.funding_rounds)) {
@@ -711,15 +797,18 @@ export async function writeCollected(
     // so a backfilled point carries its own date there too, not "now".
     for (const p of headcountPoints) {
       const base = { startup_id: row.id, employee_count: p.count, snapshot_date: p.date, recorded_date: `${p.date}T00:00:00Z` };
-      let { error: hcErr } = await supabase.from("headcount_history").upsert({ ...base, point_type: p.pointType ?? "observed" }, { onConflict: "startup_id,snapshot_date" });
-      // Before migration 20261117000000 the column is missing: the point is still written.
-      if (hcErr && /point_type/.test(hcErr.message)) ({ error: hcErr } = await supabase.from("headcount_history").upsert(base, { onConflict: "startup_id,snapshot_date" }));
+      let { error: hcErr } = await supabase.from("headcount_history").upsert({
+        ...base, point_type: p.pointType ?? "observed", source_url: p.sourceUrl ?? null, evidence_quote: p.quote ?? null,
+        measure: p.measure ?? null, is_lower_bound: !!p.lowerBound, employee_count_max: p.countMax ?? null,
+      }, { onConflict: "startup_id,snapshot_date,point_type" });
+      // Before migration 20261117000000 the columns are missing: the point is still written (the older day key).
+      if (hcErr && /point_type|source_url|evidence_quote|measure|is_lower_bound|employee_count_max|constraint/.test(hcErr.message)) ({ error: hcErr } = await supabase.from("headcount_history").upsert(base, { onConflict: "startup_id,snapshot_date" }));
       if (hcErr) console.warn(`    ⚠️  headcount_history upsert failed (${p.date}): ${hcErr.message}`);
     }
 
     for (const round of plan.inserts) {
       const roundRow = {
-        startup_id: row.id, round_type: round.round_type,
+        startup_id: row.id, round_type: round.round_type === "Unknown" ? null : round.round_type,
         amount_raised: round.amount_raised ?? null, valuation: round.valuation ?? null,
         amount_original: round.amount_currency ? (round.amount_original ?? null) : null, amount_currency: round.amount_currency ?? null,
         is_valuation_estimated: round.valuation != null ? (round.is_valuation_estimated ?? null) : null,

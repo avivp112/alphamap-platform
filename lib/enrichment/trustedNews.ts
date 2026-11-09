@@ -13,7 +13,7 @@ export const TRUSTED_NEWS_DOMAINS = [
   // General and business
   "reuters.com", "apnews.com", "bloomberg.com", "wsj.com", "ft.com", "nytimes.com", "washingtonpost.com", "theguardian.com",
   "bbc.com", "bbc.co.uk", "cnbc.com", "economist.com", "forbes.com", "fortune.com", "businessinsider.com", "axios.com",
-  "fastcompany.com", "inc.com", "theinformation.com",
+  "fastcompany.com", "inc.com", "theinformation.com", "barrons.com", "marketwatch.com", "latimes.com",
   // Technology
   "techcrunch.com", "theverge.com", "wired.com", "venturebeat.com", "siliconangle.com", "zdnet.com", "theregister.com",
   "arstechnica.com", "engadget.com", "geekwire.com", "thenextweb.com", "sifted.eu", "tech.eu", "techinasia.com",

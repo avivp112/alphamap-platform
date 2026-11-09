@@ -132,6 +132,13 @@ export function debtNextToAmount(text: string, amount: number): boolean {
   return false;
 }
 
+/** Another figure of `text` than `amount` that has a debt word right beside it ("a $25 million loan from SVB"). */
+function otherFigureIsDebt(text: string, amount: number): boolean {
+  return extractNumbersFromText(text).some((n) => Math.abs(n - amount) / amount > 0.005 && debtNextToAmount(text, n));
+}
+
+const otherFigureExists = (text: string, amount: number) => extractNumbersFromText(text).some((n) => Math.abs(n - amount) / amount > 0.005 && n >= 100_000);
+
 const EQUITY_LABELS = new Set(["Pre-Seed", "Seed", "Series A", "Series B", "Series C", "Series D", "Series E", "Series F+", "Growth", "Bridge", "Unknown", "Other"]);
 
 /**
@@ -144,7 +151,22 @@ export function groundRoundType(round: V2Round, sources: LabeledSource[]): { rou
   const type = normalizeRoundType(round.round_type);
   const byId = new Map(sources.map((s) => [s.source_id, s]));
   const quotes = [round.amount_raised, round.valuation, round.announcement_date, round.lead_investor].map((e) => e?.evidence_quote ?? "").join("\n");
-  if (EQUITY_LABELS.has(type) && TYPE_STATED["Debt"]!.test(quotes) && !(TYPE_STATED[type]?.test(quotes))) {
+  // An announcement that splits one total into a loan and equity ("$115 million: a $25 million loan from SVB
+  // and $90 million in equity led by Nimble" — Reliable Robotics, owner 2026-11-06): the loan is the figure the
+  // text calls a loan, the rest is equity. A loan word in the quotes makes THIS figure debt only when it sits
+  // beside THIS figure — never because another figure in the same sentence is the loan.
+  const amount = round.amount_raised?.value ?? null;
+  const evidence = `${quotes}\n${roundTypeEvidence(round, byId)}`;
+  const loanIsAnotherFigure = amount != null && !debtNextToAmount(evidence, amount) && otherFigureIsDebt(evidence, amount);
+  if ((type === "Debt" || type === "Venture Debt") && loanIsAnotherFigure) {
+    const named = statedRoundLabels(amountSentenceAndHeadline(round, byId));
+    return { round_type: named.length === 1 ? named[0] : "Other", stated: true };
+  }
+  // The figure the text itself calls a loan is debt, whatever equity round the same text also names.
+  if (EQUITY_LABELS.has(type) && amount != null && debtNextToAmount(evidence, amount) && otherFigureExists(evidence, amount)) {
+    return { round_type: /\bventure debt\b/i.test(evidence) ? "Venture Debt" : "Debt", stated: true };
+  }
+  if (EQUITY_LABELS.has(type) && TYPE_STATED["Debt"]!.test(quotes) && !(TYPE_STATED[type]?.test(quotes)) && !loanIsAnotherFigure) {
     return { round_type: TYPE_STATED["Venture Debt"]!.test(quotes) ? "Venture Debt" : "Debt", stated: true };
   }
   // An untyped figure that its own source calls debt is debt (owner, 2026-11-01:
@@ -362,11 +384,28 @@ export function rejectRound(round: V2Round, companyName: string, sources: Labele
   const bareName = companyName.replace(/\.(io|ai|com|co|app|so|dev|net)$/i, "");
   if (raiser && !NOT_A_RAISER.test(raiser) && !namesCompany(raiser, companyName) && !namesCompany(raiser, bareName)) return "round_raised_by_another_company";
   if (!allowedSomewhere) return "round_source_not_listed";
+  // The amount is the value most often wrong, so ITS source must be an allowed one — not just some other source the
+  // round cites (owner, 2026-11-08: Apex's "Series E $185.1M" came from forgeglobal.com, a secondary market, while
+  // the lead investor's source was allowed). A round whose amount stands only on an unlisted or denied source is not
+  // written: it goes the way of every platform-only round (a hint, searched for in a primary source).
+  const amountSource = round.amount_raised?.source_id ? byId.get(round.amount_raised.source_id) : undefined;
+  if (amountSource && amountSource.url) {
+    const st = roundSourceStanding(amountSource.url, { isCompanySite: amountSource.source_type === "company_site", leadInvestor: round.lead_investor?.value, content: amountSource.content, headline: amountSource.title, companyName });
+    if (st.kind === "denied") return "round_only_from_data_platform";
+    if (st.kind === "unlisted") return "round_source_not_listed";
+  }
   // No amount, while its own source's headline or address states one (field review run 3:
   // Forward Financing's "expanded-450-million-credit-facility" written as "amount not disclosed").
+  // Every source the round cites counts, not only its own source_url (owner, 2026-11-06: Parloa's
+  // "…valued-at-3-billion-with-350m-series-d" was written without an amount because the check looked
+  // at source_url alone, and a quote's source is often another record of the same article).
   if (round.amount_raised?.value == null && type !== "Acquired" && type !== "IPO") {
-    const src = round.source_url ? sources.find((x) => x.url === round.source_url) : undefined;
-    if (statesAmount(`${src?.title ?? ""} ${round.source_url ?? ""}`)) return "round_amount_stated_but_missing";
+    const urlKey = (u: string) => u.replace(/[?#].*$/, "").replace(/\/+$/, "").toLowerCase();
+    const citedSources = new Map<string, LabeledSource>();
+    for (const f of [round.lead_investor, round.valuation, round.announcement_date]) { const x = f?.source_id ? byId.get(f.source_id) : undefined; if (x) citedSources.set(x.source_id, x); }
+    if (round.source_url) for (const x of sources) if (urlKey(x.url) === urlKey(round.source_url)) citedSources.set(x.source_id, x);
+    const states = [...citedSources.values()].some((x) => statesAmount(`${x.title ?? ""} ${x.url}`)) || (!!round.source_url && statesAmount(round.source_url));
+    if (states) return "round_amount_stated_but_missing";
   }
   return null;
 }
@@ -391,7 +430,7 @@ export type IncompleteRoundRejection = "round_without_amount_incomplete" | "roun
 export function incompleteRound(r: RoundLike): IncompleteRoundRejection | null {
   const type = normalizeRoundType(r.round_type);
   if (r.amount_raised == null && (GENERIC_TYPES.has(type) || !r.announcement_date || !r.lead_investor)) return "round_without_amount_incomplete";
-  if (type === "Other" && !r.announcement_date) return "round_other_without_date";
+  if (GENERIC_TYPES.has(type) && !r.announcement_date) return "round_other_without_date";
   return null;
 }
 
@@ -642,6 +681,7 @@ export function mergeMarketExtractions(base: V2MarketExtraction, extra: V2Market
 
   return {
     competitors, acquisitions, news, patents,
+    market_peers: [...new Set([...(base.market_peers ?? []), ...(extra.market_peers ?? [])])].slice(0, 5),
     patent_summary: {
       patent_count: base.patent_summary.patent_count ?? extra.patent_summary.patent_count,
       patent_fields: base.patent_summary.patent_fields.length ? base.patent_summary.patent_fields : extra.patent_summary.patent_fields,

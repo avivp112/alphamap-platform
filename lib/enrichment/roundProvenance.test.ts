@@ -51,3 +51,17 @@ describe("roundFieldEvidence", () => {
     expect(roundFieldEvidence({ amount_raised: null, valuation: undefined }, extracted)).toEqual([]);
   });
 });
+
+import { evidencedFillPatch } from "./roundProvenance";
+describe("evidencedFillPatch — no round value without a source (owner, 2026-11-09)", () => {
+  const extracted = [{ round_type: "Series B", lead_investor: { value: "Lakestar", source_id: "S1", evidence_quote: "led by Lakestar" }, amount_raised: { value: 37_000_000, source_id: "S1", evidence_quote: "€37 million" } }] as never;
+  it("investor lists never fill a round on file (Adaptive Shield, Appcharge, Upside)", () => {
+    expect(evidencedFillPatch({ investors: ["Existing investors"], investor_amounts: {} }, extracted)).toBeNull();
+  });
+  it("a column no source backs is removed; the backed one stays", () => {
+    expect(evidencedFillPatch({ lead_investor: "Lakestar", valuation: 500_000_000, investors: ["A"] }, extracted)).toEqual({ lead_investor: "Lakestar" });
+  });
+  it("nothing backed, nothing written", () => {
+    expect(evidencedFillPatch({ valuation: 500_000_000 }, extracted)).toBeNull();
+  });
+});

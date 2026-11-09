@@ -24,6 +24,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { requestFor } from "./models.ts";
 import { sanitizeModelOutput, ensureArray } from "./sanitize";
 import { verifyEvidence, normalizeForMatch, dateFromUrl, type EvidenceSource } from "./evidence";
+import { sourceHeadlineDetail } from "./newsRelevance";
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
 import { debugDumpJson } from "./debugDump";
 import { competitorRelation, type RelationDrop } from "./competitorRelation";
@@ -38,11 +39,13 @@ export interface EvidencedValue<T> {
 
 export interface V2Competitor {
   name: string; website?: string; how_it_competes: string; source_ids?: string[];
+  /** declared: a source says they compete; market: an allowed source puts both in one market (competitorTiers.ts). Absent: declared. */
+  tier?: "declared" | "market";
   /** The ONE primary source that says they compete, and its verbatim sentence (competitorEvidence.ts). */
   source_id?: string; evidence_quote?: string;
 }
 export interface V2Acquisition { company_name: string; website?: string; acquired_date?: string; amount?: number; description?: string; source_ids?: string[] }
-export interface V2NewsItem { title: string; url: string; source?: string; published_date?: string; summary?: string; image_url?: string }
+export interface V2NewsItem { title_joined?: boolean; title: string; url: string; source?: string; published_date?: string; summary?: string; image_url?: string }
 /** A patent from the EPO register (epoPatents.ts) — the only source of patents. */
 export interface V2PatentRecord { title: string; patent_number?: string; filing_date?: string | null; url?: string; summary?: string; source?: "epo" }
 export interface V2Technology {
@@ -53,6 +56,8 @@ export interface V2Technology {
 
 export interface V2MarketExtraction {
   competitors: V2Competitor[];
+  /** Up to 5 names the model proposes as companies of the same market — hints only, verified by a targeted search (competitorTiers.ts). */
+  market_peers?: string[];
   acquisitions: V2Acquisition[];
   news: V2NewsItem[];
   patent_summary: { patent_count: number | null; patent_fields: string[] };
@@ -70,7 +75,7 @@ export function emptyMarketExtraction(): V2MarketExtraction {
 
 export type MarketDropReason =
   | "competitor_not_in_source" | "competitor_is_self" | "acquisition_not_in_source"
-  | "news_url_not_in_sources" | "news_is_profile_page" | "patent_not_from_register"
+  | "news_url_not_in_sources" | "news_title_not_in_source" | "news_is_profile_page" | "patent_not_from_register"
   | "tech_not_in_source" | "competitor_is_acquisition" | "acquisition_is_self" | "news_date_not_in_source" | "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found"
   | RelationDrop | CompetitorEvidenceDrop;
 
@@ -119,6 +124,11 @@ function marketExtractionTool() {
             required: ["name", "how_it_competes", "source_ids", "source_id", "evidence_quote"],
           },
         },
+        market_peers: {
+          type: "array",
+          items: { type: "string" },
+          description: "HINTS, not facts: up to 5 names of companies you know sell the same kind of product to the same customers as this company. Each is searched for afterwards and kept only if an allowed source puts both in the same market. [] when unsure — never a customer, partner, investor or parent.",
+        },
         acquisitions: {
           type: "array",
           description: "Companies THIS company bought (outbound only). [] if none are reported.",
@@ -158,7 +168,7 @@ function marketExtractionTool() {
           },
         },
       },
-      required: ["competitors", "news"],
+      required: ["competitors", "news", "market_peers"],
     },
   };
 }
@@ -174,6 +184,7 @@ RULES:
 4. TECHNOLOGY — only technologies a source names (job posts, careers pages, engineering blogs, GitHub). Never infer from the sector.
 5. Never construct or guess a URL — every URL you output must appear verbatim in a source.
 6. Scan EVERY source below for each category, not just the ones whose label matches it. An empty list is correct only after that check.
+7. MARKET_PEERS — separately from COMPETITORS, list up to 5 companies you know sell the same kind of product to the same kind of customer as ${companyName}, even if no source below says they compete. These are search HINTS, not facts: each is looked up afterwards and kept only if an allowed source puts both companies in one market. Never list ${companyName} itself, a customer, an investor or a platform it runs on. [] when unsure.
 
 Labeled research (each source is tagged [S#] for a search result or [W#] for a fetched website page):
 ${context}`;
@@ -333,7 +344,12 @@ export function processMarketExtractionResponse(
     }
     // No date from the model: the article's own address may give it (Business Wire, /YYYY/MM/DD/).
     if (!publishedDate) publishedDate = dateFromUrl(src.url) ?? undefined;
-    news.push({ ...n, url: src.url, published_date: publishedDate });
+    const headline = sourceHeadlineDetail(n.title, src);
+    if (!headline) {
+      console.log(`    🚫  news title not in its source — model: "${String(n.title).slice(0, 110)}" | source title: "${String(src.title ?? "").slice(0, 110)}" | ${src.url}`);
+      dropped.push({ field: "news", reason: "news_title_not_in_source" }); continue;
+    }
+    news.push({ ...n, title: headline.title, ...(headline.joined ? { title_joined: true } : {}), url: src.url, published_date: publishedDate });
     if (news.length >= 8) break;
   }
 
@@ -356,9 +372,11 @@ export function processMarketExtractionResponse(
     return claim;
   };
 
+  const marketPeers = [...new Set(ensureArray<string>((i as { market_peers?: unknown }).market_peers).filter((n): n is string => typeof n === "string" && n.trim().length > 1 && normalizeForMatch(n) !== selfKey).map((n) => n.trim()))].slice(0, 5);
   return {
     result: {
       competitors,
+      market_peers: marketPeers,
       acquisitions,
       news,
       patent_summary: patentSummary,

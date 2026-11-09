@@ -10,12 +10,18 @@
 export const FIELD_COLUMNS: Record<string, string[]> = {
   hq_city: ["city"], hq_country: ["country"], founded_year: ["founded_year"], founding_country: ["founding_country"],
   office: ["offices", "office_countries"],
+  // Added to the review before phase 1 (owner, 2026-11-07): the text, the sector and the sub-sector tags.
+  description: ["description", "value_proposition"], sector: ["sector_id", "industry"], tags: [],
   employee_range: ["employee_range"], employee_count: ["employee_count"],
-  founder: ["founders"], leader: ["leadership"], competitor: ["competitors"],
+  // The dated points (headcount_history table), not a column of startups.
+  employee_history: [],
+  founder: ["founders"], leader: ["leadership"],
+  // Two tiers of one column (owner, 2026-11-07): declared = a source says they compete; market = one market, per an allowed source.
+  competitor_declared: ["competitors"], competitor_market: ["competitors"],
   patent: ["patents", "patent_count", "patent_fields"],
   news: ["news"],
   // Not columns of their own: the rounds table, and the bios inside founders / leadership.
-  round: [], founder_bio: [],
+  round: [], founder_bio: [], founder_background: [],
 };
 
 /** Every field a run may write once it is open. */
@@ -28,6 +34,12 @@ export function openColumnsOf(open: readonly string[]): Set<string> {
 
 export const writesRounds = (open: readonly string[]) => open.includes("round");
 export const writesBios = (open: readonly string[]) => open.includes("founder_bio");
+/** Whether a competitor of this tier may be written: its own field is open ("competitor", the field's name before the tiers, counts as declared). */
+export const writesCompetitorTier = (open: readonly string[], tier: "declared" | "market" | undefined) =>
+  tier === "market" ? open.includes("competitor_market") : open.includes("competitor_declared") || open.includes("competitor");
+export const writesFounderBackground = (open: readonly string[]) => open.includes("founder_background");
+export const writesTags = (open: readonly string[]) => open.includes("tags");
+export const writesEmployeeHistory = (open: readonly string[]) => open.includes("employee_history");
 export const writesHeadcount = (open: readonly string[]) => open.includes("employee_count");
 
 /**

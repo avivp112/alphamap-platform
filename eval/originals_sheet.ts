@@ -13,7 +13,7 @@ import { config } from "dotenv";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import { sheetValues, sheetText, sheetCsv, applyVerdict, type SheetValue } from "./originalsSheet.ts";
+import { sheetValues, sheetText, sheetCsv, applyVerdict, quoteFor } from "./originalsSheet.ts";
 import type { GoldenSet } from "./score.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -30,14 +30,6 @@ async function page(url: string): Promise<string> {
   } catch { return ""; }
 }
 
-/** The sentence of the page that carries the value (a person: the surname). */
-export function quoteFor(text: string, v: Pick<SheetValue, "field" | "value">): string {
-  const needle = (v.field === "founder" ? v.value.split(" (")[0].split(/\s+/).pop()! : v.value).toLowerCase();
-  if (!needle || needle.length < 2) return "";
-  const s = text.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/).find((x) => x.toLowerCase().includes(needle));
-  return s ? s.slice(0, 320).trim() : "";
-}
-
 (async () => {
   const base = sheetValues(golden.companies);
   if (process.env.WRONG !== undefined) {
@@ -50,12 +42,22 @@ export function quoteFor(text: string, v: Pick<SheetValue, "field" | "value">): 
     console.log(`📝  ${goldenPath} updated.`);
     return;
   }
+  // Pages are read six at a time; progress goes to stderr so a redirected run still shows it.
+  const urls = [...new Set(base.map((v) => v.source_url).filter(Boolean))];
   const pages = new Map<string, string>();
+  let done = 0, next = 0;
+  await Promise.all(Array.from({ length: 6 }, async () => {
+    while (next < urls.length) {
+      const u = urls[next++];
+      pages.set(u, await page(u));
+      done++;
+      process.stderr.write(`\rpages read: ${done}/${urls.length}`);
+    }
+  }));
+  process.stderr.write("\n");
   const quotes: Record<string, string> = {};
   for (const v of base) {
-    if (!v.source_url) continue;
-    if (!pages.has(v.source_url)) pages.set(v.source_url, await page(v.source_url));
-    const q = quoteFor(pages.get(v.source_url)!, v);
+    const q = v.source_url ? quoteFor(pages.get(v.source_url) ?? "", v) : "";
     if (q) quotes[v.id] = q;
   }
   const values = sheetValues(golden.companies, quotes);

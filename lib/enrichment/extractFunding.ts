@@ -17,7 +17,7 @@ import { sanitizeModelOutput, ensureArray } from "./sanitize";
 import { verifyEvidence, datePrecision, type EvidenceSource } from "./evidence";
 import { currencyOfAmount, toUsd } from "./currency";
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
-import { normalizeRoundType, type RoundLike } from "./rounds";
+import { normalizeRoundType, refineRoundType, type RoundLike } from "./rounds";
 import { debugDumpJson } from "./debugDump";
 
 export interface EvidencedValue<T> {
@@ -35,6 +35,8 @@ export interface V2Round {
   valuation?: EvidencedValue<number>;
   is_valuation_estimated?: boolean;
   announcement_date?: EvidencedValue<string>;
+  /** Set when the date's precision was decided after extraction (roundDates.ts: a press-only date is a month). */
+  announcement_date_precision?: "day" | "month" | "year";
   lead_investor?: EvidencedValue<string>;
   other_investors?: string[];
   investor_amounts?: V2InvestorAmount[];
@@ -73,6 +75,16 @@ export interface V2FundingExtraction {
 }
 
 /** Flattens a verified V2Round down to the plain shape rounds.ts/validation.ts operate on — called by the orchestrator AFTER evidence verification has already dropped whatever didn't check out. */
+/** A list of investor NAMES: not "existing investors", "angel investors", "a group of …" (pilot dry run 2026-11-08: "Swan's existing investors"). */
+export function investorNamesOnly(list: string[] | null | undefined): string[] | null {
+  const kept = (list ?? []).map((n) => n.trim()).filter((n) =>
+    n.length >= 2 && n.length <= 60
+    && !/\b(?:existing|current|previous|prior|new|other|several|various|undisclosed|unnamed|institutional|strategic|angel|individual|private|unidentified|participating|returning|follow-on)\s+(?:investors?|backers?|shareholders?|funds?)\b/i.test(n)
+    && !/^(?:investors?|backers?|angels?|others?|existing|a group of|group of|and others|and)\b/i.test(n)
+    && !/['’]s\s+(?:existing|current|previous)\b/i.test(n));
+  return kept.length ? kept : null;
+}
+
 export function roundToRoundLike(round: V2Round): RoundLike {
   // A figure the source writes in another currency is kept as written and
   // converted to a USD estimate (currency.ts, owner 2026-11-01).
@@ -92,14 +104,14 @@ export function roundToRoundLike(round: V2Round): RoundLike {
     // (like v1's own insertNewRounds()) must normalize defensively rather
     // than trust the raw string ever reaching rounds.ts's dedup or a DB
     // insert unnormalized.
-    round_type: normalizeRoundType(round.round_type),
+    round_type: refineRoundType(round.round_type, [round.amount_raised, round.valuation, round.announcement_date, round.lead_investor].map((f) => f?.evidence_quote ?? "").join(" ")),
     amount_raised: amount.usd,
     ...(amount.currency ? { amount_original: amount.original, amount_currency: amount.currency } : {}),
     valuation: valuation.usd,
     announcement_date: round.announcement_date?.value ?? null,
-    announcement_date_precision: round.announcement_date?.value ? datePrecision(round.announcement_date.value, round.announcement_date.evidence_quote) : null,
+    announcement_date_precision: round.announcement_date?.value ? (round.announcement_date_precision ?? datePrecision(round.announcement_date.value, round.announcement_date.evidence_quote)) : null,
     lead_investor: round.lead_investor?.value ?? null,
-    other_investors: round.other_investors ?? null,
+    other_investors: investorNamesOnly(round.other_investors),
     source_url: round.source_url ?? null,
     is_valuation_estimated: round.valuation ? (round.is_valuation_estimated ?? null) : null,
     investor_amounts: round.investor_amounts?.length ? round.investor_amounts : null,
@@ -124,7 +136,7 @@ function materialField(valueSchema: Record<string, unknown>, description: string
 const ROUND_TYPE_ENUM = [
   "Pre-Seed", "Seed", "Series A", "Series B", "Series C", "Series D", "Series E", "Series F+",
   "Growth", "Venture Debt", "Grant", "Secondary",
-  "Convertible Note", "Bootstrapped", "Acquired", "PE Buyout", "IPO", "Debt", "Other",
+  "Convertible Note", "Bootstrapped", "Acquired", "PE Buyout", "IPO", "Debt", "Other", "Unknown",
 ];
 
 function fundingExtractionTool() {
@@ -224,7 +236,9 @@ STRICT RULES:
 6. NEVER construct or guess a source_url — only a URL that appears verbatim in a source.
 7. NON-VC EVENTS — 'PE Buyout' = a private-equity takeover/buyout/take-private. 'Acquired' = bought by a strategic operating company. 'Secondary' = existing shareholders selling, NO new money to the company — never report a secondary as capital raised. 'Debt' = venture debt/credit facilities/term loans, reported but never conflated with an equity round. These are NOT exempt from rule 2: put the acquirer/buyer/lender's name in lead_investor and the event date in announcement_date, each with its own evidence_quote, exactly like a VC round. If you cannot cite a quote for EITHER of those two fields, you have no verified event to report — omit the round entirely rather than record a bare label.
 8. ARR/REVENUE/VALUATION — actively re-scan EVERY source below (not just ones labeled "financials") for a stated ARR/revenue figure or valuation mention — a funding-round article often states a revenue/ARR figure in the same paragraph as the round itself, easy to miss if you only read the sources tagged for that round. After that active check, most companies genuinely disclose none of this, and [] / omitted is the normal, correct answer, not a failure. Never duplicate a round's own valuation in valuation_benchmarks.
+9a. ROUND TYPE: use "Unknown" when no source states what kind of round it is ("emerges from stealth with $7.5M", "raised $150M") — never guess a series from the amount or the year. Use "Other" only for a type the source itself names that is not a regular series (strategic investment, crowdfunding, token sale).
 9. NEVER report a round_type with nothing behind it. Every round must carry at least one evidenced field (amount_raised, valuation, announcement_date, or lead_investor) — a category label alone, with no cited fact attached, is a guess and will be discarded.
+11. LOAN AND EQUITY IN ONE ANNOUNCEMENT — when an announcement splits a total into debt and equity ("$115 million: a $25 million loan from SVB and $90 million in equity led by Nimble"), report TWO rounds: the amount the text calls a loan, term loan, credit facility or venture debt is the 'Debt' round (its lender in lead_investor), and the rest is the equity round (its own type, its own lead). Never give the equity amount the 'Debt' type because the word "loan" appears in the same sentence, and never report the total as a third round.
 10. ANNOUNCEMENT DATE — find one for every round. The article or press release that announced a round carries its date in its own header: a dateline ("PARIS, Oct. 15, 2024 /PRNewswire/"), a "Date: Oct 15, 2024" line, or "Published Time: 2024-10-15". That date IS the round's announcement_date — quote that line. If only the month or year is stated, use YYYY-MM-01 / YYYY-01-01 and quote the phrase that states it. Never date a round from an article that only mentions it in passing later ("Following its 2024 Series A, ...") unless that sentence itself states the date.
 
 Labeled research (each source is tagged [S#] for a search result or [W#] for a fetched website page):

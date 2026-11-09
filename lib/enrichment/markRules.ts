@@ -10,18 +10,25 @@
  */
 import { classifySourceType } from "./sources";
 import { profileSourceAllowed, roundSourceStanding } from "./roundSources";
-import { roleAtCompany, isOrganisationName } from "./people";
+import { roleAtCompany, isOrganisationName, isLeadershipRole } from "./people";
 import { RAISE_RE, statesAmount } from "./assemble";
 import { dateFromUrl } from "./evidence";
+import { isLinkList, quoteIsAboutTheCompany, quoteLinksTheTwo } from "./competitorEvidence";
+import { isLegalPageUrl } from "./headquarters";
+import { looksLikeCompanyName, isUserContentUrl } from "./competitorEvidence";
+import { isExplainer } from "./newsRelevance";
+import { PARENT_BY_SUB_SECTOR } from "../../src/lib/taxonomy";
 import type { Mark } from "./fieldReview";
 
 export interface MarkContext {
   /** The company's own domain ("dlight.com"), when known. Without it an unlisted source is not judged. */
   domain?: string | null;
+  /** The quote stored with the value (field_review/run_N.csv): a competitor's is judged by it. */
+  quote?: string | null;
 }
 export interface MarkJudgment { produced: boolean; rule?: string }
 
-const PROFILE = new Set(["hq_city", "hq_country", "founded_year", "founding_country", "office", "employee_range", "employee_count", "founder", "founder_bio", "leader"]);
+const PROFILE = new Set(["hq_city", "hq_country", "founded_year", "founding_country", "office", "employee_range", "employee_count", "founder", "founder_bio", "leader", "board"]);
 const keep: MarkJudgment = { produced: true };
 const out = (rule: string): MarkJudgment => ({ produced: false, rule });
 
@@ -39,6 +46,8 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
   if (url) {
     const host = (() => { try { return new URL(url).hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; } })();
     const ownSite = !!ctx.domain && (host === ctx.domain || host.endsWith(`.${ctx.domain}`));
+    // An address on a legal page is an office, never the headquarters (owner, 2026-11-08: EngFlow).
+    if ((mark.field === "hq_city" || mark.field === "hq_country") && isLegalPageUrl(url)) return out("an address on a legal page is an office");
     if (PROFILE.has(mark.field)) {
       const sourceType = ownSite ? "company_site" : classifySourceType(url, ctx.domain);
       const allowed = profileSourceAllowed({ url, source_type: sourceType }, company);
@@ -52,7 +61,7 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
         // A leader's source here is only the first allowed page that names them: no judgment on its tier.
         if (standing.kind === "allowed" && mark.field !== "leader") return out("source above tier 3 for a profile field");
       }
-    } else if (mark.field === "news" || mark.field === "competitor" || mark.field === "round") {
+    } else if (mark.field === "news" || mark.field === "competitor" || mark.field === "competitor_declared" || mark.field === "competitor_market" || mark.field === "round") {
       const standing = roundSourceStanding(url, { companyName: company, isCompanySite: ownSite });
       if (standing.kind === "denied" && standing.why !== "republished_without_allowed_original") return out(`source not allowed (${standing.why})`);
       // An unlisted site may be an investor's or a party's own release, which the stored value alone
@@ -69,6 +78,7 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
       const cls = roleAtCompany(role, company);
       if (cls.kind === "advisor") return out("an advisor");
       if (cls.kind === "board") return out("the board, kept apart");
+      if (!isLeadershipRole(cls.role ?? role) && cls.role !== "Leadership team") return out("not on the closed list of leadership roles");
       if (isOrganisationName(name)) return out("an organisation, not a person");
       return keep;
     }
@@ -86,6 +96,38 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
       const about = rest.split(/(?<=[.!?])\s+/).some((s) => parts.some((w) => s.toLowerCase().includes(w)) || /\b(he|she|his|her|they|their)\b/i.test(s));
       return about ? keep : out("not about the person");
     }
+    case "competitor": case "competitor_declared": case "competitor_market": {
+      // The quote must say, of the company, that it competes with this one (competitorEvidence.ts, owner 2026-11-06):
+      // not a row of "X vs Y" links, not a rival of a third party ("Rippling competes with HiBob, Namely, BambooHR").
+      // The name must be a company: not a category ("EDR / AV"), not a post title (review 6, 2026-11-08).
+      if (!looksLikeCompanyName(mark.value)) return out("not a company name");
+      if (url && isUserContentUrl(url)) return out("a forum or user post is not a source");
+      const q = ctx.quote?.trim();
+      if (!q) return keep;
+      const ownSite = !!ctx.domain && (() => { try { const h = new URL(url).hostname.toLowerCase().replace(/^www\./, ""); return h === ctx.domain || h.endsWith(`.${ctx.domain}`); } catch { return false; } })();
+      if (isLinkList(q)) return out("a row of links, not a quote");
+      // Without the mark's source (a competitors-sheet mark kept none) a "we / our" on its own site cannot be recognised: not judged.
+      if (url && !quoteIsAboutTheCompany(q, company, ownSite)) return out("the quote is not about the company");
+      if (!quoteLinksTheTwo(q, company, mark.value)) return out("the quote does not link the company and this competitor directly");
+      return keep;
+    }
+    case "tags": {
+      // A tag no sentence of an allowed page supports, or "supported" by an error page (review 6, 2026-11-08).
+      const q = ctx.quote ?? "";
+      if (/no sentence found|Target URL returned error/i.test(q)) return out("a tag no sentence supports");
+      return keep;
+    }
+    case "sector": {
+      // The sector is the parent of its sub-sector (EngFlow's "DeepTech › DevOps / CI-CD").
+      const [parent, sub] = mark.value.split("›").map((x) => x.trim());
+      const real = sub ? PARENT_BY_SUB_SECTOR[sub] : undefined;
+      return real && real !== parent ? out("sector and sub-sector disagree") : keep;
+    }
+    case "news": {
+      const title = mark.value.replace(/^(?:\d{4}-\d{2}-\d{2}|no date)\s+—\s+/, "");
+      return isExplainer(title) ? out("a guide, not news") : keep;
+    }
+    case "employee_history": return judgeHeadcount(mark, ctx);
     case "round": {
       // No amount while its own source's address states one (Forward Financing, run 3).
       if (/amount not disclosed/i.test(mark.value) && url && statesAmount(url)) return out("amount stated in its source");
@@ -99,4 +141,37 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
     }
     default: return keep;
   }
+}
+
+
+// ── Headcount history (review 6, 2026-11-08) ──────────────────────────────
+const firstWordOf = (name: string) => name.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").split(/\s+/).find((w) => w.length >= 3) ?? "";
+
+/** "300+ employees @ 2025-01-30 (site_stated)": judged by its stored source, quote and type. */
+function judgeHeadcount(mark: Mark, ctx: MarkContext): MarkJudgment {
+  const m = mark.value.match(/^(\d[\d,]*)(?:[+–-]\d*)?\s+employees\s+@\s+(\S+)\s+\((\w+)\)/);
+  if (!m) return keep;
+  const [, num, date, type] = [...m];
+  let url = mark.source_url?.trim() ?? "";
+  const archived = url.match(/^https?:\/\/web\.archive\.org\/web\/\d+[a-z_]*\/(https?:\/\/.+)$/);
+  if (archived) url = archived[1];                       // a copy is judged by the page it copies
+  if (!/^\d{4}(-\d{2}){0,2}$/.test(date)) return out("a point with no date");
+  if (url) {
+    const standing = roundSourceStanding(url, { companyName: mark.company });
+    if (standing.kind === "denied") return out(`source not allowed (${standing.why})`);   // RocketReach and the like
+  }
+  const q = (ctx.quote ?? "").replace(/(\d),(\d)/g, "$1$2");
+  if (q) {
+    if (!new RegExp(`(^|[^\\d])${num.replace(/,/g, "")}([^\\d]|$)`).test(q)) return out("the number is not in the quote");
+    const w = firstWordOf(mark.company);
+    if (!(w && q.toLowerCase().includes(w)) && !/\b(?:we|our|us)\b|\bthe\b[^.]{0,40}\b(?:company|startup|firm|team|business)\b/i.test(q)) return out("the quote is not about the company");
+    // A milestone or a dated past count is not the size on the day of the copy.
+    const years = new Set([...q.matchAll(/\b(19[89]\d|20\d{2})\b/g)].map((y) => y[1]));
+    if (type === "site_stated" && /web\.archive\.org/.test(mark.source_url ?? "") && (years.size > 1 || /\b(milestone|reached|grew (?:to|from))\b/i.test(q))) return out("a milestone or a dated count, not the copy's day");
+  }
+  // The company's own site is site_stated, never press_reported.
+  let host = ""; try { host = new URL(url).hostname.toLowerCase().replace(/^www\./, ""); } catch { /* no host */ }
+  const own = (!!ctx.domain && (host === ctx.domain || host.endsWith(`.${ctx.domain}`))) || (!!firstWordOf(mark.company) && host.split(".")[0].includes(firstWordOf(mark.company)));
+  if (type === "press_reported" && own) return out("the company's own page is site_stated");
+  return keep;
 }

@@ -38,6 +38,7 @@
  *   DRY_RUN=false BATCH_SIZE=10 npx tsx scripts/bulk_enrich_v2.ts   # apply writes, small batch
  */
 
+import { maxArticles } from "../lib/enrichment/articleBudget.ts";
 import { callCostUsd, UsageMeter, LONG_PROMPT_TOKENS } from "../lib/enrichment/models.ts";
 import Anthropic from "@anthropic-ai/sdk";
 import { pathToFileURL } from "url";
@@ -74,7 +75,7 @@ const DEEP_DIVE       = process.env.DEEP_DIVE             !== "false";
 // Cheap homepage-based "is this tech?" check before any searching (techGate.ts).
 const TECH_GATE       = process.env.TECH_GATE             !== "false";
 // How many third-party articles to read in full via Jina (free) per company.
-const ARTICLES_TO_READ = Number(process.env.ARTICLES_TO_READ ?? 4);
+const ARTICLES_TO_READ = maxArticles();
 // ONLY=<id or exact name>[,...] re-runs specific companies, ignoring the
 // queue order, OFFSET and BATCH_SIZE (e.g. ONLY=Gladia after a fix).
 // startups_search refresh cadence during a long run (companies); 0 = only at the end.

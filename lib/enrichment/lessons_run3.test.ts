@@ -104,8 +104,13 @@ describe("entity: a namesake's site with a marketing prefix is still a namesake"
 });
 
 describe("Jina Reader out of credit", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
   it("is switched off after the first 402 instead of failing on every page", async () => {
+    // Independent of the keys in the shell the suite runs in: with SERP_KEY set, the scrape fallback fetches again
+    // (the test failed in Cloud Shell, where the keys are exported, and passed where they are not).
+    vi.stubEnv("JINA_API_KEY", "test-key");
+    vi.stubEnv("SERP_KEY", "");
+    vi.stubEnv("TAVILY_API_KEY", "");
     const fetchMock = vi.fn(async () => new Response("", { status: 402 }));
     vi.stubGlobal("fetch", fetchMock);
     vi.spyOn(console, "warn").mockImplementation(() => {});

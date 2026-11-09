@@ -8,10 +8,12 @@
  *   npx tsx eval/import_review.ts
  */
 
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, appendFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import { parseCsv, applyCompetitorMarks, applyPatentMarks, applyRoundMarks } from "./reviewSheet.ts";
+import { parseCsv, applyCompetitorMarks, applyPatentMarks, applyRoundMarks, trackerMarksFromCompetitorSheet } from "./reviewSheet.ts";
+import { readMarks } from "../lib/enrichment/fieldReview.ts";
+import { trackerLine } from "../lib/enrichment/batchReport.ts";
 import type { GoldenSet } from "./score.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -24,9 +26,15 @@ const rounds = join(__dir, "review", "rounds_review.csv");
 if (!existsSync(competitors) && !existsSync(patents) && !existsSync(rounds)) { console.error("No review sheet in eval/review/ yet."); process.exit(1); }
 
 if (existsSync(competitors)) {
-  const r = applyCompetitorMarks(golden.companies, parseCsv(readFileSync(competitors, "utf8")));
+  const rows = parseCsv(readFileSync(competitors, "utf8"));
+  const r = applyCompetitorMarks(golden.companies, rows);
   console.log(`Competitors: ${r.applied} mark(s) imported, ${r.unmarked} not marked yet.`);
   for (const u of r.unreadable) console.log(`  ⚠️  not understood: ${u}`);
+  // Phase 1 measures competitors by the tracker: the sheet's marks go there too (once each).
+  const trackerPath = join(__dir, "field_review_tracker.csv");
+  const toTracker = trackerMarksFromCompetitorSheet(rows, readMarks(trackerPath), new Date().toISOString().slice(0, 10));
+  if (toTracker.length) appendFileSync(trackerPath, toTracker.map((m) => trackerLine(m)).join("\n") + "\n");
+  console.log(`Competitors: ${toTracker.length} new mark(s) entered in the tracker${toTracker.length ? ` (${toTracker.filter((m) => m.verdict === "correct").length} right, ${toTracker.filter((m) => m.verdict === "wrong").length} wrong)` : " — every marked value was there already"}.`);
 }
 if (existsSync(patents)) {
   const r = applyPatentMarks(golden.companies, parseCsv(readFileSync(patents, "utf8")));

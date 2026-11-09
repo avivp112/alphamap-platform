@@ -19,6 +19,7 @@
  *   npx tsx scripts/field_review.ts            # SIZE=15
  */
 
+import { maxArticles } from "../lib/enrichment/articleBudget.ts";
 import { createClient } from "@supabase/supabase-js";
 import { config } from "dotenv";
 import Anthropic from "@anthropic-ai/sdk";
@@ -29,11 +30,13 @@ import { collectCompany, newCollectStats, V2_STARTUP_COLUMNS, V2_ROUND_COLUMNS, 
 import { loadSectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { createSearchProviderState } from "../lib/enrichment/searchProviders.ts";
 import { openSearchCache } from "../lib/enrichment/searchCache.ts";
-import { drawReviewSample, targetedCount, FOCUS_FIELDS, type PilotCandidate } from "../lib/enrichment/pilotSample.ts";
+import { drawReviewSample, targetedCount, restrictCandidates, FOCUS_FIELDS, type PilotCandidate } from "../lib/enrichment/pilotSample.ts";
 import { UsageMeter } from "../lib/enrichment/models.ts";
 import { buildProfile } from "../worker/profile.ts";
 import { profileSourceAllowed, roundSourceStanding } from "../lib/enrichment/roundSources.ts";
 import { capPerCompany, PER_COMPANY } from "../lib/enrichment/fieldReview.ts";
+import { majorPressNote } from "../lib/enrichment/unlistedDomains.ts";
+import { definitionLines } from "../lib/enrichment/reviewDefinitions.ts";
 import { REVIEW_FIELDS, wouldWrite, type Field, type Value } from "../lib/enrichment/reviewValues.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -91,7 +94,11 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
   const unknownFocus = FOCUS.filter((f) => !(f in FOCUS_FIELDS));
   if (unknownFocus.length) { console.error(`FOCUS: unknown field(s) ${unknownFocus.join(", ")} — use ${Object.keys(FOCUS_FIELDS).join(", ")}.`); process.exit(1); }
   const withRounds = rows.map((r) => ({ ...r, rounds_on_file: roundCount.get(r.id) ?? 0 }));
-  const sample = drawReviewSample(withRounds.filter((r) => !seen.has(r.id) && !golden.has(r.name.trim().toLowerCase())), covered, { size: SIZE, targeted: targetedCount(SIZE), seed: SEED, focus: FOCUS });
+  // MIN_ROUNDS=3 and/or PRESS_ONLY=true draw only companies a rival can be found for (funded, covered by allowed press).
+  const minRounds = Number(process.env.MIN_ROUNDS ?? 0), pressOnly = process.env.PRESS_ONLY === "true";
+  const pool = restrictCandidates(withRounds.filter((r) => !seen.has(r.id) && !golden.has(r.name.trim().toLowerCase())), covered, { minRounds, pressOnly });
+  if (minRounds || pressOnly) console.log(`Pool narrowed${minRounds ? ` to ≥${minRounds} rounds on file` : ""}${pressOnly ? `${minRounds ? " and" : " to"} companies an allowed press source covers` : ""}: ${pool.length} companies.`);
+  const sample = drawReviewSample(pool, covered, { size: SIZE, targeted: targetedCount(SIZE), seed: SEED, focus: FOCUS });
   console.log(`Draw: ${sample.filter((c) => c.why.includes("targeted")).length} targeted (${FOCUS.length ? `short of ${FOCUS.join(", ")}` : "fields short of marks"}), ${sample.filter((c) => !c.why.includes("targeted")).length} random.`);
   return sample;
 }
@@ -112,6 +119,7 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
   const meter = new UsageMeter();
   const values: Value[] = [];
   const roleChecks: NonNullable<ReturnType<typeof newCollectStats>["roleChecks"]> = [];
+  const unlistedSeen = new Map<string, string>();   // domains on no list that a source came from (roundSources.ts)
   for (const row of (rows ?? []) as V2StartupRow[]) {
     console.log(`── ${row.name} (${row.website}) ──`);
     const state = createSearchProviderState();
@@ -120,13 +128,14 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
     try {
       const c = await collectCompany(row, ((rounds ?? []) as V2FundingRoundRow[]).filter((r) => r.startup_id === row.id), taxonomy, {
         anthropic, models: { enrich: MODEL, profile: MODEL, funding: MODEL, market: MODEL },
-        update: false, deepDive: true, techGate: true, articlesToRead: 4, verbose: false, seen: null,
+        update: false, deepDive: true, techGate: true, articlesToRead: maxArticles(), verbose: false, seen: null,
         recordCost: (m, u) => meter.add(m, u),
       }, stats, state);
       roleChecks.push(...(stats.roleChecks ?? []));
       const v = wouldWrite(c, row);
       values.push(...v);
       console.log(`    → ${c.outcome}: ${v.length} value(s) would be written`);
+      for (const d of c.unlistedDomains ?? []) unlistedSeen.set(d.domain, d.url);
     } catch (e) {
       console.error(`    💥  ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -142,6 +151,7 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
 
   // First, 3 random values of each field, numbered, for the owner to mark.
   console.log(`\n${"═".repeat(62)}\nTo mark (run ${runNo}) — answer "<number> נכון" / "<number> לא נכון" (a round: amount AND date):\n`);
+  console.log(`What "correct" means for the newer fields:\n${definitionLines(REVIEW_FIELDS).join("\n")}\n`);
   let n = 0;
   const sample: Array<Value & { id: string }> = [];
   // Owner, 2026-11-02: simple fields up to 8 values a run, complex fields up to 5 — and, in the first
@@ -159,7 +169,7 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
     console.log(`[${f}]`);
     for (const v of pick) {
       n++; sample.push({ ...v, id: `${runNo}.${n}` });
-      console.log(`  ${runNo}.${n}  ${v.company}: ${v.value.slice(0, 220)}\n        source: ${v.source_url || "—"}${v.quote ? `\n        quote: "${v.quote.slice(0, 180)}"` : ""}`);
+      console.log(`  ${runNo}.${n}  ${v.company}: ${v.value.slice(0, 220)}${v.field === "description" && v.on_file ? `\n        on file (${v.on_file.slice(0, 260)})` : ""}\n        source: ${v.source_url || "—"}${v.quote ? `\n        quote: "${v.quote.slice(0, v.field === "description" || v.field === "tags" ? 420 : 180)}"` : ""}`);
     }
   }
   writeFileSync(join(DIR, `run_${runNo}_sample.csv`), "﻿" + ["id,field,company,value,source_url", ...sample.map((v) => [v.id, v.field, v.company, v.value, v.source_url].map(cell).join(","))].join("\r\n") + "\r\n");
@@ -167,6 +177,11 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
   const per = REVIEW_FIELDS.map((f) => `${f} ${values.filter((v) => v.field === f).length}`).join(" · ");
   console.log(`\n${"═".repeat(62)}\nWould be written: ${values.length} value(s) — ${per}`);
   // The leaders' title rule (owner, 2026-11-03): how much it costs.
+  if (unlistedSeen.size) {
+    console.log(`Unlisted source domains this run (${unlistedSeen.size}): ${[...unlistedSeen.keys()].slice(0, 12).join(", ")}${unlistedSeen.size > 12 ? ", …" : ""}`);
+    const press = majorPressNote([...unlistedSeen.keys()]);
+    if (press) console.log(`🗞️   ${press}`);
+  }
   const by = (o: string) => roleChecks.filter((r) => r.outcome === o);
   const lost = [...by("kept_without_title"), ...by("dropped")];
   console.log(`Leaders' titles: ${roleChecks.length} checked — ${by("verified_card").length} verified on the site's card, ${by("verified_text").length} beside the name in a source, ${by("kept_without_title").length} kept as "Leadership team", ${by("dropped").length} dropped`);

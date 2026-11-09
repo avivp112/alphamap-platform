@@ -85,7 +85,7 @@ const job = (): PromotionJob => ({
 });
 
 const deps = (db: never, existing: { id: string; name: string } | null = null) => ({
-  db, taxonomy: async () => ({}) as never, findExisting: vi.fn(async () => existing), notify: vi.fn(async () => {}), log: () => {},
+  db, phase1Passed: true, openFields: ["news"] as readonly string[], taxonomy: async () => ({}) as never, findExisting: vi.fn(async () => existing), notify: vi.fn(async () => {}), log: () => {},
 });
 
 describe("promoteOne", () => {
@@ -151,5 +151,40 @@ describe("promoteOne — an approved update to an AlphaMap company", () => {
     expect(await promoteOne({ ...deps(db), loadCompany: vi.fn(async () => null) } as never)).toBe(true);
     expect(writeCollected).not.toHaveBeenCalled();
     expect(rpcs.at(-1)?.args).toMatchObject({ p_status: "failed" });
+  });
+});
+
+describe("the write gate (owner, 2026-11-07)", () => {
+  beforeEach(() => writeCollected.mockClear());
+  it("while Phase 1 has not passed, a real write is refused with an error, before anything is claimed", async () => {
+    const { db, rpcs } = fakeDb(job());
+    await expect(promoteOne({ ...deps(db), phase1Passed: false })).rejects.toThrow(/writing is off until enrichment v2 passes Phase 1/);
+    expect(rpcs).toEqual([]);
+    expect(writeCollected).not.toHaveBeenCalled();
+  });
+  it("by default the gate is the real constant, which is closed", async () => {
+    const { db } = fakeDb(job());
+    const { phase1Passed: _p, ...open } = deps(db);
+    await expect(promoteOne(open)).rejects.toThrow(/Phase 1/);
+    expect((await import("../lib/enrichment/writeGate")).PHASE1_PASSED).toBe(false);
+  });
+});
+
+describe("past Phase 1 a promotion passes the tracker's gate (owner, 2026-11-08)", () => {
+  beforeEach(() => writeCollected.mockClear());
+  it("with the flag on and only news open, the write stage is told to write news and nothing else", async () => {
+    const { db } = fakeDb(job());
+    await promoteOne({ ...deps(db), phase1Passed: true, openFields: ["news"] });
+    expect(writeCollected.mock.calls[0][2]).toMatchObject({ openFields: ["news"], dryRun: false });
+    const { restrictPatch } = await import("../lib/enrichment/writeUnits");
+    const patch = { news: [1], city: "X", description: "d", founders: [], employee_count: 3, competitors: [] };
+    expect(Object.keys(restrictPatch(patch, ["news"]).patch)).toEqual(["news"]);
+  });
+  it("an update promotion (a deepen's additions) is gated the same way", async () => {
+    const j = { ...job(), kind: "update" as const, startup_id: "s-9" };
+    const { db } = fakeDb(j);
+    const loadCompany = vi.fn(async () => ({ row: freshRow("s-9", "Nuova AI", "https://nuova.ai"), rounds: [] }));
+    await promoteOne({ ...deps(db), loadCompany, phase1Passed: true, openFields: ["news", "patent"] });
+    expect(writeCollected.mock.calls[0][2]).toMatchObject({ openFields: ["news", "patent"] });
   });
 });

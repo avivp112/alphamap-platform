@@ -100,6 +100,55 @@ function sameRaiseOtherCurrency(sentence: string, h: RoundHint): number | null {
 }
 
 /**
+ * A round the extraction wrote without an amount although its own source states one (owner,
+ * 2026-11-06 — Parloa's PRNewswire "…with $350M Series D" and Mercury's CNBC "$200M", both written
+ * as "amount not disclosed"): the amount is read back from the sources the round cites.
+ *
+ * A candidate is a sum in a sentence (or headline) that names the company, carries a raise word and
+ * the round's own stage, with valuations, totals and revenue figures taken out first. Exactly one
+ * distinct candidate: that amount, with the sentence as its quote. Several: "ambiguous", and the
+ * round is not written — better missing than wrong.
+ */
+export type AmountRecovery = { kind: "recovered"; amount: number; source_id: string; quote: string } | { kind: "ambiguous"; candidates: number[] };
+
+const NOT_THE_RAISE = [
+  /\bvalu(?:ing|es)\b[^.;]{0,50}?\bat\s+(?:about\s+|roughly\s+|nearly\s+|over\s+|more\s+than\s+)?[$€£]?\s?\d[\d.,]*\s?(?:billion|million|bn|mm|b|m)?\b/gi,
+  /[$€£]\s?\d[\d.,]*\s?(?:billion|million|bn|mm|b|m)?\s+(?:post-money\s+|pre-money\s+)?valuation\b/gi,
+  /\b(?:valued\s+at|valuation\s+of|at\s+a\s+valuation\s+of|a\s+valuation\s+of|worth|post-money|pre-money)\s+(?:about\s+|roughly\s+|nearly\s+|over\s+|more\s+than\s+)?[$€£]?\s?\d[\d.,]*\s?(?:billion|million|bn|mm|b|m)?\b/gi,
+  /\b(?:total(?:ing)?|bringing|brings|to\s+date|so\s+far|overall|in\s+total)\b[^.;]{0,40}?[$€£]\s?\d[\d.,]*\s?(?:billion|million|bn|mm|b|m)?\b/gi,
+  /[$€£]\s?\d[\d.,]*\s?(?:billion|million|bn|mm|b|m)?\s+(?:in\s+)?(?:ARR|annual\s+recurring\s+revenue|annualized\s+revenue|revenue|sales|customers)\b/gi,
+];
+
+export function recoverMissingAmount(round: V2Round, sources: LabeledSource[], companyName: string): AmountRecovery | null {
+  if (round.amount_raised?.value != null) return null;
+  const byId = new Map(sources.map((x) => [x.source_id, x]));
+  const urlKey = (u: string) => u.replace(/[?#].*$/, "").replace(/\/+$/, "").toLowerCase();
+  const cited = new Map<string, LabeledSource>();
+  for (const f of [round.amount_raised, round.lead_investor, round.valuation, round.announcement_date]) {
+    const src = f?.source_id ? byId.get(f.source_id) : undefined;
+    if (src) cited.set(src.source_id, src);
+  }
+  if (round.source_url) for (const x of sources) if (urlKey(x.url) === urlKey(round.source_url)) cited.set(x.source_id, x);
+  const stage = round.round_type && NAMED_STAGE.test(round.round_type) ? new RegExp(`\\b${round.round_type.replace(/[+]/g, "\\+")}\\b`, "i") : null;
+  const found: Array<{ amount: number; source_id: string; quote: string }> = [];
+  for (const src of cited.values()) {
+    if (!canConfirm(src, round.lead_investor?.value)) continue;
+    const text = `${src.title ?? ""}. ${src.content}`;
+    for (const sen of sentences(text)) {
+      if (sen.length > 400 || !RAISE.test(sen) || !namesCompany(sen, companyName) || (stage && !stage.test(sen))) continue;
+      let rest = sen;
+      for (const re of NOT_THE_RAISE) rest = rest.replace(re, " ");
+      for (const n of extractNumbersFromText(rest)) if (n >= 100_000) found.push({ amount: n, source_id: src.source_id, quote: sen.trim() });
+    }
+  }
+  const distinct: typeof found = [];
+  for (const c of found) if (!distinct.some((d) => Math.abs(d.amount - c.amount) / c.amount < 0.01)) distinct.push(c);
+  if (distinct.length === 1) return { kind: "recovered", amount: distinct[0].amount, source_id: distinct[0].source_id, quote: distinct[0].quote };
+  if (distinct.length > 1) return { kind: "ambiguous", candidates: distinct.map((d) => d.amount) };
+  return null;
+}
+
+/**
  * A source that may confirm a hint: one on the allowed list for rounds
  * (roundSources.ts, owner 2026-11-01) — the company's own site, the lead
  * investor's, an official wire, a register, or the listed press. Never a data

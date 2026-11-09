@@ -95,3 +95,29 @@ describe("HQ, founded year and founding country only from allowed sources (owner
     expect(profileSourceAllowed({ url: "https://www.thecompanycheck.com/company/b/ofbusiness/x", source_type: "news" })).toBe(false);
   });
 });
+
+import { registerDecides, isLocalSubsidiary } from "./registers";
+
+describe("a register decides founding only for the company's own entity in its headquarters country (owner, 2026-11-06)", () => {
+  const f = (entity: string, founding_country: string) => ({ entity, founding_country });
+  it("Wiz: its UK entity, with the headquarters in the United States, decides nothing", () => {
+    expect(registerDecides(f("WIZ CLOUD LIMITED", "United Kingdom"), "Wiz", "United States")).toEqual({ decides: false, why: "headquarters_elsewhere" });
+  });
+  it("Upwind: UPWIND SECURITY UK LTD is a local subsidiary, whatever the headquarters", () => {
+    expect(isLocalSubsidiary("UPWIND SECURITY UK LTD", "Upwind")).toBe(true);
+    expect(registerDecides(f("UPWIND SECURITY UK LTD", "United Kingdom"), "Upwind", "United Kingdom")).toEqual({ decides: false, why: "local_subsidiary" });
+  });
+  it("Black Forest Labs: a US Form D with no headquarters decided decides nothing", () => {
+    expect(registerDecides(f("Black Forest Labs Inc.", "United States"), "Black Forest Labs", null)).toEqual({ decides: false, why: "headquarters_unknown" });
+    expect(registerDecides(f("Black Forest Labs Inc.", "United States"), "Black Forest Labs", "Germany")).toEqual({ decides: false, why: "headquarters_elsewhere" });
+  });
+  it("Kraken, Synthesia and Wayve keep their register year: the entity is the company's own, in its headquarters country", () => {
+    expect(registerDecides(f("KRAKEN TECHNOLOGIES LIMITED", "United Kingdom"), "Kraken Technologies", "United Kingdom")).toEqual({ decides: true });
+    expect(registerDecides(f("SYNTHESIA LIMITED", "United Kingdom"), "Synthesia", "UK")).toEqual({ decides: true });
+    expect(registerDecides(f("WAYVE TECHNOLOGIES LTD", "United Kingdom"), "Wayve", "United Kingdom")).toEqual({ decides: true });
+  });
+  it("a country that is part of the company's own name is not a subsidiary marker", () => {
+    expect(isLocalSubsidiary("INDIA TODAY GROUP LTD", "India Today")).toBe(false);
+    expect(isLocalSubsidiary("ACME DEUTSCHLAND GMBH", "Acme")).toBe(true);
+  });
+});

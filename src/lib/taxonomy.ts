@@ -184,7 +184,7 @@ function lookup(table: Record<string, string>, ns: string, value: string | null 
 /** Localised label for a funding stage / round type. Falls back to the input. */
 /** A round whose type no source states is stored as "Unknown" (lib/enrichment/assemble.ts groundRoundType): shown as such, in plain words. */
 export function roundTypeLabel(value: string | null | undefined): string {
-  return !value || value === "Unknown" ? "Undisclosed round" : value;
+  return !value || value === "Unknown" ? "Undisclosed" : value;
 }
 
 export function stageLabel(value: string | null | undefined, t: TFunction): string {

@@ -310,6 +310,9 @@
     "headcountGrowth": "従業員数の伸び：",
     "serialFounderBonus": "連続起業家ボーナス：",
     "headcountHistory": "従業員数の推移",
+    "hiring": {
+      "title": "採用活動"
+    },
     "patentPortfolio": "特許ポートフォリオ",
     "technology": "テクノロジー",
     "acquisitions": "買収実績",

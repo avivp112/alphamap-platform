@@ -76,6 +76,28 @@ export function mergeRows(existing: SheetRow[], incoming: SheetRow[], key: (r: S
 
 export const competitorKey = (r: SheetRow) => `${r.company_id}|${normalizeName(r.competitor)}`;
 export const patentKey = (r: SheetRow) => `${r.company_id}|${r.publication}`;
+/**
+ * One real round can reach the sheet twice — in an earlier run without its date, in this one without
+ * its amount (Mistral's Series D, Mercury's). Two rows are the same round when they are one company's
+ * and their amounts agree within 1% with dates that do not disagree, or one has no amount and the
+ * other's type and month match. A row the owner marked stays; of the unmarked, the one with an amount
+ * and a date is kept (owner, 2026-11-06).
+ */
+export function sameRound(a: SheetRow, b: SheetRow): boolean {
+  if (a.company_id !== b.company_id) return false;
+  const x = Number(a.amount_usd) || 0, y = Number(b.amount_usd) || 0;
+  const mx = (a.date ?? "").slice(0, 7), my = (b.date ?? "").slice(0, 7);
+  if (x && y) return Math.abs(x - y) / Math.max(x, y) <= 0.01 && (!mx || !my || mx === my);
+  if (!x && !y) return false;
+  return !!mx && mx === my && (a.round_type ?? "").toLowerCase() === (b.round_type ?? "").toLowerCase();
+}
+export function dedupeRoundRows(rows: SheetRow[]): SheetRow[] {
+  const rank = (r: SheetRow) => (r.mark?.trim() ? 4 : 0) + (Number(r.amount_usd) ? 2 : 0) + (r.date ? 1 : 0);
+  return rows.filter((r, i) => {
+    if (r.mark?.trim()) return true;
+    return !rows.some((o, j) => j !== i && sameRound(r, o) && (rank(o) > rank(r) || (rank(o) === rank(r) && j < i)));
+  });
+}
 export const roundKey = (r: SheetRow) => `${r.company_id}|${r.amount_usd}|${(r.date ?? "").slice(0, 7)}|${r.amount_usd ? "" : (r.round_type ?? "").toLowerCase()}`;
 
 const normalizeName = (n: string) => (n ?? "").toLowerCase().replace(/,?\s*\b(inc|llc|ltd|limited|corp|corporation|gmbh|plc|co)\b\.?$/, "").replace(/[^\p{L}\p{N}]/gu, "");
@@ -156,4 +178,25 @@ export function applyRoundMarks(companies: GoldenCompany[], rows: SheetRow[]): M
     rounds.push({ type: r.round_type, amount_usd: amount, date: r.date || null, lead_investor: r.lead_investor || null, confidence: "verified", ...(r.source_url ? { source_url: r.source_url } : {}) });
   }
   return result;
+}
+
+
+/**
+ * The competitors sheet's marks as tracker rows (owner, 2026-11-06): Phase 1 measures competitors by
+ * eval/field_review_tracker.csv, so a value marked on the sheet must be in the tracker too. A value the
+ * tracker already holds (same company and name) is not entered twice; ids are s.c1, s.c2 …
+ */
+export function trackerMarksFromCompetitorSheet(rows: SheetRow[], existing: Array<{ id: string; field: string; company: string; value: string }>, today: string): Array<{ id: string; field: "competitor"; company: string; value: string; source_url: string; verdict: "correct" | "wrong"; source_of_mark: string }> {
+  const have = new Set(existing.filter((m) => m.field === "competitor").map((m) => `${normalizeName(m.company)}|${normalizeName(m.value)}`));
+  let n = existing.reduce((max, m) => { const k = m.id.match(/^s\.c(\d+)$/); return k ? Math.max(max, Number(k[1])) : max; }, 0);
+  const out: ReturnType<typeof trackerMarksFromCompetitorSheet> = [];
+  for (const r of rows) {
+    const verdict = readMark(r.mark ?? "");
+    if (verdict === null || verdict === "unreadable") continue;
+    const key = `${normalizeName(r.company)}|${normalizeName(r.competitor)}`;
+    if (have.has(key)) continue;
+    have.add(key);
+    out.push({ id: `s.c${++n}`, field: "competitor", company: r.company, value: r.competitor, source_url: r.source_url ?? "", verdict: verdict ? "correct" : "wrong", source_of_mark: `owner ${today} (competitors sheet)` });
+  }
+  return out;
 }

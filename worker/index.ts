@@ -32,6 +32,8 @@ import { loadSectorTaxonomy, type SectorTaxonomy } from "../lib/enrichment/extra
 import { isDistinctiveName } from "../lib/enrichment/entity.ts";
 import { PermanentError } from "./retry.ts";
 import { PHASE1_PASSED } from "../lib/enrichment/writeGate.ts";
+import { openFieldNames } from "../lib/enrichment/fieldReview.ts";
+import { openColumnsOf } from "../lib/enrichment/writeUnits.ts";
 
 let cfg: WorkerConfig;
 try {
@@ -65,7 +67,12 @@ const execute: Execute = async (row, meter) => {
       collect: async (c, onStage) => runCollection(c.row, c.rounds, { anthropic, model: cfg.enrichModel, taxonomy: await taxonomy(), meter, onStage }),
       // Until v2 passes Phase 1 nothing is written without an admin (lib/enrichment/writeGate.ts):
       // what would have been written directly goes into the proposal instead.
-      applyDirectWrites: async (id, w) => (PHASE1_PASSED ? applyDirectWrites(db, id, w) : []),
+      applyDirectWrites: async (id, w) => {
+        if (!PHASE1_PASSED) return [];
+        // Past Phase 1 only the columns of the fields the tracker has opened (owner, 2026-11-08).
+        const open = openColumnsOf(openFieldNames());
+        return applyDirectWrites(db, id, w.filter((x) => open.has(x.field)));
+      },
       dryRunWrite: async (r, c) => writeCollected(r, c, {
         db, dryRun: true, update: false, verbose: false, thresholds: BULK_THRESHOLDS,
         taxonomy: await taxonomy(), startupByDomain: await domainIndex(db), seen: null,

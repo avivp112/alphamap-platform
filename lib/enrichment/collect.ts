@@ -25,8 +25,17 @@ import { buildLabeledSources, markCompanyLinkedFiles, mergeDuplicateResults, cla
 import { extractProfile, type SectorTaxonomy } from "./extractProfile.ts";
 import { extractFunding, roundToRoundLike, type V2Round } from "./extractFunding.ts";
 import { extractMarket, normalizeUrlForMatch } from "./extractMarket.ts";
+import { normalizeForMatch } from "./evidence.ts";
+import { competitorTierClaims, type TieredClaim } from "./competitorTiers.ts";
+import { websiteLooksLikeAnotherCompany } from "./websiteIdentity.ts";
+import { judgeNews, finishNews } from "./newsGate.ts";
+import { reconcileSector } from "./sectors.ts";
+import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
+import { buildDescriptionRequest, descriptionSources, processDescription } from "./descriptionBuilder.ts";
+import { buildBackgroundRequest, processBackgroundResponse, backgroundSearchQuery } from "./founderBackground.ts";
+import { requestFor } from "./models.ts";
 import { lookupEpoPatents, type CompanyIdentity, type EpoPatentResult } from "./epoPatents.ts";
-import { hintFromRound, hintQueries, confirmHint, hintKey, type RoundHint } from "./hints.ts";
+import { hintFromRound, hintQueries, confirmHint, hintKey, recoverMissingAmount, type RoundHint } from "./hints.ts";
 import { detectGaps, buildDeepDiveQueries, hasNoFinancingRounds, type DeepDiveSection } from "./deepDive.ts";
 import {
   groundRoundDetails, isUnstatedEvent, incompleteRound, absorbAmountlessRounds, rejectRound, roundSourceStandings, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
@@ -35,18 +44,20 @@ import {
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
 import { pickArticlesToRead } from "./articles.ts";
 import { runTechGate, shouldSkipAsNonTech, type TechGateVerdict } from "./techGate.ts";
-import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, personCardsInHtml, roleAtCompany } from "./people.ts";
+import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, personCardsInHtml, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
 import { componentOn } from "./components.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
 import { validateEnrichment, checkNarratives } from "./validation.ts";
-import { hqStatementsIn, decideHeadquarters, statementKind, articleDate, countryOfCity, contactPageAddresses, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, canonicalCity, type HqStatement } from "./headquarters.ts";
-import { profileSourceAllowed, roundSourceStanding, unwrapRedirect } from "./roundSources.ts";
+import { hqStatementsIn, decideHeadquarters, statementKind, isLegalPageUrl, articleDate, countryOfCity, contactPageAddresses, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, canonicalCity, type HqStatement } from "./headquarters.ts";
+import { profileSourceAllowed, roundSourceStanding, unwrapRedirect, corroboratedInvestors } from "./roundSources.ts";
 import { aboutParagraph, aboutIsOf, factsFromAbout, legalFacts, releasePointsTo, type LegalFacts } from "./companyFacts.ts";
 import { checkFoundingCountry } from "./origin.ts";
 import { namesCompany } from "./headcount.ts";
-import { lookupRegisters, nodeRegisterIo, type RegisterContext, type RegisterFinding } from "./registers.ts";
+import { companiesHouseHeadcount, brregHeadcount, waybackHeadcount, type HeadcountIo } from "./headcountCollect.ts";
+import type { HistoryPoint } from "./headcountHistory.ts";
+import { lookupRegisters, nodeRegisterIo, registerDecides, type RegisterContext, type RegisterFinding } from "./registers.ts";
 import { stripHonorific } from "./people.ts";
 import { countryFromLocationQuote } from "./location.ts";
 import type { VerifiedFact } from "./narrative.ts";
@@ -202,6 +213,8 @@ export type LinkedInPersonPatch = { name: string; title?: string; role?: string;
 
 export interface CollectedCompany {
   outcome: "collected";
+  /** Headcount points from registers, plans and archived pages (headcountHistory.ts); each with its source and type. */
+  headcountExtra?: import("./headcountHistory.ts").HistoryPoint[];
   profile: ProfileResult;
   funding: FundingResult;
   market: MarketResult;
@@ -268,8 +281,11 @@ export async function runAllSearches(name: string, anchor: string, state: Search
     // (the separate "tech stack" query was dropped: careers/engineering
     // pages fetched from the company's own site carry that, for free)
   ];
+  // SEARCH_SKIP=acquisitions,financials — leaves those core queries out, to measure what they add on the
+  // golden set (owner, 2026-11-05: search is ~60% of the cost). Unset in every normal run.
+  const skip = new Set((process.env.SEARCH_SKIP ?? "").split(",").map((x) => x.trim()).filter(Boolean));
   const [searchBatches, newsResults] = await Promise.all([
-    Promise.all(queries.map(([label, q]) => webSearch(q, label, state))),
+    Promise.all(queries.filter(([label]) => !skip.has(label)).map(([label, q]) => webSearch(q, label, state))),
     // Serper's News endpoint is primary for news; the site:-heavy query is
     // only used if Jina Search has to back it up (see newsSearch()).
     newsSearch(
@@ -789,7 +805,25 @@ export async function collectCompany(
   // ── Round grounding: co-investors / per-investor amounts / source URL ──
   const platformOnly: V2Round[] = [];
   const unlistedDomains: Array<{ domain: string; url: string }> = [];
-  const keptRounds = funding.funding_rounds.filter((r) => {
+  // A round written without an amount whose own sources state one gets it back (hints.ts
+  // recoverMissingAmount); two different sums in them is "ambiguous" and the round is not written.
+  const withAmounts: V2Round[] = [];
+  for (const r of funding.funding_rounds) {
+    const rec = recoverMissingAmount(r, allSources, row.name);
+    if (rec?.kind === "ambiguous") {
+      console.log(`    🚫  ${r.round_type} not written (round_amount_ambiguous: its sources state ${rec.candidates.join(" and ")})`);
+      bump(stats.droppedByReason, "round_amount_ambiguous");
+      continue;
+    }
+    if (rec?.kind === "recovered") {
+      console.log(`    🔧  ${r.round_type}: amount ${rec.amount} read back from its source — "${rec.quote.slice(0, 100)}"`);
+      bump(stats.droppedByReason, "round_amount_recovered");
+      withAmounts.push({ ...r, amount_raised: { value: rec.amount, source_id: rec.source_id, evidence_quote: rec.quote } });
+      continue;
+    }
+    withAmounts.push(r);
+  }
+  const keptRounds = withAmounts.filter((r) => {
     const why = rejectRound(r, row.name, allSources);
     if (!why) return true;
     if (why === "round_only_from_data_platform" || why === "round_source_not_listed") {
@@ -840,6 +874,36 @@ export async function collectCompany(
   }
   for (const h of [...hints.values()].slice(MAX_HINTS_SEARCHED)) roundHints.push(h);
 
+  // ── A round dated only by a press article's dateline (roundDates.ts, owner 2026-11-08) ──
+  // The article can trail the announcement by days: look for the original release; else keep the month.
+  if (componentOn("round_dates") && !ctx.update) {
+    let dateSearches = Math.max(0, Number(process.env.DATE_SEARCHES ?? 3) || 0);
+    let dateSourceCount = 0;
+    for (const r of keptRounds) {
+      if (!pressOnlyDate(r, allSources, row.name)) continue;
+      const articleSrc = allSources.find((x) => x.source_id === r.announcement_date!.source_id);
+      let originals: LabeledSource[] = [];
+      if (dateSearches > 0) {
+        dateSearches--;
+        const found = await webSearch(originalReleaseQuery(r, row.name, domain), "round_date", searchState);
+        originals = mergeDuplicateResults(found).results.map((raw) => ({ ...raw, source_id: `D${++dateSourceCount}`, source_type: classifySourceType(raw.url, domain) }));
+      }
+      const res = resolveRoundDate(r, originals, articleSrc, row.name);
+      if (res.kind === "original") {
+        allSources = [...allSources, res.source];
+        console.log(`    📅  ${r.round_type} ${r.amount_raised?.value ?? ""}: ${r.announcement_date!.value} was a press article's date — the original release says ${res.iso} (${res.source.url})`);
+        r.announcement_date = { value: res.iso, source_id: res.source.source_id, evidence_quote: res.quote };
+        r.announcement_date_precision = "day";
+        bump(stats.droppedByReason, "round_date_from_original");
+      } else {
+        console.log(`    📅  ${r.round_type} ${r.amount_raised?.value ?? ""}: dated by a press article only (${r.announcement_date!.value}) and no original release found — kept as ${res.month}`);
+        r.announcement_date = { ...r.announcement_date!, value: `${res.month}-01` };
+        r.announcement_date_precision = "month";
+        bump(stats.droppedByReason, "round_date_month_only");
+      }
+    }
+  }
+
   const sourceById = new Map(allSources.map((s) => [s.source_id, s]));
   const sourceTypeFor = (sourceId: string | undefined): SourceType | undefined => (sourceId ? sourceById.get(sourceId)?.source_type : undefined);
   const sourceUrlFor = (sourceId: string | undefined): string | null => (sourceId ? sourceById.get(sourceId)?.url ?? null : null);
@@ -868,6 +932,13 @@ export async function collectCompany(
   // The HQ the decision took (a Contact-page address, an About paragraph): validation does not ask
   // its quote for an HQ word again (Anonymised's "7 Bell Yard, London" — model check 2026-11-02).
   let hqDecided = false;
+  // Extra searches (EXTRA_SEARCHES, default 4, owner 2026-11-07): competitors by tier and the founders' background share them.
+  let extraSearchesLeft = Math.max(0, Number(process.env.EXTRA_SEARCHES ?? 4) || 0);
+  const extraSearch = async (query: string, label: string): Promise<RawSearchResult[]> => {
+    if (extraSearchesLeft <= 0 || ctx.update) return [];
+    extraSearchesLeft--;
+    return webSearch(query, label, searchState);
+  };
   const newSource = (url: string, content: string, title: string, label: string): LabeledSource => {
     const src: LabeledSource = { url, title, content, provider: "serper", query_label: label, source_id: `X${allSources.length + 1}`, source_type: classifySourceType(url, domain) };
     allSources.push(src);
@@ -1042,12 +1113,54 @@ export async function collectCompany(
   profile.profile.founders = profile.profile.founders?.map((f) => ({ ...f, name: stripHonorific(f.name) }));
   profile.leadership = profile.leadership.map((l) => ({ ...l, name: stripHonorific(l.name) }));
 
+  // Founder background (founderBackground.ts, owner 2026-11-07): structured facts, each with a quote from an allowed
+  // source; one targeted search (extra budget) and one model call for all the founders.
+  if (componentOn("founder_background") && !ctx.update && (profile.profile.founders ?? []).length) {
+    const names = (profile.profile.founders ?? []).map((f) => f.name).filter(Boolean).slice(0, 4);
+    try {
+      for (const r of await extraSearch(backgroundSearchQuery(row.name, names), "founder_background")) newSource(r.url, r.content ?? "", r.title ?? "", "founder_background");
+      const usable = allSources.filter((x) => profileSourceAllowed(x, row.name) && names.some((n) => normalizeForMatch(x.content ?? "").includes(normalizeForMatch(n.split(" ").slice(-1)[0] ?? "")))).slice(0, 12);
+      if (usable.length) {
+        const msg = await ctx.anthropic.messages.create(requestFor(buildBackgroundRequest(row.name, names, usable), ctx.models.market));
+        ctx.recordCost(ctx.models.market, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 });
+        const tool = msg.content.find((b) => b.type === "tool_use");
+        if (tool && tool.type === "tool_use") {
+          const { kept, dropped } = processBackgroundResponse(tool.input, names, row.name, Object.fromEntries(usable.map((x) => [x.source_id, x])), (id) => allowedFact({ source_id: id }));
+          for (const d of dropped) { console.log(`    🚫  background of ${d.founder} (${d.fact.kind}: ${d.fact.organization}) not written — ${d.why}`); bump(stats.droppedByReason, `founder_background_${d.why}`); }
+          for (const k of kept) {
+            const f = (profile.profile.founders ?? []).find((x) => x.name === k.founder);
+            if (!f) continue;
+            f.background = k.facts;
+            for (const fact of k.facts) console.log(`    🎓  ${k.founder}: ${fact.kind} ${fact.organization}${fact.role ? ` (${fact.role})` : ""} — "${fact.evidence_quote.slice(0, 100)}"`);
+          }
+        }
+      }
+    } catch (e) {
+      console.log(`    ⚠️  founder background skipped: ${(e as Error).message}`);
+    }
+  }
+
   // ── HQ, founded year, founding country: only from allowed sources ─────
   // (owner, 2026-11-02 — roundSources.ts profileSourceAllowed).
   for (const key of ["city", "country", "founded_year", "founding_country"] as const) {
     const f = profile.profile[key] as { value: unknown; source_id: string } | undefined;
     if (!f) continue;
     const s = sourceById.get(f.source_id);
+    // A legal page's address is the registered office, not the headquarters: an office, never the HQ (owner, 2026-11-08).
+    if (s && (key === "city" || key === "country") && isLegalPageUrl(s.url)) {
+      console.log(`    🚫  ${key} ${JSON.stringify(f.value)} not written as the headquarters — it comes from a legal page (${s.url}); kept as an office`);
+      bump(stats.droppedByReason, "hq_from_legal_page");
+      if (key === "city") {
+        const offices = profile.profile.offices ?? [];
+        if (!offices.some((o) => canonicalCity(o.city) === canonicalCity(String(f.value)))) {
+          const ctry = profile.profile.country && sourceById.get(profile.profile.country.source_id) && isLegalPageUrl(sourceById.get(profile.profile.country.source_id)!.url) ? profile.profile.country.value : countryOfCity(String(f.value));
+          offices.push({ city: String(f.value), ...(ctry ? { country: ctry } : {}), source_id: f.source_id, evidence_quote: (f as { evidence_quote?: string }).evidence_quote ?? "" } as never);
+        }
+        profile.profile.offices = offices;
+      }
+      (profile.profile as Record<string, unknown>)[key] = undefined;
+      continue;
+    }
     if (s && profileSourceAllowed(s, row.name)) continue;
     console.log(`    🚫  ${key} ${JSON.stringify(f.value)} not written — its source is not on the allowed list: ${s?.url ?? f.source_id}`);
     bump(stats.droppedByReason, "profile_source_not_listed");
@@ -1118,7 +1231,7 @@ export async function collectCompany(
       if (!allowedTexts.some((t) => personMentionedIn(l.name, t))) { drop(`leader ${l.name}`, "leader_source_not_listed"); continue; }
       if (cls.kind === "board") { console.log(`    🏛️   ${l.name}: board — "${cls.role}"${cls.role !== raw.role ? ` (was "${raw.role}")` : ""}`); keptLeaders.push({ ...l, group: "board" }); continue; }
       const others = peopleNames.filter((n) => n !== l.name);
-      const role = l.role ?? "";
+      let role = l.role ?? "";
       const onPages = websitePages.filter((p) => personMentionedIn(l.name, p.content));
       let outcome: "verified_card" | "verified_text" | null = null;
       // Why no card verified it — the first test against real sites (owner, 2026-11-03).
@@ -1127,6 +1240,17 @@ export async function collectCompany(
         if (!htmlCache.has(p.url)) htmlCache.set(p.url, ctx.update ? null : await fetchPageHtml(p.url, searchState));
         const html = htmlCache.get(p.url);
         const cards = html ? personCardsInHtml(html, l.name, others) : [];
+        // The extraction gave no title, but the site's own card does (Quris AI's "Head of Strategic Alliances").
+        if (!role) {
+          const fromCard = cards.map((c) => titleFromCard(l.name, c)).find((t): t is string => !!t);
+          const cardCls = fromCard ? roleAtCompany(fromCard, row.name) : null;
+          if (fromCard && cardCls?.kind === "leader") {
+            role = cardCls.role ?? fromCard; l.role = role; outcome = "verified_card"; cardNote = `card on ${p.url}`;
+            console.log(`    🏷️   leader ${l.name}: the title "${role}" read from the site's card (${p.url})`);
+            bump(stats.droppedByReason, "leader_title_from_card");
+            break;
+          }
+        }
         if (role && cards.some((c) => roleSupported(l.name, role, [c]))) { outcome = "verified_card"; cardNote = `card on ${p.url}`; break; }
         cardNote = !html ? `no HTML for ${p.url}` : !cards.length ? `no card found on ${p.url}` : `card on ${p.url} without the title: "${cards[0].slice(0, 80)}"`;
       }
@@ -1145,16 +1269,65 @@ export async function collectCompany(
       bump(stats.droppedByReason, "leader_title_unsupported");
       record("dropped");
     }
-    profile.leadership = keptLeaders;
+    // The closed list of leadership roles holds for a title read from a card or a page too (owner, 2026-11-09):
+    // "Head of …", "Tech Lead", "Director of …" are not leaders. The board is apart; "Leadership team" is the
+    // owner's 2026-11-03 placeholder for a person on the leadership page whose title could not be verified.
+    profile.leadership = keptLeaders.filter((l) => {
+      if (l.group === "board" || l.role === "Leadership team" || isLeadershipRole(l.role)) return true;
+      console.log(`    🚫  leader ${l.name} not written — "${l.role}" is not on the closed list of leadership roles`);
+      bump(stats.droppedByReason, "leader_role_not_on_list");
+      return false;
+    });
+    // The website may be another company's (websiteIdentity.ts): the allowed press names founders the site never shows.
+    {
+      const siteHosts = domain ? [domain] : [];
+      const pressFounders = (profile.profile.founders ?? []).filter((f) => f.grounded_url && !siteHosts.some((d) => f.grounded_url!.includes(d))).map((f) => f.name);
+      const sitePages = allSources.filter((x) => x.source_type === "company_site").map((x) => x.content ?? "");
+      if (websiteLooksLikeAnotherCompany({ sitePages, pressFounders })) {
+        console.log(`    🚫  The website (${domain}) names none of the founders the press names (${pressFounders.join(", ")}) — it may be another company's. Its people are not written: ${profile.leadership.length} leader(s) dropped.`);
+        bump(stats.droppedByReason, "website_may_be_another_company");
+        profile.leadership = [];
+      }
+    }
     // Competitors: the sentence that says they compete comes from an allowed source.
     market.competitors = market.competitors.filter((c) => {
       if (allowedId(c.source_id)) return true;
       drop(`competitor ${c.name}`, "competitor_source_not_listed", c.source_id ? sourceById.get(c.source_id)?.url : undefined);
       return false;
     });
+    // Competitors by tier (competitorTiers.ts, owner 2026-11-07): declared — rival sentences of every page read, "X vs Y"
+    // pages of the company's own site and of the competitors' own sites; market — the model's hints, each kept only when
+    // an allowed source puts both companies in one market. The searches come from the extra budget.
+    if (componentOn("competitor_tiers") && !ctx.update) {
+      for (const c of market.competitors) c.tier ??= "declared";
+      const have = new Set([...market.competitors.map((c) => normalizeForMatch(c.name)), normalizeForMatch(row.name)]);
+      const adopt = (claims: TieredClaim[], how: string) => {
+        for (const cl of claims) {
+          const k = normalizeForMatch(cl.name);
+          if (!k || have.has(k) || market.competitors.length >= 8) continue;
+          have.add(k);
+          market.competitors.push({ name: cl.name, how_it_competes: cl.how_it_competes, source_ids: [cl.source_id], source_id: cl.source_id, evidence_quote: cl.evidence_quote, tier: cl.tier });
+          console.log(`    🥊  ${cl.tier} competitor ${cl.name} (${how}): "${cl.evidence_quote.slice(0, 110)}"`);
+          bump(stats.droppedByReason, `competitor_${cl.tier}_${how}`);
+        }
+      };
+      console.log(`    💡  Market peer hint(s) from the model: ${(market.market_peers ?? []).join(", ") || "none"}`);
+      const { claims, unconfirmedHints } = await competitorTierClaims({
+        companyName: row.name, domain, sources: allSources, hints: market.market_peers ?? [], known: have,
+        search: (q, label) => extraSearch(q, label),
+        addSource: (r, label) => newSource(r.url, r.content ?? "", r.title ?? "", label),
+        // A competitor named on its own site is a competitor only if it is a company we know: an allowed source other
+        // than its own pages names it (owner, 2026-11-08: SecPortal's SEO page).
+        companyDescription: [profile.profile.description, profile.profile.value_proposition, row.description].filter(Boolean).join(" "),
+        knownCompany: (name, host) => allSources.some((x) => !x.url.includes(host) && !/^(vs_page|vs_own|vs_other)/.test(x.query_label ?? "") && profileSourceAllowed(x, row.name) && normalizeForMatch(`${x.title ?? ""} ${x.content}`).includes(normalizeForMatch(name))),
+      });
+      adopt(claims, "found");
+      if (unconfirmedHints.length) console.log(`    💡  Market hint(s) not confirmed by an allowed source, not written: ${unconfirmedHints.join(", ")}`);
+    }
     const sourceByUrl = (u: string) => allSources.find((x) => x.url === u);
     // The company's investors, found now or on file: their own sites are allowed.
-    const knownInvestors = [...roundInvestors, ...existingRounds.flatMap((r) => [r.lead_investor, ...(r.investors ?? [])])];
+    // Only investors that an allowed source other than their own site also names (roundSources.ts corroboratedInvestors).
+    const knownInvestors = corroboratedInvestors([...roundInvestors, ...existingRounds.flatMap((r) => [r.lead_investor, ...(r.investors ?? [])])], allSources, row.name);
     // News: an article of an allowed outlet (tiers 1–4) or the company's own site.
     const newsStanding = (url: string, content?: string, headline?: string) => roundSourceStanding(url, {
       isCompanySite: classifySourceType(url, domain) === "company_site" || sourceByUrl(url)?.source_type === "company_site",
@@ -1164,11 +1337,24 @@ export async function collectCompany(
       companyName: row.name,
     });
     const keptNews: typeof market.news = [];
+    const newsDeps = {
+      companyName: row.name,
+      content: (u: string) => sourceByUrl(u)?.content,
+      isOwnSite: (u: string) => classifySourceType(u, domain) === "company_site" || sourceByUrl(u)?.source_type === "company_site",
+      fetchHtml: async (u: string) => (ctx.update ? null : await fetchPageHtml(u, searchState)),
+    };
     let hintSearches = 0;
     for (const raw of market.news) {
       const n = { ...raw, url: unwrapRedirect(raw.url) };
       const standing = newsStanding(n.url, undefined, n.title);
-      if (standing.kind === "allowed") { keptNews.push(n); continue; }
+      if (standing.kind === "allowed") {
+        // newsGate.ts decides (guides, passing mentions, other companies' news, own-site pages, cut headlines, dates).
+        const about = [profile.profile.description, profile.profile.value_proposition, profile.profile.industry, row.description].filter(Boolean).join(" ");
+        const v = await judgeNews(n, { ...newsDeps, about });
+        if (!v.keep) { console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — ${v.message}: ${n.url}`); bump(stats.droppedByReason, v.reason); continue; }
+        if (v.dated) { console.log(`    📅  news "${n.title.slice(0, 50)}" dated ${v.item.published_date} from ${v.dated === "address" ? "its address" : "the page's code"}`); bump(stats.droppedByReason, "news_date_recovered"); }
+        keptNews.push(v.item as typeof n); continue;
+      }
       // A hint-only site (owner, 2026-11-03): its headline is searched for in an allowed source.
       if (standing.kind === "denied" && standing.why === "hint_only" && hintSearches < 2 && !ctx.update) {
         hintSearches++;
@@ -1182,9 +1368,15 @@ export async function collectCompany(
       }
       drop(`news "${n.title.slice(0, 60)}"`, standing.kind === "denied" && standing.why === "hint_only" ? "news_hint_not_confirmed" : "news_source_not_listed", n.url);
     }
-    market.news = keptNews;
+    // One row per event, then no date, no news (newsGate.ts).
+    const fin = finishNews(keptNews, newsDeps);
+    for (const x of fin.dropped) { console.log(`    🚫  news "${x.item.title.slice(0, 60)}" not written — ${x.message}: ${x.item.url}`); bump(stats.droppedByReason, x.reason); }
+    market.news = fin.kept;
   }
 
+  let registerLegalName: string | null = null;
+  let registerCountry: string | null = null;
+  let ukRegisterEntity: { number: string; entity: string } | null = null;
   // ── Registers: founded year and founding country, a certain match beats any article ──
   if (componentOn("registers") && !ctx.update) {
     const siteSources = allSources.filter((s) => s.source_type === "company_site");
@@ -1203,8 +1395,18 @@ export async function collectCompany(
       legalName: legal.legalName ?? null,
       statedFoundingCountry: profile.profile.founding_country?.value ?? null,
     });
-    const reg = findings[0];
-    if (!reg) {
+    // A register decides founding only for the company's own entity in its headquarters country
+    // (registers.ts registerDecides): Wiz's UK subsidiary, Upwind's, Black Forest Labs' US parent.
+    const hqCountry = profile.profile.country?.value ?? (profile.profile.city ? countryOfCity(profile.profile.city.value) : null);
+    for (const f of findings) {
+      const d = registerDecides(f, row.name, hqCountry);
+      if (d.decides) continue;
+      console.log(`    🏛️   Register ${f.register}: ${f.entity} (${f.number}) not used for founded year / founding country — ${d.why === "local_subsidiary" ? "a local subsidiary (a country in its name)" : d.why === "headquarters_unknown" ? "no headquarters decided to compare its country with" : `the headquarters is not in ${f.founding_country}`}.`);
+      bump(stats.droppedByReason, `register_${d.why}`);
+    }
+    const reg = findings.find((f) => registerDecides(f, row.name, hqCountry).decides);
+    if (reg) { registerLegalName = reg.entity; registerCountry = reg.founding_country; if (reg.register === "uk_companies_house") ukRegisterEntity = { number: reg.number, entity: reg.entity }; }
+    if (!reg && !findings.length) {
       const known = (profile.profile.founders ?? []).map((f) => f.name).filter(Boolean);
       console.log(`    🏛️   Registers: no certain match (name + number / office city${known.length ? ` / founders ${known.join(", ")}` : " — no founder known to match against"}).`);
     }
@@ -1256,6 +1458,43 @@ export async function collectCompany(
   // Written text says what the company does: no data platform, no weakly
   // attributed claim this run did not verify (owner's rule 2026-10-25) —
   // here, so a check, a deepen and every run apply it.
+  // The sector agrees with its sub-sector: the most specific category wins, DeepTech only without one (sectors.ts).
+  {
+    const rec = reconcileSector(profile.profile, taxonomy.parentOf);
+    if (rec.changes.length) {
+      Object.assign(profile.profile, { sector_name: rec.fields.sector_name, sub_sector_name: rec.fields.sub_sector_name, sub_sector_names: rec.fields.sub_sector_names });
+      for (const c of rec.changes) { console.log(`    🧭  Sector reconciled — ${c}`); bump(stats.droppedByReason, "sector_reconciled"); }
+    }
+  }
+  // v2's own description (descriptionBuilder.ts, owner 2026-11-08): replaces the extraction's free text; without a
+  // verified "what" and "for whom" there is none. Written later only for a company with no description on file.
+  if (componentOn("description_v2") && !ctx.update) {
+    const before = profile.profile.description;
+    profile.profile.description = undefined;
+    profile.profile.description_source_ids = undefined;
+    try {
+      // Not the extra searches' pages (founders, rivals): they did not pass the entity filter the first pass did.
+      const usable = descriptionSources(allSources, (x) => profileSourceAllowed(x, row.name) && !/^(founder_background|vs_own|vs_other|market_peers)/.test(x.query_label ?? ""));
+      if (usable.length) {
+        const msg = await ctx.anthropic.messages.create(requestFor(buildDescriptionRequest(row.name, usable), ctx.models.profile));
+        ctx.recordCost(ctx.models.profile, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 });
+        const tool = msg.content.find((b) => b.type === "tool_use");
+        const built = tool && tool.type === "tool_use" ? processDescription(tool.input, row.name, Object.fromEntries(usable.map((x) => [x.source_id, x])), (id) => allowedFact({ source_id: id })) : null;
+        for (const d of built?.dropped ?? []) { console.log(`    🚫  description sentence dropped (${d.why}): "${d.text.slice(0, 90)}"`); bump(stats.droppedByReason, `description_${d.why.split(":")[0]}`); }
+        if (built) {
+          profile.profile.description = built.description;
+          profile.profile.description_source_ids = [...new Set(built.sentences.flatMap((x) => x.source_ids))];
+          profile.profile.description_sentences = built.sentences;
+          console.log(`    📝  Description (v2): ${built.sentences.length} sentence(s) — ${built.description.slice(0, 120)}…`);
+        } else {
+          console.log(`    📝  Description (v2): no verified "what" and "for whom" — none written${before ? " (the extraction's free text is not used)" : ""}.`);
+          bump(stats.droppedByReason, "description_not_verified");
+        }
+      }
+    } catch (e) {
+      console.log(`    ⚠️  description skipped: ${(e as Error).message}`);
+    }
+  }
   const verifiedFacts = collectVerifiedFacts(profile, funding);
   const narratives = checkNarratives({
     description: profile.profile.description, value_proposition: profile.profile.value_proposition,
@@ -1287,19 +1526,47 @@ export async function collectCompany(
   // ── Stage 8b: patents — the EPO register only (epoPatents.ts) ───────────
   let patentsFromRegister = false;
   if (componentOn("epo_patents")) try {
+    const legalName = registerLegalName ?? legal.legalName ?? null;
+    // The anchor: the country of the register that gave the name, else the registered office on the legal pages.
+    const legalNameCountry = registerLegalName ? registerCountry : legal.registeredCity ? countryOfCity(legal.registeredCity) ?? null : null;
+    const patentCountries = [validation.accepted.country ?? row.country, profile.profile.founding_country?.value ?? row.founding_country, registerCountry];
     const register = await (ctx.patentLookup ?? lookupEpoPatents)({
       name: row.name,
-      countries: [validation.accepted.country ?? row.country, profile.profile.founding_country?.value ?? row.founding_country],
+      // The full legal name, from the register entity that decided or the company's own legal pages: an
+      // applicant in another legal form ("WAYVE LLC") is another company.
+      legalName,
+      legalNameCountry,
+      countries: patentCountries,
     });
-    if (register) {
+    if (!register) {
+      // null is "not looked up", never "none" (epoPatents.ts): say why, so a missing key is not read as "no patents".
+      const why = !ctx.patentLookup && !(process.env.EPO_OPS_KEY?.trim() && process.env.EPO_OPS_SECRET?.trim()) ? "EPO_OPS_KEY / EPO_OPS_SECRET are not set in this shell" : "the name is too common to look up safely, or the register search was incomplete";
+      console.log(`    📜  EPO register: NOT looked up — ${why}. Patents are left as they are (unknown, not zero).`);
+      bump(stats.droppedByReason, "patents_not_looked_up");
+    } else {
       patentsFromRegister = true;
       market.patents = register.patents;
       market.patent_summary = { patent_count: register.familyCount, patent_fields: [] };
       for (const r of register.rejected) bump(stats.droppedByReason, r.reason);
-      console.log(`    📜  EPO register: ${register.patents.length} patent famil(ies) with ${row.name} as applicant${register.rejected.length ? `, ${register.rejected.length} publication(s) of other applicants set aside` : ""}.`);
+      console.log(`    📜  EPO register: ${register.patents.length} patent famil(ies) with ${row.name} as applicant${register.rejected.length ? `, ${register.rejected.length} publication(s) of other applicants set aside (${[...register.rejected.reduce((m, r) => m.set(r.reason, (m.get(r.reason) ?? 0) + 1), new Map<string, number>())].map(([k, n]) => `${k} ×${n}`).join(", ")})` : ""}${legalName ? `; legal name "${legalName}"` : "; no legal name known"}; countries ${JSON.stringify(patentCountries)}.`);
     }
   } catch (e) {
     console.warn(`    ⚠️  EPO register lookup failed (${e instanceof Error ? e.message : String(e)}) — patents left as they are.`);
+  }
+
+  // ── Headcount points from registers and archived pages (headcountCollect.ts, owner 2026-11-08) ──
+  // Companies House only for the certain match whose country is the decided headquarters; Brreg for a Norwegian
+  // headquarters; the Wayback copies of the company's About / Careers pages for every company with a website.
+  const headcountExtra: HistoryPoint[] = [];
+  if (componentOn("headcount_sources") && !ctx.update && !process.env.VITEST) {
+    const hqNow = profile.profile.country?.value ?? (profile.profile.city ? countryOfCity(profile.profile.city.value) : null);
+    const io: HeadcountIo = { ...nodeRegisterIo(), pause: () => new Promise((r) => setTimeout(r, 1000)) };
+    const today = new Date().toISOString().slice(0, 10);
+    if (ukRegisterEntity && (hqNow ?? "").toLowerCase().replace(/^uk$/, "united kingdom") === "united kingdom") headcountExtra.push(...await companiesHouseHeadcount(ukRegisterEntity.number, ukRegisterEntity.entity, io));
+    if ((hqNow ?? "").toLowerCase() === "norway") headcountExtra.push(...await brregHeadcount(row.name, legal.legalName, io, today));
+    if (domain) headcountExtra.push(...await waybackHeadcount(domain, row.name, io));
+    if (headcountExtra.length) console.log(`    👥  Headcount points: ${headcountExtra.map((p) => `${p.value}${p.lowerBound ? "+" : ""}@${p.date} (${p.type})`).join(", ")}`);
+    else console.log("    👥  Headcount points: none from registers or archived pages.");
   }
 
   return {
@@ -1307,5 +1574,6 @@ export async function collectCompany(
     profile, funding, market, allSources, sourceById, sourceTypeFor, sourceUrlFor,
     linkedinFounders, linkedinLeaders, existingRefs, validation, plan,
     cityConfidence, countryConfidence, domain, verifiedFacts, patentsFromRegister, roundHints, confirmedHints, unlistedDomains,
+    ...(headcountExtra.length ? { headcountExtra } : {}),
   };
 }

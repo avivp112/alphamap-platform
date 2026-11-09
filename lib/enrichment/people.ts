@@ -217,10 +217,14 @@ export function cleanPeople<T extends { name: string }>(people: T[]): T[] {
  * placeholder / non-leadership one, and the person is not listed.
  */
 export function isLeadershipRole(role: string | null | undefined): boolean {
+  // A CLOSED list (owner, 2026-11-09, after the Orq "Tech Lead" and "Head of" entries): C-level, President,
+  // Founder / Co-founder, General Manager, Managing Director, VP / SVP / EVP. Lead, Manager, Director (other than
+  // Managing Director), Head of and anything else are not leaders. The board is kept apart (roleAtCompany).
   const r = (role ?? "").trim();
   if (!r) return false;
   if (/\b(not specified|unspecified|unknown|n\/a|none|employee|staff|team member|member of|intern|contractor|volunteer|student|candidate)\b/i.test(r)) return false;
-  return /\b(chief|c[a-z]o|ceo|cto|cfo|coo|cmo|cpo|cro|ciso|president|founder|co-?founder|owner|chair(?:man|woman|person)?|director|head|vp|vice[- ]president|svp|evp|general manager|gm|managing|partner|principal|lead|executive|officer|board|advisor|scientist)\b/i.test(r);
+  if (/\bchief\s+of\s+staff\b/i.test(r) && !/\b(ceo|cto|cfo|coo|founder|president)\b/i.test(r)) return false;
+  return /\b(ceo|cto|cfo|coo|cmo|cpo|cro|cio|ciso|cdo|cso|cco|clo|chro|cxo|chief\b[\p{L} &,-]{0,40}\bofficer|president|founders?|co-?\s?founders?|general manager|managing director|vp|svp|evp|vice[- ]president)\b/iu.test(r);
 }
 
 /**
@@ -484,4 +488,28 @@ export function roleAtCompany(role: string | null | undefined, companyName: stri
     return { kind: "board", role: /\bchair/i.test(text) ? "Chairman" : "Board member" };
   }
   return { kind: "leader", role: own.length ? text : null };
+}
+
+
+const CREDENTIALS = "phd|ph\\.d|md|m\\.d|mba|rd|cpa|esq|ms|msc|bsc|ma|jd|dds|dvm|pe|dr";
+const TITLE_WORD = /\b(ceo|cto|coo|cfo|cmo|cpo|cro|ciso|chief|founder|co-?founder|president|vp|svp|evp|vice president|head|director|manager|lead|officer|partner|general manager|managing director)\b/i;
+const ACRONYMS = new Set(["ceo", "cto", "coo", "cfo", "cmo", "cpo", "cro", "ciso", "vp", "svp", "evp", "gm", "us", "uk", "r&d", "ai", "hr", "it"]);
+
+/**
+ * The title a person's card gives when the extraction gave none (owner, 2026-11-06 — Quris AI's team page:
+ * "Shelly Maman, PhD  Head of Strategic Alliances"): what follows the name and its credentials, up to the
+ * first sentence stop, when it reads as a role. null when the card holds no such phrase. The card is the
+ * lower-cased text personCardsInHtml returns.
+ */
+export function titleFromCard(personName: string, card: string): string | null {
+  const tokens = fold(personName).toLowerCase().split(/[^a-z]+/).filter((t) => t.length > 1);
+  if (tokens.length < 2) return null;
+  const text = fold(card).toLowerCase().replace(/\s+/g, " ").trim();
+  const nameEnd = new RegExp(`\\b${tokens[0]}\\b[^a-z]+(?:[a-z.]+[^a-z]+){0,2}${tokens[tokens.length - 1]}\\b`).exec(text);
+  if (!nameEnd) return null;
+  let rest = text.slice(nameEnd.index + nameEnd[0].length).replace(new RegExp(`^(?:[\\s,.]*\\b(?:${CREDENTIALS})\\b)+`, "i"), "").replace(/^[\s,.:;|·•–—-]+/, "");
+  rest = rest.split(/[.;|·•\n]|\s{2,}| [-–—] /)[0].trim();
+  const words = rest.split(/\s+/).filter(Boolean);
+  if (!words.length || words.length > 9 || !TITLE_WORD.test(rest)) return null;
+  return words.map((w) => (ACRONYMS.has(w) ? w.toUpperCase() : /^(of|and|the|for|in|at|&)$/.test(w) ? w : w[0].toUpperCase() + w.slice(1))).join(" ").replace(/\bR&d\b/g, "R&D");
 }

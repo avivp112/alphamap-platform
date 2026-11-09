@@ -320,7 +320,10 @@ Blocking the flag:
 - [ ] Golden set: zero city/country mismatches.
 - [ ] Golden set: zero duplicate rounds. APEX has a single $200M round, and Total Raised is recomputed.
 - [ ] Golden set: zero cases of `founded_year` after the first round.
-- [ ] Golden set precision, as `eval/score.ts` `PHASE1_BARS` encodes it: round type ≥ 95% (at least 20 judged), competitors ≥ 90% (20), patents ≥ 98% (10), and location / founded year ≥ 95%, written round amounts ≥ 90%. If a target is missed, prefer lower coverage over wrong values.
+- [ ] Golden set precision, as `eval/score.ts` `PHASE1_BARS` encodes it: round type ≥ 95% (at least 20 judged), patents ≥ 98% (10), and location / founded year ≥ 95%, written round amounts ≥ 90%. If a target is missed, prefer lower coverage over wrong values.
+- **Competitors are not a Phase 1 condition** (owner, 2026-11-07). The write gate (section 7a) already keeps the field closed until the tracker opens it (at least 20 marks, at least 90%), so a competitor reaches the database only after that measure passes; the field is opened by the competitors coverage project (`docs/competitors_proposal.md`). The evaluation report still prints the measure, marked as information (ℹ️), and says where it comes from. What follows is that measure's definition (owner, 2026-11-06):
+- [ ] ~~Competitors ≥ 90%, measured by the field-review tracker, not the golden set~~ (information only, see above). The golden-set run finds too few competitors to judge (11 on 56 companies, and fewer under the stricter quote rules), so the bar reads `eval/field_review_tracker.csv`: at least 20 marked competitor values and at least 90% of them correct, counted against the CURRENT rules (`scripts/field_review_replay.ts`). The replay judges each mark by its stored quote too (`lib/enrichment/markRules.ts`): a quote that is a row of "X vs Y" links, is not about the company, or does not link the company and the competitor directly ("Rippling competes with HiBob, Namely, BambooHR" says nothing about HiBob and BambooHR) takes the mark out of the count. The evaluation report's competitors line names this source. This is the same measure that opens the `competitor` field for writing (section 7a).
+- [ ] "Reviewed for Phase 1" (owner, 2026-11-05): a golden company counts when every Phase 1 field its entry states (city, country, founded year, rounds, competitors, patents) is in its `reviewed_fields`, or its `reviewed_by_human` flag is true; the report prints how many companies do, and the figures are a verdict only with 50 or more.
 - [x] Every written value has a `field_provenance` row with URL and quote (the write path records it; checked end to end by the batch reports).
 - [x] No field is written unless it is open in the tracker (section 7a).
 
@@ -355,3 +358,37 @@ Deferred, not blocking: founder bios (the field stays closed until it reaches 90
 - [ ] `DRY_RUN` remains the default, and resumability works exactly as in v1.
 - [ ] The end-of-run summary shows dropped fields by reason code.
 - [ ] All DB changes are additive Supabase migrations.
+
+## Review fields added 2026-11-07/08 (owner)
+
+Tracker fields: `competitor_declared`, `competitor_market`, `founder_background`, `description`, `sector`, `tags`, `employee_history`
+(a field is written only when open there: ≥20 marks, ≥90% correct). Definitions of "correct" are printed at the top of every
+marking report (`lib/enrichment/reviewDefinitions.ts`).
+
+- **Description** (`descriptionBuilder.ts`): v2's own 2–4 English sentences (what / for whom / edge), each with its sources; a
+  number or name absent from them, or a marketing word, drops the sentence; no verified "what" + "for whom" → none. Written only
+  where no description is on file; v1 text is shown beside it in the review.
+- **Headcount history** (`headcountHistory.ts`, `headcountCollect.ts`, `headcountSources.ts`): point types `registry`,
+  `plan_participants`, `site_stated`, `press_reported`, `observed`, `model_estimate`, `legacy` (every point that existed before the
+  migration: shown, never current, never "Live data"). The current number comes only from a point of the last two years; "75+"
+  stays a floor; no interpolation; jumps ≥3×, figures that do not fit the money raised and same-month duplicates are dropped; two
+  contradicting points of different types in one month are both kept. Sources wired: Companies House accounts (certain match in
+  the headquarters country), Brreg, Wayback copies of About/Careers pages (robots.txt honoured). Form 5500 and CVR wait for the
+  coverage measurement (`scripts/headcount_coverage.ts`).
+- **Promotion** (`worker/promote.ts`): refuses a real write until `PHASE1_PASSED`; after it, only the tracker's open fields.
+
+## Round types and dates (owner, 2026-11-08)
+
+- **Unknown vs Other.** `Unknown`: no source states what kind of round it is ("emerges from stealth with $7.5M"); stored as NULL, shown as "Undisclosed", counted *missing* (not wrong) in the evaluation. `Other`: a type the source names that is no regular series (strategic, crowdfunding, token sale); judged like any type. A model's "Other" with no such word in its evidence becomes `Unknown` (`refineRoundType`).
+- **A round's amount** must stand on an allowed source of its own, not just any source the round cites (Apex's $185.1M from forgeglobal.com).
+- **A date from a press article's dateline only** (`roundDates.ts`): one search for the original release (company site, wire, investor) for its day; not found → `announcement_date_precision = month`, shown as a month. In the evaluation a month date is right when the month matches. Switch `round_dates`; `DATE_SEARCHES` per company, default 3.
+
+## Review 6 rules (owner, 2026-11-08)
+
+- **HQ never from a legal page** (Impressum, Legal, Terms, Privacy…): the address is an office (`headquarters.ts isLegalPageUrl`).
+- **Headcount points** (`headcountSources.ts`): the number must be in the quote and the quote about the company; data platforms (RocketReach…) are no source; no date, no point; a figure the text dates to a year is that year's (`count_in_year`), a milestone without a year gives nothing; the company's own site is `site_stated`, anything else `press_reported`.
+- **Tags** need a sentence of an allowed page; an error/block page supports nothing (`quoteFinder.ts`).
+- **Sector** agrees with its sub-sector; the most specific category wins; DeepTech only without a specific one (`sectors.ts`).
+- **Competitors:** the other side of a "vs" title must be a company (not a category or a post title); a vs page on the competitor's own site needs a competitor known from the database or an allowed source.
+- **News** (`newsRelevance.ts`): a guide/explainer is not news; an article whose named product shares no word with the company's description is another company's.
+- **Website identity** (`websiteIdentity.ts`): if allowed press outside the site names ≥2 founders and none appears on the site, the site's people are not written.

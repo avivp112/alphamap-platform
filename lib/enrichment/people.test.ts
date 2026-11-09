@@ -62,9 +62,18 @@ describe("isLeadershipRole — a leader needs a real role (BETA, 2026-10-26)", (
     expect(isLeadershipRole(null)).toBe(false);
     expect(isLeadershipRole("Software Engineer")).toBe(false);
   });
+  it("a tech / team lead is not a leader (Orq, pilot dry run 2026-11-08)", () => {
+    for (const r of ["Tech Lead", "Technical Lead", "Team Lead", "Product Lead"]) expect(isLeadershipRole(r)).toBe(false);
+    expect(isLeadershipRole("Tech Lead and CTO")).toBe(true);
+  });
   it("keeps executives", () => {
-    for (const r of ["CEO (Co-Founder)", "Chief Technology Officer", "VP Engineering", "Head of Product", "President", "Managing Director", "General Manager, EMEA"]) {
+    for (const r of ["CEO (Co-Founder)", "Chief Technology Officer", "VP Engineering", "SVP Sales", "EVP Operations", "CISO", "President", "Managing Director", "General Manager, EMEA", "Co-founder"]) {
       expect(isLeadershipRole(r)).toBe(true);
+    }
+  });
+  it("the list is closed: Head of, Director, Manager, Lead, Chief of Staff are not leaders (owner, 2026-11-09)", () => {
+    for (const r of ["Head of Product", "Director of Engineering", "Engineering Manager", "Lead Designer", "Chief of Staff", "Partner", "Advisor", "Board member"]) {
+      expect(isLeadershipRole(r)).toBe(false);
     }
   });
 });
@@ -150,5 +159,21 @@ describe("a person's card on a team page, by the HTML (owner, 2026-11-03)", () =
     const plain = `<body><div><div><div>Liron Bitan</div><div>VP R&amp;D</div></div><div><div>Kristina Cross</div><div>VP Sales</div></div></div></body>`;
     expect(personCardsInHtml(plain, "Liron Bitan")).toEqual(["liron bitan vp r&d"]);
     expect(personCardsInHtml(plain, "Nobody Here")).toEqual([]);
+  });
+});
+
+import { titleFromCard } from "./people";
+describe("a leader's title read from the site's card when the extraction gave none (owner, 2026-11-06 — Quris AI)", () => {
+  it("takes the title after the name and its credentials", () => {
+    expect(titleFromCard("Shelly Maman, PhD", "shelly maman, phd head of strategic alliances")).toBe("Head of Strategic Alliances");
+    expect(titleFromCard("Amir Bein, RD, PhD", "amir bein, rd, phd svp of biology")).toBe("SVP of Biology");
+    expect(titleFromCard("Shahar Harel", "shahar harel vp of ai")).toBe("VP of AI");
+  });
+  it("stops at the first sentence stop", () => {
+    expect(titleFromCard("Ayelet Richter", "ayelet richter vp business development & us gm. ayelet joined in 2020 from sap.")).toBe("VP Business Development & US GM");
+  });
+  it("gives nothing when the card holds no role", () => {
+    expect(titleFromCard("Jane Doe", "jane doe joined us from a bank and loves hiking")).toBeNull();
+    expect(titleFromCard("Jane Doe", "something else entirely")).toBeNull();
   });
 });

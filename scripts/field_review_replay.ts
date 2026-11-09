@@ -16,11 +16,12 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { config } from "dotenv";
-import { existsSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import { readMarks, readReplay, REPLAY } from "../lib/enrichment/fieldReview.ts";
+import { readMarks, readReplay, parseCsvText, REPLAY } from "../lib/enrichment/fieldReview.ts";
+import { quotesFromRows, quotesFromCompetitorSheet, quoteOf } from "../lib/enrichment/markQuotes.ts";
 import { judgeMark } from "../lib/enrichment/markRules.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -49,7 +50,12 @@ const domainOf = (website: string | null | undefined) => {
   try { commit = execSync("git rev-parse --short HEAD").toString().trim(); } catch { /* not a checkout */ }
   const previous = readReplay();
   const today = new Date().toISOString().slice(0, 10);
-  const judged = new Map(marks.map((m) => [m.id, judgeMark(m, { domain: domains.get(m.company) })]));
+  // The quotes stored with the values (run_N.csv, batch_N.csv): a competitor's quote is judged too.
+  const quotes = new Map<string, string>();
+  if (existsSync("field_review")) for (const f of readdirSync("field_review").filter((x) => /\.csv$/.test(x) && !/_sample\.csv$/.test(x))) quotesFromRows(parseCsvText(readFileSync(`field_review/${f}`, "utf8").replace(/^\uFEFF/, "")), quotes);
+  // The owner's competitors sheet keeps the quote of the values he marked there (tracker ids g.c…, which kept no source).
+  if (existsSync("eval/review/competitors_review.csv")) quotesFromCompetitorSheet(parseCsvText(readFileSync("eval/review/competitors_review.csv", "utf8").replace(/^\uFEFF/, "")), quotes);
+  const judged = new Map(marks.map((m) => [m.id, judgeMark(m, { domain: domains.get(m.company), quote: quoteOf(m, quotes) })]));
 
   const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   const lines = ["id,produced,replayed_at,rules,note"];
@@ -60,6 +66,8 @@ const domainOf = (website: string | null | undefined) => {
   }
   writeFileSync(REPLAY, "﻿" + lines.join("\r\n") + "\r\n");
 
+  const competitors = marks.filter((m) => m.field === "competitor");
+  console.log(`Competitor marks judged by their stored quote: ${competitors.filter((m) => quoteOf(m, quotes)).length} of ${competitors.length} have a quote in field_review/*.csv (the rest cannot be judged and stay).`);
   const gone = marks.filter((m) => !judged.get(m.id)!.produced);
   console.log(`${marks.length} mark(s) judged by the rules at ${commit || "this checkout"}: ${gone.length} no longer produced, ${marks.length - gone.length} stay.\n`);
   for (const m of gone) console.log(`  ${m.id.padEnd(6)} ${m.field.padEnd(16)} ${m.verdict.padEnd(8)} ${m.company}: ${m.value.slice(0, 60)}  ← ${judged.get(m.id)!.rule}`);

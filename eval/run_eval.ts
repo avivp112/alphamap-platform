@@ -58,6 +58,7 @@
  * JINA_API_KEY) — loaded via the same initV1Context() v1 itself uses.
  */
 
+import { maxArticles } from "../lib/enrichment/articleBudget.ts";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
@@ -74,13 +75,16 @@ import { createSearchProviderState, searchCalls } from "../lib/enrichment/search
 import { openSearchCache } from "../lib/enrichment/searchCache.ts";
 import { blankRow } from "../worker/enrich.ts";
 import { buildProfile } from "../worker/profile.ts";
+import { wrongValues, wrongValuesText, wrongValuesCsv } from "./wrongValues.ts";
 import { callCostUsd, knownModel, UsageMeter, LONG_PROMPT_TOKENS } from "../lib/enrichment/models.ts";
 import {
-  FIELDS, newScoreboard, pct, scoreCompany, duplicateRounds, foundedAfterFirstRound, phase1Checks, hintGain, matchRounds, roundsDayGap, isFatalProviderError, isEvent,
+  FIELDS, PHASE1_REVIEW_FIELDS, phase1ReviewCounts, newScoreboard, pct, scoreCompany, duplicateRounds, foundedAfterFirstRound, phase1Checks, phase1Passes, hintGain, matchRounds, roundsDayGap, isFatalProviderError, isEvent,
   type GoldenSet, type GoldenCompany, type PipelineOutput, type FieldResult, type Field,
 } from "./score.ts";
 
-import { toCsv, parseCsv, mergeRows, competitorKey, roundKey, COMPETITOR_COLUMNS, ROUND_COLUMNS, type SheetRow } from "./reviewSheet.ts";
+import { fieldStatus, countedMarks, readReplay, TRACKER } from "../lib/enrichment/fieldReview.ts";
+import { majorPressNote } from "../lib/enrichment/unlistedDomains.ts";
+import { toCsv, parseCsv, mergeRows, dedupeRoundRows, competitorKey, roundKey, COMPETITOR_COLUMNS, ROUND_COLUMNS, type SheetRow } from "./reviewSheet.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const STORE_EVIDENCE = process.env.STORE_EVIDENCE === "true";
@@ -88,7 +92,7 @@ const PIPELINE = process.env.PIPELINE === "v2" ? "v2" : "v1";
 const ONLY = (process.env.ONLY ?? "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean);
 // v2 run settings — the bulk run's own defaults.
 const ENRICH_MODEL = process.env.ENRICH_MODEL ?? "claude-haiku-5-5"; // owner, 2026-11-02 (was claude-haiku-4-5-20251001)
-const ARTICLES_TO_READ = Number(process.env.ARTICLES_TO_READ ?? 4);
+const ARTICLES_TO_READ = maxArticles();
 const DEEP_DIVE = process.env.DEEP_DIVE !== "false";
 const TECH_GATE = process.env.TECH_GATE !== "false";
 const SEARCH_COST_USD = Number(process.env.SEARCH_COST_USD ?? 0.001);
@@ -139,6 +143,7 @@ async function runV2(company: GoldenCompany, anthropic: Anthropic, taxonomy: Sec
   const companyLlm = new UsageMeter();
   const searchState = createSearchProviderState();
   searchState.cache = openSearchCache(`eval-${company.id}`);
+  searchState.queryLog = [];
   const row = blankRow({ checkId: `eval-${company.id}`, name: company.name, website: company.website ?? null, country: null, founder: null });
   const done = (output: PipelineOutput | null, outcome: string, sources = 0): V2Run => ({
     output, outcome, sources,
@@ -171,6 +176,8 @@ async function runV2(company: GoldenCompany, anthropic: Anthropic, taxonomy: Sec
       // Patents come only from the EPO register: not looked up (no EPO keys) is not "none".
       patents: c.patentsFromRegister ? c.market.patents.map((x) => x.patent_number).filter((n): n is string => !!n) : undefined,
       unlisted_domains: c.unlistedDomains ?? [],
+      scalar_sources: Object.fromEntries((["city", "country", "founded_year", "founding_country"] as const).map((f) => [f, { source_url: p.overview[f]?.source_url ?? null, quote: p.overview[f]?.quote ?? null }])),
+      search_log: searchState.queryLog,
       hints: {
         confirmed: (c.confirmedHints ?? []).map((h) => ({ round_type: h.round_type, amount_raised: h.amount_raised, date: h.announcement_date, source_url: h.confirmed_source_url })),
         kept: (c.roundHints ?? []).map((h) => ({ round_type: h.round_type, amount_raised: h.amount_raised, date: h.announcement_date, source_url: h.source_url })),
@@ -198,20 +205,39 @@ function reviewableSource(url: string | null | undefined, website: string | null
   return standing.kind === "allowed" && standing.tier <= 3;
 }
 
+/**
+ * RESCORE=true (owner, 2026-11-05): scores the output a finished run stored (eval/v2_results_<label>.json)
+ * against the CURRENT golden set — no search, no model, no database, no cost. After the owner marks a
+ * value or adds a company, the numbers update without paying for the run again. A company the stored
+ * run does not hold is listed and skipped, never guessed.
+ */
+const RESCORE = process.env.RESCORE === "true";
+const RESULTS_FILE = PIPELINE === "v1" ? "baseline.json" : `v2_results${COMPONENTS_LABEL ? `_${COMPONENTS_LABEL}` : ""}.json`;
+
 async function main() {
-  await initV1Context();
-  if (PIPELINE === "v1") await loadSectorTaxonomy();
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const v2Taxonomy = PIPELINE === "v2" ? await loadV2Taxonomy(supabase) : null;
+  const stored: { per_company?: Record<string, { output: PipelineOutput | null; outcome?: string; cost_usd?: number; seconds?: number }>; generated_at?: string } | null = RESCORE
+    ? (existsSync(join(__dir, RESULTS_FILE)) ? JSON.parse(readFileSync(join(__dir, RESULTS_FILE), "utf8")) : null) : null;
+  if (RESCORE && !stored?.per_company) { console.error(`RESCORE=true: eval/${RESULTS_FILE} not found or holds no per-company output. Run the evaluation first (EVAL_LABEL names the file).`); process.exit(1); }
+  if (!RESCORE) await initV1Context();
+  if (PIPELINE === "v1" && !RESCORE) await loadSectorTaxonomy();
+  const anthropic = RESCORE ? (null as unknown as Anthropic) : new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const v2Taxonomy = PIPELINE === "v2" && !RESCORE ? await loadV2Taxonomy(supabase) : null;
 
   const golden: GoldenSet = JSON.parse(readFileSync(join(__dir, "golden_set.json"), "utf8"));
   const inSet = golden.companies.filter((c) => !ONLY.length || ONLY.includes(c.id.toLowerCase()) || ONLY.includes(c.name.toLowerCase()));
   // A company without a website does not enter the golden set (owner, 2026-11-05): searching by name
   // alone would be an unfair measurement. The import tool copies the website by company id.
-  const companies = inSet.filter((c) => c.website);
+  let companies = inSet.filter((c) => c.website);
+  if (RESCORE) {
+    const missing = companies.filter((c) => !stored!.per_company![c.id]);
+    companies = companies.filter((c) => stored!.per_company![c.id]);
+    console.log(`RESCORE: scoring the stored run of ${stored!.generated_at ?? "?"} (eval/${RESULTS_FILE}) against the current golden set — nothing is searched or paid for.`);
+    if (missing.length) console.log(`  ${missing.length} golden compan${missing.length === 1 ? "y is" : "ies are"} not in that run and skipped: ${missing.map((c) => c.name).join(", ")}`);
+  }
   for (const c of inSet.filter((x) => !x.website)) console.warn(`  ⚠️  ${c.name}: no website in the golden set — skipped. Run eval/import_field_review.ts to fill it by company id.`);
-  const unreviewed = companies.filter((c) => !c.reviewed_by_human).length;
-  console.log(`Pipeline ${PIPELINE} on ${companies.length} golden-set companies${unreviewed ? ` (${unreviewed} not yet reviewed by a human)` : ""}.`);
+  const reviewCounts = phase1ReviewCounts(companies);
+  const unreviewed = reviewCounts.total - reviewCounts.reviewed;
+  console.log(`Pipeline ${PIPELINE} on ${companies.length} golden-set companies — reviewed for Phase 1: ${reviewCounts.reviewed} of ${reviewCounts.total}.`);
   if (PIPELINE === "v2") console.log(`Components (V2_COMPONENTS=${process.env.V2_COMPONENTS ?? "default"}): ${Object.entries(COMPONENTS).map(([n, on]) => `${n} ${on ? "on" : "off"}`).join(" · ")}`);
   console.log("");
 
@@ -270,6 +296,11 @@ async function main() {
           console.log(`    ℹ️   No existing startups row matched "${company.name}" — skipping evidence storage (extraction was still scored).`);
         }
       }
+    } else if (RESCORE) {
+      const st = stored!.per_company![company.id];
+      output = st.output;
+      extra = { outcome: st.outcome, cost_usd: st.cost_usd, seconds: st.seconds } as typeof extra;
+      totalCost += st.cost_usd ?? 0; totalSeconds += st.seconds ?? 0; ran++;
     } else {
       try {
         const r = await withoutWrites("v2 collection", () => runV2(company, anthropic, v2Taxonomy!));
@@ -331,22 +362,37 @@ async function main() {
   console.log(`rounds written without a date: ${roundDates.undated} of ${roundDates.rounds} (${pct(roundDates.undated, roundDates.rounds)})`);
   console.log(`founders written with a bio: ${founderBios.with_bio} of ${founderBios.founders} (${pct(founderBios.with_bio, founderBios.founders)})`);
   console.log("═".repeat(62));
-  const checks = phase1Checks(board, { locationMismatches, duplicateRounds: duplicates, foundedAfterRound });
+  // Competitors are measured by the field-review tracker (owner, 2026-11-06), counted against the current rules.
+  const trackerCompetitors = fieldStatus(countedMarks()).find((x) => x.field === "competitor_declared");
+  const replayed = readReplay();
+  const competitorSource = `the field-review tracker (${TRACKER}), ${replayed.size ? `replayed against the current rules — ${[...replayed.values()].filter((v) => !v).length} mark(s) no longer produced, left out` : "no replay yet, every mark counts"}`;
+  const checks = phase1Checks(board, { locationMismatches, duplicateRounds: duplicates, foundedAfterRound: foundedAfterRound }, { marked: trackerCompetitors?.marked ?? 0, correct: trackerCompetitors?.correct ?? 0, source: competitorSource });
+  console.log(`competitors: Phase 1 reads the tracker, not this run — the run judged ${board.competitors.produced} competitor name(s) against the golden set (for information).`);
   console.log("Phase 1 rules (docs/enrichment_v2_spec.md §7):");
-  for (const c of checks) console.log(`  ${c.pass ? "✅" : "❌"} ${c.rule} — ${c.detail}`);
+  for (const c of checks) console.log(`  ${c.info ? "ℹ️ " : c.pass ? "✅" : "❌"} ${c.rule} — ${c.detail}`);
+  console.log(`  Phase 1 accuracy conditions: ${phase1Passes(checks) ? "ALL PASS ✅ — the owner reads this report and sets PHASE1_PASSED by hand" : "not all pass ❌"}`);
+  const wrongRows = companies.flatMap((c) => { const o = perCompany[c.id]?.output; return o ? wrongValues(c, o) : []; });
+  console.log(`\nValues counted wrong: ${wrongRows.length}`);
+  console.log(wrongValuesText(wrongRows));
   if (PIPELINE === "v2" && ran) {
     console.log(`\nHints (rounds only a data platform states — lib/enrichment/hints.ts):`);
     console.log(`  confirmed by a primary source and written: ${hintTotals.confirmed} — matching a golden round: ${hintTotals.confirmed_matching_golden}, matching none (wrong writes): ${hintTotals.confirmed - hintTotals.confirmed_matching_golden}`);
     console.log(`  kept as hints, not written: ${hintTotals.kept} — of which real golden rounds still to find: ${hintTotals.kept_matching_golden}`);
-    console.log(`\nCost: $${totalCost.toFixed(3)} total, $${(totalCost / ran).toFixed(4)} per company · time: ${(totalSeconds / ran).toFixed(0)} s per company`);
-    console.log(`Claude (${ENRICH_MODEL}${knownModel(ENRICH_MODEL) ? "" : " — no price on file, priced as Haiku 4.5"}): $${LLM.costUsd.toFixed(4)} total, $${(LLM.costUsd / ran).toFixed(4)} per company, from ${LLM.calls} calls' reported tokens (in ${LLM.inputTokens.toLocaleString()}, cache write ${LLM.cacheWriteTokens.toLocaleString()}, cache read ${LLM.cacheReadTokens.toLocaleString()}, out ${LLM.outputTokens.toLocaleString()})`);
-    console.log(`Longest prompt: ${LLM.maxPromptTokens.toLocaleString()} tokens · calls over ${LONG_PROMPT_TOKENS.toLocaleString()}: ${LLM.callsOverLong}${LLM.callsOverLong ? "  ⚠️  those are billed at Haiku 5.5's long-prompt rate ($0.50 / $2.50)" : " ✅"}`);
+    console.log(`\n${RESCORE ? "Cost of the stored run" : "Cost"}: $${totalCost.toFixed(3)} total, $${(totalCost / ran).toFixed(4)} per company · time: ${(totalSeconds / ran).toFixed(0)} s per company`);
+    if (!RESCORE) console.log(`Claude (${ENRICH_MODEL}${knownModel(ENRICH_MODEL) ? "" : " — no price on file, priced as Haiku 4.5"}): $${LLM.costUsd.toFixed(4)} total, $${(LLM.costUsd / ran).toFixed(4)} per company, from ${LLM.calls} calls' reported tokens (in ${LLM.inputTokens.toLocaleString()}, cache write ${LLM.cacheWriteTokens.toLocaleString()}, cache read ${LLM.cacheReadTokens.toLocaleString()}, out ${LLM.outputTokens.toLocaleString()})`);
+    if (!RESCORE) console.log(`Longest prompt: ${LLM.maxPromptTokens.toLocaleString()} tokens · calls over ${LONG_PROMPT_TOKENS.toLocaleString()}: ${LLM.callsOverLong}${LLM.callsOverLong ? "  ⚠️  those are billed at Haiku 5.5's long-prompt rate ($0.50 / $2.50)" : " ✅"}`);
   }
-  if (companies.length < 50 || unreviewed) {
-    console.log(`\n⚠️  ${companies.length} companies${unreviewed ? `, ${unreviewed} not yet reviewed by a human` : ""} — Phase 1 is judged only on the full,`);
-    console.log("   reviewed golden set (50+). Treat these numbers as a direction, not a verdict.\n");
+  console.log(`\nReviewed for Phase 1 (every Phase 1 field the entry states is in reviewed_fields, or reviewed_by_human): ${reviewCounts.reviewed} of ${reviewCounts.total} companies.`);
+  console.log(`  by field (reviewed / stated): ${PHASE1_REVIEW_FIELDS.map((f) => `${f} ${reviewCounts.byField[f].reviewed}/${reviewCounts.byField[f].stated}`).join(" · ")}`);
+  if (reviewCounts.reviewed < 50) {
+    console.log(`\n⚠️  Only ${reviewCounts.reviewed} companies are reviewed for Phase 1 — it is judged on at least 50.`);
+    console.log("   Treat these numbers as a direction, not a verdict.\n");
   }
 
+  const wrongFile = join(__dir, `wrong_values${COMPONENTS_LABEL ? `_${COMPONENTS_LABEL}` : ""}.csv`);
+  writeFileSync(wrongFile, wrongValuesCsv(wrongRows));
+  console.log(`\n📄  ${wrongRows.length} wrong value(s) with their sources: ${wrongFile}`);
+  if (RESCORE) { console.log("RESCORE: nothing else written (the stored run and the review sheets are untouched)."); return; }
   // One file per component setting, so a baseline run and an all-on run sit side by side (eval/compare_runs.ts).
   const file = PIPELINE === "v1" ? "baseline.json" : `v2_results${COMPONENTS_LABEL ? `_${COMPONENTS_LABEL}` : ""}.json`;
   // Competitors v2 found that the golden set does not judge yet, for the
@@ -392,6 +438,8 @@ async function main() {
     const existing = existsSync(sheet) ? parseCsv(readFileSync(sheet, "utf8")) : [];
     writeFileSync(sheet, toCsv(["domain", "companies", "example_company", "example_url", "decision"], mergeRows(existing, rows, (r) => r.domain)));
     console.log(`🌐  ${domainCounts.size} unlisted source domain(s) in eval/review/domains_review.csv — mark "מותר" / "אסור" / "להתעלם"`);
+    const press = majorPressNote([...domainCounts.keys()]);
+    if (press) console.log(`🗞️   ${press}`);
   }
   if (roundsToReview.length) {
     const sheet = join(__dir, "review", "rounds_review.csv");
@@ -399,7 +447,7 @@ async function main() {
     // Rows already marked stay; unmarked ones from a source no longer allowed go.
     const existing = (existsSync(sheet) ? parseCsv(readFileSync(sheet, "utf8")) : [])
       .filter((r) => r.mark?.trim() || reviewableSource(r.source_url, companies.find((c) => c.id === r.company_id)?.website));
-    const merged = mergeRows(existing, roundsToReview, roundKey);
+    const merged = dedupeRoundRows(mergeRows(existing, roundsToReview, roundKey));
     writeFileSync(sheet, toCsv(ROUND_COLUMNS, merged));
     console.log(`📝  ${merged.length - existing.length} round(s) to mark in eval/review/rounds_review.csv ("נכון" / "לא נכון"), then: npx tsx eval/import_review.ts`);
   }

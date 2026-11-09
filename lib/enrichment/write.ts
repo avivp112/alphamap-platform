@@ -64,7 +64,7 @@ export function decideScalarWrite<T>(existing: ExistingFieldState<T>, candidate:
 
 // ── Headcount update guard (issue 6) ──────────────────────────────────────
 
-export type HeadcountPointType = "observed" | "press_reported" | "model_estimate";
+export type HeadcountPointType = "registry" | "plan_participants" | "site_stated" | "press_reported" | "observed" | "model_estimate" | "legacy";
 
 export interface HeadcountUpdateDecision {
   /** Whether to update startups.employee_count itself. */
@@ -115,6 +115,8 @@ export interface MergeablePerson {
   elite_background?: boolean;
   notable_pedigree?: boolean;
   joined_date?: string;
+  /** Verified background facts (founderBackground.ts): merged as a union by kind + organization. */
+  background?: Array<{ kind: string; organization: string }>;
 }
 
 /**
@@ -166,6 +168,12 @@ export function mergePeople<T extends MergeablePerson>(existing: T[], incoming: 
       if (current[field] == null && person[field] != null) {
         (current as MergeablePerson)[field] = person[field];
       }
+    }
+    if (person.background?.length) {
+      const have = current.background ?? [];
+      const key = (f: { kind: string; organization: string }) => `${f.kind}|${f.organization.toLowerCase()}`;
+      const added = person.background.filter((f) => !have.some((h) => key(h) === key(f)));
+      if (added.length) current.background = [...have, ...added];
     }
     for (const flag of ["had_prior_exit", "elite_background", "notable_pedigree"] as const) {
       if (person[flag] === true && current[flag] !== true) {

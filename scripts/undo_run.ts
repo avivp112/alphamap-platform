@@ -20,8 +20,9 @@
  *   RUN_ID=<id> FIELDS=competitors npx tsx scripts/undo_run.ts  # only some fields
  *   RUN_ID=<id> DRY_RUN=false npx tsx scripts/undo_run.ts       # undo
  *
- * FIELDS defaults to patents, patent_count, patent_fields, competitors and
- * funding_rounds (new rounds and filled round fields — the round types).
+ * FIELDS defaults to "all": everything the run recorded (owner, 2026-11-09 — wet batch 1's undo used the old
+ * default of patents, patent_count, patent_fields, competitors and funding_rounds, and left the batch's news,
+ * two of them marked wrong, in the database). A list of columns still narrows it.
  * Needs SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (env or .env).
  */
 
@@ -39,7 +40,7 @@ if (existsSync(envPath)) config({ path: envPath });
 const DRY_RUN = process.env.DRY_RUN !== "false";
 const LIST = process.env.LIST === "true";
 const RUN_IDS = (process.env.RUN_ID ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-const FIELDS = (process.env.FIELDS ?? "patents,patent_count,patent_fields,competitors,funding_rounds").split(",").map((s) => s.trim()).filter(Boolean);
+const FIELDS = (process.env.FIELDS ?? "all").split(",").map((s) => s.trim()).filter(Boolean);
 
 const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -110,7 +111,7 @@ async function undo() {
       else if (a.kind === "delete_round") console.log(`• ${name(a.startup_id)} — delete round ${a.round.round_type ?? "?"} ${a.round.amount_raised ?? ""} (${a.round.source_url ?? "no source"})`);
       else if (a.kind === "restore_round") console.log(`• ${name(a.startup_id)} — put back round ${a.round.round_type ?? "?"} ${a.round.amount_raised ?? ""}`);
       else if (a.kind === "restore_round_field") console.log(`• ${name(a.startup_id)} — round ${a.round_id}: ${a.column} → ${short(a.value)}`);
-      else console.log(`  ↷ ${name(a.startup_id)} — ${a.field}: left alone (${a.reason === "changed_since" ? "changed after the run" : a.reason === "round_back" ? "the round is there again" : "round already deleted"})`);
+      else console.log(`  ↷ ${name(a.startup_id)} — ${a.field}: left alone (${a.reason === "changed_since" ? "changed after the run" : a.reason === "already_undone" ? "already back as before the run" : a.reason === "round_back" ? "the round is there again" : "round already deleted"})`);
       if (DRY_RUN) continue;
       if (a.kind === "restore_startup_field") {
         const { error: e } = await db.from("startups").update({ [a.field]: a.value }).eq("id", a.startup_id);
@@ -132,6 +133,16 @@ async function undo() {
         const { error: e } = await db.from("funding_rounds").update({ [a.column]: a.value }).eq("id", a.round_id);
         if (e) console.warn(`  ⚠️  ${e.message}`);
       }
+    }
+    // Undoing everything: the run's field_provenance rows go with the values they were for — except those of a value someone changed
+    // after the run (wet batch 1: 14 rows stayed behind, pointing at news no longer on file).
+    if (!DRY_RUN && FIELDS.includes("all")) {
+      const kept = report.filter((r) => r.run === run.run_id && r.action.kind === "skip" && r.action.reason === "changed_since").map((r) => ({ startup: r.action.startup_id, field: (r.action as { field: string }).field }));
+      const { data: prov } = await db.from("field_provenance").select("id, startup_id, field").eq("run_id", run.run_id);
+      const colOf = (f: string) => (f.startsWith("news.") ? "news" : f.startsWith("leadership.") ? "leadership" : f.startsWith("founders.") ? "founders" : f.startsWith("patents.") ? "patents" : f.startsWith("market.competitors") ? "competitors" : f.startsWith("funding_rounds.") ? f : f.replace(/^profile\./, ""));
+      const ids = (prov ?? []).filter((p: { startup_id: string; field: string }) => !kept.some((k) => k.startup === p.startup_id && (k.field === colOf(p.field) || p.field === k.field))).map((p: { id: string }) => p.id);
+      for (let i = 0; i < ids.length; i += 200) await db.from("field_provenance").delete().in("id", ids.slice(i, i + 200));
+      if (ids.length) console.log(`  field_provenance: ${ids.length} row(s) of the run removed with the values they were for.`);
     }
     if (!DRY_RUN && FIELDS.includes("competitors")) await db.from("field_provenance").delete().eq("run_id", run.run_id).eq("field", "market.competitors");
   }

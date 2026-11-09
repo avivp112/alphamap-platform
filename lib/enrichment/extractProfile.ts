@@ -115,6 +115,8 @@ export interface V2Founder extends PersonQualityTags {
   linkedin_url?: EvidencedValue<string>;
   /** The source that states this person founded the company (people.ts groundFounders). */
   grounded_url?: string;
+  /** Structured background facts, each with a quote (founderBackground.ts); written only when the founder_background field is open. */
+  background?: import("./founderBackground.ts").BackgroundFact[];
 }
 
 export interface V2Leader extends PersonQualityTags {
@@ -134,6 +136,8 @@ export interface V2Profile {
   website?: EvidencedValue<string>;
   description?: string;
   description_source_ids?: string[];
+  /** v2's own description, sentence by sentence with the sources behind each (descriptionBuilder.ts). */
+  description_sentences?: Array<{ role: string; text: string; source_ids: string[]; quote: string }>;
   value_proposition?: string;
   value_proposition_source_ids?: string[];
   industry?: string;
@@ -161,7 +165,7 @@ export interface V2HeadcountPoint {
   source_id: string;
   evidence_quote: string;
   /** "press_reported": an article's dated figure, never the current headcount (owner, 2026-11-04). */
-  point_type?: "observed" | "press_reported" | "model_estimate";
+  point_type?: "registry" | "plan_participants" | "site_stated" | "press_reported" | "observed" | "model_estimate" | "legacy";
 }
 
 export interface V2Metrics {
@@ -214,6 +218,13 @@ const PERSON_QUALITY_TAG_PROPERTIES = {
   },
 };
 
+/**
+ * Which source a location or founding fact may cite (owner, 2026-11-08: Fresha's London was found in an allowed article
+ * in one run and cited to LinkedIn in the next, and dropped). The model chooses the shortest snippet that states it;
+ * telling it which sources count makes it cite one of them whenever one states the fact.
+ */
+export const ALLOWED_SOURCE_RULE = " CITE ONLY the company's own website ([W#]), a press release, or a news article that states it. NEVER cite LinkedIn, a data platform or directory (Crunchbase, Tracxn, PitchBook, ContactOut, RocketReach, SignalHire and the like) or any profile page: if the same fact is in an allowed source and in one of those, cite the allowed one; if only those state it, omit the field.";
+
 const BIO_DESCRIPTION = [
   "3-4 sentences of professional background, for a hover card on this person's name. Prioritize, whenever a",
   "source explicitly states it: (1) where they studied, (2) whether they previously founded a company (and",
@@ -244,9 +255,9 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
             value_proposition: { type: "string", description: "1-2 sentences: the company's distinct positioning, in its own terms — never naming a data platform or where a fact was read. Omit if not clearly supported." },
             value_proposition_source_ids: { type: "array", items: { type: "string" } },
             industry: { type: "string", description: "Primary tech sector (e.g. 'AI & ML', 'Cybersecurity', 'FinTech')." },
-            founded_year: materialField({ type: "integer" }, "Year the company was FOUNDED (started). When a source gives a founding year and a later incorporation year (\"founded in 2020, incorporated in 2022\"), use the founding year. Never infer from an article's publish date or a funding round's date — only from an explicit founding-year statement. Cite the company's own site or a news article when one states it — a data platform, directory or comparison site (Crunchbase, Tracxn, SourceForge…) is never accepted as the source."),
-            country: materialField({ type: "string" }, "HQ country full name — ONLY when a source DECLARES the headquarters ('headquartered in', 'HQ', 'head office', 'based in', '<city>-based'). A list of offices or locations is NOT a headquarters: put those in `offices`. Must come from the SAME source and the SAME sentence/address as `city` — never combine a city from one source with a country from another."),
-            city: materialField({ type: "string" }, "HQ city — ONLY when a source DECLARES it the headquarters (see `country`). Must come from the SAME source and the SAME sentence/address as `country`."),
+            founded_year: materialField({ type: "integer" }, "Year the company was FOUNDED (started). When a source gives a founding year and a later incorporation year (\"founded in 2020, incorporated in 2022\"), use the founding year. Never infer from an article's publish date or a funding round's date — only from an explicit founding-year statement. Cite the company's own site or a news article when one states it — a data platform, directory or comparison site (Crunchbase, Tracxn, SourceForge…) is never accepted as the source." + ALLOWED_SOURCE_RULE),
+            country: materialField({ type: "string" }, "HQ country full name — ONLY when a source DECLARES the headquarters ('headquartered in', 'HQ', 'head office', 'based in', '<city>-based'). A list of offices or locations is NOT a headquarters: put those in `offices`. Must come from the SAME source and the SAME sentence/address as `city` — never combine a city from one source with a country from another." + ALLOWED_SOURCE_RULE),
+            city: materialField({ type: "string" }, "HQ city — ONLY when a source DECLARES it the headquarters (see `country`). Must come from the SAME source and the SAME sentence/address as `country`." + ALLOWED_SOURCE_RULE),
             offices: {
               type: "array",
               description: "Every office / location the company's OWN website ([W] sources) lists — 'Locations: New York, Tel Aviv', 'offices in Palo Alto and Tel Aviv'. Only from [W] sources; never from a news article, a job board or a data platform. Separate from the HQ fields.",
@@ -261,7 +272,7 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
                 required: ["city", "source_id", "evidence_quote"],
               },
             },
-            founding_country: materialField({ type: "string" }, "Country full name where the company was FOUNDED — may differ from the HQ `country` (e.g. founded in Israel, HQ now in New York). Only from a quote that says it of the company: 'founded in Tel Aviv', 'the Israeli startup', 'started in Berlin'. Never from a founder's nationality, army unit or university, a customer, or an office. Cite the company's own site or a news article — a data platform, directory or comparison site is never accepted as the source."),
+            founding_country: materialField({ type: "string" }, "Country full name where the company was FOUNDED — may differ from the HQ `country` (e.g. founded in Israel, HQ now in New York). Only from a quote that says it of the company: 'founded in Tel Aviv', 'the Israeli startup', 'started in Berlin'. Never from a founder's nationality, army unit or university, a customer, or an office. Cite the company's own site or a news article — a data platform, directory or comparison site is never accepted as the source." + ALLOWED_SOURCE_RULE),
             israel_rnd_center: materialField({ type: "boolean" }, "TRUE only if a source states the company has its R&D / development / engineering centre or team in Israel (e.g. 'headquartered in New York with R&D in Tel Aviv'). A sales office does not count. Omit otherwise."),
             founders: {
               type: "array",
@@ -282,12 +293,12 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
             sector_name: {
               type: "string",
               enum: taxonomy.parentNames.length > 0 ? taxonomy.parentNames : undefined,
-              description: "The single best-fit sector from the enumerated list. Omit if genuinely uncertain — never guess.",
+              description: "The single best-fit sector from the enumerated list — the most SPECIFIC one that fits. DeepTech only for a company whose core is quantum, robotics, space, semiconductors or hard science; never for software or DevOps. Omit if genuinely uncertain — never guess.",
             },
             sub_sector_name: {
               type: "string",
               enum: taxonomy.subNames.length > 0 ? taxonomy.subNames : undefined,
-              description: "The single best-fit sub-sector, one level more specific than sector_name. Omit if genuinely uncertain.",
+              description: "The single best-fit sub-sector, one level more specific than sector_name and belonging to it. Use a '… / General' sub-sector only when no specific one fits. Omit if genuinely uncertain.",
             },
             sub_sector_names: {
               type: "array",

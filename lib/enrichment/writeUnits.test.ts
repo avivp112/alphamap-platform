@@ -21,17 +21,18 @@ describe("the tracker is the gate (owner, 2026-11-05)", () => {
     expect(openFieldNames([...marks("leader", 19, 0), ...marks("round", 18, 4), ...marks("news", 20, 0), ...marks("patent", 18, 2)])).toEqual(["news", "patent"]);
   });
   it("every review field maps to columns, rounds or bios; a column belongs to one field", () => {
-    expect(WRITABLE_FIELDS).toHaveLength(14);
-    expect(openColumnsOf(["office", "competitor"])).toEqual(new Set(["offices", "office_countries", "competitors"]));
+    expect(WRITABLE_FIELDS).toHaveLength(20);
+    expect(WRITABLE_FIELDS).toEqual(expect.arrayContaining(["competitor_declared", "competitor_market", "founder_background", "description", "sector", "tags"]));
+    expect(openColumnsOf(["office", "competitor_declared"])).toEqual(new Set(["offices", "office_countries", "competitors"]));
     expect(fieldOfColumn("leadership")).toBe("leader");
-    expect(fieldOfColumn("description")).toBeNull();
+    expect(fieldOfColumn("tech_stack")).toBeNull();
   });
   it("bios and the tags read off them are cut from a person unless the bios field is open", () => {
     expect(withoutBio({ name: "A", role: "CEO", bio: "x", elite_background: true, linkedin_url: "u" })).toEqual({ name: "A", role: "CEO", linkedin_url: "u" });
   });
   it("the pilot may be asked for any review field, nothing else", () => {
-    expect(enrichmentWriteRefusal("bulk", true, false, { fields: ["news", "competitor", "round"], companies: 5 })).toBeNull();
-    expect(enrichmentWriteRefusal("bulk", true, false, { fields: ["news", "description"], companies: 5 })).toMatch(/description/);
+    expect(enrichmentWriteRefusal("bulk", true, false, { fields: ["news", "competitor_declared", "competitor_market", "round"], companies: 5 })).toBeNull();
+    expect(enrichmentWriteRefusal("bulk", true, false, { fields: ["news", "headcount_x"], companies: 5 })).toMatch(/headcount_x/);
   });
 });
 
@@ -52,5 +53,39 @@ describe("FOCUS: a review run pointed at the fields short of marks (owner, 2026-
     expect(s.filter((c) => c.why.includes("targeted")).every((c) => c.id.startsWith("short"))).toBe(true);
     // Without FOCUS the default needs three missing fields: these companies miss one, so none is targeted.
     expect(drawReviewSample(rows, covered, { size: 15, targeted: 8, seed: 3 }).filter((c) => c.why.includes("targeted"))).toHaveLength(0);
+  });
+});
+
+import { writesCompetitorTier, writesFounderBackground } from "./writeUnits";
+import { fieldStatus } from "./fieldReview";
+describe("competitors by tier: each tier is written only when its own field is open (owner, 2026-11-07)", () => {
+  it("declared needs competitor_declared (or the field's older name); market needs competitor_market", () => {
+    expect(writesCompetitorTier(["competitor_declared"], "declared")).toBe(true);
+    expect(writesCompetitorTier(["competitor_declared"], undefined)).toBe(true);
+    expect(writesCompetitorTier(["competitor_declared"], "market")).toBe(false);
+    expect(writesCompetitorTier(["competitor_market"], "market")).toBe(true);
+    expect(writesCompetitorTier(["competitor_market"], "declared")).toBe(false);
+    expect(writesCompetitorTier(["competitor"], "declared")).toBe(true);
+    expect(writesCompetitorTier([], "declared")).toBe(false);
+  });
+  it("marks of the tracker's older field 'competitor' count for the declared tier; the market tier starts at zero", () => {
+    const st = fieldStatus(marks("competitor", 18, 2));
+    expect(st.find((x) => x.field === "competitor_declared")).toMatchObject({ marked: 20, correct: 18, open: true });
+    expect(st.find((x) => x.field === "competitor_market")).toBeUndefined();
+    expect(openFieldNames(marks("competitor", 20, 0))).toEqual(["competitor_declared"]);
+  });
+  it("founder background has its own field", () => {
+    expect(writesFounderBackground(["founder_background"])).toBe(true);
+    expect(writesFounderBackground(["founder_bio"])).toBe(false);
+  });
+});
+
+import { writesTags } from "./writeUnits";
+describe("description, sector and tags are review fields (owner, 2026-11-07)", () => {
+  it("each gates its own columns; tags have no column of their own", () => {
+    expect(restrictPatch({ description: "d", value_proposition: "v", sector_id: "s", industry: "i", city: "x" }, ["description"]).patch).toEqual({ description: "d", value_proposition: "v" });
+    expect(restrictPatch({ sector_id: "s", industry: "i", description: "d" }, ["sector"]).patch).toEqual({ sector_id: "s", industry: "i" });
+    expect(writesTags(["tags"])).toBe(true);
+    expect(writesTags(["sector"])).toBe(false);
   });
 });

@@ -21,11 +21,15 @@ export interface GoldenField<T> {
   value: T | null; confidence: Confidence; source_url?: string; notes?: string;
   /** The company declares no headquarters (owner, 2026-11-01: Port, Aidoc, SSI): empty is correct, any value is wrong. */
   not_declared?: boolean;
+  /** Other accepted values (owner, 2026-11-05): a company with two real headquarters, "Munich" and "New York". Any of them is correct. */
+  alternatives?: string[];
 }
-export interface GoldenFounder { name: string; title?: string; confidence: Confidence; source_url?: string }
+export interface GoldenFounder { name: string; title?: string; confidence: Confidence; source_url?: string; /** other spellings of the same person (Hebrew transliterations) */ aka?: string[] }
 export interface GoldenRound {
   type: string; amount_usd: number | null; date: string | null;
   lead_investor?: string | null; valuation_usd?: number | null; confidence: Confidence;
+  /** Investors named in the source, beyond the lead (not scored; for the owner's reference). */
+  investors?: string[];
   /** Where the round was verified (rounds the owner marked on the review sheet). */
   source_url?: string;
 }
@@ -71,6 +75,8 @@ export interface GoldenCompany {
    * entries written before this was introduced).
    */
   reviewed_fields?: string[];
+  /** The founders list is complete: a person the pipeline names who is not on it is wrong. Absent: unlisted people are unjudged. */
+  founders_complete?: boolean;
   hard_case_tags?: string[];
 }
 export interface GoldenSet { version: number; companies: GoldenCompany[] }
@@ -95,6 +101,10 @@ export interface PipelineOutput {
   hints?: { confirmed: HintedRound[]; kept: HintedRound[] };
   /** Domains on no list that a round came from (lib/enrichment/roundSources.ts). */
   unlisted_domains?: Array<{ domain: string; url: string }>;
+  /** Where each scalar came from, so a wrong value can be traced without re-running (owner, 2026-11-05). */
+  scalar_sources?: Partial<Record<"city" | "country" | "founded_year" | "founding_country", { source_url: string | null; quote: string | null }>>;
+  /** Every search of the run: label, query, provider, and whether the cache answered (eval/search_audit.ts). */
+  search_log?: Array<{ label: string; query: string; provider: string; cached: boolean }>;
 }
 
 export interface HintedRound { round_type: string | null; amount_raised: number | null; date: string | null; source_url: string | null }
@@ -114,6 +124,37 @@ export function hintGain(g: GoldenCompany, hints: PipelineOutput["hints"]): { co
 
 /** unjudged: produced values the golden set neither confirms nor rejects (competitors only) — reported, not scored. */
 export interface FieldStats { scored: number; produced: number; correct: number; unjudged?: number }
+/**
+ * Reviewed for Phase 1 (owner, 2026-11-05): a company counts when every Phase 1 field its golden entry
+ * states — location, founded year, rounds, competitors, patents — is in its `reviewed_fields`, or when
+ * the general `reviewed_by_human` flag is true. A field the entry does not state needs no review.
+ */
+export const PHASE1_REVIEW_FIELDS = ["city", "country", "founded_year", "rounds", "competitors", "patents"] as const;
+export type Phase1ReviewField = (typeof PHASE1_REVIEW_FIELDS)[number];
+const statedValue = (f: GoldenField<unknown> | undefined) => !!f && (!!f.not_declared || (f.value != null && f.confidence !== "unknown"));
+export function statedPhase1Fields(g: GoldenCompany): Phase1ReviewField[] {
+  const out: Phase1ReviewField[] = [];
+  if (statedValue(g.city)) out.push("city");
+  if (statedValue(g.country)) out.push("country");
+  if (statedValue(g.founded_year)) out.push("founded_year");
+  if ((g.funding_rounds ?? []).some((r) => r.confidence !== "unknown")) out.push("rounds");
+  if (g.competitors && g.competitors.confidence !== "unknown") out.push("competitors");
+  if (g.patents && g.patents.confidence !== "unknown") out.push("patents");
+  return out;
+}
+export const isFieldListed = (g: GoldenCompany, f: Phase1ReviewField) => (g.reviewed_fields ?? []).some((x) => x === f || (f === "rounds" && x === "funding_rounds"));
+export function phase1Reviewed(g: GoldenCompany): boolean {
+  if (g.reviewed_by_human) return true;
+  const need = statedPhase1Fields(g);
+  return need.length > 0 && need.every((f) => isFieldListed(g, f));
+}
+/** How many companies state each Phase 1 field and how many of those list it as reviewed — the report's own answer to "was the sheet imported?". */
+export function phase1ReviewCounts(companies: GoldenCompany[]): { reviewed: number; total: number; byField: Record<Phase1ReviewField, { stated: number; reviewed: number }> } {
+  const byField = Object.fromEntries(PHASE1_REVIEW_FIELDS.map((f) => [f, { stated: 0, reviewed: 0 }])) as Record<Phase1ReviewField, { stated: number; reviewed: number }>;
+  for (const g of companies) for (const f of statedPhase1Fields(g)) { byField[f].stated++; if (g.reviewed_by_human || isFieldListed(g, f)) byField[f].reviewed++; }
+  return { reviewed: companies.filter(phase1Reviewed).length, total: companies.length, byField };
+}
+
 export const FIELDS = ["city", "country", "founding_country", "founded_year", "founders", "funding_rounds", "round_type", "employee_range", "arr_usd", "competitors", "patents"] as const;
 export type Field = (typeof FIELDS)[number];
 export type Scoreboard = Record<Field, FieldStats>;
@@ -134,6 +175,7 @@ const ALIASES: Record<string, string> = {
 function samePerson(a: string, b: string): boolean {
   return normalize(a) === normalize(b) || samePersonName(a, b);
 }
+const isGoldenPerson = (g: GoldenFounder, name: string) => [g.name, ...(g.aka ?? [])].some((n) => samePerson(n, name));
 
 export function normalize(s: string | null | undefined): string {
   const n = (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -153,21 +195,28 @@ function scoreScalar(s: FieldStats, golden: GoldenField<string | number> | undef
   s.scored++;
   if (extracted == null || extracted === "") return "missing";   // lowers coverage, not precision
   s.produced++;
-  if (normalize(String(extracted)) === normalize(String(golden.value))) { s.correct++; return "correct"; }
+  const accepted = [golden.value, ...(golden.alternatives ?? [])].map((v) => normalize(String(v)));
+  if (accepted.includes(normalize(String(extracted)))) { s.correct++; return "correct"; }
   return "wrong";
 }
 
-// Coverage denominator = golden founders (was each real founder found);
-// precision denominator = extracted founders (of everyone NAMED a founder, how
-// many are real).
-function scoreFounders(s: FieldStats, golden: GoldenFounder[] | undefined, extracted: Array<{ name: string }>): FieldResult {
-  const verified = (golden ?? []).filter((f) => f.confidence !== "unknown");
+// Coverage denominator = golden founders (was each real founder found). The golden set does not
+// always list every founder (Hailo without Rami Feig, Coralogix without Yoni Farin), so a person the
+// pipeline names who is not listed is UNJUDGED (owner, 2026-11-05), not wrong — unless the entry says
+// `founders_complete: true`, when an unlisted person is a wrong one. Precision counts judged people only.
+function scoreFounders(s: FieldStats, g: GoldenCompany, extracted: Array<{ name: string }>): FieldResult {
+  const verified = (g.founders ?? []).filter((f) => f.confidence !== "unknown");
   if (verified.length === 0) return "excluded";
+  const matched = extracted.filter((f) => verified.some((v) => isGoldenPerson(v, f.name)));
+  const unlisted = extracted.length - matched.length;
+  const judged = g.founders_complete ? extracted.length : matched.length;
   s.scored += verified.length;
-  s.produced += extracted.length;
-  const correct = extracted.filter((f) => verified.some((g) => samePerson(g.name, f.name))).length;
-  s.correct += correct;
-  return extracted.length === 0 ? "missing" : correct === extracted.length && correct === verified.length ? "correct" : "wrong";
+  s.produced += judged;
+  s.correct += matched.length;
+  if (!g.founders_complete && unlisted) s.unjudged = (s.unjudged ?? 0) + unlisted;
+  const found = verified.filter((v) => extracted.some((f) => isGoldenPerson(v, f.name))).length;
+  if (g.founders_complete && unlisted) return "wrong";
+  return extracted.length === 0 || found < verified.length ? "missing" : "correct";
 }
 
 // The same real-world round: amount within ±10% and dates within ~9 months.
@@ -207,10 +256,21 @@ export function matchRounds(verified: GoldenRound[], extracted: PipelineOutput["
   return pairs;
 }
 
-function scoreRounds(s: FieldStats, g: GoldenCompany, extracted: PipelineOutput["rounds"]): FieldResult {
+/** The same announcement date: both stated, the same month, and when both give the day, within 3 days. */
+export function sameRoundDate(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  if (a.length >= 10 && b.length >= 10) return Math.abs(new Date(a).getTime() - new Date(b).getTime()) / 86_400_000 <= 3;
+  return a.slice(0, 7) === b.slice(0, 7);
+}
+
+/**
+ * How one company's extracted rounds line up with the golden set: which are matched to a verified
+ * round, which are left out of judgement (matches a round the golden set could not source, an event,
+ * or — for a judged-only entry — anything it neither verifies nor marks wrong), and which are wrong.
+ */
+export function roundBreakdown(g: GoldenCompany, extracted: PipelineOutput["rounds"]) {
   const golden = g.funding_rounds;
   const verified = (golden ?? []).filter((r) => r.confidence !== "unknown");
-  if (verified.length === 0 && !(g.judged_only && (g.funding_rounds_wrong ?? []).length)) return "excluded";
   // A round that matches one the golden set could not source (2023 Wiz Series
   // D) is neither right nor wrong: left out of "produced" rather than counted
   // as a wrong write. Only rounds no verified golden round takes.
@@ -218,18 +278,39 @@ function scoreRounds(s: FieldStats, g: GoldenCompany, extracted: PipelineOutput[
     ...(golden ?? []).filter((r) => r.confidence === "unknown"),
     ...(g.funding_rounds_excluded_unknown ?? []).map((r) => ({ ...r, confidence: "unknown" as const })),
   ];
-  s.scored += verified.length;
   const pairs = matchRounds(verified, extracted);
   const used = new Set(pairs.map(([, i]) => i));
-  const correct = pairs.length;
   // An event (acquisition, IPO, secondary, buyout) the golden set does not
   // list is not a wrong funding round either (Wiz's $32B acquisition, eval of
   // 2026-11-01): the golden rounds are money raised; events are judged only
   // where the golden set lists them (Wise's secondaries, its listing).
   const wrong = (g.funding_rounds_wrong ?? []).map((r) => ({ ...r, confidence: r.confidence ?? ("verified" as const) }));
-  const ignored = extracted.filter((er, i) => !used.has(i) && (unknown.some((ur) => roundsDayGap(ur, er) !== null) || isEvent(er.round_type)
-    // A judged-only entry knows only its verified and wrong rounds; any other produced round is unjudged.
-    || (g.judged_only && !wrong.some((wr) => roundsDayGap(wr, er) !== null)))).length;
+  const ignoredIdx = new Set<number>();
+  extracted.forEach((er, i) => {
+    if (used.has(i)) return;
+    if (unknown.some((ur) => roundsDayGap(ur, er) !== null) || isEvent(er.round_type)
+      // A judged-only entry knows only its verified and wrong rounds; any other produced round is unjudged.
+      || (g.judged_only && !wrong.some((wr) => roundsDayGap(wr, er) !== null))) ignoredIdx.add(i);
+  });
+  // A round with no amount, of the type and on the date of a verified golden round that has one, is that
+  // round with its amount missing — unjudged, neither right nor wrong (owner, 2026-11-06: Mercury's and
+  // Parloa's Series D). Whether the pipeline should have written it without an amount is its own rule.
+  const amountless = new Set<number>();
+  extracted.forEach((er, i) => {
+    if (used.has(i) || ignoredIdx.has(i) || er.amount_raised != null) return;
+    if (verified.some((gr) => gr.amount_usd != null && canonType(gr.type) === canonType(er.round_type) && canonType(er.round_type) !== "unknown" && sameRoundDate(gr.date, er.date))) amountless.add(i);
+  });
+  const wrongIdx = extracted.map((_, i) => i).filter((i) => !used.has(i) && !ignoredIdx.has(i) && !amountless.has(i));
+  return { verified, pairs, used, ignored: ignoredIdx.size + amountless.size, amountless: amountless.size, wrongIdx };
+}
+
+function scoreRounds(s: FieldStats, g: GoldenCompany, extracted: PipelineOutput["rounds"]): FieldResult {
+  const verified = (g.funding_rounds ?? []).filter((r) => r.confidence !== "unknown");
+  if (verified.length === 0 && !(g.judged_only && (g.funding_rounds_wrong ?? []).length)) return "excluded";
+  const { pairs, ignored, amountless } = roundBreakdown(g, extracted);
+  const correct = pairs.length;
+  if (amountless) s.unjudged = (s.unjudged ?? 0) + amountless;
+  s.scored += verified.length;
   // A hallucinated or duplicate round is produced-but-not-correct.
   s.produced += extracted.length - ignored;
   s.correct += correct;
@@ -250,7 +331,8 @@ function scoreRoundTypes(s: FieldStats, g: GoldenCompany, extracted: PipelineOut
   for (const [gr, i] of pairs) {
     s.scored++;
     const t = extracted[i].round_type;
-    if (!t || canonType(t) === "unknown" || canonType(t) === "other") continue;
+    // "Unknown" (the source states no type) is missing; "Other" (a known type that is no regular series) is judged (owner, 2026-11-08).
+    if (!t || canonType(t) === "unknown") continue;
     produced++;
     if (canonType(t) === canonType(gr.type)) correct++;
   }
@@ -279,6 +361,16 @@ function scoreCompetitors(s: FieldStats, g: GoldenCompany, extracted: string[] |
   s.correct += correct;
   s.unjudged = (s.unjudged ?? 0) + unjudged;
   return produced === 0 ? (extracted.length === 0 ? "missing" : "excluded") : correct === produced ? "correct" : "wrong";
+}
+
+/** The patent numbers the pipeline wrote that the golden set does not list as the company's (the wrong ones the score counts). */
+export function wrongPatents(g: GoldenCompany, extracted: string[] | undefined): string[] {
+  const golden = g.patents;
+  if (!golden || golden.confidence === "unknown" || extracted === undefined) return [];
+  const known = new Set(golden.numbers.map(patentDigits));
+  const notKnown = new Set((golden.not_numbers ?? []).map(patentDigits));
+  const judged = g.judged_only ? extracted.filter((n) => known.has(patentDigits(n)) || notKnown.has(patentDigits(n))) : extracted;
+  return golden.none ? judged : judged.filter((n) => !known.has(patentDigits(n)));
 }
 
 /** Patents: a number of a family the register gives the company is right; any other is wrong. */
@@ -318,7 +410,7 @@ export function scoreCompany(board: Scoreboard, g: GoldenCompany, out: PipelineO
     founding_country: ifReviewed(["founding_country"], () => scoreScalar(board.founding_country, g.founding_country, out.founding_country)),
     founded_year: ifReviewed(["founded_year"], () => scoreScalar(board.founded_year, g.founded_year, out.founded_year)),
     // An entry built from marks lists only some founders: the field is not scored there.
-    founders: ifReviewed(["founders"], () => (g.judged_only ? "excluded" : scoreFounders(board.founders, g.founders, out.founders))),
+    founders: ifReviewed(["founders"], () => (g.judged_only ? "excluded" : scoreFounders(board.founders, g, out.founders))),
     funding_rounds: ifReviewed(["rounds", "funding_rounds"], () => scoreRounds(board.funding_rounds, g, out.rounds)),
     round_type: ifReviewed(["rounds", "funding_rounds"], () => scoreRoundTypes(board.round_type, g, out.rounds)),
     employee_range: ifReviewed(["employee_range"], () => scoreScalar(board.employee_range, g.employee_range, out.employee_range)),
@@ -365,7 +457,8 @@ export function foundedAfterFirstRound(out: PipelineOutput): boolean {
   return years.length > 0 && out.founded_year > Math.min(...years);
 }
 
-export interface Phase1Check { rule: string; pass: boolean; detail: string }
+/** `info`: shown, not counted toward passing Phase 1 (competitors, owner 2026-11-07: the write gate already holds the field closed until it opens). */
+export interface Phase1Check { rule: string; pass: boolean; detail: string; info?: boolean }
 
 /**
  * Pass bars for the fields the 2026-10-26 run got wrong (owner, 2026-10-26):
@@ -378,7 +471,14 @@ export const PHASE1_BARS = {
   patents: { threshold: 0.98, min: 10 },
 } as const;
 
-export function phase1Checks(board: Scoreboard, facts: { locationMismatches: number; duplicateRounds: number; foundedAfterRound: number }): Phase1Check[] {
+/**
+ * A field measured by the owner's marks of what the pipeline wrote (eval/field_review_tracker.csv, counted
+ * against the current rules) rather than by the golden set. Competitors, from 2026-11-06: the golden-set run
+ * finds too few competitors to judge, and the tracker measures the same rules on what is actually written.
+ */
+export interface TrackerMeasure { marked: number; correct: number; source: string }
+
+export function phase1Checks(board: Scoreboard, facts: { locationMismatches: number; duplicateRounds: number; foundedAfterRound: number }, competitors?: TrackerMeasure): Phase1Check[] {
   const precision = (fs: FieldStats[]) => {
     const produced = fs.reduce((n, f) => n + f.produced, 0);
     return produced ? fs.reduce((n, f) => n + f.correct, 0) / produced : null;
@@ -401,10 +501,21 @@ export function phase1Checks(board: Scoreboard, facts: { locationMismatches: num
     { rule: "precision ≥ 95% on location and founded year", pass: loc != null && loc >= 0.95, detail: loc == null ? "nothing judged" : `${(loc * 100).toFixed(1)}% (${judgedOf([board.city, board.country, board.founded_year])} judged)` },
     { rule: "precision ≥ 90% on round amounts", pass: rounds != null && rounds >= 0.9, detail: rounds == null ? "nothing judged" : `${(rounds * 100).toFixed(1)}% (${judgedOf([board.funding_rounds])} judged)` },
     bar(`precision ≥ ${PHASE1_BARS.round_type.threshold * 100}% on round type`, board.round_type, PHASE1_BARS.round_type.min, PHASE1_BARS.round_type.threshold),
-    bar(`precision ≥ ${PHASE1_BARS.competitors.threshold * 100}% on competitors`, board.competitors, PHASE1_BARS.competitors.min, PHASE1_BARS.competitors.threshold),
+    { ...(competitors
+      ? trackerBar(`precision ≥ ${PHASE1_BARS.competitors.threshold * 100}% on competitors (information — not a Phase 1 condition)`, competitors, PHASE1_BARS.competitors.min, PHASE1_BARS.competitors.threshold)
+      : bar(`precision ≥ ${PHASE1_BARS.competitors.threshold * 100}% on competitors (information — not a Phase 1 condition)`, board.competitors, PHASE1_BARS.competitors.min, PHASE1_BARS.competitors.threshold)), info: true },
     bar(`precision ≥ ${PHASE1_BARS.patents.threshold * 100}% on patents`, board.patents, PHASE1_BARS.patents.min, PHASE1_BARS.patents.threshold),
   ];
 }
+
+function trackerBar(rule: string, m: TrackerMeasure, min: number, threshold: number): Phase1Check {
+  if (m.marked < min) return { rule, pass: false, detail: `only ${m.marked} marks — at least ${min} needed — measured by ${m.source}` };
+  const p = m.correct / m.marked;
+  return { rule, pass: p >= threshold, detail: `${(p * 100).toFixed(1)}% (${m.correct}/${m.marked} marks) — measured by ${m.source}` };
+}
+
+/** Phase 1 passes when every counted check passes; an informational check never blocks. */
+export const phase1Passes = (checks: Phase1Check[]) => checks.filter((c) => !c.info).every((c) => c.pass);
 
 /** An error no retry fixes — Anthropic out of credit, a key rejected: the eval stops rather than score every later company "missing". */
 export function isFatalProviderError(err: unknown): boolean {

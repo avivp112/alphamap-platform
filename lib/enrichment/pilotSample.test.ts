@@ -21,7 +21,7 @@ describe("the partial wet run (owner, 2026-11-01)", () => {
   });
   it("the gate lets a pilot write only its four fields, for a listed set of at most 25 companies", () => {
     expect(enrichmentWriteRefusal("bulk", true, false, { fields: PILOT_FIELDS, companies: 20 })).toBeNull();
-    expect(enrichmentWriteRefusal("bulk", true, false, { fields: [...PILOT_FIELDS, "description"], companies: 20 })).toMatch(/description/);
+    expect(enrichmentWriteRefusal("bulk", true, false, { fields: [...PILOT_FIELDS, "tech_stack"], companies: 20 })).toMatch(/tech_stack/);
     expect(enrichmentWriteRefusal("bulk", true, false, { fields: PILOT_FIELDS, companies: 0 })).toMatch(/ONLY/);
     expect(enrichmentWriteRefusal("bulk", true, false, { fields: PILOT_FIELDS, companies: 400 })).toMatch(/1–25/);
     expect(enrichmentWriteRefusal("bulk", true, false)).toMatch(/Phase 1/);

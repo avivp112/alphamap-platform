@@ -255,8 +255,8 @@ describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
     expect(p.employee_count).toBe(60);
     expect(p.city).toBe("London");
     expect(p.country).toBe("United Kingdom");
-    // The sector is not a review field: the tracker does not open it, so it is held back (owner, 2026-11-05).
-    expect(p.sector_id).toBeUndefined();
+    // The sector is a review field since 2026-11-07; the smoke test opens every field, so it is written.
+    expect(p.sector_id).toBe("sec-1");
   });
 
   it("writes grounded competitors only — an unverified one on file stays unless this run verifies it — and news with og:image, newest first", () => {
@@ -281,8 +281,9 @@ describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
     expect(calls.filter((c) => c.table === "funding_rounds" && c.op === "insert")).toHaveLength(0);
     const upd = calls.find((c) => c.table === "funding_rounds" && c.op === "update")!;
     expect(upd.filters).toContainEqual(["id", "r-1"]);
+    // The lead investor has evidence behind it; the investor list has none, so it is not written as a fill (owner, 2026-11-08).
     expect(upd.payload).toEqual({
-      lead_investor: "Y Combinator", investors: ["SV Angel"],
+      lead_investor: "Y Combinator",
       source_url: "https://techcrunch.com/2014/03/15/ghost-raises-seed",
     });
   });
@@ -305,8 +306,8 @@ describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
     expect(john?.bio ?? "").not.toContain("Studied at Stanford");
   });
 
-  it("writes provenance, refreshes startups_search; the sub-sector tags are held back (no review field)", () => {
-    expect(calls.some((c) => c.table === "startup_sub_sectors" && c.op === "upsert")).toBe(false);
+  it("writes provenance, refreshes startups_search; the sub-sector tags are written (the tags field is open here)", () => {
+    expect(calls.some((c) => c.table === "startup_sub_sectors" && c.op === "upsert")).toBe(true);
     expect(calls.filter((c) => c.table === "field_provenance").length).toBeGreaterThan(0);
     expect(rpcCalls).toContain("refresh_startups_search");
   });
