@@ -133,6 +133,17 @@ export function eventKeys(title: string): Set<string> {
 }
 
 const dayMs = 86_400_000;
+type EventItem = { title: string; published_date?: string | null };
+/** Two reports of one event: the same amount or acquisition within 7 days, or when either has no date. */
+export function sameNewsEvent(a: EventItem, b: EventItem, leadA = "", leadB = ""): boolean {
+  // The headline and the opening of the article: Bloomberg's "HeyGen Valued at $500 Million" is the $60M Series A.
+  const ka = eventKeys(`${a.title} ${leadA}`);
+  const kb = eventKeys(`${b.title} ${leadB}`);
+  if (![...ka].some((x) => kb.has(x))) return false;
+  if (!a.published_date || !b.published_date) return true;
+  return Math.abs(Date.parse(a.published_date) - Date.parse(b.published_date)) <= 7 * dayMs;
+}
+
 /**
  * One row per event (owner, 2026-11-09): the same amount, or the same acquisition, within 7 days — or when either has no
  * date — is one report. The one kept is dated over undated, then an outlet over the company's own site, then the first.
@@ -141,14 +152,7 @@ export function dedupeNewsEvents<T extends { title: string; url: string; publish
   const kept: T[] = [];
   const rank = (x: T) => (x.published_date ? 0 : 2) + (isOwnSite(x.url) ? 1 : 0);
   for (const it of items) {
-    // The headline and the opening of the article: Bloomberg's "HeyGen Valued at $500 Million" is the $60M Series A.
-    const keys = eventKeys(`${it.title} ${lead(it)}`);
-    const i = kept.findIndex((k) => {
-      const kk = eventKeys(`${k.title} ${lead(k)}`);
-      if (![...keys].some((x) => kk.has(x))) return false;
-      if (!it.published_date || !k.published_date) return true;
-      return Math.abs(Date.parse(it.published_date) - Date.parse(k.published_date)) <= 7 * dayMs;
-    });
+    const i = kept.findIndex((k) => sameNewsEvent(it, k, lead(it), lead(k)));
     if (i < 0) kept.push(it);
     else if (rank(it) < rank(kept[i])) kept[i] = it;
   }
@@ -208,6 +212,16 @@ const titleWords = (s: string) => normTitle(s).split(" ").filter((w) => w.length
  * Dropped (null) only when the source has no usable title and does not carry the model's.
  */
 export function sourceHeadline(modelTitle: string, source: { title?: string | null; content?: string | null; url?: string }): string | null {
+  return sourceHeadlineDetail(modelTitle, source)?.title ?? null;
+}
+
+/**
+ * Same, saying whether the headline is the source's title joined to the model's continuation: the source's title was cut at a
+ * colon or dash (a search result's) and the model wrote the rest ("Driving Profitability and Streamlining Fleet Operations:"
+ * + "Datatruck Recognized as a Core Transportation Management Provider…"). A joined headline is checked against the page's own
+ * title before anything is written (newsGate.ts).
+ */
+export function sourceHeadlineDetail(modelTitle: string, source: { title?: string | null; content?: string | null; url?: string }): { title: string; joined: boolean } | null {
   const url = source.url ?? "";
   const own = cleanHeadline(decodeEntities(source.title ?? ""), url);
   const model = cleanHeadline(decodeEntities(modelTitle), url);
@@ -215,10 +229,11 @@ export function sourceHeadline(modelTitle: string, source: { title?: string | nu
   const modelWords = titleWords(model);
   const overlap = modelWords.length ? modelWords.filter((w) => ownWords.has(w)).length / modelWords.length : 0;
   // The source's own title, unless it shares next to nothing with what the model wrote (a generic page title).
-  if (own.length >= 15 && !headlineLooksCut(own) && (overlap >= 0.3 || !modelWords.length)) return own;
+  if (own.length >= 15 && !headlineLooksCut(own) && (overlap >= 0.3 || !modelWords.length)) return { title: own, joined: false };
+  // The source's title ends at a colon or dash and the model gives the continuation.
+  if (own.length >= 15 && /[:\u2013\u2014-]\s*$/.test(own) && modelWords.length >= 3 && overlap < 0.5 && !headlineLooksCut(model)) return { title: `${own.replace(/\s+$/, "")} ${model}`, joined: true };
   const hay = new Set(titleWords(`${source.title ?? ""} ${(source.content ?? "").slice(0, 4000)}`));
-  const words = titleWords(model);
-  const carried = words.length ? words.filter((w) => hay.has(w)).length / words.length : 0;
-  if (carried >= 0.6) return model;
+  const carried = modelWords.length ? modelWords.filter((w) => hay.has(w)).length / modelWords.length : 0;
+  if (carried >= 0.6) return { title: model, joined: false };
   return null;
 }

@@ -22,7 +22,7 @@ import { checkHeadcountOutlier } from "./validation.ts";
 import { screenPoints, type HistoryPoint } from "./headcountHistory.ts";
 import { supportedTags } from "./quoteFinder.ts";
 import { extractionPoints } from "./headcountSources.ts";
-import { stripTrackingParams } from "./newsRelevance.ts";
+import { stripTrackingParams, sameNewsEvent } from "./newsRelevance.ts";
 import { profileSourceAllowed } from "./roundSources.ts";
 import { countryFromLocationQuote } from "./location.ts";
 import { retireReplacedExecutives } from "./update.ts";
@@ -479,7 +479,12 @@ export async function writeCollected(
   const existingNews = reconciled.news as NonNullable<V2StartupRow["news"]>;
   if (reconciled.notes.some((n) => n.startsWith("cleared news date"))) patch.news = existingNews;
   const existingNewsKeys = new Set(existingNews.map((n) => normalizeUrlForMatch(n.url ?? "")));
-  const freshNews = market.news.filter((n) => !existingNewsKeys.has(normalizeUrlForMatch(n.url)));
+  // Not on file by address, and not another report of an event already on file (wet batch 1 left Business Wire's "$58M Series B"
+  // on file; the next dry run offered Glilot's copy of the same news as new).
+  const onFileUrl = market.news.filter((n) => existingNewsKeys.has(normalizeUrlForMatch(n.url)));
+  const sameEventOnFile = market.news.filter((n) => !existingNewsKeys.has(normalizeUrlForMatch(n.url)) && existingNews.some((e) => sameNewsEvent({ title: n.title, published_date: n.published_date }, { title: e.title ?? "", published_date: e.published_date ?? null })));
+  const freshNews = market.news.filter((n) => !onFileUrl.includes(n) && !sameEventOnFile.includes(n));
+  if (onFileUrl.length || sameEventOnFile.length) console.log(`    📰  News found: ${market.news.length} — ${onFileUrl.length} already on file${sameEventOnFile.length ? `, ${sameEventOnFile.length} another report of an event on file (${sameEventOnFile.map((n) => `"${n.title.slice(0, 40)}"`).join(", ")})` : ""}; ${freshNews.length} new.`);
   let newsAdded = 0;
   if (freshNews.length > 0 && existingNews.length < MAX_NEWS) {
     const toAdd = freshNews.slice(0, MAX_NEWS - existingNews.length);

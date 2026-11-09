@@ -70,8 +70,9 @@ export interface CurrentState {
   rounds: Map<string, Record<string, unknown>>;
 }
 
+/** "all" (the default of undo_run.ts): everything the run recorded — news, leaders, founders… as well as the market fields. */
 const inScope = (field: string, scope: UndoScope[]) =>
-  scope.includes(field.startsWith("funding_rounds.") ? "funding_rounds" : field);
+  scope.includes("all") || scope.includes(field.startsWith("funding_rounds.") ? "funding_rounds" : field);
 
 /**
  * What undoing one run means. A value is put back only when it is still what

@@ -20,8 +20,9 @@
  *   RUN_ID=<id> FIELDS=competitors npx tsx scripts/undo_run.ts  # only some fields
  *   RUN_ID=<id> DRY_RUN=false npx tsx scripts/undo_run.ts       # undo
  *
- * FIELDS defaults to patents, patent_count, patent_fields, competitors and
- * funding_rounds (new rounds and filled round fields — the round types).
+ * FIELDS defaults to "all": everything the run recorded (owner, 2026-11-09 — wet batch 1's undo used the old
+ * default of patents, patent_count, patent_fields, competitors and funding_rounds, and left the batch's news,
+ * two of them marked wrong, in the database). A list of columns still narrows it.
  * Needs SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (env or .env).
  */
 
@@ -39,7 +40,7 @@ if (existsSync(envPath)) config({ path: envPath });
 const DRY_RUN = process.env.DRY_RUN !== "false";
 const LIST = process.env.LIST === "true";
 const RUN_IDS = (process.env.RUN_ID ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-const FIELDS = (process.env.FIELDS ?? "patents,patent_count,patent_fields,competitors,funding_rounds").split(",").map((s) => s.trim()).filter(Boolean);
+const FIELDS = (process.env.FIELDS ?? "all").split(",").map((s) => s.trim()).filter(Boolean);
 
 const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -132,6 +133,10 @@ async function undo() {
         const { error: e } = await db.from("funding_rounds").update({ [a.column]: a.value }).eq("id", a.round_id);
         if (e) console.warn(`  ⚠️  ${e.message}`);
       }
+    }
+    // Undoing everything: the run's field_provenance rows go with it, unless a value was changed after the run (then they stay with it).
+    if (!DRY_RUN && FIELDS.includes("all") && !report.some((r) => r.run === run.run_id && r.action.kind === "skip" && r.action.reason === "changed_since")) {
+      await db.from("field_provenance").delete().eq("run_id", run.run_id);
     }
     if (!DRY_RUN && FIELDS.includes("competitors")) await db.from("field_provenance").delete().eq("run_id", run.run_id).eq("field", "market.competitors");
   }

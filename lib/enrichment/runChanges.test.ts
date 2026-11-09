@@ -70,3 +70,17 @@ describe("a run is undone by its run_id (owner, 2026-10-26)", () => {
   });
 });
 
+
+describe("undo scope 'all' (wet batch 1, 2026-11-09: the default left the batch's news in the database)", () => {
+  const changes = [
+    { startup_id: "s1", field: "news", old_value: [], new_value: [{ title: "x" }], source_url: null, run_id: "r" },
+    { startup_id: "s1", field: "patent_count", old_value: null, new_value: 0, source_url: null, run_id: "r" },
+  ] as never;
+  const now = { startups: new Map([["s1", { news: [{ title: "x" }], patent_count: 0 }]]), rounds: new Map() };
+  it("the old default did not touch news", () => {
+    expect(planUndo(changes, now, ["patents", "patent_count", "patent_fields", "competitors", "funding_rounds"]).map((a) => a.kind)).toEqual(["skip", "restore_startup_field"]);
+  });
+  it("'all' puts news back as well", () => {
+    expect(planUndo(changes, now, ["all"]).map((a) => a.kind)).toEqual(["restore_startup_field", "restore_startup_field"]);
+  });
+});

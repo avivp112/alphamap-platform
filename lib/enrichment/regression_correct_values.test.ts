@@ -49,3 +49,27 @@ describe("marked correct: the news gate lets every one of a company's marked val
     expect(out.map((x) => x.url).sort()).toEqual(mine.map((f) => f.url).sort());
   });
 });
+
+describe("Datatruck (dry report 6, 2026-11-09): a search result's title cut at the colon, the model gave the rest", () => {
+  const url = "https://www.globenewswire.com/news-release/2026/10/21/3385717/0/en/driving-profitability-and-streamlining-fleet-operations-datatruck-recognized.html";
+  const full = "Driving Profitability and Streamlining Fleet Operations: Datatruck Recognized as a Core Transportation Management Provider by Nucleus Research";
+  const sources = [{ source_id: "S1", source_type: "news", url, title: "Driving Profitability and Streamlining Fleet Operations:", content: "Datatruck announced today that it was recognized by Nucleus Research. ", provider: "serper", query_label: "news" }] as never;
+  const model = "Datatruck Recognized as a Core Transportation Management Provider by Nucleus Research";
+  it("the extraction keeps it, joined, and says so", () => {
+    const out = processMarketExtractionResponse({ news: [{ title: model, url, published_date: "2026-10-21" }], competitors: [], acquisitions: [] }, sources, "Datatruck", "2026-11-09");
+    expect(out.result.news).toHaveLength(1);
+    expect(out.result.news[0].title).toBe(`Driving Profitability and Streamlining Fleet Operations: ${model}`);
+    expect(out.result.news[0].title_joined).toBe(true);
+  });
+  it("the gate writes the page's own title (its og:title, h1 or title)", async () => {
+    const item = { title: `Driving Profitability and Streamlining Fleet Operations: ${model}`, url, published_date: "2026-10-21", title_joined: true };
+    const v = await judgeNews(item, { companyName: "Datatruck", about: "trucking software", content: () => undefined, isOwnSite: () => false,
+      fetchHtml: async () => `<html><head><title>${full} | GlobeNewswire</title></head><body><h1>${full}</h1></body></html>` });
+    expect(v.keep && v.item.title).toBe(full);
+    expect(v.keep && "title_joined" in v.item).toBe(false);
+  });
+  it("with no page to check it against, a joined headline is not written", async () => {
+    const item = { title: `Driving Profitability and Streamlining Fleet Operations: ${model}`, url, published_date: "2026-10-21", title_joined: true };
+    expect((await judgeNews(item, { companyName: "Datatruck", about: "trucking software", content: () => undefined, isOwnSite: () => false, fetchHtml: async () => null })).keep).toBe(false);
+  });
+});

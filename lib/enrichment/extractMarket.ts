@@ -24,7 +24,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { requestFor } from "./models.ts";
 import { sanitizeModelOutput, ensureArray } from "./sanitize";
 import { verifyEvidence, normalizeForMatch, dateFromUrl, type EvidenceSource } from "./evidence";
-import { sourceHeadline } from "./newsRelevance";
+import { sourceHeadlineDetail } from "./newsRelevance";
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
 import { debugDumpJson } from "./debugDump";
 import { competitorRelation, type RelationDrop } from "./competitorRelation";
@@ -45,7 +45,7 @@ export interface V2Competitor {
   source_id?: string; evidence_quote?: string;
 }
 export interface V2Acquisition { company_name: string; website?: string; acquired_date?: string; amount?: number; description?: string; source_ids?: string[] }
-export interface V2NewsItem { title: string; url: string; source?: string; published_date?: string; summary?: string; image_url?: string }
+export interface V2NewsItem { title_joined?: boolean; title: string; url: string; source?: string; published_date?: string; summary?: string; image_url?: string }
 /** A patent from the EPO register (epoPatents.ts) — the only source of patents. */
 export interface V2PatentRecord { title: string; patent_number?: string; filing_date?: string | null; url?: string; summary?: string; source?: "epo" }
 export interface V2Technology {
@@ -344,12 +344,12 @@ export function processMarketExtractionResponse(
     }
     // No date from the model: the article's own address may give it (Business Wire, /YYYY/MM/DD/).
     if (!publishedDate) publishedDate = dateFromUrl(src.url) ?? undefined;
-    const headline = sourceHeadline(n.title, src);
+    const headline = sourceHeadlineDetail(n.title, src);
     if (!headline) {
       console.log(`    🚫  news title not in its source — model: "${String(n.title).slice(0, 110)}" | source title: "${String(src.title ?? "").slice(0, 110)}" | ${src.url}`);
       dropped.push({ field: "news", reason: "news_title_not_in_source" }); continue;
     }
-    news.push({ ...n, title: headline, url: src.url, published_date: publishedDate });
+    news.push({ ...n, title: headline.title, ...(headline.joined ? { title_joined: true } : {}), url: src.url, published_date: publishedDate });
     if (news.length >= 8) break;
   }
 

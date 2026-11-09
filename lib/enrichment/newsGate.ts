@@ -10,7 +10,7 @@
  */
 import { newsProblem, ownSiteNewsOk, dateFromUrl, dateFromHtml, dedupeNewsEvents, cleanHeadline, headlineLooksCut, titleFromHtml } from "./newsRelevance.ts";
 
-export interface NewsItem { title: string; url: string; published_date?: string | null; [k: string]: unknown }
+export interface NewsItem { title: string; url: string; published_date?: string | null; title_joined?: boolean; [k: string]: unknown }
 export interface NewsDeps {
   companyName: string;
   /** What the company is, in its own words (for the different-product test). */
@@ -29,6 +29,12 @@ export async function judgeNews(n: NewsItem, d: NewsDeps): Promise<NewsVerdict> 
   let title = cleanHeadline(n.title, n.url);
   let html: string | null | undefined;
   const page = async () => (html === undefined ? (html = await d.fetchHtml(n.url)) : html);
+  // A headline joined from a cut source title and the model's continuation is checked against the page's own title; the page's wins.
+  if (n.title_joined) {
+    const full = titleFromHtml((await page()) ?? "", n.url);
+    if (!full) return { keep: false, reason: "news_title_cut", message: "the source's headline is cut off and the page does not give the whole of it" };
+    title = full;
+  }
   if (headlineLooksCut(title)) {
     const full = titleFromHtml((await page()) ?? "", n.url);
     const a = title.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
@@ -38,7 +44,8 @@ export async function judgeNews(n: NewsItem, d: NewsDeps): Promise<NewsVerdict> 
   const problem = newsProblem({ title, content: d.content(n.url) }, d.companyName, d.about);
   if (problem) return { keep: false, reason: `news_${problem}`, message: problem === "explainer" ? "a guide, a roundup or an explainer, not news" : problem === "not_about_the_company" ? "its headline and first paragraph do not name the company (a passing mention)" : "about another company of the same name (a different product)" };
   if (d.isOwnSite(n.url) && !ownSiteNewsOk(n.url, title, d.companyName)) return { keep: false, reason: "news_own_site_not_news", message: "a page of the company's own site outside its news / press pages, and not an announcement naming the company" };
-  const item = { ...n, title };
+  const { title_joined: _j, ...rest } = n;
+  const item = { ...rest, title };
   let dated: "address" | "page" | undefined;
   if (!item.published_date) {
     const fromUrl = dateFromUrl(item.url, d.today);
