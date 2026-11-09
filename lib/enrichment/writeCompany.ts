@@ -454,7 +454,10 @@ export async function writeCollected(
   if (collected.patentsFromRegister) {
     const registerPatents = market.patents.map((p) => ({ title: p.title, patent_number: p.patent_number ?? null, filing_date: p.filing_date ?? null, url: p.url ?? null, summary: null, source: "epo" }));
     if (!sameJson(registerPatents, row.patents ?? [])) patch.patents = registerPatents;
-    if (market.patent_summary.patent_count !== row.patent_count) patch.patent_count = market.patent_summary.patent_count;
+    // "0 patents" is a claim of absence a name search cannot prove (wet batch 1 wrote 0 for four companies, none in the numbered
+    // report): a count is written when it is above zero, or replaces a count on file.
+    const pc = market.patent_summary.patent_count;
+    if (pc !== row.patent_count && !((pc === 0 || pc == null) && row.patent_count == null)) patch.patent_count = pc;
     // Fields were only ever read off pages.
     if (row.patent_fields?.length) patch.patent_fields = [];
     refresh.delete("patents");

@@ -77,7 +77,8 @@ describe("pilot dry run 2 (owner, 2026-11-09)", () => {
     expect(ownSiteNewsOk("https://empxtrack.com/news/thriveni-expands-partnership-empxtrack/", "Thriveni Expands Partnership with Empxtrack", "Empxtrack")).toBe(true);
     expect(ownSiteNewsOk("https://www.appcharge.com/blog/epic-v-google-the-settlement-is-off-the-table", "Epic v. Google: The Settlement Is Off the Table, and That Is Good for Developers", "Appcharge")).toBe(false);
     expect(ownSiteNewsOk("https://www.heygen.com/blog/heygen-surpasses-200m-arr", "HeyGen Surpasses $200M ARR as AI Video Adoption Accelerates", "HeyGen")).toBe(true);
-    expect(ownSiteNewsOk("https://www.swan.io/blog-posts/swan-secures-eu42m", "Swan secures €42M", "Swan")).toBe(false);
+    // An announcement naming the company is fine on a blog; without a date it is dropped later (newsGate).
+    expect(ownSiteNewsOk("https://www.swan.io/blog-posts/swan-secures-eu42m", "Swan secures €42M", "Swan")).toBe(true);
     expect(ownSiteNewsOk("https://www.upside.com/newsroom/press-releases/x", "Forbes recognizes Upside", "Upside")).toBe(true);
   });
   it("one row per event: the same amount or acquisition within 7 days, or one undated (Adaptive Shield, Appcharge, HeyGen)", () => {
@@ -114,12 +115,36 @@ import { sourceHeadline } from "./newsRelevance";
 describe("sourceHeadline — the headline is the source's (pilot dry run 4, Swan)", () => {
   const src = { title: "Paris-based Swan raises €37 million Series B to fuel Banking-as-a-Service across Europe - EU-Startups", content: "Swan has secured a €37 million Series B investment round led by Lakestar." };
   it("a paraphrase is replaced by the source's own title", () => {
-    expect(sourceHeadline("Swan's raises a €37m Series B to fuel the embedded banking across Europe", src)).toBe("Paris-based Swan raises €37 million Series B to fuel Banking-as-a-Service across Europe");
+    expect(sourceHeadline("Swan's raises a €37m Series B to fuel the embedded banking across Europe", { ...src, url: "https://www.eu-startups.com/2023/09/x/" })).toBe("Paris-based Swan raises €37 million Series B to fuel Banking-as-a-Service across Europe");
   });
-  it("a title the source carries stays", () => {
-    expect(sourceHeadline("Paris-based Swan raises €37 million Series B", src)).toBe("Paris-based Swan raises €37 million Series B");
+  it("a title the source carries whole stays; the source's complete title is used when the model's is part of it", () => {
+    expect(sourceHeadline("Paris-based Swan raises €37 million Series B to fuel Banking-as-a-Service across Europe", { ...src, url: "https://www.eu-startups.com/2023/09/x/" })).toBe("Paris-based Swan raises €37 million Series B to fuel Banking-as-a-Service across Europe");
   });
   it("no source title to fall back on: dropped", () => {
     expect(sourceHeadline("Something made up", { title: "", content: "unrelated" })).toBeNull();
+  });
+});
+
+import { cleanHeadline, headlineLooksCut, titleFromHtml } from "./newsRelevance";
+describe("wet batch 1 (owner, 2026-11-09): headlines and own-site posts", () => {
+  it("the site's name leaves the headline", () => {
+    expect(cleanHeadline("Appcharge Blog | Full Circle: Why I Joined Appcharge", "https://www.appcharge.com/blog/x")).toBe("Full Circle: Why I Joined Appcharge");
+    expect(cleanHeadline("Datatruck raises $12M to build the AI-native operating system | TechCrunch", "https://techcrunch.com/2026/01/28/x/")).toBe("Datatruck raises $12M to build the AI-native operating system");
+    expect(cleanHeadline("Paris-based Swan raises €37 million Series B - EU-Startups", "https://www.eu-startups.com/2023/09/x/")).toBe("Paris-based Swan raises €37 million Series B");
+    // A subtitle that is not the site's name stays.
+    expect(cleanHeadline("Swan - the embedded bank for builders", "https://www.eu-startups.com/x")).toBe("Swan - the embedded bank for builders");
+  });
+  it("a headline cut at a colon is recognised, and completed from the page's own title (Datatruck w1.3)", () => {
+    expect(headlineLooksCut("Driving Profitability and Streamlining Fleet Operations:")).toBe(true);
+    expect(headlineLooksCut("Datatruck raises $12M to build the AI-native operating system for")).toBe(true);
+    expect(headlineLooksCut("Datatruck Raises $12M Led by Avenue Growth Partners")).toBe(false);
+    const html = '<meta property="og:title" content="Driving Profitability and Streamlining Fleet Operations: Datatruck Recognized as a Core Transportation Management Provider by Nucleus Research | GlobeNewswire">';
+    expect(titleFromHtml(html, "https://www.globenewswire.com/news-release/2026/10/21/3385717/0/en/x.html")).toBe("Driving Profitability and Streamlining Fleet Operations: Datatruck Recognized as a Core Transportation Management Provider by Nucleus Research");
+  });
+  it("a personal post on the company's blog is not news (Appcharge w1.1); an announcement is", () => {
+    expect(ownSiteNewsOk("https://www.appcharge.com/blog/full-circle-why-i-joined-appcharge", "Full Circle: Why I Joined Appcharge", "Appcharge")).toBe(false);
+    expect(ownSiteNewsOk("https://www.heygen.com/blog/heygen-surpasses-200m-arr", "HeyGen Surpasses $200M ARR", "HeyGen")).toBe(true);
+    expect(ownSiteNewsOk("https://www.appcharge.com/blog/appcharge-launches-web-stores", "Appcharge launches Web Stores for mobile games", "Appcharge")).toBe(true);
+    expect(ownSiteNewsOk("https://www.appcharge.com/blog/why-we-built-appcharge", "Why we built Appcharge", "Appcharge")).toBe(false);
   });
 });

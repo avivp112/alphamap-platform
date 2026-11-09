@@ -99,6 +99,15 @@ export function dateFromHtml(html: string, today = new Date().toISOString().slic
 }
 
 /**
+ * An announcement: a raise, an acquisition, a launch, a partnership, an appointment, a milestone with a number. A personal
+ * or opinion post ("Full Circle: Why I Joined Appcharge") is not.
+ */
+export function isAnnouncement(title: string): boolean {
+  if (/\b(?:I|my|me)\b/.test(title.replace(/^.*?[|:]\s+(?=\S)/, (m) => m)) && !/\b(?:announce|launch|raise|acqui)/i.test(title)) return false;
+  return /\b(?:raises?|raised|secures?|funding|series [a-z]|seed|acquir\w+|acquisition|launch\w*|introduc\w+|unveil\w*|announc\w+|partner\w*|appoint\w*|names?|hires?|expands?|opens?|releases?|surpass\w*|reach\w*|crosse?s|doubles?|triples?|wins?|awarded|award|recogni[sz]ed|integrat\w+)\b/i.test(title) || /[$€£]\s?\d|\b\d+(?:[.,]\d+)?\s?(?:m|bn?|million|billion)\b/i.test(title);
+}
+
+/**
  * A page of the company's own site counts as news only under its news / press paths; a blog post only when the
  * company is named in its headline (Appcharge's "Epic v. Google: The Settlement Is Off the Table" is about Google).
  */
@@ -106,7 +115,7 @@ export function ownSiteNewsOk(url: string, title: string | null | undefined, com
   let path = "";
   try { path = new URL(url).pathname.toLowerCase(); } catch { return false; }
   if (/\/(?:news|press|newsroom|press-releases?|pressroom|media|in-the-news|announcements?|company-news)(?:\/|$)/.test(path)) return true;
-  if (/\/(?:blog|insights|resources|articles|posts|stories)(?:\/|$)/.test(path)) return namesCompanyUpFront({ title, content: "" }, companyName);
+  if (/\/(?:blog|blog-posts|insights|resources|articles|posts|stories)(?:\/|$)/.test(path)) return namesCompanyUpFront({ title, content: "" }, companyName) && isAnnouncement(title ?? "");
   return false;
 }
 
@@ -146,16 +155,60 @@ export function dedupeNewsEvents<T extends { title: string; url: string; publish
   return kept;
 }
 
+/** A headline cut off: ends in a colon, comma, dash, ellipsis or a dangling word. */
+export const headlineLooksCut = (t: string): boolean => /(?:[:;,\u2013\u2014-]|\.\.\.|\u2026)\s*$/.test(t.trim()) || /\b(?:and|or|of|to|for|the|a|an|in|on|with|as)\s*$/i.test(t.trim());
+
+const flatHost = (url: string) => { try { return new URL(url).hostname.toLowerCase().replace(/^www\./, "").replace(/[^a-z0-9]/g, ""); } catch { return ""; } };
+const SITE_WORDS = /\b(?:blog|news|newsroom|press|wire|times|post|journal|magazine|insights|updates|media)\b/i;
+
 /**
- * A headline is the source's own words (pilot dry run 4, 2026-11-09: the model wrote "Swan's raises a €37m Series B to
- * fuel the embedded banking across Europe" over eu-startups' "Paris-based Swan raises €37 million Series B…"). A title the
- * source does not carry is replaced by the source's own title; with no title to fall back on, the item is dropped (null).
+ * The headline without the site's name: "Appcharge Blog | Full Circle: …" → "Full Circle: …", "… | TechCrunch" → "…",
+ * "… - EU-Startups" → "…". A segment is the site's name when it names the host or reads as a site / section name.
  */
-export function sourceHeadline(modelTitle: string, source: { title?: string | null; content?: string | null }): string | null {
+export function cleanHeadline(title: string, url = ""): string {
+  let t = title.replace(/\s+/g, " ").trim();
+  const host = flatHost(url);
+  const isSite = (seg: string, hyphenOnly = false) => {
+    const flat = seg.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (flat.length >= 3 && host && (host.includes(flat) || flat.includes(host.split(".")[0] || "\u0000"))) return true;
+    return !hyphenOnly && seg.split(/\s+/).length <= 4 && SITE_WORDS.test(seg);
+  };
+  const lead = t.match(/^([^|\u2013\u2014]{2,40}?)\s+[|\u2013\u2014]\s+(.{15,})$/);
+  if (lead && isSite(lead[1])) t = lead[2];
+  const tail = t.match(/^(.{15,}?)\s+(?:[|\u2013\u2014]|-)\s+([^|\u2013\u2014]{2,40})$/);
+  if (tail && isSite(tail[2], /\s-\s/.test(t.slice(tail[1].length, tail[1].length + 4)))) t = tail[1];
+  return t.trim();
+}
+
+/** The article's own headline in its page code: og:title, then h1, then <title>. */
+export function titleFromHtml(html: string, url = ""): string | null {
+  const head = html.slice(0, 400_000);
+  const dec = (x: string) => x.replace(/&amp;/g, "&").replace(/&#0?39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/&nbsp;/g, " ").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+  const cands = [
+    head.match(/<meta[^>]+property=["']og:title["'][^>]*content=["']([^"']+)["']/i)?.[1],
+    head.match(/<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:title["']/i)?.[1],
+    head.match(/<h1[^>]*>([\s\S]{5,300}?)<\/h1>/i)?.[1],
+    head.match(/<title[^>]*>([\s\S]{5,300}?)<\/title>/i)?.[1],
+  ];
+  for (const c of cands) { const t = c ? cleanHeadline(dec(c), url) : ""; if (t.length >= 15 && !headlineLooksCut(t)) return t; }
+  return null;
+}
+
+/**
+ * A headline is the source's own words and the whole of them (pilot dry run 4: the model wrote "Swan's raises a €37m Series B…"
+ * over eu-startups' "Paris-based Swan raises €37 million Series B…"; wet batch 1: "Driving Profitability and Streamlining
+ * Fleet Operations:" was cut at the colon). The source's own title, without the site's name, is used when it carries the
+ * model's; a model title the source carries whole stays; otherwise the source's title, or null (dropped).
+ */
+export function sourceHeadline(modelTitle: string, source: { title?: string | null; content?: string | null; url?: string }): string | null {
   const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").replace(/\s+/g, " ").trim();
   const t = norm(modelTitle);
+  const own = cleanHeadline(source.title ?? "", source.url ?? "");
+  const ownOk = own.length >= 15 && !headlineLooksCut(own);
+  if (ownOk && t && norm(own).includes(t)) return own;
   const hay = norm(`${source.title ?? ""} ${(source.content ?? "").slice(0, 4000)}`);
-  if (t && hay.includes(t)) return modelTitle.trim();
-  const own = (source.title ?? "").replace(/\s+[|–—-]\s+[^|–—]{2,40}$/, "").trim();
-  return own.length >= 15 ? own : null;
+  const cleaned = cleanHeadline(modelTitle, source.url ?? "");
+  if (t && hay.includes(t) && !headlineLooksCut(cleaned)) return cleaned;
+  if (ownOk) return own;
+  return cleaned && !headlineLooksCut(cleaned) && t && hay.includes(t) ? cleaned : (headlineLooksCut(modelTitle) && t && hay.includes(t) ? modelTitle.trim() : null);
 }

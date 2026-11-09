@@ -68,3 +68,28 @@ describe("the pilot report's news path on the real dry-run items (owner, 2026-11
     expect(v.keep && v.item.published_date).toBe("2026-01-28");
   });
 });
+
+describe("wet batch 1 (owner, 2026-11-09) through the gate", () => {
+  const base = { companyName: "Datatruck", about: "trucking software", content: () => undefined as string | undefined, isOwnSite: () => false };
+  it("Datatruck w1.3: the headline cut at the colon is completed from the page", async () => {
+    const v = await judgeNews({ title: "Driving Profitability and Streamlining Fleet Operations:", url: "https://www.globenewswire.com/news-release/2026/10/21/3385717/0/en/x.html" }, { ...base, fetchHtml: async () => '<meta property="og:title" content="Driving Profitability and Streamlining Fleet Operations: Datatruck Recognized as a Core Transportation Management Provider | GlobeNewswire">' });
+    expect(v.keep && v.item.title).toBe("Driving Profitability and Streamlining Fleet Operations: Datatruck Recognized as a Core Transportation Management Provider");
+  });
+  it("a cut headline the page cannot complete is not written", async () => {
+    const v = await judgeNews({ title: "Driving Profitability and Streamlining Fleet Operations:", url: "https://www.globenewswire.com/news-release/2026/10/21/3385717/0/en/x.html" }, { ...base, fetchHtml: async () => null });
+    expect(v.keep).toBe(false);
+  });
+  it("Appcharge w1.1: a personal post on the company's blog is not news", async () => {
+    const v = await judgeNews({ title: "Appcharge Blog | Full Circle: Why I Joined Appcharge", url: "https://www.appcharge.com/blog/full-circle-why-i-joined-appcharge", published_date: "2026-11-02" },
+      { ...base, companyName: "Appcharge", isOwnSite: () => true, fetchHtml: async () => null });
+    expect(v.keep).toBe(false);
+  });
+  it("HeyGen w1.10: the distribution copy beats the company's blog", () => {
+    const own = (u: string) => u.includes("heygen.com");
+    const { kept } = finishNews([
+      { title: "HeyGen Surpasses $200M ARR as AI Video Adoption Accelerates", url: "https://www.heygen.com/blog/heygen-surpasses-200m-arr", published_date: "2026-06-25" },
+      { title: "HeyGen Doubles to $200M ARR in Eight Months", url: "https://www.businesswire.com/news/home/20260625305891/en/x", published_date: "2026-06-25" },
+    ], { isOwnSite: own, content: () => undefined });
+    expect(kept.map((x) => x.url)).toEqual(["https://www.businesswire.com/news/home/20260625305891/en/x"]);
+  });
+});
