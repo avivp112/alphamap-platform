@@ -12,11 +12,16 @@ describe("the headcount chart's points", () => {
     expect(headcountSeries([pt("2024-01-01", 10, "press_reported"), pt("2025-01-01", 12, "site_stated")]).live).toBe(false);
     expect(headcountSeries([pt("2025-01-01", 12, "observed")]).live).toBe(true);
   });
-  it("a point from before the migration (no type, or legacy) is shown as reported with its own label, never live", () => {
+  it("a legacy point, or one from before the migration (no type), is hidden — never shown, never live (owner, 2026-11-09)", () => {
     const s = headcountSeries([pt("2024-01-01", 10), pt("2024-06-01", 12, "legacy")]);
-    expect(s.reported).toHaveLength(2);
-    expect(s.reported.every((p) => p.type === "legacy")).toBe(true);
+    expect(s.reported).toHaveLength(0);
+    expect(s.official).toHaveLength(0);
     expect(s.live).toBe(false);
+  });
+  it("sourced points still show beside hidden legacy ones", () => {
+    const s = headcountSeries([pt("2024-01-01", 10, "legacy"), pt("2024-06-01", 12), pt("2025-01-01", 40, "registry"), pt("2025-06-01", 45, "site_stated")]);
+    expect(s.official.map((p) => p.value)).toEqual([40]);
+    expect(s.reported.map((p) => p.value)).toEqual([45]);
   });
   it("floors and ranges keep their form", () => {
     expect(pointValueText({ value: 75, max: null, lowerBound: true })).toBe("75+");

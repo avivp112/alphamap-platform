@@ -2,7 +2,9 @@
 // src/lib/headcountSeries.ts — the headcount chart's points (owner, 2026-11-07).
 // Points are shown by type: official (a register, a pension plan) and reported (the
 // company's own page, an article, a current reading), each with its source on hover.
-// A model estimate is never shown. No line joins the points: a gap is a gap, not data.
+// A model estimate is never shown, and neither is a `legacy` point (a record whose source was not kept — owner,
+// 2026-11-09: 9,487 points written by v1 with no source and no data date): hidden, not deleted, until a v2 run
+// replaces them with sourced points. No line joins the points: a gap is a gap, not data.
 // "Live data" appears only when a point is an `observed` one.
 // =============================================================================
 
@@ -22,7 +24,7 @@ export interface ChartPoint {
 export function headcountSeries(points: HeadcountPoint[]): { official: ChartPoint[]; reported: ChartPoint[]; live: boolean } {
   const shaped: ChartPoint[] = points
     .map((p) => ({ ...p, type: (p.point_type ?? "legacy") as HeadcountPointType }))
-    .filter((p) => p.type !== "model_estimate" && p.employee_count > 0)
+    .filter((p) => p.type !== "model_estimate" && p.type !== "legacy" && p.employee_count > 0)
     .map((p) => ({
       t: Date.parse(p.recorded_date), value: p.employee_count, max: p.employee_count_max ?? null, lowerBound: !!p.is_lower_bound,
       type: p.type, label: TYPE_LABEL[p.type], source: p.source_url ?? null, quote: p.evidence_quote ?? null, measure: p.measure ?? null,
