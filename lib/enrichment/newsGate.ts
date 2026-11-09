@@ -41,6 +41,18 @@ export async function judgeNews(n: NewsItem, d: NewsDeps): Promise<NewsVerdict> 
     if (full && full.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").startsWith(a.slice(0, Math.max(12, a.length - 2)))) title = full;
     else return { keep: false, reason: "news_title_cut", message: "the headline is cut off and the page does not give the whole of it" };
   }
+  // The page's own headline (og:title, then h1, then <title>) beats a search result's: Glilot's page says "…as mobile games break from
+  // app stores", its search result "…for Mobile Web Stores" (dry report 7). Only when the page was read and its headline is about the
+  // same story (it shares words with what we have); an unreadable page leaves the source's title as it is.
+  if (!n.title_joined && !headlineLooksCut(title)) {
+    const fromPage = titleFromHtml((await page()) ?? "", n.url);
+    if (fromPage) {
+      const words = (t: string) => new Set(t.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").split(/\s+/).filter((w) => w.length >= 2));
+      const a = words(title), b = words(fromPage);
+      const shared = [...a].filter((w) => b.has(w)).length / Math.max(1, Math.min(a.size, b.size));
+      if (shared >= 0.4) title = fromPage;
+    }
+  }
   const problem = newsProblem({ title, content: d.content(n.url) }, d.companyName, d.about);
   if (problem) return { keep: false, reason: `news_${problem}`, message: problem === "explainer" ? "a guide, a roundup or an explainer, not news" : problem === "not_about_the_company" ? "its headline and first paragraph do not name the company (a passing mention)" : "about another company of the same name (a different product)" };
   if (d.isOwnSite(n.url) && !ownSiteNewsOk(n.url, title, d.companyName)) return { keep: false, reason: "news_own_site_not_news", message: "a page of the company's own site outside its news / press pages, and not an announcement naming the company" };

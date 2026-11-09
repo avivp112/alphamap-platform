@@ -73,3 +73,21 @@ describe("Datatruck (dry report 6, 2026-11-09): a search result's title cut at t
     expect((await judgeNews(item, { companyName: "Datatruck", about: "trucking software", content: () => undefined, isOwnSite: () => false, fetchHtml: async () => null })).keep).toBe(false);
   });
 });
+
+describe("Appcharge / Glilot (dry report 7, 2026-11-09): the page's own headline beats the search result's", () => {
+  const url = "https://glilotcapital.com/cyberhubs/appcharge-raises-58-million-series-b-as-mobile-games-break-from-app-stores/";
+  const item = { title: "Appcharge Raises $58M Series B for Mobile Web Stores", url, published_date: "2025-08-13" };
+  const deps = { companyName: "Appcharge", about: "payments for mobile games", content: () => undefined, isOwnSite: () => false };
+  it("the page's og:title is used (site name removed)", async () => {
+    const v = await judgeNews(item, { ...deps, fetchHtml: async () => '<meta property="og:title" content="Appcharge raises $58 million Series B as mobile games break from app stores | Glilot Capital">' });
+    expect(v.keep && v.item.title).toBe("Appcharge raises $58 million Series B as mobile games break from app stores");
+  });
+  it("a page about something else does not replace it", async () => {
+    const v = await judgeNews(item, { ...deps, fetchHtml: async () => '<meta property="og:title" content="Cookie settings and privacy preferences center">' });
+    expect(v.keep && v.item.title).toBe(item.title);
+  });
+  it("an unreadable page leaves the source's title", async () => {
+    const v = await judgeNews(item, { ...deps, fetchHtml: async () => null });
+    expect(v.keep && v.item.title).toBe(item.title);
+  });
+});
