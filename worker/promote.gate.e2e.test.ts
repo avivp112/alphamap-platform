@@ -219,7 +219,7 @@ async function promoteWith(openFields: readonly string[]) {
 // What a promotion writes besides the company's data, with or without a field open (owner, 2026-11-09): the same bookkeeping as a
 // wide bulk_enrich_v2 run (a pilot skips it) — the company is stamped as enriched and listed (enriched_v2_at, migration 20261010000000)
 // and its score is snapshotted. Pinned here: a new column or table in this list is a decision, not an accident.
-const BOOKKEEPING_COLUMNS = ["last_enriched_at", "enriched_v2_at"];
+const BOOKKEEPING_COLUMNS = ["last_enriched_at", "enriched_v2_at"];   // enriched_v2_at only when the description was written (below)
 const BOOKKEEPING_TABLES = ["field_changes", "field_provenance", "enrichment_runs", "alphamap_score_history"];
 
 describe("past Phase 1, a promotion writes only the fields the tracker has opened", () => {
@@ -300,5 +300,34 @@ describe("a competitor in the batch report comes with the sentence that says the
       expect(l.source_url).toBeTruthy();
       expect(l.quote).toMatch(/compete/i);
     }
+  });
+});
+
+describe("enriched_v2_at — the Private Market stamp — only when the description was written (owner, 2026-11-09)", () => {
+  it("news open, no description: the company is not stamped, so v2 puts no company on the Private Market for a news item", async () => {
+    const r = await promoteWith(["news"]);
+    expect(r.startupKeys).toContain("news");
+    expect(r.startupKeys).not.toContain("enriched_v2_at");
+  });
+  it("description open and written: the company is stamped", async () => {
+    // The collection's own description builder wrote none on the fake web (no verified "what" and "for whom"): one is given.
+    const s = stored as unknown as { profile: { profile: { description?: string } } };
+    const keep = s.profile.profile.description;
+    s.profile.profile.description = "Ghost provides an open source publishing platform for newsletters and paid memberships.";
+    try {
+      const r = await promoteWith(["description", "news"]);
+      expect(r.startupKeys).toContain("description");
+      expect(r.startupKeys).toContain("enriched_v2_at");
+    } finally { s.profile.profile.description = keep; }
+  });
+  it("description open but nothing written for it: not stamped", async () => {
+    const s = stored as unknown as { profile: { profile: { description?: string } } };
+    const keep = s.profile.profile.description;
+    s.profile.profile.description = undefined;
+    try {
+      const r = await promoteWith(["description"]);
+      expect(r.startupKeys).not.toContain("description");
+      expect(r.startupKeys).not.toContain("enriched_v2_at");
+    } finally { s.profile.profile.description = keep; }
   });
 });
