@@ -23,6 +23,7 @@ import { dirname, join } from "path";
 import { readMarks, readReplay, parseCsvText, REPLAY } from "../lib/enrichment/fieldReview.ts";
 import { quotesFromRows, quotesFromCompetitorSheet, quoteOf } from "../lib/enrichment/markQuotes.ts";
 import { judgeMark } from "../lib/enrichment/markRules.ts";
+import { applySectorRejudge } from "../lib/enrichment/sectorRejudge.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 if (existsSync(join(__dir, "..", ".env"))) config({ path: join(__dir, "..", ".env") });
@@ -56,6 +57,12 @@ const domainOf = (website: string | null | undefined) => {
   // The owner's competitors sheet keeps the quote of the values he marked there (tracker ids g.c…, which kept no source).
   if (existsSync("eval/review/competitors_review.csv")) quotesFromCompetitorSheet(parseCsvText(readFileSync("eval/review/competitors_review.csv", "utf8").replace(/^\uFEFF/, "")), quotes);
   const judged = new Map(marks.map((m) => [m.id, judgeMark(m, { domain: domains.get(m.company), quote: quoteOf(m, quotes) })]));
+  // Sector marks counted against the current classification (scripts/sector_rejudge.ts): a mark whose sector it no longer gives leaves.
+  if (existsSync("eval/sector_rejudged.csv")) {
+    const rows = parseCsvText(readFileSync("eval/sector_rejudged.csv", "utf8").replace(/^\uFEFF/, ""));
+    rows.shift();
+    applySectorRejudge(judged, rows.map(([id, produced, now]) => ({ id, produced: produced === "yes", now })));
+  }
 
   const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   const lines = ["id,produced,replayed_at,rules,note"];
