@@ -138,3 +138,23 @@ describe("a legal page's address is an office, not the headquarters (owner, 2026
     expect(hqIn(about, "EngFlow").map((s: { city: string }) => s.city)).toEqual(["Austin"]);
   });
 });
+
+describe("review 9 (2026-11-10): the Contact page's addresses and an article of 2014", () => {
+  const st = (over: Partial<HqStatement>): HqStatement => ({ city: "New York", quote: "q", source_id: "S1", url: "https://sentra.io/contact", kind: "company", date: null, ...over });
+  it("Sentra: two addresses on the Contact page are offices, not a headquarters", () => {
+    const d = decideHeadquarters([st({ viaAddress: true }), st({ city: "Tel Aviv", viaAddress: true })], "2026-11-10");
+    expect(d.kind).toBe("site_offices");
+  });
+  it("one address there is the headquarters; a sentence that declares one wins over addresses", () => {
+    expect(decideHeadquarters([st({ viaAddress: true })], "2026-11-10")).toMatchObject({ kind: "declared" });
+    const d = decideHeadquarters([st({ viaAddress: true }), st({ city: "Tel Aviv", viaAddress: true }), st({ city: "Tel Aviv", quote: "headquartered in Tel Aviv" })], "2026-11-10");
+    expect(d).toMatchObject({ kind: "declared", statement: { city: "Tel Aviv", quote: "headquartered in Tel Aviv" } });
+  });
+  it("Chargebee: an article of 2014 alone is not today's headquarters; of 2021 it is", () => {
+    const press = (date: string | null, city = "Chennai"): HqStatement => ({ city, quote: `${city}-based`, source_id: "S2", url: "https://techcrunch.com/x", kind: "press", date });
+    expect(decideHeadquarters([press("2014-01-12")], "2026-11-10").kind).toBe("none");
+    expect(decideHeadquarters([press("2021-12-17", "New York")], "2026-11-10")).toMatchObject({ kind: "declared" });
+    expect(decideHeadquarters([press(null)], "2026-11-10")).toMatchObject({ kind: "declared" });
+    expect(decideHeadquarters([press("2014-01-12"), press("2024-05-01", "San Francisco")], "2026-11-10")).toMatchObject({ kind: "declared", statement: { city: "San Francisco" } });
+  });
+});

@@ -57,6 +57,7 @@ export const DATA_PLATFORMS: DataPlatform[] = [
   { name: "Clay.com", domains: ["clay.com"] },
   // People-data and company-data sites that publish headcounts (review 7, 2026-11-09: crustdata, contactout, startupim).
   { name: "Crustdata", domains: ["crustdata.com"] },
+  { name: "Forge Global", aliases: ["forgeglobal.com"], domains: ["forgeglobal.com"] },
   { name: "ContactOut", domains: ["contactout.com"] },
   { name: "Startupim", domains: ["startupim.com"] },
   { name: "TheOrg", aliases: ["theorg.com"], caseSensitive: true, domains: ["theorg.com"] },

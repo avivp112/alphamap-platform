@@ -9,12 +9,12 @@
  * the same things. That measures the run's luck, not the rules.)
  */
 import { classifySourceType } from "./sources";
-import { profileSourceAllowed, roundSourceStanding } from "./roundSources";
+import { profileSourceAllowed, roundSourceStanding, isJobBoardOrProfileDirectory } from "./roundSources";
 import { roleAtCompany, isOrganisationName, isLeadershipRole } from "./people";
 import { RAISE_RE, statesAmount } from "./assemble";
 import { dateFromUrl } from "./evidence";
 import { isLinkList, quoteIsAboutTheCompany, quoteLinksTheTwo } from "./competitorEvidence";
-import { isLegalPageUrl } from "./headquarters";
+import { isLegalPageUrl, HQ_MAX_AGE_DAYS } from "./headquarters";
 import { looksLikeCompanyName, isUserContentUrl } from "./competitorEvidence";
 import { isExplainer, headlineIncomplete } from "./newsRelevance";
 import { PARENT_BY_SUB_SECTOR, SECTOR_TAXONOMY } from "../../src/lib/taxonomy";
@@ -50,6 +50,12 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
     const ownSite = !!ctx.domain && (host === ctx.domain || host.endsWith(`.${ctx.domain}`));
     // An address on a legal page is an office, never the headquarters (owner, 2026-11-08: EngFlow).
     if ((mark.field === "hq_city" || mark.field === "hq_country") && isLegalPageUrl(url)) return out("an address on a legal page is an office");
+    // A headquarters from an article older than eight years, on a site that is not the company's own (review 9: Chargebee, 2014).
+    if ((mark.field === "hq_city" || mark.field === "hq_country") && !ownSite) {
+      const d = dateFromUrl(url);
+      if (d && Date.now() - Date.parse(d) > HQ_MAX_AGE_DAYS * 86_400_000) return out("a headquarters from an article older than eight years");
+    }
+    if (PROFILE.has(mark.field) && isJobBoardOrProfileDirectory(url, ownSite)) return out("a job posting or a directory profile is no source");
     if (PROFILE.has(mark.field)) {
       const sourceType = ownSite ? "company_site" : classifySourceType(url, ctx.domain);
       const allowed = profileSourceAllowed({ url, source_type: sourceType }, company);

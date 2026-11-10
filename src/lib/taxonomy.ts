@@ -26,7 +26,7 @@ import type { RoundType } from "./supabase";
 export const SECTOR_TAXONOMY: Record<string, string[]> = {
   "AI & ML":               ["AI / General", "LLMs", "Generative AI", "Computer Vision", "NLP / Speech", "AI Agents", "MLOps", "AI Infrastructure", "Voice & Speech AI"],
   "Fintech":               ["Fintech / General", "Payments", "Banking / Neobanking", "Insurance / Insurtech", "Lending", "Crypto / Web3", "WealthTech", "RegTech", "Fintech Infrastructure"],
-  "Cybersecurity":         ["Cybersecurity / General", "Identity & Access", "Endpoint Security", "Cloud Security", "Threat Intelligence", "Zero Trust", "Data Security", "Security Testing", "Vulnerability Management", "Application & API Security", "Fraud & Abuse Prevention", "Email Security"],
+  "Cybersecurity":         ["Cybersecurity / General", "Identity & Access", "Endpoint Security", "Cloud Security", "Threat Intelligence", "Zero Trust", "Data Security", "Security Testing", "Vulnerability Management", "Application & API Security", "Fraud & Abuse Prevention", "Email Security", "Managed Security Services"],
   "SaaS & Dev Tools":      ["SaaS / General", "Developer Tools", "DevOps / CI-CD", "API Platforms", "Low-Code / No-Code", "Data Infrastructure", "Observability & Monitoring", "Vertical SaaS"],
   "E-commerce & Retail":   ["E-commerce / General", "D2C", "Marketplaces", "Logistics / Supply Chain", "Retail Tech"],
   "Health & Life Sciences": ["Digital Health", "MedTech", "Biotech / Genomics", "Mental Health", "Healthcare SaaS", "Healthcare IT & Administration"],
@@ -121,6 +121,7 @@ const SECTOR_SLUGS: Record<string, string> = {
   "Application & API Security": "appApiSecurity",
   "Fraud & Abuse Prevention": "fraudAbusePrevention",
   "Email Security": "emailSecurity",
+  "Managed Security Services": "managedSecurityServices",
   "Observability & Monitoring": "observabilityMonitoring",
   "Vertical SaaS": "verticalSaas",
   "Customer Support & CX": "customerSupportCx",
