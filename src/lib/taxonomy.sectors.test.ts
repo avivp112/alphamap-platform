@@ -7,9 +7,18 @@ describe("sectors added in review 7 (2026-11-09)", () => {
   it("PropTech, AdTech, AgTech, Security Testing and Industrial & Manufacturing exist, each under one parent", () => {
     expect(PARENT_BY_SUB_SECTOR["PropTech"]).toBe("Real Estate");
     expect(PARENT_BY_SUB_SECTOR["AdTech"]).toBe("Consumer & Media");
-    expect(PARENT_BY_SUB_SECTOR["AgTech"]).toBe("Industrial & Manufacturing");
-    expect(PARENT_BY_SUB_SECTOR["Security Testing"]).toBe("Cybersecurity");
+        expect(PARENT_BY_SUB_SECTOR["Security Testing"]).toBe("Cybersecurity");
     expect(SECTOR_TAXONOMY["Industrial & Manufacturing"]).toContain("Industrial / General");
+  });
+  it("review 8 (2026-11-10): the sectors the owner asked for", () => {
+    expect(PARENT_BY_SUB_SECTOR["Voice & Speech AI"]).toBe("AI & ML");
+    expect(PARENT_BY_SUB_SECTOR["FoodTech"]).toBe("Food & Agriculture");
+    expect(PARENT_BY_SUB_SECTOR["AgTech"]).toBe("Food & Agriculture");
+    expect(PARENT_BY_SUB_SECTOR["Vehicle Security"]).toBe("Automotive & Mobility");
+    expect(PARENT_BY_SUB_SECTOR["Productivity & Collaboration"]).toBe("Enterprise Software");
+    expect(PARENT_BY_SUB_SECTOR["Vulnerability Management"]).toBe("Cybersecurity");
+    expect(PARENT_BY_SUB_SECTOR["RegTech"]).toBe("Fintech");
+    expect(PARENT_BY_SUB_SECTOR["Developer Tools"]).toBe("SaaS & Dev Tools");
   });
   it("sub-sector names are unique across the tree and none is a parent's name", () => {
     const subs = Object.values(SECTOR_TAXONOMY).flat();

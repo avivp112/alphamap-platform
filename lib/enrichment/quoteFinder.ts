@@ -15,7 +15,7 @@ export function sentencesOf(text: string): string[] {
 
 /** A fetch that returned an error or a block page, not the page (review 6: Armorblox's "Target URL returned error 403"). */
 export const isErrorPage = (content: string): boolean =>
-  /Target URL returned error \d{3}|^\s*(?:403|404|429|503)\b[^\n]{0,40}(?:forbidden|not found|too many requests|unavailable)|Access Denied|Please be advised that this page is unavailable|Just a moment\.\.\.|Attention Required! \| Cloudflare/i.test(content.slice(0, 1500));
+  /Target URL returned error \d{3}|^\s*(?:403|404|429|503)\b[^\n]{0,40}(?:forbidden|not found|too many requests|unavailable)|Access Denied|nothing was found at this location|page not found|404 not found|error 404|this page (?:could not|cannot|can['’]t) be found|the page you (?:are looking for|requested|were looking for)[^.]{0,40}(?:not|no longer)|Please be advised that this page is unavailable|Just a moment\.\.\.|Attention Required! \| Cloudflare/i.test(content.slice(0, 1500));
 
 /** The sentence with the most distinct words in common with `terms` (at least `min`), or null. */
 export function bestSentence(content: string, terms: string, min = 2): string | null {
@@ -58,8 +58,35 @@ export function supportedTags(tags: string[], allPages: Array<{ id: string; cont
   // A privacy policy, terms, glossary, help article or career page supports no tag (review 7, 2026-11-09).
   const pages = allPages.filter((p) => !isNonDescriptivePage(p.url));
   for (const tag of tags) {
-    const hit = bestQuote(pages, tag, 1);
+    const hit = bestTagQuote(pages, tag);
     if (hit) kept.push({ tag, id: hit.id, quote: hit.quote }); else dropped.push(tag);
   }
   return { kept, dropped };
+}
+
+/**
+ * The sentence that carries the tag's own words, close together (review 8, 2026-11-10): "Cloud Security" is not supported by
+ * "the platform is entirely cloud-based … vehicle security" (the platform runs in the cloud; its product is not cloud security),
+ * and "Enterprise Software" is not supported by "enterprise customers". Every content word of the tag ("General" is no word of
+ * a tag), within six words of each other.
+ */
+export function bestTagQuote(pages: Array<{ id: string; content: string }>, tag: string): { id: string; quote: string } | null {
+  const want = contentWords(tag.replace(/\bgeneral\b/gi, "")).map((w) => w.slice(0, 6));
+  if (!want.length) return null;
+  let best: { id: string; quote: string; n: number } | null = null;
+  for (const page of pages) {
+    if (isErrorPage(page.content)) continue;
+    for (const s of sentencesOf(page.content)) {
+      const toks = (s.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
+      const at = want.map((w) => toks.map((t, i) => (t.startsWith(w) ? i : -1)).filter((i) => i >= 0));
+      if (at.some((a) => !a.length)) continue;
+      // Some choice of one position per word spans at most six words.
+      const starts = at[0];
+      const tight = starts.some((p0) => at.every((a) => a.some((p) => Math.abs(p - p0) <= 5)));
+      if (!tight) continue;
+      const n = want.length;
+      if (!best || n > best.n) best = { id: page.id, quote: s, n };
+    }
+  }
+  return best ? { id: best.id, quote: best.quote } : null;
 }

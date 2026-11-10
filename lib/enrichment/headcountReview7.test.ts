@@ -73,3 +73,30 @@ describe("the replay (field_review_replay) drops each of the 21 marked values by
   ];
   for (const [c, v, u, q] of rows) it(`${c}: ${v}`, () => expect(judgeMark(m(c, v, u), { quote: q }).produced).toBe(false));
 });
+
+import { figureIsJobPosting, quoteStatesLowerBound } from "./headcountSources";
+describe("review 8 (2026-11-10): headcount", () => {
+  const src = new Map([["S1", { url: "https://venturebeat.com/x", source_type: "web", content: "", title: "" }], ["S2", { url: "https://venturebeat.com/y", source_type: "web", content: "", title: "" }]]);
+  it("a team of a job posting is not the company's size (Myndshft)", () => {
+    expect(figureIsJobPosting("As the head of a team of 4 Software Engineers, you&#8217;ll translate business requirements into user stories")).toBe(true);
+    expect(figureIsJobPosting("Our team of more than 50 scientists and business leaders share the same vision")).toBe(false);
+    const p = [{ date: "2019-07", employee_count: 4, source_id: "S1", evidence_quote: "As the head of a team of 4 Software Engineers, you'll translate business requirements" }];
+    expect(extractionPoints(p, src, "Myndshft")).toEqual([]);
+  });
+  it("over N, more than N and N+ are a floor; about and nearly are not (Verbit)", () => {
+    expect(quoteStatesLowerBound("Verbit currently employs a team of over 30 across its offices", 30)).toBe(true);
+    expect(quoteStatesLowerBound("a team of more than 50 scientists", 50)).toBe(true);
+    expect(quoteStatesLowerBound("about 65 employees", 65)).toBe(false);
+    const [p] = extractionPoints([{ date: "2019-01-29", employee_count: 30, source_id: "S1", evidence_quote: "Verbit currently employs a team of over 30 across its Tel Aviv and New York offices" }], src, "Verbit");
+    expect(p.lower_bound).toBe(true);
+  });
+  it("the same point twice is one point (Verbit, Ezetap, Stytch)", () => {
+    const q = "Verbit currently employs a team of over 30 across its Tel Aviv and New York offices";
+    const pts = extractionPoints([{ date: "2019-01-29", employee_count: 30, source_id: "S1", evidence_quote: q }, { date: "2019-01-29", employee_count: 30, source_id: "S2", evidence_quote: q }], src, "Verbit");
+    expect(pts).toHaveLength(1);
+  });
+  it("the replay drops the job-posting point", () => {
+    const m = { id: "x", field: "employee_history", company: "Myndshft", value: "4 employees @ 2019-07-23 (site_stated)", source_url: "https://web.archive.org/web/20190723021855/https://www.myndshft.com/careers", verdict: "wrong", source_of_mark: "" } as Mark;
+    expect(judgeMark(m, { quote: "As the head of a team of 4 Software Engineers, you&#8217;ll translate business requirements into user stories" }).produced).toBe(false);
+  });
+});

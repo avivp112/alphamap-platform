@@ -1031,7 +1031,17 @@
       "agTech": "AgTech",
       "propTech": "PropTech",
       "salesTech": "Sales Tech",
-      "travelTech": "Travel Tech"
+      "travelTech": "Travel Tech",
+      "foodAgriculture": "Food & Agriculture",
+      "automotiveMobility": "Automotive & Mobility",
+      "voiceSpeechAi": "Voice & Speech AI",
+      "vulnerabilityManagement": "Vulnerability Management",
+      "productivityCollaboration": "Productivity & Collaboration",
+      "foodTech": "FoodTech",
+      "automotiveGeneral": "Automotive / General",
+      "vehicleSecurity": "Vehicle Security",
+      "autonomousDriving": "Autonomous Driving",
+      "mobilityServices": "Mobility Services"
     }
   },
   "profile": {

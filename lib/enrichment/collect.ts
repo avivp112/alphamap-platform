@@ -29,7 +29,7 @@ import { normalizeForMatch } from "./evidence.ts";
 import { competitorTierClaims, type TieredClaim } from "./competitorTiers.ts";
 import { websiteLooksLikeAnotherCompany } from "./websiteIdentity.ts";
 import { judgeNews, finishNews } from "./newsGate.ts";
-import { reconcileSector } from "./sectors.ts";
+import { reconcileSector, subSectorUnsupported } from "./sectors.ts";
 import { siteBelongsToAnotherCompany } from "./siteOwner.ts";
 import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
 import { buildDescriptionRequest, descriptionSources, processDescription } from "./descriptionBuilder.ts";
@@ -1272,7 +1272,9 @@ export async function collectCompany(
         keptLeaders.push({ ...l, role: "Leadership team" });
         continue;
       }
-      console.log(`    🚫  leader ${l.name} not written — no allowed source gives the title "${role}"`);
+      const namedIn = allowedTexts.filter((t) => personMentionedIn(l.name, t)).length;
+      cardNote = `${cardNote ? `${cardNote} · ` : ""}named in ${namedIn} allowed source(s), the title is beside the name in none`;
+      console.log(`    🚫  leader ${l.name} not written — no allowed source gives the title "${role}" (${cardNote})`);
       bump(stats.droppedByReason, "leader_title_unsupported");
       record("dropped");
     }
@@ -1513,6 +1515,17 @@ export async function collectCompany(
     bump(stats.droppedByReason, "sector_without_verified_description");
     profile.profile.sector_name = undefined;
     profile.profile.sub_sector_name = undefined;
+  }
+  // A sub-sector the verified description does not support is not kept (Computer Vision for a voice AI company).
+  if (profile.profile.description_sentences?.length) {
+    const text = profile.profile.description_sentences.map((x) => x.text).join(" ");
+    for (const sub of [profile.profile.sub_sector_name, ...(profile.profile.sub_sector_names ?? [])]) {
+      if (!subSectorUnsupported(sub, text)) continue;
+      console.log(`    🧭  Sub-sector "${sub}" dropped — the verified description does not support it.`);
+      bump(stats.droppedByReason, "sub_sector_unsupported");
+      if (profile.profile.sub_sector_name === sub) profile.profile.sub_sector_name = undefined;
+      profile.profile.sub_sector_names = (profile.profile.sub_sector_names ?? []).filter((n) => n !== sub);
+    }
   }
   const verifiedFacts = collectVerifiedFacts(profile, funding);
   const narratives = checkNarratives({

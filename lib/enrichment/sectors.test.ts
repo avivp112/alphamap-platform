@@ -43,3 +43,12 @@ describe("a sub-sector that is the name of a sector (review 7, x67.40)", () => {
   });
 });
 
+
+import { subSectorUnsupported } from "./sectors";
+describe("Computer Vision is for images and video (review 8, Verbit)", () => {
+  it("a voice AI company is not Computer Vision; a pathology imaging company is", () => {
+    expect(subSectorUnsupported("Computer Vision", "Verbit sells a verbal intelligence and voice AI platform that combines speech recognition with human transcribers.")).toBe(true);
+    expect(subSectorUnsupported("Computer Vision", "Ibex sells AI-powered digital pathology that analyzes images of tissue samples.")).toBe(false);
+    expect(subSectorUnsupported("Payments", "anything")).toBe(false);
+  });
+});

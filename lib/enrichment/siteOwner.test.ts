@@ -23,3 +23,19 @@ describe("a website that belongs to another company now (review 7, 2026-11-09)",
     expect(siteBelongsToAnotherCompany("X", "https://x.com", [])).toBeNull();
   });
 });
+
+describe("review 8 (2026-11-10): an address that leads to another company", () => {
+  const page = (url: string, finalUrl: string, text: string) => ({ url, content: `Title: x URL Source: ${url} Final URL: ${finalUrl} Published Time: Fri, 06 Nov 2026 Markdown Content: ${text}` });
+  it("Hofy and Ezetap: the site the address leads to is Deel's and Razorpay's", () => {
+    expect(siteBelongsToAnotherCompany("Hofy", "https://hofy.com", [page("https://hofy.com/", "https://www.deel.com/it/", "Deel IT. Manage devices.")])).toMatch(/hofy's address leads to www\.deel\.com/);
+    expect(siteBelongsToAnotherCompany("Ezetap", "https://ezetap.com", [page("https://ezetap.com/", "https://razorpay.com/pos/", "Razorpay POS.")])).toMatch(/razorpay\.com/);
+  });
+  it("www, a country domain, or a longer name on the same brand are the same company", () => {
+    expect(siteBelongsToAnotherCompany("Sedric", "https://sedric.ai", [page("https://sedric.ai/", "https://www.sedric.ai/", "Sedric reviews content." + filler)])).toBeNull();
+    expect(siteBelongsToAnotherCompany("Verbit", "https://verbit.ai/about", [page("https://verbit.ai/about", "https://verbit.ai/about-us/", "About Verbit." + filler)])).toBeNull();
+    expect(siteBelongsToAnotherCompany("Bolt", "https://getbolt.com", [page("https://getbolt.com/", "https://bolt.com/", "Bolt checkout." + filler)])).toBeNull();
+  });
+  it("Superhuman: the page says another company is now this one", () => {
+    expect(siteBelongsToAnotherCompany("Superhuman", "https://superhuman.com", [{ url: "https://superhuman.com", content: "Grammarly is now Superhuman. The AI productivity suite." + filler }])).toMatch(/acquired \/ rebranded/);
+  });
+});
