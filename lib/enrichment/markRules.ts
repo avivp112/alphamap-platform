@@ -20,7 +20,7 @@ import { isExplainer, headlineIncomplete } from "./newsRelevance";
 import { PARENT_BY_SUB_SECTOR, SECTOR_TAXONOMY } from "../../src/lib/taxonomy";
 import type { Mark } from "./fieldReview";
 import { isNonDescriptivePage } from "./pageKind";
-import { figureIsBiographical, figureIsJobPosting } from "./headcountSources";
+import { figureIsBiographical, figureIsJobPosting, quoteStatesLowerBound } from "./headcountSources";
 
 export interface MarkContext {
   /** The company's own domain ("dlight.com"), when known. Without it an unlisted source is not judged. */
@@ -175,6 +175,8 @@ function judgeHeadcount(mark: Mark, ctx: MarkContext): MarkJudgment {
     if (!new RegExp(`(^|[^\\d])${num.replace(/,/g, "")}([^\\d]|$)`).test(q)) return out("the number is not in the quote");
     if (figureIsBiographical(ctx.quote ?? "", type === "site_stated")) return out("the figure is someone's career, not the company's");
     if (figureIsJobPosting(ctx.quote ?? "")) return out("the figure is a team of a job posting, not the company's size");
+    // "over 30", "more than 50", "N+" in the quote is a floor: produced as "30+" (review 8, 2026-11-10: Verbit), not as 30.
+    if (!/^\d[\d,]*\+/.test(mark.value) && quoteStatesLowerBound(ctx.quote ?? "", Number(num.replace(/,/g, "")))) return out("the quote gives a floor (over / more than N): it is produced as N+");
     const w = firstWordOf(mark.company);
     if (!(w && q.toLowerCase().includes(w)) && !/\b(?:we|our|us)\b|\bthe\b[^.]{0,40}\b(?:company|startup|firm|team|business)\b/i.test(q)) return out("the quote is not about the company");
     // A milestone or a dated past count is not the size on the day of the copy.
@@ -186,4 +188,20 @@ function judgeHeadcount(mark: Mark, ctx: MarkContext): MarkJudgment {
   const own = (!!ctx.domain && (host === ctx.domain || host.endsWith(`.${ctx.domain}`))) || (!!firstWordOf(mark.company) && host.split(".")[0].includes(firstWordOf(mark.company)));
   if (type === "press_reported" && own) return out("the company's own page is site_stated");
   return keep;
+}
+
+
+/**
+ * The same headcount point marked twice (company, date, number, type): one point once (review 8, 2026-11-10: Verbit, Ezetap
+ * and Stytch each twice). The first mark in the tracker's order stands; the later ones are the same point and leave the count.
+ */
+export function duplicateMarkIds(marks: Array<Pick<Mark, "id" | "field" | "company" | "value">>): Set<string> {
+  const seen = new Set<string>();
+  const dup = new Set<string>();
+  for (const m of marks) {
+    if (m.field !== "employee_history") continue;
+    const k = `${m.company.toLowerCase()}|${m.value.replace(/\s+/g, " ").trim().toLowerCase()}`;
+    if (seen.has(k)) dup.add(m.id); else seen.add(k);
+  }
+  return dup;
 }

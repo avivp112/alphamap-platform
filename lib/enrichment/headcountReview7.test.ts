@@ -100,3 +100,24 @@ describe("review 8 (2026-11-10): headcount", () => {
     expect(judgeMark(m, { quote: "As the head of a team of 4 Software Engineers, you&#8217;ll translate business requirements into user stories" }).produced).toBe(false);
   });
 });
+
+import { duplicateMarkIds } from "./markRules";
+describe("review 8 marks counted against the current rules (2026-11-10)", () => {
+  const m = (company: string, value: string, source_url: string): Mark => ({ id: "x", field: "employee_history", company, value, source_url, verdict: "wrong", source_of_mark: "" }) as Mark;
+  it("'over 30' marked as 30 is a floor: it is produced as 30+ (Verbit)", () => {
+    const q = "Verbit currently employs a team of over 30 across its Tel Aviv and New York offices";
+    expect(judgeMark(m("Verbit", "30 employees @ 2019-01-29 (press_reported)", "https://venturebeat.com/business/verbit"), { quote: q }).produced).toBe(false);
+    expect(judgeMark(m("Verbit", "30+ employees @ 2019-01-29 (press_reported)", "https://venturebeat.com/business/verbit"), { quote: q }).produced).toBe(true);
+    expect(judgeMark(m("Stytch", "27 employees @ 2021-11-18 (press_reported)", "https://www.businessinsider.com/stytch"), { quote: "Stytch currently has 27 employees but will look to grow to more than 150" }).produced).toBe(true);
+  });
+  it("the same point twice is one mark: the later ones leave", () => {
+    const rows = [
+      { id: "8.51", field: "employee_history", company: "Verbit", value: "30 employees @ 2019-01-29 (press_reported)" },
+      { id: "8.46", field: "employee_history", company: "Ezetap", value: "200 employees @ 2017-08-24 (press_reported)" },
+      { id: "8.55", field: "employee_history", company: "Verbit", value: "30 employees @ 2019-01-29 (press_reported)" },
+      { id: "8.56", field: "employee_history", company: "Ezetap", value: "200 employees @ 2017-08-24 (press_reported)" },
+      { id: "9.1", field: "founder", company: "Verbit", value: "30 employees @ 2019-01-29 (press_reported)" },
+    ];
+    expect([...duplicateMarkIds(rows)].sort()).toEqual(["8.55", "8.56"]);
+  });
+});
