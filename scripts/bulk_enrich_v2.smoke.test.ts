@@ -17,7 +17,7 @@ const calls: Call[] = [];
 const rpcCalls: string[] = [];
 
 const tables: Record<string, unknown[]> = {
-  sectors: [{ name: "Media", parent_id: null }, { name: "Publishing", parent_id: "p" }],
+  sectors: [{ id: "p", name: "Media", parent_id: null }, { id: "q", name: "Publishing", parent_id: "p" }],
   startups: [{
     id: "st-1", name: "Ghost", website: "https://ghost.org", description: null, value_proposition: null, industry: null,
     founded_year: null, country: null, city: null, employee_count: null, employee_range: null, growth_trend: null,
@@ -155,6 +155,8 @@ const createMock = vi.fn(async (req: { tools: Array<{ name: string }>; messages:
       { role: "what", text: "Ghost is an independent open source publishing platform for newsletters and paid membership subscriptions.", source_ids: [w1] },
       { role: "for_whom", text: "Creators use Ghost publishing to run newsletters and grow membership revenue.", source_ids: [w1] },
     ] };
+  } else if (tool === "save_sector") {
+    input = { sector_name: "Media", sub_sector_name: "Publishing" };
   } else if (tool === "classify_company") {
     input = prompt.includes('"Ghia"')
       ? { is_tech_company: false, confidence: "high", reason: "a non-alcoholic beverage brand" }

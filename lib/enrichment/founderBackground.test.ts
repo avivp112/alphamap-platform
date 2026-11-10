@@ -67,3 +67,10 @@ describe("a fact belongs to the founder the sentence says it of (review 7, x67.1
     expect(factBelongsToFounder("Saar Safra formerly was CTO of Ad4Ever.", "Saar Safra", "Ad4Ever", [])).toBe(true);
   });
 });
+
+import { founderSearchQuery } from "./founderBackground";
+describe("one search per founder (owner, 2026-11-10)", () => {
+  it("names one founder and the company", () => {
+    expect(founderSearchQuery("Cado Security", "James Campbell")).toBe('"James Campbell" "Cado Security" founder previously OR formerly OR "before founding" OR graduated OR served OR "co-founder of"');
+  });
+});

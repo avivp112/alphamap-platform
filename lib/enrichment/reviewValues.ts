@@ -75,7 +75,7 @@ export function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V
   const onFileFounders = new Set(((row.founders ?? []) as Array<{ name?: string }>).map((f) => (f.name ?? "").toLowerCase()));
   for (const f of c.profile.profile.founders ?? []) {
     if (!onFileFounders.has(f.name.toLowerCase())) add("founder", `${f.name}${f.title ? ` — ${f.title}` : ""}`, "", f.grounded_url ?? "");
-    if (f.bio) { const id = allowedId(f.bio_source_ids); add("founder_bio", `${f.name}: ${f.bio}`, "", src(id), quoteOf(id)); }
+    if (f.bio) { const id = allowedId(f.bio_source_ids); add("founder_bio", `${f.name}: ${f.bio}`, "", src(id), f.bio_verbatim ? "(the team page's own text, word for word)" : quoteOf(id)); }
     const filed = ((row.founders ?? []) as Array<{ name?: string; background?: Array<{ kind: string; organization: string }> }>).find((x) => (x.name ?? "").toLowerCase() === f.name.toLowerCase())?.background ?? [];
     for (const b of f.background ?? []) {
       if (filed.some((h) => h.kind === b.kind && h.organization.toLowerCase() === b.organization.toLowerCase())) continue;

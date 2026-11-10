@@ -31,9 +31,10 @@ import { websiteLooksLikeAnotherCompany } from "./websiteIdentity.ts";
 import { judgeNews, finishNews } from "./newsGate.ts";
 import { reconcileSector, subSectorUnsupported } from "./sectors.ts";
 import { siteBelongsToAnotherCompany } from "./siteOwner.ts";
+import { buildSectorRequest, parseSectorChoice } from "./classifySector.ts";
 import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
 import { buildDescriptionRequest, descriptionSources, processDescription } from "./descriptionBuilder.ts";
-import { buildBackgroundRequest, processBackgroundResponse, backgroundSearchQuery } from "./founderBackground.ts";
+import { buildBackgroundRequest, processBackgroundResponse, backgroundSearchQuery, founderSearchQuery } from "./founderBackground.ts";
 import { requestFor } from "./models.ts";
 import { lookupEpoPatents, type CompanyIdentity, type EpoPatentResult } from "./epoPatents.ts";
 import { hintFromRound, hintQueries, confirmHint, hintKey, recoverMissingAmount, type RoundHint } from "./hints.ts";
@@ -45,7 +46,7 @@ import {
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
 import { pickArticlesToRead } from "./articles.ts";
 import { runTechGate, shouldSkipAsNonTech, type TechGateVerdict } from "./techGate.ts";
-import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, personCardsInHtml, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
+import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, personCardsInHtml, bioFromCard, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
 import { componentOn } from "./components.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
@@ -1125,7 +1126,11 @@ export async function collectCompany(
   if (componentOn("founder_background") && !ctx.update && (profile.profile.founders ?? []).length) {
     const names = (profile.profile.founders ?? []).map((f) => f.name).filter(Boolean).slice(0, 4);
     try {
-      for (const r of await extraSearch(backgroundSearchQuery(row.name, names), "founder_background")) newSource(r.url, r.content ?? "", r.title ?? "", "founder_background");
+      // One search per founder (FOUNDER_SEARCHES, default 3), apart from the extra budget the competitors share.
+      const perFounder = Math.max(0, Number(process.env.FOUNDER_SEARCHES ?? 3) || 0);
+      for (const name of names.slice(0, perFounder)) {
+        for (const r of await webSearch(founderSearchQuery(row.name, name), "founder_background", searchState)) newSource(r.url, r.content ?? "", r.title ?? "", "founder_background");
+      }
       const usable = allSources.filter((x) => profileSourceAllowed(x, row.name) && names.some((n) => normalizeForMatch(x.content ?? "").includes(normalizeForMatch(n.split(" ").slice(-1)[0] ?? "")))).slice(0, 12);
       if (usable.length) {
         const msg = await ctx.anthropic.messages.create(requestFor(buildBackgroundRequest(row.name, names, usable), ctx.models.market));
@@ -1258,6 +1263,12 @@ export async function collectCompany(
             break;
           }
         }
+        // The card's own biography, word for word (people.ts bioFromCard): it replaces a rewritten one.
+        if (html && !ctx.update && !l.bio_verbatim) {
+          const bioCard = personCardsInHtml(html, l.name, others, { keepCase: true, maxLen: 1500 }).map((c) => bioFromCard(c, l.name, role)).find((b): b is string => !!b);
+          const sid = allSources.find((x) => x.url === p.url)?.source_id;
+          if (bioCard && sid) { l.bio = bioCard; l.bio_source_ids = [sid]; l.bio_verbatim = true; console.log(`    📖  ${l.name}: biography taken word for word from the card on ${p.url}`); bump(stats.droppedByReason, "bio_from_card"); }
+        }
         if (role && cards.some((c) => roleSupported(l.name, role, [c]))) { outcome = "verified_card"; cardNote = `card on ${p.url}`; break; }
         cardNote = !html ? `no HTML for ${p.url}` : !cards.length ? `no card found on ${p.url}` : `card on ${p.url} without the title: "${cards[0].slice(0, 80)}"`;
       }
@@ -1287,6 +1298,21 @@ export async function collectCompany(
       bump(stats.droppedByReason, "leader_role_not_on_list");
       return false;
     });
+    // The founders' cards on the company's own pages: their biography word for word too.
+    if (!ctx.update) {
+      for (const f of (profile.profile.founders ?? [])) {
+        if (f.bio_verbatim) continue;
+        const others = peopleNames.filter((n) => n !== f.name);
+        for (const p of websitePages.filter((x) => personMentionedIn(f.name, x.content)).slice(0, 3)) {
+          if (!htmlCache.has(p.url)) htmlCache.set(p.url, await fetchPageHtml(p.url, searchState));
+          const html = htmlCache.get(p.url);
+          if (!html) continue;
+          const bio = personCardsInHtml(html, f.name, others, { keepCase: true, maxLen: 1500 }).map((c) => bioFromCard(c, f.name, f.title)).find((b): b is string => !!b);
+          const sid = allSources.find((x) => x.url === p.url)?.source_id;
+          if (bio && sid) { f.bio = bio; f.bio_source_ids = [sid]; f.bio_verbatim = true; console.log(`    📖  ${f.name}: biography taken word for word from the card on ${p.url}`); bump(stats.droppedByReason, "bio_from_card"); break; }
+        }
+      }
+    }
     // The website may be another company's (websiteIdentity.ts): the allowed press names founders the site never shows.
     {
       const siteHosts = domain ? [domain] : [];
@@ -1515,6 +1541,27 @@ export async function collectCompany(
     bump(stats.droppedByReason, "sector_without_verified_description");
     profile.profile.sector_name = undefined;
     profile.profile.sub_sector_name = undefined;
+  }
+  // The sector comes from the verified description alone (classifySector.ts, owner 2026-11-10): the extraction chose it while
+  // reading search results; here the model sees only the checked description, the definitions and the rules.
+  if (componentOn("description_v2") && !ctx.update && profile.profile.description_sentences?.length && taxonomy.parentNames.length) {
+    try {
+      const msg = await ctx.anthropic.messages.create(requestFor(buildSectorRequest(row.name, profile.profile.description_sentences.map((x) => x.text).join(" "), taxonomy), ctx.models.enrich));
+      ctx.recordCost(ctx.models.enrich, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 });
+      const tool = msg.content.find((b) => b.type === "tool_use");
+      const choice = tool && tool.type === "tool_use" ? parseSectorChoice(tool.input, taxonomy) : null;
+      if (choice) {
+        console.log(`    🧭  Sector from the verified description: ${choice.sector_name}${choice.sub_sector_name ? ` › ${choice.sub_sector_name}` : ""}${choice.sub_sector_names.length ? ` (+ ${choice.sub_sector_names.join(", ")})` : ""}`);
+        Object.assign(profile.profile, { sector_name: choice.sector_name, sub_sector_name: choice.sub_sector_name, sub_sector_names: choice.sub_sector_names });
+      } else {
+        console.log(`    🧭  Sector not written — the classification of the verified description gave none.`);
+        bump(stats.droppedByReason, "sector_classification_none");
+        profile.profile.sector_name = undefined; profile.profile.sub_sector_name = undefined; profile.profile.sub_sector_names = [];
+      }
+    } catch (e) {
+      console.log(`    ⚠️  sector classification skipped: ${(e as Error).message} — the extraction's choice is not used.`);
+      profile.profile.sector_name = undefined; profile.profile.sub_sector_name = undefined;
+    }
   }
   // A sub-sector the verified description does not support is not kept (Computer Vision for a voice AI company).
   if (profile.profile.description_sentences?.length) {

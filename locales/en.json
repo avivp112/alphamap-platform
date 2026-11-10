@@ -1041,7 +1041,22 @@
       "automotiveGeneral": "Automotive / General",
       "vehicleSecurity": "Vehicle Security",
       "autonomousDriving": "Autonomous Driving",
-      "mobilityServices": "Mobility Services"
+      "mobilityServices": "Mobility Services",
+      "fintechInfrastructure": "Fintech Infrastructure",
+      "appApiSecurity": "Application & API Security",
+      "fraudAbusePrevention": "Fraud & Abuse Prevention",
+      "emailSecurity": "Email Security",
+      "observabilityMonitoring": "Observability & Monitoring",
+      "verticalSaas": "Vertical SaaS",
+      "customerSupportCx": "Customer Support & CX",
+      "marketingTech": "Marketing Tech",
+      "legalComplianceSoftware": "Legal & Compliance Software",
+      "healthcareItAdmin": "Healthcare IT & Administration",
+      "advancedMaterials": "Advanced Materials",
+      "iotConnectivity": "IoT & Connectivity",
+      "industrialAutomation": "Industrial Automation",
+      "advancedManufacturing": "Advanced Manufacturing",
+      "constructionTech": "Construction Tech"
     }
   },
   "profile": {
