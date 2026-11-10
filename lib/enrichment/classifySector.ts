@@ -59,3 +59,20 @@ export function sectorProblem(choice: SectorChoice | null, description: string):
   if (choice.sub_sector_name && /\/\s*general$/i.test(choice.sub_sector_name)) return `"${choice.sub_sector_name}" is a last resort; name the closest specific sub-sector of any sector, or keep General only if none fits`;
   return null;
 }
+
+/**
+ * The classification as the pipeline runs it: one answer; a problem (an unsupported sub-sector, a General) gets a second look
+ * with the reason; a General that stays General is accepted, an answer the description is not about is not. One function for the
+ * collection, the examples check and the marks' rejudge, so they cannot disagree.
+ */
+export async function classifyWithRetry(
+  call: (feedback?: string) => Promise<SectorChoice | null>, description: string, log: (m: string) => void = () => {},
+): Promise<SectorChoice | null> {
+  const choice = await call();
+  const problem = sectorProblem(choice, description);
+  if (!problem) return choice;
+  log(`answer rejected (${problem}) \u2014 asking once more`);
+  const again = await call(`${choice ? `${choice.sector_name}${choice.sub_sector_name ? ` \u203A ${choice.sub_sector_name}` : ""}: ` : ""}${problem}.`);
+  const stillBad = sectorProblem(again, description);
+  return again && (!stillBad || /last resort/.test(stillBad)) ? again : null;
+}

@@ -68,3 +68,25 @@ describe("an answer the description is not about, or a General while a specific 
     expect(r.messages[0].content).toMatch(/PREVIOUS ANSWER WAS REJECTED: SaaS \/ General: last resort\./);
   });
 });
+
+import { classifyWithRetry } from "./classifySector";
+describe("the classification as the pipeline runs it (one function for the collection, the check and the rejudge)", () => {
+  const malt = "Malt is a freelance management system that centralizes the independent talent lifecycle, including contracts and payment.";
+  const choice = (sector: string, sub?: string) => ({ sector_name: sector, sub_sector_name: sub, sub_sector_names: [] as string[] });
+  it("a General gets a second look and a specific answer wins", async () => {
+    const seen: Array<string | undefined> = [];
+    const r = await classifyWithRetry(async (f) => { seen.push(f); return f ? choice("Enterprise Software", "HR Tech") : choice("SaaS & Dev Tools", "SaaS / General"); }, malt);
+    expect(r).toMatchObject({ sub_sector_name: "HR Tech" });
+    expect(seen[0]).toBeUndefined();
+    expect(seen[1]).toMatch(/last resort/);
+  });
+  it("a General that stays General is accepted; an unsupported answer that stays unsupported is none", async () => {
+    expect(await classifyWithRetry(async () => choice("SaaS & Dev Tools", "SaaS / General"), malt)).toMatchObject({ sub_sector_name: "SaaS / General" });
+    expect(await classifyWithRetry(async () => choice("Real Estate", "PropTech"), malt)).toBeNull();
+  });
+  it("a good first answer is one call", async () => {
+    let n = 0;
+    await classifyWithRetry(async () => { n++; return choice("Enterprise Software", "HR Tech"); }, malt);
+    expect(n).toBe(1);
+  });
+});

@@ -9,7 +9,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
 import { loadSectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
-import { buildSectorRequest, parseSectorChoice } from "../lib/enrichment/classifySector.ts";
+import { buildSectorRequest, parseSectorChoice, classifyWithRetry } from "../lib/enrichment/classifySector.ts";
 import { requestFor } from "../lib/enrichment/models.ts";
 import { readMarks, parseCsvText } from "../lib/enrichment/fieldReview.ts";
 import { rejudgeSectorMarks } from "../lib/enrichment/sectorRejudge.ts";
@@ -34,9 +34,12 @@ for (const r of runs) {
 const marks = readMarks().filter((m) => m.field === "sector");
 console.log(`${marks.length} sector mark(s); ${new Set(marks.filter((m) => descriptions.has(m.company)).map((m) => m.company)).size} company(ies) with a stored description.`);
 const result = await rejudgeSectorMarks(marks, (c) => descriptions.get(c) ?? null, async (company, description) => {
-  const msg = await anthropic.messages.create(requestFor(buildSectorRequest(company, description, taxonomy), model) as never) as Anthropic.Message;
-  const tool = msg.content.find((b) => b.type === "tool_use");
-  const c = tool && tool.type === "tool_use" ? parseSectorChoice(tool.input, taxonomy) : null;
+  // The classification as the pipeline runs it, second look included.
+  const c = await classifyWithRetry(async (feedback) => {
+    const msg = await anthropic.messages.create(requestFor(buildSectorRequest(company, description, taxonomy, feedback), model) as never) as Anthropic.Message;
+    const tool = msg.content.find((b) => b.type === "tool_use");
+    return tool && tool.type === "tool_use" ? parseSectorChoice(tool.input, taxonomy) : null;
+  }, description);
   return c ? `${c.sector_name}${c.sub_sector_name ? ` › ${c.sub_sector_name}` : ""}` : null;
 });
 const today = new Date().toISOString().slice(0, 10);

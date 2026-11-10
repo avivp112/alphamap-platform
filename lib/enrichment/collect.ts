@@ -31,7 +31,7 @@ import { websiteLooksLikeAnotherCompany } from "./websiteIdentity.ts";
 import { judgeNews, finishNews } from "./newsGate.ts";
 import { reconcileSector, subSectorUnsupported } from "./sectors.ts";
 import { siteBelongsToAnotherCompany } from "./siteOwner.ts";
-import { buildSectorRequest, parseSectorChoice, sectorProblem, type SectorChoice } from "./classifySector.ts";
+import { buildSectorRequest, parseSectorChoice, classifyWithRetry, type SectorChoice } from "./classifySector.ts";
 import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
 import { buildDescriptionRequest, descriptionSources, processDescription } from "./descriptionBuilder.ts";
 import { buildBackgroundRequest, processBackgroundResponse, backgroundSearchQuery, founderSearchQuery } from "./founderBackground.ts";
@@ -1553,16 +1553,7 @@ export async function collectCompany(
         const tool = msg.content.find((b) => b.type === "tool_use");
         return tool && tool.type === "tool_use" ? parseSectorChoice(tool.input, taxonomy) : null;
       };
-      let choice = await classify();
-      const problem = sectorProblem(choice, descText);
-      if (problem) {
-        console.log(`    🧭  Sector answer rejected (${problem}) — asking once more.`);
-        bump(stats.droppedByReason, "sector_answer_rejected");
-        const again = await classify(`${choice ? `${choice.sector_name}${choice.sub_sector_name ? ` \u203A ${choice.sub_sector_name}` : ""}: ` : ""}${problem}.`);
-        const stillBad = sectorProblem(again, descText);
-        // A General that stays General after a second look is accepted; an answer the description is not about is not.
-        choice = again && (!stillBad || /last resort/.test(stillBad)) ? again : null;
-      }
+      const choice = await classifyWithRetry(classify, descText, (m) => { console.log(`    🧭  Sector ${m}.`); bump(stats.droppedByReason, "sector_answer_rejected"); });
       if (choice) {
         console.log(`    🧭  Sector from the verified description: ${choice.sector_name}${choice.sub_sector_name ? ` › ${choice.sub_sector_name}` : ""}${choice.sub_sector_names.length ? ` (+ ${choice.sub_sector_names.join(", ")})` : ""}`);
         Object.assign(profile.profile, { sector_name: choice.sector_name, sub_sector_name: choice.sub_sector_name, sub_sector_names: choice.sub_sector_names });
