@@ -36,13 +36,15 @@ ${sectorGuidance(taxonomy.subNames)}`;
   };
 }
 
-/** The model's answer, checked against the taxonomy: a sub-sector of another sector is dropped, never guessed. */
+/** The model's answer, checked against the taxonomy. A sub-sector that belongs to another sector than the one named wins: it is the more specific answer (review 8: Elenium came back "Enterprise Software" with Travel Tech), so the sector becomes its parent. */
 export function parseSectorChoice(input: unknown, taxonomy: SectorTaxonomyLite): SectorChoice | null {
   const i = (input ?? {}) as { sector_name?: unknown; sub_sector_name?: unknown; sub_sector_names?: unknown };
-  const sector = typeof i.sector_name === "string" && taxonomy.parentNames.includes(i.sector_name) ? i.sector_name : undefined;
-  if (!sector) return null;
   const known = (n: unknown): n is string => typeof n === "string" && taxonomy.subNames.includes(n);
-  const sub = known(i.sub_sector_name) && (!taxonomy.parentOf || taxonomy.parentOf[i.sub_sector_name] === sector) ? i.sub_sector_name : undefined;
+  const sub = known(i.sub_sector_name) ? i.sub_sector_name : undefined;
+  const ofSub = sub ? taxonomy.parentOf?.[sub] : undefined;
+  const named = typeof i.sector_name === "string" && taxonomy.parentNames.includes(i.sector_name) ? i.sector_name : undefined;
+  const sector = ofSub && taxonomy.parentNames.includes(ofSub) ? ofSub : named;
+  if (!sector) return null;
   const others = (Array.isArray(i.sub_sector_names) ? i.sub_sector_names : []).filter(known).filter((n) => n !== sub).slice(0, 3);
   return { sector_name: sector, sub_sector_name: sub, sub_sector_names: others };
 }
