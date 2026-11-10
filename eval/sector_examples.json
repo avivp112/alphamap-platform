@@ -133,5 +133,18 @@
     "description": "Antheia uses a biosynthesis platform, built on engineered microbes, to produce biosynthetic pharmaceutical ingredients. Antheia's ingredients are made for pharmaceutical manufacturing, including ingredients for the opioid overdose treatment.",
     "expect": "Health & Life Sciences › Biotech / Genomics",
     "was": "Industrial & Manufacturing › Advanced Manufacturing (rejudge 2026-11-10)"
+  },
+  {
+    "company": "Cinsay",
+    "description": "Cinsay sells shoppable video: an interactive overlay that lets viewers buy products inside the video without leaving the content, for brands and retailers.",
+    "expect": "E-commerce & Retail › E-commerce / General",
+    "was": "AI & ML › Computer Vision (rejudge 2026-11-10)",
+    "note": "the site is now aibuy's; the example tests only the video-as-medium rule. Expectation to confirm: E-commerce or AdTech"
+  },
+  {
+    "company": "EverCurrent",
+    "description": "EverCurrent sells an AI platform of record that connects the tools, data, and knowledge behind hardware so teams can see how changes spread. EverCurrent is sold to hardware product and engineering teams, which use it to manage BOMs, ECOs and handoffs.",
+    "expect": "Industrial & Manufacturing › Advanced Manufacturing",
+    "was": "Enterprise Software › Productivity & Collaboration (rejudge 2026-11-10)"
   }
 ]

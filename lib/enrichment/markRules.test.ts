@@ -76,3 +76,19 @@ describe("a headquarters from a Contact page of several addresses (review 9, Sen
     expect([...contactPageHqIds(rows)].sort()).toEqual(["9.14", "9.8"]);
   });
 });
+
+describe("descriptions the builder would not write now leave the count (review 9, 2026-11-10)", () => {
+  const d = (company: string, value: string, id = "d.x"): Mark => ({ id, field: "description", company, value, source_url: "https://x.example/", verdict: "wrong", source_of_mark: "" }) as Mark;
+  it("another company's name first (Cinsay→aibuy, Hofy→Deel IT, Ezetap→Razorpay), a selling word (AyoxxA), no company at all (DealHub), 'reinvents' (Cartana)", () => {
+    expect(judge6(d("Cinsay", "aibuy offers shoppable video products, including Shoppable Overlay, which adds an interactive overlay to videos.")).produced).toBe(false);
+    expect(judge6(d("Hofy", "Deel IT is a platform for running global IT operations, where companies buy, lease, configure, ship, and manage devices.")).produced).toBe(false);
+    expect(judge6(d("Ezetap", "Razorpay's POS swipe machines are in-store payment terminals, including the All-in-One POS and Smart POS with Dock.")).produced).toBe(false);
+    expect(judge6(d("AyoxxA", "AYOXXA Biosystems GmbH has developed a proprietary technology platform for multiplex protein analysis that requires the lowest sample volume in the field.")).produced).toBe(false);
+    expect(judge6(d("DealHub", "The platform is built to power SLG, PLG, self-service, and consumption-based go-to-market (GTM) motions.")).produced).toBe(false);
+    expect(judge6(d("Cartana", "Cartana has developed one platform that reinvents traditional point-of-sale (POS) functions using new technologies.")).produced).toBe(false);
+  });
+  it("a plain description that names the company stays", () => {
+    expect(judge6(d("Verbit", "Verbit sells a verbal intelligence and voice AI platform that combines automatic speech recognition with human transcribers.")).produced).toBe(true);
+    expect(judge6(d("Cult.fit", "Cult.fit runs fitness centres and sells workout classes and meals through its app.")).produced).toBe(true);
+  });
+});

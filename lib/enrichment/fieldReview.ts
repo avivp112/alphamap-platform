@@ -43,9 +43,32 @@ export function readMarks(path = process.env.FIELD_REVIEW_TRACKER ?? TRACKER): M
   }));
 }
 
-export interface FieldStatus { field: string; marked: number; correct: number; share: number | null; open: boolean }
+export const REJUDGED = "eval/sector_rejudged.csv";
+export interface RejudgedRow { id: string; produced: boolean; now: string }
+export function readRejudged(path = process.env.SECTOR_REJUDGED ?? REJUDGED): RejudgedRow[] {
+  if (!existsSync(path)) return [];
+  const [, ...rows] = parseCsv(readFileSync(path, "utf8").replace(/^\uFEFF/, ""));
+  return rows.map(([id, produced, now]) => ({ id, produced: produced === "yes", now: now ?? "" }));
+}
 
-export function fieldStatus(marks: Mark[]): FieldStatus[] {
+/**
+ * The new classifications nobody has reviewed (owner, 2026-11-10): when the classifier changes, the marks of the old values are not
+ * evidence about the new ones. Each rejudged mark whose sector changed needs a mark of its company on the NEW value; until it has one the
+ * sector field is not counted open.
+ */
+export function pendingSectorReviews(rows: RejudgedRow[] = readRejudged(), marks: Array<Pick<Mark, "id" | "field" | "company" | "value">> = readMarks()): number {
+  const sector = marks.filter((m) => m.field === "sector");
+  const companyOf = new Map(sector.map((m) => [m.id, m.company]));
+  const norm = (v: string) => v.replace(/\s+/g, " ").trim().toLowerCase();
+  return rows.filter((r) => !r.produced && r.now).filter((r) => {
+    const company = companyOf.get(r.id);
+    return !!company && !sector.some((m) => m.company === company && norm(m.value) === norm(r.now));
+  }).length;
+}
+
+export interface FieldStatus { field: string; marked: number; correct: number; share: number | null; open: boolean; pending?: number }
+
+export function fieldStatus(marks: Mark[], pending: Record<string, number> = {}): FieldStatus[] {
   // "competitor", the tracker's field before the tiers (2026-11-07), is the declared tier.
   const fieldOf = (m: Mark) => (m.field === "competitor" ? "competitor_declared" : m.field);
   const fields = [...new Set(marks.map(fieldOf))];
@@ -53,18 +76,25 @@ export function fieldStatus(marks: Mark[]): FieldStatus[] {
     const mine = marks.filter((m) => fieldOf(m) === field);
     const correct = mine.filter((m) => m.verdict === "correct").length;
     const share = mine.length ? correct / mine.length : null;
-    return { field, marked: mine.length, correct, share, open: mine.length >= MIN_MARKED && share != null && share >= MIN_CORRECT };
+    const waiting = pending[field] ?? 0;
+    return { field, marked: mine.length, correct, share, pending: waiting, open: waiting === 0 && mine.length >= MIN_MARKED && share != null && share >= MIN_CORRECT };
   });
+}
+
+/** Fields waiting for the review of values a changed rule or classifier produced (sector, for now). */
+export function pendingReviews(): Record<string, number> {
+  const n = pendingSectorReviews();
+  return n ? { sector: n } : {};
 }
 
 /** The startups columns open for writing by the review. */
 export function openColumns(marks: Mark[] = countedMarks()): string[] {
-  return fieldStatus(marks).filter((s) => s.open).flatMap((s) => FIELD_COLUMNS[s.field] ?? []);
+  return fieldStatus(marks, pendingReviews()).filter((s) => s.open).flatMap((s) => FIELD_COLUMNS[s.field] ?? []);
 }
 
 /** The review fields open for writing: ≥20 marked, ≥90% correct, against the current rules. */
 export function openFieldNames(marks: Mark[] = countedMarks()): string[] {
-  return fieldStatus(marks).filter((s) => s.open).map((s) => s.field);
+  return fieldStatus(marks, pendingReviews()).filter((s) => s.open).map((s) => s.field);
 }
 
 /** At most this many values of one company in a field's sample (owner, 2026-11-04: Constructor's patents). */

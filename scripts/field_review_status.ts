@@ -6,13 +6,14 @@
  *
  *   npx tsx scripts/field_review_status.ts
  */
-import { readMarks, readReplay, countedMarks, fieldStatus, MIN_MARKED, MIN_CORRECT, TRACKER } from "../lib/enrichment/fieldReview.ts";
+import { readMarks, readReplay, countedMarks, fieldStatus, pendingReviews, MIN_MARKED, MIN_CORRECT, TRACKER } from "../lib/enrichment/fieldReview.ts";
 
 const ORDER = ["hq_city", "hq_country", "founded_year", "founding_country", "description", "sector", "tags", "office", "employee_range", "employee_count", "employee_history", "founder", "founder_bio", "leader", "board", "round", "competitor_declared", "competitor_market", "patent", "news", "founder_background"];
 const all = readMarks();
 const replay = readReplay();
 const counted = countedMarks(all, replay);
-const status = fieldStatus(counted);
+const pending = pendingReviews();
+const status = fieldStatus(counted, pending);
 // A mark whose value the current rules no longer produce leaves the count (owner, 2026-11-04).
 const excluded = all.filter((m) => !counted.includes(m));
 console.log(`Field review — ${TRACKER} (open: ≥${MIN_MARKED} marked and ≥${MIN_CORRECT * 100}% correct)\n`);
@@ -20,7 +21,8 @@ console.log(replay.size ? `Against the current rules: ${replay.size} mark(s) rep
 console.log(`${"field".padEnd(18)}${"marked".padEnd(8)}${"correct".padEnd(9)}${"share".padEnd(8)}status`);
 for (const f of ORDER) {
   const s = status.find((x) => x.field === f) ?? { marked: 0, correct: 0, share: null, open: false };
-  const st = s.open ? "✅ open" : s.marked < MIN_MARKED ? `needs ${MIN_MARKED - s.marked} more` : "❌ below 90%";
+  const waiting = pending[f] ?? 0;
+  const st = waiting ? `⏳ ${waiting} new value(s) to review` : s.open ? "✅ open" : s.marked < MIN_MARKED ? `needs ${MIN_MARKED - s.marked} more` : "❌ below 90%";
   console.log(`${f.padEnd(18)}${String(s.marked).padEnd(8)}${String(s.correct).padEnd(9)}${(s.share == null ? "—" : `${Math.round(s.share * 100)}%`).padEnd(8)}${st}`);
 }
 if (excluded.length) {

@@ -18,7 +18,7 @@ export interface DescriptionSentence { role: SentenceRole; text: string; source_
 export interface BuiltDescription { description: string; sentences: DescriptionSentence[]; dropped: Array<{ text: string; why: string }> }
 
 /** Words that sell instead of describe. Used alone they say nothing; a sentence with one is rewritten or dropped. */
-export const MARKETING = /\b(leading|leader in|innovative|innovation|revolutionary|revolutionize[sd]?|ai-native|cutting-edge|state-of-the-art|world-class|best-in-class|next-generation|next-gen|game-chang\w+|seamless(ly)?|unparalleled|disruptive|industry-leading|pioneering|transformative|powerful|robust|end-to-end|lowest|highest|best|fastest|first|largest|biggest|smallest|most|top|greatest|unmatched|unrivall?ed|premier|foremost|ultimate|market leader|number one|#1)\b/i;
+export const MARKETING = /\b(leading|leader in|innovative|innovation|revolutionary|revolutionize[sd]?|ai-native|cutting-edge|state-of-the-art|world-class|best-in-class|next-generation|next-gen|game-chang\w+|seamless(ly)?|unparalleled|disruptive|industry-leading|pioneering|transformative|powerful|robust|end-to-end|lowest|highest|best|fastest|first|largest|biggest|smallest|most|top|greatest|unmatched|unrivall?ed|premier|foremost|ultimate|market leader|number one|#1|reinvent\w*|reimagin\w+)\b/i;
 
 const norm = (s: string) => s.toLowerCase().replace(/(\d),(\d)/g, "$1$2").replace(/[^\p{L}\p{N}$%.+ ]/gu, " ").replace(/\s+/g, " ");
 const COMMON_CAPS = new Set(["the", "a", "an", "it", "its", "this", "that", "they", "their", "for", "to", "and", "in", "of", "with", "by", "on", "from", "ai", "api", "saas", "b2b", "b2c", "it", "ml", "sdk", "iot", "cloud", "ceo", "cto", "us", "usa", "eu", "uk"]);
@@ -56,6 +56,12 @@ export function fragmentProblem(text: string, role = "what"): string | null {
   return null;
 }
 
+/** Whether a sentence names the company (its first word of three letters or more): a description that begins with another name is another company's. */
+export function namesTheCompany(sentence: string, companyName: string): boolean {
+  const first = norm(companyName).split(" ").find((w) => w.replace(/[^\p{L}\p{N}]/gu, "").length >= 3)?.replace(/[^\p{L}\p{N}]/gu, "");
+  return !first || norm(sentence).replace(/[^\p{L}\p{N} ]/gu, "").includes(first);
+}
+
 export function sentenceProblem(
   s: { role: string; text: string; source_ids: string[] }, companyName: string,
   byId: Record<string, { content: string }>, allowed: (id: string) => boolean,
@@ -70,6 +76,8 @@ export function sentenceProblem(
   if (MARKETING.test(s.text)) return "marketing_word";
   const frag = fragmentProblem(s.text, s.role);
   if (frag) return frag;
+  // What the company sells is said of the company by name (review 9: "aibuy offers …" for Cinsay, "Deel IT is …" for Hofy, "The platform is built to power …" for DealHub).
+  if (s.role === "what" && !namesTheCompany(s.text, companyName)) return "what_without_company";
   const hay = norm(s.source_ids.map((id) => byId[id].content).join(" "));
   const c = claims(s.text, companyName);
   for (const n of c.numbers) if (!hay.includes(norm(n))) return `number_not_in_sources:${n}`;

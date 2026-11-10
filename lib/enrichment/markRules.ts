@@ -15,6 +15,7 @@ import { RAISE_RE, statesAmount } from "./assemble";
 import { dateFromUrl } from "./evidence";
 import { isLinkList, quoteIsAboutTheCompany, quoteLinksTheTwo } from "./competitorEvidence";
 import { isLegalPageUrl, HQ_MAX_AGE_DAYS } from "./headquarters";
+import { MARKETING, namesTheCompany } from "./descriptionBuilder";
 import { looksLikeCompanyName, isUserContentUrl } from "./competitorEvidence";
 import { isExplainer, headlineIncomplete } from "./newsRelevance";
 import { PARENT_BY_SUB_SECTOR, SECTOR_TAXONOMY } from "../../src/lib/taxonomy";
@@ -117,6 +118,13 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
       // Without the mark's source (a competitors-sheet mark kept none) a "we / our" on its own site cannot be recognised: not judged.
       if (url && !quoteIsAboutTheCompany(q, company, ownSite)) return out("the quote is not about the company");
       if (!quoteLinksTheTwo(q, company, mark.value)) return out("the quote does not link the company and this competitor directly");
+      return keep;
+    }
+    case "description": {
+      // A description the builder would not write now (review 9, 2026-11-10): selling words, or a first sentence that does not name the company.
+      if (MARKETING.test(mark.value)) return out("a selling word in the description");
+      const first = mark.value.split(/(?<=[.!?])\s+/)[0] ?? "";
+      if (!namesTheCompany(first, mark.company)) return out("the first sentence does not name the company");
       return keep;
     }
     case "tags": {
