@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
 import { loadSectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
-import { buildSectorRequest, parseSectorChoice } from "../lib/enrichment/classifySector.ts";
+import { buildSectorRequest, parseSectorChoice, classifyWithRetry } from "../lib/enrichment/classifySector.ts";
 import { requestFor } from "../lib/enrichment/models.ts";
 
 const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL;
@@ -22,9 +22,11 @@ const missing = examples.map((e) => e.expect.split(" › ")[1]).filter((n) => !t
 if (missing.length) console.log(`⚠️  not in the database yet (run the sector migrations): ${[...new Set(missing)].join(", ")}\n`);
 let pass = 0;
 for (const e of examples) {
-  const msg = await anthropic.messages.create(requestFor(buildSectorRequest(e.company, e.description, taxonomy), model) as never) as Anthropic.Message;
-  const tool = msg.content.find((b) => b.type === "tool_use");
-  const c = tool && tool.type === "tool_use" ? parseSectorChoice(tool.input, taxonomy) : null;
+  const c = await classifyWithRetry(async (feedback) => {
+    const msg = await anthropic.messages.create(requestFor(buildSectorRequest(e.company, e.description, taxonomy, feedback), model) as never) as Anthropic.Message;
+    const tool = msg.content.find((b) => b.type === "tool_use");
+    return tool && tool.type === "tool_use" ? parseSectorChoice(tool.input, taxonomy) : null;
+  }, e.description);
   const got = c ? `${c.sector_name}${c.sub_sector_name ? ` › ${c.sub_sector_name}` : ""}` : "(none)";
   const ok = got === e.expect; if (ok) pass++;
   console.log(`${ok ? "PASS" : "FAIL"}  ${e.company}: ${got}${ok ? "" : `   expected ${e.expect}${e.was ? ` (was ${e.was})` : ""}`}${c?.sub_sector_names.length ? `   + ${c.sub_sector_names.join(", ")}` : ""}`);
