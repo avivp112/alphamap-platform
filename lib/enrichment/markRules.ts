@@ -20,7 +20,7 @@ import { isExplainer, headlineIncomplete } from "./newsRelevance";
 import { PARENT_BY_SUB_SECTOR, SECTOR_TAXONOMY } from "../../src/lib/taxonomy";
 import type { Mark } from "./fieldReview";
 import { isNonDescriptivePage } from "./pageKind";
-import { figureIsBiographical } from "./headcountSources";
+import { figureIsBiographical, figureIsJobPosting } from "./headcountSources";
 
 export interface MarkContext {
   /** The company's own domain ("dlight.com"), when known. Without it an unlisted source is not judged. */
@@ -174,6 +174,7 @@ function judgeHeadcount(mark: Mark, ctx: MarkContext): MarkJudgment {
   if (q) {
     if (!new RegExp(`(^|[^\\d])${num.replace(/,/g, "")}([^\\d]|$)`).test(q)) return out("the number is not in the quote");
     if (figureIsBiographical(ctx.quote ?? "", type === "site_stated")) return out("the figure is someone's career, not the company's");
+    if (figureIsJobPosting(ctx.quote ?? "")) return out("the figure is a team of a job posting, not the company's size");
     const w = firstWordOf(mark.company);
     if (!(w && q.toLowerCase().includes(w)) && !/\b(?:we|our|us)\b|\bthe\b[^.]{0,40}\b(?:company|startup|firm|team|business)\b/i.test(q)) return out("the quote is not about the company");
     // A milestone or a dated past count is not the size on the day of the copy.

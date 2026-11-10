@@ -555,7 +555,7 @@ export async function writeCollected(
   const headcountPoints: Array<{ date: string; count: number; pointType?: string; sourceUrl?: string; quote?: string; measure?: string; lowerBound?: boolean; countMax?: number }> = [];
   for (const h of extractionPoints(profile.metrics.headcount_history, sourceById, row.name)) {
     const date = normalizeIsoDate(h.date);
-    if (date && h.employee_count > 0 && !headcountPoints.some((p) => p.date === date && p.pointType === h.point_type)) headcountPoints.push({ date, count: h.employee_count, pointType: h.point_type ?? "press_reported", sourceUrl: sourceById.get(h.source_id)?.url, quote: h.evidence_quote });
+    if (date && h.employee_count > 0 && !headcountPoints.some((p) => p.date === date && p.pointType === h.point_type)) headcountPoints.push({ date, count: h.employee_count, pointType: h.point_type ?? "press_reported", sourceUrl: sourceById.get(h.source_id)?.url, quote: h.evidence_quote, lowerBound: h.lower_bound });
   }
   for (const h of profile.metrics.headcount_history ?? []) if (!extractionPoints([h], sourceById, row.name).length) bump(summary.droppedByReason, "headcount_point_not_usable");
   // Points from the registers, plans and archived pages (headcountHistory.ts), screened like the rest.

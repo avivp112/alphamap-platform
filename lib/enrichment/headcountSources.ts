@@ -69,6 +69,20 @@ export function figureIsBiographical(sentence: string, onOwnPage: boolean): bool
   return BIO_STRONG.test(sentence) || (onOwnPage && BIO_ROLE.test(sentence));
 }
 
+/**
+ * A team or a department of a job posting is not the company's size (review 8, 2026-11-10: Myndshft's "As the head of a team
+ * of 4 Software Engineers, you'll translate business requirements …").
+ */
+const APOS = String.raw`(?:['’]|&#8217;|&rsquo;|&#39;)`;
+const JOB_POSTING = new RegExp(String.raw`\byou${APOS}?ll\b|\byou will\b|\bhead of (?:a |the )?team\b|\b(?:lead|leading|manage|managing|manages|build|building) (?:a |the )?team of\b|\breport(?:s|ing)? to\b|\bwe${APOS}re (?:hiring|looking)\b|\blooking for (?:a|an)\b|\bjoin (?:our|the) team\b|\bresponsibilit`, "i");
+export const figureIsJobPosting = (sentence: string): boolean => JOB_POSTING.test(sentence);
+
+/** "over 30", "more than 50", "at least 20", "30+" — a floor, not the count. "About", "nearly" and "around" are not. */
+export function quoteStatesLowerBound(quote: string, n: number): boolean {
+  const q = quote.replace(/(\d),(\d)/g, "$1$2");
+  return new RegExp(String.raw`\b(?:over|more than|at least|upwards of|north of)\s+(?:\w+\s+){0,2}?${n}\b|(?:^|[^\d])${n}\s*\+`, "i").test(q);
+}
+
 export interface SizeStatement { value: number; lowerBound: boolean; sentence: string; year?: number }
 const NUM = String.raw`(\d{1,3}(?:,\d{3})+|\d{1,6})`;
 const LOWER = String.raw`(?:over|more than|\d+\+|at least|nearly|almost)`;
@@ -83,7 +97,7 @@ export function sizeStatement(text: string): SizeStatement | null {
     const years = [...sentence.matchAll(/\b(19[89]\d|20\d{2})\b/g)].map((y) => Number(y[1]));
     if (new Set(years).size > 1) continue;
     if (!years.length && MILESTONE.test(sentence)) continue;
-    if (figureIsBiographical(sentence, true)) continue;
+    if (figureIsBiographical(sentence, true) || figureIsJobPosting(sentence)) continue;
     for (const re of PATTERNS) {
       const m = sentence.match(re);
       if (!m) continue;
@@ -101,7 +115,7 @@ export function sizeStatement(text: string): SizeStatement | null {
 }
 
 // ── A headcount point read out of an article or page by the extraction (profile.metrics.headcount_history) ──
-export interface ExtractionPoint { date: string; employee_count: number; source_id: string; evidence_quote: string; point_type?: string }
+export interface ExtractionPoint { date: string; employee_count: number; source_id: string; evidence_quote: string; point_type?: string; lower_bound?: boolean }
 const FIRST_PERSON = /\b(?:we|our|us)\b|\bthe\b[^.]{0,40}\b(?:company|startup|firm|team|business)\b/i;
 const firstWord = (name: string) => name.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").split(/\s+/).find((w) => w.length >= 3) ?? "";
 
@@ -115,11 +129,15 @@ export function extractionPointProblem(h: ExtractionPoint, src: { url: string; s
   const w = firstWord(companyName);
   if (!(w && q.toLowerCase().includes(w)) && !FIRST_PERSON.test(q)) return "quote_not_about_the_company";
   if (figureIsBiographical(h.evidence_quote ?? "", src.source_type === "company_site")) return "quote_is_a_career_not_the_company";
+  if (figureIsJobPosting(h.evidence_quote ?? "")) return "quote_is_a_job_posting";
   return null;
 }
 
 /** The usable points, typed by where they come from: the company's own site is site_stated, anything else press_reported. */
 export function extractionPoints(points: ExtractionPoint[] | undefined, byId: Map<string, { url: string; source_type?: string | null; content?: string | null; title?: string | null }>, companyName: string): ExtractionPoint[] {
+  const seen = new Set<string>();
   return (points ?? []).filter((h) => !extractionPointProblem(h, byId.get(h.source_id), companyName))
-    .map((h) => ({ ...h, point_type: byId.get(h.source_id)?.source_type === "company_site" ? "site_stated" : (h.point_type && h.point_type !== "observed" ? h.point_type : "press_reported") }));
+    // The same point (company, date, number) is one point, however many sources or repeats gave it (review 8: Verbit, Ezetap, Stytch twice).
+    .filter((h) => { const k = `${h.date}|${h.employee_count}|${byId.get(h.source_id)?.source_type === "company_site" ? "site" : "press"}`; if (seen.has(k)) return false; seen.add(k); return true; })
+    .map((h) => ({ ...h, lower_bound: h.lower_bound ?? quoteStatesLowerBound(h.evidence_quote ?? "", h.employee_count), point_type: byId.get(h.source_id)?.source_type === "company_site" ? "site_stated" : (h.point_type && h.point_type !== "observed" ? h.point_type : "press_reported") }));
 }

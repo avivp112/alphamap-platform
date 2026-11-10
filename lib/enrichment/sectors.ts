@@ -39,3 +39,14 @@ export function reconcileSector<T extends SectorFields>(p: T, parentOf: Record<s
   }
   return { fields: out, changes };
 }
+
+/**
+ * A sub-sector the company's description does not support (review 8, 2026-11-10: Verbit, a voice AI company, was "Computer
+ * Vision"). Computer Vision is for a company whose product processes images or video.
+ */
+const VISION_WORDS = /\b(?:images?|imaging|imagery|video|videos|visual|vision|camera|cameras|photos?|photograph\w*|scans?|scanning|pixels?|footage|microscop\w*|lidar|optical|3d)\b/i;
+export function subSectorUnsupported(sub: string | undefined, description: string): boolean {
+  if (!sub) return false;
+  if (sub === "Computer Vision") return !VISION_WORDS.test(description);
+  return false;
+}

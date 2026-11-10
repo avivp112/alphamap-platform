@@ -20,11 +20,26 @@ describe("the sentence of a source that supports a text", () => {
 
 import { supportedTags } from "./quoteFinder";
 describe("tags need a supporting sentence", () => {
-  const pages = [{ id: "W1", content: "BrowserStack provides developer teams instant access to a cloud platform for testing websites and mobile applications. Our analytics dashboards show usage." }];
+  const pages = [{ id: "W1", content: "BrowserStack provides developer tools and instant access to a cloud platform for testing websites and mobile applications. Our analytics dashboards show usage." }];
   it("keeps the ones a sentence carries, drops the rest", () => {
     const r = supportedTags(["Developer Tools", "Cybersecurity / General", "Analytics / BI"], pages);
     expect(r.kept.map((k) => k.tag)).toEqual(["Developer Tools", "Analytics / BI"]);
     expect(r.dropped).toEqual(["Cybersecurity / General"]);
+  });
+});
+
+describe("a tag needs its own words close together (review 8, 2026-11-10)", () => {
+  it("Cloud Security is not 'a cloud-based platform … vehicle security'; Enterprise Software is not 'enterprise customers'", () => {
+    const upstream = [{ id: "S1", content: "Upstream's platform is entirely cloud-based and seamlessly ingests and normalizes automotive data to deliver cybersecurity insights that ensure vehicle security and safety is never compromised." }];
+    expect(supportedTags(["Cloud Security"], upstream).kept).toEqual([]);
+    expect(supportedTags(["Enterprise Software"], [{ id: "S2", content: "The majority of the business is now focused on delivering answers to enterprise customers who subscribe to the data." }]).kept).toEqual([]);
+  });
+  it("the product that is cloud security, or enterprise software, is kept", () => {
+    expect(supportedTags(["Cloud Security"], [{ id: "S1", content: "Wiz sells a cloud security platform that finds risks across cloud environments." }]).kept.map((k) => k.tag)).toEqual(["Cloud Security"]);
+    expect(supportedTags(["Fintech / General"], [{ id: "S3", content: "Sedric is an AI-based compliance platform for next-gen fintech companies and banks." }]).kept.map((k) => k.tag)).toEqual(["Fintech / General"]);
+  });
+  it("a page that says nothing was found supports nothing (SuperMeat)", () => {
+    expect(supportedTags(["Industrial & Manufacturing"], [{ id: "S4", content: "It looks like nothing was found at this location. Manufacturing | Our Meat | Press | Contact us. Industrial and manufacturing partners welcome." }]).kept).toEqual([]);
   });
 });
 

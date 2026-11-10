@@ -26,6 +26,8 @@ export function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V
   const out: Value[] = [];
   const add = (field: Field, value: string, on_file: unknown, source_url = "", quote = "") => {
     if (!value) return;
+    // The same value of a company is one value, however often it was found (review 8: three headcount points twice).
+    if (out.some((x) => x.field === field && x.value === value)) return;
     out.push({ company_id: row.id, company: row.name, field, value, on_file: on_file == null ? "" : String(on_file), source_url, quote: quote.replace(/\s+/g, " ").slice(0, field === "description" || field === "tags" || field === "founder_background" ? 700 : 240) });
   };
   const fill = (field: Field, v: { value: unknown; source_url: string | null; quote: string | null } | null | undefined, onFile: unknown) => {
@@ -68,7 +70,7 @@ export function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V
   for (const o of p.overview.offices ?? []) add("office", [o.city, o.country].filter(Boolean).join(", "), "", o.source_url ?? "");
   // Headcount points (owner, 2026-11-07): each with its date, type, source and quote.
   const histLine = (value: number, date: string, type: string, lower?: boolean, max?: number) => `${value}${max ? `–${max}` : lower ? "+" : ""} employees @ ${date.slice(0, 10)} (${type})`;
-  for (const h of extractionPoints(c.profile.metrics.headcount_history, c.sourceById, row.name)) add("employee_history", histLine(h.employee_count, h.date, h.point_type ?? "press_reported"), "", src(h.source_id), h.evidence_quote);
+  for (const h of extractionPoints(c.profile.metrics.headcount_history, c.sourceById, row.name)) add("employee_history", histLine(h.employee_count, h.date, h.point_type ?? "press_reported", h.lower_bound), "", src(h.source_id), h.evidence_quote);
   for (const h of c.headcountExtra ?? []) add("employee_history", histLine(h.value, h.date, h.type, h.lowerBound, h.valueMax), "", h.sourceUrl, h.quote ?? h.measure ?? "");
   const onFileFounders = new Set(((row.founders ?? []) as Array<{ name?: string }>).map((f) => (f.name ?? "").toLowerCase()));
   for (const f of c.profile.profile.founders ?? []) {
