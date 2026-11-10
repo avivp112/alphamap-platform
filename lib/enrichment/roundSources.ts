@@ -312,7 +312,25 @@ export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean
  * 2026-11-02 took KETS's founding year from Tracxn, Soda's founding country
  * from SourceForge and Mentat's year from a Tracxn list of mood-tracker apps.
  */
+/**
+ * A job posting or a directory profile is no source for a person or a company fact, whatever site it sits on (owner,
+ * 2026-11-10, review 9: jobs.lever.co's posting named "Nate Smith" a founder of Lever; inc42's /company/cultfit/people
+ * profile page named founders).
+ */
+const JOB_HOSTS = /(?:^|\.)(?:jobs\.lever\.co|boards\.greenhouse\.io|job-boards\.greenhouse\.io|jobs\.ashbyhq\.com|apply\.workable\.com|jobs\.smartrecruiters\.com|jobs\.jobvite\.com|myworkdayjobs\.com|recruitee\.com|breezy\.hr|bamboohr\.com\/careers|f6s\.com|theorg\.com)$/i;
+const DIRECTORY_PATH = /\/(?:company|companies|startup|startups|org|organization)\/[^/]+\/(?:people|team|employees|founders|management|leadership)\/?$/i;
+export function isJobBoardOrProfileDirectory(url: string, ownSite = false): boolean {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase().replace(/^www\./, "");
+    if (JOB_HOSTS.test(host)) return true;
+    if (/(?:^|\.)(?:linkedin\.com|indeed\.com)$/.test(host) && /\/jobs?\//i.test(u.pathname)) return true;
+    return !ownSite && DIRECTORY_PATH.test(u.pathname);
+  } catch { return false; }
+}
+
 export function profileSourceAllowed(s: { url: string; source_type?: string | null; content?: string | null; title?: string | null }, companyName?: string | null): boolean {
+  if (isJobBoardOrProfileDirectory(s.url, s.source_type === "company_site")) return false;
   if (s.source_type === "company_site" || s.source_type === "registry") return true;
   if (isDirectoryPage(s.url)) return false;
   if (s.source_type === "press_release") return true;

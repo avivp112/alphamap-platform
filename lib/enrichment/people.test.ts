@@ -197,3 +197,42 @@ describe("the biography a team page's card carries, word for word (owner, 2026-1
     expect(personCardsInHtml(html, "Jane Rivera", ["Sam Cohen"])[0]).toBe(personCardsInHtml(html, "Jane Rivera", ["Sam Cohen"])[0].toLowerCase());
   });
 });
+
+describe("a team-page biography is about the person, whole, and the company wrote it (review 9, 2026-11-10)", () => {
+  const card = (name: string, text: string) => `<html><body><div class="team"><div class="card"><h3>${name}</h3><p>${text}</p></div><div class="card"><h3>Other Person</h3><p>Short.</p></div></div></body></html>`;
+  const bioOf = (html: string, name: string, title: string | null, others: string[]) => personCardsInHtml(html, name, others, { keepCase: true, maxLen: 1500 }).map((c) => bioFromCard(c, name, title, others)).find((b) => b) ?? null;
+
+  it("the name stays in the text (Chargebee's sentence begins with it)", () => {
+    const b = bioOf(card("Krish Subramanian", "× Krish Subramanian, CEO & Co-founder at Chargebee, leverages two decades of technology experience to grow Chargebee into a global leader. A problem-solver at heart, he excels at building teams."), "Krish Subramanian", "CEO & Co-Founder", ["Other Person"]);
+    expect(b).toMatch(/^Krish Subramanian, CEO & Co-founder at Chargebee, leverages two decades/);
+    expect(b).not.toMatch(/×/);
+  });
+  it("a shared paragraph that names both founders is no one's biography (ConductorOne)", () => {
+    const text = "Our founders come from identity. Alex Bovee and Paul Querna met while building Zero Trust products at Okta, so they understand this space deeply. Having helped build foundational identity solutions for the human era, they started again.";
+    expect(bioOf(card("Paul Querna", text), "Paul Querna", null, ["Alex Bovee"])).toBeNull();
+  });
+  it("a menu of people is not a biography (Tevel)", () => {
+    const text = "Our Team Our Team Our Team Executive Team Assi Rubin Chief Financial Officer Nir Hazout Chief Operations Officer Simone Pollano Europe General Manager Dr. Adi Taflia Chief Technology Officer Gregory Khodos VP R&D Yaniv Maor Chief Executive Officer";
+    expect(bioOf(card("Yaniv Maor", text), "Yaniv Maor", "Chief Executive Officer", ["Assi Rubin", "Nir Hazout"])).toBeNull();
+  });
+  it("the company's marketing is not a biography (Dezerv)", () => {
+    const text = "Traditional wealth management is broken & you need a better way to manage your money. Using unbiased data driven decisions, we ensure your investment journey is successful so you can focus on what matters.";
+    expect(bioOf(card("Sandeep Jethwani", text), "Sandeep Jethwani", null, ["Vaibhav Porwal"])).toBeNull();
+  });
+  it("an own-voice biography with the person's experience stays whole", () => {
+    const b = bioOf(card("Shlomy Kadosh", "The company’s first entrepreneur, Shlomy is an agritech innovator and international agriculture expert. He has over 40 years of hands-on experience in building large-scale projects worldwide, and managing teams."), "Shlomy Kadosh", null, ["Other Person"]);
+    expect(b).toMatch(/^The company’s first entrepreneur, Shlomy is an agritech innovator/);
+  });
+});
+
+import { roleSupported } from "./people";
+describe("a title beside the surname alone counts when the source names the person in full (review 9: Crowdfire)", () => {
+  it("'Nischal Shetty' once, then 'Shetty, the CEO'", () => {
+    const text = "Crowdfire raised $2.5M. Nischal Shetty started the company in 2010. Today Shetty, the CEO of Crowdfire, said the team will grow.";
+    expect(roleSupported("Nischal Shetty", "CEO", [text])).toBe(true);
+  });
+  it("a surname with no full name in the source is not enough; another role beside the surname is not the CEO", () => {
+    expect(roleSupported("Nischal Shetty", "CEO", ["Shetty, the CEO of another startup, said"])).toBe(false);
+    expect(roleSupported("Nischal Shetty", "CEO", ["Nischal Shetty started it. Shetty, the CTO, said"])).toBe(false);
+  });
+});

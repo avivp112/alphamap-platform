@@ -4,19 +4,19 @@
  * the CEO or an investor. Here the model sees nothing but the description whose sentences were checked against allowed
  * sources, the definitions of the sub-sectors, and the rules (one main sector, the customer's industry for vertical software).
  */
-import { sectorGuidance } from "./sectorDefinitions.ts";
+import { sectorGuidance, definitionSupports } from "./sectorDefinitions.ts";
 
 export interface SectorTaxonomyLite { parentNames: string[]; subNames: string[]; parentOf?: Record<string, string> }
 export interface SectorChoice { sector_name?: string; sub_sector_name?: string; sub_sector_names: string[] }
 
-export function buildSectorRequest(companyName: string, description: string, taxonomy: SectorTaxonomyLite) {
+export function buildSectorRequest(companyName: string, description: string, taxonomy: SectorTaxonomyLite, feedback?: string) {
   const prompt = `Classify the company "${companyName}" from its description alone.
 
 Description (checked against sources): ${description}
 
 Pick the single most specific sector and sub-sector for what the description says the company sells. Add "sub_sector_names" for other fields it genuinely operates in (at most 3; include "Vertical SaaS" for software built for one industry). Omit anything the description does not support.
 
-${sectorGuidance(taxonomy.subNames)}`;
+${sectorGuidance(taxonomy.subNames)}${feedback ? `\n\nYOUR PREVIOUS ANSWER WAS REJECTED: ${feedback}\nChoose again.` : ""}`;
   return {
     model: "", max_tokens: 400, temperature: 0,
     tools: [{
@@ -47,4 +47,15 @@ export function parseSectorChoice(input: unknown, taxonomy: SectorTaxonomyLite):
   if (!sector) return null;
   const others = (Array.isArray(i.sub_sector_names) ? i.sub_sector_names : []).filter(known).filter((n) => n !== sub).slice(0, 3);
   return { sector_name: sector, sub_sector_name: sub, sub_sector_names: others };
+}
+
+/**
+ * What is wrong with an answer, or null (owner, 2026-11-10, review 9): a sub-sector the description is not about (a rocket maker
+ * as PropTech), or a "General" while a specific one fits.
+ */
+export function sectorProblem(choice: SectorChoice | null, description: string): string | null {
+  if (!choice) return "no usable classification";
+  if (!definitionSupports(choice.sub_sector_name, description)) return `"${choice.sub_sector_name}" has nothing in common with the description; read the definitions and pick what the company sells`;
+  if (choice.sub_sector_name && /\/\s*general$/i.test(choice.sub_sector_name)) return `"${choice.sub_sector_name}" is a last resort; name the closest specific sub-sector of any sector, or keep General only if none fits`;
+  return null;
 }

@@ -41,3 +41,30 @@ describe("the examples the reviews marked wrong (eval/sector_examples.json)", ()
     for (const n of ["Verbit", "SuperMeat", "Upstream Security", "Dazz", "Headway", "Pentera", "TurboTenant", "Anzu.io", "Elenium Automation"]) expect(names).toContain(n);
   });
 });
+
+import { definitionSupports } from "./sectorDefinitions";
+import { sectorProblem } from "./classifySector";
+describe("an answer the description is not about, or a General while a specific one fits (review 9, 2026-11-10)", () => {
+  const ex = JSON.parse(readFileSync("eval/sector_examples.json", "utf8")) as Array<{ company: string; description: string; expect: string; was?: string }>;
+  it("every expected sub-sector is supported by its description (the check never rejects a right answer)", () => {
+    for (const e of ex) expect(definitionSupports(e.expect.split(" › ")[1], e.description), `${e.company}: ${e.expect}`).toBe(true);
+  });
+  it("the wrong answers the reviews marked are mostly caught by the check: a rocket maker is not PropTech", () => {
+    const agnikul = ex.find((e) => e.company === "Agnikul Cosmos")!.description;
+    expect(definitionSupports("PropTech", agnikul)).toBe(false);
+    expect(definitionSupports("Space Tech", agnikul)).toBe(true);
+    const verbit = ex.find((e) => e.company === "Verbit")!.description;
+    expect(definitionSupports("Computer Vision", verbit)).toBe(false);
+  });
+  it("sectorProblem: unsupported and General are problems; a specific supported answer is none", () => {
+    const d = ex.find((e) => e.company === "Malt")!.description;
+    expect(sectorProblem({ sector_name: "Real Estate", sub_sector_name: "PropTech", sub_sector_names: [] }, d)).toMatch(/nothing in common/);
+    expect(sectorProblem({ sector_name: "SaaS & Dev Tools", sub_sector_name: "SaaS / General", sub_sector_names: [] }, d)).toMatch(/last resort/);
+    expect(sectorProblem({ sector_name: "Enterprise Software", sub_sector_name: "HR Tech", sub_sector_names: [] }, d)).toBeNull();
+    expect(sectorProblem(null, d)).toMatch(/no usable/);
+  });
+  it("the retry text reaches the prompt", () => {
+    const r = buildSectorRequest("Malt", "Malt manages freelancers.", tax, "SaaS / General: last resort.");
+    expect(r.messages[0].content).toMatch(/PREVIOUS ANSWER WAS REJECTED: SaaS \/ General: last resort\./);
+  });
+});

@@ -31,7 +31,7 @@ import { websiteLooksLikeAnotherCompany } from "./websiteIdentity.ts";
 import { judgeNews, finishNews } from "./newsGate.ts";
 import { reconcileSector, subSectorUnsupported } from "./sectors.ts";
 import { siteBelongsToAnotherCompany } from "./siteOwner.ts";
-import { buildSectorRequest, parseSectorChoice } from "./classifySector.ts";
+import { buildSectorRequest, parseSectorChoice, sectorProblem, type SectorChoice } from "./classifySector.ts";
 import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
 import { buildDescriptionRequest, descriptionSources, processDescription } from "./descriptionBuilder.ts";
 import { buildBackgroundRequest, processBackgroundResponse, backgroundSearchQuery, founderSearchQuery } from "./founderBackground.ts";
@@ -1265,7 +1265,7 @@ export async function collectCompany(
         }
         // The card's own biography, word for word (people.ts bioFromCard): it replaces a rewritten one.
         if (html && !ctx.update && !l.bio_verbatim) {
-          const bioCard = personCardsInHtml(html, l.name, others, { keepCase: true, maxLen: 1500 }).map((c) => bioFromCard(c, l.name, role)).find((b): b is string => !!b);
+          const bioCard = personCardsInHtml(html, l.name, others, { keepCase: true, maxLen: 1500 }).map((c) => bioFromCard(c, l.name, role, others)).find((b): b is string => !!b);
           const sid = allSources.find((x) => x.url === p.url)?.source_id;
           if (bioCard && sid) { l.bio = bioCard; l.bio_source_ids = [sid]; l.bio_verbatim = true; console.log(`    📖  ${l.name}: biography taken word for word from the card on ${p.url}`); bump(stats.droppedByReason, "bio_from_card"); }
         }
@@ -1307,7 +1307,7 @@ export async function collectCompany(
           if (!htmlCache.has(p.url)) htmlCache.set(p.url, await fetchPageHtml(p.url, searchState));
           const html = htmlCache.get(p.url);
           if (!html) continue;
-          const bio = personCardsInHtml(html, f.name, others, { keepCase: true, maxLen: 1500 }).map((c) => bioFromCard(c, f.name, f.title)).find((b): b is string => !!b);
+          const bio = personCardsInHtml(html, f.name, others, { keepCase: true, maxLen: 1500 }).map((c) => bioFromCard(c, f.name, f.title, others)).find((b): b is string => !!b);
           const sid = allSources.find((x) => x.url === p.url)?.source_id;
           if (bio && sid) { f.bio = bio; f.bio_source_ids = [sid]; f.bio_verbatim = true; console.log(`    📖  ${f.name}: biography taken word for word from the card on ${p.url}`); bump(stats.droppedByReason, "bio_from_card"); break; }
         }
@@ -1546,10 +1546,23 @@ export async function collectCompany(
   // reading search results; here the model sees only the checked description, the definitions and the rules.
   if (componentOn("description_v2") && !ctx.update && profile.profile.description_sentences?.length && taxonomy.parentNames.length) {
     try {
-      const msg = await ctx.anthropic.messages.create(requestFor(buildSectorRequest(row.name, profile.profile.description_sentences.map((x) => x.text).join(" "), taxonomy), ctx.models.enrich));
-      ctx.recordCost(ctx.models.enrich, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 });
-      const tool = msg.content.find((b) => b.type === "tool_use");
-      const choice = tool && tool.type === "tool_use" ? parseSectorChoice(tool.input, taxonomy) : null;
+      const descText = profile.profile.description_sentences.map((x) => x.text).join(" ");
+      const classify = async (feedback?: string): Promise<SectorChoice | null> => {
+        const msg = await ctx.anthropic.messages.create(requestFor(buildSectorRequest(row.name, descText, taxonomy, feedback), ctx.models.enrich));
+        ctx.recordCost(ctx.models.enrich, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 });
+        const tool = msg.content.find((b) => b.type === "tool_use");
+        return tool && tool.type === "tool_use" ? parseSectorChoice(tool.input, taxonomy) : null;
+      };
+      let choice = await classify();
+      const problem = sectorProblem(choice, descText);
+      if (problem) {
+        console.log(`    🧭  Sector answer rejected (${problem}) — asking once more.`);
+        bump(stats.droppedByReason, "sector_answer_rejected");
+        const again = await classify(`${choice ? `${choice.sector_name}${choice.sub_sector_name ? ` \u203A ${choice.sub_sector_name}` : ""}: ` : ""}${problem}.`);
+        const stillBad = sectorProblem(again, descText);
+        // A General that stays General after a second look is accepted; an answer the description is not about is not.
+        choice = again && (!stillBad || /last resort/.test(stillBad)) ? again : null;
+      }
       if (choice) {
         console.log(`    🧭  Sector from the verified description: ${choice.sector_name}${choice.sub_sector_name ? ` › ${choice.sub_sector_name}` : ""}${choice.sub_sector_names.length ? ` (+ ${choice.sub_sector_names.join(", ")})` : ""}`);
         Object.assign(profile.profile, { sector_name: choice.sector_name, sub_sector_name: choice.sub_sector_name, sub_sector_names: choice.sub_sector_names });

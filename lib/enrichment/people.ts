@@ -367,11 +367,13 @@ export function roleSupported(personName: string, roleText: string, sourceTexts:
   const tokens = fold(personName).toLowerCase().split(/[^a-z]+/).filter((t) => t.length > 1);
   if (tokens.length < 2) return false;
   const re = new RegExp(`\\b${tokens[0]}\\b[^a-z]+(?:[a-z.]+[^a-z]+){0,2}${tokens[tokens.length - 1]}\\b`, "g");
+  // After the first mention an article says "Shetty", not "Nischal Shetty" (review 9: Crowdfire's CEO): the surname alone counts
+  // in a source that names the person in full.
+  const reLast = new RegExp(`\\b${tokens[tokens.length - 1]}\\b`, "g");
   const own = new Set(tokens);
   const others = [...new Set(otherPeople.flatMap((n) => fold(n).toLowerCase().split(/[^a-z]+/).filter((t) => t.length > 2 && !own.has(t))))];
-  for (const raw of sourceTexts) {
-    const text = fold(raw).toLowerCase();
-    for (const m of text.matchAll(re)) {
+  const check = (text: string, rx: RegExp): boolean => {
+    for (const m of text.matchAll(rx)) {
       const at = m.index ?? 0;
       let before = text.slice(Math.max(0, at - 80), at);
       let after = text.slice(at + m[0].length, at + m[0].length + 150);
@@ -386,6 +388,12 @@ export function roleSupported(personName: string, roleText: string, sourceTexts:
       const window = before + m[0] + after;
       if (wanted.every(([, inSource]) => inSource.test(window))) return true;
     }
+    return false;
+  };
+  for (const raw of sourceTexts) {
+    const text = fold(raw).toLowerCase();
+    if (check(text, re)) return true;
+    if (tokens[tokens.length - 1].length >= 4 && new RegExp(re.source).test(text) && check(text, reLast)) return true;
   }
   return false;
 }
@@ -516,22 +524,51 @@ export function titleFromCard(personName: string, card: string): string | null {
 }
 
 
-const CARD_NOISE = /\b(?:read (?:more|less)|show (?:more|less)|view (?:full )?(?:bio|profile)|learn more|see (?:more|bio)|linkedin|twitter|x\.com|email|follow|connect|close|open)\b/gi;
+const CARD_NOISE = /\b(?:read (?:more|less)|show (?:more|less)|view (?:full )?(?:bio|profile)|learn more|see (?:more|bio)|linkedin|twitter|x\.com|follow|connect|close)\b|[×✕✖]/gi;
+const BIO_CUE = /\b(?:experience|previously|prior to|before (?:joining|founding|that)|founded|co-?founded|served|led|leads|joined|worked|holds|degree|graduat\w+|ph\.?d|mba|studied|university|college|years|career|expertise|background|veteran|managed|built|launched|headed|oversees|responsible|began|started|earned)\b/i;
+const PRONOUN = /\b(?:he|she|they|his|her|their)\b/i;
+const TITLES = /\b(?:ceo|cto|coo|cfo|cmo|cpo|cro|ciso|chief [a-z]+ officer|founder|co-?founder|president|vp|svp|evp|vice president|head of|general manager|managing director)\b/gi;
 /**
- * The biography a team page's card carries, word for word (owner, 2026-11-10): the card's text without the name, the title
- * and the page's buttons. null unless what is left reads as a biography — a few sentences, not a caption. The company wrote it,
- * so it is kept as written and never rephrased.
+ * The biography a team page's card carries, word for word (owner, 2026-11-10): the card's text, with only its header (the person's
+ * name and title at the start) and the page's buttons taken off. The name stays wherever the text uses it. null unless what is left
+ * is about this person: it names or points to them (name, he/she), reads as a biography (roles, experience, education), is not a
+ * menu of several people, does not name another person of the company, and is not the company's marketing.
  */
-export function bioFromCard(card: string, personName: string, title?: string | null): string | null {
-  let t = card.replace(/https?:\/\/\S+/g, " ").replace(/\s+/g, " ").trim();
+export function bioFromCard(card: string, personName: string, title?: string | null, otherPeople: string[] = []): string | null {
+  const original = card.replace(/https?:\/\/\S+/g, " ").replace(/\s+/g, " ").trim();
   const parts = fold(personName).split(/[^A-Za-z]+/).filter((x) => x.length > 1);
   if (parts.length < 2) return null;
-  const nameRe = new RegExp(`(?:(?:dr|prof|professor|mr|mrs|ms)\\.?\\s+)?${parts[0]}[^A-Za-z]+(?:[A-Za-z.]+[^A-Za-z]+){0,2}${parts[parts.length - 1]}(?:\\s*,?\\s*(?:${CREDENTIALS}))*`, "i");
-  t = t.replace(nameRe, " ");
-  if (title) t = t.replace(new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+"), "i"), " ");
-  t = t.replace(CARD_NOISE, " ").replace(/\s+/g, " ").replace(/^[\s,.:;|·•–—-]+/, "").trim();
+  const first = parts[0], last = parts[parts.length - 1];
+  const nameAnywhere = new RegExp(`${first}[^A-Za-z]+(?:[A-Za-z.]+[^A-Za-z]+){0,2}${last}`, "i");
+  if (!nameAnywhere.test(fold(original))) return null;
+  // Only a header at the start is removed: honorific, name, credentials, then the title.
+  let t = original.replace(CARD_NOISE, " ").replace(/\s+/g, " ").trim();
+  const header = new RegExp(`^(?:(?:dr|prof|professor|mr|mrs|ms)\\.?\\s+)?${first}[^A-Za-z]+(?:[A-Za-z.]+[^A-Za-z]+){0,2}${last}(?:\\s*,?\\s*(?:${CREDENTIALS}))*[\\s,.:;|·•–—-]*`, "i");
+  t = t.replace(header, "");
+  if (title) t = t.replace(new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+")}[\\s,.:;|·•–—-]*`, "i"), "");
+  t = t.replace(/^[\s,.:;|·•–—-]+/, "").trim();
+  // The name was the subject of the first sentence ("Krish Subramanian, CEO & Co-founder at Chargebee, leverages …"): keep it.
+  if (/^[a-z]/.test(t)) {
+    const at = fold(original.replace(CARD_NOISE, " ")).search(nameAnywhere);
+    t = original.replace(CARD_NOISE, " ").replace(/\s+/g, " ").trim().slice(Math.max(0, at)).trim();
+    // A heading with the name, then a paragraph that begins with it: the name once.
+    t = t.replace(/^([\p{L}.' -]{5,60}?)\s+\1(?=[,\s])/u, "$1");
+  }
+  const words = t.split(/\s+/).filter(Boolean);
   const sentences = t.split(/(?<=[.!?])\s+/).filter((x) => x.split(/\s+/).length >= 6);
-  if (t.length < 90 || t.split(/\s+/).length < 14 || !sentences.length) return null;
+  if (t.length < 90 || words.length < 14 || !sentences.length) return null;
+  // About this person: the name in the text, or he / she / they.
+  const lastOnly = new RegExp(`\\b${last}\\b`, "i");
+  if (!lastOnly.test(fold(t)) && !new RegExp(`\\b${first}\\b`, "i").test(fold(t)) && !PRONOUN.test(t)) return null;
+  if (!BIO_CUE.test(t)) return null;
+  // A menu or a row of people (Tevel's "Our Team Our Team … Chief Financial Officer … Chief Operations Officer …").
+  if (/\b(\w+ \w+)\s+\1\b/i.test(t.slice(0, 80)) && /\bour team\b/i.test(t)) return null;
+  if ((t.match(TITLES) ?? []).length > 3) return null;
+  // Another person of the company in the text: a shared paragraph (ConductorOne's "Alex Bovee and Paul Querna met …").
+  for (const o of otherPeople) {
+    const ol = fold(o).split(/[^A-Za-z]+/).filter((x) => x.length > 2).pop();
+    if (ol && ol.toLowerCase() !== last.toLowerCase() && new RegExp(`\\b${ol}\\b`, "i").test(fold(t))) return null;
+  }
   if (t.length <= 900) return t;
   const cut = t.slice(0, 900);
   const end = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));

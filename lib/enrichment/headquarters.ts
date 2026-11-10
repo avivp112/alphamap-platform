@@ -32,6 +32,8 @@ export interface HqStatement {
   kind: "company" | "press";
   /** The article's date (YYYY-MM-DD) when known; a company's own site is current. */
   date: string | null;
+  /** Read from a street address on the Contact page, without a word that declares a headquarters. */
+  viaAddress?: boolean;
 }
 
 export type HqDecision =
@@ -225,13 +227,15 @@ export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type
       // A street named after a city is not the city ("46430 Fremont Blvd": EnerVenue, model check 2026-11-02).
       if (/^\s+(blvd|boulevard|st|street|ave|avenue|rd|road|way|drive|dr|lane|ln|place|pl|parkway|pkwy|highway|hwy)\b\.?/i.test(line.slice(m.index! + m[0].length))) continue;
       if (isRegionalOfficeQuote(line, city)) continue;
-      if (!out.some((o) => sameCity(o.city, city))) out.push({ city, quote: line, source_id: s.source_id, url: s.url, kind: "company", date: null });
+      if (!out.some((o) => sameCity(o.city, city))) out.push({ city, quote: line, source_id: s.source_id, url: s.url, kind: "company", date: null, viaAddress: true });
     }
   }
   return out;
 }
 
 const DAY = 86_400_000;
+/** A press declaration older than this, with nothing newer, is not the headquarters (about eight years). */
+export const HQ_MAX_AGE_DAYS = 8 * 365;
 /** One city under its two names ("Bangalore" / "Bengaluru": Unacademy's "conflict" — field review run 1). */
 const CITY_ALIASES: Record<string, string> = {
   bangalore: "bengaluru", gurgaon: "gurugram", bombay: "mumbai", "new york city": "new york", nyc: "new york",
@@ -251,16 +255,26 @@ const sameCity = (a: string, b: string) => canonicalCity(a) === canonicalCity(b)
  * New York and Tel Aviv; a 2022 WSJ "Tel Aviv-based" does not decide it). An
  * undated article is not shown to be recent, so it counts as old.
  */
-export function decideHeadquarters(statements: HqStatement[], today = new Date().toISOString().slice(0, 10), siteOfficeCities: string[] = []): HqDecision {
+export function decideHeadquarters(statements: HqStatement[], today = new Date().toISOString().slice(0, 10), siteOfficeCitiesIn: string[] = []): HqDecision {
+  let siteOfficeCities = siteOfficeCitiesIn;
   const latestFirst = (xs: HqStatement[]) => [...xs].sort((a, b) => (b.date ?? "9999").localeCompare(a.date ?? "9999"));
-  const company = latestFirst(statements.filter((s) => s.kind === "company"));
+  const allCompany = latestFirst(statements.filter((s) => s.kind === "company"));
+  // Only a single address on the Contact page is the headquarters; several addresses there are offices (owner, 2026-11-10: Sentra).
+  const addressCities = allCompany.filter((s) => s.viaAddress).map((s) => s.city).filter((c, i, a) => a.findIndex((d) => sameCity(c, d)) === i);
+  const company = allCompany.filter((s) => !s.viaAddress || addressCities.length < 2);
   if (company.length) return { kind: "declared", statement: company[0] };
+  if (addressCities.length >= 2 && !siteOfficeCities.length) siteOfficeCities = addressCities;
   const press = latestFirst(statements.filter((s) => s.kind === "press"));
   const recent = press.filter((s) => s.date && Date.parse(today) - Date.parse(s.date) <= 730 * DAY);
   const siteCities = siteOfficeCities.filter((c, i) => siteOfficeCities.findIndex((d) => sameCity(c, d)) === i);
   if (siteCities.length >= 2 && !recent.length) return { kind: "site_offices", cities: siteCities };
   if (!press.length) return { kind: "none" };
-  const pool = recent.length ? recent : press;
+  // Declarations that are all from articles older than eight years are not today's headquarters (owner, 2026-11-10: Chargebee
+  // "Chennai-based" in 2014). An undated article is not shown to be old, so it still counts.
+  if (press.every((s) => s.date && Date.parse(today) - Date.parse(s.date) > HQ_MAX_AGE_DAYS * DAY)) return { kind: "none" };
+  // Nothing recent: the latest declaration decides, unless one within two years before it disagrees (the latest wins, owner 2026-11-10).
+  const newest = press[0];
+  const pool = recent.length ? recent : press.filter((x) => !newest.date || !x.date || Date.parse(newest.date) - Date.parse(x.date) <= 730 * DAY);
   const cities = pool.filter((s, i) => pool.findIndex((t) => sameCity(t.city, s.city)) === i);
   if (cities.length > 1) return { kind: "conflict", cities };
   return { kind: "declared", statement: pool[0] };

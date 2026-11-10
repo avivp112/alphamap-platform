@@ -8,7 +8,7 @@ export const SECTOR_DEFINITIONS: Record<string, string> = {
   "AI / General": "AI is the product but no narrower AI sub-sector fits.",
   "LLMs": "builds or serves large language models themselves (foundation-model labs, model APIs); not a product that merely uses one — that is Generative AI or AI Agents.",
   "Generative AI": "products whose output is generated content (text, image, audio, video, code) for end users; not the model lab itself (LLMs) and not autonomous task-doers (AI Agents).",
-  "Computer Vision": "the product processes images or video (inspection, recognition, imaging analysis); never for speech or text.",
+  "Computer Vision": "the product processes images or video (inspection, imaging analysis, object detection); never for speech or text.",
   "NLP / Speech": "text and language understanding as the core technology (classification, extraction, search over text); voice products go to Voice & Speech AI.",
   "AI Agents": "software that carries out multi-step tasks autonomously on a user's behalf; not a chatbot or a content generator.",
   "MLOps": "tools to train, deploy, monitor and govern machine-learning models for other teams; not the AI hardware or cloud (AI Infrastructure).",
@@ -36,6 +36,7 @@ export const SECTOR_DEFINITIONS: Record<string, string> = {
   "Vulnerability Management": "finds, prioritizes and remediates weaknesses across assets and code; differs from Security Testing, which simulates attacks to check whether defenses hold.",
   "Application & API Security": "protects applications and APIs: API discovery and testing, WAF, code and runtime protection.",
   "Fraud & Abuse Prevention": "detects fraudulent users, bots, account takeover and abuse in applications; not network security.",
+  "Managed Security Services": "a provider that runs security for customers as a service: managed detection and response (MDR), MSSP, security consulting, incident response; differs from the product categories above, which sell software.",
   "Email Security": "protects mailboxes and content channels from phishing, malware and business email compromise.",
   // SaaS & Dev Tools
   "SaaS / General": "business software with no narrower fit and no single customer industry; never a default for a product that has a clear category.",
@@ -67,8 +68,8 @@ export const SECTOR_DEFINITIONS: Record<string, string> = {
   // Enterprise Software
   "Enterprise / General": "software for large organizations with no narrower fit.",
   "CRM": "manages customer relationships and sales pipelines; revenue-process tools such as quoting are Sales Tech.",
-  "HR Tech": "hiring, onboarding, payroll, talent and workforce planning.",
-  "ERP / Finance": "accounting, planning, procurement and finance operations for companies.",
+  "HR Tech": "hiring, onboarding, payroll, talent and workforce planning, including freelancer and contingent-workforce management and talent marketplaces for work.",
+  "ERP / Finance": "accounting, planning, procurement and spend management, billing, invoicing and subscription revenue operations for companies.",
   "Analytics / BI": "dashboards, reporting and data analysis for business users, including market-data products.",
   "Sales Tech": "helps sales teams sell: quoting and CPQ, revenue operations, sales engagement; differs from CRM, which stores the relationship.",
   "Productivity & Collaboration": "tools for personal and team work: email, docs, meetings, notes, task management.",
@@ -109,11 +110,31 @@ export const SECTOR_DEFINITIONS: Record<string, string> = {
   "PropTech": "technology for property: rental management, listings, mortgages, building operations.",
 };
 
+/** Words too common to show that a description is about a sub-sector. */
+const GENERIC = new Set(["software", "platform", "technology", "product", "products", "company", "companies", "services", "service", "business", "businesses", "tools", "systems", "system", "data", "solutions", "customers", "teams", "management", "operations", "enterprise", "digital", "online", "provides", "that", "with", "from", "their", "which", "also", "used", "into", "over", "across"]);
+const stems = (t: string) => new Set((t.toLowerCase().match(/\p{L}{4,}/gu) ?? []).filter((w) => !GENERIC.has(w)).map((w) => w.slice(0, 5)));
+
+/**
+ * Whether the description is about the sub-sector at all: it shares a content word with the sub-sector's name or definition
+ * (owner, 2026-11-10, review 9: a rocket maker came back as PropTech). "... / General" fits anything and is not checked.
+ */
+export function definitionSupports(sub: string | undefined, description: string): boolean {
+  if (!sub || /\/\s*general$/i.test(sub)) return true;
+  const def = SECTOR_DEFINITIONS[sub];
+  if (!def) return true;
+  const have = stems(description);
+  // The part of the definition that says what belongs, not the part that says what does not ("never …", "differs from …").
+  const positive = def.split(/;|\bdiffers\b|\bnever\b|\bnot a\b/i)[0];
+  for (const w of stems(`${sub} ${positive}`)) if (have.has(w)) return true;
+  return false;
+}
+
 export const SECTOR_RULES = `RULES FOR THE SECTOR
 - ONE main sector and sub-sector: the most specific one that fits what the verified description says the company sells.
 - A "… / General" sub-sector only when no other sub-sector fits at all.
 - Software for one industry's customers: the sector is the CUSTOMER'S industry (roofing contractors → Industrial & Manufacturing › Construction Tech; landlords → Real Estate › PropTech; therapists and prior-authorization teams → Health & Life Sciences › Healthcare IT & Administration); list "Vertical SaaS" among the other fields.
 - Other fields the company operates in go in sub_sector_names (tags), not in the main sector.
+- "… / General" is a last resort: before using it, check every specific sub-sector of every sector against what the description says the company sells.
 - Computer Vision only when the product processes images or video. A product that runs in the cloud is not Cloud Security.`;
 
 /** The classification guidance for the prompt: each sub-sector with its definition, limited to those the database knows. */
