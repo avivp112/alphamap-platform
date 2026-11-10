@@ -121,5 +121,17 @@
     "description": "Tesorion is a Dutch, independent cybersecurity service provider that offers managed security, consultancy, secure infrastructure and incident response, and its Tesorion Immunity product provides Network Access Control.",
     "expect": "Cybersecurity › Managed Security Services",
     "was": "Cybersecurity › Cybersecurity / General (9.55)"
+  },
+  {
+    "company": "Adranos",
+    "description": "Adranos makes solid rocket motors and the ALITEC solid rocket fuel, a proprietary aluminum-lithium alloy propellant that can increase missile range by up to 40% while saving costs. Its customers are prime contractors that build missiles and launch vehicles.",
+    "expect": "DeepTech › Space Tech",
+    "was": "Industrial & Manufacturing › Advanced Manufacturing (rejudge 2026-11-10)"
+  },
+  {
+    "company": "Antheia",
+    "description": "Antheia uses a biosynthesis platform, built on engineered microbes, to produce biosynthetic pharmaceutical ingredients. Antheia's ingredients are made for pharmaceutical manufacturing, including ingredients for the opioid overdose treatment.",
+    "expect": "Health & Life Sciences › Biotech / Genomics",
+    "was": "Industrial & Manufacturing › Advanced Manufacturing (rejudge 2026-11-10)"
   }
 ]

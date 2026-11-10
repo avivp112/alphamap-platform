@@ -60,3 +60,19 @@ describe("review 9 (2026-11-10): sources that are not sources", () => {
     expect(judge6(m9("hq_city", "Frontegg", "Tel Aviv", "https://techcrunch.com/2020/10/14/frontegg-raises-5m-to-help-saas-companies-build-saas-faster/")).produced).toBe(true);
   });
 });
+
+import { contactPageHqIds } from "./markRules";
+describe("a headquarters from a Contact page of several addresses (review 9, Sentra)", () => {
+  const rows = [
+    { id: "9.8", field: "hq_city", company: "Sentra", value: "New York", source_url: "https://sentra.io/contact" },
+    { id: "9.14", field: "hq_country", company: "Sentra", value: "United States", source_url: "https://sentra.io/contact" },
+    { id: "9.83", field: "office", company: "Sentra", value: "Tel Aviv, Israel", source_url: "https://sentra.io/contact" },
+    { id: "9.85", field: "office", company: "Sentra", value: "New York, United States", source_url: "https://sentra.io/contact" },
+    { id: "9.2", field: "hq_city", company: "Vanilla Vida", value: "Yesod HaMa'ala", source_url: "https://vanillavida.com/team" },
+    { id: "9.9", field: "hq_city", company: "Solo", value: "Paris", source_url: "https://solo.com/contact" },
+    { id: "9.99", field: "office", company: "Solo", value: "Paris, France", source_url: "https://solo.com/contact" },
+  ];
+  it("the headquarters marks of a page that gives two places leave; one address stays", () => {
+    expect([...contactPageHqIds(rows)].sort()).toEqual(["9.14", "9.8"]);
+  });
+});

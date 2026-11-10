@@ -211,3 +211,24 @@ export function duplicateMarkIds(marks: Array<Pick<Mark, "id" | "field" | "compa
   }
   return dup;
 }
+
+
+/**
+ * A headquarters taken from a Contact page that lists several addresses (owner, 2026-11-10: Sentra's New York and Tel Aviv
+ * addresses). The tracker holds the page's other addresses as office marks from the same source: two or more distinct places
+ * from one page, and the headquarters mark from that page is an office too.
+ */
+export function contactPageHqIds(marks: Array<Pick<Mark, "id" | "field" | "company" | "value" | "source_url">>): Set<string> {
+  const byPage = new Map<string, Set<string>>();
+  for (const m of marks) {
+    if (m.field !== "office" || !m.source_url) continue;
+    const k = `${m.company.toLowerCase()}|${m.source_url}`;
+    byPage.set(k, (byPage.get(k) ?? new Set()).add(m.value.split(",")[0].trim().toLowerCase()));
+  }
+  const out = new Set<string>();
+  for (const m of marks) {
+    if ((m.field !== "hq_city" && m.field !== "hq_country") || !m.source_url || !/\/contact/i.test(m.source_url)) continue;
+    if ((byPage.get(`${m.company.toLowerCase()}|${m.source_url}`)?.size ?? 0) >= 2) out.add(m.id);
+  }
+  return out;
+}

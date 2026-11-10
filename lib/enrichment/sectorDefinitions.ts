@@ -56,7 +56,7 @@ export const SECTOR_DEFINITIONS: Record<string, string> = {
   // Health & Life Sciences
   "Digital Health": "care delivered or supported by software for patients and clinicians (telehealth, remote monitoring).",
   "MedTech": "medical devices and clinical diagnostics, including AI-based diagnostic tools.",
-  "Biotech / Genomics": "drug discovery, therapeutics, synthetic biology, genomics; food made by cells is FoodTech.",
+  "Biotech / Genomics": "drug discovery, therapeutics, synthetic biology and biomanufacturing of pharmaceutical ingredients, genomics; food made by cells is FoodTech.",
   "Mental Health": "mental-health care, therapy and wellbeing programs.",
   "Healthcare SaaS": "clinical and patient-facing software sold to providers (patient engagement, clinical workflow, decision support); practice management, EHR, billing and authorization are Healthcare IT & Administration.",
   "Healthcare IT & Administration": "the administrative and operating side of healthcare organizations: practice management, EHR, scheduling, billing, coding, claims, prior authorization, for providers, payers and pharmacies; clinical and patient-facing software is Healthcare SaaS.",
@@ -89,14 +89,14 @@ export const SECTOR_DEFINITIONS: Record<string, string> = {
   "DeepTech / General": "hard-science or hardware company with no narrower fit; never for software.",
   "Quantum Computing": "quantum hardware, software or sensing.",
   "Robotics": "robots and autonomous machines as the product.",
-  "Space Tech": "launch, satellites, propulsion and space or defense systems.",
+  "Space Tech": "rockets and launch vehicles, satellites, rocket motors and propellants, space and defense systems; a company that builds rockets is Space Tech even when it 3D-prints its engines.",
   "Semiconductors": "chips and chip design, including photonic and AI accelerators.",
   "Advanced Materials": "new materials as the product (polymers, composites, materials made from waste).",
   "IoT & Connectivity": "connected devices, sensors and the networks that link them (telematics, LPWAN, satellite IoT).",
   // Industrial & Manufacturing
   "Industrial / General": "industrial company with no narrower fit.",
   "Industrial Automation": "automation, control and machine-vision systems on production lines.",
-  "Advanced Manufacturing": "how things are made: digital twins of processes, 3D printing, process optimization for factories.",
+  "Advanced Manufacturing": "software and machines for how factories make things: process digital twins, 3D printers and printing services, production optimization; a company that makes a product in another category (rockets, drugs, food, chips) is classified by that product, not by how it is made.",
   "Construction Tech": "software and tools for building and contracting (roofing, estimating, project management for construction trades).",
   // Food & Agriculture
   "FoodTech": "food production and food products made with technology (cultivated meat, alternative protein, food automation).",
