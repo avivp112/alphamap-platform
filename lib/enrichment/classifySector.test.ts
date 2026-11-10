@@ -13,9 +13,10 @@ describe("the sector is classified from the verified description alone (owner, 2
     expect(text).toMatch(/customer's industry/i);
     expect(r.tools[0].input_schema.properties.sector_name.enum).toContain("Automotive & Mobility");
   });
-  it("a sub-sector of another sector is dropped; an unknown name is dropped; at most three other fields", () => {
-    expect(parseSectorChoice({ sector_name: "Cybersecurity", sub_sector_name: "Payments", sub_sector_names: ["Email Security", "Nonsense", "Vertical SaaS", "Cloud Security", "Zero Trust"] }, tax))
-      .toEqual({ sector_name: "Cybersecurity", sub_sector_name: undefined, sub_sector_names: ["Email Security", "Vertical SaaS", "Cloud Security"] });
+  it("a sub-sector of another sector than the one named wins: the sector becomes its parent (Elenium); an unknown name is dropped; at most three other fields", () => {
+    expect(parseSectorChoice({ sector_name: "Enterprise Software", sub_sector_name: "Travel Tech" }, tax)).toMatchObject({ sector_name: "Consumer & Media", sub_sector_name: "Travel Tech" });
+    expect(parseSectorChoice({ sector_name: "Cybersecurity", sub_sector_name: "Email Security", sub_sector_names: ["Nonsense", "Vertical SaaS", "Cloud Security", "Zero Trust", "Data Security"] }, tax))
+      .toEqual({ sector_name: "Cybersecurity", sub_sector_name: "Email Security", sub_sector_names: ["Vertical SaaS", "Cloud Security", "Zero Trust"] });
     expect(parseSectorChoice({ sector_name: "Made Up" }, tax)).toBeNull();
     expect(parseSectorChoice(undefined, tax)).toBeNull();
   });

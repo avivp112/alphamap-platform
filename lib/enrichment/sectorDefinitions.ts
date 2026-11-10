@@ -57,8 +57,8 @@ export const SECTOR_DEFINITIONS: Record<string, string> = {
   "MedTech": "medical devices and clinical diagnostics, including AI-based diagnostic tools.",
   "Biotech / Genomics": "drug discovery, therapeutics, synthetic biology, genomics; food made by cells is FoodTech.",
   "Mental Health": "mental-health care, therapy and wellbeing programs.",
-  "Healthcare SaaS": "software run by a provider to operate its practice (EHR, scheduling, practice management).",
-  "Healthcare IT & Administration": "the administrative side of healthcare for payers, providers and pharmacies (prior authorization, billing, coding, claims); differs from Healthcare SaaS, which runs a practice's clinical operations.",
+  "Healthcare SaaS": "clinical and patient-facing software sold to providers (patient engagement, clinical workflow, decision support); practice management, EHR, billing and authorization are Healthcare IT & Administration.",
+  "Healthcare IT & Administration": "the administrative and operating side of healthcare organizations: practice management, EHR, scheduling, billing, coding, claims, prior authorization, for providers, payers and pharmacies; clinical and patient-facing software is Healthcare SaaS.",
   // Climate & Energy
   "CleanTech": "technology that cuts emissions or resource use (solar, storage, recycling, materials from waste).",
   "EnergyTech": "software and hardware for producing, trading or managing energy (grid, EV charging, utilities).",
