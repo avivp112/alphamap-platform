@@ -177,3 +177,23 @@ describe("a leader's title read from the site's card when the extraction gave no
     expect(titleFromCard("Jane Doe", "something else entirely")).toBeNull();
   });
 });
+
+import { bioFromCard, personCardsInHtml } from "./people";
+describe("the biography a team page's card carries, word for word (owner, 2026-11-10)", () => {
+  const html = `<html><body><div class="team"><div class="card"><h3>Dr. Jane Rivera</h3><p>Chief Technology Officer</p>
+    <p>Jane has spent fifteen years building distributed systems at scale. Before founding the company she led platform engineering at a large payments provider and holds a PhD in computer science from MIT.</p><a>LinkedIn</a><a>Read more</a></div>
+    <div class="card"><h3>Sam Cohen</h3><p>CEO</p><p>Sam writes the strategy.</p></div></div></body></html>`;
+  it("keeps the card's sentences as written, without the name, title and buttons", () => {
+    const [card] = personCardsInHtml(html, "Jane Rivera", ["Sam Cohen"], { keepCase: true, maxLen: 1500 });
+    const bio = bioFromCard(card, "Jane Rivera", "Chief Technology Officer");
+    expect(bio).toBe("Jane has spent fifteen years building distributed systems at scale. Before founding the company she led platform engineering at a large payments provider and holds a PhD in computer science from MIT.");
+  });
+  it("a caption is not a biography; a card with only the title gives none", () => {
+    const [card] = personCardsInHtml(html, "Sam Cohen", ["Jane Rivera"], { keepCase: true, maxLen: 1500 });
+    expect(bioFromCard(card, "Sam Cohen", "CEO")).toBeNull();
+    expect(bioFromCard("Jane Rivera Chief Technology Officer", "Jane Rivera", "Chief Technology Officer")).toBeNull();
+  });
+  it("the card search is unchanged without the options", () => {
+    expect(personCardsInHtml(html, "Jane Rivera", ["Sam Cohen"])[0]).toBe(personCardsInHtml(html, "Jane Rivera", ["Sam Cohen"])[0].toLowerCase());
+  });
+});

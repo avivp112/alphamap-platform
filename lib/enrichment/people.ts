@@ -396,7 +396,8 @@ export function roleSupported(personName: string, roleText: string, sourceTexts:
  * a team grid) — never one holding another known person's name, never more than 500
  * characters. The text of each card found; empty when the name is not on the page.
  */
-export function personCardsInHtml(html: string, personName: string, otherPeople: string[] = []): string[] {
+export function personCardsInHtml(html: string, personName: string, otherPeople: string[] = [], opts: { keepCase?: boolean; maxLen?: number } = {}): string[] {
+  const maxLen = opts.maxLen ?? 500;
   const $ = cheerio.load(html);
   $("script, style, noscript, svg, head").remove();
   // Elements are separate words ("<h3>Liron Bitan</h3><p>VP R&D</p>" is not "Bitanvp").
@@ -423,11 +424,11 @@ export function personCardsInHtml(html: string, personName: string, otherPeople:
       // One card of a row of alike cards, and more than the name alone.
       if (alike.length > 0 && textOf(node).length > norm(personName).length + 2) break;
       const pText = textOf(parent);
-      if (pText.length > 500 || otherRes.some((r) => r.test(pText))) break;
+      if (pText.length > maxLen || otherRes.some((r) => r.test(pText))) break;
       node = parent;
     }
-    const t = textOf(node);
-    if (t.length <= 500 && !cards.includes(t)) cards.push(t);
+    const t = opts.keepCase ? node.text().replace(/\s+/g, " ").trim() : textOf(node);
+    if (textOf(node).length <= maxLen && !cards.includes(t)) cards.push(t);
   });
   return cards;
 }
@@ -512,4 +513,27 @@ export function titleFromCard(personName: string, card: string): string | null {
   const words = rest.split(/\s+/).filter(Boolean);
   if (!words.length || words.length > 9 || !TITLE_WORD.test(rest)) return null;
   return words.map((w) => (ACRONYMS.has(w) ? w.toUpperCase() : /^(of|and|the|for|in|at|&)$/.test(w) ? w : w[0].toUpperCase() + w.slice(1))).join(" ").replace(/\bR&d\b/g, "R&D");
+}
+
+
+const CARD_NOISE = /\b(?:read (?:more|less)|show (?:more|less)|view (?:full )?(?:bio|profile)|learn more|see (?:more|bio)|linkedin|twitter|x\.com|email|follow|connect|close|open)\b/gi;
+/**
+ * The biography a team page's card carries, word for word (owner, 2026-11-10): the card's text without the name, the title
+ * and the page's buttons. null unless what is left reads as a biography — a few sentences, not a caption. The company wrote it,
+ * so it is kept as written and never rephrased.
+ */
+export function bioFromCard(card: string, personName: string, title?: string | null): string | null {
+  let t = card.replace(/https?:\/\/\S+/g, " ").replace(/\s+/g, " ").trim();
+  const parts = fold(personName).split(/[^A-Za-z]+/).filter((x) => x.length > 1);
+  if (parts.length < 2) return null;
+  const nameRe = new RegExp(`(?:(?:dr|prof|professor|mr|mrs|ms)\\.?\\s+)?${parts[0]}[^A-Za-z]+(?:[A-Za-z.]+[^A-Za-z]+){0,2}${parts[parts.length - 1]}(?:\\s*,?\\s*(?:${CREDENTIALS}))*`, "i");
+  t = t.replace(nameRe, " ");
+  if (title) t = t.replace(new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+"), "i"), " ");
+  t = t.replace(CARD_NOISE, " ").replace(/\s+/g, " ").replace(/^[\s,.:;|·•–—-]+/, "").trim();
+  const sentences = t.split(/(?<=[.!?])\s+/).filter((x) => x.split(/\s+/).length >= 6);
+  if (t.length < 90 || t.split(/\s+/).length < 14 || !sentences.length) return null;
+  if (t.length <= 900) return t;
+  const cut = t.slice(0, 900);
+  const end = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
+  return end > 200 ? cut.slice(0, end + 1) : null;
 }

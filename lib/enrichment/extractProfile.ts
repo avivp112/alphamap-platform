@@ -31,6 +31,7 @@ import { debugDumpJson } from "./debugDump";
 import { checkHeadcountClaim, type HeadcountDropReason } from "./headcount";
 import { checkFoundingCountry, checkIsraelRnd, type OriginDrop } from "./origin";
 import { isLeadershipRole } from "./people";
+import { sectorGuidance } from "./sectorDefinitions";
 
 export interface SectorTaxonomy {
   parentNames: string[];
@@ -112,6 +113,8 @@ export interface V2Founder extends PersonQualityTags {
   /** 3-4 sentences per the bio amendment (docs/enrichment_v2_spec.md Section 2 footnote) — narrative, not a single material fact. */
   bio?: string;
   bio_source_ids?: string[];
+  /** The bio is the team page's own text, kept word for word (people.ts bioFromCard). */
+  bio_verbatim?: boolean;
   linkedin_url?: EvidencedValue<string>;
   /** The source that states this person founded the company (people.ts groundFounders). */
   grounded_url?: string;
@@ -126,6 +129,7 @@ export interface V2Leader extends PersonQualityTags {
   group?: "board";
   bio?: string;
   bio_source_ids?: string[];
+  bio_verbatim?: boolean;
   linkedin_url?: EvidencedValue<string>;
   joined_date?: string;
 }
@@ -380,6 +384,7 @@ STRICT RULES:
 9. PUBLIC COMPANY — this is a consequential flag (a true archives the company out of the active dataset), so it needs the same evidence_quote/source_id as any other material field: a specific exchange and ticker stated in the source. A company being ACQUIRED, bought by a strategic/PE buyer, or a subsidiary of a public parent is still PRIVATE itself — report that acquisition via round_type 'Acquired'/'PE Buyout' in the funding history, never by flagging is_public_company. If you cannot cite a direct public-listing statement, omit the field.
 10. ACTIVELY SEARCH EVERY CATEGORY — before leaving founders, leadership, metrics.employee_count, metrics.headcount_history, or the HQ location empty, actively re-scan EVERY source below, not just the one whose label obviously matches: a funding-round article often states headcount at the time of the round ("the 45-person startup"), a LinkedIn company snippet states "X employees" or a size bracket ("51-200 employees" -> employee_range ONLY, never employee_count), a founding-year line ("Founded in 2019", "Founded: 2019", "since 2019") often sits in a Crunchbase/LinkedIn snippet or a press release's boilerplate "About" paragraph, a "founded by"/"co-founded by" sentence names EVERY founder (list each one), a team/about page names the executives, a Crunchbase/LinkedIn snippet often states the headquarters city. An empty field is correct only AFTER that active check, never as a default for not having looked.
 11. SECTOR — pick sector_name (and sub_sector_name when one clearly fits) from the enumerated lists once you know what the company does, from what the company's own pages say it sells — not from a sentence about its executives or investors; the sub-sector must belong to the sector; add sub_sector_names for any other field it genuinely operates in.
+${sectorGuidance(taxonomy.subNames)}
 
 Labeled research (each source is tagged [S#] for a search result or [W#] for a fetched website page):
 ${context}`;

@@ -184,3 +184,8 @@ export function backgroundSearchQuery(companyName: string, founders: string[]): 
   const names = founders.slice(0, 2).map((n) => `"${n}"`).join(" OR ");
   return `${names} "${companyName}" founder previously OR formerly OR "before founding" OR graduated OR served`;
 }
+
+/** One search for one founder (owner, 2026-11-10): a query that names several founders finds the article about the better-known one. */
+export function founderSearchQuery(companyName: string, founder: string): string {
+  return `"${founder}" "${companyName}" founder previously OR formerly OR "before founding" OR graduated OR served OR "co-founder of"`;
+}
