@@ -90,3 +90,19 @@ describe("the classification as the pipeline runs it (one function for the colle
     expect(n).toBe(1);
   });
 });
+
+describe("Vertical SaaS is a tag, not the main sub-sector (owner, 2026-11-12: SafetyCulture)", () => {
+  const sc = "SafetyCulture is an operations system for the frontline that connects people, workflows and operational data, covering quality management, asset maintenance, training and compliance.";
+  const choice = (sector: string, sub?: string, others: string[] = []) => ({ sector_name: sector, sub_sector_name: sub, sub_sector_names: others });
+  it("as the main answer it is a problem with the reason", () => {
+    expect(sectorProblem(choice("SaaS & Dev Tools", "Vertical SaaS"), sc)).toMatch(/is a tag, not the main sub-sector/);
+    expect(sectorProblem(choice("Industrial & Manufacturing", "Industrial Automation", ["Vertical SaaS"]), "Industrial automation and production lines for manufacturers.")).toBeNull();
+  });
+  it("a second look that names the industry wins; one that stays Vertical SaaS keeps it as a tag only", async () => {
+    const fixed = await classifyWithRetry(async (f) => (f ? choice("Enterprise Software", "Legal & Compliance Software", ["Vertical SaaS"]) : choice("SaaS & Dev Tools", "Vertical SaaS")), sc);
+    expect(fixed).toMatchObject({ sector_name: "Enterprise Software", sub_sector_name: "Legal & Compliance Software" });
+    const stuck = await classifyWithRetry(async () => choice("SaaS & Dev Tools", "Vertical SaaS"), sc);
+    expect(stuck).toMatchObject({ sector_name: "SaaS & Dev Tools", sub_sector_name: undefined });
+    expect(stuck?.sub_sector_names).toContain("Vertical SaaS");
+  });
+});

@@ -56,6 +56,8 @@ export function parseSectorChoice(input: unknown, taxonomy: SectorTaxonomyLite):
 export function sectorProblem(choice: SectorChoice | null, description: string): string | null {
   if (!choice) return "no usable classification";
   if (!definitionSupports(choice.sub_sector_name, description)) return `"${choice.sub_sector_name}" has nothing in common with the description; read the definitions and pick what the company sells`;
+  // "Vertical SaaS" is a tag; the main sector is the customer's industry (owner, 2026-11-10; SafetyCulture came back as SaaS & Dev Tools › Vertical SaaS).
+  if (choice.sub_sector_name === "Vertical SaaS") return `"Vertical SaaS" is a tag, not the main sub-sector; name the customers' industry (the market the company serves) and keep Vertical SaaS among the other fields`;
   if (choice.sub_sector_name && /\/\s*general$/i.test(choice.sub_sector_name)) return `"${choice.sub_sector_name}" is a last resort; name the closest specific sub-sector of any sector, or keep General only if none fits`;
   return null;
 }
@@ -74,5 +76,7 @@ export async function classifyWithRetry(
   log(`answer rejected (${problem}) \u2014 asking once more`);
   const again = await call(`${choice ? `${choice.sector_name}${choice.sub_sector_name ? ` \u203A ${choice.sub_sector_name}` : ""}: ` : ""}${problem}.`);
   const stillBad = sectorProblem(again, description);
+  // Still "Vertical SaaS" as the main sub-sector: the industry is not named, so no main sub-sector, and it stays among the tags.
+  if (again && again.sub_sector_name === "Vertical SaaS") return { ...again, sub_sector_name: undefined, sub_sector_names: [...new Set(["Vertical SaaS", ...again.sub_sector_names])].slice(0, 3) };
   return again && (!stillBad || /last resort/.test(stillBad)) ? again : null;
 }
