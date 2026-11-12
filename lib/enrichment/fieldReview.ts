@@ -80,8 +80,11 @@ export interface FieldStatus { field: string; marked: number; correct: number; s
 /** Derived from the headcount history, never marked on their own (owner, 2026-11-12): they stand or fall with employee_history. */
 export const DERIVED_FROM_HISTORY = ["employee_count", "employee_range"] as const;
 
+/** Fields no longer collected or reviewed (owner, 2026-11-12: biographies). Their old marks stay in the tracker and count for nothing. */
+export const RETIRED_FIELDS = ["founder_bio"] as const;
+
 export function fieldStatus(marks: Mark[], pending: Record<string, number> = {}): FieldStatus[] {
-  const all = fieldStatusOwn(marks.filter((m) => !(DERIVED_FROM_HISTORY as readonly string[]).includes(m.field)), pending);
+  const all = fieldStatusOwn(marks.filter((m) => !(DERIVED_FROM_HISTORY as readonly string[]).includes(m.field) && !(RETIRED_FIELDS as readonly string[]).includes(m.field)), pending);
   const hist = all.find((s) => s.field === "employee_history") ?? { field: "employee_history", marked: 0, correct: 0, share: null, open: false, pending: 0 };
   return [...all, ...DERIVED_FROM_HISTORY.map((field) => ({ ...hist, field }))];
 }

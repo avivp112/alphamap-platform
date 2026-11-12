@@ -21,7 +21,7 @@ describe("the tracker is the gate (owner, 2026-11-05)", () => {
     expect(openFieldNames([...marks("leader", 19, 0), ...marks("round", 18, 4), ...marks("news", 20, 0), ...marks("patent", 18, 2)])).toEqual(["news", "patent"]);
   });
   it("every review field maps to columns, rounds or bios; a column belongs to one field", () => {
-    expect(WRITABLE_FIELDS).toHaveLength(21);
+    expect(WRITABLE_FIELDS).toHaveLength(20);   // founder_bio is retired (owner, 2026-11-12)
     expect(WRITABLE_FIELDS).toEqual(expect.arrayContaining(["competitor_declared", "competitor_market", "board", "founder_background", "description", "sector", "tags"]));
     expect(openColumnsOf(["office", "competitor_declared"])).toEqual(new Set(["offices", "office_countries", "competitors"]));
     expect(fieldOfColumn("leadership")).toBe("leader");

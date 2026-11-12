@@ -39,9 +39,4 @@ describe("review 7 focus fields (owner, 2026-11-09)", () => {
     expect(FOCUS7.employees(co({ employee_count: null, employee_range: null }))).toBe(true);
     expect(FOCUS7.employees(co({ employee_range: "11-50" }))).toBe(false);
   });
-  it("team_bio: nobody on file, or a person with no bio", () => {
-    expect(FOCUS7.team_bio(co({ founders: [], leadership: [] }))).toBe(true);
-    expect(FOCUS7.team_bio(co({ founders: [{ bio: "Built X." }], leadership: [{ bio: "Ran Y." }] }))).toBe(false);
-    expect(FOCUS7.team_bio(co({ founders: [{ bio: "Built X." }], leadership: [{ bio: "" }] }))).toBe(true);
-  });
 });

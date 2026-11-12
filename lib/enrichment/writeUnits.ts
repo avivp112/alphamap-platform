@@ -24,7 +24,7 @@ export const FIELD_COLUMNS: Record<string, string[]> = {
   patent: ["patents", "patent_count", "patent_fields"],
   news: ["news"],
   // Not columns of their own: the rounds table, and the bios inside founders / leadership.
-  round: [], founder_bio: [], founder_background: [],
+  round: [], founder_background: [],
 };
 
 /** Every field a run may write once it is open. */
