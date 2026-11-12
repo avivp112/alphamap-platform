@@ -1,0 +1,1 @@
+-- Rollback of 20261128000000: re-run 20261126000000 (restores the earlier hf_link_candidates view).

@@ -37,3 +37,10 @@ describe("hf org migration", () => {
     expect(readFileSync("supabase/rollback/20261126000000_hf_org_layer_down.sql", "utf8")).toMatch(/DROP TABLE IF EXISTS hf_orgs/);
   });
 });
+
+describe("hf link on shared hosts (fix 20261128)", () => {
+  const fix = readFileSync("supabase/migrations/20261128000000_hf_link_own_domain.sql", "utf8");
+  it("a profile website on a shared host (readthedocs.io, github.io ...) never proves a link", () => {
+    expect(fix).toMatch(/WHERE oss_is_own_domain\(registrable_domain\(o\.website\)\)/);
+  });
+});
