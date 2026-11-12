@@ -73,3 +73,26 @@ describe("companyPath", () => {
     expect(companyPath("63f3cf48-db5c-4a8f-9507-075af3c57813")).toBe("/startups?company=63f3cf48-db5c-4a8f-9507-075af3c57813");
   });
 });
+
+describe("oss_github candidates (stage 7, 2026-11-12)", () => {
+  const evidence = { github_url: "https://github.com/DietrichGebert/ponytail", owner: "DietrichGebert", owner_type: "User", repo: "ponytail", stars: 189155, stars_7d: 3916, forks: 200, open_issues: 40, created: "2026-06-12", age_days: 152, homepage: "https://ponytail.dev", description: "Makes your AI agent think like the laziest senior dev in the room.", suspect_stars: true };
+  it("links to the repo, and only to a github.com address", () => {
+    expect(registryUrl({ source: "oss_github", cik: null, entity_number: null, name: "ponytail", evidence })).toBe("https://github.com/DietrichGebert/ponytail");
+    expect(registryUrl({ source: "oss_github", cik: null, entity_number: null, name: "x", evidence: { github_url: "https://evil.example/x" } })).toBeNull();
+    expect(registryUrl({ source: "oss_github", cik: null, entity_number: null, name: "x" })).toBeNull();
+  });
+  it("shows the project, the growth, the forks and issues, the age, and the warning for bought stars", () => {
+    const lines = evidenceLines({ source: "oss_github", evidence, country: null, founded_year: null });
+    const by = Object.fromEntries(lines.map((l) => [l.label, l.value]));
+    expect(by["Project"]).toBe("DietrichGebert/ponytail (user)");
+    expect(by["Growth"]).toBe("+3,916 stars in 7 days (189,155 stars in all)");
+    expect(by["Forks / issues"]).toBe("200 forks, 40 open issues");
+    expect(by["Created"]).toBe("2026-06-12 (152 days old)");
+    expect(by["Homepage"]).toBe("https://ponytail.dev");
+    expect(by["Check"]).toMatch(/Suspected bought stars/);
+  });
+  it("no warning without the flag", () => {
+    const lines = evidenceLines({ source: "oss_github", evidence: { ...evidence, suspect_stars: false }, country: null, founded_year: null });
+    expect(lines.some((l) => l.label === "Check")).toBe(false);
+  });
+});

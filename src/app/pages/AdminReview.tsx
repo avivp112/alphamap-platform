@@ -28,7 +28,7 @@ import {
 
 const PAGE = 50;
 const STATUSES: CandidateStatus[] = ["pending", "approved", "rejected"];
-const SOURCES: Array<CandidateSource | "all"> = ["all", "sec_form_d", "uk_companies_house", "epo_ops"];
+const SOURCES: Array<CandidateSource | "all"> = ["all", "sec_form_d", "uk_companies_house", "epo_ops", "oss_github"];
 
 function timeAgo(iso: string | null): string {
   if (!iso) return "";

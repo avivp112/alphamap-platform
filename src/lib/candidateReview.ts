@@ -6,7 +6,7 @@
 // filing (company_candidates, migration 20261016000000). It becomes a
 // startups row only when an admin approves it.
 
-export type CandidateSource = "sec_form_d" | "uk_companies_house" | "epo_ops";
+export type CandidateSource = "sec_form_d" | "uk_companies_house" | "epo_ops" | "oss_github";
 export type CandidateStatus = "pending" | "approved" | "rejected";
 export type CandidateTier = "queue" | "alert";
 
@@ -27,6 +27,21 @@ export interface CandidateEvidence {
   title?: string;
   abstract?: string;
   filing_date?: string;
+  // oss_github (migration 20261125000000): a growing GitHub project with a homepage of its own.
+  github_url?: string;
+  owner?: string;
+  owner_type?: string;
+  repo?: string;
+  description?: string;
+  homepage?: string;
+  stars?: number;
+  stars_7d?: number;
+  forks?: number;
+  open_issues?: number;
+  created?: string;
+  age_days?: number;
+  /** Stars far above forks and open issues: a flag for the reviewer, never a rejection. */
+  suspect_stars?: boolean;
 }
 
 export interface CompanyCandidate {
@@ -66,11 +81,14 @@ export const SOURCE_LABEL: Record<string, string> = {
   sec_form_d: "SEC Form D",
   uk_companies_house: "UK Companies House",
   epo_ops: "EPO patents",
+  oss_github: "GitHub project",
 };
 
 /** The official record, so the reviewer can check the source itself. */
-export function registryUrl(c: Pick<CompanyCandidate, "source" | "cik" | "entity_number" | "name">): string | null {
+export function registryUrl(c: Pick<CompanyCandidate, "source" | "cik" | "entity_number" | "name"> & { evidence?: CandidateEvidence }): string | null {
   switch (c.source) {
+    case "oss_github":
+      return typeof c.evidence?.github_url === "string" && /^https:\/\/github\.com\//.test(c.evidence.github_url) ? c.evidence.github_url : null;
     case "sec_form_d":
       return c.cik ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${encodeURIComponent(c.cik)}&type=D` : null;
     case "uk_companies_house":
@@ -123,6 +141,16 @@ export function evidenceLines(c: Pick<CompanyCandidate, "source" | "evidence" | 
     const raising = formatUsd(e.total_offering);
     const sold = formatUsd(e.total_sold);
     add("Raising", raising && sold ? `${raising} (sold ${sold})` : raising ?? sold);
+  }
+  if (c.source === "oss_github") {
+    add("Project", e.owner && e.repo ? `${e.owner}/${e.repo}${e.owner_type ? ` (${e.owner_type.toLowerCase()})` : ""}` : null);
+    const total = e.stars != null ? `${e.stars.toLocaleString("en-US")} stars` : null;
+    add("Growth", e.stars_7d != null ? `+${e.stars_7d.toLocaleString("en-US")} stars in 7 days${total ? ` (${total} in all)` : ""}` : total);
+    add("Forks / issues", e.forks != null || e.open_issues != null ? `${e.forks ?? "?"} forks, ${e.open_issues ?? "?"} open issues` : null);
+    add("Created", e.created ? `${e.created}${e.age_days != null ? ` (${Math.round(e.age_days)} days old)` : ""}` : null);
+    add("Homepage", e.homepage);
+    add("Description", e.description && e.description.length > 400 ? `${e.description.slice(0, 400).trimEnd()}…` : e.description);
+    if (e.suspect_stars) lines.push({ label: "Check", value: "Suspected bought stars: many stars, almost no forks or issues. Look at who starred it before approving." });
   }
   if (c.source === "epo_ops") {
     add("Patent", e.title);
