@@ -36,7 +36,7 @@ export SUPABASE_ACCESS_TOKEN
 CLI="npx --yes supabase@2.120.0"
 FUNCTIONS=(
   ingest-sec-form-d ingest-uk-companies-house ingest-epo-ops ingest-uspto-patents
-  ingest-github-velocity ingest-huggingface
+  ingest-github-velocity ingest-huggingface snapshot-huggingface
   sourcing-crawl discover-boards extract-job-signals
   backfill-embeddings pipeline-health
 )

@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import type { HfSummary } from "./hfSummary";
 import type { CompanyCandidate, CandidateSource, CandidateStatus, CandidatePreview } from "./candidateReview";
 import { TAB_STATUSES, type CheckPromotion, type PromotionTab } from "./checkPromotion";
 import { sanitizeSearch, type DealFeedRow, type DealFeedStats, type DealKind, type DealSort } from "./dealFeed";
@@ -779,6 +780,12 @@ export async function fetchScoreHistory(startupId: string): Promise<ScoreHistory
     .order("recorded_date", { ascending: true });
   if (error) throw error;
   return (data ?? []) as ScoreHistoryPoint[];
+}
+
+export async function fetchHfSummary(startupId: string): Promise<HfSummary | null> {
+  const { data, error } = await supabase.rpc("company_hf_summary", { p_startup_id: startupId });
+  if (error) throw error;
+  return (data ?? null) as HfSummary | null;
 }
 
 export async function fetchAlphaScore(startupId: string): Promise<AlphaScore | null> {

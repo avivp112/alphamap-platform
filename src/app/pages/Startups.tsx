@@ -41,11 +41,12 @@ import {
   fetchStartupsPage, fetchStartupsCount, fetchStartupsForExport, EXPORT_ROW_CAP, fetchDistinctCountries, fetchStartupDetail,
   fetchSuggestedPeers, fetchStartupListRowById, fetchScoreHistory, fetchArticleImage, STARTUPS_PAGE_SIZE, subSectorNames,
   fetchUserMandate, logInteraction, fetchPassedStartupIds, fetchMatchScores, fetchLookalikes,
-  fetchUserWebhook, syncStartupToCrm,
+  fetchUserWebhook, syncStartupToCrm, fetchHfSummary,
   type Startup, type FundingRound, type RoundType, type AlphaScore, type HeadcountPoint,
   type StartupListRow, type StartupSearchFilters, type ScoreHistoryPoint,
   type NewsItem, type PassReason, type MatchScoreResult, type LookalikeResult,
 } from "../../lib/supabase";
+import { hfHeadline, hfHasTrend, hfOrgUrl, type HfSummary } from "../../lib/hfSummary";
 import { useWatchlistMembership, addToWatchlist, removeFromWatchlist, watchlistErrorMessage } from "../../lib/watchlist";
 import { exportRows, type ExportColumn, type ExportFormat } from "../../lib/exportData";
 import { originFacts, type OriginFacts } from "../../lib/origin";
@@ -1060,6 +1061,55 @@ function MissingDataState({ message }: { message: string }) {
 
 // ── Tab 1: Overview ───────────────────────────────────────────────────────────
 
+function CompanyHuggingFace({ startupId }: { startupId: string }) {
+  const [s, setS] = useState<HfSummary | null>(null);
+  useEffect(() => {
+    setS(null);
+    fetchHfSummary(startupId).then(setS).catch(() => setS(null));
+  }, [startupId]);
+  if (!s || s.models === 0) return null;
+  const h = hfHeadline(s);
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-3">
+        <Activity className="w-4 h-4 text-gray-400" />
+        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Hugging Face</h3>
+      </div>
+      <div className="bg-gray-50 border border-gray-100 rounded-[8px] p-4 flex flex-col gap-2 text-sm text-gray-700">
+        <div>
+          {s.orgs.map((o, i) => (
+            <a key={o} href={hfOrgUrl(o)} target="_blank" rel="noopener noreferrer" className="text-violet-700 underline">{i > 0 ? ", " : ""}{o}</a>
+          ))}
+          <span className="text-gray-500"> · {h.models}{h.downloads ? ` · ${h.downloads}` : ""}{h.trend ? ` · ${h.trend}` : ""}</span>
+        </div>
+        {hfHasTrend(s) && (
+          <div className="h-24">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={s.weekly} margin={{ top: 4, right: 0, left: -10, bottom: 0 }}>
+                <XAxis dataKey="week" tick={{ fill: "#9CA3AF", fontSize: 9 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "#9CA3AF", fontSize: 9 }} axisLine={false} tickLine={false} />
+                <ReTooltip />
+                <Line type="monotone" dataKey="downloads" stroke="#7c3aed" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+        {s.top_models.length > 0 && (
+          <ul className="text-xs text-gray-600 flex flex-col gap-1">
+            {s.top_models.map((m) => (
+              <li key={m.name}>
+                <a href={m.url} target="_blank" rel="noopener noreferrer" className="text-violet-700 underline">{m.name}</a>
+                {m.downloads != null ? ` · ${m.downloads.toLocaleString("en-US")} downloads` : ""}
+                {m.downloads_delta_7d != null ? ` (${m.downloads_delta_7d >= 0 ? "+" : "−"}${Math.abs(m.downloads_delta_7d).toLocaleString("en-US")} in 7 days)` : ""}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ScoreHistoryChart({ startupId }: { startupId: string }) {
   const [pts, setPts] = useState<ScoreHistoryPoint[] | null>(null);
 
@@ -1239,6 +1289,8 @@ function OverviewTab({
       <AlphaMapScorePanel data={alphaScore} loading={alphaLoading} err={alphaErr} />
 
       <ScoreHistoryChart startupId={startup.id} />
+
+      <CompanyHuggingFace startupId={startup.id} />
 
       {startup.founders && startup.founders.length > 0 && (
         <div>
