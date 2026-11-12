@@ -84,3 +84,34 @@ describe("a changed classifier needs a review of its new values before the field
     expect(held?.pending).toBe(3);
   });
 });
+
+describe("one value, one mark; one answer per classifier version (owner, 2026-11-12)", () => {
+  const m = (id: string, company: string, value: string): Mark => ({ id, field: "sector", company, value, source_url: "https://x.example/", verdict: "wrong", source_of_mark: "" });
+  it("two old marks of a company that change to the same value give one new mark, wrong if either is named", () => {
+    const marks = [m("9.61", "Agnikul Cosmos", "Real Estate › PropTech"), m("rj.9.61", "Agnikul Cosmos", "Industrial & Manufacturing › Advanced Manufacturing")];
+    const rows = [{ id: "9.61", produced: false, now: "DeepTech › Space Tech" }, { id: "rj.9.61", produced: false, now: "DeepTech › Space Tech" }];
+    const r = marksForNewClassifications(rows, marks, [], () => undefined, "n");
+    expect(r.marks).toHaveLength(1);
+    expect(r.marks[0].verdict).toBe("correct");
+    expect(marksForNewClassifications(rows, marks, ["rj.9.61"], () => undefined, "n").marks[0].verdict).toBe("wrong");
+  });
+});
+
+import { classifierVersion, cacheKey, currentEntries, toCacheFile } from "./sectorCache";
+describe("sector cache", () => {
+  it("the version follows the definitions and the model; the key follows version, company and description", () => {
+    const v = classifierVersion("haiku");
+    expect(classifierVersion("haiku")).toBe(v);
+    expect(classifierVersion("other-model")).not.toBe(v);
+    expect(cacheKey(v, "A", "d")).toBe(cacheKey(v, "A", "d"));
+    expect(cacheKey(v, "A", "d")).not.toBe(cacheKey(v, "A", "d2"));
+    expect(cacheKey(v, "A", "d")).not.toBe(cacheKey("other", "A", "d"));
+  });
+  it("only the current version's answers are reused", () => {
+    const e = new Map<string, string | null>([["k", "DeepTech › Space Tech"], ["n", null]]);
+    const file = toCacheFile("v1", e);
+    expect([...currentEntries(file, "v1")]).toEqual([["k", "DeepTech › Space Tech"], ["n", null]]);
+    expect(currentEntries(file, "v2").size).toBe(0);
+    expect(currentEntries(null, "v1").size).toBe(0);
+  });
+});

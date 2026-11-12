@@ -57,9 +57,13 @@ export function marksForNewClassifications(
     .filter((r) => !sector.some((m) => m.company === byId.get(r.id)!.company && norm(m.value) === norm(r.now)));
   const round = 1 + Math.max(0, ...marks.map((m) => Number(m.id.match(/^rj(\d*)\./)?.[1] || (m.id.startsWith("rj.") ? 1 : 0))));
   const prefix = round === 1 ? "rj" : `rj${round}`;
-  const out: Mark[] = changed.map((r) => {
+  // Several old marks of one company can change to the same new value: it is one value, one mark (wrong if any of them is named).
+  const groups = new Map<string, RejudgedRow[]>();
+  for (const r of changed) { const k = `${byId.get(r.id)!.company}|${norm(r.now)}`; groups.set(k, [...(groups.get(k) ?? []), r]); }
+  const out: Mark[] = [...groups.values()].map((g) => {
+    const r = g[0];
     const old = byId.get(r.id)!;
-    return { id: `${prefix}.${r.id}`, field: "sector", company: old.company, value: r.now, source_url: sourceOf(old.company) ?? old.source_url, verdict: wrongOldIds.includes(r.id) ? "wrong" : "correct", source_of_mark: note };
+    return { id: `${prefix}.${r.id}`, field: "sector", company: old.company, value: r.now, source_url: sourceOf(old.company) ?? old.source_url, verdict: g.some((x) => wrongOldIds.includes(x.id)) ? "wrong" : "correct", source_of_mark: note };
   });
   const known = new Set(changed.map((r) => r.id));
   return { marks: out, unknown: wrongOldIds.filter((w) => !known.has(w)) };
