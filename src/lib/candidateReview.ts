@@ -6,7 +6,7 @@
 // filing (company_candidates, migration 20261016000000). It becomes a
 // startups row only when an admin approves it.
 
-export type CandidateSource = "sec_form_d" | "uk_companies_house" | "epo_ops" | "oss_github";
+export type CandidateSource = "sec_form_d" | "uk_companies_house" | "epo_ops" | "oss_github" | "hf_org";
 export type CandidateStatus = "pending" | "approved" | "rejected";
 export type CandidateTier = "queue" | "alert";
 
@@ -42,6 +42,18 @@ export interface CandidateEvidence {
   age_days?: number;
   /** Stars far above forks and open issues: a flag for the reviewer, never a rejection. */
   suspect_stars?: boolean;
+  // hf_org (migration 20261126000000): a Hugging Face organization with a website of its own.
+  hf_org?: string;
+  hf_url?: string;
+  fullname?: string;
+  org_type?: string;
+  github?: string;
+  models?: number;
+  first_model?: string;
+  downloads?: number;
+  downloads_7d?: number;
+  likes?: number;
+  followers?: number;
 }
 
 export interface CompanyCandidate {
@@ -82,6 +94,7 @@ export const SOURCE_LABEL: Record<string, string> = {
   uk_companies_house: "UK Companies House",
   epo_ops: "EPO patents",
   oss_github: "GitHub project",
+  hf_org: "Hugging Face org",
 };
 
 /** The official record, so the reviewer can check the source itself. */
@@ -89,6 +102,8 @@ export function registryUrl(c: Pick<CompanyCandidate, "source" | "cik" | "entity
   switch (c.source) {
     case "oss_github":
       return typeof c.evidence?.github_url === "string" && /^https:\/\/github\.com\//.test(c.evidence.github_url) ? c.evidence.github_url : null;
+    case "hf_org":
+      return typeof c.evidence?.hf_url === "string" && /^https:\/\/huggingface\.co\//.test(c.evidence.hf_url) ? c.evidence.hf_url : null;
     case "sec_form_d":
       return c.cik ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${encodeURIComponent(c.cik)}&type=D` : null;
     case "uk_companies_house":
@@ -151,6 +166,15 @@ export function evidenceLines(c: Pick<CompanyCandidate, "source" | "evidence" | 
     add("Homepage", e.homepage);
     add("Description", e.description && e.description.length > 400 ? `${e.description.slice(0, 400).trimEnd()}…` : e.description);
     if (e.suspect_stars) lines.push({ label: "Check", value: "Suspected bought stars: many stars, almost no forks or issues. Look at who starred it before approving." });
+  }
+  if (c.source === "hf_org") {
+    const n = (v: number) => v.toLocaleString("en-US");
+    add("Organization", e.hf_org ? `${e.hf_org}${e.fullname && e.fullname !== e.hf_org ? ` (${e.fullname})` : ""}` : null);
+    add("Models", e.models != null ? `${e.models} model${e.models === 1 ? "" : "s"}${e.first_model ? `, the first on ${e.first_model}` : ""}` : null);
+    add("Growth", e.downloads_7d != null ? `+${n(e.downloads_7d)} downloads in 7 days${e.downloads != null ? ` (${n(e.downloads)} in the last 30 days)` : ""}` : e.downloads != null ? `${n(e.downloads)} downloads in the last 30 days` : null);
+    add("Likes / followers", e.likes != null || e.followers != null ? `${e.likes ?? "?"} likes, ${e.followers ?? "?"} followers` : null);
+    add("Website", e.homepage);
+    add("GitHub", e.github);
   }
   if (c.source === "epo_ops") {
     add("Patent", e.title);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { registryUrl, formatUsd, formatPeople, evidenceLines, companyPath } from "./candidateReview";
+import { registryUrl, formatUsd, formatPeople, evidenceLines, companyPath, SOURCE_LABEL } from "./candidateReview";
 
 describe("registryUrl", () => {
   it("links each source to its official record", () => {
@@ -94,5 +94,21 @@ describe("oss_github candidates (stage 7, 2026-11-12)", () => {
   it("no warning without the flag", () => {
     const lines = evidenceLines({ source: "oss_github", evidence: { ...evidence, suspect_stars: false }, country: null, founded_year: null });
     expect(lines.some((l) => l.label === "Check")).toBe(false);
+  });
+});
+
+describe("hf_org candidates (stage 7b)", () => {
+  const evidence = { hf_org: "newco", hf_url: "https://huggingface.co/newco", fullname: "NewCo", homepage: "https://newco.dev", models: 2, first_model: "2026-09-13", downloads: 1100, downloads_7d: 1000, likes: 7, followers: 40 };
+  it("links to the org page, and only to huggingface.co", () => {
+    expect(registryUrl({ source: "hf_org", cik: null, entity_number: null, name: "NewCo", evidence })).toBe("https://huggingface.co/newco");
+    expect(registryUrl({ source: "hf_org", cik: null, entity_number: null, name: "x", evidence: { hf_url: "https://evil.example/x" } })).toBeNull();
+  });
+  it("shows the org, the models and first date, the growth and the website", () => {
+    const by = Object.fromEntries(evidenceLines({ source: "hf_org", evidence, country: null, founded_year: null }).map((l) => [l.label, l.value]));
+    expect(by["Organization"]).toBe("newco (NewCo)");
+    expect(by["Models"]).toBe("2 models, the first on 2026-09-13");
+    expect(by["Growth"]).toBe("+1,000 downloads in 7 days (1,100 in the last 30 days)");
+    expect(by["Website"]).toBe("https://newco.dev");
+    expect(SOURCE_LABEL.hf_org).toBe("Hugging Face org");
   });
 });
