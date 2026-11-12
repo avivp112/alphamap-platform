@@ -47,7 +47,7 @@ import {
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
 import { pickArticlesToRead } from "./articles.ts";
 import { runTechGate, shouldSkipAsNonTech, type TechGateVerdict } from "./techGate.ts";
-import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, personCardsInHtml, bioFromCard, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
+import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, supportedRoleSubset, personCardsInHtml, bioFromCard, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
 import { componentOn } from "./components.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
@@ -1291,6 +1291,15 @@ export async function collectCompany(
         bump(stats.droppedByReason, "leader_title_removed");
         record("kept_without_title");
         keptLeaders.push({ ...l, role: "Leadership team" });
+        continue;
+      }
+      // Part of the title is verified: that part is written (Scripbox: "Founded in 2012 by Atul Shinghal" gives Founder; no source says CEO).
+      const partial = role ? supportedRoleSubset(l.name, role, allowedTexts, others) : null;
+      if (partial) {
+        console.log(`    🏷️   leader ${l.name}: only "${partial}" of "${role}" is beside the name in an allowed source — written as "${partial}"`);
+        bump(stats.droppedByReason, "leader_title_reduced_to_verified");
+        record("verified_text");
+        keptLeaders.push({ ...l, role: partial });
         continue;
       }
       const namedIn = allowedTexts.filter((t) => personMentionedIn(l.name, t)).length;

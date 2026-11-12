@@ -96,3 +96,80 @@ describe("Swimm: an address under an Offices heading is an office, not the headq
     expect([...contactPageOfficeListHqIds(marks, (m) => quotes[m.id])].sort()).toEqual(["10.2", "10.8"]);
   });
 });
+
+import { marketRelationProblem } from "./competitorTiers";
+import { extractionPoints } from "./headcountSources";
+import { duplicateMarkIds } from "./markRules";
+import { roleSupported } from "./people";
+import { roundSourceStanding } from "./roundSources";
+
+describe("run 11: market peers are not partners, acquirers, or 'in contrast to'", () => {
+  it("Rand McNally ↔ Platform Science (powered by / acquired)", () => {
+    expect(marketRelationProblem("Rand McNally Introduces Truck-Safe Connected Navigation Powered by ... 2025, Platform Science acquired Trimble's global transportation ...")).not.toBeNull();
+  });
+  it("Rezonate ↔ Silverfort: the article's address says it was acquired", () => {
+    expect(marketRelationProblem("Together, Silverfort and Rezonate deliver a complete, end-to-end identity security platform https://prnewswire.com/silverfort-acquires-rezonate-expanding-its-cloud")).toBe("market_acquirer_or_acquired");
+  });
+  it("Navi ↔ PhonePe, Paytm: 'in contrast to' separates", () => {
+    expect(marketRelationProblem("In contrast to other fintech startups like Paytm, BharatPe, Razorpay and PhonePe, which started as payment startups and later expanded into lending, Navi")).toBe("market_contrast");
+  });
+  it("the peers the owner kept stay", () => {
+    for (const q of [
+      "Acko, founded in 2015, competes with players including SoftBank (9984.T) , opens new tab-backed Policybazaar and ICICI Lombard (ICIL.NS) ...",
+      "Startups competing with SkyDrive for market share include Archer Aviation and Toyota-backed Joby Aviation, both based in California, as well ...",
+      "Eight Sleep competes with the likes of BedJet and Chilipad on the mattress and temperature control front, and with Oura and Whoop in the ...",
+      "Scripbox competes with a slew of startups including Piggyy, Fisdom, and Groww along with biggies - Paytm Money and ET Money.",
+      "ActiveCampaign is a strong Mailchimp alternative for businesses that have outgrown basic email marketing and need a platform that can support more sophisticated ...",
+      "Compare top platforms like Vanta, AuditBoard, and ...",
+    ]) expect(marketRelationProblem(q)).toBeNull();
+  });
+});
+
+describe("run 11: one article, one point", () => {
+  const src = new Map([["S1", { url: "https://techcrunch.com/2020/04/14/fareye-series-d-india-logistics/", source_type: "news", content: "", title: "" }]]);
+  it("FarEye 350 on 04-14 and 04-15 from one article is one point", () => {
+    const pts = [
+      { date: "2020-04-14", employee_count: 350, source_id: "S1", evidence_quote: "The startup, which employs about 350 people, said it is already handling more than 10 million transactions" },
+      { date: "2020-04-15", employee_count: 350, source_id: "S1", evidence_quote: "The startup, which employs about 350 people, said it is already handling more than 10 million transactions" },
+    ];
+    expect(extractionPoints(pts, src as never, "FarEye")).toHaveLength(1);
+  });
+  it("replay: the second mark of the same article and number leaves; a different article stays", () => {
+    const m = (id: string, value: string, source_url: string) => ({ id, field: "employee_history", company: "FarEye", value, source_url });
+    const dup = duplicateMarkIds([
+      m("11.5", "350 employees @ 2020-04-14 (press_reported)", "https://techcrunch.com/2020/04/14/fareye/"),
+      m("11.6", "350 employees @ 2020-04-15 (press_reported)", "https://techcrunch.com/2020/04/14/fareye/"),
+      m("11.x", "350 employees @ 2020-05-01 (press_reported)", "https://other.com/fareye"),
+    ]);
+    expect([...dup]).toEqual(["11.6"]);
+  });
+});
+
+describe("run 11: a leader's roles each beside the name, not necessarily in one mention", () => {
+  it("'Founder and CEO': one source says founder, another CEO", () => {
+    const a = "Scripbox founder Atul Shinghal said the round will fund expansion.";
+    const b = "Atul Shinghal, CEO of Scripbox, told reporters that revenue doubled.";
+    expect(roleSupported("Atul Shinghal", "Founder and CEO", [a, b])).toBe(true);
+    expect(roleSupported("Atul Shinghal", "Founder and CEO", [a])).toBe(false);
+    expect(roleSupported("Atul Shinghal", "CTO", [b])).toBe(false);
+  });
+});
+
+describe("run 11: business-standard.com is tier 2", () => {
+  it("allowed at tier 2", () => {
+    expect(roundSourceStanding("https://www.business-standard.com/companies/news/x-1.html", { companyName: "X" })).toMatchObject({ kind: "allowed", tier: 2 });
+  });
+});
+
+import { supportedRoleSubset } from "./people";
+describe("run 11, Scripbox: a title verified in part is written in part", () => {
+  const art = "Founded in 2012 by Atul Shinghal and Sanjiv Singhal, Scripbox operates a digital wealth management platform that offers investment products across mutual funds.";
+  it("'Founder and CEO': the article gives Founder only", () => {
+    expect(roleSupported("Atul Shinghal", "Founder and CEO", [art])).toBe(false);
+    expect(supportedRoleSubset("Atul Shinghal", "Founder and CEO", [art])).toBe("Founder");
+  });
+  it("a full title gives no subset; a title with nothing verified gives none", () => {
+    expect(supportedRoleSubset("Atul Shinghal", "Founder", [art])).toBeNull();
+    expect(supportedRoleSubset("Atul Shinghal", "CEO", [art])).toBeNull();
+  });
+});
