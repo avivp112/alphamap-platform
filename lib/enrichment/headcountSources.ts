@@ -160,7 +160,10 @@ export function extractionPointProblem(h: ExtractionPoint, src: { url: string; s
 /** The usable points, typed by where they come from: the company's own site is site_stated, anything else press_reported. */
 export function extractionPoints(points: ExtractionPoint[] | undefined, byId: Map<string, { url: string; source_type?: string | null; content?: string | null; title?: string | null }>, companyName: string): ExtractionPoint[] {
   const seen = new Set<string>();
+  const seenArticle = new Set<string>();
   return (points ?? []).filter((h) => !extractionPointProblem(h, byId.get(h.source_id), companyName))
+    // One article (one address) gives one point for a number, even when the dates differ by a day (run 11: FarEye's TechCrunch piece, 04-14 and 04-15).
+    .filter((h) => { const u = byId.get(h.source_id)?.url; if (!u) return true; const k = `${u}|${h.employee_count}`; if (seenArticle.has(k)) return false; seenArticle.add(k); return true; })
     // The same point (company, date, number) is one point, however many sources or repeats gave it (review 8: Verbit, Ezetap, Stytch twice).
     .filter((h) => { const k = `${h.date}|${h.employee_count}|${byId.get(h.source_id)?.source_type === "company_site" ? "site" : "press"}`; if (seen.has(k)) return false; seen.add(k); return true; })
     .map((h) => ({ ...h, lower_bound: h.lower_bound ?? quoteStatesLowerBound(h.evidence_quote ?? "", h.employee_count), point_type: byId.get(h.source_id)?.source_type === "company_site" ? "site_stated" : (h.point_type && h.point_type !== "observed" ? h.point_type : "press_reported") }));

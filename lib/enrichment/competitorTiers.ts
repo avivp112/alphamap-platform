@@ -129,6 +129,19 @@ export function vsPageClaims(results: Array<{ url: string; title?: string | null
   return out;
 }
 
+/**
+ * A partner, an integration, an acquirer or an acquired company is not a market peer, and "in contrast to X" distinguishes the two instead of
+ * comparing them (owner, 2026-11-12, run 11: Rand McNally "powered by … Platform Science", Rezonate acquired by Silverfort, Navi "in contrast
+ * to … PhonePe, Paytm"). `text` is the quote, plus the source's address when it is an article ("silverfort-acquires-rezonate").
+ */
+export function marketRelationProblem(text: string): "market_partner_or_integration" | "market_acquirer_or_acquired" | "market_contrast" | null {
+  const t = ` ${text.replace(/[-_/]+/g, " ").replace(/\s+/g, " ")} `;
+  if (/\b(partners?|partnered|partnering|partnership|collaborat\w+|alliance|integrat\w+|integration|powered by|built on|runs on|available on|on the [A-Z][\w-]+ platform|in partnership with|teams? up|teamed up)\b/i.test(t)) return "market_partner_or_integration";
+  if (/\b(acquir\w+|acquisition|acquires|acquired|merg(?:es|ed|er)|buys|bought|takeover|take over)\b/i.test(t)) return "market_acquirer_or_acquired";
+  if (/\b(in contrast to|unlike|as opposed to|rather than|differs? from|different from)\b/i.test(t)) return "market_contrast";
+  return null;
+}
+
 const MARKET_WORD = /\b(market|space|industry|sector|category|segment|landscape|players?|vendors?|providers?|platforms?|companies such as|competes?|rivals?|alongside|including|such as|among)\b/i;
 
 /** Why a market claim does not stand, or null: an allowed source, one sentence with both companies and a market word. */
@@ -143,6 +156,8 @@ export function marketEvidenceProblem(c: { name: string; source_id: string; evid
   const q = ` ${normalizeForMatch(c.evidence_quote)} `;
   if (!q.includes(` ${coreName(companyName)} `) || !q.includes(` ${coreName(c.name)} `)) return "market_quote_not_both";
   if (!MARKET_WORD.test(c.evidence_quote)) return "market_no_market_word";
+  const relation = marketRelationProblem(`${c.evidence_quote} ${src.url}`);
+  if (relation) return relation;
   if (isLinkList(c.evidence_quote)) return "market_link_list";
   return null;
 }

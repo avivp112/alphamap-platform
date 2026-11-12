@@ -13,7 +13,7 @@ const MAJOR_PRESS = [
   "corriere.it", "bostonglobe.com", "chicagotribune.com", "seattletimes.com", "sfchronicle.com", "vox.com", "theatlantic.com",
   "newyorker.com", "hbr.org", "technologyreview.com", "semafor.com", "politico.com", "politico.eu", "nikkei.com", "handelsblatt.com",
   "zeit.de", "sueddeutsche.de", "ouest-france.fr", "lefigaro.fr", "haaretz.com", "jpost.com", "thehindu.com", "hindustantimes.com",
-  "indianexpress.com", "business-standard.com", "livemint.com", "dawn.com", "gulfnews.com", "thenationalnews.com", "arabnews.com",
+  "indianexpress.com", "livemint.com", "dawn.com", "gulfnews.com", "thenationalnews.com", "arabnews.com",
 ];
 
 const hostOf = (domain: string) => domain.toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];

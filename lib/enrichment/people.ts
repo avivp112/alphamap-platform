@@ -372,6 +372,9 @@ export function roleSupported(personName: string, roleText: string, sourceTexts:
   const reLast = new RegExp(`\\b${tokens[tokens.length - 1]}\\b`, "g");
   const own = new Set(tokens);
   const others = [...new Set(otherPeople.flatMap((n) => fold(n).toLowerCase().split(/[^a-z]+/).filter((t) => t.length > 2 && !own.has(t))))];
+  // Each role of the title needs a mention of the person that carries it, beside the name; the roles need not share one mention (run 11:
+  // Scripbox's "Founder and CEO" was dropped when one article said "founder Atul Shinghal" and another "CEO Atul Shinghal").
+  const satisfied = new Set<number>();
   const check = (text: string, rx: RegExp): boolean => {
     for (const m of text.matchAll(rx)) {
       const at = m.index ?? 0;
@@ -386,7 +389,8 @@ export function roleSupported(personName: string, roleText: string, sourceTexts:
         if (b?.index !== undefined) before = before.slice(b.index + t.length);
       }
       const window = before + m[0] + after;
-      if (wanted.every(([, inSource]) => inSource.test(window))) return true;
+      wanted.forEach(([, inSource], i) => { if (inSource.test(window)) satisfied.add(i); });
+      if (satisfied.size === wanted.length) return true;
     }
     return false;
   };

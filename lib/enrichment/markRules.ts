@@ -21,6 +21,7 @@ import { isExplainer, headlineIncomplete } from "./newsRelevance";
 import { PARENT_BY_SUB_SECTOR, SECTOR_TAXONOMY } from "../../src/lib/taxonomy";
 import type { Mark } from "./fieldReview";
 import { isNonDescriptivePage } from "./pageKind";
+import { marketRelationProblem } from "./competitorTiers";
 import { tagIsTechnologyProtected } from "./quoteFinder";
 import { yearBelongsToFigure, figureIsAwardCategory, figureIsBiographical, figureIsJobPosting, quoteStatesLowerBound } from "./headcountSources";
 
@@ -118,6 +119,8 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
       if (!q) return keep;
       const ownSite = !!ctx.domain && (() => { try { const h = new URL(url).hostname.toLowerCase().replace(/^www\./, ""); return h === ctx.domain || h.endsWith(`.${ctx.domain}`); } catch { return false; } })();
       if (isLinkList(q)) return out("a row of links, not a quote");
+      // A market peer is not a partner, an integration, an acquirer / acquired company, nor "in contrast to" (run 11).
+      if (mark.field === "competitor_market") { const rel = marketRelationProblem(`${q} ${url}`); if (rel) return out(`a ${rel.replace("market_", "").replace(/_/g, " ")} is not a market peer`); }
       // Without the mark's source (a competitors-sheet mark kept none) a "we / our" on its own site cannot be recognised: not judged.
       if (url && !quoteIsAboutTheCompany(q, company, ownSite)) return out("the quote is not about the company");
       if (!quoteLinksTheTwo(q, company, mark.value)) return out("the quote does not link the company and this competitor directly");
@@ -221,13 +224,16 @@ function judgeHeadcount(mark: Mark, ctx: MarkContext): MarkJudgment {
  * The same headcount point marked twice (company, date, number, type): one point once (review 8, 2026-11-10: Verbit, Ezetap
  * and Stytch each twice). The first mark in the tracker's order stands; the later ones are the same point and leave the count.
  */
-export function duplicateMarkIds(marks: Array<Pick<Mark, "id" | "field" | "company" | "value">>): Set<string> {
+export function duplicateMarkIds(marks: Array<Pick<Mark, "id" | "field" | "company" | "value"> & { source_url?: string }>): Set<string> {
   const seen = new Set<string>();
   const dup = new Set<string>();
   for (const m of marks) {
     if (m.field !== "employee_history") continue;
     const k = `${m.company.toLowerCase()}|${m.value.replace(/\s+/g, " ").trim().toLowerCase()}`;
-    if (seen.has(k)) dup.add(m.id); else seen.add(k);
+    // The same article (address) and the same number is one point, whatever the day (run 11: FarEye 350 on 04-14 and 04-15).
+    const num = m.value.match(/^(\d[\d,]*)/)?.[1]?.replace(/,/g, "");
+    const k2 = m.source_url && num ? `${m.company.toLowerCase()}|${m.source_url}|${num}` : null;
+    if (seen.has(k) || (k2 && seen.has(k2))) dup.add(m.id); else { seen.add(k); if (k2) seen.add(k2); }
   }
   return dup;
 }
