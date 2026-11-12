@@ -15,6 +15,7 @@
  * public company (status='ipo') is now the caller's, on outcome "public".
  */
 
+import { pickDevLinks } from "./devLinks";
 import Anthropic from "@anthropic-ai/sdk";
 import {
   verifyDomainMatch, webSearch, readPageCached, fetchPageHtml, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, fetchArticleTexts,
@@ -558,6 +559,15 @@ export async function collectCompany(
   }
   let funding = fundingOutcome.extraction.result;
   let market = marketOutcome.extraction.result;
+  // The company's own organization on GitHub / Hugging Face, from links on its own site (devLinks.ts): one organization, bare address.
+  {
+    const dev = pickDevLinks(websitePages);
+    for (const [key, hit] of [["github_url", dev.github], ["huggingface_url", dev.huggingface]] as const) {
+      if (!hit || market.technology[key]) continue;
+      const src = allSources.find((s) => s.query_label === "website" && s.url === hit.page);
+      if (src) market.technology[key] = { value: hit.url, source_id: src.source_id, evidence_quote: hit.url };
+    }
+  }
   for (const d of [...fundingOutcome.extraction.dropped, ...marketOutcome.extraction.dropped]) bump(stats.droppedByReason, d.reason);
 
   const existingRefs = roundRefs(existingRounds);

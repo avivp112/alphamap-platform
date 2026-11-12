@@ -37,6 +37,7 @@
  * live API wrappers.
  */
 
+import { devLinksFromText, type DevLinks } from "./devLinks";
 import type { Provider, RawSearchResult } from "./sources";
 import { websiteDomain } from "./websiteValidation";
 import type { SearchCache } from "./searchCache";
@@ -623,6 +624,8 @@ export interface FetchedPage {
   url: string; content: string; provider: Provider;
   /** Pages of the site that rendered this same page (/contact → /about): the Contact page rule reads them (headquarters.ts). */
   also_urls?: string[];
+  /** The organization links the site names (devLinks.ts), read from the whole page before the cap cut the footer off. */
+  dev_links?: DevLinks;
 }
 
 function shingles(text: string, size = 5): Set<string> {
@@ -734,7 +737,7 @@ export async function fetchCompanyWebsitePages(
       continue;
     }
     state.websitePagesFetched++;
-    pages.push({ url, content: capped, provider });
+    pages.push({ url, content: capped, provider, dev_links: devLinksFromText(content) });
     console.log(`    🌐  fetched ${url} (${content.length} chars, ${provider}${cachedPage ? ", cached" : ""})`);
   }
   return pages;
