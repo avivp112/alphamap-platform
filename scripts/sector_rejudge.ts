@@ -12,7 +12,7 @@ import { loadSectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { buildSectorRequest, parseSectorChoice, classifyWithRetry } from "../lib/enrichment/classifySector.ts";
 import { requestFor } from "../lib/enrichment/models.ts";
 import { readMarks } from "../lib/enrichment/fieldReview.ts";
-import { rejudgeSectorMarks } from "../lib/enrichment/sectorRejudge.ts";
+import { rejudgeSectorMarks, frozenSectors } from "../lib/enrichment/sectorRejudge.ts";
 import { latestDescriptions } from "../lib/enrichment/runDescriptions.ts";
 import { SECTOR_CACHE, classifierVersion, cacheKey, currentEntries, toCacheFile, type SectorCacheFile } from "../lib/enrichment/sectorCache.ts";
 
@@ -30,7 +30,10 @@ console.log(`${marks.length} sector mark(s); ${new Set(marks.filter((m) => store
 const version = classifierVersion(model);
 const cache = currentEntries(existsSync(SECTOR_CACHE) ? JSON.parse(readFileSync(SECTOR_CACHE, "utf8")) as SectorCacheFile : null, version);
 let asked = 0;
+const frozen = frozenSectors(marks);
 const result = await rejudgeSectorMarks(marks, (c) => stored.get(c)?.value ?? null, async (company, description) => {
+  // A sector already marked correct stays: it is not classified again.
+  if (frozen.has(company)) return frozen.get(company)!;
   const k = cacheKey(version, company, description);
   if (cache.has(k)) return cache.get(k) ?? null;
   asked++;

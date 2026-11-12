@@ -34,3 +34,13 @@ describe("the definitions tell a rocket maker from a factory (review 9 rejudge, 
     expect(SECTOR_DEFINITIONS["Biotech / Genomics"]).toMatch(/biological manufacturing/);
   });
 });
+
+describe("the sector is the market, technology is a tag (owner, 2026-11-12)", () => {
+  it("the rules and the AI definitions say so; Fintech Infrastructure is for banks' builders", () => {
+    expect(sectorGuidance()).toMatch(/MARKET the company serves/);
+    expect(SECTOR_DEFINITIONS["AI Agents"]).toMatch(/belongs to that industry/);
+    expect(SECTOR_DEFINITIONS["Fintech Infrastructure"]).toMatch(/banking as a service/);
+    expect(SECTOR_DEFINITIONS["ERP / Finance"]).toMatch(/FP&A/);
+    expect(SECTOR_DEFINITIONS["Payments"]).toMatch(/terminals/);
+  });
+});

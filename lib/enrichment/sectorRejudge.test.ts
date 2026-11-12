@@ -115,3 +115,30 @@ describe("sector cache", () => {
     expect(currentEntries(null, "v1").size).toBe(0);
   });
 });
+
+import { frozenSectors } from "./sectorRejudge";
+describe("a sector marked correct is not classified again (owner, 2026-11-12)", () => {
+  const f = (company: string, value: string, verdict: "correct" | "wrong") => ({ field: "sector", company, value, verdict });
+  it("the latest correct mark of a company is its sector; a company with only wrong marks has none", () => {
+    const m = frozenSectors([
+      f("Gloat", "Enterprise Software › HR Tech", "correct"),
+      f("Gloat", "AI & ML › AI Agents", "wrong"),
+      f("Vantari VR", "Health & Life Sciences › Digital Health", "correct"),
+      f("Vantari VR", "Health & Life Sciences › Healthcare SaaS", "correct"),
+      f("Agnikul", "Real Estate › PropTech", "wrong"),
+      { field: "tags", company: "Gloat", value: "x", verdict: "correct" as const },
+    ]);
+    expect(m.get("Gloat")).toBe("Enterprise Software › HR Tech");
+    expect(m.get("Vantari VR")).toBe("Health & Life Sciences › Healthcare SaaS");
+    expect(m.has("Agnikul")).toBe(false);
+  });
+  it("so the wrong mark of a frozen company leaves and the right one stays", async () => {
+    const marks = [
+      { id: "x67.59", field: "sector", company: "Gloat", value: "Enterprise Software › HR Tech", verdict: "correct" as const },
+      { id: "rj2.x67.59", field: "sector", company: "Gloat", value: "AI & ML › AI Agents", verdict: "wrong" as const },
+    ];
+    const frozen = frozenSectors(marks);
+    const r = await rejudgeSectorMarks(marks, () => "d", async (c) => frozen.get(c) ?? null);
+    expect(r).toEqual([{ id: "x67.59", produced: true, now: "Enterprise Software › HR Tech" }, { id: "rj2.x67.59", produced: false, now: "Enterprise Software › HR Tech" }]);
+  });
+});
