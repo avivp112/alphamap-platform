@@ -160,3 +160,16 @@ describe("run 11: business-standard.com is tier 2", () => {
     expect(roundSourceStanding("https://www.business-standard.com/companies/news/x-1.html", { companyName: "X" })).toMatchObject({ kind: "allowed", tier: 2 });
   });
 });
+
+import { supportedRoleSubset } from "./people";
+describe("run 11, Scripbox: a title verified in part is written in part", () => {
+  const art = "Founded in 2012 by Atul Shinghal and Sanjiv Singhal, Scripbox operates a digital wealth management platform that offers investment products across mutual funds.";
+  it("'Founder and CEO': the article gives Founder only", () => {
+    expect(roleSupported("Atul Shinghal", "Founder and CEO", [art])).toBe(false);
+    expect(supportedRoleSubset("Atul Shinghal", "Founder and CEO", [art])).toBe("Founder");
+  });
+  it("a full title gives no subset; a title with nothing verified gives none", () => {
+    expect(supportedRoleSubset("Atul Shinghal", "Founder", [art])).toBeNull();
+    expect(supportedRoleSubset("Atul Shinghal", "CEO", [art])).toBeNull();
+  });
+});

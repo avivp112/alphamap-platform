@@ -360,22 +360,22 @@ const ROLES: Array<[RegExp, RegExp]> = [
  * Prep", NPCx's CEO as "CTO", CData's CEO as "founder"). Beside: from 80 characters before
  * the name to 150 after it. A title without a known role passes.
  */
-export function roleSupported(personName: string, roleText: string, sourceTexts: string[], otherPeople: string[] = []): boolean {
-  // "Co-Founder & CEO" asks for both.
-  const wanted = ROLES.filter(([inTitle]) => inTitle.test(roleText));
-  if (!wanted.length) return true;
+const ROLE_LABELS = ["VP", "CEO", "CTO", "COO", "CFO", "CMO", "CPO", "CRO", "Founder", "Chair"];
+
+/** The roles of the title (indices into ROLES) and the ones some mention of the person, beside the name, carries. */
+function rolesBesideName(personName: string, roleText: string, sourceTexts: string[], otherPeople: string[]): { wanted: number[]; satisfied: Set<number> } {
+  const wantedIdx = ROLES.map(([inTitle], i) => (inTitle.test(roleText) ? i : -1)).filter((i) => i >= 0);
+  const satisfied = new Set<number>();
+  if (!wantedIdx.length) return { wanted: [], satisfied };
   const tokens = fold(personName).toLowerCase().split(/[^a-z]+/).filter((t) => t.length > 1);
-  if (tokens.length < 2) return false;
+  if (tokens.length < 2) return { wanted: wantedIdx, satisfied };
   const re = new RegExp(`\\b${tokens[0]}\\b[^a-z]+(?:[a-z.]+[^a-z]+){0,2}${tokens[tokens.length - 1]}\\b`, "g");
   // After the first mention an article says "Shetty", not "Nischal Shetty" (review 9: Crowdfire's CEO): the surname alone counts
   // in a source that names the person in full.
   const reLast = new RegExp(`\\b${tokens[tokens.length - 1]}\\b`, "g");
   const own = new Set(tokens);
   const others = [...new Set(otherPeople.flatMap((n) => fold(n).toLowerCase().split(/[^a-z]+/).filter((t) => t.length > 2 && !own.has(t))))];
-  // Each role of the title needs a mention of the person that carries it, beside the name; the roles need not share one mention (run 11:
-  // Scripbox's "Founder and CEO" was dropped when one article said "founder Atul Shinghal" and another "CEO Atul Shinghal").
-  const satisfied = new Set<number>();
-  const check = (text: string, rx: RegExp): boolean => {
+  const scan = (text: string, rx: RegExp) => {
     for (const m of text.matchAll(rx)) {
       const at = m.index ?? 0;
       let before = text.slice(Math.max(0, at - 80), at);
@@ -389,17 +389,40 @@ export function roleSupported(personName: string, roleText: string, sourceTexts:
         if (b?.index !== undefined) before = before.slice(b.index + t.length);
       }
       const window = before + m[0] + after;
-      wanted.forEach(([, inSource], i) => { if (inSource.test(window)) satisfied.add(i); });
-      if (satisfied.size === wanted.length) return true;
+      for (const i of wantedIdx) if (ROLES[i][1].test(window)) satisfied.add(i);
     }
-    return false;
   };
   for (const raw of sourceTexts) {
     const text = fold(raw).toLowerCase();
-    if (check(text, re)) return true;
-    if (tokens[tokens.length - 1].length >= 4 && new RegExp(re.source).test(text) && check(text, reLast)) return true;
+    scan(text, re);
+    if (tokens[tokens.length - 1].length >= 4 && new RegExp(re.source).test(text)) scan(text, reLast);
   }
-  return false;
+  return { wanted: wantedIdx, satisfied };
+}
+
+/**
+ * Every role a title or sentence gives a person (CEO, CTO, founder, VP…) is written beside
+ * their name in one of the sources (field review runs 1–2: "Co-Founder & CEO, Unacademy Test
+ * Prep", NPCx's CEO as "CTO", CData's CEO as "founder"). Beside: from 80 characters before
+ * the name to 150 after it. Each role needs a mention that carries it; the roles need not share one mention
+ * (run 11). A title without a known role passes.
+ */
+export function roleSupported(personName: string, roleText: string, sourceTexts: string[], otherPeople: string[] = []): boolean {
+  const { wanted, satisfied } = rolesBesideName(personName, roleText, sourceTexts, otherPeople);
+  if (!wanted.length) return true;
+  if (fold(personName).toLowerCase().split(/[^a-z]+/).filter((t) => t.length > 1).length < 2) return false;
+  return wanted.every((i) => satisfied.has(i));
+}
+
+/**
+ * The roles of a title that the sources do carry beside the name, as a title ("Founder"), or null when none. For a leader whose full title is
+ * not all verified: the verified part is written instead of dropping the person (owner's rule: missing is better than wrong; run 11, Scripbox:
+ * "Founded in 2012 by Atul Shinghal" gives Founder, no source gives CEO).
+ */
+export function supportedRoleSubset(personName: string, roleText: string, sourceTexts: string[], otherPeople: string[] = []): string | null {
+  const { wanted, satisfied } = rolesBesideName(personName, roleText, sourceTexts, otherPeople);
+  const ok = wanted.filter((i) => satisfied.has(i));
+  return ok.length && ok.length < wanted.length ? ok.map((i) => ROLE_LABELS[i]).join(" & ") : null;
 }
 
 /**
