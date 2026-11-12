@@ -70,6 +70,26 @@ export function supportedTags(tags: string[], allPages: Array<{ id: string; cont
  * and "Enterprise Software" is not supported by "enterprise customers". Every content word of the tag ("General" is no word of
  * a tag), within six words of each other.
  */
+/**
+ * A technology the company secures, tests, scans or monitors is not its own tag (owner, 2026-11-12, run 10: DeepKeep secures AI agents; it is
+ * not an "AI Agents" company). True when the sentence puts the tag's words right after such a verb, or right before "security / scanner /
+ * firewall / testing / monitoring". A tag that is itself about security or testing is not judged by this.
+ */
+export function tagIsTechnologyProtected(tag: string, sentence: string): boolean {
+  if (/\b(secur|protect|test|monitor|scan|firewall|govern|audit|guard|red.?team)/i.test(tag)) return false;
+  const first = contentWords(tag.replace(/\bgeneral\b/gi, "")).map((w) => w.slice(0, 5))[0];
+  if (!first) return false;
+  const toks = sentence.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+  const VERB = /^(secur|protect|test|monitor|scan|govern|audit|guard|red|firewall|safeguard|harden)/;
+  const AFTER = /^(secur|scanner|scan|firewall|test|monitor|governance|guardrail|safety|red)/;
+  for (let i = 0; i < toks.length; i++) {
+    if (!toks[i].startsWith(first)) continue;
+    if (toks.slice(Math.max(0, i - 4), i).some((t) => VERB.test(t))) return true;
+    if (toks.slice(i + 1, i + 3).some((t) => AFTER.test(t))) return true;
+  }
+  return false;
+}
+
 export function bestTagQuote(pages: Array<{ id: string; content: string }>, tag: string): { id: string; quote: string } | null {
   const want = contentWords(tag.replace(/\bgeneral\b/gi, "")).map((w) => w.slice(0, 6));
   if (!want.length) return null;
@@ -84,6 +104,7 @@ export function bestTagQuote(pages: Array<{ id: string; content: string }>, tag:
       const starts = at[0];
       const tight = starts.some((p0) => at.every((a) => a.some((p) => Math.abs(p - p0) <= 5)));
       if (!tight) continue;
+      if (tagIsTechnologyProtected(tag, s)) continue;
       const n = want.length;
       if (!best || n > best.n) best = { id: page.id, quote: s, n };
     }

@@ -10,18 +10,19 @@
  */
 import { classifySourceType } from "./sources";
 import { profileSourceAllowed, roundSourceStanding, isJobBoardOrProfileDirectory } from "./roundSources";
-import { roleAtCompany, isOrganisationName, isLeadershipRole } from "./people";
+import { roleAtCompany, isOrganisationName, isLeadershipRole, BIO_BACKGROUND } from "./people";
 import { RAISE_RE, statesAmount } from "./assemble";
 import { dateFromUrl } from "./evidence";
 import { isLinkList, quoteIsAboutTheCompany, quoteLinksTheTwo } from "./competitorEvidence";
 import { isLegalPageUrl, HQ_MAX_AGE_DAYS } from "./headquarters";
-import { MARKETING, namesTheCompany } from "./descriptionBuilder";
+import { MARKETING, namesTheCompany, leadsWithCompany } from "./descriptionBuilder";
 import { looksLikeCompanyName, isUserContentUrl } from "./competitorEvidence";
 import { isExplainer, headlineIncomplete } from "./newsRelevance";
 import { PARENT_BY_SUB_SECTOR, SECTOR_TAXONOMY } from "../../src/lib/taxonomy";
 import type { Mark } from "./fieldReview";
 import { isNonDescriptivePage } from "./pageKind";
-import { figureIsBiographical, figureIsJobPosting, quoteStatesLowerBound } from "./headcountSources";
+import { tagIsTechnologyProtected } from "./quoteFinder";
+import { yearBelongsToFigure, figureIsAwardCategory, figureIsBiographical, figureIsJobPosting, quoteStatesLowerBound } from "./headcountSources";
 
 export interface MarkContext {
   /** The company's own domain ("dlight.com"), when known. Without it an unlisted source is not judged. */
@@ -103,7 +104,9 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
       // A stored fragment ("founder and CEO of …") cannot be judged: it stays.
       if (!rest || /^[a-z…]/.test(rest)) return keep;
       const about = rest.split(/(?<=[.!?])\s+/).some((s) => parts.some((w) => s.toLowerCase().includes(w)) || /\b(he|she|his|her|they|their)\b/i.test(s));
-      return about ? keep : out("not about the person");
+      if (!about) return out("not about the person");
+      if (!BIO_BACKGROUND.test(rest)) return out("not the person's background (past roles, experience or education), only the current role");
+      return keep;
     }
     case "competitor": case "competitor_declared": case "competitor_market": {
       // The quote must say, of the company, that it competes with this one (competitorEvidence.ts, owner 2026-11-06):
@@ -125,6 +128,7 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
       if (MARKETING.test(mark.value)) return out("a selling word in the description");
       const first = mark.value.split(/(?<=[.!?])\s+/)[0] ?? "";
       if (!namesTheCompany(first, mark.company)) return out("the first sentence does not name the company");
+      if (!leadsWithCompany(first, mark.company)) return out("the first sentence describes a product, not the company (it must start with the company)");
       return keep;
     }
     case "tags": {
@@ -133,6 +137,11 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
       if (/no sentence found|Target URL returned error/i.test(q)) return out("a tag no sentence supports");
       if (!mark.source_url?.trim()) return out("a tag with no source");
       if (isNonDescriptivePage(mark.source_url)) return out("a policy, terms, glossary, help or careers page supports no tag");
+      // "Tag: sentence | Tag: sentence": a technology the company secures, tests or monitors is not its tag (run 10: DeepKeep, AI Agents).
+      for (const part of q.split(/\s\|\s/)) {
+        const m = part.match(/^(.{2,60}?):\s+([\s\S]+)$/);
+        if (m && tagIsTechnologyProtected(m[1], m[2])) return out(`"${m[1]}" is a technology the company secures or tests, not what it is`);
+      }
       return keep;
     }
     case "sector": {
@@ -189,12 +198,15 @@ function judgeHeadcount(mark: Mark, ctx: MarkContext): MarkJudgment {
     if (!new RegExp(`(^|[^\\d])${num.replace(/,/g, "")}([^\\d]|$)`).test(q)) return out("the number is not in the quote");
     if (figureIsBiographical(ctx.quote ?? "", type === "site_stated")) return out("the figure is someone's career, not the company's");
     if (figureIsJobPosting(ctx.quote ?? "")) return out("the figure is a team of a job posting, not the company's size");
+    if (figureIsAwardCategory(ctx.quote ?? "")) return out("the figure is the size class of an award, not the company's headcount");
     // "over 30", "more than 50", "N+" in the quote is a floor: produced as "30+" (review 8, 2026-11-10: Verbit), not as 30.
     if (!/^\d[\d,]*\+/.test(mark.value) && quoteStatesLowerBound(ctx.quote ?? "", Number(num.replace(/,/g, "")))) return out("the quote gives a floor (over / more than N): it is produced as N+");
     const w = firstWordOf(mark.company);
     if (!(w && q.toLowerCase().includes(w)) && !/\b(?:we|our|us)\b|\bthe\b[^.]{0,40}\b(?:company|startup|firm|team|business)\b/i.test(q)) return out("the quote is not about the company");
     // A milestone or a dated past count is not the size on the day of the copy.
     const years = new Set([...q.matchAll(/\b(19[89]\d|20\d{2})\b/g)].map((y) => y[1]));
+    // One year in the quote that is not this figure's own date (a founding year, another figure's year, "… now has"): the copy's day dates it.
+    if (type === "site_stated" && years.size === 1 && date.startsWith([...years][0]) && !yearBelongsToFigure(q, Number(num.replace(/,/g, "")))) return out("the year in the quote is not this count's date (a founding year or another figure's)");
     if (type === "site_stated" && /web\.archive\.org/.test(mark.source_url ?? "") && (years.size > 1 || /\b(milestone|reached|grew (?:to|from))\b/i.test(q))) return out("a milestone or a dated count, not the copy's day");
   }
   // The company's own site is site_stated, never press_reported.

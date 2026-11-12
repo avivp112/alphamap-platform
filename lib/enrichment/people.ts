@@ -526,6 +526,11 @@ export function titleFromCard(personName: string, card: string): string | null {
 
 const CARD_NOISE = /\b(?:read (?:more|less)|show (?:more|less)|view (?:full )?(?:bio|profile)|learn more|see (?:more|bio)|linkedin|twitter|x\.com|follow|connect|close)\b|[×✕✖]/gi;
 const BIO_CUE = /\b(?:experience|previously|prior to|before (?:joining|founding|that)|founded|co-?founded|served|led|leads|joined|worked|holds|degree|graduat\w+|ph\.?d|mba|studied|university|college|years|career|expertise|background|veteran|managed|built|launched|headed|oversees|responsible|began|started|earned)\b/i;
+/**
+ * What makes text a person's BACKGROUND (owner, 2026-11-12, run 10): past roles, experience, education, military service. A description of the
+ * current role, or a quote of the person ("We're not selling a technology"), is not one (Swimm's Oren Toledano).
+ */
+export const BIO_BACKGROUND = /\b(?:previously|prior to|formerly|before (?:joining|founding|that|this)|ex-|alum(?:nus|ni|na)?|graduat\w+|ph\.?d|mba|m\.?d\.?|degree|studied|alma mater|\d+\+?\s+years|years of experience|decades?|career|veteran|served|worked (?:at|for|as|with|on)|held (?:roles|positions|senior)|spent|(?:began|started) (?:his|her|their) career|earned|turned|background|experience (?:in|at|as|with)|(?:was|were) (?:a|an|part of|the|among)|unit \d+|idf|special forces)\b/i;
 const PRONOUN = /\b(?:he|she|they|his|her|their)\b/i;
 const TITLES = /\b(?:ceo|cto|coo|cfo|cmo|cpo|cro|ciso|chief [a-z]+ officer|founder|co-?founder|president|vp|svp|evp|vice president|head of|general manager|managing director)\b/gi;
 /**
@@ -561,6 +566,7 @@ export function bioFromCard(card: string, personName: string, title?: string | n
   const lastOnly = new RegExp(`\\b${last}\\b`, "i");
   if (!lastOnly.test(fold(t)) && !new RegExp(`\\b${first}\\b`, "i").test(fold(t)) && !PRONOUN.test(t)) return null;
   if (!BIO_CUE.test(t)) return null;
+  if (!BIO_BACKGROUND.test(t)) return null;   // only the current role, or a quote of the person: not a background
   // A menu or a row of people (Tevel's "Our Team Our Team … Chief Financial Officer … Chief Operations Officer …").
   if (/\b(\w+ \w+)\s+\1\b/i.test(t.slice(0, 80)) && /\bour team\b/i.test(t)) return null;
   if ((t.match(TITLES) ?? []).length > 3) return null;
