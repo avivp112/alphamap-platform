@@ -20,6 +20,9 @@ export interface HfOrgProfile {
   followers: number | null;
   isEnterprise: boolean | null;
   modelsCount: number | null;
+  plan: string | null;
+  numUsers: number | null;
+  isVerified: boolean | null;
 }
 
 /** The organization overview, tolerant of the field names (the endpoint is not versioned). Only a published website counts. */
@@ -37,6 +40,9 @@ export function mapOrgProfile(org: string, rec: Record<string, unknown> | null |
     followers: num(r.numFollowers) ?? num(r.followerCount),
     isEnterprise: typeof r.isEnterprise === "boolean" ? r.isEnterprise : null,
     modelsCount: num(r.numModels),
+    plan: str(r.plan),
+    numUsers: num(r.numUsers),
+    isVerified: typeof r.isVerified === "boolean" ? r.isVerified : null,
   };
 }
 
@@ -52,3 +58,23 @@ export function newestModelsUrl(skip: number): string {
   const p = new URLSearchParams({ sort: "createdAt", direction: "-1", limit: String(MODELS_PAGE), skip: String(skip), full: "true" });
   return `${HF_API}/models?${p.toString()}`;
 }
+
+/**
+ * The links an organization publishes in its profile header, read from the org page (the overview API has no website).
+ * Verified on the live pages of mistralai, stabilityai and nomic-ai (2026-11-12): the website is the FIRST external link in the header,
+ * with class "leading-snug text-gray-600 hover:underline"; GitHub and Twitter follow in the next block. Only the first 120 KB are read,
+ * so a link inside a model card further down is never taken. Returns nulls (never a guess) when the structure is not found.
+ */
+export function parseOrgPage(html: string): { website: string | null; github: string | null; twitter: string | null } {
+  const head = String(html ?? "").slice(0, 120_000);
+  const a = head.match(/<a[^>]*class="[^"]*leading-snug text-gray-600 hover:underline[^"]*"[^>]*href="(https?:\/\/[^"]+)"[^>]*rel="[^"]*nofollow/i)
+    ?? head.match(/<a[^>]*href="(https?:\/\/[^"]+)"[^>]*class="[^"]*leading-snug text-gray-600 hover:underline[^"]*"[^>]*rel="[^"]*nofollow/i);
+  const decode = (u: string) => u.replace(/&amp;/g, "&");
+  const website = a ? decode(a[1]) : null;
+  const after = a ? head.slice((a.index ?? 0) + a[0].length, (a.index ?? 0) + a[0].length + 6000) : "";
+  const gh = after.match(/href="(https:\/\/github\.com\/[^"\/]+)"/i);
+  const tw = after.match(/href="(https:\/\/(?:twitter|x)\.com\/[^"\/]+)"/i);
+  return { website: website && !/^https?:\/\/(www\.)?huggingface\.co\b/i.test(website) ? website : null, github: gh ? gh[1] : null, twitter: tw ? tw[1] : null };
+}
+
+export const orgPageUrl = (org: string): string => `https://huggingface.co/${encodeURIComponent(org)}`;

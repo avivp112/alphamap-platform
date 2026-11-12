@@ -23,3 +23,20 @@ describe("snapshot-huggingface logic", () => {
     expect(newestModelsUrl(0)).toContain("sort=createdAt");
   });
 });
+
+import { readFileSync } from "node:fs";
+import { parseOrgPage } from "./logic";
+
+describe("org page header (live structure, 2026-11-12)", () => {
+  const pages = JSON.parse(readFileSync("supabase/functions/snapshot-huggingface/fixtures/org_pages.json", "utf8")) as Record<string, string>;
+  it("reads the website, GitHub and Twitter from the profile header", () => {
+    expect(parseOrgPage(pages.mistralai)).toEqual({ website: "https://mistral.ai", github: "https://github.com/mistralai", twitter: "https://twitter.com/mistralai" });
+    expect(parseOrgPage(pages.stabilityai).website).toBe("https://stability.ai/license");
+  });
+  it("never takes a link outside the header, and returns nulls when the structure is missing", () => {
+    const far = "x".repeat(130_000) + pages.mistralai;
+    expect(parseOrgPage(far).website).toBeNull();
+    expect(parseOrgPage("<html></html>")).toEqual({ website: null, github: null, twitter: null });
+    expect(parseOrgPage('<a class="leading-snug text-gray-600 hover:underline" href="https://huggingface.co/x" rel="nofollow">x</a>').website).toBeNull();
+  });
+});
