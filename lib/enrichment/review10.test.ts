@@ -72,3 +72,27 @@ describe("replay judges the same rules", () => {
     expect(typeof judgeMark).toBe("function");
   });
 });
+
+import { contactPageAddresses, decideHeadquarters } from "./headquarters";
+import { contactPageOfficeListHqIds } from "./markRules";
+describe("Swimm: an address under an Offices heading is an office, not the headquarters", () => {
+  const page = { url: "https://swimm.io/contact-us", source_type: "company_site", source_id: "W1", content: "Swimm customer with technical support questions? Email: support@swimm.io.\nOffices. United States 200 Park Avenue South, New York, New York 10003." } as never;
+  it("one address under the heading is not a headquarters", () => {
+    const st = contactPageAddresses(page);
+    expect(st[0]?.officeList).toBe(true);
+    expect(decideHeadquarters(st).kind).not.toBe("declared");
+  });
+  it("one address with no heading still is (a single-site company)", () => {
+    const st = contactPageAddresses({ ...(page as object), content: "Contact us.\n200 Park Avenue South, New York, New York 10003." } as never);
+    expect(decideHeadquarters(st).kind).toBe("declared");
+  });
+  it("replay: the marks of that page leave when one of their quotes carries the heading", () => {
+    const marks = [
+      { id: "10.2", field: "hq_city", company: "Swimm", source_url: "https://swimm.io/contact-us" },
+      { id: "10.8", field: "hq_country", company: "Swimm", source_url: "https://swimm.io/contact-us" },
+      { id: "10.9", field: "hq_city", company: "Other", source_url: "https://other.io/contact" },
+    ];
+    const quotes: Record<string, string> = { "10.2": "United States 200 Park Avenue South, New York", "10.8": "Offices. United States 200 Park Avenue South", "10.9": "Other is at 5 Main St, Boston" };
+    expect([...contactPageOfficeListHqIds(marks, (m) => quotes[m.id])].sort()).toEqual(["10.2", "10.8"]);
+  });
+});

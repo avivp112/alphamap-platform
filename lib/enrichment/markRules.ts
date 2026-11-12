@@ -14,7 +14,7 @@ import { roleAtCompany, isOrganisationName, isLeadershipRole, BIO_BACKGROUND } f
 import { RAISE_RE, statesAmount } from "./assemble";
 import { dateFromUrl } from "./evidence";
 import { isLinkList, quoteIsAboutTheCompany, quoteLinksTheTwo } from "./competitorEvidence";
-import { isLegalPageUrl, HQ_MAX_AGE_DAYS } from "./headquarters";
+import { isLegalPageUrl, HQ_MAX_AGE_DAYS, OFFICE_HEADING } from "./headquarters";
 import { MARKETING, namesTheCompany, leadsWithCompany } from "./descriptionBuilder";
 import { looksLikeCompanyName, isUserContentUrl } from "./competitorEvidence";
 import { isExplainer, headlineIncomplete } from "./newsRelevance";
@@ -238,6 +238,17 @@ export function duplicateMarkIds(marks: Array<Pick<Mark, "id" | "field" | "compa
  * addresses). The tracker holds the page's other addresses as office marks from the same source: two or more distinct places
  * from one page, and the headquarters mark from that page is an office too.
  */
+/**
+ * A headquarters taken from a Contact page whose address sits under an "Offices" heading (owner, 2026-11-12: Swimm's "Offices. United States
+ * 200 Park Avenue South …"). One page, one company: when any headquarters mark from it quotes that heading, they all are offices.
+ */
+export function contactPageOfficeListHqIds(marks: Array<Pick<Mark, "id" | "field" | "company" | "source_url">>, quoteOf: (m: { id: string }) => string): Set<string> {
+  const flagged = new Set<string>();
+  const hq = marks.filter((m) => (m.field === "hq_city" || m.field === "hq_country") && m.source_url && /\/contact/i.test(m.source_url));
+  for (const m of hq) if (OFFICE_HEADING.test(quoteOf(m))) flagged.add(`${m.company.toLowerCase()}|${m.source_url}`);
+  return new Set(hq.filter((m) => flagged.has(`${m.company.toLowerCase()}|${m.source_url}`)).map((m) => m.id));
+}
+
 export function contactPageHqIds(marks: Array<Pick<Mark, "id" | "field" | "company" | "value" | "source_url">>): Set<string> {
   const byPage = new Map<string, Set<string>>();
   for (const m of marks) {
