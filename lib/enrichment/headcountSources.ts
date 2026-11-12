@@ -91,13 +91,37 @@ const PATTERNS: RegExp[] = [
   new RegExp(String.raw`\b(over\s+|more than\s+|about\s+|around\s+|approximately\s+|nearly\s+|almost\s+)?${NUM}(\+)?\s+(?:full[- ]time\s+)?(?:employees|team members|teammates|colleagues|staff members)\b`, "i"),
   new RegExp(String.raw`\b(?:we are|we're|with|have|has)\s+(over\s+|more than\s+|about\s+|around\s+|approximately\s+|nearly\s+)?${NUM}(\+)?\s+(?:talented\s+)?(?:people|professionals|engineers|employees)\b`, "i"),
 ];
+/**
+ * Whether the one year in a sentence is the date OF THIS FIGURE (owner, 2026-11-12, run 10): "Starting with 6 people in 2013, Beamery now
+ * has around 200" dates the 6, not the 200; "2016 YEAR FOUNDED … 200+ TEAM MEMBERS" is the founding year. A year counts for the figure only
+ * when it is not a founding / start year, does not belong to another headcount figure before it, and no "now / today" follows it.
+ * Otherwise the figure is dated by the copy or the article, never by that year.
+ */
+export function yearBelongsToFigure(sentence: string, value?: number): boolean {
+  const m = sentence.match(/\b(19[89]\d|20\d{2})\b/);
+  if (!m || m.index === undefined) return false;
+  const idx = m.index;
+  const around = sentence.slice(Math.max(0, idx - 35), idx + 4 + 35);
+  if (/\b(founded|founding|since|established|launched|started|starting|incorporated|inception)\b/i.test(around)) return false;
+  if (/\b(now|currently|today|these days|at present|as of today)\b/i.test(sentence.slice(idx + 4))) return false;
+  // Another headcount figure right before the year ("6 people in 2013") is the one the year dates; the figure itself ("800 employees in 2021") is fine.
+  const before = sentence.slice(Math.max(0, idx - 50), idx).match(/(\d[\d,]*)\+?\s+(?:people|employees|team members|professionals|engineers|staff|members)\b[^.\d]{0,25}$/i);
+  if (before && (value === undefined || Number(before[1].replace(/,/g, "")) !== value)) return false;
+  return true;
+}
+
+/** "Up to 100 Employees": the size class of an award or a ranking, not the company's headcount (WebPT's Stevie Award category). */
+export function figureIsAwardCategory(sentence: string): boolean {
+  return /\b(award|awards|winner|stevie|category|ranking|ranked|finalist|list of)\b/i.test(sentence) && /\b(?:up to|under|fewer than|less than|more than|over)\s+\d[\d,]*\s+employees\b/i.test(sentence);
+}
+
 const MILESTONE = /\b(milestone|reached|grew (?:to|from)|surpass\w*|crossed|hit|first \d+)\b/i;
 export function sizeStatement(text: string): SizeStatement | null {
   for (const sentence of text.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/)) {
     const years = [...sentence.matchAll(/\b(19[89]\d|20\d{2})\b/g)].map((y) => Number(y[1]));
     if (new Set(years).size > 1) continue;
     if (!years.length && MILESTONE.test(sentence)) continue;
-    if (figureIsBiographical(sentence, true) || figureIsJobPosting(sentence)) continue;
+    if (figureIsBiographical(sentence, true) || figureIsJobPosting(sentence) || figureIsAwardCategory(sentence)) continue;
     for (const re of PATTERNS) {
       const m = sentence.match(re);
       if (!m) continue;
@@ -108,7 +132,7 @@ export function sizeStatement(text: string): SizeStatement | null {
       const lowerBound = qualifier === "+" || new RegExp(LOWER, "i").test(qualifier ?? "") || /\d\+/.test(m[0]);
       // The excerpt is centred on the match, so a long sentence still shows its number (review 6: CaPow's "300+").
       const at = Math.max(0, (m.index ?? 0) - 110);
-      return { value, lowerBound, sentence: sentence.trim().slice(at, at + 240), ...(years.length ? { year: years[0] } : {}) };
+      return { value, lowerBound, sentence: sentence.trim().slice(at, at + 240), ...(years.length && yearBelongsToFigure(sentence, value) ? { year: years[0] } : {}) };
     }
   }
   return null;

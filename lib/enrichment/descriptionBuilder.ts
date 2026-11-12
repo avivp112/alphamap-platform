@@ -62,6 +62,17 @@ export function namesTheCompany(sentence: string, companyName: string): boolean 
   return !first || norm(sentence).replace(/[^\p{L}\p{N} ]/gu, "").includes(first);
 }
 
+/**
+ * The sentence is about the company: its name leads it ("Genoox sells …", "The Genoox platform …"), not a product's ("Franklin, by Genoox, is a free
+ * variant interpretation tool" describes a product; owner, 2026-11-12, run 10). The company's first word must be one of the first two words.
+ */
+export function leadsWithCompany(sentence: string, companyName: string): boolean {
+  const first = norm(companyName).split(" ").find((w) => w.replace(/[^\p{L}\p{N}]/gu, "").length >= 3)?.replace(/[^\p{L}\p{N}]/gu, "");
+  if (!first) return true;
+  const toks = norm(sentence).replace(/[^\p{L}\p{N} ]/gu, " ").split(" ").filter(Boolean).slice(0, 2);
+  return toks.some((t) => t.startsWith(first) || first.startsWith(t) && t.length >= 4);
+}
+
 export function sentenceProblem(
   s: { role: string; text: string; source_ids: string[] }, companyName: string,
   byId: Record<string, { content: string }>, allowed: (id: string) => boolean,
@@ -78,6 +89,8 @@ export function sentenceProblem(
   if (frag) return frag;
   // What the company sells is said of the company by name (review 9: "aibuy offers …" for Cinsay, "Deel IT is …" for Hofy, "The platform is built to power …" for DealHub).
   if (s.role === "what" && !namesTheCompany(s.text, companyName)) return "what_without_company";
+  // ... and by the company, not by one of its products (run 10: "Franklin, by Genoox, is a free variant interpretation tool").
+  if (s.role === "what" && !leadsWithCompany(s.text, companyName)) return "what_describes_a_product";
   const hay = norm(s.source_ids.map((id) => byId[id].content).join(" "));
   const c = claims(s.text, companyName);
   for (const n of c.numbers) if (!hay.includes(norm(n))) return `number_not_in_sources:${n}`;
