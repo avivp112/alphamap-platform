@@ -142,3 +142,18 @@ describe("a sector marked correct is not classified again (owner, 2026-11-12)", 
     expect(r).toEqual([{ id: "x67.59", produced: true, now: "Enterprise Software › HR Tech" }, { id: "rj2.x67.59", produced: false, now: "Enterprise Software › HR Tech" }]);
   });
 });
+
+import { pendingSectorItems } from "./fieldReview";
+describe("the sector values waiting for a review are named (owner, 2026-11-12)", () => {
+  const sm = (id: string, company: string, value: string): Mark => ({ id, field: "sector", company, value, source_url: "u", verdict: "correct", source_of_mark: "" });
+  it("lists each company's new value once, with the id to mark it by", () => {
+    const marks = [sm("a", "Acme", "Fintech › Payments"), sm("b", "Acme", "Fintech › Lending"), sm("c", "Beta", "AI & ML › LLMs")];
+    const rows = [
+      { id: "a", produced: false, now: "Fintech › RegTech" },
+      { id: "b", produced: false, now: "Fintech › RegTech" },
+      { id: "c", produced: false, now: "AI & ML › LLMs" },
+      { id: "c", produced: true, now: "AI & ML › LLMs" },
+    ];
+    expect(pendingSectorItems(rows, marks)).toEqual([{ id: "a", company: "Acme", now: "Fintech › RegTech" }]);
+  });
+});

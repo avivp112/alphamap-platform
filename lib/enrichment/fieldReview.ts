@@ -56,15 +56,24 @@ export function readRejudged(path = process.env.SECTOR_REJUDGED ?? REJUDGED): Re
  * evidence about the new ones. Each rejudged mark whose sector changed needs a mark of its company on the NEW value; until it has one the
  * sector field is not counted open.
  */
-export function pendingSectorReviews(rows: RejudgedRow[] = readRejudged(), marks: Array<Pick<Mark, "id" | "field" | "company" | "value">> = readMarks()): number {
+export function pendingSectorItems(rows: RejudgedRow[] = readRejudged(), marks: Array<Pick<Mark, "id" | "field" | "company" | "value">> = readMarks()): Array<{ id: string; company: string; now: string }> {
   const sector = marks.filter((m) => m.field === "sector");
   const companyOf = new Map(sector.map((m) => [m.id, m.company]));
   const norm = (v: string) => v.replace(/\s+/g, " ").trim().toLowerCase();
-  return rows.filter((r) => !r.produced && r.now).filter((r) => {
+  const seen = new Set<string>();
+  const out: Array<{ id: string; company: string; now: string }> = [];
+  for (const r of rows) {
+    if (r.produced || !r.now) continue;
     const company = companyOf.get(r.id);
-    return !!company && !sector.some((m) => m.company === company && norm(m.value) === norm(r.now));
-  }).length;
+    if (!company || sector.some((m) => m.company === company && norm(m.value) === norm(r.now))) continue;
+    const k = `${company}|${norm(r.now)}`;
+    if (seen.has(k)) continue;           // one value, however many old marks changed to it
+    seen.add(k);
+    out.push({ id: r.id, company, now: r.now });
+  }
+  return out;
 }
+export const pendingSectorReviews = (rows?: RejudgedRow[], marks?: Array<Pick<Mark, "id" | "field" | "company" | "value">>): number => pendingSectorItems(rows, marks).length;
 
 export interface FieldStatus { field: string; marked: number; correct: number; share: number | null; open: boolean; pending?: number }
 
