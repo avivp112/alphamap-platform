@@ -15,7 +15,7 @@
 //
 // Invoke:  POST {}                          -> next 50 orgs
 //          POST { "batch": 100 }            -> more per run
-//          POST { "discover": 300 }         -> also read the 300 newest models (finds new orgs)
+//          POST { "discover": 300 }         -> also read the 300 newest models (the most) (finds new orgs)
 //          POST { "dryRun": true }          -> fetch and count, write nothing
 //
 // Schedule: NOT scheduled by this repo. After a dry run looks right, schedule it
@@ -40,6 +40,22 @@ const json = (b: unknown, s = 200) =>
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const DELAY_MS = 300;
 const MAX_MODELS_PER_ORG = 1000;
+const PAGE_BYTES = 130_000;   // the profile header is in the first 120 KB; never hold a whole 350 KB page
+
+/** Read at most PAGE_BYTES of a response and stop the download. */
+async function readHead(res: Response): Promise<string> {
+  if (!res.body) return "";
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let out = "", n = 0;
+  while (n < PAGE_BYTES) {
+    const { done, value } = await reader.read();
+    if (done || !value) break;
+    n += value.length; out += dec.decode(value, { stream: true });
+  }
+  try { await reader.cancel(); } catch { /* already closed */ }
+  return out;
+}
 
 async function getJson(url: string, token?: string): Promise<{ ok: boolean; status: number; body: unknown }> {
   const res = await fetch(url, {
@@ -82,11 +98,11 @@ Deno.serve(withRunLog("huggingface_snapshot", countKeys("modelsRecorded"), async
   const supabase = createClient(URL_, KEY);
   const token = Deno.env.get("HUGGINGFACE_TOKEN")?.trim();
 
-  let batch = 50, discover = 0, dryRun = false;
+  let batch = 20, discover = 0, dryRun = false;
   try {
     const b = await req.json();
-    if (Number(b?.batch) > 0) batch = Math.min(Math.floor(Number(b.batch)), 300);
-    if (Number(b?.discover) > 0) discover = Math.min(Math.floor(Number(b.discover)), 2000);
+    if (Number(b?.batch) > 0) batch = Math.min(Math.floor(Number(b.batch)), 30);
+    if (Number(b?.discover) > 0) discover = Math.min(Math.floor(Number(b.discover)), 300);
     dryRun = b?.dryRun === true;
   } catch { /* defaults */ }
 
@@ -116,7 +132,7 @@ Deno.serve(withRunLog("huggingface_snapshot", countKeys("modelsRecorded"), async
         try {
           const pr = await fetch(orgPageUrl(org), { headers: { Accept: "text/html", "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(20_000) });
           if (pr.ok) {
-            const pg = parseOrgPage(await pr.text());
+            const pg = parseOrgPage(await readHead(pr));
             profile.website = pg.website ?? profile.website;
             profile.github = pg.github ?? profile.github;
           } else out.failures.push(`${org} page ${pr.status}`);
