@@ -11,7 +11,7 @@ describe("hf org migration", () => {
     expect(sql).toMatch(/registrable_domain\(o\.website\) = registrable_domain\(s\.website\)/);
     const view = sql.slice(sql.indexOf("CREATE OR REPLACE VIEW hf_link_candidates"), sql.indexOf("COMMENT ON VIEW hf_link_candidates"));
     expect(view).not.toMatch(/similarity|ilike|name_norm|s\.name/i);
-    expect(view).toMatch(/count\(DISTINCT p2\.startup_id\)\) = 1/);   // an org pointing at two companies is dropped
+    expect(view).toMatch(/count\(DISTINCT p2\.startup_id\) FROM per_pair p2 WHERE p2\.org = p\.org\) = 1/);   // an org pointing at two companies is dropped
   });
   it("link and propose are dry runs by default and only the service role runs them", () => {
     expect(sql).toMatch(/link_hf_orgs\(p_dry_run boolean DEFAULT true\)/);
