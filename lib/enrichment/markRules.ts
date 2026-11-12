@@ -15,6 +15,7 @@ import { RAISE_RE, statesAmount } from "./assemble";
 import { dateFromUrl } from "./evidence";
 import { isLinkList, quoteIsAboutTheCompany, quoteLinksTheTwo } from "./competitorEvidence";
 import { isLegalPageUrl, HQ_MAX_AGE_DAYS } from "./headquarters";
+import { MARKETING, namesTheCompany } from "./descriptionBuilder";
 import { looksLikeCompanyName, isUserContentUrl } from "./competitorEvidence";
 import { isExplainer, headlineIncomplete } from "./newsRelevance";
 import { PARENT_BY_SUB_SECTOR, SECTOR_TAXONOMY } from "../../src/lib/taxonomy";
@@ -119,6 +120,13 @@ export function judgeMark(mark: Mark, ctx: MarkContext = {}): MarkJudgment {
       if (!quoteLinksTheTwo(q, company, mark.value)) return out("the quote does not link the company and this competitor directly");
       return keep;
     }
+    case "description": {
+      // A description the builder would not write now (review 9, 2026-11-10): selling words, or a first sentence that does not name the company.
+      if (MARKETING.test(mark.value)) return out("a selling word in the description");
+      const first = mark.value.split(/(?<=[.!?])\s+/)[0] ?? "";
+      if (!namesTheCompany(first, mark.company)) return out("the first sentence does not name the company");
+      return keep;
+    }
     case "tags": {
       // A tag no sentence of an allowed page supports, or "supported" by an error page (review 6, 2026-11-08).
       const q = ctx.quote ?? "";
@@ -210,4 +218,25 @@ export function duplicateMarkIds(marks: Array<Pick<Mark, "id" | "field" | "compa
     if (seen.has(k)) dup.add(m.id); else seen.add(k);
   }
   return dup;
+}
+
+
+/**
+ * A headquarters taken from a Contact page that lists several addresses (owner, 2026-11-10: Sentra's New York and Tel Aviv
+ * addresses). The tracker holds the page's other addresses as office marks from the same source: two or more distinct places
+ * from one page, and the headquarters mark from that page is an office too.
+ */
+export function contactPageHqIds(marks: Array<Pick<Mark, "id" | "field" | "company" | "value" | "source_url">>): Set<string> {
+  const byPage = new Map<string, Set<string>>();
+  for (const m of marks) {
+    if (m.field !== "office" || !m.source_url) continue;
+    const k = `${m.company.toLowerCase()}|${m.source_url}`;
+    byPage.set(k, (byPage.get(k) ?? new Set()).add(m.value.split(",")[0].trim().toLowerCase()));
+  }
+  const out = new Set<string>();
+  for (const m of marks) {
+    if ((m.field !== "hq_city" && m.field !== "hq_country") || !m.source_url || !/\/contact/i.test(m.source_url)) continue;
+    if ((byPage.get(`${m.company.toLowerCase()}|${m.source_url}`)?.size ?? 0) >= 2) out.add(m.id);
+  }
+  return out;
 }

@@ -82,3 +82,18 @@ describe("a description sentence is a sentence (review 7, x67.26 DealHub)", () =
     expect(fragmentProblem("DealHub is a revenue platform built for the.")).toBe("fragment_dangling_word");
   });
 });
+
+import { namesTheCompany } from "./descriptionBuilder";
+describe("what the company sells is said of the company by name (review 9)", () => {
+  it("the first word of the company, three letters or more", () => {
+    expect(namesTheCompany("Cult.fit runs fitness centres.", "Cult.fit")).toBe(true);
+    expect(namesTheCompany("aibuy offers shoppable video.", "Cinsay")).toBe(false);
+    expect(namesTheCompany("The platform is built to power sales.", "DealHub")).toBe(false);
+    expect(namesTheCompany("Hofy delivers devices.", "Hofy")).toBe(true);
+  });
+  it("a 'what' sentence without the company is dropped; the others are not asked", () => {
+    const byId = { W1: { content: "Acme sells rockets. The platform is built to power sales teams worldwide." } };
+    expect(sentenceProblem({ role: "what", text: "The platform is built to power sales teams worldwide.", source_ids: ["W1"] }, "Acme", byId, () => true)).toBe("what_without_company");
+    expect(sentenceProblem({ role: "for_whom", text: "The platform is built to power sales teams worldwide.", source_ids: ["W1"] }, "Acme", byId, () => true)).toBeNull();
+  });
+});

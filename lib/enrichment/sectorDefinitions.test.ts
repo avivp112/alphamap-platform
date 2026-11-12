@@ -26,3 +26,11 @@ describe("every sub-sector has a one-line definition (owner, 2026-11-10)", () =>
     expect(g).toMatch(/Vertical SaaS/);
   });
 });
+
+describe("the definitions tell a rocket maker from a factory (review 9 rejudge, 2026-11-10)", () => {
+  it("Space Tech and Advanced Manufacturing say where the line is", () => {
+    expect(SECTOR_DEFINITIONS["Space Tech"]).toMatch(/rockets/);
+    expect(SECTOR_DEFINITIONS["Advanced Manufacturing"]).toMatch(/never by how it is made/);
+    expect(SECTOR_DEFINITIONS["Biotech / Genomics"]).toMatch(/biological manufacturing/);
+  });
+});

@@ -4,7 +4,7 @@
  * verified description (classifySector.ts), so "produced" means: classify the description the mark's company had, and see
  * whether the same sector comes out. A mark whose company has no stored description cannot be judged and stays.
  */
-import type { Mark } from "./fieldReview.ts";
+import type { Mark, RejudgedRow } from "./fieldReview.ts";
 
 export interface Rejudged { id: string; produced: boolean; now: string }
 
@@ -40,4 +40,27 @@ export function applySectorRejudge(judged: Map<string, { produced: boolean; rule
     const j = judged.get(r.id);
     if (j && j.produced && !r.produced) judged.set(r.id, { produced: false, rule: `the current classification gives ${r.now}` });
   }
+}
+
+/**
+ * The tracker rows for the new classifications nobody has marked yet: wrong for the old ids named, correct for the rest. Run again after
+ * the classifier changes once more, only the values still without a mark get one; the id carries the round (rj.<old id>, rj2.<old id>, …).
+ */
+export function marksForNewClassifications(
+  rows: RejudgedRow[], marks: Array<Pick<Mark, "id" | "field" | "company" | "value" | "source_url">>,
+  wrongOldIds: string[], sourceOf: (company: string) => string | undefined, note: string,
+): { marks: Mark[]; unknown: string[] } {
+  const sector = marks.filter((m) => m.field === "sector");
+  const byId = new Map(sector.map((m) => [m.id, m]));
+  const norm = (v: string) => v.replace(/\s+/g, " ").trim().toLowerCase();
+  const changed = rows.filter((r) => !r.produced && r.now && byId.has(r.id))
+    .filter((r) => !sector.some((m) => m.company === byId.get(r.id)!.company && norm(m.value) === norm(r.now)));
+  const round = 1 + Math.max(0, ...marks.map((m) => Number(m.id.match(/^rj(\d*)\./)?.[1] || (m.id.startsWith("rj.") ? 1 : 0))));
+  const prefix = round === 1 ? "rj" : `rj${round}`;
+  const out: Mark[] = changed.map((r) => {
+    const old = byId.get(r.id)!;
+    return { id: `${prefix}.${r.id}`, field: "sector", company: old.company, value: r.now, source_url: sourceOf(old.company) ?? old.source_url, verdict: wrongOldIds.includes(r.id) ? "wrong" : "correct", source_of_mark: note };
+  });
+  const known = new Set(changed.map((r) => r.id));
+  return { marks: out, unknown: wrongOldIds.filter((w) => !known.has(w)) };
 }

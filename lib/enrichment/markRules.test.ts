@@ -60,3 +60,35 @@ describe("review 9 (2026-11-10): sources that are not sources", () => {
     expect(judge6(m9("hq_city", "Frontegg", "Tel Aviv", "https://techcrunch.com/2020/10/14/frontegg-raises-5m-to-help-saas-companies-build-saas-faster/")).produced).toBe(true);
   });
 });
+
+import { contactPageHqIds } from "./markRules";
+describe("a headquarters from a Contact page of several addresses (review 9, Sentra)", () => {
+  const rows = [
+    { id: "9.8", field: "hq_city", company: "Sentra", value: "New York", source_url: "https://sentra.io/contact" },
+    { id: "9.14", field: "hq_country", company: "Sentra", value: "United States", source_url: "https://sentra.io/contact" },
+    { id: "9.83", field: "office", company: "Sentra", value: "Tel Aviv, Israel", source_url: "https://sentra.io/contact" },
+    { id: "9.85", field: "office", company: "Sentra", value: "New York, United States", source_url: "https://sentra.io/contact" },
+    { id: "9.2", field: "hq_city", company: "Vanilla Vida", value: "Yesod HaMa'ala", source_url: "https://vanillavida.com/team" },
+    { id: "9.9", field: "hq_city", company: "Solo", value: "Paris", source_url: "https://solo.com/contact" },
+    { id: "9.99", field: "office", company: "Solo", value: "Paris, France", source_url: "https://solo.com/contact" },
+  ];
+  it("the headquarters marks of a page that gives two places leave; one address stays", () => {
+    expect([...contactPageHqIds(rows)].sort()).toEqual(["9.14", "9.8"]);
+  });
+});
+
+describe("descriptions the builder would not write now leave the count (review 9, 2026-11-10)", () => {
+  const d = (company: string, value: string, id = "d.x"): Mark => ({ id, field: "description", company, value, source_url: "https://x.example/", verdict: "wrong", source_of_mark: "" }) as Mark;
+  it("another company's name first (Cinsay→aibuy, Hofy→Deel IT, Ezetap→Razorpay), a selling word (AyoxxA), no company at all (DealHub), 'reinvents' (Cartana)", () => {
+    expect(judge6(d("Cinsay", "aibuy offers shoppable video products, including Shoppable Overlay, which adds an interactive overlay to videos.")).produced).toBe(false);
+    expect(judge6(d("Hofy", "Deel IT is a platform for running global IT operations, where companies buy, lease, configure, ship, and manage devices.")).produced).toBe(false);
+    expect(judge6(d("Ezetap", "Razorpay's POS swipe machines are in-store payment terminals, including the All-in-One POS and Smart POS with Dock.")).produced).toBe(false);
+    expect(judge6(d("AyoxxA", "AYOXXA Biosystems GmbH has developed a proprietary technology platform for multiplex protein analysis that requires the lowest sample volume in the field.")).produced).toBe(false);
+    expect(judge6(d("DealHub", "The platform is built to power SLG, PLG, self-service, and consumption-based go-to-market (GTM) motions.")).produced).toBe(false);
+    expect(judge6(d("Cartana", "Cartana has developed one platform that reinvents traditional point-of-sale (POS) functions using new technologies.")).produced).toBe(false);
+  });
+  it("a plain description that names the company stays", () => {
+    expect(judge6(d("Verbit", "Verbit sells a verbal intelligence and voice AI platform that combines automatic speech recognition with human transcribers.")).produced).toBe(true);
+    expect(judge6(d("Cult.fit", "Cult.fit runs fitness centres and sells workout classes and meals through its app.")).produced).toBe(true);
+  });
+});
