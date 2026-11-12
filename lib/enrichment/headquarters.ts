@@ -34,6 +34,8 @@ export interface HqStatement {
   date: string | null;
   /** Read from a street address on the Contact page, without a word that declares a headquarters. */
   viaAddress?: boolean;
+  /** The address sits under an "Offices" / "Locations" heading: an office of the company, not its headquarters (Swimm, owner 2026-11-12). */
+  officeList?: boolean;
 }
 
 export type HqDecision =
@@ -199,6 +201,9 @@ function saysOfCompany(sentence: string, at: number, city: string, companyName: 
   return ownSite && /\b(we|we're|we are|our)\b/i.test(lead);
 }
 
+/** "Offices." / "Our offices:" / "Locations" at the start of a line or as a heading of its own. */
+export const OFFICE_HEADING = /(?:^|[|*#>\s])(?:our\s+)?(?:offices?|locations?)\s*(?:[.:|]|$)/i;
+
 // A street address on the line: "1674 Broadway", "Hamasger 34", a postcode
 // ("BS1 6QH", "94105", "6789141").
 const ADDRESS_HINT = /(\b\d{1,5}\s+\p{L}{3,}|\p{L}{3,}\.?\s+\d{1,5}\b|\b[A-Z]{1,2}\d[A-Z\d]?\s\d[A-Z]{2}\b|\b\d{5}(?:-\d{4})?\b|\b\d{7}\b)/u;
@@ -213,10 +218,12 @@ export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type
   // The Contact page — or the page /contact rendered (Soda's /contact is its /about: dry run 2026-11-02).
   if (s.source_type !== "company_site" || ![s.url, ...(s.also_urls ?? [])].some((u) => /\/contact/i.test(u))) return [];
   const out: HqStatement[] = [];
+  let underOfficeHeading = false;
   for (const raw of s.content.split(/\n+/)) {
     // Markdown images and links are not addresses: drop images, keep a link's text only
     // ("![Image 4: … return to main Palo Alto Networks site](…)" on Koi's page — 2026-11-02).
     const line = raw.replace(/!\[[^\]]*\]\([^)]*\)/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/https?:\/\/\S+/g, " ").trim();
+    if (OFFICE_HEADING.test(line)) underOfficeHeading = true;
     if (line.length > 250 || !ADDRESS_HINT.test(line)) continue;
     for (const m of line.matchAll(CITY_RE)) {
       const city = title(m[2].toLowerCase());
@@ -227,7 +234,7 @@ export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type
       // A street named after a city is not the city ("46430 Fremont Blvd": EnerVenue, model check 2026-11-02).
       if (/^\s+(blvd|boulevard|st|street|ave|avenue|rd|road|way|drive|dr|lane|ln|place|pl|parkway|pkwy|highway|hwy)\b\.?/i.test(line.slice(m.index! + m[0].length))) continue;
       if (isRegionalOfficeQuote(line, city)) continue;
-      if (!out.some((o) => sameCity(o.city, city))) out.push({ city, quote: line, source_id: s.source_id, url: s.url, kind: "company", date: null, viaAddress: true });
+      if (!out.some((o) => sameCity(o.city, city))) out.push({ city, quote: line, source_id: s.source_id, url: s.url, kind: "company", date: null, viaAddress: true, ...(underOfficeHeading ? { officeList: true } : {}) });
     }
   }
   return out;
@@ -261,9 +268,9 @@ export function decideHeadquarters(statements: HqStatement[], today = new Date()
   const allCompany = latestFirst(statements.filter((s) => s.kind === "company"));
   // Only a single address on the Contact page is the headquarters; several addresses there are offices (owner, 2026-11-10: Sentra).
   const addressCities = allCompany.filter((s) => s.viaAddress).map((s) => s.city).filter((c, i, a) => a.findIndex((d) => sameCity(c, d)) === i);
-  const company = allCompany.filter((s) => !s.viaAddress || addressCities.length < 2);
+  const company = allCompany.filter((s) => !s.viaAddress || (addressCities.length < 2 && !s.officeList));
   if (company.length) return { kind: "declared", statement: company[0] };
-  if (addressCities.length >= 2 && !siteOfficeCities.length) siteOfficeCities = addressCities;
+  if ((addressCities.length >= 2 || allCompany.some((x) => x.viaAddress && x.officeList)) && !siteOfficeCities.length) siteOfficeCities = addressCities;
   const press = latestFirst(statements.filter((s) => s.kind === "press"));
   const recent = press.filter((s) => s.date && Date.parse(today) - Date.parse(s.date) <= 730 * DAY);
   const siteCities = siteOfficeCities.filter((c, i) => siteOfficeCities.findIndex((d) => sameCity(c, d)) === i);

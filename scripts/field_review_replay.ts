@@ -22,7 +22,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { readMarks, readReplay, parseCsvText, REPLAY } from "../lib/enrichment/fieldReview.ts";
 import { quotesFromRows, quotesFromCompetitorSheet, quoteOf } from "../lib/enrichment/markQuotes.ts";
-import { judgeMark, duplicateMarkIds, contactPageHqIds } from "../lib/enrichment/markRules.ts";
+import { judgeMark, duplicateMarkIds, contactPageHqIds, contactPageOfficeListHqIds } from "../lib/enrichment/markRules.ts";
 import { applySectorRejudge } from "../lib/enrichment/sectorRejudge.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -59,6 +59,8 @@ const domainOf = (website: string | null | undefined) => {
   const judged = new Map(marks.map((m) => [m.id, judgeMark(m, { domain: domains.get(m.company), quote: quoteOf(m, quotes) })]));
   // A headquarters from a Contact page that lists several addresses is an office (Sentra).
   for (const id of contactPageHqIds(all)) { const j = judged.get(id); if (j?.produced) judged.set(id, { produced: false, rule: "the Contact page lists several addresses: offices" }); }
+  // ... or whose address sits under an "Offices" heading (Swimm).
+  for (const id of contactPageOfficeListHqIds(all, (m) => quoteOf(all.find((x) => x.id === m.id)!, quotes) ?? "")) { const j = judged.get(id); if (j?.produced) judged.set(id, { produced: false, rule: "the Contact page lists the address under Offices: an office, not the headquarters" }); }
   // One headcount point is one mark: the later duplicates leave the count.
   for (const id of duplicateMarkIds(all)) { const j = judged.get(id); if (j?.produced) judged.set(id, { produced: false, rule: "the same point as an earlier mark" }); }
   // Sector marks counted against the current classification (scripts/sector_rejudge.ts): a mark whose sector it no longer gives leaves.
