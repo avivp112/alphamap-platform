@@ -44,3 +44,13 @@ describe("hf link on shared hosts (fix 20261128)", () => {
     expect(fix).toMatch(/WHERE oss_is_own_domain\(registrable_domain\(o\.website\)\)/);
   });
 });
+
+describe("weekly cron and GitHub link (20261129)", () => {
+  const m = readFileSync("supabase/migrations/20261129000000_oss_weekly_cron_and_github_link.sql", "utf8");
+  it("schedules the snapshot in 30-org calls and links only certain pairs; candidates are not scheduled", () => {
+    expect(m).toMatch(/'\*\/10 2-6 \* \* 1'.*"batch": 30/);
+    expect(m).toMatch(/link_hf_orgs\(false\); SELECT link_github_orgs\(false\)/);
+    expect(m).not.toMatch(/schedule\([^)]*propose_/);
+    expect(m).toMatch(/DISTINCT f2\.startup_id\) FROM from_site f2 WHERE f2\.org = f\.org\) = 1/);
+  });
+});
