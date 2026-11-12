@@ -6,7 +6,7 @@
  *
  *   npx tsx scripts/field_review_status.ts
  */
-import { readMarks, readReplay, countedMarks, fieldStatus, pendingReviews, MIN_MARKED, MIN_CORRECT, TRACKER } from "../lib/enrichment/fieldReview.ts";
+import { readMarks, readReplay, countedMarks, fieldStatus, pendingReviews, pendingSectorItems, MIN_MARKED, MIN_CORRECT, TRACKER } from "../lib/enrichment/fieldReview.ts";
 
 const ORDER = ["hq_city", "hq_country", "founded_year", "founding_country", "description", "sector", "tags", "office", "employee_range", "employee_count", "employee_history", "founder", "founder_bio", "leader", "board", "round", "competitor_declared", "competitor_market", "patent", "news", "founder_background"];
 const all = readMarks();
@@ -24,6 +24,11 @@ for (const f of ORDER) {
   const waiting = pending[f] ?? 0;
   const st = waiting ? `⏳ ${waiting} new value(s) to review` : s.open ? "✅ open" : s.marked < MIN_MARKED ? `needs ${MIN_MARKED - s.marked} more` : "❌ below 90%";
   console.log(`${f.padEnd(18)}${String(s.marked).padEnd(8)}${String(s.correct).padEnd(9)}${(s.share == null ? "—" : `${Math.round(s.share * 100)}%`).padEnd(8)}${st}`);
+}
+const waitingItems = pendingSectorItems();
+if (waitingItems.length) {
+  console.log("\nSector values to review (mark them: WRONG=<id> npx tsx scripts/sector_rejudge_mark.ts):");
+  for (const w of waitingItems) console.log(`  ${w.id.padEnd(12)} ${w.company}: ${w.now}`);
 }
 if (excluded.length) {
   console.log("\nLeft out (the current rules no longer produce them):");
