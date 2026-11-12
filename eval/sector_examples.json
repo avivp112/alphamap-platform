@@ -146,5 +146,36 @@
     "description": "EverCurrent sells an AI platform of record that connects the tools, data, and knowledge behind hardware so teams can see how changes spread. EverCurrent is sold to hardware product and engineering teams, which use it to manage BOMs, ECOs and handoffs.",
     "expect": "Industrial & Manufacturing › Advanced Manufacturing",
     "was": "Enterprise Software › Productivity & Collaboration (rejudge 2026-11-10)"
+  },
+  {
+    "company": "Gloat",
+    "description": "Gloat sells Agentic HR, a set of pre-built and no-code-buildable AI workforce agents that handle HR tasks from transactional questions to workflow and strategic planning, powered by its Loomra workforce context engine. Its customers are enterprise HR and talent teams.",
+    "expect": "Enterprise Software › HR Tech",
+    "was": "AI & ML › AI Agents (rejudge 2026-11-12)"
+  },
+  {
+    "company": "Ezetap",
+    "description": "Ezetap sells in-store payment terminals, including the All-in-One POS, Smart POS with Dock, and Android Mini POS, that accept payments, capture loyalty signups, and run offers. Its customers are merchants and retailers.",
+    "expect": "Fintech › Payments",
+    "was": "E-commerce & Retail › Retail Tech (rejudge 2026-11-12)",
+    "note": "the description on file is Razorpay's (acquired); the example tests the payments rule"
+  },
+  {
+    "company": "DataRails",
+    "description": "Datarails FinanceOS is a governed, Excel-connected operating layer that consolidates financial and operational data from over 600 sources into one source of truth, and the Datarails FP&A product runs planning, budgeting and reporting. Its customers are corporate finance teams.",
+    "expect": "Enterprise Software › ERP / Finance",
+    "was": "Fintech › Fintech Infrastructure (rejudge 2026-11-12)"
+  },
+  {
+    "company": "Kitov.ai",
+    "description": "KITOV.ai offers an AI-based software platform that automates CAD-based visual inspection planning, letting QC engineers define inspection requirements directly on a CAD model. The platform is sold to machine builders, system integrators and large manufacturers.",
+    "expect": "Industrial & Manufacturing › Industrial Automation",
+    "was": "AI & ML › Computer Vision (rejudge 2026-11-12)"
+  },
+  {
+    "company": "AIVF",
+    "description": "AIVF develops AI-powered IVF solutions, including an AI platform that grades embryos and provides insights on embryo quality. AIVF sells its solutions to IVF clinics, embryology labs, clinicians and embryologists.",
+    "expect": "Health & Life Sciences › MedTech",
+    "was": "Health & Life Sciences › Healthcare SaaS / Digital Health (rejudge 2026-11-12)"
   }
 ]

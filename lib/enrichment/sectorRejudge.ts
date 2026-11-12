@@ -68,3 +68,14 @@ export function marksForNewClassifications(
   const known = new Set(changed.map((r) => r.id));
   return { marks: out, unknown: wrongOldIds.filter((w) => !known.has(w)) };
 }
+
+/**
+ * The sector the owner has already marked correct for a company (owner, 2026-11-12): the latest correct mark in the tracker's order. A
+ * classification that was marked correct is not asked again, so a model that answers a borderline company differently each time cannot
+ * retire a mark that is right; only a company with no correct mark is classified.
+ */
+export function frozenSectors(marks: Array<Pick<Mark, "field" | "company" | "value" | "verdict">>): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const m of marks) if (m.field === "sector" && m.verdict === "correct") out.set(m.company, m.value);
+  return out;
+}

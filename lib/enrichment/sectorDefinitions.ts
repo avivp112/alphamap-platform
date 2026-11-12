@@ -10,20 +10,20 @@ export const SECTOR_DEFINITIONS: Record<string, string> = {
   "Generative AI": "products whose output is generated content (text, image, audio, video, code) for end users; not the model lab itself (LLMs) and not autonomous task-doers (AI Agents).",
   "Computer Vision": "the product analyzes the content of images or video with machine vision (inspection, imaging analysis, object detection); video or images as a medium for selling, advertising or entertainment is not Computer Vision; never for speech or text.",
   "NLP / Speech": "text and language understanding as the core technology (classification, extraction, search over text); voice products go to Voice & Speech AI.",
-  "AI Agents": "software that carries out multi-step tasks autonomously on a user's behalf; not a chatbot or a content generator.",
+  "AI Agents": "agents sold as the product for any customer, carrying out multi-step tasks autonomously on a user's behalf; an agent built for one industry (HR, finance, health, security) belongs to that industry; not a chatbot or a content generator.",
   "MLOps": "tools to train, deploy, monitor and govern machine-learning models for other teams; not the AI hardware or cloud (AI Infrastructure).",
   "AI Infrastructure": "compute, chips-as-a-service, inference platforms and data-center software for running AI; not the tooling teams use on top of it (MLOps).",
   "Voice & Speech AI": "the product is speech: recognition, transcription, captioning, dubbing, voice agents or synthesis; text-only language AI is NLP / Speech.",
   // Fintech
   "Fintech / General": "a financial product that fits no narrower fintech sub-sector.",
-  "Payments": "moves money for merchants or consumers (acquiring, POS, cross-border transfers, wallets); not the bank or lender behind it.",
+  "Payments": "moves money for merchants or consumers: payment acceptance and terminals (POS swipe machines, card readers), acquiring, cross-border transfers, wallets; not the bank or lender behind it.",
   "Banking / Neobanking": "a bank, neobank or banking-as-a-service front end holding customer accounts; not payments processing alone.",
   "Insurance / Insurtech": "sells, underwrites or administers insurance with technology (car, health, claims software for insurers).",
   "Lending": "originates, scores or services loans and credit (BNPL, SME lending, mortgages); not deposit accounts.",
   "Crypto / Web3": "blockchain, tokens, digital-asset custody or exchanges.",
   "WealthTech": "investing, savings, trading, portfolio and pension tools for individuals or advisers.",
   "RegTech": "software that checks a business against regulation or policy (compliance monitoring, KYC/AML, review of marketing or communications); not security tooling.",
-  "Fintech Infrastructure": "APIs and platforms other financial companies build on (ledgers, card issuing, open-banking connectivity); not consumer-facing payments.",
+  "Fintech Infrastructure": "banking as a service, card issuing, ledgers and financial APIs that banks and fintech builders build on; not payment acceptance (Payments) and not finance software a company's own finance team uses (ERP / Finance).",
   // Cybersecurity
   "Cybersecurity / General": "security is the product but no narrower security sub-sector fits.",
   "Identity & Access": "who may log in or act: authentication, SSO, passwordless, privileged access.",
@@ -68,8 +68,8 @@ export const SECTOR_DEFINITIONS: Record<string, string> = {
   // Enterprise Software
   "Enterprise / General": "software for large organizations with no narrower fit.",
   "CRM": "manages customer relationships and sales pipelines; revenue-process tools such as quoting are Sales Tech.",
-  "HR Tech": "hiring, onboarding, payroll, talent and workforce planning, including freelancer and contingent-workforce management and talent marketplaces for work.",
-  "ERP / Finance": "accounting, planning, procurement and spend management, billing, invoicing and subscription revenue operations for companies.",
+  "HR Tech": "hiring, onboarding, payroll, talent and workforce planning, internal mobility and talent matching (including agentic HR), freelancer and contingent-workforce management and talent marketplaces for work.",
+  "ERP / Finance": "finance software for a company's own finance team: accounting, FP&A, budgeting, planning and consolidation, procurement and spend management, billing, invoicing and subscription revenue operations.",
   "Analytics / BI": "dashboards, reporting and data analysis for business users, including market-data products.",
   "Sales Tech": "helps sales teams sell: quoting and CPQ, revenue operations, sales engagement; differs from CRM, which stores the relationship.",
   "Productivity & Collaboration": "tools for personal and team work: email, docs, meetings, notes, task management; engineering and product-lifecycle tools for hardware teams are Advanced Manufacturing.",
@@ -130,6 +130,7 @@ export function definitionSupports(sub: string | undefined, description: string)
 }
 
 export const SECTOR_RULES = `RULES FOR THE SECTOR
+- The sector is the MARKET the company serves. AI, vision, speech and agents are technologies: a company that applies them for an industry (HR, finance, health, security, manufacturing, retail) belongs to that industry, and the AI sub-sector goes among the other fields (tags). Use an AI & ML sub-sector only when the company sells the technology itself (models, AI infrastructure, MLOps, a speech or vision engine as the product).
 - ONE main sector and sub-sector: the most specific one that fits what the verified description says the company sells.
 - A "… / General" sub-sector only when no other sub-sector fits at all.
 - Software for one industry's customers: the sector is the CUSTOMER'S industry (roofing contractors → Industrial & Manufacturing › Construction Tech; landlords → Real Estate › PropTech; therapists and prior-authorization teams → Health & Life Sciences › Healthcare IT & Administration); list "Vertical SaaS" among the other fields.
