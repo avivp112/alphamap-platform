@@ -10,7 +10,7 @@ import { bestQuote, supportedTags } from "./quoteFinder.ts";
 import { extractionPoints } from "./headcountSources.ts";
 
 /** The fields, in the order of the report and of the tracker. */
-export const REVIEW_FIELDS = ["hq_city", "hq_country", "founded_year", "founding_country", "description", "sector", "tags", "office", "employee_range", "employee_count", "employee_history", "founder", "founder_bio", "leader", "round", "competitor_declared", "competitor_market", "patent", "news", "founder_background"] as const;
+export const REVIEW_FIELDS = ["hq_city", "hq_country", "founded_year", "founding_country", "description", "sector", "tags", "office", "employee_history", "founder", "founder_bio", "leader", "round", "competitor_declared", "competitor_market", "patent", "news", "founder_background"] as const;
 export type Field = (typeof REVIEW_FIELDS)[number];
 export interface Value { company_id: string; company: string; field: Field; value: string; on_file: string; source_url: string; quote: string }
 
@@ -63,10 +63,7 @@ export function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V
   if (tagged.kept.length) {
     add("tags", tagged.kept.map((k) => k.tag).join(", "), "", src(tagged.kept[0].id), tagged.kept.map((k) => `${k.tag}: ${k.quote}`).join(" | "));
   }
-  const range = c.profile.metrics.employee_range;
-  if (range && !row.employee_range) add("employee_range", range.value, row.employee_range, src(range.source_id), range.evidence_quote);
-  const count = c.profile.metrics.employee_count;
-  if (count && row.employee_count == null) add("employee_count", String(count.value), row.employee_count, src(count.source_id), count.evidence_quote);
+  // employee_count and employee_range are derived from the history (headcountDerived.ts): nothing separate to mark.
   for (const o of p.overview.offices ?? []) add("office", [o.city, o.country].filter(Boolean).join(", "), "", o.source_url ?? "");
   // Headcount points (owner, 2026-11-07): each with its date, type, source and quote.
   const histLine = (value: number, date: string, type: string, lower?: boolean, max?: number) => `${value}${max ? `–${max}` : lower ? "+" : ""} employees @ ${date.slice(0, 10)} (${type})`;
