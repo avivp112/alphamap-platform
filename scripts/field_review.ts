@@ -24,7 +24,7 @@ import { maxArticles } from "../lib/enrichment/articleBudget.ts";
 import { createClient } from "@supabase/supabase-js";
 import { config } from "dotenv";
 import Anthropic from "@anthropic-ai/sdk";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "fs";
+import { unlinkSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { collectCompany, newCollectStats, V2_STARTUP_COLUMNS, V2_ROUND_COLUMNS, type V2StartupRow, type V2FundingRoundRow } from "../lib/enrichment/collect.ts";
@@ -123,7 +123,19 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
   const coverageLists: CompetitorLists[] = [];
   const roleChecks: NonNullable<ReturnType<typeof newCollectStats>["roleChecks"]> = [];
   const unlistedSeen = new Map<string, string>();   // domains on no list that a source came from (roundSources.ts)
+  // A stop request (Ctrl+C, SIGTERM, or a file field_review/STOP) finishes the company in hand, skips the rest and writes the report from the
+  // companies already read (owner, 2026-11-12: stopping at company 47 of 50 lost everything).
+  let stopRequested = false;
+  const requestStop = (why: string) => { if (!stopRequested) { stopRequested = true; console.log(`\n⏹️   Stop requested (${why}): finishing this company, then writing the report from the companies read so far.\n`); } };
+  process.on("SIGINT", () => requestStop("Ctrl+C"));
+  process.on("SIGTERM", () => requestStop("SIGTERM"));
+  const STOP_FILE = join(DIR, "STOP");
+  if (existsSync(STOP_FILE)) unlinkSync(STOP_FILE);   // a leftover from an earlier run is not a request for this one
+  let readCompanies = 0;
   for (const row of (rows ?? []) as V2StartupRow[]) {
+    if (!stopRequested && existsSync(STOP_FILE)) { requestStop("the STOP file"); }
+    if (stopRequested) break;
+    readCompanies++;
     console.log(`── ${row.name} (${row.website}) ──`);
     const state = createSearchProviderState();
     state.cache = openSearchCache(row.id);
@@ -197,6 +209,7 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
   // The cards, a separate line (owner, 2026-11-03): their first test against real sites.
   console.log(`Team-page cards: ${roleChecks.filter((r) => r.card && !r.card.startsWith("not named")).length} leader(s) named on the site's pages — ${by("verified_card").length} verified by their card; ${roleChecks.filter((r) => r.card?.startsWith("no HTML")).length} without HTML, ${roleChecks.filter((r) => r.card?.startsWith("no card")).length} without a card found, ${roleChecks.filter((r) => r.card?.includes("without the title")).length} with a card lacking the title`);
   for (const r of roleChecks.filter((x) => x.card && !x.card.startsWith("not named")).slice(0, 8)) console.log(`    · ${r.company}: ${r.name} ("${r.title}") — ${r.card}`);
+  if (stopRequested) console.log(`\n⏹️   Stopped after ${readCompanies} of ${(rows ?? []).length} companies: the report and the sample hold those ${readCompanies} only.`);
   console.log(`\n${coverageReport(coverageLists).join("\n")}`);
   console.log(`Claude: $${meter.costUsd.toFixed(4)} ($${(meter.costUsd / Math.max(1, drawn.length)).toFixed(4)} a company) · longest prompt ${meter.maxPromptTokens.toLocaleString()} tokens · over 100K: ${meter.callsOverLong}`);
   console.log(`📝  ${DIR}/run_${runNo}.csv (all values) · ${DIR}/run_${runNo}_sample.csv (the ${sample.length} to mark)`);
