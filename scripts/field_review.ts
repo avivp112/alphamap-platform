@@ -38,6 +38,7 @@ import { profileSourceAllowed, roundSourceStanding } from "../lib/enrichment/rou
 import { capPerCompany, PER_COMPANY } from "../lib/enrichment/fieldReview.ts";
 import { majorPressNote } from "../lib/enrichment/unlistedDomains.ts";
 import { definitionLines } from "../lib/enrichment/reviewDefinitions.ts";
+import { coverageReport, type CompetitorLists } from "../lib/enrichment/competitorCoverage.ts";
 import { REVIEW_FIELDS, wouldWrite, type Field, type Value } from "../lib/enrichment/reviewValues.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -119,6 +120,7 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
   const taxonomy = await loadSectorTaxonomy(db);
   const meter = new UsageMeter();
   const values: Value[] = [];
+  const coverageLists: CompetitorLists[] = [];
   const roleChecks: NonNullable<ReturnType<typeof newCollectStats>["roleChecks"]> = [];
   const unlistedSeen = new Map<string, string>();   // domains on no list that a source came from (roundSources.ts)
   for (const row of (rows ?? []) as V2StartupRow[]) {
@@ -135,6 +137,7 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
       roleChecks.push(...(stats.roleChecks ?? []));
       const v = wouldWrite(c, row);
       values.push(...v);
+      if (c.outcome === "collected") coverageLists.push({ onFile: (row.competitors ?? []) as CompetitorLists["onFile"], found: c.market.competitors.map((x) => ({ name: x.name, tier: x.tier })) });
       console.log(`    → ${c.outcome}: ${v.length} value(s) would be written`);
       for (const d of c.unlistedDomains ?? []) unlistedSeen.set(d.domain, d.url);
     } catch (e) {
@@ -194,6 +197,7 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
   // The cards, a separate line (owner, 2026-11-03): their first test against real sites.
   console.log(`Team-page cards: ${roleChecks.filter((r) => r.card && !r.card.startsWith("not named")).length} leader(s) named on the site's pages — ${by("verified_card").length} verified by their card; ${roleChecks.filter((r) => r.card?.startsWith("no HTML")).length} without HTML, ${roleChecks.filter((r) => r.card?.startsWith("no card")).length} without a card found, ${roleChecks.filter((r) => r.card?.includes("without the title")).length} with a card lacking the title`);
   for (const r of roleChecks.filter((x) => x.card && !x.card.startsWith("not named")).slice(0, 8)) console.log(`    · ${r.company}: ${r.name} ("${r.title}") — ${r.card}`);
+  console.log(`\n${coverageReport(coverageLists).join("\n")}`);
   console.log(`Claude: $${meter.costUsd.toFixed(4)} ($${(meter.costUsd / Math.max(1, drawn.length)).toFixed(4)} a company) · longest prompt ${meter.maxPromptTokens.toLocaleString()} tokens · over 100K: ${meter.callsOverLong}`);
   console.log(`📝  ${DIR}/run_${runNo}.csv (all values) · ${DIR}/run_${runNo}_sample.csv (the ${sample.length} to mark)`);
 })().catch((e) => { console.error(e); process.exit(1); });

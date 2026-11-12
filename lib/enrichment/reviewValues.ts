@@ -6,11 +6,12 @@
 import type { collectCompany, V2StartupRow } from "./collect.ts";
 import { buildProfile } from "../../worker/profile.ts";
 import { profileSourceAllowed } from "./roundSources.ts";
+import { componentOn } from "./components.ts";
 import { bestQuote, supportedTags } from "./quoteFinder.ts";
 import { extractionPoints } from "./headcountSources.ts";
 
 /** The fields, in the order of the report and of the tracker. */
-export const REVIEW_FIELDS = ["hq_city", "hq_country", "founded_year", "founding_country", "description", "sector", "tags", "office", "employee_history", "founder", "founder_bio", "leader", "round", "competitor_declared", "competitor_market", "patent", "news", "founder_background"] as const;
+export const REVIEW_FIELDS = ["hq_city", "hq_country", "founded_year", "founding_country", "description", "sector", "tags", "office", "employee_history", "founder", "leader", "round", "competitor_declared", "competitor_market", "patent", "news", "founder_background"] as const;
 export type Field = (typeof REVIEW_FIELDS)[number];
 export interface Value { company_id: string; company: string; field: Field; value: string; on_file: string; source_url: string; quote: string }
 
@@ -72,7 +73,7 @@ export function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V
   const onFileFounders = new Set(((row.founders ?? []) as Array<{ name?: string }>).map((f) => (f.name ?? "").toLowerCase()));
   for (const f of c.profile.profile.founders ?? []) {
     if (!onFileFounders.has(f.name.toLowerCase())) add("founder", `${f.name}${f.title ? ` — ${f.title}` : ""}`, "", f.grounded_url ?? "");
-    if (f.bio) { const id = allowedId(f.bio_source_ids); add("founder_bio", `${f.name}: ${f.bio}`, "", src(id), f.bio_verbatim ? "(the team page's own text, word for word)" : quoteOf(id)); }
+    if (f.bio && componentOn("bios")) { const id = allowedId(f.bio_source_ids); add("founder_bio", `${f.name}: ${f.bio}`, "", src(id), f.bio_verbatim ? "(the team page's own text, word for word)" : quoteOf(id)); }
     const filed = ((row.founders ?? []) as Array<{ name?: string; background?: Array<{ kind: string; organization: string }> }>).find((x) => (x.name ?? "").toLowerCase() === f.name.toLowerCase())?.background ?? [];
     for (const b of f.background ?? []) {
       if (filed.some((h) => h.kind === b.kind && h.organization.toLowerCase() === b.organization.toLowerCase())) continue;

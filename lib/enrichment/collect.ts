@@ -1274,7 +1274,7 @@ export async function collectCompany(
           }
         }
         // The card's own biography, word for word (people.ts bioFromCard): it replaces a rewritten one.
-        if (html && !ctx.update && !l.bio_verbatim) {
+        if (html && !ctx.update && !l.bio_verbatim && componentOn("bios")) {
           const bioCard = personCardsInHtml(html, l.name, others, { keepCase: true, maxLen: 1500 }).map((c) => bioFromCard(c, l.name, role, others)).find((b): b is string => !!b);
           const sid = allSources.find((x) => x.url === p.url)?.source_id;
           if (bioCard && sid) { l.bio = bioCard; l.bio_source_ids = [sid]; l.bio_verbatim = true; console.log(`    📖  ${l.name}: biography taken word for word from the card on ${p.url}`); bump(stats.droppedByReason, "bio_from_card"); }
@@ -1318,7 +1318,7 @@ export async function collectCompany(
       return false;
     });
     // The founders' cards on the company's own pages: their biography word for word too.
-    if (!ctx.update) {
+    if (!ctx.update && componentOn("bios")) {
       for (const f of (profile.profile.founders ?? [])) {
         if (f.bio_verbatim) continue;
         const others = peopleNames.filter((n) => n !== f.name);

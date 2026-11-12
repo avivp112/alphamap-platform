@@ -78,6 +78,10 @@ export const V2_COMPONENTS = {
     on: false, since: "2026-11-02", // off by the owner, 2026-11-02: 0 of 7 confirmed on the 10-company check
     what: "an HQ / founding year / founding country only a data platform states is not written, but searched for once in an allowed source that confirms it",
   },
+  bios: {
+    on: false, since: "2026-11-12", // off by the owner, 2026-11-12: the founders' background facts are enough; no biography is collected or reviewed
+    what: "founders' and leaders' biographies: asked of the extraction, taken word for word from team-page cards, checked against their sources",
+  },
   search_backup: {
     on: true, since: "2026-10-29",
     what: "Jina Search answers a search Serper could not; Serper scrape reads a page Jina could not",

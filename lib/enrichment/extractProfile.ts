@@ -31,6 +31,7 @@ import { debugDumpJson } from "./debugDump";
 import { checkHeadcountClaim, type HeadcountDropReason } from "./headcount";
 import { checkFoundingCountry, checkIsraelRnd, type OriginDrop } from "./origin";
 import { isLeadershipRole } from "./people";
+import { componentOn } from "./components";
 import { sectorGuidance } from "./sectorDefinitions";
 
 export interface SectorTaxonomy {
@@ -286,8 +287,7 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
                 properties: {
                   name: { type: "string" },
                   title: { type: "string", description: "Current title, e.g. 'CEO & Co-Founder'. Omit if not stated." },
-                  bio: { type: "string", description: BIO_DESCRIPTION },
-                  bio_source_ids: { type: "array", items: { type: "string" } },
+                  ...(componentOn("bios") ? { bio: { type: "string", description: BIO_DESCRIPTION }, bio_source_ids: { type: "array", items: { type: "string" } } } : {}),
                   linkedin_url: materialField({ type: "string" }, "Their personal linkedin.com/in/... URL. Omit entirely if not found verbatim in a source — never guess or construct one from a name."),
                   ...PERSON_QUALITY_TAG_PROPERTIES,
                 },
@@ -325,8 +325,7 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
             properties: {
               name: { type: "string" },
               role: { type: "string" },
-              bio: { type: "string", description: BIO_DESCRIPTION },
-              bio_source_ids: { type: "array", items: { type: "string" } },
+              ...(componentOn("bios") ? { bio: { type: "string", description: BIO_DESCRIPTION }, bio_source_ids: { type: "array", items: { type: "string" } } } : {}),
               linkedin_url: materialField({ type: "string" }, "Their personal LinkedIn URL. Omit if not found verbatim."),
               joined_date: { type: "string", description: "YYYY-MM-DD (or YYYY-MM-01) only for a genuinely dateable hire — omit otherwise." },
               ...PERSON_QUALITY_TAG_PROPERTIES,

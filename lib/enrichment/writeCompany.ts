@@ -382,7 +382,8 @@ export async function writeCollected(
     // "Former CEO" instead of listing two current CEOs.
     let leadershipOnFile = row.leadership ?? [];
     if (UPDATE) {
-      const { leaders, retired } = retireReplacedExecutives(leadershipOnFile, cleanLeadership);
+      // The "appointed CEO" wording lives in the extraction's text, which is read here before the biography is cut from what is written (bios are off).
+      const { leaders, retired } = retireReplacedExecutives(leadershipOnFile, (profile.leadership ?? []).filter((l) => l.group !== "board"));
       leadershipOnFile = leaders;
       for (const r of retired) console.log(`    👔  ${r} replaced by a newly announced leader — kept as "Former".`);
     }

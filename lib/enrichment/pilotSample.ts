@@ -51,11 +51,6 @@ export const FOCUS_FIELDS: Record<string, (c: PilotCandidate) => boolean> = {
   description: (c) => !c.description?.trim(),
   sector: (c) => !c.sector_id,
   employees: (c) => c.employee_count == null && !c.employee_range, employee_history: (c) => c.employee_count == null && !c.employee_range,
-  // A person on file with no bio, or nobody on file at all: a bio found would be one the review can mark.
-  team_bio: (c) => {
-    const people = [...(c.founders ?? []), ...(c.leadership ?? [])] as Array<{ bio?: string | null }>;
-    return people.length === 0 || people.some((p) => !p?.bio?.trim());
-  },
 };
 const DEFAULT_FOCUS = ["city", "founded_year", "founding_country", "founders", "competitors"];
 
