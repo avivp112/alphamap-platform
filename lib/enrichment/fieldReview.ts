@@ -77,7 +77,16 @@ export const pendingSectorReviews = (rows?: RejudgedRow[], marks?: Array<Pick<Ma
 
 export interface FieldStatus { field: string; marked: number; correct: number; share: number | null; open: boolean; pending?: number }
 
+/** Derived from the headcount history, never marked on their own (owner, 2026-11-12): they stand or fall with employee_history. */
+export const DERIVED_FROM_HISTORY = ["employee_count", "employee_range"] as const;
+
 export function fieldStatus(marks: Mark[], pending: Record<string, number> = {}): FieldStatus[] {
+  const all = fieldStatusOwn(marks.filter((m) => !(DERIVED_FROM_HISTORY as readonly string[]).includes(m.field)), pending);
+  const hist = all.find((s) => s.field === "employee_history") ?? { field: "employee_history", marked: 0, correct: 0, share: null, open: false, pending: 0 };
+  return [...all, ...DERIVED_FROM_HISTORY.map((field) => ({ ...hist, field }))];
+}
+
+function fieldStatusOwn(marks: Mark[], pending: Record<string, number> = {}): FieldStatus[] {
   // "competitor", the tracker's field before the tiers (2026-11-07), is the declared tier.
   const fieldOf = (m: Mark) => (m.field === "competitor" ? "competitor_declared" : m.field);
   const fields = [...new Set(marks.map(fieldOf))];

@@ -39,6 +39,8 @@ import {
 } from "./write.ts";
 import { validateWebsiteCandidate, websiteDomain, type DomainOwner } from "./websiteValidation.ts";
 import { sourceTypeRank, type SourceType } from "./sourceTypes.ts";
+import { classifySourceType } from "./sources.ts";
+import { currentFromHistory } from "./headcountDerived.ts";
 import { restrictPatch, writesRounds, writesBios, writesBoard, writesHeadcount, writesCompetitorTier, writesFounderBackground, writesTags, writesEmployeeHistory, fieldOfColumn, withoutBio } from "./writeUnits.ts";
 
 // Upper bounds on the additive list sections, so repeated runs can't grow
@@ -571,16 +573,13 @@ export async function writeCollected(
     };
     const headcountDecision = decideHeadcountUpdate(row.employee_count, candidate);
     if (headcountDecision.writeEmployeeCount) {
-      if (candidate.value !== row.employee_count) {
-        patch.employee_count = candidate.value;
-        provenance("metrics.employee_count", candidate.value, profile.metrics.employee_count);
-      }
+      // The count is not written from here: it is derived from the history below (headcountDerived.ts).
       // A figure that is really an old article's dated count (e.g. "the
       // 45-person startup" in a 2023 Series A story) is recorded at that
       // date only — never re-stamped as today's headcount.
       const today = new Date().toISOString().slice(0, 10);
       const staleDuplicate = headcountPoints.some((p) => p.count === candidate.value && (Date.now() - new Date(p.date).getTime()) / 86_400_000 > 180);
-      if (!staleDuplicate && !headcountPoints.some((p) => p.date === today)) headcountPoints.push({ date: today, count: candidate.value, pointType: headcountDecision.pointType });
+      if (!staleDuplicate && !headcountPoints.some((p) => p.date === today)) headcountPoints.push({ date: today, count: candidate.value, pointType: headcountDecision.pointType, sourceUrl: sourceById.get(profile.metrics.employee_count.source_id)?.url, quote: profile.metrics.employee_count.evidence_quote });
     } else {
       console.log(`    ⚠️  Headcount change rejected (point_type=${headcountDecision.pointType}): ${row.employee_count} -> ${candidate.value} not strongly enough evidenced.`);
     }
@@ -624,11 +623,23 @@ export async function writeCollected(
     bump(summary.droppedByReason, "on_file_contradiction_fixed");
   }
 
-  // A range is written only with its source (owner, 2026-11-02).
-  const range = profile.metrics.employee_range;
-  if (range?.value && range.source_id) {
-    setIfChanged("employee_range", fillScalarIfNull(row.employee_range, range.value), row.employee_range);
-    if (row.employee_range == null) provenance("metrics.employee_range", range.value, range);
+  // The current headcount and its range come from the history (owner, 2026-11-12): the latest point when it is from the last 24 months,
+  // the bracket of that number ("75+" by its lower bound). No separate source.
+  {
+    const cur = currentFromHistory(headcountPoints.map((p) => ({ date: p.date, count: p.count, lowerBound: p.lowerBound, countMax: p.countMax })));
+    if (cur) {
+      setIfChanged("employee_count", cur.count, row.employee_count);
+      setIfChanged("employee_range", cur.range, row.employee_range);
+      const from = headcountPoints.find((p) => p.date === cur.date && p.count === cur.count);
+      let sid = from?.sourceUrl ? [...sourceById.entries()].find(([, x]) => x.url === from.sourceUrl)?.[0] : undefined;
+      // A register, a plan or an archived copy is not among the pages read: it is registered as a source of its own, with the point's quote.
+      if (!sid && from?.sourceUrl) {
+        sid = "HC1";
+        let host = ""; try { host = new URL(/^https?:/.test(row.website ?? "") ? row.website! : `https://${row.website}`).hostname.replace(/^www\./, ""); } catch { /* no site */ }
+        sourceById.set(sid, { source_id: sid, url: from.sourceUrl, content: from.quote ?? "", provider: "serper", query_label: "headcount_history", source_type: classifySourceType(from.sourceUrl, host || null) } as never);
+      }
+      if (sid && from?.quote) { provenance("metrics.employee_count", cur.count, { source_id: sid, evidence_quote: from.quote }); provenance("metrics.employee_range", cur.range, { source_id: sid, evidence_quote: from.quote }); }
+    }
   }
   if (profile.metrics.growth_trend) setIfChanged("growth_trend", profile.metrics.growth_trend, row.growth_trend);
 
