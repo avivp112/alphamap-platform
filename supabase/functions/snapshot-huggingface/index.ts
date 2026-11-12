@@ -21,14 +21,14 @@
 // Schedule: NOT scheduled by this repo. After a dry run looks right, schedule it
 // weekly (repeat a few times on that day to cover all orgs).
 //
-// The org profile endpoint's field names are mapped tolerantly (logic.ts) and
-// unverified from the sandbox (outbound HTTPS blocked): run dryRun first and
-// check `withWebsite` in the response.
+// The overview API has NO website (checked live, 2026-11-12). The website and GitHub link are
+// read from the org page header (logic.ts parseOrgPage, verified on three real pages).
+// Check `withWebsite` in a dryRun response.
 // =============================================================================
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { withRunLog, countKeys } from "../_shared/run-log.ts";
-import { mapOrgProfile, orgModelsUrl, orgOverviewUrl, newestModelsUrl, MODELS_PAGE } from "./logic.ts";
+import { mapOrgProfile, parseOrgPage, orgPageUrl, orgModelsUrl, orgOverviewUrl, newestModelsUrl, MODELS_PAGE } from "./logic.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -111,7 +111,18 @@ Deno.serve(withRunLog("huggingface_snapshot", countKeys("modelsRecorded"), async
       const prof = await getJson(orgOverviewUrl(org), token);
       const profile = prof.ok ? mapOrgProfile(org, prof.body as Record<string, unknown>) : null;
       if (!prof.ok) out.failures.push(`${org} profile ${prof.status}`);
-      if (profile) { out.profiles++; if (profile.website) out.withWebsite++; }
+      if (profile) {
+        // The overview API has no website: read it from the org page header (parseOrgPage).
+        try {
+          const pr = await fetch(orgPageUrl(org), { headers: { Accept: "text/html", "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(20_000) });
+          if (pr.ok) {
+            const pg = parseOrgPage(await pr.text());
+            profile.website = pg.website ?? profile.website;
+            profile.github = pg.github ?? profile.github;
+          } else out.failures.push(`${org} page ${pr.status}`);
+        } catch { out.failures.push(`${org} page failed`); }
+        out.profiles++; if (profile.website) out.withWebsite++;
+      }
 
       let listedAll = true;
       for (let skip = 0; skip < MAX_MODELS_PER_ORG; skip += MODELS_PAGE) {
@@ -129,6 +140,7 @@ Deno.serve(withRunLog("huggingface_snapshot", countKeys("modelsRecorded"), async
           p_org: org, p_fullname: profile?.fullname ?? null, p_org_type: profile?.orgType ?? null, p_website: profile?.website ?? null,
           p_github: profile?.github ?? null, p_followers: profile?.followers ?? null, p_is_enterprise: profile?.isEnterprise ?? null,
           p_models_count: profile?.modelsCount ?? null, p_models_listed: listedAll,
+          p_plan: profile?.plan ?? null, p_num_users: profile?.numUsers ?? null, p_is_verified: profile?.isVerified ?? null,
         });
       }
       await sleep(DELAY_MS);

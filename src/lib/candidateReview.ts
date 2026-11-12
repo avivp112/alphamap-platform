@@ -54,6 +54,9 @@ export interface CandidateEvidence {
   downloads_7d?: number;
   likes?: number;
   followers?: number;
+  plan?: string;
+  num_users?: number;
+  verified?: boolean;
 }
 
 export interface CompanyCandidate {
@@ -173,6 +176,7 @@ export function evidenceLines(c: Pick<CompanyCandidate, "source" | "evidence" | 
     add("Models", e.models != null ? `${e.models} model${e.models === 1 ? "" : "s"}${e.first_model ? `, the first on ${e.first_model}` : ""}` : null);
     add("Growth", e.downloads_7d != null ? `+${n(e.downloads_7d)} downloads in 7 days${e.downloads != null ? ` (${n(e.downloads)} in the last 30 days)` : ""}` : e.downloads != null ? `${n(e.downloads)} downloads in the last 30 days` : null);
     add("Likes / followers", e.likes != null || e.followers != null ? `${e.likes ?? "?"} likes, ${e.followers ?? "?"} followers` : null);
+    add("Team", e.num_users != null || e.plan || e.verified != null ? [e.num_users != null ? `${e.num_users} member${e.num_users === 1 ? "" : "s"}` : null, e.plan ? `${e.plan} plan` : null, e.verified ? "verified" : null].filter(Boolean).join(", ") : null);
     add("Website", e.homepage);
     add("GitHub", e.github);
   }

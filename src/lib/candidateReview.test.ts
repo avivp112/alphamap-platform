@@ -109,6 +109,8 @@ describe("hf_org candidates (stage 7b)", () => {
     expect(by["Models"]).toBe("2 models, the first on 2026-09-13");
     expect(by["Growth"]).toBe("+1,000 downloads in 7 days (1,100 in the last 30 days)");
     expect(by["Website"]).toBe("https://newco.dev");
+    const t = Object.fromEntries(evidenceLines({ source: "hf_org", evidence: { ...evidence, num_users: 6, plan: "team", verified: true }, country: null, founded_year: null }).map((l) => [l.label, l.value]));
+    expect(t["Team"]).toBe("6 members, team plan, verified");
     expect(SOURCE_LABEL.hf_org).toBe("Hugging Face org");
   });
 });
