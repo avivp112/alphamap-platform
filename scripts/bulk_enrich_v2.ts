@@ -38,6 +38,7 @@
  *   DRY_RUN=false BATCH_SIZE=10 npx tsx scripts/bulk_enrich_v2.ts   # apply writes, small batch
  */
 
+import { makePeerLookup } from "../lib/enrichment/peerLookup.ts";
 import { maxArticles } from "../lib/enrichment/articleBudget.ts";
 import { callCostUsd, UsageMeter, LONG_PROMPT_TOKENS } from "../lib/enrichment/models.ts";
 import Anthropic from "@anthropic-ai/sdk";
@@ -256,6 +257,7 @@ async function enrichCompany(
       return ((prov ?? []) as Array<{ source_url: string | null }>).map((p) => p.source_url);
     },
     recordCost: (model, usage) => recordCost(summary, model, usage),
+    peerLookup: makePeerLookup(supabase),
     onWebsiteIssue: (reason, detail) => {
       websiteRows.push({ company_id: row.id, company: row.name, website: row.website ?? "", reason, detail });
       if (!DRY_RUN) void supabase.rpc("note_website_issue", { p_startup_id: row.id, p_website: row.website, p_reason: reason, p_detail: detail })

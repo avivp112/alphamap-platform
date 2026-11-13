@@ -37,6 +37,8 @@ import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDa
 import { buildDescriptionRequest, descriptionSources, processDescription } from "./descriptionBuilder.ts";
 import { buildBackgroundRequest, processBackgroundResponse, backgroundSearchQuery, founderSearchQuery } from "./founderBackground.ts";
 import { requestFor } from "./models.ts";
+import { judgeMarketPeers, type PeerClaim, type PeerFacts, type buildPeerComparisonRequest } from "./marketComparison.ts";
+import { isDataPlatformUrl } from "./dataPlatforms.ts";
 import { lookupEpoPatents, type CompanyIdentity, type EpoPatentResult } from "./epoPatents.ts";
 import { hintFromRound, hintQueries, confirmHint, hintKey, recoverMissingAmount, type RoundHint } from "./hints.ts";
 import { detectGaps, buildDeepDiveQueries, hasNoFinancingRounds, type DeepDiveSection } from "./deepDive.ts";
@@ -192,6 +194,8 @@ export interface CollectContext {
   openHints?: () => Promise<RoundHint[]>;
   /** Search for a primary source of each platform-only round (default on; three searches per hint at most). */
   hintSearch?: boolean;
+  /** Candidates' descriptions from the database, by name (peerLookup.ts); market candidates not in it are looked up on their own sites. */
+  peerLookup?: (names: string[]) => Promise<Map<string, PeerFacts>>;
 }
 
 export type CollectStage = "searching" | "reading" | "extracting" | "deep_dive" | "people" | "validating";
@@ -1375,7 +1379,38 @@ export async function collectCompany(
         companyDescription: [profile.profile.description, profile.profile.value_proposition, row.description].filter(Boolean).join(" "),
         knownCompany: (name, host) => allSources.some((x) => !x.url.includes(host) && !/^(vs_page|vs_own|vs_other)/.test(x.query_label ?? "") && profileSourceAllowed(x, row.name) && normalizeForMatch(`${x.title ?? ""} ${x.content}`).includes(normalizeForMatch(name))),
       });
-      adopt(claims, "found");
+      // Market peers are judged by what the two sell (marketComparison.ts): a company with a website, the same product for the same customer.
+      let adoptable = claims;
+      const marketClaims = claims.filter((c) => c.tier === "market");
+      if (marketClaims.length && componentOn("market_compare")) {
+        const ownDescription = [profile.profile.description, profile.profile.value_proposition, row.description].filter(Boolean).join(" ").trim();
+        if (ownDescription) {
+          const fromDb = ctx.peerLookup ? await ctx.peerLookup(marketClaims.map((c) => c.name)) : new Map<string, PeerFacts>();
+          let lookups = 0;
+          const resolve = async (name: string): Promise<PeerFacts | null> => {
+            const hit = fromDb.get(name.toLowerCase());
+            if (hit) return hit;
+            if (lookups >= 3 || ctx.update) return null;   // at most three searches per company for candidates not on file
+            lookups++;
+            const res = (await extraSearch(`"${name}" official website`, "peer_site")).find((r) => r.url && !isDataPlatformUrl(r.url) && !/wikipedia|linkedin|crunchbase|facebook|twitter|x\.com|youtube/i.test(r.url));
+            if (!res) return null;
+            const home = new URL(res.url).origin;
+            const page = await readPageCached(home, searchState);
+            const text = (page?.text ?? "").replace(/\s+/g, " ").trim();
+            return text.length >= 200 && text.toLowerCase().includes(name.toLowerCase().split(/\s+/)[0]) ? { name, description: text.slice(0, 700), website: home, where: "own_site" } : null;
+          };
+          const ask = async (request: ReturnType<typeof buildPeerComparisonRequest>) => {
+            const msg = await ctx.anthropic.messages.create(requestFor(request, ctx.models.market));
+            ctx.recordCost(ctx.models.market, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheReadTokens: 0, cacheWriteTokens: 0 } as never);
+            const tool = msg.content.find((b) => b.type === "tool_use");
+            return tool && tool.type === "tool_use" ? tool.input : null;
+          };
+          const judged = await judgeMarketPeers({ resolve, ask }, { name: row.name, description: ownDescription }, marketClaims as PeerClaim[], (c) => sourceById.get(c.source_id)?.url ?? "");
+          for (const d of judged.dropped) { console.log(`    🚫  market peer ${d.name} not written — ${d.why}`); bump(stats.droppedByReason, d.why.split(":")[0]); }
+          adoptable = [...claims.filter((c) => c.tier !== "market"), ...(judged.kept as unknown as TieredClaim[])];
+        }
+      }
+      adopt(adoptable, "found");
       if (unconfirmedHints.length) console.log(`    💡  Market hint(s) not confirmed by an allowed source, not written: ${unconfirmedHints.join(", ")}`);
     }
     const sourceByUrl = (u: string) => allSources.find((x) => x.url === u);

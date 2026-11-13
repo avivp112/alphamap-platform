@@ -38,6 +38,7 @@ import { profileSourceAllowed, roundSourceStanding } from "../lib/enrichment/rou
 import { capPerCompany, PER_COMPANY } from "../lib/enrichment/fieldReview.ts";
 import { majorPressNote } from "../lib/enrichment/unlistedDomains.ts";
 import { definitionLines } from "../lib/enrichment/reviewDefinitions.ts";
+import { makePeerLookup } from "../lib/enrichment/peerLookup.ts";
 import { coverageReport, type CompetitorLists } from "../lib/enrichment/competitorCoverage.ts";
 import { REVIEW_FIELDS, wouldWrite, type Field, type Value } from "../lib/enrichment/reviewValues.ts";
 
@@ -144,7 +145,7 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
       const c = await collectCompany(row, ((rounds ?? []) as V2FundingRoundRow[]).filter((r) => r.startup_id === row.id), taxonomy, {
         anthropic, models: { enrich: MODEL, profile: MODEL, funding: MODEL, market: MODEL },
         update: false, deepDive: true, techGate: true, articlesToRead: maxArticles(), verbose: false, seen: null,
-        recordCost: (m, u) => meter.add(m, u),
+        recordCost: (m, u) => meter.add(m, u), peerLookup: makePeerLookup(db),
       }, stats, state);
       roleChecks.push(...(stats.roleChecks ?? []));
       const v = wouldWrite(c, row);

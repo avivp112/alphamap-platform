@@ -78,6 +78,10 @@ export const V2_COMPONENTS = {
     on: false, since: "2026-11-02", // off by the owner, 2026-11-02: 0 of 7 confirmed on the 10-company check
     what: "an HQ / founding year / founding country only a data platform states is not written, but searched for once in an allowed source that confirms it",
   },
+  market_compare: {
+    on: true, since: "2026-11-12",
+    what: "market competitors judged by what the two companies sell (marketComparison.ts): each candidate must be a company with a website, and one model call compares the two descriptions — the same kind of product for the same kind of customer; partners, complementary products, acquirers and unrelated companies in a broad field do not stay. One extra model call per company with candidates, plus a search and a page read for each candidate that is not in the database",
+  },
   bios: {
     on: false, since: "2026-11-12", // off by the owner, 2026-11-12: the founders' background facts are enough; no biography is collected or reviewed
     what: "founders' and leaders' biographies: asked of the extraction, taken word for word from team-page cards, checked against their sources",
