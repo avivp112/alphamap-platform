@@ -4,6 +4,7 @@
  *
  *   FILE=companies.csv npx tsx scripts/add_companies.ts                 # dry run: the report, nothing written
  *   FILE=companies.csv DRY_RUN=false npx tsx scripts/add_companies.ts   # adds the new ones
+ *   ADD_LINES=27,145 ...   # lines whose name matches a company already there but which are a different company
  *
  * ADD ONLY. A company already in the database (same website domain; or the same name with another website, which is reported and not added)
  * is left exactly as it is: nothing is reset or overwritten. (scripts/import_startups_list.ts, by contrast, syncs the whole table to a master
@@ -31,19 +32,21 @@ const db = createClient(url, key, { auth: { persistSession: false } });
 (async () => {
   const { rows, problem } = parseList(readFileSync(FILE, "utf8"));
   if (problem) { console.error(`❌  ${problem}`); process.exit(1); }
-  const hosts = new Set<string>(), names = new Set<string>();
+  const hosts = new Set<string>(), names = new Map<string, { name: string; website: string | null }>();
   for (let from = 0; ; from += 1000) {
     const { data, error } = await db.from("startups").select("name, website").range(from, from + 999);
     if (error) throw error;
     for (const s of (data ?? []) as Array<{ name: string; website: string | null }>) {
       const n = normalizeSite(s.website); if (n) hosts.add(n.host);
-      const k = nameKey(s.name); if (k.length >= 3) names.add(k);
+      const k = nameKey(s.name); if (k.length >= 3 && !names.has(k)) names.set(k, { name: s.name, website: s.website });
     }
     if (!data || data.length < 1000) break;
   }
-  const sorted = sortRows(rows, { hosts, names });
+  // ADD_LINES=27,145: lines of the list whose name matches a company already there but which are a different company: added.
+  const addLines = new Set((process.env.ADD_LINES ?? "").split(",").map((x) => Number(x.trim())).filter(Boolean));
+  const sorted = sortRows(rows, { hosts, names }, addLines);
   console.log(`${DRY_RUN ? "DRY RUN — nothing is written.\n" : ""}${summaryOf(sorted).join("\n")}\n`);
-  for (const s of sorted.filter((x) => x.verdict !== "new").slice(0, 60)) console.log(`  line ${String(s.line).padStart(4)}  ${s.row.name.slice(0, 40).padEnd(40)} ${s.verdict}: ${s.note}`);
+  for (const s of sorted.filter((x) => x.verdict !== "new" && x.verdict !== "already_in_database")) console.log(`  line ${String(s.line).padStart(4)}  ${s.row.name.slice(0, 40).padEnd(40)} ${s.verdict}: ${s.note}`);
   const fresh = sorted.filter((s) => s.verdict === "new");
   const ids = new Map<string, string>();
   if (!DRY_RUN) {
