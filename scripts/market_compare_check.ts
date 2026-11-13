@@ -78,7 +78,9 @@ const PAIRS: Array<[string, string, boolean, string]> = [
   for (const [company, peer, expected, quote] of PAIRS) {
     const own = await companyFacts(company);
     const peerFacts = await peerFactsOf(peer, company, quote);
-    if (!own || !peerFacts) { console.log(`  —  ${company} ↔ ${peer}: not on file with a description (${!own ? company : peer})`); continue; }
+    const tally = expected ? right : wrong;
+    tally.total++;
+    if (!own || !peerFacts) { tally.noSite++; console.log(`  —  ${company} ↔ ${peer}: not on file with a description (${!own ? company : peer})`); continue; }
     const claim: PeerClaim = { name: peer, source_id: "S1", evidence_quote: quote, how_it_competes: quote, tier: "market" };
     const r = await judgeMarketPeers({
       resolve: async () => peerFacts,
@@ -91,7 +93,10 @@ const PAIRS: Array<[string, string, boolean, string]> = [
     }, { name: company, description: own.description }, [claim]);
     const kept = r.kept.length === 1;
     judged++; if (kept === expected) agree++;
+    if (kept) tally.kept++; else tally.dropped++;
     console.log(`  ${kept === expected ? "✓" : "✗"}  ${company} ↔ ${peer}: owner ${expected ? "competitor" : "not"} · now ${kept ? "kept" : `dropped (${r.dropped[0]?.why.slice(0, 110)})`}`);
   }
+  console.log(`\nWRONG pairs that got through:  ${wrong.kept} of ${wrong.total}   (aim 0)   — dropped by the comparison ${wrong.dropped}, dropped for having no site or description ${wrong.noSite}`);
+  console.log(`RIGHT pairs that were kept:    ${right.kept} of ${right.total}   (aim at least 8)   — dropped by the comparison ${right.dropped}, lost for having no site or description ${right.noSite}`);
   console.log(`\nAgree with the owner: ${agree}/${judged}. Tokens: ${tokensIn} in, ${tokensOut} out (${judged} calls of one candidate each; a company's real call holds up to five candidates).`);
 })().catch((e) => { console.error(e); process.exit(1); });

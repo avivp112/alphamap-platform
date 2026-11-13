@@ -24,16 +24,39 @@ export function contextWords(quote: string, names: string[]): string[] {
 
 export const peerSiteQuery = (name: string, quote: string, company: string): string => `"${name}" ${contextWords(quote, [name, company]).join(" ")} official site`.replace(/\s+/g, " ").trim();
 
-/** The result whose host is the candidate's own (its host carries the name); null when none does. */
+/** Words that name a kind of business, not a business: a host carrying only these is not shown to be the candidate's. */
+const GENERIC = new Set(["services", "service", "technologies", "technology", "systems", "solutions", "group", "health", "healthcare", "medical", "labs", "lab", "security", "software", "global", "holdings", "company", "international", "networks", "network", "digital", "cloud", "data", "web", "care", "capital", "financial", "finance", "insurance", "media", "partners", "ventures", "studio", "studios", "online", "platform", "the", "inc", "ltd", "llc", "corp", "limited", "gmbh", "and"]);
+
+/** The words of a name that tell it apart ("Amazon Web Services" → amazon), at least three letters, none of them a kind of business. */
+export function distinctiveWords(name: string): string[] {
+  return fold(name).split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !GENERIC.has(w));
+}
+
+/**
+ * The result whose host is the candidate's own (owner, 2026-11-13: one distinctive word of the name in the host is enough —
+ * "Amazon Web Services" → aws.amazon.com; the name's initials as a host label count too: aws). The whole name in the host is the strongest;
+ * the best of the results wins. null when no host carries any of it.
+ */
 export function pickPeerSite(results: Array<{ url: string }>, name: string): string | null {
   const key = letters(name);
-  if (key.length < 3) return null;
+  const words = distinctiveWords(name);
+  const initials = fold(name).split(/[^a-z0-9]+/).filter(Boolean).map((w) => w[0]).join("");
+  let best: { origin: string; score: number } | null = null;
   for (const r of results) {
-    let host = "";
-    try { host = new URL(r.url).hostname.toLowerCase().replace(/^www\./, ""); } catch { continue; }
+    let u: URL;
+    try { u = new URL(r.url); } catch { continue; }
+    const host = u.hostname.toLowerCase().replace(/^www\./, "");
     if (BAD_HOST.test(host)) continue;
-    const label = host.split(".").slice(0, -1).join("");
-    if (letters(label).includes(key) || key.includes(letters(label.split("-")[0])) && letters(label.split("-")[0]).length >= 4) return new URL(r.url).origin;
+    const labels = host.split(".").slice(0, -1);            // the host without its public suffix
+    const flat = letters(labels.join(""));
+    let score = 0;
+    if (key.length >= 3 && flat.includes(key)) score = 100;
+    else {
+      const hits = words.filter((w) => flat.includes(w)).length;
+      score = hits * 10;
+      if (initials.length >= 3 && labels.some((l) => letters(l) === initials)) score = Math.max(score, 50);
+    }
+    if (score > 0 && (!best || score > best.score)) best = { origin: u.origin, score };
   }
-  return null;
+  return best?.origin ?? null;
 }
