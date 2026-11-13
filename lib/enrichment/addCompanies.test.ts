@@ -21,13 +21,13 @@ describe("adding companies from a list (owner, 2026-11-13)", () => {
       { name: "Renamed Co", website: "renamed.ai", line: 5 }, { name: "Page", website: "linkedin.com/company/page", line: 6 }, { name: "NoSite", website: null, line: 7 },
       { name: "", website: "x.com", line: 8 }, { name: "Fresh Inc.", website: "fresh.dev", line: 9 },
     ];
-    const s = sortRows(rows, { hosts: new Set(["known.io"]), names: new Set([nameKey("Renamed Co")]) });
+    const s = sortRows(rows, { hosts: new Set(["known.io"]), names: new Map([[nameKey("Renamed Co"), { name: "Renamed Co", website: "https://old.io" }]]) });
     expect(s.map((x) => x.verdict)).toEqual(["new", "in_file_duplicate", "already_in_database", "name_already_in_database", "not_a_company_site", "no_website", "no_name", "new"]);
     expect(summaryOf(s)[0]).toBe("8 rows");
   });
   it("a company's legal suffix does not hide a name already there", () => {
     expect(nameKey("Fresh Inc.")).toBe(nameKey("Fresh"));
-    expect(sortRows([{ name: "Fresh Ltd", website: "fresh.co.uk", line: 2 }], { hosts: new Set(), names: new Set([nameKey("Fresh")]) })[0].verdict).toBe("name_already_in_database");
+    expect(sortRows([{ name: "Fresh Ltd", website: "fresh.co.uk", line: 2 }], { hosts: new Set(), names: new Map([[nameKey("Fresh"), { name: "Fresh", website: "https://fresh.com" }]]) })[0].verdict).toBe("name_already_in_database");
   });
 });
 
@@ -40,16 +40,30 @@ describe("the owner's list (2026-11-13): no header, tab-separated, and the platf
   it("Linktree's own address is a company site; a platform page or a platform subdomain is not", () => {
     const s = sortRows([
       { name: "Linktree", website: "linktr.ee", line: 1 }, { name: "A", website: "linkedin.com/company/a", line: 2 }, { name: "B", website: "b.github.io", line: 3 }, { name: "Medium", website: "medium.com", line: 4 },
-    ], { hosts: new Set(), names: new Set() });
+    ], { hosts: new Set(), names: new Map() });
     expect(s.map((x) => x.verdict)).toEqual(["new", "not_a_company_site", "not_a_company_site", "new"]);
   });
   it("another address of a domain already there is reported, not added", () => {
     expect(registrable("app.example.com")).toBe("example.com");
     expect(registrable("www.example.co.uk")).toBe("example.co.uk");
-    const s = sortRows([{ name: "X", website: "app.x.com", line: 1 }, { name: "Y", website: "y.com", line: 2 }], { hosts: new Set(["x.com"]), names: new Set() });
+    const s = sortRows([{ name: "X", website: "app.x.com", line: 1 }, { name: "Y", website: "y.com", line: 2 }], { hosts: new Set(["x.com"]), names: new Map() });
     expect(s.map((v) => v.verdict)).toEqual(["same_domain_in_database", "new"]);
   });
   it("two different companies with similar names on different sites are both new (Zero AI / Zero)", () => {
-    expect(sortRows([{ name: "Zero AI", website: "zero.ai", line: 1 }, { name: "Zero", website: "zero.inc", line: 2 }], { hosts: new Set(), names: new Set() }).map((v) => v.verdict)).toEqual(["new", "new"]);
+    expect(sortRows([{ name: "Zero AI", website: "zero.ai", line: 1 }, { name: "Zero", website: "zero.inc", line: 2 }], { hosts: new Set(), names: new Map() }).map((v) => v.verdict)).toEqual(["new", "new"]);
+  });
+});
+
+describe("same name, other website: show the company there, and let the owner add a different one", () => {
+  const names = new Map([[nameKey("Bold"), { name: "Bold", website: "https://bold.com" }]]);
+  const rows = [{ name: "Bold", website: "bold.co", line: 199 }];
+  it("the note names the company in the database and its website", () => {
+    const s = sortRows(rows, { hosts: new Set(["bold.com"]), names });
+    expect(s[0].verdict).toBe("name_already_in_database");
+    expect(s[0].note).toContain("https://bold.com");
+  });
+  it("ADD_LINES adds that line, and only that line", () => {
+    const s = sortRows([...rows, { name: "Bold", website: "bold2.io", line: 200 }], { hosts: new Set(["bold.com"]), names }, new Set([199]));
+    expect(s.map((x) => x.verdict)).toEqual(["new", "name_already_in_database"]);
   });
 });
