@@ -38,6 +38,6 @@ for (const name of names) {
   if (!row?.website) { console.log(`${name}: not in the database or no website`); continue; }
   const text = ((await readPageCached(row.website, state))?.text ?? "").replace(/\s+/g, " ").trim();
   const { verdict } = await runTechGate(name, text, row.description, row.industry, { client: anthropic, model: MODEL });
-  const label = !verdict ? "NO VERDICT" : shouldSkipAsNonTech(verdict) ? "REJECTED (not technology)" : verdict.is_tech_company ? "technology" : `not technology, but only ${verdict.confidence} confidence → goes on to the full check`;
+  const label = verdict && verdict.enough_information === false ? "NO DECISION (too little to go on)" : !verdict ? "NO VERDICT" : shouldSkipAsNonTech(verdict) ? "REJECTED (not technology)" : verdict.is_tech_company ? "technology" : `not technology, but only ${verdict.confidence} confidence → goes on to the full check`;
   console.log(`${name.padEnd(26)} ${label}\n    ${verdict?.reason ?? ""}${text ? "" : "  [homepage unreadable]"}`);
 }

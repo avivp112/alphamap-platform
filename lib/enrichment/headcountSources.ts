@@ -63,7 +63,7 @@ export function form5500Columns(header: string[]): { sponsor: number; ein: numbe
  * engineers" at SolarEdge, Kitov's "CEO of Verint ... 1200 employees", Armorblox's "helping to grow Blue Jeans to 200+").
  * Past-career wording is always one; a role title only on the company's own pages (a press sentence names its speaker).
  */
-const BIO_STRONG = /\b(?:served as|prior to|previously|formerly|former|helping to grow|helped (?:to )?(?:grow|build|scale)|grew it from|managing a team|managed a team|led a team|leading a team|annual revenues?)\b/i;
+const BIO_STRONG = /\b(?:served as|prior to|previously|formerly|former|helping to grow|helped (?:to )?(?:grow|build|scale)|grew it from|managing a team|managed a team|led a team|leading a team|annual revenues?|led (?:its|the) (?:global )?expansion|(?:founded|co-?founded|started)\b[^.]{0,80}\bin (?:19|20)\d{2}\b[^.]{0,80}\b(?:expansion|grew|growth)\b)\b/i;
 const BIO_ROLE = /\b(?:CEO|CTO|CFO|COO|CMO|CRO|President|Vice President|VP|Chairman|Managing Director|Co-?Founder|Founder)\b/;
 export function figureIsBiographical(sentence: string, onOwnPage: boolean): boolean {
   return BIO_STRONG.test(sentence) || (onOwnPage && BIO_ROLE.test(sentence));
