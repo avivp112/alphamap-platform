@@ -17,7 +17,10 @@ import { config } from "dotenv";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import { parseList, sortRows, summaryOf, nameKey, normalizeSite } from "../lib/enrichment/addCompanies.ts";
+import { parseList, sortRows, summaryOf, nameKey, normalizeSite, type KnownName } from "../lib/enrichment/addCompanies.ts";
+import { resolveCollision, type DbRecord } from "../lib/enrichment/sameCompany.ts";
+import Anthropic from "@anthropic-ai/sdk";
+import { requestFor } from "../lib/enrichment/models.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 if (existsSync(join(__dir, "..", ".env"))) config({ path: join(__dir, "..", ".env") });
@@ -32,21 +35,52 @@ const db = createClient(url, key, { auth: { persistSession: false } });
 (async () => {
   const { rows, problem } = parseList(readFileSync(FILE, "utf8"));
   if (problem) { console.error(`❌  ${problem}`); process.exit(1); }
-  const hosts = new Set<string>(), names = new Map<string, { name: string; website: string | null }>();
+  const hosts = new Set<string>(), names = new Map<string, KnownName>();
   for (let from = 0; ; from += 1000) {
-    const { data, error } = await db.from("startups").select("name, website").range(from, from + 999);
+    const { data, error } = await db.from("startups").select("id, name, website, country, city, industry, description").range(from, from + 999);
     if (error) throw error;
-    for (const s of (data ?? []) as Array<{ name: string; website: string | null }>) {
+    for (const s of (data ?? []) as Array<DbRecord>) {
       const n = normalizeSite(s.website); if (n) hosts.add(n.host);
-      const k = nameKey(s.name); if (k.length >= 3 && !names.has(k)) names.set(k, { name: s.name, website: s.website });
+      const k = nameKey(s.name); if (k.length >= 3 && !names.has(k)) names.set(k, { id: s.id, name: s.name, website: s.website, country: s.country, city: s.city, industry: s.industry, description: s.description });
     }
     if (!data || data.length < 1000) break;
   }
   // ADD_LINES=27,145: lines of the list whose name matches a company already there but which are a different company: added.
   const addLines = new Set((process.env.ADD_LINES ?? "").split(",").map((x) => Number(x.trim())).filter(Boolean));
-  const sorted = sortRows(rows, { hosts, names }, addLines);
+  let sorted = sortRows(rows, { hosts, names }, addLines);
+
+  // A name that matches a company already there: the redirect and the record are checked before the owner is asked (sameCompany.ts).
+  // RESOLVE=false skips this. same: not added, the address is proposed as a fix; different: added; unclear: left for the owner.
+  const fixes: Array<{ id: string; name: string; old: string; next: string; why: string }> = [];
+  if (process.env.RESOLVE !== "false") {
+    const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
+    const MODEL = process.env.MODEL ?? "claude-haiku-5-5";
+    const get = async (u: string, opts: { text?: boolean } = {}) => {
+      try {
+        const res = await fetch(u, { redirect: "follow", signal: AbortSignal.timeout(12_000), headers: { "User-Agent": "Mozilla/5.0 (compatible; AlphaMapBot/1.0)", Accept: "text/html" } });
+        const body = opts.text ? (await res.text()).replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<[^>]+>/g, " ").replace(/&nbsp;|&#160;/g, " ").replace(/\s+/g, " ").trim().slice(0, 1500) : "";
+        return { host: new URL(res.url).hostname, body };
+      } catch { return { host: null as string | null, body: "" }; }
+    };
+    const cc: Record<string, string> = { br: "Brazil", pl: "Poland", cl: "Chile", co: "Colombia", mx: "Mexico", ar: "Argentina", pe: "Peru", au: "Australia", jp: "Japan", in: "India", uk: "United Kingdom", de: "Germany", fr: "France", il: "Israel", is: "Iceland" };
+    for (const s of sorted) {
+      if (s.verdict !== "name_already_in_database" || !s.collidesWith?.id || !s.website) continue;
+      const r = await resolveCollision({
+        finalHost: async (u) => (await get(u)).host, homepageText: async (u) => (await get(u, { text: true })).body,
+        ask: async (req) => { if (!anthropic) return null; const msg = await anthropic.messages.create(requestFor(req, MODEL)); const t = msg.content.find((b) => b.type === "tool_use"); return t && t.type === "tool_use" ? t.input : null; },
+        countryHint: (h) => cc[h.split(".").pop() ?? ""] ?? null,
+      }, s.collidesWith as DbRecord, s.row.name, s.website);
+      if (r.verdict === "different") { s.verdict = "new"; s.note = `another company with the same name (${r.reason})`; }
+      else if (r.verdict === "same") { s.note = `the same company (${r.how}): ${r.reason}`; if (s.collidesWith.website && s.collidesWith.website !== s.website) fixes.push({ id: s.collidesWith.id!, name: s.collidesWith.name, old: s.collidesWith.website, next: s.website, why: r.reason }); }
+      else s.note = `unclear (${r.reason}): the database has "${s.collidesWith.name}" with ${s.collidesWith.website ?? "no website"} (${s.collidesWith.country ?? "no country"})`;
+    }
+  }
   console.log(`${DRY_RUN ? "DRY RUN — nothing is written.\n" : ""}${summaryOf(sorted).join("\n")}\n`);
   for (const s of sorted.filter((x) => x.verdict !== "new" && x.verdict !== "already_in_database")) console.log(`  line ${String(s.line).padStart(4)}  ${s.row.name.slice(0, 40).padEnd(40)} ${s.verdict}: ${s.note}`);
+  if (fixes.length) {
+    console.log(`\nThe same company under another address (nothing is changed here; to correct the address in the database, run the SQL below after you look):`);
+    for (const f of fixes) console.log(`-- ${f.name}: ${f.old} -> ${f.next}  (${f.why})\nWITH u AS (UPDATE startups SET website = '${f.next}' WHERE id = '${f.id}' AND website = '${f.old}' RETURNING id) INSERT INTO field_changes (startup_id, field, old_value, new_value, source_url) SELECT id, 'website', to_jsonb('${f.old}'::text), to_jsonb('${f.next}'::text), 'owner decision 2026-11-13' FROM u;`);
+  }
   const fresh = sorted.filter((s) => s.verdict === "new");
   const ids = new Map<string, string>();
   if (!DRY_RUN) {
