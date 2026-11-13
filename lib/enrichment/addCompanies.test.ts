@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseList, normalizeSite, sortRows, summaryOf, nameKey } from "./addCompanies";
+import { parseList, normalizeSite, sortRows, summaryOf, nameKey, registrable } from "./addCompanies";
 
 describe("adding companies from a list (owner, 2026-11-13)", () => {
   it("reads a list with a name and a website column, whatever the case, the BOM or the delimiter", () => {
@@ -28,5 +28,28 @@ describe("adding companies from a list (owner, 2026-11-13)", () => {
   it("a company's legal suffix does not hide a name already there", () => {
     expect(nameKey("Fresh Inc.")).toBe(nameKey("Fresh"));
     expect(sortRows([{ name: "Fresh Ltd", website: "fresh.co.uk", line: 2 }], { hosts: new Set(), names: new Set([nameKey("Fresh")]) })[0].verdict).toBe("name_already_in_database");
+  });
+});
+
+describe("the owner's list (2026-11-13): no header, tab-separated, and the platform edge cases", () => {
+  it("reads 'Name<TAB>website' with no header line, and trims a trailing space", () => {
+    const r = parseList("HUSKEYS\thuskeys.io\nCausaly \tcausaly.com\nZero AI\tzero.ai\n");
+    expect(r.problem).toBeNull();
+    expect(r.rows).toMatchObject([{ name: "HUSKEYS", website: "huskeys.io", line: 1 }, { name: "Causaly", website: "causaly.com", line: 2 }, { name: "Zero AI", website: "zero.ai", line: 3 }]);
+  });
+  it("Linktree's own address is a company site; a platform page or a platform subdomain is not", () => {
+    const s = sortRows([
+      { name: "Linktree", website: "linktr.ee", line: 1 }, { name: "A", website: "linkedin.com/company/a", line: 2 }, { name: "B", website: "b.github.io", line: 3 }, { name: "Medium", website: "medium.com", line: 4 },
+    ], { hosts: new Set(), names: new Set() });
+    expect(s.map((x) => x.verdict)).toEqual(["new", "not_a_company_site", "not_a_company_site", "new"]);
+  });
+  it("another address of a domain already there is reported, not added", () => {
+    expect(registrable("app.example.com")).toBe("example.com");
+    expect(registrable("www.example.co.uk")).toBe("example.co.uk");
+    const s = sortRows([{ name: "X", website: "app.x.com", line: 1 }, { name: "Y", website: "y.com", line: 2 }], { hosts: new Set(["x.com"]), names: new Set() });
+    expect(s.map((v) => v.verdict)).toEqual(["same_domain_in_database", "new"]);
+  });
+  it("two different companies with similar names on different sites are both new (Zero AI / Zero)", () => {
+    expect(sortRows([{ name: "Zero AI", website: "zero.ai", line: 1 }, { name: "Zero", website: "zero.inc", line: 2 }], { hosts: new Set(), names: new Set() }).map((v) => v.verdict)).toEqual(["new", "new"]);
   });
 });

@@ -49,11 +49,12 @@ const db = createClient(url, key, { auth: { persistSession: false } });
   if (!DRY_RUN) {
     for (let i = 0; i < fresh.length; i += 200) {
       const batch = fresh.slice(i, i + 200).map((s) => ({ name: s.row.name, website: s.website! }));
-      const { data, error } = await db.from("startups").insert(batch).select("id, website");
+      // ON CONFLICT (website) DO NOTHING: even a row that appeared in the database since the check cannot be overwritten or double-written.
+      const { data, error } = await db.from("startups").upsert(batch, { onConflict: "website", ignoreDuplicates: true }).select("id, website");
       if (error) { console.error(`❌  insert failed at row ${i}: ${error.message}. Nothing after this batch was written; ${ids.size} added so far.`); break; }
       for (const r of (data ?? []) as Array<{ id: string; website: string }>) ids.set(r.website, r.id);
     }
-    console.log(`\n✅  ${ids.size} companies added.`);
+    console.log(`\n✅  ${ids.size} companies added${ids.size < fresh.length ? ` (${fresh.length - ids.size} were already there by now and were left alone)` : ""}.`);
   } else console.log(`\n${fresh.length} would be added. Run with DRY_RUN=false to add them.`);
   const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   const out = `added_companies_${new Date().toISOString().slice(0, 10)}.csv`;
