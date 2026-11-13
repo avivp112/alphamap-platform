@@ -39,6 +39,7 @@ import { buildBackgroundRequest, processBackgroundResponse, backgroundSearchQuer
 import { requestFor } from "./models.ts";
 import { judgeMarketPeers, type PeerClaim, type PeerFacts, type buildPeerComparisonRequest } from "./marketComparison.ts";
 import { isDataPlatformUrl } from "./dataPlatforms.ts";
+import { peerSiteQuery, pickPeerSite } from "./peerSite.ts";
 import { lookupEpoPatents, type CompanyIdentity, type EpoPatentResult } from "./epoPatents.ts";
 import { hintFromRound, hintQueries, confirmHint, hintKey, recoverMissingAmount, type RoundHint } from "./hints.ts";
 import { detectGaps, buildDeepDiveQueries, hasNoFinancingRounds, type DeepDiveSection } from "./deepDive.ts";
@@ -1392,12 +1393,13 @@ export async function collectCompany(
             if (hit) return hit;
             if (lookups >= 3 || ctx.update) return null;   // at most three searches per company for candidates not on file
             lookups++;
-            const res = (await extraSearch(`"${name}" official website`, "peer_site")).find((r) => r.url && !isDataPlatformUrl(r.url) && !/wikipedia|linkedin|crunchbase|facebook|twitter|x\.com|youtube/i.test(r.url));
-            if (!res) return null;
-            const home = new URL(res.url).origin;
+            const claim = marketClaims.find((c) => c.name === name);
+            const found = (await extraSearch(peerSiteQuery(name, claim?.evidence_quote ?? "", row.name), "peer_site")).filter((r) => r.url && !isDataPlatformUrl(r.url));
+            const home = pickPeerSite(found, name);
+            if (!home) return null;
             const page = await readPageCached(home, searchState);
             const text = (page?.text ?? "").replace(/\s+/g, " ").trim();
-            return text.length >= 200 && text.toLowerCase().includes(name.toLowerCase().split(/\s+/)[0]) ? { name, description: text.slice(0, 700), website: home, where: "own_site" } : null;
+            return text.length >= 200 ? { name, description: text.slice(0, 700), website: home, where: "own_site" } : null;
           };
           const ask = async (request: ReturnType<typeof buildPeerComparisonRequest>) => {
             const msg = await ctx.anthropic.messages.create(requestFor(request, ctx.models.market));
