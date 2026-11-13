@@ -2,7 +2,7 @@
 /**
  * scripts/market_compare_check.ts — the market-peer comparison (marketComparison.ts) on the pairs the owner marked in review runs 11 and 12, with
  * the model. Reads descriptions from the database; a pair whose company or peer is no description found in the database or on its own site is listed as "not on file".
- * Writes nothing. About $0.01 for the whole set.
+ * Writes nothing. About $0.01 for the whole set. Default: clean descriptions (the judgment alone). WEB=1: a search and the homepage, as a real run finds them.
  *
  *   npx tsx scripts/market_compare_check.ts
  */
@@ -53,7 +53,49 @@ const PAIRS: Array<[string, string, boolean, string]> = [
   ["Smartzer", "Shoppable", false, "a shoppable video storefront"],
 ];
 
+// Short, plain descriptions of what each company sells, as a verified extraction would give them (written for this check, from public
+// knowledge). The judgment is measured on these; WEB=1 measures the page reading instead (a search and the homepage), which is noisier.
+const FACTS: Record<string, string> = {
+  "Acko": "Acko is an Indian digital insurer selling car, bike, health and travel insurance directly to consumers online.",
+  "Policybazaar": "Policybazaar is an Indian online insurance marketplace where consumers compare and buy life, health and motor insurance.",
+  "SkyDrive": "SkyDrive is a Japanese developer of electric vertical take-off and landing (eVTOL) flying cars and air taxis for passenger and cargo transport.",
+  "Archer Aviation": "Archer Aviation designs and builds electric vertical take-off and landing (eVTOL) aircraft for urban air mobility air-taxi services.",
+  "Joby Aviation": "Joby Aviation develops electric vertical take-off and landing (eVTOL) aircraft to operate as an air taxi service for passengers.",
+  "Eight Sleep": "Eight Sleep makes the Pod, a smart mattress cover that regulates bed temperature and tracks sleep, sold to consumers who want better sleep.",
+  "Oura": "Oura makes a smart ring that tracks sleep, activity and readiness, sold to consumers who want to improve their sleep and health.",
+  "ActiveCampaign": "ActiveCampaign sells email marketing, marketing automation and CRM software to small and mid-sized businesses.",
+  "Mailchimp": "Mailchimp sells email marketing and marketing automation software to small businesses.",
+  "Klaviyo": "Klaviyo sells email and SMS marketing automation software to e-commerce businesses.",
+  "Vanta": "Vanta sells compliance automation software that helps companies get and keep SOC 2, ISO 27001 and similar security certifications.",
+  "AuditBoard": "AuditBoard sells audit, risk and compliance management software to enterprise audit and compliance teams.",
+  "Scripbox": "Scripbox is an Indian online wealth platform where consumers invest in mutual funds, with advisory and portfolio management.",
+  "Groww": "Groww is an Indian online investment platform where consumers buy mutual funds, stocks and other investments.",
+  "EarlySalary": "EarlySalary is an Indian digital lender that gives salaried consumers short-term personal loans through an app.",
+  "MoneyTap": "MoneyTap is an Indian digital lender offering consumers a credit line and personal loans through an app.",
+  "Livi": "Livi is a digital healthcare provider offering video GP consultations to consumers in the UK.",
+  "Teladoc Health": "Teladoc Health provides virtual healthcare: telehealth consultations for consumers and health systems.",
+  "Doctor Care Anywhere": "Doctor Care Anywhere provides online GP and telehealth consultations to UK consumers and employers.",
+  "Rand McNally": "Rand McNally makes GPS navigation devices and truck routing software for professional drivers and fleets.",
+  "Platform Science": "Platform Science sells a telematics and fleet-management platform to trucking fleets.",
+  "Navi Technologies": "Navi is an Indian fintech offering consumers personal loans, home loans, insurance and mutual funds through an app.",
+  "PhonePe": "PhonePe is an Indian digital payments app for consumers and merchants, with insurance and investments.",
+  "Paytm": "Paytm is an Indian payments wallet and financial services app for consumers and merchants.",
+  "Rezonate": "Rezonate sells identity-security software that protects cloud identities and access for enterprise security teams.",
+  "Silverfort": "Silverfort sells identity-protection software that secures authentication and access across enterprise systems.",
+  "Linnworks": "Linnworks sells e-commerce order and inventory management software to online retailers selling across marketplaces.",
+  "Extensiv": "Extensiv sells warehouse management and third-party logistics software to fulfilment businesses and brands.",
+  "Opus Security": "Opus Security sells cloud security orchestration and remediation software that automates fixing vulnerabilities for security teams.",
+  "Laminar": "Laminar sells cloud data security software that discovers and protects sensitive data stored in the cloud.",
+  "Dig Security": "Dig Security sells cloud data security posture management software that finds and protects sensitive data in cloud databases.",
+  "Figment": "Figment provides blockchain staking infrastructure that lets institutions stake cryptocurrency and earn rewards.",
+  "Fireblocks": "Fireblocks sells digital-asset custody and transfer infrastructure to banks, exchanges and fintech firms.",
+  "AirStrip": "AirStrip sells mobile software that gives clinicians real-time patient data from electronic health records and monitors.",
+  "Philips": "Philips is a large health-technology conglomerate making consumer health products, imaging and patient monitoring equipment.",
+  "Smartzer": "Smartzer sells shoppable video technology that lets viewers buy products inside videos, for brands and publishers.",
+};
+
 (async () => {
+  const WEB = process.env.WEB === "1";
   const lookup = makePeerLookup(db);
   const state = createSearchProviderState();
   // The company side is read from its own site (in a real run: the extracted description); the peer side exactly as collect.ts does it:
@@ -68,8 +110,10 @@ const PAIRS: Array<[string, string, boolean, string]> = [
     const text = ((await readPageCached(origin, state))?.text ?? "").replace(/\s+/g, " ").trim();
     return text.length >= 200 ? { name, description: text.slice(0, 700), website: origin, where: "own_site" as const } : null;
   };
-  const companyFacts = async (name: string) => (await lookup([name])).get(name.toLowerCase()) ?? (SITES[name] ? homepage(SITES[name], name) : null);
+  const clean = (name: string) => (FACTS[name] ? { name, description: FACTS[name], website: null, where: "database" as const } : null);
+  const companyFacts = async (name: string) => !WEB ? clean(name) : (await lookup([name])).get(name.toLowerCase()) ?? (SITES[name] ? homepage(SITES[name], name) : null);
   const peerFactsOf = async (name: string, company: string, quote: string) => {
+    if (!WEB) return clean(name);
     const hit = (await lookup([name])).get(name.toLowerCase());
     if (hit) return hit;
     const home = pickPeerSite((await webSearch(peerSiteQuery(name, quote, company), "peer_site", state)).filter((r) => r.url && !isDataPlatformUrl(r.url)), name);
