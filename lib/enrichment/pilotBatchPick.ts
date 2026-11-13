@@ -12,7 +12,7 @@ export const isAmerican = (c: PilotCandidate) => /^(united states|usa|us|united 
 /** Data-rich: a real description and people on file. */
 export const isRich = (c: PilotCandidate) => (c.description?.trim().length ?? 0) >= 200 && ((c.founders?.length ?? 0) > 0 || (c.leadership?.length ?? 0) > 0);
 
-function shuffled<T>(xs: T[], seed: number): T[] {
+export function shuffled<T>(xs: T[], seed: number): T[] {
   const out = [...xs];
   let s = seed >>> 0 || 1;
   const rand = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32);
