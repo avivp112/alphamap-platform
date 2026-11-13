@@ -17,6 +17,7 @@ import { makePeerLookup } from "../lib/enrichment/peerLookup.ts";
 import { requestFor } from "../lib/enrichment/models.ts";
 import { createSearchProviderState, webSearch, readPageCached } from "../lib/enrichment/searchProviders.ts";
 import { isDataPlatformUrl } from "../lib/enrichment/dataPlatforms.ts";
+import { peerSiteQuery, pickPeerSite } from "../lib/enrichment/peerSite.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 if (existsSync(join(__dir, "..", ".env"))) config({ path: join(__dir, "..", ".env") });
@@ -55,20 +56,28 @@ const PAIRS: Array<[string, string, boolean, string]> = [
 (async () => {
   const lookup = makePeerLookup(db);
   const state = createSearchProviderState();
-  // The same fallback as collect.ts: not in the database -> a search and the company's own homepage.
-  const factsOf = async (name: string) => {
+  // The company side is read from its own site (in a real run: the extracted description); the peer side exactly as collect.ts does it:
+  // the database, else a search with the sentence's context words and the candidate's own host.
+  const SITES: Record<string, string> = {
+    "Acko": "https://www.acko.com", "SkyDrive": "https://skydrive2020.com", "Eight Sleep": "https://www.eightsleep.com", "ActiveCampaign": "https://www.activecampaign.com",
+    "Vanta": "https://www.vanta.com", "Scripbox": "https://scripbox.com", "EarlySalary": "https://www.earlysalary.com", "Livi": "https://www.livi.co.uk",
+    "Rand McNally": "https://www.randmcnally.com", "Navi Technologies": "https://navi.com", "Rezonate": "https://rezonate.io", "Linnworks": "https://www.linnworks.com",
+    "Opus Security": "https://www.opus.security", "Figment": "https://www.figment.io", "AirStrip": "https://www.airstrip.com", "Smartzer": "https://www.smartzer.com",
+  };
+  const homepage = async (origin: string, name: string) => {
+    const text = ((await readPageCached(origin, state))?.text ?? "").replace(/\s+/g, " ").trim();
+    return text.length >= 200 ? { name, description: text.slice(0, 700), website: origin, where: "own_site" as const } : null;
+  };
+  const companyFacts = async (name: string) => (await lookup([name])).get(name.toLowerCase()) ?? (SITES[name] ? homepage(SITES[name], name) : null);
+  const peerFactsOf = async (name: string, company: string, quote: string) => {
     const hit = (await lookup([name])).get(name.toLowerCase());
     if (hit) return hit;
-    const res = (await webSearch(`"${name}" official website`, "peer_site", state)).find((r) => r.url && !isDataPlatformUrl(r.url) && !/wikipedia|linkedin|crunchbase|facebook|twitter|x\.com|youtube/i.test(r.url));
-    if (!res) return null;
-    const home = new URL(res.url).origin;
-    const text = ((await readPageCached(home, state))?.text ?? "").replace(/\s+/g, " ").trim();
-    return text.length >= 200 ? { name, description: text.slice(0, 700), website: home, where: "own_site" as const } : null;
+    const home = pickPeerSite((await webSearch(peerSiteQuery(name, quote, company), "peer_site", state)).filter((r) => r.url && !isDataPlatformUrl(r.url)), name);
+    return home ? homepage(home, name) : null;
   };
-  let agree = 0, judged = 0, tokensIn = 0, tokensOut = 0;
   for (const [company, peer, expected, quote] of PAIRS) {
-    const own = await factsOf(company);
-    const peerFacts = await factsOf(peer);
+    const own = await companyFacts(company);
+    const peerFacts = await peerFactsOf(peer, company, quote);
     if (!own || !peerFacts) { console.log(`  —  ${company} ↔ ${peer}: not on file with a description (${!own ? company : peer})`); continue; }
     const claim: PeerClaim = { name: peer, source_id: "S1", evidence_quote: quote, how_it_competes: quote, tier: "market" };
     const r = await judgeMarketPeers({

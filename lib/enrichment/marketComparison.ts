@@ -16,13 +16,15 @@ export interface PeerFacts { name: string; description: string; website: string 
 export interface PeerVerdict { name: string; same_product: boolean; same_customer: boolean; reason: string }
 
 const SYSTEM = [
-  "You judge whether two companies are market competitors. Two companies compete only when BOTH hold:",
-  "(1) the SAME KIND OF PRODUCT: a customer could buy one INSTEAD of the other for the same job;",
-  "(2) the SAME KIND OF CUSTOMER (who pays, and the size of company or the person).",
-  "Answer false for: complementary products used together (a warehouse system and an inventory platform), partners, suppliers, an acquirer or an",
-  "acquired company, a very large conglomerate that merely has a division in the field, companies in the same broad industry doing different jobs",
-  "(cloud data security vs identity security), and anything that is not a company with its own product.",
-  "Judge ONLY from the two descriptions given. When they do not show the same product and customer, answer false.",
+  "You judge whether two companies are market competitors (owner's definition: both sell a product in the same CATEGORY to the same kind of CUSTOMER).",
+  "Same category means a customer would look for both in the same place for the same need, even when the form differs: an insurer and an online insurance",
+  "marketplace both sell insurance to consumers; a bed that regulates temperature and a ring that tracks sleep both address sleep; an app-based lender and a",
+  "payments wallet both serve consumers' money needs. Same kind of customer: consumers or businesses, and for businesses the same kind of buyer.",
+  "Answer false for: complementary products used together (a warehouse system and an inventory platform), partners, suppliers, an acquirer or an acquired",
+  "company, a very large conglomerate that merely has a division in the field, companies in the same broad industry doing different jobs for different",
+  "buyers (cloud data discovery vs security orchestration), and anything that is not a company with its own product.",
+  "Judge ONLY from the two descriptions given. When a description is not about a company's own product (a tracking pixel, an error page, a",
+  "page about something else), answer false and say so in the reason. When they do not show the same category and customer, answer false.",
 ].join(" ");
 
 export function buildPeerComparisonRequest(company: { name: string; description: string }, peers: PeerFacts[]) {
@@ -44,7 +46,7 @@ export function buildPeerComparisonRequest(company: { name: string; description:
               type: "object" as const,
               properties: {
                 name: { type: "string" },
-                same_product: { type: "boolean", description: "A customer could buy this INSTEAD of the company's product for the same job." },
+                same_product: { type: "boolean", description: "The same category of product: the same customer need, even when the form differs." },
                 same_customer: { type: "boolean", description: "Sold to the same kind of customer." },
                 reason: { type: "string", description: "One short sentence." },
               },
@@ -63,8 +65,9 @@ export function buildPeerComparisonRequest(company: { name: string; description:
 export function parsePeerVerdicts(input: unknown, peers: PeerFacts[]): PeerVerdict[] {
   const raw = (input as { verdicts?: unknown })?.verdicts;
   const list = Array.isArray(raw) ? raw as Array<Record<string, unknown>> : [];
-  return peers.map((p) => {
-    const v = list.find((x) => String(x?.name ?? "").trim().toLowerCase() === p.name.trim().toLowerCase());
+  return peers.map((p, i) => {
+    // By name; when the model wrote the name another way and there is one verdict per candidate, by position.
+    const v = list.find((x) => String(x?.name ?? "").trim().toLowerCase() === p.name.trim().toLowerCase()) ?? (list.length === peers.length ? list[i] : undefined);
     return { name: p.name, same_product: v?.same_product === true, same_customer: v?.same_customer === true, reason: typeof v?.reason === "string" ? v.reason : "no verdict" };
   });
 }
