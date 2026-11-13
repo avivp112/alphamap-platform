@@ -12,4 +12,14 @@ describe("a market candidate's own site (run 12 check)", () => {
     expect(pickPeerSite([{ url: "https://play.google.com/store/apps/details?id=x" }, { url: "https://random-games.com" }], "EarlySalary")).toBeNull();
     expect(pickPeerSite([{ url: "https://policybazaar.com/insurance" }], "Policybazaar")).toBe("https://policybazaar.com");
   });
+  it("one distinctive word of the name in the host is enough (owner, 2026-11-13)", () => {
+    expect(pickPeerSite([{ url: "https://aws.amazon.com/security" }], "Amazon Web Services")).toBe("https://aws.amazon.com");
+    expect(pickPeerSite([{ url: "https://www.dig.security/product" }], "Dig Security")).toBe("https://www.dig.security");
+    expect(pickPeerSite([{ url: "https://aws.com/x" }, { url: "https://example.com" }], "Amazon Web Services")).toBe("https://aws.com");   // the initials
+    expect(pickPeerSite([{ url: "https://security.example.com" }], "Dig Security")).toBeNull();       // a kind of business is not a name
+    expect(pickPeerSite([{ url: "https://cloud-services.example.net" }], "Amazon Web Services")).toBeNull();
+  });
+  it("the best result wins: the whole name over one word", () => {
+    expect(pickPeerSite([{ url: "https://amazon.example.org" }, { url: "https://amazonwebservices.com" }], "Amazon Web Services")).toBe("https://amazonwebservices.com");
+  });
 });
