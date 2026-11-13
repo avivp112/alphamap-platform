@@ -29,6 +29,11 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const MODEL = process.env.MODEL ?? "claude-haiku-5-5";
 
 // [company, peer, the owner's verdict: true = a real market competitor, quote]
+// The address of the article that named the pair, where it says something the sentence does not (a real run reads it too: collect.ts).
+const URLS: Record<string, string> = {
+  "Rezonate|Silverfort": "https://www.prnewswire.com/apac/news-releases/silverfort-acquires-rezonate-expanding-its-cloud-identity-security-offering-302303537.html",
+  "Rand McNally|Platform Science": "https://www.prnewswire.com/news-releases/rand-mcnally-introduces-truck-safe-connected-navigation-powered-by-rand-road-iq-on-platform-science-302594363.html",
+};
 const PAIRS: Array<[string, string, boolean, string]> = [
   ["Acko", "Policybazaar", true, "Acko competes with players including Policybazaar and ICICI Lombard"],
   ["SkyDrive", "Archer Aviation", true, "Startups competing with SkyDrive include Archer Aviation"],
@@ -137,7 +142,7 @@ const FACTS: Record<string, string> = {
         const tool = msg.content.find((b) => b.type === "tool_use");
         return tool && tool.type === "tool_use" ? tool.input : null;
       },
-    }, { name: company, description: own.description }, [claim]);
+    }, { name: company, description: own.description }, [claim], () => URLS[`${company}|${peer}`] ?? "");
     const kept = r.kept.length === 1;
     judged++; if (kept === expected) agree++;
     if (kept) tally.kept++; else tally.dropped++;
