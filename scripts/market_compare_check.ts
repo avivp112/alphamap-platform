@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * scripts/market_compare_check.ts — the market-peer comparison (marketComparison.ts) on the pairs the owner marked in review runs 11 and 12, with
- * the model. Reads descriptions from the database; a pair whose company or peer is not on file with a description is listed as "not on file".
+ * the model. Reads descriptions from the database; a pair whose company or peer is no description found in the database or on its own site is listed as "not on file".
  * Writes nothing. About $0.01 for the whole set.
  *
  *   npx tsx scripts/market_compare_check.ts
@@ -15,6 +15,8 @@ import { dirname, join } from "path";
 import { judgeMarketPeers, type PeerClaim } from "../lib/enrichment/marketComparison.ts";
 import { makePeerLookup } from "../lib/enrichment/peerLookup.ts";
 import { requestFor } from "../lib/enrichment/models.ts";
+import { createSearchProviderState, webSearch, readPageCached } from "../lib/enrichment/searchProviders.ts";
+import { isDataPlatformUrl } from "../lib/enrichment/dataPlatforms.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 if (existsSync(join(__dir, "..", ".env"))) config({ path: join(__dir, "..", ".env") });
@@ -52,10 +54,21 @@ const PAIRS: Array<[string, string, boolean, string]> = [
 
 (async () => {
   const lookup = makePeerLookup(db);
+  const state = createSearchProviderState();
+  // The same fallback as collect.ts: not in the database -> a search and the company's own homepage.
+  const factsOf = async (name: string) => {
+    const hit = (await lookup([name])).get(name.toLowerCase());
+    if (hit) return hit;
+    const res = (await webSearch(`"${name}" official website`, "peer_site", state)).find((r) => r.url && !isDataPlatformUrl(r.url) && !/wikipedia|linkedin|crunchbase|facebook|twitter|x\.com|youtube/i.test(r.url));
+    if (!res) return null;
+    const home = new URL(res.url).origin;
+    const text = ((await readPageCached(home, state))?.text ?? "").replace(/\s+/g, " ").trim();
+    return text.length >= 200 ? { name, description: text.slice(0, 700), website: home, where: "own_site" as const } : null;
+  };
   let agree = 0, judged = 0, tokensIn = 0, tokensOut = 0;
   for (const [company, peer, expected, quote] of PAIRS) {
-    const own = (await lookup([company])).get(company.toLowerCase());
-    const peerFacts = (await lookup([peer])).get(peer.toLowerCase());
+    const own = await factsOf(company);
+    const peerFacts = await factsOf(peer);
     if (!own || !peerFacts) { console.log(`  —  ${company} ↔ ${peer}: not on file with a description (${!own ? company : peer})`); continue; }
     const claim: PeerClaim = { name: peer, source_id: "S1", evidence_quote: quote, how_it_competes: quote, tier: "market" };
     const r = await judgeMarketPeers({
