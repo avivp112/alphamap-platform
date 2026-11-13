@@ -300,7 +300,7 @@ async function enrichCompany(
   }
   if (collected.outcome !== "collected") {
     summary.tally[collected.outcome]++;
-    notEnrich(row, collected.outcome, (collected as { reason?: string }).reason);
+    notEnrich(row, collected.outcome, (collected as { reason?: string }).reason, (collected as { detail?: string }).detail);
     return;
   }
 
@@ -319,9 +319,9 @@ async function enrichCompany(
 // Why a company was not enriched (lib/enrichment/notEnriched.ts), for the batch report.
 const notEnrichedRows: NotEnrichedRow[] = [];
 const websiteIssueOf = new Map<string, "content_mismatch" | "unreadable">();
-function notEnrich(row: V2StartupRow, outcome: string, reason: string | undefined) {
+function notEnrich(row: V2StartupRow, outcome: string, reason: string | undefined, detail?: string) {
   const why = whyNotEnriched(outcome, reason, websiteIssueOf.get(row.id), row.website);
-  if (why) notEnrichedRows.push({ company: row.name, website: row.website ?? "", why, detail: [outcome, reason].filter(Boolean).join(": ") });
+  if (why) notEnrichedRows.push({ company: row.name, website: row.website ?? "", why, detail: detail ?? [outcome, reason].filter(Boolean).join(": ") });
 }
 
 // This run's enrichment_runs row: every write is recorded under it in

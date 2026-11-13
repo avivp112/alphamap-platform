@@ -22,6 +22,16 @@ export interface TechGateVerdict {
   site_matches_description?: boolean;
 }
 
+/**
+ * What "technology company" means here (owner, 2026-11-13): the product falls in one of the platform's sector categories — software and AI,
+ * fintech, cybersecurity, health and life sciences, climate and energy (energy storage, clean energy, carbon), deep tech (advanced materials,
+ * robotics, space, semiconductors), industrial and manufacturing technology, food and agriculture technology (vertical farming, cultivated food),
+ * automotive and mobility, proptech, e-commerce and marketplaces run on their own platform. NOT technology: professional services (design or
+ * creative studios, agencies, consultancies), non-profits, incubators, accelerators and funds, and consumer products or shops with no technology of their own.
+ * One definition for the early check and for the profile extraction, so they cannot disagree.
+ */
+export const TECH_DEFINITION = "A technology company is one whose product falls in a technology category: software, AI/ML, fintech, cybersecurity, health or life-science technology, climate and energy technology (energy storage, clean energy, carbon capture), deep tech (advanced materials, robotics, space, semiconductors), industrial or manufacturing technology, food or agriculture technology (vertical farming, cultivated food), automotive or mobility technology, proptech, or an e-commerce / marketplace business built on its own platform. NOT technology: professional services (design or creative studios, agencies, consultancies), non-profits, incubators, accelerators and funds, and consumer products or physical shops with no technology of their own.";
+
 export function buildTechGateRequest(companyName: string, homepageText: string, description: string | null, industry: string | null) {
   const material = [
     description ? `Description on file: ${description}` : "",
@@ -38,7 +48,7 @@ export function buildTechGateRequest(companyName: string, homepageText: string, 
       input_schema: {
         type: "object" as const,
         properties: {
-          is_tech_company: { type: "boolean", description: "TRUE for any company whose core product or competitive edge is its own technology/software/R&D (broad category — AI/ML, fintech, biotech, hardware, marketplaces and platforms run on their own app/software, etc. all count)." },
+          is_tech_company: { type: "boolean", description: TECH_DEFINITION },
           confidence: { type: "string", enum: ["high", "medium", "low"] },
           reason: { type: "string", description: "One short sentence." },
           site_matches_description: { type: "boolean", description: "FALSE when the homepage text is about a different business than the description on file — a parked or sold domain, a casino, an unrelated company. TRUE when they describe the same business, or when there is no description to compare." },
@@ -49,7 +59,7 @@ export function buildTechGateRequest(companyName: string, homepageText: string, 
     tool_choice: { type: "tool" as const, name: "classify_company" },
     messages: [{
       role: "user" as const,
-      content: `Is "${companyName}" a technology company?\n\nAnswer is_tech_company=false with confidence "high" ONLY when the material clearly shows a non-technology business — e.g. a food or beverage brand, a restaurant, a charity or NGO without its own technology product, a consultancy or agency, a retailer of physical goods with no proprietary technology. A company that runs its own app, software platform, marketplace, or does R&D is a technology company. If the material is thin or ambiguous, answer true or use low/medium confidence.\n\n${material}`,
+      content: `Is "${companyName}" a technology company?\n\n${TECH_DEFINITION}\n\nAnswer is_tech_company=false with confidence "high" ONLY when the material clearly shows a business outside those categories. A company whose product falls in one of them is a technology company, however traditional its industry sounds. If the material is thin or ambiguous, answer true or use low/medium confidence. In "reason" name the product and the category it falls in, or why it falls in none.\n\n${material}`,
     }],
   };
 }
