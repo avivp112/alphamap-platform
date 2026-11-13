@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { judgeMarketPeers, buildPeerComparisonRequest, parsePeerVerdicts, type PeerClaim, type PeerFacts } from "./marketComparison";
+import { nameIsWrittenAsAName, judgeMarketPeers, buildPeerComparisonRequest, parsePeerVerdicts, type PeerClaim, type PeerFacts } from "./marketComparison";
 
 /** The plumbing, on the examples of runs 11 and 12 (owner, 2026-11-12). The model's own judgment is measured by scripts/market_compare_check.ts. */
 const claim = (name: string, quote: string): PeerClaim => ({ name, source_id: "S1", evidence_quote: quote, how_it_competes: quote, tier: "market" });
@@ -23,7 +23,7 @@ describe("market peers: the comparison", () => {
   });
   it("a name that is not a company with a website is dropped before the model is asked (\"Shoppable\")", async () => {
     let asked = 0;
-    const r = await judgeMarketPeers({ resolve: async () => null, ask: async () => { asked++; return {}; } }, { name: "Smartzer", description: "Shoppable video." }, [claim("Shoppable", "a shoppable video storefront")]);
+    const r = await judgeMarketPeers({ resolve: async () => null, ask: async () => { asked++; return {}; } }, { name: "Smartzer", description: "Shoppable video." }, [claim("Shoppable", "Smartzer and Shoppable sell video storefronts")]);
     expect(r.kept).toEqual([]);
     expect(r.dropped[0].why).toBe("peer_not_a_company_with_a_site");
     expect(asked).toBe(0);
@@ -39,5 +39,21 @@ describe("market peers: the comparison", () => {
     const peers = [facts("A", "a"), facts("B", "b")];
     expect(buildPeerComparisonRequest({ name: "X", description: "x" }, peers).messages[0].content).toMatch(/1\. A: a\n2\. B: b/);
     expect(parsePeerVerdicts({ verdicts: [{ name: "A", same_product: true, same_customer: true, reason: "ok" }] }, peers).map((v) => v.same_product && v.same_customer)).toEqual([true, false]);
+  });
+});
+
+describe("run 12: a word is not a company", () => {
+  it("'shoppable' in 'a shoppable video storefront' is a word; names written as names pass", () => {
+    expect(nameIsWrittenAsAName("Minishop by Smartzer gives you a shoppable video storefront that works independently", "Shoppable")).toBe(false);
+    expect(nameIsWrittenAsAName("Brands run Linnworks and Extensiv together.", "Extensiv")).toBe(true);
+    expect(nameIsWrittenAsAName("Startups competing with SkyDrive include Archer Aviation and Toyota-backed Joby Aviation", "Joby Aviation")).toBe(true);
+    expect(nameIsWrittenAsAName("regulated platforms like Uphold and eToro built new staking", "eToro")).toBe(true);
+    expect(nameIsWrittenAsAName("a strong mailchimp alternative", "Mailchimp")).toBe(false);
+  });
+  it("such a claim is dropped before anything is looked up", async () => {
+    let resolved = 0;
+    const r = await judgeMarketPeers({ resolve: async () => { resolved++; return null; }, ask: async () => ({}) }, { name: "Smartzer", description: "Shoppable video." }, [claim("Shoppable", "Minishop by Smartzer gives you a shoppable video storefront")]);
+    expect(r.dropped[0].why).toBe("peer_name_is_a_word_in_the_sentence");
+    expect(resolved).toBe(0);
   });
 });

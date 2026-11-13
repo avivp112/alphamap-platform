@@ -69,6 +69,17 @@ export function parsePeerVerdicts(input: unknown, peers: PeerFacts[]): PeerVerdi
   });
 }
 
+/**
+ * The candidate's name is written as a name in the sentence: a capital letter where it appears ("Fireblocks", "Opus Security"), not the lower-case
+ * word of "a shoppable video storefront" (run 12: "Shoppable" was a word, and a company of that name exists, so the comparison alone kept it).
+ */
+export function nameIsWrittenAsAName(quote: string, name: string): boolean {
+  const esc = name.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+  if (!esc) return false;
+  const m = [...quote.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])(${esc})(?![\\p{L}\\p{N}])`, "giu"))];
+  return m.some((x) => /[\p{Lu}\d]/u.test(x[1][0]) || /[\p{Lu}]/u.test(x[1].slice(1)));   // a leading capital, or a capital inside ("eToro", "PhonePe")
+}
+
 export interface PeerDeps {
   /** The candidate's description and website: the database, else its own homepage; null when it is not a company with a website. */
   resolve: (name: string) => Promise<PeerFacts | null>;
@@ -83,6 +94,7 @@ export async function judgeMarketPeers(deps: PeerDeps, company: { name: string; 
   for (const c of claims) {
     const relation = marketRelationProblem(`${c.evidence_quote} ${url(c)}`);
     if (relation) { dropped.push({ name: c.name, why: relation }); continue; }
+    if (!nameIsWrittenAsAName(c.evidence_quote, c.name)) { dropped.push({ name: c.name, why: "peer_name_is_a_word_in_the_sentence" }); continue; }
     const facts = await deps.resolve(c.name);
     if (!facts || !facts.description.trim()) { dropped.push({ name: c.name, why: "peer_not_a_company_with_a_site" }); continue; }
     candidates.push({ claim: c, facts });
