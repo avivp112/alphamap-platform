@@ -50,7 +50,7 @@ import {
 } from "./assemble.ts";
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
 import { pickArticlesToRead } from "./articles.ts";
-import { runTechGate, shouldSkipAsNonTech, type TechGateVerdict } from "./techGate.ts";
+import { runTechGate, shouldSkipAsNonTech, techDecision, type TechGateVerdict } from "./techGate.ts";
 import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, supportedRoleSubset, personCardsInHtml, bioFromCard, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
 import { componentOn } from "./components.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "./linkedin.ts";
@@ -380,7 +380,7 @@ export async function collectCompany(
     console.log(`    🛠️   ${siteOwnerIssue} — no description or sector is written; listed for review.`);
     ctx.onWebsiteIssue?.("content_mismatch", siteOwnerIssue);
   }
-  let techUndecided = false;
+  let techGateVerdict: TechGateVerdict | null = null;
   if (ctx.techGate && !ctx.update) {
     // The verdict is cached with the search results, so seeing the same
     // company again (a re-run, the next cycle) costs nothing.
@@ -395,7 +395,8 @@ export async function collectCompany(
     }
     ctx.recordCost(ctx.models.enrich, gate);
     // Too little to go on (a suspended or unreadable homepage): there is no decision, and it is not "technology" either.
-    if (gate.verdict && gate.verdict.enough_information === false) { techUndecided = true; console.log(`    ❔  Technology check: no decision — ${gate.verdict.reason}`); }
+    techGateVerdict = gate.verdict;
+    if (gate.verdict && gate.verdict.enough_information === false) { console.log(`    ❔  Technology check: no decision — ${gate.verdict.reason}`); }
     if (shouldSkipAsNonTech(gate.verdict)) {
       console.log(`    🚫  REJECTED before searching — not a technology company: ${gate.verdict!.reason}`);
       // A site that shows another business than the company's own description is a website to fix.
@@ -552,14 +553,17 @@ export async function collectCompany(
   }
   // An update reads a few news items, not the company's whole footprint —
   // the tech/non-tech decision from the full run stands.
-  // The early check could not tell and the full read found nothing to describe the company with: still no decision, so nothing is written.
-  if (techUndecided && !profile.profile.description && !ctx.update) {
-    console.log("    ❔  Technology undetermined — nothing to describe the company with; not enriched.");
-    return { outcome: "low_evidence", reason: "technology_undetermined", detail: "the homepage could not be read and the search found nothing to say what the company does" };
-  }
-  if (!profile.is_tech_company && !ctx.update) {
-    console.log("    🚫  REJECTED — not a technology-driven company");
-    return { outcome: "rejected", reason: "not_technology", detail: `profile: ${profile.tech_reason ?? "no reason given"}` };
+  // One decision from the early check and the profile call (techGate.ts techDecision): the early check's yes stands; a "cannot tell" is no rejection.
+  if (!ctx.update) {
+    const decision = techDecision(techGateVerdict, profile, !!profile.profile.description);
+    if (decision === "undetermined") {
+      console.log(`    ❔  Technology undetermined — ${profile.tech_reason ?? "nothing to describe the company with"}; not enriched, to be tried again.`);
+      return { outcome: "low_evidence", reason: "technology_undetermined", detail: `profile: ${profile.tech_reason ?? "the sources do not say what the company does"}` };
+    }
+    if (decision === "reject") {
+      console.log("    🚫  REJECTED — not a technology-driven company");
+      return { outcome: "rejected", reason: "not_technology", detail: `profile: ${profile.tech_reason ?? "no reason given"}` };
+    }
   }
 
   // An update whose new pages say nothing about money skips the funding call.
@@ -1647,7 +1651,7 @@ export async function collectCompany(
         const tool = msg.content.find((b) => b.type === "tool_use");
         return tool && tool.type === "tool_use" ? parseSectorChoice(tool.input, taxonomy) : null;
       };
-      const choice = await classifyWithRetry(classify, descText, (m) => { console.log(`    🧭  Sector ${m}.`); bump(stats.droppedByReason, "sector_answer_rejected"); });
+      const choice = await classifyWithRetry(classify, descText, (m) => { console.log(`    🧭  Sector ${m}.`); bump(stats.droppedByReason, "sector_answer_retried"); });
       if (choice) {
         console.log(`    🧭  Sector from the verified description: ${choice.sector_name}${choice.sub_sector_name ? ` › ${choice.sub_sector_name}` : ""}${choice.sub_sector_names.length ? ` (+ ${choice.sub_sector_names.join(", ")})` : ""}`);
         Object.assign(profile.profile, { sector_name: choice.sector_name, sub_sector_name: choice.sub_sector_name, sub_sector_names: choice.sub_sector_names });

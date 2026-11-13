@@ -72,7 +72,7 @@ export const SECTOR_DEFINITIONS: Record<string, string> = {
   "ERP / Finance": "finance software for a company's own finance team: accounting, FP&A, budgeting, planning and consolidation, procurement and spend management, billing, invoicing and subscription revenue operations.",
   "Analytics / BI": "dashboards, reporting and data analysis for business users, including market-data products.",
   "Sales Tech": "helps sales teams sell: quoting and CPQ, revenue operations, sales engagement; differs from CRM, which stores the relationship.",
-  "Productivity & Collaboration": "tools for personal and team work: email, docs, meetings, notes, task management; engineering and product-lifecycle tools for hardware teams are Advanced Manufacturing.",
+  "Productivity & Collaboration": "tools for team and business work: email, docs, meetings, notes, task management (email or storage accounts sold to private individuals are Consumer / General); engineering and product-lifecycle tools for hardware teams are Advanced Manufacturing.",
   "Customer Support & CX": "customer service desks, support automation and customer-experience measurement.",
   "Marketing Tech": "marketing automation, content, attribution and customer-engagement software; media buying is AdTech.",
   "Legal & Compliance Software": "contracts, e-discovery, legal operations and corporate compliance workflow for in-house and law-firm teams.",
@@ -88,14 +88,14 @@ export const SECTOR_DEFINITIONS: Record<string, string> = {
   // DeepTech
   "DeepTech / General": "hard-science or hardware company with no narrower fit; never for software.",
   "Quantum Computing": "quantum hardware, software or sensing.",
-  "Robotics": "robots and autonomous machines as the product.",
+  "Robotics": "robots and autonomous machines as the product when the robot is the research or general-purpose product; mobile robots (AMR, AGV), cobots and pickers that automate factory or warehouse work are Industrial Automation (Robotics is then a tag).",
   "Space Tech": "space and defense: rockets and launch vehicles, satellites, missiles, rocket motors and propellants, defense systems; a company that builds rockets or missile propulsion is Space Tech even when it 3D-prints its engines or manufactures the parts.",
   "Semiconductors": "chips and chip design, including photonic and AI accelerators.",
   "Advanced Materials": "new materials as the product (polymers, composites, materials made from waste).",
   "IoT & Connectivity": "connected devices, sensors and the networks that link them (telematics, LPWAN, satellite IoT).",
   // Industrial & Manufacturing
   "Industrial / General": "industrial company with no narrower fit.",
-  "Industrial Automation": "automation, control and machine-vision systems on production lines.",
+  "Industrial Automation": "automation, control and machine-vision systems on production lines, and mobile robots (AMR, AGV), cobots and pickers that automate factory and warehouse work.",
   "Advanced Manufacturing": "the product IS manufacturing technology: engineering and production software for hardware makers (BOM, ECO, PLM, MES), process digital twins, 3D printers and printing services, factory production optimization; a company that makes a product in another category (rockets, drugs, food, chips) is classified by that product, never by how it is made.",
   "Construction Tech": "software and tools for building and contracting (roofing, estimating, project management for construction trades).",
   // Food & Agriculture

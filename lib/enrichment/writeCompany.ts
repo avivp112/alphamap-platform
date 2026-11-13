@@ -732,8 +732,9 @@ export async function writeCollected(
           for (let i = fieldWrites.length - 1; i >= 0; i--) if (fieldWrites[i].field.replace(/^(profile|metrics)\./, "") === k) fieldWrites.splice(i, 1);
           continue;
         }
-        // A sector is shown by its name, not by the id the column holds.
-        const shown = k === "sector_id" ? (profile.profile.sector_name ?? patch[k]) : k === "employee_count" && headcountLowerBoundNow ? `${patch[k]}+` : patch[k];
+        // A sector is shown by its name, not by the id the column holds, and once: the industry column carries the parent sector (one report line for both).
+        if (k === "industry" && "sector_id" in patch) continue;
+        const shown = k === "sector_id" ? `${profile.profile.sector_name ?? patch[k]}${patch.industry && patch.industry !== profile.profile.sector_name ? ` (industry: ${patch.industry})` : ""}` : k === "employee_count" && headcountLowerBoundNow ? `${patch[k]}+` : patch[k];
         reportLines.push({ field: fieldOfColumn(k) ?? k, before: rowOf[k] ?? null, after: shown, source_url: sourceUrl, quote: fw?.evidence_quote ?? null });
       }
     }

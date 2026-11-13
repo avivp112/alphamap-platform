@@ -67,6 +67,24 @@ export function buildTechGateRequest(companyName: string, homepageText: string, 
   };
 }
 
+export type TechDecision = "proceed" | "reject" | "undetermined";
+/**
+ * One decision from the two looks (owner, 2026-11-13, batch 4 round 3: Hydrostor and Promethean Particles were turned away by the profile call as "not software"):
+ *   - the early check, made with the definition above, said technology with enough to go on → the company proceeds; the profile call cannot turn it away;
+ *   - the profile call (or a thin early check with nothing to describe the company with) could not tell → undetermined: not enriched, tried again later;
+ *   - otherwise the profile call's no is a rejection.
+ */
+export function techDecision(
+  gate: TechGateVerdict | null,
+  profile: { is_tech_company: boolean; tech_decision?: "technology" | "not_technology" | "cannot_tell" },
+  hasDescription: boolean,
+): TechDecision {
+  const gateConfirms = !!gate && gate.is_tech_company === true && gate.enough_information !== false && gate.confidence !== "low";
+  if (gateConfirms) return "proceed";
+  if (profile.tech_decision === "cannot_tell" || (gate?.enough_information === false && !hasDescription)) return "undetermined";
+  return profile.is_tech_company === false ? "reject" : "proceed";
+}
+
 /** Skip the company only on a high-confidence non-tech verdict. */
 export function shouldSkipAsNonTech(v: TechGateVerdict | null): boolean {
   return !!v && v.is_tech_company === false && v.confidence === "high";
