@@ -252,7 +252,7 @@ export interface CollectedCompany {
 
 export type CollectResult =
   | CollectedCompany
-  | { outcome: "rejected" | "no_change" | "no_data" | "low_evidence"; reason?: string }
+  | { outcome: "rejected" | "no_change" | "no_data" | "low_evidence"; reason?: string; /** Why, in a sentence, for the batch report. */ detail?: string }
   | { outcome: "public"; listing: ListingStatement | null }
   | { outcome: "error"; reason: string };
 
@@ -382,11 +382,11 @@ export async function collectCompany(
   if (ctx.techGate && !ctx.update) {
     // The verdict is cached with the search results, so seeing the same
     // company again (a re-run, the next cycle) costs nothing.
-    const cachedVerdict = searchState.cache?.get<TechGateVerdict>("techgate");
+    const cachedVerdict = searchState.cache?.get<TechGateVerdict>("techgate2");
     const gate = cachedVerdict
       ? { verdict: cachedVerdict, inputTokens: 0, outputTokens: 0 }
       : await runTechGate(row.name, websitePages[0]?.content ?? "", row.description, row.industry, { client: ctx.anthropic, model: ctx.models.enrich });
-    if (!cachedVerdict) searchState.cache?.set("techgate", gate.verdict);
+    if (!cachedVerdict) searchState.cache?.set("techgate2", gate.verdict);
     if (gate.verdict?.site_matches_description === false && !shouldSkipAsNonTech(gate.verdict)) {
       console.log(`    🛠️   The site shows another business than the description on file — listed as a website to fix: ${gate.verdict.reason}`);
       ctx.onWebsiteIssue?.("content_mismatch", gate.verdict.reason);
@@ -397,7 +397,7 @@ export async function collectCompany(
       // A site that shows another business than the company's own description is a website to fix.
       if (gate.verdict!.site_matches_description === false) ctx.onWebsiteIssue?.("content_mismatch", gate.verdict!.reason);
       stats.earlyRejected++;
-      return { outcome: "rejected", reason: gate.verdict!.site_matches_description === false ? "site_shows_another_business" : "not_technology" };
+      return { outcome: "rejected", reason: gate.verdict!.site_matches_description === false ? "site_shows_another_business" : "not_technology", detail: `early check: ${gate.verdict!.reason}` };
     }
   }
   ctx.onStage?.("searching");
@@ -540,7 +540,7 @@ export async function collectCompany(
   // the tech/non-tech decision from the full run stands.
   if (!profile.is_tech_company && !ctx.update) {
     console.log("    🚫  REJECTED — not a technology-driven company");
-    return { outcome: "rejected", reason: "not_technology" };
+    return { outcome: "rejected", reason: "not_technology", detail: `profile: ${profile.tech_reason ?? "no reason given"}` };
   }
 
   // An update whose new pages say nothing about money skips the funding call.

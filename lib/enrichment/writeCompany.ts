@@ -601,6 +601,14 @@ export async function writeCollected(
       headcountPoints.splice(i, 1);
     }
   }
+  // No source, no value: a point without the address it was read from is not written (a point of the run's own register/archive collectors carries one too).
+  for (let i = headcountPoints.length - 1; i >= 0; i--) {
+    if (!headcountPoints[i].sourceUrl) {
+      console.log(`    ⚠️  Headcount point ${headcountPoints[i].count}@${headcountPoints[i].date} dropped — no source address.`);
+      bump(summary.droppedByReason, "headcount_point_no_source");
+      headcountPoints.splice(i, 1);
+    }
+  }
   // Jumps and repeats within the series (headcountHistory.ts): what is dropped here is named; two points that
   // contradict each other in one month stay, both, with their types.
   {
@@ -733,7 +741,7 @@ export async function writeCollected(
       const ev = roundFieldEvidence(u.patch, funding.funding_rounds)[0];
       reportLines.push({ field: "round", before: "(on file)", after: `${u.round_type} filled: ${JSON.stringify(u.patch)}`, source_url: ev ? sourceById.get(ev.source_id)?.url ?? null : null, quote: ev?.evidence_quote ?? null });
     }
-    for (const h of headcountPoints) reportLines.push({ field: "headcount_history", before: null, after: `${h.count} on ${h.date} (${h.pointType ?? "observed"})`, source_url: null, quote: null });
+    for (const h of headcountPoints) reportLines.push({ field: "headcount_history", before: null, after: `${h.count} on ${h.date} (${h.pointType ?? "observed"})`, source_url: h.sourceUrl ?? null, quote: h.quote ?? null });
     for (const c of reportLines) console.log(`    ${DRY_RUN ? "[DRY] would write" : "✏️  writing"} ${c.field}: ${c.before == null ? "" : `${JSON.stringify(c.before)} → `}${typeof c.after === "string" ? c.after : JSON.stringify(c.after)}  (${c.source_url ?? "no source"})`);
     if (!reportLines.length) console.log("    🟠 nothing to write for the open fields");
   }

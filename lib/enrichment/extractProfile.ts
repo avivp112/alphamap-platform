@@ -21,6 +21,7 @@
  *     forces.
  */
 
+import { TECH_DEFINITION } from "./techGate.ts";
 import Anthropic from "@anthropic-ai/sdk";
 import { requestFor } from "./models.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -188,6 +189,8 @@ export interface V2Metrics {
 export interface V2ProfileExtraction {
   is_public_company: boolean;
   is_tech_company: boolean;
+  /** One sentence naming the product and its category (or why none): why the company is, or is not, a technology company. */
+  tech_reason?: string;
   profile: V2Profile;
   leadership: V2Leader[];
   metrics: V2Metrics;
@@ -250,7 +253,8 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
           { type: "boolean" },
           "TRUE only if THIS exact company is listed on a public stock exchange (NYSE, NASDAQ, LSE, TASE, Euronext, etc.) under its own ticker, with the specific exchange/ticker stated in the source. Being acquired by, or a subsidiary of, a public company does NOT make this company itself public. Omit the whole field entirely if you cannot point to that -- the default is private.",
         ),
-        is_tech_company: { type: "boolean", description: "TRUE for any company whose core product or competitive edge is its own technology/software/R&D (broad category — AI/ML, fintech, biotech, hardware, etc. all count)." },
+        is_tech_company: { type: "boolean", description: TECH_DEFINITION },
+        tech_reason: { type: "string", description: "One short sentence: the product and the technology category it falls in, or why it falls in none." },
         profile: {
           type: "object" as const,
           properties: {
@@ -614,6 +618,7 @@ export function processProfileExtractionResponse(
     result: {
       is_public_company: verifyIsPublicClaim(i.is_public_company, sourceLookup, dropped),
       is_tech_company: i.is_tech_company ?? true,
+      tech_reason: i.tech_reason,
       profile,
       leadership,
       metrics,

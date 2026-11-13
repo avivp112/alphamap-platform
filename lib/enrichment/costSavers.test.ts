@@ -64,7 +64,7 @@ describe("tech pre-check — one-sided", () => {
   });
   it("counts app/platform businesses as tech in its own instructions", () => {
     const req = buildTechGateRequest("Glamsquad", "Book beauty pros in our app", null, null);
-    expect(req.messages[0].content).toContain("runs its own app, software platform, marketplace");
+    expect(req.messages[0].content).toContain("marketplace business built on its own platform");
   });
 });
 
