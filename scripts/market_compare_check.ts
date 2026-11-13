@@ -75,6 +75,9 @@ const PAIRS: Array<[string, string, boolean, string]> = [
     const home = pickPeerSite((await webSearch(peerSiteQuery(name, quote, company), "peer_site", state)).filter((r) => r.url && !isDataPlatformUrl(r.url)), name);
     return home ? homepage(home, name) : null;
   };
+  let agree = 0, judged = 0, tokensIn = 0, tokensOut = 0;
+  // The owner's two counts (2026-11-13): a wrong peer let in is worse than a right one dropped.
+  const wrong = { total: 0, kept: 0, dropped: 0, noSite: 0 }, right = { total: 0, kept: 0, dropped: 0, noSite: 0 };
   for (const [company, peer, expected, quote] of PAIRS) {
     const own = await companyFacts(company);
     const peerFacts = await peerFactsOf(peer, company, quote);
