@@ -5,7 +5,7 @@
  */
 export interface ListRow { name: string; website: string | null }
 export type Verdict = "new" | "same_domain_in_database" | "in_file_duplicate" | "already_in_database" | "name_already_in_database" | "no_name" | "no_website" | "bad_website" | "not_a_company_site";
-export interface Sorted { row: ListRow; line: number; verdict: Verdict; website: string | null; note: string }
+export interface Sorted { row: ListRow; line: number; verdict: Verdict; website: string | null; note: string; collidesWith?: KnownName }
 
 const clean = (s: string) => s.replace(/^﻿/, "").replace(/ /g, " ").replace(/​/g, "").trim();
 
@@ -92,7 +92,8 @@ export function registrable(host: string): string {
   return p.length >= 3 && p[p.length - 1].length === 2 && ["co", "com", "org", "net", "gov", "ac", "edu"].includes(p[p.length - 2]) ? p.slice(-3).join(".") : p.slice(-2).join(".");
 }
 
-export interface KnownNames { get(key: string): { name: string; website: string | null } | undefined; has(key: string): boolean }
+export interface KnownName { name: string; website: string | null; id?: string; country?: string | null; city?: string | null; industry?: string | null; description?: string | null }
+export interface KnownNames { get(key: string): KnownName | undefined; has(key: string): boolean }
 
 export function sortRows(rows: Array<ListRow & { line: number }>, known: { hosts: Set<string>; names: KnownNames }, addLines: Set<number> = new Set()): Sorted[] {
   const knownRegistrable = new Map<string, string>();
@@ -115,7 +116,7 @@ export function sortRows(rows: Array<ListRow & { line: number }>, known: { hosts
     // A name that matches a company already there is not added, unless the owner named this line (ADD_LINES): a different company with a common name.
     if (nk.length >= 3 && (known.names.has(nk) || seenName.has(nk)) && !addLines.has(r.line)) {
       const k = known.names.get(nk);
-      return { ...base, verdict: "name_already_in_database" as const, website: n.site, note: k ? `the database has "${k.name}" with ${k.website ?? "no website"}; the list has ${n.host}: the same company under another address?` : `the file has this name twice, with other websites` };
+      return { ...base, verdict: "name_already_in_database" as const, website: n.site, collidesWith: k, note: k ? `the database has "${k.name}" with ${k.website ?? "no website"}; the list has ${n.host}: the same company under another address?` : `the file has this name twice, with other websites` };
     }
     if (nk.length >= 3) seenName.add(nk);
     return { ...base, verdict: "new" as const, website: n.site, note: n.site === clean(r.website) ? "" : `website written as ${n.site}` };
