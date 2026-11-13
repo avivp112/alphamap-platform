@@ -38,6 +38,7 @@
  *   DRY_RUN=false BATCH_SIZE=10 npx tsx scripts/bulk_enrich_v2.ts   # apply writes, small batch
  */
 
+import { whyNotEnriched, notEnrichedReport, type NotEnrichedRow } from "../lib/enrichment/notEnriched.ts";
 import { makePeerLookup } from "../lib/enrichment/peerLookup.ts";
 import { maxArticles } from "../lib/enrichment/articleBudget.ts";
 import { callCostUsd, UsageMeter, LONG_PROMPT_TOKENS } from "../lib/enrichment/models.ts";
@@ -259,6 +260,7 @@ async function enrichCompany(
     recordCost: (model, usage) => recordCost(summary, model, usage),
     peerLookup: makePeerLookup(supabase),
     onWebsiteIssue: (reason, detail) => {
+      websiteIssueOf.set(row.id, reason);
       websiteRows.push({ company_id: row.id, company: row.name, website: row.website ?? "", reason, detail });
       if (!DRY_RUN) void supabase.rpc("note_website_issue", { p_startup_id: row.id, p_website: row.website, p_reason: reason, p_detail: detail })
         .then(({ error }) => { if (error) console.warn(`    ⚠️  website_review not noted (${error.message}) — run migration 20261116000000`); });
@@ -272,6 +274,7 @@ async function enrichCompany(
 
   if (collected.outcome === "public") {
     summary.tally.removed_public++;
+    notEnrich(row, "public", undefined);
     if (PILOT) { console.log("    [PILOT] Public company — not archived in a pilot (status is not a pilot field)."); return; }
     if (!DRY_RUN) {
       const { error: changeErr } = await supabase.from("field_changes").insert({
@@ -293,10 +296,11 @@ async function enrichCompany(
   // An outage is not a verdict on the company: not stamped (see "settled"), so it is tried again.
   if (collected.outcome === "error" && collected.reason === "search_unavailable") {
     summary.tally.search_unavailable++;
-    return;
+    return;   // an outage is not a verdict on the company: not counted as "not enriched"
   }
   if (collected.outcome !== "collected") {
     summary.tally[collected.outcome]++;
+    notEnrich(row, collected.outcome, (collected as { reason?: string }).reason);
     return;
   }
 
@@ -310,6 +314,14 @@ async function enrichCompany(
     pilotRows.push({ company_id: row.id, company: row.name, field: c.field, before: c.before == null ? "" : String(c.before), after: String(c.after), source_url: c.source_url ?? "", quote: c.quote ?? "" });
   }
   if (PILOT && !(outcome?.pilot ?? []).length) pilotRows.push({ company_id: row.id, company: row.name, field: "(nothing)", before: "", after: "", source_url: "", quote: "" });
+}
+
+// Why a company was not enriched (lib/enrichment/notEnriched.ts), for the batch report.
+const notEnrichedRows: NotEnrichedRow[] = [];
+const websiteIssueOf = new Map<string, "content_mismatch" | "unreadable">();
+function notEnrich(row: V2StartupRow, outcome: string, reason: string | undefined) {
+  const why = whyNotEnriched(outcome, reason, websiteIssueOf.get(row.id), row.website);
+  if (why) notEnrichedRows.push({ company: row.name, website: row.website ?? "", why, detail: [outcome, reason].filter(Boolean).join(": ") });
 }
 
 // This run's enrichment_runs row: every write is recorded under it in
@@ -518,11 +530,17 @@ async function main() {
   console.log(`  longest prompt               ${LLM.maxPromptTokens.toLocaleString()} tokens · calls over ${LONG_PROMPT_TOKENS.toLocaleString()}: ${LLM.callsOverLong}${LLM.callsOverLong ? "  ⚠️  billed at Haiku 5.5's long-prompt rate" : ""}`);
   if (jinaDisabled()) console.log(`  ⛔ Jina Reader was switched off mid-run (${jinaDisabled()}) — top up Jina and re-run the affected companies for full articles.`);
   console.log(`  website pages: ${summary.websitePagesFetched} real / ${summary.websitePagesSkippedThin} thin-404 / ${summary.websitePagesDuplicate} duplicate skipped  |  serper calls: ${summary.serperCalls}  |  jina search (Serper backup): ${summary.jinaSearchCalls}  |  serper scrape (Jina backup): ${summary.serperScrapes}  |  tavily calls: ${summary.tavilyCalls}`);
+  for (const l of notEnrichedReport(notEnrichedRows, Object.values(summary.tally).reduce((n, c) => n + c, 0))) console.log(`  ${l}`);
   console.log("  dropped/flagged by reason code:");
   for (const [reason, count] of summary.droppedByReason) {
     console.log(`    ${reason.padEnd(32)} ${count}`);
   }
   console.log("═".repeat(62));
+  if (notEnrichedRows.length && !process.env.VITEST) {
+    const ncell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    writeFileSync("not_enriched.csv", "\uFEFF" + ["company,website,why,detail", ...notEnrichedRows.map((r) => [r.company, r.website, r.why, r.detail].map(ncell).join(","))].join("\r\n") + "\r\n");
+    console.log(`📋  ${notEnrichedRows.length} company(ies) not enriched, with the reason, in not_enriched.csv.`);
+  }
   if (websiteRows.length && !process.env.VITEST) {
     const wcols = ["company_id", "company", "website", "reason", "detail"];
     const wcell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);

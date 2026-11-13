@@ -252,7 +252,7 @@ export interface CollectedCompany {
 
 export type CollectResult =
   | CollectedCompany
-  | { outcome: "rejected" | "no_change" | "no_data" | "low_evidence" }
+  | { outcome: "rejected" | "no_change" | "no_data" | "low_evidence"; reason?: string }
   | { outcome: "public"; listing: ListingStatement | null }
   | { outcome: "error"; reason: string };
 
@@ -397,7 +397,7 @@ export async function collectCompany(
       // A site that shows another business than the company's own description is a website to fix.
       if (gate.verdict!.site_matches_description === false) ctx.onWebsiteIssue?.("content_mismatch", gate.verdict!.reason);
       stats.earlyRejected++;
-      return { outcome: "rejected" };
+      return { outcome: "rejected", reason: gate.verdict!.site_matches_description === false ? "site_shows_another_business" : "not_technology" };
     }
   }
   ctx.onStage?.("searching");
@@ -434,7 +434,7 @@ export async function collectCompany(
   }
   if (allRaw.length === 0) {
     console.log("    🔍  All searches failed — no data retrieved");
-    return { outcome: "no_data" };
+    return { outcome: "no_data", reason: "all_searches_failed" };
   }
 
   // ── Stage 3: entity filter ─────────────────────────────────────────────
@@ -540,7 +540,7 @@ export async function collectCompany(
   // the tech/non-tech decision from the full run stands.
   if (!profile.is_tech_company && !ctx.update) {
     console.log("    🚫  REJECTED — not a technology-driven company");
-    return { outcome: "rejected" };
+    return { outcome: "rejected", reason: "not_technology" };
   }
 
   // An update whose new pages say nothing about money skips the funding call.
