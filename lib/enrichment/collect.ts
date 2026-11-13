@@ -37,6 +37,7 @@ import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDa
 import { buildDescriptionRequest, descriptionSources, processDescription } from "./descriptionBuilder.ts";
 import { buildBackgroundRequest, processBackgroundResponse, backgroundSearchQuery, founderSearchQuery } from "./founderBackground.ts";
 import { requestFor } from "./models.ts";
+import { judgeArticleEntity, countryOfHost, type CompanyProfileForMatch } from "./articleEntity.ts";
 import { judgeMarketPeers, type PeerClaim, type PeerFacts, type buildPeerComparisonRequest } from "./marketComparison.ts";
 import { isDataPlatformUrl } from "./dataPlatforms.ts";
 import { peerSiteQuery, pickPeerSite } from "./peerSite.ts";
@@ -379,6 +380,7 @@ export async function collectCompany(
     console.log(`    🛠️   ${siteOwnerIssue} — no description or sector is written; listed for review.`);
     ctx.onWebsiteIssue?.("content_mismatch", siteOwnerIssue);
   }
+  let techUndecided = false;
   if (ctx.techGate && !ctx.update) {
     // The verdict is cached with the search results, so seeing the same
     // company again (a re-run, the next cycle) costs nothing.
@@ -392,6 +394,8 @@ export async function collectCompany(
       ctx.onWebsiteIssue?.("content_mismatch", gate.verdict.reason);
     }
     ctx.recordCost(ctx.models.enrich, gate);
+    // Too little to go on (a suspended or unreadable homepage): there is no decision, and it is not "technology" either.
+    if (gate.verdict && gate.verdict.enough_information === false) { techUndecided = true; console.log(`    ❔  Technology check: no decision — ${gate.verdict.reason}`); }
     if (shouldSkipAsNonTech(gate.verdict)) {
       console.log(`    🚫  REJECTED before searching — not a technology company: ${gate.verdict!.reason}`);
       // A site that shows another business than the company's own description is a website to fix.
@@ -528,6 +532,16 @@ export async function collectCompany(
   logExtraction("profile", row.name, profileOutcome);
   let profile = profileOutcome.extraction.result;
   for (const d of profileOutcome.extraction.dropped) bump(stats.droppedByReason, d.reason);
+  // Is an article about THIS company or a namesake (articleEntity.ts)? Compared with the profile: the country its domain suggests, what it does.
+  const articleIsThisCompany = async (title: string, url: string, text: string) => {
+    const company: CompanyProfileForMatch = { name: row.name, website: effectiveWebsite ?? row.website, countryHint: countryOfHost(domain) ?? row.country ?? null, about: [profile.profile.description, profile.profile.value_proposition, row.description].filter(Boolean).join(" ") };
+    return judgeArticleEntity(async (request) => {
+      const msg = await ctx.anthropic.messages.create(requestFor(request, ctx.models.enrich));
+      ctx.recordCost(ctx.models.enrich, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheReadTokens: 0, cacheWriteTokens: 0 } as never);
+      const tool = msg.content.find((b) => b.type === "tool_use");
+      return tool && tool.type === "tool_use" ? tool.input : null;
+    }, company, { title, url, text });
+  };
 
   // Backstop for the model's flag: "<Name>, Inc. (Nasdaq: XYZ)" in a source.
   const listing = profile.is_public_company ? null : findListingStatement(row.name, allSources, domain);
@@ -538,6 +552,11 @@ export async function collectCompany(
   }
   // An update reads a few news items, not the company's whole footprint —
   // the tech/non-tech decision from the full run stands.
+  // The early check could not tell and the full read found nothing to describe the company with: still no decision, so nothing is written.
+  if (techUndecided && !profile.profile.description && !ctx.update) {
+    console.log("    ❔  Technology undetermined — nothing to describe the company with; not enriched.");
+    return { outcome: "low_evidence", reason: "technology_undetermined", detail: "the homepage could not be read and the search found nothing to say what the company does" };
+  }
   if (!profile.is_tech_company && !ctx.update) {
     console.log("    🚫  REJECTED — not a technology-driven company");
     return { outcome: "rejected", reason: "not_technology", detail: `profile: ${profile.tech_reason ?? "no reason given"}` };
@@ -846,7 +865,7 @@ export async function collectCompany(
     }
     withAmounts.push(r);
   }
-  const keptRounds = withAmounts.filter((r) => {
+  const roundsPassingRules = withAmounts.filter((r) => {
     const why = rejectRound(r, row.name, allSources);
     if (!why) return true;
     if (why === "round_only_from_data_platform" || why === "round_source_not_listed") {
@@ -862,6 +881,23 @@ export async function collectCompany(
     bump(stats.droppedByReason, why);
     return false;
   });
+  // A round reported by an outlet is checked against the profile too: the same name in another country or business is another company's round
+  // (DataX, owner 2026-11-13). The company's own site is the company, so it needs no check; one source that is this company's is enough.
+  const keptRounds: typeof roundsPassingRules = [];
+  for (const r of roundsPassingRules) {
+    const outlets = roundSourceStandings(r, allSources, row.name).map((s) => s.url).filter((u) => allSources.find((x) => x.url === u)?.source_type !== "company_site").slice(0, 2);
+    const ownSite = roundSourceStandings(r, allSources, row.name).some((s) => allSources.find((x) => x.url === s.url)?.source_type === "company_site");
+    if (ownSite || !outlets.length) { keptRounds.push(r); continue; }
+    let verdict: Awaited<ReturnType<typeof articleIsThisCompany>> | null = null;
+    for (const u of outlets) {
+      const src = allSources.find((x) => x.url === u);
+      const v = await articleIsThisCompany(src?.title ?? "", u, src?.content ?? "");
+      if (v.keep) { verdict = v; break; }
+      verdict = v;
+    }
+    if (verdict && !verdict.keep) { console.log(`    🚫  ${r.round_type} not written (another company's round: ${verdict.reason})`); bump(stats.droppedByReason, "round_other_company"); continue; }
+    keptRounds.push(r);
+  }
 
   // ── Stage 5b: hints — a round only a data platform states (hints.ts) ──
   // Searched for in primary sources; confirmed → written with that source
@@ -1443,6 +1479,8 @@ export async function collectCompany(
         const about = [profile.profile.description, profile.profile.value_proposition, profile.profile.industry, row.description].filter(Boolean).join(" ");
         const v = await judgeNews(n, { ...newsDeps, about });
         if (!v.keep) { console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — ${v.message}: ${n.url}`); bump(stats.droppedByReason, v.reason); continue; }
+        const entity = await articleIsThisCompany(v.item.title, v.item.url, sourceByUrl(v.item.url)?.content ?? String((n as { summary?: string | null }).summary ?? ""));
+        if (!entity.keep) { console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — another company's (${entity.reason}): ${n.url}`); bump(stats.droppedByReason, "news_other_company"); continue; }
         if (v.dated) { console.log(`    📅  news "${n.title.slice(0, 50)}" dated ${v.item.published_date} from ${v.dated === "address" ? "its address" : "the page's code"}`); bump(stats.droppedByReason, "news_date_recovered"); }
         keptNews.push(v.item as typeof n); continue;
       }

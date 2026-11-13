@@ -69,6 +69,18 @@ export async function loadSectorTaxonomy(supabase: SupabaseClient): Promise<Sect
   };
 }
 
+/**
+ * The industry written to a company is a sector of the closed list, never free text (owner, 2026-11-13: "Design & Prototyping Software").
+ * The model's own word counts only when it is one of the sectors; otherwise the sector the company was classified into (or its parent).
+ */
+export function industryFromTaxonomy(industry: string | null | undefined, sectorName: string | null | undefined, taxonomy: SectorTaxonomy): string | null {
+  const parents = new Set(taxonomy.parentNames);
+  if (industry && parents.has(industry)) return industry;
+  if (sectorName && parents.has(sectorName)) return sectorName;
+  const parent = sectorName ? taxonomy.parentOf?.[sectorName] : undefined;
+  return parent && parents.has(parent) ? parent : null;
+}
+
 const TAG_FILLER_WORDS = new Set(["general", "digital", "tech", "technology", "technologies", "and", "other", "services", "platforms", "platform", "software", "management", "solutions", "data"]);
 
 /**

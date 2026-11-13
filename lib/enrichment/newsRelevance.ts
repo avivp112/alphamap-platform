@@ -133,10 +133,20 @@ export function eventKeys(title: string): Set<string> {
 }
 
 const dayMs = 86_400_000;
-type EventItem = { title: string; published_date?: string | null };
+type EventItem = { title: string; url?: string; published_date?: string | null };
+const slugOf = (url?: string): string => { try { return decodeURIComponent(new URL(url ?? "").pathname.split("/").filter(Boolean).pop() ?? "").replace(/\.(html?|php)$/i, "").replace(/[-_+]/g, " "); } catch { return ""; } };
+const wordSet = (t: string) => new Set(t.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").split(/\s+/).filter((w) => w.length >= 4));
+/** The same day and the same story: the headline and the address's slug of one share at least half the words of the other's (Krilltech: one KPMG story at Business Wire and VentureBeat). */
+function sameStoryOnTheSameDay(a: EventItem, b: EventItem): boolean {
+  if (!a.published_date || a.published_date !== b.published_date) return false;
+  const wa = wordSet(`${a.title} ${slugOf(a.url)}`), wb = wordSet(`${b.title} ${slugOf(b.url)}`);
+  const shared = [...wa].filter((w) => wb.has(w)).length;
+  return wa.size >= 4 && wb.size >= 4 && shared / Math.min(wa.size, wb.size) >= 0.6;
+}
 /** Two reports of one event: the same amount or acquisition within 7 days, or when either has no date. */
 export function sameNewsEvent(a: EventItem, b: EventItem, leadA = "", leadB = ""): boolean {
   // The headline and the opening of the article: Bloomberg's "HeyGen Valued at $500 Million" is the $60M Series A.
+  if (sameStoryOnTheSameDay(a, b)) return true;
   const ka = eventKeys(`${a.title} ${leadA}`);
   const kb = eventKeys(`${b.title} ${leadB}`);
   if (![...ka].some((x) => kb.has(x))) return false;

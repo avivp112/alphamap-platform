@@ -12,7 +12,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CollectedCompany, V2StartupRow } from "./collect.ts";
-import { filterCrossSectorTags, type SectorTaxonomy } from "./extractProfile.ts";
+import { filterCrossSectorTags, industryFromTaxonomy, type SectorTaxonomy } from "./extractProfile.ts";
 import { normalizeUrlForMatch } from "./extractMarket.ts";
 import { normalizeIsoDate, appendNew, reconcileOnFile } from "./assemble.ts";
 import { fetchArticleOgImage } from "./ogImage.ts";
@@ -290,8 +290,9 @@ export async function writeCollected(
     patch.value_proposition = valueProposition;
     refresh.delete("value_proposition");
   }
-  if (!row.industry && profile.profile.industry && descEvidence) { patch.industry = profile.profile.industry; provenance("profile.industry", profile.profile.industry, descEvidence); }
-  else if (!row.industry && profile.profile.industry) patch.industry = profile.profile.industry;   // no source: the guard below drops it
+  const industryValue = industryFromTaxonomy(profile.profile.industry, profile.profile.sector_name, taxonomy);
+  if (!row.industry && industryValue && descEvidence) { patch.industry = industryValue; provenance("profile.industry", industryValue, descEvidence); }
+  else if (!row.industry && industryValue) patch.industry = industryValue;   // no source: the guard below drops it
   if (!row.website && profile.profile.website) {
     const websiteResult = validateWebsiteCandidate(profile.profile.website.value, row.id, startupByDomain);
     if (websiteResult.website) {
@@ -632,11 +633,13 @@ export async function writeCollected(
     bump(summary.droppedByReason, "on_file_contradiction_fixed");
   }
 
+  let headcountLowerBoundNow = false;
   // The current headcount and its range come from the history (owner, 2026-11-12): the latest point when it is from the last 24 months,
   // the bracket of that number ("75+" by its lower bound). No separate source.
   {
     const cur = currentFromHistory(headcountPoints.map((p) => ({ date: p.date, count: p.count, lowerBound: p.lowerBound, countMax: p.countMax })));
     if (cur) {
+      headcountLowerBoundNow = cur.lowerBound;
       setIfChanged("employee_count", cur.count, row.employee_count);
       setIfChanged("employee_range", cur.range, row.employee_range);
       const from = headcountPoints.find((p) => p.date === cur.date && p.count === cur.count);
@@ -729,7 +732,9 @@ export async function writeCollected(
           for (let i = fieldWrites.length - 1; i >= 0; i--) if (fieldWrites[i].field.replace(/^(profile|metrics)\./, "") === k) fieldWrites.splice(i, 1);
           continue;
         }
-        reportLines.push({ field: fieldOfColumn(k) ?? k, before: rowOf[k] ?? null, after: patch[k], source_url: sourceUrl, quote: fw?.evidence_quote ?? null });
+        // A sector is shown by its name, not by the id the column holds.
+        const shown = k === "sector_id" ? (profile.profile.sector_name ?? patch[k]) : k === "employee_count" && headcountLowerBoundNow ? `${patch[k]}+` : patch[k];
+        reportLines.push({ field: fieldOfColumn(k) ?? k, before: rowOf[k] ?? null, after: shown, source_url: sourceUrl, quote: fw?.evidence_quote ?? null });
       }
     }
     for (const r of plan.inserts) {
@@ -741,7 +746,7 @@ export async function writeCollected(
       const ev = roundFieldEvidence(u.patch, funding.funding_rounds)[0];
       reportLines.push({ field: "round", before: "(on file)", after: `${u.round_type} filled: ${JSON.stringify(u.patch)}`, source_url: ev ? sourceById.get(ev.source_id)?.url ?? null : null, quote: ev?.evidence_quote ?? null });
     }
-    for (const h of headcountPoints) reportLines.push({ field: "headcount_history", before: null, after: `${h.count} on ${h.date} (${h.pointType ?? "observed"})`, source_url: h.sourceUrl ?? null, quote: h.quote ?? null });
+    for (const h of headcountPoints) reportLines.push({ field: "headcount_history", before: null, after: `${h.count}${h.lowerBound ? "+" : ""} on ${h.date} (${h.pointType ?? "observed"}${h.lowerBound ? ", lower bound" : ""})`, source_url: h.sourceUrl ?? null, quote: h.quote ?? null });
     for (const c of reportLines) console.log(`    ${DRY_RUN ? "[DRY] would write" : "✏️  writing"} ${c.field}: ${c.before == null ? "" : `${JSON.stringify(c.before)} → `}${typeof c.after === "string" ? c.after : JSON.stringify(c.after)}  (${c.source_url ?? "no source"})`);
     if (!reportLines.length) console.log("    🟠 nothing to write for the open fields");
   }
