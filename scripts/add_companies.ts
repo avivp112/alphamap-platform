@@ -5,6 +5,7 @@
  *   FILE=companies.csv npx tsx scripts/add_companies.ts                 # dry run: the report, nothing written
  *   FILE=companies.csv DRY_RUN=false npx tsx scripts/add_companies.ts   # adds the new ones
  *   ADD_LINES=27,145 ...   # lines whose name matches a company already there but which are a different company
+ *   SKIP_LINES=291,411 ... # lines not to add, whatever the checks say
  *
  * ADD ONLY. A company already in the database (same website domain; or the same name with another website, which is reported and not added)
  * is left exactly as it is: nothing is reset or overwritten. (scripts/import_startups_list.ts, by contrast, syncs the whole table to a master
@@ -48,6 +49,8 @@ const db = createClient(url, key, { auth: { persistSession: false } });
   // ADD_LINES=27,145: lines of the list whose name matches a company already there but which are a different company: added.
   const addLines = new Set((process.env.ADD_LINES ?? "").split(",").map((x) => Number(x.trim())).filter(Boolean));
   let sorted = sortRows(rows, { hosts, names }, addLines);
+  // SKIP_LINES=291,411: lines the owner decided not to add, whatever the checks say.
+  const skipLines = new Set((process.env.SKIP_LINES ?? "").split(",").map((x) => Number(x.trim())).filter(Boolean));
 
   // A name that matches a company already there: the redirect and the record are checked before the owner is asked (sameCompany.ts).
   // RESOLVE=false skips this. same: not added, the address is proposed as a fix; different: added; unclear: left for the owner.
@@ -64,22 +67,27 @@ const db = createClient(url, key, { auth: { persistSession: false } });
     };
     const cc: Record<string, string> = { br: "Brazil", pl: "Poland", cl: "Chile", co: "Colombia", mx: "Mexico", ar: "Argentina", pe: "Peru", au: "Australia", jp: "Japan", in: "India", uk: "United Kingdom", de: "Germany", fr: "France", il: "Israel", is: "Iceland" };
     for (const s of sorted) {
-      if (s.verdict !== "name_already_in_database" || !s.collidesWith?.id || !s.website) continue;
+      if (s.verdict !== "name_already_in_database" || !s.collidesWith?.id || !s.website || skipLines.has(s.line)) continue;
       const r = await resolveCollision({
         finalHost: async (u) => (await get(u)).host, homepageText: async (u) => (await get(u, { text: true })).body,
         ask: async (req) => { if (!anthropic) return null; const msg = await anthropic.messages.create(requestFor(req, MODEL)); const t = msg.content.find((b) => b.type === "tool_use"); return t && t.type === "tool_use" ? t.input : null; },
         countryHint: (h) => cc[h.split(".").pop() ?? ""] ?? null,
       }, s.collidesWith as DbRecord, s.row.name, s.website);
       if (r.verdict === "different") { s.verdict = "new"; s.note = `another company with the same name (${r.reason})`; }
-      else if (r.verdict === "same") { s.note = `the same company (${r.how}): ${r.reason}`; if (s.collidesWith.website && s.collidesWith.website !== s.website) fixes.push({ id: s.collidesWith.id!, name: s.collidesWith.name, old: s.collidesWith.website, next: s.website, why: r.reason }); }
+      else if (r.verdict === "same") {
+        s.note = `the same company (${r.how}): ${r.reason}`;
+        // An address fix is proposed only when a redirect shows where the sites lead, and it points at that final address; when the database already holds it, nothing.
+        if (r.how === "redirect" && r.canonical && s.collidesWith.website && new URL(s.collidesWith.website).hostname.replace(/^www\./, "") !== new URL(r.canonical).hostname) fixes.push({ id: s.collidesWith.id!, name: s.collidesWith.name, old: s.collidesWith.website, next: r.canonical, why: r.reason });
+      }
       else s.note = `unclear (${r.reason}): the database has "${s.collidesWith.name}" with ${s.collidesWith.website ?? "no website"} (${s.collidesWith.country ?? "no country"})`;
     }
   }
   console.log(`${DRY_RUN ? "DRY RUN — nothing is written.\n" : ""}${summaryOf(sorted).join("\n")}\n`);
   for (const s of sorted.filter((x) => x.verdict !== "new" && x.verdict !== "already_in_database")) console.log(`  line ${String(s.line).padStart(4)}  ${s.row.name.slice(0, 40).padEnd(40)} ${s.verdict}: ${s.note}`);
+  for (const s of sorted) if (skipLines.has(s.line) && s.verdict === "new") { s.verdict = "name_already_in_database"; s.note = "skipped: the owner decided not to add it (SKIP_LINES)"; }
   if (fixes.length) {
     console.log(`\nThe same company under another address (nothing is changed here; to correct the address in the database, run the SQL below after you look):`);
-    for (const f of fixes) console.log(`-- ${f.name}: ${f.old} -> ${f.next}  (${f.why})\nWITH u AS (UPDATE startups SET website = '${f.next}' WHERE id = '${f.id}' AND website = '${f.old}' RETURNING id) INSERT INTO field_changes (startup_id, field, old_value, new_value, source_url) SELECT id, 'website', to_jsonb('${f.old}'::text), to_jsonb('${f.next}'::text), 'owner decision 2026-11-13' FROM u;`);
+    for (const f of fixes) console.log(`-- ${f.name}: ${f.old} -> ${f.next}  (${f.why})\nWITH u AS (UPDATE startups SET website = '${f.next}' WHERE id = '${f.id}' AND website = '${f.old}' AND NOT EXISTS (SELECT 1 FROM startups WHERE website = '${f.next}') RETURNING id) INSERT INTO field_changes (startup_id, field, old_value, new_value, source_url) SELECT id, 'website', to_jsonb('${f.old}'::text), to_jsonb('${f.next}'::text), 'owner decision 2026-11-13' FROM u;`);
   }
   const fresh = sorted.filter((s) => s.verdict === "new");
   const ids = new Map<string, string>();

@@ -9,7 +9,7 @@ import { registrable } from "./addCompanies.ts";
 
 export interface DbRecord { id: string; name: string; website: string | null; country: string | null; city: string | null; industry: string | null; description: string | null }
 export type SameVerdict = "same" | "different" | "unclear";
-export interface SameResult { verdict: SameVerdict; how: "redirect" | "model" | "none"; reason: string }
+export interface SameResult { verdict: SameVerdict; how: "redirect" | "model" | "none"; reason: string; /** The address the sites lead to (https://host, no www), when a redirect showed it. */ canonical?: string }
 
 /** The two final addresses are one site: the same host, or the same registrable domain. */
 export function sameSite(hostA: string | null, hostB: string | null): boolean {
@@ -66,7 +66,8 @@ export async function resolveCollision(deps: SameDeps, db: DbRecord, listName: s
   const listHost = new URL(listSite).hostname, dbHost = db.website ? new URL(db.website).hostname : null;
   // One address leads to the other's site: the same company under a new address.
   if (sameSite(finalList, dbHost) || sameSite(finalDb, listHost) || (finalList && finalDb && sameSite(finalList, finalDb))) {
-    return { verdict: "same", how: "redirect", reason: `${listHost} and ${dbHost} lead to one site (${finalList ?? finalDb})` };
+    const final = (finalList ?? finalDb)!.toLowerCase().replace(/^www\./, "");
+    return { verdict: "same", how: "redirect", reason: `${listHost} and ${dbHost} lead to one site (${final})`, canonical: `https://${final}` };
   }
   const homepage = await deps.homepageText(listSite);
   const r = parseSameCompany(await deps.ask(buildSameCompanyRequest(db, listName, listSite, homepage, deps.countryHint(listHost))));
