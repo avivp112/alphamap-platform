@@ -118,3 +118,16 @@ describe("Vertical SaaS is a tag, not the main sub-sector (owner, 2026-11-12: Sa
     expect(stuck?.sub_sector_names).toContain("Vertical SaaS");
   });
 });
+
+import { buildSectorRequest as buildReq, NO_CUSTOMERS_NOTE } from "./classifySector";
+describe("a description with a 'what' and no 'for whom' (owner, 2026-11-14: Posteo)", () => {
+  const tax = { parentNames: ["Enterprise Software", "Consumer & Media"], subNames: ["Productivity & Collaboration", "Consumer / General"] };
+  it("tells the classifier not to assume business customers", () => {
+    const text = buildReq("Posteo", "Posteo sells secure email accounts that include an address book, calendar and notes.", tax, undefined, { noCustomers: true }).messages[0].content;
+    expect(text).toContain(NO_CUSTOMERS_NOTE);
+    expect(text).toContain("do not assume business customers");
+  });
+  it("says nothing of it when the description names its buyers", () => {
+    expect(buildReq("Posteo", "x", tax).messages[0].content).not.toContain(NO_CUSTOMERS_NOTE);
+  });
+});

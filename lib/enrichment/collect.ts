@@ -38,6 +38,7 @@ import { buildDescriptionRequest, descriptionSources, processDescription } from 
 import { buildBackgroundRequest, processBackgroundResponse, backgroundSearchQuery, founderSearchQuery } from "./founderBackground.ts";
 import { requestFor } from "./models.ts";
 import { rejectedDomains, describeRejected } from "./rejectedDomains.ts";
+import { classifyUnknownDomains } from "./domainClassify.ts";
 import { judgeArticleEntity, countryOfHost, type CompanyProfileForMatch } from "./articleEntity.ts";
 import { judgeMarketPeers, type PeerClaim, type PeerFacts, type buildPeerComparisonRequest } from "./marketComparison.ts";
 import { isDataPlatformUrl } from "./dataPlatforms.ts";
@@ -524,6 +525,22 @@ export async function collectCompany(
   ctx.onStage?.("extracting");
   let allSources: LabeledSource[] = buildLabeledSources(usableResults, domain);
   markCompanyLinkedFiles(allSources, websitePages);
+  // A domain on no list is classified once (domainClass.ts): outlets and wires become tier 4, directories and blogs are blocked. Run again when sources are added.
+  const classifyDomains = async () => {
+    try {
+      const n = await classifyUnknownDomains(allSources, {
+        isCompanySite: (u) => classifySourceType(u, domain) === "company_site",
+        ask: async (request) => {
+          const msg = await ctx.anthropic.messages.create(requestFor(request, ctx.models.enrich));
+          ctx.recordCost(ctx.models.enrich, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheReadTokens: 0, cacheWriteTokens: 0 } as never);
+          const tool = msg.content.find((b) => b.type === "tool_use");
+          return tool && tool.type === "tool_use" ? tool.input : null;
+        },
+      });
+      if (n) console.log(`    🌐  ${n} new source domain(s) classified (domain_classes_new.csv)`);
+    } catch (e) { console.log(`    ⚠️  domain classification skipped: ${(e as Error).message}`); }
+  };
+  await classifyDomains();
   const shared = (kind: ExtractionKind) => buildSharedExtractionRequest(kind, row.name, allSources, { taxonomy });
   const profileOutcome = await extractProfile(row.name, allSources, { client: ctx.anthropic, model: ctx.models.profile, taxonomy, request: shared("profile") });
   if (!profileOutcome) {
@@ -1236,6 +1253,7 @@ export async function collectCompany(
     (profile.profile as Record<string, unknown>)[key] = undefined;
   }
 
+  await classifyDomains();
   // ── The allowed sources apply to every field (owner, 2026-11-02): the company's own site or
   // release, a register, the press of tiers 1–3 (rounds: 1–4, roundSources.ts). LinkedIn,
   // data platforms and unlisted sites are never the source of a written value.
@@ -1618,17 +1636,23 @@ export async function collectCompany(
         const msg = await ctx.anthropic.messages.create(requestFor(buildDescriptionRequest(row.name, usable), ctx.models.profile));
         ctx.recordCost(ctx.models.profile, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 });
         const tool = msg.content.find((b) => b.type === "tool_use");
+        const returned = tool && tool.type === "tool_use" && Array.isArray((tool.input as { sentences?: unknown[] }).sentences) ? (tool.input as { sentences: Array<{ role: string }> }).sentences.map((x) => x.role) : [];
         const built = tool && tool.type === "tool_use" ? processDescription(tool.input, row.name, Object.fromEntries(usable.map((x) => [x.source_id, x])), (id) => allowedFact({ source_id: id })) : null;
         for (const d of built?.dropped ?? []) { console.log(`    🚫  description sentence dropped (${d.why}): "${d.text.slice(0, 90)}"`); bump(stats.droppedByReason, `description_${d.why.split(":")[0]}`); }
         if (built) {
           profile.profile.description = built.description;
           profile.profile.description_source_ids = [...new Set(built.sentences.flatMap((x) => x.source_ids))];
           profile.profile.description_sentences = built.sentences;
-          console.log(`    📝  Description (v2): ${built.sentences.length} sentence(s) — ${built.description.slice(0, 120)}…`);
+          profile.profile.description_complete = built.complete;
+          console.log(`    📝  Description (v2): ${built.sentences.length} sentence(s)${built.complete ? "" : " (what only: no source says who buys it)"} — ${built.description.slice(0, 120)}…`);
+          if (!built.complete) bump(stats.droppedByReason, "description_what_only");
         } else {
-          console.log(`    📝  Description (v2): no verified "what" and "for whom" — none written${before ? " (the extraction's free text is not used)" : ""}.`);
+          console.log(`    📝  Description (v2): no verified "what" — none written${before ? " (the extraction's free text is not used)" : ""}. Sources given: ${usable.length} (${usable.filter((x) => x.source_type === "company_site").length} of the company's own site, ${usable.filter((x) => x.source_type === "company_site").reduce((n, x) => n + (x.content?.length ?? 0), 0)} characters); the model returned ${returned.length ? returned.join("+") : "no sentences"}.`);
           bump(stats.droppedByReason, "description_not_verified");
         }
+      } else {
+        console.log(`    📝  Description (v2): no allowed source to describe the company from (${allSources.length} sources read, none allowed).`);
+        bump(stats.droppedByReason, "description_no_allowed_source");
       }
     } catch (e) {
       console.log(`    ⚠️  description skipped: ${(e as Error).message}`);
@@ -1648,7 +1672,7 @@ export async function collectCompany(
     try {
       const descText = profile.profile.description_sentences.map((x) => x.text).join(" ");
       const classify = async (feedback?: string): Promise<SectorChoice | null> => {
-        const msg = await ctx.anthropic.messages.create(requestFor(buildSectorRequest(row.name, descText, taxonomy, feedback), ctx.models.enrich));
+        const msg = await ctx.anthropic.messages.create(requestFor(buildSectorRequest(row.name, descText, taxonomy, feedback, { noCustomers: profile.profile.description_complete === false }), ctx.models.enrich));
         ctx.recordCost(ctx.models.enrich, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 });
         const tool = msg.content.find((b) => b.type === "tool_use");
         return tool && tool.type === "tool_use" ? parseSectorChoice(tool.input, taxonomy) : null;

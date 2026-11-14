@@ -20,7 +20,7 @@
  */
 
 import { normalizeForMatch, extractNumbersFromText, parseFullDate, dateFromUrl } from "./evidence";
-import { investorNamesMatch, normalizeRoundType, type RoundLike } from "./rounds";
+import { investorNamesMatch, normalizeRoundType, refineRoundType, type RoundLike } from "./rounds";
 import { termAppearsIn, normalizeUrlForMatch, type V2MarketExtraction, type V2NewsItem } from "./extractMarket";
 import { namesCompany } from "./headcount";
 import type { V2Round, V2FundingExtraction } from "./extractFunding";
@@ -180,7 +180,8 @@ export function groundRoundType(round: V2Round, sources: LabeledSource[]): { rou
   if (type === "Unknown" || type === "Other") {
     const named = statedRoundLabels(amountSentenceAndHeadline(round, byId));
     if (named.length === 1) return { round_type: named[0], stated: true };
-    return { round_type: type, stated: true };
+    // "Other" is a type a source names (strategic, crowdfunding, a token sale…); a round whose sources do not say what kind it is, is Unknown (owner, 2026-11-14: KrillTech, Hydrostor).
+    return { round_type: refineRoundType(type, evidence), stated: true };
   }
   // The amount's own sentence or headline names another round: that one
   // (owner, 2026-11-01 — Forbes' "Synthesia raises $50 million in Series B"

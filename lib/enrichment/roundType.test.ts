@@ -30,7 +30,9 @@ describe("a round's type must be stated (run of 2026-10-26)", () => {
     expect(groundRoundType({ round_type: "Debt", amount_raised: ev(169_000_000, "S3", "BETA secured a $169 million loan") }, [debt]).round_type).toBe("Debt");
   });
 
-  it("leaves Unknown and Other as they are", () => {
-    expect(groundRoundType({ round_type: "Other" }, []).round_type).toBe("Other");
+  it("an Other no source names a kind of is Unknown (owner, 2026-11-14: KrillTech, Hydrostor); one a source names stays Other", () => {
+    expect(groundRoundType({ round_type: "Other" }, []).round_type).toBe("Unknown");
+    const r = { round_type: "Other", amount_raised: { value: 7e6, source_id: "S1", evidence_quote: "a strategic investment of $7M" } } as never;
+    expect(groundRoundType(r, [{ source_id: "S1", url: "https://x.com/a", content: "a strategic investment of $7M" }] as never).round_type).toBe("Other");
   });
 });

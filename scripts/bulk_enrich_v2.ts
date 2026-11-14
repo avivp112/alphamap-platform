@@ -60,6 +60,7 @@ import { assertEnrichmentWritesAllowed, PILOT_FIELDS } from "../lib/enrichment/w
 import { openFieldNames } from "../lib/enrichment/fieldReview.ts";
 import { writeFileSync, mkdirSync, readdirSync } from "fs";
 import { rejectedDomains, rejectedDomainsCsv } from "../lib/enrichment/rejectedDomains.ts";
+import { domainClasses, domainClassesCsv } from "../lib/enrichment/domainClass.ts";
 import { numberValues, renderBatchReport, batchCsv } from "../lib/enrichment/batchReport.ts";
 import type { RoundHint } from "../lib/enrichment/hints.ts";
 // ── Configuration (ground rule 3: same env vars as v1) ──────────────────
@@ -545,6 +546,10 @@ async function main() {
   if (rejectedDomains.size && !process.env.VITEST) {
     writeFileSync("rejected_domains.csv", rejectedDomainsCsv(rejectedDomains.rows_()));
     console.log(`📋  ${rejectedDomains.size} source domain/field pair(s) turned away as not on the allowed list, in rejected_domains.csv.`);
+  }
+  if (domainClasses.newThisRun().length && !process.env.VITEST) {
+    writeFileSync("domain_classes_new.csv", domainClassesCsv(domainClasses.newThisRun()));
+    console.log(`📋  ${domainClasses.newThisRun().length} source domain(s) classified for the first time, for your check, in domain_classes_new.csv.`);
   }
   if (websiteRows.length && !process.env.VITEST) {
     const wcols = ["company_id", "company", "website", "reason", "detail"];

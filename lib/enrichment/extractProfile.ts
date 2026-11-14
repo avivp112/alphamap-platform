@@ -154,6 +154,8 @@ export interface V2Profile {
   website?: EvidencedValue<string>;
   description?: string;
   description_source_ids?: string[];
+  /** false when the description is a verified "what" only (no source says who buys it). */
+  description_complete?: boolean;
   /** v2's own description, sentence by sentence with the sources behind each (descriptionBuilder.ts). */
   description_sentences?: Array<{ role: string; text: string; source_ids: string[]; quote: string }>;
   value_proposition?: string;

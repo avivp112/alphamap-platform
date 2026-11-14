@@ -177,5 +177,13 @@
     "description": "AIVF develops AI-powered IVF solutions, including an AI platform that grades embryos and provides insights on embryo quality. AIVF sells its solutions to IVF clinics, embryology labs, clinicians and embryologists.",
     "expect": "Health & Life Sciences › MedTech",
     "was": "Health & Life Sciences › Healthcare SaaS / Digital Health (rejudge 2026-11-12)"
+  },
+  {
+    "company": "Posteo",
+    "description": "Posteo sells secure email accounts that include an address book, calendar and notes, with encryption that can be switched on.",
+    "expect": "Consumer & Media › Consumer / General",
+    "was": "Enterprise Software › Productivity & Collaboration",
+    "note": "owner 2026-11-14: what-only description; sold to private persons, not to businesses",
+    "noCustomers": true
   }
 ]

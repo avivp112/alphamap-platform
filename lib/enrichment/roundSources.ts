@@ -25,6 +25,7 @@
  */
 
 import { isDataPlatformUrl, LISTING_SITES } from "./dataPlatforms";
+import { domainClasses, standingOfClass } from "./domainClass";
 import { isRegionalWireHost } from "./primarySources";
 
 export type SourceTier = 1 | 2 | 3 | 4;
@@ -262,8 +263,17 @@ export type SourceStanding =
  * eu-startups.com/directory/docplanner) — never a source, even on an allowed outlet.
  */
 const NOT_ARTICLE_PATH = /\/(?:directory|directories|company-directory|startup-directory|company-profile|profiles?|rankings?)(?:\/|$)|\/(?:companies|company|startups?|organi[sz]ations?)\/[^/]+\/?$/i;
+/** The last path segment reads like an article's (a file with an extension, an id of six digits, or a slug of four or more words), not a company's name. */
+const articleSlug = (path: string): boolean => {
+  const last = path.split("/").filter(Boolean).pop() ?? "";
+  return /\.(html?|cms|ece|php|aspx?|article)$/i.test(last) || /\d{6,}/.test(last) || last.split("-").length >= 5;
+};
 export function isDirectoryPage(url: string): boolean {
-  try { return NOT_ARTICLE_PATH.test(new URL(url.startsWith("http") ? url : `https://${url}`).pathname); } catch { return false; }
+  try {
+    const path = new URL(url.startsWith("http") ? url : `https://${url}`).pathname;
+    // moneycontrol.com/news/business/companies/<a-long-headline>.html is an article under a "companies" section, not a directory page.
+    return NOT_ARTICLE_PATH.test(path) && !articleSlug(path);
+  } catch { return false; }
 }
 
 /**
@@ -311,6 +321,11 @@ export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean
   if (onList(host, TIER4_DOMAINS)) return { kind: "allowed", tier: 4, lowConfidence: true, why: "tier4_press" };
   // Tier 1 for the event itself; the profile's fields take it as tier 2 (profileSourceAllowed).
   if (isPartyRelease(url, opts.headline)) return { kind: "allowed", tier: 1, lowConfidence: false, why: "party_release" };
+  // A domain on no list that was classified once (domainClass.ts): outlets and wires are tier 4, the weakest; directories, blogs and other
+  // companies' own sites are blocked; an investor follows the investor rule above.
+  const cls = domainClasses.get(url);
+  const auto = cls ? standingOfClass(cls.class) : null;
+  if (auto) return auto;
   return { kind: "unlisted", domain: reviewDomain(url) ?? host };
 }
 
