@@ -94,6 +94,14 @@ export interface WriteContext {
 }
 
 /** One field of a pilot: what is on file, what the run writes, and its source. */
+/** A round's date as far as its source states it: a year-only round shows the year, not 1 January (owner, 2026-11-14: KrillTech's "2024-01-01"). */
+export function dateByPrecision(date: string | null | undefined, precision: "day" | "month" | "year" | null | undefined): string {
+  if (!date) return "no date";
+  if (precision === "year") return `${date.slice(0, 4)} (year only)`;
+  if (precision === "month") return `${date.slice(0, 7)} (month only)`;
+  return date;
+}
+
 export interface PilotChange { field: string; before: unknown; after: unknown; source_url: string | null; quote: string | null }
 
 /** The run totals Stage 10 adds to (the bulk run's RunSummary has these). */
@@ -740,13 +748,16 @@ export async function writeCollected(
     }
     for (const r of plan.inserts) {
       const amount = r.amount_raised == null ? "amount not disclosed" : `$${+(r.amount_raised / 1e6).toFixed(1)}M`;
-      reportLines.push({ field: "round", before: null, after: `${r.round_type} ${amount} · ${r.announcement_date ?? "no date"}${r.lead_investor ? ` · lead ${r.lead_investor}` : ""}`, source_url: r.source_url ?? null, quote: null });
+      reportLines.push({ field: "round", before: null, after: `${r.round_type} ${amount} · ${dateByPrecision(r.announcement_date, r.announcement_date_precision)}${r.lead_investor ? ` · lead ${r.lead_investor}` : ""}`, source_url: r.source_url ?? null, quote: null });
     }
     for (const u of plan.updates) {
       // A filled round field shows the source of the evidence it was filled from (it had "no source" in the report; the provenance row had it all along).
       const ev = roundFieldEvidence(u.patch, funding.funding_rounds)[0];
       reportLines.push({ field: "round", before: "(on file)", after: `${u.round_type} filled: ${JSON.stringify(u.patch)}`, source_url: ev ? sourceById.get(ev.source_id)?.url ?? null : null, quote: ev?.evidence_quote ?? null });
     }
+    // Tags (sub-sector tags): one line, with the sentence of an allowed page that carries the first (they were never in the report: "tags 0").
+    if (tagSectorIds.length > 0) reportLines.push({ field: "tags", before: null, after: tagNames.join(", "), source_url: sourceById.get(supported.kept[0]?.id ?? "")?.url ?? null, quote: supported.kept[0]?.quote ?? null });
+    else if (tagNames.length > 0) console.log(`    ⏸️   tags held back — field not open: ${tagNames.join(", ")}`);
     for (const h of headcountPoints) reportLines.push({ field: "headcount_history", before: null, after: `${h.count}${h.lowerBound ? "+" : ""} on ${h.date} (${h.pointType ?? "observed"}${h.lowerBound ? ", lower bound" : ""})`, source_url: h.sourceUrl ?? null, quote: h.quote ?? null });
     for (const c of reportLines) console.log(`    ${DRY_RUN ? "[DRY] would write" : "✏️  writing"} ${c.field}: ${c.before == null ? "" : `${JSON.stringify(c.before)} → `}${typeof c.after === "string" ? c.after : JSON.stringify(c.after)}  (${c.source_url ?? "no source"})`);
     if (!reportLines.length) console.log("    🟠 nothing to write for the open fields");

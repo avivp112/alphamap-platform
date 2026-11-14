@@ -38,6 +38,7 @@ import { profileSourceAllowed, roundSourceStanding } from "../lib/enrichment/rou
 import { capPerCompany, PER_COMPANY } from "../lib/enrichment/fieldReview.ts";
 import { majorPressNote } from "../lib/enrichment/unlistedDomains.ts";
 import { rejectedDomains, rejectedDomainsCsv } from "../lib/enrichment/rejectedDomains.ts";
+import { domainClasses, domainClassesCsv } from "../lib/enrichment/domainClass.ts";
 import { definitionLines } from "../lib/enrichment/reviewDefinitions.ts";
 import { makePeerLookup } from "../lib/enrichment/peerLookup.ts";
 import { coverageReport, type CompetitorLists } from "../lib/enrichment/competitorCoverage.ts";
@@ -202,6 +203,10 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
   if (rejectedDomains.size) {
     writeFileSync(join(DIR, `run_${runNo}_rejected_domains.csv`), rejectedDomainsCsv(rejectedDomains.rows_()));
     console.log(`📋  ${rejectedDomains.size} source domain/field pair(s) turned away as not on the allowed list: ${join(DIR, `run_${runNo}_rejected_domains.csv`)}`);
+  }
+  if (domainClasses.newThisRun().length) {
+    writeFileSync(join(DIR, `run_${runNo}_domain_classes_new.csv`), domainClassesCsv(domainClasses.newThisRun()));
+    console.log(`📋  ${domainClasses.newThisRun().length} source domain(s) classified for the first time: ${join(DIR, `run_${runNo}_domain_classes_new.csv`)}`);
   }
   if (unlistedSeen.size) {
     console.log(`Unlisted source domains this run (${unlistedSeen.size}): ${[...unlistedSeen.keys()].slice(0, 12).join(", ")}${unlistedSeen.size > 12 ? ", …" : ""}`);

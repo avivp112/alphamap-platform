@@ -27,14 +27,31 @@ if (!existsSync(report)) { console.error(`${report} not found`); process.exit(1)
 const [head, ...body] = parseCsv(readFileSync(report, "utf8"));
 const ci = (n: string) => head.indexOf(n);
 const wrote = new Map<string, Set<string>>();     // field -> companies with a value
-const companies = new Map<string, string>();      // id -> name
-for (const r of body) { const id = r[ci("company_id")], f = r[ci("field")]; if (!id || !f) continue; companies.set(id, r[ci("company")]); (wrote.get(f) ?? wrote.set(f, new Set()).get(f)!).add(id); }
+const companies = new Map<string, string>();      // id -> name (companies with at least one value)
+const names = new Map<string, string>();
+const nothing = new Set<string>();   // enriched, but no value to write ("(nothing)" rows)
+for (const r of body) {
+  const id = r[ci("company_id")], f = r[ci("field")]; if (!id || !f) continue;
+  if (f === "(nothing)") { nothing.add(id); names.set(id, r[ci("company")]); continue; }
+  companies.set(id, r[ci("company")]); (wrote.get(f) ?? wrote.set(f, new Set()).get(f)!).add(id);
+  if (!names.has(id)) names.set(id, r[ci("company")]);
+}
 const notEnriched = new Set<string>();
 if (existsSync("not_enriched.csv")) for (const r of parseCsv(readFileSync("not_enriched.csv", "utf8")).slice(1)) { notEnriched.add(r[0]); }
-const processed = companies.size + [...notEnriched].filter((n) => ![...companies.values()].includes(n)).length;
-const enriched = companies.size;
-console.log(`Processed ${processed} · with at least one value ${enriched} · not enriched ${notEnriched.size}\n`);
+const processed = companies.size + nothing.size + notEnriched.size;
+const enriched = companies.size + nothing.size;   // got through the checks; some have nothing to write
+console.log(`Processed ${processed} · enriched ${enriched} (with at least one value ${companies.size}, nothing to write ${nothing.size}) · not enriched ${notEnriched.size}\n`);
+const KEY = ["description", "sector", "tags", "hq_city", "hq_country", "founded_year", "founder", "leader", "office", "employee_count", "news", "round"];
 console.log(`${"field".padEnd(24)} ${"companies".padStart(9)} ${"of processed".padStart(13)} ${"of enriched".padStart(12)}`);
+for (const f of KEY.filter((k) => !wrote.has(k))) console.log(`${f.padEnd(24)} ${"0".padStart(9)} ${"0%".padStart(13)} ${"0%".padStart(12)}`);
 for (const [f, set] of [...wrote.entries()].sort((a, b) => b[1].size - a[1].size)) {
   console.log(`${f.padEnd(24)} ${String(set.size).padStart(9)} ${(Math.round(1000 * set.size / processed) / 10 + "%").padStart(13)} ${(Math.round(1000 * set.size / Math.max(1, enriched)) / 10 + "%").padStart(12)}`);
+}
+
+// Which key fields each company lacks (so a gap can be traced to the company, not just counted).
+console.log("\nKey fields missing, by company (enriched companies only):");
+for (const [id, name] of names.entries()) {
+  const has = (f: string) => wrote.get(f)?.has(id);
+  const lacks = ["description", "sector", "tags", "hq_city", "founder"].filter((f) => !has(f));
+  if (lacks.length) console.log(`  ${String(name).padEnd(26)} lacks: ${lacks.join(", ")}`);
 }

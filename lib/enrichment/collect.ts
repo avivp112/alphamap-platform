@@ -38,6 +38,7 @@ import { buildDescriptionRequest, descriptionSources, processDescription } from 
 import { buildBackgroundRequest, processBackgroundResponse, backgroundSearchQuery, founderSearchQuery } from "./founderBackground.ts";
 import { requestFor } from "./models.ts";
 import { rejectedDomains, describeRejected } from "./rejectedDomains.ts";
+import { classifyUnknownDomains } from "./domainClassify.ts";
 import { judgeArticleEntity, countryOfHost, type CompanyProfileForMatch } from "./articleEntity.ts";
 import { judgeMarketPeers, type PeerClaim, type PeerFacts, type buildPeerComparisonRequest } from "./marketComparison.ts";
 import { isDataPlatformUrl } from "./dataPlatforms.ts";
@@ -524,6 +525,22 @@ export async function collectCompany(
   ctx.onStage?.("extracting");
   let allSources: LabeledSource[] = buildLabeledSources(usableResults, domain);
   markCompanyLinkedFiles(allSources, websitePages);
+  // A domain on no list is classified once (domainClass.ts): outlets and wires become tier 4, directories and blogs are blocked. Run again when sources are added.
+  const classifyDomains = async () => {
+    try {
+      const n = await classifyUnknownDomains(allSources, {
+        isCompanySite: (u) => classifySourceType(u, domain) === "company_site",
+        ask: async (request) => {
+          const msg = await ctx.anthropic.messages.create(requestFor(request, ctx.models.enrich));
+          ctx.recordCost(ctx.models.enrich, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheReadTokens: 0, cacheWriteTokens: 0 } as never);
+          const tool = msg.content.find((b) => b.type === "tool_use");
+          return tool && tool.type === "tool_use" ? tool.input : null;
+        },
+      });
+      if (n) console.log(`    🌐  ${n} new source domain(s) classified (domain_classes_new.csv)`);
+    } catch (e) { console.log(`    ⚠️  domain classification skipped: ${(e as Error).message}`); }
+  };
+  await classifyDomains();
   const shared = (kind: ExtractionKind) => buildSharedExtractionRequest(kind, row.name, allSources, { taxonomy });
   const profileOutcome = await extractProfile(row.name, allSources, { client: ctx.anthropic, model: ctx.models.profile, taxonomy, request: shared("profile") });
   if (!profileOutcome) {
@@ -1236,6 +1253,7 @@ export async function collectCompany(
     (profile.profile as Record<string, unknown>)[key] = undefined;
   }
 
+  await classifyDomains();
   // ── The allowed sources apply to every field (owner, 2026-11-02): the company's own site or
   // release, a register, the press of tiers 1–3 (rounds: 1–4, roundSources.ts). LinkedIn,
   // data platforms and unlisted sites are never the source of a written value.
