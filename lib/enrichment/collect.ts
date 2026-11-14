@@ -37,6 +37,7 @@ import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDa
 import { buildDescriptionRequest, descriptionSources, processDescription } from "./descriptionBuilder.ts";
 import { buildBackgroundRequest, processBackgroundResponse, backgroundSearchQuery, founderSearchQuery } from "./founderBackground.ts";
 import { requestFor } from "./models.ts";
+import { rejectedDomains, describeRejected } from "./rejectedDomains.ts";
 import { judgeArticleEntity, countryOfHost, type CompanyProfileForMatch } from "./articleEntity.ts";
 import { judgeMarketPeers, type PeerClaim, type PeerFacts, type buildPeerComparisonRequest } from "./marketComparison.ts";
 import { isDataPlatformUrl } from "./dataPlatforms.ts";
@@ -876,7 +877,7 @@ export async function collectCompany(
       platformOnly.push(r);
       // An unlisted domain goes to the owner's review list (roundSources.ts).
       for (const s of roundSourceStandings(r, allSources, row.name)) {
-        if (s.kind === "unlisted") unlistedDomains.push({ domain: s.domain, url: s.url });
+        if (s.kind === "unlisted") { unlistedDomains.push({ domain: s.domain, url: s.url }); rejectedDomains.note("round", s.url, `${r.round_type ?? "round"}`); }
       }
       if (why === "round_source_not_listed") bump(stats.droppedByReason, why);
       return false;
@@ -1230,6 +1231,7 @@ export async function collectCompany(
     }
     if (s && profileSourceAllowed(s, row.name)) continue;
     console.log(`    🚫  ${key} ${JSON.stringify(f.value)} not written — its source is not on the allowed list: ${s?.url ?? f.source_id}`);
+    rejectedDomains.note(key, s?.url, `${key} ${JSON.stringify(f.value)}`);
     bump(stats.droppedByReason, "profile_source_not_listed");
     (profile.profile as Record<string, unknown>)[key] = undefined;
   }
@@ -1239,7 +1241,7 @@ export async function collectCompany(
   // data platforms and unlisted sites are never the source of a written value.
   {
     const allowedId = (id?: string | null) => { const src = id ? sourceById.get(id) : undefined; return !!src && profileSourceAllowed(src, row.name); };
-    const drop = (what: string, reason: string, url?: string) => { console.log(`    🚫  ${what} not written — ${url ? `its source is not on the allowed list: ${url}` : "no allowed source"}`); bump(stats.droppedByReason, reason); };
+    const drop = (what: string, reason: string, url?: string) => { console.log(`    🚫  ${what} not written — ${url ? `its source is not on the allowed list: ${url}` : "no allowed source"}`); if (url) { const d = describeRejected(what); rejectedDomains.note(d.field, url, d.title); } bump(stats.droppedByReason, reason); };
     // Size: employee count and range.
     for (const key of ["employee_range", "employee_count"] as const) {
       const v = profile.metrics[key] as { value: unknown; source_id: string } | undefined;

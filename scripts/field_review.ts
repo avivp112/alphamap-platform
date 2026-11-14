@@ -37,6 +37,7 @@ import { buildProfile } from "../worker/profile.ts";
 import { profileSourceAllowed, roundSourceStanding } from "../lib/enrichment/roundSources.ts";
 import { capPerCompany, PER_COMPANY } from "../lib/enrichment/fieldReview.ts";
 import { majorPressNote } from "../lib/enrichment/unlistedDomains.ts";
+import { rejectedDomains, rejectedDomainsCsv } from "../lib/enrichment/rejectedDomains.ts";
 import { definitionLines } from "../lib/enrichment/reviewDefinitions.ts";
 import { makePeerLookup } from "../lib/enrichment/peerLookup.ts";
 import { coverageReport, type CompetitorLists } from "../lib/enrichment/competitorCoverage.ts";
@@ -198,6 +199,10 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
   const per = REVIEW_FIELDS.map((f) => `${f} ${values.filter((v) => v.field === f).length}`).join(" · ");
   console.log(`\n${"═".repeat(62)}\nWould be written: ${values.length} value(s) — ${per}`);
   // The leaders' title rule (owner, 2026-11-03): how much it costs.
+  if (rejectedDomains.size) {
+    writeFileSync(join(DIR, `run_${runNo}_rejected_domains.csv`), rejectedDomainsCsv(rejectedDomains.rows_()));
+    console.log(`📋  ${rejectedDomains.size} source domain/field pair(s) turned away as not on the allowed list: ${join(DIR, `run_${runNo}_rejected_domains.csv`)}`);
+  }
   if (unlistedSeen.size) {
     console.log(`Unlisted source domains this run (${unlistedSeen.size}): ${[...unlistedSeen.keys()].slice(0, 12).join(", ")}${unlistedSeen.size > 12 ? ", …" : ""}`);
     const press = majorPressNote([...unlistedSeen.keys()]);

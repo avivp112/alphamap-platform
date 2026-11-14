@@ -59,6 +59,7 @@ import { websiteDomain, type DomainOwner } from "../lib/enrichment/websiteValida
 import { assertEnrichmentWritesAllowed, PILOT_FIELDS } from "../lib/enrichment/writeGate.ts";
 import { openFieldNames } from "../lib/enrichment/fieldReview.ts";
 import { writeFileSync, mkdirSync, readdirSync } from "fs";
+import { rejectedDomains, rejectedDomainsCsv } from "../lib/enrichment/rejectedDomains.ts";
 import { numberValues, renderBatchReport, batchCsv } from "../lib/enrichment/batchReport.ts";
 import type { RoundHint } from "../lib/enrichment/hints.ts";
 // ── Configuration (ground rule 3: same env vars as v1) ──────────────────
@@ -540,6 +541,10 @@ async function main() {
     const ncell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
     writeFileSync("not_enriched.csv", "\uFEFF" + ["company,website,why,detail", ...notEnrichedRows.map((r) => [r.company, r.website, r.why, r.detail].map(ncell).join(","))].join("\r\n") + "\r\n");
     console.log(`📋  ${notEnrichedRows.length} company(ies) not enriched, with the reason, in not_enriched.csv.`);
+  }
+  if (rejectedDomains.size && !process.env.VITEST) {
+    writeFileSync("rejected_domains.csv", rejectedDomainsCsv(rejectedDomains.rows_()));
+    console.log(`📋  ${rejectedDomains.size} source domain/field pair(s) turned away as not on the allowed list, in rejected_domains.csv.`);
   }
   if (websiteRows.length && !process.env.VITEST) {
     const wcols = ["company_id", "company", "website", "reason", "detail"];
