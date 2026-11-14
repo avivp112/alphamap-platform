@@ -67,6 +67,7 @@ export const TIER3_DOMAINS = [
   "afr.com", "smartcompany.com.au", "startupdaily.net", "betakit.com", "theglobeandmail.com",
   // United States, regional
   "geekwire.com", // owner, 2026-11-03
+  "observer.com", "bizjournals.com", // owner, 2026-11-14 (regional / general press)
   // Technology, its regional editions too (au.pcmag.com…) — owner, 2026-11-03
   "pcmag.com",
   // Owner, 2026-11-03 (rejected-domains table, runs 1–2)
@@ -91,6 +92,7 @@ export const TIER4_DOMAINS = [
   "nosh.com", "gameworldobserver.com", "channele2e.com", "pymnts.com", "venturecapitaljournal.com",
   "phocuswire.com", "constructiondive.com", "datacenterdynamics.com", "gamedeveloper.com", "wealthmanagement.com",
   "siliconrepublic.com", // owner, 2026-11-14: professional press, not national (tier 2 stays for the leading national and financial press)
+  "pocketgamer.biz", "mcvuk.com", "vehicle-electronics.biz", "hpcwire.com", "computerweekly.com", // owner, 2026-11-14 (trade press)
   "financemagnates.com", "fxnewsgroup.com", "defensedaily.com", "electronicsweekly.com", "paymentsdive.com", "industrialcyber.co",
   "roboticsandautomationnews.com", "globalaginvesting.com", "decrypt.co",
   // Owner, 2026-11-05
@@ -106,6 +108,7 @@ export const LOW_CONFIDENCE_DOMAINS = ["einpresswire.com", "accesswire.com", "ne
 /** Never a source for a round, beside every data platform (dataPlatforms.ts). */
 export const DENIED_DOMAINS = [
   // Aggregators of "alternatives" and review / comparison listings (owner, 2026-11-14: bouncewatch.com) — the listing sites of dataPlatforms.ts too
+  "contentgrip.com", "marktechpost.com", "yespress.io", "lounge.ai", "ai-market-watch.com", // owner, 2026-11-14 (rewriting blogs, paid PR distribution, company directories)
   "bouncewatch.com", "slant.co", "toolify.ai", "futurepedia.io", "theresanaiforthat.com", "topai.tools", "aitools.fyi", "siftery.com",
   ...LISTING_SITES,
   // Encyclopedias
