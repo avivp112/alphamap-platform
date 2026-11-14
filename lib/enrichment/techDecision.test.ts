@@ -23,6 +23,9 @@ describe("one technology decision from the early check and the profile call", ()
     expect(techDecision(null, { is_tech_company: false, tech_decision: "cannot_tell" }, false)).toBe("undetermined");
     expect(techDecision(gate({ enough_information: false }), { is_tech_company: true }, false)).toBe("undetermined");
   });
+  it("a no with nothing known about the company is undetermined, not a rejection", () => {
+    expect(techDecision(null, { is_tech_company: false }, false)).toBe("undetermined");
+  });
   it("a company the early check did not run for follows the profile call", () => {
     expect(techDecision(null, { is_tech_company: true }, true)).toBe("proceed");
     expect(techDecision(null, { is_tech_company: false }, true)).toBe("reject");

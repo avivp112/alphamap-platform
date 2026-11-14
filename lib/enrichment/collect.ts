@@ -562,7 +562,7 @@ export async function collectCompany(
     }
     if (decision === "reject") {
       console.log("    🚫  REJECTED — not a technology-driven company");
-      return { outcome: "rejected", reason: "not_technology", detail: `profile: ${profile.tech_reason ?? "no reason given"}` };
+      return { outcome: "rejected", reason: "not_technology", detail: `profile: ${profile.tech_reason ?? profile.profile.description?.slice(0, 200) ?? "the model gave no reason"}` };
     }
   }
 

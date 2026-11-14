@@ -78,5 +78,12 @@ export async function classifyWithRetry(
   const stillBad = sectorProblem(again, description);
   // Still "Vertical SaaS" as the main sub-sector: the industry is not named, so no main sub-sector, and it stays among the tags.
   if (again && again.sub_sector_name === "Vertical SaaS") return { ...again, sub_sector_name: undefined, sub_sector_names: [...new Set(["Vertical SaaS", ...again.sub_sector_names])].slice(0, 3) };
-  return again && (!stillBad || /last resort/.test(stillBad)) ? again : null;
+  if (again && (!stillBad || /last resort/.test(stillBad))) return again;
+  if (!again) return null;
+  // Still not supported by the description (owner, 2026-11-13: Motorway, Pet Circle and Versabox came back with no sector at all): a classification
+  // always ends with a value. A last look asks for the closest sector with its "General" sub-sector; whatever sub-sector the description does not
+  // support is dropped, and the sector stays.
+  const last = await call(`${again.sector_name}${again.sub_sector_name ? ` \u203A ${again.sub_sector_name}` : ""}: ${stillBad}. None of the specific sub-sectors fits well: name the closest sector and its "General" sub-sector (or leave the sub-sector out).`);
+  const pick = last ?? again;
+  return definitionSupports(pick.sub_sector_name, description) ? pick : { ...pick, sub_sector_name: undefined };
 }

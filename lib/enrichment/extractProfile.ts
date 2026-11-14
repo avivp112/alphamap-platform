@@ -375,7 +375,7 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
           },
         },
       },
-      required: ["is_tech_company"],
+      required: ["is_tech_company", "tech_decision", "tech_reason"],
     },
   };
 }
