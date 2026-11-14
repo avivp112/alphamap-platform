@@ -24,7 +24,7 @@
  * To add or move a domain, edit this file only.
  */
 
-import { isDataPlatformUrl } from "./dataPlatforms";
+import { isDataPlatformUrl, LISTING_SITES } from "./dataPlatforms";
 import { isRegionalWireHost } from "./primarySources";
 
 export type SourceTier = 1 | 2 | 3 | 4;
@@ -90,10 +90,12 @@ export const TIER4_DOMAINS = [
   "gamesbeat.com", "techtarget.com", "siliconangle.com", "bankinfosecurity.com", "biospace.com",
   "nosh.com", "gameworldobserver.com", "channele2e.com", "pymnts.com", "venturecapitaljournal.com",
   "phocuswire.com", "constructiondive.com", "datacenterdynamics.com", "gamedeveloper.com", "wealthmanagement.com",
+  "siliconrepublic.com", // owner, 2026-11-14: professional press, not national (tier 2 stays for the leading national and financial press)
   "financemagnates.com", "fxnewsgroup.com", "defensedaily.com", "electronicsweekly.com", "paymentsdive.com", "industrialcyber.co",
   "roboticsandautomationnews.com", "globalaginvesting.com", "decrypt.co",
   // Owner, 2026-11-05
   "csoonline.com", "thequantuminsider.com",
+
 ];
 
 /** Lower confidence even though allowed. */
@@ -103,6 +105,9 @@ export const LOW_CONFIDENCE_DOMAINS = ["einpresswire.com", "accesswire.com", "ne
 
 /** Never a source for a round, beside every data platform (dataPlatforms.ts). */
 export const DENIED_DOMAINS = [
+  // Aggregators of "alternatives" and review / comparison listings (owner, 2026-11-14: bouncewatch.com) — the listing sites of dataPlatforms.ts too
+  "bouncewatch.com", "slant.co", "toolify.ai", "futurepedia.io", "theresanaiforthat.com", "topai.tools", "aitools.fyi", "siftery.com",
+  ...LISTING_SITES,
   // Encyclopedias
   "wikipedia.org",
   // Social networks and publishing platforms
