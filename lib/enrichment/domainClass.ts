@@ -27,16 +27,24 @@ export function domainClassKey(url: string): string | null {
   } catch { return null; }
 }
 
-export interface DomainClassEntry { key: string; class: DomainClass; reason: string; example_url: string; example_title: string; at: string }
+export interface DomainClassEntry { key: string; class: DomainClass; reason: string; example_url: string; example_title: string; at: string; /** true when this is one page's class (sponsored content, a tag or data page), not the site's */ page?: boolean }
+
+/** A reason that hedges ("best guess", "may be", "appears to be") is no decision: the class is blocked (owner, 2026-11-14: ossia.com, biggo.com). */
+const HEDGE = /\b(best guess|may be|might be|appears to be|appear to be|seems? to be|suggests?|unclear|not (?:clearly|a recognizable)|likely|probably|presumably|reads like|looks like)\b/i;
+export const isHedged = (reason: string): boolean => HEDGE.test(reason);
 
 export class DomainClassRegistry {
   private map = new Map<string, DomainClassEntry>();
   private fresh = new Set<string>();
   load(entries: DomainClassEntry[]): void { for (const e of entries) this.map.set(e.key, e); }
   get(url: string): DomainClassEntry | undefined {
+    // One page's class (sponsored content, a tag or data page) is kept for that page only.
+    const page = this.map.get(`page:${url}`);
+    if (page) return page;
     const key = domainClassKey(url);
     if (!key) return undefined;
-    return this.map.get(key);
+    const hit = this.map.get(key);
+    return hit && !hit.page ? hit : undefined;
   }
   has(url: string): boolean { return !!this.get(url); }
   set(e: DomainClassEntry): void { this.map.set(e.key, e); this.fresh.add(e.key); }
@@ -47,9 +55,13 @@ export class DomainClassRegistry {
 }
 export const domainClasses = new DomainClassRegistry();
 
-export function parseDomainClass(input: unknown): { class: DomainClass; reason: string } {
-  const c = (input as { class?: unknown })?.class;
-  return { class: (DOMAIN_CLASSES as readonly string[]).includes(c as string) ? (c as DomainClass) : "blog_vendor_other", reason: String((input as { reason?: unknown })?.reason ?? "no answer").slice(0, 200) };
+export function parseDomainClass(input: unknown): { class: DomainClass; reason: string; page: boolean } {
+  const i = (input ?? {}) as { class?: unknown; reason?: unknown; confident?: unknown; scope?: unknown };
+  const reason = String(i.reason ?? "no answer").slice(0, 300);
+  const asked = (DOMAIN_CLASSES as readonly string[]).includes(i.class as string) ? (i.class as DomainClass) : "blog_vendor_other";
+  // Not sure (the model says so, or its reason hedges): blocked.
+  const sure = i.confident !== false && !isHedged(reason);
+  return { class: sure ? asked : "blog_vendor_other", reason: sure ? reason : `not sure — ${reason}`, page: i.scope === "page" };
 }
 
 /** What a class means for the source's standing: allowed (tier 4, low confidence), denied, or "leave it" (the existing investor rule). */

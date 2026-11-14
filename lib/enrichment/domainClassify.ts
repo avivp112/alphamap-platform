@@ -16,7 +16,9 @@ const SYSTEM = [
   "company_owned — the official site of a single company, writing about ITSELF (its own product, about, newsroom or blog pages). A company\'s pages about its partners, customers, integrations or case studies are blog_vendor_other (vendor marketing).",
   "directory_aggregator — a company directory, database, ecosystem map, 'alternatives' or 'similar companies' listing, ranking, 'top N startups' list, or review / comparison listing.",
   "blog_vendor_other — blogs and newsletters, vendor marketing pages (partner pages, case studies, integrations), product reviews, forums, personal sites, and anything that is none of the above.",
-  "Judge the kind of site (and the section of it, when the address is a section such as /partners, /case-studies, /companies, /reviews), not whether the page's claim is true. When unsure, blog_vendor_other.",
+  "Judge the kind of site (and the section of it, when the address is a section such as /partners, /case-studies, /companies, /reviews), not whether the page's claim is true.",
+  "scope: 'domain' when the class is the whole site's (a newspaper is a news_outlet on every page); 'page' when only this page is what it is (a sponsored or paid content piece on an otherwise real outlet, a tag or archive listing, a data page): a page-scoped answer says nothing about the rest of the site.",
+  "confident: false when you are guessing (the site is not recognisable, the page is ambiguous). A guess is not an answer: say confident=false rather than hedging in the reason.",
 ].join(" ");
 
 export function buildDomainClassRequest(url: string, title: string, text: string) {
@@ -25,7 +27,7 @@ export function buildDomainClassRequest(url: string, title: string, text: string
     system: SYSTEM,
     tools: [{
       name: "classify_domain", description: "Classify the domain.",
-      input_schema: { type: "object" as const, properties: { class: { type: "string", enum: [...DOMAIN_CLASSES] }, reason: { type: "string", description: "One short sentence." } }, required: ["class", "reason"] },
+      input_schema: { type: "object" as const, properties: { class: { type: "string", enum: [...DOMAIN_CLASSES] }, scope: { type: "string", enum: ["domain", "page"] }, confident: { type: "boolean" }, reason: { type: "string", description: "One short sentence." } }, required: ["class", "scope", "confident", "reason"] },
     }],
     tool_choice: { type: "tool" as const, name: "classify_domain" },
     messages: [{ role: "user" as const, content: `Address: ${url}\nHeadline: ${title || "(none)"}\nText: ${text.replace(/\s+/g, " ").slice(0, 700) || "(not available)"}` }],
@@ -33,16 +35,21 @@ export function buildDomainClassRequest(url: string, title: string, text: string
 }
 
 const FILE = "cache/domain_class.json";
+/** Bump when the rules change: older answers are dropped and asked again (v2, 2026-11-14: page scope, unsure = blocked). */
+const CACHE_VERSION = 2;
 let loaded = false;
 /** Reads the kept classes once per process (not under tests). */
 export function loadDomainClasses(file = FILE): void {
   if (loaded) return; loaded = true;
   if (process.env.VITEST || !existsSync(file)) return;
-  try { domainClasses.load(JSON.parse(readFileSync(file, "utf8")) as DomainClassEntry[]); } catch { /* an unreadable cache is a fresh one */ }
+  try {
+    const j = JSON.parse(readFileSync(file, "utf8")) as { version?: number; entries?: DomainClassEntry[] } | DomainClassEntry[];
+    if (!Array.isArray(j) && j.version === CACHE_VERSION) domainClasses.load(j.entries ?? []);
+  } catch { /* an unreadable cache is a fresh one */ }
 }
 export function saveDomainClasses(file = FILE): void {
   if (process.env.VITEST) return;
-  try { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, JSON.stringify(domainClasses.all(), null, 1)); } catch { /* the cache is a convenience */ }
+  try { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, JSON.stringify({ version: CACHE_VERSION, entries: domainClasses.all() }, null, 1)); } catch { /* the cache is a convenience */ }
 }
 
 export interface ClassifyDeps { ask: (request: ReturnType<typeof buildDomainClassRequest>) => Promise<unknown>; isCompanySite: (url: string) => boolean; max?: number }
@@ -57,6 +64,7 @@ export async function classifyUnknownDomains(sources: Array<{ url: string; title
   for (const s of sources) {
     const key = domainClassKey(s.url);
     if (!key || todo.has(key) || domainClasses.has(s.url)) continue;
+    if (domainClasses.all().some((e) => e.key === key && !e.page)) continue;
     if (deps.isCompanySite(s.url) || roundSourceStanding(s.url).kind !== "unlisted") continue;
     todo.set(key, { url: s.url, title: s.title ?? "", text: s.content ?? "" });
   }
@@ -64,7 +72,8 @@ export async function classifyUnknownDomains(sources: Array<{ url: string; title
   for (const [key, s] of [...todo].slice(0, deps.max ?? 20)) {
     try {
       const r = parseDomainClass(await deps.ask(buildDomainClassRequest(s.url, s.title, s.text)));
-      domainClasses.set({ key, class: r.class, reason: r.reason, example_url: s.url, example_title: s.title.slice(0, 140), at: new Date().toISOString().slice(0, 10) });
+      // A page-scoped answer is kept for that page only; the site stays unclassified (its other pages are asked about when they turn up).
+      domainClasses.set({ key: r.page ? `page:${s.url}` : key, class: r.class, reason: r.reason, example_url: s.url, example_title: s.title.slice(0, 140), at: new Date().toISOString().slice(0, 10), ...(r.page ? { page: true } : {}) });
       n++;
     } catch { /* stays unclassified */ }
   }

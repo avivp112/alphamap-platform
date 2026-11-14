@@ -1,0 +1,10 @@
+[
+  { "company": "Hydrostor", "expect": "technology", "note": "energy storage: climate and energy technology" },
+  { "company": "Promethean Particles", "expect": "technology", "note": "advanced materials (MOFs)" },
+  { "company": "Pet Circle", "expect": "technology", "note": "online-first retail, venture-backed" },
+  { "company": "Moft", "expect": "not technology", "note": "owner 2026-11-14: a maker of physical consumer products that also sells online" },
+  { "company": "Grind", "expect": "not technology", "note": "coffee" },
+  { "company": "Studio Feixen", "expect": "not technology", "note": "design studio" },
+  { "company": "ALUS Canada", "expect": "not technology", "note": "charity" },
+  { "company": "MindUP Incubator", "expect": "not technology", "note": "incubator" }
+]

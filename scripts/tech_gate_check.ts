@@ -5,6 +5,7 @@
  *
  *   NAMES="Hydrostor,Grind" npx tsx scripts/tech_gate_check.ts      # companies by name (from the database)
  *   FILE=not_enriched.csv npx tsx scripts/tech_gate_check.ts        # every row of that report whose why is not_technology
+ *   EXAMPLES=1 RUNS=3 npx tsx scripts/tech_gate_check.ts             # eval/tech_examples.json, each RUNS times (the answer should not move between runs)
  */
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
@@ -29,7 +30,10 @@ if (process.env.FILE) {
   const lines = readFileSync(process.env.FILE, "utf8").replace(/^﻿/, "").split(/\r?\n/).slice(1).filter(Boolean);
   names = lines.map((l) => l.split(",")).filter((c) => c[2] === "not_technology").map((c) => c[0]);
 }
-if (!names.length) { console.error("NAMES=… or FILE=not_enriched.csv"); process.exit(1); }
+const EXAMPLES = process.env.EXAMPLES ? (JSON.parse(readFileSync("eval/tech_examples.json", "utf8")) as Array<{ company: string; expect: string }>) : [];
+if (EXAMPLES.length) names = EXAMPLES.map((e) => e.company);
+const RUNS = Number(process.env.RUNS ?? 1);
+if (!names.length) { console.error("NAMES=… or FILE=not_enriched.csv or EXAMPLES=1"); process.exit(1); }
 
 const state = createSearchProviderState();
 for (const name of names) {
@@ -37,6 +41,13 @@ for (const name of names) {
   const row = data?.[0];
   if (!row?.website) { console.log(`${name}: not in the database or no website`); continue; }
   const text = ((await readPageCached(row.website, state))?.text ?? "").replace(/\s+/g, " ").trim();
+  const want = EXAMPLES.find((e) => e.company === name)?.expect;
+  const seen: string[] = [];
+  for (let k = 0; k < RUNS; k++) {
+    const g = await runTechGate(name, text, row.description, row.industry, { client: anthropic, model: MODEL });
+    seen.push(!g.verdict ? "no verdict" : g.verdict.enough_information === false ? "no decision" : shouldSkipAsNonTech(g.verdict) ? "not technology" : g.verdict.is_tech_company ? "technology" : `not technology (${g.verdict.confidence})`);
+  }
+  if (want) console.log(`${name.padEnd(26)} want ${want.padEnd(15)} got ${seen.join(" | ")}${new Set(seen).size > 1 ? "   ⚠️ the answer moves between runs" : ""}`);
   const { verdict } = await runTechGate(name, text, row.description, row.industry, { client: anthropic, model: MODEL });
   const label = verdict && verdict.enough_information === false ? "NO DECISION (too little to go on)" : !verdict ? "NO VERDICT" : shouldSkipAsNonTech(verdict) ? "REJECTED (not technology)" : verdict.is_tech_company ? "technology" : `not technology, but only ${verdict.confidence} confidence → goes on to the full check`;
   console.log(`${name.padEnd(26)} ${label}\n    ${verdict?.reason ?? ""}${text ? "" : "  [homepage unreadable]"}`);

@@ -99,6 +99,21 @@ export function sentenceProblem(
   return null;
 }
 
+/** What came of a description attempt: the description (or none), and every sentence that was dropped with its reason — also when there is no description. */
+export function describeAttempt(
+  input: unknown, companyName: string, byId: Record<string, { content: string }>, allowed: (id: string) => boolean,
+): { built: BuiltDescription | null; dropped: Array<{ text: string; why: string }>; returned: Array<{ role: string; text: string }> } {
+  const list = Array.isArray((input as { sentences?: unknown })?.sentences) ? (input as { sentences: Array<{ role: string; text: string }> }).sentences : [];
+  const built = processDescription(input, companyName, byId, allowed);
+  if (built) return { built, dropped: built.dropped, returned: list.map((s) => ({ role: s.role, text: s.text })) };
+  const dropped: Array<{ text: string; why: string }> = [];
+  for (const s of list as Array<{ role: string; text: string; source_ids: string[] }>) {
+    const why = sentenceProblem(s, companyName, byId, allowed);
+    if (why) dropped.push({ text: s?.text ?? "", why });
+  }
+  return { built: null, dropped, returned: list.map((s) => ({ role: s.role, text: s.text })) };
+}
+
 export function processDescription(
   input: unknown, companyName: string, byId: Record<string, { content: string }>, allowed: (id: string) => boolean,
 ): BuiltDescription | null {

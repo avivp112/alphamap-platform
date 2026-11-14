@@ -86,13 +86,13 @@ describe("a Google redirect (field review run 1, Avenda)", () => {
 
 import { isPartyRelease } from "./roundSources";
 describe("domain decisions, groups a–f (owner, 2026-11-03 — runs 1–2)", () => {
-  it("a. a party to the deal on its own official site: tier 1 for the event, allowed for the profile", () => {
+  it("a. a party to the deal on its own official site: tier 1 for the event, no source for the profile (owner, 2026-11-14)", () => {
     const akamai = "https://www.akamai.com/newsroom/press-release/akamai-completes-acquisition-of-secure-enterprise-browser-provider-layerx";
     expect(roundSourceStanding(akamai, { headline: "Akamai Completes Acquisition of Secure Enterprise Browser Provider LayerX" })).toMatchObject({ kind: "allowed", tier: 1, why: "party_release" });
     expect(isPartyRelease("https://www.honeywell.com/us/en/news/press-releases/2023/07/honeywell-to-acquire-scadafence", "Honeywell To Acquire Scadafence")).toBe(true);
     expect(isPartyRelease("https://investor.edap-tms.com/news-releases/news-release-details/x", "EDAP and Avenda Health Launch World's First AI-Assisted Focal")).toBe(true);
     expect(isPartyRelease("https://esd.ny.gov/esd-media-center/press-releases/empire-state-development-announces-kraken", "Empire State Development Announces Energy Software Platform Kraken")).toBe(true);
-    expect(profileSourceAllowed({ url: akamai, source_type: "news", title: "Akamai Completes Acquisition of LayerX" })).toBe(true);
+    expect(profileSourceAllowed({ url: akamai, source_type: "news", title: "Akamai Completes Acquisition of LayerX" })).toBe(false);
     // Not a release, or the site is not named in the headline: still unlisted.
     expect(isPartyRelease("https://www.akamai.com/products/x", "Akamai buys LayerX")).toBe(false);
     expect(isPartyRelease("https://somebrand.com/news/x", "Akamai Completes Acquisition of LayerX")).toBe(false);

@@ -33,6 +33,8 @@ const CASES: Array<[string, string, DomainClass]> = [
   ["https://www.femaleswitch.com/directories/tpost/marvel-alternatives", "Marvel Alternatives for Prototyping, Wireframing and User Testing", "directory_aggregator"],
   ["https://bouncewatch.com/alternatives/krilltech-nanoagtech", "Krilltech Nanoagtech alternatives", "directory_aggregator"],
   ["https://www.automate.org/companies/aerobotix", "Aerobotix - A3 member company", "directory_aggregator"],
+  ["https://www.robotics247.com/article/aerobotix_to_demonstrate_mobile_robot_coating_system", "Aerobotix to demonstrate mobile robot coating system", "news_outlet"],
+  ["https://www.generalmills.com/news/press-releases/general-mills-invests-2-3-million-to-advance-regenerative-agriculture", "General Mills invests $2.3 million to advance regenerative agriculture with ALUS", "company_owned"],
   ["https://www.mux.com/partners/jump-data-driven-video", "JUMP Data-Driven Video is a Mux Partner", "blog_vendor_other"],
   ["https://magnetto.com/case-studies/tayseer", "How Magnetto Drove 13K+ Clicks for Tayseer Arabian Finance", "blog_vendor_other"],
   ["https://cyberinsider.com/email/reviews/posteo/", "Posteo review", "blog_vendor_other"],
