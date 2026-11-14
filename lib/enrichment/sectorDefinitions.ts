@@ -23,7 +23,7 @@ export const SECTOR_DEFINITIONS: Record<string, string> = {
   "Crypto / Web3": "blockchain, tokens, digital-asset custody or exchanges.",
   "WealthTech": "investing, savings, trading, portfolio and pension tools for individuals or advisers.",
   "RegTech": "software that checks a business against regulation or policy (compliance monitoring, KYC/AML, review of marketing or communications); not security tooling.",
-  "Fintech Infrastructure": "banking as a service, card issuing, ledgers and financial APIs that banks and fintech builders build on; not payment acceptance (Payments) and not finance software a company's own finance team uses (ERP / Finance).",
+  "Fintech Infrastructure": "banking as a service, card issuing, ledgers and financial APIs that banks and fintech builders build on; not payment acceptance (Payments) and not finance software a company's own finance team uses (ERP / Finance): subscription billing and revenue-management software is ERP / Finance even when it calls itself infrastructure.",
   // Cybersecurity
   "Cybersecurity / General": "security is the product but no narrower security sub-sector fits.",
   "Identity & Access": "who may log in or act: authentication, SSO, passwordless, privileged access.",
@@ -55,10 +55,10 @@ export const SECTOR_DEFINITIONS: Record<string, string> = {
   "Retail Tech": "technology for physical stores (smart carts, in-store analytics, shelf monitoring, POS software).",
   // Health & Life Sciences
   "Digital Health": "care delivered or supported by software for patients and clinicians (telehealth, remote monitoring).",
-  "MedTech": "medical devices and clinical diagnostics, including AI-based diagnostic tools.",
+  "MedTech": "medical devices and clinical diagnostics, including AI-based diagnostic tools: software that analyses images or samples to grade, diagnose or screen (embryo grading, AI diagnostics) is MedTech even when clinics buy it as a platform.",
   "Biotech / Genomics": "biotech and pharma: drug discovery, therapeutics, synthetic biology and the biological manufacturing of pharmaceutical ingredients (engineered microbes, fermentation), genomics; food made by cells is FoodTech.",
   "Mental Health": "mental-health care, therapy and wellbeing programs.",
-  "Healthcare SaaS": "clinical and patient-facing software sold to providers (patient engagement, clinical workflow, decision support); practice management, EHR, billing and authorization are Healthcare IT & Administration.",
+  "Healthcare SaaS": "clinical and patient-facing software sold to providers (patient engagement, clinical workflow, decision support); practice management, EHR, billing and authorization are Healthcare IT & Administration; software that analyses images or samples to diagnose or grade is MedTech.",
   "Healthcare IT & Administration": "the administrative and operating side of healthcare organizations: practice management, EHR, scheduling, billing, coding, claims, prior authorization, for providers, payers and pharmacies; clinical and patient-facing software is Healthcare SaaS.",
   // Climate & Energy
   "CleanTech": "technology that cuts emissions or resource use (solar, storage, recycling, materials from waste).",

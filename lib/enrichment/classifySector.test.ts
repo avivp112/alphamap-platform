@@ -131,3 +131,22 @@ describe("a description with a 'what' and no 'for whom' (owner, 2026-11-14: Post
     expect(buildReq("Posteo", "x", tax).messages[0].content).not.toContain(NO_CUSTOMERS_NOTE);
   });
 });
+
+import { classifyWithRetry as cwr, sectorProblem as sp, ASSUMES_BUYERS } from "./classifySector";
+describe("a personal-tools answer for a description with no buyer (Posteo)", () => {
+  const d = "Posteo sells secure email accounts that include an address book, calendar and notes.";
+  const ent = { sector_name: "Enterprise Software", sub_sector_name: "Productivity & Collaboration", sub_sector_names: [] as string[] };
+  const con = { sector_name: "Consumer & Media", sub_sector_name: "Consumer / General", sub_sector_names: [] as string[] };
+  it("is a problem only when the description names no buyer", () => {
+    expect(sp(ent, d, { noCustomers: true })).toBe(ASSUMES_BUYERS);
+    expect(sp(ent, d)).toBeNull();
+  });
+  it("gets one second look; a consumer answer wins, an Enterprise answer chosen again stays (no third look)", async () => {
+    const seen: Array<string | undefined> = [];
+    expect(await cwr(async (f) => { seen.push(f); return f ? con : ent; }, d, undefined, { noCustomers: true })).toMatchObject({ sector_name: "Consumer & Media" });
+    expect(seen[1]).toContain("assumes business buyers");
+    let n = 0;
+    expect(await cwr(async () => { n++; return ent; }, d, undefined, { noCustomers: true })).toMatchObject({ sector_name: "Enterprise Software" });
+    expect(n).toBe(2);
+  });
+});
