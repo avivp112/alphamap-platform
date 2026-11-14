@@ -13,8 +13,8 @@ const SYSTEM = [
   "news_outlet — a publication with editors that reports news or analysis (general, business, regional, or a trade / sector publication).",
   "wire — a press-release distribution service where organisations publish their own releases (like PR Newswire, Business Wire, newswire.ca).",
   "investor — a venture capital firm, fund, accelerator or corporate investor, writing about its portfolio.",
-  "company_owned — the official site of a single company, writing about itself (its product, about, newsroom or blog pages).",
-  "directory_aggregator — a company directory, database, ecosystem map, 'alternatives' or 'similar companies' listing, ranking, or review / comparison listing.",
+  "company_owned — the official site of a single company, writing about ITSELF (its own product, about, newsroom or blog pages). A company\'s pages about its partners, customers, integrations or case studies are blog_vendor_other (vendor marketing).",
+  "directory_aggregator — a company directory, database, ecosystem map, 'alternatives' or 'similar companies' listing, ranking, 'top N startups' list, or review / comparison listing.",
   "blog_vendor_other — blogs and newsletters, vendor marketing pages (partner pages, case studies, integrations), product reviews, forums, personal sites, and anything that is none of the above.",
   "Judge the kind of site (and the section of it, when the address is a section such as /partners, /case-studies, /companies, /reviews), not whether the page's claim is true. When unsure, blog_vendor_other.",
 ].join(" ");

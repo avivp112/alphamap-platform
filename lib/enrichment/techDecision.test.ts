@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { techDecision, type TechGateVerdict } from "./techGate.ts";
 import { whyNotEnriched } from "./notEnriched.ts";
 import { SECTOR_DEFINITIONS } from "./sectorDefinitions.ts";
+import { NO_CUSTOMERS_NOTE } from "./classifySector.ts";
 
 const gate = (o: Partial<TechGateVerdict>): TechGateVerdict => ({ is_tech_company: true, confidence: "high", reason: "", enough_information: true, ...o });
 
@@ -40,7 +41,7 @@ describe("undetermined is its own class in the report", () => {
 
 describe("batch 4 sector rubric", () => {
   it("email for private individuals is consumer, not enterprise; factory robots are industrial automation", () => {
-    expect(SECTOR_DEFINITIONS["Productivity & Collaboration"]).toContain("private individuals");
+    expect(NO_CUSTOMERS_NOTE).toContain("Email, calendar, notes and storage accounts with no business buyer named are Consumer & Media");
     expect(SECTOR_DEFINITIONS["Industrial Automation"]).toContain("AMR");
     expect(SECTOR_DEFINITIONS["Robotics"]).toContain("Industrial Automation");
   });
