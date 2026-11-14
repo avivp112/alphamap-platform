@@ -44,8 +44,13 @@ describe("the description", () => {
     expect(r?.dropped.map((d) => d.why)).toEqual(["marketing_word"]);
     expect(r?.sentences[0].quote).toMatch(/machine learning/);
   });
-  it("without a verified what and for_whom there is no description", () => {
-    expect(processDescription({ sentences: [S("what", "Nuova predicts supply-chain disruptions for global manufacturers using machine learning.")] }, "Nuova", byId, ok)).toBeNull();
+  it("a verified what alone is a description, marked incomplete; with the for_whom it is complete", () => {
+    const only = processDescription({ sentences: [S("what", "Nuova predicts supply-chain disruptions for global manufacturers using machine learning.")] }, "Nuova", byId, ok);
+    expect(only?.complete).toBe(false);
+    expect(only?.sentences.map((x) => x.role)).toEqual(["what"]);
+    expect(processDescription({ sentences: [S("for_whom", "Customers include automotive and electronics manufacturers in Europe.")] }, "Nuova", byId, ok)).toBeNull();
+  });
+  it("without a verified what there is no description", () => {
     expect(processDescription({ sentences: [] }, "Nuova", byId, ok)).toBeNull();
     expect(processDescription(null, "Nuova", byId, ok)).toBeNull();
   });

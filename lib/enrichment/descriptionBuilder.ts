@@ -6,7 +6,7 @@
  *   3. edge      optional, what sets it apart — only with a source that says so
  * Each sentence names the sources that support it. A sentence is dropped when a source it cites is not an allowed
  * one, when a number or a name in it is not in those sources, when it uses a marketing word, or when no sentence of
- * its sources comes near it. Without a "what" and a "for_whom" there is no description (missing is better than wrong).
+ * its sources comes near it. Without a verified "what" there is no description (missing is better than wrong); a verified "for_whom" completes it.
  * The current website comes first in the prompt: it beats an old article. Pure: the model call is the caller's.
  */
 import { articleDate } from "./headquarters.ts";
@@ -15,7 +15,7 @@ import { bestSentence } from "./quoteFinder.ts";
 
 export type SentenceRole = "what" | "for_whom" | "edge";
 export interface DescriptionSentence { role: SentenceRole; text: string; source_ids: string[]; quote: string }
-export interface BuiltDescription { description: string; sentences: DescriptionSentence[]; dropped: Array<{ text: string; why: string }> }
+export interface BuiltDescription { description: string; sentences: DescriptionSentence[]; dropped: Array<{ text: string; why: string }>; /** false when the sources gave a verified "what" but no verified "for whom" (owner, 2026-11-14: a what-only description is written, marked). */ complete: boolean }
 
 /** Words that sell instead of describe. Used alone they say nothing; a sentence with one is rewritten or dropped. */
 export const MARKETING = /\b(leading|leader in|innovative|innovation|revolutionary|revolutionize[sd]?|ai-native|cutting-edge|state-of-the-art|world-class|best-in-class|next-generation|next-gen|game-chang\w+|seamless(ly)?|unparalleled|disruptive|industry-leading|pioneering|transformative|powerful|robust|end-to-end|lowest|highest|best|fastest|first|largest|biggest|smallest|most|top|greatest|unmatched|unrivall?ed|premier|foremost|ultimate|market leader|number one|#1|reinvent\w*|reimagin\w+)\b/i;
@@ -114,8 +114,10 @@ export function processDescription(
   }
   const order: SentenceRole[] = ["what", "for_whom", "edge"];
   kept.sort((a, b) => order.indexOf(a.role) - order.indexOf(b.role));
-  if (!kept.some((k) => k.role === "what") || !kept.some((k) => k.role === "for_whom")) return null;
-  return { description: kept.map((k) => k.text).join(" "), sentences: kept, dropped };
+  // A verified "what" is a description; the "for whom" completes it when a source states it (owner, 2026-11-14: 10 of 18 companies had no description,
+  // the model leaving the "for whom" out when the site does not say who buys). Without a verified "what" there is none.
+  if (!kept.some((k) => k.role === "what")) return null;
+  return { description: kept.map((k) => k.text).join(" "), sentences: kept, dropped, complete: kept.some((k) => k.role === "for_whom") };
 }
 
 export function descriptionTool() {
@@ -171,7 +173,7 @@ RULES:
 - The company's own current website comes first; prefer it to an older article, and never describe it from an article older than two years. Describe the company as it is now.
 - Do not mention funding, investors, rankings, data platforms or where a fact was read. Do not start with the company name more than once.
 - Every sentence is a complete sentence with a verb: it says what the company sells (or to whom), not a title, a tagline or a clause cut from a longer sentence.
-- If the sources do not support a "what" and a "for_whom" sentence, return no sentences.
+- Give the "what" sentence whenever the sources support it, and the "for_whom" sentence too when a source says who buys the product. If only the "what" is supported, return the "what" alone; if not even that is supported, return no sentences.
 
 Labeled research:
 ${formatSourcesForPrompt(sources)}`;

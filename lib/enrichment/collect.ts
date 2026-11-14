@@ -1636,17 +1636,22 @@ export async function collectCompany(
         const msg = await ctx.anthropic.messages.create(requestFor(buildDescriptionRequest(row.name, usable), ctx.models.profile));
         ctx.recordCost(ctx.models.profile, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 });
         const tool = msg.content.find((b) => b.type === "tool_use");
+        const returned = tool && tool.type === "tool_use" && Array.isArray((tool.input as { sentences?: unknown[] }).sentences) ? (tool.input as { sentences: Array<{ role: string }> }).sentences.map((x) => x.role) : [];
         const built = tool && tool.type === "tool_use" ? processDescription(tool.input, row.name, Object.fromEntries(usable.map((x) => [x.source_id, x])), (id) => allowedFact({ source_id: id })) : null;
         for (const d of built?.dropped ?? []) { console.log(`    🚫  description sentence dropped (${d.why}): "${d.text.slice(0, 90)}"`); bump(stats.droppedByReason, `description_${d.why.split(":")[0]}`); }
         if (built) {
           profile.profile.description = built.description;
           profile.profile.description_source_ids = [...new Set(built.sentences.flatMap((x) => x.source_ids))];
           profile.profile.description_sentences = built.sentences;
-          console.log(`    📝  Description (v2): ${built.sentences.length} sentence(s) — ${built.description.slice(0, 120)}…`);
+          console.log(`    📝  Description (v2): ${built.sentences.length} sentence(s)${built.complete ? "" : " (what only: no source says who buys it)"} — ${built.description.slice(0, 120)}…`);
+          if (!built.complete) bump(stats.droppedByReason, "description_what_only");
         } else {
-          console.log(`    📝  Description (v2): no verified "what" and "for whom" — none written${before ? " (the extraction's free text is not used)" : ""}.`);
+          console.log(`    📝  Description (v2): no verified "what" — none written${before ? " (the extraction's free text is not used)" : ""}. Sources given: ${usable.length} (${usable.filter((x) => x.source_type === "company_site").length} of the company's own site, ${usable.filter((x) => x.source_type === "company_site").reduce((n, x) => n + (x.content?.length ?? 0), 0)} characters); the model returned ${returned.length ? returned.join("+") : "no sentences"}.`);
           bump(stats.droppedByReason, "description_not_verified");
         }
+      } else {
+        console.log(`    📝  Description (v2): no allowed source to describe the company from (${allSources.length} sources read, none allowed).`);
+        bump(stats.droppedByReason, "description_no_allowed_source");
       }
     } catch (e) {
       console.log(`    ⚠️  description skipped: ${(e as Error).message}`);
