@@ -701,11 +701,15 @@ export async function fetchCompanyWebsitePages(
   const pages: FetchedPage[] = [];
 
   const fetched = new Map<string, { content: string; provider: Provider; cached: boolean }>();
+  // Sixteen addresses on a site that does not answer would cost minutes: after four misses in a row the rest of the pages are not tried.
+  let misses = 0;
   for (const url of urls) {
     const cachedPage = state.cache?.get<{ content: string; provider: Provider }>(`page:${url}`);
-    if (cachedPage) { fetched.set(url, { ...cachedPage, cached: true }); continue; }
+    if (cachedPage) { fetched.set(url, { ...cachedPage, cached: true }); misses = 0; continue; }
+    if (misses >= 4) continue;
     const read = await readPage(url, state);
-    if (read && looksLikeRealContent(read.text)) fetched.set(url, { content: read.text, provider: read.provider, cached: false });
+    if (read && looksLikeRealContent(read.text)) { fetched.set(url, { content: read.text, provider: read.provider, cached: false }); misses = 0; }
+    else misses++;
   }
   if (fetched.size === 0) {
     // Neither Jina nor Serper got anything from this site: Tavily Extract, one call.
