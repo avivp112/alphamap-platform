@@ -82,6 +82,8 @@ export function techDecision(
   const gateConfirms = !!gate && gate.is_tech_company === true && gate.enough_information !== false && gate.confidence !== "low";
   if (gateConfirms) return "proceed";
   if (profile.tech_decision === "cannot_tell" || (gate?.enough_information === false && !hasDescription)) return "undetermined";
+  // A rejection needs a described product to rest on: with nothing known about what the company sells, a "no" is not a finding (Ondato IL).
+  if (profile.is_tech_company === false && !hasDescription) return "undetermined";
   return profile.is_tech_company === false ? "reject" : "proceed";
 }
 

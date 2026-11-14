@@ -134,6 +134,7 @@ export const SECTOR_RULES = `RULES FOR THE SECTOR
 - ONE main sector and sub-sector: the most specific one that fits what the verified description says the company sells.
 - A "… / General" sub-sector only when no other sub-sector fits at all.
 - Software for one industry's customers: the sector is the CUSTOMER'S industry (roofing contractors → Industrial & Manufacturing › Construction Tech; landlords → Real Estate › PropTech; therapists and prior-authorization teams → Health & Life Sciences › Healthcare IT & Administration); list "Vertical SaaS" among the other fields.
+- Who buys decides between business and consumer: email, calendar, notes or storage accounts that anyone can open for themselves (a private mailbox, sold per person) are Consumer & Media (Consumer / General), not Enterprise Software; Enterprise Software only when the product is sold to organisations (teams, an admin console, company domains).
 - Other fields the company operates in go in sub_sector_names (tags), not in the main sector.
 - "… / General" is a last resort: before using it, check every specific sub-sector of every sector against what the description says the company sells.
 - Computer Vision only when the product processes images or video. A product that runs in the cloud is not Cloud Security.`;

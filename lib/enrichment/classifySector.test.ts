@@ -80,9 +80,21 @@ describe("the classification as the pipeline runs it (one function for the colle
     expect(seen[0]).toBeUndefined();
     expect(seen[1]).toMatch(/last resort/);
   });
-  it("a General that stays General is accepted; an unsupported answer that stays unsupported is none", async () => {
+  it("a General that stays General is accepted; an unsupported answer that stays unsupported keeps the sector, without the sub-sector", async () => {
     expect(await classifyWithRetry(async () => choice("SaaS & Dev Tools", "SaaS / General"), malt)).toMatchObject({ sub_sector_name: "SaaS / General" });
-    expect(await classifyWithRetry(async () => choice("Real Estate", "PropTech"), malt)).toBeNull();
+    const stuck = await classifyWithRetry(async () => choice("Real Estate", "PropTech"), malt);
+    expect(stuck).toMatchObject({ sector_name: "Real Estate", sub_sector_name: undefined });
+  });
+  it("a classification always ends with a value after the retries (Motorway, Pet Circle, Versabox)", async () => {
+    let n = 0;
+    const r = await classifyWithRetry(async (f) => { n++; return f ? choice("Real Estate", "PropTech") : choice("Real Estate", "PropTech"); }, malt);
+    expect(r).not.toBeNull();
+    expect(n).toBe(3);
+  });
+  it("the last look asks for the closest sector with its General", async () => {
+    const seen: Array<string | undefined> = [];
+    await classifyWithRetry(async (f) => { seen.push(f); return choice("Real Estate", "PropTech"); }, malt);
+    expect(seen[2]).toMatch(/General/);
   });
   it("a good first answer is one call", async () => {
     let n = 0;
