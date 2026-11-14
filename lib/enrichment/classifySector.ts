@@ -10,7 +10,7 @@ export interface SectorTaxonomyLite { parentNames: string[]; subNames: string[];
 export interface SectorChoice { sector_name?: string; sub_sector_name?: string; sub_sector_names: string[] }
 
 /** A description with a verified "what" but no "for whom" (owner, 2026-11-14): the sector follows the product, not an assumed business customer. */
-export const NO_CUSTOMERS_NOTE = "The description does not say who buys the product. Decide by the product itself and do not assume business customers: a product anyone can sign up for by themselves (a personal mailbox, a consumer app, a shop) is a consumer product; choose an Enterprise or industry sector only when the description names organisations, teams or businesses as the buyers.";
+export const NO_CUSTOMERS_NOTE = "The description does not say who buys the product. Decide by the product itself and do not assume business customers: a product anyone can sign up for by themselves (a personal mailbox, a consumer app, a shop) is a consumer product; choose an Enterprise or industry sector only when the description names organisations, teams or businesses as the buyers. Email, calendar, notes and storage accounts with no business buyer named are Consumer & Media (Consumer / General), not Enterprise Software (Productivity & Collaboration).";
 
 export function buildSectorRequest(companyName: string, description: string, taxonomy: SectorTaxonomyLite, feedback?: string, opts: { noCustomers?: boolean } = {}) {
   const prompt = `Classify the company "${companyName}" from its description alone.
