@@ -145,8 +145,13 @@ describe("a personal-tools answer for a description with no buyer (Posteo)", () 
     const seen: Array<string | undefined> = [];
     expect(await cwr(async (f) => { seen.push(f); return f ? con : ent; }, d, undefined, { noCustomers: true })).toMatchObject({ sector_name: "Consumer & Media" });
     expect(seen[1]).toContain("assumes business buyers");
+    // chosen again for an email account with no buyer named: the product decides
     let n = 0;
-    expect(await cwr(async () => { n++; return ent; }, d, undefined, { noCustomers: true })).toMatchObject({ sector_name: "Enterprise Software" });
+    expect(await cwr(async () => { n++; return ent; }, d, undefined, { noCustomers: true })).toMatchObject({ sector_name: "Consumer & Media", sub_sector_name: "Consumer / General" });
+    expect(n).toBe(2);
+    // chosen again for something that is not a personal account: it stays
+    n = 0;
+    expect(await cwr(async () => { n++; return ent; }, "Acme sells a meeting notes tool with a shared workspace.", undefined, { noCustomers: true })).toMatchObject({ sector_name: "Enterprise Software" });
     expect(n).toBe(2);
   });
 });
