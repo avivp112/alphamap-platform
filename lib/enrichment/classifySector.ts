@@ -9,6 +9,8 @@ import { sectorGuidance, definitionSupports } from "./sectorDefinitions.ts";
 export interface SectorTaxonomyLite { parentNames: string[]; subNames: string[]; parentOf?: Record<string, string> }
 export interface SectorChoice { sector_name?: string; sub_sector_name?: string; sub_sector_names: string[] }
 
+export const ASSUMES_BUYERS = `"Enterprise Software" assumes business buyers, and the description names none. If the product is one anyone can sign up for by themselves (a personal account, an app), choose its consumer sector; keep the Enterprise sector only if the description says organisations buy it`;
+
 /** A description with a verified "what" but no "for whom" (owner, 2026-11-14): the sector follows the product, not an assumed business customer. */
 export const NO_CUSTOMERS_NOTE = "The description does not say who buys the product. Decide by the product itself and do not assume business customers: a product anyone can sign up for by themselves (a personal mailbox, a consumer app, a shop) is a consumer product; choose an Enterprise or industry sector only when the description names organisations, teams or businesses as the buyers. Email, calendar, notes and storage accounts with no business buyer named are Consumer & Media (Consumer / General), not Enterprise Software (Productivity & Collaboration).";
 
@@ -56,8 +58,10 @@ export function parseSectorChoice(input: unknown, taxonomy: SectorTaxonomyLite):
  * What is wrong with an answer, or null (owner, 2026-11-10, review 9): a sub-sector the description is not about (a rocket maker
  * as PropTech), or a "General" while a specific one fits.
  */
-export function sectorProblem(choice: SectorChoice | null, description: string): string | null {
+export function sectorProblem(choice: SectorChoice | null, description: string, opts: { noCustomers?: boolean } = {}): string | null {
   if (!choice) return "no usable classification";
+  // A description that names no buyer (owner, 2026-11-14: Posteo): a personal-tools answer in the Enterprise sector assumes business buyers. One second look; the answer stays if it is chosen again.
+  if (opts.noCustomers && choice.sector_name === "Enterprise Software" && (choice.sub_sector_name === "Productivity & Collaboration" || choice.sub_sector_name === "Enterprise / General")) return ASSUMES_BUYERS;
   if (!definitionSupports(choice.sub_sector_name, description)) return `"${choice.sub_sector_name}" has nothing in common with the description; read the definitions and pick what the company sells`;
   // "Vertical SaaS" is a tag; the main sector is the customer's industry (owner, 2026-11-10; SafetyCulture came back as SaaS & Dev Tools › Vertical SaaS).
   if (choice.sub_sector_name === "Vertical SaaS") return `"Vertical SaaS" is a tag, not the main sub-sector; name the customers' industry (the market the company serves) and keep Vertical SaaS among the other fields`;
@@ -71,17 +75,17 @@ export function sectorProblem(choice: SectorChoice | null, description: string):
  * collection, the examples check and the marks' rejudge, so they cannot disagree.
  */
 export async function classifyWithRetry(
-  call: (feedback?: string) => Promise<SectorChoice | null>, description: string, log: (m: string) => void = () => {},
+  call: (feedback?: string) => Promise<SectorChoice | null>, description: string, log: (m: string) => void = () => {}, opts: { noCustomers?: boolean } = {},
 ): Promise<SectorChoice | null> {
   const choice = await call();
-  const problem = sectorProblem(choice, description);
+  const problem = sectorProblem(choice, description, opts);
   if (!problem) return choice;
   log(`answer rejected (${problem}) \u2014 asking once more`);
   const again = await call(`${choice ? `${choice.sector_name}${choice.sub_sector_name ? ` \u203A ${choice.sub_sector_name}` : ""}: ` : ""}${problem}.`);
-  const stillBad = sectorProblem(again, description);
+  const stillBad = sectorProblem(again, description, opts);
   // Still "Vertical SaaS" as the main sub-sector: the industry is not named, so no main sub-sector, and it stays among the tags.
   if (again && again.sub_sector_name === "Vertical SaaS") return { ...again, sub_sector_name: undefined, sub_sector_names: [...new Set(["Vertical SaaS", ...again.sub_sector_names])].slice(0, 3) };
-  if (again && (!stillBad || /last resort/.test(stillBad))) return again;
+  if (again && (!stillBad || /last resort/.test(stillBad) || stillBad === ASSUMES_BUYERS)) return again;
   if (!again) return null;
   // Still not supported by the description (owner, 2026-11-13: Motorway, Pet Circle and Versabox came back with no sector at all): a classification
   // always ends with a value. A last look asks for the closest sector with its "General" sub-sector; whatever sub-sector the description does not

@@ -1677,7 +1677,7 @@ export async function collectCompany(
         const tool = msg.content.find((b) => b.type === "tool_use");
         return tool && tool.type === "tool_use" ? parseSectorChoice(tool.input, taxonomy) : null;
       };
-      const choice = await classifyWithRetry(classify, descText, (m) => { console.log(`    🧭  Sector ${m}.`); bump(stats.droppedByReason, "sector_answer_retried"); });
+      const choice = await classifyWithRetry(classify, descText, (m) => { console.log(`    🧭  Sector ${m}.`); bump(stats.droppedByReason, "sector_answer_retried"); }, { noCustomers: profile.profile.description_complete === false });
       if (choice) {
         console.log(`    🧭  Sector from the verified description: ${choice.sector_name}${choice.sub_sector_name ? ` › ${choice.sub_sector_name}` : ""}${choice.sub_sector_names.length ? ` (+ ${choice.sub_sector_names.join(", ")})` : ""}`);
         Object.assign(profile.profile, { sector_name: choice.sector_name, sub_sector_name: choice.sub_sector_name, sub_sector_names: choice.sub_sector_names });
