@@ -203,6 +203,8 @@ export interface V2ProfileExtraction {
   is_tech_company: boolean;
   /** One sentence naming the product and its category (or why none): why the company is, or is not, a technology company. */
   tech_reason?: string;
+  /** "cannot_tell" when the sources do not describe what the company sells: no decision, not a rejection. */
+  tech_decision?: "technology" | "not_technology" | "cannot_tell";
   profile: V2Profile;
   leadership: V2Leader[];
   metrics: V2Metrics;
@@ -266,6 +268,7 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
           "TRUE only if THIS exact company is listed on a public stock exchange (NYSE, NASDAQ, LSE, TASE, Euronext, etc.) under its own ticker, with the specific exchange/ticker stated in the source. Being acquired by, or a subsidiary of, a public company does NOT make this company itself public. Omit the whole field entirely if you cannot point to that -- the default is private.",
         ),
         is_tech_company: { type: "boolean", description: TECH_DEFINITION },
+        tech_decision: { type: "string", enum: ["technology", "not_technology", "cannot_tell"], description: "technology / not_technology by the definition above; cannot_tell when the sources do not describe what the company sells or does (an unreadable site, no product named). Never not_technology for lack of information." },
         tech_reason: { type: "string", description: "One short sentence: the product and the technology category it falls in, or why it falls in none." },
         profile: {
           type: "object" as const,
@@ -313,7 +316,7 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
             sector_name: {
               type: "string",
               enum: taxonomy.parentNames.length > 0 ? taxonomy.parentNames : undefined,
-              description: "The single best-fit sector from the enumerated list — the most SPECIFIC one that fits. DeepTech only for a company whose core is quantum, robotics, space, semiconductors or hard science; never for software or DevOps. Real estate / property → Real Estate; advertising or marketing technology → Consumer & Media (AdTech); farming → Industrial & Manufacturing (AgTech); penetration testing / breach validation → Cybersecurity (Security Testing). Speech, voice, captioning or transcription → AI & ML (Voice & Speech AI); vulnerability remediation → Cybersecurity (Vulnerability Management); compliance review of marketing or communications → Fintech (RegTech); vehicles and automotive security → Automotive & Mobility; food or cultivated meat → Food & Agriculture (FoodTech); email, docs or productivity suites → Enterprise Software (Productivity & Collaboration); product-update, changelog or developer-facing tools → SaaS & Dev Tools (Developer Tools), not 'SaaS / General'. Computer Vision only for a company whose product processes images or video. Omit if genuinely uncertain — never guess.",
+              description: "The single best-fit sector from the enumerated list — the most SPECIFIC one that fits. DeepTech only for a company whose core is quantum, general-purpose robotics research, space, semiconductors or hard science (robots that automate factory and warehouse work, AMR/AGV/cobots/pickers → Industrial & Manufacturing (Industrial Automation), with Robotics as a tag); never for software or DevOps. Real estate / property → Real Estate; advertising or marketing technology → Consumer & Media (AdTech); farming → Industrial & Manufacturing (AgTech); penetration testing / breach validation → Cybersecurity (Security Testing). Speech, voice, captioning or transcription → AI & ML (Voice & Speech AI); vulnerability remediation → Cybersecurity (Vulnerability Management); compliance review of marketing or communications → Fintech (RegTech); vehicles and automotive security → Automotive & Mobility; food or cultivated meat → Food & Agriculture (FoodTech); email, docs or productivity suites sold to businesses and teams → Enterprise Software (Productivity & Collaboration), but email or storage accounts sold to private individuals → Consumer & Media (Consumer / General); product-update, changelog or developer-facing tools → SaaS & Dev Tools (Developer Tools), not 'SaaS / General'. Computer Vision only for a company whose product processes images or video. Omit if genuinely uncertain — never guess.",
             },
             sub_sector_name: {
               type: "string",
@@ -384,6 +387,8 @@ export function buildProfileExtractionRequest(
 ) {
   const context = formatSourcesForPrompt(sources);
   const prompt = `You are a financial data analyst. Extract the company status, profile (overview, founding year, location, sector), founders, leadership team, and headcount for the private tech company "${companyName}" from the labeled research below.
+
+TECHNOLOGY: ${TECH_DEFINITION} Hardware, energy, materials, biotech and robotics companies count; "not software" is not a reason for not_technology. If the sources do not describe what the company does, answer cannot_tell.
 
 STRICT RULES:
 1. Only extract facts stated explicitly in the sources below. If a field is not stated, omit it entirely — never guess.
@@ -631,6 +636,7 @@ export function processProfileExtractionResponse(
       is_public_company: verifyIsPublicClaim(i.is_public_company, sourceLookup, dropped),
       is_tech_company: i.is_tech_company ?? true,
       tech_reason: i.tech_reason,
+      tech_decision: (i as { tech_decision?: "technology" | "not_technology" | "cannot_tell" }).tech_decision,
       profile,
       leadership,
       metrics,
