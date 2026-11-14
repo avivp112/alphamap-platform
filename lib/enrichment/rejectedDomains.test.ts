@@ -52,3 +52,13 @@ describe("the lists after the owner's decisions", () => {
     for (const u of ["https://bouncewatch.com/alternatives/krilltech", "https://slant.co/x", "https://www.g2.com/products/x", "https://alternativeto.net/software/x"]) expect(roundSourceStanding(u).kind).toBe("denied");
   });
 });
+
+describe("the owner's placement of the 12 unlisted domains (2026-11-14)", () => {
+  it("trade press is tier 4, regional / general press tier 3", () => {
+    for (const d of ["pocketgamer.biz", "mcvuk.com", "vehicle-electronics.biz", "hpcwire.com", "computerweekly.com"]) expect(roundSourceStanding(`https://www.${d}/news/x`)).toMatchObject({ kind: "allowed", tier: 4 });
+    for (const d of ["observer.com", "bizjournals.com"]) expect(roundSourceStanding(`https://www.${d}/x`)).toMatchObject({ kind: "allowed", tier: 3 });
+  });
+  it("rewriting blogs, paid PR distribution and company directories are blocked", () => {
+    for (const d of ["contentgrip.com", "marktechpost.com", "yespress.io", "lounge.ai", "ai-market-watch.com"]) expect(roundSourceStanding(`https://${d}/x`).kind).toBe("denied");
+  });
+});
