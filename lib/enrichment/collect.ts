@@ -1643,6 +1643,7 @@ export async function collectCompany(
           profile.profile.description = built.description;
           profile.profile.description_source_ids = [...new Set(built.sentences.flatMap((x) => x.source_ids))];
           profile.profile.description_sentences = built.sentences;
+          profile.profile.description_complete = built.complete;
           console.log(`    📝  Description (v2): ${built.sentences.length} sentence(s)${built.complete ? "" : " (what only: no source says who buys it)"} — ${built.description.slice(0, 120)}…`);
           if (!built.complete) bump(stats.droppedByReason, "description_what_only");
         } else {
@@ -1671,7 +1672,7 @@ export async function collectCompany(
     try {
       const descText = profile.profile.description_sentences.map((x) => x.text).join(" ");
       const classify = async (feedback?: string): Promise<SectorChoice | null> => {
-        const msg = await ctx.anthropic.messages.create(requestFor(buildSectorRequest(row.name, descText, taxonomy, feedback), ctx.models.enrich));
+        const msg = await ctx.anthropic.messages.create(requestFor(buildSectorRequest(row.name, descText, taxonomy, feedback, { noCustomers: profile.profile.description_complete === false }), ctx.models.enrich));
         ctx.recordCost(ctx.models.enrich, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 });
         const tool = msg.content.find((b) => b.type === "tool_use");
         return tool && tool.type === "tool_use" ? parseSectorChoice(tool.input, taxonomy) : null;

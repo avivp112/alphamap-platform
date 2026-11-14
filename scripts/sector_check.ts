@@ -17,13 +17,13 @@ if (!url || !key || !process.env.ANTHROPIC_API_KEY) { console.error("SUPABASE_UR
 const model = process.env.ENRICH_MODEL ?? "claude-haiku-5-5";
 const taxonomy = await loadSectorTaxonomy(createClient(url, key));
 const anthropic = new Anthropic();
-const examples = JSON.parse(readFileSync("eval/sector_examples.json", "utf8")) as Array<{ company: string; description: string; expect: string; was?: string; note?: string }>;
+const examples = JSON.parse(readFileSync("eval/sector_examples.json", "utf8")) as Array<{ company: string; description: string; expect: string; was?: string; note?: string; noCustomers?: boolean }>;
 const missing = examples.map((e) => e.expect.split(" › ")[1]).filter((n) => !taxonomy.subNames.includes(n));
 if (missing.length) console.log(`⚠️  not in the database yet (run the sector migrations): ${[...new Set(missing)].join(", ")}\n`);
 let pass = 0;
 for (const e of examples) {
   const c = await classifyWithRetry(async (feedback) => {
-    const msg = await anthropic.messages.create(requestFor(buildSectorRequest(e.company, e.description, taxonomy, feedback), model) as never) as Anthropic.Message;
+    const msg = await anthropic.messages.create(requestFor(buildSectorRequest(e.company, e.description, taxonomy, feedback, { noCustomers: e.noCustomers }), model) as never) as Anthropic.Message;
     const tool = msg.content.find((b) => b.type === "tool_use");
     return tool && tool.type === "tool_use" ? parseSectorChoice(tool.input, taxonomy) : null;
   }, e.description);

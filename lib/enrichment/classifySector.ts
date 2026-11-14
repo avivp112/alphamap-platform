@@ -9,14 +9,17 @@ import { sectorGuidance, definitionSupports } from "./sectorDefinitions.ts";
 export interface SectorTaxonomyLite { parentNames: string[]; subNames: string[]; parentOf?: Record<string, string> }
 export interface SectorChoice { sector_name?: string; sub_sector_name?: string; sub_sector_names: string[] }
 
-export function buildSectorRequest(companyName: string, description: string, taxonomy: SectorTaxonomyLite, feedback?: string) {
+/** A description with a verified "what" but no "for whom" (owner, 2026-11-14): the sector follows the product, not an assumed business customer. */
+export const NO_CUSTOMERS_NOTE = "The description does not say who buys the product. Decide by the product itself and do not assume business customers: a product anyone can sign up for by themselves (a personal mailbox, a consumer app, a shop) is a consumer product; choose an Enterprise or industry sector only when the description names organisations, teams or businesses as the buyers.";
+
+export function buildSectorRequest(companyName: string, description: string, taxonomy: SectorTaxonomyLite, feedback?: string, opts: { noCustomers?: boolean } = {}) {
   const prompt = `Classify the company "${companyName}" from its description alone.
 
 Description (checked against sources): ${description}
 
 Pick the single most specific sector and sub-sector for what the description says the company sells. Add "sub_sector_names" for other fields it genuinely operates in (at most 3; include "Vertical SaaS" for software built for one industry). Omit anything the description does not support.
 
-${sectorGuidance(taxonomy.subNames)}${feedback ? `\n\nYOUR PREVIOUS ANSWER WAS REJECTED: ${feedback}\nChoose again.` : ""}`;
+${opts.noCustomers ? NO_CUSTOMERS_NOTE + "\n\n" : ""}${sectorGuidance(taxonomy.subNames)}${feedback ? `\n\nYOUR PREVIOUS ANSWER WAS REJECTED: ${feedback}\nChoose again.` : ""}`;
   return {
     model: "", max_tokens: 400, temperature: 0,
     tools: [{

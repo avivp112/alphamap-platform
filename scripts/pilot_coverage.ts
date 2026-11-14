@@ -41,17 +41,19 @@ if (existsSync("not_enriched.csv")) for (const r of parseCsv(readFileSync("not_e
 const processed = companies.size + nothing.size + notEnriched.size;
 const enriched = companies.size + nothing.size;   // got through the checks; some have nothing to write
 console.log(`Processed ${processed} · enriched ${enriched} (with at least one value ${companies.size}, nothing to write ${nothing.size}) · not enriched ${notEnriched.size}\n`);
-const KEY = ["description", "sector", "tags", "hq_city", "hq_country", "founded_year", "founder", "leader", "office", "employee_count", "news", "round"];
+const KEY = ["description", "description_what_only", "sector", "tags", "hq_city", "hq_country", "founded_year", "founder", "leader", "office", "employee_count", "news", "round"];
 console.log(`${"field".padEnd(24)} ${"companies".padStart(9)} ${"of processed".padStart(13)} ${"of enriched".padStart(12)}`);
 for (const f of KEY.filter((k) => !wrote.has(k))) console.log(`${f.padEnd(24)} ${"0".padStart(9)} ${"0%".padStart(13)} ${"0%".padStart(12)}`);
 for (const [f, set] of [...wrote.entries()].sort((a, b) => b[1].size - a[1].size)) {
   console.log(`${f.padEnd(24)} ${String(set.size).padStart(9)} ${(Math.round(1000 * set.size / processed) / 10 + "%").padStart(13)} ${(Math.round(1000 * set.size / Math.max(1, enriched)) / 10 + "%").padStart(12)}`);
 }
 
+const anyDesc = new Set([...(wrote.get("description") ?? []), ...(wrote.get("description_what_only") ?? [])]);
+console.log(`\nDescription: complete ${wrote.get("description")?.size ?? 0} · what only ${wrote.get("description_what_only")?.size ?? 0} · either ${anyDesc.size} of ${enriched} enriched (${Math.round(1000 * anyDesc.size / Math.max(1, enriched)) / 10}%)`);
 // Which key fields each company lacks (so a gap can be traced to the company, not just counted).
 console.log("\nKey fields missing, by company (enriched companies only):");
 for (const [id, name] of names.entries()) {
   const has = (f: string) => wrote.get(f)?.has(id);
-  const lacks = ["description", "sector", "tags", "hq_city", "founder"].filter((f) => !has(f));
+  const lacks = ["description", "sector", "tags", "hq_city", "founder"].filter((f) => (f === "description" ? !anyDesc.has(id) : !has(f)));
   if (lacks.length) console.log(`  ${String(name).padEnd(26)} lacks: ${lacks.join(", ")}`);
 }

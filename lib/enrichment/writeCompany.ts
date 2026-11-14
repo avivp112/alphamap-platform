@@ -755,6 +755,8 @@ export async function writeCollected(
       const ev = roundFieldEvidence(u.patch, funding.funding_rounds)[0];
       reportLines.push({ field: "round", before: "(on file)", after: `${u.round_type} filled: ${JSON.stringify(u.patch)}`, source_url: ev ? sourceById.get(ev.source_id)?.url ?? null : null, quote: ev?.evidence_quote ?? null });
     }
+    // A description that is a verified "what" only is reported apart, so the coverage tells complete from what-only (owner, 2026-11-14).
+    if (profile.profile.description_complete === false) for (const l of reportLines) if (l.field === "description") l.field = "description_what_only";
     // Tags (sub-sector tags): one line, with the sentence of an allowed page that carries the first (they were never in the report: "tags 0").
     if (tagSectorIds.length > 0) reportLines.push({ field: "tags", before: null, after: tagNames.join(", "), source_url: sourceById.get(supported.kept[0]?.id ?? "")?.url ?? null, quote: supported.kept[0]?.quote ?? null });
     else if (tagNames.length > 0) console.log(`    ⏸️   tags held back — field not open: ${tagNames.join(", ")}`);
