@@ -39,7 +39,7 @@ import { buildBackgroundRequest, processBackgroundResponse, backgroundSearchQuer
 import { requestFor } from "./models.ts";
 import { rejectedDomains, describeRejected } from "./rejectedDomains.ts";
 import { classifyUnknownDomains } from "./domainClassify.ts";
-import { ownBrandSources, finalHostOf, brandLabelMatches } from "./ownDomain.ts";
+import { ownBrandSources, finalHostOf } from "./ownDomain.ts";
 import { judgeArticleEntity, countryOfHost, type CompanyProfileForMatch } from "./articleEntity.ts";
 import { judgeMarketPeers, type PeerClaim, type PeerFacts, type buildPeerComparisonRequest } from "./marketComparison.ts";
 import { isDataPlatformUrl } from "./dataPlatforms.ts";
@@ -528,10 +528,14 @@ export async function collectCompany(
   markCompanyLinkedFiles(allSources, websitePages);
   // The company's own site is tier 1 even on another domain than the one on file (ownDomain.ts): where the registered website redirects to, or the same brand.
   const redirectDomain = effectiveWebsite ? await finalHostOf(effectiveWebsite).catch(() => null) : null;
+  const registeredHost = effectiveWebsite ? (() => { try { return new URL(effectiveWebsite.startsWith("http") ? effectiveWebsite : `https://${effectiveWebsite}`).hostname.toLowerCase().replace(/^www\./, ""); } catch { return null; } })() : null;
   const markOwnSites = () => {
-    for (const x of ownBrandSources(allSources, row.name, redirectDomain)) {
-      console.log(`    🏠  ${x.url} is the company's own site (${redirectDomain && x.url.includes(redirectDomain) ? "the registered website redirects there" : "same brand"}) — tier 1.`);
-      x.source_type = "company_site";
+    const registered = { host: registeredHost, pages: websitePages.map((p) => ({ url: p.url, title: undefined, content: p.content })) };
+    for (const x of ownBrandSources(allSources, row.name, redirectDomain, registered)) {
+      const src = allSources.find((y) => y.url === x.url);
+      if (!src || src.source_type === "company_site") continue;
+      console.log(`    🏠  ${x.url} is the company's own site (${x.ownHow}) — tier 1.`);
+      src.source_type = "company_site";
     }
   };
   markOwnSites();
@@ -539,7 +543,7 @@ export async function collectCompany(
   const classifyDomains = async () => {
     try {
       const n = await classifyUnknownDomains(allSources, {
-        isCompanySite: (u) => classifySourceType(u, domain) === "company_site" || allSources.some((x) => x.url === u && x.source_type === "company_site") || brandLabelMatches(u, row.name) || (!!redirectDomain && u.includes(redirectDomain)),
+        isCompanySite: (u) => classifySourceType(u, domain) === "company_site" || allSources.some((x) => x.url === u && x.source_type === "company_site") || (!!redirectDomain && u.includes(redirectDomain)),
         ask: async (request) => {
           const msg = await ctx.anthropic.messages.create(requestFor(request, ctx.models.enrich));
           ctx.recordCost(ctx.models.enrich, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheReadTokens: 0, cacheWriteTokens: 0 } as never);
