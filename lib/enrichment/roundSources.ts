@@ -47,6 +47,7 @@ export const TIER2_DOMAINS = [
   "nytimes.com", "washingtonpost.com", "theguardian.com", "economist.com", "apnews.com", "bbc.com", "bbc.co.uk",
   "barrons.com", "marketwatch.com", "latimes.com",
   "business-standard.com", // owner, 2026-11-12
+  "theaustralian.com.au", "smh.com.au", // owner, 2026-11-14
 ];
 
 export const TIER3_DOMAINS = [
@@ -72,6 +73,7 @@ export const TIER3_DOMAINS = [
   // Technology, its regional editions too (au.pcmag.com…) — owner, 2026-11-03
   "pcmag.com",
   // Owner, 2026-11-03 (rejected-domains table, runs 1–2)
+  "haaretz.com", "taipeitimes.com", "gulfnews.com", "khaleejtimes.com", // owner, 2026-11-14
   "seenews.com", "aninews.in", "thehansindia.com", "dbusiness.com", "prolificnorth.co.uk",
 ];
 
@@ -92,6 +94,7 @@ export const TIER4_DOMAINS = [
   "gamesbeat.com", "techtarget.com", "siliconangle.com", "bankinfosecurity.com", "biospace.com",
   "nosh.com", "gameworldobserver.com", "channele2e.com", "pymnts.com", "venturecapitaljournal.com",
   "phocuswire.com", "constructiondive.com", "datacenterdynamics.com", "gamedeveloper.com", "wealthmanagement.com",
+  "robotics247.com", // owner, 2026-11-14 (trade press)
   "siliconrepublic.com", // owner, 2026-11-14: professional press, not national (tier 2 stays for the leading national and financial press)
   "pocketgamer.biz", "mcvuk.com", "vehicle-electronics.biz", "hpcwire.com", "computerweekly.com", // owner, 2026-11-14 (trade press)
   "financemagnates.com", "fxnewsgroup.com", "defensedaily.com", "electronicsweekly.com", "paymentsdive.com", "industrialcyber.co",
@@ -109,6 +112,7 @@ export const LOW_CONFIDENCE_DOMAINS = ["einpresswire.com", "accesswire.com", "ne
 /** Never a source for a round, beside every data platform (dataPlatforms.ts). */
 export const DENIED_DOMAINS = [
   // Aggregators of "alternatives" and review / comparison listings (owner, 2026-11-14: bouncewatch.com) — the listing sites of dataPlatforms.ts too
+  "ossia.com", "biggo.com", // owner, 2026-11-14 (a company, not an outlet; an aggregator)
   "contentgrip.com", "marktechpost.com", "yespress.io", "lounge.ai", "ai-market-watch.com", // owner, 2026-11-14 (rewriting blogs, paid PR distribution, company directories)
   "bouncewatch.com", "slant.co", "toolify.ai", "futurepedia.io", "theresanaiforthat.com", "topai.tools", "aitools.fyi", "siftery.com",
   ...LISTING_SITES,
@@ -292,7 +296,10 @@ export function isPartyRelease(url: string, headline: string | null | undefined)
   if (!RELEASE_PATH.test(path) && !releaseHost) return false;
   if (/\.gov(\.[a-z]{2})?$|\.gov\.[a-z]{2}$|\.gc\.ca$|\.europa\.eu$/.test(host)) return true;
   const label = (reviewDomain(url) ?? host).split(".")[0];
-  const words = new Set((headline ?? "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3));
+  const list = (headline ?? "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const words = new Set(list.filter((w) => w.length >= 3));
+  // A name of two words is one word in the address (bakerhughes.com, generalmills.com): adjacent headline words joined count too.
+  for (let i = 0; i + 1 < list.length; i++) { words.add(list[i] + list[i + 1]); if (i + 2 < list.length) words.add(list[i] + list[i + 1] + list[i + 2]); }
   return label.split("-").some((part, i) => (i === 0 || part.length >= 4) && part.length >= 3 && words.has(part));
 }
 
@@ -359,8 +366,9 @@ export function profileSourceAllowed(s: { url: string; source_type?: string | nu
   if (isDirectoryPage(s.url)) return false;
   if (s.source_type === "press_release") return true;
   const standing = roundSourceStanding(s.url, { content: s.content, headline: s.title, companyName });
-  // A party's release counts as tier 2 for the profile (owner, 2026-11-03): still within 1–3.
-  const tier = standing.kind === "allowed" && standing.why === "party_release" ? 2 : standing.kind === "allowed" ? standing.tier : 99;
+  // A party's release (an acquirer's, a partner's, an authority's) is for the news and for the event it is a party to (owner, 2026-11-14),
+  // not for facts about the company (headquarters, employees, founders, what it does).
+  const tier = standing.kind === "allowed" && standing.why === "party_release" ? 99 : standing.kind === "allowed" ? standing.tier : 99;
   return tier <= 3;
 }
 

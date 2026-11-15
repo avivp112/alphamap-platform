@@ -79,7 +79,8 @@ export function techDecision(
   profile: { is_tech_company: boolean; tech_decision?: "technology" | "not_technology" | "cannot_tell" },
   hasDescription: boolean,
 ): TechDecision {
-  const gateConfirms = !!gate && gate.is_tech_company === true && gate.enough_information !== false && gate.confidence !== "low";
+  // Only a sure early "yes" stands against the profile call's "no": a medium one (Moft: a coffee-table gadget maker one run, a technology company the next) does not.
+  const gateConfirms = !!gate && gate.is_tech_company === true && gate.enough_information !== false && gate.confidence === "high";
   if (gateConfirms) return "proceed";
   if (profile.tech_decision === "cannot_tell" || (gate?.enough_information === false && !hasDescription)) return "undetermined";
   // A rejection needs a described product to rest on: with nothing known about what the company sells, a "no" is not a finding (Ondato IL).

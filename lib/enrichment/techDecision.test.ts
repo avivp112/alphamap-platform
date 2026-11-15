@@ -14,6 +14,10 @@ describe("one technology decision from the early check and the profile call", ()
   it("Promethean Particles (advanced materials): same", () => {
     expect(techDecision(gate({ reason: "MOFs, deep tech advanced materials" }), { is_tech_company: false }, true)).toBe("proceed");
   });
+  it("Moft: an early 'technology' that is only medium does not overrule the profile's no", () => {
+    expect(techDecision(gate({ confidence: "medium" }), { is_tech_company: false, tech_decision: "not_technology" }, true)).toBe("reject");
+    expect(techDecision(gate({ confidence: "high" }), { is_tech_company: false, tech_decision: "not_technology" }, true)).toBe("proceed");
+  });
   it("MindUP Incubator: a thin early check and a profile that says incubator is a rejection", () => {
     expect(techDecision(gate({ enough_information: false, confidence: "low" }), { is_tech_company: false, tech_decision: "not_technology" }, true)).toBe("reject");
   });

@@ -34,11 +34,12 @@ import { reconcileSector, subSectorUnsupported } from "./sectors.ts";
 import { siteBelongsToAnotherCompany } from "./siteOwner.ts";
 import { buildSectorRequest, parseSectorChoice, classifyWithRetry, type SectorChoice } from "./classifySector.ts";
 import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
-import { buildDescriptionRequest, descriptionSources, processDescription } from "./descriptionBuilder.ts";
+import { buildDescriptionRequest, descriptionSources, processDescription, describeAttempt } from "./descriptionBuilder.ts";
 import { buildBackgroundRequest, processBackgroundResponse, backgroundSearchQuery, founderSearchQuery } from "./founderBackground.ts";
 import { requestFor } from "./models.ts";
 import { rejectedDomains, describeRejected } from "./rejectedDomains.ts";
 import { classifyUnknownDomains } from "./domainClassify.ts";
+import { ownBrandSources, finalHostOf } from "./ownDomain.ts";
 import { judgeArticleEntity, countryOfHost, type CompanyProfileForMatch } from "./articleEntity.ts";
 import { judgeMarketPeers, type PeerClaim, type PeerFacts, type buildPeerComparisonRequest } from "./marketComparison.ts";
 import { isDataPlatformUrl } from "./dataPlatforms.ts";
@@ -525,11 +526,24 @@ export async function collectCompany(
   ctx.onStage?.("extracting");
   let allSources: LabeledSource[] = buildLabeledSources(usableResults, domain);
   markCompanyLinkedFiles(allSources, websitePages);
+  // The company's own site is tier 1 even on another domain than the one on file (ownDomain.ts): where the registered website redirects to, or the same brand.
+  const redirectDomain = effectiveWebsite ? await finalHostOf(effectiveWebsite).catch(() => null) : null;
+  const registeredHost = effectiveWebsite ? (() => { try { return new URL(effectiveWebsite.startsWith("http") ? effectiveWebsite : `https://${effectiveWebsite}`).hostname.toLowerCase().replace(/^www\./, ""); } catch { return null; } })() : null;
+  const markOwnSites = () => {
+    const registered = { host: registeredHost, pages: websitePages.map((p) => ({ url: p.url, title: undefined, content: p.content })) };
+    for (const x of ownBrandSources(allSources, row.name, redirectDomain, registered)) {
+      const src = allSources.find((y) => y.url === x.url);
+      if (!src || src.source_type === "company_site") continue;
+      console.log(`    🏠  ${x.url} is the company's own site (${x.ownHow}) — tier 1.`);
+      src.source_type = "company_site";
+    }
+  };
+  markOwnSites();
   // A domain on no list is classified once (domainClass.ts): outlets and wires become tier 4, directories and blogs are blocked. Run again when sources are added.
   const classifyDomains = async () => {
     try {
       const n = await classifyUnknownDomains(allSources, {
-        isCompanySite: (u) => classifySourceType(u, domain) === "company_site",
+        isCompanySite: (u) => classifySourceType(u, domain) === "company_site" || allSources.some((x) => x.url === u && x.source_type === "company_site") || (!!redirectDomain && u.includes(redirectDomain)),
         ask: async (request) => {
           const msg = await ctx.anthropic.messages.create(requestFor(request, ctx.models.enrich));
           ctx.recordCost(ctx.models.enrich, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheReadTokens: 0, cacheWriteTokens: 0 } as never);
@@ -551,6 +565,12 @@ export async function collectCompany(
   logExtraction("profile", row.name, profileOutcome);
   let profile = profileOutcome.extraction.result;
   for (const d of profileOutcome.extraction.dropped) bump(stats.droppedByReason, d.reason);
+  // What the model proposed for the headquarters and the founders, before any filter: the coverage line at the end says what became of it.
+  const proposed = {
+    city: profile.profile.city?.value as string | undefined, country: profile.profile.country?.value as string | undefined,
+    where: allSources.find((x) => x.source_id === (profile.profile.city?.source_id ?? profile.profile.country?.source_id))?.url,
+    founders: (profile.profile.founders ?? []).map((f) => f.name),
+  };
   // Is an article about THIS company or a namesake (articleEntity.ts)? Compared with the profile: the country its domain suggests, what it does.
   const articleIsThisCompany = async (title: string, url: string, text: string) => {
     const company: CompanyProfileForMatch = { name: row.name, website: effectiveWebsite ?? row.website, countryHint: countryOfHost(domain) ?? row.country ?? null, about: [profile.profile.description, profile.profile.value_proposition, row.description].filter(Boolean).join(" ") };
@@ -1253,6 +1273,7 @@ export async function collectCompany(
     (profile.profile as Record<string, unknown>)[key] = undefined;
   }
 
+  markOwnSites();
   await classifyDomains();
   // ── The allowed sources apply to every field (owner, 2026-11-02): the company's own site or
   // release, a register, the press of tiers 1–3 (rounds: 1–4, roundSources.ts). LinkedIn,
@@ -1637,8 +1658,10 @@ export async function collectCompany(
         ctx.recordCost(ctx.models.profile, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 });
         const tool = msg.content.find((b) => b.type === "tool_use");
         const returned = tool && tool.type === "tool_use" && Array.isArray((tool.input as { sentences?: unknown[] }).sentences) ? (tool.input as { sentences: Array<{ role: string }> }).sentences.map((x) => x.role) : [];
-        const built = tool && tool.type === "tool_use" ? processDescription(tool.input, row.name, Object.fromEntries(usable.map((x) => [x.source_id, x])), (id) => allowedFact({ source_id: id })) : null;
-        for (const d of built?.dropped ?? []) { console.log(`    🚫  description sentence dropped (${d.why}): "${d.text.slice(0, 90)}"`); bump(stats.droppedByReason, `description_${d.why.split(":")[0]}`); }
+        const attempt = tool && tool.type === "tool_use" ? describeAttempt(tool.input, row.name, Object.fromEntries(usable.map((x) => [x.source_id, x])), (id) => allowedFact({ source_id: id })) : null;
+        const built = attempt?.built ?? null;
+        // Every dropped sentence is named, also when no description came of it (owner, 2026-11-14: nine companies without one and nothing in the log).
+        for (const d of attempt?.dropped ?? []) { console.log(`    🚫  description sentence dropped (${d.why}): "${d.text.slice(0, 160)}"`); bump(stats.droppedByReason, `description_${d.why.split(":")[0]}`); }
         if (built) {
           profile.profile.description = built.description;
           profile.profile.description_source_ids = [...new Set(built.sentences.flatMap((x) => x.source_ids))];
@@ -1774,6 +1797,15 @@ export async function collectCompany(
     if (domain) headcountExtra.push(...await waybackHeadcount(domain, row.name, io));
     if (headcountExtra.length) console.log(`    👥  Headcount points: ${headcountExtra.map((p) => `${p.value}${p.lowerBound ? "+" : ""}@${p.date} (${p.type})`).join(", ")}`);
     else console.log("    👥  Headcount points: none from registers or archived pages.");
+  }
+
+  // Coverage, per company (owner, 2026-11-14): the pages read, and what became of the headquarters and the founders the model proposed.
+  {
+    const short = (u: string) => { try { const x = new URL(u); return x.pathname === "/" ? x.hostname.replace(/^www\./, "") : x.pathname.replace(/\/$/, ""); } catch { return u; } };
+    console.log(`    🔍  Pages of the company read: ${websitePages.length ? websitePages.map((p) => `${short(p.url)} (${p.content.length})`).join(", ") : "none"}${websitePages.length ? "" : " — the site could not be read"}`);
+    const fin = profile.profile;
+    console.log(`        Headquarters: the model proposed ${proposed.city ?? "no city"}${proposed.country ? `, ${proposed.country}` : ""}${proposed.where ? ` from ${proposed.where.slice(0, 90)}` : ""}; kept ${fin.city?.value ?? "no city"}${fin.country?.value ? `, ${fin.country.value}` : ""}${hqDecided ? " (decided)" : ""}.`);
+    console.log(`        Founders: the model proposed ${proposed.founders.length ? proposed.founders.join(", ") : "none"}; kept ${(fin.founders ?? []).length ? (fin.founders ?? []).map((f) => f.name).join(", ") : "none"}.`);
   }
 
   return {

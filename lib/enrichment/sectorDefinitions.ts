@@ -48,7 +48,7 @@ export const SECTOR_DEFINITIONS: Record<string, string> = {
   "Observability & Monitoring": "watches systems, metrics and business KPIs for anomalies and incidents (logs, traces, anomaly detection); not security monitoring.",
   "Vertical SaaS": "software built for one industry's workflows; the sector is the customer's industry and this is added as a tag.",
   // E-commerce & Retail
-  "E-commerce / General": "online selling with no narrower fit.",
+  "E-commerce / General": "online selling with no narrower fit, including shoppable video and commerce overlays that let viewers buy inside content.",
   "D2C": "a brand that sells its own products directly to consumers.",
   "Marketplaces": "a platform matching many sellers and buyers.",
   "Logistics / Supply Chain": "moves, stores or tracks goods (freight, warehousing, last mile, supply-chain visibility).",
@@ -72,7 +72,7 @@ export const SECTOR_DEFINITIONS: Record<string, string> = {
   "ERP / Finance": "finance software for a company's own finance team: accounting, FP&A, budgeting, planning and consolidation, procurement and spend management, billing, invoicing and subscription revenue operations.",
   "Analytics / BI": "dashboards, reporting and data analysis for business users, including market-data products.",
   "Sales Tech": "helps sales teams sell: quoting and CPQ, revenue operations, sales engagement; differs from CRM, which stores the relationship.",
-  "Productivity & Collaboration": "tools for personal and team work: email, docs, meetings, notes, task management; engineering and product-lifecycle tools for hardware teams are Advanced Manufacturing.",
+  "Productivity & Collaboration": "tools for team and business work: email, docs, meetings, notes, task management (an email, calendar, notes or storage account that a person opens for themselves, with no business buyer named, is Consumer / General); engineering and product-lifecycle tools for hardware teams are Advanced Manufacturing.",
   "Customer Support & CX": "customer service desks, support automation and customer-experience measurement.",
   "Marketing Tech": "marketing automation, content, attribution and customer-engagement software; media buying is AdTech.",
   "Legal & Compliance Software": "contracts, e-discovery, legal operations and corporate compliance workflow for in-house and law-firm teams.",
