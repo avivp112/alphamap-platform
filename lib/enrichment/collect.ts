@@ -433,7 +433,7 @@ export async function collectCompany(
 
   const allRaw: RawSearchResult[] = [
     ...searchResults,
-    ...websitePages.map((p) => ({ url: p.url, content: p.content, provider: p.provider, query_label: "website", ...(p.also_urls ? { also_urls: p.also_urls } : {}) })),
+    ...websitePages.map((p) => ({ url: p.url, content: p.content, ...(p.prompt_content ? { prompt_content: p.prompt_content } : {}), provider: p.provider, query_label: "website", ...(p.also_urls ? { also_urls: p.also_urls } : {}) })),
   ];
 
   if (allRaw.length === 0 && ctx.update) {
@@ -571,6 +571,8 @@ export async function collectCompany(
     where: allSources.find((x) => x.source_id === (profile.profile.city?.source_id ?? profile.profile.country?.source_id))?.url,
     founders: (profile.profile.founders ?? []).map((f) => f.name),
   };
+  // Why a proposed value was not kept, in the words of the step that dropped it (owner, 2026-11-15: no silent drop).
+  const fates = { hq: null as string | null, founders: new Map<string, string>() };
   // Is an article about THIS company or a namesake (articleEntity.ts)? Compared with the profile: the country its domain suggests, what it does.
   const articleIsThisCompany = async (title: string, url: string, text: string) => {
     const company: CompanyProfileForMatch = { name: row.name, website: effectiveWebsite ?? row.website, countryHint: countryOfHost(domain) ?? row.country ?? null, about: [profile.profile.description, profile.profile.value_proposition, row.description].filter(Boolean).join(" ") };
@@ -875,6 +877,7 @@ export async function collectCompany(
   // Only an allowed source grounds a founder (owner, 2026-11-02: the list applies to every field).
   const grounded = groundFounders(profile.profile.founders ?? [], allSources.filter((s) => profileSourceAllowed(s, row.name)), row.name, roundInvestors);
   for (const d of grounded.dropped) {
+    fates.founders.set(d.name, d.reason === "founder_is_investor" ? "named among the investors" : `no allowed source says they founded the company (${allSources.filter((x) => profileSourceAllowed(x, row.name)).length} allowed source(s) read)`);
     console.log(`    👤  ${d.name} not kept as a founder (${d.reason === "founder_is_investor" ? "named among the investors" : "no source says they founded this company"}).`);
     bump(stats.droppedByReason, d.reason);
   }
@@ -1169,6 +1172,7 @@ export async function collectCompany(
       statements.push({ city: mc.value, quote: mc.evidence_quote, source_id: mc.source_id, url: mcSource.url, kind: mcKind, date: mcKind === "company" && mcSource.source_type === "company_site" ? null : articleDate(mcSource) });
     }
     const hq = decideHeadquarters(statements, undefined, (profile.profile.offices ?? []).map((o) => o.city));
+    if (hq.kind === "none" && !fates.hq) fates.hq = mc ? `no allowed source states the headquarters: the model's "${mc.evidence_quote.slice(0, 100)}" is not a headquarters statement (${mcSource?.url ?? mc.source_id})` : "no source states the headquarters";
     if (hq.kind === "declared") {
       const st = hq.statement;
       // The model's own quote stands only when it cites the statement's source: the same city
@@ -1183,6 +1187,7 @@ export async function collectCompany(
       hqDecided = true;
       profile.profile.country = country;
     } else if (hq.kind === "conflict") {
+      fates.hq = `the press of the last two years disagrees: ${hq.cities.map((c) => c.city).join(" vs ")}`;
       console.log(`    🏢  Headquarters left empty — the press of the last two years disagrees: ${hq.cities.map((c) => `${c.city} (${c.url})`).join(" vs ")}. Both are offices.`);
       profile.profile.city = undefined;
       profile.profile.country = undefined;
@@ -1197,6 +1202,7 @@ export async function collectCompany(
       profile.profile.city = undefined;
       if (profile.profile.country?.evidence_quote === mc.evidence_quote) profile.profile.country = undefined;
     } else if (hq.kind === "site_offices") {
+      fates.hq = `the site lists several offices without naming a headquarters (${hq.cities.join(", ")})`;
       console.log(`    🏢  Headquarters left empty — the company's site lists ${hq.cities.join(", ")} without naming one, and no press declaration is from the last two years. They stay offices.`);
       profile.profile.city = undefined;
       profile.profile.country = undefined;
@@ -1206,6 +1212,7 @@ export async function collectCompany(
   // "Founder, Sisense" never makes anyone a founder of this company (owner, 2026-11-04).
   profile.profile.founders = profile.profile.founders?.filter((f) => {
     if (!f.title || roleAtCompany(f.title, row.name).role !== null) return true;
+    fates.founders.set(f.name, `the title "${f.title}" is at another company`);
     console.log(`    🚫  founder ${f.name} not written — the title "${f.title}" is at another company`);
     bump(stats.droppedByReason, "founder_of_another_company");
     return false;
@@ -1267,6 +1274,7 @@ export async function collectCompany(
       continue;
     }
     if (s && profileSourceAllowed(s, row.name)) continue;
+    if (key === "city" || key === "country") fates.hq = `${key} ${JSON.stringify(f.value)}: its source is not on the allowed list (${s?.url ?? f.source_id})`;
     console.log(`    🚫  ${key} ${JSON.stringify(f.value)} not written — its source is not on the allowed list: ${s?.url ?? f.source_id}`);
     rejectedDomains.note(key, s?.url, `${key} ${JSON.stringify(f.value)}`);
     bump(stats.droppedByReason, "profile_source_not_listed");
@@ -1802,10 +1810,13 @@ export async function collectCompany(
   // Coverage, per company (owner, 2026-11-14): the pages read, and what became of the headquarters and the founders the model proposed.
   {
     const short = (u: string) => { try { const x = new URL(u); return x.pathname === "/" ? x.hostname.replace(/^www\./, "") : x.pathname.replace(/\/$/, ""); } catch { return u; } };
-    console.log(`    🔍  Pages of the company read: ${websitePages.length ? websitePages.map((p) => `${short(p.url)} (${p.content.length})`).join(", ") : "none"}${websitePages.length ? "" : " — the site could not be read"}`);
+    console.log(`    🔍  Pages of the company read: ${websitePages.length ? websitePages.map((p) => `${short(p.url)} (${p.content.length}→${p.prompt_content?.length ?? p.content.length})`).join(", ") : "none"}${websitePages.length ? "" : " — the site could not be read"}`);
     const fin = profile.profile;
-    console.log(`        Headquarters: the model proposed ${proposed.city ?? "no city"}${proposed.country ? `, ${proposed.country}` : ""}${proposed.where ? ` from ${proposed.where.slice(0, 90)}` : ""}; kept ${fin.city?.value ?? "no city"}${fin.country?.value ? `, ${fin.country.value}` : ""}${hqDecided ? " (decided)" : ""}.`);
-    console.log(`        Founders: the model proposed ${proposed.founders.length ? proposed.founders.join(", ") : "none"}; kept ${(fin.founders ?? []).length ? (fin.founders ?? []).map((f) => f.name).join(", ") : "none"}.`);
+    console.log(`        Headquarters: the model proposed ${proposed.city ?? "no city"}${proposed.country ? `, ${proposed.country}` : ""}${proposed.where ? ` from ${proposed.where.slice(0, 90)}` : ""}; kept ${fin.city?.value ?? "no city"}${fin.country?.value ? `, ${fin.country.value}` : ""}${hqDecided ? " (decided)" : ""}${proposed.city && !fin.city ? ` — not kept: ${fates.hq ?? "dropped by a later check (see the lines above)"}` : ""}.`);
+    const keptNames = (fin.founders ?? []).map((f) => f.name);
+    const lost = proposed.founders.filter((n) => !keptNames.some((k) => samePersonName(k, n)));
+    console.log(`        Founders: the model proposed ${proposed.founders.length ? proposed.founders.join(", ") : "none"}; kept ${keptNames.length ? keptNames.join(", ") : "none"}.`);
+    for (const n of lost) console.log(`          · ${n} not kept: ${fates.founders.get(n) ?? "dropped by a later check (see the lines above)"}`);
   }
 
   return {

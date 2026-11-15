@@ -208,6 +208,9 @@ export const OFFICE_HEADING = /(?:^|[|*#>\s])(?:our\s+)?(?:offices?|locations?)\
 // ("BS1 6QH", "94105", "6789141").
 const ADDRESS_HINT = /(\b\d{1,5}\s+\p{L}{3,}|\p{L}{3,}\.?\s+\d{1,5}\b|\b[A-Z]{1,2}\d[A-Z\d]?\s\d[A-Z]{2}\b|\b\d{5}(?:-\d{4})?\b|\b\d{7}\b)/u;
 
+/** The word that declares an address the headquarters. */
+const HQ_LABEL = /\b(?:head ?quarters?|head office|main office|global office|corporate office|hq)\b/i;
+
 /**
  * The cities of the street addresses the company's Contact page gives
  * (owner, 2026-11-02): one address there is the headquarters, even without
@@ -219,12 +222,18 @@ export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type
   if (s.source_type !== "company_site" || ![s.url, ...(s.also_urls ?? [])].some((u) => /\/contact/i.test(u))) return [];
   const out: HqStatement[] = [];
   let underOfficeHeading = false;
+  // An address marked Headquarters / Head office / HQ — on its own line or under such a heading — is the headquarters even among several (owner, 2026-11-15: Hydrostor).
+  let hqMarkLeft = 0;
   for (const raw of s.content.split(/\n+/)) {
     // Markdown images and links are not addresses: drop images, keep a link's text only
     // ("![Image 4: … return to main Palo Alto Networks site](…)" on Koi's page — 2026-11-02).
     const line = raw.replace(/!\[[^\]]*\]\([^)]*\)/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/https?:\/\/\S+/g, " ").trim();
     if (OFFICE_HEADING.test(line)) underOfficeHeading = true;
-    if (line.length > 250 || !ADDRESS_HINT.test(line)) continue;
+    const marked = HQ_LABEL.test(line);
+    if (marked && !ADDRESS_HINT.test(line)) { hqMarkLeft = 3; continue; }   // a heading: the address follows within a few lines
+    if (line.length > 250 || !ADDRESS_HINT.test(line)) { if (hqMarkLeft > 0) hqMarkLeft--; continue; }
+    const declared = marked || hqMarkLeft > 0;
+    if (hqMarkLeft > 0) hqMarkLeft = 0;
     for (const m of line.matchAll(CITY_RE)) {
       const city = title(m[2].toLowerCase());
       // An address names the city before a comma, a postcode, a state code or the line's end —
@@ -234,7 +243,7 @@ export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type
       // A street named after a city is not the city ("46430 Fremont Blvd": EnerVenue, model check 2026-11-02).
       if (/^\s+(blvd|boulevard|st|street|ave|avenue|rd|road|way|drive|dr|lane|ln|place|pl|parkway|pkwy|highway|hwy)\b\.?/i.test(line.slice(m.index! + m[0].length))) continue;
       if (isRegionalOfficeQuote(line, city)) continue;
-      if (!out.some((o) => sameCity(o.city, city))) out.push({ city, quote: line, source_id: s.source_id, url: s.url, kind: "company", date: null, viaAddress: true, ...(underOfficeHeading ? { officeList: true } : {}) });
+      if (!out.some((o) => sameCity(o.city, city))) out.push({ city, quote: line, source_id: s.source_id, url: s.url, kind: "company", date: null, viaAddress: !declared, ...(!declared && underOfficeHeading ? { officeList: true } : {}) });
     }
   }
   return out;

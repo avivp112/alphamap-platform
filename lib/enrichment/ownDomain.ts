@@ -32,19 +32,24 @@ export function isSameBrandPage(page: { url: string; title?: string | null; cont
   return brandLabelMatches(page.url, companyName) && pageNamesCompany(page, companyName);
 }
 
-const finalHosts = new Map<string, string | null>();
-/** The registrable domain an address ends up at after its redirects (3.5 s per hop is plenty); null when it cannot be reached. */
-export async function finalHostOf(url: string, fetchImpl: typeof fetch = fetch): Promise<string | null> {
-  if (finalHosts.has(url)) return finalHosts.get(url)!;
+const finalOrigins = new Map<string, string | null>();
+/** The origin (https://host) an address ends up at after its redirects; null when it cannot be reached. tymebank.co.za → https://gotyme.co.za */
+export async function finalOriginOf(url: string, fetchImpl: typeof fetch = fetch): Promise<string | null> {
+  if (finalOrigins.has(url)) return finalOrigins.get(url)!;
   let out: string | null = null;
   try {
     const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 8000);
     const r = await fetchImpl(url.startsWith("http") ? url : `https://${url}`, { redirect: "follow", signal: ctl.signal, headers: { "user-agent": "Mozilla/5.0 (compatible; AlphaMapBot)" } });
     clearTimeout(t);
-    out = registrable(new URL(r.url).hostname.toLowerCase().replace(/^www\./, ""));
+    out = new URL(r.url).origin;
   } catch { out = null; }
-  finalHosts.set(url, out);
+  finalOrigins.set(url, out);
   return out;
+}
+/** The registrable domain an address ends up at after its redirects; null when it cannot be reached. */
+export async function finalHostOf(url: string, fetchImpl: typeof fetch = fetch): Promise<string | null> {
+  const o = await finalOriginOf(url, fetchImpl);
+  return o ? registrable(new URL(o).hostname.toLowerCase().replace(/^www\./, "")) : null;
 }
 
 // ── Evidence that a page of another domain is the company's own (owner, 2026-11-14, condition on MR 54) ──────────────────────────────────

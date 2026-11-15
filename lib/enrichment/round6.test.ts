@@ -57,6 +57,12 @@ describe("domain classes: a guess is blocked, a page's class is the page's", () 
     expect(parseDomainClass({ class: "news_outlet", scope: "domain", confident: false, reason: "Trade publication." })).toMatchObject({ class: "blog_vendor_other" });
     expect(parseDomainClass({ class: "news_outlet", scope: "domain", confident: true, reason: "Trade publication with editors." })).toMatchObject({ class: "news_outlet" });
   });
+  it("an answer that could not be read is no doubt: null, so it is asked again", () => {
+    expect(parseDomainClass({})).toBeNull();
+    expect(parseDomainClass(null)).toBeNull();
+    expect(parseDomainClass({ class: "news_outlet" })).toBeNull();            // cut off before the reason
+    expect(parseDomainClass({ class: "weird", reason: "x" })).toBeNull();
+  });
   it("a page-scoped class does not classify the site (haaretz.com's Haaretz Labels piece)", () => {
     domainClasses.set({ key: "page:https://www.haaretz.com/labels/x", class: "blog_vendor_other", reason: "sponsored", example_url: "https://www.haaretz.com/labels/x", example_title: "", at: "", page: true });
     expect(domainClasses.get("https://www.haaretz.com/labels/x")).toBeDefined();
@@ -132,5 +138,24 @@ describe("condition on MR 54: the same brand is not enough — marvel.com is not
     const reg = { host: "acme.io", pages: [{ url: "https://acme.io/", title: "Acme", content: "# FlowDesk\nWorkflow tool" }] };
     expect(ownEvidence({ url: "https://acme.com/", content: "Acme FlowDesk now available" }, reg, "Acme")?.how).toBe("product");
     expect(ownEvidence({ url: "https://acme.com/", content: "Acme sells ladders" }, reg, "Acme")).toBeNull();
+  });
+});
+
+import { contactPageAddresses, decideHeadquarters } from "./headquarters.ts";
+describe("a Contact page of several addresses decides the headquarters when one is marked (owner, 2026-11-15: Hydrostor)", () => {
+  const src = (content: string) => ({ url: "https://hydrostor.ca/contact", source_type: "company_site" as const, content, source_id: "W4", also_urls: [] as string[] });
+  it("an address under a Headquarters heading is the headquarters, the others are offices", () => {
+    const s = contactPageAddresses(src("# Contact\n\n## Headquarters\n\n33 Yonge Street, Toronto, ON M5E 1G4\n\n## Offices\n\n1900 Grant Street, Denver, CO 80203\n\n120 Collins Street, Melbourne VIC 3000"));
+    const toronto = s.find((x) => x.city === "Toronto");
+    expect(toronto?.viaAddress).toBe(false);
+    expect(decideHeadquarters(s)).toMatchObject({ kind: "declared", statement: { city: "Toronto" } });
+  });
+  it("a line that says it: 'Head office: 33 Yonge Street, Toronto'", () => {
+    const s = contactPageAddresses(src("Head office: 33 Yonge Street, Toronto, ON M5E 1G4\n1900 Grant Street, Denver, CO 80203"));
+    expect(decideHeadquarters(s)).toMatchObject({ kind: "declared", statement: { city: "Toronto" } });
+  });
+  it("without a mark, several addresses are still offices", () => {
+    const s = contactPageAddresses(src("33 Yonge Street, Toronto, ON M5E 1G4\n\n1900 Grant Street, Denver, CO 80203"));
+    expect(decideHeadquarters(s).kind).not.toBe("declared");
   });
 });
