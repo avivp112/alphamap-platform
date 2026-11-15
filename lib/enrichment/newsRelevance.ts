@@ -25,6 +25,8 @@ export function stripTrackingParams(url: string): string {
  * that mentions this one: it counts only when the first paragraph names the company too. With no text to read, the
  * headline alone must name it (Datatruck's "IT Park Ventures: The First Venture Investments in Uzbekistan's Startups").
  */
+const TRAILING_DESCRIPTOR = new Set(["inc", "ltd", "llc", "gmbh", "corp", "co", "labs", "lab", "technologies", "technology", "tech", "systems", "medical", "applied", "group", "holdings", "solutions", "software", "bio", "health", "therapeutics", "robotics", "networks"]);
+
 export function namesCompanyUpFront(item: { title?: string | null; content?: string | null }, companyName: string): boolean {
   const core = companyName.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").replace(/\s+/g, " ").trim();
   if (!core) return true;
@@ -32,6 +34,11 @@ export function namesCompanyUpFront(item: { title?: string | null; content?: str
   const has = (t: string) => t.includes(` ${core} `) || t.includes(` ${core.replace(/ /g, "")} `);
   const title = item.title ?? "";
   if (has(flat(title, false))) return true; // named outright in the headline
+  // The short form a headline uses: the name without its trailing descriptor ("HIL Applied Medical" → "HIL", owner 2026-11-15, Calcalist's "Cancer Treatment Company HIL …").
+  const words = core.split(" ");
+  while (words.length > 1 && TRAILING_DESCRIPTOR.has(words[words.length - 1])) words.pop();
+  const short = words.join(" ");
+  if (short !== core && short.length >= 3 && !words.every((w) => TRAILING_DESCRIPTOR.has(w)) && flat(title, false).includes(` ${short} `)) return true;
   if (has(flat(title, true)) && flat(title, true).trim().startsWith(core)) return true; // "Speechify's new feature…"
   return has(flat((item.content ?? "").slice(0, 400), true)); // else the first paragraph must name it
 }
