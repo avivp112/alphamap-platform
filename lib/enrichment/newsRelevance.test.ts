@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { newsProblem, isExplainer, describedProduct } from "./newsRelevance";
+import { newsProblem, isExplainer, describedProduct, namesCompanyUpFront } from "./newsRelevance";
 
 const superblocks = "Superblocks is a governed enterprise platform that lets business teams generate AI apps and agents on company data, while IT controls integrations, permissions and code security.";
 
@@ -166,5 +166,13 @@ describe("headlineIncomplete (wet batch 3, Synthflow / Business Insider, 2026-11
   it("fewer than five words is for the page to confirm, and a stored mark does not apply that part", () => {
     expect(headlineIncomplete("Quris-AI Acquires Nortis")).toBe(true);
     expect(headlineIncomplete("Quris-AI Acquires Nortis", { short: false })).toBe(false);
+  });
+});
+
+describe("the short form of a name in a headline (owner, 2026-11-15: HIL Applied Medical)", () => {
+  it("'HIL' names HIL Applied Medical; a name that is only descriptors has no short form", () => {
+    expect(namesCompanyUpFront({ title: "Cancer Treatment Company HIL to Set Up $5 Million Jerusalem Manufacture Center", content: "" }, "HIL Applied Medical")).toBe(true);
+    expect(namesCompanyUpFront({ title: "Applied Materials posts record quarter", content: "" }, "Applied Medical")).toBe(false);
+    expect(namesCompanyUpFront({ title: "Hilton opens a hotel", content: "" }, "HIL Applied Medical")).toBe(false);
   });
 });
