@@ -224,6 +224,9 @@ export function isLeadershipRole(role: string | null | undefined): boolean {
   if (!r) return false;
   if (/\b(not specified|unspecified|unknown|n\/a|none|employee|staff|team member|member of|intern|contractor|volunteer|student|candidate)\b/i.test(r)) return false;
   if (/\bchief\s+of\s+staff\b/i.test(r) && !/\b(ceo|cto|cfo|coo|founder|president)\b/i.test(r)) return false;
+  // A past role is no leadership (owner, round 10: TymeBank "CEO (former TymeBank CEO)"), and "Founder" alone is not a management title: founders have their own field.
+  if (/\b(former|formerly|ex-|previous(?:ly)?|past|outgoing|retired|stepped down)\b/i.test(r)) return false;
+  if (!/\b(ceo|cto|cfo|coo|cmo|cpo|cro|cio|ciso|cdo|cso|cco|clo|chro|cxo|chief\b|president|general manager|managing director|vp|svp|evp|vice[- ]president)\b/i.test(r)) return false;
   return /\b(ceo|cto|cfo|coo|cmo|cpo|cro|cio|ciso|cdo|cso|cco|clo|chro|cxo|chief\b[\p{L} &,-]{0,40}\bofficer|president|founders?|co-?\s?founders?|general manager|managing director|vp|svp|evp|vice[- ]president)\b/iu.test(r);
 }
 

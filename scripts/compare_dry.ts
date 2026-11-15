@@ -3,7 +3,7 @@
  * scripts/compare_dry.ts — two dry runs of the same companies side by side (owner, 2026-11-15): per company and field, what is new, what is gone, what changed.
  * A run is lost when the next one overwrites its report, so keep copies:  cp pilot_report_dry.csv runs/dry_$(date +%m%d_%H%M).csv
  *
- *   A=runs/dry_1114.csv B=pilot_report_dry.csv npx tsx scripts/compare_dry.ts
+ *   npx tsx scripts/compare_dry.ts runs/dry_1114.csv [pilot_report_dry.csv]      (or A=… B=… in the environment)
  */
 import { readFileSync, existsSync } from "fs";
 
@@ -21,8 +21,9 @@ function parseCsv(text: string): string[][] {
   if (cur || row.length) { row.push(cur); rows.push(row); }
   return rows;
 }
-const A = process.env.A, B = process.env.B ?? "pilot_report_dry.csv";
-if (!A || !existsSync(A) || !existsSync(B)) { console.error("A=<older report.csv> [B=<newer, default pilot_report_dry.csv>]"); process.exit(1); }
+const args = process.argv.slice(2).filter((x) => !x.startsWith("-"));
+const A = args[0] ?? process.env.A, B = args[1] ?? process.env.B ?? "pilot_report_dry.csv";
+if (!A || !existsSync(A) || !existsSync(B)) { console.error("npx tsx scripts/compare_dry.ts <older.csv> [<newer.csv, default pilot_report_dry.csv>]   (or A=… B=… in the environment; LOG=<run log> marks REPLAY cache misses)"); process.exit(1); }
 
 function load(path: string): Map<string, Map<string, string[]>> {
   const [head, ...body] = parseCsv(readFileSync(path, "utf8"));
