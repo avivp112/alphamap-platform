@@ -1,312 +1,812 @@
 ﻿id,produced,replayed_at,rules,note
-g.r1,yes,2026-11-09,74fc7b0,
-g.r2,yes,2026-11-09,74fc7b0,
-g.r3,yes,2026-11-09,74fc7b0,
-g.r4,yes,2026-11-09,74fc7b0,
-g.r5,yes,2026-11-09,74fc7b0,
-g.r6,yes,2026-11-09,74fc7b0,
-g.r7,yes,2026-11-09,74fc7b0,
-g.r8,yes,2026-11-09,74fc7b0,
-g.r9,yes,2026-11-09,74fc7b0,
-g.c1,yes,2026-11-09,74fc7b0,
-g.c2,no,2026-11-09,74fc7b0,"a row of links, not a quote"
-g.c3,no,2026-11-09,74fc7b0,"a row of links, not a quote"
-g.c4,yes,2026-11-09,74fc7b0,
-g.c5,yes,2026-11-09,74fc7b0,
-g.c6,yes,2026-11-09,74fc7b0,
-g.c7,yes,2026-11-09,74fc7b0,
-g.c8,yes,2026-11-09,74fc7b0,
-g.c9,yes,2026-11-09,74fc7b0,
-g.c10,no,2026-11-09,74fc7b0,the quote does not link the company and this competitor directly
-g.c11,yes,2026-11-09,74fc7b0,
-g.c12,no,2026-11-09,74fc7b0,the quote does not link the company and this competitor directly
-g.c13,no,2026-11-09,74fc7b0,the quote does not link the company and this competitor directly
-g.c14,yes,2026-11-09,74fc7b0,
-g.c15,yes,2026-11-09,74fc7b0,
-g.c16,yes,2026-11-09,74fc7b0,
-g.c17,yes,2026-11-09,74fc7b0,
-m.1,yes,2026-11-09,74fc7b0,
-m.2,yes,2026-11-09,74fc7b0,
-m.3,no,2026-11-09,74fc7b0,source not allowed (denied_domain)
-m.4,no,2026-11-09,74fc7b0,source not allowed (data_platform)
-1.2,yes,2026-11-09,74fc7b0,
-1.9,yes,2026-11-09,74fc7b0,
-1.10,yes,2026-11-09,74fc7b0,
-1.13,yes,2026-11-09,74fc7b0,
-1.17,yes,2026-11-09,74fc7b0,
-1.18,no,2026-11-09,74fc7b0,no source
-1.19,no,2026-11-09,74fc7b0,source not allowed (denied_domain)
-1.21,no,2026-11-09,74fc7b0,no source
-1.22,yes,2026-11-09,74fc7b0,
-1.24,yes,2026-11-09,74fc7b0,
-1.25,yes,2026-11-09,74fc7b0,
-1.29,yes,2026-11-09,74fc7b0,
-1.1,yes,2026-11-09,74fc7b0,
-1.3,yes,2026-11-09,74fc7b0,
-1.4,yes,2026-11-09,74fc7b0,
-1.5,yes,2026-11-09,74fc7b0,
-1.6,yes,2026-11-09,74fc7b0,
-1.7,yes,2026-11-09,74fc7b0,
-1.8,yes,2026-11-09,74fc7b0,
-1.11,yes,2026-11-09,74fc7b0,
-1.12,yes,2026-11-09,74fc7b0,
-1.14,yes,2026-11-09,74fc7b0,
-1.16,yes,2026-11-09,74fc7b0,
-1.20,yes,2026-11-09,74fc7b0,
-1.23,yes,2026-11-09,74fc7b0,
-1.26,yes,2026-11-09,74fc7b0,
-1.27,yes,2026-11-09,74fc7b0,
-1.28,yes,2026-11-09,74fc7b0,
-1.30,yes,2026-11-09,74fc7b0,
-1.31,yes,2026-11-09,74fc7b0,
-1.32,yes,2026-11-09,74fc7b0,
-1.33,yes,2026-11-09,74fc7b0,
-1.34,yes,2026-11-09,74fc7b0,
-1.35,yes,2026-11-09,74fc7b0,
-1.36,yes,2026-11-09,74fc7b0,
-2.1,yes,2026-11-09,74fc7b0,
-2.2,yes,2026-11-09,74fc7b0,
-2.3,yes,2026-11-09,74fc7b0,
-2.4,yes,2026-11-09,74fc7b0,
-2.5,yes,2026-11-09,74fc7b0,
-2.6,yes,2026-11-09,74fc7b0,
-2.7,yes,2026-11-09,74fc7b0,
-2.8,no,2026-11-09,74fc7b0,"an organisation, not a person"
-2.9,no,2026-11-09,74fc7b0,"an organisation, not a person"
-2.10,no,2026-11-09,74fc7b0,not about the person
-2.11,yes,2026-11-09,74fc7b0,
-2.12,yes,2026-11-09,74fc7b0,
-2.13,yes,2026-11-09,74fc7b0,
-2.14,yes,2026-11-09,74fc7b0,
-2.15,yes,2026-11-09,74fc7b0,
-2.16,yes,2026-11-09,74fc7b0,
-2.17,yes,2026-11-09,74fc7b0,
-2.18,no,2026-11-09,74fc7b0,dated by an article that does not announce the raise
-2.19,yes,2026-11-09,74fc7b0,
-2.20,yes,2026-11-09,74fc7b0,
-2.21,yes,2026-11-09,74fc7b0,
-2.22,yes,2026-11-09,74fc7b0,
-2.23,yes,2026-11-09,74fc7b0,
-2.24,yes,2026-11-09,74fc7b0,
-2.25,yes,2026-11-09,74fc7b0,
-2.26,yes,2026-11-09,74fc7b0,
-2.27,yes,2026-11-09,74fc7b0,
-2.28,yes,2026-11-09,74fc7b0,
-2.29,yes,2026-11-09,74fc7b0,
-3.1,yes,2026-11-09,74fc7b0,
-3.2,yes,2026-11-09,74fc7b0,
-3.3,yes,2026-11-09,74fc7b0,
-3.4,yes,2026-11-09,74fc7b0,
-3.5,yes,2026-11-09,74fc7b0,
-3.6,yes,2026-11-09,74fc7b0,
-3.7,yes,2026-11-09,74fc7b0,
-3.8,yes,2026-11-09,74fc7b0,
-3.9,yes,2026-11-09,74fc7b0,
-3.10,yes,2026-11-09,74fc7b0,
-3.11,no,2026-11-09,74fc7b0,not on the closed list of leadership roles
-3.12,yes,2026-11-09,74fc7b0,
-3.13,yes,2026-11-09,74fc7b0,
-3.14,no,2026-11-09,74fc7b0,amount stated in its source
-3.15,yes,2026-11-09,74fc7b0,
-3.16,yes,2026-11-09,74fc7b0,
-3.17,yes,2026-11-09,74fc7b0,
-3.18,yes,2026-11-09,74fc7b0,
-3.19,yes,2026-11-09,74fc7b0,
-3.20,yes,2026-11-09,74fc7b0,
-3.21,yes,2026-11-09,74fc7b0,
-3.22,yes,2026-11-09,74fc7b0,
-3.23,yes,2026-11-09,74fc7b0,
-3.24,yes,2026-11-09,74fc7b0,
-4.1,yes,2026-11-09,74fc7b0,
-4.2,yes,2026-11-09,74fc7b0,
-4.3,yes,2026-11-09,74fc7b0,
-4.4,yes,2026-11-09,74fc7b0,
-4.5,yes,2026-11-09,74fc7b0,
-4.6,yes,2026-11-09,74fc7b0,
-4.7,yes,2026-11-09,74fc7b0,
-4.8,yes,2026-11-09,74fc7b0,
-4.9,yes,2026-11-09,74fc7b0,
-4.10,yes,2026-11-09,74fc7b0,
-4.11,no,2026-11-09,74fc7b0,an advisor
-4.12,no,2026-11-09,74fc7b0,an advisor
-4.13,yes,2026-11-09,74fc7b0,
-4.14,yes,2026-11-09,74fc7b0,
-4.15,yes,2026-11-09,74fc7b0,
-4.16,no,2026-11-09,74fc7b0,dated by an article that does not announce the raise
-4.17,yes,2026-11-09,74fc7b0,
-4.18,yes,2026-11-09,74fc7b0,
-4.19,yes,2026-11-09,74fc7b0,
-4.20,yes,2026-11-09,74fc7b0,
-4.21,yes,2026-11-09,74fc7b0,
-4.22,yes,2026-11-09,74fc7b0,
-4.23,yes,2026-11-09,74fc7b0,
-5.1,yes,2026-11-09,74fc7b0,
-5.2,yes,2026-11-09,74fc7b0,
-5.3,yes,2026-11-09,74fc7b0,
-5.4,yes,2026-11-09,74fc7b0,
-5.5,yes,2026-11-09,74fc7b0,
-5.6,yes,2026-11-09,74fc7b0,
-5.7,yes,2026-11-09,74fc7b0,
-5.8,yes,2026-11-09,74fc7b0,
-5.9,yes,2026-11-09,74fc7b0,
-5.10,yes,2026-11-09,74fc7b0,
-5.11,yes,2026-11-09,74fc7b0,
-5.12,yes,2026-11-09,74fc7b0,
-5.13,yes,2026-11-09,74fc7b0,
-5.14,yes,2026-11-09,74fc7b0,
-5.15,yes,2026-11-09,74fc7b0,
-5.16,yes,2026-11-09,74fc7b0,
-5.17,yes,2026-11-09,74fc7b0,
-5.18,yes,2026-11-09,74fc7b0,
-5.19,yes,2026-11-09,74fc7b0,
-5.20,yes,2026-11-09,74fc7b0,
-5.21,yes,2026-11-09,74fc7b0,
-5.22,yes,2026-11-09,74fc7b0,
-5.23,yes,2026-11-09,74fc7b0,
-5.24,yes,2026-11-09,74fc7b0,
-5.25,yes,2026-11-09,74fc7b0,
-5.26,yes,2026-11-09,74fc7b0,
-5.27,yes,2026-11-09,74fc7b0,
-5.28,yes,2026-11-09,74fc7b0,
-5.29,yes,2026-11-09,74fc7b0,
-s.c1,yes,2026-11-09,74fc7b0,
-s.c2,yes,2026-11-09,74fc7b0,
-s.c3,yes,2026-11-09,74fc7b0,
-s.c4,yes,2026-11-09,74fc7b0,
-6.1,yes,2026-11-09,74fc7b0,
-6.2,yes,2026-11-09,74fc7b0,
-6.3,yes,2026-11-09,74fc7b0,
-6.4,yes,2026-11-09,74fc7b0,
-6.5,no,2026-11-09,74fc7b0,an address on a legal page is an office
-6.6,yes,2026-11-09,74fc7b0,
-6.7,yes,2026-11-09,74fc7b0,
-6.8,yes,2026-11-09,74fc7b0,
-6.9,yes,2026-11-09,74fc7b0,
-6.10,no,2026-11-09,74fc7b0,an address on a legal page is an office
-6.11,yes,2026-11-09,74fc7b0,
-6.12,yes,2026-11-09,74fc7b0,
-6.13,yes,2026-11-09,74fc7b0,
-6.14,yes,2026-11-09,74fc7b0,
-6.15,yes,2026-11-09,74fc7b0,
-6.16,yes,2026-11-09,74fc7b0,
-6.17,yes,2026-11-09,74fc7b0,
-6.18,yes,2026-11-09,74fc7b0,
-6.19,yes,2026-11-09,74fc7b0,
-6.20,yes,2026-11-09,74fc7b0,
-6.21,yes,2026-11-09,74fc7b0,
-6.22,yes,2026-11-09,74fc7b0,
-6.23,yes,2026-11-09,74fc7b0,
-6.24,yes,2026-11-09,74fc7b0,
-6.25,yes,2026-11-09,74fc7b0,
-6.26,yes,2026-11-09,74fc7b0,
-6.27,yes,2026-11-09,74fc7b0,
-6.28,yes,2026-11-09,74fc7b0,
-6.29,yes,2026-11-09,74fc7b0,
-6.30,no,2026-11-09,74fc7b0,sector and sub-sector disagree
-6.31,yes,2026-11-09,74fc7b0,
-6.32,no,2026-11-09,74fc7b0,a tag no sentence supports
-6.33,no,2026-11-09,74fc7b0,a tag no sentence supports
-6.34,no,2026-11-09,74fc7b0,a tag no sentence supports
-6.35,no,2026-11-09,74fc7b0,a tag no sentence supports
-6.36,yes,2026-11-09,74fc7b0,
-6.37,no,2026-11-09,74fc7b0,the quote is not about the company
-6.38,no,2026-11-09,74fc7b0,the quote is not about the company
-6.39,no,2026-11-09,74fc7b0,a point with no date
-6.40,yes,2026-11-09,74fc7b0,
-6.41,no,2026-11-09,74fc7b0,the quote is not about the company
-6.42,yes,2026-11-09,74fc7b0,
-6.43,yes,2026-11-09,74fc7b0,
-6.44,yes,2026-11-09,74fc7b0,
-6.45,yes,2026-11-09,74fc7b0,
-6.46,yes,2026-11-09,74fc7b0,
-6.47,yes,2026-11-09,74fc7b0,
-6.48,yes,2026-11-09,74fc7b0,
-6.49,yes,2026-11-09,74fc7b0,
-6.50,yes,2026-11-09,74fc7b0,
-6.51,yes,2026-11-09,74fc7b0,
-6.52,yes,2026-11-09,74fc7b0,
-6.53,yes,2026-11-09,74fc7b0,
-6.54,yes,2026-11-09,74fc7b0,
-6.55,yes,2026-11-09,74fc7b0,
-6.56,yes,2026-11-09,74fc7b0,
-6.57,yes,2026-11-09,74fc7b0,
-6.58,yes,2026-11-09,74fc7b0,
-6.59,no,2026-11-09,74fc7b0,not a company name
-6.60,yes,2026-11-09,74fc7b0,
-6.61,no,2026-11-09,74fc7b0,not a company name
-6.62,yes,2026-11-09,74fc7b0,
-6.63,yes,2026-11-09,74fc7b0,
-6.64,yes,2026-11-09,74fc7b0,
-6.65,yes,2026-11-09,74fc7b0,
-6.66,yes,2026-11-09,74fc7b0,
-6.67,yes,2026-11-09,74fc7b0,
-6.68,yes,2026-11-09,74fc7b0,
-6.69,yes,2026-11-09,74fc7b0,
-6.70,yes,2026-11-09,74fc7b0,
-6.71,yes,2026-11-09,74fc7b0,
-6.72,yes,2026-11-09,74fc7b0,
-6.73,no,2026-11-09,74fc7b0,"a guide, not news"
-6.74,yes,2026-11-09,74fc7b0,
-6.75,yes,2026-11-09,74fc7b0,
-6.76,yes,2026-11-09,74fc7b0,
-6.77,yes,2026-11-09,74fc7b0,
-s.c5,yes,2026-11-09,74fc7b0,
-s.c6,yes,2026-11-09,74fc7b0,
-s.c7,yes,2026-11-09,74fc7b0,
-s.c8,yes,2026-11-09,74fc7b0,
-s.c9,no,2026-11-09,74fc7b0,a forum or user post is not a source
-s.c10,yes,2026-11-09,74fc7b0,
-s.c11,no,2026-11-09,74fc7b0,not a company name
-s.c12,yes,2026-11-09,74fc7b0,
-s.c13,yes,2026-11-09,74fc7b0,
-s.c14,yes,2026-11-09,74fc7b0,
-s.c15,yes,2026-11-09,74fc7b0,
-s.c16,no,2026-11-09,74fc7b0,not a company name
-s.c17,no,2026-11-09,74fc7b0,not a company name
-s.c18,no,2026-11-09,74fc7b0,a forum or user post is not a source
-s.c19,no,2026-11-09,74fc7b0,not a company name
-s.c20,yes,2026-11-09,74fc7b0,
-s.c21,yes,2026-11-09,74fc7b0,
-s.c22,yes,2026-11-09,74fc7b0,
-s.c23,yes,2026-11-09,74fc7b0,
-s.c24,yes,2026-11-09,74fc7b0,
-s.c25,no,2026-11-09,74fc7b0,not a company name
-s.c26,yes,2026-11-09,74fc7b0,
-s.c27,yes,2026-11-09,74fc7b0,
-s.c28,yes,2026-11-09,74fc7b0,
-s.c29,no,2026-11-09,74fc7b0,not a company name
-s.c30,yes,2026-11-09,74fc7b0,
-s.c31,yes,2026-11-09,74fc7b0,
-s.c32,yes,2026-11-09,74fc7b0,
-s.c33,yes,2026-11-09,74fc7b0,
-w1.1,yes,2026-11-09,74fc7b0,
-w1.2,yes,2026-11-09,74fc7b0,
-w1.3,yes,2026-11-09,74fc7b0,
-w1.4,yes,2026-11-09,74fc7b0,
-w1.5,yes,2026-11-09,74fc7b0,
-w1.6,yes,2026-11-09,74fc7b0,
-w1.7,yes,2026-11-09,74fc7b0,
-w1.8,yes,2026-11-09,74fc7b0,
-w1.9,yes,2026-11-09,74fc7b0,
-w1.10,yes,2026-11-09,74fc7b0,
-w1.11,yes,2026-11-09,74fc7b0,
-w1.12,yes,2026-11-09,74fc7b0,
-w1.13,yes,2026-11-09,74fc7b0,
-w1.14,yes,2026-11-09,74fc7b0,
-w2.1,yes,2026-11-09,74fc7b0,
-w2.2,yes,2026-11-09,74fc7b0,
-w2.3,yes,2026-11-09,74fc7b0,
-w2.4,yes,2026-11-09,74fc7b0,
-w2.5,yes,2026-11-09,74fc7b0,
-w2.6,yes,2026-11-09,74fc7b0,
-w2.7,yes,2026-11-09,74fc7b0,
-w2.8,yes,2026-11-09,74fc7b0,
-w2.9,yes,2026-11-09,74fc7b0,
-w2.10,yes,2026-11-09,74fc7b0,
-w2.11,yes,2026-11-09,74fc7b0,
-w2.12,yes,2026-11-09,74fc7b0,
-w2.13,yes,2026-11-09,74fc7b0,
-w2.14,yes,2026-11-09,74fc7b0,
-w2.15,yes,2026-11-09,74fc7b0,
-w2.16,yes,2026-11-09,74fc7b0,
-w2.17,yes,2026-11-09,74fc7b0,
+g.r1,yes,2026-11-13,636768f,
+g.r2,yes,2026-11-13,636768f,
+g.r3,yes,2026-11-13,636768f,
+g.r4,yes,2026-11-13,636768f,
+g.r5,yes,2026-11-13,636768f,
+g.r6,yes,2026-11-13,636768f,
+g.r7,yes,2026-11-13,636768f,
+g.r8,yes,2026-11-13,636768f,
+g.r9,yes,2026-11-13,636768f,
+g.c1,yes,2026-11-13,636768f,
+g.c2,no,2026-11-13,636768f,"a row of links, not a quote"
+g.c3,no,2026-11-13,636768f,"a row of links, not a quote"
+g.c4,yes,2026-11-13,636768f,
+g.c5,yes,2026-11-13,636768f,
+g.c6,yes,2026-11-13,636768f,
+g.c7,yes,2026-11-13,636768f,
+g.c8,yes,2026-11-13,636768f,
+g.c9,yes,2026-11-13,636768f,
+g.c10,no,2026-11-13,636768f,the quote does not link the company and this competitor directly
+g.c11,yes,2026-11-13,636768f,
+g.c12,no,2026-11-13,636768f,the quote does not link the company and this competitor directly
+g.c13,no,2026-11-13,636768f,the quote does not link the company and this competitor directly
+g.c14,yes,2026-11-13,636768f,
+g.c15,yes,2026-11-13,636768f,
+g.c16,yes,2026-11-13,636768f,
+g.c17,yes,2026-11-13,636768f,
+m.1,yes,2026-11-13,636768f,
+m.2,yes,2026-11-13,636768f,
+m.3,no,2026-11-13,636768f,source not allowed (denied_domain)
+m.4,no,2026-11-13,636768f,source not allowed (data_platform)
+1.2,yes,2026-11-13,636768f,
+1.9,yes,2026-11-13,636768f,
+1.10,yes,2026-11-13,636768f,
+1.13,yes,2026-11-13,636768f,
+1.17,yes,2026-11-13,636768f,
+1.18,no,2026-11-13,636768f,no source
+1.19,no,2026-11-13,636768f,source not allowed (denied_domain)
+1.21,no,2026-11-13,636768f,no source
+1.22,yes,2026-11-13,636768f,
+1.24,yes,2026-11-13,636768f,
+1.25,yes,2026-11-13,636768f,
+1.29,yes,2026-11-13,636768f,
+1.1,yes,2026-11-13,636768f,
+1.3,yes,2026-11-13,636768f,
+1.4,yes,2026-11-13,636768f,
+1.5,yes,2026-11-13,636768f,
+1.6,yes,2026-11-13,636768f,
+1.7,yes,2026-11-13,636768f,
+1.8,yes,2026-11-13,636768f,
+1.11,yes,2026-11-13,636768f,
+1.12,yes,2026-11-13,636768f,
+1.14,yes,2026-11-13,636768f,
+1.16,yes,2026-11-13,636768f,
+1.20,yes,2026-11-13,636768f,
+1.23,yes,2026-11-13,636768f,
+1.26,yes,2026-11-13,636768f,
+1.27,yes,2026-11-13,636768f,
+1.28,yes,2026-11-13,636768f,
+1.30,yes,2026-11-13,636768f,
+1.31,yes,2026-11-13,636768f,
+1.32,yes,2026-11-13,636768f,
+1.33,yes,2026-11-13,636768f,
+1.34,yes,2026-11-13,636768f,
+1.35,yes,2026-11-13,636768f,
+1.36,yes,2026-11-13,636768f,
+2.1,yes,2026-11-13,636768f,
+2.2,yes,2026-11-13,636768f,
+2.3,yes,2026-11-13,636768f,
+2.4,yes,2026-11-13,636768f,
+2.5,yes,2026-11-13,636768f,
+2.6,yes,2026-11-13,636768f,
+2.7,yes,2026-11-13,636768f,
+2.8,no,2026-11-13,636768f,"an organisation, not a person"
+2.9,no,2026-11-13,636768f,"an organisation, not a person"
+2.10,no,2026-11-13,636768f,not about the person
+2.11,yes,2026-11-13,636768f,
+2.12,yes,2026-11-13,636768f,
+2.13,yes,2026-11-13,636768f,
+2.14,yes,2026-11-13,636768f,
+2.15,yes,2026-11-13,636768f,
+2.16,yes,2026-11-13,636768f,
+2.17,yes,2026-11-13,636768f,
+2.18,no,2026-11-13,636768f,dated by an article that does not announce the raise
+2.19,yes,2026-11-13,636768f,
+2.20,yes,2026-11-13,636768f,
+2.21,yes,2026-11-13,636768f,
+2.22,yes,2026-11-13,636768f,
+2.23,yes,2026-11-13,636768f,
+2.24,yes,2026-11-13,636768f,
+2.25,yes,2026-11-13,636768f,
+2.26,yes,2026-11-13,636768f,
+2.27,yes,2026-11-13,636768f,
+2.28,yes,2026-11-13,636768f,
+2.29,yes,2026-11-13,636768f,
+3.1,yes,2026-11-13,636768f,
+3.2,yes,2026-11-13,636768f,
+3.3,yes,2026-11-13,636768f,
+3.4,yes,2026-11-13,636768f,
+3.5,yes,2026-11-13,636768f,
+3.6,yes,2026-11-13,636768f,
+3.7,yes,2026-11-13,636768f,
+3.8,yes,2026-11-13,636768f,
+3.9,yes,2026-11-13,636768f,
+3.10,yes,2026-11-13,636768f,
+3.11,no,2026-11-13,636768f,not on the closed list of leadership roles
+3.12,yes,2026-11-13,636768f,
+3.13,yes,2026-11-13,636768f,
+3.14,no,2026-11-13,636768f,amount stated in its source
+3.15,yes,2026-11-13,636768f,
+3.16,yes,2026-11-13,636768f,
+3.17,yes,2026-11-13,636768f,
+3.18,yes,2026-11-13,636768f,
+3.19,yes,2026-11-13,636768f,
+3.20,yes,2026-11-13,636768f,
+3.21,yes,2026-11-13,636768f,
+3.22,yes,2026-11-13,636768f,
+3.23,yes,2026-11-13,636768f,
+3.24,yes,2026-11-13,636768f,
+4.1,yes,2026-11-13,636768f,
+4.2,yes,2026-11-13,636768f,
+4.3,yes,2026-11-13,636768f,
+4.4,yes,2026-11-13,636768f,
+4.5,yes,2026-11-13,636768f,
+4.6,yes,2026-11-13,636768f,
+4.7,yes,2026-11-13,636768f,
+4.8,yes,2026-11-13,636768f,
+4.9,no,2026-11-13,636768f,"not the person's background (past roles, experience or education), only the current role"
+4.10,no,2026-11-13,636768f,"not the person's background (past roles, experience or education), only the current role"
+4.11,no,2026-11-13,636768f,an advisor
+4.12,no,2026-11-13,636768f,an advisor
+4.13,yes,2026-11-13,636768f,
+4.14,yes,2026-11-13,636768f,
+4.15,yes,2026-11-13,636768f,
+4.16,no,2026-11-13,636768f,dated by an article that does not announce the raise
+4.17,yes,2026-11-13,636768f,
+4.18,yes,2026-11-13,636768f,
+4.19,yes,2026-11-13,636768f,
+4.20,yes,2026-11-13,636768f,
+4.21,yes,2026-11-13,636768f,
+4.22,yes,2026-11-13,636768f,
+4.23,yes,2026-11-13,636768f,
+5.1,yes,2026-11-13,636768f,
+5.2,yes,2026-11-13,636768f,
+5.3,yes,2026-11-13,636768f,
+5.4,yes,2026-11-13,636768f,
+5.5,yes,2026-11-13,636768f,
+5.6,yes,2026-11-13,636768f,
+5.7,no,2026-11-13,636768f,source not listed
+5.8,yes,2026-11-13,636768f,
+5.9,yes,2026-11-13,636768f,
+5.10,yes,2026-11-13,636768f,
+5.11,yes,2026-11-13,636768f,
+5.12,yes,2026-11-13,636768f,
+5.13,yes,2026-11-13,636768f,
+5.14,yes,2026-11-13,636768f,
+5.15,yes,2026-11-13,636768f,
+5.16,yes,2026-11-13,636768f,
+5.17,yes,2026-11-13,636768f,
+5.18,yes,2026-11-13,636768f,
+5.19,yes,2026-11-13,636768f,
+5.20,yes,2026-11-13,636768f,
+5.21,yes,2026-11-13,636768f,
+5.22,yes,2026-11-13,636768f,
+5.23,yes,2026-11-13,636768f,
+5.24,yes,2026-11-13,636768f,
+5.25,yes,2026-11-13,636768f,
+5.26,yes,2026-11-13,636768f,
+5.27,yes,2026-11-13,636768f,
+5.28,yes,2026-11-13,636768f,
+5.29,yes,2026-11-13,636768f,
+s.c1,yes,2026-11-13,636768f,
+s.c2,yes,2026-11-13,636768f,
+s.c3,yes,2026-11-13,636768f,
+s.c4,yes,2026-11-13,636768f,
+6.1,yes,2026-11-13,636768f,
+6.2,yes,2026-11-13,636768f,
+6.3,yes,2026-11-13,636768f,
+6.4,yes,2026-11-13,636768f,
+6.5,no,2026-11-13,636768f,an address on a legal page is an office
+6.6,yes,2026-11-13,636768f,
+6.7,yes,2026-11-13,636768f,
+6.8,yes,2026-11-13,636768f,
+6.9,yes,2026-11-13,636768f,
+6.10,no,2026-11-13,636768f,an address on a legal page is an office
+6.11,yes,2026-11-13,636768f,
+6.12,yes,2026-11-13,636768f,
+6.13,yes,2026-11-13,636768f,
+6.14,yes,2026-11-13,636768f,
+6.15,yes,2026-11-13,636768f,
+6.16,yes,2026-11-13,636768f,
+6.17,yes,2026-11-13,636768f,
+6.18,yes,2026-11-13,636768f,
+6.19,yes,2026-11-13,636768f,
+6.20,yes,2026-11-13,636768f,
+6.21,yes,2026-11-13,636768f,
+6.22,yes,2026-11-13,636768f,
+6.23,yes,2026-11-13,636768f,
+6.24,yes,2026-11-13,636768f,
+6.25,yes,2026-11-13,636768f,
+6.26,no,2026-11-13,636768f,the current classification gives DeepTech › Space Tech
+6.27,yes,2026-11-13,636768f,
+6.28,yes,2026-11-13,636768f,
+6.29,yes,2026-11-13,636768f,
+6.30,no,2026-11-13,636768f,"a policy, terms, glossary, help or careers page supports no sector"
+6.31,yes,2026-11-13,636768f,
+6.32,no,2026-11-13,636768f,a tag no sentence supports
+6.33,no,2026-11-13,636768f,a tag no sentence supports
+6.34,no,2026-11-13,636768f,a tag no sentence supports
+6.35,no,2026-11-13,636768f,a tag no sentence supports
+6.36,yes,2026-11-13,636768f,
+6.37,no,2026-11-13,636768f,"the figure is someone's career, not the company's"
+6.38,no,2026-11-13,636768f,the quote is not about the company
+6.39,no,2026-11-13,636768f,a point with no date
+6.40,yes,2026-11-13,636768f,
+6.41,no,2026-11-13,636768f,the quote is not about the company
+6.42,yes,2026-11-13,636768f,
+6.43,yes,2026-11-13,636768f,
+6.44,no,2026-11-13,636768f,source not listed
+6.45,yes,2026-11-13,636768f,
+6.46,yes,2026-11-13,636768f,
+6.47,no,2026-11-13,636768f,"not the person's background (past roles, experience or education), only the current role"
+6.48,yes,2026-11-13,636768f,
+6.49,yes,2026-11-13,636768f,
+6.50,yes,2026-11-13,636768f,
+6.51,yes,2026-11-13,636768f,
+6.52,yes,2026-11-13,636768f,
+6.53,yes,2026-11-13,636768f,
+6.54,yes,2026-11-13,636768f,
+6.55,yes,2026-11-13,636768f,
+6.56,yes,2026-11-13,636768f,
+6.57,yes,2026-11-13,636768f,
+6.58,yes,2026-11-13,636768f,
+6.59,no,2026-11-13,636768f,not a company name
+6.60,yes,2026-11-13,636768f,
+6.61,no,2026-11-13,636768f,not a company name
+6.62,yes,2026-11-13,636768f,
+6.63,yes,2026-11-13,636768f,
+6.64,yes,2026-11-13,636768f,
+6.65,yes,2026-11-13,636768f,
+6.66,yes,2026-11-13,636768f,
+6.67,yes,2026-11-13,636768f,
+6.68,yes,2026-11-13,636768f,
+6.69,yes,2026-11-13,636768f,
+6.70,yes,2026-11-13,636768f,
+6.71,yes,2026-11-13,636768f,
+6.72,yes,2026-11-13,636768f,
+6.73,no,2026-11-13,636768f,"a guide, not news"
+6.74,yes,2026-11-13,636768f,
+6.75,yes,2026-11-13,636768f,
+6.76,yes,2026-11-13,636768f,
+6.77,yes,2026-11-13,636768f,
+s.c5,yes,2026-11-13,636768f,
+s.c6,yes,2026-11-13,636768f,
+s.c7,yes,2026-11-13,636768f,
+s.c8,yes,2026-11-13,636768f,
+s.c9,no,2026-11-13,636768f,a forum or user post is not a source
+s.c10,yes,2026-11-13,636768f,
+s.c11,no,2026-11-13,636768f,not a company name
+s.c12,yes,2026-11-13,636768f,
+s.c13,yes,2026-11-13,636768f,
+s.c14,yes,2026-11-13,636768f,
+s.c15,yes,2026-11-13,636768f,
+s.c16,no,2026-11-13,636768f,not a company name
+s.c17,no,2026-11-13,636768f,not a company name
+s.c18,no,2026-11-13,636768f,a forum or user post is not a source
+s.c19,no,2026-11-13,636768f,not a company name
+s.c20,yes,2026-11-13,636768f,
+s.c21,yes,2026-11-13,636768f,
+s.c22,yes,2026-11-13,636768f,
+s.c23,yes,2026-11-13,636768f,
+s.c24,yes,2026-11-13,636768f,
+s.c25,no,2026-11-13,636768f,not a company name
+s.c26,yes,2026-11-13,636768f,
+s.c27,yes,2026-11-13,636768f,
+s.c28,yes,2026-11-13,636768f,
+s.c29,no,2026-11-13,636768f,not a company name
+s.c30,yes,2026-11-13,636768f,
+s.c31,yes,2026-11-13,636768f,
+s.c32,yes,2026-11-13,636768f,
+s.c33,yes,2026-11-13,636768f,
+w1.1,yes,2026-11-13,636768f,
+w1.2,yes,2026-11-13,636768f,
+w1.3,yes,2026-11-13,636768f,
+w1.4,yes,2026-11-13,636768f,
+w1.5,yes,2026-11-13,636768f,
+w1.6,yes,2026-11-13,636768f,
+w1.7,yes,2026-11-13,636768f,
+w1.8,yes,2026-11-13,636768f,
+w1.9,yes,2026-11-13,636768f,
+w1.10,yes,2026-11-13,636768f,
+w1.11,yes,2026-11-13,636768f,
+w1.12,yes,2026-11-13,636768f,
+w1.13,yes,2026-11-13,636768f,
+w1.14,yes,2026-11-13,636768f,
+w2.1,yes,2026-11-13,636768f,
+w2.2,yes,2026-11-13,636768f,
+w2.3,yes,2026-11-13,636768f,
+w2.4,yes,2026-11-13,636768f,
+w2.5,yes,2026-11-13,636768f,
+w2.6,yes,2026-11-13,636768f,
+w2.7,yes,2026-11-13,636768f,
+w2.8,yes,2026-11-13,636768f,
+w2.9,yes,2026-11-13,636768f,
+w2.10,yes,2026-11-13,636768f,
+w2.11,yes,2026-11-13,636768f,
+w2.12,yes,2026-11-13,636768f,
+w2.13,yes,2026-11-13,636768f,
+w2.14,yes,2026-11-13,636768f,
+w2.15,yes,2026-11-13,636768f,
+w2.16,yes,2026-11-13,636768f,
+w2.17,yes,2026-11-13,636768f,
+w3.1,yes,2026-11-13,636768f,
+w3.2,yes,2026-11-13,636768f,
+w3.3,yes,2026-11-13,636768f,
+w3.4,yes,2026-11-13,636768f,
+w3.5,yes,2026-11-13,636768f,
+w3.6,yes,2026-11-13,636768f,
+w3.7,yes,2026-11-13,636768f,
+w3.8,yes,2026-11-13,636768f,
+w3.9,yes,2026-11-13,636768f,
+w3.10,yes,2026-11-13,636768f,
+w3.11,yes,2026-11-13,636768f,
+w3.12,yes,2026-11-13,636768f,
+w3.13,yes,2026-11-13,636768f,
+w3.14,yes,2026-11-13,636768f,
+w3.15,yes,2026-11-13,636768f,
+w3.16,yes,2026-11-13,636768f,
+w3.17,yes,2026-11-13,636768f,
+w3.18,yes,2026-11-13,636768f,
+w3.19,yes,2026-11-13,636768f,
+w3.20,yes,2026-11-13,636768f,
+w3.21,yes,2026-11-13,636768f,
+w3.22,yes,2026-11-13,636768f,
+w3.23,no,2026-11-13,636768f,an incomplete headline
+w3.24,yes,2026-11-13,636768f,
+w3.25,yes,2026-11-13,636768f,
+x67.1,yes,2026-11-13,636768f,
+x67.2,no,2026-11-13,636768f,a selling word in the description
+x67.3,yes,2026-11-13,636768f,
+x67.4,yes,2026-11-13,636768f,
+x67.5,yes,2026-11-13,636768f,
+x67.6,no,2026-11-13,636768f,the first sentence does not name the company
+x67.7,yes,2026-11-13,636768f,
+x67.8,yes,2026-11-13,636768f,
+x67.9,yes,2026-11-13,636768f,
+x67.10,yes,2026-11-13,636768f,
+x67.11,yes,2026-11-13,636768f,
+x67.12,yes,2026-11-13,636768f,
+x67.13,yes,2026-11-13,636768f,
+x67.14,yes,2026-11-13,636768f,
+x67.15,yes,2026-11-13,636768f,
+x67.16,yes,2026-11-13,636768f,
+x67.17,yes,2026-11-13,636768f,
+x67.18,yes,2026-11-13,636768f,
+x67.19,no,2026-11-13,636768f,a selling word in the description
+x67.20,no,2026-11-13,636768f,a selling word in the description
+x67.21,yes,2026-11-13,636768f,
+x67.22,yes,2026-11-13,636768f,
+x67.23,yes,2026-11-13,636768f,
+x67.24,no,2026-11-13,636768f,a selling word in the description
+x67.25,yes,2026-11-13,636768f,
+x67.26,no,2026-11-13,636768f,the first sentence does not name the company
+x67.27,no,2026-11-13,636768f,"the first sentence describes a product, not the company (it must start with the company)"
+x67.28,yes,2026-11-13,636768f,
+x67.29,no,2026-11-13,636768f,the current classification gives Cybersecurity › Security Testing
+x67.30,no,2026-11-13,636768f,"a policy, terms, glossary, help or careers page supports no sector"
+x67.31,no,2026-11-13,636768f,sector and sub-sector disagree
+x67.32,no,2026-11-13,636768f,the current classification gives Cybersecurity › Vulnerability Management
+x67.33,no,2026-11-13,636768f,a sector with no source
+x67.34,no,2026-11-13,636768f,the current classification gives Industrial & Manufacturing › Industrial Automation
+x67.35,no,2026-11-13,636768f,the current classification gives Enterprise Software › ERP / Finance
+x67.36,no,2026-11-13,636768f,the current classification gives Consumer & Media › AdTech
+x67.37,no,2026-11-13,636768f,sector and sub-sector disagree
+x67.38,yes,2026-11-13,636768f,
+x67.39,no,2026-11-13,636768f,sector and sub-sector disagree
+x67.40,no,2026-11-13,636768f,sector and sub-sector disagree
+x67.41,yes,2026-11-13,636768f,
+x67.42,no,2026-11-13,636768f,sector and sub-sector disagree
+x67.43,yes,2026-11-13,636768f,
+x67.44,no,2026-11-13,636768f,the current classification gives Health & Life Sciences › Healthcare IT & Administration
+x67.45,no,2026-11-13,636768f,a sector with no source
+x67.46,yes,2026-11-13,636768f,
+x67.47,yes,2026-11-13,636768f,
+x67.48,yes,2026-11-13,636768f,
+x67.49,yes,2026-11-13,636768f,
+x67.50,no,2026-11-13,636768f,the current classification gives Cybersecurity › Managed Security Services
+x67.51,yes,2026-11-13,636768f,
+x67.52,yes,2026-11-13,636768f,
+x67.53,yes,2026-11-13,636768f,
+x67.54,no,2026-11-13,636768f,the current classification gives Climate & Energy › CleanTech
+x67.55,no,2026-11-13,636768f,a sector with no source
+x67.56,no,2026-11-13,636768f,a sector with no source
+x67.57,no,2026-11-13,636768f,a sector with no source
+x67.58,yes,2026-11-13,636768f,
+x67.59,yes,2026-11-13,636768f,
+x67.60,yes,2026-11-13,636768f,
+x67.61,yes,2026-11-13,636768f,
+x67.62,yes,2026-11-13,636768f,
+x67.63,yes,2026-11-13,636768f,
+x67.64,no,2026-11-13,636768f,the current classification gives Consumer & Media › Travel Tech
+x67.65,no,2026-11-13,636768f,the current classification gives Health & Life Sciences › MedTech
+x67.66,no,2026-11-13,636768f,the current classification gives Health & Life Sciences › Healthcare IT & Administration
+x67.67,no,2026-11-13,636768f,"a policy, terms, glossary, help or careers page supports no sector"
+x67.68,no,2026-11-13,636768f,the current classification gives SaaS & Dev Tools › Vertical SaaS
+x67.69,yes,2026-11-13,636768f,
+x67.70,no,2026-11-13,636768f,the current classification gives Cybersecurity › Application & API Security
+x67.71,no,2026-11-13,636768f,"a policy, terms, glossary, help or careers page supports no tag"
+x67.72,no,2026-11-13,636768f,a tag no sentence supports
+x67.73,yes,2026-11-13,636768f,
+x67.74,no,2026-11-13,636768f,a tag no sentence supports
+x67.75,no,2026-11-13,636768f,a tag no sentence supports
+x67.76,yes,2026-11-13,636768f,
+x67.77,no,2026-11-13,636768f,a tag no sentence supports
+x67.78,no,2026-11-13,636768f,"a policy, terms, glossary, help or careers page supports no tag"
+x67.79,no,2026-11-13,636768f,a tag no sentence supports
+x67.80,yes,2026-11-13,636768f,
+x67.81,no,2026-11-13,636768f,"""Cybersecurity / General"" is a technology the company secures or tests, not what it is"
+x67.82,no,2026-11-13,636768f,a tag no sentence supports
+x67.83,no,2026-11-13,636768f,a tag no sentence supports
+x67.84,yes,2026-11-13,636768f,
+x67.85,no,2026-11-13,636768f,a tag no sentence supports
+x67.86,no,2026-11-13,636768f,a tag no sentence supports
+x67.87,no,2026-11-13,636768f,a tag no sentence supports
+x67.88,no,2026-11-13,636768f,a tag no sentence supports
+x67.89,no,2026-11-13,636768f,a tag no sentence supports
+x67.90,no,2026-11-13,636768f,a tag no sentence supports
+x67.91,no,2026-11-13,636768f,"a policy, terms, glossary, help or careers page supports no tag"
+x67.92,yes,2026-11-13,636768f,
+x67.93,yes,2026-11-13,636768f,
+x67.94,yes,2026-11-13,636768f,
+x67.95,yes,2026-11-13,636768f,
+x67.96,yes,2026-11-13,636768f,
+x67.97,yes,2026-11-13,636768f,
+x67.98,yes,2026-11-13,636768f,
+x67.99,yes,2026-11-13,636768f,
+x67.100,yes,2026-11-13,636768f,
+x67.101,yes,2026-11-13,636768f,
+x67.102,yes,2026-11-13,636768f,
+x67.103,yes,2026-11-13,636768f,
+x67.104,no,2026-11-13,636768f,"a policy, terms, glossary, help or careers page supports no tag"
+x67.105,no,2026-11-13,636768f,"a policy, terms, glossary, help or careers page supports no tag"
+x67.106,yes,2026-11-13,636768f,
+x67.107,yes,2026-11-13,636768f,
+x67.108,no,2026-11-13,636768f,source not allowed (data_platform)
+x67.109,no,2026-11-13,636768f,"the figure is someone's career, not the company's"
+x67.110,no,2026-11-13,636768f,"the figure is someone's career, not the company's"
+x67.111,no,2026-11-13,636768f,"the figure is someone's career, not the company's"
+x67.112,no,2026-11-13,636768f,a point with no date
+x67.113,no,2026-11-13,636768f,"the figure is someone's career, not the company's"
+x67.114,no,2026-11-13,636768f,the quote is not about the company
+x67.115,no,2026-11-13,636768f,the quote is not about the company
+x67.116,no,2026-11-13,636768f,the quote is not about the company
+x67.117,no,2026-11-13,636768f,source not allowed (data_platform)
+x67.118,no,2026-11-13,636768f,source not allowed (data_platform)
+x67.119,no,2026-11-13,636768f,source not allowed (data_platform)
+x67.120,no,2026-11-13,636768f,the quote is not about the company
+x67.121,no,2026-11-13,636768f,"the figure is someone's career, not the company's"
+x67.122,no,2026-11-13,636768f,"the figure is someone's career, not the company's"
+x67.123,no,2026-11-13,636768f,a point with no date
+x67.124,yes,2026-11-13,636768f,
+x67.125,yes,2026-11-13,636768f,
+x67.126,yes,2026-11-13,636768f,
+x67.127,yes,2026-11-13,636768f,
+x67.128,yes,2026-11-13,636768f,
+x67.129,yes,2026-11-13,636768f,
+x67.130,yes,2026-11-13,636768f,
+x67.131,yes,2026-11-13,636768f,
+x67.132,yes,2026-11-13,636768f,
+x67.133,yes,2026-11-13,636768f,
+x67.134,no,2026-11-13,636768f,the quote does not link the company and this competitor directly
+x67.135,no,2026-11-13,636768f,the quote does not link the company and this competitor directly
+8.1,yes,2026-11-13,636768f,
+8.2,yes,2026-11-13,636768f,
+8.3,yes,2026-11-13,636768f,
+8.4,yes,2026-11-13,636768f,
+8.5,no,2026-11-13,636768f,the first sentence does not name the company
+8.6,yes,2026-11-13,636768f,
+8.7,yes,2026-11-13,636768f,
+8.8,yes,2026-11-13,636768f,
+8.9,yes,2026-11-13,636768f,
+8.10,yes,2026-11-13,636768f,
+8.11,yes,2026-11-13,636768f,
+8.12,yes,2026-11-13,636768f,
+8.13,no,2026-11-13,636768f,the first sentence does not name the company
+8.14,yes,2026-11-13,636768f,
+8.15,yes,2026-11-13,636768f,
+8.16,yes,2026-11-13,636768f,
+8.17,no,2026-11-13,636768f,the current classification gives Cybersecurity › Vulnerability Management
+8.18,no,2026-11-13,636768f,the current classification gives Health & Life Sciences › MedTech
+8.19,yes,2026-11-13,636768f,
+8.20,no,2026-11-13,636768f,the current classification gives Fintech › RegTech
+8.21,yes,2026-11-13,636768f,
+8.22,no,2026-11-13,636768f,the current classification gives SaaS & Dev Tools › Observability & Monitoring
+8.23,no,2026-11-13,636768f,the current classification gives SaaS & Dev Tools › Developer Tools
+8.24,no,2026-11-13,636768f,the current classification gives Health & Life Sciences › Healthcare IT & Administration
+8.25,no,2026-11-13,636768f,the current classification gives AI & ML › Voice & Speech AI
+8.26,no,2026-11-13,636768f,the current classification gives Health & Life Sciences › MedTech
+8.27,no,2026-11-13,636768f,the current classification gives Food & Agriculture › FoodTech
+8.28,no,2026-11-13,636768f,the current classification gives Health & Life Sciences › Healthcare SaaS
+8.29,no,2026-11-13,636768f,the current classification gives Automotive & Mobility › Vehicle Security
+8.30,no,2026-11-13,636768f,the current classification gives Enterprise Software › Productivity & Collaboration
+8.31,yes,2026-11-13,636768f,
+8.32,yes,2026-11-13,636768f,
+8.33,yes,2026-11-13,636768f,
+8.34,yes,2026-11-13,636768f,
+8.35,yes,2026-11-13,636768f,
+8.36,yes,2026-11-13,636768f,
+8.37,yes,2026-11-13,636768f,
+8.38,yes,2026-11-13,636768f,
+8.39,yes,2026-11-13,636768f,
+8.40,yes,2026-11-13,636768f,
+8.41,yes,2026-11-13,636768f,
+8.42,yes,2026-11-13,636768f,
+8.43,yes,2026-11-13,636768f,
+8.44,yes,2026-11-13,636768f,
+8.45,yes,2026-11-13,636768f,
+8.46,yes,2026-11-13,636768f,
+8.47,yes,2026-11-13,636768f,
+8.48,no,2026-11-13,636768f,"the figure is a team of a job posting, not the company's size"
+8.49,yes,2026-11-13,636768f,
+8.50,yes,2026-11-13,636768f,
+8.51,no,2026-11-13,636768f,the quote gives a floor (over / more than N): it is produced as N+
+8.52,yes,2026-11-13,636768f,
+8.53,yes,2026-11-13,636768f,
+8.54,yes,2026-11-13,636768f,
+8.55,no,2026-11-13,636768f,the quote gives a floor (over / more than N): it is produced as N+
+8.56,no,2026-11-13,636768f,the same point as an earlier mark
+8.57,yes,2026-11-13,636768f,
+8.58,no,2026-11-13,636768f,the same point as an earlier mark
+9.1,no,2026-11-13,636768f,source not listed
+9.2,yes,2026-11-13,636768f,
+9.3,yes,2026-11-13,636768f,
+9.4,yes,2026-11-13,636768f,
+9.5,yes,2026-11-13,636768f,
+9.6,yes,2026-11-13,636768f,
+9.7,yes,2026-11-13,636768f,
+9.8,no,2026-11-13,636768f,the Contact page lists several addresses: offices
+9.9,yes,2026-11-13,636768f,
+9.10,no,2026-11-13,636768f,a headquarters from an article older than eight years
+9.11,yes,2026-11-13,636768f,
+9.12,yes,2026-11-13,636768f,
+9.13,yes,2026-11-13,636768f,
+9.14,no,2026-11-13,636768f,the Contact page lists several addresses: offices
+9.15,no,2026-11-13,636768f,source not listed
+9.16,yes,2026-11-13,636768f,
+9.17,yes,2026-11-13,636768f,
+9.18,yes,2026-11-13,636768f,
+9.19,no,2026-11-13,636768f,a headquarters from an article older than eight years
+9.20,yes,2026-11-13,636768f,
+9.21,yes,2026-11-13,636768f,
+9.22,yes,2026-11-13,636768f,
+9.23,yes,2026-11-13,636768f,
+9.24,yes,2026-11-13,636768f,
+9.25,yes,2026-11-13,636768f,
+9.26,yes,2026-11-13,636768f,
+9.27,yes,2026-11-13,636768f,
+9.28,yes,2026-11-13,636768f,
+9.29,yes,2026-11-13,636768f,
+9.30,yes,2026-11-13,636768f,
+9.31,yes,2026-11-13,636768f,
+9.32,yes,2026-11-13,636768f,
+9.33,yes,2026-11-13,636768f,
+9.34,yes,2026-11-13,636768f,
+9.35,yes,2026-11-13,636768f,
+9.36,yes,2026-11-13,636768f,
+9.37,yes,2026-11-13,636768f,
+9.38,yes,2026-11-13,636768f,
+9.39,yes,2026-11-13,636768f,
+9.40,yes,2026-11-13,636768f,
+9.41,yes,2026-11-13,636768f,
+9.42,yes,2026-11-13,636768f,
+9.43,yes,2026-11-13,636768f,
+9.44,yes,2026-11-13,636768f,
+9.45,yes,2026-11-13,636768f,
+9.46,yes,2026-11-13,636768f,
+9.47,yes,2026-11-13,636768f,
+9.48,yes,2026-11-13,636768f,
+9.49,no,2026-11-13,636768f,a selling word in the description
+9.50,yes,2026-11-13,636768f,
+9.51,no,2026-11-13,636768f,the current classification gives Enterprise Software › HR Tech
+9.52,yes,2026-11-13,636768f,
+9.53,yes,2026-11-13,636768f,
+9.54,no,2026-11-13,636768f,the current classification gives Cybersecurity › Managed Security Services
+9.55,no,2026-11-13,636768f,the current classification gives Cybersecurity › Managed Security Services
+9.56,no,2026-11-13,636768f,the current classification gives Enterprise Software › ERP / Finance
+9.57,yes,2026-11-13,636768f,
+9.58,yes,2026-11-13,636768f,
+9.59,no,2026-11-13,636768f,the current classification gives DeepTech › Robotics
+9.60,yes,2026-11-13,636768f,
+9.61,no,2026-11-13,636768f,the current classification gives DeepTech › Space Tech
+9.62,yes,2026-11-13,636768f,
+9.63,yes,2026-11-13,636768f,
+9.64,no,2026-11-13,636768f,the current classification gives Enterprise Software › ERP / Finance
+9.65,yes,2026-11-13,636768f,
+9.66,yes,2026-11-13,636768f,
+9.67,yes,2026-11-13,636768f,
+9.68,yes,2026-11-13,636768f,
+9.69,yes,2026-11-13,636768f,
+9.70,yes,2026-11-13,636768f,
+9.71,yes,2026-11-13,636768f,
+9.72,yes,2026-11-13,636768f,
+9.73,yes,2026-11-13,636768f,
+9.74,yes,2026-11-13,636768f,
+9.75,yes,2026-11-13,636768f,
+9.76,yes,2026-11-13,636768f,
+9.77,yes,2026-11-13,636768f,
+9.78,yes,2026-11-13,636768f,
+9.79,yes,2026-11-13,636768f,
+9.80,yes,2026-11-13,636768f,
+9.81,yes,2026-11-13,636768f,
+9.82,yes,2026-11-13,636768f,
+9.83,yes,2026-11-13,636768f,
+9.84,yes,2026-11-13,636768f,
+9.85,yes,2026-11-13,636768f,
+9.86,yes,2026-11-13,636768f,
+9.87,yes,2026-11-13,636768f,
+9.88,yes,2026-11-13,636768f,
+9.89,yes,2026-11-13,636768f,
+9.90,yes,2026-11-13,636768f,
+9.91,yes,2026-11-13,636768f,
+9.92,yes,2026-11-13,636768f,
+9.93,no,2026-11-13,636768f,a job posting or a directory profile is no source
+9.94,yes,2026-11-13,636768f,
+9.95,yes,2026-11-13,636768f,
+9.96,yes,2026-11-13,636768f,
+9.97,yes,2026-11-13,636768f,
+9.98,yes,2026-11-13,636768f,
+9.99,yes,2026-11-13,636768f,
+9.100,yes,2026-11-13,636768f,
+9.101,yes,2026-11-13,636768f,
+9.102,yes,2026-11-13,636768f,
+9.103,no,2026-11-13,636768f,a job posting or a directory profile is no source
+9.104,yes,2026-11-13,636768f,
+9.105,no,2026-11-13,636768f,a job posting or a directory profile is no source
+9.106,yes,2026-11-13,636768f,
+9.107,no,2026-11-13,636768f,source not listed
+9.108,yes,2026-11-13,636768f,
+9.109,yes,2026-11-13,636768f,
+9.110,yes,2026-11-13,636768f,
+9.111,yes,2026-11-13,636768f,
+9.112,yes,2026-11-13,636768f,
+9.113,no,2026-11-13,636768f,"not the person's background (past roles, experience or education), only the current role"
+9.114,no,2026-11-13,636768f,"not the person's background (past roles, experience or education), only the current role"
+9.115,no,2026-11-13,636768f,"not the person's background (past roles, experience or education), only the current role"
+9.116,no,2026-11-13,636768f,"not the person's background (past roles, experience or education), only the current role"
+9.117,no,2026-11-13,636768f,not about the person
+9.118,no,2026-11-13,636768f,"not the person's background (past roles, experience or education), only the current role"
+9.119,yes,2026-11-13,636768f,
+9.120,yes,2026-11-13,636768f,
+9.121,yes,2026-11-13,636768f,
+9.122,yes,2026-11-13,636768f,
+9.123,yes,2026-11-13,636768f,
+9.124,yes,2026-11-13,636768f,
+9.125,yes,2026-11-13,636768f,
+rj.6.26,no,2026-11-13,636768f,the current classification gives DeepTech › Space Tech
+rj.6.30,yes,2026-11-13,636768f,
+rj.x67.29,yes,2026-11-13,636768f,
+rj.x67.32,yes,2026-11-13,636768f,
+rj.x67.34,yes,2026-11-13,636768f,
+rj.x67.35,yes,2026-11-13,636768f,
+rj.x67.36,no,2026-11-13,636768f,the current classification gives Consumer & Media › AdTech
+rj.x67.37,yes,2026-11-13,636768f,
+rj.x67.40,yes,2026-11-13,636768f,
+rj.x67.42,yes,2026-11-13,636768f,
+rj.x67.44,yes,2026-11-13,636768f,
+rj.x67.50,yes,2026-11-13,636768f,
+rj.x67.54,yes,2026-11-13,636768f,
+rj.x67.57,yes,2026-11-13,636768f,
+rj.x67.64,yes,2026-11-13,636768f,
+rj.x67.65,yes,2026-11-13,636768f,
+rj.x67.66,yes,2026-11-13,636768f,
+rj.x67.70,yes,2026-11-13,636768f,
+rj.8.17,yes,2026-11-13,636768f,
+rj.8.18,no,2026-11-13,636768f,the current classification gives Health & Life Sciences › MedTech
+rj.8.20,yes,2026-11-13,636768f,
+rj.8.21,no,2026-11-13,636768f,the current classification gives Health & Life Sciences › Biotech / Genomics
+rj.8.22,yes,2026-11-13,636768f,
+rj.8.23,yes,2026-11-13,636768f,
+rj.8.24,yes,2026-11-13,636768f,
+rj.8.25,yes,2026-11-13,636768f,
+rj.8.26,yes,2026-11-13,636768f,
+rj.8.27,yes,2026-11-13,636768f,
+rj.8.28,yes,2026-11-13,636768f,
+rj.8.29,yes,2026-11-13,636768f,
+rj.8.30,yes,2026-11-13,636768f,
+rj.9.51,yes,2026-11-13,636768f,
+rj.9.54,yes,2026-11-13,636768f,
+rj.9.55,yes,2026-11-13,636768f,
+rj.9.56,yes,2026-11-13,636768f,
+rj.9.59,yes,2026-11-13,636768f,
+rj.9.60,no,2026-11-13,636768f,the current classification gives Industrial & Manufacturing › Advanced Manufacturing
+rj.9.61,no,2026-11-13,636768f,the current classification gives DeepTech › Space Tech
+rj.9.64,yes,2026-11-13,636768f,
+rj2.6.26,yes,2026-11-13,636768f,
+rj2.x67.35,no,2026-11-13,636768f,the current classification gives Enterprise Software › ERP / Finance
+rj2.x67.36,yes,2026-11-13,636768f,
+rj2.x67.59,no,2026-11-13,636768f,the current classification gives Enterprise Software › HR Tech
+rj2.8.16,no,2026-11-13,636768f,the current classification gives Fintech › Payments
+rj2.8.18,yes,2026-11-13,636768f,
+rj2.8.28,no,2026-11-13,636768f,the current classification gives Health & Life Sciences › Healthcare SaaS
+rj2.9.61,yes,2026-11-13,636768f,
+rj3.x67.68,yes,2026-11-13,636768f,
+10.1,yes,2026-11-13,636768f,
+10.2,no,2026-11-13,636768f,"the Contact page lists the address under Offices: an office, not the headquarters"
+10.3,yes,2026-11-13,636768f,
+10.4,no,2026-11-13,636768f,source not listed
+10.5,yes,2026-11-13,636768f,
+10.6,yes,2026-11-13,636768f,
+10.7,no,2026-11-13,636768f,source not listed
+10.8,no,2026-11-13,636768f,"the Contact page lists the address under Offices: an office, not the headquarters"
+10.9,yes,2026-11-13,636768f,
+10.10,yes,2026-11-13,636768f,
+10.11,yes,2026-11-13,636768f,
+10.12,yes,2026-11-13,636768f,
+10.13,yes,2026-11-13,636768f,
+10.14,yes,2026-11-13,636768f,
+10.15,yes,2026-11-13,636768f,
+10.16,yes,2026-11-13,636768f,
+10.17,yes,2026-11-13,636768f,
+10.18,no,2026-11-13,636768f,"the first sentence describes a product, not the company (it must start with the company)"
+10.19,yes,2026-11-13,636768f,
+10.20,yes,2026-11-13,636768f,
+10.21,yes,2026-11-13,636768f,
+10.22,yes,2026-11-13,636768f,
+10.23,yes,2026-11-13,636768f,
+10.24,yes,2026-11-13,636768f,
+10.25,yes,2026-11-13,636768f,
+10.26,yes,2026-11-13,636768f,
+10.27,yes,2026-11-13,636768f,
+10.28,yes,2026-11-13,636768f,
+10.29,yes,2026-11-13,636768f,
+10.30,yes,2026-11-13,636768f,
+10.31,yes,2026-11-13,636768f,
+10.32,yes,2026-11-13,636768f,
+10.33,yes,2026-11-13,636768f,
+10.34,yes,2026-11-13,636768f,
+10.35,yes,2026-11-13,636768f,
+10.36,yes,2026-11-13,636768f,
+10.37,yes,2026-11-13,636768f,
+10.38,yes,2026-11-13,636768f,
+10.39,yes,2026-11-13,636768f,
+10.40,yes,2026-11-13,636768f,
+10.41,yes,2026-11-13,636768f,
+10.42,yes,2026-11-13,636768f,
+10.43,yes,2026-11-13,636768f,
+10.44,yes,2026-11-13,636768f,
+10.45,yes,2026-11-13,636768f,
+10.46,yes,2026-11-13,636768f,
+10.47,yes,2026-11-13,636768f,
+10.48,yes,2026-11-13,636768f,
+10.49,yes,2026-11-13,636768f,
+10.50,yes,2026-11-13,636768f,
+10.51,yes,2026-11-13,636768f,
+10.52,yes,2026-11-13,636768f,
+10.53,yes,2026-11-13,636768f,
+10.54,yes,2026-11-13,636768f,
+10.55,no,2026-11-13,636768f,the year in the quote is not this count's date (a founding year or another figure's)
+10.56,yes,2026-11-13,636768f,
+10.57,yes,2026-11-13,636768f,
+10.58,no,2026-11-13,636768f,"the figure is the size class of an award, not the company's headcount"
+10.59,no,2026-11-13,636768f,the year in the quote is not this count's date (a founding year or another figure's)
+10.60,yes,2026-11-13,636768f,
+10.61,no,2026-11-13,636768f,"not the person's background (past roles, experience or education), only the current role"
+10.62,yes,2026-11-13,636768f,
+10.63,yes,2026-11-13,636768f,
+10.64,yes,2026-11-13,636768f,
+10.65,yes,2026-11-13,636768f,
+10.66,yes,2026-11-13,636768f,
+11.1,yes,2026-11-13,636768f,
+11.2,yes,2026-11-13,636768f,
+11.3,yes,2026-11-13,636768f,
+11.4,yes,2026-11-13,636768f,
+11.5,yes,2026-11-13,636768f,
+11.6,no,2026-11-13,636768f,the same point as an earlier mark
+11.7,yes,2026-11-13,636768f,
+11.8,yes,2026-11-13,636768f,
+11.9,yes,2026-11-13,636768f,
+11.10,no,2026-11-13,636768f,"not the person's background (past roles, experience or education), only the current role"
+11.11,no,2026-11-13,636768f,"not the person's background (past roles, experience or education), only the current role"
+11.12,no,2026-11-13,636768f,"not the person's background (past roles, experience or education), only the current role"
+11.13,yes,2026-11-13,636768f,
+11.14,no,2026-11-13,636768f,the quote does not link the company and this competitor directly
+11.15,no,2026-11-13,636768f,a partner or integration is not a market peer
+11.16,yes,2026-11-13,636768f,
+11.17,no,2026-11-13,636768f,a contrast is not a market peer
+11.18,no,2026-11-13,636768f,a contrast is not a market peer
+11.19,no,2026-11-13,636768f,the quote does not link the company and this competitor directly
+11.20,no,2026-11-13,636768f,the quote does not link the company and this competitor directly
+11.21,yes,2026-11-13,636768f,
+11.22,no,2026-11-13,636768f,the quote does not link the company and this competitor directly
+11.23,no,2026-11-13,636768f,the quote does not link the company and this competitor directly
+11.24,no,2026-11-13,636768f,a acquirer or acquired is not a market peer
+11.25,yes,2026-11-13,636768f,
+11.26,yes,2026-11-13,636768f,
+11.27,yes,2026-11-13,636768f,
+11.28,yes,2026-11-13,636768f,
+12.1,yes,2026-11-13,636768f,
+12.2,yes,2026-11-13,636768f,
+12.3,yes,2026-11-13,636768f,
+12.4,no,2026-11-13,636768f,source not listed
+12.5,yes,2026-11-13,636768f,
+12.6,yes,2026-11-13,636768f,
+12.7,no,2026-11-13,636768f,the quote does not link the company and this competitor directly
+12.8,no,2026-11-13,636768f,the quote does not link the company and this competitor directly
+12.9,no,2026-11-13,636768f,the quote does not link the company and this competitor directly
+12.10,no,2026-11-13,636768f,the quote does not link the company and this competitor directly
+12.11,yes,2026-11-13,636768f,
+12.12,no,2026-11-13,636768f,the quote does not link the company and this competitor directly
+12.13,no,2026-11-13,636768f,the quote does not link the company and this competitor directly
+12.14,no,2026-11-13,636768f,the quote does not link the company and this competitor directly
+12.15,no,2026-11-13,636768f,the quote does not link the company and this competitor directly
