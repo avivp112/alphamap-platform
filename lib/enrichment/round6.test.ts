@@ -52,7 +52,7 @@ describe("a party's own announcement: for the news and the event, not for facts 
 describe("domain classes: a guess is blocked, a page's class is the page's", () => {
   it("a hedged reason is no decision", () => {
     expect(isHedged("The domain ossia.com is not a recognizable outlet, so this is a best guess.")).toBe(true);
-    expect(isHedged("finance.biggo.com ... though it may be an aggregator rather than an original newsroom")).toBe(true);
+    expect(isHedged("finance.biggo.com ... though it may be an aggregator rather than an original newsroom")).toBe(false);   // softened (round 9): only strong hedges
     expect(isHedged("Gizmodo is a tech publication with editors.")).toBe(false);
     expect(parseDomainClass({ class: "news_outlet", scope: "domain", confident: true, reason: "A best guess." })).toMatchObject({ class: "blog_vendor_other" });
     expect(parseDomainClass({ class: "news_outlet", scope: "domain", confident: false, reason: "Trade publication." })).toMatchObject({ class: "blog_vendor_other" });
@@ -184,7 +184,7 @@ describe("several offices, none marked, and an allowed source names one as the h
 import { hasExplicitSponsorMark } from "./domainClass.ts";
 describe("'may be sponsored' is not evidence (owner, 2026-11-15)", () => {
   it("a guess about sponsorship is not a doubt about the site", () => {
-    expect(isHedged("Business Alabama appears to be a regional business publication, but this page may be sponsored or company-supplied content")).toBe(true);   // 'appears to be' about the site still counts
+    expect(isHedged("Business Alabama appears to be a regional business publication, but this page may be sponsored or company-supplied content")).toBe(false);   // round 9: only strong hedges block
     expect(isHedged("Health Europa is a health publication; this article reads like a sponsored piece.")).toBe(false);
     expect(isHedged("starting-up.de is a German startup news publication, but this founder interview may be sponsored or part of a paid series")).toBe(false);
   });

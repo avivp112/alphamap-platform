@@ -322,10 +322,16 @@ export async function writeCollected(
     if (sid) { patch.sector_id = sid; provenance("profile.sector_id", profile.profile.sector_name, descEvidence); }
   }
   // Sub-sector tags (startup_sub_sectors): additive across runs, like v1.
-  const proposedTags = [...new Set([
+  const allProposed = [...new Set([
     ...(profile.profile.sub_sector_name ? [profile.profile.sub_sector_name] : []),
     ...(profile.profile.sub_sector_names ?? []),
   ])];
+  // Tags are sub-sectors only: a parent category ("AI & ML", "Consumer & Media") proposed as a tag is not one (owner, round 9).
+  const proposedTags = allProposed.filter((t) => taxonomy.subNames.includes(t));
+  for (const t of allProposed.filter((t) => !taxonomy.subNames.includes(t))) {
+    console.log(`    🏷️   Tag "${t}" dropped — it is a main sector, not a sub-sector; tags come only from the sub-sector list.`);
+    bump(summary.droppedByReason, "tag_not_a_sub_sector");
+  }
   const tagFilter = filterCrossSectorTags(
     proposedTags, profile.profile.sector_name, taxonomy,
     [profile.profile.description, profile.profile.value_proposition, profile.profile.industry, row.description].filter(Boolean).join(" "),

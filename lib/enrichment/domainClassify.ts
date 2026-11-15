@@ -19,7 +19,7 @@ const SYSTEM = [
   "Judge the kind of site (and the section of it, when the address is a section such as /partners, /case-studies, /companies, /reviews), not whether the page's claim is true.",
   "A page is sponsored or paid content ONLY when the facts you are given say it carries an explicit mark (Sponsored, Partner content, Advertorial, Promoted, Branded content). 'It may be sponsored' is not evidence: classify the SITE by what kind of site it is.",
   "scope: 'domain' when the class is the whole site's (a newspaper is a news_outlet on every page); 'page' when only this page is what it is (a sponsored or paid content piece on an otherwise real outlet, a tag or archive listing, a data page): a page-scoped answer says nothing about the rest of the site.",
-  "confident: false when you are guessing (the site is not recognisable, the page is ambiguous). A guess is not an answer: say confident=false rather than hedging in the reason.",
+  "confident refers to the SITE TYPE: false only when you cannot tell what kind of site this is (not recognisable); a page you cannot judge on a site you recognise is still confident. A guess is not an answer: say confident=false rather than hedging in the reason.",
 ].join(" ");
 
 export function buildDomainClassRequest(url: string, title: string, text: string, sponsorMark = false) {

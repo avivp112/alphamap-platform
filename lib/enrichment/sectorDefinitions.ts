@@ -100,7 +100,7 @@ export const SECTOR_DEFINITIONS: Record<string, string> = {
   "Construction Tech": "software and tools for building and contracting (roofing, estimating, project management for construction trades).",
   // Food & Agriculture
   "FoodTech": "food production and food products made with technology (cultivated meat, alternative protein, food automation).",
-  "AgTech": "farming technology: crops, orchards, yield forecasting, agricultural data and inputs.",
+  "AgTech": "farming technology: crops, orchards, yield forecasting, agricultural data and inputs (fertilisers, biostimulants, nano-solutions applied to plants or soil).",
   // Automotive & Mobility
   "Automotive / General": "automotive company with no narrower fit.",
   "Vehicle Security": "protects vehicles and connected-car data and fleets from attack; the sector is Automotive & Mobility, not Cybersecurity.",

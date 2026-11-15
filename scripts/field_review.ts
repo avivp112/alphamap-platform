@@ -38,7 +38,7 @@ import { profileSourceAllowed, roundSourceStanding } from "../lib/enrichment/rou
 import { capPerCompany, PER_COMPANY } from "../lib/enrichment/fieldReview.ts";
 import { majorPressNote } from "../lib/enrichment/unlistedDomains.ts";
 import { rejectedDomains, rejectedDomainsCsv } from "../lib/enrichment/rejectedDomains.ts";
-import { wrapAnthropic, enterOfflineMode, installFetchTimeout } from "../lib/enrichment/recorder.ts";
+import { wrapAnthropic, installHttpRecorder, quietOffline, installFetchTimeout } from "../lib/enrichment/recorder.ts";
 import { domainClasses, domainClassesCsv } from "../lib/enrichment/domainClass.ts";
 import { definitionLines } from "../lib/enrichment/reviewDefinitions.ts";
 import { makePeerLookup } from "../lib/enrichment/peerLookup.ts";
@@ -121,7 +121,8 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
   console.log(`Field review run ${runNo} — ${drawn.length} new random companies (seed ${SEED}), model ${MODEL}. Nothing is written to the database.\n`);
 
   installFetchTimeout();
-  enterOfflineMode();
+  installHttpRecorder();
+  quietOffline();
   const anthropic = wrapAnthropic(new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: Number(process.env.MODEL_TIMEOUT_MS ?? 120_000), maxRetries: 2 }));
   const taxonomy = await loadSectorTaxonomy(db);
   const meter = new UsageMeter();
