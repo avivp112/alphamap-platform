@@ -50,7 +50,9 @@ import { collectCompany, V2_STARTUP_COLUMNS, V2_ROUND_COLUMNS, type V2StartupRow
 import { writeCollected, BULK_THRESHOLDS } from "../lib/enrichment/writeCompany.ts";
 
 import { classifyTier, type TierRow, type TierRound } from "../lib/enrichment/queue.ts";
-import { createSearchProviderState, jinaDisabled, type SearchProviderState } from "../lib/enrichment/searchProviders.ts";
+import { createSearchProviderState, jinaDisabled, readPageCached, type SearchProviderState } from "../lib/enrichment/searchProviders.ts";
+import { loadKnown, saveKnown, remember, applyKnown, markKey, KNOWN_PATH, type KnownStore } from "../lib/enrichment/knownSources.ts";
+import { readMarks } from "../lib/enrichment/fieldReview.ts";
 import { loadSectorTaxonomy, type SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { openSearchCache } from "../lib/enrichment/searchCache.ts";
 import { ACTIVE_DAYS, QUIET_DAYS, SeenUrls, isUpdateDue } from "../lib/enrichment/update.ts";
@@ -114,6 +116,15 @@ if (PILOT && ONLY.length === 0) { console.error("⛔  PILOT=true needs ONLY=<com
 // Every pilot field written — or, dry, that would be — before and after (the owner's report).
 const PILOT_REPORT = process.env.PILOT_REPORT ?? `${PILOT ? "pilot" : "run"}_report_${DRY_RUN ? "dry" : "write"}.csv`;
 const pilotRows: Array<Record<string, string>> = [];
+// Memory of verified sources (lib/enrichment/knownSources.ts): KNOWN_SOURCES=off switches it off.
+const KNOWN_ON = process.env.KNOWN_SOURCES !== "off";
+const knownStore: KnownStore = KNOWN_ON ? loadKnown() : {};
+const markList = KNOWN_ON ? readMarks() : [];
+const wrongMarks = new Set(markList.filter((m) => m.verdict === "wrong").map((m) => markKey(m.company, m.field, m.value)));
+const lockedMarks = new Set(markList.filter((m) => m.verdict === "correct").map((m) => markKey(m.company, m.field, m.value)));
+const knownReadState = createSearchProviderState();
+const readKnownPage = async (url: string): Promise<string | null> => { try { return (await readPageCached(url, knownReadState))?.text ?? null; } catch { return null; } };
+const RUN_DATE = new Date().toISOString().slice(0, 10);
 // Websites to fix (owner, 2026-11-02): another business on the site, or none of it readable.
 // Always in website_review.csv; noted in the website_review table on a wet run.
 const websiteRows: Array<Record<string, string>> = [];
@@ -314,10 +325,21 @@ async function enrichCompany(
     taxonomy, startupByDomain, seen: PILOT ? null : seen, runId,
     openFields: OPEN_FIELDS, pilot: PILOT,
   }, summary);
-  for (const c of outcome?.pilot ?? []) {
-    pilotRows.push({ company_id: row.id, company: row.name, field: c.field, before: c.before == null ? "" : String(c.before), after: String(c.after), source_url: c.source_url ?? "", quote: c.quote ?? "" });
+  let companyRows = (outcome?.pilot ?? []).map((c) => ({ company_id: row.id, company: row.name, field: c.field, before: c.before == null ? "" : String(c.before), after: String(c.after), source_url: c.source_url ?? "", quote: c.quote ?? "", origin: "new" }));
+  if (KNOWN_ON) {
+    // What this run found is remembered; what was verified before and is still confirmed is carried (no model, no search for it).
+    const freshFound = new Set(companyRows.map((r) => r.field));
+    const before = Object.keys(knownStore[row.id] ?? []).length;
+    const carry = await applyKnown(knownStore, row.id, companyRows, RUN_DATE, readKnownPage, lockedMarks);
+    remember(knownStore, companyRows, runId ?? "dry", RUN_DATE, wrongMarks);
+    companyRows = carry.rows.map((r) => ({ ...r, origin: r.origin ?? "new" })) as typeof companyRows;
+    const missing = ASKED.filter((f) => OPEN_FIELDS.includes(f) && !companyRows.some((r) => r.field === f || r.field.startsWith(f)));
+    console.log(`    📚  Known sources (${row.name}): from memory ${carry.carried.length ? [...new Set(carry.carried.map((r) => r.field))].join(", ") + ` (${carry.carried.length} value(s))` : "none"}; from this run's search ${[...freshFound].join(", ") || "none"}; still missing ${missing.join(", ") || "none"}${carry.recheck.length ? `; back to review (quote gone): ${carry.recheck.join(" | ")}` : ""}${carry.refreshDue.length ? `; older than the refresh time, searched again: ${carry.refreshDue.join(" | ")}` : ""}${carry.locked.length ? `; locked (marked correct) kept: ${carry.locked.join(" | ")}` : ""}${before ? "" : " [no memory yet]"}`);
   }
-  if (PILOT && !(outcome?.pilot ?? []).length) pilotRows.push({ company_id: row.id, company: row.name, field: "(nothing)", before: "", after: "", source_url: "", quote: "" });
+  for (const c of companyRows) {
+    pilotRows.push({ company_id: c.company_id, company: c.company, field: c.field, before: c.before, after: c.after, source_url: c.source_url, quote: c.quote, origin: c.origin });
+  }
+  if (PILOT && !companyRows.length) pilotRows.push({ company_id: row.id, company: row.name, field: "(nothing)", before: "", after: "", source_url: "", quote: "" });
 }
 
 // Why a company was not enriched (lib/enrichment/notEnriched.ts), for the batch report.
@@ -586,8 +608,9 @@ async function main() {
     writeFileSync("website_review.csv", "\uFEFF" + [wcols.join(","), ...websiteRows.map((r) => wcols.map((c) => wcell(r[c] ?? "")).join(","))].join("\r\n") + "\r\n");
     console.log(`🛠️   ${websiteRows.length} website(s) to fix in website_review.csv${DRY_RUN ? "" : " (and the website_review table)"}.`);
   }
+  if (KNOWN_ON && Object.keys(knownStore).length) { saveKnown(knownStore); console.log(`📚  Known sources saved: ${KNOWN_PATH} (${Object.values(knownStore).reduce((n, l) => n + l.length, 0)} value(s) of ${Object.keys(knownStore).length} compan(ies)).`); }
   if (PILOT || pilotRows.length > 0) {
-    const cols = ["company_id", "company", "field", "before", "after", "source_url", "quote"];
+    const cols = ["company_id", "company", "field", "before", "after", "source_url", "quote", "origin"];
     const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
     writeFileSync(PILOT_REPORT, "\uFEFF" + [cols.join(","), ...pilotRows.map((r) => cols.map((c) => cell(r[c] ?? "")).join(","))].join("\r\n") + "\r\n");
     // The numbered report of this batch (owner, 2026-11-05): the owner answers with the wrong numbers.
