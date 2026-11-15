@@ -184,8 +184,13 @@ export async function writeCollected(
   const planned = OPEN && !writesRounds(OPEN) ? { ...fullPlan, inserts: [], updates: [] } : fullPlan;
   // A round on file is filled only with values that have evidence behind them (an amount, valuation, date, lead investor):
   // an investor list has none, so it is never written as a fill (pilot dry run 2026-11-08: "Swan's existing investors").
+  // An acquisition is an exit, not a funding round (owner, round 10: ZestMoney "Acquired · DMI Finance" was a round row): it is taken out of the
+  // rounds and shown as its own proposal (acquired by, date) for the owner's review; the company's status is not changed by the pipeline.
+  const exitEvents = planned.inserts.filter((r) => r.round_type === "Acquired");
+  for (const r of exitEvents) { console.log(`    🏁  Acquisition is not a funding round — "${r.lead_investor ?? "buyer not named"}", ${r.announcement_date ?? "undated"}: shown as an acquired proposal, not written as a round.`); bump(summary.droppedByReason, "acquisition_not_a_round"); }
   const plan = {
     ...planned,
+    inserts: planned.inserts.filter((r) => r.round_type !== "Acquired"),
     updates: planned.updates.flatMap((u) => {
       const patch = evidencedFillPatch(u.patch as Record<string, unknown>, funding.funding_rounds);
       if (!patch) { bump(summary.droppedByReason, "round_fill_without_evidence"); return []; }
@@ -327,10 +332,15 @@ export async function writeCollected(
     ...(profile.profile.sub_sector_names ?? []),
   ])];
   // Tags are sub-sectors only: a parent category ("AI & ML", "Consumer & Media") proposed as a tag is not one (owner, round 9).
-  const proposedTags = allProposed.filter((t) => taxonomy.subNames.includes(t));
+  const isGeneral = (t: string) => /\/\s*general$/i.test(t);
+  const proposedTags = allProposed.filter((t) => taxonomy.subNames.includes(t) && !isGeneral(t));
   for (const t of allProposed.filter((t) => !taxonomy.subNames.includes(t))) {
     console.log(`    🏷️   Tag "${t}" dropped — it is a main sector, not a sub-sector; tags come only from the sub-sector list.`);
     bump(summary.droppedByReason, "tag_not_a_sub_sector");
+  }
+  for (const t of allProposed.filter((t) => taxonomy.subNames.includes(t) && isGeneral(t))) {
+    console.log(`    🏷️   Tag "${t}" dropped — a "General" sub-sector says nothing about the company; it is a classification fallback, not a tag.`);
+    bump(summary.droppedByReason, "tag_general");
   }
   const tagFilter = filterCrossSectorTags(
     proposedTags, profile.profile.sector_name, taxonomy,
@@ -757,6 +767,11 @@ export async function writeCollected(
     for (const r of plan.inserts) {
       const amount = r.amount_raised == null ? "amount not disclosed" : `$${+(r.amount_raised / 1e6).toFixed(1)}M`;
       reportLines.push({ field: "round", before: null, after: `${r.round_type} ${amount} · ${dateByPrecision(r.announcement_date, r.announcement_date_precision)}${r.lead_investor ? ` · lead ${r.lead_investor}` : ""}`, source_url: r.source_url ?? null, quote: null });
+    }
+    const renamedTo = (profile.profile as { rebrand_to?: string }).rebrand_to;
+    if (renamedTo) reportLines.push({ field: "name_proposal", before: row.name, after: `name = "${renamedTo}", former_names += "${row.name}" — the same company renamed; for review, not applied`, source_url: row.website ? (/^https?:/.test(row.website) ? row.website : `https://${row.website}`) : null, quote: null });
+    for (const r of exitEvents) {
+      reportLines.push({ field: "acquired", before: null, after: `acquired by ${r.lead_investor ?? "(buyer not named)"} · ${dateByPrecision(r.announcement_date, r.announcement_date_precision)} — proposal: status acquired, for review`, source_url: r.source_url ?? null, quote: null });
     }
     for (const u of plan.updates) {
       // A filled round field shows the source of the evidence it was filled from (it had "no source" in the report; the provenance row had it all along).

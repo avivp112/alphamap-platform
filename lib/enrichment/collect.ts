@@ -31,7 +31,7 @@ import { competitorTierClaims, type TieredClaim } from "./competitorTiers.ts";
 import { websiteLooksLikeAnotherCompany } from "./websiteIdentity.ts";
 import { judgeNews, finishNews } from "./newsGate.ts";
 import { reconcileSector, subSectorUnsupported } from "./sectors.ts";
-import { siteBelongsToAnotherCompany, acquisitionHeadline } from "./siteOwner.ts";
+import { siteBelongsToAnotherCompany, acquisitionHeadline, rebrandedAs } from "./siteOwner.ts";
 import { buildSectorRequest, parseSectorChoice, classifyWithRetry, type SectorChoice } from "./classifySector.ts";
 import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
 import { buildDescriptionRequest, descriptionSources, processDescription, describeAttempt } from "./descriptionBuilder.ts";
@@ -311,6 +311,9 @@ export async function runAllSearches(name: string, anchor: string, state: Search
       "news", state,
     ),
   ]);
+  // Which fixed searches ran, and what each returned (owner, round 10): a missing value is either a search that found nothing or an extraction that missed it.
+  const fixed = ["raises", "funding_round", "founded_by", "headquarters"].filter((l) => !skip.has(l) && queries.some(([q]) => q === l));
+  console.log(`    🔎  Fixed searches: ${fixed.map((l) => `${l} (${searchBatches.flat().filter((r) => r.query_label === l).length} result(s))`).join(", ")}`);
   return [...searchBatches.flat(), ...newsResults];
 }
 
@@ -384,6 +387,9 @@ export async function collectCompany(
   }
   // A site that belongs to another company now (acquired, rebranded): nothing is described from it (owner, 2026-11-09).
   let siteOwnerIssue = ctx.update ? null : siteBelongsToAnotherCompany(row.name, effectiveWebsite, websitePages);
+  // Renamed is not acquired (owner, round 10: TymeBank is GoTyme Bank): the description uses the new name, and the new name is a proposal for the owner.
+  const rebrandedTo = ctx.update || siteOwnerIssue ? null : rebrandedAs(row.name, websitePages);
+  if (rebrandedTo) console.log(`    🔁  Rebranded: ${row.name} is now "${rebrandedTo}" (the site says so) — described under the new name; name update proposed: name = "${rebrandedTo}", former_names += "${row.name}" (for the owner's review, not applied).`);
   if (siteOwnerIssue) {
     console.log(`    🛠️   ${siteOwnerIssue} — no description or sector is written; listed for review.`);
     ctx.onWebsiteIssue?.("content_mismatch", siteOwnerIssue);
@@ -406,6 +412,9 @@ export async function collectCompany(
     ctx.recordCost(ctx.models.enrich, gate);
     // Too little to go on (a suspended or unreadable homepage): there is no decision, and it is not "technology" either.
     techGateVerdict = gate.verdict;
+    // Every company's early technology check is shown, whatever the answer (owner, round 10: ALUS Canada had no line at all).
+    if (gate.verdict) console.log(`    🧪  Technology check: ${gate.verdict.enough_information === false ? "no decision (too little information)" : gate.verdict.is_tech_company ? "technology" : "not technology"} (${gate.verdict.confidence}${cachedVerdict ? ", from the saved verdict" : ""}) — ${gate.verdict.reason}`);
+    else console.log("    🧪  Technology check: the model gave no verdict — the profile call decides.");
     if (gate.verdict && gate.verdict.enough_information === false) { console.log(`    ❔  Technology check: no decision — ${gate.verdict.reason}`); }
     if (shouldSkipAsNonTech(gate.verdict)) {
       console.log(`    🚫  REJECTED before searching — not a technology company: ${gate.verdict!.reason}`);
@@ -608,6 +617,7 @@ export async function collectCompany(
   // One decision from the early check and the profile call (techGate.ts techDecision): the early check's yes stands; a "cannot tell" is no rejection.
   if (!ctx.update) {
     const decision = techDecision(techGateVerdict, profile, !!profile.profile.description);
+    console.log(`    🧪  Technology decision: ${decision} — early check ${techGateVerdict ? `${techGateVerdict.enough_information === false ? "undecided" : techGateVerdict.is_tech_company ? "yes" : "no"} (${techGateVerdict.confidence})` : "none"}; profile ${String((profile as { tech_decision?: unknown }).tech_decision ?? "none")}${profile.tech_reason ? ` — ${profile.tech_reason}` : ""}`);
     if (decision === "undetermined") {
       console.log(`    ❔  Technology undetermined — ${profile.tech_reason ?? "nothing to describe the company with"}; not enriched, to be tried again.`);
       return { outcome: "low_evidence", reason: "technology_undetermined", detail: `profile: ${profile.tech_reason ?? "the sources do not say what the company does"}` };
@@ -1687,7 +1697,7 @@ export async function collectCompany(
         ctx.recordCost(ctx.models.profile, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 });
         const tool = msg.content.find((b) => b.type === "tool_use");
         const returned = tool && tool.type === "tool_use" && Array.isArray((tool.input as { sentences?: unknown[] }).sentences) ? (tool.input as { sentences: Array<{ role: string }> }).sentences.map((x) => x.role) : [];
-        const attempt = tool && tool.type === "tool_use" ? describeAttempt(tool.input, row.name, Object.fromEntries(usable.map((x) => [x.source_id, x])), (id) => allowedFact({ source_id: id })) : null;
+        const attempt = tool && tool.type === "tool_use" ? describeAttempt(tool.input, row.name, Object.fromEntries(usable.map((x) => [x.source_id, x])), (id) => allowedFact({ source_id: id }), rebrandedTo ? [rebrandedTo] : []) : null;
         const built = attempt?.built ?? null;
         // Every dropped sentence is named, also when no description came of it (owner, 2026-11-14: nine companies without one and nothing in the log).
         for (const d of attempt?.dropped ?? []) { console.log(`    🚫  description sentence dropped (${d.why}): "${d.text.slice(0, 160)}"`); bump(stats.droppedByReason, `description_${d.why.split(":")[0]}`); }
@@ -1696,6 +1706,7 @@ export async function collectCompany(
           profile.profile.description_source_ids = [...new Set(built.sentences.flatMap((x) => x.source_ids))];
           profile.profile.description_sentences = built.sentences;
           profile.profile.description_complete = built.complete;
+          if (rebrandedTo) (profile.profile as { rebrand_to?: string }).rebrand_to = rebrandedTo;
           console.log(`    📝  Description (v2): ${built.sentences.length} sentence(s)${built.complete ? "" : " (what only: no source says who buys it)"} — ${built.description.slice(0, 120)}…`);
           if (!built.complete) bump(stats.droppedByReason, "description_what_only");
         } else {

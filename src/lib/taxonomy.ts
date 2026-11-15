@@ -32,7 +32,7 @@ export const SECTOR_TAXONOMY: Record<string, string[]> = {
   "Health & Life Sciences": ["Digital Health", "MedTech", "Biotech / Genomics", "Mental Health", "Healthcare SaaS", "Healthcare IT & Administration"],
   "Climate & Energy":      ["CleanTech", "EnergyTech", "Carbon Markets", "Sustainability"],
   "Enterprise Software":   ["Enterprise / General", "CRM", "HR Tech", "ERP / Finance", "Analytics / BI", "Sales Tech", "Productivity & Collaboration", "Customer Support & CX", "Marketing Tech", "Legal & Compliance Software"],
-  "Consumer & Media":      ["Consumer / General", "Social Media", "Gaming", "EdTech", "Travel & Hospitality", "Media / Content", "AdTech", "Travel Tech"],
+  "Consumer & Media":      ["Consumer / General", "Social Media", "Gaming", "EdTech", "Travel & Hospitality", "Media / Content", "AdTech", "Travel Tech", "Consumer Apps & Communication"],
   "DeepTech":              ["DeepTech / General", "Quantum Computing", "Robotics", "Space Tech", "Semiconductors", "Advanced Materials", "IoT & Connectivity"],
   "Industrial & Manufacturing": ["Industrial / General", "Industrial Automation", "Advanced Manufacturing", "Construction Tech"],
   "Food & Agriculture":    ["FoodTech", "AgTech"],
@@ -198,6 +198,7 @@ const SECTOR_SLUGS: Record<string, string> = {
   "Analytics / BI": "analyticsBi",
   // Consumer & Media
   "Consumer / General": "consumerGeneral",
+  "Consumer Apps & Communication": "consumerAppsCommunication",
   "Social Media": "socialMedia",
   "Gaming": "gaming",
   "EdTech": "edTech",

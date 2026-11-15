@@ -3,9 +3,10 @@
  * scripts/compare_dry.ts — two dry runs of the same companies side by side (owner, 2026-11-15): per company and field, what is new, what is gone, what changed.
  * A run is lost when the next one overwrites its report, so keep copies:  cp pilot_report_dry.csv runs/dry_$(date +%m%d_%H%M).csv
  *
- *   A=runs/dry_1114.csv B=pilot_report_dry.csv npx tsx scripts/compare_dry.ts
+ *   npx tsx scripts/compare_dry.ts runs/dry_1114.csv [pilot_report_dry.csv]      (or A=… B=… in the environment)
  */
 import { readFileSync, existsSync } from "fs";
+import { loadKnown } from "../lib/enrichment/knownSources.ts";
 
 function parseCsv(text: string): string[][] {
   const rows: string[][] = []; let row: string[] = [], cur = "", q = false;
@@ -21,8 +22,9 @@ function parseCsv(text: string): string[][] {
   if (cur || row.length) { row.push(cur); rows.push(row); }
   return rows;
 }
-const A = process.env.A, B = process.env.B ?? "pilot_report_dry.csv";
-if (!A || !existsSync(A) || !existsSync(B)) { console.error("A=<older report.csv> [B=<newer, default pilot_report_dry.csv>]"); process.exit(1); }
+const args = process.argv.slice(2).filter((x) => !x.startsWith("-"));
+const A = args[0] ?? process.env.A, B = args[1] ?? process.env.B ?? "pilot_report_dry.csv";
+if (!A || !existsSync(A) || !existsSync(B)) { console.error("npx tsx scripts/compare_dry.ts <older.csv> [<newer.csv, default pilot_report_dry.csv>]   (or A=… B=… in the environment; LOG=<run log> marks REPLAY cache misses)"); process.exit(1); }
 
 function load(path: string): Map<string, Map<string, string[]>> {
   const [head, ...body] = parseCsv(readFileSync(path, "utf8"));
@@ -36,7 +38,10 @@ function load(path: string): Map<string, Map<string, string[]>> {
   return m;
 }
 const a = load(A), b = load(B);
-let gained = 0, lost = 0, changed = 0, missed = 0;
+let gained = 0, lost = 0, changed = 0, missed = 0, notFound = 0;
+// "Lost" = a value the memory of verified sources holds that the newer report lacks (a bug); "not found" = a value of the older run that was never verified.
+const inMemory = new Set<string>();
+for (const list of Object.values(loadKnown())) for (const e of list) if (e.status !== "quote_gone") inMemory.add(`${e.company}|${e.field}`);
 // Companies whose replay lacked recordings (LOG=<run log>): a lost value there is not a regression.
 const missCompanies = new Set<string>();
 if (process.env.LOG) for (const l of readFileSync(process.env.LOG, "utf8").split("\n")) { const m = l.match(/REPLAY MISS (.+?): /); if (m) missCompanies.add(m[1]); }
@@ -48,7 +53,8 @@ for (const c of [...new Set([...a.keys(), ...b.keys()])].sort()) {
     const va = fa.get(f), vb = fb.get(f);
     if (!va && vb) { gained++; lines.push(`  + ${f}: ${vb.slice(0, 2).join(" | ")}${vb.length > 2 ? ` (+${vb.length - 2})` : ""}`); }
     else if (va && !vb && missCompanies.has(c)) { missed++; lines.push(`  ? ${f}: cache_miss (not a faithful replay) — was ${va.slice(0, 2).join(" | ")}`); }
-    else if (va && !vb) { lost++; lines.push(`  − ${f}: ${va.slice(0, 2).join(" | ")}${va.length > 2 ? ` (+${va.length - 2})` : ""}`); }
+    else if (va && !vb && !inMemory.has(`${c}|${f}`)) { notFound++; lines.push(`  ∅ ${f}: not found this time, never verified — was ${va.slice(0, 2).join(" | ")}`); }
+    else if (va && !vb) { lost++; lines.push(`  − LOST ${f}: ${va.slice(0, 2).join(" | ")}${va.length > 2 ? ` (+${va.length - 2})` : ""}`); }
     else if (va && vb && JSON.stringify([...va].sort()) !== JSON.stringify([...vb].sort())) {
       const onlyA = va.filter((x) => !vb.includes(x)), onlyB = vb.filter((x) => !va.includes(x));
       changed++;
@@ -61,4 +67,4 @@ for (const c of [...new Set([...a.keys(), ...b.keys()])].sort()) {
   else if (lines.length) out.push(`${c}\n${lines.join("\n")}`);
 }
 console.log(out.join("\n") || "No difference.");
-console.log(`\n${gained} field(s) gained, ${lost} lost, ${changed} changed, ${missed} cache_miss.  (A: ${A} — B: ${B})`);
+console.log(`\n${gained} field(s) gained, ${lost} lost, ${changed} changed, ${notFound} not found (never verified), ${missed} cache_miss.  (A: ${A} — B: ${B})`);

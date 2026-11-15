@@ -14,7 +14,7 @@ const PERSONAL_ACCOUNT = /\b(?:e-?mail|mailbox|calendar|notes?|storage)\b[^.]{0,
 export const ASSUMES_BUYERS = `"Enterprise Software" assumes business buyers, and the description names none. If the product is one anyone can sign up for by themselves (a personal account, an app), choose its consumer sector; keep the Enterprise sector only if the description says organisations buy it`;
 
 /** A description with a verified "what" but no "for whom" (owner, 2026-11-14): the sector follows the product, not an assumed business customer. */
-export const NO_CUSTOMERS_NOTE = "The description does not say who buys the product. Decide by the product itself and do not assume business customers: a product anyone can sign up for by themselves (a personal mailbox, a consumer app, a shop) is a consumer product; choose an Enterprise or industry sector only when the description names organisations, teams or businesses as the buyers. Email, calendar, notes and storage accounts with no business buyer named are Consumer & Media (Consumer / General), not Enterprise Software (Productivity & Collaboration).";
+export const NO_CUSTOMERS_NOTE = "The description does not say who buys the product. Decide by the product itself and do not assume business customers: a product anyone can sign up for by themselves (a personal mailbox, a consumer app, a shop) is a consumer product; choose an Enterprise or industry sector only when the description names organisations, teams or businesses as the buyers. Email, calendar, notes and storage accounts with no business buyer named are Consumer & Media (Consumer Apps & Communication), not Enterprise Software (Productivity & Collaboration).";
 
 export function buildSectorRequest(companyName: string, description: string, taxonomy: SectorTaxonomyLite, feedback?: string, opts: { noCustomers?: boolean } = {}) {
   const prompt = `Classify the company "${companyName}" from its description alone.
@@ -83,10 +83,14 @@ export async function classifyWithRetry(
   const problem = sectorProblem(choice, description, opts);
   if (!problem) return choice;
   log(`answer rejected (${problem}) \u2014 asking once more`);
-  const again = await call(`${choice ? `${choice.sector_name}${choice.sub_sector_name ? ` \u203A ${choice.sub_sector_name}` : ""}: ` : ""}${problem}.`);
+  // A "General" is only a question about the sub-sector: the main sector is locked on the second look, and a General that stays is accepted
+  // (owner, round 10: Posteo was Consumer / General, and the second look jumped to Enterprise Software).
+  const generalOnly = !!choice && /last resort/.test(problem);
+  let again = await call(`${choice ? `${choice.sector_name}${choice.sub_sector_name ? ` \u203A ${choice.sub_sector_name}` : ""}: ` : ""}${problem}.${generalOnly ? ` Keep the main sector "${choice!.sector_name}": choose a specific sub-sector inside it that fits, or keep its General one.` : ""}`);
+  if (generalOnly && choice && (!again || again.sector_name !== choice.sector_name)) again = choice;
   const stillBad = sectorProblem(again, description, opts);
   // The second look chose the Enterprise sector again for an account a person opens for themselves (a mailbox) with no buyer named: the product decides.
-  if (opts.noCustomers && again && stillBad === ASSUMES_BUYERS && PERSONAL_ACCOUNT.test(description)) return { sector_name: "Consumer & Media", sub_sector_name: "Consumer / General", sub_sector_names: again.sub_sector_names.filter((n) => n !== "Productivity & Collaboration").slice(0, 3) };
+  if (opts.noCustomers && again && stillBad === ASSUMES_BUYERS && PERSONAL_ACCOUNT.test(description)) return { sector_name: "Consumer & Media", sub_sector_name: "Consumer Apps & Communication", sub_sector_names: again.sub_sector_names.filter((n) => n !== "Productivity & Collaboration").slice(0, 3) };
   // Still "Vertical SaaS" as the main sub-sector: the industry is not named, so no main sub-sector, and it stays among the tags.
   if (again && again.sub_sector_name === "Vertical SaaS") return { ...again, sub_sector_name: undefined, sub_sector_names: [...new Set(["Vertical SaaS", ...again.sub_sector_names])].slice(0, 3) };
   if (again && (!stillBad || /last resort/.test(stillBad) || stillBad === ASSUMES_BUYERS)) return again;

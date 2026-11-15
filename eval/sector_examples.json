@@ -191,5 +191,11 @@
     "description": "Krilltech sells liquid agricultural solutions containing spherical carbon nanoparticles that are applied to plants or soil to improve plant development and make plants more efficient and healthier.",
     "expect": "Food & Agriculture › AgTech",
     "was": "Climate & Energy (round 9 flip)"
+  },
+  {
+    "company": "Promethean Particles",
+    "description": "Promethean Particles produces metal-organic frameworks (MOFs) using a proprietary and patented continuous process. Its MOF materials are applied to carbon capture, and the company supplies them to industrial customers.",
+    "expect": "Climate & Energy › CleanTech",
+    "was": "flipped between Climate & Energy, Industrial & Manufacturing and DeepTech (round 10)"
   }
 ]

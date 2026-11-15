@@ -75,10 +75,14 @@ describe("the classification as the pipeline runs it (one function for the colle
   const choice = (sector: string, sub?: string) => ({ sector_name: sector, sub_sector_name: sub, sub_sector_names: [] as string[] });
   it("a General gets a second look and a specific answer wins", async () => {
     const seen: Array<string | undefined> = [];
-    const r = await classifyWithRetry(async (f) => { seen.push(f); return f ? choice("Enterprise Software", "HR Tech") : choice("SaaS & Dev Tools", "SaaS / General"); }, malt);
+    const r = await classifyWithRetry(async (f) => { seen.push(f); return f ? choice("Enterprise Software", "HR Tech") : choice("Enterprise Software", "Enterprise / General"); }, malt);
     expect(r).toMatchObject({ sub_sector_name: "HR Tech" });
     expect(seen[0]).toBeUndefined();
     expect(seen[1]).toMatch(/last resort/);
+  });
+  it("the second look after a General keeps the main sector (owner, round 10: Posteo)", async () => {
+    const r = await classifyWithRetry(async (f) => (f ? choice("Enterprise Software", "HR Tech") : choice("Consumer & Media", "Consumer / General")), malt);
+    expect(r).toMatchObject({ sector_name: "Consumer & Media", sub_sector_name: "Consumer / General" });
   });
   it("a General that stays General is accepted; an unsupported answer that stays unsupported keeps the sector, without the sub-sector", async () => {
     expect(await classifyWithRetry(async () => choice("SaaS & Dev Tools", "SaaS / General"), malt)).toMatchObject({ sub_sector_name: "SaaS / General" });
@@ -147,7 +151,7 @@ describe("a personal-tools answer for a description with no buyer (Posteo)", () 
     expect(seen[1]).toContain("assumes business buyers");
     // chosen again for an email account with no buyer named: the product decides
     let n = 0;
-    expect(await cwr(async () => { n++; return ent; }, d, undefined, { noCustomers: true })).toMatchObject({ sector_name: "Consumer & Media", sub_sector_name: "Consumer / General" });
+    expect(await cwr(async () => { n++; return ent; }, d, undefined, { noCustomers: true })).toMatchObject({ sector_name: "Consumer & Media", sub_sector_name: "Consumer Apps & Communication" });
     expect(n).toBe(2);
     // chosen again for something that is not a personal account: it stays
     n = 0;

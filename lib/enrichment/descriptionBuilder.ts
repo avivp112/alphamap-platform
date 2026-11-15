@@ -24,6 +24,7 @@ const norm = (s: string) => s.toLowerCase().replace(/(\d),(\d)/g, "$1$2").replac
 const COMMON_CAPS = new Set(["the", "a", "an", "it", "its", "this", "that", "they", "their", "for", "to", "and", "in", "of", "with", "by", "on", "from", "ai", "api", "saas", "b2b", "b2c", "it", "ml", "sdk", "iot", "cloud", "ceo", "cto", "us", "usa", "eu", "uk"]);
 
 /** The numbers and the capitalised names of a sentence (not its first word, not the company's own name). */
+const TERMS = new Set(["saas", "paas", "iaas", "iot", "nosql", "devops", "fintech", "proptech", "edtech", "healthtech", "insurtech", "regtech", "adtech", "foodtech", "agtech", "biotech", "cleantech"]);
 export function claims(sentence: string, companyName: string): { numbers: string[]; names: string[] } {
   const numbers = (sentence.match(/\$?\d[\d,.]*\s?(?:[kKmMbB]\b|%|\+)?/g) ?? []).map((n) => n.replace(/[$,\s+]/g, "").replace(/\.$/, "")).filter(Boolean);
   const own = new Set(norm(companyName).split(" "));
@@ -33,6 +34,8 @@ export function claims(sentence: string, companyName: string): { numbers: string
     const bare = w.replace(/^[("'“]+|[)"'”.,;:!?]+$/g, "");
     if (i === 0 || !/^[A-Z][\p{L}\d&-]{1,}$/u.test(bare)) return;
     const k = bare.toLowerCase();
+    // Acronyms and trade terms (MOFs, AMRs, APIs, SaaS) are vocabulary, not names of companies, products or people (owner, round 10: Promethean's "MOFs").
+    if (/^[A-Z]{2,}s?$/.test(bare) || TERMS.has(k)) return;
     if (!COMMON_CAPS.has(k) && !own.has(k)) names.push(bare);
   });
   return { numbers, names: [...new Set(names)] };
@@ -75,7 +78,7 @@ export function leadsWithCompany(sentence: string, companyName: string): boolean
 
 export function sentenceProblem(
   s: { role: string; text: string; source_ids: string[] }, companyName: string,
-  byId: Record<string, { content: string }>, allowed: (id: string) => boolean,
+  byId: Record<string, { content: string }>, allowed: (id: string) => boolean, aliases: string[] = [],
 ): string | null {
   if (!["what", "for_whom", "edge"].includes(s.role)) return "unknown_role";
   if (!s.text?.trim() || s.text.length > 400) return "bad_text";
@@ -88,11 +91,11 @@ export function sentenceProblem(
   const frag = fragmentProblem(s.text, s.role);
   if (frag) return frag;
   // What the company sells is said of the company by name (review 9: "aibuy offers …" for Cinsay, "Deel IT is …" for Hofy, "The platform is built to power …" for DealHub).
-  if (s.role === "what" && !namesTheCompany(s.text, companyName)) return "what_without_company";
+  if (s.role === "what" && ![companyName, ...aliases].some((n) => namesTheCompany(s.text, n))) return "what_without_company";
   // ... and by the company, not by one of its products (run 10: "Franklin, by Genoox, is a free variant interpretation tool").
-  if (s.role === "what" && !leadsWithCompany(s.text, companyName)) return "what_describes_a_product";
+  if (s.role === "what" && ![companyName, ...aliases].some((n) => leadsWithCompany(s.text, n))) return "what_describes_a_product";
   const hay = norm(s.source_ids.map((id) => byId[id].content).join(" "));
-  const c = claims(s.text, companyName);
+  const c = claims(s.text, [companyName, ...aliases].join(" "));
   for (const n of c.numbers) if (!hay.includes(norm(n))) return `number_not_in_sources:${n}`;
   for (const n of c.names) if (!hay.includes(norm(n))) return `name_not_in_sources:${n}`;
   if (!s.source_ids.some((id) => bestSentence(byId[id].content, s.text, 3))) return "no_supporting_sentence";
@@ -101,27 +104,27 @@ export function sentenceProblem(
 
 /** What came of a description attempt: the description (or none), and every sentence that was dropped with its reason — also when there is no description. */
 export function describeAttempt(
-  input: unknown, companyName: string, byId: Record<string, { content: string }>, allowed: (id: string) => boolean,
+  input: unknown, companyName: string, byId: Record<string, { content: string }>, allowed: (id: string) => boolean, aliases: string[] = [],
 ): { built: BuiltDescription | null; dropped: Array<{ text: string; why: string }>; returned: Array<{ role: string; text: string }> } {
   const list = Array.isArray((input as { sentences?: unknown })?.sentences) ? (input as { sentences: Array<{ role: string; text: string }> }).sentences : [];
-  const built = processDescription(input, companyName, byId, allowed);
+  const built = processDescription(input, companyName, byId, allowed, aliases);
   if (built) return { built, dropped: built.dropped, returned: list.map((s) => ({ role: s.role, text: s.text })) };
   const dropped: Array<{ text: string; why: string }> = [];
   for (const s of list as Array<{ role: string; text: string; source_ids: string[] }>) {
-    const why = sentenceProblem(s, companyName, byId, allowed);
+    const why = sentenceProblem(s, companyName, byId, allowed, aliases);
     if (why) dropped.push({ text: s?.text ?? "", why });
   }
   return { built: null, dropped, returned: list.map((s) => ({ role: s.role, text: s.text })) };
 }
 
 export function processDescription(
-  input: unknown, companyName: string, byId: Record<string, { content: string }>, allowed: (id: string) => boolean,
+  input: unknown, companyName: string, byId: Record<string, { content: string }>, allowed: (id: string) => boolean, aliases: string[] = [],
 ): BuiltDescription | null {
   const list = Array.isArray((input as { sentences?: unknown })?.sentences) ? (input as { sentences: Array<{ role: string; text: string; source_ids: string[] }> }).sentences : [];
   const kept: DescriptionSentence[] = [];
   const dropped: BuiltDescription["dropped"] = [];
   for (const s of list) {
-    const why = sentenceProblem(s, companyName, byId, allowed);
+    const why = sentenceProblem(s, companyName, byId, allowed, aliases);
     if (why) { dropped.push({ text: s?.text ?? "", why }); continue; }
     if (kept.some((k) => k.role === s.role)) { dropped.push({ text: s.text, why: "second_sentence_of_role" }); continue; }
     const quote = s.source_ids.map((id) => bestSentence(byId[id].content, s.text, 3)).find(Boolean) ?? "";

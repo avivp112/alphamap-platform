@@ -132,6 +132,8 @@ export function ownBrandSources<T extends PageText & { source_type?: string | nu
     if (s.source_type === "company_site") continue;
     let reg: string | null = null;
     try { reg = registrable(new URL(s.url).hostname.toLowerCase().replace(/^www\./, "")); } catch { continue; }
+    // The registered website's own domain is tier 1 always (owner, round 10: aerobotix.com), whatever the page says.
+    if (registered.host && reg === registrable(registered.host)) { out.push({ ...s, ownHow: "the domain of the registered website" }); continue; }
     if (!!redirectDomain && reg === redirectDomain && pageNamesCompany(s, companyName)) { out.push({ ...s, ownHow: "the registered website redirects there" }); continue; }
     if (brandLabelMatches(s.url, companyName) && pageNamesCompany(s, companyName)) {
       const ev = ownEvidence(s, registered, companyName);

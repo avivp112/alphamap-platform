@@ -63,3 +63,14 @@ describe("a headline in which the company is the one acquired (domain_repurposed
     expect(acquisitionHeadline("Wiz acquires Dazz for $450 million", "Wiz")).toBe(false);
   });
 });
+
+import { rebrandedAs } from "./siteOwner";
+describe("renamed is not acquired (owner, round 10: TymeBank → GoTyme Bank)", () => {
+  it("a rename is found and is no site-owner issue; an acquisition still is", () => {
+    const pages = [{ url: "https://gotyme.co.za", content: "GoTyme Bank (formerly TymeBank) is a digital bank." }];
+    expect(rebrandedAs("TymeBank", pages)).toBe("GoTyme Bank");
+    expect(siteBelongsToAnotherCompany("TymeBank", "https://tymebank.co.za", pages)).toBeNull();
+    expect(rebrandedAs("Acme", [{ url: "u", content: "Acme is now part of Globex." }])).toBeNull();
+    expect(siteBelongsToAnotherCompany("Acme", "https://acme.com", [{ url: "u", content: "Acme has been acquired by Globex Corporation and is now part of it." }])).toMatch(/acquired/);
+  });
+});
