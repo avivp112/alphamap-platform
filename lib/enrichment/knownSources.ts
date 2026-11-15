@@ -34,6 +34,8 @@ export function saveKnown(store: KnownStore, path = KNOWN_PATH): void {
   writeFileSync(path, JSON.stringify(store, null, 1));
 }
 
+/** description and description_what_only are one field: a company has one description, complete or what-only. */
+const family = (f: string) => (f === "description_what_only" ? "description" : f);
 const fold = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 export const markKey = (company: string, field: string, value: string) => `${fold(company)}|${field}|${fold(value).slice(0, 80)}`;
 
@@ -53,7 +55,7 @@ export function remember(store: KnownStore, rows: ReportRow[], runId: string, to
     const same = list.find((e) => e.field === r.field && fold(e.value) === fold(r.after));
     if (same) { Object.assign(same, { source_url: r.source_url, quote: r.quote || same.quote, verified_at: today, run_id: runId, status: "ok" as const }); continue; }
     // A single-valued field has one value: the newer replaces the older one.
-    if (SINGLE_FIELDS.has(r.field)) for (let i = list.length - 1; i >= 0; i--) if (list[i].field === r.field) list.splice(i, 1);
+    if (SINGLE_FIELDS.has(r.field)) for (let i = list.length - 1; i >= 0; i--) if (family(list[i].field) === family(r.field)) list.splice(i, 1);
     list.push({ company_id: r.company_id, company: r.company, field: r.field, value: r.after, source_url: r.source_url, quote: r.quote, verified_at: today, run_id: runId, status: "ok" });
     added++;
   }
@@ -83,8 +85,8 @@ export async function applyKnown(
 ): Promise<CarryResult> {
   const known = store[companyId] ?? [];
   const real = rows.filter((r) => r.field !== "(nothing)");
-  const have = (field: string, value: string) => real.some((r) => r.field === field && fold(r.after) === fold(value));
-  const hasField = (field: string) => real.some((r) => r.field === field);
+  const have = (field: string, value: string) => real.some((r) => family(r.field) === family(field) && fold(r.after) === fold(value));
+  const hasField = (field: string) => real.some((r) => family(r.field) === family(field));
   const out: ReportRow[] = [...real];
   const carried: ReportRow[] = [], recheck: string[] = [], due: string[] = [], lockedKept: string[] = [], fromMemory = new Set<string>();
   const cache = new Map<string, Promise<string | null>>();
@@ -100,7 +102,7 @@ export async function applyKnown(
     if (check === "quote_gone") { e.status = "quote_gone"; recheck.push(`${e.field}: ${e.value.slice(0, 40)}`); continue; }
     e.status = check === "confirmed" ? "ok" : "stale_check_failed";
     if (isLocked && SINGLE_FIELDS.has(e.field) && hasField(e.field)) {
-      for (let i = out.length - 1; i >= 0; i--) if (out[i].field === e.field) out.splice(i, 1);
+      for (let i = out.length - 1; i >= 0; i--) if (family(out[i].field) === family(e.field)) out.splice(i, 1);
       lockedKept.push(`${e.field}: ${e.value.slice(0, 40)}`);
     }
     const row: ReportRow = { company_id: e.company_id, company: e.company, field: e.field, before: "", after: e.value, source_url: e.source_url, quote: e.quote, origin: check === "confirmed" ? "known_source" : "known_source_stale_check_failed" };
