@@ -24,3 +24,9 @@ export async function gathered<T>(fn: () => Promise<T>): Promise<{ result?: T; e
   const s = { lines: [] as string[] };
   try { return { result: await store.run(s, fn), lines: s.lines }; } catch (error) { return { error, lines: s.lines }; }
 }
+
+
+const nameStore = new AsyncLocalStorage<string>();
+/** Runs fn with the company's name attached to everything it does (the recorder says which company a missing recording hurt). */
+export function withCompany<T>(name: string, fn: () => Promise<T>): Promise<T> { return nameStore.run(name, fn); }
+export const currentCompany = (): string => nameStore.getStore() ?? "(outside a company)";

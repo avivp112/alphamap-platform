@@ -10,10 +10,19 @@
  * Recording is always on. Requests that carry today's date in their text change at midnight, so a replay is best the same day.
  */
 import { createHash } from "crypto";
+import { gzipSync, gunzipSync } from "zlib";
+import { currentCompany } from "./companyLog.ts";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 
-export const recorderStats = { replayed: 0, live: 0, blockedFetches: new Map<string, number>() };
+export const recorderStats = {
+  replayed: 0, live: 0, blockedFetches: new Map<string, number>(),
+  httpRecorded: 0, httpReplayed: 0,
+  /** company → host → count: a request that REPLAY needed and the recordings did not have. */
+  misses: new Map<string, Map<string, number>>(),
+  /** the model steps asked live in a REPLAY: step → count */
+  liveSteps: new Map<string, number>(),
+};
 
 export const replayMode = (): "off" | "on" | "strict" => (process.env.REPLAY === "strict" ? "strict" : process.env.REPLAY && process.env.REPLAY !== "0" && process.env.REPLAY !== "false" ? "on" : "off");
 
@@ -36,6 +45,11 @@ export function wrapAnthropic<T extends { messages: { create: (...a: any[]) => a
       } catch { /* an unreadable recording is a miss */ }
     }
     if (mode === "strict") throw new Error(`REPLAY=strict: a model request that was never recorded (${key.slice(0, 10)}) — a prompt changed. Run once with REPLAY=1.`);
+    if (mode !== "off") {
+      const step = (params as { tools?: Array<{ name?: string }> })?.tools?.[0]?.name ?? "(no tool)";
+      recorderStats.liveSteps.set(step, (recorderStats.liveSteps.get(step) ?? 0) + 1);
+      console.log(`    🧠  REPLAY: a live model call for the step "${step}" — its request is new (${currentCompany()}).`);
+    }
     const msg = await real(params, options);
     recorderStats.live++;
     try { mkdirSync(dir(), { recursive: true }); writeFileSync(file, JSON.stringify(msg)); } catch { /* recording is a convenience */ }
@@ -45,18 +59,68 @@ export function wrapAnthropic<T extends { messages: { create: (...a: any[]) => a
   return client;
 }
 
-/** With REPLAY on, nothing but the model API is fetched from the network; what is asked of anything else is counted and fails (the callers treat it as an empty answer). */
-export function enterOfflineMode(allowedHosts: string[] = ["api.anthropic.com"]): void {
-  if (replayMode() === "off") return;
+const httpDir = () => process.env.HTTP_RECORD_DIR ?? join("cache", "http");
+const SKIP_HOSTS = ["api.anthropic.com", "supabase.co", "supabase.in"];
+const skipped = (host: string) => SKIP_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+const MAX_RECORDED_BYTES = 4_000_000;
+
+/**
+ * Records every web response of a live run (searches, page reads, archive, registers) by the signature of its request, and with REPLAY on answers
+ * from those recordings and fetches nothing: a request that was never recorded is a MISS, counted against the company that made it (owner, 2026-11-15:
+ * the search cache alone left holes — hydrostor.ca, web.archive.org, r.jina.ai — and a replay lost values that a live run finds).
+ * The model API and the database are not recorded here (the model has its own recording; the database is read live).
+ */
+export function installHttpRecorder(): void {
   const real = globalThis.fetch;
+  const mode = replayMode();
   globalThis.fetch = (async (input: any, init?: any) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     let host = ""; try { host = new URL(url).hostname; } catch { /* relative */ }
-    if (allowedHosts.some((h) => host === h || host.endsWith(`.${h}`))) return real(input, init);
-    recorderStats.blockedFetches.set(host, (recorderStats.blockedFetches.get(host) ?? 0) + 1);
-    throw new Error(`offline (REPLAY): ${host} not fetched`);
+    if (skipped(host)) return real(input, init);
+    const method = (init?.method ?? (typeof input === "object" && "method" in input ? input.method : "GET")).toUpperCase();
+    const body = typeof init?.body === "string" ? init.body : "";
+    const key = createHash("sha256").update(`${method}|${url}|${body}`).digest("hex");
+    const file = join(httpDir(), `${key}.json.gz`);
+    if (mode !== "off") {
+      if (existsSync(file)) {
+        try {
+          const rec = JSON.parse(gunzipSync(readFileSync(file)).toString("utf8")) as { status?: number; type?: string; finalUrl?: string; body?: string; error?: string };
+          recorderStats.httpReplayed++;
+          if (rec.error) throw new Error(rec.error);
+          const resp = new Response(Buffer.from(rec.body ?? "", "base64"), { status: rec.status ?? 200, headers: rec.type ? { "content-type": rec.type } : {} });
+          Object.defineProperty(resp, "url", { value: rec.finalUrl ?? url });
+          return resp;
+        } catch (e) { if (e instanceof Error && !/Unexpected token|JSON/.test(e.message)) throw e; }
+      }
+      const company = currentCompany();
+      const m = recorderStats.misses.get(company) ?? new Map<string, number>();
+      m.set(host, (m.get(host) ?? 0) + 1); recorderStats.misses.set(company, m);
+      throw new Error(`offline (REPLAY): ${host} not fetched`);
+    }
+    // Live: record the answer (or the failure) and hand the answer on.
+    const save = (rec: unknown) => { try { mkdirSync(httpDir(), { recursive: true }); writeFileSync(file, gzipSync(Buffer.from(JSON.stringify(rec)))); recorderStats.httpRecorded++; } catch { /* a convenience */ } };
+    try {
+      const res = await real(input, init);
+      try {
+        const buf = Buffer.from(await res.clone().arrayBuffer());
+        if (buf.length <= MAX_RECORDED_BYTES) save({ status: res.status, type: res.headers.get("content-type") ?? undefined, finalUrl: res.url || undefined, body: buf.toString("base64") });
+      } catch { /* a body that cannot be read twice is not recorded */ }
+      return res;
+    } catch (e) { save({ error: e instanceof Error ? e.message : String(e) }); throw e; }
   }) as typeof fetch;
 }
+
+/** With REPLAY on, the lines "offline (REPLAY)" are not printed one by one; the run's summary names what was missing, per company. */
+export function quietOffline(): void {
+  if (replayMode() === "off") return;
+  for (const k of ["log", "warn", "error"] as const) {
+    const real = console[k].bind(console);
+    console[k] = ((...args: unknown[]) => { if (args.some((a) => typeof a === "string" && a.includes("offline (REPLAY)"))) return; real(...args); }) as never;
+  }
+}
+
+/** Kept for callers that only want the network shut: the same as installHttpRecorder in REPLAY mode. */
+export function enterOfflineMode(): void { installHttpRecorder(); quietOffline(); }
 
 /** A default timeout for every fetch that has none (a dead site must not hold a run: CALL_TIMEOUT_MS, default 30 s). */
 export function installFetchTimeout(ms = Number(process.env.CALL_TIMEOUT_MS ?? 30_000)): void {
@@ -70,8 +134,12 @@ export function installFetchTimeout(ms = Number(process.env.CALL_TIMEOUT_MS ?? 3
 export function recorderSummary(): string[] {
   const out: string[] = [];
   if (replayMode() !== "off") {
-    out.push(`  REPLAY=${replayMode()}: ${recorderStats.replayed} model reply(ies) from the recording, ${recorderStats.live} new (live)`);
-    if (recorderStats.blockedFetches.size) out.push(`  not fetched (offline): ${[...recorderStats.blockedFetches].map(([h, n]) => `${h}×${n}`).join(", ")}`);
-  } else out.push(`  recorded ${recorderStats.live} model reply(ies) for a later REPLAY=1`);
+    out.push(`  REPLAY=${replayMode()}: ${recorderStats.replayed} model reply(ies) from the recording, ${recorderStats.live} new (live); ${recorderStats.httpReplayed} web response(s) from the recording`);
+    if (recorderStats.liveSteps.size) out.push(`  live model steps: ${[...recorderStats.liveSteps].map(([k, n]) => `${k}×${n}`).join(", ")}`);
+    if (recorderStats.misses.size) {
+      out.push(`  ⚠️ REPLAY CACHE MISSES — not a faithful replay for these companies (a live run records what is missing):`);
+      for (const [c, m] of recorderStats.misses) out.push(`  REPLAY MISS ${c}: ${[...m].map(([h, n]) => `${h}×${n}`).join(", ")}`);
+    } else out.push("  no REPLAY cache misses: every web response came from the recordings");
+  } else out.push(`  recorded ${recorderStats.live} model reply(ies) and ${recorderStats.httpRecorded} web response(s) for a later REPLAY=1`);
   return out;
 }

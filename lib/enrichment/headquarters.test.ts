@@ -158,3 +158,14 @@ describe("review 9 (2026-11-10): the Contact page's addresses and an article of 
     expect(decideHeadquarters([press("2014-01-12"), press("2024-05-01", "San Francisco")], "2026-11-10")).toMatchObject({ kind: "declared", statement: { city: "San Francisco" } });
   });
 });
+
+describe("tier-4 trade press only chooses among the site's offices (owner, round 9: Hydrostor)", () => {
+  const w = (city: string, url: string, date: string | null): HqStatement => ({ city, quote: `${city}-based Hydrostor`, source_id: url, url, kind: "press", date, weak: true });
+  const sites = ["Toronto", "Los Angeles"];
+  it("two sources (one tier 4) naming one office decide; tier 4 alone never does", () => {
+    const strong: HqStatement = { city: "Toronto", quote: "Toronto-based Hydrostor", source_id: "a", url: "https://reuters.com/a", kind: "press", date: "2026-03-01" };
+    expect(decideHeadquarters([strong, w("Toronto", "https://theenergymix.com/x", "2026-02-01")], "2026-11-15", sites)).toMatchObject({ kind: "declared", statement: { city: "Toronto" } });
+    expect(decideHeadquarters([w("Toronto", "https://theenergymix.com/x", "2026-02-01")], "2026-11-15", sites)).toMatchObject({ kind: "site_offices" });
+    expect(decideHeadquarters([w("Toronto", "https://theenergymix.com/x", "2026-02-01")], "2026-11-15", [])).toEqual({ kind: "none" });
+  });
+});
