@@ -60,8 +60,8 @@ import { assertEnrichmentWritesAllowed, PILOT_FIELDS } from "../lib/enrichment/w
 import { openFieldNames } from "../lib/enrichment/fieldReview.ts";
 import { writeFileSync, mkdirSync, readdirSync } from "fs";
 import { rejectedDomains, rejectedDomainsCsv } from "../lib/enrichment/rejectedDomains.ts";
-import { wrapAnthropic, enterOfflineMode, installFetchTimeout, recorderSummary, replayMode } from "../lib/enrichment/recorder.ts";
-import { installCompanyLog, gathered } from "../lib/enrichment/companyLog.ts";
+import { wrapAnthropic, installHttpRecorder, quietOffline, installFetchTimeout, recorderSummary, replayMode } from "../lib/enrichment/recorder.ts";
+import { installCompanyLog, gathered, withCompany } from "../lib/enrichment/companyLog.ts";
 import { domainClasses, domainClassesCsv } from "../lib/enrichment/domainClass.ts";
 import { numberValues, renderBatchReport, batchCsv } from "../lib/enrichment/batchReport.ts";
 import type { RoundHint } from "../lib/enrichment/hints.ts";
@@ -345,7 +345,8 @@ async function registerRun(): Promise<string> {
 async function main() {
   await initV1Context();
   installFetchTimeout();
-  enterOfflineMode();
+  installHttpRecorder();   // every web response is recorded (live), or answered from the recording (REPLAY)
+  quietOffline();
   anthropic = wrapAnthropic(new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: Number(process.env.MODEL_TIMEOUT_MS ?? 120_000), maxRetries: 2 }));
   if (replayMode() !== "off") console.log(`🔁  REPLAY=${replayMode()}: the web is not fetched (only what is in cache/enrich_v2), the model is asked only what it was never asked.\n`);
   const taxonomy = await loadSectorTaxonomy(supabase);
@@ -496,7 +497,7 @@ async function main() {
       const errorsBefore = summary.tally.error + summary.tally.error_incomplete_extraction + summary.tally.search_unavailable;
       const noChangeBefore = summary.tally.no_change;
       running.add(row.name);
-      const job = () => processCompany(row, roundsByStartup.get(row.id) ?? [], taxonomy, startupByDomain, summary);
+      const job = () => withCompany(row.name, () => processCompany(row, roundsByStartup.get(row.id) ?? [], taxonomy, startupByDomain, summary));
       let timedOut = false;
       const timeout = new Promise<"timeout">((r) => setTimeout(() => r("timeout"), COMPANY_TIMEOUT_MS));
       if (CONCURRENCY > 1) {

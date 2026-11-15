@@ -50,7 +50,7 @@ describe("record and replay of the model (owner, 2026-11-15)", () => {
     await expect(fetch("https://r.jina.ai/https://acme.com")).rejects.toThrow(/offline/);
     await fetch("https://api.anthropic.com/v1/messages");
     expect(real).toHaveBeenCalledTimes(1);
-    expect(recorderStats.blockedFetches.get("r.jina.ai")).toBe(1);
+    expect(recorderStats.misses.get("(outside a company)")?.get("r.jina.ai")).toBe(1);
   });
 });
 

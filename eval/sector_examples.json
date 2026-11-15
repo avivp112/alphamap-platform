@@ -185,5 +185,11 @@
     "was": "Enterprise Software › Productivity & Collaboration",
     "note": "owner 2026-11-14: what-only description; sold to private persons, not to businesses",
     "noCustomers": true
+  },
+  {
+    "company": "KrillTech",
+    "description": "Krilltech sells liquid agricultural solutions containing spherical carbon nanoparticles that are applied to plants or soil to improve plant development and make plants more efficient and healthier.",
+    "expect": "Food & Agriculture › AgTech",
+    "was": "Climate & Energy (round 9 flip)"
   }
 ]

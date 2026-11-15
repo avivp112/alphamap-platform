@@ -34,6 +34,8 @@ export interface HqStatement {
   date: string | null;
   /** Read from a street address on the Contact page, without a word that declares a headquarters. */
   viaAddress?: boolean;
+  /** Trade press of tier 4: counts only in the multi-office tie-breaker, never alone (owner, round 9: Hydrostor, "Toronto-Based Hydrostor" in theenergymix). */
+  weak?: boolean;
   /** The address sits under an "Offices" / "Locations" heading: an office of the company, not its headquarters (Swimm, owner 2026-11-12). */
   officeList?: boolean;
 }
@@ -71,6 +73,13 @@ export function statementKind(s: Pick<LabeledSource, "url" | "source_type"> & { 
   return standing.kind === "allowed" && standing.tier <= 3 ? "press" : null;
 }
 
+/** An allowed outlet of tier 4 (trade press): usable only to choose among offices the site itself lists. */
+export function isWeakPress(s: Pick<LabeledSource, "url" | "source_type"> & { content?: string; title?: string }): boolean {
+  if (isLegalPageUrl(s.url) || s.source_type === "company_site" || isDirectoryPage(s.url) || s.source_type === "press_release") return false;
+  const standing = roundSourceStanding(s.url, { content: s.content, headline: s.title });
+  return standing.kind === "allowed" && standing.tier === 4;
+}
+
 /** The article's own date: a "Date:" / "Published Time:" line, a wire dateline or a /YYYY/MM/DD/ URL. */
 export function articleDate(s: Pick<LabeledSource, "url" | "content">): string | null {
   const c = [
@@ -87,7 +96,8 @@ const sentencesOf = (text: string) => text.replace(/\s+/g, " ").split(/(?<=[.!?]
 
 /** Every sentence of a source that declares a headquarters city for this company. */
 export function hqStatementsIn(s: LabeledSource, companyName: string): HqStatement[] {
-  const kind = statementKind(s);
+  const weak = !statementKind(s) && isWeakPress(s);
+  const kind = weak ? "press" : statementKind(s);
   if (!kind) return [];
   const date = kind === "company" && s.source_type === "company_site" ? null : articleDate(s);
   const out: HqStatement[] = [];
@@ -96,7 +106,7 @@ export function hqStatementsIn(s: LabeledSource, companyName: string): HqStateme
     for (const m of sentence.matchAll(CITY_RE)) {
       const city = title(m[2].toLowerCase());
       if (!saysOfCompany(sentence, m.index! + m[1].length, city, companyName, s.source_type === "company_site") || isRegionalOfficeQuote(sentence, city)) continue;
-      if (!out.some((o) => o.city === city)) out.push({ city, quote: sentence.trim(), source_id: s.source_id, url: s.url, kind, date });
+      if (!out.some((o) => o.city === city)) out.push({ city, quote: sentence.trim(), source_id: s.source_id, url: s.url, kind, date, ...(weak ? { weak: true } : {}) });
     }
   }
   return out;
@@ -280,13 +290,14 @@ export function decideHeadquarters(statements: HqStatement[], today = new Date()
   const company = allCompany.filter((s) => !s.viaAddress || (addressCities.length < 2 && !s.officeList));
   if (company.length) return { kind: "declared", statement: company[0] };
   if ((addressCities.length >= 2 || allCompany.some((x) => x.viaAddress && x.officeList)) && !siteOfficeCities.length) siteOfficeCities = addressCities;
-  const press = latestFirst(statements.filter((s) => s.kind === "press"));
+  const pressWithWeak = latestFirst(statements.filter((s) => s.kind === "press"));
+  const press = pressWithWeak.filter((s) => !s.weak);
   const recent = press.filter((s) => s.date && Date.parse(today) - Date.parse(s.date) <= 730 * DAY);
   const siteCities = siteOfficeCities.filter((c, i) => siteOfficeCities.findIndex((d) => sameCity(c, d)) === i);
   // Several offices on the site and none marked: an allowed source that says "<city>-based <Company>" / "headquartered in <city>" for one of them decides
   // (owner, 2026-11-15: Motorway → London, Hydrostor → Toronto). A city that is not one of the offices does not.
   if (siteCities.length >= 2) {
-    const named = press.filter((st) => siteCities.some((c) => sameCity(c, st.city)) && (!st.date || Date.parse(today) - Date.parse(st.date) <= HQ_MAX_AGE_DAYS * DAY));
+    const named = pressWithWeak.filter((st) => siteCities.some((c) => sameCity(c, st.city)) && (!st.date || Date.parse(today) - Date.parse(st.date) <= HQ_MAX_AGE_DAYS * DAY));
     const cities = named.filter((st, i) => named.findIndex((o) => sameCity(o.city, st.city)) === i);
     // Two allowed sources, or one of the last two years: a single older article does not outweigh the site of today (owner, 2026-11-02: Aidoc's 2022 "Tel Aviv-based").
     const sources = new Set(named.map((x) => x.url || x.source_id));

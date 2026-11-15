@@ -30,7 +30,7 @@ export function domainClassKey(url: string): string | null {
 export interface DomainClassEntry { key: string; class: DomainClass; reason: string; example_url: string; example_title: string; at: string; /** true when this is one page's class (sponsored content, a tag or data page), not the site's */ page?: boolean }
 
 /** A reason that hedges ("best guess", "may be", "appears to be") is no decision: the class is blocked (owner, 2026-11-14: ossia.com, biggo.com). */
-const HEDGE = /\b(best guess|may be|might be|appears to be|appear to be|seems? to be|suggests?|unclear|not (?:clearly|a recognizable)|likely|probably|presumably|reads like|looks like)\b/i;
+const HEDGE = /\b(best guess|guess(?:ing)?|unclear|cannot tell|can't tell|not (?:a )?recogni[sz]able|not sure)\b/i;
 /** "may be sponsored", "reads like a company-supplied piece" is a guess about the page, not a doubt about the site (owner, 2026-11-15: businessalabama.com, foodtank.com, healtheuropa.com, starting-up.de). */
 const SPONSOR_GUESS = /\b(?:may|might|could|possibly|probably|appears to|seems to|looks like|reads like|reads as|may be|might be)\s+(?:be\s+)?(?:a\s+|an\s+)?(?:sponsored|company-supplied|promotional|paid|advertorial|press[- ]release|vendor)[^.;]*/gi;
 export const isHedged = (reason: string): boolean => HEDGE.test(reason.replace(SPONSOR_GUESS, " "));
