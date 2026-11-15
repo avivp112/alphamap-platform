@@ -341,6 +341,8 @@ export async function writeCollected(
     bump(summary.droppedByReason, "tag_unsupported");
   }
   const tagNames = supported.kept.map((k) => k.tag);
+  // Tags, with the fate of each (owner, 2026-11-15: five companies with a sector and no tags, nothing said why).
+  console.log(`    🏷️   Tags: ${proposedTags.length ? `proposed ${proposedTags.join(", ")}` : "the classification proposed none (no sub-sector among the main answer and the other fields)"}; kept ${tagNames.length ? tagNames.join(", ") : "none"}${tagFilter.dropped.length ? `; other sector without support in the description: ${tagFilter.dropped.join(", ")}` : ""}${supported.dropped.length ? `; no sentence of an allowed page carries: ${supported.dropped.join(", ")}` : ""}.`);
   const tagSectorIds: string[] = [];
   for (const tagName of tagNames) {
     const { data: tagId } = await supabase.rpc("sector_id_by_name", { p_name: tagName });

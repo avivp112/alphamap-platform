@@ -66,15 +66,32 @@ export function parseArticleEntity(input: unknown): { verdict: ArticleEntityVerd
   return { verdict: v === "this_company" || v === "other_company" ? v : "unclear", reason: String((input as { reason?: unknown })?.reason ?? "no answer").slice(0, 200) };
 }
 
-/** Keep an article unless it is clearly another company's; when the profile is too thin to compare against (nothing about what the company does, no country), "unclear" is dropped too. */
-export function keepArticle(r: { verdict: ArticleEntityVerdict }, c: CompanyProfileForMatch): boolean {
+/**
+ * The article names something that only THIS company has: its web address, its country, or its city (owner, 2026-11-15, DataX: Equifax's release about
+ * the American DataX was kept for the Japanese datax.co.jp because nothing in the profile contradicted it). Used when the profile says too little to compare with.
+ */
+export function mentionsCompanyAnchor(text: string, c: CompanyProfileForMatch): boolean {
+  const t = text.toLowerCase();
+  const host = (() => { try { return new URL(c.website?.startsWith("http") ? c.website : `https://${c.website}`).hostname.replace(/^www\./, "").toLowerCase(); } catch { return ""; } })();
+  if (host && t.includes(host)) return true;
+  if (c.countryHint && t.includes(c.countryHint.toLowerCase())) return true;
+  return false;
+}
+
+/**
+ * Keep an article unless it is clearly another company's. An article that is not clearly this company's ("unclear") stays only when the profile has a description
+ * to compare it with; and when the profile says nothing about what the company does, even a "this company" needs an anchor in the article (its address or country).
+ * This holds for every source, a party's own release and tier 1 included.
+ */
+export function keepArticle(r: { verdict: ArticleEntityVerdict }, c: CompanyProfileForMatch, articleText = ""): boolean {
   if (r.verdict === "other_company") return false;
-  if (r.verdict === "unclear") return !!(c.about.trim() || c.countryHint);
+  if (r.verdict === "unclear") return !!c.about.trim();
+  if (!c.about.trim() && c.website) return mentionsCompanyAnchor(articleText, c);   // nothing to compare against: the article must name what only this company has
   return true;
 }
 
 export async function judgeArticleEntity(ask: (request: ReturnType<typeof buildArticleEntityRequest>) => Promise<unknown>, c: CompanyProfileForMatch, a: ArticleForMatch): Promise<{ keep: boolean; verdict: ArticleEntityVerdict; reason: string }> {
   let r: { verdict: ArticleEntityVerdict; reason: string };
   try { r = parseArticleEntity(await ask(buildArticleEntityRequest(c, a))); } catch { r = { verdict: "unclear", reason: "the check failed" }; }
-  return { keep: keepArticle(r, c), ...r };
+  return { keep: keepArticle(r, c, `${a.title} ${a.url} ${a.text}`), ...r };
 }

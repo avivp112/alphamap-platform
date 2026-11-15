@@ -9,6 +9,7 @@
 import { readFileSync, existsSync } from "fs";
 import { roundSourceStanding } from "../lib/enrichment/roundSources.ts";
 import { domainOf } from "../lib/enrichment/rejectedDomains.ts";
+import { acquisitionHeadline } from "../lib/enrichment/siteOwner.ts";
 
 function parseCsv(text: string): string[][] {
   const rows: string[][] = []; let row: string[] = [], cur = "", q = false;
@@ -39,6 +40,7 @@ const warn = (c: string, m: string) => warnings.push(`${c}: ${m}`);
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
 const seen = new Map<string, number>();
 const unlisted = new Map<string, number>();
+const archived = new Map<string, number>();
 const byCompany = new Map<string, Row[]>();
 for (const r of rows) {
   (byCompany.get(r.company) ?? byCompany.set(r.company, []).get(r.company)!).push(r);
@@ -57,6 +59,11 @@ for (const r of rows) {
   seen.set(k, (seen.get(k) ?? 0) + 1);
   // 5. a year-only or month-only round shown as a day
   if (r.field === "round" && /·\s\d{4}-01-01\b(?!\s\()/.test(r.after)) warn(r.company, `round dated 1 January without "(year only)": ${r.after.slice(0, 60)}`);
+  // 5b. a round over $2B for a private company (Pet Circle's "$10200M")
+  if (r.field === "round") { const m = r.after.match(/\$(\d+(?:\.\d+)?)\s?(M|B)\b/); if (m && (m[2] === "B" ? Number(m[1]) * 1000 : Number(m[1])) >= 2000) err(r.company, `a round of $${m[1]}${m[2]} for a private company: ${r.after.slice(0, 70)}`); }
+  // 5c. a value read from the Internet Archive: the domain of the original page
+  const arch = r.url.match(/web\.archive\.org\/web\/\d+[a-z_]*\/(https?:\/\/[^/]+)/i);
+  if (arch) archived.set(`${r.company} ← ${arch[1].replace(/^https?:\/\//, "")}`, (archived.get(`${r.company} ← ${arch[1].replace(/^https?:\/\//, "")}`) ?? 0) + 1);
   // 6. news without a date
   if (r.field === "news" && /^no date\b/.test(r.after)) err(r.company, `news without a date: ${r.after.slice(0, 60)}`);
   // 7. a headcount point without a quote
@@ -85,6 +92,18 @@ if (existsSync("not_enriched.csv")) {
 // the log: no silent drop
 if (existsSync("batch4_dry.log")) {
   const log = readFileSync("batch4_dry.log", "utf8");
+  // a company's block of the log (CONCURRENCY>1 prints one block per company: "┌── Name" … "└── Name done")
+  const blocks = new Map<string, string>();
+  for (const m of log.matchAll(/┌── (.+)\n([\s\S]*?)\n└── \1 done/g)) blocks.set(m[1], m[2]);
+  for (const [company, text] of blocks) {
+    // a domain that is both the company's own site and a rebranded one
+    const own = [...text.matchAll(/🏠\s+(https?:\/\/\S+) is the company's own site/g)].map((x) => domainOf(x[1]));
+    const moved = text.match(/acquired \/ rebranded: \S+'s address leads to (\S+)/)?.[1];
+    if (moved && own.includes(domainOf(`https://${moved}`))) err(company, `${moved} is marked both as the company's own site and as the site of another company (acquired / rebranded)`);
+    // news that says the company was acquired, and the company not flagged for review
+    const flagged = /acquired \/ rebranded|domain_repurposed/.test(text);
+    for (const r of byCompany.get(company) ?? []) if (r.field === "news" && acquisitionHeadline(r.after.replace(/^[^—]*—\s*/, ""), company) && !flagged) warn(company, `news says the company was acquired and it is not flagged for review: ${r.after.slice(0, 80)}`);
+  }
   const noDesc = [...log.matchAll(/Description \(v2\): no verified "what" — none written[^\n]*\n/g)].length;
   const dropLines = [...log.matchAll(/description sentence dropped/g)].length;
   const returnedSome = [...log.matchAll(/the model returned (?!no sentences)/g)].length;
@@ -100,6 +119,7 @@ if (existsSync("batch4_dry.log")) {
 console.log(`${rows.length} value(s) of ${byCompany.size} company(ies) checked.\n`);
 for (const e of errors) console.log(`❌ ${e}`);
 for (const w of warnings) console.log(`⚠️  ${w}`);
+if (archived.size) console.log(`\nℹ️  Values read from the Internet Archive (original domain): ${[...archived].map(([k, n]) => `${k}×${n}`).join(", ")}`);
 if (unlisted.size) console.log(`\nℹ️  Values from domains on no list (the companies' own sites, or a source to place): ${[...unlisted].sort((x, y) => y[1] - x[1]).map(([d, n]) => `${d}×${n}`).slice(0, 30).join(", ")}`);
 console.log(`\n${errors.length} error(s), ${warnings.length} warning(s).`);
 process.exit(errors.length ? 1 : 0);

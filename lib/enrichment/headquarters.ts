@@ -283,6 +283,15 @@ export function decideHeadquarters(statements: HqStatement[], today = new Date()
   const press = latestFirst(statements.filter((s) => s.kind === "press"));
   const recent = press.filter((s) => s.date && Date.parse(today) - Date.parse(s.date) <= 730 * DAY);
   const siteCities = siteOfficeCities.filter((c, i) => siteOfficeCities.findIndex((d) => sameCity(c, d)) === i);
+  // Several offices on the site and none marked: an allowed source that says "<city>-based <Company>" / "headquartered in <city>" for one of them decides
+  // (owner, 2026-11-15: Motorway → London, Hydrostor → Toronto). A city that is not one of the offices does not.
+  if (siteCities.length >= 2) {
+    const named = press.filter((st) => siteCities.some((c) => sameCity(c, st.city)) && (!st.date || Date.parse(today) - Date.parse(st.date) <= HQ_MAX_AGE_DAYS * DAY));
+    const cities = named.filter((st, i) => named.findIndex((o) => sameCity(o.city, st.city)) === i);
+    // Two allowed sources, or one of the last two years: a single older article does not outweigh the site of today (owner, 2026-11-02: Aidoc's 2022 "Tel Aviv-based").
+    const sources = new Set(named.map((x) => x.url || x.source_id));
+    if (cities.length === 1 && sources.size >= 2) return { kind: "declared", statement: named[0] };
+  }
   if (siteCities.length >= 2 && !recent.length) return { kind: "site_offices", cities: siteCities };
   if (!press.length) return { kind: "none" };
   // Declarations that are all from articles older than eight years are not today's headquarters (owner, 2026-11-10: Chargebee

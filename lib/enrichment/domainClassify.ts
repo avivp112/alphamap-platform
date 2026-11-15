@@ -4,7 +4,7 @@
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { dirname } from "path";
-import { DOMAIN_CLASSES, domainClassKey, domainClasses, parseDomainClass, type DomainClassEntry } from "./domainClass.ts";
+import { DOMAIN_CLASSES, domainClassKey, domainClasses, parseDomainClass, hasExplicitSponsorMark, type DomainClassEntry } from "./domainClass.ts";
 import { roundSourceStanding } from "./roundSources.ts";
 
 const SYSTEM = [
@@ -17,11 +17,12 @@ const SYSTEM = [
   "directory_aggregator — a company directory, database, ecosystem map, 'alternatives' or 'similar companies' listing, ranking, 'top N startups' list, or review / comparison listing.",
   "blog_vendor_other — blogs and newsletters, vendor marketing pages (partner pages, case studies, integrations), product reviews, forums, personal sites, and anything that is none of the above.",
   "Judge the kind of site (and the section of it, when the address is a section such as /partners, /case-studies, /companies, /reviews), not whether the page's claim is true.",
+  "A page is sponsored or paid content ONLY when the facts you are given say it carries an explicit mark (Sponsored, Partner content, Advertorial, Promoted, Branded content). 'It may be sponsored' is not evidence: classify the SITE by what kind of site it is.",
   "scope: 'domain' when the class is the whole site's (a newspaper is a news_outlet on every page); 'page' when only this page is what it is (a sponsored or paid content piece on an otherwise real outlet, a tag or archive listing, a data page): a page-scoped answer says nothing about the rest of the site.",
   "confident: false when you are guessing (the site is not recognisable, the page is ambiguous). A guess is not an answer: say confident=false rather than hedging in the reason.",
 ].join(" ");
 
-export function buildDomainClassRequest(url: string, title: string, text: string) {
+export function buildDomainClassRequest(url: string, title: string, text: string, sponsorMark = false) {
   return {
     model: "", max_tokens: 500, temperature: 0,
     system: SYSTEM,
@@ -30,7 +31,7 @@ export function buildDomainClassRequest(url: string, title: string, text: string
       input_schema: { type: "object" as const, properties: { class: { type: "string", enum: [...DOMAIN_CLASSES] }, scope: { type: "string", enum: ["domain", "page"] }, confident: { type: "boolean" }, reason: { type: "string", description: "One short sentence." } }, required: ["class", "scope", "confident", "reason"] },
     }],
     tool_choice: { type: "tool" as const, name: "classify_domain" },
-    messages: [{ role: "user" as const, content: `Address: ${url}\nHeadline: ${title || "(none)"}\nText: ${text.replace(/\s+/g, " ").slice(0, 700) || "(not available)"}` }],
+    messages: [{ role: "user" as const, content: `Address: ${url}\nExplicit sponsored-content mark on the page: ${sponsorMark ? "YES" : "no"}\nHeadline: ${title || "(none)"}\nText: ${text.replace(/\s+/g, " ").slice(0, 700) || "(not available)"}` }],
   };
 }
 
@@ -72,9 +73,12 @@ export async function classifyUnknownDomains(sources: Array<{ url: string; title
   for (const [key, s] of [...todo].slice(0, deps.max ?? 20)) {
     try {
       // An answer that cannot be read is asked once more; if it still cannot be read the domain stays unclassified (tried again next run), never blocked.
-      let r = parseDomainClass(await deps.ask(buildDomainClassRequest(s.url, s.title, s.text)));
-      if (!r) r = parseDomainClass(await deps.ask(buildDomainClassRequest(s.url, s.title, s.text)));
+      const mark = hasExplicitSponsorMark(s.title, s.text);
+      let r = parseDomainClass(await deps.ask(buildDomainClassRequest(s.url, s.title, s.text, mark)));
+      if (!r) r = parseDomainClass(await deps.ask(buildDomainClassRequest(s.url, s.title, s.text, mark)));
       if (!r) { console.log(`    ⚠️  domain ${key}: the answer could not be read twice — left unclassified.`); continue; }
+      // A page said to be special (sponsored, a tag page...) without the mark that would show it, and blocked: that is a guess about the page, not a class — left unclassified.
+      if (r.page && !mark && r.class !== "news_outlet" && r.class !== "wire" && r.class !== "investor" && /sponsor|paid|advertorial|promot|company-supplied/i.test(r.reason)) { console.log(`    ⚠️  domain ${key}: "sponsored" without any mark on the page is no evidence — left unclassified.`); continue; }
       // A page-scoped answer is kept for that page only; the site stays unclassified (its other pages are asked about when they turn up).
       domainClasses.set({ key: r.page ? `page:${s.url}` : key, class: r.class, reason: r.reason, example_url: s.url, example_title: s.title.slice(0, 140), at: new Date().toISOString().slice(0, 10), ...(r.page ? { page: true } : {}) });
       n++;

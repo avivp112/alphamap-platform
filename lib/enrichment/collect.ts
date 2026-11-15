@@ -31,7 +31,7 @@ import { competitorTierClaims, type TieredClaim } from "./competitorTiers.ts";
 import { websiteLooksLikeAnotherCompany } from "./websiteIdentity.ts";
 import { judgeNews, finishNews } from "./newsGate.ts";
 import { reconcileSector, subSectorUnsupported } from "./sectors.ts";
-import { siteBelongsToAnotherCompany } from "./siteOwner.ts";
+import { siteBelongsToAnotherCompany, acquisitionHeadline } from "./siteOwner.ts";
 import { buildSectorRequest, parseSectorChoice, classifyWithRetry, type SectorChoice } from "./classifySector.ts";
 import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
 import { buildDescriptionRequest, descriptionSources, processDescription, describeAttempt } from "./descriptionBuilder.ts";
@@ -39,7 +39,7 @@ import { buildBackgroundRequest, processBackgroundResponse, backgroundSearchQuer
 import { requestFor } from "./models.ts";
 import { rejectedDomains, describeRejected } from "./rejectedDomains.ts";
 import { classifyUnknownDomains } from "./domainClassify.ts";
-import { ownBrandSources, finalHostOf } from "./ownDomain.ts";
+import { ownBrandSources, finalHostOf, brandLabelMatches } from "./ownDomain.ts";
 import { judgeArticleEntity, countryOfHost, type CompanyProfileForMatch } from "./articleEntity.ts";
 import { judgeMarketPeers, type PeerClaim, type PeerFacts, type buildPeerComparisonRequest } from "./marketComparison.ts";
 import { isDataPlatformUrl } from "./dataPlatforms.ts";
@@ -287,6 +287,11 @@ export async function runAllSearches(name: string, anchor: string, state: Search
     ["competitors",  `"${name}"${anchor} "competes with" OR "competitors include" OR "rival" OR "competing with"`],
     ["acquisitions", `"${name}"${anchor} acquires OR acquired OR acquisition`],
     ["financials",   `"${name}"${anchor} ARR "annual recurring revenue" OR revenue estimate OR valued at OR valuation milestone`],
+    // Fixed searches on every run (owner, 2026-11-15: values that came and went between runs — Motorway's $190M round, ZestMoney's Zip round, Pink Farms' São Paulo):
+    // what a result list happens to contain must not decide whether a round, a founder or a headquarters is found.
+    ["raises",       `"${name}"${anchor} raises`],
+    ["funding_round", `"${name}"${anchor} "funding round"`],
+    ["founded_by",   `"${name}"${anchor} "founded by"`],
     // The press's own HQ phrase ("Tel Aviv-based Hailo") — without the domain
     // anchor, which news articles rarely carry (owner, 2026-11-01; headquarters.ts).
     ...(componentOn("hq_search") ? [["headquarters", `"${name}" "headquartered in" OR "based in" OR "-based" startup`] as [string, string]] : []),
@@ -378,7 +383,7 @@ export async function collectCompany(
     ctx.onWebsiteIssue?.("unreadable", `No page of ${effectiveWebsite} could be read (Jina Reader and Serper scrape both failed).`);
   }
   // A site that belongs to another company now (acquired, rebranded): nothing is described from it (owner, 2026-11-09).
-  const siteOwnerIssue = ctx.update ? null : siteBelongsToAnotherCompany(row.name, effectiveWebsite, websitePages);
+  let siteOwnerIssue = ctx.update ? null : siteBelongsToAnotherCompany(row.name, effectiveWebsite, websitePages);
   if (siteOwnerIssue) {
     console.log(`    🛠️   ${siteOwnerIssue} — no description or sector is written; listed for review.`);
     ctx.onWebsiteIssue?.("content_mismatch", siteOwnerIssue);
@@ -392,6 +397,8 @@ export async function collectCompany(
       ? { verdict: cachedVerdict, inputTokens: 0, outputTokens: 0 }
       : await runTechGate(row.name, websitePages[0]?.content ?? "", row.description, row.industry, { client: ctx.anthropic, model: ctx.models.enrich });
     if (!cachedVerdict) searchState.cache?.set("techgate2", gate.verdict);
+    // The site now shows another business than the one on file: it is not used (owner, 2026-11-15, domain_repurposed: flytech.co.il now teaches children technology).
+    if (gate.verdict?.site_matches_description === false && !siteOwnerIssue) siteOwnerIssue = `domain_repurposed: the site shows another business than the description on file — ${gate.verdict.reason}`;
     if (gate.verdict?.site_matches_description === false && !shouldSkipAsNonTech(gate.verdict)) {
       console.log(`    🛠️   The site shows another business than the description on file — listed as a website to fix: ${gate.verdict.reason}`);
       ctx.onWebsiteIssue?.("content_mismatch", gate.verdict.reason);
@@ -539,6 +546,11 @@ export async function collectCompany(
     }
   };
   markOwnSites();
+  // The registered address could not be read, and a site of the same brand turned up on another domain: the registered address may be the wrong one (listed for the owner).
+  if (!ctx.update && effectiveWebsite && websitePages.length === 0) {
+    const brand = allSources.find((x) => x.source_type !== "company_site" && brandLabelMatches(x.url, row.name));
+    if (brand) { const msg = `The registered address ${effectiveWebsite} could not be read, and a site of the same brand exists: ${brand.url.split("/").slice(0, 3).join("/")} — is the address on file the right one?`; console.log(`    🛠️   ${msg}`); ctx.onWebsiteIssue?.("unreadable", msg); }
+  }
   // A domain on no list is classified once (domainClass.ts): outlets and wires become tier 4, directories and blogs are blocked. Run again when sources are added.
   const classifyDomains = async () => {
     try {
@@ -1650,6 +1662,15 @@ export async function collectCompany(
   }
   // v2's own description (descriptionBuilder.ts, owner 2026-11-08): replaces the extraction's free text; without a
   // verified "what" and "for whom" there is none. Written later only for a company with no description on file.
+  // News that the company was acquired: its site today is the buyer's or something else (owner, 2026-11-15) — not used, listed for review.
+  if (!ctx.update && !siteOwnerIssue) {
+    const hit = (market.news ?? []).find((n) => acquisitionHeadline(n.title ?? "", row.name));
+    if (hit) {
+      siteOwnerIssue = `domain_repurposed: news says the company was acquired — "${(hit.title ?? "").slice(0, 100)}"`;
+      console.log(`    🛠️   ${siteOwnerIssue} — the site is not used for the description or sector; listed for review.`);
+      ctx.onWebsiteIssue?.("content_mismatch", siteOwnerIssue);
+    }
+  }
   if (componentOn("description_v2") && !ctx.update && siteOwnerIssue) {
     profile.profile.description = undefined;
     profile.profile.description_source_ids = undefined;
@@ -1810,7 +1831,9 @@ export async function collectCompany(
   // Coverage, per company (owner, 2026-11-14): the pages read, and what became of the headquarters and the founders the model proposed.
   {
     const short = (u: string) => { try { const x = new URL(u); return x.pathname === "/" ? x.hostname.replace(/^www\./, "") : x.pathname.replace(/\/$/, ""); } catch { return u; } };
-    console.log(`    🔍  Pages of the company read: ${websitePages.length ? websitePages.map((p) => `${short(p.url)} (${p.content.length}→${p.prompt_content?.length ?? p.content.length})`).join(", ") : "none"}${websitePages.length ? "" : " — the site could not be read"}`);
+    const viaSearch = allSources.filter((x) => x.source_type === "company_site" && x.query_label !== "website");
+    if (viaSearch.length) console.log(`    🔍  Own-site pages that came as search results (they count as the site read): ${viaSearch.slice(0, 6).map((x) => short(x.url)).join(", ")}${viaSearch.length > 6 ? ` +${viaSearch.length - 6}` : ""}`);
+    console.log(`    🔍  Pages of the company read: ${websitePages.length ? websitePages.map((p) => `${short(p.url)} (${p.content.length}→${p.prompt_content?.length ?? p.content.length})`).join(", ") : "none"}${websitePages.length ? "" : viaSearch.length ? " — only through search results" : " — the site could not be read"}`);
     const fin = profile.profile;
     console.log(`        Headquarters: the model proposed ${proposed.city ?? "no city"}${proposed.country ? `, ${proposed.country}` : ""}${proposed.where ? ` from ${proposed.where.slice(0, 90)}` : ""}; kept ${fin.city?.value ?? "no city"}${fin.country?.value ? `, ${fin.country.value}` : ""}${hqDecided ? " (decided)" : ""}${proposed.city && !fin.city ? ` — not kept: ${fates.hq ?? "dropped by a later check (see the lines above)"}` : ""}.`);
     const keptNames = (fin.founders ?? []).map((f) => f.name);

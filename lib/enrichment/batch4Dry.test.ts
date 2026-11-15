@@ -42,8 +42,9 @@ describe("batch 4 dry run — the industry is a sector of the closed list", () =
     expect(industryFromTaxonomy("Design & Prototyping Software", "AI & ML", taxonomy)).toBe("AI & ML");
     expect(industryFromTaxonomy("whatever", "AgTech", taxonomy)).toBe("Food & Agriculture");
   });
-  it("a model word that is a sector stays", () => {
-    expect(industryFromTaxonomy("Fintech", "AI & ML", taxonomy)).toBe("Fintech");
+  it("the sector decides; the model's own word counts only when there is no sector", () => {
+    expect(industryFromTaxonomy("Fintech", "AI & ML", taxonomy)).toBe("AI & ML");
+    expect(industryFromTaxonomy("Fintech", null, taxonomy)).toBe("Fintech");
   });
 });
 

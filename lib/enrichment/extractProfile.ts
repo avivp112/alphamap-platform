@@ -75,10 +75,15 @@ export async function loadSectorTaxonomy(supabase: SupabaseClient): Promise<Sect
  */
 export function industryFromTaxonomy(industry: string | null | undefined, sectorName: string | null | undefined, taxonomy: SectorTaxonomy): string | null {
   const parents = new Set(taxonomy.parentNames);
-  if (industry && parents.has(industry)) return industry;
-  if (sectorName && parents.has(sectorName)) return sectorName;
-  const parent = sectorName ? taxonomy.parentOf?.[sectorName] : undefined;
-  return parent && parents.has(parent) ? parent : null;
+  // The sector the company was classified into decides (owner, 2026-11-15: "Enterprise Software (industry: Consumer & Media)" was two answers to one question);
+  // the model's own word counts only when there is no sector.
+  if (sectorName) {
+    if (parents.has(sectorName)) return sectorName;
+    const parent = taxonomy.parentOf?.[sectorName];
+    if (parent && parents.has(parent)) return parent;
+  }
+  if (!sectorName && industry && parents.has(industry)) return industry;
+  return null;
 }
 
 const TAG_FILLER_WORDS = new Set(["general", "digital", "tech", "technology", "technologies", "and", "other", "services", "platforms", "platform", "software", "management", "solutions", "data"]);

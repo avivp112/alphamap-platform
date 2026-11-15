@@ -31,7 +31,13 @@ export interface DomainClassEntry { key: string; class: DomainClass; reason: str
 
 /** A reason that hedges ("best guess", "may be", "appears to be") is no decision: the class is blocked (owner, 2026-11-14: ossia.com, biggo.com). */
 const HEDGE = /\b(best guess|may be|might be|appears to be|appear to be|seems? to be|suggests?|unclear|not (?:clearly|a recognizable)|likely|probably|presumably|reads like|looks like)\b/i;
-export const isHedged = (reason: string): boolean => HEDGE.test(reason);
+/** "may be sponsored", "reads like a company-supplied piece" is a guess about the page, not a doubt about the site (owner, 2026-11-15: businessalabama.com, foodtank.com, healtheuropa.com, starting-up.de). */
+const SPONSOR_GUESS = /\b(?:may|might|could|possibly|probably|appears to|seems to|looks like|reads like|reads as|may be|might be)\s+(?:be\s+)?(?:a\s+|an\s+)?(?:sponsored|company-supplied|promotional|paid|advertorial|press[- ]release|vendor)[^.;]*/gi;
+export const isHedged = (reason: string): boolean => HEDGE.test(reason.replace(SPONSOR_GUESS, " "));
+
+/** The page carries an explicit mark that it is paid or supplied content — the only evidence that makes a page sponsored. */
+const SPONSOR_MARK = /\b(sponsored (?:content|post|article|by)|paid (?:content|post|partnership|promotion)|partner content|partnered content|branded content|brand(?:ed)? voice|advertorial|promoted (?:content|post)|this (?:is a )?paid|content (?:produced|provided|supplied) by|presented by)\b|\bHaaretz Labels\b|\bsponsored\b\s*$/im;
+export const hasExplicitSponsorMark = (title: string, text: string): boolean => SPONSOR_MARK.test(`${title}\n${text.slice(0, 4000)}`);
 
 export class DomainClassRegistry {
   private map = new Map<string, DomainClassEntry>();
