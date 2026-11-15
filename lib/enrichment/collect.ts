@@ -311,6 +311,9 @@ export async function runAllSearches(name: string, anchor: string, state: Search
       "news", state,
     ),
   ]);
+  // Which fixed searches ran, and what each returned (owner, round 10): a missing value is either a search that found nothing or an extraction that missed it.
+  const fixed = ["raises", "funding_round", "founded_by", "headquarters"].filter((l) => !skip.has(l) && queries.some(([q]) => q === l));
+  console.log(`    🔎  Fixed searches: ${fixed.map((l) => `${l} (${searchBatches.flat().filter((r) => r.query_label === l).length} result(s))`).join(", ")}`);
   return [...searchBatches.flat(), ...newsResults];
 }
 

@@ -6,7 +6,7 @@
  *
  *   npx tsx scripts/report_lint.ts
  */
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, existsSync } from "fs";
 import { roundSourceStanding } from "../lib/enrichment/roundSources.ts";
 import { domainOf } from "../lib/enrichment/rejectedDomains.ts";
 import { acquisitionHeadline } from "../lib/enrichment/siteOwner.ts";
@@ -122,4 +122,48 @@ for (const w of warnings) console.log(`⚠️  ${w}`);
 if (archived.size) console.log(`\nℹ️  Values read from the Internet Archive (original domain): ${[...archived].map(([k, n]) => `${k}×${n}`).join(", ")}`);
 if (unlisted.size) console.log(`\nℹ️  Values from domains on no list (the companies' own sites, or a source to place): ${[...unlisted].sort((x, y) => y[1] - x[1]).map(([d, n]) => `${d}×${n}`).slice(0, 30).join(", ")}`);
 console.log(`\n${errors.length} error(s), ${warnings.length} warning(s).`);
+
+// ── Ready for a wet run? (owner, round 10) ───────────────────────────────────────────────────────────────────────────
+{
+  const unreadable = new Set<string>();
+  if (existsSync("website_review.csv")) {
+    const [wh, ...wb] = parseCsv(readFileSync("website_review.csv", "utf8"));
+    const wi = (n: string) => wh.indexOf(n);
+    for (const r of wb) if (/unreadable/i.test(r[wi("reason")] ?? "")) unreadable.add(r[wi("company")]);
+  }
+  const enriched = [...byCompany.keys()].filter((c) => !unreadable.has(c));
+  const has = (c: string, ...fs: string[]) => (byCompany.get(c) ?? []).some((r) => fs.includes(r.field));
+  const pct = (n: number) => enriched.length ? Math.round((100 * n) / enriched.length) : 0;
+  const goals: Array<[string, number, number]> = [
+    ["description", pct(enriched.filter((c) => has(c, "description", "description_what_only")).length), 80],
+    ["sector", pct(enriched.filter((c) => has(c, "sector")).length), 80],
+    ["tags", pct(enriched.filter((c) => has(c, "tags")).length), 80],
+    ["headquarters", pct(enriched.filter((c) => has(c, "hq_city")).length), 60],
+    ["founders", pct(enriched.filter((c) => has(c, "founder")).length), 50],
+  ];
+  const gaps: string[] = [];
+  console.log(`\n── Ready for a wet run? (${enriched.length} enriched compan(ies) with a readable site) ──`);
+  if (errors.length) gaps.push(`lint: ${errors.length} error(s), target 0`);
+  for (const [name, got, want] of goals) { console.log(`  ${got >= want ? "✅" : "❌"} ${name}: ${got}% (target ≥${want}%)`); if (got < want) gaps.push(`${name} ${got}% < ${want}%`); }
+  const prevPath = process.env.PREV;
+  if (prevPath && existsSync(prevPath)) {
+    const [ph, ...pb] = parseCsv(readFileSync(prevPath, "utf8"));
+    const pi = (n: string) => ph.indexOf(n);
+    const prev = new Set(pb.filter((r) => r[pi("field")] !== "(nothing)").map((r) => `${r[pi("company")]}|${r[pi("field")]}`));
+    const now = new Set(rows.map((r) => `${r.company}|${r.field}`));
+    const lost = [...prev].filter((k) => !now.has(k)).length;
+    const lostPct = prev.size ? Math.round((1000 * lost) / prev.size) / 10 : 0;
+    console.log(`  ${lostPct < 5 ? "✅" : "❌"} stability: ${lost} of ${prev.size} field(s) of ${prevPath} are gone (${lostPct}%, target <5%)`);
+    if (lostPct >= 5) gaps.push(`stability ${lostPct}% lost ≥ 5%`);
+  } else console.log("  ➖ stability: not measured (PREV=<earlier report.csv> compares two runs)");
+  // A random sample of 40 values for the owner's precision check (target ≥95% correct).
+  let seed = Number(process.env.SAMPLE_SEED ?? 40);
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
+  const pool = rows.filter((r) => r.field !== "(nothing)" && r.after);
+  const pick = [...pool].sort(() => rnd() - 0.5).slice(0, 40);
+  const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  writeFileSync("sample_40.csv", "\uFEFF" + ["n,company,field,value,source_url,quote,verdict (correct/wrong)", ...pick.map((r, i) => [i + 1, r.company, r.field, r.after, r.url, r.quote, ""].map((x) => q(String(x))).join(","))].join("\r\n") + "\r\n");
+  console.log(`  ➖ precision: ${pick.length} random value(s) in sample_40.csv — mark each correct/wrong (target ≥95%)`);
+  console.log(`\n${gaps.length ? `מוכן לרטוב: לא — הפער: ${gaps.join("; ")}` : "מוכן לרטוב: כן (בכפוף לבדיקת הדיוק במדגם)"}`);
+}
 process.exit(errors.length ? 1 : 0);
