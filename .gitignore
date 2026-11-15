@@ -25,3 +25,8 @@ field_review/run_*.csv
 *_report_dry.csv
 *_report_write.csv
 website_review.csv
+
+missing_by_field.csv
+sample_40.csv
+cache/known_sources.json
+cache/known_gaps.json
