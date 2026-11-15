@@ -16,6 +16,28 @@ const labelOf = (host: string): string => {
   return (parts[Math.max(0, parts.length - tld2)] ?? "").replace(/[^a-z0-9]/g, "");
 };
 
+const RENAME_NEW = (nameRe: string) => [
+  // "<Company> is now X", "has been renamed X", "now known as X": the company under a new name.
+  new RegExp(`\\b${nameRe}\\b[^.\\n]{0,60}\\b(?:is now(?! part of)|has become|has rebranded as|has been renamed(?: to)?|was renamed(?: to)?|rebranded (?:as|to)|(?:is )?now known as|is now called|now called)\\s+([A-Z][\\w&.-]*(?:\\s+[A-Z][\\w&.-]*){0,2})`),
+  // "X (formerly <Company>)", "X, formerly known as <Company>"
+  new RegExp(`\\b([A-Z][\\w&.-]*(?:\\s+[A-Z][\\w&.-]*){0,2})[\\s,]*\\(?\\s*(?:formerly|previously|fka|f/k/a)\\s+(?:known as\\s+)?${nameRe}\\b`, "i"),
+];
+
+/**
+ * The new name a company goes by (owner, round 10: TymeBank is GoTyme Bank — the same company, renamed; that is not an acquisition). Read from the
+ * pages' own words; a rename is a proposal for the owner, never applied by the pipeline. null when the pages do not say.
+ */
+export function rebrandedAs(companyName: string, pages: Page[]): string | null {
+  const text = pages.slice(0, 4).map((p) => p.content).join("\n").slice(0, 12000);
+  const nameRe = esc(companyName.trim()).replace(/\s+/g, "\\s+");
+  for (const re of RENAME_NEW(nameRe)) {
+    const m = text.match(re);
+    const to = m?.[1]?.trim();
+    if (to && core(to) !== core(companyName) && to.length >= 3) return to;
+  }
+  return null;
+}
+
 /** null, or the reason ("acquired / rebranded: …") the pages are no description of this company. */
 export function siteBelongsToAnotherCompany(companyName: string, website: string | null | undefined, pages: Page[]): string | null {
   if (!pages.length) return null;
@@ -38,9 +60,7 @@ export function siteBelongsToAnotherCompany(companyName: string, website: string
   }
   // 1. The pages say, of this company, that it was acquired / is now part of / was renamed.
   const said = [
-    new RegExp(`\\b${nameRe}\\b[^.\\n]{0,80}\\b(?:has been|was|is now|is)\\s+(?:acquired by|part of|a part of|now part of|joined|merged into|renamed|rebranded|now known as|now called)\\s+([A-Z][\\w&.-]*(?:\\s+[A-Z][\\w&.-]*){0,2})`, "i"),
-    new RegExp(`\\b${nameRe}\\b[^.\\n]{0,60}\\b(?:is now|has become|has rebranded as|has been renamed)\\s+([A-Z][\\w&.-]*(?:\\s+[A-Z][\\w&.-]*){0,2})`),
-    new RegExp(`\\bformerly\\s+(?:known as\\s+)?${nameRe}\\b`, "i"),
+    new RegExp(`\\b${nameRe}\\b[^.\\n]{0,80}\\b(?:has been|was|is now|is)\\s+(?:acquired by|part of|a part of|now part of|joined|merged into)\\s+([A-Z][\\w&.-]*(?:\\s+[A-Z][\\w&.-]*){0,2})`, "i"),
     // The buyer says it: "Deel acquires Hofy", "Deel has acquired Hofy".
     new RegExp(`\\b[A-Z][\\w&.-]*(?:\\s+[A-Z][\\w&.-]*){0,2}\\s+(?:has\\s+)?(?:acquired|acquires|bought|buys)\\s+${nameRe}\\b`),
     // The other way round: the company's name is another company's new name ("Grammarly is now Superhuman", "(formerly Grammarly)").

@@ -768,6 +768,8 @@ export async function writeCollected(
       const amount = r.amount_raised == null ? "amount not disclosed" : `$${+(r.amount_raised / 1e6).toFixed(1)}M`;
       reportLines.push({ field: "round", before: null, after: `${r.round_type} ${amount} · ${dateByPrecision(r.announcement_date, r.announcement_date_precision)}${r.lead_investor ? ` · lead ${r.lead_investor}` : ""}`, source_url: r.source_url ?? null, quote: null });
     }
+    const renamedTo = (profile.profile as { rebrand_to?: string }).rebrand_to;
+    if (renamedTo) reportLines.push({ field: "name_proposal", before: row.name, after: `name = "${renamedTo}", former_names += "${row.name}" — the same company renamed; for review, not applied`, source_url: row.website ? (/^https?:/.test(row.website) ? row.website : `https://${row.website}`) : null, quote: null });
     for (const r of exitEvents) {
       reportLines.push({ field: "acquired", before: null, after: `acquired by ${r.lead_investor ?? "(buyer not named)"} · ${dateByPrecision(r.announcement_date, r.announcement_date_precision)} — proposal: status acquired, for review`, source_url: r.source_url ?? null, quote: null });
     }

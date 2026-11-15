@@ -16,7 +16,9 @@ const WEAK = /\b(about us|who we are|our (?:story|mission|team|customers|product
 export function stripNavigation(text: string): string {
   const out: string[] = [];
   let shortRun: string[] = [];
-  const flush = () => { if (shortRun.length < 4) out.push(...shortRun); shortRun = []; };   // four or more short lines in a row are a menu
+  // A menu is a long run of very short items; marketing pages are also made of short lines (owner, round 10: Promethean's 14 pages shrank to 2,092 characters).
+  const isMenuRun = (run: string[]) => run.length >= 8 && run.every((l) => l.split(/\s+/).length <= 3);
+  const flush = () => { if (!isMenuRun(shortRun)) out.push(...shortRun); shortRun = []; };
   for (const raw of text.split("\n")) {
     const line = raw.trim();
     if (!line) { flush(); out.push(""); continue; }
@@ -34,7 +36,9 @@ export function stripNavigation(text: string): string {
 
 /** The text sent to the model: at most `max` characters, nothing the verifier could not find in the full page. */
 export function promptText(full: string, max = 6000): string {
-  const clean = stripNavigation(full);
+  let clean = stripNavigation(full);
+  // The cleaning must not eat the page: when most of it went, the page itself (links and cookie lines aside) is what the model reads.
+  if (clean.length < full.length * 0.4 && full.length - clean.length > 600) clean = full.replace(/\n{3,}/g, "\n\n").trim();
   if (clean.length <= max) return clean;
   const head = Math.floor(max * 0.45), foot = Math.min(700, Math.floor(max * 0.1));
   const picks: Array<[number, number]> = [[0, head]];
