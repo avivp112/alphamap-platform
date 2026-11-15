@@ -23,7 +23,7 @@ const SYSTEM = [
 
 export function buildDomainClassRequest(url: string, title: string, text: string) {
   return {
-    model: "", max_tokens: 150, temperature: 0,
+    model: "", max_tokens: 500, temperature: 0,
     system: SYSTEM,
     tools: [{
       name: "classify_domain", description: "Classify the domain.",
@@ -35,8 +35,8 @@ export function buildDomainClassRequest(url: string, title: string, text: string
 }
 
 const FILE = "cache/domain_class.json";
-/** Bump when the rules change: older answers are dropped and asked again (v2, 2026-11-14: page scope, unsure = blocked). */
-const CACHE_VERSION = 2;
+/** Bump when the rules change: older answers are dropped and asked again (v2, 2026-11-14: page scope, unsure = blocked; v3, 2026-11-15: answers that could not be read are asked again, not blocked). */
+const CACHE_VERSION = 3;
 let loaded = false;
 /** Reads the kept classes once per process (not under tests). */
 export function loadDomainClasses(file = FILE): void {
@@ -71,7 +71,10 @@ export async function classifyUnknownDomains(sources: Array<{ url: string; title
   let n = 0;
   for (const [key, s] of [...todo].slice(0, deps.max ?? 20)) {
     try {
-      const r = parseDomainClass(await deps.ask(buildDomainClassRequest(s.url, s.title, s.text)));
+      // An answer that cannot be read is asked once more; if it still cannot be read the domain stays unclassified (tried again next run), never blocked.
+      let r = parseDomainClass(await deps.ask(buildDomainClassRequest(s.url, s.title, s.text)));
+      if (!r) r = parseDomainClass(await deps.ask(buildDomainClassRequest(s.url, s.title, s.text)));
+      if (!r) { console.log(`    ⚠️  domain ${key}: the answer could not be read twice — left unclassified.`); continue; }
       // A page-scoped answer is kept for that page only; the site stays unclassified (its other pages are asked about when they turn up).
       domainClasses.set({ key: r.page ? `page:${s.url}` : key, class: r.class, reason: r.reason, example_url: s.url, example_title: s.title.slice(0, 140), at: new Date().toISOString().slice(0, 10), ...(r.page ? { page: true } : {}) });
       n++;

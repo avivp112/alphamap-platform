@@ -55,10 +55,16 @@ export class DomainClassRegistry {
 }
 export const domainClasses = new DomainClassRegistry();
 
-export function parseDomainClass(input: unknown): { class: DomainClass; reason: string; page: boolean } {
+/**
+ * The model's answer. An answer that could not be read (no class, no reason: a cut-off or an empty tool call) is NOT a doubt: it returns null and the
+ * caller asks again, and leaves the domain unclassified if it still cannot be read (owner, 2026-11-15: "no answer" blocked businessalabama.com,
+ * themadisonrecord.com, aiaa.org, rockingrobots.com and milsatmagazine.com).
+ */
+export function parseDomainClass(input: unknown): { class: DomainClass; reason: string; page: boolean } | null {
   const i = (input ?? {}) as { class?: unknown; reason?: unknown; confident?: unknown; scope?: unknown };
-  const reason = String(i.reason ?? "no answer").slice(0, 300);
-  const asked = (DOMAIN_CLASSES as readonly string[]).includes(i.class as string) ? (i.class as DomainClass) : "blog_vendor_other";
+  if (!(DOMAIN_CLASSES as readonly string[]).includes(i.class as string) || typeof i.reason !== "string" || !i.reason.trim()) return null;
+  const reason = String(i.reason).slice(0, 300);
+  const asked = i.class as DomainClass;
   // Not sure (the model says so, or its reason hedges): blocked.
   const sure = i.confident !== false && !isHedged(reason);
   return { class: sure ? asked : "blog_vendor_other", reason: sure ? reason : `not sure — ${reason}`, page: i.scope === "page" };

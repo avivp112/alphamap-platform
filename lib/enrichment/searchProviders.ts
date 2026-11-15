@@ -454,7 +454,10 @@ export async function verifyDomainMatch(
 // ── Company website fetch (Stage 2) ────────────────────────────────────────
 
 const JINA_TIMEOUT_MS = 15_000;
-const MAX_WEBSITE_CHARS = 6_000; // spec stage 2: "cap content per page (for example 6,000 characters)" -- raised from v1's 3,000 now that each page is its own labeled [W#] source rather than one slot in a single shared context budget
+import { promptText, htmlToText } from "./pageText.ts";
+const MAX_WEBSITE_CHARS = Number(process.env.WEB_PAGE_PROMPT_CHARS ?? 6_000);   // what the model gets of a page; the verifier reads the whole page (up to MAX_PAGE_STORED)
+const MAX_PAGE_STORED = 120_000;
+const DUMMY_WEBSITE_CHARS = 0; // spec stage 2: "cap content per page (for example 6,000 characters)" -- raised from v1's 3,000 now that each page is its own labeled [W#] source rather than one slot in a single shared context budget
 
 // Set on an HTTP 402/401 from Jina (out of credit / bad key): later pages go
 // straight to Tavily instead of paying a failed round trip and a warning line
@@ -570,12 +573,42 @@ async function fetchViaSerperScrape(url: string, state: SearchProviderState): Pr
 }
 
 /** Jina Reader first; Serper scrape when Jina could not read it. */
-async function readPage(url: string, state: SearchProviderState): Promise<{ text: string; provider: Provider } | null> {
+/** The page straight from its server (no reader service between), as text. */
+async function fetchDirect(url: string, ms = 10_000): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    const res = await fetch(url, { signal: controller.signal, redirect: "follow", headers: { "user-agent": "Mozilla/5.0 (compatible; AlphaMapBot)", accept: "text/html,application/xhtml+xml" } }).finally(() => clearTimeout(timer));
+    if (!res.ok || !/html|text/.test(res.headers.get("content-type") ?? "")) return null;
+    return htmlToText(await res.text()) || null;
+  } catch { return null; }
+}
+
+/** The last snapshot of the page in the Internet Archive, as text (the site down, blocked, or empty to a reader). */
+async function fetchFromArchive(url: string): Promise<string | null> {
+  const text = await fetchDirect(`https://web.archive.org/web/2/${url}`, 15_000);
+  return text ? text.replace(/^[\s\S]*?(?=\n#|\n[A-Z])/, "").trim() || text : null;
+}
+
+/**
+ * Jina Reader, then Serper's scrape, then the page straight from its server, then the Internet Archive: the first that gives real content.
+ * The reader services come first (the site's own server is not hit when they can read it); a site neither can read is tried directly, and then its last
+ * archived snapshot (owner, 2026-11-15: Aerobotix, Aida, FlyTech and KrillTech could not be read).
+ */
+async function readPage(url: string, state: SearchProviderState, fallbacks = false): Promise<{ text: string; provider: Provider } | null> {
   const viaJina = await fetchViaJinaReader(url, state);
   if (viaJina) return { text: viaJina, provider: "jina" };
-  if (!componentOn("search_backup")) return null;
-  const viaSerper = await fetchViaSerperScrape(url, state);
-  return viaSerper ? { text: viaSerper, provider: "serper_scrape" } : null;
+  if (componentOn("search_backup")) {
+    const viaSerper = await fetchViaSerperScrape(url, state);
+    if (viaSerper) return { text: viaSerper, provider: "serper_scrape" };
+  }
+  // The direct read and the archive only for a site the readers could not read at all (its home page): a missing sub-page of a readable site is just missing.
+  if (!fallbacks) return null;
+  const direct = await fetchDirect(url);
+  if (direct && looksLikeRealContent(direct)) return { text: direct, provider: "cheerio" };
+  const archived = await fetchFromArchive(url);
+  if (archived && looksLikeRealContent(archived)) { console.log(`    🗄️  ${url} read from the Internet Archive (its last snapshot).`); return { text: archived, provider: "archive" }; }
+  return null;
 }
 
 /** One page's text, cached with the company's searches (press releases, legal pages — companyFacts.ts). */
@@ -622,6 +655,8 @@ function extractedFor(extracted: Map<string, string>, url: string): string | und
 
 export interface FetchedPage {
   url: string; content: string; provider: Provider;
+  /** What the model gets of the page (pageText.ts); `content` is the whole page. */
+  prompt_content?: string;
   /** Pages of the site that rendered this same page (/contact → /about): the Contact page rule reads them (headquarters.ts). */
   also_urls?: string[];
   /** The organization links the site names (devLinks.ts), read from the whole page before the cap cut the footer off. */
@@ -694,20 +729,41 @@ export async function fetchCompanyWebsitePages(
   state: SearchProviderState,
 ): Promise<FetchedPage[]> {
   if (!website) return [];
-  const root = website.startsWith("http") ? website : `https://${website}`;
+  let root = website.startsWith("http") ? website : `https://${website}`;
   // The company's own pages are read on every run, whatever the search finds (owner, 2026-11-14): home, about, team / leadership, contact, news / press, and customers / solutions / industries / products / platform (where "for whom" is usually written).
   const candidatePaths = ["", "/about", "/about-us", "/team", "/leadership", "/company", "/contact", "/contact-us", "/news", "/press", "/newsroom", "/customers", "/solutions", "/industries", "/products", "/platform"];
-  const urls = candidatePaths.map((path) => root.replace(/\/+$/, "") + path);
+  let urls = candidatePaths.map((path) => root.replace(/\/+$/, "") + path);
   const pages: FetchedPage[] = [];
 
   const fetched = new Map<string, { content: string; provider: Provider; cached: boolean }>();
+  // The registered address may lead elsewhere (tymebank.co.za → gotyme.co.za): the reader names where the home page ended, and the fixed pages are read there.
+  const finalOriginIn = (text: string): string | null => {
+    const m = text.slice(0, 1500).match(/(?:Final URL|URL Source):\s*(https?:\/\/[^\s]+)/i)?.[1];
+    try { return m ? new URL(m).origin : null; } catch { return null; }
+  };
+  const bare = (h: string) => h.replace(/^www\./, "");
+  const home = urls[0];
+  const cachedHome = state.cache?.get<{ content: string; provider: Provider }>(`page:${home}`);
+  const homeRead = cachedHome ? { text: cachedHome.content, provider: cachedHome.provider } : await readPage(home, state, true);
+  const needFallbacks = homeRead?.provider === "cheerio" || homeRead?.provider === "archive";
+  if (homeRead) {
+    const origin = finalOriginIn(homeRead.text);
+    if (origin && bare(new URL(origin).hostname) !== bare(new URL(root).hostname)) {
+      console.log(`    🔀  ${root} leads to ${origin}: its pages are read there.`);
+      root = origin; urls = candidatePaths.map((path) => root.replace(/\/+$/, "") + path);
+    } else if (looksLikeRealContent(homeRead.text)) {
+      fetched.set(home, { content: homeRead.text, provider: homeRead.provider, cached: !!cachedHome });
+      if (!cachedHome) state.cache?.set(`page:${home}`, { content: homeRead.text, provider: homeRead.provider });
+    }
+  }
   // Sixteen addresses on a site that does not answer would cost minutes: after four misses in a row the rest of the pages are not tried.
   let misses = 0;
   for (const url of urls) {
+    if (fetched.has(url)) continue;
     const cachedPage = state.cache?.get<{ content: string; provider: Provider }>(`page:${url}`);
     if (cachedPage) { fetched.set(url, { ...cachedPage, cached: true }); misses = 0; continue; }
     if (misses >= 4) continue;
-    const read = await readPage(url, state);
+    const read = await readPage(url, state, needFallbacks);
     if (read && looksLikeRealContent(read.text)) { fetched.set(url, { content: read.text, provider: read.provider, cached: false }); misses = 0; }
     else misses++;
   }
@@ -731,7 +787,7 @@ export async function fetchCompanyWebsitePages(
       continue;
     }
     if (!cachedPage) state.cache?.set(`page:${url}`, { content, provider });
-    const capped = content.slice(0, MAX_WEBSITE_CHARS);
+    const capped = content.slice(0, MAX_PAGE_STORED);
     // /team, /company and /contact often redirect to (or render) the same
     // page as /about or the homepage — sending it again only costs tokens.
     const duplicateOf = pages.find((p) => isNearDuplicatePage(p.content, capped));
@@ -742,8 +798,9 @@ export async function fetchCompanyWebsitePages(
       continue;
     }
     state.websitePagesFetched++;
-    pages.push({ url, content: capped, provider, dev_links: devLinksFromText(content) });
-    console.log(`    🌐  fetched ${url} (${content.length} chars, ${provider}${cachedPage ? ", cached" : ""})`);
+    const sent = promptText(capped, MAX_WEBSITE_CHARS);
+    pages.push({ url, content: capped, prompt_content: sent, provider, dev_links: devLinksFromText(content) });
+    console.log(`    🌐  fetched ${url} (${content.length} chars, ${provider}${cachedPage ? ", cached" : ""}; ${sent.length} sent to the model)`);
   }
   return pages;
 }

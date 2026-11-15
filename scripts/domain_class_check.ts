@@ -45,7 +45,7 @@ let wrong = 0;
 for (const [url, title, want] of CASES) {
   const msg = await anthropic.messages.create(requestFor(buildDomainClassRequest(url, title, ""), MODEL));
   const tool = msg.content.find((b) => b.type === "tool_use");
-  const got = parseDomainClass(tool && tool.type === "tool_use" ? tool.input : null);
+  const got = parseDomainClass(tool && tool.type === "tool_use" ? tool.input : null) ?? { class: "(unreadable)" as never, reason: "the answer could not be read" };
   const ok = got.class === want; if (!ok) wrong++;
   console.log(`${ok ? "✅" : "❌"} ${new URL(url).hostname.padEnd(34)} want ${want.padEnd(22)} got ${got.class.padEnd(22)} ${ok ? "" : got.reason}`);
 }

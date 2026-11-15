@@ -50,7 +50,7 @@ describe("domain classes (owner, 2026-11-14)", () => {
     expect(roundSourceStanding("https://flaky.com/a").kind).toBe("unlisted");
   });
   it("an odd answer is blog_vendor_other (blocked)", () => {
-    expect(parseDomainClass({ class: "weird" }).class).toBe("blog_vendor_other");
+    expect(parseDomainClass({ class: "weird" })).toBeNull();
   });
   it("writes the owner's list of new classes", () => {
     domainClasses.set({ key: "newswire.ca", class: "wire", reason: "a wire", example_url: "https://newswire.ca/x", example_title: "T", at: "" });
