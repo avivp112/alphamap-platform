@@ -60,13 +60,15 @@ import { assertEnrichmentWritesAllowed, PILOT_FIELDS } from "../lib/enrichment/w
 import { openFieldNames } from "../lib/enrichment/fieldReview.ts";
 import { writeFileSync, mkdirSync, readdirSync } from "fs";
 import { rejectedDomains, rejectedDomainsCsv } from "../lib/enrichment/rejectedDomains.ts";
+import { wrapAnthropic, enterOfflineMode, installFetchTimeout, recorderSummary, replayMode } from "../lib/enrichment/recorder.ts";
+import { installCompanyLog, gathered } from "../lib/enrichment/companyLog.ts";
 import { domainClasses, domainClassesCsv } from "../lib/enrichment/domainClass.ts";
 import { numberValues, renderBatchReport, batchCsv } from "../lib/enrichment/batchReport.ts";
 import type { RoundHint } from "../lib/enrichment/hints.ts";
 // ── Configuration (ground rule 3: same env vars as v1) ──────────────────
 const BATCH_SIZE     = Number(process.env.BATCH_SIZE     ?? 9999);
 const OFFSET         = Number(process.env.OFFSET         ?? 0);
-const DELAY_MS       = Number(process.env.DELAY_MS       ?? 20_000);
+const DELAY_MS       = Number(process.env.DELAY_MS       ?? (replayMode() !== "off" ? 0 : 20_000));
 const DRY_RUN        = process.env.DRY_RUN               !== "false";
 // PILOT=true: the partial wet run (writeGate.ts) — only PILOT_FIELDS, only the companies in ONLY=<ids>.
 const PILOT          = process.env.PILOT                 === "true";
@@ -342,7 +344,10 @@ async function registerRun(): Promise<string> {
 
 async function main() {
   await initV1Context();
-  anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  installFetchTimeout();
+  enterOfflineMode();
+  anthropic = wrapAnthropic(new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: Number(process.env.MODEL_TIMEOUT_MS ?? 120_000), maxRetries: 2 }));
+  if (replayMode() !== "off") console.log(`🔁  REPLAY=${replayMode()}: the web is not fetched (only what is in cache/enrich_v2), the model is asked only what it was never asked.\n`);
   const taxonomy = await loadSectorTaxonomy(supabase);
 
   const startedAt = new Date().toISOString();
@@ -473,30 +478,52 @@ async function main() {
   let consecutiveErrors = 0;
   if (DRY_RUN) console.log("ℹ️  DRY_RUN: nothing is written, so the queue does not advance between dry runs — the same companies come first every time (use OFFSET=… or ONLY=… to look at others).\n");
 
-  for (let i = 0; i < queue.length && !stopRequested; i++) {
-    const row = queue[i];
-    const elapsedMin = (Date.now() - runStartedAt) / 60_000;
-    const t = summary.tally;
-    console.log(`📍 [${i + 1}/${queue.length}] ${elapsedMin.toFixed(0)} min | $${summary.totalCostUsd.toFixed(2)} so far | ✅ ${t.success} 🟠 ${t.partial} 🚫 ${t.rejected} 🔍 ${t.low_evidence + t.no_data} 💥 ${t.error}${t.search_unavailable ? ` 📡 ${t.search_unavailable}` : ""}${UPDATE ? ` 💤 ${t.no_change}` : ""}`);
-    const errorsBefore = summary.tally.error + summary.tally.error_incomplete_extraction + summary.tally.search_unavailable;
-    const noChangeBefore = summary.tally.no_change;
-    await processCompany(row, roundsByStartup.get(row.id) ?? [], taxonomy, startupByDomain, summary);
-    consecutiveErrors = summary.tally.error + summary.tally.error_incomplete_extraction + summary.tally.search_unavailable > errorsBefore ? consecutiveErrors + 1 : 0;
-    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-      console.error(`\n⛔  ${consecutiveErrors} companies in a row failed — this looks systemic (API key, credits, provider outage), not company-specific. Stopping so the rest of the queue isn't burned. Fix the cause and re-run; it continues from here.`);
-      break;
+  // CONCURRENCY=5: five companies at once, each one's log gathered into one block, each held to COMPANY_TIMEOUT_MS (10 minutes) so a dead site cannot stall the run.
+  const CONCURRENCY = Math.max(1, Number(process.env.CONCURRENCY ?? 1));
+  const COMPANY_TIMEOUT_MS = Number(process.env.COMPANY_TIMEOUT_MS ?? 600_000);
+  if (CONCURRENCY > 1) installCompanyLog();
+  let next = 0, finished = 0, stopSystemic = false;
+  const running = new Set<string>();
+  const heartbeat = CONCURRENCY > 1 ? setInterval(() => console.log(`⏳ ${finished}/${queue.length} done · running: ${[...running].join(", ") || "—"}`), 60_000) : null;
+  const worker = async (w: number) => {
+    while (!stopRequested && !stopSystemic) {
+      const i = next++;
+      if (i >= queue.length) return;
+      const row = queue[i];
+      const elapsedMin = (Date.now() - runStartedAt) / 60_000;
+      const t = summary.tally;
+      console.log(`📍 [${i + 1}/${queue.length}] ${elapsedMin.toFixed(0)} min | $${summary.totalCostUsd.toFixed(2)} so far | ✅ ${t.success} 🟠 ${t.partial} 🚫 ${t.rejected} 🔍 ${t.low_evidence + t.no_data} 💥 ${t.error}${t.search_unavailable ? ` 📡 ${t.search_unavailable}` : ""}${UPDATE ? ` 💤 ${t.no_change}` : ""}  → ${row.name}`);
+      const errorsBefore = summary.tally.error + summary.tally.error_incomplete_extraction + summary.tally.search_unavailable;
+      const noChangeBefore = summary.tally.no_change;
+      running.add(row.name);
+      const job = () => processCompany(row, roundsByStartup.get(row.id) ?? [], taxonomy, startupByDomain, summary);
+      let timedOut = false;
+      const timeout = new Promise<"timeout">((r) => setTimeout(() => r("timeout"), COMPANY_TIMEOUT_MS));
+      if (CONCURRENCY > 1) {
+        const g = gathered(job);
+        const first = await Promise.race([g, timeout]);
+        if (first === "timeout") { timedOut = true; console.log(`⏱️  ${row.name}: still running after ${COMPANY_TIMEOUT_MS / 60_000} min — given up (counted as an error); its work is abandoned.`); summary.tally.error++; notEnrich(row, "error", "timeout", `the company took longer than ${COMPANY_TIMEOUT_MS / 60_000} minutes`); }
+        else { console.log(`┌── ${row.name}\n${first.lines.join("\n")}\n└── ${row.name} done`); if (first.error) { console.error(`💥  ${row.name}: ${String(first.error)}`); summary.tally.error++; } }
+      } else {
+        const first = await Promise.race([job().then(() => "ok" as const), timeout]);
+        if (first === "timeout") { timedOut = true; console.log(`⏱️  ${row.name}: still running after ${COMPANY_TIMEOUT_MS / 60_000} min — given up (counted as an error).`); summary.tally.error++; notEnrich(row, "error", "timeout", `the company took longer than ${COMPANY_TIMEOUT_MS / 60_000} minutes`); }
+      }
+      running.delete(row.name); finished++;
+      consecutiveErrors = summary.tally.error + summary.tally.error_incomplete_extraction + summary.tally.search_unavailable > errorsBefore ? consecutiveErrors + 1 : 0;
+      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+        console.error(`\n⛔  ${consecutiveErrors} companies in a row failed — this looks systemic (API key, credits, provider outage), not company-specific. Stopping so the rest of the queue isn't burned.`);
+        stopSystemic = true; return;
+      }
+      if (!DRY_RUN && REFRESH_EVERY > 0 && finished % REFRESH_EVERY === 0) await refreshSearch();
+      if (next < queue.length && !stopRequested && !timedOut) {
+        const wait = summary.tally.no_change > noChangeBefore ? Math.min(DELAY_MS, 2_000) : DELAY_MS;
+        if (CONCURRENCY === 1) console.log(`    ⏳  Waiting ${wait / 1000}s…\n`);
+        await interruptibleSleep(wait);
+      }
     }
-    // The company page reads startups_search — refresh it periodically on a
-    // long run, not only at the very end.
-    if (!DRY_RUN && REFRESH_EVERY > 0 && (i + 1) % REFRESH_EVERY === 0) await refreshSearch();
-    if (i < queue.length - 1 && !stopRequested) {
-      // The pause protects the Claude rate limit; a company with nothing new
-      // made no Claude call, so the next one can follow almost at once.
-      const wait = summary.tally.no_change > noChangeBefore ? Math.min(DELAY_MS, 2_000) : DELAY_MS;
-      console.log(`    ⏳  Waiting ${wait / 1000}s…\n`);
-      await interruptibleSleep(wait);
-    }
-  }
+  };
+  await Promise.all(Array.from({ length: CONCURRENCY }, (_, w) => worker(w)));
+  if (heartbeat) clearInterval(heartbeat);
   if (stopRequested) console.log("🛑  Stopped by request. Re-running continues from the companies not yet processed (queue is ordered by last_enriched_at).");
 
   if (!DRY_RUN && (summary.totalFieldsPatched > 0 || summary.totalRoundsInserted > 0 || summary.totalRoundsUpdated > 0)) {
@@ -516,6 +543,7 @@ async function main() {
   for (const [status, count] of Object.entries(summary.tally)) {
     console.log(`  ${status.padEnd(28)} ${count}`);
   }
+  for (const l of recorderSummary()) console.log(l);
   console.log(`  rounds inserted              ${summary.totalRoundsInserted}`);
   console.log(`  existing rounds filled       ${summary.totalRoundsUpdated}`);
   console.log(`  news articles added          ${summary.totalNewsAdded}`);

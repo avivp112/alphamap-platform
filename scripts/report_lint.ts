@@ -89,6 +89,11 @@ if (existsSync("batch4_dry.log")) {
   const dropLines = [...log.matchAll(/description sentence dropped/g)].length;
   const returnedSome = [...log.matchAll(/the model returned (?!no sentences)/g)].length;
   if (returnedSome > 0 && dropLines === 0) err("(log)", `${returnedSome} description(s) failed with sentences returned, and not one dropped sentence is named`);
+  // a value the model proposed and that vanished without its own reason
+  const later = [...log.matchAll(/not kept: dropped by a later check/g)].length;
+  if (later) err("(log)", `${later} proposed value(s) were dropped with no reason of their own ("dropped by a later check") — a silent drop`);
+  const proposedNoneKept = [...log.matchAll(/Headquarters: the model proposed (?!no city)[^\n]*kept no city(?![^\n]*not kept:)/g)].length;
+  if (proposedNoneKept) err("(log)", `${proposedNoneKept} headquarters proposed and not kept without a reason on the same line`);
   if (noDesc) console.log(`(log) ${noDesc} company(ies) without a description; ${dropLines} dropped sentence(s) named.`);
 }
 
