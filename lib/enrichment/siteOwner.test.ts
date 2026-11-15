@@ -39,3 +39,27 @@ describe("review 8 (2026-11-10): an address that leads to another company", () =
     expect(siteBelongsToAnotherCompany("Superhuman", "https://superhuman.com", [{ url: "https://superhuman.com", content: "Grammarly is now Superhuman. The AI productivity suite." + filler }])).toMatch(/acquired \/ rebranded/);
   });
 });
+
+describe("round 8 (2026-11-15): a move to a new address is not an acquisition when the new site names the company", () => {
+  const page = (url: string, finalUrl: string, text: string) => ({ url, content: `Title: x URL Source: ${url} Final URL: ${finalUrl} Markdown Content: ${text}` });
+  it("tymebank.co.za → gotyme.co.za: TymeBank Limited is on the destination — the same company", () => {
+    expect(siteBelongsToAnotherCompany("TymeBank", "https://tymebank.co.za", [page("https://tymebank.co.za/", "https://gotyme.co.za/", "GoTyme. Banking by TymeBank Limited, an authorised financial services provider." + filler)])).toBeNull();
+  });
+  it("Hofy → deel.com still is flagged when Deel is the buyer in the page's own words", () => {
+    expect(siteBelongsToAnotherCompany("Hofy", "https://hofy.com", [page("https://hofy.com/", "https://www.deel.com/it/", "Deel acquires Hofy to bring IT to every team. " + filler)])).toMatch(/acquired \/ rebranded/);
+  });
+});
+
+import { acquisitionHeadline } from "./siteOwner";
+describe("a headline in which the company is the one acquired (domain_repurposed)", () => {
+  it("is", () => {
+    expect(acquisitionHeadline("Aerodrome expanding drone offering with $4.5 million acquisition of FlyTech", "FlyTech")).toBe(true);
+    expect(acquisitionHeadline("Equifax Acquires DataX to Expand Credit Access for Consumers", "DataX")).toBe(true);
+    expect(acquisitionHeadline("Cinsay is being acquired by aibuy", "Cinsay")).toBe(true);
+  });
+  it("is not, when the company buys, or only joins or launches", () => {
+    expect(acquisitionHeadline("Ghost joins the fediverse", "Ghost")).toBe(false);
+    expect(acquisitionHeadline("Ghost 6.0 launches", "Ghost")).toBe(false);
+    expect(acquisitionHeadline("Wiz acquires Dazz for $450 million", "Wiz")).toBe(false);
+  });
+});

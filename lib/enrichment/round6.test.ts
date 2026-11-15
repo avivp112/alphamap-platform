@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { isHedged } from "./domainClass.ts";
 import { mentionsAddress, brandLabelMatches, pageNamesCompany, ownBrandSources, ownEvidence, emailsIn, phonesIn, addressesIn, productTerms } from "./ownDomain.ts";
 import { roundSourceStanding, profileSourceAllowed, isPartyRelease } from "./roundSources.ts";
 import { domainClasses, parseDomainClass, isHedged } from "./domainClass.ts";
@@ -157,5 +158,39 @@ describe("a Contact page of several addresses decides the headquarters when one 
   it("without a mark, several addresses are still offices", () => {
     const s = contactPageAddresses(src("33 Yonge Street, Toronto, ON M5E 1G4\n\n1900 Grant Street, Denver, CO 80203"));
     expect(decideHeadquarters(s).kind).not.toBe("declared");
+  });
+});
+
+describe("several offices, none marked, and an allowed source names one as the headquarters (owner, 2026-11-15)", () => {
+  const st = (city: string, kind: "press" | "company", date: string | null, n = 1) => ({ city, quote: `${city}-based Company`, source_id: `S${n}`, url: `https://techcrunch.com/x${n}`, kind, date }) as never;
+  it("Motorway: London and Brighton on the site, 'London-based Motorway' in two articles → London", () => {
+    const d = decideHeadquarters([st("London", "press", "2023-05-01", 1), st("London", "press", "2024-02-01", 2)], "2026-11-15", ["London", "Brighton"]);
+    expect(d).toMatchObject({ kind: "declared", statement: { city: "London" } });
+  });
+  it("Hydrostor: four offices, 'Toronto-based Hydrostor' in two articles → Toronto", () => {
+    expect(decideHeadquarters([st("Toronto", "press", "2024-01-10", 1), st("Toronto", "press", "2025-03-10", 2)], "2026-11-15", ["Toronto", "Denver", "Melbourne", "Adelaide"])).toMatchObject({ kind: "declared", statement: { city: "Toronto" } });
+  });
+  it("one old article alone still does not outweigh the site (Aidoc stays empty)", () => {
+    expect(decideHeadquarters([st("Toronto", "press", "2022-01-10", 1)], "2026-11-15", ["Toronto", "Denver"]).kind).toBe("site_offices");
+  });
+  it("a press city that is not one of the offices does not decide", () => {
+    expect(decideHeadquarters([st("Paris", "press", "2024-01-10")], "2026-11-15", ["London", "Brighton"]).kind).not.toBe("declared");
+  });
+  it("two cities named by the press are no decision", () => {
+    expect(decideHeadquarters([st("London", "press", "2024-01-10"), st("Brighton", "press", "2024-02-10")], "2026-11-15", ["London", "Brighton"]).kind).not.toBe("declared");
+  });
+});
+
+import { hasExplicitSponsorMark } from "./domainClass.ts";
+describe("'may be sponsored' is not evidence (owner, 2026-11-15)", () => {
+  it("a guess about sponsorship is not a doubt about the site", () => {
+    expect(isHedged("Business Alabama appears to be a regional business publication, but this page may be sponsored or company-supplied content")).toBe(true);   // 'appears to be' about the site still counts
+    expect(isHedged("Health Europa is a health publication; this article reads like a sponsored piece.")).toBe(false);
+    expect(isHedged("starting-up.de is a German startup news publication, but this founder interview may be sponsored or part of a paid series")).toBe(false);
+  });
+  it("only an explicit mark makes a page sponsored", () => {
+    expect(hasExplicitSponsorMark("Inventing Patents for You", "Haaretz Labels — In partnership with Rambam MedTech")).toBe(true);
+    expect(hasExplicitSponsorMark("Title", "SPONSORED CONTENT\nBy our partners")).toBe(true);
+    expect(hasExplicitSponsorMark("AIDA Diagnostics: when blood meets AI", "Health Europa reports on a company")).toBe(false);
   });
 });

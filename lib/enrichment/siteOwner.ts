@@ -31,13 +31,18 @@ export function siteBelongsToAnotherCompany(companyName: string, website: string
     let finHost = ""; try { finHost = new URL(fin).hostname; } catch { continue; }
     const got = labelOf(finHost);
     const related = got === asked || got.includes(asked) || asked.includes(got) || (key0.length >= 3 && (got.includes(key0) || key0.includes(got)));
-    if (got && !related) return `acquired / rebranded: ${asked}'s address leads to ${finHost}`;
+    // The company's name (TymeBank Limited) on the page the address leads to: the same company under a new address (owner, 2026-11-15: tymebank.co.za → gotyme.co.za).
+    // Rebranded or acquired is then decided by what the page SAYS about it (step 1 below), not by the move alone.
+    const flatDest = pages.slice(0, 3).map((q) => q.content.replace(/^[\s\S]{0,1600}?Markdown Content:/i, "")).join(" ").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    if (got && !related && !(key0.length >= 4 && flatDest.includes(key0))) return `acquired / rebranded: ${asked}'s address leads to ${finHost}`;
   }
   // 1. The pages say, of this company, that it was acquired / is now part of / was renamed.
   const said = [
     new RegExp(`\\b${nameRe}\\b[^.\\n]{0,80}\\b(?:has been|was|is now|is)\\s+(?:acquired by|part of|a part of|now part of|joined|merged into|renamed|rebranded|now known as|now called)\\s+([A-Z][\\w&.-]*(?:\\s+[A-Z][\\w&.-]*){0,2})`, "i"),
     new RegExp(`\\b${nameRe}\\b[^.\\n]{0,60}\\b(?:is now|has become|has rebranded as|has been renamed)\\s+([A-Z][\\w&.-]*(?:\\s+[A-Z][\\w&.-]*){0,2})`),
     new RegExp(`\\bformerly\\s+(?:known as\\s+)?${nameRe}\\b`, "i"),
+    // The buyer says it: "Deel acquires Hofy", "Deel has acquired Hofy".
+    new RegExp(`\\b[A-Z][\\w&.-]*(?:\\s+[A-Z][\\w&.-]*){0,2}\\s+(?:has\\s+)?(?:acquired|acquires|bought|buys)\\s+${nameRe}\\b`),
     // The other way round: the company's name is another company's new name ("Grammarly is now Superhuman", "(formerly Grammarly)").
     new RegExp(`\\b[A-Z][\\w&.-]*\\s+(?:is now|has (?:rebranded|renamed itself) (?:as|to)|is becoming|became|rebrands? as|has become)\\s+${nameRe}\\b`),
     new RegExp(`\\b${nameRe}\\b\\s*\\((?:formerly|previously|fka|f/k/a)\\s+[A-Z]`, "i"),
@@ -60,4 +65,15 @@ export function siteBelongsToAnotherCompany(companyName: string, website: string
     }
   }
   return null;
+}
+
+
+/** A headline in which the company is the one acquired ("Equifax acquires DataX", "Aerodrome … acquisition of FlyTech", "X is acquired by Y"); not one where it is the buyer or only joins something. */
+export function acquisitionHeadline(title: string, companyName: string): boolean {
+  const nameRe = esc(companyName.trim()).replace(/\s+/g, "\\s+");
+  const asTarget = new RegExp(`\\b(?:acquires?|acquired|acquisition of|buys|bought|to buy|to acquire|merges? with|takes? over)\\b[^.:;]{0,60}\\b${nameRe}\\b|\\b${nameRe}\\b[^.:;]{0,50}\\b(?:acquired by|bought by|sold to|to be acquired|is being acquired)\\b`, "i");
+  if (!asTarget.test(title)) return false;
+  // "Acme acquires Foo" with Acme as the company: it is the buyer.
+  const asBuyer = new RegExp(`^\\W*${nameRe}\\b(?!\\s+(?:is|was|has been|being|to be|will be|gets|got)\\b)[^.:;]{0,15}\\b(?:acquires?|acquired|buys|bought|to buy|to acquire)\\b`, "i");
+  return !asBuyer.test(title);
 }

@@ -34,7 +34,14 @@ describe("an article about a namesake (batch 4 dry run)", () => {
   });
   it("drops 'unclear' when the profile has nothing to compare against, keeps it when it has", () => {
     expect(keepArticle({ verdict: "unclear" }, { name: "X", website: null, countryHint: null, about: "" })).toBe(false);
+    expect(keepArticle({ verdict: "unclear" }, datax)).toBe(false);          // a country alone is not a description
     expect(keepArticle({ verdict: "unclear" }, marvel)).toBe(true);
+  });
+  it("DataX (datax.co.jp, no description): 'this company' still needs the article to name its address or its country", () => {
+    expect(keepArticle({ verdict: "this_company" }, datax, "Equifax Acquires DataX to Expand Credit Access for Consumers — Atlanta and London")).toBe(false);
+    expect(keepArticle({ verdict: "this_company" }, datax, "DataX Japan opens an office in Tokyo, Japan")).toBe(true);
+    expect(keepArticle({ verdict: "this_company" }, datax, "see https://www.datax.co.jp/news")).toBe(true);
+    expect(keepArticle({ verdict: "this_company" }, marvel, "Marvel's iPhone App Turns Sketches Into Prototypes")).toBe(true);   // a description to compare with
   });
   it("drops the article when the check itself fails and nothing is known about the company", async () => {
     const r = await judgeArticleEntity(async () => { throw new Error("api"); }, { name: "X", website: null, countryHint: null, about: "" }, { title: "t", url: "https://x.com", text: "" });

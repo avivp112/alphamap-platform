@@ -457,6 +457,8 @@ const JINA_TIMEOUT_MS = 15_000;
 import { promptText, htmlToText } from "./pageText.ts";
 const MAX_WEBSITE_CHARS = Number(process.env.WEB_PAGE_PROMPT_CHARS ?? 6_000);   // what the model gets of a page; the verifier reads the whole page (up to MAX_PAGE_STORED)
 const MAX_PAGE_STORED = 120_000;
+/** Why the last read failed, set by each step (readPage names every step of the chain when all fail). */
+let lastFailure = "";
 const DUMMY_WEBSITE_CHARS = 0; // spec stage 2: "cap content per page (for example 6,000 characters)" -- raised from v1's 3,000 now that each page is its own labeled [W#] source rather than one slot in a single shared context budget
 
 // Set on an HTTP 402/401 from Jina (out of credit / bad key): later pages go
@@ -487,16 +489,19 @@ async function fetchViaJinaReader(url: string, state: SearchProviderState): Prom
       return null;
     }
     if (!res.ok) {
+      lastFailure = `HTTP ${res.status}`;
       console.warn(`    ⚠️  Jina Reader HTTP ${res.status} for ${url} — Serper may read it instead.`);
       return null;
     }
     const text = (await res.text()).trim();
     if (!text) {
+      lastFailure = "empty page";
       console.warn(`    ⚠️  Jina Reader returned empty content for ${url} — Serper may read it instead.`);
       return null;
     }
     return text;
   } catch (err) {
+    lastFailure = describeFetchError(err);
     console.warn(`    ⚠️  Jina Reader threw for ${url}: ${describeFetchError(err)} — Serper may read it instead.`);
     return null;
   }
@@ -560,6 +565,7 @@ async function fetchViaSerperScrape(url: string, state: SearchProviderState): Pr
       body: JSON.stringify({ url, includeMarkdown: true }),
     }).finally(() => clearTimeout(timer));
     if (!res.ok) {
+      lastFailure = `HTTP ${res.status}`;
       console.warn(`    ⚠️  Serper scrape HTTP ${res.status} for ${url}`);
       return null;
     }
@@ -567,6 +573,7 @@ async function fetchViaSerperScrape(url: string, state: SearchProviderState): Pr
     if (text) state.serperScrapeCount = (state.serperScrapeCount ?? 0) + 1;
     return text;
   } catch (err) {
+    lastFailure = describeFetchError(err);
     console.warn(`    ⚠️  Serper scrape threw for ${url}: ${describeFetchError(err)}`);
     return null;
   }
@@ -579,9 +586,12 @@ async function fetchDirect(url: string, ms = 10_000): Promise<string | null> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), ms);
     const res = await fetch(url, { signal: controller.signal, redirect: "follow", headers: { "user-agent": "Mozilla/5.0 (compatible; AlphaMapBot)", accept: "text/html,application/xhtml+xml" } }).finally(() => clearTimeout(timer));
-    if (!res.ok || !/html|text/.test(res.headers.get("content-type") ?? "")) return null;
-    return htmlToText(await res.text()) || null;
-  } catch { return null; }
+    if (!res.ok) { lastFailure = `HTTP ${res.status}`; return null; }
+    if (!/html|text/.test(res.headers.get("content-type") ?? "")) { lastFailure = `not a web page (${res.headers.get("content-type") ?? "no type"})`; return null; }
+    const text = htmlToText(await res.text());
+    if (!text) lastFailure = "empty page";
+    return text || null;
+  } catch (e) { lastFailure = describeFetchError(e); return null; }
 }
 
 /** The last snapshot of the page in the Internet Archive, as text (the site down, blocked, or empty to a reader). */
@@ -596,18 +606,28 @@ async function fetchFromArchive(url: string): Promise<string | null> {
  * archived snapshot (owner, 2026-11-15: Aerobotix, Aida, FlyTech and KrillTech could not be read).
  */
 async function readPage(url: string, state: SearchProviderState, fallbacks = false): Promise<{ text: string; provider: Provider } | null> {
+  const trail: string[] = [];
+  const step = (name: string) => { trail.push(`${name} — ${lastFailure || "nothing"}`); lastFailure = ""; };
+  lastFailure = "";
   const viaJina = await fetchViaJinaReader(url, state);
   if (viaJina) return { text: viaJina, provider: "jina" };
+  step("Jina Reader");
   if (componentOn("search_backup")) {
     const viaSerper = await fetchViaSerperScrape(url, state);
     if (viaSerper) return { text: viaSerper, provider: "serper_scrape" };
+    step("Serper scrape");
   }
   // The direct read and the archive only for a site the readers could not read at all (its home page): a missing sub-page of a readable site is just missing.
   if (!fallbacks) return null;
   const direct = await fetchDirect(url);
   if (direct && looksLikeRealContent(direct)) return { text: direct, provider: "cheerio" };
+  if (direct) lastFailure = `only ${direct.length} characters (a shell page or a block page)`;
+  step("direct");
   const archived = await fetchFromArchive(url);
   if (archived && looksLikeRealContent(archived)) { console.log(`    🗄️  ${url} read from the Internet Archive (its last snapshot).`); return { text: archived, provider: "archive" }; }
+  if (!lastFailure) lastFailure = archived ? "snapshot too short" : "no snapshot";
+  step("Internet Archive");
+  console.log(`    📡  ${url} could not be read — ${trail.join("; ")}.`);
   return null;
 }
 
