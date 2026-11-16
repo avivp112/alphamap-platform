@@ -89,6 +89,15 @@ export function injectKnown(collected: CollectedCompany, confirmed: KnownEntry[]
       if (reallyNew.length) { collected.plan.inserts.push(...reallyNew); done.push("round"); }
     }
   }
+  // Offices: "City, Country" as the report shows them.
+  for (const e of confirmed.filter((x) => x.field === "office")) {
+    const [city, ...rest] = e.value.split(",").map((x) => x.trim());
+    if (!city) continue;
+    const list = profile.offices ?? (profile.offices = []);
+    if (list.some((o) => o.city.toLowerCase() === city.toLowerCase())) continue;
+    list.push({ city, ...(rest.length ? { country: rest.join(", ") } : {}), source_id: source(e).source_id, evidence_quote: e.quote || e.value });
+    done.includes("office") || done.push("office");
+  }
   // Lists: one entry per value, added when the run did not find the same one (by address for news, by name for people).
   const samePerson = (a: string, b: string) => a.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() === b.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   const split = (v: string) => { const i = v.indexOf(" — "); return i < 0 ? [v.trim(), ""] as const : [v.slice(0, i).trim(), v.slice(i + 3).trim()] as const; };

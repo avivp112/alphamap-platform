@@ -228,10 +228,34 @@ const HQ_LABEL = /\b(?:head ?quarters?|head office|main office|global office|cor
  * the word. Lines that name a city on the list and carry a street number or
  * a postcode; a regional office's line is not counted.
  */
-export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type" | "content" | "source_id" | "also_urls">): HqStatement[] {
-  // The Contact page — or the page /contact rendered (Soda's /contact is its /about: dry run 2026-11-02).
-  if (s.source_type !== "company_site" || ![s.url, ...(s.also_urls ?? [])].some((u) => /\/contact/i.test(u))) return [];
+const THIRD_PARTY_ADDRESS = /\b(gdpr|eu representative|uk representative|representative in the (?:eu|uk|european union|united kingdom)|data protection officer|dpo\b|registered agent|art(?:icle|\.)?\s*27|vertreter|datenschutzbeauftragte)/i;
+
+/**
+ * The company's seat as an Impressum / imprint states it: "Sitz der Gesellschaft: Berlin" (owner, round 10). That is the headquarters, declared, from the company's own legal page.
+ */
+export function impressumSeat(s: Pick<LabeledSource, "url" | "source_type" | "content" | "source_id" | "also_urls">): HqStatement[] {
+  if (s.source_type !== "company_site" || ![s.url, ...(s.also_urls ?? [])].some((u) => isLegalPageUrl(u))) return [];
   const out: HqStatement[] = [];
+  for (const line of s.content.split(/\n+/)) {
+    if (THIRD_PARTY_ADDRESS.test(line)) continue;
+    const m = line.match(/\b(?:Sitz der Gesellschaft|Gesellschaftssitz|Sitz des Unternehmens|Firmensitz|Registered seat|Siège social)\b\s*[:\-–]?\s*(?:\d{4,5}\s+)?(.{2,60})/i);
+    if (!m) continue;
+    for (const c of m[1].matchAll(CITY_RE)) {
+      const city = title(c[2].toLowerCase());
+      if (!out.some((o) => sameCity(o.city, city))) out.push({ city, quote: line.trim().slice(0, 240), source_id: s.source_id, url: s.url, kind: "company", date: null });
+      break;
+    }
+  }
+  return out;
+}
+
+export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type" | "content" | "source_id" | "also_urls">): HqStatement[] {
+  // Any page of the company's own site — the Contact page, the footer every page repeats, an About page (owner, round 10); a legal page is read apart (impressumSeat) and its
+  // address is an office. A single address anywhere on the site is the headquarters; several are offices (decideHeadquarters).
+  if (s.source_type !== "company_site" || [s.url, ...(s.also_urls ?? [])].some((u) => isLegalPageUrl(u))) return [];
+  const out: HqStatement[] = [];
+  // An EU / UK representative, a data protection officer or a registered agent has an address that is never the company's (GDPR Art. 27 notices in footers).
+  let skipLeft = 0;
   let underOfficeHeading = false;
   // An address marked Headquarters / Head office / HQ — on its own line or under such a heading — is the headquarters even among several (owner, 2026-11-15: Hydrostor).
   let hqMarkLeft = 0;
@@ -239,6 +263,8 @@ export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type
     // Markdown images and links are not addresses: drop images, keep a link's text only
     // ("![Image 4: … return to main Palo Alto Networks site](…)" on Koi's page — 2026-11-02).
     const line = raw.replace(/!\[[^\]]*\]\([^)]*\)/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/https?:\/\/\S+/g, " ").trim();
+    if (THIRD_PARTY_ADDRESS.test(line)) { skipLeft = 2; continue; }
+    if (skipLeft > 0) { skipLeft--; continue; }
     if (OFFICE_HEADING.test(line)) underOfficeHeading = true;
     const marked = HQ_LABEL.test(line);
     if (marked && !ADDRESS_HINT.test(line)) { hqMarkLeft = 3; continue; }   // a heading: the address follows within a few lines

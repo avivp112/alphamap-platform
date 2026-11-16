@@ -65,7 +65,7 @@ import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePerso
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
 import { validateEnrichment, checkNarratives } from "./validation.ts";
-import { hqStatementsIn, decideHeadquarters, statementKind, isLegalPageUrl, articleDate, countryOfCity, contactPageAddresses, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, canonicalCity, type HqStatement } from "./headquarters.ts";
+import { hqStatementsIn, decideHeadquarters, statementKind, isLegalPageUrl, articleDate, countryOfCity, contactPageAddresses, impressumSeat, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, canonicalCity, type HqStatement } from "./headquarters.ts";
 import { profileSourceAllowed, roundSourceStanding, unwrapRedirect, corroboratedInvestors } from "./roundSources.ts";
 import { aboutParagraph, aboutIsOf, factsFromAbout, legalFacts, releasePointsTo, type LegalFacts } from "./companyFacts.ts";
 import { checkFoundingCountry } from "./origin.ts";
@@ -232,6 +232,8 @@ export interface CollectedCompany {
   outcome: "collected";
   /** The company's own site, found by name when the address on file was another business or unreadable (domainResolve.ts): a proposal, never applied. */
   websiteProposal?: { from: string | null; to: string; reason: string };
+  /** What kind of company this was, for the stratified precision sample (owner, round 10). */
+  flags?: { translated: boolean; sources: number; techBorderline: boolean };
   /** Headcount points from registers, plans and archived pages (headcountHistory.ts); each with its source and type. */
   headcountExtra?: import("./headcountHistory.ts").HistoryPoint[];
   profile: ProfileResult;
@@ -1281,9 +1283,10 @@ export async function collectCompany(
   // press of tiers 1–3; press of the last two years that disagrees leaves it
   // empty and both cities become offices (headquarters.ts, owner 2026-11-01).
   {
-    const statements = [...allSources.flatMap((s) => hqStatementsIn(s, row.name)), ...extraStatements.filter((x, i, xs) => xs.findIndex((y) => y.city === x.city && y.source_id === x.source_id) === i)];
+    const statements = [...allSources.flatMap((s) => hqStatementsIn(s, row.name)), ...allSources.flatMap((s) => impressumSeat(s)), ...extraStatements.filter((x, i, xs) => xs.findIndex((y) => y.city === x.city && y.source_id === x.source_id) === i)];
     // One street address on the Contact page is the headquarters (owner, 2026-11-02).
-    const contact = allSources.flatMap((s) => contactPageAddresses(s));
+    // The same city on every page (a footer) is one address.
+    const contact = allSources.flatMap((s) => contactPageAddresses(s)).filter((c, i, a) => a.findIndex((d) => canonicalCity(d.city) === canonicalCity(c.city)) === i);
     if (contact.length === 1 && !statements.some((s) => s.kind === "company")) {
       console.log(`    🏢  The Contact page gives one address — ${contact[0].city}: "${contact[0].quote.slice(0, 120)}"`);
       statements.push(contact[0]);
@@ -1964,6 +1967,11 @@ export async function collectCompany(
   return {
     outcome: "collected",
     ...(websiteProposal ? { websiteProposal } : {}),
+    flags: {
+      translated: allSources.some((x) => x.translation_offset != null),
+      sources: allSources.length,
+      techBorderline: !!techGateVerdict && (techGateVerdict.confidence !== "high" || techGateVerdict.is_tech_company === false || (profile as { tech_decision?: string }).tech_decision === "cannot_tell"),
+    },
     profile, funding, market, allSources, sourceById, sourceTypeFor, sourceUrlFor,
     linkedinFounders, linkedinLeaders, existingRefs, validation, plan,
     cityConfidence, countryConfidence, domain, verifiedFacts, patentsFromRegister, roundHints, confirmedHints, unlistedDomains,

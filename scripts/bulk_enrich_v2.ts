@@ -61,7 +61,7 @@ import { websiteDomain, type DomainOwner } from "../lib/enrichment/websiteValida
 
 import { assertEnrichmentWritesAllowed, PILOT_FIELDS } from "../lib/enrichment/writeGate.ts";
 import { openFieldNames } from "../lib/enrichment/fieldReview.ts";
-import { writeFileSync, mkdirSync, readdirSync } from "fs";
+import { writeFileSync, mkdirSync, readdirSync, readFileSync } from "fs";
 import { rejectedDomains, rejectedDomainsCsv } from "../lib/enrichment/rejectedDomains.ts";
 import { wrapAnthropic, installHttpRecorder, quietOffline, installFetchTimeout, recorderSummary, replayMode } from "../lib/enrichment/recorder.ts";
 import { installCompanyLog, installLineTap, gathered, withCompany, companyLines } from "../lib/enrichment/companyLog.ts";
@@ -331,6 +331,17 @@ async function enrichCompany(
     summary.tally[collected.outcome]++;
     notEnrich(row, collected.outcome, (collected as { reason?: string }).reason, (collected as { detail?: string }).detail);
     return;
+  }
+
+  // What kind of company this was, kept for the stratified sample of the precision check (scripts/report_lint.ts).
+  {
+    const bare = row.name.toLowerCase().replace(/\b(inc|ltd|llc|gmbh|corp|co)\b\.?/g, "").trim();
+    const generic = !/\s/.test(bare) && /^[\p{L}]{3,8}$/u.test(bare);
+    let all: Record<string, { generic: boolean; translated: boolean; sources: number; techBorderline: boolean }> = {};
+    try { all = JSON.parse(readFileSync("cache/company_flags.json", "utf8")); } catch { /* first run */ }
+    const f = (collected as { flags?: { translated: boolean; sources: number; techBorderline: boolean } }).flags;
+    all[row.name] = { generic, translated: !!f?.translated, sources: f?.sources ?? 0, techBorderline: !!f?.techBorderline };
+    try { mkdirSync("cache", { recursive: true }); writeFileSync("cache/company_flags.json", JSON.stringify(all, null, 1)); } catch { /* a convenience */ }
   }
 
   // The memory of verified sources first (dry and wet alike): a verified value whose quote is still on its page, and that this run did not find, enters the

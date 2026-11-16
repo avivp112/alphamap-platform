@@ -93,8 +93,9 @@ describe("the headquarters (owner, 2026-11-01): the company's declaration, else 
     expect(contactPageAddresses(page("Get in touch\nKETS Quantum Security\nUnit DX, St Philips Central, Bristol BS2 0QR\nhello@kets-quantum.com")))
       .toMatchObject([{ city: "Bristol", kind: "company" }]);
     expect(contactPageAddresses(page("Offices\n1674 Broadway, New York, NY 10019\nHamasger 34, Tel Aviv"))).toHaveLength(2);
-    // Not the Contact page, or no street on the line.
-    expect(contactPageAddresses(page("Unit DX, Bristol BS2 0QR", "https://kets-quantum.com/about"))).toEqual([]);
+    // Any page of the company's own site (the footer, an About page — owner, round 10), but a legal page is read apart; no street on the line is no address.
+    expect(contactPageAddresses(page("Unit DX, Bristol BS2 0QR", "https://kets-quantum.com/about"))).toMatchObject([{ city: "Bristol" }]);
+    expect(contactPageAddresses(page("Unit DX, Bristol BS2 0QR", "https://kets-quantum.com/imprint"))).toEqual([]);
     expect(contactPageAddresses(page("We work with teams in Bristol and beyond."))).toEqual([]);
   });
   it("Bangalore and Bengaluru are one city — no 'conflict' between them (Unacademy, field review run 1)", () => {
@@ -192,5 +193,19 @@ describe("every form of the city before the company (owner, round 10)", () => {
   it("is not fooled by 'based on' or another company's headquarters", () => {
     expect(city("Sydney based on a model, Pet Circle sells food.", "Pet Circle")).toEqual([]);
     expect(city("Pet Circle partnered with Sydney headquartered Acme Corp.", "Pet Circle")).toEqual([]);
+  });
+});
+
+
+import { impressumSeat } from "./headquarters";
+describe("Impressum seat and third-party addresses (owner, round 10)", () => {
+  const page = (content: string, url: string) => ({ url, content, source_type: "company_site" as const, source_id: "W9" });
+  it("'Sitz der Gesellschaft' on the Impressum is the headquarters, declared", () => {
+    expect(impressumSeat(page("Acme GmbH\nSitz der Gesellschaft: Berlin\nHRB 12345", "https://acme.de/impressum"))).toMatchObject([{ city: "Berlin", kind: "company" }]);
+    expect(impressumSeat(page("Sitz der Gesellschaft: Berlin", "https://acme.de/about"))).toEqual([]);
+  });
+  it("an EU representative, a data protection officer or a registered agent is never the company's address", () => {
+    const text = "EU Representative\nExample Rep Ltd, 12 Rue de la Paix, Paris 75002\nContact\nUnit 4, 10 High Street, Bristol BS1 1AA";
+    expect(contactPageAddresses(page(text, "https://acme.com/contact")).map((a) => a.city)).toEqual(["Bristol"]);
   });
 });
