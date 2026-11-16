@@ -247,3 +247,33 @@ describe("one entry per person (owner, round 10)", () => {
     expect(r[0].role).toBe("CEO · Co-founder");
   });
 });
+
+import { foundersFromCards, foundersFromMentions, groundFounders, hasFounderWord } from "./people";
+describe("founders from titles, in any language (owner, round 10)", () => {
+  it("a full name beside Founder / Co-founder, in the owner's languages", () => {
+    const page = ["## Equipe", "Vitor Asseituno", "Cofundador e CEO", "", "Marcin Pióro, Współzałożyciel i CEO", "", "Przemysław Skokowski", "Założyciel", "", "Mike Frizell", "Co-Founder & CEO", "", "Rafał Chojecki — CEO, co-founder", "", "Jean Dupont — Co-fondateur", "Hans Müller, Gründer", "Marco Rossi — Cofondatore"].join("\n");
+    const got = foundersFromCards(page, "Acme").map((f) => f.name);
+    expect(got).toEqual(["Vitor Asseituno", "Marcin Pióro", "Przemysław Skokowski", "Mike Frizell", "Rafał Chojecki", "Jean Dupont", "Hans Müller", "Marco Rossi"]);
+    expect(foundersFromCards(page, "Acme")[0].quote).toContain("Cofundador");
+  });
+  it("not: another company's founder, founding engineer/member/team/partner, founder's office, a single name", () => {
+    const page = ["Ann Lee — Founder of Globex", "Bob Roy", "Founding engineer", "Cy Dee, Founding member", "Di Ray", "Founding partner", "Ed Fox — Founder's office", "Peter", "Co-founder"].join("\n");
+    expect(foundersFromCards(page, "Acme")).toEqual([]);
+    expect(hasFounderWord("Founding team")).toBe(false);
+    expect(hasFounderWord("Co-Founder & CEO")).toBe(true);
+    expect(hasFounderWord("مؤسس مشارك")).toBe(true);
+    expect(hasFounderWord("共同創業者")).toBe(true);
+    expect(hasFounderWord("מייסד שותף")).toBe(true);
+  });
+  it("'<Name>, founder of <this company>' in an article; of another company is a background, not a founder", () => {
+    expect(foundersFromMentions("Said Ann Lee, founder of Acme, in a statement on Tuesday.", "Acme").map((f) => f.name)).toEqual(["Ann Lee"]);
+    expect(foundersFromMentions("Said Ann Lee, founder of Globex, in a statement.", "Acme")).toEqual([]);
+  });
+  it("groundFounders keeps a model-proposed founder shown with the title on the company's own page, with the quote", () => {
+    const own = { url: "https://sami.com.br/equipe", content: "Equipe\nVitor Asseituno\nCofundador e CEO", source_type: "company_site" };
+    const r = groundFounders([{ name: "Vitor Asseituno" }, { name: "Ghost Person" }], [own], "Sami", []);
+    expect(r.kept.map((k) => k.name)).toEqual(["Vitor Asseituno"]);
+    expect(r.kept[0].grounded_quote).toContain("Cofundador");
+    expect(r.dropped.map((d) => d.name)).toEqual(["Ghost Person"]);
+  });
+});

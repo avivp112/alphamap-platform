@@ -58,7 +58,7 @@ import {
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
 import { pickArticlesToRead } from "./articles.ts";
 import { runTechGate, shouldSkipAsNonTech, techDecision, type TechGateVerdict } from "./techGate.ts";
-import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, supportedRoleSubset, personCardsInHtml, bioFromCard, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
+import { foundersFromText, foundersFromCards, foundersFromMentions, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, supportedRoleSubset, personCardsInHtml, bioFromCard, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
 import { componentOn } from "./components.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
@@ -869,7 +869,22 @@ export async function collectCompany(
         textFounders.push(`${f.name} [${src.source_id}]`);
       }
     }
-    if (textFounders.length > 0) console.log(`    👥  Founders from "founded by" sentences: ${textFounders.join(", ")}`);
+    // A full name shown with the title Founder / Co-founder (in any language) on the company's own team or about page, or "<Name>, founder of <this company>" in an allowed article
+    // (owner, round 10). "Founder of <another company>", "Founding engineer / member / team / partner" and "Founder's office" are not founders.
+    for (const src of allSources) {
+      if (!statementKind(src) || !profileSourceAllowed(src, row.name)) continue;
+      const text = `${src.title ?? ""}\n${src.content}`;
+      const found = [...(src.source_type === "company_site" ? foundersFromCards(text, row.name) : []), ...foundersFromMentions(text, row.name)];
+      for (const raw of found) {
+        const f = { ...raw, name: stripHonorific(raw.name) };
+        if (!f.name.includes(" ")) continue;
+        const founders = profile.profile.founders ?? [];
+        if (founders.some((x) => x?.name && samePersonName(x.name, f.name))) continue;
+        profile.profile.founders = [...founders, { name: f.name, title: f.title }];
+        textFounders.push(`${f.name} [${src.source_id}] "${f.quote.replace(/\s+/g, " ").slice(0, 80)}"`);
+      }
+    }
+    if (textFounders.length > 0) console.log(`    👥  Founders from "founded by" sentences and from titles: ${textFounders.join(", ")}`);
   } else {
     const textOnly = founderNamesNotExtracted(profile.profile.founders ?? [], allSources, row.name);
     if (textOnly.length > 0) console.log(`    👥  Named as founder in a sentence but not extracted with evidence — not added: ${textOnly.join(", ")}`);

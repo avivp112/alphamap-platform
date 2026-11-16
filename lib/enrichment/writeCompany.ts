@@ -721,8 +721,8 @@ export async function writeCollected(
         for (const n of newOf<{ url?: string; title: string; published_date?: string | null }>(patch.news, rowOf.news, (a, b) => a.url === b.url)) one("news", `${n.published_date || "no date"} — ${n.title}`, n.url ?? null);
       } else if (k === "founders") {
         for (const f of newOf<{ name: string; title?: string | null; bio?: string | null }>(patch.founders, rowOf.founders, (a, b) => samePersonName(a.name ?? "", b.name))) {
-          const grounded = (profile.profile.founders ?? []).find((g) => samePersonName(g.name, f.name)) as { grounded_url?: string | null } | undefined;
-          one("founder", `${f.name}${f.title ? ` — ${f.title}` : ""}`, grounded?.grounded_url ?? null);
+          const grounded = (profile.profile.founders ?? []).find((g) => samePersonName(g.name, f.name)) as { grounded_url?: string | null; grounded_quote?: string } | undefined;
+          one("founder", `${f.name}${f.title ? ` — ${f.title}` : ""}`, grounded?.grounded_url ?? null, grounded?.grounded_quote ?? null);
           if (f.bio) one("founder_bio", `${f.name}: ${f.bio}`, grounded?.grounded_url ?? null);
         }
         for (const f of (patch.founders ?? []) as Array<{ name: string; background?: Array<{ kind: string; organization: string; role?: string; source_id: string; evidence_quote: string }> }>) {
