@@ -8,6 +8,9 @@ export type Check =
   | { id: string; why: string; kind: "present"; company: string; field: string; match: string }
   | { id: string; why: string; kind: "max_count"; company: string; field: string; match: string; max: number }
   | { id: string; why: string; kind: "not_enriched"; company: string }
+  | { id: string; why: string; kind: "no_duplicates"; field: string }
+  | { id: string; why: string; kind: "no_url_quote" }
+  | { id: string; why: string; kind: "present_quote"; company: string; field: string; match: string }
   | { id: string; why: string; kind: "news_dates_before_run" }
   | { id: string; why: string; kind: "tags_include"; company: string; include: string; not_only?: string };
 export interface Result { id: string; why: string; pass: boolean; detail: string }
@@ -53,6 +56,20 @@ export function runAcceptance(checks: Check[], rows: Row[], notEnriched: string[
       case "max_count": {
         const n = of(c).filter((r) => re(c.match).test(r.after)).length;
         return { ...base, pass: n <= c.max, detail: `${n} row(s), at most ${c.max}` };
+      }
+      case "no_duplicates": {
+        const seen = new Map<string, number>();
+        for (const r of rows.filter((x) => x.field === c.field)) { const k = `${fold(r.company)}|${r.after.toLowerCase().replace(/\s+/g, " ").replace(/\s*·\s*lead\s+.*$/, "").trim()}`; seen.set(k, (seen.get(k) ?? 0) + 1); }
+        const dup = [...seen].filter(([, n]) => n > 1);
+        return { ...base, pass: dup.length === 0, detail: dup.length ? `twice: ${dup.slice(0, 3).map(([k]) => k.slice(0, 60)).join(" | ")}` : "no duplicates" };
+      }
+      case "no_url_quote": {
+        const bad = rows.filter((r) => { const t = r.quote.trim(); return !!t && (/^https?:\/\//i.test(t) || (!/\s/.test(t) && /[a-z0-9]+(?:-[a-z0-9]+){3,}/i.test(t))); });
+        return { ...base, pass: bad.length === 0, detail: bad.length ? `${bad.length} quote(s) are addresses: ${bad.slice(0, 2).map((r) => `${r.company} ${r.field}`).join(" | ")}` : "no quote is an address" };
+      }
+      case "present_quote": {
+        const hits = of(c).filter((r) => re(c.match).test(r.quote));
+        return { ...base, pass: hits.length > 0, detail: hits.length ? `quote: ${hits[0].quote.slice(0, 80)}` : `no ${c.field} row of ${c.company} has a quote matching /${c.match}/` };
       }
       case "not_enriched": {
         const listed = notEnriched.some((x) => same(x, c.company)), has = rows.some((r) => same(r.company, c.company));

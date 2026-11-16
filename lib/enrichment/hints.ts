@@ -176,12 +176,14 @@ export function recoverMissingAmount(round: V2Round, sources: LabeledSource[], c
   }
   const distinct: typeof found = [];
   for (const c of found) if (!distinct.some((d) => Math.abs(d.amount - c.amount) / c.amount < 0.01)) distinct.push(c);
-  // Nothing in the text, but the announcement's own address states one sum beside a raise verb: that sum, with the address as its quote.
+  // Nothing in the sentences, but the announcement's own address states one sum beside a raise verb: that sum — with the headline of the page as its quote
+  // (never the address: owner, round 10). No headline that carries the sum, no recovery.
   if (distinct.length === 0) {
     for (const src of cited.values()) {
       if (!canConfirm(src, round.lead_investor?.value)) continue;
       const a = amountFromAddress(src.url);
-      if (a && (!stage || stage.test(a.slug.replace(/-/g, " ")))) return { kind: "recovered", amount: a.amount, source_id: src.source_id, quote: a.slug };
+      const title = (src.title ?? "").trim();
+      if (a && title && extractNumbersFromText(title).some((n) => Math.abs(n - a.amount) / a.amount < 0.01) && (!stage || stage.test(title))) return { kind: "recovered", amount: a.amount, source_id: src.source_id, quote: title };
     }
   }
   if (distinct.length === 1) return { kind: "recovered", amount: distinct[0].amount, source_id: distinct[0].source_id, quote: distinct[0].quote };

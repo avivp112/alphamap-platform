@@ -206,5 +206,40 @@
   "company": "Six Degrees",
   "field": "news",
   "match": "sold to US investors"
+ },
+ {
+  "id": "no_duplicate_rounds",
+  "why": "No company has two identical rounds",
+  "kind": "no_duplicates",
+  "field": "round"
+ },
+ {
+  "id": "no_url_quotes",
+  "why": "No quote is an address or a slug",
+  "kind": "no_url_quote"
+ },
+ {
+  "id": "paradox_series_c_headline",
+  "why": "Paradox Series C quote is the headline of the page",
+  "kind": "present_quote",
+  "company": "Paradox AI",
+  "field": "round",
+  "match": "Raises \\$200M Series C"
+ },
+ {
+  "id": "paradox_acquired",
+  "why": "Paradox AI acquired by Workday, 2025-10-01 (from the accepted news)",
+  "kind": "present",
+  "company": "Paradox AI",
+  "field": "acquired",
+  "match": "Workday.*2025-10"
+ },
+ {
+  "id": "medipass_brand",
+  "why": "Medipass brand after the acquisition is written as the page writes it",
+  "kind": "present",
+  "company": "Medipass",
+  "field": "brand_after_acquisition",
+  "match": "Tyro Health"
  }
 ]

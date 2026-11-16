@@ -54,7 +54,7 @@ import { createSearchProviderState, jinaDisabled, readPageCached, type SearchPro
 import { techOverride } from "../lib/enrichment/techOverrides.ts";
 import { classifyDescription, mainTag } from "../lib/enrichment/postClassify.ts";
 import { acceptanceReport } from "./acceptance_check.ts";
-import { rowProblem, applyRowRules, acquiredFromNews } from "../lib/enrichment/rowRules.ts";
+import { rowProblem, applyRowRules, acquiredFromNews, brandAsWritten } from "../lib/enrichment/rowRules.ts";
 import { loadKnown, saveKnown, remember, applyKnown, markKey, NOT_REMEMBERED, KNOWN_PATH, type KnownStore, type KnownEntry } from "../lib/enrichment/knownSources.ts";
 import { injectKnown } from "../lib/enrichment/knownInject.ts";
 import { readMarks } from "../lib/enrichment/fieldReview.ts";
@@ -400,7 +400,7 @@ async function enrichCompany(
         // A rename after a purchase is a purchase: the new name is the brand after the acquisition, not a name proposal.
         for (const r of companyRows.filter((x) => x.field === "name_proposal")) {
           const to = r.after.match(/name = "([^"]+)"/)?.[1];
-          if (to) companyRows.push({ ...r, field: "brand_after_acquisition", after: `brand after the acquisition: ${to}` } as (typeof companyRows)[number]);
+          if (to) companyRows.push({ ...r, field: "brand_after_acquisition", after: `brand after the acquisition: ${brandAsWritten(to, companyRows.flatMap((x) => [x.after, x.quote ?? ""]))}` } as (typeof companyRows)[number]);
         }
         companyRows = companyRows.filter((x) => x.field !== "name_proposal");
       }
