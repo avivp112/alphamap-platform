@@ -102,7 +102,7 @@ export function dateByPrecision(date: string | null | undefined, precision: "day
   return date;
 }
 
-export interface PilotChange { field: string; before: unknown; after: unknown; source_url: string | null; quote: string | null }
+export interface PilotChange { field: string; before: unknown; after: unknown; source_url: string | null; quote: string | null; /** The structured value behind a report line, kept in the memory of verified sources (a round). */ payload?: unknown }
 
 /** The run totals Stage 10 adds to (the bulk run's RunSummary has these). */
 export interface WriteSummary {
@@ -768,7 +768,8 @@ export async function writeCollected(
       const amount = r.amount_raised == null ? "amount not disclosed" : `$${+(r.amount_raised / 1e6).toFixed(1)}M`;
       // The quote that states the amount, so the report (and report_lint) can see the figure and its unit in the source's own words (owner, round 10: Hydrostor "$25M" against "$250 million").
       const amountEvidence = roundFieldEvidence(r as never, funding.funding_rounds).find((e) => e.field === "amount_raised");
-      reportLines.push({ field: "round", before: null, after: `${r.round_type} ${amount} · ${dateByPrecision(r.announcement_date, r.announcement_date_precision)}${r.lead_investor ? ` · lead ${r.lead_investor}` : ""}`, source_url: r.source_url ?? null, quote: amountEvidence?.evidence_quote ?? null });
+      reportLines.push({ field: "round", before: null, after: `${r.round_type} ${amount} · ${dateByPrecision(r.announcement_date, r.announcement_date_precision)}${r.lead_investor ? ` · lead ${r.lead_investor}` : ""}`, source_url: r.source_url ?? null, quote: amountEvidence?.evidence_quote ?? null,
+        payload: { round: r, evidence: roundFieldEvidence(r as never, funding.funding_rounds).map((e) => ({ field: e.field, value: e.value, source_url: sourceById.get(e.source_id)?.url ?? null, quote: e.evidence_quote })) } });
     }
     const renamedTo = (profile.profile as { rebrand_to?: string }).rebrand_to;
     if (renamedTo) reportLines.push({ field: "name_proposal", before: row.name, after: `name = "${renamedTo}", former_names += "${row.name}" — the same company renamed; for review, not applied`, source_url: row.website ? (/^https?:/.test(row.website) ? row.website : `https://${row.website}`) : null, quote: null });

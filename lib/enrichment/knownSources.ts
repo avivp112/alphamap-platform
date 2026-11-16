@@ -16,9 +16,11 @@ export interface KnownEntry {
   company_id: string; company: string; field: string; value: string;
   source_url: string; quote: string; verified_at: string; run_id: string;
   status?: "ok" | "stale_check_failed" | "quote_gone";
+  /** The structured value (JSON) behind the line, when the write stage needs one (a round). */
+  payload?: string;
 }
 export type KnownStore = Record<string, KnownEntry[]>;     // company_id → entries
-export interface ReportRow { company_id: string; company: string; field: string; before: string; after: string; source_url: string; quote: string; origin?: string }
+export interface ReportRow { company_id: string; company: string; field: string; before: string; after: string; source_url: string; quote: string; origin?: string; payload?: string }
 
 export const VOLATILE_FIELDS = new Set(["leader", "headcount_history", "employee_count", "employee_range", "hq_city", "hq_country", "office", "news", "round", "acquired"]);
 /** Fields with one value: a locked (marked correct) value is kept against a different new one. */
@@ -54,10 +56,10 @@ export function remember(store: KnownStore, rows: ReportRow[], runId: string, to
     if (isWrong(r.company, r.field, r.after)) continue;                             // marked wrong: never remembered
     const list = store[r.company_id] ?? (store[r.company_id] = []);
     const same = list.find((e) => e.field === r.field && fold(e.value) === fold(r.after));
-    if (same) { Object.assign(same, { source_url: r.source_url, quote: r.quote || same.quote, verified_at: today, run_id: runId, status: "ok" as const }); continue; }
+    if (same) { Object.assign(same, { source_url: r.source_url, quote: r.quote || same.quote, verified_at: today, run_id: runId, status: "ok" as const, ...(r.payload ? { payload: r.payload } : {}) }); continue; }
     // A single-valued field has one value: the newer replaces the older one.
     if (SINGLE_FIELDS.has(r.field)) for (let i = list.length - 1; i >= 0; i--) if (family(list[i].field) === family(r.field)) list.splice(i, 1);
-    list.push({ company_id: r.company_id, company: r.company, field: r.field, value: r.after, source_url: r.source_url, quote: r.quote, verified_at: today, run_id: runId, status: "ok" });
+    list.push({ company_id: r.company_id, company: r.company, field: r.field, value: r.after, source_url: r.source_url, quote: r.quote, verified_at: today, run_id: runId, status: "ok", ...(r.payload ? { payload: r.payload } : {}) });
     added++;
   }
   return added;
@@ -106,7 +108,7 @@ export async function applyKnown(
       for (let i = out.length - 1; i >= 0; i--) if (family(out[i].field) === family(e.field)) out.splice(i, 1);
       lockedKept.push(`${e.field}: ${e.value.slice(0, 40)}`);
     }
-    const row: ReportRow = { company_id: e.company_id, company: e.company, field: e.field, before: "", after: e.value, source_url: e.source_url, quote: e.quote, origin: check === "confirmed" ? "known_source" : "known_source_stale_check_failed" };
+    const row: ReportRow = { company_id: e.company_id, company: e.company, field: e.field, before: "", after: e.value, source_url: e.source_url, quote: e.quote, origin: check === "confirmed" ? "known_source" : "known_source_stale_check_failed", ...(e.payload ? { payload: e.payload } : {}) };
     out.push(row); carried.push(row); fromMemory.add(e.field);
   }
   const fromSearch = [...new Set(real.map((r) => r.field))].filter((f) => !fromMemory.has(f) || real.some((r) => r.field === f));

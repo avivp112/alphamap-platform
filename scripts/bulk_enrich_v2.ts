@@ -336,7 +336,7 @@ async function enrichCompany(
   // collected company with its source, so the write stage gates, fills and records it like a found value (lib/enrichment/knownInject.ts).
   if (KNOWN_ON) {
     const carry = await applyKnown(knownStore, row.id, [], RUN_DATE, readKnownPage, lockedMarks);
-    const confirmed: KnownEntry[] = carry.carried.filter((r) => r.origin === "known_source").map((r) => ({ company_id: r.company_id, company: r.company, field: r.field, value: r.after, source_url: r.source_url, quote: r.quote, verified_at: RUN_DATE, run_id: "memory" }));
+    const confirmed: KnownEntry[] = carry.carried.filter((r) => r.origin === "known_source").map((r) => ({ company_id: r.company_id, company: r.company, field: r.field, value: r.after, source_url: r.source_url, quote: r.quote, verified_at: RUN_DATE, run_id: "memory", ...(r.payload ? { payload: r.payload } : {}) }));
     let host: string | null = null; try { host = row.website ? new URL(/^https?:/.test(row.website) ? row.website : `https://${row.website}`).hostname.replace(/^www\./, "") : null; } catch { /* no site */ }
     const injected = injectKnown(collected, confirmed, host);
     console.log(`    🧠  From the memory into the write stage: ${injected.length ? injected.join(", ") : "nothing (this run found the fields, or the memory has none)"}${carry.recheck.length ? ` · back to review (quote gone): ${carry.recheck.join(" | ")}` : ""}`);
@@ -348,7 +348,7 @@ async function enrichCompany(
     taxonomy, startupByDomain, seen: PILOT ? null : seen, runId,
     openFields: OPEN_FIELDS, pilot: PILOT,
   }, summary);
-  let companyRows = (outcome?.pilot ?? []).map((c) => ({ company_id: row.id, company: row.name, field: c.field, before: c.before == null ? "" : String(c.before), after: String(c.after), source_url: c.source_url ?? "", quote: c.quote ?? "", origin: "new" }));
+  let companyRows = (outcome?.pilot ?? []).map((c) => ({ company_id: row.id, company: row.name, field: c.field, before: c.before == null ? "" : String(c.before), after: String(c.after), source_url: c.source_url ?? "", quote: c.quote ?? "", origin: "new", ...(c.payload ? { payload: JSON.stringify(c.payload) } : {}) }));
   if (KNOWN_ON) {
     // A value the owner marked wrong does not come back in the report, however it was found again.
     const back = companyRows.filter((r) => ownerWrong(r.company, r.field, r.after));
