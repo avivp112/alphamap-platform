@@ -192,9 +192,14 @@ console.log(`\n${errors.length} error(s), ${warnings.length} warning(s).`);
     const pi = (n: string) => ph.indexOf(n);
     const prev = new Set(pb.filter((r) => r[pi("field")] !== "(nothing)").map((r) => `${r[pi("company")]}|${r[pi("field")]}`));
     const now = new Set(rows.map((r) => `${r.company}|${r.field}`));
-    const lost = [...prev].filter((k) => !now.has(k)).length;
-    const lostPct = prev.size ? Math.round((1000 * lost) / prev.size) / 10 : 0;
-    console.log(`  ${lostPct < 5 ? "✅" : "❌"} stability: ${lost} of ${prev.size} field(s) of ${prevPath} are gone (${lostPct}%, target <5%)`);
+    // A company the run no longer enriches (a rule turned it away: not technology, domain unresolved) is not a lost value; it is listed apart.
+    const companiesNow = new Set(rows.map((r) => r.company));
+    const gone = [...prev].filter((k) => !companiesNow.has(k.split("|")[0]));
+    const comparable = new Set([...prev].filter((k) => companiesNow.has(k.split("|")[0])));
+    const lost = [...comparable].filter((k) => !now.has(k)).length;
+    if (gone.length) console.log(`  ℹ️  ${gone.length} field(s) of ${new Set(gone.map((k) => k.split("|")[0])).size} compan(ies) that this run no longer enriches are not counted: ${[...new Set(gone.map((k) => k.split("|")[0]))].join(", ")}`);
+    const lostPct = comparable.size ? Math.round((1000 * lost) / comparable.size) / 10 : 0;
+    console.log(`  ${lostPct < 5 ? "✅" : "❌"} stability: ${lost} of ${comparable.size} field(s) of ${prevPath} are gone (${lostPct}%, target <5%)`);
     if (lostPct >= 5) gaps.push(`stability ${lostPct}% lost ≥ 5%`);
   } else console.log("  ➖ stability: not measured (PREV=<earlier report.csv> compares two runs)");
   // A random sample of 40 values for the owner's precision check (target ≥95% correct).
