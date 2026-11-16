@@ -90,3 +90,10 @@ describe("an investor's site is a source only when an allowed source elsewhere n
     expect(roundSourceStanding(gec.url, { investors: inv, headline: gec.title, companyName: "Orq" })).toMatchObject({ kind: "allowed", why: "investor_site" });
   });
 });
+
+describe("bloomberg company profiles are not sources (owner, round 10)", () => {
+  it("a profile page is denied; an article stays tier 2", () => {
+    expect(roundSourceStanding("https://www.bloomberg.com/profile/company/HYDRO:CN")).toMatchObject({ kind: "denied" });
+    expect(roundSourceStanding("https://www.bloomberg.com/news/articles/2024-05-01/hydrostor-raises-200-million")).toMatchObject({ kind: "allowed", tier: 2 });
+  });
+});

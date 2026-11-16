@@ -10,6 +10,7 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 import { roundSourceStanding } from "../lib/enrichment/roundSources.ts";
 import { domainOf } from "../lib/enrichment/rejectedDomains.ts";
 import { acquisitionHeadline } from "../lib/enrichment/siteOwner.ts";
+import { extractNumbersFromText } from "../lib/enrichment/evidence.ts";
 
 function parseCsv(text: string): string[][] {
   const rows: string[][] = []; let row: string[] = [], cur = "", q = false;
@@ -75,6 +76,17 @@ for (const [k, n] of seen) if (n > 1) { const [c, f, a] = k.split("|"); err(c, `
 
 // per company
 for (const [c, rs] of byCompany) {
+  // A round's amount must stand in its quote, with the unit (owner, round 10: "$25M" where the source says "$250 million").
+  for (const r of rs.filter((x) => x.field === "round")) {
+    const m = r.after.match(/\$(\d+(?:\.\d+)?)M\b/);
+    if (!m) continue;
+    const amount = Number(m[1]) * 1e6;
+    if (!r.quote) { warn(c, `round "${r.after.slice(0, 50)}" has no quote to check its amount against`); continue; }
+    const nums = extractNumbersFromText(r.quote);
+    if (nums.some((n) => Math.abs(n - amount) / amount < 0.006)) continue;
+    if (/[€£₹¥]|\b(?:EUR|GBP|INR|CAD|AUD|NIS|ILS|CHF|SEK|C\$|A\$)\b/.test(r.quote)) { warn(c, `round "${r.after.slice(0, 50)}": the quote is in another currency (${r.quote.slice(0, 80)}), amount shown in USD`); continue; }
+    err(c, `round amount $${m[1]}M is not in its quote with its unit: "${r.quote.replace(/\s+/g, " ").slice(0, 160)}"`);
+  }
   const f = (name: string) => rs.filter((r) => r.field === name);
   if (f("sector").length > 1) err(c, `sector appears ${f("sector").length} times`);
   if ((f("description").length || f("description_what_only").length) && !f("sector").length) warn(c, "has a description but no sector");

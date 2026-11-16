@@ -308,6 +308,8 @@ export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean
   if (!host) return { kind: "denied", why: "no_host" };
   if (opts.isCompanySite) return { kind: "allowed", tier: 1, lowConfidence: false, why: "company_site" };
   if (isDataPlatformUrl(url)) return { kind: "denied", why: "data_platform" };
+  // A company profile page on a news site is a data page, not an article (owner, round 10: bloomberg.com/profile/company/…); its articles stay tier 2.
+  if (/(^|\.)bloomberg\.com$/.test(host) && (() => { try { return /^\/(?:profiles?|research\/stocks|quote)(?:\/|$)/i.test(new URL(url.startsWith("http") ? url : `https://${url}`).pathname); } catch { return false; } })()) return { kind: "denied", why: "directory_page" };
   if (onList(host, DENIED_DOMAINS)) return { kind: "denied", why: "denied_domain" };
   if (onList(host, HINT_ONLY_DOMAINS)) return { kind: "denied", why: "hint_only" };
   if (isOwnNewsroom(url, opts.companyName)) return { kind: "allowed", tier: 1, lowConfidence: true, why: "own_newsroom" };

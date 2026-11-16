@@ -31,7 +31,7 @@ import { competitorTierClaims, type TieredClaim } from "./competitorTiers.ts";
 import { websiteLooksLikeAnotherCompany } from "./websiteIdentity.ts";
 import { judgeNews, finishNews } from "./newsGate.ts";
 import { reconcileSector, subSectorUnsupported } from "./sectors.ts";
-import { siteBelongsToAnotherCompany, acquisitionHeadline, rebrandedAs } from "./siteOwner.ts";
+import { siteBelongsToAnotherCompany, acquisitionHeadline, rebrandedAs, redirectBrand } from "./siteOwner.ts";
 import { buildSectorRequest, parseSectorChoice, classifyWithRetry, type SectorChoice } from "./classifySector.ts";
 import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
 import { buildDescriptionRequest, descriptionSources, processDescription, describeAttempt } from "./descriptionBuilder.ts";
@@ -68,7 +68,7 @@ import { namesCompany } from "./headcount.ts";
 import { companiesHouseHeadcount, brregHeadcount, waybackHeadcount, type HeadcountIo } from "./headcountCollect.ts";
 import type { HistoryPoint } from "./headcountHistory.ts";
 import { lookupRegisters, nodeRegisterIo, registerDecides, type RegisterContext, type RegisterFinding } from "./registers.ts";
-import { stripHonorific } from "./people.ts";
+import { stripHonorific, mergeLeadersByPerson } from "./people.ts";
 import { countryFromLocationQuote } from "./location.ts";
 import type { VerifiedFact } from "./narrative.ts";
 import { computeTotalRaised, normalizeRoundType, type RoundLike } from "./rounds.ts";
@@ -388,7 +388,7 @@ export async function collectCompany(
   // A site that belongs to another company now (acquired, rebranded): nothing is described from it (owner, 2026-11-09).
   let siteOwnerIssue = ctx.update ? null : siteBelongsToAnotherCompany(row.name, effectiveWebsite, websitePages);
   // Renamed is not acquired (owner, round 10: TymeBank is GoTyme Bank): the description uses the new name, and the new name is a proposal for the owner.
-  const rebrandedTo = ctx.update || siteOwnerIssue ? null : rebrandedAs(row.name, websitePages);
+  const rebrandedTo = ctx.update || siteOwnerIssue ? null : (rebrandedAs(row.name, websitePages) ?? redirectBrand(row.name, effectiveWebsite, websitePages));
   if (rebrandedTo) console.log(`    🔁  Rebranded: ${row.name} is now "${rebrandedTo}" (the site says so) — described under the new name; name update proposed: name = "${rebrandedTo}", former_names += "${row.name}" (for the owner's review, not applied).`);
   if (siteOwnerIssue) {
     console.log(`    🛠️   ${siteOwnerIssue} — no description or sector is written; listed for review.`);
@@ -1429,10 +1429,15 @@ export async function collectCompany(
     // owner's 2026-11-03 placeholder for a person on the leadership page whose title could not be verified.
     profile.leadership = keptLeaders.filter((l) => {
       if (l.group === "board" || l.role === "Leadership team" || isLeadershipRole(l.role)) return true;
-      console.log(`    🚫  leader ${l.name} not written — "${l.role}" is not on the closed list of leadership roles`);
+      console.log(`    🚫  leader ${l.name} not written — "${l.role}" ${/\b(former|formerly|ex-)\b/i.test(l.role ?? "") ? "is a past role" : "is not on the closed list of leadership roles"}`);
       bump(stats.droppedByReason, "leader_role_not_on_list");
       return false;
     });
+    {
+      const merged = mergeLeadersByPerson(profile.leadership);
+      if (merged.length < profile.leadership.length) console.log(`    👥  ${profile.leadership.length - merged.length} leader entr${profile.leadership.length - merged.length === 1 ? "y" : "ies"} merged by person`);
+      profile.leadership = merged;
+    }
     // The founders' cards on the company's own pages: their biography word for word too.
     if (!ctx.update && componentOn("bios")) {
       for (const f of (profile.profile.founders ?? [])) {
@@ -1700,7 +1705,7 @@ export async function collectCompany(
         const attempt = tool && tool.type === "tool_use" ? describeAttempt(tool.input, row.name, Object.fromEntries(usable.map((x) => [x.source_id, x])), (id) => allowedFact({ source_id: id }), rebrandedTo ? [rebrandedTo] : []) : null;
         const built = attempt?.built ?? null;
         // Every dropped sentence is named, also when no description came of it (owner, 2026-11-14: nine companies without one and nothing in the log).
-        for (const d of attempt?.dropped ?? []) { console.log(`    🚫  description sentence dropped (${d.why}): "${d.text.slice(0, 160)}"`); bump(stats.droppedByReason, `description_${d.why.split(":")[0]}`); }
+        for (const d of attempt?.dropped ?? []) { console.log(`    🚫  description sentence dropped (${d.why}): "${d.text.slice(0, 160)}"${(d as { detail?: string }).detail ? `\n        ↳ checked against: ${(d as { detail?: string }).detail}` : ""}`); bump(stats.droppedByReason, `description_${d.why.split(":")[0]}`); }
         if (built) {
           profile.profile.description = built.description;
           profile.profile.description_source_ids = [...new Set(built.sentences.flatMap((x) => x.source_ids))];

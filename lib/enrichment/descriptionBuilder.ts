@@ -15,7 +15,7 @@ import { bestSentence } from "./quoteFinder.ts";
 
 export type SentenceRole = "what" | "for_whom" | "edge";
 export interface DescriptionSentence { role: SentenceRole; text: string; source_ids: string[]; quote: string }
-export interface BuiltDescription { description: string; sentences: DescriptionSentence[]; dropped: Array<{ text: string; why: string }>; /** false when the sources gave a verified "what" but no verified "for whom" (owner, 2026-11-14: a what-only description is written, marked). */ complete: boolean }
+export interface BuiltDescription { description: string; sentences: DescriptionSentence[]; dropped: Array<{ text: string; why: string; detail?: string }>; /** false when the sources gave a verified "what" but no verified "for whom" (owner, 2026-11-14: a what-only description is written, marked). */ complete: boolean }
 
 /** Words that sell instead of describe. Used alone they say nothing; a sentence with one is rewritten or dropped. */
 export const MARKETING = /\b(leading|leader in|innovative|innovation|revolutionary|revolutionize[sd]?|ai-native|cutting-edge|state-of-the-art|world-class|best-in-class|next-generation|next-gen|game-chang\w+|seamless(ly)?|unparalleled|disruptive|industry-leading|pioneering|transformative|powerful|robust|end-to-end|lowest|highest|best|fastest|first|largest|biggest|smallest|most|top|greatest|unmatched|unrivall?ed|premier|foremost|ultimate|market leader|number one|#1|reinvent\w*|reimagin\w+)\b/i;
@@ -102,6 +102,22 @@ export function sentenceProblem(
   return null;
 }
 
+/**
+ * Why a sentence was refused, shown beside it (owner, round 10: Pink Farms "fragment_no_verb", Rooftop "no_supporting_sentence"): the verb test's view of the sentence, or
+ * the closest sentence of each cited source and how many content words it shares.
+ */
+export function dropDetail(why: string, s: { text: string; source_ids?: string[] }, byId: Record<string, { content: string }>): string | undefined {
+  if (why === "fragment_no_verb") return `no word of the sentence is on the verb list: ${s.text.split(/\s+/).slice(0, 14).join(" ")}…`;
+  if (why === "no_supporting_sentence") {
+    const found = (s.source_ids ?? []).filter((id) => byId[id]).map((id) => {
+      const close = bestSentence(byId[id].content, s.text, 1);
+      return `${id}: ${close ? `closest "${close.replace(/\s+/g, " ").slice(0, 200)}"` : "no sentence shares a content word"}`;
+    });
+    return found.join(" | ") || "no cited source";
+  }
+  return undefined;
+}
+
 /** What came of a description attempt: the description (or none), and every sentence that was dropped with its reason — also when there is no description. */
 export function describeAttempt(
   input: unknown, companyName: string, byId: Record<string, { content: string }>, allowed: (id: string) => boolean, aliases: string[] = [],
@@ -112,7 +128,7 @@ export function describeAttempt(
   const dropped: Array<{ text: string; why: string }> = [];
   for (const s of list as Array<{ role: string; text: string; source_ids: string[] }>) {
     const why = sentenceProblem(s, companyName, byId, allowed, aliases);
-    if (why) dropped.push({ text: s?.text ?? "", why });
+    if (why) dropped.push({ text: s?.text ?? "", why, detail: dropDetail(why, s, byId) });
   }
   return { built: null, dropped, returned: list.map((s) => ({ role: s.role, text: s.text })) };
 }
@@ -125,7 +141,7 @@ export function processDescription(
   const dropped: BuiltDescription["dropped"] = [];
   for (const s of list) {
     const why = sentenceProblem(s, companyName, byId, allowed, aliases);
-    if (why) { dropped.push({ text: s?.text ?? "", why }); continue; }
+    if (why) { dropped.push({ text: s?.text ?? "", why, detail: dropDetail(why, s, byId) }); continue; }
     if (kept.some((k) => k.role === s.role)) { dropped.push({ text: s.text, why: "second_sentence_of_role" }); continue; }
     const quote = s.source_ids.map((id) => bestSentence(byId[id].content, s.text, 3)).find(Boolean) ?? "";
     kept.push({ role: s.role as SentenceRole, text: s.text.trim(), source_ids: s.source_ids, quote });

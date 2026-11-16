@@ -169,3 +169,12 @@ describe("tier-4 trade press only chooses among the site's offices (owner, round
     expect(decideHeadquarters([w("Toronto", "https://theenergymix.com/x", "2026-02-01")], "2026-11-15", [])).toEqual({ kind: "none" });
   });
 });
+
+describe("tier-4 press alone needs two sources (owner, round 10)", () => {
+  const w = (city: string, url: string): HqStatement => ({ city, quote: `${city}-based Hydrostor`, source_id: url, url, kind: "press", date: "2026-02-01", weak: true });
+  it("one trade article is nothing; two naming one city are the headquarters; two cities conflict", () => {
+    expect(decideHeadquarters([w("Toronto", "https://a.com/1")], "2026-11-15", [])).toEqual({ kind: "none" });
+    expect(decideHeadquarters([w("Toronto", "https://a.com/1"), w("Toronto", "https://b.com/2")], "2026-11-15", [])).toMatchObject({ kind: "declared", statement: { city: "Toronto" } });
+    expect(decideHeadquarters([w("Toronto", "https://a.com/1"), w("Calgary", "https://b.com/2")], "2026-11-15", [])).toEqual({ kind: "none" });
+  });
+});

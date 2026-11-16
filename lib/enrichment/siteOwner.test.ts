@@ -74,3 +74,12 @@ describe("renamed is not acquired (owner, round 10: TymeBank → GoTyme Bank)", 
     expect(siteBelongsToAnotherCompany("Acme", "https://acme.com", [{ url: "u", content: "Acme has been acquired by Globex Corporation and is now part of it." }])).toMatch(/acquired/);
   });
 });
+
+import { redirectBrand } from "./siteOwner";
+describe("the brand a registered address leads to (owner, round 10)", () => {
+  it("TymeBank's address leads to GoTyme Bank's site", () => {
+    const pages = [{ url: "https://tymebank.co.za", content: "Title: GoTyme Bank\nURL Source: https://tymebank.co.za\nFinal URL: https://www.gotyme.co.za/\n\nMarkdown Content:\nGoTyme Bank, formerly TymeBank, is a digital bank. Open an account with GoTyme Bank today." }];
+    expect(redirectBrand("TymeBank", "https://tymebank.co.za", pages)).toBe("GoTyme Bank");
+    expect(redirectBrand("Acme", "https://acme.com", [{ url: "u", content: "Final URL: https://acme.com/\n\nMarkdown Content:\nAcme" }])).toBeNull();
+  });
+});

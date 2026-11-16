@@ -1,8 +1,8 @@
 /**
- * lib/enrichment/articleBudget.ts — how many full articles a company's run reads (owner, 2026-11-07: six, not four).
+ * lib/enrichment/articleBudget.ts — how many full articles a company's run reads (owner, 2026-11-07: eight (owner, round 10), earlier six).
  * MAX_ARTICLES sets it; ARTICLES_TO_READ, its older name, still works. Pure.
  */
-export const DEFAULT_MAX_ARTICLES = 6;
+export const DEFAULT_MAX_ARTICLES = 8;
 
 export function maxArticles(env: Record<string, string | undefined> = process.env): number {
   for (const raw of [env.MAX_ARTICLES, env.ARTICLES_TO_READ]) {

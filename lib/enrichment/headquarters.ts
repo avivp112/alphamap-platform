@@ -304,7 +304,14 @@ export function decideHeadquarters(statements: HqStatement[], today = new Date()
     if (cities.length === 1 && sources.size >= 2) return { kind: "declared", statement: named[0] };
   }
   if (siteCities.length >= 2 && !recent.length) return { kind: "site_offices", cities: siteCities };
-  if (!press.length) return { kind: "none" };
+  // Trade press of tier 4 alone: two different sources naming the same city (and no other city) are the headquarters (owner, round 10: Hydrostor → Toronto);
+  // one source is not.
+  if (!press.length) {
+    const fresh = pressWithWeak.filter((st) => !st.date || Date.parse(today) - Date.parse(st.date) <= HQ_MAX_AGE_DAYS * DAY);
+    const cities = fresh.filter((st, i) => fresh.findIndex((o) => sameCity(o.city, st.city)) === i);
+    if (cities.length === 1 && new Set(fresh.map((x) => x.url || x.source_id)).size >= 2) return { kind: "declared", statement: fresh[0] };
+    return { kind: "none" };
+  }
   // Declarations that are all from articles older than eight years are not today's headquarters (owner, 2026-11-10: Chargebee
   // "Chennai-based" in 2014). An undated article is not shown to be old, so it still counts.
   if (press.every((s) => s.date && Date.parse(today) - Date.parse(s.date) > HQ_MAX_AGE_DAYS * DAY)) return { kind: "none" };
