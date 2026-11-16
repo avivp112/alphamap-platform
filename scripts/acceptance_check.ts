@@ -7,17 +7,24 @@
 import { existsSync, readFileSync } from "fs";
 import { rowsFromCsv, parseCsv, runAcceptance, renderAcceptance, type Check } from "../lib/enrichment/acceptance.ts";
 
-export function acceptanceReport(reportPath: string, specPath = "eval/acceptance_batch5.json", today = process.env.TODAY ?? new Date().toISOString().slice(0, 10)): { text: string; failed: number } {
+/** The checks of a batch: the batch-independent ones (eval/acceptance_generic.json) and, when it exists, the batch's own (eval/acceptance_batch<N>.json); an id is checked once. */
+export function specPathsFor(batchNo?: number): string[] {
+  return ["eval/acceptance_generic.json", ...(batchNo ? [`eval/acceptance_batch${batchNo}.json`] : [])].filter((p) => existsSync(p));
+}
+
+export function acceptanceReport(reportPath: string, specPaths: string[] | string = ["eval/acceptance_batch5.json"], today = process.env.TODAY ?? new Date().toISOString().slice(0, 10)): { text: string; failed: number } {
   const rows = rowsFromCsv(readFileSync(reportPath, "utf8"));
   const notEnriched = existsSync("not_enriched.csv") ? parseCsv(readFileSync("not_enriched.csv", "utf8")).slice(1).map((r) => r[0]) : [];
-  const results = runAcceptance(JSON.parse(readFileSync(specPath, "utf8")) as Check[], rows, notEnriched, today);
+  const seen = new Set<string>();
+  const checks = (Array.isArray(specPaths) ? specPaths : [specPaths]).flatMap((p) => JSON.parse(readFileSync(p, "utf8")) as Check[]).filter((c) => !seen.has(c.id) && !!seen.add(c.id));
+  const results = runAcceptance(checks, rows, notEnriched, today);
   return { text: renderAcceptance(results), failed: results.filter((r) => !r.pass && r.severity === "error").length };
 }
 
 if (process.argv[1]?.endsWith("acceptance_check.ts")) {
   const report = process.argv[2] ?? "pilot_report_dry.csv";
   if (!existsSync(report)) { console.error(`no report at ${report}`); process.exit(2); }
-  const { text, failed } = acceptanceReport(report, process.argv[3]);
+  const { text, failed } = acceptanceReport(report, process.argv[3] ? [process.argv[3]] : specPathsFor(Number(process.env.BATCH_NO) || 5));
   console.log(text);
   process.exit(failed ? 1 : 0);
 }

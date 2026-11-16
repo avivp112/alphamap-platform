@@ -1,0 +1,2 @@
+🔓  Would be written: hq_city, hq_country, founded_year, founding_country, office, description, sector, tags, employee_range, employee_count, employee_history, founder, leader, board, competitor_declared, competitor_market, patent, news, round, founder_background
+❌  Missing required environment variable: SUPABASE_URL

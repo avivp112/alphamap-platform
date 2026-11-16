@@ -3,7 +3,7 @@ import { roundFromHeadline, roundsFromNews } from "./newsRounds";
 describe("a round from an accepted headline (owner, round 10)", () => {
   it("reads type and amount from the headline", () => {
     expect(roundFromHeadline("Canada's Leading All-In-One HR Platform, Humi, Closes $31M Series B", "Humi")).toMatchObject({ type: "Series B", amount: 31_000_000 });
-    expect(roundFromHeadline("Mintifi raises $180 million in funding, valuation soars to $850 million", "Mintifi")).toMatchObject({ type: "Other", amount: 180_000_000 });
+    expect(roundFromHeadline("Mintifi raises $180 million in funding, valuation soars to $850 million", "Mintifi")).toMatchObject({ type: "Unknown", amount: 180_000_000 });
     expect(roundFromHeadline("Supply chain financing company Mintifi scores $110m Series D", "Mintifi")).toMatchObject({ type: "Series D", amount: 110_000_000 });
     expect(roundFromHeadline("On a Mission to Build HR Software, Paradox Raises $200M Series C", "Paradox AI")).toMatchObject({ type: "Series C", amount: 200_000_000 });
   });
