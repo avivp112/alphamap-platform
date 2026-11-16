@@ -19,8 +19,8 @@ export function saveGaps(g: GapStore, path = GAPS_PATH): void { mkdirSync(dirnam
 /** The log lines that speak about a field. */
 const TOPIC: Array<[RegExp, RegExp]> = [
   [/^hq_|^office/, /headquarter|\bhq\b|🏢|office|address|based in/i],
-  [/^founded|^founding/, /founded|founding|incorporat|register/i],
-  [/^founder/, /founder|founded by/i],
+  [/^founded|^founding/, /founded_year|founding_country|founded in|year founded|founding year|incorporat|established in|registered in|📅|origin/i],
+  [/^founder/, /founder|founded by|👤/i],
   [/^leader/, /leader|title|advisor|board/i],
   [/^description/, /description|sentence dropped|📝/i],
   [/^sector/, /sector|🧭/i],

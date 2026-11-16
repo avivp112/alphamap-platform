@@ -45,3 +45,12 @@ describe("known sources (owner, round 10)", () => {
     expect(locked.rows.map((x) => x.after)).toEqual(["Toronto"]);
   });
 });
+
+describe("a quote from a machine translation (owner, round 10)", () => {
+  it("is carried with the page readable, marked as not checkable", async () => {
+    const store: KnownStore = {};
+    remember(store, [{ company_id: "c1", company: "Sami", field: "founder", before: "", after: "Vitor Asseituno — Co-founder", source_url: "https://sami.com.br", quote: "[machine translation] founded by Vitor Asseituno" }], "r1", "2026-11-15");
+    const r = await applyKnown(store, "c1", [], "2026-11-16", async () => "Fundada por Vitor Asseituno");
+    expect(r.carried[0].origin).toBe("known_source_stale_check_failed");
+  });
+});

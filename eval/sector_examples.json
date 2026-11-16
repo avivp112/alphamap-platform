@@ -197,5 +197,11 @@
     "description": "Promethean Particles produces metal-organic frameworks (MOFs) using a proprietary and patented continuous process. Its MOF materials are applied to carbon capture, and the company supplies them to industrial customers.",
     "expect": "Climate & Energy › CleanTech",
     "was": "flipped between Climate & Energy, Industrial & Manufacturing and DeepTech (round 10)"
+  },
+  {
+    "company": "Paradox AI",
+    "description": "Paradox sells conversational AI recruiting software, the Olivia assistant, that automates hiring tasks such as screening candidates and scheduling interviews for employers.",
+    "expect": "Enterprise Software › HR Tech",
+    "was": "Enterprise Software with no sub-sector (round 10)"
   }
 ]

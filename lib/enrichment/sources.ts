@@ -79,6 +79,8 @@ export interface RawSearchResult {
   also_urls?: string[];
   /** Website pages: the text sent to the model (without navigation, the relevant passages when the page is long); `content` is the whole page, which the verifier reads. */
   prompt_content?: string;
+  /** Set when the English translation was appended to `content` (translate.ts): where the translated half starts. */
+  translation_offset?: number;
 }
 
 export interface LabeledSource extends RawSearchResult {

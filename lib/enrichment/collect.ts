@@ -32,6 +32,8 @@ import { websiteLooksLikeAnotherCompany } from "./websiteIdentity.ts";
 import { judgeNews, finishNews } from "./newsGate.ts";
 import { reconcileSector, subSectorUnsupported } from "./sectors.ts";
 import { siteBelongsToAnotherCompany, acquisitionHeadline, rebrandedAs, redirectBrand } from "./siteOwner.ts";
+import { resolveDomain } from "./domainResolve.ts";
+import { translateItems } from "./translate.ts";
 import { buildSectorRequest, parseSectorChoice, classifyWithRetry, type SectorChoice } from "./classifySector.ts";
 import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
 import { buildDescriptionRequest, descriptionSources, processDescription, describeAttempt } from "./descriptionBuilder.ts";
@@ -225,6 +227,8 @@ export type LinkedInPersonPatch = { name: string; title?: string; role?: string;
 
 export interface CollectedCompany {
   outcome: "collected";
+  /** The company's own site, found by name when the address on file was another business or unreadable (domainResolve.ts): a proposal, never applied. */
+  websiteProposal?: { from: string | null; to: string; reason: string };
   /** Headcount points from registers, plans and archived pages (headcountHistory.ts); each with its source and type. */
   headcountExtra?: import("./headcountHistory.ts").HistoryPoint[];
   profile: ProfileResult;
@@ -370,23 +374,49 @@ export async function collectCompany(
   // ── Stage 0: domain verification ──────────────────────────────────────
   // (an update trusts the website already checked by the full run)
   const domainVerification = ctx.update ? { verified: undefined, note: "" } : await verifyDomainMatch(row.name, row.website, searchState);
-  const effectiveWebsite = domainVerification.verified === false ? null : row.website;
+  let effectiveWebsite = domainVerification.verified === false ? null : row.website;
   if (domainVerification.verified === false) console.warn(`    ⚠️  Domain verification: ${domainVerification.note}`);
   else if (domainVerification.verified === true) console.log(`    ✅  Domain verified via Crunchbase/LinkedIn`);
 
-  const domain = websiteDomain(effectiveWebsite);
-  const anchor = domain ? ` "${domain}"` : row.country ? ` ${row.country} (startup OR tech company)` : "";
+  let domain = websiteDomain(effectiveWebsite);
+  let anchor = domain ? ` "${domain}"` : row.country ? ` ${row.country} (startup OR tech company)` : "";
 
   // ── Stage 1: website (Jina, free) → tech pre-check → searches ─────────
   // The homepage is fetched first so a clearly non-tech company is
   // rejected before paying for ~11 searches and three extraction calls.
-  const websitePages = ctx.update ? [] : await fetchCompanyWebsitePages(effectiveWebsite, searchState);
+  let websitePages = ctx.update ? [] : await fetchCompanyWebsitePages(effectiveWebsite, searchState);
   if (effectiveWebsite && !ctx.update && websitePages.length === 0) {
     console.log(`    🛠️   No page of ${effectiveWebsite} could be read — listed as a website to fix.`);
     ctx.onWebsiteIssue?.("unreadable", `No page of ${effectiveWebsite} could be read (Jina Reader and Serper scrape both failed).`);
   }
   // A site that belongs to another company now (acquired, rebranded): nothing is described from it (owner, 2026-11-09).
   let siteOwnerIssue = ctx.update ? null : siteBelongsToAnotherCompany(row.name, effectiveWebsite, websitePages);
+  // The address on file is another business, or nothing of it can be read: the company's own site is looked for by name, country and field (domainResolve.ts). Found with
+  // high confidence → the run goes on with it and the new address is a proposal for the owner; not found → the company is left out (domain_unresolved), nothing is written about it.
+  let websiteProposal: { from: string | null; to: string; reason: string } | null = null;
+  if (!ctx.update && process.env.DOMAIN_RESOLVE !== "false" && (websitePages.length === 0 || /never names/.test(siteOwnerIssue ?? ""))) {
+    const found = await resolveDomain(
+      { name: row.name, country: row.country, industry: row.industry, description: row.description },
+      domain,
+      {
+        client: ctx.anthropic, model: ctx.models.enrich,
+        search: (q, label) => webSearch(q, label, searchState),
+        homepage: async (w) => (await fetchCompanyWebsitePages(w, searchState))[0]?.content ?? null,
+      },
+    );
+    if (found.website) {
+      console.log(`    🧭  The address on file (${row.website ?? "none"}) ${websitePages.length === 0 ? "could not be read" : "shows another business"}; the company's own site is ${found.website} — ${found.reason} (tried: ${found.tried.join(", ")}). Address update proposed, for the owner's review.`);
+      websiteProposal = { from: row.website ?? null, to: found.website, reason: found.reason };
+      effectiveWebsite = found.website; domain = websiteDomain(effectiveWebsite);
+      anchor = domain ? ` "${domain}"` : anchor;
+      websitePages = await fetchCompanyWebsitePages(effectiveWebsite, searchState);
+      siteOwnerIssue = siteBelongsToAnotherCompany(row.name, effectiveWebsite, websitePages);
+    } else {
+      console.log(`    🧭  domain_unresolved: the address on file (${row.website ?? "none"}) ${websitePages.length === 0 ? "could not be read" : "shows another business"} and no site of the company itself was found (tried: ${found.tried.join(", ") || "no candidate"}).`);
+      bump(stats.droppedByReason, "domain_unresolved");
+      return { outcome: "no_data", reason: "domain_unresolved", detail: `address ${row.website ?? "none"} — ${websitePages.length === 0 ? "unreadable" : "another business"}; candidates tried: ${found.tried.join(", ") || "none"}` };
+    }
+  }
   // Renamed is not acquired (owner, round 10: TymeBank is GoTyme Bank): the description uses the new name, and the new name is a proposal for the owner.
   const rebrandedTo = ctx.update || siteOwnerIssue ? null : (rebrandedAs(row.name, websitePages) ?? redirectBrand(row.name, effectiveWebsite, websitePages));
   if (rebrandedTo) console.log(`    🔁  Rebranded: ${row.name} is now "${rebrandedTo}" (the site says so) — described under the new name; name update proposed: name = "${rebrandedTo}", former_names += "${row.name}" (for the owner's review, not applied).`);
@@ -540,6 +570,12 @@ export async function collectCompany(
   // profile call goes first: it writes the cache, and it decides
   // public / non-tech — in which case the other two calls are never made.
   ctx.onStage?.("extracting");
+  // A page that is not in English is translated and the translation appended, so what is verified against it reads English (translate.ts); TRANSLATE=false switches it off.
+  if (!ctx.update && process.env.TRANSLATE !== "false") {
+    const first = [...usableResults].sort((a, b) => Number(isWebsiteResult(b)) - Number(isWebsiteResult(a)));
+    const n = await translateItems(first, ctx.anthropic, ctx.models.enrich, undefined, (m) => console.log(m));
+    if (n) bump(stats.droppedByReason, "pages_translated");
+  }
   let allSources: LabeledSource[] = buildLabeledSources(usableResults, domain);
   markCompanyLinkedFiles(allSources, websitePages);
   // The company's own site is tier 1 even on another domain than the one on file (ownDomain.ts): where the registered website redirects to, or the same brand.
@@ -1860,6 +1896,7 @@ export async function collectCompany(
 
   return {
     outcome: "collected",
+    ...(websiteProposal ? { websiteProposal } : {}),
     profile, funding, market, allSources, sourceById, sourceTypeFor, sourceUrlFor,
     linkedinFounders, linkedinLeaders, existingRefs, validation, plan,
     cityConfidence, countryConfidence, domain, verifiedFacts, patentsFromRegister, roundHints, confirmedHints, unlistedDomains,

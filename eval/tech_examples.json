@@ -48,5 +48,25 @@
     "company": "Tayseer",
     "expect": "any",
     "note": "owner 2026-11-15: should not be 'undetermined' when its own site is read"
+  },
+  {
+    "company": "Routing",
+    "expect": "not technology",
+    "note": "owner round 10: IT support under SLA, networking and CCTV installation — services"
+  },
+  {
+    "company": "Mototech",
+    "expect": "not technology",
+    "note": "owner round 10: Celara sells AI engineering talent recruiting and implementation — services"
+  },
+  {
+    "company": "Plott",
+    "expect": "not technology",
+    "note": "owner round 10: short-form anime content production"
+  },
+  {
+    "company": "Six Degrees",
+    "expect": "technology",
+    "note": "owner round 10: managed cloud and security platform, MSS in the taxonomy"
   }
 ]

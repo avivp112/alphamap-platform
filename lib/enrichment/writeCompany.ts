@@ -30,6 +30,7 @@ import { MAJOR_CITIES } from "./majorCities.ts";
 import { normalizeForMatch } from "./evidence.ts";
 import { computeTotalRaised, computeDebtRaised } from "./rounds.ts";
 import { computeFieldConfidence, meetsProfileThreshold } from "./confidence.ts";
+import { markTranslatedQuote } from "./translate.ts";
 import { roundFieldEvidence, evidencedFillPatch } from "./roundProvenance.ts";
 import { startupChanges, roundInsertChange, roundUpdateChanges, type FieldChangeRow } from "./runChanges.ts";
 import { hintKey, type RoundHint } from "./hints.ts";
@@ -102,7 +103,7 @@ export function dateByPrecision(date: string | null | undefined, precision: "day
   return date;
 }
 
-export interface PilotChange { field: string; before: unknown; after: unknown; source_url: string | null; quote: string | null }
+export interface PilotChange { field: string; before: unknown; after: unknown; source_url: string | null; quote: string | null; /** The structured value behind a report line, kept in the memory of verified sources (a round). */ payload?: unknown }
 
 /** The run totals Stage 10 adds to (the bulk run's RunSummary has these). */
 export interface WriteSummary {
@@ -186,11 +187,18 @@ export async function writeCollected(
   // an investor list has none, so it is never written as a fill (pilot dry run 2026-11-08: "Swan's existing investors").
   // An acquisition is an exit, not a funding round (owner, round 10: ZestMoney "Acquired · DMI Finance" was a round row): it is taken out of the
   // rounds and shown as its own proposal (acquired by, date) for the owner's review; the company's status is not changed by the pipeline.
-  const exitEvents = planned.inserts.filter((r) => r.round_type === "Acquired");
+  // A round with no quote to stand on is not written (owner, round 10: Humi "Series A $10.9M · no date"): a round needs at least one evidence quote, and its amount its own.
+  const evidencedInserts = planned.inserts.filter((r) => {
+    const ev = roundFieldEvidence(r as never, funding.funding_rounds);
+    const ok = ev.length > 0 && (r.amount_raised == null || ev.some((e) => e.field === "amount_raised"));
+    if (!ok) { console.log(`    🚫  ${r.round_type} ${r.amount_raised != null ? `$${+(r.amount_raised / 1e6).toFixed(1)}M ` : ""}not written — no quote stands behind ${r.amount_raised != null ? "its amount" : "it"}.`); bump(summary.droppedByReason, "round_without_quote"); }
+    return ok;
+  });
+  const exitEvents = evidencedInserts.filter((r) => r.round_type === "Acquired");
   for (const r of exitEvents) { console.log(`    🏁  Acquisition is not a funding round — "${r.lead_investor ?? "buyer not named"}", ${r.announcement_date ?? "undated"}: shown as an acquired proposal, not written as a round.`); bump(summary.droppedByReason, "acquisition_not_a_round"); }
   const plan = {
     ...planned,
-    inserts: planned.inserts.filter((r) => r.round_type !== "Acquired"),
+    inserts: evidencedInserts.filter((r) => r.round_type !== "Acquired"),
     updates: planned.updates.flatMap((u) => {
       const patch = evidencedFillPatch(u.patch as Record<string, unknown>, funding.funding_rounds);
       if (!patch) { bump(summary.droppedByReason, "round_fill_without_evidence"); return []; }
@@ -768,8 +776,10 @@ export async function writeCollected(
       const amount = r.amount_raised == null ? "amount not disclosed" : `$${+(r.amount_raised / 1e6).toFixed(1)}M`;
       // The quote that states the amount, so the report (and report_lint) can see the figure and its unit in the source's own words (owner, round 10: Hydrostor "$25M" against "$250 million").
       const amountEvidence = roundFieldEvidence(r as never, funding.funding_rounds).find((e) => e.field === "amount_raised");
-      reportLines.push({ field: "round", before: null, after: `${r.round_type} ${amount} · ${dateByPrecision(r.announcement_date, r.announcement_date_precision)}${r.lead_investor ? ` · lead ${r.lead_investor}` : ""}`, source_url: r.source_url ?? null, quote: amountEvidence?.evidence_quote ?? null });
+      reportLines.push({ field: "round", before: null, after: `${r.round_type} ${amount} · ${dateByPrecision(r.announcement_date, r.announcement_date_precision)}${r.lead_investor ? ` · lead ${r.lead_investor}` : ""}`, source_url: r.source_url ?? null, quote: amountEvidence?.evidence_quote ?? null,
+        payload: { round: r, evidence: roundFieldEvidence(r as never, funding.funding_rounds).map((e) => ({ field: e.field, value: e.value, source_url: sourceById.get(e.source_id)?.url ?? null, quote: e.evidence_quote })) } });
     }
+    if (collected.websiteProposal) reportLines.push({ field: "website_proposal", before: collected.websiteProposal.from, after: `website = ${collected.websiteProposal.to} — the address on file is another business or unreadable; for review, not applied`, source_url: collected.websiteProposal.to, quote: collected.websiteProposal.reason });
     const renamedTo = (profile.profile as { rebrand_to?: string }).rebrand_to;
     if (renamedTo) reportLines.push({ field: "name_proposal", before: row.name, after: `name = "${renamedTo}", former_names += "${row.name}" — the same company renamed; for review, not applied`, source_url: row.website ? (/^https?:/.test(row.website) ? row.website : `https://${row.website}`) : null, quote: null });
     for (const r of exitEvents) {
@@ -780,6 +790,8 @@ export async function writeCollected(
       const ev = roundFieldEvidence(u.patch, funding.funding_rounds)[0];
       reportLines.push({ field: "round", before: "(on file)", after: `${u.round_type} filled: ${JSON.stringify(u.patch)}`, source_url: ev ? sourceById.get(ev.source_id)?.url ?? null : null, quote: ev?.evidence_quote ?? null });
     }
+    // A quote that stands in the machine translation of a page says so (translate.ts).
+    for (const l of reportLines) if (l.quote && l.source_url) l.quote = markTranslatedQuote(l.quote, allSources.find((x) => x.url === l.source_url));
     // A description that is a verified "what" only is reported apart, so the coverage tells complete from what-only (owner, 2026-11-14).
     if (profile.profile.description_complete === false) for (const l of reportLines) if (l.field === "description") l.field = "description_what_only";
     // Tags (sub-sector tags): one line, with the sentence of an allowed page that carries the first (they were never in the report: "tags 0").
@@ -846,7 +858,7 @@ export async function writeCollected(
     const writeProvenance = async (fw: { field: string; value: unknown; source_id: string; evidence_quote: string; source_type: SourceType }) => {
       const { error: provenanceErr } = await supabase.from("field_provenance").insert({
         startup_id: row.id, field: fw.field, value: fw.value, source_url: sourceById.get(fw.source_id)?.url,
-        source_type: fw.source_type, evidence_quote: fw.evidence_quote,
+        source_type: fw.source_type, evidence_quote: markTranslatedQuote(fw.evidence_quote, sourceById.get(fw.source_id)),
         confidence: computeFieldConfidence([{ source_type: fw.source_type }]), run_id: runId,
       });
       if (provenanceErr) console.warn(`    ⚠️  field_provenance insert failed (${fw.field}): ${provenanceErr.message}`);
@@ -865,7 +877,7 @@ export async function writeCollected(
       const src = allSources.find((x) => x.url === rl.source_url);
       const { error: lpErr } = await supabase.from("field_provenance").insert({
         startup_id: row.id, field: listKey[rl.field](rl.after), value: rl.after, source_url: rl.source_url,
-        source_type: src?.source_type ?? (rl.field === "patent" ? "registry" : "news"), evidence_quote: rl.quote ?? (typeof rl.after === "string" ? rl.after.slice(0, 200) : null),
+        source_type: src?.source_type ?? (rl.field === "patent" ? "registry" : "news"), evidence_quote: rl.quote ? markTranslatedQuote(rl.quote, src) : (typeof rl.after === "string" ? rl.after.slice(0, 200) : null),
         confidence: computeFieldConfidence([{ source_type: src?.source_type ?? "news" }]), run_id: runId,
       });
       if (lpErr) console.warn(`    ⚠️  field_provenance insert failed (${rl.field}): ${lpErr.message}`);
