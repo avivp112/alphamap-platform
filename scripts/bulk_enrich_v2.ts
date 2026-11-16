@@ -54,7 +54,7 @@ import { createSearchProviderState, jinaDisabled, readPageCached, type SearchPro
 import { techOverride } from "../lib/enrichment/techOverrides.ts";
 import { classifyDescription, mainTag } from "../lib/enrichment/postClassify.ts";
 import { acceptanceReport } from "./acceptance_check.ts";
-import { rowProblem, applyRowRules, acquiredFromNews, brandAsWritten } from "../lib/enrichment/rowRules.ts";
+import { rowProblem, applyRowRules, acquiredFromNews, brandAsWritten, brandFromTexts } from "../lib/enrichment/rowRules.ts";
 import { loadKnown, saveKnown, remember, applyKnown, markKey, NOT_REMEMBERED, KNOWN_PATH, type KnownStore, type KnownEntry } from "../lib/enrichment/knownSources.ts";
 import { injectKnown } from "../lib/enrichment/knownInject.ts";
 import { readMarks } from "../lib/enrichment/fieldReview.ts";
@@ -397,10 +397,14 @@ async function enrichCompany(
       const acq = acquiredFromNews(companyRows, row.name, row.id);
       if (acq) {
         companyRows.push(acq as (typeof companyRows)[number]); console.log(`    🏁  acquired — read from the company's news: ${acq.after}`);
-        // A rename after a purchase is a purchase: the new name is the brand after the acquisition, not a name proposal.
-        for (const r of companyRows.filter((x) => x.field === "name_proposal")) {
-          const to = r.after.match(/name = "([^"]+)"/)?.[1];
-          if (to) companyRows.push({ ...r, field: "brand_after_acquisition", after: `brand after the acquisition: ${brandAsWritten(to, companyRows.flatMap((x) => [x.after, x.quote ?? ""]))}` } as (typeof companyRows)[number]);
+        // A rename after a purchase is a purchase: the new name is the brand after the acquisition, written as the company's own pages write it, never a name proposal.
+        const texts = companyRows.flatMap((x) => [x.after, x.quote ?? ""]);
+        const written = brandFromTexts(row.name, texts);
+        const prop = companyRows.find((x) => x.field === "name_proposal");
+        const brand = written ?? (prop ? brandAsWritten(prop.after.match(/name = "([^"]+)"/)?.[1] ?? "", texts) : null);
+        if (brand) {
+          const from = companyRows.find((x) => (x.field === "description" || x.field === "description_what_only") && x.after.includes(brand)) ?? prop;
+          companyRows.push({ company_id: row.id, company: row.name, field: "brand_after_acquisition", before: "", after: `brand after the acquisition: ${brand}`, source_url: from?.source_url ?? "", quote: from?.field === "name_proposal" ? "" : from?.quote ?? "", origin: "text" } as (typeof companyRows)[number]);
         }
         companyRows = companyRows.filter((x) => x.field !== "name_proposal");
       }

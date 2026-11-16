@@ -3,7 +3,8 @@
  * expected result, and the report is not sent until every line says PASS. Reads the report rows (pilot_report_dry.csv) and the list of companies not enriched.
  */
 export interface Row { company: string; field: string; after: string; source_url: string; quote: string }
-export type Check =
+export type Severity = "error" | "gap";
+export type Check = (
   | { id: string; why: string; kind: "absent"; company?: string; field?: string; match?: string; quote_match?: string; source_match?: string }
   | { id: string; why: string; kind: "present"; company: string; field: string; match: string }
   | { id: string; why: string; kind: "max_count"; company: string; field: string; match: string; max: number }
@@ -11,9 +12,11 @@ export type Check =
   | { id: string; why: string; kind: "no_duplicates"; field: string }
   | { id: string; why: string; kind: "no_url_quote" }
   | { id: string; why: string; kind: "present_quote"; company: string; field: string; match: string }
+  | { id: string; why: string; kind: "single_value"; fields: string[] }
+) & { severity?: Severity }
   | { id: string; why: string; kind: "news_dates_before_run" }
-  | { id: string; why: string; kind: "tags_include"; company: string; include: string; not_only?: string };
-export interface Result { id: string; why: string; pass: boolean; detail: string }
+  | { id: string; why: string; kind: "tags_include"; company: string; include: string; not_only?: string }
+export interface Result { id: string; why: string; pass: boolean; detail: string; severity: "error" | "gap" }
 
 export function parseCsv(text: string): string[][] {
   const rows: string[][] = []; let row: string[] = [], cur = "", q = false;
@@ -43,7 +46,7 @@ const re = (s: string) => new RegExp(s, "iu");
 export function runAcceptance(checks: Check[], rows: Row[], notEnriched: string[], today: string): Result[] {
   const of = (c: { company?: string; field?: string }) => rows.filter((r) => (!c.company || same(r.company, c.company)) && (!c.field || r.field === c.field));
   return checks.map((c): Result => {
-    const base = { id: c.id, why: c.why };
+    const base = { id: c.id, why: c.why, severity: (c.severity ?? "error") as Severity };
     switch (c.kind) {
       case "absent": {
         const hits = of(c).filter((r) => (!c.match || re(c.match).test(r.after)) && (!c.quote_match || re(c.quote_match).test(r.quote)) && (!c.source_match || re(c.source_match).test(r.source_url)));
@@ -56,6 +59,13 @@ export function runAcceptance(checks: Check[], rows: Row[], notEnriched: string[
       case "max_count": {
         const n = of(c).filter((r) => re(c.match).test(r.after)).length;
         return { ...base, pass: n <= c.max, detail: `${n} row(s), at most ${c.max}` };
+      }
+      case "single_value": {
+        const per = new Map<string, number>();
+        const fam = (f: string) => (f === "description_what_only" ? "description" : f);
+        for (const r of rows.filter((x) => c.fields.includes(x.field))) { const k = `${fold(r.company)}|${fam(r.field)}`; per.set(k, (per.get(k) ?? 0) + 1); }
+        const bad = [...per].filter(([, n]) => n > 1);
+        return { ...base, pass: bad.length === 0, detail: bad.length ? `more than one: ${bad.slice(0, 3).map(([k]) => k).join(" | ")}` : "one value per company" };
       }
       case "no_duplicates": {
         const seen = new Map<string, number>();
@@ -89,7 +99,9 @@ export function runAcceptance(checks: Check[], rows: Row[], notEnriched: string[
 }
 
 export function renderAcceptance(results: Result[]): string {
-  const fail = results.filter((r) => !r.pass);
-  return [...results.map((r) => `  ${r.pass ? "PASS" : "FAIL"}  ${r.id} — ${r.why}${r.pass ? "" : `\n        ${r.detail}`}`),
-    "", fail.length ? `ACCEPTANCE: ${fail.length} FAIL of ${results.length} — this report is NOT to be sent.` : `ACCEPTANCE: all ${results.length} PASS.`].join("\n");
+  const errors = results.filter((r) => !r.pass && r.severity === "error");
+  const gaps = results.filter((r) => !r.pass && r.severity === "gap");
+  return [...results.map((r) => `  ${r.pass ? "PASS" : r.severity === "gap" ? "GAP " : "FAIL"}  ${r.id} — ${r.why}${r.pass ? "" : `\n        ${r.detail}`}`),
+    "", errors.length ? `ACCEPTANCE: ${errors.length} ERROR${gaps.length ? `, ${gaps.length} gap(s) recorded` : ""} of ${results.length} — a wrong value: this report is NOT to be sent.`
+      : `ACCEPTANCE: no error${gaps.length ? ` — ${gaps.length} gap(s) recorded (a value that is missing, not a wrong one): ${gaps.map((g) => g.id).join(", ")}` : `: all ${results.length} PASS`}.`].join("\n");
 }

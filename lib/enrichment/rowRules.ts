@@ -36,6 +36,26 @@ export function brandAsWritten(value: string, texts: string[]): string {
   return value;
 }
 
+/**
+ * The name a company trades under after a purchase, as its own pages write it: "Tyro Health, formerly Medipass", "Tyro Health, which operates under the Medipass name",
+ * "Humi by Employment Hero", "Humi, now part of Employment Hero". Null when no text says it.
+ */
+export function brandFromTexts(companyName: string, texts: string[]): string | null {
+  const name = companyName.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+  const CAP = "(\\p{Lu}[\\p{L}\\p{N}&'’-]*(?:\\s+\\p{Lu}[\\p{L}\\p{N}&'’-]*){0,3})";
+  const res = [
+    new RegExp(`${CAP},?\\s+(?:formerly|previously|fka|f/k/a|formerly known as|which operates under the|which trades as|operating as)\\s+(?:the\\s+)?${name}\\b`, "u"),
+    new RegExp(`\\b${name}\\b,?\\s+(?:now part of|now a part of|is now part of|is part of|is now|now)\\s+${CAP}`, "iu"),
+    new RegExp(`\\b${name}\\s+by\\s+${CAP}`, "u"),
+  ];
+  for (const t of texts) for (const re of res) {
+    const m = t.match(re);
+    const b = m?.[1]?.trim();
+    if (b && b.toLowerCase() !== companyName.trim().toLowerCase()) return b;
+  }
+  return null;
+}
+
 /** Why this value may not stand under today's rules, or null. */
 export function rowProblem(r: RowLike, companyName: string, today: string, weekBefore = 0): string | null {
   const url = r.source_url ?? "";
@@ -129,7 +149,19 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
     }
     merged.push(r);
   }
-  return { rows: merged, dropped };
+  // one value per single-valued field (owner, round 10: Medipass had two descriptions): the run's own over the memory's, else the first.
+  const family = (f: string) => (f === "description_what_only" ? "description" : f);
+  const SINGLE = new Set(["description", "sector", "founded_year", "hq_city", "hq_country", "founding_country", "employee_range", "employee_count"]);
+  const fromMemory = (r: T) => /known_source/.test(String(r.origin ?? ""));
+  const winner = new Map<string, T>();
+  for (const r of merged) {
+    const f = family(r.field);
+    if (!SINGLE.has(f)) continue;
+    const have = winner.get(f);
+    if (!have || (fromMemory(have) && !fromMemory(r))) winner.set(f, r);
+  }
+  const final = merged.filter((r) => { const f = family(r.field); if (!SINGLE.has(f)) return true; if (winner.get(f) === r) return true; dropped.push(`${r.field}: ${String(r.after).slice(0, 50)} — a second value of a single-valued field`); return false; });
+  return { rows: final, dropped };
 }
 
 function stripUngroundedLead<T extends RowLike>(r: T): { row: T; stripped: string | null } {
