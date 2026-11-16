@@ -10,7 +10,15 @@ const STOP = new Set(["that", "this", "with", "from", "their", "which", "have", 
 export const contentWords = (s: string): string[] => (s.toLowerCase().match(/\p{L}{4,}/gu) ?? []).filter((w) => !STOP.has(w));
 
 export function sentencesOf(text: string): string[] {
-  return text.replace(/\s+/g, " ").split(/(?<=[.!?])\s+(?=[A-Z0-9"“])/).map((s) => s.trim()).filter((s) => s.length >= 25 && s.length <= 400);
+  const keep = (s: string) => s.trim().replace(/^#+\s*/, "");
+  const fit = (s: string) => s.length >= 25 && s.length <= 400;
+  const out = new Set<string>();
+  // As the text runs on (sentences that cross a line break stay whole)…
+  for (const s of text.replace(/\s+/g, " ").split(/(?<=[.!?])\s+(?=[A-Z0-9"“])/).map(keep)) if (fit(s)) out.add(s);
+  // … and line by line: a page or a translation made of headings and short paragraphs without full stops would otherwise be one giant "sentence" that no check can use
+  // (owner, round 10: Sami's English translation was in the text and still nothing supported "Sami sells a health plan with a personal doctor").
+  for (const line of text.split(/\n+/)) for (const s of line.replace(/\s+/g, " ").split(/(?<=[.!?])\s+(?=[A-Z0-9"“])/).map(keep)) if (fit(s)) out.add(s);
+  return [...out];
 }
 
 /** A fetch that returned an error or a block page, not the page (review 6: Armorblox's "Target URL returned error 403"). */
