@@ -40,6 +40,15 @@ export function gapFor(field: string, lines: string[]): { searched: string[]; re
   return { searched, rejected };
 }
 
+/** Records a refusal for a value that may not be in the memory at all (the owner found it wrong in a report). */
+export function addOwnerRefusal(g: GapStore, companyId: string | null, company: string, field: string, text: string, today: string): void {
+  const id = companyId ?? `name:${company.toLowerCase()}`;
+  const c = g[id] ?? (g[id] = { company, fields: {} });
+  const f = c.fields[field] ?? (c.fields[field] = { field, searched: [], rejected_candidates: [], last_run: today, run_id: "owner mark" });
+  const line = `marked wrong by the owner: ${text}`;
+  if (!f.rejected_candidates.includes(line)) f.rejected_candidates.push(line);
+}
+
 export function recordGaps(g: GapStore, companyId: string, company: string, missing: string[], lines: string[], runId: string, today: string): void {
   const c = g[companyId] ?? (g[companyId] = { company, fields: {} });
   c.company = company;
@@ -78,6 +87,20 @@ export function ownerWrongKeys(g: GapStore, keyOf: (company: string, field: stri
     if (m) out.add(keyOf(c.company, f.field, m[1]));
   }
   return out;
+}
+
+/**
+ * What the owner marked wrong, as a test of (company, field, value): a stored refusal's text is a part of the value ("Paul Denney" for "Paul Denney — CFO"), so the test is containment.
+ * Works also for a value that was never in the memory (scripts/known_sources_fix.ts records the refusal either way).
+ */
+export function ownerWrongTest(g: GapStore): (company: string, field: string, value: string) => boolean {
+  const fold = (x: string) => x.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const list: Array<{ company: string; field: string; text: string }> = [];
+  for (const c of Object.values(g)) for (const f of Object.values(c.fields)) for (const r of f.rejected_candidates) {
+    const m = r.match(/^marked wrong by the owner: ([\s\S]*?)(?: \(https?:[^)]*\))?$/);
+    if (m && fold(m[1])) list.push({ company: fold(c.company), field: f.field, text: fold(m[1]) });
+  }
+  return (company, field, value) => { const co = fold(company), v = fold(value); return list.some((x) => x.field === field && x.company === co && v.includes(x.text)); };
 }
 
 export interface MissingRow { field: string; company: string; reason: string; searched: string; rejected: string }

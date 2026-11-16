@@ -65,7 +65,7 @@ import { writeFileSync, mkdirSync, readdirSync } from "fs";
 import { rejectedDomains, rejectedDomainsCsv } from "../lib/enrichment/rejectedDomains.ts";
 import { wrapAnthropic, installHttpRecorder, quietOffline, installFetchTimeout, recorderSummary, replayMode } from "../lib/enrichment/recorder.ts";
 import { installCompanyLog, installLineTap, gathered, withCompany, companyLines } from "../lib/enrichment/companyLog.ts";
-import { loadGaps, saveGaps, recordGaps, purgeWrong, ownerWrongKeys, missingRows, missingCsv, GAPS_PATH, type GapStore } from "../lib/enrichment/knownGaps.ts";
+import { loadGaps, saveGaps, recordGaps, purgeWrong, ownerWrongTest, missingRows, missingCsv, GAPS_PATH, type GapStore } from "../lib/enrichment/knownGaps.ts";
 import { domainClasses, domainClassesCsv } from "../lib/enrichment/domainClass.ts";
 import { numberValues, renderBatchReport, batchCsv } from "../lib/enrichment/batchReport.ts";
 import type { RoundHint } from "../lib/enrichment/hints.ts";
@@ -123,12 +123,13 @@ const KNOWN_ON = process.env.KNOWN_SOURCES !== "off";
 const knownStore: KnownStore = KNOWN_ON ? loadKnown() : {};
 const markList = KNOWN_ON ? readMarks() : [];
 const wrongMarks = new Set(markList.filter((m) => m.verdict === "wrong").map((m) => markKey(m.company, m.field, m.value)));
-for (const k of KNOWN_ON ? ownerWrongKeys(loadGaps(), markKey) : []) wrongMarks.add(k);   // also what was removed by scripts/known_sources_fix.ts
+const ownerWrong = KNOWN_ON ? ownerWrongTest(loadGaps()) : () => false;   // also what the owner removed with scripts/known_sources_fix.ts
+const isWrongValue = (c: string, f: string, v: string) => wrongMarks.has(markKey(c, f, v)) || ownerWrong(c, f, v);
 const lockedMarks = new Set(markList.filter((m) => m.verdict === "correct").map((m) => markKey(m.company, m.field, m.value)));
 const gapStore: GapStore = KNOWN_ON ? loadGaps() : {};
 if (KNOWN_ON) {
   // What the owner marked wrong leaves the memory and stays as a refused candidate (owner, round 10).
-  const wrongSet = (c: string, f: string, v: string) => wrongMarks.has(markKey(c, f, v));
+  const wrongSet = isWrongValue;
   const removed = purgeWrong(knownStore, gapStore, wrongSet, new Date().toISOString().slice(0, 10));
   if (removed.length) console.log(`🧹  ${removed.length} value(s) marked wrong removed from the memory of verified sources: ${removed.slice(0, 8).join(" | ")}`);
 }
@@ -349,11 +350,14 @@ async function enrichCompany(
   }, summary);
   let companyRows = (outcome?.pilot ?? []).map((c) => ({ company_id: row.id, company: row.name, field: c.field, before: c.before == null ? "" : String(c.before), after: String(c.after), source_url: c.source_url ?? "", quote: c.quote ?? "", origin: "new" }));
   if (KNOWN_ON) {
+    // A value the owner marked wrong does not come back in the report, however it was found again.
+    const back = companyRows.filter((r) => ownerWrong(r.company, r.field, r.after));
+    if (back.length) { console.log(`    🚫  Marked wrong by the owner, not reported again: ${back.map((r) => `${r.field}: ${r.after.slice(0, 60)}`).join(" | ")}`); companyRows = companyRows.filter((r) => !back.includes(r)); }
     // What this run found is remembered; what was verified before and is still confirmed is carried (no model, no search for it).
     const freshFound = new Set(companyRows.map((r) => r.field));
     const before = Object.keys(knownStore[row.id] ?? []).length;
     const carry = await applyKnown(knownStore, row.id, companyRows, RUN_DATE, readKnownPage, lockedMarks);
-    remember(knownStore, companyRows, runId ?? "dry", RUN_DATE, wrongMarks);
+    remember(knownStore, companyRows, runId ?? "dry", RUN_DATE, isWrongValue);
     companyRows = carry.rows.map((r) => ({ ...r, origin: r.origin ?? "new" })) as typeof companyRows;
     const missing = ASKED.filter((f) => OPEN_FIELDS.includes(f) && !companyRows.some((r) => r.field === f || r.field.startsWith(f)));
     recordGaps(gapStore, row.id, row.name, missing, companyLines(), runId ?? "dry", RUN_DATE);
