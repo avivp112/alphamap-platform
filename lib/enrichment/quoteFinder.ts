@@ -60,7 +60,7 @@ export function bestQuote(sources: Array<{ id: string; content: string }>, terms
  * "Consumer & Media" had no sentence anywhere in the sources). A tag no sentence of an allowed page carries a word of
  * is not written.
  */
-const NOT_A_PRODUCT_SENTENCE = /\bcookies?\b|privacy\s+policy|\bwe use cookies|\bwas previously\b|\bpreviously\s+(?:served|worked|led|held|was)\b|\bprior to joining\b|\bjoined\s+\w+\s+(?:as|in)\b|\bhis career\b|\bher career\b/i;
+const NOT_A_PRODUCT_SENTENCE = /^\W*(?:drive|get|unlock|grow|boost|power|accelerate|transform|discover|start|see|learn|join|talk|book|request|enhance|experience)\b|\bcookies?\b|privacy\s+policy|\bwe use cookies|\bwas previously\b|\bpreviously\s+(?:served|worked|led|held|was)\b|\bprior to joining\b|\bjoined\s+\w+\s+(?:as|in)\b|\bhis career\b|\bher career\b/i;
 export function supportedTags(tags: string[], allPages: Array<{ id: string; content: string; url?: string }>): { kept: Array<{ tag: string; id: string; quote: string }>; dropped: string[] } {
   const kept: Array<{ tag: string; id: string; quote: string }> = [];
   const dropped: string[] = [];

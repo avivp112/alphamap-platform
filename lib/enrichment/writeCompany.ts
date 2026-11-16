@@ -16,7 +16,7 @@ import { filterCrossSectorTags, industryFromTaxonomy, type SectorTaxonomy } from
 import { normalizeUrlForMatch } from "./extractMarket.ts";
 import { normalizeIsoDate, appendNew, reconcileOnFile } from "./assemble.ts";
 import { fetchArticleOgImage } from "./ogImage.ts";
-import { cleanPeople, isFounderEntry, cleanFounderTitle, canonicalTitle } from "./people.ts";
+import { cleanPeople, mergeFoundersByName, isFounderEntry, cleanFounderTitle, canonicalTitle } from "./people.ts";
 import { samePersonName } from "./linkedin.ts";
 import { checkHeadcountOutlier } from "./validation.ts";
 import { screenPoints, type HistoryPoint } from "./headcountHistory.ts";
@@ -381,7 +381,7 @@ export async function writeCollected(
   }
 
   // Leadership & founders (additive merge, never destructive)
-  const founderCandidates = cleanPeople((profile.profile.founders ?? []).map((f) => keepBio({
+  const founderCandidates = cleanPeople(mergeFoundersByName(profile.profile.founders ?? []).map((f) => keepBio({
     name: f.name, title: cleanFounderTitle(f.title, row.name), bio: f.bio, linkedin_url: f.linkedin_url?.value,
     had_prior_exit: f.had_prior_exit, elite_background: f.elite_background, notable_pedigree: f.notable_pedigree,
     ...(f.background?.length && (!OPEN || writesFounderBackground(OPEN)) ? { background: f.background } : {}),

@@ -720,3 +720,17 @@ export function mergeLeadersByPerson<T extends { name: string; role?: string | n
   }
   return out;
 }
+
+/** One founder per person (owner, round 10: "Alastair Mills — Founder" and "— Founder and CEO" are one row): the title that contains the others, else the longest; the first one's source and quote stay. */
+export function mergeFoundersByName<T extends { name: string; title?: string | null }>(founders: T[]): T[] {
+  const key = (n: string) => n.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/ł/g, "l").replace(/ø/g, "o").replace(/đ/g, "d").replace(/ß/g, "ss").replace(/\b(dr|mr|mrs|ms|prof)\.?\s/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const out: T[] = [];
+  for (const f of founders) {
+    const same = out.find((q) => key(q.name) === key(f.name));
+    if (!same) { out.push({ ...f }); continue; }
+    const a = (same.title ?? "").trim(), b = (f.title ?? "").trim();
+    if (b && (!a || (b.toLowerCase().includes(a.toLowerCase()) && b.length > a.length) || (!a.toLowerCase().includes(b.toLowerCase()) && b.length > a.length))) same.title = b;
+    for (const k of Object.keys(f) as Array<keyof T>) if (same[k] == null || same[k] === "") same[k] = f[k];
+  }
+  return out;
+}

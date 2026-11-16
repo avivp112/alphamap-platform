@@ -8,7 +8,7 @@
  * The second needs the article to say what the company makes; an article that does not is not judged (no verdict).
  */
 
-const EXPLAINER = /\b(roundup|round-up|weekly digest|newsletter|lessons from|lessons learned|tips for|tips to|how to|what (?:to know|is|are|you (?:need|should) (?:to )?know)|how to (?:buy|invest|trade|use)|should you (?:buy|invest)|is [^?]{0,50} a good (?:investment|buy)|price prediction|before investing|investing in|explained|explainer|beginner'?s guide|a guide to|everything you need to know|pros and cons|where to buy)\b/i;
+const EXPLAINER = /\b(roundup|round-up|weekly digest|newsletter|lessons from|lessons learned|tips for|tips to|how to|what (?:to know|is|are|you (?:need|should) (?:to )?know)|how to (?:buy|invest|trade|use)|should you (?:buy|invest)|is [^?]{0,50} a good (?:investment|buy)|price prediction|before investing|investing in|explained|explainer|beginner'?s guide|a guide to|everything you need to know|pros and cons|where to buy|(?:rules|ways|steps|reasons|things|tips|questions|mistakes|signs|factors)\s+(?:for|to|when)\s+(?:choosing|picking|selecting|buying|evaluating|investing)|how to choose|choosing (?:a|an|the)\b|(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:rules|ways|steps|reasons|things|tips|questions|mistakes|signs|factors)\b)\b/i;
 
 /** Tracking parameters (Google's srsltid, utm_*, fbclid…) are not part of an article's address. */
 export function stripTrackingParams(url: string): string {
@@ -27,6 +27,12 @@ export function stripTrackingParams(url: string): string {
  */
 const TRAILING_DESCRIPTOR = new Set(["inc", "ltd", "llc", "gmbh", "corp", "co", "labs", "lab", "technologies", "technology", "tech", "systems", "medical", "applied", "group", "holdings", "solutions", "software", "bio", "health", "therapeutics", "robotics", "networks"]);
 
+/** The first paragraph of a page's text: after the reader's header lines (Title:, URL Source:, Published Time:), the first lines of real prose. */
+export function firstParagraph(content: string): string {
+  const prose = content.replace(/\r/g, "").split(/\n+/).map((l) => l.trim()).filter((l) => l.length >= 60 && !/^(?:Title|URL Source|Published Time|Markdown Content|Date):/i.test(l) && !/^(?:!?\[|https?:|\W*[-*]\s*\[)/.test(l));
+  return (prose[0] ?? content).slice(0, 500);
+}
+
 export function namesCompanyUpFront(item: { title?: string | null; content?: string | null }, companyName: string): boolean {
   const core = companyName.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").replace(/\s+/g, " ").trim();
   if (!core) return true;
@@ -40,7 +46,7 @@ export function namesCompanyUpFront(item: { title?: string | null; content?: str
   const short = words.join(" ");
   if (short !== core && short.length >= 3 && !words.every((w) => TRAILING_DESCRIPTOR.has(w)) && flat(title, false).includes(` ${short} `)) return true;
   if (has(flat(title, true)) && flat(title, true).trim().startsWith(core)) return true; // "Speechify's new feature…"
-  return has(flat((item.content ?? "").slice(0, 400), true)); // else the first paragraph must name it
+  return has(flat(firstParagraph(item.content ?? ""), true)); // else the first paragraph must name it
 }
 
 /** "The 8 Best ProtonMail Alternatives", "Top 10 …", "X alternatives": a list that mentions many companies, not news about one (owner, round 10: Posteo). */

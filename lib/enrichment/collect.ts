@@ -55,7 +55,7 @@ import { lookupEpoPatents, type CompanyIdentity, type EpoPatentResult } from "./
 import { hintFromRound, hintQueries, confirmHint, hintKey, recoverMissingAmount, type RoundHint } from "./hints.ts";
 import { detectGaps, buildDeepDiveQueries, hasNoFinancingRounds, type DeepDiveSection } from "./deepDive.ts";
 import {
-  groundRoundDetails, isUnstatedEvent, incompleteRound, absorbAmountlessRounds, rejectRound, roundSourceStandings, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
+  groundLeadInvestor, groundRoundDetails, isUnstatedEvent, incompleteRound, absorbAmountlessRounds, rejectRound, roundSourceStandings, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
   type ExistingRoundRef,
 } from "./assemble.ts";
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
@@ -1015,6 +1015,11 @@ export async function collectCompany(
       continue;
     }
     withAmounts.push(r);
+  }
+  // The lead investor must stand in a source the round cites (owner, round 10).
+  for (let i = 0; i < withAmounts.length; i++) {
+    const g = groundLeadInvestor(withAmounts[i], allSources);
+    if (g.dropped) { console.log(`    🚫  ${withAmounts[i].round_type}: lead investor ${g.dropped} not written — no source the round cites names it.`); bump(stats.droppedByReason, "lead_investor_not_in_source"); withAmounts[i] = g.round; }
   }
   const roundsPassingRules = withAmounts.filter((r) => {
     const why = rejectRound(r, row.name, allSources);
