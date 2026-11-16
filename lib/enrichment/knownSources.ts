@@ -15,7 +15,7 @@ import { dirname } from "path";
 export interface KnownEntry {
   company_id: string; company: string; field: string; value: string;
   source_url: string; quote: string; verified_at: string; run_id: string;
-  status?: "ok" | "stale_check_failed" | "quote_gone";
+  status?: "ok" | "stale_check_failed" | "quote_gone" | "superseded";
   /** The structured value (JSON) behind the line, when the write stage needs one (a round). */
   payload?: string;
 }
@@ -57,9 +57,15 @@ export function remember(store: KnownStore, rows: ReportRow[], runId: string, to
     const list = store[r.company_id] ?? (store[r.company_id] = []);
     const same = list.find((e) => e.field === r.field && fold(e.value) === fold(r.after));
     if (same) { Object.assign(same, { source_url: r.source_url, quote: r.quote || same.quote, verified_at: today, run_id: runId, status: "ok" as const, ...(r.payload ? { payload: r.payload } : {}) }); continue; }
-    // A single-valued field has one value: the newer replaces the older one.
-    if (SINGLE_FIELDS.has(r.field)) for (let i = list.length - 1; i >= 0; i--) if (family(list[i].field) === family(r.field)) list.splice(i, 1);
-    list.push({ company_id: r.company_id, company: r.company, field: r.field, value: r.after, source_url: r.source_url, quote: r.quote, verified_at: today, run_id: runId, status: "ok", ...(r.payload ? { payload: r.payload } : {}) });
+    // The memory only grows (owner, round 10): a single-valued field keeps its older value, marked "superseded" by the newer one; the older one is never removed, and
+    // when the incoming value is older than what is already there, it is the incoming one that is kept as superseded.
+    const entry: KnownEntry = { company_id: r.company_id, company: r.company, field: r.field, value: r.after, source_url: r.source_url, quote: r.quote, verified_at: today, run_id: runId, status: "ok", ...(r.payload ? { payload: r.payload } : {}) };
+    if (SINGLE_FIELDS.has(r.field)) {
+      const current = list.filter((e) => family(e.field) === family(r.field) && e.status !== "superseded");
+      if (current.some((e) => e.verified_at > today)) entry.status = "superseded";
+      else for (const e of current) e.status = "superseded";
+    }
+    list.push(entry);
     added++;
   }
   return added;
@@ -75,7 +81,16 @@ export async function checkEntry(e: KnownEntry, readText: (url: string) => Promi
   const hay = fold(text);
   const needle = fold(e.quote || e.value).slice(0, 90);
   if (!needle) return "stale_check_failed";
-  return hay.includes(needle) ? "confirmed" : "quote_gone";
+  if (hay.includes(needle)) return "confirmed";
+  // The quote may come from a search snippet or an archived copy, and the page as read now may be laid out differently: most of the quote's own words still on the page
+  // confirm it; only a page that is read and shares almost nothing of the quote says the quote is gone (owner, round 10: Six Degrees, Conotoxia and Paradox were all "gone").
+  const words = [...new Set(fold(e.quote || e.value).split(" ").filter((w) => w.length >= 4))];
+  if (words.length >= 4) {
+    const share = words.filter((w) => hay.includes(w)).length / words.length;
+    if (share >= 0.6) return "confirmed";
+    if (share >= 0.3) return "stale_check_failed";
+  }
+  return "quote_gone";
 }
 
 export interface CarryResult { rows: ReportRow[]; carried: ReportRow[]; fromMemory: string[]; fromSearch: string[]; recheck: string[]; refreshDue: string[]; locked: string[] }
@@ -97,7 +112,7 @@ export async function applyKnown(
   const cache = new Map<string, Promise<string | null>>();
   const read = (u: string) => cache.get(u) ?? (cache.set(u, readText(u).catch(() => null)), cache.get(u)!);
   for (const e of known) {
-    if (e.status === "quote_gone") continue;
+    if (e.status === "superseded") continue;
     if (have(e.field, e.value)) continue;
     const isLocked = locked.has(markKey(e.company, e.field, e.value));
     // A different new value for a single-valued field stands, unless the old one is locked.

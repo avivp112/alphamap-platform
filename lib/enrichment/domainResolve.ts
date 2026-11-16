@@ -14,6 +14,12 @@ import type { RawSearchResult } from "./searchProviders.ts";
 
 const NOT_A_SITE = /(^|\.)(linkedin|facebook|instagram|twitter|x|youtube|wikipedia|crunchbase|pitchbook|dealroom|tracxn|cbinsights|zoominfo|glassdoor|indeed|apple|google|play\.google|amazon|bloomberg|reuters|forbes|techcrunch|medium|github|yelp|trustpilot|g2|capterra|similarweb|owler|rocketreach|signalhire|f6s|angel|wellfound|opencorporates|dnb|northdata|companieshouse|find-and-update\.company-information\.service\.gov)\./i;
 
+/** A country code of the address ("co.jp" → "jp", "com.br" → "br"); null for .com, .net, .org and the like. */
+export function ccTld(host: string): string | null {
+  const last = host.toLowerCase().split(".").pop() ?? "";
+  return last.length === 2 && !["tv", "io", "ai", "co", "me", "fm", "ly", "gg", "cc", "ws"].includes(last) ? last : null;
+}
+
 export interface DomainCandidate { website: string; host: string; title: string }
 
 /** Distinct sites among search results, with the ones that cannot be a company's own site left out. */
@@ -24,6 +30,9 @@ export function candidateSites(results: Array<Pick<RawSearchResult, "url" | "tit
     const host = u.hostname.toLowerCase().replace(/^www\./, "");
     if (NOT_A_SITE.test(`${host}.`) || isDataPlatformUrl(r.url)) continue;
     if (currentHost && registrable(host) === registrable(currentHost)) continue;
+    // The address on file says which country the company is in; a site of another country is another business with the same name (Plott .jp ≠ PLOTT Finance .co.uk).
+    const have = currentHost ? ccTld(currentHost) : null, cand = ccTld(host);
+    if (have && cand && have !== cand) continue;
     if (out.some((o) => registrable(o.host) === registrable(host))) continue;
     out.push({ website: `${u.protocol}//${u.hostname}/`, host, title: r.title ?? "" });
     if (out.length >= max) break;
@@ -54,6 +63,15 @@ export function buildDomainJudgeRequest(facts: DomainFacts, homepage: string, ur
   };
 }
 
+/** Is this homepage the company's own? `addressOnFile` tells the judge the country the address on file implies. */
+export async function judgeSite(client: Anthropic, model: string, facts: DomainFacts, homepage: string, url: string, addressOnFile?: string | null): Promise<{ is_the_company?: boolean; confidence?: string; reason?: string } | null> {
+  const cc = addressOnFile ? ccTld(addressOnFile) : null;
+  const withHint = cc && !facts.country ? { ...facts, country: `(the address on file ends in .${cc})` } : facts;
+  const msg = await client.messages.create(requestFor(buildDomainJudgeRequest(withHint, homepage, url), model));
+  const tool = msg.content.find((b) => b.type === "tool_use");
+  return tool && tool.type === "tool_use" ? (tool.input as { is_the_company?: boolean; confidence?: string; reason?: string }) : null;
+}
+
 export interface DomainResolveDeps {
   client: Anthropic; model: string;
   search: (query: string, label: string) => Promise<Array<Pick<RawSearchResult, "url" | "title">>>;
@@ -70,9 +88,7 @@ export async function resolveDomain(facts: DomainFacts, currentHost: string | nu
     const text = await deps.homepage(c.website).catch(() => null);
     // The page must name the company itself — no model can talk a page into being the company's.
     if (!text || !pageNamesCompany({ content: text }, facts.name)) continue;
-    const msg = await deps.client.messages.create(requestFor(buildDomainJudgeRequest(facts, text, c.website), deps.model));
-    const tool = msg.content.find((b) => b.type === "tool_use");
-    const v = tool && tool.type === "tool_use" ? (tool.input as { is_the_company?: boolean; confidence?: string; reason?: string }) : null;
+    const v = await judgeSite(deps.client, deps.model, facts, text, c.website, currentHost);
     if (v?.is_the_company === true && v.confidence === "high") return { website: c.website, reason: v.reason ?? "", tried };
   }
   return { website: null, tried };
