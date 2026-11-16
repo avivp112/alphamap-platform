@@ -228,10 +228,34 @@ const HQ_LABEL = /\b(?:head ?quarters?|head office|main office|global office|cor
  * the word. Lines that name a city on the list and carry a street number or
  * a postcode; a regional office's line is not counted.
  */
-export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type" | "content" | "source_id" | "also_urls">): HqStatement[] {
-  // The Contact page — or the page /contact rendered (Soda's /contact is its /about: dry run 2026-11-02).
-  if (s.source_type !== "company_site" || ![s.url, ...(s.also_urls ?? [])].some((u) => /\/contact/i.test(u))) return [];
+const THIRD_PARTY_ADDRESS = /\b(gdpr|eu representative|uk representative|representative in the (?:eu|uk|european union|united kingdom)|data protection officer|dpo\b|registered agent|art(?:icle|\.)?\s*27|vertreter|datenschutzbeauftragte)/i;
+
+/**
+ * The company's seat as an Impressum / imprint states it: "Sitz der Gesellschaft: Berlin" (owner, round 10). That is the headquarters, declared, from the company's own legal page.
+ */
+export function impressumSeat(s: Pick<LabeledSource, "url" | "source_type" | "content" | "source_id" | "also_urls">): HqStatement[] {
+  if (s.source_type !== "company_site" || ![s.url, ...(s.also_urls ?? [])].some((u) => isLegalPageUrl(u))) return [];
   const out: HqStatement[] = [];
+  for (const line of s.content.split(/\n+/)) {
+    if (THIRD_PARTY_ADDRESS.test(line)) continue;
+    const m = line.match(/\b(?:Sitz der Gesellschaft|Gesellschaftssitz|Sitz des Unternehmens|Firmensitz|Registered seat|Siège social)\b\s*[:\-–]?\s*(?:\d{4,5}\s+)?(.{2,60})/i);
+    if (!m) continue;
+    for (const c of m[1].matchAll(CITY_RE)) {
+      const city = title(c[2].toLowerCase());
+      if (!out.some((o) => sameCity(o.city, city))) out.push({ city, quote: line.trim().slice(0, 240), source_id: s.source_id, url: s.url, kind: "company", date: null });
+      break;
+    }
+  }
+  return out;
+}
+
+export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type" | "content" | "source_id" | "also_urls">): HqStatement[] {
+  // Any page of the company's own site — the Contact page, the footer every page repeats, an About page (owner, round 10); a legal page is read apart (impressumSeat) and its
+  // address is an office. A single address anywhere on the site is the headquarters; several are offices (decideHeadquarters).
+  if (s.source_type !== "company_site" || [s.url, ...(s.also_urls ?? [])].some((u) => isLegalPageUrl(u))) return [];
+  const out: HqStatement[] = [];
+  // An EU / UK representative, a data protection officer or a registered agent has an address that is never the company's (GDPR Art. 27 notices in footers).
+  let skipLeft = 0;
   let underOfficeHeading = false;
   // An address marked Headquarters / Head office / HQ — on its own line or under such a heading — is the headquarters even among several (owner, 2026-11-15: Hydrostor).
   let hqMarkLeft = 0;
@@ -239,6 +263,8 @@ export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type
     // Markdown images and links are not addresses: drop images, keep a link's text only
     // ("![Image 4: … return to main Palo Alto Networks site](…)" on Koi's page — 2026-11-02).
     const line = raw.replace(/!\[[^\]]*\]\([^)]*\)/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/https?:\/\/\S+/g, " ").trim();
+    if (THIRD_PARTY_ADDRESS.test(line)) { skipLeft = 2; continue; }
+    if (skipLeft > 0) { skipLeft--; continue; }
     if (OFFICE_HEADING.test(line)) underOfficeHeading = true;
     const marked = HQ_LABEL.test(line);
     if (marked && !ADDRESS_HINT.test(line)) { hqMarkLeft = 3; continue; }   // a heading: the address follows within a few lines
@@ -328,4 +354,63 @@ export function decideHeadquarters(statements: HqStatement[], today = new Date()
 export function countryOfCity(city: string): string | null {
   const set = MAJOR_CITIES.get(city.trim().toLowerCase());
   return set && set.size === 1 ? [...set][0] : null;
+}
+
+const TLD_COUNTRY: Record<string, string> = {
+  us: "United States", uk: "United Kingdom", gb: "United Kingdom", de: "Germany", fr: "France", es: "Spain", it: "Italy", nl: "Netherlands", be: "Belgium", ch: "Switzerland", at: "Austria",
+  se: "Sweden", no: "Norway", dk: "Denmark", fi: "Finland", pl: "Poland", pt: "Portugal", ie: "Ireland", il: "Israel", in: "India", br: "Brazil", mx: "Mexico", ar: "Argentina", cl: "Chile",
+  co: "Colombia", ca: "Canada", au: "Australia", nz: "New Zealand", jp: "Japan", kr: "South Korea", cn: "China", sg: "Singapore", hk: "Hong Kong", ae: "United Arab Emirates", za: "South Africa",
+  ng: "Nigeria", ke: "Kenya", eg: "Egypt", tr: "Turkey", cz: "Czechia", ro: "Romania", gr: "Greece", ee: "Estonia", lt: "Lithuania", lv: "Latvia", ua: "Ukraine", id: "Indonesia", my: "Malaysia",
+  th: "Thailand", vn: "Vietnam", ph: "Philippines", sa: "Saudi Arabia", pk: "Pakistan", lu: "Luxembourg",
+};
+
+/** The country a site's address points to ("example.de" → Germany); null for .com and the like. */
+export function countryOfTld(domainOrHost: string | null | undefined): string | null {
+  const last = (domainOrHost ?? "").toLowerCase().replace(/^https?:\/\//, "").replace(/[/:].*$/, "").split(".").pop() ?? "";
+  return TLD_COUNTRY[last] ?? null;
+}
+
+const LANG_COUNTRIES: Array<[RegExp, string[]]> = [
+  [/\b(und|der|die|das|nicht|wir|unser|datenschutz)\b/gi, ["Germany", "Austria", "Switzerland"]],
+  [/\b(le|la|les|des|nous|notre|et|pour|mentions légales)\b/gi, ["France", "Belgium", "Switzerland", "Canada", "Luxembourg"]],
+  [/\b(el|los|las|nuestro|y|para|aviso legal)\b/gi, ["Spain", "Mexico", "Argentina", "Chile", "Colombia"]],
+  [/\b(o|os|as|nosso|não|para|política de privacidade)\b/gi, ["Portugal", "Brazil"]],
+  [/\b(il|gli|nostro|per|che|informativa)\b/gi, ["Italy", "Switzerland"]],
+  [/\b(het|een|van|wij|onze|privacyverklaring)\b/gi, ["Netherlands", "Belgium"]],
+  [/\b(och|vi|att|integritetspolicy)\b/gi, ["Sweden", "Finland"]],
+  [/\b(i|og|vi|vårt|personvern)\b/gi, ["Norway", "Denmark"]],
+  [/\b(oraz|nasz|polityka prywatności)\b/gi, ["Poland"]],
+];
+
+/** The countries the site's language points to, or [] when it is English or unclear (a language is evidence only when it names few countries). */
+export function languageCountries(text: string): string[] {
+  const sample = text.slice(0, 6000);
+  const words = Math.max(1, (sample.match(/\p{L}+/gu) ?? []).length);
+  let best: { hits: number; countries: string[] } = { hits: 0, countries: [] };
+  for (const [re, countries] of LANG_COUNTRIES) {
+    const hits = (sample.match(re) ?? []).length;
+    if (hits > best.hits) best = { hits, countries };
+  }
+  return best.hits / words > 0.05 ? best.countries : [];
+}
+
+/**
+ * The company's only address, found on a Terms / Privacy / Legal page, is the headquarters only when it is the only address found anywhere AND its
+ * country agrees with other evidence: the site's country code, the site's language, or an article naming the same country. Otherwise it is an office.
+ * GDPR / EU-representative / DPO / registered-agent addresses are never the headquarters (owner, round 10).
+ */
+export function legalPageHq(o: {
+  city: string; quote: string;
+  otherAddressCities: string[];          // every other address city found (offices, contact pages, press statements)
+  domain?: string | null; siteText?: string; articleCountries?: string[];
+}): { country: string; basis: string } | null {
+  if (THIRD_PARTY_ADDRESS.test(o.quote)) return null;
+  const mine = canonicalCity(o.city);
+  if (o.otherAddressCities.some((c) => canonicalCity(c) !== mine)) return null;
+  const country = countryOfCity(o.city);
+  if (!country) return null;
+  if (countryOfTld(o.domain) === country) return { country, basis: `the site's country code (.${(o.domain ?? "").split(".").pop()})` };
+  if (languageCountries(o.siteText ?? "").includes(country)) return { country, basis: "the language of the site" };
+  if ((o.articleCountries ?? []).includes(country)) return { country, basis: "an article naming the same country" };
+  return null;
 }

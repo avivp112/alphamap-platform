@@ -34,6 +34,16 @@ export interface TechGateVerdict {
  */
 export const TECH_DEFINITION = "A technology company is one whose product falls in a technology category: software, AI/ML, fintech, cybersecurity, health or life-science technology, climate and energy technology (energy storage, clean energy, carbon capture), deep tech (advanced materials, robotics, space, semiconductors), industrial or manufacturing technology, food or agriculture technology (vertical farming, cultivated food), automotive or mobility technology, proptech, or an online-first e-commerce / marketplace business (selling online is its main business and it is venture-backed, like an online pet shop), or a business built on its own platform; financial and property-finance products sold through the company's own platform or app (lending, home-equity, insurance, payments) are fintech or proptech even when people take part in delivering them. NOT technology: professional services (design or creative studios, agencies, consultancies), non-profits, incubators, accelerators and funds, a maker of physical consumer products that also sells online (phone accessories, coffee), and physical shops with no technology of their own, IT support, systems-integration and managed IT services, staffing and recruiting services (also when AI is the theme), digital, design and creative agencies, and content, entertainment, animation and media production without a technology product of its own (a managed security or cloud platform sold as a product is technology).";
 
+/** Borderline cases the owner decided (round 10), given to the model as examples. */
+export const TECH_EXAMPLES = [
+  "NOT technology — Moft: physical consumer accessories (laptop stands, desk gadgets) that are also sold online.",
+  "NOT technology — noo.ma: designs and sells furniture and home accessories through its web shop.",
+  "NOT technology — Plott: produces short-form anime content for video platforms (content production, no technology product).",
+  "NOT technology — Routing: IT support under SLA, network installation and CCTV (managed IT services).",
+  "Technology — Pet Circle: an online-first pet retailer, venture-backed, its business is its own e-commerce platform.",
+  "Technology — Hydrostor: long-duration energy storage (a hardware product in the climate and energy category).",
+].join("\n");
+
 export function buildTechGateRequest(companyName: string, homepageText: string, description: string | null, industry: string | null) {
   const material = [
     description ? `Description on file: ${description}` : "",
@@ -62,7 +72,7 @@ export function buildTechGateRequest(companyName: string, homepageText: string, 
     tool_choice: { type: "tool" as const, name: "classify_company" },
     messages: [{
       role: "user" as const,
-      content: `Is "${companyName}" a technology company?\n\n${TECH_DEFINITION}\n\nAnswer is_tech_company=false with confidence "high" ONLY when the material clearly shows a business outside those categories. A company whose product falls in one of them is a technology company, however traditional its industry sounds. If the material is thin or ambiguous, answer true or use low/medium confidence. In "reason" name the product and the category it falls in, or why it falls in none.\n\n${material}`,
+      content: `Is "${companyName}" a technology company?\n\n${TECH_DEFINITION}\n\nDecided cases:\n${TECH_EXAMPLES}\n\nAnswer is_tech_company=false with confidence "high" ONLY when the material clearly shows a business outside those categories. A company whose product falls in one of them is a technology company, however traditional its industry sounds. If the material is thin or ambiguous, answer true or use low/medium confidence. In "reason" name the product and the category it falls in, or why it falls in none.\n\n${material}`,
     }],
   };
 }

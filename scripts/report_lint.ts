@@ -34,8 +34,8 @@ const reportPath = process.env.PILOT_REPORT ?? "pilot_report_dry.csv";
 if (!existsSync(reportPath)) { console.error(`${reportPath} not found`); process.exit(1); }
 const [head, ...body] = parseCsv(readFileSync(reportPath, "utf8"));
 const ix = (n: string) => head.indexOf(n);
-type Row = { id: string; company: string; field: string; after: string; url: string; quote: string };
-const rows: Row[] = body.map((r) => ({ id: r[ix("company_id")], company: r[ix("company")], field: r[ix("field")], after: r[ix("after")] ?? "", url: r[ix("source_url")] ?? "", quote: r[ix("quote")] ?? "" })).filter((r) => r.field && r.field !== "(nothing)");
+type Row = { id: string; company: string; field: string; after: string; url: string; quote: string; original: string; translated: string };
+const rows: Row[] = body.map((r) => ({ id: r[ix("company_id")], company: r[ix("company")], field: r[ix("field")], after: r[ix("after")] ?? "", url: r[ix("source_url")] ?? "", quote: r[ix("quote")] ?? "", original: ix("quote_original") >= 0 ? r[ix("quote_original")] ?? "" : "", translated: ix("quote_translated") >= 0 ? r[ix("quote_translated")] ?? "" : "" })).filter((r) => r.field && r.field !== "(nothing)");
 
 const errors: string[] = [], warnings: string[] = [];
 const err = (c: string, m: string) => errors.push(`${c}: ${m}`);
@@ -190,8 +190,9 @@ console.log(`\n${errors.length} error(s), ${warnings.length} warning(s).`);
   if (prevPath && existsSync(prevPath)) {
     const [ph, ...pb] = parseCsv(readFileSync(prevPath, "utf8"));
     const pi = (n: string) => ph.indexOf(n);
-    const prev = new Set(pb.filter((r) => r[pi("field")] !== "(nothing)").map((r) => `${r[pi("company")]}|${r[pi("field")]}`));
-    const now = new Set(rows.map((r) => `${r.company}|${r.field}`));
+    const fam = (f: string) => (f === "description_what_only" ? "description" : f);
+    const prev = new Set(pb.filter((r) => r[pi("field")] !== "(nothing)").map((r) => `${r[pi("company")]}|${fam(r[pi("field")])}`));
+    const now = new Set(rows.map((r) => `${r.company}|${fam(r.field)}`));
     // A company the run no longer enriches (a rule turned it away: not technology, domain unresolved) is not a lost value; it is listed apart.
     const companiesNow = new Set(rows.map((r) => r.company));
     const gone = [...prev].filter((k) => !companiesNow.has(k.split("|")[0]));
@@ -202,14 +203,32 @@ console.log(`\n${errors.length} error(s), ${warnings.length} warning(s).`);
     console.log(`  ${lostPct < 5 ? "✅" : "❌"} stability: ${lost} of ${comparable.size} field(s) of ${prevPath} are gone (${lostPct}%, target <5%)`);
     if (lostPct >= 5) gaps.push(`stability ${lostPct}% lost ≥ 5%`);
   } else console.log("  ➖ stability: not measured (PREV=<earlier report.csv> compares two runs)");
-  // A random sample of 40 values for the owner's precision check (target ≥95% correct).
+  // A stratified sample of 40 values for the owner's precision check (round 10): 10 from companies with a common or generic name, 10 from companies whose sources were translated, 10
+  // from borderline technology companies, 10 from small startups (few sources). A stratum with too few values is filled from the others. Each value with its source and quote; a translated
+  // page is marked, and its original is the source address.
   let seed = Number(process.env.SAMPLE_SEED ?? 40);
   const rnd = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
   const pool = rows.filter((r) => r.field !== "(nothing)" && r.after);
-  const pick = [...pool].sort(() => rnd() - 0.5).slice(0, 40);
+  let flags: Record<string, { generic: boolean; translated: boolean; sources: number; techBorderline: boolean }> = {};
+  try { flags = JSON.parse(readFileSync("cache/company_flags.json", "utf8")); } catch { /* no flags: a random sample */ }
+  const strata: Array<[string, (c: string) => boolean]> = [
+    ["common/generic name", (c) => !!flags[c]?.generic],
+    ["translated sources", (c) => !!flags[c]?.translated],
+    ["borderline technology", (c) => !!flags[c]?.techBorderline],
+    ["small startup (few sources)", (c) => !!flags[c] && flags[c].sources > 0 && flags[c].sources < 15],
+  ];
+  const shuffle = <T,>(xs: T[]) => [...xs].sort(() => rnd() - 0.5);
+  const chosen: Array<{ r: Row; stratum: string }> = [];
+  const used = new Set<Row>();
+  for (const [label, test] of strata) {
+    for (const r of shuffle(pool.filter((x) => test(x.company) && !used.has(x))).slice(0, 10)) { chosen.push({ r, stratum: label }); used.add(r); }
+  }
+  for (const r of shuffle(pool.filter((x) => !used.has(x)))) { if (chosen.length >= 40) break; chosen.push({ r, stratum: "filled from the rest" }); used.add(r); }
+  const pick = chosen.slice(0, 40);
   const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-  writeFileSync("sample_40.csv", "\uFEFF" + ["n,company,field,value,source_url,quote,verdict (correct/wrong)", ...pick.map((r, i) => [i + 1, r.company, r.field, r.after, r.url, r.quote, ""].map((x) => q(String(x))).join(","))].join("\r\n") + "\r\n");
-  console.log(`  ➖ precision: ${pick.length} random value(s) in sample_40.csv — mark each correct/wrong (target ≥95%)`);
+  writeFileSync("sample_40.csv", "\uFEFF" + ["n,stratum,company,field,value,source_url,quote_original (the page's own words),quote_translated (English it was verified against),verdict (correct/wrong)", ...pick.map(({ r, stratum }, i) => [i + 1, stratum, r.company, r.field, r.after, r.url, r.original || r.quote.replace(/^\[machine translation\]\s*/, ""), r.translated, ""].map((x) => q(String(x))).join(","))].join("\r\n") + "\r\n");
+  console.log(`  strata: ${strata.map(([l]) => `${l} ${pick.filter((p) => p.stratum === l).length}`).join(" · ")} · filled ${pick.filter((p) => p.stratum === "filled from the rest").length}`);
+  console.log(`  ➖ precision: ${pick.length} value(s) in sample_40.csv (stratified) — mark each correct/wrong (target ≥95%)`);
   console.log(`\n${gaps.length ? `מוכן לרטוב: לא — הפער: ${gaps.join("; ")}` : "מוכן לרטוב: כן (בכפוף לבדיקת הדיוק במדגם)"}`);
 }
 process.exit(errors.length ? 1 : 0);

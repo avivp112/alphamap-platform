@@ -18,10 +18,14 @@ export interface KnownEntry {
   status?: "ok" | "stale_check_failed" | "quote_gone" | "superseded";
   /** The structured value (JSON) behind the line, when the write stage needs one (a round). */
   payload?: string;
+  /** The page's own words, when the quote was verified against a translation (round 10): what a later check looks for on the page. */
+  quote_original?: string;
 }
 export type KnownStore = Record<string, KnownEntry[]>;     // company_id → entries
-export interface ReportRow { company_id: string; company: string; field: string; before: string; after: string; source_url: string; quote: string; origin?: string; payload?: string }
+export interface ReportRow { company_id: string; company: string; field: string; before: string; after: string; source_url: string; quote: string; origin?: string; payload?: string; quote_original?: string; quote_translated?: string }
 
+/** Report lines that are proposals for the owner, not verified values: never remembered, never carried (Plott's wrong address proposal came back from the memory). */
+export const NOT_REMEMBERED = new Set(["website_proposal", "name_proposal", "acquired"]);
 export const VOLATILE_FIELDS = new Set(["leader", "headcount_history", "employee_count", "employee_range", "hq_city", "hq_country", "office", "news", "round", "acquired"]);
 /** Fields with one value: a locked (marked correct) value is kept against a different new one. */
 export const SINGLE_FIELDS = new Set(["tags", "founded_year", "founding_country", "hq_city", "hq_country", "sector", "description", "description_what_only", "employee_count", "employee_range"]);
@@ -51,15 +55,15 @@ export function remember(store: KnownStore, rows: ReportRow[], runId: string, to
   const isWrong = (c: string, f: string, v: string) => (typeof wrong === "function" ? wrong(c, f, v) : wrong.has(markKey(c, f, v)));
   let added = 0;
   for (const r of rows) {
-    if (!r.company_id || r.field === "(nothing)" || !r.after || !r.source_url) continue;
+    if (!r.company_id || r.field === "(nothing)" || !r.after || !r.source_url || NOT_REMEMBERED.has(r.field)) continue;
     if (r.origin && r.origin !== "new") continue;                                   // carried rows are not re-verified here
     if (isWrong(r.company, r.field, r.after)) continue;                             // marked wrong: never remembered
     const list = store[r.company_id] ?? (store[r.company_id] = []);
     const same = list.find((e) => e.field === r.field && fold(e.value) === fold(r.after));
-    if (same) { Object.assign(same, { source_url: r.source_url, quote: r.quote || same.quote, verified_at: today, run_id: runId, status: "ok" as const, ...(r.payload ? { payload: r.payload } : {}) }); continue; }
+    if (same) { Object.assign(same, { source_url: r.source_url, quote: r.quote || same.quote, verified_at: today, run_id: runId, status: "ok" as const, ...(r.payload ? { payload: r.payload } : {}), ...(r.quote_original ? { quote_original: r.quote_original } : {}) }); continue; }
     // The memory only grows (owner, round 10): a single-valued field keeps its older value, marked "superseded" by the newer one; the older one is never removed, and
     // when the incoming value is older than what is already there, it is the incoming one that is kept as superseded.
-    const entry: KnownEntry = { company_id: r.company_id, company: r.company, field: r.field, value: r.after, source_url: r.source_url, quote: r.quote, verified_at: today, run_id: runId, status: "ok", ...(r.payload ? { payload: r.payload } : {}) };
+    const entry: KnownEntry = { company_id: r.company_id, company: r.company, field: r.field, value: r.after, source_url: r.source_url, quote: r.quote, verified_at: today, run_id: runId, status: "ok", ...(r.payload ? { payload: r.payload } : {}), ...(r.quote_original ? { quote_original: r.quote_original } : {}) };
     if (SINGLE_FIELDS.has(r.field)) {
       const current = list.filter((e) => family(e.field) === family(r.field) && e.status !== "superseded");
       if (current.some((e) => e.verified_at > today)) entry.status = "superseded";
@@ -76,18 +80,23 @@ export type Check = "confirmed" | "stale_check_failed" | "quote_gone";
 export async function checkEntry(e: KnownEntry, readText: (url: string) => Promise<string | null>): Promise<Check> {
   const text = await readText(e.source_url);
   if (!text) return "stale_check_failed";
-  // A quote taken from a machine translation cannot be found in the page's own words: the page being readable is all that can be checked.
-  if (/^\[machine translation\]/.test(e.quote)) return "stale_check_failed";
   const hay = fold(text);
+  // A quote verified against a machine translation is checked by the page's own words when they were kept; without them the page being readable is all that can be checked.
+  if (e.quote_original) {
+    const o = fold(e.quote_original.split(" … ")[0]).slice(0, 90);
+    return o && hay.includes(o) ? "confirmed" : "stale_check_failed";
+  }
+  if (/^\[machine translation\]/.test(e.quote)) return "stale_check_failed";
   const needle = fold(e.quote || e.value).slice(0, 90);
   if (!needle) return "stale_check_failed";
   if (hay.includes(needle)) return "confirmed";
   // The quote may come from a search snippet or an archived copy, and the page as read now may be laid out differently: most of the quote's own words still on the page
   // confirm it; only a page that is read and shares almost nothing of the quote says the quote is gone (owner, round 10: Six Degrees, Conotoxia and Paradox were all "gone").
   const words = [...new Set(fold(e.quote || e.value).split(" ").filter((w) => w.length >= 4))];
-  if (words.length >= 4) {
+  if (words.length >= 1) {
     const share = words.filter((w) => hay.includes(w)).length / words.length;
-    if (share >= 0.6) return "confirmed";
+    // A short value ("Toronto, Canada") has no quote of its own to share words with: all its words on the page confirm it.
+    if (share >= 0.6 && (words.length >= 4 || share === 1)) return "confirmed";
     if (share >= 0.3) return "stale_check_failed";
   }
   return "quote_gone";
@@ -112,7 +121,7 @@ export async function applyKnown(
   const cache = new Map<string, Promise<string | null>>();
   const read = (u: string) => cache.get(u) ?? (cache.set(u, readText(u).catch(() => null)), cache.get(u)!);
   for (const e of known) {
-    if (e.status === "superseded") continue;
+    if (e.status === "superseded" || NOT_REMEMBERED.has(e.field)) continue;
     if (have(e.field, e.value)) continue;
     const isLocked = locked.has(markKey(e.company, e.field, e.value));
     // A different new value for a single-valued field stands, unless the old one is locked.
@@ -125,7 +134,7 @@ export async function applyKnown(
       for (let i = out.length - 1; i >= 0; i--) if (family(out[i].field) === family(e.field)) out.splice(i, 1);
       lockedKept.push(`${e.field}: ${e.value.slice(0, 40)}`);
     }
-    const row: ReportRow = { company_id: e.company_id, company: e.company, field: e.field, before: "", after: e.value, source_url: e.source_url, quote: e.quote, origin: check === "confirmed" ? "known_source" : "known_source_stale_check_failed", ...(e.payload ? { payload: e.payload } : {}) };
+    const row: ReportRow = { company_id: e.company_id, company: e.company, field: e.field, before: "", after: e.value, source_url: e.source_url, quote: e.quote, origin: check === "confirmed" ? "known_source" : "known_source_stale_check_failed", ...(e.payload ? { payload: e.payload } : {}), ...(e.quote_original ? { quote_original: e.quote_original } : {}) };
     out.push(row); carried.push(row); fromMemory.add(e.field);
   }
   const fromSearch = [...new Set(real.map((r) => r.field))].filter((f) => !fromMemory.has(f) || real.some((r) => r.field === f));

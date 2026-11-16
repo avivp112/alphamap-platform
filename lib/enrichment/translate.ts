@@ -23,25 +23,55 @@ export function looksEnglish(text: string): boolean {
   return en / Math.max(1, words.length) >= 0.08;
 }
 
-export function buildTranslateRequest(text: string) {
+export function buildTranslateRequest(lines: string[]) {
   return {
-    max_tokens: 4000, temperature: 0,
-    system: "You translate web page text into English, faithfully and completely. Keep every name, number, date, address and title exactly as written. Keep the line structure. Do not summarise, explain or add anything.",
-    messages: [{ role: "user" as const, content: `Translate into English:\n\n${text}` }],
+    max_tokens: 6000, temperature: 0,
+    system: "You translate web page text into English, faithfully and completely. Each input line is numbered: N<TAB>text. Answer with the same numbers, one line per input line, in the form N<TAB>English text. Never merge, split, skip or reorder lines. Keep every name, number, date, address and title exactly as written. Do not summarise or add anything. A line that is already English or has nothing to translate is repeated as it is.",
+    messages: [{ role: "user" as const, content: lines.map((l, i) => `${i + 1}\t${l}`).join("\n") }],
   };
 }
 
-export async function translateToEnglish(client: Anthropic, model: string, text: string, maxChars = 6000): Promise<string | null> {
-  const msg = await client.messages.create(requestFor(buildTranslateRequest(text.slice(0, maxChars)), model));
-  const block = msg.content.find((b) => b.type === "text");
-  const out = block && block.type === "text" ? block.text.trim() : "";
-  return out.length >= 40 ? out : null;
+export interface TranslationPair { original: string; english: string }
+
+/** The model's numbered answer, read back against the lines it was given. */
+export function parseNumberedTranslation(answer: string, lines: string[]): TranslationPair[] {
+  const byNo = new Map<number, string>();
+  for (const l of answer.split("\n")) {
+    const m = l.match(/^\s*(\d+)\t(.*)$/);
+    if (m) byNo.set(Number(m[1]), m[2].trim());
+  }
+  const out: TranslationPair[] = [];
+  lines.forEach((original, i) => { const english = byNo.get(i + 1); if (english) out.push({ original, english }); });
+  return out;
 }
 
-export interface Translatable { url: string; content: string; prompt_content?: string; translation_offset?: number }
+/** The page cut into the lines that are translated one by one (so a quote can be taken back to its original line). */
+export function linesOfPage(text: string, maxChars = 6000): string[] {
+  const out: string[] = []; let n = 0;
+  for (const raw of text.split(/\n+/)) {
+    const l = raw.trim();
+    if (!l) continue;
+    if (n + l.length > maxChars) break;
+    out.push(l); n += l.length;
+  }
+  return out;
+}
+
+export async function translateToEnglish(client: Anthropic, model: string, text: string, maxChars = 6000): Promise<TranslationPair[] | null> {
+  const lines = linesOfPage(text, maxChars);
+  if (!lines.length) return null;
+  const msg = await client.messages.create(requestFor(buildTranslateRequest(lines), model));
+  const block = msg.content.find((b) => b.type === "text");
+  const pairs = block && block.type === "text" ? parseNumberedTranslation(block.text, lines) : [];
+  // An answer that kept fewer than half of the lines is not an aligned translation.
+  return pairs.length >= Math.max(1, Math.floor(lines.length / 2)) && pairs.map((p) => p.english).join(" ").length >= 40 ? pairs : null;
+}
+
+export interface Translatable { url: string; content: string; prompt_content?: string; translation_offset?: number; translation_pairs?: TranslationPair[] }
 
 /**
  * Appends the English translation to up to `max` non-English items (the pages of the company's own site first, in the order given). Returns how many were translated.
+ * The original line of every translated line is kept with the item (translation_pairs), so a quote found in the translation can be written beside the page's own words.
  * A failure of the model call leaves the item as it was.
  */
 export async function translateItems<T extends Translatable>(items: T[], client: Anthropic, model: string, max = Number(process.env.TRANSLATE_MAX ?? 8), log: (m: string) => void = () => {}): Promise<number> {
@@ -50,13 +80,15 @@ export async function translateItems<T extends Translatable>(items: T[], client:
     if (done >= max) break;
     if (it.translation_offset != null || looksEnglish(it.content)) continue;
     try {
-      const tr = await translateToEnglish(client, model, it.prompt_content ?? it.content);
-      if (!tr) continue;
+      const pairs = await translateToEnglish(client, model, it.prompt_content ?? it.content);
+      if (!pairs) continue;
+      const tr = pairs.map((p) => p.english).join("\n");
       it.translation_offset = it.content.length + TRANSLATION_MARK.length;
+      it.translation_pairs = pairs;
       it.content = `${it.content}${TRANSLATION_MARK}${tr}`;
       if (it.prompt_content) it.prompt_content = `${it.prompt_content}${TRANSLATION_MARK}${tr}`;
       done++;
-      log(`    🌐  Translated to English for verification: ${it.url} (${tr.length} chars)`);
+      log(`    🌐  Translated to English for verification: ${it.url} (${pairs.length} line(s), ${tr.length} chars)`);
     } catch (e) { log(`    ⚠️  translation failed for ${it.url}: ${(e as Error).message}`); }
   }
   return done;
@@ -67,4 +99,21 @@ export function markTranslatedQuote(quote: string, source: { content: string; tr
   if (!source || source.translation_offset == null || !quote) return quote;
   const at = source.content.indexOf(quote);
   return at >= source.translation_offset ? `[machine translation] ${quote}` : quote;
+}
+
+const norm = (x: string) => x.toLowerCase().replace(/\s+/g, " ").trim();
+/**
+ * The two quotes of a value (owner, round 10): `original` is the page's own words, word for word, `translated` the English it was verified against (null when the page was English).
+ * A quote found in the translated half is taken back to the original line(s) it was translated from.
+ */
+export function quotePair(quote: string, source: { content: string; translation_offset?: number; translation_pairs?: TranslationPair[] } | undefined): { original: string; translated: string | null } {
+  const q = quote.replace(/^\[machine translation\]\s*/, "");
+  if (!source || source.translation_offset == null || !q) return { original: q, translated: null };
+  const at = source.content.indexOf(q);
+  if (at >= 0 && at < source.translation_offset) return { original: q, translated: null };     // the quote is the page's own text
+  const nq = norm(q);
+  const pairs = source.translation_pairs ?? [];
+  const hit = pairs.filter((p) => nq.includes(norm(p.english)) || norm(p.english).includes(nq));
+  if (hit.length) return { original: hit.map((p) => p.original).join(" … "), translated: q };
+  return { original: "", translated: q };   // no aligned original: the translation alone, said so
 }

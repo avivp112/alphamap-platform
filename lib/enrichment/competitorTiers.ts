@@ -97,6 +97,24 @@ export function vsTitleCompetitor(title: string, companyName: string): string | 
   return other && coreName(other) !== coreName(companyName) && looksLikeCompanyName(other) ? other : null;
 }
 
+const CATEGORY_Y = /^(?:the\s+)?(?:traditional|legacy|manual|old|other|any|your|existing|spreadsheets?|excel|email|paper|banks?|competitors?|alternatives?|tools?|software|solutions?|platforms?|agencies|consultants?|in-house|diy)\b/i;
+
+/**
+ * The company's own comparison page that names one rival: "Alternative to Y", "<Company>: the Y alternative", "Compare <Company> and Y",
+ * "<Company> compared to Y". Y must be an identified company, not a category ("alternative to spreadsheets"). Own-site pages only (owner, round 10).
+ */
+export function comparisonTitleCompetitor(title: string, companyName: string): string | null {
+  const t = title.trim();
+  if (isLinkList(t) || t.length > 140) return null;
+  const clean = (s: string) => s.replace(/\s*(?:[:|–—-].*)$/, "").replace(/[?!.]+$/, "").trim();
+  const m = t.match(/\balternatives?\s+to\s+(.{2,60})$/i) ?? t.match(/\b(?:compare|comparing|compared\s+to|comparison\s+with)\s+(?:\S+\s+){0,3}?(?:to|with|and|vs\.?)\s+(.{2,60})$/i) ?? t.match(/^(.{2,40}?)\s+alternative\b/i);
+  if (!m) return null;
+  const other = clean(m[1]).replace(/^the\s+/i, "");
+  if (!other || CATEGORY_Y.test(other) || coreName(other) === coreName(companyName) || !looksLikeCompanyName(other)) return null;
+  if (!/[\p{Lu}\d]/u.test(other)) return null;
+  return other;
+}
+
 const hostOf = (url: string) => { try { return new URL(url).hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; } };
 const registrable = (host: string) => host.split(".").slice(-2)[0] ?? "";
 
@@ -110,10 +128,10 @@ export function vsPageClaims(results: Array<{ url: string; title?: string | null
     const title = (r.title ?? "").trim();
     // A forum thread or user post is not a source for a competitor, even on the company's own domain (owner, 2026-11-08: Hailo's community).
     if (isUserContentUrl(r.url)) continue;
-    const other = title ? vsTitleCompetitor(title, companyName) : null;
-    if (!other) continue;
     const host = hostOf(r.url);
     const own = !!ownDomain && (host === ownDomain || host.endsWith(`.${ownDomain}`));
+    const other = title ? vsTitleCompetitor(title, companyName) ?? (own ? comparisonTitleCompetitor(title, companyName) : null) : null;
+    if (!other) continue;
     const theirs = !own && coreName(registrable(host)) === coreName(other).replace(/\s+/g, "");
     if (!own && !theirs) continue;
     // A page on the competitor's own site counts only when the competitor is a known company — in our database, or named
@@ -211,7 +229,7 @@ export async function competitorTierClaims(o: {
   const take = (list: TieredClaim[]) => { for (const c of list) { const k = normalizeForMatch(c.name); if (k && !have.has(k)) { have.add(k); claims.push(c); } } };
   take(acceptedDeclared(rivalSentenceClaims(o.sources, o.companyName), o.sources, o.companyName));
   const vs = [
-    ...(o.domain ? await o.search(`site:${o.domain} vs OR versus OR alternatives`, "vs_own") : []),
+    ...(o.domain ? await o.search(`site:${o.domain} vs OR versus OR alternative OR compare`, "vs_own") : []),
     ...(await o.search(`"${o.companyName}" vs OR versus${o.domain ? ` -site:${o.domain}` : ""}`, "vs_other")),
   ].filter((r) => !isDataPlatformUrl(r.url));
   const vsSources = vs.map((r) => o.addSource(r, "vs_page"));

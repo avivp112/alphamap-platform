@@ -46,4 +46,10 @@ describe("the memory enters the write stage (owner, round 10)", () => {
     expect(injectKnown(c as never, [e], null)).not.toContain("round");
     expect(c.plan.inserts).toHaveLength(1);
   });
+  it("an office returns with its source (Humi Toronto, Paradox Scottsdale)", () => {
+    const c = fake();
+    expect(injectKnown(c as never, [entry("office", "Toronto, Canada")], null)).toContain("office");
+    expect((c.profile.profile as any).offices[0]).toMatchObject({ city: "Toronto", country: "Canada" });
+    expect(injectKnown(c as never, [entry("office", "Toronto, Canada")], null)).not.toContain("office");
+  });
 });

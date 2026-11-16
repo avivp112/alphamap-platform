@@ -16,7 +16,7 @@ import { filterCrossSectorTags, industryFromTaxonomy, type SectorTaxonomy } from
 import { normalizeUrlForMatch } from "./extractMarket.ts";
 import { normalizeIsoDate, appendNew, reconcileOnFile } from "./assemble.ts";
 import { fetchArticleOgImage } from "./ogImage.ts";
-import { cleanPeople, isFounderEntry, cleanFounderTitle } from "./people.ts";
+import { cleanPeople, isFounderEntry, cleanFounderTitle, canonicalTitle } from "./people.ts";
 import { samePersonName } from "./linkedin.ts";
 import { checkHeadcountOutlier } from "./validation.ts";
 import { screenPoints, type HistoryPoint } from "./headcountHistory.ts";
@@ -30,7 +30,7 @@ import { MAJOR_CITIES } from "./majorCities.ts";
 import { normalizeForMatch } from "./evidence.ts";
 import { computeTotalRaised, computeDebtRaised } from "./rounds.ts";
 import { computeFieldConfidence, meetsProfileThreshold } from "./confidence.ts";
-import { markTranslatedQuote } from "./translate.ts";
+import { markTranslatedQuote, quotePair } from "./translate.ts";
 import { roundFieldEvidence, evidencedFillPatch } from "./roundProvenance.ts";
 import { startupChanges, roundInsertChange, roundUpdateChanges, type FieldChangeRow } from "./runChanges.ts";
 import { hintKey, type RoundHint } from "./hints.ts";
@@ -103,7 +103,7 @@ export function dateByPrecision(date: string | null | undefined, precision: "day
   return date;
 }
 
-export interface PilotChange { field: string; before: unknown; after: unknown; source_url: string | null; quote: string | null; /** The structured value behind a report line, kept in the memory of verified sources (a round). */ payload?: unknown }
+export interface PilotChange { field: string; before: unknown; after: unknown; source_url: string | null; quote: string | null; quote_original?: string | null; quote_translated?: string | null; /** The structured value behind a report line, kept in the memory of verified sources (a round). */ payload?: unknown }
 
 /** The run totals Stage 10 adds to (the bulk run's RunSummary has these). */
 export interface WriteSummary {
@@ -365,6 +365,13 @@ export async function writeCollected(
     bump(summary.droppedByReason, "tag_unsupported");
   }
   const tagNames = supported.kept.map((k) => k.tag);
+  // The sub-sector the sector was classified into is the first tag, on the evidence the sector stands on — the verified description (owner, round 10); never a "/ General".
+  const mainSub = profile.profile.sub_sector_name;
+  if (mainSub && !isGeneral(mainSub) && taxonomy.subNames.includes(mainSub) && !tagNames.includes(mainSub) && profile.profile.sector_name && (profile.profile.description_sentences?.length ?? 0) > 0) {
+    tagNames.unshift(mainSub);
+    console.log(`    🏷️   "${mainSub}" is the sector's own sub-sector: entered as the first tag, on the evidence of the verified description.`);
+    bump(summary.droppedByReason, "tag_from_sector");
+  }
   // Tags, with the fate of each (owner, 2026-11-15: five companies with a sector and no tags, nothing said why).
   console.log(`    🏷️   Tags: ${proposedTags.length ? `proposed ${proposedTags.join(", ")}` : "the classification proposed none (no sub-sector among the main answer and the other fields)"}; kept ${tagNames.length ? tagNames.join(", ") : "none"}${tagFilter.dropped.length ? `; other sector without support in the description: ${tagFilter.dropped.join(", ")}` : ""}${supported.dropped.length ? `; no sentence of an allowed page carries: ${supported.dropped.join(", ")}` : ""}.`);
   const tagSectorIds: string[] = [];
@@ -400,7 +407,7 @@ export async function writeCollected(
   // members were written as leaders with the role "Board member"), and written only when the board field is open.
   const boardOk = !OPEN || writesBoard(OPEN);
   const cleanLeadership = cleanPeople((profile.leadership ?? []).filter((l) => l.group !== "board" || boardOk).map((l) => keepBio({
-    name: l.name, role: l.role, bio: l.bio, linkedin_url: l.linkedin_url?.value, joined_date: l.joined_date,
+    name: l.name, role: canonicalTitle(l.role), bio: l.bio, linkedin_url: l.linkedin_url?.value, joined_date: l.joined_date,
     had_prior_exit: l.had_prior_exit, elite_background: l.elite_background, notable_pedigree: l.notable_pedigree,
     ...(l.group === "board" ? { group: "board" as const } : {}),
   })));
@@ -721,8 +728,8 @@ export async function writeCollected(
         for (const n of newOf<{ url?: string; title: string; published_date?: string | null }>(patch.news, rowOf.news, (a, b) => a.url === b.url)) one("news", `${n.published_date || "no date"} — ${n.title}`, n.url ?? null);
       } else if (k === "founders") {
         for (const f of newOf<{ name: string; title?: string | null; bio?: string | null }>(patch.founders, rowOf.founders, (a, b) => samePersonName(a.name ?? "", b.name))) {
-          const grounded = (profile.profile.founders ?? []).find((g) => samePersonName(g.name, f.name)) as { grounded_url?: string | null } | undefined;
-          one("founder", `${f.name}${f.title ? ` — ${f.title}` : ""}`, grounded?.grounded_url ?? null);
+          const grounded = (profile.profile.founders ?? []).find((g) => samePersonName(g.name, f.name)) as { grounded_url?: string | null; grounded_quote?: string } | undefined;
+          one("founder", `${f.name}${f.title ? ` — ${f.title}` : ""}`, grounded?.grounded_url ?? null, grounded?.grounded_quote ?? null);
           if (f.bio) one("founder_bio", `${f.name}: ${f.bio}`, grounded?.grounded_url ?? null);
         }
         for (const f of (patch.founders ?? []) as Array<{ name: string; background?: Array<{ kind: string; organization: string; role?: string; source_id: string; evidence_quote: string }> }>) {
@@ -791,7 +798,14 @@ export async function writeCollected(
       reportLines.push({ field: "round", before: "(on file)", after: `${u.round_type} filled: ${JSON.stringify(u.patch)}`, source_url: ev ? sourceById.get(ev.source_id)?.url ?? null : null, quote: ev?.evidence_quote ?? null });
     }
     // A quote that stands in the machine translation of a page says so (translate.ts).
-    for (const l of reportLines) if (l.quote && l.source_url) l.quote = markTranslatedQuote(l.quote, allSources.find((x) => x.url === l.source_url));
+    // Both quotes of a value (owner, round 10): the page's own words and, when the page was translated, the English it was verified against.
+    for (const l of reportLines) {
+      if (!l.quote || !l.source_url) continue;
+      const src = allSources.find((x) => x.url === l.source_url);
+      const pair = quotePair(l.quote, src);
+      l.quote_original = pair.original; l.quote_translated = pair.translated;
+      l.quote = markTranslatedQuote(l.quote, src);
+    }
     // A description that is a verified "what" only is reported apart, so the coverage tells complete from what-only (owner, 2026-11-14).
     if (profile.profile.description_complete === false) for (const l of reportLines) if (l.field === "description") l.field = "description_what_only";
     // Tags (sub-sector tags): one line, with the sentence of an allowed page that carries the first (they were never in the report: "tags 0").
@@ -855,13 +869,25 @@ export async function writeCollected(
       if (tagErr) console.warn(`    ⚠️  Sub-sector tag write failed: ${tagErr.message}`);
     }
 
+    // field_provenance keeps the page's own words (quote_original) and, when the page was translated, the English it was verified against (quote_translated) — owner, round 10.
+    const insertProvenance = async (record: Record<string, unknown>, quote: string | null, source: (typeof allSources)[number] | undefined): Promise<string | null> => {
+      const pair = quote ? quotePair(quote, source) : { original: "", translated: null };
+      const full = { ...record, evidence_quote: quote ? markTranslatedQuote(quote, source) : quote, quote_original: pair.original || null, quote_translated: pair.translated };
+      let { error } = await supabase.from("field_provenance").insert(full);
+      // Before migration 20261201000000 the two columns do not exist: the row is written without them rather than not at all.
+      if (error && /quote_(original|translated)/.test(error.message)) {
+        const { quote_original: _o, quote_translated: _t, ...old } = full;
+        ({ error } = await supabase.from("field_provenance").insert(old));
+        if (!error) console.warn("    ⚠️  field_provenance written without quote_original / quote_translated — run migration 20261201000000.");
+      }
+      return error ? error.message : null;
+    };
     const writeProvenance = async (fw: { field: string; value: unknown; source_id: string; evidence_quote: string; source_type: SourceType }) => {
-      const { error: provenanceErr } = await supabase.from("field_provenance").insert({
+      const provenanceErr = await insertProvenance({
         startup_id: row.id, field: fw.field, value: fw.value, source_url: sourceById.get(fw.source_id)?.url,
-        source_type: fw.source_type, evidence_quote: markTranslatedQuote(fw.evidence_quote, sourceById.get(fw.source_id)),
-        confidence: computeFieldConfidence([{ source_type: fw.source_type }]), run_id: runId,
-      });
-      if (provenanceErr) console.warn(`    ⚠️  field_provenance insert failed (${fw.field}): ${provenanceErr.message}`);
+        source_type: fw.source_type, confidence: computeFieldConfidence([{ source_type: fw.source_type }]), run_id: runId,
+      }, fw.evidence_quote, sourceById.get(fw.source_id));
+      if (provenanceErr) console.warn(`    ⚠️  field_provenance insert failed (${fw.field}): ${provenanceErr}`);
     };
     for (const fw of fieldWrites) await writeProvenance(fw);
     // News, founders, leaders and patents live in jsonb lists with no source of their own: each value written gets a
@@ -875,12 +901,12 @@ export async function writeCollected(
     };
     for (const rl of reportLines.filter((r) => listKey[r.field] && r.source_url)) {
       const src = allSources.find((x) => x.url === rl.source_url);
-      const { error: lpErr } = await supabase.from("field_provenance").insert({
+      const lpErr = await insertProvenance({
         startup_id: row.id, field: listKey[rl.field](rl.after), value: rl.after, source_url: rl.source_url,
-        source_type: src?.source_type ?? (rl.field === "patent" ? "registry" : "news"), evidence_quote: rl.quote ? markTranslatedQuote(rl.quote, src) : (typeof rl.after === "string" ? rl.after.slice(0, 200) : null),
+        source_type: src?.source_type ?? (rl.field === "patent" ? "registry" : "news"),
         confidence: computeFieldConfidence([{ source_type: src?.source_type ?? "news" }]), run_id: runId,
-      });
-      if (lpErr) console.warn(`    ⚠️  field_provenance insert failed (${rl.field}): ${lpErr.message}`);
+      }, rl.quote ?? (typeof rl.after === "string" ? rl.after.slice(0, 200) : null), src);
+      if (lpErr) console.warn(`    ⚠️  field_provenance insert failed (${rl.field}): ${lpErr}`);
     }
     // A round's amount / valuation / date / lead: field "funding_rounds.<id>.<column>".
     const roundProvenance = async (roundId: string, written: Parameters<typeof roundFieldEvidence>[0]) => {

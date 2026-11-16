@@ -51,7 +51,7 @@ import { writeCollected, BULK_THRESHOLDS } from "../lib/enrichment/writeCompany.
 
 import { classifyTier, type TierRow, type TierRound } from "../lib/enrichment/queue.ts";
 import { createSearchProviderState, jinaDisabled, readPageCached, type SearchProviderState } from "../lib/enrichment/searchProviders.ts";
-import { loadKnown, saveKnown, remember, applyKnown, markKey, KNOWN_PATH, type KnownStore, type KnownEntry } from "../lib/enrichment/knownSources.ts";
+import { loadKnown, saveKnown, remember, applyKnown, markKey, NOT_REMEMBERED, KNOWN_PATH, type KnownStore, type KnownEntry } from "../lib/enrichment/knownSources.ts";
 import { injectKnown } from "../lib/enrichment/knownInject.ts";
 import { readMarks } from "../lib/enrichment/fieldReview.ts";
 import { loadSectorTaxonomy, type SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
@@ -61,7 +61,7 @@ import { websiteDomain, type DomainOwner } from "../lib/enrichment/websiteValida
 
 import { assertEnrichmentWritesAllowed, PILOT_FIELDS } from "../lib/enrichment/writeGate.ts";
 import { openFieldNames } from "../lib/enrichment/fieldReview.ts";
-import { writeFileSync, mkdirSync, readdirSync } from "fs";
+import { writeFileSync, mkdirSync, readdirSync, readFileSync } from "fs";
 import { rejectedDomains, rejectedDomainsCsv } from "../lib/enrichment/rejectedDomains.ts";
 import { wrapAnthropic, installHttpRecorder, quietOffline, installFetchTimeout, recorderSummary, replayMode } from "../lib/enrichment/recorder.ts";
 import { installCompanyLog, installLineTap, gathered, withCompany, companyLines } from "../lib/enrichment/companyLog.ts";
@@ -126,6 +126,7 @@ const wrongMarks = new Set(markList.filter((m) => m.verdict === "wrong").map((m)
 const ownerWrong = KNOWN_ON ? ownerWrongTest(loadGaps()) : () => false;   // also what the owner removed with scripts/known_sources_fix.ts
 const isWrongValue = (c: string, f: string, v: string) => wrongMarks.has(markKey(c, f, v)) || ownerWrong(c, f, v);
 const lockedMarks = new Set(markList.filter((m) => m.verdict === "correct").map((m) => markKey(m.company, m.field, m.value)));
+for (const list of Object.values(knownStore)) for (let i = list.length - 1; i >= 0; i--) if (NOT_REMEMBERED.has(list[i].field)) list.splice(i, 1);   // proposals are not remembered
 const gapStore: GapStore = KNOWN_ON ? loadGaps() : {};
 if (KNOWN_ON) {
   // What the owner marked wrong leaves the memory and stays as a refused candidate (owner, round 10).
@@ -332,6 +333,17 @@ async function enrichCompany(
     return;
   }
 
+  // What kind of company this was, kept for the stratified sample of the precision check (scripts/report_lint.ts).
+  {
+    const bare = row.name.toLowerCase().replace(/\b(inc|ltd|llc|gmbh|corp|co)\b\.?/g, "").trim();
+    const generic = !/\s/.test(bare) && /^[\p{L}]{3,8}$/u.test(bare);
+    let all: Record<string, { generic: boolean; translated: boolean; sources: number; techBorderline: boolean }> = {};
+    try { all = JSON.parse(readFileSync("cache/company_flags.json", "utf8")); } catch { /* first run */ }
+    const f = (collected as { flags?: { translated: boolean; sources: number; techBorderline: boolean } }).flags;
+    all[row.name] = { generic, translated: !!f?.translated, sources: f?.sources ?? 0, techBorderline: !!f?.techBorderline };
+    try { mkdirSync("cache", { recursive: true }); writeFileSync("cache/company_flags.json", JSON.stringify(all, null, 1)); } catch { /* a convenience */ }
+  }
+
   // The memory of verified sources first (dry and wet alike): a verified value whose quote is still on its page, and that this run did not find, enters the
   // collected company with its source, so the write stage gates, fills and records it like a found value (lib/enrichment/knownInject.ts).
   let injectedNow: string[] = [];
@@ -350,7 +362,7 @@ async function enrichCompany(
     taxonomy, startupByDomain, seen: PILOT ? null : seen, runId,
     openFields: OPEN_FIELDS, pilot: PILOT,
   }, summary);
-  let companyRows = (outcome?.pilot ?? []).map((c) => ({ company_id: row.id, company: row.name, field: c.field, before: c.before == null ? "" : String(c.before), after: String(c.after), source_url: c.source_url ?? "", quote: c.quote ?? "", origin: "new", ...(c.payload ? { payload: JSON.stringify(c.payload) } : {}) }));
+  let companyRows = (outcome?.pilot ?? []).map((c) => ({ company_id: row.id, company: row.name, field: c.field, before: c.before == null ? "" : String(c.before), after: String(c.after), source_url: c.source_url ?? "", quote: c.quote ?? "", origin: "new", quote_original: c.quote_original ?? "", quote_translated: c.quote_translated ?? "", ...(c.payload ? { payload: JSON.stringify(c.payload) } : {}) }));
   if (KNOWN_ON) {
     // A value the owner marked wrong does not come back in the report, however it was found again.
     const back = companyRows.filter((r) => ownerWrong(r.company, r.field, r.after));
@@ -366,7 +378,7 @@ async function enrichCompany(
     console.log(`    📚  Known sources (${row.name}): from memory ${[...new Set([...injectedNow, ...carry.carried.map((r) => r.field)])].join(", ") || "none"}${injectedNow.length ? ` (${injectedNow.join(", ")} entered the write stage)` : ""}${carry.carried.length ? ` (${carry.carried.length} more value(s) carried in the report)` : ""}; from this run's search ${[...freshFound].filter((f) => !injectedNow.includes(f)).join(", ") || "none"}; still missing ${missing.join(", ") || "none"}${carry.recheck.length ? `; back to review (quote gone): ${carry.recheck.join(" | ")}` : ""}${carry.refreshDue.length ? `; older than the refresh time, searched again: ${carry.refreshDue.join(" | ")}` : ""}${carry.locked.length ? `; locked (marked correct) kept: ${carry.locked.join(" | ")}` : ""}${before ? "" : " [no memory yet]"}`);
   }
   for (const c of companyRows) {
-    pilotRows.push({ company_id: c.company_id, company: c.company, field: c.field, before: c.before, after: c.after, source_url: c.source_url, quote: c.quote, origin: c.origin });
+    pilotRows.push({ company_id: c.company_id, company: c.company, field: c.field, before: c.before, after: c.after, source_url: c.source_url, quote: c.quote, origin: c.origin, quote_original: (c as { quote_original?: string }).quote_original ?? "", quote_translated: (c as { quote_translated?: string }).quote_translated ?? "" });
   }
   if (PILOT && !companyRows.length) pilotRows.push({ company_id: row.id, company: row.name, field: "(nothing)", before: "", after: "", source_url: "", quote: "" });
 }
@@ -654,7 +666,7 @@ async function main() {
   }
   if (KNOWN_ON && Object.keys(knownStore).length) { saveKnown(knownStore); console.log(`📚  Known sources saved: ${KNOWN_PATH} (${Object.values(knownStore).reduce((n, l) => n + l.length, 0)} value(s) of ${Object.keys(knownStore).length} compan(ies)).`); }
   if (PILOT || pilotRows.length > 0) {
-    const cols = ["company_id", "company", "field", "before", "after", "source_url", "quote", "origin"];
+    const cols = ["company_id", "company", "field", "before", "after", "source_url", "quote", "origin", "quote_original", "quote_translated"];
     const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
     writeFileSync(PILOT_REPORT, "\uFEFF" + [cols.join(","), ...pilotRows.map((r) => cols.map((c) => cell(r[c] ?? "")).join(","))].join("\r\n") + "\r\n");
     // The numbered report of this batch (owner, 2026-11-05): the owner answers with the wrong numbers.

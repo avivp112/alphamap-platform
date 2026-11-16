@@ -137,6 +137,8 @@ export interface V2Founder extends PersonQualityTags {
   linkedin_url?: EvidencedValue<string>;
   /** The source that states this person founded the company (people.ts groundFounders). */
   grounded_url?: string;
+  /** The words of that source that ground him (round 10): shown as the founder's quote in the report. */
+  grounded_quote?: string;
   /** Structured background facts, each with a quote (founderBackground.ts); written only when the founder_background field is open. */
   background?: import("./founderBackground.ts").BackgroundFact[];
 }

@@ -35,6 +35,8 @@ import { siteBelongsToAnotherCompany, acquisitionHeadline, rebrandedAs, redirect
 import { resolveDomain, judgeSite } from "./domainResolve.ts";
 import { pageNamesCompany } from "./ownDomain.ts";
 import { translateItems } from "./translate.ts";
+import { foundedYearFromSite, copyrightStartYear, foundedInCityYear } from "./siteFacts.ts";
+import { storedRejection, rememberRejection } from "./techMemory.ts";
 import { buildSectorRequest, parseSectorChoice, classifyWithRetry, type SectorChoice } from "./classifySector.ts";
 import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
 import { buildDescriptionRequest, descriptionSources, processDescription, describeAttempt } from "./descriptionBuilder.ts";
@@ -57,19 +59,20 @@ import {
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
 import { pickArticlesToRead } from "./articles.ts";
 import { runTechGate, shouldSkipAsNonTech, techDecision, type TechGateVerdict } from "./techGate.ts";
-import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, supportedRoleSubset, personCardsInHtml, bioFromCard, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
+import { teamPeopleCount, foundersFromText, foundersFromCards, foundersFromMentions, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, supportedRoleSubset, personCardsInHtml, bioFromCard, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
 import { componentOn } from "./components.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
 import { validateEnrichment, checkNarratives } from "./validation.ts";
-import { hqStatementsIn, decideHeadquarters, statementKind, isLegalPageUrl, articleDate, countryOfCity, contactPageAddresses, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, canonicalCity, type HqStatement } from "./headquarters.ts";
+import { legalPageHq, hqStatementsIn, decideHeadquarters, statementKind, isLegalPageUrl, articleDate, countryOfCity, contactPageAddresses, impressumSeat, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, canonicalCity, type HqStatement } from "./headquarters.ts";
 import { profileSourceAllowed, roundSourceStanding, unwrapRedirect, corroboratedInvestors } from "./roundSources.ts";
 import { aboutParagraph, aboutIsOf, factsFromAbout, legalFacts, releasePointsTo, type LegalFacts } from "./companyFacts.ts";
 import { checkFoundingCountry } from "./origin.ts";
 import { namesCompany } from "./headcount.ts";
 import { companiesHouseHeadcount, brregHeadcount, waybackHeadcount, type HeadcountIo } from "./headcountCollect.ts";
 import type { HistoryPoint } from "./headcountHistory.ts";
+import { sizeStatement } from "./headcountSources.ts";
 import { lookupRegisters, nodeRegisterIo, registerDecides, type RegisterContext, type RegisterFinding } from "./registers.ts";
 import { stripHonorific, mergeLeadersByPerson } from "./people.ts";
 import { countryFromLocationQuote } from "./location.ts";
@@ -230,6 +233,8 @@ export interface CollectedCompany {
   outcome: "collected";
   /** The company's own site, found by name when the address on file was another business or unreadable (domainResolve.ts): a proposal, never applied. */
   websiteProposal?: { from: string | null; to: string; reason: string };
+  /** What kind of company this was, for the stratified precision sample (owner, round 10). */
+  flags?: { translated: boolean; sources: number; techBorderline: boolean };
   /** Headcount points from registers, plans and archived pages (headcountHistory.ts); each with its source and type. */
   headcountExtra?: import("./headcountHistory.ts").HistoryPoint[];
   profile: ProfileResult;
@@ -372,6 +377,15 @@ export async function collectCompany(
   const seen = ctx.seen;
   const gapFillDue = ctx.update && !!seen?.gapFillDue();
 
+  // A company turned away as not technology stays turned away for a time (techMemory.ts): the same answer every run, and no searches spent.
+  if (!ctx.update) {
+    const before = storedRejection(row.id);
+    if (before) {
+      console.log(`    🧪  Technology: turned away on ${before.date} (${before.kind} check) — ${before.reason.slice(0, 160)}; reused (TECH_RECHECK=true looks again).`);
+      return { outcome: "rejected", reason: "not_technology", detail: `earlier decision ${before.date}: ${before.reason}` };
+    }
+  }
+
   // ── Stage 0: domain verification ──────────────────────────────────────
   // (an update trusts the website already checked by the full run)
   const domainVerification = ctx.update ? { verified: undefined, note: "" } : await verifyDomainMatch(row.name, row.website, searchState);
@@ -459,6 +473,7 @@ export async function collectCompany(
       // A site that shows another business than the company's own description is a website to fix.
       if (gate.verdict!.site_matches_description === false) ctx.onWebsiteIssue?.("content_mismatch", gate.verdict!.reason);
       stats.earlyRejected++;
+      if (gate.verdict!.site_matches_description !== false) rememberRejection(row.id, { reason: gate.verdict!.reason, kind: "early" });
       return { outcome: "rejected", reason: gate.verdict!.site_matches_description === false ? "site_shows_another_business" : "not_technology", detail: `early check: ${gate.verdict!.reason}` };
     }
   }
@@ -668,6 +683,7 @@ export async function collectCompany(
     }
     if (decision === "reject") {
       console.log("    🚫  REJECTED — not a technology-driven company");
+      rememberRejection(row.id, { reason: profile.tech_reason ?? profile.profile.description?.slice(0, 200) ?? "not technology", kind: "profile" });
       return { outcome: "rejected", reason: "not_technology", detail: `profile: ${profile.tech_reason ?? profile.profile.description?.slice(0, 200) ?? "the model gave no reason"}` };
     }
   }
@@ -857,7 +873,22 @@ export async function collectCompany(
         textFounders.push(`${f.name} [${src.source_id}]`);
       }
     }
-    if (textFounders.length > 0) console.log(`    👥  Founders from "founded by" sentences: ${textFounders.join(", ")}`);
+    // A full name shown with the title Founder / Co-founder (in any language) on the company's own team or about page, or "<Name>, founder of <this company>" in an allowed article
+    // (owner, round 10). "Founder of <another company>", "Founding engineer / member / team / partner" and "Founder's office" are not founders.
+    for (const src of allSources) {
+      if (!statementKind(src) || !profileSourceAllowed(src, row.name)) continue;
+      const text = `${src.title ?? ""}\n${src.content}`;
+      const found = [...(src.source_type === "company_site" ? foundersFromCards(text, row.name) : []), ...foundersFromMentions(text, row.name)];
+      for (const raw of found) {
+        const f = { ...raw, name: stripHonorific(raw.name) };
+        if (!f.name.includes(" ")) continue;
+        const founders = profile.profile.founders ?? [];
+        if (founders.some((x) => x?.name && samePersonName(x.name, f.name))) continue;
+        profile.profile.founders = [...founders, { name: f.name, title: f.title }];
+        textFounders.push(`${f.name} [${src.source_id}] "${f.quote.replace(/\s+/g, " ").slice(0, 80)}"`);
+      }
+    }
+    if (textFounders.length > 0) console.log(`    👥  Founders from "founded by" sentences and from titles: ${textFounders.join(", ")}`);
   } else {
     const textOnly = founderNamesNotExtracted(profile.profile.founders ?? [], allSources, row.name);
     if (textOnly.length > 0) console.log(`    👥  Named as founder in a sentence but not extracted with evidence — not added: ${textOnly.join(", ")}`);
@@ -1102,6 +1133,7 @@ export async function collectCompany(
   // The HQ the decision took (a Contact-page address, an About paragraph): validation does not ask
   // its quote for an HQ word again (Anonymised's "7 Bell Yard, London" — model check 2026-11-02).
   let hqDecided = false;
+  let statementsAll: HqStatement[] = [];
   // Extra searches (EXTRA_SEARCHES, default 4, owner 2026-11-07): competitors by tier and the founders' background share them.
   let extraSearchesLeft = Math.max(0, Number(process.env.EXTRA_SEARCHES ?? 4) || 0);
   const extraSearch = async (query: string, label: string): Promise<RawSearchResult[]> => {
@@ -1154,8 +1186,40 @@ export async function collectCompany(
     }
   }
 
+  // a2. Founding year from a clear structure on the company's own site ("Founded in 2013", "Since 2013", "Est. 2013"); an article needs a sentence "founded in <city> in <year>" naming the company
+  // (owner, round 10). The © year of the footer decides nothing; it only flags a founding year later than the first year of the © range.
+  if (!ctx.update && !allowedFact(profile.profile.founded_year)) {
+    let fromSite: { year: number; quote: string; src: LabeledSource } | null = null;
+    for (const src of allSources) {
+      if (src.source_type !== "company_site" || !profileSourceAllowed(src, row.name)) continue;
+      const hit = foundedYearFromSite(src.content);
+      if (hit) { fromSite = { ...hit, src }; break; }
+    }
+    if (fromSite) {
+      profile.profile.founded_year = { value: fromSite.year, source_id: fromSite.src.source_id, evidence_quote: fromSite.quote } as typeof profile.profile.founded_year;
+      console.log(`    📅  Founded ${fromSite.year} — the company's own site: "${fromSite.quote.slice(0, 100)}" (${fromSite.src.url})`);
+      bump(stats.droppedByReason, "founded_year_from_site");
+      const c = allSources.filter((x) => x.source_type === "company_site").map((x) => copyrightStartYear(x.content)).filter((y): y is number => y != null);
+      if (c.length && fromSite.year > Math.min(...c)) console.log(`    ⚠️  Founded ${fromSite.year} is later than the first © year of the site (${Math.min(...c)}): flagged for review.`);
+    } else {
+      for (const src of allSources) {
+        if (!statementKind(src) || !profileSourceAllowed(src, row.name)) continue;
+        const sentences = `${src.title ?? ""}. ${src.content}`.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/);
+        const hit = foundedInCityYear(sentences, row.name);
+        if (!hit) continue;
+        profile.profile.founded_year = { value: hit.year, source_id: src.source_id, evidence_quote: hit.quote } as typeof profile.profile.founded_year;
+        const cc = countryOfCity(hit.city);
+        if (cc && !profile.profile.founding_country) profile.profile.founding_country = { value: cc, source_id: src.source_id, evidence_quote: hit.quote } as typeof profile.profile.founding_country;
+        console.log(`    📅  Founded ${hit.year} in ${hit.city}${cc ? ` (${cc})` : ""} — "${hit.quote.slice(0, 100)}" (${src.url})`);
+        bump(stats.droppedByReason, "founded_year_from_article");
+        break;
+      }
+    }
+  }
+
   // b. Its legal pages: legal name, company number, registered office (an office only).
   let legal: LegalFacts = {};
+  let legalSeat: { city: string; quote: string; source_id: string } | null = null;
   if (componentOn("legal_pages") && !ctx.update && effectiveWebsite) {
     const root = (effectiveWebsite.startsWith("http") ? effectiveWebsite : `https://${effectiveWebsite}`).replace(/\/+$/, "");
     // A site that answers every path with its home page (Moon Active, Carbeniumtec: model check
@@ -1178,6 +1242,7 @@ export async function collectCompany(
       src.source_type = "company_site";
       console.log(`    ⚖️   ${root + path}: ${[legal.legalName && `legal name ${legal.legalName}`, legal.companyNumber && `company no. ${legal.companyNumber}`, legal.registeredCity && `registered office in ${legal.registeredCity}`].filter(Boolean).join(", ")}`);
       if (f.registeredCity) {
+        legalSeat ??= { city: f.registeredCity, quote: f.quote ?? f.registeredCity, source_id: src.source_id };
         const offices = profile.profile.offices ?? [];
         if (!offices.some((o) => canonicalCity(o.city) === canonicalCity(f.registeredCity!))) {
           offices.push({ city: f.registeredCity, ...(countryOfCity(f.registeredCity) ? { country: countryOfCity(f.registeredCity)! } : {}), source_id: src.source_id, evidence_quote: f.quote ?? f.registeredCity });
@@ -1222,9 +1287,10 @@ export async function collectCompany(
   // press of tiers 1–3; press of the last two years that disagrees leaves it
   // empty and both cities become offices (headquarters.ts, owner 2026-11-01).
   {
-    const statements = [...allSources.flatMap((s) => hqStatementsIn(s, row.name)), ...extraStatements.filter((x, i, xs) => xs.findIndex((y) => y.city === x.city && y.source_id === x.source_id) === i)];
+    const statements = [...allSources.flatMap((s) => hqStatementsIn(s, row.name)), ...allSources.flatMap((s) => impressumSeat(s)), ...extraStatements.filter((x, i, xs) => xs.findIndex((y) => y.city === x.city && y.source_id === x.source_id) === i)];
     // One street address on the Contact page is the headquarters (owner, 2026-11-02).
-    const contact = allSources.flatMap((s) => contactPageAddresses(s));
+    // The same city on every page (a footer) is one address.
+    const contact = allSources.flatMap((s) => contactPageAddresses(s)).filter((c, i, a) => a.findIndex((d) => canonicalCity(d.city) === canonicalCity(c.city)) === i);
     if (contact.length === 1 && !statements.some((s) => s.kind === "company")) {
       console.log(`    🏢  The Contact page gives one address — ${contact[0].city}: "${contact[0].quote.slice(0, 120)}"`);
       statements.push(contact[0]);
@@ -1237,6 +1303,7 @@ export async function collectCompany(
       && quoteSaysHqOf(mc.evidence_quote, mc.value, row.name, mcSource.source_type === "company_site") && !statements.some((s) => s.city.toLowerCase() === mc.value.toLowerCase() && s.source_id === mc.source_id)) {
       statements.push({ city: mc.value, quote: mc.evidence_quote, source_id: mc.source_id, url: mcSource.url, kind: mcKind, date: mcKind === "company" && mcSource.source_type === "company_site" ? null : articleDate(mcSource) });
     }
+    statementsAll = statements;
     const hq = decideHeadquarters(statements, undefined, (profile.profile.offices ?? []).map((o) => o.city));
     if (hq.kind === "none" && !fates.hq) fates.hq = mc ? `no allowed source states the headquarters: the model's "${mc.evidence_quote.slice(0, 100)}" is not a headquarters statement (${mcSource?.url ?? mc.source_id})` : "no source states the headquarters";
     if (hq.kind === "declared") {
@@ -1272,6 +1339,26 @@ export async function collectCompany(
       console.log(`    🏢  Headquarters left empty — the company's site lists ${hq.cities.join(", ")} without naming one, and no press declaration is from the last two years. They stay offices.`);
       profile.profile.city = undefined;
       profile.profile.country = undefined;
+    }
+  }
+
+  // A legal page's address is the headquarters only when it is the only address found AND the country agrees with other evidence (owner, round 10).
+  let legalHqSourceId: string | null = null;
+  if (legalSeat && !hqDecided && !profile.profile.city) {
+    const others = [
+      ...(profile.profile.offices ?? []).filter((o) => o.source_id !== legalSeat!.source_id).map((o) => o.city),
+      ...statementsAll.map((x) => x.city),
+    ];
+    const articleCountries = statementsAll.map((x) => countryOfCity(x.city)).filter((c): c is string => !!c);
+    const ok = legalPageHq({ city: legalSeat.city, quote: legalSeat.quote, otherAddressCities: others, domain: effectiveWebsite, siteText: siteSources.map((x) => x.content).join("\n"), articleCountries });
+    if (ok) {
+      legalHqSourceId = legalSeat.source_id;
+      profile.profile.city = { value: legalSeat.city, source_id: legalSeat.source_id, evidence_quote: legalSeat.quote };
+      profile.profile.country = { value: ok.country, source_id: legalSeat.source_id, evidence_quote: legalSeat.quote };
+      hqDecided = true;
+      console.log(`    🏢  Headquarters ${legalSeat.city} — the only address found, on a legal page; the country (${ok.country}) agrees with ${ok.basis}`);
+    } else {
+      console.log(`    🏢  The legal page's address (${legalSeat.city}) stays an office — it is not the only address found, or no other evidence names its country`);
     }
   }
 
@@ -1325,7 +1412,7 @@ export async function collectCompany(
     if (!f) continue;
     const s = sourceById.get(f.source_id);
     // A legal page's address is the registered office, not the headquarters: an office, never the HQ (owner, 2026-11-08).
-    if (s && (key === "city" || key === "country") && isLegalPageUrl(s.url)) {
+    if (s && (key === "city" || key === "country") && isLegalPageUrl(s.url) && f.source_id !== legalHqSourceId) {
       console.log(`    🚫  ${key} ${JSON.stringify(f.value)} not written as the headquarters — it comes from a legal page (${s.url}); kept as an office`);
       bump(stats.droppedByReason, "hq_from_legal_page");
       if (key === "city") {
@@ -1884,6 +1971,18 @@ export async function collectCompany(
     if (ukRegisterEntity && (hqNow ?? "").toLowerCase().replace(/^uk$/, "united kingdom") === "united kingdom") headcountExtra.push(...await companiesHouseHeadcount(ukRegisterEntity.number, ukRegisterEntity.entity, io));
     if ((hqNow ?? "").toLowerCase() === "norway") headcountExtra.push(...await brregHeadcount(row.name, legal.legalName, io, today));
     if (domain) headcountExtra.push(...await waybackHeadcount(domain, row.name, io));
+    // The company's own pages as they are now (owner, round 10): "Team of 50+", "over 200 people" → a lower bound, site_stated; a team page that shows N people → "N+", observed.
+    for (const src of allSources) {
+      if (src.source_type !== "company_site" || !profileSourceAllowed(src, row.name)) continue;
+      const stated = sizeStatement(src.content);
+      if (stated && !headcountExtra.some((p) => p.type === "site_stated" && p.sourceUrl === src.url)) {
+        headcountExtra.push({ date: today, value: stated.value, ...(stated.lowerBound ? { lowerBound: true } : {}), type: "site_stated", measure: "count_at_date", sourceUrl: src.url, quote: stated.sentence });
+      }
+      if (/\/(team|people|our-team|the-team|leadership|about-us|about|company)(\/|$)/i.test(src.url)) {
+        const seen = teamPeopleCount(src.content);
+        if (seen) headcountExtra.push({ date: today, value: seen.count, lowerBound: true, type: "observed", measure: "count_at_date", sourceUrl: src.url, quote: seen.quote });
+      }
+    }
     if (headcountExtra.length) console.log(`    👥  Headcount points: ${headcountExtra.map((p) => `${p.value}${p.lowerBound ? "+" : ""}@${p.date} (${p.type})`).join(", ")}`);
     else console.log("    👥  Headcount points: none from registers or archived pages.");
   }
@@ -1905,6 +2004,11 @@ export async function collectCompany(
   return {
     outcome: "collected",
     ...(websiteProposal ? { websiteProposal } : {}),
+    flags: {
+      translated: allSources.some((x) => x.translation_offset != null),
+      sources: allSources.length,
+      techBorderline: !!techGateVerdict && (techGateVerdict.confidence !== "high" || techGateVerdict.is_tech_company === false || (profile as { tech_decision?: string }).tech_decision === "cannot_tell"),
+    },
     profile, funding, market, allSources, sourceById, sourceTypeFor, sourceUrlFor,
     linkedinFounders, linkedinLeaders, existingRefs, validation, plan,
     cityConfidence, countryConfidence, domain, verifiedFacts, patentsFromRegister, roundHints, confirmedHints, unlistedDomains,

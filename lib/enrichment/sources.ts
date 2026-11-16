@@ -81,6 +81,8 @@ export interface RawSearchResult {
   prompt_content?: string;
   /** Set when the English translation was appended to `content` (translate.ts): where the translated half starts. */
   translation_offset?: number;
+  /** The original line of every translated line (translate.ts), to give a quote beside the page's own words. */
+  translation_pairs?: Array<{ original: string; english: string }>;
 }
 
 export interface LabeledSource extends RawSearchResult {
