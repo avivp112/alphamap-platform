@@ -998,7 +998,9 @@ export async function writeCollected(
     // Only when this run wrote the description (owner, 2026-11-09): the Private Market lists every company with this stamp, whatever
     // else it holds, and a company that got a news item or a patent is not a card worth listing. Until the description field is open
     // and written, v2 puts no company on that page (a company the view's own bar admits — description and completeness ≥ 7 — still is).
-    if (!PILOT && typeof patch.description === "string" && patch.description.trim().length > 0) {
+    // A pilot run lists its companies the same way (owner, round 10: ten enriched companies were written by the pilot and did not appear on the platform, because the stamp was a
+    // full-run privilege): the stamp is set when THIS run wrote the description, in a pilot or not.
+    if (typeof patch.description === "string" && patch.description.trim().length > 0) {
       const { error: markErr } = await supabase.from("startups").update({ enriched_v2_at: new Date().toISOString() }).eq("id", row.id);
       if (markErr && !warnedNoEnrichedV2Column) {
         warnedNoEnrichedV2Column = true;
