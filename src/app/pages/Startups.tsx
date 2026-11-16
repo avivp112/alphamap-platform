@@ -2153,6 +2153,7 @@ function TearsheetModal({
   const roundType   = (detail ? latestLiveRound?.round_type : startup.latest_round_type) ?? null;
   const roundStyle  = roundType ? (ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]) : null;
   const location    = placeLabel(live.city, live.country);
+  const acq         = live as Partial<Startup>;   // exit details, when the record has them (a purchase, owner round 10)
   const origin      = originNote(originFacts(live), t);
 
   const sortedRounds = useMemo(
@@ -2400,6 +2401,16 @@ function TearsheetModal({
                   <>
                     <span className="text-[#0F172A]/30">·</span>
                     <span className="flex items-center gap-1"><Calendar className="w-3 h-3 flex-none" />Est. {live.founded_year}</span>
+                  </>
+                )}
+                {(acq.status === "acquired" || acq.status === "majority_acquired") && acq.acquired_by && (
+                  <>
+                    <span className="text-[#0F172A]/30">·</span>
+                    <span className="font-medium text-[#0F172A]/80">
+                      {acq.status === "majority_acquired" ? "Majority acquired by" : "Acquired by"} {acq.acquired_by}
+                      {acq.exit_date ? ` (${acq.exit_date.slice(0, 10)})` : ""}
+                      {acq.brand_after_acquisition ? ` · now ${acq.brand_after_acquisition}` : ""}
+                    </span>
                   </>
                 )}
                 {live.website && (

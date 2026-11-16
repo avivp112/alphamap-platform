@@ -37,6 +37,7 @@
  * live API wrappers.
  */
 
+import { parseSitemap, robotsSitemaps, pickSitePages, MAX_SITE_PAGES } from "./sitemap.ts";
 import { devLinksFromText, type DevLinks } from "./devLinks";
 import type { Provider, RawSearchResult } from "./sources";
 import { websiteDomain } from "./websiteValidation";
@@ -744,6 +745,46 @@ export async function fetchArticleTexts(urls: string[], state: SearchProviderSta
  * Everything is checked against looksLikeRealContent(), so a generic 404
  * page isn't counted as a real source whichever provider fetched it.
  */
+/**
+ * The sitemap's pages worth reading (sitemap.ts), cached per site; [] when the site has none. Read through the page readers like every page of the company's site — never a direct
+ * fetch (providerOrder.test.ts) — so what comes back is text: the addresses are taken from it whether or not the XML tags survived.
+ */
+async function sitemapPagesFor(root: string, state: SearchProviderState): Promise<string[]> {
+  let origin: string;
+  try { origin = new URL(root).origin; } catch { return []; }
+  const key = `sitemap:${origin}`;
+  const cached = state.cache?.get<string[]>(key);
+  if (cached) return cached;
+  const get = async (url: string): Promise<string | null> => (await readPage(url, state, false))?.text ?? null;
+  const addresses = (text: string): { kind: "urlset" | "index"; urls: string[] } => {
+    const parsed = parseSitemap(text);
+    if (parsed.urls.length) return parsed;
+    // The reader turned the XML into text: every address in it is one.
+    return { kind: /sitemap[^\s]*\.xml/i.test(text) && !/<urlset/i.test(text) ? "index" : "urlset", urls: [...new Set((text.match(/https?:\/\/[^\s<>"')\]]+/g) ?? []).map((u) => u.replace(/[.,;]+$/, "")))] };
+  };
+  const urls: string[] = [];
+  const read = async (smUrl: string, depth = 0): Promise<void> => {
+    if (urls.length > 5000 || depth > 1) return;
+    const text = await get(smUrl);
+    if (!text || text.length < 40) return;
+    const parsed = addresses(text);
+    const isMap = (u: string) => /\.xml(\?|$)/i.test(u) && /sitemap/i.test(u);
+    const kids = parsed.urls.filter(isMap);
+    if (kids.length && depth === 0) {
+      for (const k of kids.filter((u) => !/(product|image|video|post|blog|article|category|tag)/i.test(u)).slice(0, 3)) await read(k, depth + 1);
+    }
+    urls.push(...parsed.urls.filter((u) => !isMap(u)));
+  };
+  await read(`${origin}/sitemap.xml`);
+  if (!urls.length) {
+    const robots = await get(`${origin}/robots.txt`);
+    for (const sm of robots ? robotsSitemaps(robots).slice(0, 2) : []) await read(sm);
+  }
+  const picked = urls.length ? pickSitePages(urls, root) : [];
+  state.cache?.set(key, picked);
+  return picked;
+}
+
 export async function fetchCompanyWebsitePages(
   website: string | null | undefined,
   state: SearchProviderState,
@@ -774,6 +815,16 @@ export async function fetchCompanyWebsitePages(
     } else if (looksLikeRealContent(homeRead.text)) {
       fetched.set(home, { content: homeRead.text, provider: homeRead.provider, cached: !!cachedHome });
       if (!cachedHome) state.cache?.set(`page:${home}`, { content: homeRead.text, provider: homeRead.provider });
+    }
+  }
+  // The site's own sitemap (owner, round 10): sitemap.xml, or the Sitemap line of robots.txt; the pages whose path says about / team / leadership / contact / press / news / careers /
+  // impressum / legal / investors (and the same words in the site's language) replace the fixed list, at most 30 pages. No sitemap: the fixed list stays.
+  if (process.env.SITEMAP !== "off") {
+    const fromMap = await sitemapPagesFor(root, state);
+    if (fromMap.length) {
+      const next = [urls[0], ...fromMap.filter((u) => u.replace(/\/+$/, "") !== urls[0].replace(/\/+$/, ""))].slice(0, MAX_SITE_PAGES);
+      console.log(`    🗺️   sitemap: ${fromMap.length} page(s) chosen (${next.length} read, cap ${MAX_SITE_PAGES}) instead of the ${urls.length} fixed addresses.`);
+      urls = next;
     }
   }
   // Sixteen addresses on a site that does not answer would cost minutes: after four misses in a row the rest of the pages are not tried.
