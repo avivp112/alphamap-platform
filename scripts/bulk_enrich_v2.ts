@@ -334,11 +334,13 @@ async function enrichCompany(
 
   // The memory of verified sources first (dry and wet alike): a verified value whose quote is still on its page, and that this run did not find, enters the
   // collected company with its source, so the write stage gates, fills and records it like a found value (lib/enrichment/knownInject.ts).
+  let injectedNow: string[] = [];
   if (KNOWN_ON) {
     const carry = await applyKnown(knownStore, row.id, [], RUN_DATE, readKnownPage, lockedMarks);
     const confirmed: KnownEntry[] = carry.carried.filter((r) => r.origin === "known_source").map((r) => ({ company_id: r.company_id, company: r.company, field: r.field, value: r.after, source_url: r.source_url, quote: r.quote, verified_at: RUN_DATE, run_id: "memory", ...(r.payload ? { payload: r.payload } : {}) }));
     let host: string | null = null; try { host = row.website ? new URL(/^https?:/.test(row.website) ? row.website : `https://${row.website}`).hostname.replace(/^www\./, "") : null; } catch { /* no site */ }
     const injected = injectKnown(collected, confirmed, host);
+    injectedNow = injected;
     console.log(`    🧠  From the memory into the write stage: ${injected.length ? injected.join(", ") : "nothing (this run found the fields, or the memory has none)"}${carry.recheck.length ? ` · back to review (quote gone): ${carry.recheck.join(" | ")}` : ""}`);
   }
 
@@ -361,7 +363,7 @@ async function enrichCompany(
     companyRows = carry.rows.map((r) => ({ ...r, origin: r.origin ?? "new" })) as typeof companyRows;
     const missing = ASKED.filter((f) => OPEN_FIELDS.includes(f) && !companyRows.some((r) => r.field === f || r.field.startsWith(f)));
     recordGaps(gapStore, row.id, row.name, missing, companyLines(), runId ?? "dry", RUN_DATE);
-    console.log(`    📚  Known sources (${row.name}): from memory ${carry.carried.length ? [...new Set(carry.carried.map((r) => r.field))].join(", ") + ` (${carry.carried.length} value(s))` : "none"}; from this run's search ${[...freshFound].join(", ") || "none"}; still missing ${missing.join(", ") || "none"}${carry.recheck.length ? `; back to review (quote gone): ${carry.recheck.join(" | ")}` : ""}${carry.refreshDue.length ? `; older than the refresh time, searched again: ${carry.refreshDue.join(" | ")}` : ""}${carry.locked.length ? `; locked (marked correct) kept: ${carry.locked.join(" | ")}` : ""}${before ? "" : " [no memory yet]"}`);
+    console.log(`    📚  Known sources (${row.name}): from memory ${[...new Set([...injectedNow, ...carry.carried.map((r) => r.field)])].join(", ") || "none"}${injectedNow.length ? ` (${injectedNow.join(", ")} entered the write stage)` : ""}${carry.carried.length ? ` (${carry.carried.length} more value(s) carried in the report)` : ""}; from this run's search ${[...freshFound].filter((f) => !injectedNow.includes(f)).join(", ") || "none"}; still missing ${missing.join(", ") || "none"}${carry.recheck.length ? `; back to review (quote gone): ${carry.recheck.join(" | ")}` : ""}${carry.refreshDue.length ? `; older than the refresh time, searched again: ${carry.refreshDue.join(" | ")}` : ""}${carry.locked.length ? `; locked (marked correct) kept: ${carry.locked.join(" | ")}` : ""}${before ? "" : " [no memory yet]"}`);
   }
   for (const c of companyRows) {
     pilotRows.push({ company_id: c.company_id, company: c.company, field: c.field, before: c.before, after: c.after, source_url: c.source_url, quote: c.quote, origin: c.origin });
