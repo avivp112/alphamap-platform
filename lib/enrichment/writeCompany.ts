@@ -778,6 +778,7 @@ export async function writeCollected(
       reportLines.push({ field: "round", before: null, after: `${r.round_type} ${amount} · ${dateByPrecision(r.announcement_date, r.announcement_date_precision)}${r.lead_investor ? ` · lead ${r.lead_investor}` : ""}`, source_url: r.source_url ?? null, quote: amountEvidence?.evidence_quote ?? null,
         payload: { round: r, evidence: roundFieldEvidence(r as never, funding.funding_rounds).map((e) => ({ field: e.field, value: e.value, source_url: sourceById.get(e.source_id)?.url ?? null, quote: e.evidence_quote })) } });
     }
+    if (collected.websiteProposal) reportLines.push({ field: "website_proposal", before: collected.websiteProposal.from, after: `website = ${collected.websiteProposal.to} — the address on file is another business or unreadable; for review, not applied`, source_url: collected.websiteProposal.to, quote: collected.websiteProposal.reason });
     const renamedTo = (profile.profile as { rebrand_to?: string }).rebrand_to;
     if (renamedTo) reportLines.push({ field: "name_proposal", before: row.name, after: `name = "${renamedTo}", former_names += "${row.name}" — the same company renamed; for review, not applied`, source_url: row.website ? (/^https?:/.test(row.website) ? row.website : `https://${row.website}`) : null, quote: null });
     for (const r of exitEvents) {

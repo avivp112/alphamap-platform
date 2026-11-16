@@ -621,6 +621,12 @@ async function main() {
     const ncell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
     writeFileSync("not_enriched.csv", "\uFEFF" + ["company,website,why,detail", ...notEnrichedRows.map((r) => [r.company, r.website, r.why, r.detail].map(ncell).join(","))].join("\r\n") + "\r\n");
     console.log(`📋  ${notEnrichedRows.length} company(ies) not enriched, with the reason, in not_enriched.csv.`);
+    // Companies whose address on file is another business or unreadable and whose own site was not found: a list of their own (owner, round 10).
+    const unresolved = notEnrichedRows.filter((r) => r.why === "domain_unresolved");
+    if (unresolved.length) {
+      writeFileSync("domain_unresolved.csv", "\uFEFF" + ["company,website,detail", ...unresolved.map((r) => [r.company, r.website, r.detail].map(ncell).join(","))].join("\r\n") + "\r\n");
+      console.log(`🧭  ${unresolved.length} company(ies) with no usable website (domain_unresolved) in domain_unresolved.csv.`);
+    }
   }
   if (rejectedDomains.size && !process.env.VITEST) {
     writeFileSync("rejected_domains.csv", rejectedDomainsCsv(rejectedDomains.rows_()));
