@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { recordGaps, purgeWrong, missingRows, gapFor, type GapStore } from "./knownGaps";
+import { recordGaps, purgeWrong, missingRows, gapFor, ownerWrongKeys, type GapStore } from "./knownGaps";
+import { markKey } from "./knownSources";
 import { remember, type KnownStore } from "./knownSources";
 
 describe("known gaps (owner, round 10)", () => {
@@ -33,5 +34,15 @@ describe("known gaps (owner, round 10)", () => {
     expect(missingRows(g, ["c1"], new Set())[0].reason).toBe("no source found");
     expect(missingRows(g, ["c1"], new Set(["Acme"]))[0].reason).toBe("site not read");
     expect(gapFor("zzz", lines).rejected).toEqual([]);
+  });
+  it("what the owner removed is not taken back by a rebuilt memory", () => {
+    const store: KnownStore = {}; const g: GapStore = {};
+    remember(store, [{ company_id: "c1", company: "Acme", field: "round", before: "", after: "Other $25M · 2022-04-19 · Goldman Sachs", source_url: "https://x.com/a", quote: "q" }], "r1", "2026-11-01");
+    purgeWrong(store, g, (_c, f) => f === "round", "2026-11-15");
+    const keys = ownerWrongKeys(g, markKey);
+    expect(keys.has(markKey("Acme", "round", "Other $25M · 2022-04-19 · Goldman Sachs"))).toBe(true);
+    const again: KnownStore = {};
+    remember(again, [{ company_id: "c1", company: "Acme", field: "round", before: "", after: "Other $25M · 2022-04-19 · Goldman Sachs", source_url: "https://x.com/a", quote: "q" }], "r2", "2026-11-16", keys);
+    expect(again.c1 ?? []).toEqual([]);
   });
 });

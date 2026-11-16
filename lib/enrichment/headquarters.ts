@@ -47,7 +47,7 @@ export type HqDecision =
   | { kind: "site_offices"; cities: string[] }
   | { kind: "none" };
 
-const HQ_WORD = /\b(headquarter(?:s|ed)?|hq|head office|based in|-based)\b/i;
+const HQ_WORD = /\b(headquarter(?:s|ed)?|hq|head office|based in|-based|based)\b/i;
 const CITY_NAMES = [...MAJOR_CITIES.keys()].sort((a, b) => b.length - a.length);
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const CITY_RE = new RegExp(`(^|[^\\p{L}])(${CITY_NAMES.map(esc).join("|")})(?=$|[^\\p{L}])`, "giu");
@@ -170,7 +170,8 @@ export function diagnoseHq(s: LabeledSource, companyName: string): string[] {
  */
 function saysOfCompany(sentence: string, at: number, city: string, companyName: string, ownSite: boolean): boolean {
   const after = sentence.slice(at + city.length);
-  const based = after.match(/^-based\s+(.{0,60})/i);
+  // "Tel Aviv-based Hailo", "Sydney-headquartered Pet Circle", "Sydney headquartered Pet Circle", "Sydney based Pet Circle" (not "… based on …", "… headquartered in …", which the other branch reads).
+  const based = after.match(/^(?:-|\s+)(?:based|headquartered|hq'?d)\s+(?!on\b|in\b|at\b|upon\b|out\b)(.{0,60})/i);
   if (based) {
     // The company is the noun right after "-based" ("Tel Aviv-based Hailo", "Tel Aviv-based chipmaker
     // Hailo") — within its name's length plus three words, not as a possessive further on ("The

@@ -10,6 +10,7 @@ import { readFileSync, statSync, existsSync } from "fs";
 import { basename } from "path";
 import { loadKnown, saveKnown, remember, markKey, KNOWN_PATH, type ReportRow } from "../lib/enrichment/knownSources.ts";
 import { readMarks } from "../lib/enrichment/fieldReview.ts";
+import { loadGaps, ownerWrongKeys } from "../lib/enrichment/knownGaps.ts";
 
 function parseCsv(text: string): string[][] {
   const rows: string[][] = []; let row: string[] = [], cur = "", q = false;
@@ -30,6 +31,7 @@ const files = process.argv.slice(2).filter((f) => !f.startsWith("-"));
 if (!files.length) { console.error("npx tsx scripts/known_sources_seed.ts <report.csv> [<report.csv> …]   (oldest first)"); process.exit(1); }
 const store = loadKnown();
 const wrong = new Set(readMarks().filter((m) => m.verdict === "wrong").map((m) => markKey(m.company, m.field, m.value)));
+for (const k of ownerWrongKeys(loadGaps(), markKey)) wrong.add(k);
 for (const f of files) {
   if (!existsSync(f)) { console.warn(`⚠️  ${f} not found — skipped`); continue; }
   const [head, ...body] = parseCsv(readFileSync(f, "utf8"));
