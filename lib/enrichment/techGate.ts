@@ -32,7 +32,7 @@ export interface TechGateVerdict {
  * creative studios, agencies, consultancies), non-profits, incubators, accelerators and funds, and consumer products or shops with no technology of their own.
  * One definition for the early check and for the profile extraction, so they cannot disagree.
  */
-export const TECH_DEFINITION = "A technology company is one whose product falls in a technology category: software, AI/ML, fintech, cybersecurity, health or life-science technology, climate and energy technology (energy storage, clean energy, carbon capture), deep tech (advanced materials, robotics, space, semiconductors), industrial or manufacturing technology, food or agriculture technology (vertical farming, cultivated food), automotive or mobility technology, proptech, or an online-first e-commerce / marketplace business (selling online is its main business and it is venture-backed, like an online pet shop), or a business built on its own platform; financial and property-finance products sold through the company's own platform or app (lending, home-equity, insurance, payments) are fintech or proptech even when people take part in delivering them. NOT technology: professional services (design or creative studios, agencies, consultancies), non-profits, incubators, accelerators and funds, a maker of physical consumer products that also sells online (phone accessories, coffee), and physical shops with no technology of their own.";
+export const TECH_DEFINITION = "A technology company is one whose product falls in a technology category: software, AI/ML, fintech, cybersecurity, health or life-science technology, climate and energy technology (energy storage, clean energy, carbon capture), deep tech (advanced materials, robotics, space, semiconductors), industrial or manufacturing technology, food or agriculture technology (vertical farming, cultivated food), automotive or mobility technology, proptech, or an online-first e-commerce / marketplace business (selling online is its main business and it is venture-backed, like an online pet shop), or a business built on its own platform; financial and property-finance products sold through the company's own platform or app (lending, home-equity, insurance, payments) are fintech or proptech even when people take part in delivering them. NOT technology: professional services (design or creative studios, agencies, consultancies), non-profits, incubators, accelerators and funds, a maker of physical consumer products that also sells online (phone accessories, coffee), and physical shops with no technology of their own, IT support, systems-integration and managed IT services, staffing and recruiting services (also when AI is the theme), digital, design and creative agencies, and content, entertainment, animation and media production without a technology product of its own (a managed security or cloud platform sold as a product is technology).";
 
 export function buildTechGateRequest(companyName: string, homepageText: string, description: string | null, industry: string | null) {
   const material = [
@@ -74,14 +74,18 @@ export type TechDecision = "proceed" | "reject" | "undetermined";
  *   - the profile call (or a thin early check with nothing to describe the company with) could not tell → undetermined: not enriched, tried again later;
  *   - otherwise the profile call's no is a rejection.
  */
+const PRODUCT_WORDS = /\b(platform|software|app|application|saas|api|device|hardware|chip|robot|algorithm|marketplace|digital bank|product)\b/i;
 export function techDecision(
   gate: TechGateVerdict | null,
-  profile: { is_tech_company: boolean; tech_decision?: "technology" | "not_technology" | "cannot_tell" },
+  profile: { is_tech_company: boolean; tech_decision?: "technology" | "not_technology" | "cannot_tell"; tech_reason?: string },
   hasDescription: boolean,
 ): TechDecision {
   // Only a sure early "yes" stands against the profile call's "no": a medium one (Moft: a coffee-table gadget maker one run, a technology company the next) does not.
   const gateConfirms = !!gate && gate.is_tech_company === true && gate.enough_information !== false && gate.confidence === "high";
   if (gateConfirms) return "proceed";
+  // The early check said no with some confidence and the profile says yes: the profile's yes stands only when it rests on a product (a platform, software, an app, a device),
+  // not on a service (owner, round 10: Mototech/Celara sells AI talent recruiting and implementation services).
+  if (gate && gate.is_tech_company === false && gate.enough_information !== false && gate.confidence !== "low" && profile.is_tech_company === true && !PRODUCT_WORDS.test(profile.tech_reason ?? "")) return "reject";
   if (profile.tech_decision === "cannot_tell" || (gate?.enough_information === false && !hasDescription)) return "undetermined";
   // A rejection needs a described product to rest on: with nothing known about what the company sells, a "no" is not a finding (Ondato IL).
   if (profile.is_tech_company === false && !hasDescription) return "undetermined";

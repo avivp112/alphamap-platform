@@ -186,11 +186,18 @@ export async function writeCollected(
   // an investor list has none, so it is never written as a fill (pilot dry run 2026-11-08: "Swan's existing investors").
   // An acquisition is an exit, not a funding round (owner, round 10: ZestMoney "Acquired · DMI Finance" was a round row): it is taken out of the
   // rounds and shown as its own proposal (acquired by, date) for the owner's review; the company's status is not changed by the pipeline.
-  const exitEvents = planned.inserts.filter((r) => r.round_type === "Acquired");
+  // A round with no quote to stand on is not written (owner, round 10: Humi "Series A $10.9M · no date"): a round needs at least one evidence quote, and its amount its own.
+  const evidencedInserts = planned.inserts.filter((r) => {
+    const ev = roundFieldEvidence(r as never, funding.funding_rounds);
+    const ok = ev.length > 0 && (r.amount_raised == null || ev.some((e) => e.field === "amount_raised"));
+    if (!ok) { console.log(`    🚫  ${r.round_type} ${r.amount_raised != null ? `$${+(r.amount_raised / 1e6).toFixed(1)}M ` : ""}not written — no quote stands behind ${r.amount_raised != null ? "its amount" : "it"}.`); bump(summary.droppedByReason, "round_without_quote"); }
+    return ok;
+  });
+  const exitEvents = evidencedInserts.filter((r) => r.round_type === "Acquired");
   for (const r of exitEvents) { console.log(`    🏁  Acquisition is not a funding round — "${r.lead_investor ?? "buyer not named"}", ${r.announcement_date ?? "undated"}: shown as an acquired proposal, not written as a round.`); bump(summary.droppedByReason, "acquisition_not_a_round"); }
   const plan = {
     ...planned,
-    inserts: planned.inserts.filter((r) => r.round_type !== "Acquired"),
+    inserts: evidencedInserts.filter((r) => r.round_type !== "Acquired"),
     updates: planned.updates.flatMap((u) => {
       const patch = evidencedFillPatch(u.patch as Record<string, unknown>, funding.funding_rounds);
       if (!patch) { bump(summary.droppedByReason, "round_fill_without_evidence"); return []; }

@@ -11,6 +11,7 @@ import { roundSourceStanding } from "../lib/enrichment/roundSources.ts";
 import { domainOf } from "../lib/enrichment/rejectedDomains.ts";
 import { acquisitionHeadline } from "../lib/enrichment/siteOwner.ts";
 import { extractNumbersFromText } from "../lib/enrichment/evidence.ts";
+import { SECTOR_TAXONOMY } from "../src/lib/taxonomy.ts";
 
 function parseCsv(text: string): string[][] {
   const rows: string[][] = []; let row: string[] = [], cur = "", q = false;
@@ -70,7 +71,11 @@ for (const r of rows) {
   // 7. a headcount point without a quote
   if (r.field === "headcount_history" && !r.quote) err(r.company, `headcount point without its quote: ${r.after}`);
   // 8. a sector that is not a sector of the list
-  if (r.field === "sector" && /^Design|Software$/.test(r.after) && !/&/.test(r.after) && !/\(industry/.test(r.after)) warn(r.company, `sector "${r.after}" looks like free text`);
+  if (r.field === "sector") {
+    const name = r.after.replace(/\s*\(industry:[^)]*\)\s*$/, "").trim();
+    const known = new Set([...Object.keys(SECTOR_TAXONOMY), ...Object.values(SECTOR_TAXONOMY).flat()]);
+    if (!known.has(name)) warn(r.company, `sector "${r.after}" is not a sector of the taxonomy`);
+  }
 }
 for (const [k, n] of seen) if (n > 1) { const [c, f, a] = k.split("|"); err(c, `${f} "${a.slice(0, 50)}" appears ${n} times`); }
 

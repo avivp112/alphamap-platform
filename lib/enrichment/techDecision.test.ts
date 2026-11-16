@@ -50,3 +50,12 @@ describe("batch 4 sector rubric", () => {
     expect(SECTOR_DEFINITIONS["Robotics"]).toContain("Industrial Automation");
   });
 });
+
+describe("a service is no product (owner, round 10)", () => {
+  const gate = (yes: boolean, confidence: "high" | "medium" | "low") => ({ is_tech_company: yes, confidence, enough_information: true, reason: "r", site_matches_description: true }) as never;
+  it("an early no with a profile yes that rests on services is a rejection; on a platform it stands", () => {
+    expect(techDecision(gate(false, "medium"), { is_tech_company: true, tech_reason: "sells AI engineering talent recruiting and implementation, a technology/AI services offering" }, true)).toBe("reject");
+    expect(techDecision(gate(false, "medium"), { is_tech_company: true, tech_reason: "sells a cloud-based platform for hospitals" }, true)).toBe("proceed");
+    expect(techDecision(gate(false, "low"), { is_tech_company: true, tech_reason: "services" }, true)).toBe("proceed");
+  });
+});
