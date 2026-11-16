@@ -94,7 +94,8 @@ describe("round 3 follow-up (owner, round 10)", () => {
     expect(amountFromAddress("https://x.com/news/acme-launches-product")).toBeNull();
   });
   it("a carried round 'amount not disclosed' gets the sum from the address", () => {
-    const r = applyRowRules([{ field: "round", after: "Series C amount not disclosed · 2021-12-27 · lead Stripes", source_url: "https://www.prnewswire.com/news-releases/paradox-raises-200m-series-c-301450591.html", quote: "" }], "Paradox AI", TODAY).rows;
+    const url = "https://www.prnewswire.com/news-releases/paradox-raises-200m-series-c-301450591.html";
+    const r = applyRowRules([{ field: "news", after: "2021-12-27 — Paradox Raises $200M Series C", source_url: url, quote: "" }, { field: "round", after: "Series C amount not disclosed · 2021-12-27 · lead Stripes", source_url: url, quote: "" }], "Paradox AI", TODAY).rows.filter((x) => x.field === "round");
     expect(r[0].after).toMatch(/Series C \$200M/);
   });
   it("a lead investor named only in the model's own quote is taken out", () => {
@@ -109,5 +110,33 @@ describe("round 3 follow-up (owner, round 10)", () => {
   it("Conotoxia's news under the name Cinkciarz.pl", () => {
     expect(aliasesOf("Conotoxia")).toContain("Cinkciarz.pl");
     expect(rowProblem({ field: "news", after: "2025-10-29 — Cinkciarz.pl Collapses After Year-Long Scandal, Trustee Takes Control", source_url: "https://financefeeds.com/cinkciarz-pl-collapses" }, "Conotoxia", TODAY)).toBeNull();
+  });
+});
+
+import { brandAsWritten, looksLikeAddress } from "./rowRules";
+describe("round 4 follow-up (owner, round 10)", () => {
+  it("a round listed twice is one", () => {
+    const row = { field: "round", company: "Choiz", after: "Seed $1.5M · 2022-07-23", source_url: "h", quote: "The startup announced a USD $1.5M seed round." };
+    expect(applyRowRules([row, { ...row }], "Choiz", TODAY).rows.filter((r) => r.field === "round")).toHaveLength(1);
+  });
+  it("a quote is never an address: the headline of the same article stands in, else the round is not kept", () => {
+    const url = "https://www.prnewswire.com/news-releases/on-a-mission-paradox-raises-200m-series-c-301450591.html";
+    const slug = "on-a-mission-paradox-raises-200m-series-c-301450591.html";
+    expect(looksLikeAddress(slug)).toBe(true);
+    expect(looksLikeAddress("Paradox Raises $200M Series C")).toBe(false);
+    const news = { field: "news", company: "Paradox AI", after: "2021-12-27 — On a Mission to Build HR Software, Paradox Raises $200M Series C", source_url: url, quote: "" };
+    const round = { field: "round", company: "Paradox AI", after: "Series C amount not disclosed · 2021-12-27", source_url: url, quote: slug };
+    const r = applyRowRules([news, round], "Paradox AI", TODAY).rows.find((x) => x.field === "round")!;
+    expect(r.after).toMatch(/Series C \$200M/);
+    expect(r.quote).toMatch(/Raises \$200M Series C/);
+    expect(applyRowRules([round], "Paradox AI", TODAY).rows.filter((x) => x.field === "round")).toHaveLength(0);
+  });
+  it("the news of 'Paradox AI' written as 'Paradox' names the company", () => {
+    expect(rowProblem({ field: "news", after: "2021-12-27 — On a Mission, Paradox Raises $200M Series C", source_url: "https://www.prnewswire.com/news-releases/x.html" }, "Paradox AI", TODAY)).toBeNull();
+  });
+  it("the brand as the page writes it", () => {
+    expect(brandAsWritten("tyrohealth", ["Tyro Health, formerly Medipass, offers EFTPOS terminals"])).toBe("Tyro Health");
+    expect(brandAsWritten("Employment Hero CA", ["Humi, now part of Employment Hero, sells an all-in-one system"])).toBe("Employment Hero");
+    expect(brandAsWritten("zzz", ["nothing here"])).toBe("zzz");
   });
 });

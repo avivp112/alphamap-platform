@@ -26,7 +26,7 @@ export function stripTrackingParams(url: string): string {
  * that mentions this one: it counts only when the first paragraph names the company too. With no text to read, the
  * headline alone must name it (Datatruck's "IT Park Ventures: The First Venture Investments in Uzbekistan's Startups").
  */
-const TRAILING_DESCRIPTOR = new Set(["inc", "ltd", "llc", "gmbh", "corp", "co", "labs", "lab", "technologies", "technology", "tech", "systems", "medical", "applied", "group", "holdings", "solutions", "software", "bio", "health", "therapeutics", "robotics", "networks"]);
+const TRAILING_DESCRIPTOR = new Set(["ai", "inc", "ltd", "llc", "gmbh", "corp", "co", "labs", "lab", "technologies", "technology", "tech", "systems", "medical", "applied", "group", "holdings", "solutions", "software", "bio", "health", "therapeutics", "robotics", "networks"]);
 
 /** The first paragraph of a page's text: after the reader's header lines (Title:, URL Source:, Published Time:), the first lines of real prose. */
 export function firstParagraph(content: string): string {

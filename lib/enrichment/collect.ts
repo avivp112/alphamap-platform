@@ -34,6 +34,7 @@ import { reconcileSector, subSectorUnsupported } from "./sectors.ts";
 import { siteBelongsToAnotherCompany, acquisitionHeadline, rebrandedAs, redirectBrand } from "./siteOwner.ts";
 import { resolveDomain, judgeSite } from "./domainResolve.ts";
 import { techOverride, sectorDecision } from "./techOverrides.ts";
+import { acquirerIn } from "./acquisition.ts";
 import { pageNamesCompany } from "./ownDomain.ts";
 import { translateItems } from "./translate.ts";
 import { foundedYearFromSite, copyrightStartYear, foundedInCityYear } from "./siteFacts.ts";
@@ -1685,6 +1686,21 @@ export async function collectCompany(
       headline: headline ?? sourceByUrl(url)?.title,
       companyName: row.name,
     });
+    // The company's acquisition, as news (owner, round 10): two fixed searches for every company; a headline in which the company is the one acquired is offered to the same
+    // gate as every news item (source, entity, date). Nothing else derives "acquired": bulk_enrich_v2.ts reads it from the accepted news.
+    if (!ctx.update) {
+      try {
+        const found = (await Promise.all([`"${row.name}" acquired`, `"${row.name}" acquisition`].map((q) => webSearch(q, "acquired_check", searchState)))).flat();
+        for (const r of found) {
+          const t = (r.title ?? "").trim();
+          if (!r.url || !t || isDataPlatformUrl(r.url) || (!acquisitionHeadline(t, row.name) && !acquirerIn(t, row.name))) continue;
+          if (market.news.some((n) => unwrapRedirect(n.url) === r.url)) continue;
+          if (!allSources.some((x) => x.url === r.url)) newSource(r.url, r.content ?? "", t, "acquired_check");
+          market.news.push({ title: t, url: r.url, summary: (r.content ?? "").slice(0, 300) } as (typeof market.news)[number]);
+          console.log(`    🏁  acquisition headline offered to the news gate: "${t.slice(0, 90)}" ${r.url}`);
+        }
+      } catch (e) { console.log(`    ⚠️  acquisition search skipped: ${(e as Error).message}`); }
+    }
     const keptNews: typeof market.news = [];
     const newsDeps = {
       companyName: row.name,
