@@ -51,7 +51,7 @@ import { writeCollected, BULK_THRESHOLDS } from "../lib/enrichment/writeCompany.
 
 import { classifyTier, type TierRow, type TierRound } from "../lib/enrichment/queue.ts";
 import { createSearchProviderState, jinaDisabled, readPageCached, type SearchProviderState } from "../lib/enrichment/searchProviders.ts";
-import { loadKnown, saveKnown, remember, applyKnown, markKey, KNOWN_PATH, type KnownStore, type KnownEntry } from "../lib/enrichment/knownSources.ts";
+import { loadKnown, saveKnown, remember, applyKnown, markKey, NOT_REMEMBERED, KNOWN_PATH, type KnownStore, type KnownEntry } from "../lib/enrichment/knownSources.ts";
 import { injectKnown } from "../lib/enrichment/knownInject.ts";
 import { readMarks } from "../lib/enrichment/fieldReview.ts";
 import { loadSectorTaxonomy, type SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
@@ -126,6 +126,7 @@ const wrongMarks = new Set(markList.filter((m) => m.verdict === "wrong").map((m)
 const ownerWrong = KNOWN_ON ? ownerWrongTest(loadGaps()) : () => false;   // also what the owner removed with scripts/known_sources_fix.ts
 const isWrongValue = (c: string, f: string, v: string) => wrongMarks.has(markKey(c, f, v)) || ownerWrong(c, f, v);
 const lockedMarks = new Set(markList.filter((m) => m.verdict === "correct").map((m) => markKey(m.company, m.field, m.value)));
+for (const list of Object.values(knownStore)) for (let i = list.length - 1; i >= 0; i--) if (NOT_REMEMBERED.has(list[i].field)) list.splice(i, 1);   // proposals are not remembered
 const gapStore: GapStore = KNOWN_ON ? loadGaps() : {};
 if (KNOWN_ON) {
   // What the owner marked wrong leaves the memory and stays as a refused candidate (owner, round 10).

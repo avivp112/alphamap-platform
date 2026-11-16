@@ -47,10 +47,12 @@ const DANGLING = /\b(?:and|or|for|to|the|of|with|in|on|a|an|by|that|from|at|as|i
  * A sentence that does not say what the company sells (DealHub, review 7, x67.26: a clause cut from a longer sentence).
  * A sentence starts like one, is long enough to carry a product and its use, ends where a sentence ends, and has a verb.
  */
-export function fragmentProblem(text: string, role = "what"): string | null {
+export function fragmentProblem(text: string, role = "what", companyName = ""): string | null {
   const t = text.trim();
   const words = t.split(/\s+/);
-  if (!/^[A-Z0-9"“(]/.test(t)) return "fragment_starts_lowercase";
+  // A company written in lower case (noo.ma, eBay, iRobot) may open its own sentence.
+  const opensWithName = !!companyName && t.toLowerCase().startsWith(companyName.trim().toLowerCase());
+  if (!/^[A-Z0-9"“(]/.test(t) && !opensWithName) return "fragment_starts_lowercase";
   if (words.length < 6) return "fragment_too_short";
   if (!/[.!?]["”)]?$/.test(t)) return "fragment_no_end";
   if (DANGLING.test(t.replace(/[.!?]["”)]?$/, ""))) return "fragment_dangling_word";
@@ -88,7 +90,7 @@ export function sentenceProblem(
     if (!allowed(id)) return "source_not_allowed";
   }
   if (MARKETING.test(s.text)) return "marketing_word";
-  const frag = fragmentProblem(s.text, s.role);
+  const frag = fragmentProblem(s.text, s.role, companyName);
   if (frag) return frag;
   // What the company sells is said of the company by name (review 9: "aibuy offers …" for Cinsay, "Deel IT is …" for Hofy, "The platform is built to power …" for DealHub).
   if (s.role === "what" && ![companyName, ...aliases].some((n) => namesTheCompany(s.text, n))) return "what_without_company";

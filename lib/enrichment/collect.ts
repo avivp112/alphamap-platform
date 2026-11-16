@@ -35,6 +35,7 @@ import { siteBelongsToAnotherCompany, acquisitionHeadline, rebrandedAs, redirect
 import { resolveDomain, judgeSite } from "./domainResolve.ts";
 import { pageNamesCompany } from "./ownDomain.ts";
 import { translateItems } from "./translate.ts";
+import { storedRejection, rememberRejection } from "./techMemory.ts";
 import { buildSectorRequest, parseSectorChoice, classifyWithRetry, type SectorChoice } from "./classifySector.ts";
 import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
 import { buildDescriptionRequest, descriptionSources, processDescription, describeAttempt } from "./descriptionBuilder.ts";
@@ -372,6 +373,15 @@ export async function collectCompany(
   const seen = ctx.seen;
   const gapFillDue = ctx.update && !!seen?.gapFillDue();
 
+  // A company turned away as not technology stays turned away for a time (techMemory.ts): the same answer every run, and no searches spent.
+  if (!ctx.update) {
+    const before = storedRejection(row.id);
+    if (before) {
+      console.log(`    🧪  Technology: turned away on ${before.date} (${before.kind} check) — ${before.reason.slice(0, 160)}; reused (TECH_RECHECK=true looks again).`);
+      return { outcome: "rejected", reason: "not_technology", detail: `earlier decision ${before.date}: ${before.reason}` };
+    }
+  }
+
   // ── Stage 0: domain verification ──────────────────────────────────────
   // (an update trusts the website already checked by the full run)
   const domainVerification = ctx.update ? { verified: undefined, note: "" } : await verifyDomainMatch(row.name, row.website, searchState);
@@ -459,6 +469,7 @@ export async function collectCompany(
       // A site that shows another business than the company's own description is a website to fix.
       if (gate.verdict!.site_matches_description === false) ctx.onWebsiteIssue?.("content_mismatch", gate.verdict!.reason);
       stats.earlyRejected++;
+      if (gate.verdict!.site_matches_description !== false) rememberRejection(row.id, { reason: gate.verdict!.reason, kind: "early" });
       return { outcome: "rejected", reason: gate.verdict!.site_matches_description === false ? "site_shows_another_business" : "not_technology", detail: `early check: ${gate.verdict!.reason}` };
     }
   }
@@ -668,6 +679,7 @@ export async function collectCompany(
     }
     if (decision === "reject") {
       console.log("    🚫  REJECTED — not a technology-driven company");
+      rememberRejection(row.id, { reason: profile.tech_reason ?? profile.profile.description?.slice(0, 200) ?? "not technology", kind: "profile" });
       return { outcome: "rejected", reason: "not_technology", detail: `profile: ${profile.tech_reason ?? profile.profile.description?.slice(0, 200) ?? "the model gave no reason"}` };
     }
   }

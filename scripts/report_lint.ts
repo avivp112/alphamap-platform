@@ -190,8 +190,9 @@ console.log(`\n${errors.length} error(s), ${warnings.length} warning(s).`);
   if (prevPath && existsSync(prevPath)) {
     const [ph, ...pb] = parseCsv(readFileSync(prevPath, "utf8"));
     const pi = (n: string) => ph.indexOf(n);
-    const prev = new Set(pb.filter((r) => r[pi("field")] !== "(nothing)").map((r) => `${r[pi("company")]}|${r[pi("field")]}`));
-    const now = new Set(rows.map((r) => `${r.company}|${r.field}`));
+    const fam = (f: string) => (f === "description_what_only" ? "description" : f);
+    const prev = new Set(pb.filter((r) => r[pi("field")] !== "(nothing)").map((r) => `${r[pi("company")]}|${fam(r[pi("field")])}`));
+    const now = new Set(rows.map((r) => `${r.company}|${fam(r.field)}`));
     // A company the run no longer enriches (a rule turned it away: not technology, domain unresolved) is not a lost value; it is listed apart.
     const companiesNow = new Set(rows.map((r) => r.company));
     const gone = [...prev].filter((k) => !companiesNow.has(k.split("|")[0]));
