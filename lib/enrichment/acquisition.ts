@@ -4,7 +4,7 @@
  * A controlling / majority stake is "majority_acquired". A partner, a buyer or a company that only joins something is not acquired.
  */
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const BUY = "(?:acquires?|acquired|buys|bought|snaps up|picks up|takes over|to acquire|to buy|przejmuje|przejął|przejęła|kupuje|adquiere|adquirió|adquirida|compra|compró|übernimmt|übernahm|rachète|rachètent|acquiert|רוכשת|רכשה|רוכש)";
+const BUY = "(?:acquires?|acquired|buys|bought|buyout of|snaps up|picks up|takes over|to acquire|to buy|przejmuje|przejął|przejęła|kupuje|adquiere|adquirió|adquirida|compra|compró|übernimmt|übernahm|rachète|rachètent|acquiert|רוכשת|רכשה|רוכש)";
 const BOUGHT_BY = "(?:acquired by|bought by|sold to|taken over by|to be acquired by|is being acquired by|adquirida por|przejęta przez|übernommen von|racheté par|נרכשה על ידי|נרכשת על ידי)";
 const MAJORITY = /\b(?:controlling|majority)\s+(?:stake|share|interest)|\bstake\s+in\b|\bprzejmuje\s+(?:większościowy|kontrolny)|\bparticipaci[oó]n\s+mayoritaria|\bmehrheit|\bparticipation\s+majoritaire|\bמניית\s+שליטה/i;
 
@@ -14,6 +14,7 @@ export interface AcquisitionClaim { status: "acquired" | "majority_acquired"; ac
 const WORD = "\\p{Lu}[\\p{L}\\d&.'’-]*";
 const TRAILING = new RegExp(`((?:${WORD}\\s+){0,3}${WORD})\\W*$`, "u");
 const LEADING = new RegExp(`^\\W*((?:${WORD}\\s+){0,3}${WORD})`, "u");
+const GENERIC_BUYER = /^(?:US|UK|EU|The|An?|Its|It|Investors?|Group|Company|Firm)$/i;
 const trimName = (s: string) => s.replace(/[.,;]+$/, "").replace(/\s+(?:Group|Inc|Ltd|LLC|Limited|Corp|plc)$/i, (m) => m).trim();
 
 /** Who bought `companyName` according to one sentence or headline, or null when it is not stated that the company was acquired. */
@@ -29,7 +30,7 @@ export function acquirerIn(text: string, companyName: string): { acquirer: strin
   if (passive) {
     const lead = afterName.slice(passive[0].length).match(LEADING);
     const a = lead && trimName(lead[1]);
-    if (a && !sameName(a, companyName)) return { acquirer: a, majority };
+    if (a && !GENERIC_BUYER.test(a) && !sameName(a, companyName)) return { acquirer: a, majority };
   }
   // "X acquires … <Company>": the verb before the name, the buyer just before the verb
   const before = text.slice(0, nm.index);
@@ -37,7 +38,7 @@ export function acquirerIn(text: string, companyName: string): { acquirer: strin
   if (verb && verb.index != null && before.slice(verb.index + verb[0].length).length <= 90 && !/[.:;|]/.test(before.slice(verb.index + verb[0].length))) {
     const t = before.slice(0, verb.index).match(TRAILING);
     const a = t && trimName(t[1]);
-    if (a && !sameName(a, companyName)) return { acquirer: a, majority };
+    if (a && !GENERIC_BUYER.test(a) && !sameName(a, companyName)) return { acquirer: a, majority };
   }
   return null;
 }

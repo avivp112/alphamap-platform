@@ -33,9 +33,17 @@ export function firstParagraph(content: string): string {
   return (prose[0] ?? content).slice(0, 500);
 }
 
+/** The name appears only as the end of a hyphenated name ("SW-Mototech" is not Mototech, owner round 10): every occurrence is glued to a word before it by a hyphen. */
+export function onlyAsHyphenatedSuffix(text: string, companyName: string): boolean {
+  const name = companyName.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+  const all = [...text.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])(?:[\\p{L}\\p{N}]+[-–])?${name}(?![\\p{L}\\p{N}])`, "giu"))];
+  return all.length > 0 && all.every((m) => /^[\p{L}\p{N}]+[-–]/u.test(m[0]));
+}
+
 export function namesCompanyUpFront(item: { title?: string | null; content?: string | null }, companyName: string): boolean {
   const core = companyName.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").replace(/\s+/g, " ").trim();
   if (!core) return true;
+  if (onlyAsHyphenatedSuffix(`${item.title ?? ""}\n${firstParagraph(item.content ?? "")}`, companyName)) return false;
   const flat = (s: string, poss: boolean) => ` ${s.toLowerCase().replace(/[’']s\b/g, poss ? " s" : "_poss").replace(/[^\p{L}\p{N} _]/gu, " ").replace(/\s+/g, " ")} `;
   const has = (t: string) => t.includes(` ${core} `) || t.includes(` ${core.replace(/ /g, "")} `);
   const title = item.title ?? "";

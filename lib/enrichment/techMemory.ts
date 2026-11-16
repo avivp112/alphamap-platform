@@ -19,7 +19,9 @@ export function storedRejection(companyId: string, today = new Date().toISOStrin
   if (process.env.TECH_RECHECK === "true") return null;
   const r = load()[companyId];
   if (!r) return null;
-  return (Date.parse(today) - Date.parse(r.date)) / 86_400_000 <= days() ? r : null;
+  // A rejection is permanent — it is an automatic tech_override (owner, round 10) — unless the owner lifts it (delete its entry, or TECH_RECHECK=true for one run).
+  // TECH_MEMORY_DAYS, when set, still limits it.
+  return process.env.TECH_MEMORY_DAYS && (Date.parse(today) - Date.parse(r.date)) / 86_400_000 > days() ? null : r;
 }
 
 export function rememberRejection(companyId: string, rec: Omit<TechRecord, "date">, today = new Date().toISOString().slice(0, 10)): void {

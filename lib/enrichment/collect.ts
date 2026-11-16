@@ -33,7 +33,7 @@ import { judgeNews, finishNews } from "./newsGate.ts";
 import { reconcileSector, subSectorUnsupported } from "./sectors.ts";
 import { siteBelongsToAnotherCompany, acquisitionHeadline, rebrandedAs, redirectBrand } from "./siteOwner.ts";
 import { resolveDomain, judgeSite } from "./domainResolve.ts";
-import { techOverride } from "./techOverrides.ts";
+import { techOverride, sectorDecision } from "./techOverrides.ts";
 import { detectAcquisition, type AcquisitionClaim } from "./acquisition.ts";
 import { pageNamesCompany } from "./ownDomain.ts";
 import { translateItems } from "./translate.ts";
@@ -1901,6 +1901,8 @@ export async function collectCompany(
       if (choice) {
         console.log(`    🧭  Sector from the verified description: ${choice.sector_name}${choice.sub_sector_name ? ` › ${choice.sub_sector_name}` : ""}${choice.sub_sector_names.length ? ` (+ ${choice.sub_sector_names.join(", ")})` : ""}`);
         Object.assign(profile.profile, { sector_name: choice.sector_name, sub_sector_name: choice.sub_sector_name, sub_sector_names: choice.sub_sector_names });
+        const locked = sectorDecision(row.name);
+        if (locked) { console.log(`    🔒  Sector locked by the owner: ${locked.sector} › ${locked.sub_sector}`); Object.assign(profile.profile, { sector_name: locked.sector, sub_sector_name: locked.sub_sector, sub_sector_names: [locked.sub_sector] }); }
       } else {
         console.log(`    🧭  Sector not written — the classification of the verified description gave none.`);
         bump(stats.droppedByReason, "sector_classification_none");
