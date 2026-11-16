@@ -78,9 +78,24 @@ export function leadsWithCompany(sentence: string, companyName: string): boolean
   return toks.some((t) => t.startsWith(first) || first.startsWith(t) && t.length >= 4);
 }
 
+/** On the company's own site "We" and "Our" are the company (owner, round 10); the sentence is then written in the company's name. */
+const OWN_VOICE = /^(?:we|our)\b/i;
+const ownVoice = (s: { text: string; source_ids: string[] }, byId: Record<string, { source_type?: string }>) => OWN_VOICE.test(s.text.trim()) && s.source_ids.length > 0 && s.source_ids.every((id) => byId[id]?.source_type === "company_site");
+const IRREGULAR: Record<string, string> = { are: "is", have: "has", do: "does", go: "goes", can: "can", will: "will", may: "may", must: "must", could: "could", would: "would", should: "should" };
+export function companyVoice(text: string, companyName: string): string {
+  const t = text.trim();
+  const our = t.match(/^our\s+(.*)$/is);
+  if (our) return `${companyName}'s ${our[1]}`;
+  const we = t.match(/^we\s+(?:also\s+|now\s+|currently\s+)?([a-z]+)(.*)$/is);
+  if (!we) return t;
+  const verb = we[1].toLowerCase();
+  const third = IRREGULAR[verb] ?? (/(?:s|x|z|ch|sh)$/.test(verb) ? `${verb}es` : /[^aeiou]y$/.test(verb) ? `${verb.slice(0, -1)}ies` : `${verb}s`);
+  return `${companyName} ${third}${we[2]}`;
+}
+
 export function sentenceProblem(
   s: { role: string; text: string; source_ids: string[] }, companyName: string,
-  byId: Record<string, { content: string; translation_offset?: number }>, allowed: (id: string) => boolean, aliases: string[] = [],
+  byId: Record<string, { content: string; translation_offset?: number; source_type?: string }>, allowed: (id: string) => boolean, aliases: string[] = [],
 ): string | null {
   if (!["what", "for_whom", "edge"].includes(s.role)) return "unknown_role";
   if (!s.text?.trim() || s.text.length > 400) return "bad_text";
@@ -93,9 +108,9 @@ export function sentenceProblem(
   const frag = fragmentProblem(s.text, s.role, companyName);
   if (frag) return frag;
   // What the company sells is said of the company by name (review 9: "aibuy offers …" for Cinsay, "Deel IT is …" for Hofy, "The platform is built to power …" for DealHub).
-  if (s.role === "what" && ![companyName, ...aliases].some((n) => namesTheCompany(s.text, n))) return "what_without_company";
+  if (s.role === "what" && !ownVoice(s, byId) && ![companyName, ...aliases].some((n) => namesTheCompany(s.text, n))) return "what_without_company";
   // ... and by the company, not by one of its products (run 10: "Franklin, by Genoox, is a free variant interpretation tool").
-  if (s.role === "what" && ![companyName, ...aliases].some((n) => leadsWithCompany(s.text, n))) return "what_describes_a_product";
+  if (s.role === "what" && !ownVoice(s, byId) && ![companyName, ...aliases].some((n) => leadsWithCompany(s.text, n))) return "what_describes_a_product";
   const hay = norm(s.source_ids.map((id) => byId[id].content).join(" "));
   const c = claims(s.text, [companyName, ...aliases].join(" "));
   for (const n of c.numbers) if (!hay.includes(norm(n))) return `number_not_in_sources:${n}`;
@@ -110,7 +125,7 @@ export function sentenceProblem(
  * Why a sentence was refused, shown beside it (owner, round 10: Pink Farms "fragment_no_verb", Rooftop "no_supporting_sentence"): the verb test's view of the sentence, or
  * the closest sentence of each cited source and how many content words it shares.
  */
-export function dropDetail(why: string, s: { text: string; source_ids?: string[] }, byId: Record<string, { content: string; translation_offset?: number }>): string | undefined {
+export function dropDetail(why: string, s: { text: string; source_ids?: string[] }, byId: Record<string, { content: string; translation_offset?: number; source_type?: string }>): string | undefined {
   if (why === "fragment_no_verb") return `no word of the sentence is on the verb list: ${s.text.split(/\s+/).slice(0, 14).join(" ")}…`;
   if (why === "no_supporting_sentence") {
     const found = (s.source_ids ?? []).filter((id) => byId[id]).map((id) => {
@@ -124,7 +139,7 @@ export function dropDetail(why: string, s: { text: string; source_ids?: string[]
 
 /** What came of a description attempt: the description (or none), and every sentence that was dropped with its reason — also when there is no description. */
 export function describeAttempt(
-  input: unknown, companyName: string, byId: Record<string, { content: string; translation_offset?: number }>, allowed: (id: string) => boolean, aliases: string[] = [],
+  input: unknown, companyName: string, byId: Record<string, { content: string; translation_offset?: number; source_type?: string }>, allowed: (id: string) => boolean, aliases: string[] = [],
 ): { built: BuiltDescription | null; dropped: Array<{ text: string; why: string }>; returned: Array<{ role: string; text: string }> } {
   const list = Array.isArray((input as { sentences?: unknown })?.sentences) ? (input as { sentences: Array<{ role: string; text: string }> }).sentences : [];
   const built = processDescription(input, companyName, byId, allowed, aliases);
@@ -138,7 +153,7 @@ export function describeAttempt(
 }
 
 export function processDescription(
-  input: unknown, companyName: string, byId: Record<string, { content: string; translation_offset?: number }>, allowed: (id: string) => boolean, aliases: string[] = [],
+  input: unknown, companyName: string, byId: Record<string, { content: string; translation_offset?: number; source_type?: string }>, allowed: (id: string) => boolean, aliases: string[] = [],
 ): BuiltDescription | null {
   const list = Array.isArray((input as { sentences?: unknown })?.sentences) ? (input as { sentences: Array<{ role: string; text: string; source_ids: string[] }> }).sentences : [];
   const kept: DescriptionSentence[] = [];
@@ -148,7 +163,7 @@ export function processDescription(
     if (why) { dropped.push({ text: s?.text ?? "", why, detail: dropDetail(why, s, byId) }); continue; }
     if (kept.some((k) => k.role === s.role)) { dropped.push({ text: s.text, why: "second_sentence_of_role" }); continue; }
     const quote = s.source_ids.map((id) => bestSentence(byId[id].content, s.text, byId[id].translation_offset != null ? 2 : 3)).find(Boolean) ?? "";
-    kept.push({ role: s.role as SentenceRole, text: s.text.trim(), source_ids: s.source_ids, quote });
+    kept.push({ role: s.role as SentenceRole, text: ownVoice(s, byId) ? companyVoice(s.text, companyName) : s.text.trim(), source_ids: s.source_ids, quote });
   }
   const order: SentenceRole[] = ["what", "for_whom", "edge"];
   kept.sort((a, b) => order.indexOf(a.role) - order.indexOf(b.role));

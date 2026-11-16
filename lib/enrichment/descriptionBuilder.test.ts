@@ -102,3 +102,20 @@ describe("what the company sells is said of the company by name (review 9)", () 
     expect(sentenceProblem({ role: "for_whom", text: "The platform is built to power sales teams worldwide.", source_ids: ["W1"] }, "Acme", byId, () => true)).toBeNull();
   });
 });
+
+import { companyVoice, sentenceProblem as sp2 } from "./descriptionBuilder";
+describe("'We' and 'Our' on the company's own site are the company (owner, round 10)", () => {
+  it("are written in the company's name", () => {
+    expect(companyVoice("We provide cloud and security services to enterprises.", "Six Degrees")).toBe("Six Degrees provides cloud and security services to enterprises.");
+    expect(companyVoice("We are a digital bank for individuals.", "STC Bank")).toBe("STC Bank is a digital bank for individuals.");
+    expect(companyVoice("We help teams ship faster.", "Acme")).toBe("Acme helps teams ship faster.");
+    expect(companyVoice("Our platform connects hospitals and patients.", "Acme")).toBe("Acme's platform connects hospitals and patients.");
+  });
+  it("is accepted only when every cited source is the company's own site", () => {
+    const own = { W1: { content: "We provide cloud and security services to large enterprises across the country.", source_type: "company_site" } };
+    const press = { S1: { content: "We provide cloud and security services to large enterprises across the country.", source_type: "news" } };
+    const sent = (id: string) => ({ role: "what", text: "We provide cloud and security services to large enterprises.", source_ids: [id] });
+    expect(sp2(sent("W1"), "Six Degrees", own, () => true)).toBeNull();
+    expect(sp2(sent("S1"), "Six Degrees", press, () => true)).toBe("what_without_company");
+  });
+});

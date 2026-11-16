@@ -35,6 +35,7 @@ import { siteBelongsToAnotherCompany, acquisitionHeadline, rebrandedAs, redirect
 import { resolveDomain, judgeSite } from "./domainResolve.ts";
 import { pageNamesCompany } from "./ownDomain.ts";
 import { translateItems } from "./translate.ts";
+import { foundedYearFromSite, copyrightStartYear, foundedInCityYear } from "./siteFacts.ts";
 import { storedRejection, rememberRejection } from "./techMemory.ts";
 import { buildSectorRequest, parseSectorChoice, classifyWithRetry, type SectorChoice } from "./classifySector.ts";
 import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
@@ -1178,6 +1179,37 @@ export async function collectCompany(
         profile.profile.founded_year = { value: facts.foundedYear, source_id: src.source_id, evidence_quote: facts.yearQuote! } as typeof profile.profile.founded_year;
       }
       break;
+    }
+  }
+
+  // a2. Founding year from a clear structure on the company's own site ("Founded in 2013", "Since 2013", "Est. 2013"); an article needs a sentence "founded in <city> in <year>" naming the company
+  // (owner, round 10). The © year of the footer decides nothing; it only flags a founding year later than the first year of the © range.
+  if (!ctx.update && !allowedFact(profile.profile.founded_year)) {
+    let fromSite: { year: number; quote: string; src: LabeledSource } | null = null;
+    for (const src of allSources) {
+      if (src.source_type !== "company_site" || !profileSourceAllowed(src, row.name)) continue;
+      const hit = foundedYearFromSite(src.content);
+      if (hit) { fromSite = { ...hit, src }; break; }
+    }
+    if (fromSite) {
+      profile.profile.founded_year = { value: fromSite.year, source_id: fromSite.src.source_id, evidence_quote: fromSite.quote } as typeof profile.profile.founded_year;
+      console.log(`    📅  Founded ${fromSite.year} — the company's own site: "${fromSite.quote.slice(0, 100)}" (${fromSite.src.url})`);
+      bump(stats.droppedByReason, "founded_year_from_site");
+      const c = allSources.filter((x) => x.source_type === "company_site").map((x) => copyrightStartYear(x.content)).filter((y): y is number => y != null);
+      if (c.length && fromSite.year > Math.min(...c)) console.log(`    ⚠️  Founded ${fromSite.year} is later than the first © year of the site (${Math.min(...c)}): flagged for review.`);
+    } else {
+      for (const src of allSources) {
+        if (!statementKind(src) || !profileSourceAllowed(src, row.name)) continue;
+        const sentences = `${src.title ?? ""}. ${src.content}`.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/);
+        const hit = foundedInCityYear(sentences, row.name);
+        if (!hit) continue;
+        profile.profile.founded_year = { value: hit.year, source_id: src.source_id, evidence_quote: hit.quote } as typeof profile.profile.founded_year;
+        const cc = countryOfCity(hit.city);
+        if (cc && !profile.profile.founding_country) profile.profile.founding_country = { value: cc, source_id: src.source_id, evidence_quote: hit.quote } as typeof profile.profile.founding_country;
+        console.log(`    📅  Founded ${hit.year} in ${hit.city}${cc ? ` (${cc})` : ""} — "${hit.quote.slice(0, 100)}" (${src.url})`);
+        bump(stats.droppedByReason, "founded_year_from_article");
+        break;
+      }
     }
   }
 

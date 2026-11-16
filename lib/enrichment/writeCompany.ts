@@ -16,7 +16,7 @@ import { filterCrossSectorTags, industryFromTaxonomy, type SectorTaxonomy } from
 import { normalizeUrlForMatch } from "./extractMarket.ts";
 import { normalizeIsoDate, appendNew, reconcileOnFile } from "./assemble.ts";
 import { fetchArticleOgImage } from "./ogImage.ts";
-import { cleanPeople, isFounderEntry, cleanFounderTitle } from "./people.ts";
+import { cleanPeople, isFounderEntry, cleanFounderTitle, canonicalTitle } from "./people.ts";
 import { samePersonName } from "./linkedin.ts";
 import { checkHeadcountOutlier } from "./validation.ts";
 import { screenPoints, type HistoryPoint } from "./headcountHistory.ts";
@@ -365,6 +365,13 @@ export async function writeCollected(
     bump(summary.droppedByReason, "tag_unsupported");
   }
   const tagNames = supported.kept.map((k) => k.tag);
+  // The sub-sector the sector was classified into is the first tag, on the evidence the sector stands on — the verified description (owner, round 10); never a "/ General".
+  const mainSub = profile.profile.sub_sector_name;
+  if (mainSub && !isGeneral(mainSub) && taxonomy.subNames.includes(mainSub) && !tagNames.includes(mainSub) && profile.profile.sector_name && (profile.profile.description_sentences?.length ?? 0) > 0) {
+    tagNames.unshift(mainSub);
+    console.log(`    🏷️   "${mainSub}" is the sector's own sub-sector: entered as the first tag, on the evidence of the verified description.`);
+    bump(summary.droppedByReason, "tag_from_sector");
+  }
   // Tags, with the fate of each (owner, 2026-11-15: five companies with a sector and no tags, nothing said why).
   console.log(`    🏷️   Tags: ${proposedTags.length ? `proposed ${proposedTags.join(", ")}` : "the classification proposed none (no sub-sector among the main answer and the other fields)"}; kept ${tagNames.length ? tagNames.join(", ") : "none"}${tagFilter.dropped.length ? `; other sector without support in the description: ${tagFilter.dropped.join(", ")}` : ""}${supported.dropped.length ? `; no sentence of an allowed page carries: ${supported.dropped.join(", ")}` : ""}.`);
   const tagSectorIds: string[] = [];
@@ -400,7 +407,7 @@ export async function writeCollected(
   // members were written as leaders with the role "Board member"), and written only when the board field is open.
   const boardOk = !OPEN || writesBoard(OPEN);
   const cleanLeadership = cleanPeople((profile.leadership ?? []).filter((l) => l.group !== "board" || boardOk).map((l) => keepBio({
-    name: l.name, role: l.role, bio: l.bio, linkedin_url: l.linkedin_url?.value, joined_date: l.joined_date,
+    name: l.name, role: canonicalTitle(l.role), bio: l.bio, linkedin_url: l.linkedin_url?.value, joined_date: l.joined_date,
     had_prior_exit: l.had_prior_exit, elite_background: l.elite_background, notable_pedigree: l.notable_pedigree,
     ...(l.group === "board" ? { group: "board" as const } : {}),
   })));

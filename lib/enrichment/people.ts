@@ -216,6 +216,17 @@ export function cleanPeople<T extends { name: string }>(people: T[]): T[] {
  * "Joe Pagett — Employee (Department/Title not specified)"). No role, or a
  * placeholder / non-leadership one, and the person is not listed.
  */
+/** Titles that are a CEO's or a CFO's in another language (owner, round 10): Geschäftsführer, Directeur Général, Diretor-Presidente, Prezes Zarządu; Dyrektor Finansowy, Diretor Financeiro, Directeur Financier, Finanzvorstand. */
+export const CEO_EQUIVALENT = /(?<![\p{L}])(?:gesch(?:ä|a)ftsf(?:ü|u)hrer(?:in)?|directeur(?:\s+g(?:é|e)n(?:é|e)ral)|directrice\s+g(?:é|e)n(?:é|e)rale|diretor(?:a)?[-\s]presidente|presidente\s+executiv[oa]|director(?:a)?\s+general|gerente\s+general|prezes(?:\s+zarz(?:ą|a)du)?|dyrektor\s+generalny|amministratore\s+delegato|algemeen\s+directeur|directeur-bestuurder)(?![\p{L}])/iu;
+export const CFO_EQUIVALENT = /(?<![\p{L}])(?:dyrektor\s+finansow[yi]|diretor(?:a)?\s+financeir[oa]|directeur(?:\s+financier)|directrice\s+financi(?:è|e)re|finanzvorstand|finanzchef(?:in)?|gesch(?:ä|a)ftsf(?:ü|u)hrer\s+finanzen|director(?:a)?\s+financier[oa]|direttore\s+finanziario|financieel\s+directeur)(?![\p{L}])/iu;
+const EQUIVALENT_TITLE = new RegExp(`${CEO_EQUIVALENT.source}|${CFO_EQUIVALENT.source}`, "iu");
+/** The title with the English one named beside the original: "Geschäftsführer" → "CEO (Geschäftsführer)". */
+export function canonicalTitle(role: string): string {
+  if (CEO_EQUIVALENT.test(role) && !/\bceo\b/i.test(role)) return `CEO (${role.trim()})`;
+  if (CFO_EQUIVALENT.test(role) && !/\bcfo\b/i.test(role)) return `CFO (${role.trim()})`;
+  return role;
+}
+
 export function isLeadershipRole(role: string | null | undefined): boolean {
   // A CLOSED list (owner, 2026-11-09, after the Orq "Tech Lead" and "Head of" entries): C-level, President,
   // Founder / Co-founder, General Manager, Managing Director, VP / SVP / EVP. Lead, Manager, Director (other than
@@ -226,8 +237,8 @@ export function isLeadershipRole(role: string | null | undefined): boolean {
   if (/\bchief\s+of\s+staff\b/i.test(r) && !/\b(ceo|cto|cfo|coo|founder|president)\b/i.test(r)) return false;
   // A past role is no leadership (owner, round 10: TymeBank "CEO (former TymeBank CEO)"), and "Founder" alone is not a management title: founders have their own field.
   if (/\b(former|formerly|ex-|outgoing|retired|stepped down)\b/i.test(r)) return false;
-  if (!/\b(ceo|cto|cfo|coo|cmo|cpo|cro|cio|ciso|cdo|cso|cco|clo|chro|cxo|chief\b|president|general manager|managing director|vp|svp|evp|vice[- ]president)\b/i.test(r)) return false;
-  return /\b(ceo|cto|cfo|coo|cmo|cpo|cro|cio|ciso|cdo|cso|cco|clo|chro|cxo|chief\b[\p{L} &,-]{0,40}\bofficer|president|founders?|co-?\s?founders?|general manager|managing director|vp|svp|evp|vice[- ]president)\b/iu.test(r);
+  if (!(/\b(ceo|cto|cfo|coo|cmo|cpo|cro|cio|ciso|cdo|cso|cco|clo|chro|cxo|chief\b|president|general manager|managing director|vp|svp|evp|vice[- ]president)\b/i.test(r) || EQUIVALENT_TITLE.test(r))) return false;
+  return EQUIVALENT_TITLE.test(r) || /\b(ceo|cto|cfo|coo|cmo|cpo|cro|cio|ciso|cdo|cso|cco|clo|chro|cxo|chief\b[\p{L} &,-]{0,40}\bofficer|president|founders?|co-?\s?founders?|general manager|managing director|vp|svp|evp|vice[- ]president)\b/iu.test(r);
 }
 
 /**

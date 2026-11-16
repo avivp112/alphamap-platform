@@ -277,3 +277,14 @@ describe("founders from titles, in any language (owner, round 10)", () => {
     expect(r.dropped.map((d) => d.name)).toEqual(["Ghost Person"]);
   });
 });
+
+import { isLeadershipRole as isLeader2, canonicalTitle } from "./people";
+describe("titles that are a CEO's or a CFO's in another language (owner, round 10)", () => {
+  it("are leadership, and named with the English title beside", () => {
+    for (const r of ["Geschäftsführer", "Directeur Général", "Diretor-Presidente", "Prezes Zarządu", "Dyrektor Finansowy", "Diretor Financeiro", "Directeur Financier", "Finanzvorstand"]) expect(isLeader2(r)).toBe(true);
+    expect(canonicalTitle("Geschäftsführer")).toBe("CEO (Geschäftsführer)");
+    expect(canonicalTitle("Dyrektor Finansowy")).toBe("CFO (Dyrektor Finansowy)");
+    expect(canonicalTitle("CEO")).toBe("CEO");
+    expect(isLeader2("Head of Product")).toBe(false);
+  });
+});
