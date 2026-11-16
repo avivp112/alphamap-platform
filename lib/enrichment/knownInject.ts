@@ -2,7 +2,7 @@
  * lib/enrichment/knownInject.ts — a wet run starts from the memory of verified sources (owner, round 10): a value that was verified before, whose quote is still on its page, and
  * that this run did not find again is put into the collected company as if the run had found it — with its source and quote — so the write stage treats it exactly as it treats a found
  * value: the open-field gate, the fill-only rule (a column that has a value is not overwritten), field_provenance and field_changes. Nothing is written here.
- * Covered: headquarters city and country, founded year, founding country, description, sector and tags. Lists (founders, leaders, news, rounds, headcount) are carried in the report only.
+ * Covered: headquarters city and country, founded year, founding country, description, sector, tags, news, founders and leaders. Rounds, headcount, offices, patents and competitors are carried in the report only.
  */
 import type { CollectedCompany } from "./collect.ts";
 import type { KnownEntry } from "./knownSources.ts";
@@ -49,6 +49,28 @@ export function injectKnown(collected: CollectedCompany, confirmed: KnownEntry[]
       profile.sector_name = e.value.replace(/\s*\(industry:[^)]*\)\s*$/, "").trim(); done.push(f);
     } else if (f === "tags" && !(profile.sub_sector_names?.length || profile.sub_sector_name)) {
       profile.sub_sector_names = e.value.split(/\s*,\s*/).filter(Boolean).slice(0, 4); done.push(f);
+    }
+  }
+  // Lists: one entry per value, added when the run did not find the same one (by address for news, by name for people).
+  const samePerson = (a: string, b: string) => a.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() === b.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const split = (v: string) => { const i = v.indexOf(" — "); return i < 0 ? [v.trim(), ""] as const : [v.slice(0, i).trim(), v.slice(i + 3).trim()] as const; };
+  for (const e of confirmed) {
+    if (e.field === "news") {
+      const [date, title] = split(e.value);
+      if (!title || collected.market.news.some((n) => n.url === e.source_url)) continue;
+      collected.market.news.push({ title, url: e.source_url, published_date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : undefined });
+      done.includes("news") || done.push("news");
+    } else if (e.field === "founder") {
+      const [name, title] = split(e.value);
+      const list = profile.founders ?? (profile.founders = []);
+      if (!name || list.some((f) => samePerson(f.name, name))) continue;
+      list.push({ name, ...(title ? { title } : {}), grounded_url: e.source_url } as never);
+      done.includes("founder") || done.push("founder");
+    } else if (e.field === "leader") {
+      const [name, role] = split(e.value.split(" · ")[0]);
+      if (!name || !role || collected.profile.leadership.some((l) => samePerson(l.name, name))) continue;
+      collected.profile.leadership.push({ name, role } as never);
+      done.includes("leader") || done.push("leader");
     }
   }
   return done;
