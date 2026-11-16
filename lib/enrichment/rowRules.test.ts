@@ -140,3 +140,34 @@ describe("round 4 follow-up (owner, round 10)", () => {
     expect(brandAsWritten("zzz", ["nothing here"])).toBe("zzz");
   });
 });
+
+import { brandFromTexts } from "./rowRules";
+import { renderAcceptance, runAcceptance as runAcc } from "./acceptance";
+describe("round 5 follow-up (owner, round 10)", () => {
+  it("the brand after a purchase, as the company's pages write it", () => {
+    expect(brandFromTexts("Medipass", ["Tyro Health, formerly Medipass, offers EFTPOS terminals"])).toBe("Tyro Health");
+    expect(brandFromTexts("Medipass", ["Tyro Health, which operates under the Medipass name, provides EFTPOS terminals"])).toBe("Tyro Health");
+    expect(brandFromTexts("Humi", ["Humi by Employment Hero is an all-in-one HR and payroll platform"])).toBe("Employment Hero");
+    expect(brandFromTexts("Humi", ["Humi, now part of Employment Hero, sells an all-in-one system"])).toBe("Employment Hero");
+    expect(brandFromTexts("Acme", ["Acme sells anvils."])).toBeNull();
+  });
+  it("one description per company: the run's own over the memory's", () => {
+    const rows = [
+      { field: "description", company: "Medipass", after: "Tyro Health, formerly Medipass, offers EFTPOS", origin: "new", source_url: "a", quote: "q" },
+      { field: "description", company: "Medipass", after: "Tyro Health, which operates under the Medipass name, provides EFTPOS", origin: "known_source", source_url: "a", quote: "q" },
+    ];
+    const r = applyRowRules(rows, "Medipass", TODAY).rows.filter((x) => x.field === "description");
+    expect(r).toHaveLength(1);
+    expect(r[0].origin).toBe("new");
+  });
+  it("an error blocks the report, a gap does not", () => {
+    const checks: any[] = [
+      { id: "wrong", why: "a wrong value", kind: "absent", field: "round", match: "bad" },
+      { id: "missing", why: "a missing value", kind: "present", company: "Humi", field: "round", match: "Series B", severity: "gap" },
+    ];
+    const gapOnly = runAcc(checks, [], [], TODAY);
+    expect(renderAcceptance(gapOnly)).toMatch(/no error — 1 gap/);
+    const err = runAcc(checks, [{ company: "X", field: "round", after: "bad round", source_url: "", quote: "" }], [], TODAY);
+    expect(renderAcceptance(err)).toMatch(/1 ERROR/);
+  });
+});

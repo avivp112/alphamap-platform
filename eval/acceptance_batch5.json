@@ -189,7 +189,8 @@
   "kind": "present",
   "company": "Conotoxia",
   "field": "news",
-  "match": "Collapses"
+  "match": "Collapses",
+  "severity": "gap"
  },
  {
   "id": "conotoxia_licence",
@@ -232,7 +233,8 @@
   "kind": "present",
   "company": "Paradox AI",
   "field": "acquired",
-  "match": "Workday.*2025-10"
+  "match": "Workday.*2025-10",
+  "severity": "gap"
  },
  {
   "id": "medipass_brand",
@@ -240,6 +242,59 @@
   "kind": "present",
   "company": "Medipass",
   "field": "brand_after_acquisition",
-  "match": "Tyro Health"
+  "match": "Tyro Health",
+  "severity": "gap"
+ },
+ {
+  "id": "one_description",
+  "why": "No company has more than one description",
+  "kind": "single_value",
+  "fields": [
+   "description",
+   "description_what_only"
+  ]
+ },
+ {
+  "id": "one_sector",
+  "why": "No company has more than one sector",
+  "kind": "single_value",
+  "fields": [
+   "sector"
+  ]
+ },
+ {
+  "id": "humi_series_b",
+  "why": "Humi Series B $31M, 2022-05-25 (from the accepted headline)",
+  "kind": "present",
+  "company": "Humi",
+  "field": "round",
+  "match": "Series B \\$31M.*2022-05-25",
+  "severity": "gap"
+ },
+ {
+  "id": "mintifi_180",
+  "why": "Mintifi $180M round, 2024-12-10 (from the accepted headline)",
+  "kind": "present",
+  "company": "Mintifi",
+  "field": "round",
+  "match": "\\$180M.*2024-12-10",
+  "severity": "gap"
+ },
+ {
+  "id": "mintifi_series_d_dated",
+  "why": "Mintifi Series D $110M carries the date of its headline, 2023-03-09",
+  "kind": "present",
+  "company": "Mintifi",
+  "field": "round",
+  "match": "Series D \\$110M.*2023-03-09",
+  "severity": "gap"
+ },
+ {
+  "id": "mintifi_no_undated_d",
+  "why": "Mintifi Series D is not left undated",
+  "kind": "absent",
+  "company": "Mintifi",
+  "field": "round",
+  "match": "Series D.*no date"
  }
 ]

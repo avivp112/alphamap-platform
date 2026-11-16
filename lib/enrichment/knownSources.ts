@@ -25,7 +25,7 @@ export type KnownStore = Record<string, KnownEntry[]>;     // company_id → ent
 export interface ReportRow { company_id: string; company: string; field: string; before: string; after: string; source_url: string; quote: string; origin?: string; payload?: string; quote_original?: string; quote_translated?: string }
 
 /** Report lines that are proposals for the owner, not verified values: never remembered, never carried (Plott's wrong address proposal came back from the memory). */
-export const NOT_REMEMBERED = new Set(["website_proposal", "name_proposal", "acquired"]);
+export const NOT_REMEMBERED = new Set(["website_proposal", "name_proposal", "acquired", "brand_after_acquisition"]);
 export const VOLATILE_FIELDS = new Set(["leader", "headcount_history", "employee_count", "employee_range", "hq_city", "hq_country", "office", "news", "round", "acquired"]);
 /** Fields with one value: a locked (marked correct) value is kept against a different new one. */
 export const SINGLE_FIELDS = new Set(["tags", "founded_year", "founding_country", "hq_city", "hq_country", "sector", "description", "description_what_only", "employee_count", "employee_range"]);

@@ -35,6 +35,7 @@ import { siteBelongsToAnotherCompany, acquisitionHeadline, rebrandedAs, redirect
 import { resolveDomain, judgeSite } from "./domainResolve.ts";
 import { techOverride, sectorDecision } from "./techOverrides.ts";
 import { acquirerIn } from "./acquisition.ts";
+import { roundsFromNews } from "./newsRounds.ts";
 import { pageNamesCompany } from "./ownDomain.ts";
 import { translateItems } from "./translate.ts";
 import { foundedYearFromSite, copyrightStartYear, foundedInCityYear } from "./siteFacts.ts";
@@ -1690,7 +1691,10 @@ export async function collectCompany(
     // gate as every news item (source, entity, date). Nothing else derives "acquired": bulk_enrich_v2.ts reads it from the accepted news.
     if (!ctx.update) {
       try {
-        const found = (await Promise.all([`"${row.name}" acquired`, `"${row.name}" acquisition`].map((q) => webSearch(q, "acquired_check", searchState)))).flat();
+        // A general name ("Paradox") is also searched with its domain; the results are printed so a missing acquisition can be seen to be missing from the search itself.
+        const queries = [`"${row.name}" acquired`, `"${row.name}" acquisition`, ...(domain ? [`"${domain}" acquired by OR acquires OR acquisition`] : [])];
+        const found = (await Promise.all(queries.map((q) => webSearch(q, "acquired_check", searchState)))).flat();
+        console.log(`    🔎  acquisition searches (${queries.join(" | ")}): ${found.length} result(s)${found.length ? "\n" + found.slice(0, 12).map((r) => `        · ${(r.title ?? "").slice(0, 100)} — ${r.url}`).join("\n") : ""}`);
         for (const r of found) {
           const t = (r.title ?? "").trim();
           if (!r.url || !t || isDataPlatformUrl(r.url) || (!acquisitionHeadline(t, row.name) && !acquirerIn(t, row.name))) continue;
@@ -1792,6 +1796,34 @@ export async function collectCompany(
       const disagree = [before.year != null && reg.founded_year && before.year !== reg.founded_year ? `year ${before.year} → ${reg.founded_year}` : null,
         before.country && before.country !== reg.founding_country ? `country ${before.country} → ${reg.founding_country}` : null].filter(Boolean);
       console.log(`    🏛️   Register ${reg.register}: ${reg.entity} (${reg.number}) — ${reg.match}. Founded ${reg.founded_year ?? "?"}, ${reg.founding_country}${disagree.length ? ` — overrides the articles: ${disagree.join(", ")}` : ""}`);
+    }
+  }
+
+  // A round from an accepted headline (owner, round 10): "<company> raises / closes / secures $X Series Y" in a news item that passed the gate is a round — amount and type from the
+  // headline, date from the news item, the headline as the quote. A round already found with the same sum takes the date of the headline when it had none.
+  if (!ctx.update) {
+    for (const r of roundsFromNews(market.news, row.name, allSources)) {
+      const amount = r.amount_raised!.value;
+      const near = (v?: number | null) => v != null && Math.abs(v - amount) / amount < 0.01;
+      const idx = newRoundLikes.findIndex((l) => near(l.amount_raised) || near(l.amount_original));
+      if (idx >= 0) {
+        const like = newRoundLikes[idx];
+        if (!like.announcement_date) {
+          like.announcement_date = r.announcement_date!.value; like.announcement_date_precision = "day";
+          const v2 = funding.funding_rounds.find((x) => near(x.amount_raised?.value));
+          if (v2 && !v2.announcement_date) { v2.announcement_date = r.announcement_date; v2.announcement_date_precision = "day"; }
+          console.log(`    🗞️   ${like.round_type} ${amount}: dated ${like.announcement_date} by the headline "${r.amount_raised!.evidence_quote.slice(0, 80)}"`);
+          bump(stats.droppedByReason, "round_date_from_headline");
+        }
+        continue;
+      }
+      const grounded = groundRoundDetails(r, allSources);
+      const like = roundToRoundLike(grounded.round);
+      if (incompleteRound(like)) continue;
+      funding.funding_rounds.push(r);
+      newRoundLikes.push(like);
+      console.log(`    🗞️   Round from an accepted headline: ${r.round_type} ${amount} · ${r.announcement_date!.value} — "${r.amount_raised!.evidence_quote.slice(0, 90)}"`);
+      bump(stats.droppedByReason, "round_from_headline");
     }
   }
 

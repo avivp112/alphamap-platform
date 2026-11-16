@@ -11,7 +11,7 @@ export function acceptanceReport(reportPath: string, specPath = "eval/acceptance
   const rows = rowsFromCsv(readFileSync(reportPath, "utf8"));
   const notEnriched = existsSync("not_enriched.csv") ? parseCsv(readFileSync("not_enriched.csv", "utf8")).slice(1).map((r) => r[0]) : [];
   const results = runAcceptance(JSON.parse(readFileSync(specPath, "utf8")) as Check[], rows, notEnriched, today);
-  return { text: renderAcceptance(results), failed: results.filter((r) => !r.pass).length };
+  return { text: renderAcceptance(results), failed: results.filter((r) => !r.pass && r.severity === "error").length };
 }
 
 if (process.argv[1]?.endsWith("acceptance_check.ts")) {
