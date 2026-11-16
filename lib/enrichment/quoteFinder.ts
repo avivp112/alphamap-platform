@@ -99,6 +99,13 @@ export function tagIsTechnologyProtected(tag: string, sentence: string): boolean
 }
 
 export function bestTagQuote(pages: Array<{ id: string; content: string }>, tag: string): { id: string; quote: string } | null {
+  // "Banking / Neobanking", "Insurance / Insurtech", "Analytics / BI": the two sides of a slash are alternative names, not two words that must both be there (owner, round 10: STC).
+  const alts = tag.split("/").map((a) => a.trim()).filter((a) => a && !/^general$/i.test(a));
+  if (alts.length > 1) {
+    let best: { id: string; quote: string } | null = null;
+    for (const a of alts) { const hit = bestTagQuote(pages, a); if (hit) { best = hit; break; } }
+    return best;
+  }
   const want = contentWords(tag.replace(/\bgeneral\b/gi, "")).map((w) => w.slice(0, 6));
   if (!want.length) return null;
   let best: { id: string; quote: string; n: number } | null = null;

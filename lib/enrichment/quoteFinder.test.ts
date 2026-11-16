@@ -61,3 +61,13 @@ describe("lines without full stops are sentences too (owner, round 10)", () => {
     expect(best2(page, "Sami sells a health plan with a personal doctor.", 3)).toMatch(/Sami offers health plans/);
   });
 });
+
+import { bestTagQuote } from "./quoteFinder";
+describe("the sides of a slash in a tag are alternatives (owner, round 10: STC)", () => {
+  const pages = [{ id: "W1", content: "STC Bank offers digital banking services, including accounts, cards and transfers that customers manage from a mobile app." }];
+  it("'Banking / Neobanking' is supported by 'banking'; a tag with no word on the page is not", () => {
+    expect(bestTagQuote(pages, "Banking / Neobanking")?.id).toBe("W1");
+    expect(bestTagQuote(pages, "Insurance / Insurtech")).toBeNull();
+    expect(bestTagQuote(pages, "Consumer / General")).toBeNull();
+  });
+});
