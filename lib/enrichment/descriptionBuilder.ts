@@ -78,7 +78,7 @@ export function leadsWithCompany(sentence: string, companyName: string): boolean
 
 export function sentenceProblem(
   s: { role: string; text: string; source_ids: string[] }, companyName: string,
-  byId: Record<string, { content: string }>, allowed: (id: string) => boolean, aliases: string[] = [],
+  byId: Record<string, { content: string; translation_offset?: number }>, allowed: (id: string) => boolean, aliases: string[] = [],
 ): string | null {
   if (!["what", "for_whom", "edge"].includes(s.role)) return "unknown_role";
   if (!s.text?.trim() || s.text.length > 400) return "bad_text";
@@ -98,7 +98,9 @@ export function sentenceProblem(
   const c = claims(s.text, [companyName, ...aliases].join(" "));
   for (const n of c.numbers) if (!hay.includes(norm(n))) return `number_not_in_sources:${n}`;
   for (const n of c.names) if (!hay.includes(norm(n))) return `name_not_in_sources:${n}`;
-  if (!s.source_ids.some((id) => bestSentence(byId[id].content, s.text, 3))) return "no_supporting_sentence";
+  // A page that was translated is matched with one word less: the translation paraphrases ("doctor" for "physician") (owner, round 10: Sami).
+  const need = (id: string) => (byId[id].translation_offset != null ? 2 : 3);
+  if (!s.source_ids.some((id) => bestSentence(byId[id].content, s.text, need(id)))) return "no_supporting_sentence";
   return null;
 }
 
@@ -106,7 +108,7 @@ export function sentenceProblem(
  * Why a sentence was refused, shown beside it (owner, round 10: Pink Farms "fragment_no_verb", Rooftop "no_supporting_sentence"): the verb test's view of the sentence, or
  * the closest sentence of each cited source and how many content words it shares.
  */
-export function dropDetail(why: string, s: { text: string; source_ids?: string[] }, byId: Record<string, { content: string }>): string | undefined {
+export function dropDetail(why: string, s: { text: string; source_ids?: string[] }, byId: Record<string, { content: string; translation_offset?: number }>): string | undefined {
   if (why === "fragment_no_verb") return `no word of the sentence is on the verb list: ${s.text.split(/\s+/).slice(0, 14).join(" ")}…`;
   if (why === "no_supporting_sentence") {
     const found = (s.source_ids ?? []).filter((id) => byId[id]).map((id) => {
@@ -120,7 +122,7 @@ export function dropDetail(why: string, s: { text: string; source_ids?: string[]
 
 /** What came of a description attempt: the description (or none), and every sentence that was dropped with its reason — also when there is no description. */
 export function describeAttempt(
-  input: unknown, companyName: string, byId: Record<string, { content: string }>, allowed: (id: string) => boolean, aliases: string[] = [],
+  input: unknown, companyName: string, byId: Record<string, { content: string; translation_offset?: number }>, allowed: (id: string) => boolean, aliases: string[] = [],
 ): { built: BuiltDescription | null; dropped: Array<{ text: string; why: string }>; returned: Array<{ role: string; text: string }> } {
   const list = Array.isArray((input as { sentences?: unknown })?.sentences) ? (input as { sentences: Array<{ role: string; text: string }> }).sentences : [];
   const built = processDescription(input, companyName, byId, allowed, aliases);
@@ -134,7 +136,7 @@ export function describeAttempt(
 }
 
 export function processDescription(
-  input: unknown, companyName: string, byId: Record<string, { content: string }>, allowed: (id: string) => boolean, aliases: string[] = [],
+  input: unknown, companyName: string, byId: Record<string, { content: string; translation_offset?: number }>, allowed: (id: string) => boolean, aliases: string[] = [],
 ): BuiltDescription | null {
   const list = Array.isArray((input as { sentences?: unknown })?.sentences) ? (input as { sentences: Array<{ role: string; text: string; source_ids: string[] }> }).sentences : [];
   const kept: DescriptionSentence[] = [];
@@ -143,7 +145,7 @@ export function processDescription(
     const why = sentenceProblem(s, companyName, byId, allowed, aliases);
     if (why) { dropped.push({ text: s?.text ?? "", why, detail: dropDetail(why, s, byId) }); continue; }
     if (kept.some((k) => k.role === s.role)) { dropped.push({ text: s.text, why: "second_sentence_of_role" }); continue; }
-    const quote = s.source_ids.map((id) => bestSentence(byId[id].content, s.text, 3)).find(Boolean) ?? "";
+    const quote = s.source_ids.map((id) => bestSentence(byId[id].content, s.text, byId[id].translation_offset != null ? 2 : 3)).find(Boolean) ?? "";
     kept.push({ role: s.role as SentenceRole, text: s.text.trim(), source_ids: s.source_ids, quote });
   }
   const order: SentenceRole[] = ["what", "for_whom", "edge"];

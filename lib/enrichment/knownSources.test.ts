@@ -54,3 +54,28 @@ describe("a quote from a machine translation (owner, round 10)", () => {
     expect(r.carried[0].origin).toBe("known_source_stale_check_failed");
   });
 });
+
+describe("the memory only grows, and a first false 'gone' is not for ever (owner, round 10)", () => {
+  it("a single-valued field keeps its older value as superseded; seeding an older report after a newer one does not replace it", () => {
+    const store: KnownStore = {};
+    remember(store, [row("hq_city", "Toronto")], "r1", "2026-11-10");
+    remember(store, [row("hq_city", "Calgary")], "r2", "2026-11-15");
+    expect(store.c1.map((e) => `${e.value}:${e.status}`)).toEqual(["Toronto:superseded", "Calgary:ok"]);
+    remember(store, [row("hq_city", "Ottawa")], "r0", "2026-11-01");
+    expect(store.c1.find((e) => e.value === "Ottawa")?.status).toBe("superseded");
+    expect(store.c1.find((e) => e.value === "Calgary")?.status).toBe("ok");
+    expect(store.c1).toHaveLength(3);
+  });
+  it("a quote that the page still mostly shares is confirmed; one that shares little is 'gone', and is checked again next time", async () => {
+    const store: KnownStore = {};
+    remember(store, [row("description", "Six Degrees sells cloud managed services", { quote: "Six Degrees delivers hybrid cloud, cyber security and modern work managed services to enterprises" })], "r1", "2026-11-10");
+    const ok = await applyKnown(store, "c1", [], "2026-11-16", page("Hybrid cloud and cyber security: Six Degrees delivers modern work managed services for enterprise customers"));
+    expect(ok.carried[0].origin).toBe("known_source");
+    const gone = await applyKnown(store, "c1", [], "2026-11-16", page("A page about something else entirely: shipping rates and holiday opening times"));
+    expect(gone.carried).toEqual([]);
+    expect(store.c1[0].status).toBe("quote_gone");
+    const again = await applyKnown(store, "c1", [], "2026-11-17", page("Six Degrees delivers hybrid cloud, cyber security and modern work managed services to enterprises"));
+    expect(again.carried).toHaveLength(1);
+    expect(store.c1[0].status).toBe("ok");
+  });
+});

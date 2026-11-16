@@ -12,6 +12,8 @@ import { domainOf } from "../lib/enrichment/rejectedDomains.ts";
 import { acquisitionHeadline } from "../lib/enrichment/siteOwner.ts";
 import { extractNumbersFromText } from "../lib/enrichment/evidence.ts";
 import { SECTOR_TAXONOMY } from "../src/lib/taxonomy.ts";
+import { loadKnown, refreshDue, markKey } from "../lib/enrichment/knownSources.ts";
+import { loadGaps, ownerWrongTest } from "../lib/enrichment/knownGaps.ts";
 
 function parseCsv(text: string): string[][] {
   const rows: string[][] = []; let row: string[] = [], cur = "", q = false;
@@ -131,6 +133,28 @@ if (existsSync("batch4_dry.log")) {
   const proposedNoneKept = [...log.matchAll(/Headquarters: the model proposed (?!no city)[^\n]*kept no city(?![^\n]*not kept:)/g)].length;
   if (proposedNoneKept) err("(log)", `${proposedNoneKept} headquarters proposed and not kept without a reason on the same line`);
   if (noDesc) console.log(`(log) ${noDesc} company(ies) without a description; ${dropLines} dropped sentence(s) named.`);
+}
+
+// ── Every value of the memory is in the report, or flagged with a reason (owner, round 10) ──
+{
+  const store = loadKnown(), wrong = ownerWrongTest(loadGaps());
+  const today = new Date().toISOString().slice(0, 10);
+  const fold = (x: string) => x.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const family = (f: string) => (f === "description_what_only" ? "description" : f);
+  let missing = 0;
+  for (const [id, list] of Object.entries(store)) {
+    const inReport = rows.filter((r) => r.id === id);
+    if (!inReport.length) continue;                                     // the company was not in this run's report
+    for (const e of list) {
+      if (e.status === "quote_gone" || e.status === "superseded" || wrong(e.company, e.field, e.value) || refreshDue(e, today)) continue;   // flagged, with its reason
+      if (inReport.some((r) => family(r.field) === family(e.field) && fold(r.after) === fold(e.value))) continue;
+      // A single-valued field whose value is now another one is a supersession, which remember() marks; anything else is a value that went missing.
+      if (inReport.some((r) => family(r.field) === family(e.field)) && ["hq_city", "hq_country", "founded_year", "founding_country", "sector", "description", "tags", "employee_count", "employee_range"].includes(family(e.field))) continue;
+      missing++;
+      if (missing <= 25) err(e.company, `the memory holds ${e.field} "${e.value.slice(0, 70)}" (${e.verified_at}, ${e.source_url.slice(0, 60)}) and the report does not show it, with no reason`);
+    }
+  }
+  if (missing > 25) err("(memory)", `… and ${missing - 25} more values of the memory missing from the report`);
 }
 
 console.log(`${rows.length} value(s) of ${byCompany.size} company(ies) checked.\n`);

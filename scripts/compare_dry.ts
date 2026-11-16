@@ -41,7 +41,7 @@ const a = load(A), b = load(B);
 let gained = 0, lost = 0, changed = 0, missed = 0, notFound = 0;
 // "Lost" = a value the memory of verified sources holds that the newer report lacks (a bug); "not found" = a value of the older run that was never verified.
 const inMemory = new Set<string>();
-for (const list of Object.values(loadKnown())) for (const e of list) if (e.status !== "quote_gone") inMemory.add(`${e.company}|${e.field}`);
+for (const list of Object.values(loadKnown())) for (const e of list) if (e.status !== "quote_gone" && e.status !== "superseded") inMemory.add(`${e.company}|${e.field}`);
 // Companies whose replay lacked recordings (LOG=<run log>): a lost value there is not a regression.
 const missCompanies = new Set<string>();
 if (process.env.LOG) for (const l of readFileSync(process.env.LOG, "utf8").split("\n")) { const m = l.match(/REPLAY MISS (.+?): /); if (m) missCompanies.add(m[1]); }

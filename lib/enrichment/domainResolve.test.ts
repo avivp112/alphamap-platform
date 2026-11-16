@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { candidateSites, resolveDomain } from "./domainResolve";
+import { candidateSites, resolveDomain, ccTld } from "./domainResolve";
 
 const client = (answer: { is_the_company: boolean; confidence: string }) => ({ messages: { create: async () => ({ content: [{ type: "tool_use", input: { ...answer, reason: "r" } }], usage: { input_tokens: 1, output_tokens: 1 } }) } }) as never;
 describe("the right website (owner, round 10)", () => {
@@ -13,5 +13,10 @@ describe("the right website (owner, round 10)", () => {
     expect((await resolveDomain(facts, "nipponichi.jp", deps("x", { is_the_company: true, confidence: "high" }, "Nippon Ichi Software makes games"))).website).toBe("https://nisamerica.com/");
     expect((await resolveDomain(facts, "nipponichi.jp", deps("x", { is_the_company: true, confidence: "medium" }, "Nippon Ichi Software makes games"))).website).toBeNull();
     expect((await resolveDomain(facts, "nipponichi.jp", deps("x", { is_the_company: true, confidence: "high" }, "A different page about calendars"))).website).toBeNull();
+  });
+  it("a site of another country is another business (Plott .jp ≠ PLOTT Finance .co.uk); a generic .com is not excluded", () => {
+    expect(ccTld("plott.co.jp")).toBe("jp");
+    expect(ccTld("example.com")).toBeNull();
+    expect(candidateSites([{ url: "https://finance.plott.co.uk/", title: "" }, { url: "https://plott.com/", title: "" }, { url: "https://plott.jp/", title: "" }], "plott.co.jp").map((x) => x.host)).toEqual(["plott.com", "plott.jp"]);
   });
 });

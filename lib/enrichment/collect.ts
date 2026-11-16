@@ -32,7 +32,8 @@ import { websiteLooksLikeAnotherCompany } from "./websiteIdentity.ts";
 import { judgeNews, finishNews } from "./newsGate.ts";
 import { reconcileSector, subSectorUnsupported } from "./sectors.ts";
 import { siteBelongsToAnotherCompany, acquisitionHeadline, rebrandedAs, redirectBrand } from "./siteOwner.ts";
-import { resolveDomain } from "./domainResolve.ts";
+import { resolveDomain, judgeSite } from "./domainResolve.ts";
+import { pageNamesCompany } from "./ownDomain.ts";
 import { translateItems } from "./translate.ts";
 import { buildSectorRequest, parseSectorChoice, classifyWithRetry, type SectorChoice } from "./classifySector.ts";
 import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
@@ -394,7 +395,14 @@ export async function collectCompany(
   // The address on file is another business, or nothing of it can be read: the company's own site is looked for by name, country and field (domainResolve.ts). Found with
   // high confidence → the run goes on with it and the new address is a proposal for the owner; not found → the company is left out (domain_unresolved), nothing is written about it.
   let websiteProposal: { from: string | null; to: string; reason: string } | null = null;
-  if (!ctx.update && process.env.DOMAIN_RESOLVE !== "false" && (websitePages.length === 0 || /never names/.test(siteOwnerIssue ?? ""))) {
+  // Mismatch: the pages never name the company (a "No such app" error page, a design agency's homepage), and a model shown that homepage says with high confidence that it is not the company.
+  let addressMismatch = /never names/.test(siteOwnerIssue ?? "");
+  const readable = websitePages.filter((p) => p.content.replace(/\s+/g, " ").length >= 300);
+  if (!ctx.update && process.env.DOMAIN_RESOLVE !== "false" && !addressMismatch && readable.length > 0 && !readable.slice(0, 3).some((p) => pageNamesCompany({ content: p.content }, row.name))) {
+    const v = await judgeSite(ctx.anthropic, ctx.models.enrich, { name: row.name, country: row.country, industry: row.industry, description: row.description }, readable[0].content, readable[0].url, domain).catch(() => null);
+    if (v?.is_the_company === false && v.confidence === "high") { addressMismatch = true; console.log(`    🧭  The homepage of ${row.website} is another business: ${v.reason ?? ""}`); }
+  }
+  if (!ctx.update && process.env.DOMAIN_RESOLVE !== "false" && (readable.length === 0 || addressMismatch)) {
     const found = await resolveDomain(
       { name: row.name, country: row.country, industry: row.industry, description: row.description },
       domain,
@@ -412,9 +420,9 @@ export async function collectCompany(
       websitePages = await fetchCompanyWebsitePages(effectiveWebsite, searchState);
       siteOwnerIssue = siteBelongsToAnotherCompany(row.name, effectiveWebsite, websitePages);
     } else {
-      console.log(`    🧭  domain_unresolved: the address on file (${row.website ?? "none"}) ${websitePages.length === 0 ? "could not be read" : "shows another business"} and no site of the company itself was found (tried: ${found.tried.join(", ") || "no candidate"}).`);
+      console.log(`    🧭  domain_unresolved: the address on file (${row.website ?? "none"}) ${readable.length === 0 ? "could not be read" : "shows another business"} and no site of the company itself was found (tried: ${found.tried.join(", ") || "no candidate"}).`);
       bump(stats.droppedByReason, "domain_unresolved");
-      return { outcome: "no_data", reason: "domain_unresolved", detail: `address ${row.website ?? "none"} — ${websitePages.length === 0 ? "unreadable" : "another business"}; candidates tried: ${found.tried.join(", ") || "none"}` };
+      return { outcome: "no_data", reason: "domain_unresolved", detail: `address ${row.website ?? "none"} — ${readable.length === 0 ? "unreadable" : "another business"}; candidates tried: ${found.tried.join(", ") || "none"}` };
     }
   }
   // Renamed is not acquired (owner, round 10: TymeBank is GoTyme Bank): the description uses the new name, and the new name is a proposal for the owner.
