@@ -24,6 +24,7 @@
  * To add or move a domain, edit this file only.
  */
 
+import { isListingOrSponsoredUrl } from "./pageKind.ts";
 import { isDataPlatformUrl, LISTING_SITES } from "./dataPlatforms";
 import { domainClasses, standingOfClass } from "./domainClass";
 import { isRegionalWireHost } from "./primarySources";
@@ -308,6 +309,9 @@ export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean
   if (!host) return { kind: "denied", why: "no_host" };
   if (opts.isCompanySite) return { kind: "allowed", tier: 1, lowConfidence: false, why: "company_site" };
   if (isDataPlatformUrl(url)) return { kind: "denied", why: "data_platform" };
+  // A tag / list / search page, or sponsored content, is no article (owner, round 10).
+  const notArticle = isListingOrSponsoredUrl(url);
+  if (notArticle) return { kind: "denied", why: notArticle };
   // A company profile page on a news site is a data page, not an article (owner, round 10: bloomberg.com/profile/company/…); its articles stay tier 2.
   if (/(^|\.)bloomberg\.com$/.test(host) && (() => { try { return /^\/(?:profiles?|research\/stocks|quote)(?:\/|$)/i.test(new URL(url.startsWith("http") ? url : `https://${url}`).pathname); } catch { return false; } })()) return { kind: "denied", why: "directory_page" };
   if (onList(host, DENIED_DOMAINS)) return { kind: "denied", why: "denied_domain" };

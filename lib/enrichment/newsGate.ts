@@ -8,6 +8,7 @@
  *               address and in the page's code.
  *   finishNews  one row per event (same amount or acquisition within 7 days, or either undated), then no date, no news.
  */
+import { isListingOrSponsoredUrl } from "./pageKind.ts";
 import { newsProblem, ownSiteNewsOk, dateFromUrl, dateFromHtml, dedupeNewsEvents, cleanHeadline, headlineLooksCut, headlineIncomplete, titleFromHtml } from "./newsRelevance.ts";
 
 export interface NewsItem { title: string; url: string; published_date?: string | null; title_joined?: boolean; [k: string]: unknown }
@@ -25,6 +26,9 @@ export interface NewsDeps {
 export type NewsVerdict = { keep: true; item: NewsItem; dated?: "address" | "page" } | { keep: false; reason: string; message: string };
 
 export async function judgeNews(n: NewsItem, d: NewsDeps): Promise<NewsVerdict> {
+  // The source of a news item is the address of the article itself: a tag / list / search page and sponsored content are no source (owner, round 10).
+  const notArticle = isListingOrSponsoredUrl(n.url);
+  if (notArticle) return { keep: false, reason: `news_${notArticle}`, message: notArticle === "sponsored_content" ? "sponsored content, not an article" : "a tag, list or search page, not the article itself" };
   // The site's name is not part of the headline; a cut-off headline is completed from the page's own (og:title, h1, <title>).
   let title = cleanHeadline(n.title, n.url);
   let html: string | null | undefined;
@@ -65,6 +69,11 @@ export async function judgeNews(n: NewsItem, d: NewsDeps): Promise<NewsVerdict> 
     const h = fromUrl ? null : await page();
     const found = fromUrl ?? (h ? dateFromHtml(h, d.today) : null);
     if (found) { item.published_date = found; dated = fromUrl ? "address" : "page"; }
+  }
+  // A date equal to the day of the run that the source does not carry is the crawl date, not the article's (owner, round 10: Dietly dated the run day).
+  const today = d.today ?? new Date().toISOString().slice(0, 10);
+  if (item.published_date && item.published_date >= today && !(d.content(item.url) ?? "").includes(item.published_date)) {
+    return { keep: false, reason: "news_date_not_in_source", message: `its date (${item.published_date}) is the day of the run and the article does not carry it` };
   }
   return { keep: true, item, dated };
 }

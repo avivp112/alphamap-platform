@@ -203,5 +203,11 @@
     "description": "Paradox sells conversational AI recruiting software, the Olivia assistant, that automates hiring tasks such as screening candidates and scheduling interviews for employers.",
     "expect": "Enterprise Software › HR Tech",
     "was": "Enterprise Software with no sub-sector (round 10)"
+  },
+  {
+    "company": "Mintifi",
+    "description": "Mintifi offers supply chain financing through a platform that provides check-out financing for buying inventory, smart term loans, electronic invoicing and payment (EIPP), and APIs that integrate with ERP systems. Its customers are small and medium businesses that buy inventory from suppliers.",
+    "expect": "Fintech › Lending",
+    "was": "Fintech › Payments (round 10)"
   }
 ]

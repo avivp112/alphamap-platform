@@ -33,6 +33,8 @@ import { judgeNews, finishNews } from "./newsGate.ts";
 import { reconcileSector, subSectorUnsupported } from "./sectors.ts";
 import { siteBelongsToAnotherCompany, acquisitionHeadline, rebrandedAs, redirectBrand } from "./siteOwner.ts";
 import { resolveDomain, judgeSite } from "./domainResolve.ts";
+import { techOverride } from "./techOverrides.ts";
+import { detectAcquisition, type AcquisitionClaim } from "./acquisition.ts";
 import { pageNamesCompany } from "./ownDomain.ts";
 import { translateItems } from "./translate.ts";
 import { foundedYearFromSite, copyrightStartYear, foundedInCityYear } from "./siteFacts.ts";
@@ -53,7 +55,7 @@ import { lookupEpoPatents, type CompanyIdentity, type EpoPatentResult } from "./
 import { hintFromRound, hintQueries, confirmHint, hintKey, recoverMissingAmount, type RoundHint } from "./hints.ts";
 import { detectGaps, buildDeepDiveQueries, hasNoFinancingRounds, type DeepDiveSection } from "./deepDive.ts";
 import {
-  groundRoundDetails, isUnstatedEvent, incompleteRound, absorbAmountlessRounds, rejectRound, roundSourceStandings, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
+  groundLeadInvestor, groundRoundDetails, isUnstatedEvent, incompleteRound, absorbAmountlessRounds, rejectRound, roundSourceStandings, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
   type ExistingRoundRef,
 } from "./assemble.ts";
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
@@ -233,6 +235,8 @@ export interface CollectedCompany {
   outcome: "collected";
   /** The company's own site, found by name when the address on file was another business or unreadable (domainResolve.ts): a proposal, never applied. */
   websiteProposal?: { from: string | null; to: string; reason: string };
+  /** The company was acquired (acquisition.ts): status, acquirer, date, source and quote. */
+  acquisition?: AcquisitionClaim;
   /** What kind of company this was, for the stratified precision sample (owner, round 10). */
   flags?: { translated: boolean; sources: number; techBorderline: boolean };
   /** Headcount points from registers, plans and archived pages (headcountHistory.ts); each with its source and type. */
@@ -377,6 +381,13 @@ export async function collectCompany(
   const seen = ctx.seen;
   const gapFillDue = ctx.update && !!seen?.gapFillDue();
 
+  // The owner's hard list of not-technology companies: decided in code, before the model and before any search.
+  const overridden = ctx.update ? null : techOverride(row.name);
+  if (overridden) {
+    console.log(`    🧪  Technology: ${overridden.reason} — nothing is collected.`);
+    return { outcome: "rejected", reason: "not_technology", detail: `tech_overrides: ${overridden.reason}` };
+  }
+
   // A company turned away as not technology stays turned away for a time (techMemory.ts): the same answer every run, and no searches spent.
   if (!ctx.update) {
     const before = storedRejection(row.id);
@@ -427,12 +438,10 @@ export async function collectCompany(
       },
     );
     if (found.website) {
-      console.log(`    🧭  The address on file (${row.website ?? "none"}) ${websitePages.length === 0 ? "could not be read" : "shows another business"}; the company's own site is ${found.website} — ${found.reason} (tried: ${found.tried.join(", ")}). Address update proposed, for the owner's review.`);
-      websiteProposal = { from: row.website ?? null, to: found.website, reason: found.reason };
-      effectiveWebsite = found.website; domain = websiteDomain(effectiveWebsite);
-      anchor = domain ? ` "${domain}"` : anchor;
-      websitePages = await fetchCompanyWebsitePages(effectiveWebsite, searchState);
-      siteOwnerIssue = siteBelongsToAnotherCompany(row.name, effectiveWebsite, websitePages);
+      // A proposed address is never collected from until the owner approves it (round 10: Plott's letsplott.com is another company than Plott on file). The company stays domain_unresolved.
+      console.log(`    🧭  domain_unresolved: the address on file (${row.website ?? "none"}) ${websitePages.length === 0 ? "could not be read" : "shows another business"}. A site was proposed — ${found.website} (${found.reason}) — nothing is collected from it until the owner approves it.`);
+      bump(stats.droppedByReason, "domain_unresolved");
+      return { outcome: "no_data", reason: "domain_unresolved", detail: `address ${row.website ?? "none"} — ${readable.length === 0 ? "unreadable" : "another business"}; PROPOSAL (not used, awaiting approval): ${found.website} — ${found.reason}` };
     } else {
       console.log(`    🧭  domain_unresolved: the address on file (${row.website ?? "none"}) ${readable.length === 0 ? "could not be read" : "shows another business"} and no site of the company itself was found (tried: ${found.tried.join(", ") || "no candidate"}).`);
       bump(stats.droppedByReason, "domain_unresolved");
@@ -1006,6 +1015,11 @@ export async function collectCompany(
       continue;
     }
     withAmounts.push(r);
+  }
+  // The lead investor must stand in a source the round cites (owner, round 10).
+  for (let i = 0; i < withAmounts.length; i++) {
+    const g = groundLeadInvestor(withAmounts[i], allSources);
+    if (g.dropped) { console.log(`    🚫  ${withAmounts[i].round_type}: lead investor ${g.dropped} not written — no source the round cites names it.`); bump(stats.droppedByReason, "lead_investor_not_in_source"); withAmounts[i] = g.round; }
   }
   const roundsPassingRules = withAmounts.filter((r) => {
     const why = rejectRound(r, row.name, allSources);
@@ -1808,14 +1822,21 @@ export async function collectCompany(
   }
   // v2's own description (descriptionBuilder.ts, owner 2026-11-08): replaces the extraction's free text; without a
   // verified "what" and "for whom" there is none. Written later only for a company with no description on file.
-  // News that the company was acquired: its site today is the buyer's or something else (owner, 2026-11-15) — not used, listed for review.
-  if (!ctx.update && !siteOwnerIssue) {
-    const hit = (market.news ?? []).find((n) => acquisitionHeadline(n.title ?? "", row.name));
-    if (hit) {
-      siteOwnerIssue = `domain_repurposed: news says the company was acquired — "${(hit.title ?? "").slice(0, 100)}"`;
-      console.log(`    🛠️   ${siteOwnerIssue} — the site is not used for the description or sector; listed for review.`);
-      ctx.onWebsiteIssue?.("content_mismatch", siteOwnerIssue);
-    }
+  // Acquired (owner, round 10): the company is enriched as usual — description included — and in addition status, acquirer, date, source and quote are
+  // read from the news and from two searches made for every company ("<name> acquired", "<name> acquisition"). A rename after a purchase is a purchase.
+  let acquisition: AcquisitionClaim | null = null;
+  if (!ctx.update) {
+    try {
+      const fixed = (await Promise.all([`"${row.name}" acquired`, `"${row.name}" acquisition`].map((q) => webSearch(q, "acquired_check", searchState)))).flat().filter((r) => r.url && !isDataPlatformUrl(r.url));
+      const articles = [
+        ...(market.news ?? []).map((n) => ({ url: n.url, title: n.title, content: n.summary ?? "", date: n.published_date ?? null })),
+        ...allSources.filter((x) => x.source_type !== "company_site").map((x) => ({ url: x.url, title: x.title, content: x.content, date: articleDate(x) })),
+        ...fixed.map((r) => ({ url: r.url, title: r.title ?? "", content: r.content ?? "", date: articleDate({ url: r.url, content: r.content ?? "" }) })),
+      ];
+      acquisition = detectAcquisition(articles, row.name);
+      if (acquisition) console.log(`    🏁  ${acquisition.status === "acquired" ? "Acquired" : "Majority-acquired"} by ${acquisition.acquirer} (${acquisition.date ?? "undated"}): "${acquisition.quote.slice(0, 140)}" — ${acquisition.url}`);
+      else console.log(`    🏁  No acquisition found for ${row.name} (${fixed.length} result(s) of the fixed searches read).`);
+    } catch (e) { console.log(`    ⚠️  acquisition check skipped: ${(e as Error).message}`); }
   }
   if (componentOn("description_v2") && !ctx.update && siteOwnerIssue) {
     profile.profile.description = undefined;
@@ -2004,6 +2025,7 @@ export async function collectCompany(
   return {
     outcome: "collected",
     ...(websiteProposal ? { websiteProposal } : {}),
+    ...(acquisition ? { acquisition } : {}),
     flags: {
       translated: allSources.some((x) => x.translation_offset != null),
       sources: allSources.length,

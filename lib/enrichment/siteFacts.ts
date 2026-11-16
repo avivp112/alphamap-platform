@@ -13,11 +13,13 @@ export function foundedYearFromSite(text: string, currentYear = new Date().getFu
   const candidates: RegExp[] = [
     new RegExp(`\\b(?:founded|established|incorporated|formed)\\s+(?:in\\s+|on\\s+)?(?:[A-Z][a-z]+\\s+(?:\\d{1,2},?\\s+)?)?(${YEAR})\\b`, "i"),
     new RegExp(`\\b(?:founded|established)\\b[^.]{0,25}?\\bin\\s+(${YEAR})\\b`, "i"),
-    new RegExp(`(?:^|[\\s(])(?:since|est\\.?)\\s+(${YEAR})\\b`, "i"),
+    // "Since <year>" counts only as "in business since", "serving … since", "established since", or as a line of its own — not after a growth verb or a "%" (owner, round 10: "Growing by 720% Since 2020").
+    new RegExp(`\\b(?:in business|established|operating|trusted|serving[^.]{0,60}?)\\s+since\\s+(${YEAR})\\b`, "i"),
+    new RegExp(`^(?:since|est\\.?)\\s+(${YEAR})$`, "i"),
   ];
   for (const line of lines) {
     if (/©|\(c\)|copyright|launched|launch of/i.test(line) && !/\b(founded|established|since|est\.)/i.test(line)) continue;
-    if (line.length > 400) continue;
+    if (line.length > 400 || /!\[|\]\(/.test(line)) continue;
     for (const re of candidates) {
       const m = line.match(re);
       if (!m) continue;

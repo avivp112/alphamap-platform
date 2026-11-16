@@ -16,10 +16,10 @@ export const SECTOR_DEFINITIONS: Record<string, string> = {
   "Voice & Speech AI": "the product is speech: recognition, transcription, captioning, dubbing, voice agents or synthesis; text-only language AI is NLP / Speech.",
   // Fintech
   "Fintech / General": "a financial product that fits no narrower fintech sub-sector.",
-  "Payments": "moves money for merchants or consumers: payment acceptance and terminals (POS swipe machines, card readers), acquiring, cross-border transfers, wallets; not the bank or lender behind it.",
+  "Payments": "moves money for merchants or consumers: payment acceptance and terminals (POS swipe machines, card readers), acquiring, cross-border transfers, wallets; not the bank or lender behind it, and not financing of purchases or inventory (Lending).",
   "Banking / Neobanking": "a bank, neobank or banking-as-a-service front end holding customer accounts; not payments processing alone.",
   "Insurance / Insurtech": "sells, underwrites or administers insurance with technology (car, health, claims software for insurers).",
-  "Lending": "originates, scores or services loans and credit (BNPL, SME lending, mortgages); not deposit accounts.",
+  "Lending": "originates, scores or services loans and credit (BNPL, SME lending, mortgages, supply-chain and inventory financing, term loans, invoice and working-capital financing); not deposit accounts. A company whose product is financing is Lending even when the money moves through invoices or payment APIs.",
   "Crypto / Web3": "blockchain, tokens, digital-asset custody or exchanges.",
   "WealthTech": "investing, savings, trading, portfolio and pension tools for individuals or advisers.",
   "RegTech": "software that checks a business against regulation or policy (compliance monitoring, KYC/AML, review of marketing or communications); not security tooling.",

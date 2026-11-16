@@ -21,3 +21,15 @@ describe("founding year from the company's own site (owner, round 10)", () => {
     expect(foundedInCityYear(["Globex was founded in Berlin in 2012."], "Acme")).toBeNull();
   });
 });
+
+describe("'Since <year>' (owner, round 10: Paradox 2016, not 2020)", () => {
+  it("rejects a growth phrase and an image alt", () => {
+    expect(foundedYearFromSite("Paradox Named to Inc. 5000 List — Growing by More than 720% Since 2020")).toBeNull();
+    expect(foundedYearFromSite("![Image 33: Paradox Named to List — Growing by 720% Since 2020](https://cdn/x.png)")).toBeNull();
+  });
+  it("accepts the shapes that state the start of the business", () => {
+    expect(foundedYearFromSite("We have been in business since 2012 and serve banks.")?.year).toBe(2012);
+    expect(foundedYearFromSite("Serving retailers across Europe since 2009.")?.year).toBe(2009);
+    expect(foundedYearFromSite("Some text\nSince 2016\nMore text")?.year).toBe(2016);
+  });
+});

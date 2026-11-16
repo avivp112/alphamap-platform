@@ -787,3 +787,23 @@ export function reconcileOnFile<T extends OnFileLists>(lists: T): { competitors:
   });
   return { competitors, acquisitions, news, notes };
 }
+
+
+/**
+ * A lead investor is written only when its name stands in a source the round cites (owner, round 10: Choiz "lead Insud Pharma" was in no source).
+ * Returns the round without the lead when it does not; the rest of the round is untouched.
+ */
+export function groundLeadInvestor(round: V2Round, sources: LabeledSource[]): { round: V2Round; dropped: string | null } {
+  const lead = round.lead_investor?.value;
+  if (!lead) return { round, dropped: null };
+  const byId = new Map(sources.map((x) => [x.source_id, x]));
+  const urlKey = (u: string) => u.replace(/[?#].*$/, "").replace(/\/+$/, "").toLowerCase();
+  const cited = new Map<string, LabeledSource>();
+  for (const f of [round.lead_investor, round.amount_raised, round.valuation, round.announcement_date]) { const x = f?.source_id ? byId.get(f.source_id) : undefined; if (x) cited.set(x.source_id, x); }
+  if (round.source_url) for (const x of sources) if (urlKey(x.url) === urlKey(round.source_url)) cited.set(x.source_id, x);
+  const core = normalizeForMatch(lead.replace(/\b(inc|ltd|llc|lp|llp|plc|gmbh|sa|ag|bv|co)\b\.?/gi, ""));
+  if (!core) return { round, dropped: null };
+  const named = [...cited.values()].some((x) => normalizeForMatch(`${x.title ?? ""} ${x.content}`).includes(core)) || normalizeForMatch(round.lead_investor?.evidence_quote ?? "").includes(core);
+  if (named) return { round, dropped: null };
+  return { round: { ...round, lead_investor: undefined }, dropped: lead };
+}

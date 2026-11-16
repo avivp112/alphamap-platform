@@ -119,6 +119,14 @@ const NOT_THE_RAISE = [
   /[$€£]\s?\d[\d.,]*\s?(?:billion|million|bn|mm|b|m)?\s+(?:in\s+)?(?:ARR|annual\s+recurring\s+revenue|annualized\s+revenue|revenue|sales|customers)\b/gi,
 ];
 
+const GENERIC_TAIL = /\s+(?:ai|labs?|tech|technologies|technology|software|systems|group|app|io|hq|inc|ltd|llc)\.?$/i;
+/** The company named in a sentence, also by its brand without a generic tail: the announcement of "Paradox AI" says "Paradox" (owner, round 10). */
+function namesBrand(text: string, companyName: string): boolean {
+  if (namesCompany(text, companyName)) return true;
+  const brand = companyName.trim().replace(GENERIC_TAIL, "");
+  return brand !== companyName.trim() && brand.replace(/[^\p{L}]/gu, "").length >= 4 && namesCompany(text, brand);
+}
+
 export function recoverMissingAmount(round: V2Round, sources: LabeledSource[], companyName: string): AmountRecovery | null {
   if (round.amount_raised?.value != null) return null;
   const byId = new Map(sources.map((x) => [x.source_id, x]));
@@ -135,7 +143,7 @@ export function recoverMissingAmount(round: V2Round, sources: LabeledSource[], c
     if (!canConfirm(src, round.lead_investor?.value)) continue;
     const text = `${src.title ?? ""}. ${src.content}`;
     for (const sen of sentences(text)) {
-      if (sen.length > 400 || !RAISE.test(sen) || !namesCompany(sen, companyName) || (stage && !stage.test(sen))) continue;
+      if (sen.length > 400 || !RAISE.test(sen) || !namesBrand(sen, companyName) || (stage && !stage.test(sen))) continue;
       let rest = sen;
       for (const re of NOT_THE_RAISE) rest = rest.replace(re, " ");
       for (const n of extractNumbersFromText(rest)) if (n >= 100_000) found.push({ amount: n, source_id: src.source_id, quote: sen.trim() });
