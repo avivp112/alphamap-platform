@@ -52,6 +52,8 @@ import { writeCollected, BULK_THRESHOLDS } from "../lib/enrichment/writeCompany.
 import { classifyTier, type TierRow, type TierRound } from "../lib/enrichment/queue.ts";
 import { createSearchProviderState, jinaDisabled, readPageCached, type SearchProviderState } from "../lib/enrichment/searchProviders.ts";
 import { techOverride } from "../lib/enrichment/techOverrides.ts";
+import { acceptanceReport } from "./acceptance_check.ts";
+import { rowProblem, applyRowRules, acquiredFromNews } from "../lib/enrichment/rowRules.ts";
 import { loadKnown, saveKnown, remember, applyKnown, markKey, NOT_REMEMBERED, KNOWN_PATH, type KnownStore, type KnownEntry } from "../lib/enrichment/knownSources.ts";
 import { injectKnown } from "../lib/enrichment/knownInject.ts";
 import { readMarks } from "../lib/enrichment/fieldReview.ts";
@@ -62,7 +64,7 @@ import { websiteDomain, type DomainOwner } from "../lib/enrichment/websiteValida
 
 import { assertEnrichmentWritesAllowed, PILOT_FIELDS } from "../lib/enrichment/writeGate.ts";
 import { openFieldNames } from "../lib/enrichment/fieldReview.ts";
-import { writeFileSync, mkdirSync, readdirSync, readFileSync } from "fs";
+import { writeFileSync, mkdirSync, readdirSync, readFileSync, existsSync } from "fs";
 import { rejectedDomains, rejectedDomainsCsv } from "../lib/enrichment/rejectedDomains.ts";
 import { wrapAnthropic, installHttpRecorder, quietOffline, installFetchTimeout, recorderSummary, replayMode } from "../lib/enrichment/recorder.ts";
 import { installCompanyLog, installLineTap, gathered, withCompany, companyLines } from "../lib/enrichment/companyLog.ts";
@@ -136,6 +138,17 @@ if (KNOWN_ON) {
   const wrongSet = isWrongValue;
   const removed = purgeWrong(knownStore, gapStore, wrongSet, new Date().toISOString().slice(0, 10));
   if (removed.length) console.log(`🧹  ${removed.length} value(s) marked wrong removed from the memory of verified sources: ${removed.slice(0, 8).join(" | ")}`);
+}
+// What the memory carries must pass today's rules too (owner, round 10: a round of fixes changed nothing in the report because the memory brought the old values back).
+{
+  const today = new Date().toISOString().slice(0, 10);
+  let purged = 0;
+  for (const list of Object.values(knownStore)) for (let i = list.length - 1; i >= 0; i--) {
+    const e = list[i];
+    const why = rowProblem({ field: e.field, after: e.value, source_url: e.source_url, quote: e.quote, payload: e.payload }, e.company, today);
+    if (why) { console.log(`🧹  memory: ${e.company} ${e.field} "${e.value.slice(0, 50)}" removed — ${why}`); list.splice(i, 1); purged++; }
+  }
+  if (purged) console.log(`🧹  ${purged} remembered value(s) removed: they break today's rules.`);
 }
 const unreadableSites = new Set<string>();
 const knownReadState = createSearchProviderState();
@@ -371,11 +384,15 @@ async function enrichCompany(
     const back = companyRows.filter((r) => ownerWrong(r.company, r.field, r.after));
     if (back.length) { console.log(`    🚫  Marked wrong by the owner, not reported again: ${back.map((r) => `${r.field}: ${r.after.slice(0, 60)}`).join(" | ")}`); companyRows = companyRows.filter((r) => !back.includes(r)); }
     // What this run found is remembered; what was verified before and is still confirmed is carried (no model, no search for it).
+    { const g = applyRowRules(companyRows, row.name, RUN_DATE); companyRows = g.rows; for (const d of g.dropped) console.log(`    🧹  ${d}`); }
     const freshFound = new Set(companyRows.map((r) => r.field));
     const before = Object.keys(knownStore[row.id] ?? []).length;
     const carry = await applyKnown(knownStore, row.id, companyRows, RUN_DATE, readKnownPage, lockedMarks);
     remember(knownStore, companyRows, runId ?? "dry", RUN_DATE, isWrongValue);
     companyRows = carry.rows.map((r) => ({ ...r, origin: r.origin ?? "new" })) as typeof companyRows;
+    { const g = applyRowRules(companyRows, row.name, RUN_DATE); companyRows = g.rows; for (const d of g.dropped) console.log(`    🧹  ${d}`);
+      const acq = acquiredFromNews(companyRows, row.name, row.id);
+      if (acq) { companyRows.push(acq as (typeof companyRows)[number]); console.log(`    🏁  acquired — read from the company's news: ${acq.after}`); } }
     const missing = ASKED.filter((f) => OPEN_FIELDS.includes(f) && !companyRows.some((r) => r.field === f || r.field.startsWith(f)));
     recordGaps(gapStore, row.id, row.name, missing, companyLines(), runId ?? "dry", RUN_DATE);
     console.log(`    📚  Known sources (${row.name}): from memory ${[...new Set([...injectedNow, ...carry.carried.map((r) => r.field)])].join(", ") || "none"}${injectedNow.length ? ` (${injectedNow.join(", ")} entered the write stage)` : ""}${carry.carried.length ? ` (${carry.carried.length} more value(s) carried in the report)` : ""}; from this run's search ${[...freshFound].filter((f) => !injectedNow.includes(f)).join(", ") || "none"}; still missing ${missing.join(", ") || "none"}${carry.recheck.length ? `; back to review (quote gone): ${carry.recheck.join(" | ")}` : ""}${carry.refreshDue.length ? `; older than the refresh time, searched again: ${carry.refreshDue.join(" | ")}` : ""}${carry.locked.length ? `; locked (marked correct) kept: ${carry.locked.join(" | ")}` : ""}${before ? "" : " [no memory yet]"}`);
@@ -680,6 +697,7 @@ async function main() {
     const batchPath = `${batchDir}/batch_${batchNo}.csv`;
     if (!DRY_RUN && numbered.length) writeFileSync(batchPath, batchCsv(numbered));
     if (numbered.length) console.log("\n" + renderBatchReport(numbered, { batchNo, runId, dry: DRY_RUN, csvPath: DRY_RUN ? undefined : batchPath }));
+    if (existsSync("eval/acceptance_batch5.json")) { try { const a = acceptanceReport(PILOT_REPORT); console.log(`\n── Acceptance checks (eval/acceptance_batch5.json) ──\n${a.text}\n`); } catch (e) { console.log(`⚠️  acceptance checks not run: ${(e as Error).message}`); } }
     console.log(`📝  Pilot report: ${PILOT_REPORT} — ${pilotRows.filter((r) => r.field !== "(nothing)").length} field(s) ${DRY_RUN ? "that would be written" : "written"} for ${new Set(pilotRows.map((r) => r.company_id)).size} compan(ies).${runId ? ` Undo: RUN_ID=${runId} npx tsx scripts/undo_run.ts` : ""}`);
   }
 }
