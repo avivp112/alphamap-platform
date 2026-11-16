@@ -1,6 +1,6 @@
 /**
  * lib/enrichment/newsRounds.ts — a round from an accepted headline (owner, round 10): a news item that reports the company raising ("Humi Closes $31M Series B", "Mintifi raises
- * $180 million in funding") is a round: the amount and type are the headline's, the date is the news item's date, the headline is the quote. Only a headline whose subject is the
+ * $180 million in funding") is a round: the amount and type are the headline's (a headline that names no stage gives "Unknown", written as a NULL type — never "Other"), the date is the news item's date, the headline is the quote. Only a headline whose subject is the
  * company counts; "plans to raise", a valuation, revenue or someone else's raise do not.
  */
 import type { V2Round } from "./extractFunding.ts";
@@ -21,7 +21,7 @@ export function normalizeStage(s: string): string {
   if (t === "seed") return "Seed";
   const m = t.match(/^series ([a-h])(\+?)$/);
   if (m) return `Series ${m[1].toUpperCase()}${m[2]}`;
-  return /growth/.test(t) ? "Growth" : /bridge/.test(t) ? "Bridge" : "Other";
+  return /growth/.test(t) ? "Growth" : /bridge/.test(t) ? "Bridge" : "Unknown";
 }
 
 /** The round a headline reports for this company, or null. */
@@ -44,7 +44,7 @@ export function roundFromHeadline(title: string, companyName: string): { type: s
   if (amount < 100_000) return null;
   // the same raise verb with a sum that is a valuation: "valuation soars to $850 million" is not read — only the first sum after the verb is
   const stage = t.slice(verb.index).match(STAGE);
-  return { type: stage ? normalizeStage(stage[1]) : "Other", amount, quote: t };
+  return { type: stage ? normalizeStage(stage[1]) : "Unknown", amount, quote: t };
 }
 
 /** V2 rounds for the accepted news items of a company. Each item is one round at most. */

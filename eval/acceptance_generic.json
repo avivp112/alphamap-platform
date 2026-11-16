@@ -1,0 +1,61 @@
+[
+ {
+  "id": "no_run_date_news",
+  "why": "No news dated the day of the run or later",
+  "kind": "news_dates_before_run"
+ },
+ {
+  "id": "no_tag_pages_any",
+  "why": "No value of any field has a tag / list / search page as source",
+  "kind": "absent",
+  "source_match": "/tags?/|[?&](k|s|q)="
+ },
+ {
+  "id": "no_sponsored",
+  "why": "No value has businessinsider.com/sc/ as source",
+  "kind": "absent",
+  "source_match": "businessinsider\\.com/sc/"
+ },
+ {
+  "id": "no_cookie_tag",
+  "why": "No tag rests on a cookie or privacy sentence",
+  "kind": "absent",
+  "field": "tags",
+  "quote_match": "cookie|privacy policy"
+ },
+ {
+  "id": "acquired_only_from_news",
+  "why": "No acquired row rests on a profile page, a blog or a database",
+  "kind": "absent",
+  "field": "acquired",
+  "source_match": "pitchbook|ledgerlogic|summitpartners|crunchbase|dealroom"
+ },
+ {
+  "id": "no_duplicate_rounds",
+  "why": "No company has two identical rounds",
+  "kind": "no_duplicates",
+  "field": "round"
+ },
+ {
+  "id": "no_url_quotes",
+  "why": "No quote is an address or a slug",
+  "kind": "no_url_quote"
+ },
+ {
+  "id": "one_description",
+  "why": "No company has more than one description",
+  "kind": "single_value",
+  "fields": [
+   "description",
+   "description_what_only"
+  ]
+ },
+ {
+  "id": "one_sector",
+  "why": "No company has more than one sector",
+  "kind": "single_value",
+  "fields": [
+   "sector"
+  ]
+ }
+]

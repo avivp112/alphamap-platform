@@ -53,7 +53,7 @@ import { classifyTier, type TierRow, type TierRound } from "../lib/enrichment/qu
 import { createSearchProviderState, jinaDisabled, readPageCached, type SearchProviderState } from "../lib/enrichment/searchProviders.ts";
 import { techOverride } from "../lib/enrichment/techOverrides.ts";
 import { classifyDescription, mainTag } from "../lib/enrichment/postClassify.ts";
-import { acceptanceReport } from "./acceptance_check.ts";
+import { acceptanceReport, specPathsFor } from "./acceptance_check.ts";
 import { rowProblem, applyRowRules, acquiredFromNews, brandAsWritten, brandFromTexts } from "../lib/enrichment/rowRules.ts";
 import { loadKnown, saveKnown, remember, applyKnown, markKey, NOT_REMEMBERED, KNOWN_PATH, type KnownStore, type KnownEntry } from "../lib/enrichment/knownSources.ts";
 import { injectKnown } from "../lib/enrichment/knownInject.ts";
@@ -443,11 +443,27 @@ function notEnrich(row: V2StartupRow, outcome: string, reason: string | undefine
 // field_changes, so the run can be undone as a whole (scripts/undo_run.ts).
 let runId: string | null = null;
 
+// The number of this batch (owner, round 10: batch 5 was written as batch_4.csv, "w4.x"): BATCH_NO=<n>, else the pilot_batch_<n>.json that holds every id of ONLY=, else the count of files + 1.
+function batchNumber(): number {
+  if (process.env.BATCH_NO && Number(process.env.BATCH_NO) > 0) return Number(process.env.BATCH_NO);
+  if (ONLY.length) {
+    for (const f of readdirSync(".").filter((x) => /^pilot_batch_\d+\.json$/.test(x))) {
+      try {
+        const b = JSON.parse(readFileSync(f, "utf8")) as unknown;
+        const ids = new Set((Array.isArray(b) ? b : (b as { companies?: unknown[]; batch?: unknown[] }).companies ?? (b as { batch?: unknown[] }).batch ?? []).map((c) => String((c as { id?: string }).id ?? c).toLowerCase()));
+        if (ids.size && ONLY.every((o) => ids.has(o))) return Number(f.match(/\d+/)![0]);
+      } catch { /* not a batch file */ }
+    }
+  }
+  try { return readdirSync(process.env.BATCH_DIR ?? "field_review").filter((f) => /^batch_\d+\.csv$/.test(f)).length + 1; } catch { return 1; }
+}
+const BATCH_NO = batchNumber();
+
 async function registerRun(): Promise<string> {
   const { data, error } = await supabase.from("enrichment_runs").insert({
     pipeline: "v2", run_kind: "bulk", dry_run: false, git_sha: process.env.GIT_SHA ?? null,
     profile_model: PROFILE_MODEL, funding_model: FUNDING_MODEL,
-    thresholds: { MIN_PROFILE_CONFIDENCE, MIN_FUNDING_CONFIDENCE, MARKET_MODEL, MODE: PILOT ? "pilot" : UPDATE ? "update" : "full", ...(PILOT ? { PILOT_FIELDS, companies: ONLY.length } : {}) },
+    thresholds: { batch: BATCH_NO, MIN_PROFILE_CONFIDENCE, MIN_FUNDING_CONFIDENCE, MARKET_MODEL, MODE: PILOT ? "pilot" : UPDATE ? "update" : "full", ...(PILOT ? { PILOT_FIELDS, companies: ONLY.length } : {}) },
   }).select("run_id").single();
   if (error || !data) throw new Error(`could not register the run in enrichment_runs (${error?.message ?? "no row"}) — nothing written, since the run could not be undone`);
   return (data as { run_id: string }).run_id;
@@ -490,6 +506,20 @@ async function main() {
   if (!process.env.TAVILY_API_KEY) console.warn("⚠️  TAVILY_API_KEY is not set — Tavily search/fallback is disabled for this entire run.");
   if (!process.env.SERP_KEY && !process.env.TAVILY_API_KEY) {
     console.warn("⚠️  Neither search provider is configured — every company will run on website-page content ONLY (no funding/news/competitor search results at all).");
+  }
+  // A wet run is written only after its own dry pass has passed acceptance (owner, round 10: acceptance ran after the writing and a duplicate round was written). The pass runs
+  // here, before anything is written; with the recordings of the earlier runs it costs nothing, and the writing pass then uses the same recordings (REPLAY), so it writes what was checked.
+  if (!DRY_RUN && process.env.PREFLIGHT !== "off") {
+    const { spawnSync } = await import("child_process");
+    const { openSync } = await import("fs");
+    console.log("🛂  Preflight: a dry pass of the same companies, then the acceptance checks — nothing is written until they pass.");
+    const out = openSync("preflight.log", "w");
+    const child = spawnSync("npx", ["tsx", "scripts/bulk_enrich_v2.ts"], { env: { ...process.env, DRY_RUN: "true", REPLAY: process.env.REPLAY ?? "1", PILOT_REPORT: "pilot_report_preflight.csv", PREFLIGHT: "off", BATCH_NO: String(BATCH_NO) }, stdio: ["ignore", out, out] });
+    if (child.status !== 0) { console.error(`⛔  The preflight dry pass failed (exit ${child.status}) — nothing written. See preflight.log.`); process.exit(1); }
+    const a = acceptanceReport("pilot_report_preflight.csv", specPathsFor(BATCH_NO));
+    console.log(`\n── Preflight acceptance ──\n${a.text}\n`);
+    if (a.failed) { console.error("⛔  Acceptance has an ERROR — nothing was written. Fix it, or read preflight.log and pilot_report_preflight.csv."); process.exit(1); }
+    process.env.REPLAY ??= "1";
   }
   if (!DRY_RUN) {
     runId = await registerRun();
@@ -720,12 +750,12 @@ async function main() {
     // The numbered report of this batch (owner, 2026-11-05): the owner answers with the wrong numbers.
     const batchDir = process.env.BATCH_DIR ?? "field_review";
     mkdirSync(batchDir, { recursive: true });
-    const batchNo = readdirSync(batchDir).filter((f) => /^batch_\d+\.csv$/.test(f)).length + 1;
+    const batchNo = BATCH_NO;
     const numbered = numberValues(pilotRows.filter((r) => r.field !== "(nothing)").map((r) => ({ company_id: r.company_id, company: r.company, field: r.field, value: r.after, source_url: r.source_url, quote: r.quote })), batchNo, DRY_RUN ? "d" : "w");
     const batchPath = `${batchDir}/batch_${batchNo}.csv`;
     if (!DRY_RUN && numbered.length) writeFileSync(batchPath, batchCsv(numbered));
     if (numbered.length) console.log("\n" + renderBatchReport(numbered, { batchNo, runId, dry: DRY_RUN, csvPath: DRY_RUN ? undefined : batchPath }));
-    if (existsSync("eval/acceptance_batch5.json")) { try { const a = acceptanceReport(PILOT_REPORT); console.log(`\n── Acceptance checks (eval/acceptance_batch5.json) ──\n${a.text}\n`); } catch (e) { console.log(`⚠️  acceptance checks not run: ${(e as Error).message}`); } }
+    if (specPathsFor(BATCH_NO).length) { try { const a = acceptanceReport(PILOT_REPORT, specPathsFor(BATCH_NO)); console.log(`\n── Acceptance checks (${specPathsFor(BATCH_NO).join(" + ")}) ──\n${a.text}\n`); } catch (e) { console.log(`⚠️  acceptance checks not run: ${(e as Error).message}`); } }
     console.log(`📝  Pilot report: ${PILOT_REPORT} — ${pilotRows.filter((r) => r.field !== "(nothing)").length} field(s) ${DRY_RUN ? "that would be written" : "written"} for ${new Set(pilotRows.map((r) => r.company_id)).size} compan(ies).${runId ? ` Undo: RUN_ID=${runId} npx tsx scripts/undo_run.ts` : ""}`);
   }
 }

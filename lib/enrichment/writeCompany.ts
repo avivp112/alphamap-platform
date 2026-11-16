@@ -14,7 +14,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CollectedCompany, V2StartupRow } from "./collect.ts";
 import { filterCrossSectorTags, industryFromTaxonomy, type SectorTaxonomy } from "./extractProfile.ts";
 import { normalizeUrlForMatch } from "./extractMarket.ts";
-import { normalizeIsoDate, appendNew, reconcileOnFile } from "./assemble.ts";
+import { normalizeIsoDate, appendNew, reconcileOnFile, isSameRound } from "./assemble.ts";
 import { fetchArticleOgImage } from "./ogImage.ts";
 import { cleanPeople, mergeFoundersByName, isFounderEntry, cleanFounderTitle, canonicalTitle } from "./people.ts";
 import { samePersonName } from "./linkedin.ts";
@@ -28,7 +28,7 @@ import { countryFromLocationQuote } from "./location.ts";
 import { retireReplacedExecutives } from "./update.ts";
 import { MAJOR_CITIES } from "./majorCities.ts";
 import { normalizeForMatch } from "./evidence.ts";
-import { computeTotalRaised, computeDebtRaised } from "./rounds.ts";
+import { computeTotalRaised, computeDebtRaised, normalizeRoundType } from "./rounds.ts";
 import { computeFieldConfidence, meetsProfileThreshold } from "./confidence.ts";
 import { markTranslatedQuote, quotePair } from "./translate.ts";
 import { roundFieldEvidence, evidencedFillPatch } from "./roundProvenance.ts";
@@ -194,6 +194,17 @@ export async function writeCollected(
     if (!ok) { console.log(`    🚫  ${r.round_type} ${r.amount_raised != null ? `$${+(r.amount_raised / 1e6).toFixed(1)}M ` : ""}not written — no quote stands behind ${r.amount_raised != null ? "its amount" : "it"}.`); bump(summary.droppedByReason, "round_without_quote"); }
     return ok;
   });
+  // Two inserts that are one raise (the same stage, or the same type and sum with one of them undated) are one row: the dated one, with what the other adds (owner, round 10:
+  // Mintifi Series D $110M was written twice, once "no date").
+  for (let i = evidencedInserts.length - 1; i > 0; i--) {
+    const twin = evidencedInserts.slice(0, i).findIndex((o) => isSameRound(o, evidencedInserts[i]) || (normalizeRoundType(o.round_type) === normalizeRoundType(evidencedInserts[i].round_type) && o.amount_raised != null && evidencedInserts[i].amount_raised != null && Math.abs(o.amount_raised - evidencedInserts[i].amount_raised!) / o.amount_raised < 0.01));
+    if (twin < 0) continue;
+    const keep = evidencedInserts[twin], other = evidencedInserts[i];
+    for (const k of Object.keys(other) as Array<keyof typeof other>) if (keep[k] == null || keep[k] === "") (keep as Record<string, unknown>)[k as string] = other[k];
+    console.log(`    🧹  ${other.round_type} ${other.amount_raised ?? ""} listed twice in the plan — one row written.`);
+    bump(summary.droppedByReason, "round_duplicate_in_plan");
+    evidencedInserts.splice(i, 1);
+  }
   const exitEvents = evidencedInserts.filter((r) => r.round_type === "Acquired");
   for (const r of exitEvents) { console.log(`    🏁  Acquisition is not a funding round — "${r.lead_investor ?? "buyer not named"}", ${r.announcement_date ?? "undated"}: shown as an acquired proposal, not written as a round.`); bump(summary.droppedByReason, "acquisition_not_a_round"); }
   const plan = {
