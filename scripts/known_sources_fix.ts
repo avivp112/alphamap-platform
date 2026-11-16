@@ -8,7 +8,7 @@
  *   npx tsx scripts/known_sources_fix.ts list Hydrostor
  */
 import { loadKnown, saveKnown } from "../lib/enrichment/knownSources.ts";
-import { loadGaps, saveGaps, purgeWrong } from "../lib/enrichment/knownGaps.ts";
+import { loadGaps, saveGaps, purgeWrong, addOwnerRefusal } from "../lib/enrichment/knownGaps.ts";
 
 const args = process.argv.slice(2);
 const store = loadKnown(), gaps = loadGaps();
@@ -21,5 +21,14 @@ if (args[0] === "list") {
 if (!args.length) { console.error("Company:field:text …   or   list Company"); process.exit(1); }
 const rules = args.map((a) => { const [company, field, ...rest] = a.split(":"); return { company: (company ?? "").trim().toLowerCase(), field: (field ?? "").trim(), text: rest.join(":").trim().toLowerCase() }; });
 const removed = purgeWrong(store, gaps, (c, f, v) => rules.some((r) => c.toLowerCase().includes(r.company) && f === r.field && (!r.text || v.toLowerCase().includes(r.text))), today);
+// Every rule is also kept as a refusal, whether or not the memory held the value: a later run or a rebuilt memory does not take it (owner, round 10).
+for (const r of rules) {
+  if (!r.text) continue;
+  const ids = Object.entries(store).filter(([, l]) => l.some((e) => e.company.toLowerCase().includes(r.company))).map(([id]) => id);
+  const known = Object.values(gaps).find((c) => c.company.toLowerCase().includes(r.company));
+  const company = known?.company ?? Object.values(store).flat().find((e) => e.company.toLowerCase().includes(r.company))?.company ?? r.company;
+  addOwnerRefusal(gaps, ids[0] ?? Object.entries(gaps).find(([, c]) => c === known)?.[0] ?? null, company, r.field, r.text, today);
+}
 saveKnown(store); saveGaps(gaps);
-console.log(removed.length ? `Removed ${removed.length} value(s) from the memory:\n  ${removed.join("\n  ")}` : "Nothing matched — check the company, field and text (npx tsx scripts/known_sources_fix.ts list <company>).");
+console.log(removed.length ? `Removed ${removed.length} value(s) from the memory:\n  ${removed.join("\n  ")}` : "The memory held none of these values.");
+console.log(`Kept as refused (owner): ${rules.filter((r) => r.text).map((r) => `${r.company}:${r.field}:${r.text}`).join(" | ")} — they are not remembered or written again.`);

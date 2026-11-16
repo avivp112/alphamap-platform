@@ -46,3 +46,16 @@ describe("known gaps (owner, round 10)", () => {
     expect(again.c1 ?? []).toEqual([]);
   });
 });
+
+import { addOwnerRefusal, ownerWrongTest } from "./knownGaps";
+describe("a refusal works for a value the memory never held (owner, round 10)", () => {
+  it("part of the value is enough, for that company and field only", () => {
+    const g: GapStore = {};
+    addOwnerRefusal(g, null, "Promethean Particles", "leader", "Paul Denney", "2026-11-16");
+    const wrong = ownerWrongTest(g);
+    expect(wrong("Promethean Particles", "leader", "Paul Denney — CFO")).toBe(true);
+    expect(wrong("Promethean Particles", "leader", "James Stephenson — CEO")).toBe(false);
+    expect(wrong("Other Co", "leader", "Paul Denney — CFO")).toBe(false);
+    expect(wrong("Promethean Particles", "news", "Paul Denney")).toBe(false);
+  });
+});

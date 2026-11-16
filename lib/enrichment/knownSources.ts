@@ -45,12 +45,13 @@ export const refreshDue = (e: Pick<KnownEntry, "field" | "verified_at">, today: 
   VOLATILE_FIELDS.has(e.field) && ageDays(e.verified_at, today) > days;
 
 /** Adds what a run reported (rows with a source) to the store; a value already there gets the new date and run. */
-export function remember(store: KnownStore, rows: ReportRow[], runId: string, today: string, wrong: Set<string> = new Set()): number {
+export function remember(store: KnownStore, rows: ReportRow[], runId: string, today: string, wrong: Set<string> | ((company: string, field: string, value: string) => boolean) = new Set()): number {
+  const isWrong = (c: string, f: string, v: string) => (typeof wrong === "function" ? wrong(c, f, v) : wrong.has(markKey(c, f, v)));
   let added = 0;
   for (const r of rows) {
     if (!r.company_id || r.field === "(nothing)" || !r.after || !r.source_url) continue;
     if (r.origin && r.origin !== "new") continue;                                   // carried rows are not re-verified here
-    if (wrong.has(markKey(r.company, r.field, r.after))) continue;                  // marked wrong: never remembered
+    if (isWrong(r.company, r.field, r.after)) continue;                             // marked wrong: never remembered
     const list = store[r.company_id] ?? (store[r.company_id] = []);
     const same = list.find((e) => e.field === r.field && fold(e.value) === fold(r.after));
     if (same) { Object.assign(same, { source_url: r.source_url, quote: r.quote || same.quote, verified_at: today, run_id: runId, status: "ok" as const }); continue; }

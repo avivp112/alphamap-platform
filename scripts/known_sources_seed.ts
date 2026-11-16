@@ -10,7 +10,7 @@ import { readFileSync, statSync, existsSync } from "fs";
 import { basename } from "path";
 import { loadKnown, saveKnown, remember, markKey, KNOWN_PATH, type ReportRow } from "../lib/enrichment/knownSources.ts";
 import { readMarks } from "../lib/enrichment/fieldReview.ts";
-import { loadGaps, ownerWrongKeys } from "../lib/enrichment/knownGaps.ts";
+import { loadGaps, ownerWrongTest } from "../lib/enrichment/knownGaps.ts";
 
 function parseCsv(text: string): string[][] {
   const rows: string[][] = []; let row: string[] = [], cur = "", q = false;
@@ -31,14 +31,14 @@ const files = process.argv.slice(2).filter((f) => !f.startsWith("-"));
 if (!files.length) { console.error("npx tsx scripts/known_sources_seed.ts <report.csv> [<report.csv> …]   (oldest first)"); process.exit(1); }
 const store = loadKnown();
 const wrong = new Set(readMarks().filter((m) => m.verdict === "wrong").map((m) => markKey(m.company, m.field, m.value)));
-for (const k of ownerWrongKeys(loadGaps(), markKey)) wrong.add(k);
+const ownerWrong = ownerWrongTest(loadGaps());
 for (const f of files) {
   if (!existsSync(f)) { console.warn(`⚠️  ${f} not found — skipped`); continue; }
   const [head, ...body] = parseCsv(readFileSync(f, "utf8"));
   const ix = (n: string) => head.indexOf(n);
   const rows: ReportRow[] = body.map((r) => ({ company_id: r[ix("company_id")] ?? "", company: r[ix("company")] ?? "", field: r[ix("field")] ?? "", before: r[ix("before")] ?? "", after: r[ix("after")] ?? "", source_url: r[ix("source_url")] ?? "", quote: r[ix("quote")] ?? "", origin: ix("origin") >= 0 ? r[ix("origin")] : "" }));
   const date = statSync(f).mtime.toISOString().slice(0, 10);
-  const added = remember(store, rows, basename(f), date, wrong);
+  const added = remember(store, rows, basename(f), date, (c, fl, v) => wrong.has(markKey(c, fl, v)) || ownerWrong(c, fl, v));
   console.log(`${f}: ${rows.length} row(s), ${added} new value(s) remembered (dated ${date}).`);
 }
 saveKnown(store);
