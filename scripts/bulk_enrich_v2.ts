@@ -362,7 +362,7 @@ async function enrichCompany(
     taxonomy, startupByDomain, seen: PILOT ? null : seen, runId,
     openFields: OPEN_FIELDS, pilot: PILOT,
   }, summary);
-  let companyRows = (outcome?.pilot ?? []).map((c) => ({ company_id: row.id, company: row.name, field: c.field, before: c.before == null ? "" : String(c.before), after: String(c.after), source_url: c.source_url ?? "", quote: c.quote ?? "", origin: "new", ...(c.payload ? { payload: JSON.stringify(c.payload) } : {}) }));
+  let companyRows = (outcome?.pilot ?? []).map((c) => ({ company_id: row.id, company: row.name, field: c.field, before: c.before == null ? "" : String(c.before), after: String(c.after), source_url: c.source_url ?? "", quote: c.quote ?? "", origin: "new", quote_original: c.quote_original ?? "", quote_translated: c.quote_translated ?? "", ...(c.payload ? { payload: JSON.stringify(c.payload) } : {}) }));
   if (KNOWN_ON) {
     // A value the owner marked wrong does not come back in the report, however it was found again.
     const back = companyRows.filter((r) => ownerWrong(r.company, r.field, r.after));
@@ -378,7 +378,7 @@ async function enrichCompany(
     console.log(`    📚  Known sources (${row.name}): from memory ${[...new Set([...injectedNow, ...carry.carried.map((r) => r.field)])].join(", ") || "none"}${injectedNow.length ? ` (${injectedNow.join(", ")} entered the write stage)` : ""}${carry.carried.length ? ` (${carry.carried.length} more value(s) carried in the report)` : ""}; from this run's search ${[...freshFound].filter((f) => !injectedNow.includes(f)).join(", ") || "none"}; still missing ${missing.join(", ") || "none"}${carry.recheck.length ? `; back to review (quote gone): ${carry.recheck.join(" | ")}` : ""}${carry.refreshDue.length ? `; older than the refresh time, searched again: ${carry.refreshDue.join(" | ")}` : ""}${carry.locked.length ? `; locked (marked correct) kept: ${carry.locked.join(" | ")}` : ""}${before ? "" : " [no memory yet]"}`);
   }
   for (const c of companyRows) {
-    pilotRows.push({ company_id: c.company_id, company: c.company, field: c.field, before: c.before, after: c.after, source_url: c.source_url, quote: c.quote, origin: c.origin });
+    pilotRows.push({ company_id: c.company_id, company: c.company, field: c.field, before: c.before, after: c.after, source_url: c.source_url, quote: c.quote, origin: c.origin, quote_original: (c as { quote_original?: string }).quote_original ?? "", quote_translated: (c as { quote_translated?: string }).quote_translated ?? "" });
   }
   if (PILOT && !companyRows.length) pilotRows.push({ company_id: row.id, company: row.name, field: "(nothing)", before: "", after: "", source_url: "", quote: "" });
 }
@@ -666,7 +666,7 @@ async function main() {
   }
   if (KNOWN_ON && Object.keys(knownStore).length) { saveKnown(knownStore); console.log(`📚  Known sources saved: ${KNOWN_PATH} (${Object.values(knownStore).reduce((n, l) => n + l.length, 0)} value(s) of ${Object.keys(knownStore).length} compan(ies)).`); }
   if (PILOT || pilotRows.length > 0) {
-    const cols = ["company_id", "company", "field", "before", "after", "source_url", "quote", "origin"];
+    const cols = ["company_id", "company", "field", "before", "after", "source_url", "quote", "origin", "quote_original", "quote_translated"];
     const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
     writeFileSync(PILOT_REPORT, "\uFEFF" + [cols.join(","), ...pilotRows.map((r) => cols.map((c) => cell(r[c] ?? "")).join(","))].join("\r\n") + "\r\n");
     // The numbered report of this batch (owner, 2026-11-05): the owner answers with the wrong numbers.

@@ -34,8 +34,8 @@ const reportPath = process.env.PILOT_REPORT ?? "pilot_report_dry.csv";
 if (!existsSync(reportPath)) { console.error(`${reportPath} not found`); process.exit(1); }
 const [head, ...body] = parseCsv(readFileSync(reportPath, "utf8"));
 const ix = (n: string) => head.indexOf(n);
-type Row = { id: string; company: string; field: string; after: string; url: string; quote: string };
-const rows: Row[] = body.map((r) => ({ id: r[ix("company_id")], company: r[ix("company")], field: r[ix("field")], after: r[ix("after")] ?? "", url: r[ix("source_url")] ?? "", quote: r[ix("quote")] ?? "" })).filter((r) => r.field && r.field !== "(nothing)");
+type Row = { id: string; company: string; field: string; after: string; url: string; quote: string; original: string; translated: string };
+const rows: Row[] = body.map((r) => ({ id: r[ix("company_id")], company: r[ix("company")], field: r[ix("field")], after: r[ix("after")] ?? "", url: r[ix("source_url")] ?? "", quote: r[ix("quote")] ?? "", original: ix("quote_original") >= 0 ? r[ix("quote_original")] ?? "" : "", translated: ix("quote_translated") >= 0 ? r[ix("quote_translated")] ?? "" : "" })).filter((r) => r.field && r.field !== "(nothing)");
 
 const errors: string[] = [], warnings: string[] = [];
 const err = (c: string, m: string) => errors.push(`${c}: ${m}`);
@@ -226,7 +226,7 @@ console.log(`\n${errors.length} error(s), ${warnings.length} warning(s).`);
   for (const r of shuffle(pool.filter((x) => !used.has(x)))) { if (chosen.length >= 40) break; chosen.push({ r, stratum: "filled from the rest" }); used.add(r); }
   const pick = chosen.slice(0, 40);
   const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-  writeFileSync("sample_40.csv", "\uFEFF" + ["n,stratum,company,field,value,source_url,quote,translated page (open source_url for the original),verdict (correct/wrong)", ...pick.map(({ r, stratum }, i) => [i + 1, stratum, r.company, r.field, r.after, r.url, r.quote, /^\[machine translation\]/.test(r.quote) ? "yes" : "", ""].map((x) => q(String(x))).join(","))].join("\r\n") + "\r\n");
+  writeFileSync("sample_40.csv", "\uFEFF" + ["n,stratum,company,field,value,source_url,quote_original (the page's own words),quote_translated (English it was verified against),verdict (correct/wrong)", ...pick.map(({ r, stratum }, i) => [i + 1, stratum, r.company, r.field, r.after, r.url, r.original || r.quote.replace(/^\[machine translation\]\s*/, ""), r.translated, ""].map((x) => q(String(x))).join(","))].join("\r\n") + "\r\n");
   console.log(`  strata: ${strata.map(([l]) => `${l} ${pick.filter((p) => p.stratum === l).length}`).join(" · ")} · filled ${pick.filter((p) => p.stratum === "filled from the rest").length}`);
   console.log(`  ➖ precision: ${pick.length} value(s) in sample_40.csv (stratified) — mark each correct/wrong (target ≥95%)`);
   console.log(`\n${gaps.length ? `מוכן לרטוב: לא — הפער: ${gaps.join("; ")}` : "מוכן לרטוב: כן (בכפוף לבדיקת הדיוק במדגם)"}`);

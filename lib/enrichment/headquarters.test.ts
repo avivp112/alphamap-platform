@@ -209,3 +209,20 @@ describe("Impressum seat and third-party addresses (owner, round 10)", () => {
     expect(contactPageAddresses(page(text, "https://acme.com/contact")).map((a) => a.city)).toEqual(["Bristol"]);
   });
 });
+
+import { legalPageHq, countryOfTld } from "./headquarters";
+describe("a legal page's address as the headquarters (owner, round 10)", () => {
+  const base = { city: "Berlin", quote: "Registered office: Torstrasse 1, Berlin", otherAddressCities: [] as string[] };
+  it("is the HQ when it is the only address and the country code agrees", () => {
+    expect(legalPageHq({ ...base, domain: "acme.de" })?.country).toBe("Germany");
+  });
+  it("is the HQ when the site language agrees", () => {
+    expect(legalPageHq({ ...base, domain: "acme.com", siteText: "Wir sind das Team und unser Produkt ist nicht kompliziert. Wir und die Kunden. Der Datenschutz und die Sicherheit." })?.country).toBe("Germany");
+  });
+  it("is an office when another address exists, when nothing names the country, or for a GDPR representative", () => {
+    expect(legalPageHq({ ...base, domain: "acme.de", otherAddressCities: ["London"] })).toBeNull();
+    expect(legalPageHq({ ...base, domain: "acme.com", siteText: "We build software for teams." })).toBeNull();
+    expect(legalPageHq({ ...base, domain: "acme.de", quote: "Our EU representative under GDPR is located at Torstrasse 1, Berlin" })).toBeNull();
+  });
+  it("maps a country code", () => { expect(countryOfTld("www.acme.co.il")).toBe("Israel"); expect(countryOfTld("acme.com")).toBeNull(); });
+});

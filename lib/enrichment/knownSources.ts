@@ -18,9 +18,11 @@ export interface KnownEntry {
   status?: "ok" | "stale_check_failed" | "quote_gone" | "superseded";
   /** The structured value (JSON) behind the line, when the write stage needs one (a round). */
   payload?: string;
+  /** The page's own words, when the quote was verified against a translation (round 10): what a later check looks for on the page. */
+  quote_original?: string;
 }
 export type KnownStore = Record<string, KnownEntry[]>;     // company_id → entries
-export interface ReportRow { company_id: string; company: string; field: string; before: string; after: string; source_url: string; quote: string; origin?: string; payload?: string }
+export interface ReportRow { company_id: string; company: string; field: string; before: string; after: string; source_url: string; quote: string; origin?: string; payload?: string; quote_original?: string; quote_translated?: string }
 
 /** Report lines that are proposals for the owner, not verified values: never remembered, never carried (Plott's wrong address proposal came back from the memory). */
 export const NOT_REMEMBERED = new Set(["website_proposal", "name_proposal", "acquired"]);
@@ -58,10 +60,10 @@ export function remember(store: KnownStore, rows: ReportRow[], runId: string, to
     if (isWrong(r.company, r.field, r.after)) continue;                             // marked wrong: never remembered
     const list = store[r.company_id] ?? (store[r.company_id] = []);
     const same = list.find((e) => e.field === r.field && fold(e.value) === fold(r.after));
-    if (same) { Object.assign(same, { source_url: r.source_url, quote: r.quote || same.quote, verified_at: today, run_id: runId, status: "ok" as const, ...(r.payload ? { payload: r.payload } : {}) }); continue; }
+    if (same) { Object.assign(same, { source_url: r.source_url, quote: r.quote || same.quote, verified_at: today, run_id: runId, status: "ok" as const, ...(r.payload ? { payload: r.payload } : {}), ...(r.quote_original ? { quote_original: r.quote_original } : {}) }); continue; }
     // The memory only grows (owner, round 10): a single-valued field keeps its older value, marked "superseded" by the newer one; the older one is never removed, and
     // when the incoming value is older than what is already there, it is the incoming one that is kept as superseded.
-    const entry: KnownEntry = { company_id: r.company_id, company: r.company, field: r.field, value: r.after, source_url: r.source_url, quote: r.quote, verified_at: today, run_id: runId, status: "ok", ...(r.payload ? { payload: r.payload } : {}) };
+    const entry: KnownEntry = { company_id: r.company_id, company: r.company, field: r.field, value: r.after, source_url: r.source_url, quote: r.quote, verified_at: today, run_id: runId, status: "ok", ...(r.payload ? { payload: r.payload } : {}), ...(r.quote_original ? { quote_original: r.quote_original } : {}) };
     if (SINGLE_FIELDS.has(r.field)) {
       const current = list.filter((e) => family(e.field) === family(r.field) && e.status !== "superseded");
       if (current.some((e) => e.verified_at > today)) entry.status = "superseded";
@@ -78,9 +80,13 @@ export type Check = "confirmed" | "stale_check_failed" | "quote_gone";
 export async function checkEntry(e: KnownEntry, readText: (url: string) => Promise<string | null>): Promise<Check> {
   const text = await readText(e.source_url);
   if (!text) return "stale_check_failed";
-  // A quote taken from a machine translation cannot be found in the page's own words: the page being readable is all that can be checked.
-  if (/^\[machine translation\]/.test(e.quote)) return "stale_check_failed";
   const hay = fold(text);
+  // A quote verified against a machine translation is checked by the page's own words when they were kept; without them the page being readable is all that can be checked.
+  if (e.quote_original) {
+    const o = fold(e.quote_original.split(" … ")[0]).slice(0, 90);
+    return o && hay.includes(o) ? "confirmed" : "stale_check_failed";
+  }
+  if (/^\[machine translation\]/.test(e.quote)) return "stale_check_failed";
   const needle = fold(e.quote || e.value).slice(0, 90);
   if (!needle) return "stale_check_failed";
   if (hay.includes(needle)) return "confirmed";
@@ -128,7 +134,7 @@ export async function applyKnown(
       for (let i = out.length - 1; i >= 0; i--) if (family(out[i].field) === family(e.field)) out.splice(i, 1);
       lockedKept.push(`${e.field}: ${e.value.slice(0, 40)}`);
     }
-    const row: ReportRow = { company_id: e.company_id, company: e.company, field: e.field, before: "", after: e.value, source_url: e.source_url, quote: e.quote, origin: check === "confirmed" ? "known_source" : "known_source_stale_check_failed", ...(e.payload ? { payload: e.payload } : {}) };
+    const row: ReportRow = { company_id: e.company_id, company: e.company, field: e.field, before: "", after: e.value, source_url: e.source_url, quote: e.quote, origin: check === "confirmed" ? "known_source" : "known_source_stale_check_failed", ...(e.payload ? { payload: e.payload } : {}), ...(e.quote_original ? { quote_original: e.quote_original } : {}) };
     out.push(row); carried.push(row); fromMemory.add(e.field);
   }
   const fromSearch = [...new Set(real.map((r) => r.field))].filter((f) => !fromMemory.has(f) || real.some((r) => r.field === f));

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { namesInList, rivalSentenceClaims, vsTitleCompetitor, vsPageClaims, marketPeerClaims, marketEvidenceProblem, acceptedDeclared } from "./competitorTiers";
+import { namesInList, rivalSentenceClaims, vsTitleCompetitor, comparisonTitleCompetitor, vsPageClaims, marketPeerClaims, marketEvidenceProblem, acceptedDeclared } from "./competitorTiers";
 import { buildLabeledSources } from "./sources";
 
 const srcs = (items: Array<{ url: string; title?: string; content: string }>) => buildLabeledSources(items.map((i) => ({ title: "t", provider: "serper" as const, query_label: "competitors", ...i })));
@@ -189,5 +189,17 @@ describe("the competitors sheet of 2026-11-08 through the tiers", () => {
     const r = [{ url: "https://www.phorest.com/compare/phorest-vs-fresha/", title: "Phorest vs Fresha - Compare Salon & Clinic Software" }];
     const s = [{ source_id: "X3", url: r[0].url, title: r[0].title, content: "", source_type: "news_article" }] as never;
     expect(vsPages(r, s, "Fresha", "fresha.com", () => true, "Fresha is a booking platform for salons").map((c) => c.name)).toEqual(["Phorest"]);
+  });
+});
+
+describe("own-site comparison pages (owner, round 10)", () => {
+  it("names the rival of an 'alternative to' / compare page", () => {
+    expect(comparisonTitleCompetitor("Alternative to Backstage", "Port")).toBe("Backstage");
+    expect(comparisonTitleCompetitor("Compare Port and Backstage", "Port")).toBe("Backstage");
+    expect(comparisonTitleCompetitor("The Backstage alternative | Port", "Port")).toBe("Backstage");
+  });
+  it("ignores categories", () => {
+    expect(comparisonTitleCompetitor("Alternative to spreadsheets", "Port")).toBeNull();
+    expect(comparisonTitleCompetitor("A better alternative to traditional banks", "Port")).toBeNull();
   });
 });

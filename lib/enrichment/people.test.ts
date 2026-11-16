@@ -288,3 +288,13 @@ describe("titles that are a CEO's or a CFO's in another language (owner, round 1
     expect(isLeader2("Head of Product")).toBe(false);
   });
 });
+
+import { teamPeopleCount } from "./people";
+describe("a team page that shows N people (owner, round 10)", () => {
+  it("counts full names with a role, at least four", () => {
+    const page = ["Anna Kowalski", "CEO", "Robert Bishop", "Head of Product", "Carlos Mendes — Senior Engineer", "Diana Rayner", "VP Sales", "Edward Foxwell", "Designer"].join("\n");
+    expect(teamPeopleCount(page)?.count).toBe(5);
+    expect(teamPeopleCount("Anna Kowalski\nCEO\nRobert Bishop\nCTO")).toBeNull();
+    expect(teamPeopleCount("Our mission\nWe build boats\nContact us")).toBeNull();
+  });
+});

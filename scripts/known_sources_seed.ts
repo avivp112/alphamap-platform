@@ -36,7 +36,7 @@ for (const f of files) {
   if (!existsSync(f)) { console.warn(`⚠️  ${f} not found — skipped`); continue; }
   const [head, ...body] = parseCsv(readFileSync(f, "utf8"));
   const ix = (n: string) => head.indexOf(n);
-  const rows: ReportRow[] = body.map((r) => ({ company_id: r[ix("company_id")] ?? "", company: r[ix("company")] ?? "", field: r[ix("field")] ?? "", before: r[ix("before")] ?? "", after: r[ix("after")] ?? "", source_url: r[ix("source_url")] ?? "", quote: r[ix("quote")] ?? "", origin: ix("origin") >= 0 ? r[ix("origin")] : "" }));
+  const rows: ReportRow[] = body.map((r) => ({ company_id: r[ix("company_id")] ?? "", company: r[ix("company")] ?? "", field: r[ix("field")] ?? "", before: r[ix("before")] ?? "", after: r[ix("after")] ?? "", source_url: r[ix("source_url")] ?? "", quote: r[ix("quote")] ?? "", origin: ix("origin") >= 0 ? r[ix("origin")] : "", quote_original: ix("quote_original") >= 0 ? r[ix("quote_original")] : "" }));
   const date = statSync(f).mtime.toISOString().slice(0, 10);
   const added = remember(store, rows, basename(f), date, (c, fl, v) => wrong.has(markKey(c, fl, v)) || ownerWrong(c, fl, v));
   console.log(`${f}: ${rows.length} row(s), ${added} new value(s) remembered (dated ${date}).`);

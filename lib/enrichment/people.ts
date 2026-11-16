@@ -351,6 +351,23 @@ export function foundersFromCards(text: string, companyName: string): Array<{ na
   return out;
 }
 
+/**
+ * How many people a team page of the company's own site shows: a full name with a role line (a card). A floor, not the headcount: the page may show only part of the team.
+ * Four cards or more; fewer is not a team page.
+ */
+const ROLE_LINE = /\b(ceo|cto|coo|cfo|cmo|cpo|chief|founder|co-?founder|president|vp|head|director|manager|lead|engineer|developer|designer|scientist|analyst|researcher|officer|partner|advisor|sales|marketing|product|operations|finance|support|success|counsel|consultant|specialist|architect)\b/i;
+export function teamPeopleCount(text: string): { count: number; quote: string } | null {
+  const lines = text.split(/\n+/).map(stripMarkdown).filter(Boolean);
+  const seen = new Set<string>();
+  for (let i = 0; i < lines.length; i++) {
+    const same = lines[i].match(/^(.{3,60}?)\s*[,|–—:-]\s*(.{3,80})$/u);
+    const name = same ? personName(same[1]) : personName(lines[i]);
+    const title = same ? same[2] : lines[i + 1] ?? "";
+    if (name && title.length <= 100 && ROLE_LINE.test(title) && !ROLE_LINE.test(name)) seen.add(name.toLowerCase());
+  }
+  return seen.size >= 4 ? { count: seen.size, quote: `${seen.size} people with a name and a role are shown on the page` } : null;
+}
+
 /** "<Name>, founder of <our company>" in a sentence of an article (any allowed source). */
 export function foundersFromMentions(text: string, companyName: string): Array<{ name: string; title: string; quote: string }> {
   const out: Array<{ name: string; title: string; quote: string }> = [];

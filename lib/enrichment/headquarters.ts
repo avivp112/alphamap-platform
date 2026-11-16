@@ -355,3 +355,62 @@ export function countryOfCity(city: string): string | null {
   const set = MAJOR_CITIES.get(city.trim().toLowerCase());
   return set && set.size === 1 ? [...set][0] : null;
 }
+
+const TLD_COUNTRY: Record<string, string> = {
+  us: "United States", uk: "United Kingdom", gb: "United Kingdom", de: "Germany", fr: "France", es: "Spain", it: "Italy", nl: "Netherlands", be: "Belgium", ch: "Switzerland", at: "Austria",
+  se: "Sweden", no: "Norway", dk: "Denmark", fi: "Finland", pl: "Poland", pt: "Portugal", ie: "Ireland", il: "Israel", in: "India", br: "Brazil", mx: "Mexico", ar: "Argentina", cl: "Chile",
+  co: "Colombia", ca: "Canada", au: "Australia", nz: "New Zealand", jp: "Japan", kr: "South Korea", cn: "China", sg: "Singapore", hk: "Hong Kong", ae: "United Arab Emirates", za: "South Africa",
+  ng: "Nigeria", ke: "Kenya", eg: "Egypt", tr: "Turkey", cz: "Czechia", ro: "Romania", gr: "Greece", ee: "Estonia", lt: "Lithuania", lv: "Latvia", ua: "Ukraine", id: "Indonesia", my: "Malaysia",
+  th: "Thailand", vn: "Vietnam", ph: "Philippines", sa: "Saudi Arabia", pk: "Pakistan", lu: "Luxembourg",
+};
+
+/** The country a site's address points to ("example.de" → Germany); null for .com and the like. */
+export function countryOfTld(domainOrHost: string | null | undefined): string | null {
+  const last = (domainOrHost ?? "").toLowerCase().replace(/^https?:\/\//, "").replace(/[/:].*$/, "").split(".").pop() ?? "";
+  return TLD_COUNTRY[last] ?? null;
+}
+
+const LANG_COUNTRIES: Array<[RegExp, string[]]> = [
+  [/\b(und|der|die|das|nicht|wir|unser|datenschutz)\b/gi, ["Germany", "Austria", "Switzerland"]],
+  [/\b(le|la|les|des|nous|notre|et|pour|mentions légales)\b/gi, ["France", "Belgium", "Switzerland", "Canada", "Luxembourg"]],
+  [/\b(el|los|las|nuestro|y|para|aviso legal)\b/gi, ["Spain", "Mexico", "Argentina", "Chile", "Colombia"]],
+  [/\b(o|os|as|nosso|não|para|política de privacidade)\b/gi, ["Portugal", "Brazil"]],
+  [/\b(il|gli|nostro|per|che|informativa)\b/gi, ["Italy", "Switzerland"]],
+  [/\b(het|een|van|wij|onze|privacyverklaring)\b/gi, ["Netherlands", "Belgium"]],
+  [/\b(och|vi|att|integritetspolicy)\b/gi, ["Sweden", "Finland"]],
+  [/\b(i|og|vi|vårt|personvern)\b/gi, ["Norway", "Denmark"]],
+  [/\b(oraz|nasz|polityka prywatności)\b/gi, ["Poland"]],
+];
+
+/** The countries the site's language points to, or [] when it is English or unclear (a language is evidence only when it names few countries). */
+export function languageCountries(text: string): string[] {
+  const sample = text.slice(0, 6000);
+  const words = Math.max(1, (sample.match(/\p{L}+/gu) ?? []).length);
+  let best: { hits: number; countries: string[] } = { hits: 0, countries: [] };
+  for (const [re, countries] of LANG_COUNTRIES) {
+    const hits = (sample.match(re) ?? []).length;
+    if (hits > best.hits) best = { hits, countries };
+  }
+  return best.hits / words > 0.05 ? best.countries : [];
+}
+
+/**
+ * The company's only address, found on a Terms / Privacy / Legal page, is the headquarters only when it is the only address found anywhere AND its
+ * country agrees with other evidence: the site's country code, the site's language, or an article naming the same country. Otherwise it is an office.
+ * GDPR / EU-representative / DPO / registered-agent addresses are never the headquarters (owner, round 10).
+ */
+export function legalPageHq(o: {
+  city: string; quote: string;
+  otherAddressCities: string[];          // every other address city found (offices, contact pages, press statements)
+  domain?: string | null; siteText?: string; articleCountries?: string[];
+}): { country: string; basis: string } | null {
+  if (THIRD_PARTY_ADDRESS.test(o.quote)) return null;
+  const mine = canonicalCity(o.city);
+  if (o.otherAddressCities.some((c) => canonicalCity(c) !== mine)) return null;
+  const country = countryOfCity(o.city);
+  if (!country) return null;
+  if (countryOfTld(o.domain) === country) return { country, basis: `the site's country code (.${(o.domain ?? "").split(".").pop()})` };
+  if (languageCountries(o.siteText ?? "").includes(country)) return { country, basis: "the language of the site" };
+  if ((o.articleCountries ?? []).includes(country)) return { country, basis: "an article naming the same country" };
+  return null;
+}

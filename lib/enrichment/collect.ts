@@ -59,19 +59,20 @@ import {
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
 import { pickArticlesToRead } from "./articles.ts";
 import { runTechGate, shouldSkipAsNonTech, techDecision, type TechGateVerdict } from "./techGate.ts";
-import { foundersFromText, foundersFromCards, foundersFromMentions, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, supportedRoleSubset, personCardsInHtml, bioFromCard, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
+import { teamPeopleCount, foundersFromText, foundersFromCards, foundersFromMentions, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, supportedRoleSubset, personCardsInHtml, bioFromCard, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
 import { componentOn } from "./components.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
 import { validateEnrichment, checkNarratives } from "./validation.ts";
-import { hqStatementsIn, decideHeadquarters, statementKind, isLegalPageUrl, articleDate, countryOfCity, contactPageAddresses, impressumSeat, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, canonicalCity, type HqStatement } from "./headquarters.ts";
+import { legalPageHq, hqStatementsIn, decideHeadquarters, statementKind, isLegalPageUrl, articleDate, countryOfCity, contactPageAddresses, impressumSeat, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, canonicalCity, type HqStatement } from "./headquarters.ts";
 import { profileSourceAllowed, roundSourceStanding, unwrapRedirect, corroboratedInvestors } from "./roundSources.ts";
 import { aboutParagraph, aboutIsOf, factsFromAbout, legalFacts, releasePointsTo, type LegalFacts } from "./companyFacts.ts";
 import { checkFoundingCountry } from "./origin.ts";
 import { namesCompany } from "./headcount.ts";
 import { companiesHouseHeadcount, brregHeadcount, waybackHeadcount, type HeadcountIo } from "./headcountCollect.ts";
 import type { HistoryPoint } from "./headcountHistory.ts";
+import { sizeStatement } from "./headcountSources.ts";
 import { lookupRegisters, nodeRegisterIo, registerDecides, type RegisterContext, type RegisterFinding } from "./registers.ts";
 import { stripHonorific, mergeLeadersByPerson } from "./people.ts";
 import { countryFromLocationQuote } from "./location.ts";
@@ -1132,6 +1133,7 @@ export async function collectCompany(
   // The HQ the decision took (a Contact-page address, an About paragraph): validation does not ask
   // its quote for an HQ word again (Anonymised's "7 Bell Yard, London" — model check 2026-11-02).
   let hqDecided = false;
+  let statementsAll: HqStatement[] = [];
   // Extra searches (EXTRA_SEARCHES, default 4, owner 2026-11-07): competitors by tier and the founders' background share them.
   let extraSearchesLeft = Math.max(0, Number(process.env.EXTRA_SEARCHES ?? 4) || 0);
   const extraSearch = async (query: string, label: string): Promise<RawSearchResult[]> => {
@@ -1217,6 +1219,7 @@ export async function collectCompany(
 
   // b. Its legal pages: legal name, company number, registered office (an office only).
   let legal: LegalFacts = {};
+  let legalSeat: { city: string; quote: string; source_id: string } | null = null;
   if (componentOn("legal_pages") && !ctx.update && effectiveWebsite) {
     const root = (effectiveWebsite.startsWith("http") ? effectiveWebsite : `https://${effectiveWebsite}`).replace(/\/+$/, "");
     // A site that answers every path with its home page (Moon Active, Carbeniumtec: model check
@@ -1239,6 +1242,7 @@ export async function collectCompany(
       src.source_type = "company_site";
       console.log(`    ⚖️   ${root + path}: ${[legal.legalName && `legal name ${legal.legalName}`, legal.companyNumber && `company no. ${legal.companyNumber}`, legal.registeredCity && `registered office in ${legal.registeredCity}`].filter(Boolean).join(", ")}`);
       if (f.registeredCity) {
+        legalSeat ??= { city: f.registeredCity, quote: f.quote ?? f.registeredCity, source_id: src.source_id };
         const offices = profile.profile.offices ?? [];
         if (!offices.some((o) => canonicalCity(o.city) === canonicalCity(f.registeredCity!))) {
           offices.push({ city: f.registeredCity, ...(countryOfCity(f.registeredCity) ? { country: countryOfCity(f.registeredCity)! } : {}), source_id: src.source_id, evidence_quote: f.quote ?? f.registeredCity });
@@ -1299,6 +1303,7 @@ export async function collectCompany(
       && quoteSaysHqOf(mc.evidence_quote, mc.value, row.name, mcSource.source_type === "company_site") && !statements.some((s) => s.city.toLowerCase() === mc.value.toLowerCase() && s.source_id === mc.source_id)) {
       statements.push({ city: mc.value, quote: mc.evidence_quote, source_id: mc.source_id, url: mcSource.url, kind: mcKind, date: mcKind === "company" && mcSource.source_type === "company_site" ? null : articleDate(mcSource) });
     }
+    statementsAll = statements;
     const hq = decideHeadquarters(statements, undefined, (profile.profile.offices ?? []).map((o) => o.city));
     if (hq.kind === "none" && !fates.hq) fates.hq = mc ? `no allowed source states the headquarters: the model's "${mc.evidence_quote.slice(0, 100)}" is not a headquarters statement (${mcSource?.url ?? mc.source_id})` : "no source states the headquarters";
     if (hq.kind === "declared") {
@@ -1334,6 +1339,26 @@ export async function collectCompany(
       console.log(`    🏢  Headquarters left empty — the company's site lists ${hq.cities.join(", ")} without naming one, and no press declaration is from the last two years. They stay offices.`);
       profile.profile.city = undefined;
       profile.profile.country = undefined;
+    }
+  }
+
+  // A legal page's address is the headquarters only when it is the only address found AND the country agrees with other evidence (owner, round 10).
+  let legalHqSourceId: string | null = null;
+  if (legalSeat && !hqDecided && !profile.profile.city) {
+    const others = [
+      ...(profile.profile.offices ?? []).filter((o) => o.source_id !== legalSeat!.source_id).map((o) => o.city),
+      ...statementsAll.map((x) => x.city),
+    ];
+    const articleCountries = statementsAll.map((x) => countryOfCity(x.city)).filter((c): c is string => !!c);
+    const ok = legalPageHq({ city: legalSeat.city, quote: legalSeat.quote, otherAddressCities: others, domain: effectiveWebsite, siteText: siteSources.map((x) => x.content).join("\n"), articleCountries });
+    if (ok) {
+      legalHqSourceId = legalSeat.source_id;
+      profile.profile.city = { value: legalSeat.city, source_id: legalSeat.source_id, evidence_quote: legalSeat.quote };
+      profile.profile.country = { value: ok.country, source_id: legalSeat.source_id, evidence_quote: legalSeat.quote };
+      hqDecided = true;
+      console.log(`    🏢  Headquarters ${legalSeat.city} — the only address found, on a legal page; the country (${ok.country}) agrees with ${ok.basis}`);
+    } else {
+      console.log(`    🏢  The legal page's address (${legalSeat.city}) stays an office — it is not the only address found, or no other evidence names its country`);
     }
   }
 
@@ -1387,7 +1412,7 @@ export async function collectCompany(
     if (!f) continue;
     const s = sourceById.get(f.source_id);
     // A legal page's address is the registered office, not the headquarters: an office, never the HQ (owner, 2026-11-08).
-    if (s && (key === "city" || key === "country") && isLegalPageUrl(s.url)) {
+    if (s && (key === "city" || key === "country") && isLegalPageUrl(s.url) && f.source_id !== legalHqSourceId) {
       console.log(`    🚫  ${key} ${JSON.stringify(f.value)} not written as the headquarters — it comes from a legal page (${s.url}); kept as an office`);
       bump(stats.droppedByReason, "hq_from_legal_page");
       if (key === "city") {
@@ -1946,6 +1971,18 @@ export async function collectCompany(
     if (ukRegisterEntity && (hqNow ?? "").toLowerCase().replace(/^uk$/, "united kingdom") === "united kingdom") headcountExtra.push(...await companiesHouseHeadcount(ukRegisterEntity.number, ukRegisterEntity.entity, io));
     if ((hqNow ?? "").toLowerCase() === "norway") headcountExtra.push(...await brregHeadcount(row.name, legal.legalName, io, today));
     if (domain) headcountExtra.push(...await waybackHeadcount(domain, row.name, io));
+    // The company's own pages as they are now (owner, round 10): "Team of 50+", "over 200 people" → a lower bound, site_stated; a team page that shows N people → "N+", observed.
+    for (const src of allSources) {
+      if (src.source_type !== "company_site" || !profileSourceAllowed(src, row.name)) continue;
+      const stated = sizeStatement(src.content);
+      if (stated && !headcountExtra.some((p) => p.type === "site_stated" && p.sourceUrl === src.url)) {
+        headcountExtra.push({ date: today, value: stated.value, ...(stated.lowerBound ? { lowerBound: true } : {}), type: "site_stated", measure: "count_at_date", sourceUrl: src.url, quote: stated.sentence });
+      }
+      if (/\/(team|people|our-team|the-team|leadership|about-us|about|company)(\/|$)/i.test(src.url)) {
+        const seen = teamPeopleCount(src.content);
+        if (seen) headcountExtra.push({ date: today, value: seen.count, lowerBound: true, type: "observed", measure: "count_at_date", sourceUrl: src.url, quote: seen.quote });
+      }
+    }
     if (headcountExtra.length) console.log(`    👥  Headcount points: ${headcountExtra.map((p) => `${p.value}${p.lowerBound ? "+" : ""}@${p.date} (${p.type})`).join(", ")}`);
     else console.log("    👥  Headcount points: none from registers or archived pages.");
   }
