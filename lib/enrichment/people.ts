@@ -225,7 +225,7 @@ export function isLeadershipRole(role: string | null | undefined): boolean {
   if (/\b(not specified|unspecified|unknown|n\/a|none|employee|staff|team member|member of|intern|contractor|volunteer|student|candidate)\b/i.test(r)) return false;
   if (/\bchief\s+of\s+staff\b/i.test(r) && !/\b(ceo|cto|cfo|coo|founder|president)\b/i.test(r)) return false;
   // A past role is no leadership (owner, round 10: TymeBank "CEO (former TymeBank CEO)"), and "Founder" alone is not a management title: founders have their own field.
-  if (/\b(former|formerly|ex-|previous(?:ly)?|past|outgoing|retired|stepped down)\b/i.test(r)) return false;
+  if (/\b(former|formerly|ex-|outgoing|retired|stepped down)\b/i.test(r)) return false;
   if (!/\b(ceo|cto|cfo|coo|cmo|cpo|cro|cio|ciso|cdo|cso|cco|clo|chro|cxo|chief\b|president|general manager|managing director|vp|svp|evp|vice[- ]president)\b/i.test(r)) return false;
   return /\b(ceo|cto|cfo|coo|cmo|cpo|cro|cio|ciso|cdo|cso|cco|clo|chro|cxo|chief\b[\p{L} &,-]{0,40}\bofficer|president|founders?|co-?\s?founders?|general manager|managing director|vp|svp|evp|vice[- ]president)\b/iu.test(r);
 }
@@ -609,4 +609,20 @@ export function bioFromCard(card: string, personName: string, title?: string | n
   const cut = t.slice(0, 900);
   const end = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
   return end > 200 ? cut.slice(0, end + 1) : null;
+}
+
+
+/** One entry per person: the same name twice (a card and a text mention, "Rafał Chojecki" and "Rafal Chojecki") becomes one, with the titles joined (owner, round 10: Motorway, Versabox). */
+export function mergeLeadersByPerson<T extends { name: string; role?: string | null }>(people: T[]): T[] {
+  const key = (n: string) => n.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/ł/g, "l").replace(/ø/g, "o").replace(/đ/g, "d").replace(/ß/g, "ss").replace(/\b(dr|mr|mrs|ms|prof)\.?\s/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const out: T[] = [];
+  for (const p of people) {
+    const same = out.find((q) => key(q.name) === key(p.name));
+    if (!same) { out.push({ ...p }); continue; }
+    const have = (same.role ?? "").toLowerCase();
+    const add = (p.role ?? "").trim();
+    if (add && !have.includes(add.toLowerCase())) same.role = same.role ? `${same.role} · ${add}` : add;
+    for (const k of Object.keys(p) as Array<keyof T>) if (same[k] == null || same[k] === "") same[k] = p[k];
+  }
+  return out;
 }

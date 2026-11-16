@@ -238,3 +238,12 @@ describe("a title beside the surname alone counts when the source names the pers
     expect(roleSupported("Nischal Shetty", "CEO", ["Nischal Shetty started it. Shetty, the CTO, said"])).toBe(false);
   });
 });
+
+import { mergeLeadersByPerson } from "./people";
+describe("one entry per person (owner, round 10)", () => {
+  it("merges accents and repeated names, joins titles", () => {
+    const r = mergeLeadersByPerson([{ name: "Rafał Chojecki", role: "CEO" }, { name: "Rafal Chojecki", role: "Co-founder" }, { name: "Ann Lee", role: "CFO" }]);
+    expect(r).toHaveLength(2);
+    expect(r[0].role).toBe("CEO · Co-founder");
+  });
+});

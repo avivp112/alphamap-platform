@@ -646,7 +646,10 @@ async function main() {
 
 const isDirectlyInvoked = !!process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isDirectlyInvoked) {
-  main().catch((e) => {
+  main().then(() => {
+    // Everything is written: a connection or timer left open (a page read for the memory of verified sources) must not keep the process alive for minutes (owner, round 10).
+    setTimeout(() => process.exit(0), 5000).unref();
+  }).catch((e) => {
     console.error("💥  Fatal error:", e);
     process.exit(1);
   });

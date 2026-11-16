@@ -43,7 +43,9 @@ export function namesCompanyUpFront(item: { title?: string | null; content?: str
   return has(flat((item.content ?? "").slice(0, 400), true)); // else the first paragraph must name it
 }
 
-export const isExplainer = (title: string | null | undefined): boolean => !!title && EXPLAINER.test(title);
+/** "The 8 Best ProtonMail Alternatives", "Top 10 …", "X alternatives": a list that mentions many companies, not news about one (owner, round 10: Posteo). */
+const LISTICLE = /\b\d+\s+(?:best|top|leading|greatest)\b|\b(?:best|top)\s+(?:\w+\s+){0,3}(?:alternatives?|competitors|apps|tools|services|providers|platforms|options|companies|startups|vendors)\b|\b\w+\s+alternatives?\b|\balternatives?\s+(?:to|for)\b|\btop\s+\d+\b/i;
+export const isExplainer = (title: string | null | undefined): boolean => !!title && (EXPLAINER.test(title) || LISTICLE.test(title));
 
 const GENERIC = new Set(["platform", "software", "company", "solution", "solutions", "technology", "technologies", "provider", "startup", "based", "leading", "global", "digital", "services", "service", "business", "businesses", "tools", "product", "products", "application", "applications", "system", "systems", "firm", "maker", "developer", "developers", "enterprise", "cloud", "online", "powered", "driven", "first", "next", "generation", "new", "that", "with", "from", "into", "their", "which", "your", "other"]);
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

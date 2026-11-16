@@ -176,3 +176,10 @@ describe("the short form of a name in a headline (owner, 2026-11-15: HIL Applied
     expect(namesCompanyUpFront({ title: "Hilton opens a hotel", content: "" }, "HIL Applied Medical")).toBe(false);
   });
 });
+
+describe("lists of alternatives are no news (owner, round 10: Posteo)", () => {
+  it("listicle titles are explainers; ordinary headlines are not", () => {
+    for (const t of ["The 8 Best ProtonMail Alternatives", "Top 10 email providers for privacy", "Best secure email services in 2026", "Mailbox alternatives to Gmail"]) expect(isExplainer(t)).toBe(true);
+    for (const t of ["Posteo raises funding for its email service", "Motorway launches WhatsApp stock search tool"]) expect(isExplainer(t)).toBe(false);
+  });
+});

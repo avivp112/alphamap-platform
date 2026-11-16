@@ -38,6 +38,26 @@ export function rebrandedAs(companyName: string, pages: Page[]): string | null {
   return null;
 }
 
+/**
+ * The brand a registered address now leads to (owner, round 10: tymebank.co.za → gotyme.co.za, "GoTyme Bank"): when the reader followed the address to another host whose
+ * page names the company too, the destination's own name as the page writes it ("GoTyme Bank") is the company's name now. null when there is no such redirect.
+ */
+export function redirectBrand(companyName: string, website: string | null | undefined, pages: Page[]): string | null {
+  let asked = ""; try { asked = labelOf(new URL(website?.startsWith("http") ? website : `https://${website}`).hostname); } catch { return null; }
+  for (const p of pages.slice(0, 3)) {
+    const fin = p.content.slice(0, 1200).match(/Final URL:\s*(https?:\/\/[^\s]+)/i)?.[1];
+    if (!fin) continue;
+    let host = ""; try { host = new URL(fin).hostname; } catch { continue; }
+    const got = labelOf(host);
+    if (!got || got === asked || got.includes(asked) || asked.includes(got)) continue;
+    const body = p.content.replace(/^[\s\S]{0,1600}?Markdown Content:/i, "");
+    const m = body.match(new RegExp(`\\b(${got.split("").map((c) => esc(c)).join("[\\s-]?")}[A-Za-z]*(?:\\s+[A-Z][A-Za-z]+){0,2})`, "i"));
+    const name = m?.[1]?.trim();
+    if (name && name.length >= 3 && core(name) !== core(companyName)) return name.replace(/\s+/g, " ");
+  }
+  return null;
+}
+
 /** null, or the reason ("acquired / rebranded: …") the pages are no description of this company. */
 export function siteBelongsToAnotherCompany(companyName: string, website: string | null | undefined, pages: Page[]): string | null {
   if (!pages.length) return null;
