@@ -789,14 +789,6 @@ export async function writeCollected(
     if (collected.websiteProposal) reportLines.push({ field: "website_proposal", before: collected.websiteProposal.from, after: `website = ${collected.websiteProposal.to} — the address on file is another business or unreadable; for review, not applied`, source_url: collected.websiteProposal.to, quote: collected.websiteProposal.reason });
     const renamedTo = (profile.profile as { rebrand_to?: string }).rebrand_to;
     if (renamedTo) reportLines.push({ field: "name_proposal", before: row.name, after: `name = "${renamedTo}", former_names += "${row.name}" — the same company renamed; for review, not applied`, source_url: row.website ? (/^https?:/.test(row.website) ? row.website : `https://${row.website}`) : null, quote: null });
-    const acq = (collected as { acquisition?: { status: string; acquirer: string; quote: string; url: string; date: string | null } }).acquisition;
-    if (acq) {
-      reportLines.push({ field: "acquired", before: null, after: `status = ${acq.status} · Acquired by ${acq.acquirer} (${acq.date ?? "undated"})`, source_url: acq.url, quote: acq.quote });
-    } else {
-      for (const r of exitEvents) {
-        reportLines.push({ field: "acquired", before: null, after: `status = acquired · Acquired by ${r.lead_investor ?? "(buyer not named)"} (${dateByPrecision(r.announcement_date, r.announcement_date_precision)})`, source_url: r.source_url ?? null, quote: null });
-      }
-    }
     for (const u of plan.updates) {
       // A filled round field shows the source of the evidence it was filled from (it had "no source" in the report; the provenance row had it all along).
       const ev = roundFieldEvidence(u.patch, funding.funding_rounds)[0];

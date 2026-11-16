@@ -83,19 +83,19 @@
  },
  {
   "id": "humi_acquired",
-  "why": "Humi acquired by Employment Hero, 2025-01",
+  "why": "Humi acquired by Employment Hero, 2025-01-09 (from the accepted news)",
   "kind": "present",
   "company": "Humi",
   "field": "acquired",
-  "match": "Employment Hero.*2025-01"
+  "match": "Employment Hero.*2025-01-09"
  },
  {
   "id": "medipass_acquired",
-  "why": "Medipass acquired by Tyro, 2021-05",
+  "why": "Medipass acquired by Tyro, 2021-05-11 (from the accepted news)",
   "kind": "present",
   "company": "Medipass",
   "field": "acquired",
-  "match": "Tyro.*2021-05"
+  "match": "Tyro.*2021-05-11"
  },
  {
   "id": "six_degrees_acquired",
@@ -103,7 +103,7 @@
   "kind": "present",
   "company": "Six Degrees",
   "field": "acquired",
-  "match": "Claranet.*2026-06"
+  "match": "Claranet.*2026-06-(29|30)"
  },
  {
   "id": "dietly_acquired",
@@ -111,7 +111,7 @@
   "kind": "present",
   "company": "Dietly",
   "field": "acquired",
-  "match": "majority_acquired.*Żabka.*2021-06"
+  "match": "majority_acquired.*Żabka.*2021-06-03"
  },
  {
   "id": "not_enriched_mototech",
@@ -153,5 +153,58 @@
   "kind": "absent",
   "field": "tags",
   "quote_match": "cookie|privacy policy"
+ },
+ {
+  "id": "acquired_only_from_news",
+  "why": "No acquired row rests on a profile page, a blog or a database",
+  "kind": "absent",
+  "field": "acquired",
+  "source_match": "pitchbook|ledgerlogic|summitpartners|crunchbase|dealroom"
+ },
+ {
+  "id": "medipass_not_ron",
+  "why": "Medipass is not the acquirer of RON",
+  "kind": "absent",
+  "company": "Medipass",
+  "field": "acquired",
+  "match": "RON"
+ },
+ {
+  "id": "no_name_proposal_when_acquired",
+  "why": "No name proposal for a company that was acquired (Humi, Medipass)",
+  "kind": "absent",
+  "field": "name_proposal",
+  "company": "Humi"
+ },
+ {
+  "id": "no_name_proposal_medipass",
+  "why": "No name proposal for Medipass",
+  "kind": "absent",
+  "field": "name_proposal",
+  "company": "Medipass"
+ },
+ {
+  "id": "conotoxia_collapse",
+  "why": "Conotoxia news about the collapse (Cinkciarz.pl) is back",
+  "kind": "present",
+  "company": "Conotoxia",
+  "field": "news",
+  "match": "Collapses"
+ },
+ {
+  "id": "conotoxia_licence",
+  "why": "Conotoxia news about the licence withdrawal is back",
+  "kind": "present",
+  "company": "Conotoxia",
+  "field": "news",
+  "match": "licen[cs]e|Revokes"
+ },
+ {
+  "id": "six_degrees_no_crawl_date",
+  "why": "Six Degrees: no news 'sold to US investors' dated the week before the run without a stated date",
+  "kind": "absent",
+  "company": "Six Degrees",
+  "field": "news",
+  "match": "sold to US investors"
  }
 ]

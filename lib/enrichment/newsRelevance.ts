@@ -1,3 +1,4 @@
+import { aliasesOf } from "./aliases.ts";
 /**
  * lib/enrichment/newsRelevance.ts — what is not news about THIS company (owner, 2026-11-08, review 6).
  *   explainer          a guide or explainer, not a report of something that happened ("What to know before investing in
@@ -41,6 +42,13 @@ export function onlyAsHyphenatedSuffix(text: string, companyName: string): boole
 }
 
 export function namesCompanyUpFront(item: { title?: string | null; content?: string | null }, companyName: string): boolean {
+  // An alias of the company counts as the company (aliases.ts).
+  const aliases = aliasesOf(companyName);
+  if (aliases.length && aliases.some((a) => namesCompanyUpFrontOne(item, a))) return true;
+  return namesCompanyUpFrontOne(item, companyName);
+}
+
+function namesCompanyUpFrontOne(item: { title?: string | null; content?: string | null }, companyName: string): boolean {
   const core = companyName.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").replace(/\s+/g, " ").trim();
   if (!core) return true;
   if (onlyAsHyphenatedSuffix(`${item.title ?? ""}\n${firstParagraph(item.content ?? "")}`, companyName)) return false;

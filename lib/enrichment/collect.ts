@@ -34,7 +34,6 @@ import { reconcileSector, subSectorUnsupported } from "./sectors.ts";
 import { siteBelongsToAnotherCompany, acquisitionHeadline, rebrandedAs, redirectBrand } from "./siteOwner.ts";
 import { resolveDomain, judgeSite } from "./domainResolve.ts";
 import { techOverride, sectorDecision } from "./techOverrides.ts";
-import { detectAcquisition, type AcquisitionClaim } from "./acquisition.ts";
 import { pageNamesCompany } from "./ownDomain.ts";
 import { translateItems } from "./translate.ts";
 import { foundedYearFromSite, copyrightStartYear, foundedInCityYear } from "./siteFacts.ts";
@@ -235,8 +234,6 @@ export interface CollectedCompany {
   outcome: "collected";
   /** The company's own site, found by name when the address on file was another business or unreadable (domainResolve.ts): a proposal, never applied. */
   websiteProposal?: { from: string | null; to: string; reason: string };
-  /** The company was acquired (acquisition.ts): status, acquirer, date, source and quote. */
-  acquisition?: AcquisitionClaim;
   /** What kind of company this was, for the stratified precision sample (owner, round 10). */
   flags?: { translated: boolean; sources: number; techBorderline: boolean };
   /** Headcount points from registers, plans and archived pages (headcountHistory.ts); each with its source and type. */
@@ -1822,22 +1819,7 @@ export async function collectCompany(
   }
   // v2's own description (descriptionBuilder.ts, owner 2026-11-08): replaces the extraction's free text; without a
   // verified "what" and "for whom" there is none. Written later only for a company with no description on file.
-  // Acquired (owner, round 10): the company is enriched as usual — description included — and in addition status, acquirer, date, source and quote are
-  // read from the news and from two searches made for every company ("<name> acquired", "<name> acquisition"). A rename after a purchase is a purchase.
-  let acquisition: AcquisitionClaim | null = null;
-  if (!ctx.update) {
-    try {
-      const fixed = (await Promise.all([`"${row.name}" acquired`, `"${row.name}" acquisition`].map((q) => webSearch(q, "acquired_check", searchState)))).flat().filter((r) => r.url && !isDataPlatformUrl(r.url));
-      const articles = [
-        ...(market.news ?? []).map((n) => ({ url: n.url, title: n.title, content: n.summary ?? "", date: n.published_date ?? null })),
-        ...allSources.filter((x) => x.source_type !== "company_site").map((x) => ({ url: x.url, title: x.title, content: x.content, date: articleDate(x) })),
-        ...fixed.map((r) => ({ url: r.url, title: r.title ?? "", content: r.content ?? "", date: articleDate({ url: r.url, content: r.content ?? "" }) })),
-      ];
-      acquisition = detectAcquisition(articles, row.name);
-      if (acquisition) console.log(`    🏁  ${acquisition.status === "acquired" ? "Acquired" : "Majority-acquired"} by ${acquisition.acquirer} (${acquisition.date ?? "undated"}): "${acquisition.quote.slice(0, 140)}" — ${acquisition.url}`);
-      else console.log(`    🏁  No acquisition found for ${row.name} (${fixed.length} result(s) of the fixed searches read).`);
-    } catch (e) { console.log(`    ⚠️  acquisition check skipped: ${(e as Error).message}`); }
-  }
+  // Acquired (owner, round 10): derived only from the news that was accepted — bulk_enrich_v2.ts reads the company's news rows (rowRules.ts acquiredFromNews); there is no separate extraction.
   if (componentOn("description_v2") && !ctx.update && siteOwnerIssue) {
     profile.profile.description = undefined;
     profile.profile.description_source_ids = undefined;
@@ -2027,7 +2009,6 @@ export async function collectCompany(
   return {
     outcome: "collected",
     ...(websiteProposal ? { websiteProposal } : {}),
-    ...(acquisition ? { acquisition } : {}),
     flags: {
       translated: allSources.some((x) => x.translation_offset != null),
       sources: allSources.length,

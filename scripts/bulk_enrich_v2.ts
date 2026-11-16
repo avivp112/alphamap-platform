@@ -52,6 +52,7 @@ import { writeCollected, BULK_THRESHOLDS } from "../lib/enrichment/writeCompany.
 import { classifyTier, type TierRow, type TierRound } from "../lib/enrichment/queue.ts";
 import { createSearchProviderState, jinaDisabled, readPageCached, type SearchProviderState } from "../lib/enrichment/searchProviders.ts";
 import { techOverride } from "../lib/enrichment/techOverrides.ts";
+import { classifyDescription, mainTag } from "../lib/enrichment/postClassify.ts";
 import { acceptanceReport } from "./acceptance_check.ts";
 import { rowProblem, applyRowRules, acquiredFromNews } from "../lib/enrichment/rowRules.ts";
 import { loadKnown, saveKnown, remember, applyKnown, markKey, NOT_REMEMBERED, KNOWN_PATH, type KnownStore, type KnownEntry } from "../lib/enrichment/knownSources.ts";
@@ -145,7 +146,7 @@ if (KNOWN_ON) {
   let purged = 0;
   for (const list of Object.values(knownStore)) for (let i = list.length - 1; i >= 0; i--) {
     const e = list[i];
-    const why = rowProblem({ field: e.field, after: e.value, source_url: e.source_url, quote: e.quote, payload: e.payload }, e.company, today);
+    const why = rowProblem({ field: e.field, after: e.value, source_url: e.source_url, quote: e.quote, payload: e.payload }, e.company, today, 7);
     if (why) { console.log(`🧹  memory: ${e.company} ${e.field} "${e.value.slice(0, 50)}" removed — ${why}`); list.splice(i, 1); purged++; }
   }
   if (purged) console.log(`🧹  ${purged} remembered value(s) removed: they break today's rules.`);
@@ -391,8 +392,31 @@ async function enrichCompany(
     remember(knownStore, companyRows, runId ?? "dry", RUN_DATE, isWrongValue);
     companyRows = carry.rows.map((r) => ({ ...r, origin: r.origin ?? "new" })) as typeof companyRows;
     { const g = applyRowRules(companyRows, row.name, RUN_DATE); companyRows = g.rows; for (const d of g.dropped) console.log(`    🧹  ${d}`);
+      // acquired comes only from the accepted news (owner, round 10): any acquired row found another way (a profile page, a blog) is dropped.
+      companyRows = companyRows.filter((r) => r.field !== "acquired");
       const acq = acquiredFromNews(companyRows, row.name, row.id);
-      if (acq) { companyRows.push(acq as (typeof companyRows)[number]); console.log(`    🏁  acquired — read from the company's news: ${acq.after}`); } }
+      if (acq) {
+        companyRows.push(acq as (typeof companyRows)[number]); console.log(`    🏁  acquired — read from the company's news: ${acq.after}`);
+        // A rename after a purchase is a purchase: the new name is the brand after the acquisition, not a name proposal.
+        for (const r of companyRows.filter((x) => x.field === "name_proposal")) {
+          const to = r.after.match(/name = "([^"]+)"/)?.[1];
+          if (to) companyRows.push({ ...r, field: "brand_after_acquisition", after: `brand after the acquisition: ${to}` } as (typeof companyRows)[number]);
+        }
+        companyRows = companyRows.filter((x) => x.field !== "name_proposal");
+      }
+      // A description with no tag: classified here, from the verified description (the memory carried it, so this run's classification never saw it).
+      const desc = companyRows.find((r) => r.field === "description" || r.field === "description_what_only");
+      if (desc && !companyRows.some((r) => r.field === "tags") && anthropic) {
+        try {
+          const choice = await classifyDescription({ anthropic, model: ENRICH_MODEL, taxonomy, name: row.name, description: desc.after, complete: desc.field === "description" });
+          const tag = mainTag(choice, taxonomy);
+          const sectorRow = companyRows.find((r) => r.field === "sector");
+          if (tag && choice && (!sectorRow || sectorRow.after.replace(/\s*\(industry:[^)]*\)\s*$/, "").trim() === choice.sector_name)) {
+            companyRows.push({ ...desc, field: "tags", before: "", after: tag, origin: "classified" } as (typeof companyRows)[number]);
+            console.log(`    🏷️   Tag ${tag} — the main sub-sector of the verified description (classified now: ${choice.sector_name} › ${tag}).`);
+          }
+        } catch (e) { console.log(`    ⚠️  tag classification skipped: ${(e as Error).message}`); }
+      } } 
     const missing = ASKED.filter((f) => OPEN_FIELDS.includes(f) && !companyRows.some((r) => r.field === f || r.field.startsWith(f)));
     recordGaps(gapStore, row.id, row.name, missing, companyLines(), runId ?? "dry", RUN_DATE);
     console.log(`    📚  Known sources (${row.name}): from memory ${[...new Set([...injectedNow, ...carry.carried.map((r) => r.field)])].join(", ") || "none"}${injectedNow.length ? ` (${injectedNow.join(", ")} entered the write stage)` : ""}${carry.carried.length ? ` (${carry.carried.length} more value(s) carried in the report)` : ""}; from this run's search ${[...freshFound].filter((f) => !injectedNow.includes(f)).join(", ") || "none"}; still missing ${missing.join(", ") || "none"}${carry.recheck.length ? `; back to review (quote gone): ${carry.recheck.join(" | ")}` : ""}${carry.refreshDue.length ? `; older than the refresh time, searched again: ${carry.refreshDue.join(" | ")}` : ""}${carry.locked.length ? `; locked (marked correct) kept: ${carry.locked.join(" | ")}` : ""}${before ? "" : " [no memory yet]"}`);
