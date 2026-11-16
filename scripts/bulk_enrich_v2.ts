@@ -51,7 +51,8 @@ import { writeCollected, BULK_THRESHOLDS } from "../lib/enrichment/writeCompany.
 
 import { classifyTier, type TierRow, type TierRound } from "../lib/enrichment/queue.ts";
 import { createSearchProviderState, jinaDisabled, readPageCached, type SearchProviderState } from "../lib/enrichment/searchProviders.ts";
-import { loadKnown, saveKnown, remember, applyKnown, markKey, KNOWN_PATH, type KnownStore } from "../lib/enrichment/knownSources.ts";
+import { loadKnown, saveKnown, remember, applyKnown, markKey, KNOWN_PATH, type KnownStore, type KnownEntry } from "../lib/enrichment/knownSources.ts";
+import { injectKnown } from "../lib/enrichment/knownInject.ts";
 import { readMarks } from "../lib/enrichment/fieldReview.ts";
 import { loadSectorTaxonomy, type SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { openSearchCache } from "../lib/enrichment/searchCache.ts";
@@ -64,7 +65,7 @@ import { writeFileSync, mkdirSync, readdirSync } from "fs";
 import { rejectedDomains, rejectedDomainsCsv } from "../lib/enrichment/rejectedDomains.ts";
 import { wrapAnthropic, installHttpRecorder, quietOffline, installFetchTimeout, recorderSummary, replayMode } from "../lib/enrichment/recorder.ts";
 import { installCompanyLog, installLineTap, gathered, withCompany, companyLines } from "../lib/enrichment/companyLog.ts";
-import { loadGaps, saveGaps, recordGaps, purgeWrong, missingRows, missingCsv, GAPS_PATH, type GapStore } from "../lib/enrichment/knownGaps.ts";
+import { loadGaps, saveGaps, recordGaps, purgeWrong, ownerWrongKeys, missingRows, missingCsv, GAPS_PATH, type GapStore } from "../lib/enrichment/knownGaps.ts";
 import { domainClasses, domainClassesCsv } from "../lib/enrichment/domainClass.ts";
 import { numberValues, renderBatchReport, batchCsv } from "../lib/enrichment/batchReport.ts";
 import type { RoundHint } from "../lib/enrichment/hints.ts";
@@ -122,6 +123,7 @@ const KNOWN_ON = process.env.KNOWN_SOURCES !== "off";
 const knownStore: KnownStore = KNOWN_ON ? loadKnown() : {};
 const markList = KNOWN_ON ? readMarks() : [];
 const wrongMarks = new Set(markList.filter((m) => m.verdict === "wrong").map((m) => markKey(m.company, m.field, m.value)));
+for (const k of KNOWN_ON ? ownerWrongKeys(loadGaps(), markKey) : []) wrongMarks.add(k);   // also what was removed by scripts/known_sources_fix.ts
 const lockedMarks = new Set(markList.filter((m) => m.verdict === "correct").map((m) => markKey(m.company, m.field, m.value)));
 const gapStore: GapStore = KNOWN_ON ? loadGaps() : {};
 if (KNOWN_ON) {
@@ -132,7 +134,8 @@ if (KNOWN_ON) {
 }
 const unreadableSites = new Set<string>();
 const knownReadState = createSearchProviderState();
-const readKnownPage = async (url: string): Promise<string | null> => { try { return (await readPageCached(url, knownReadState))?.text ?? null; } catch { return null; } };
+const knownPageMemo = new Map<string, Promise<string | null>>();
+const readKnownPage = (url: string): Promise<string | null> => knownPageMemo.get(url) ?? (knownPageMemo.set(url, (async () => { try { return (await readPageCached(url, knownReadState))?.text ?? null; } catch { return null; } })()), knownPageMemo.get(url)!);
 const RUN_DATE = new Date().toISOString().slice(0, 10);
 // Websites to fix (owner, 2026-11-02): another business on the site, or none of it readable.
 // Always in website_review.csv; noted in the website_review table on a wet run.
@@ -326,6 +329,16 @@ async function enrichCompany(
     summary.tally[collected.outcome]++;
     notEnrich(row, collected.outcome, (collected as { reason?: string }).reason, (collected as { detail?: string }).detail);
     return;
+  }
+
+  // The memory of verified sources first (dry and wet alike): a verified value whose quote is still on its page, and that this run did not find, enters the
+  // collected company with its source, so the write stage gates, fills and records it like a found value (lib/enrichment/knownInject.ts).
+  if (KNOWN_ON) {
+    const carry = await applyKnown(knownStore, row.id, [], RUN_DATE, readKnownPage, lockedMarks);
+    const confirmed: KnownEntry[] = carry.carried.filter((r) => r.origin === "known_source").map((r) => ({ company_id: r.company_id, company: r.company, field: r.field, value: r.after, source_url: r.source_url, quote: r.quote, verified_at: RUN_DATE, run_id: "memory" }));
+    let host: string | null = null; try { host = row.website ? new URL(/^https?:/.test(row.website) ? row.website : `https://${row.website}`).hostname.replace(/^www\./, "") : null; } catch { /* no site */ }
+    const injected = injectKnown(collected, confirmed, host);
+    console.log(`    🧠  From the memory into the write stage: ${injected.length ? injected.join(", ") : "nothing (this run found the fields, or the memory has none)"}${carry.recheck.length ? ` · back to review (quote gone): ${carry.recheck.join(" | ")}` : ""}`);
   }
 
   // ── Stage 10: write (lib/enrichment/writeCompany.ts) ───────────────────

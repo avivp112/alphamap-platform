@@ -178,3 +178,19 @@ describe("tier-4 press alone needs two sources (owner, round 10)", () => {
     expect(decideHeadquarters([w("Toronto", "https://a.com/1"), w("Calgary", "https://b.com/2")], "2026-11-15", [])).toEqual({ kind: "none" });
   });
 });
+
+describe("every form of the city before the company (owner, round 10)", () => {
+  const city = (content: string, name: string) => hqStatementsIn(src("https://www.reuters.com/x", content), name).map((x) => x.city);
+  it("<city>-based, <city>-headquartered, <city> headquartered, <city> based, headquartered in <city>, based in <city>", () => {
+    expect(city("Tel Aviv-based Hailo raised money.", "Hailo")).toEqual(["Tel Aviv"]);
+    expect(city("Sydney-headquartered Pet Circle raised money.", "Pet Circle")).toEqual(["Sydney"]);
+    expect(city("Sydney headquartered Pet Circle has raised.", "Pet Circle")).toEqual(["Sydney"]);
+    expect(city("Sydney based Pet Circle has raised.", "Pet Circle")).toEqual(["Sydney"]);
+    expect(city("Pet Circle, headquartered in Sydney, has raised.", "Pet Circle")).toEqual(["Sydney"]);
+    expect(city("Pet Circle is based in Sydney and sells pet food.", "Pet Circle")).toEqual(["Sydney"]);
+  });
+  it("is not fooled by 'based on' or another company's headquarters", () => {
+    expect(city("Sydney based on a model, Pet Circle sells food.", "Pet Circle")).toEqual([]);
+    expect(city("Pet Circle partnered with Sydney headquartered Acme Corp.", "Pet Circle")).toEqual([]);
+  });
+});

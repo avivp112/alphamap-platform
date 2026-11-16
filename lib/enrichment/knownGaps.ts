@@ -70,6 +70,16 @@ export function purgeWrong(store: KnownStore, g: GapStore, wrong: (company: stri
   return removed;
 }
 
+/** The values the owner marked wrong (kept in the gaps), as keys for markKey(company, field, value): a rebuilt or re-seeded memory must not take them back. */
+export function ownerWrongKeys(g: GapStore, keyOf: (company: string, field: string, value: string) => string): Set<string> {
+  const out = new Set<string>();
+  for (const c of Object.values(g)) for (const f of Object.values(c.fields)) for (const r of f.rejected_candidates) {
+    const m = r.match(/^marked wrong by the owner: ([\s\S]*) \(https?:[^)]*\)$/);
+    if (m) out.add(keyOf(c.company, f.field, m[1]));
+  }
+  return out;
+}
+
 export interface MissingRow { field: string; company: string; reason: string; searched: string; rejected: string }
 /** One row per missing field and company, with the commonest reason: no source found / found and refused (why) / the site was not read. */
 export function missingRows(g: GapStore, companyIds: string[], unreadable: Set<string>): MissingRow[] {
