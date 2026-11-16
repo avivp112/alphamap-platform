@@ -178,3 +178,12 @@ describe("amount recovery — valuations in every wording", () => {
     });
   }
 });
+
+import { recoverMissingAmount as recoverBrand } from "./hints";
+describe("an announcement headline's amount (owner, round 10: Paradox Series C $200M)", () => {
+  it("reads the sum from the headline when it names the brand without its generic tail", () => {
+    const src: any = { source_id: "S1", url: "https://www.prnewswire.com/news-releases/paradox-raises-200m-series-c-301450591.html", title: "Conversational AI, Paradox Raises $200M Series C", content: "Dec. 27, 2021 /PRNewswire/ -- Paradox announced funding.", source_type: "press_release" };
+    const round: any = { round_type: "Series C", source_url: src.url };
+    expect(recoverBrand(round, [src], "Paradox AI")).toMatchObject({ kind: "recovered", amount: 200_000_000 });
+  });
+});

@@ -60,6 +60,7 @@ export function bestQuote(sources: Array<{ id: string; content: string }>, terms
  * "Consumer & Media" had no sentence anywhere in the sources). A tag no sentence of an allowed page carries a word of
  * is not written.
  */
+const NOT_A_PRODUCT_SENTENCE = /\bcookies?\b|privacy\s+policy|\bwe use cookies|\bwas previously\b|\bpreviously\s+(?:served|worked|led|held|was)\b|\bprior to joining\b|\bjoined\s+\w+\s+(?:as|in)\b|\bhis career\b|\bher career\b/i;
 export function supportedTags(tags: string[], allPages: Array<{ id: string; content: string; url?: string }>): { kept: Array<{ tag: string; id: string; quote: string }>; dropped: string[] } {
   const kept: Array<{ tag: string; id: string; quote: string }> = [];
   const dropped: string[] = [];
@@ -67,7 +68,8 @@ export function supportedTags(tags: string[], allPages: Array<{ id: string; cont
   const pages = allPages.filter((p) => !isNonDescriptivePage(p.url));
   for (const tag of tags) {
     const hit = bestTagQuote(pages, tag);
-    if (hit) kept.push({ tag, id: hit.id, quote: hit.quote }); else dropped.push(tag);
+    // A cookie notice, a privacy line or a person's biography is not a product sentence (owner, round 10: Humi "HR Tech" on a cookie notice, Paradox "AI Agents" on a CTO's bio).
+    if (hit && !NOT_A_PRODUCT_SENTENCE.test(hit.quote)) kept.push({ tag, id: hit.id, quote: hit.quote }); else dropped.push(tag);
   }
   return { kept, dropped };
 }

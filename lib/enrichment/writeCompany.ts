@@ -789,8 +789,13 @@ export async function writeCollected(
     if (collected.websiteProposal) reportLines.push({ field: "website_proposal", before: collected.websiteProposal.from, after: `website = ${collected.websiteProposal.to} — the address on file is another business or unreadable; for review, not applied`, source_url: collected.websiteProposal.to, quote: collected.websiteProposal.reason });
     const renamedTo = (profile.profile as { rebrand_to?: string }).rebrand_to;
     if (renamedTo) reportLines.push({ field: "name_proposal", before: row.name, after: `name = "${renamedTo}", former_names += "${row.name}" — the same company renamed; for review, not applied`, source_url: row.website ? (/^https?:/.test(row.website) ? row.website : `https://${row.website}`) : null, quote: null });
-    for (const r of exitEvents) {
-      reportLines.push({ field: "acquired", before: null, after: `acquired by ${r.lead_investor ?? "(buyer not named)"} · ${dateByPrecision(r.announcement_date, r.announcement_date_precision)} — proposal: status acquired, for review`, source_url: r.source_url ?? null, quote: null });
+    const acq = (collected as { acquisition?: { status: string; acquirer: string; quote: string; url: string; date: string | null } }).acquisition;
+    if (acq) {
+      reportLines.push({ field: "acquired", before: null, after: `status = ${acq.status} · Acquired by ${acq.acquirer} (${acq.date ?? "undated"})`, source_url: acq.url, quote: acq.quote });
+    } else {
+      for (const r of exitEvents) {
+        reportLines.push({ field: "acquired", before: null, after: `status = acquired · Acquired by ${r.lead_investor ?? "(buyer not named)"} (${dateByPrecision(r.announcement_date, r.announcement_date_precision)})`, source_url: r.source_url ?? null, quote: null });
+      }
     }
     for (const u of plan.updates) {
       // A filled round field shows the source of the evidence it was filled from (it had "no source" in the report; the provenance row had it all along).
@@ -809,7 +814,12 @@ export async function writeCollected(
     // A description that is a verified "what" only is reported apart, so the coverage tells complete from what-only (owner, 2026-11-14).
     if (profile.profile.description_complete === false) for (const l of reportLines) if (l.field === "description") l.field = "description_what_only";
     // Tags (sub-sector tags): one line, with the sentence of an allowed page that carries the first (they were never in the report: "tags 0").
-    if (tagSectorIds.length > 0) reportLines.push({ field: "tags", before: null, after: tagNames.join(", "), source_url: sourceById.get(supported.kept[0]?.id ?? "")?.url ?? null, quote: supported.kept[0]?.quote ?? null });
+    if (tagSectorIds.length > 0) {
+      // A tag from the sector's own sub-sector stands on the verified description: its source and sentence are the tag's (a tag with no source was a lint error).
+      const ds = profile.profile.description_sentences?.[0];
+      const dsUrl = ds ? sourceById.get(ds.source_ids?.[0] ?? "")?.url ?? null : null;
+      reportLines.push({ field: "tags", before: null, after: tagNames.join(", "), source_url: sourceById.get(supported.kept[0]?.id ?? "")?.url ?? dsUrl, quote: supported.kept[0]?.quote ?? ds?.quote ?? null });
+    }
     else if (tagNames.length > 0) console.log(`    ⏸️   tags held back — field not open: ${tagNames.join(", ")}`);
     for (const h of headcountPoints) reportLines.push({ field: "headcount_history", before: null, after: `${h.count}${h.lowerBound ? "+" : ""} on ${h.date} (${h.pointType ?? "observed"}${h.lowerBound ? ", lower bound" : ""})`, source_url: h.sourceUrl ?? null, quote: h.quote ?? null });
     for (const c of reportLines) console.log(`    ${DRY_RUN ? "[DRY] would write" : "✏️  writing"} ${c.field}: ${c.before == null ? "" : `${JSON.stringify(c.before)} → `}${typeof c.after === "string" ? c.after : JSON.stringify(c.after)}  (${c.source_url ?? "no source"})`);
