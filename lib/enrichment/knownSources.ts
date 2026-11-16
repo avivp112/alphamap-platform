@@ -70,6 +70,8 @@ export type Check = "confirmed" | "stale_check_failed" | "quote_gone";
 export async function checkEntry(e: KnownEntry, readText: (url: string) => Promise<string | null>): Promise<Check> {
   const text = await readText(e.source_url);
   if (!text) return "stale_check_failed";
+  // A quote taken from a machine translation cannot be found in the page's own words: the page being readable is all that can be checked.
+  if (/^\[machine translation\]/.test(e.quote)) return "stale_check_failed";
   const hay = fold(text);
   const needle = fold(e.quote || e.value).slice(0, 90);
   if (!needle) return "stale_check_failed";

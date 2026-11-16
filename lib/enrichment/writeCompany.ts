@@ -30,6 +30,7 @@ import { MAJOR_CITIES } from "./majorCities.ts";
 import { normalizeForMatch } from "./evidence.ts";
 import { computeTotalRaised, computeDebtRaised } from "./rounds.ts";
 import { computeFieldConfidence, meetsProfileThreshold } from "./confidence.ts";
+import { markTranslatedQuote } from "./translate.ts";
 import { roundFieldEvidence, evidencedFillPatch } from "./roundProvenance.ts";
 import { startupChanges, roundInsertChange, roundUpdateChanges, type FieldChangeRow } from "./runChanges.ts";
 import { hintKey, type RoundHint } from "./hints.ts";
@@ -789,6 +790,8 @@ export async function writeCollected(
       const ev = roundFieldEvidence(u.patch, funding.funding_rounds)[0];
       reportLines.push({ field: "round", before: "(on file)", after: `${u.round_type} filled: ${JSON.stringify(u.patch)}`, source_url: ev ? sourceById.get(ev.source_id)?.url ?? null : null, quote: ev?.evidence_quote ?? null });
     }
+    // A quote that stands in the machine translation of a page says so (translate.ts).
+    for (const l of reportLines) if (l.quote && l.source_url) l.quote = markTranslatedQuote(l.quote, allSources.find((x) => x.url === l.source_url));
     // A description that is a verified "what" only is reported apart, so the coverage tells complete from what-only (owner, 2026-11-14).
     if (profile.profile.description_complete === false) for (const l of reportLines) if (l.field === "description") l.field = "description_what_only";
     // Tags (sub-sector tags): one line, with the sentence of an allowed page that carries the first (they were never in the report: "tags 0").
@@ -855,7 +858,7 @@ export async function writeCollected(
     const writeProvenance = async (fw: { field: string; value: unknown; source_id: string; evidence_quote: string; source_type: SourceType }) => {
       const { error: provenanceErr } = await supabase.from("field_provenance").insert({
         startup_id: row.id, field: fw.field, value: fw.value, source_url: sourceById.get(fw.source_id)?.url,
-        source_type: fw.source_type, evidence_quote: fw.evidence_quote,
+        source_type: fw.source_type, evidence_quote: markTranslatedQuote(fw.evidence_quote, sourceById.get(fw.source_id)),
         confidence: computeFieldConfidence([{ source_type: fw.source_type }]), run_id: runId,
       });
       if (provenanceErr) console.warn(`    ⚠️  field_provenance insert failed (${fw.field}): ${provenanceErr.message}`);
@@ -874,7 +877,7 @@ export async function writeCollected(
       const src = allSources.find((x) => x.url === rl.source_url);
       const { error: lpErr } = await supabase.from("field_provenance").insert({
         startup_id: row.id, field: listKey[rl.field](rl.after), value: rl.after, source_url: rl.source_url,
-        source_type: src?.source_type ?? (rl.field === "patent" ? "registry" : "news"), evidence_quote: rl.quote ?? (typeof rl.after === "string" ? rl.after.slice(0, 200) : null),
+        source_type: src?.source_type ?? (rl.field === "patent" ? "registry" : "news"), evidence_quote: rl.quote ? markTranslatedQuote(rl.quote, src) : (typeof rl.after === "string" ? rl.after.slice(0, 200) : null),
         confidence: computeFieldConfidence([{ source_type: src?.source_type ?? "news" }]), run_id: runId,
       });
       if (lpErr) console.warn(`    ⚠️  field_provenance insert failed (${rl.field}): ${lpErr.message}`);

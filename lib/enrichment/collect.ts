@@ -33,6 +33,7 @@ import { judgeNews, finishNews } from "./newsGate.ts";
 import { reconcileSector, subSectorUnsupported } from "./sectors.ts";
 import { siteBelongsToAnotherCompany, acquisitionHeadline, rebrandedAs, redirectBrand } from "./siteOwner.ts";
 import { resolveDomain } from "./domainResolve.ts";
+import { translateItems } from "./translate.ts";
 import { buildSectorRequest, parseSectorChoice, classifyWithRetry, type SectorChoice } from "./classifySector.ts";
 import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
 import { buildDescriptionRequest, descriptionSources, processDescription, describeAttempt } from "./descriptionBuilder.ts";
@@ -569,6 +570,12 @@ export async function collectCompany(
   // profile call goes first: it writes the cache, and it decides
   // public / non-tech — in which case the other two calls are never made.
   ctx.onStage?.("extracting");
+  // A page that is not in English is translated and the translation appended, so what is verified against it reads English (translate.ts); TRANSLATE=false switches it off.
+  if (!ctx.update && process.env.TRANSLATE !== "false") {
+    const first = [...usableResults].sort((a, b) => Number(isWebsiteResult(b)) - Number(isWebsiteResult(a)));
+    const n = await translateItems(first, ctx.anthropic, ctx.models.enrich, undefined, (m) => console.log(m));
+    if (n) bump(stats.droppedByReason, "pages_translated");
+  }
   let allSources: LabeledSource[] = buildLabeledSources(usableResults, domain);
   markCompanyLinkedFiles(allSources, websitePages);
   // The company's own site is tier 1 even on another domain than the one on file (ownDomain.ts): where the registered website redirects to, or the same brand.

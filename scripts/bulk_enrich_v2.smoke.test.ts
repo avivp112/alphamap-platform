@@ -227,7 +227,7 @@ vi.mock("@anthropic-ai/sdk", () => ({ default: class { messages = { create: crea
 
 describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
   beforeAll(async () => {
-    process.env.DOMAIN_RESOLVE = "false";
+    process.env.DOMAIN_RESOLVE = "false"; process.env.TRANSLATE = "false";
     process.env.DRY_RUN = "false";
     // Every field open in the tracker (≥20 marked, ≥90% correct): the write path is under test, not the gate.
     const tracker = join(mkdtempSync(join(tmpdir(), "review-")), "tracker.csv");

@@ -219,7 +219,7 @@ vi.mock("@anthropic-ai/sdk", () => ({ default: class { messages = { create: crea
 
 describe("the tracker is the gate: a wide wet run with only news open (all I/O faked)", () => {
   beforeAll(async () => {
-    process.env.DOMAIN_RESOLVE = "false";
+    process.env.DOMAIN_RESOLVE = "false"; process.env.TRANSLATE = "false";
     process.env.DRY_RUN = "false";
     // Only news is open in the tracker (owner, 2026-11-05): a WIDE run (no PILOT) writes nothing else.
     const tracker = join(mkdtempSync(join(tmpdir(), "review-")), "tracker.csv");
