@@ -19,7 +19,7 @@ export function isListingOrSponsoredUrl(url: string | null | undefined): "listin
   try { u = new URL(url.startsWith("http") ? url : `https://${url}`); } catch { return null; }
   const host = u.hostname.toLowerCase().replace(/^www\./, "");
   if (/(^|\.)businessinsider\.com$/.test(host) && /^\/sc(?:\/|$)/i.test(u.pathname)) return "sponsored_content";
-  if (/\/(?:tags?|topics?|authors?|search|labels?|keywords?)(?:\/|$)/i.test(u.pathname)) return "listing_page";
+  if (/\/(?:tags?|topics?|authors?|search|labels?|keywords?)(?:\/[^/]+)?\/?$/i.test(u.pathname)) return "listing_page";
   for (const k of ["k", "s", "q", "query", "search", "tag", "keyword"]) if (u.searchParams.has(k)) return "listing_page";
   return null;
 }

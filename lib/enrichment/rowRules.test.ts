@@ -78,3 +78,36 @@ describe("a locked sector (owner, round 10: Dietly → E-commerce & Retail › M
     expect(r.find((x) => x.field === "tags")!.after).toBe("Marketplaces");
   });
 });
+
+import { amountFromAddress } from "./hints";
+import { dateStatedIn } from "./newsGate";
+import { isListingOrSponsoredUrl as listing } from "./pageKind";
+import { aliasesOf } from "./aliases";
+describe("round 3 follow-up (owner, round 10)", () => {
+  it("an article under /topic/<section>/ is an article; /tag/<name>/ is a list", () => {
+    expect(listing("https://www.startupdaily.net/topic/fintech/payments-platform-tyro-buys-medical-fintech-startup-medipass/")).toBeNull();
+    expect(listing("https://www.financemagnates.com/tag/cinkciarzpl/")).toBe("listing_page");
+  });
+  it("the sum of an announcement's address", () => {
+    expect(amountFromAddress("https://www.prnewswire.com/news-releases/on-a-mission-to-build-the-next-generation-of-hr-paradox-raises-200m-series-c-301450591.html")?.amount).toBe(200_000_000);
+    expect(amountFromAddress("https://x.com/news/acme-raises-450-million-in-funding")?.amount).toBe(450_000_000);
+    expect(amountFromAddress("https://x.com/news/acme-launches-product")).toBeNull();
+  });
+  it("a carried round 'amount not disclosed' gets the sum from the address", () => {
+    const r = applyRowRules([{ field: "round", after: "Series C amount not disclosed · 2021-12-27 · lead Stripes", source_url: "https://www.prnewswire.com/news-releases/paradox-raises-200m-series-c-301450591.html", quote: "" }], "Paradox AI", TODAY).rows;
+    expect(r[0].after).toMatch(/Series C \$200M/);
+  });
+  it("a lead investor named only in the model's own quote is taken out", () => {
+    const row = { field: "round", after: "Seed $1.5M · 2022-07-23 · lead Insud Pharma", source_url: "h", quote: "The startup announced a USD $1.5M seed round.", payload: JSON.stringify({ round: { lead_investor: "Insud Pharma" }, evidence: [{ field: "amount_raised", quote: "The startup announced a USD $1.5M seed round." }, { field: "lead_investor", quote: "Insud Pharma led the round" }] }) };
+    expect(applyRowRules([row], "Choiz", TODAY).rows[0].after).not.toMatch(/Insud/);
+  });
+  it("a date in the week before the run must be stated in words", () => {
+    expect(dateStatedIn("Published 12 November 2026 by Ann", "2026-11-12")).toBe(true);
+    expect(dateStatedIn("Sold to US investors. Related stories.", "2026-11-12")).toBe(false);
+    expect(rowProblem({ field: "news", after: "2026-11-12 — London-based Six Degrees Group sold to US investors", source_url: "https://x.com/a" }, "Six Degrees", TODAY, 7)).toMatch(/week/);
+  });
+  it("Conotoxia's news under the name Cinkciarz.pl", () => {
+    expect(aliasesOf("Conotoxia")).toContain("Cinkciarz.pl");
+    expect(rowProblem({ field: "news", after: "2025-10-29 — Cinkciarz.pl Collapses After Year-Long Scandal, Trustee Takes Control", source_url: "https://financefeeds.com/cinkciarz-pl-collapses" }, "Conotoxia", TODAY)).toBeNull();
+  });
+});

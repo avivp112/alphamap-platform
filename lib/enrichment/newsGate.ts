@@ -25,6 +25,18 @@ export interface NewsDeps {
 }
 export type NewsVerdict = { keep: true; item: NewsItem; dated?: "address" | "page" } | { keep: false; reason: string; message: string };
 
+const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+/** Whether a text states a date: ISO, "November 12, 2026", "12 November 2026", "Nov. 12, 2026", "12.11.2026", "12/11/2026" or "11/12/2026". */
+export function dateStatedIn(text: string, iso: string): boolean {
+  const [y, m, dd] = iso.split("-"); const day = String(Number(dd)), mon = MONTHS[Number(m) - 1];
+  if (!mon) return false;
+  if (text.includes(iso)) return true;
+  const t = text.toLowerCase();
+  const short = mon.slice(0, 3);
+  const forms = [`${mon} ${day}, ${y}`, `${mon} ${day} ${y}`, `${day} ${mon} ${y}`, `${short}. ${day}, ${y}`, `${short} ${day}, ${y}`, `${day} ${short} ${y}`, `${day}.${m}.${y}`, `${day}/${m}/${y}`, `${m}/${dd}/${y}`, `${dd}.${m}.${y}`];
+  return forms.some((f) => t.includes(f));
+}
+
 export async function judgeNews(n: NewsItem, d: NewsDeps): Promise<NewsVerdict> {
   // The source of a news item is the address of the article itself: a tag / list / search page and sponsored content are no source (owner, round 10).
   const notArticle = isListingOrSponsoredUrl(n.url);
@@ -70,10 +82,11 @@ export async function judgeNews(n: NewsItem, d: NewsDeps): Promise<NewsVerdict> 
     const found = fromUrl ?? (h ? dateFromHtml(h, d.today) : null);
     if (found) { item.published_date = found; dated = fromUrl ? "address" : "page"; }
   }
-  // A date equal to the day of the run that the source does not carry is the crawl date, not the article's (owner, round 10: Dietly dated the run day).
+  // A date in the week before the run, or the day of it, must stand in the source in words (owner, round 10: "sold to US investors" 2026-11-12): otherwise it is the crawl date.
   const today = d.today ?? new Date().toISOString().slice(0, 10);
-  if (item.published_date && item.published_date >= today && !(d.content(item.url) ?? "").includes(item.published_date)) {
-    return { keep: false, reason: "news_date_not_in_source", message: `its date (${item.published_date}) is the day of the run and the article does not carry it` };
+  const weekAgo = new Date(Date.parse(today) - 7 * 86_400_000).toISOString().slice(0, 10);
+  if (item.published_date && item.published_date >= weekAgo && !dateStatedIn(d.content(item.url) ?? "", item.published_date)) {
+    return { keep: false, reason: "news_date_not_in_source", message: `its date (${item.published_date}) is in the week before the run and the article does not state it` };
   }
   return { keep: true, item, dated };
 }

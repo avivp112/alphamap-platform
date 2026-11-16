@@ -10,6 +10,7 @@ import { NOT_A_PRODUCT_SENTENCE } from "./quoteFinder.ts";
 import { detectAcquisition } from "./acquisition.ts";
 import { normalizeForMatch } from "./evidence.ts";
 import { sectorDecision } from "./techOverrides.ts";
+import { amountFromAddress } from "./hints.ts";
 
 export interface RowLike { company?: string; field: string; after: string; source_url?: string | null; quote?: string | null; payload?: string | null; before?: string | null; [k: string]: unknown }
 
@@ -17,7 +18,7 @@ const fold = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p
 const PERSON_PAGE = /\/(?:leadership|team|people|management|board|bio|biography|about\/team)\/[^/?#]+/i;
 
 /** Why this value may not stand under today's rules, or null. */
-export function rowProblem(r: RowLike, companyName: string, today: string): string | null {
+export function rowProblem(r: RowLike, companyName: string, today: string, weekBefore = 0): string | null {
   const url = r.source_url ?? "";
   const bad = isListingOrSponsoredUrl(url);
   if (bad) return bad === "sponsored_content" ? "its source is sponsored content" : "its source is a tag, list or search page, not the article";
@@ -26,6 +27,8 @@ export function rowProblem(r: RowLike, companyName: string, today: string): stri
     const m = r.after.match(/^(\d{4}-\d{2}-\d{2})\s+—\s+(.*)$/);
     const date = m?.[1] ?? null, title = (m?.[2] ?? r.after).trim();
     if (date && date >= today) return `its date (${date}) is the day of the run`;
+    // The memory holds no page text to find a date in: a date in the week before the run is not kept from it (the run reads the page itself).
+    if (date && weekBefore > 0 && date >= new Date(Date.parse(today) - weekBefore * 86_400_000).toISOString().slice(0, 10)) return `its date (${date}) is in the week before the run`;
     if (isExplainer(title)) return "a guide or explainer, not news";
     if (!namesCompanyUpFront({ title, content: "" }, companyName)) return "its headline does not name the company";
   }
@@ -56,6 +59,10 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
     if (locked && r.field === "tags" && !r.after.split(/\s*,\s*/).includes(locked.sub_sector)) { dropped.push(`tags: ${r.after} → ${locked.sub_sector} (locked by the owner)`); r = { ...r, after: locked.sub_sector }; }
     const why = r.field === "(nothing)" ? null : rowProblem(r, companyName, today);
     if (why) { dropped.push(`${r.field}: ${String(r.after).slice(0, 60)} — ${why}`); continue; }
+    if (r.field === "round" && /amount not disclosed/i.test(r.after)) {
+      const amt = amountFromAddress(r.source_url ?? "");
+      if (amt) { dropped.push(`round: amount ${amt.label} read from the announcement's address (${amt.slug})`); r = { ...r, after: r.after.replace(/amount not disclosed/i, amt.label), quote: r.quote || amt.slug }; }
+    }
     if (r.field === "round" && r.payload) {
       const out = stripUngroundedLead(r);
       if (out.stripped) dropped.push(`round: lead investor ${out.stripped} taken out — no quote of the round names it`);
@@ -96,15 +103,17 @@ function stripUngroundedLead<T extends RowLike>(r: T): { row: T; stripped: strin
   const name = typeof lead === "string" ? lead : (lead as { value?: string } | undefined)?.value;
   if (!name) return { row: r, stripped: null };
   const core = normalizeForMatch(name.replace(/\b(inc|ltd|llc|lp|llp|plc|gmbh|sa|ag|bv|co)\b\.?/gi, ""));
-  const texts = [r.quote ?? "", ...(payload.evidence ?? []).map((e) => e.quote ?? "")].map((t) => normalizeForMatch(t));
+  const texts = [r.quote ?? "", ...(payload.evidence ?? []).filter((e) => (e as { field?: string }).field !== "lead_investor").map((e) => e.quote ?? "")].map((t) => normalizeForMatch(t));
   if (!core || texts.some((t) => t.includes(core))) return { row: r, stripped: null };
   payload.round = { ...payload.round, lead_investor: null };
   return { row: { ...r, payload: JSON.stringify(payload), after: r.after.replace(new RegExp(`\\s*·\\s*lead\\s+${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i"), "") }, stripped: name };
 }
 
-/** The acquired row, read from the company's own news rows when none was found: the memory carries the news that says it. */
+/**
+ * The acquired row, derived only from the company's accepted news (owner, round 10: there is no separate extraction): a headline in which the company is the one acquired.
+ * Any acquired row found another way is dropped by the caller first. The brand a company takes after the purchase is kept as brand_after_acquisition, never as a rename.
+ */
 export function acquiredFromNews<T extends RowLike>(rows: T[], companyName: string, companyId: string): T | null {
-  if (rows.some((r) => r.field === "acquired")) return null;
   const articles = rows.filter((r) => r.field === "news").map((r) => {
     const m = r.after.match(/^(\d{4}-\d{2}-\d{2})\s+—\s+(.*)$/);
     return { url: r.source_url ?? "", title: m?.[2] ?? r.after, content: "", date: m?.[1] ?? null };
