@@ -2,6 +2,16 @@ import { useTranslation } from "react-i18next";
 import { formatOriginal } from "../../../lib/enrichment/currency";
 import { officesLabel } from "../../lib/offices";
 import { stageLabel, sectorLabel, roundTypeLabel, SECTOR_TAXONOMY, PARENT_BY_SUB_SECTOR, STAGE_STEPS, type StageStep } from "../../lib/taxonomy";
+import { resolveUiV2 } from "../../lib/uiFlag";
+import { useIsMobile } from "../components/ui/use-mobile";
+import {
+  EMPTY_RANGE, buildChips, normalizeRange, rangeIsActive, stageRounds, nextSort,
+  type MoneyRange, type StageChoice, type StartupSort, type StartupSortKey,
+} from "../../lib/startupFilters";
+import { FilterBar, FilterChips } from "../components/startups/FilterBar";
+import { FilterDrawer } from "../components/startups/FilterDrawer";
+import { StartupsTable, SelectionBar } from "../components/startups/StartupsTable";
+import type { FilterActions, FilterState } from "../components/startups/filterTypes";
 import { equityRaised, debtRaised, capitalKind } from "../../lib/capital";
 import { visiblePatents } from "../../lib/patentList";
 import { visibleCompetitors, splitCompetitors } from "../../lib/competitors";
@@ -3331,12 +3341,32 @@ export function Startups() {
   const [countryFilter, setCountry]     = useState("");
   // HQ, founding country or R&D centre in Israel (startups_market.israel_related).
   const [israelRelated, setIsraelRelated] = useState(false);
-  const [stageStep, setStageStep]       = useState<StageStep>("all");
+  // Stage is multi-select. `stageStep` / `setStageStep` stay as the single-bucket view of the same
+  // state, so the older sidebar, quick questions and onboarding seeding keep working unchanged.
+  const [stageSteps, setStageSteps]     = useState<StageChoice[]>([]);
+  const stageStep: StageStep = stageSteps.length === 1 ? stageSteps[0] : "all";
+  const setStageStep = (v: StageStep) => setStageSteps(v === "all" ? [] : [v as StageChoice]);
   const [headcountStep, setHeadcount]   = useState<HeadcountStep>("all");
   const [momentumFilter, setMomentum]   = useState(false);
   const [densityFilter, setDensity]     = useState<DensityFilter>("all");
   const [fundedWithinDays, setFundedWithinDays] = useState<number | null>(null);
-  const [viewMode, setView]             = useState<"grid" | "list">("grid");
+  // Redesigned page (FilterBar + table), off unless ?ui=2 — see lib/uiFlag.ts.
+  const [uiV2] = useState(() => resolveUiV2(searchParams.get("ui")));
+  const isMobile = useIsMobile(); // the table needs width; phones keep the card layout
+  const [viewMode, setViewState] = useState<"grid" | "list">(() => {
+    if (!uiV2) return "grid";
+    try { return localStorage.getItem("am_startups_view") === "grid" ? "grid" : "list"; } catch { return "list"; }
+  });
+  const setView = (v: "grid" | "list") => {
+    setViewState(v);
+    if (uiV2) { try { localStorage.setItem("am_startups_view", v); } catch { /* storage blocked */ } }
+  };
+  const [valuationRange, setValuationRange] = useState<MoneyRange>(EMPTY_RANGE);
+  const [raisedRange, setRaisedRange]       = useState<MoneyRange>(EMPTY_RANGE);
+  const [updatedWithinDays, setUpdatedWithinDays] = useState<number | null>(null);
+  const [sort, setSort]                 = useState<StartupSort | null>(null);
+  const [density, setTableDensity]      = useState<"comfortable" | "compact">("comfortable");
+  const [drawerOpen, setDrawerOpen]     = useState(false);
   const [tearsheetStartup, setSelected] = useState<StartupListRow | null>(null);
   // Map (not Set) so a selection made on one page survives navigating to
   // another page — Compare needs the full row object, not just an id, since
@@ -3374,8 +3404,8 @@ export function Startups() {
   // can replay it from the "?" button in the title bar.
   const [tourOpen, setTourOpen] = useState(false);
   useEffect(() => {
-    if (!localStorage.getItem(TOUR_SEEN_KEY)) setTourOpen(true);
-  }, []);
+    if (!uiV2 && !localStorage.getItem(TOUR_SEEN_KEY)) setTourOpen(true);
+  }, [uiV2]);
   function closeTour() {
     localStorage.setItem(TOUR_SEEN_KEY, "1");
     setTourOpen(false);
@@ -3562,8 +3592,9 @@ export function Startups() {
   }
   function clearAll() {
     setSearch(""); setParentSector(""); setSubSector(""); setSubSectorTag(""); setCountry(""); setIsraelRelated(false);
-    setStageStep("all"); setHeadcount("all"); setMomentum(false); setDensity("all");
+    setStageSteps([]); setHeadcount("all"); setMomentum(false); setDensity("all");
     setFundedWithinDays(null);
+    setValuationRange(EMPTY_RANGE); setRaisedRange(EMPTY_RANGE); setUpdatedWithinDays(null);
     clearCityFilter();
   }
 
@@ -3606,11 +3637,14 @@ export function Startups() {
   const activeFilterCount = [
     search, parentSector, subSector, subSectorTag, countryFilter, cityFilter,
     israelRelated ? "1" : "",
-    stageStep !== "all" ? "1" : "",
+    stageSteps.length > 0 ? "1" : "",
     headcountStep !== "all" ? "1" : "",
     momentumFilter ? "1" : "",
     densityFilter !== "all" ? "1" : "",
     fundedWithinDays != null ? "1" : "",
+    rangeIsActive(valuationRange) ? "1" : "",
+    rangeIsActive(raisedRange) ? "1" : "",
+    updatedWithinDays != null ? "1" : "",
   ].filter(Boolean).length;
 
   // Everything the sidebar controls collapses into one filters object, which
@@ -3628,9 +3662,9 @@ export function Startups() {
     if (countryFilter) f.country = countryFilter;
     if (israelRelated) f.israelRelated = true;
     if (cityFilter) f.city = cityFilter;
-    if (stageStep !== "all") {
-      const step = STAGE_STEPS.find((st) => st.value === stageStep);
-      if (step && step.rounds.length > 0) f.stageRoundTypes = step.rounds;
+    if (stageSteps.length > 0) {
+      const rounds = stageRounds(stageSteps);
+      if (rounds.length > 0) f.stageRoundTypes = rounds;
     }
     if (headcountStep !== "all") {
       const { min, max } = headcountRange(headcountStep);
@@ -3640,22 +3674,30 @@ export function Startups() {
     if (momentumFilter) f.momentum = true;
     if (densityFilter !== "all") f.density = densityFilter;
     if (fundedWithinDays != null) f.fundedWithinDays = fundedWithinDays;
+    if (rangeIsActive(valuationRange)) {
+      if (valuationRange.min != null) f.valuationMin = valuationRange.min;
+      if (valuationRange.max != null) f.valuationMax = valuationRange.max;
+      f.valuationIncludeUnknown = valuationRange.includeUnknown;
+    }
+    if (raisedRange.min != null) f.raisedMin = raisedRange.min;
+    if (raisedRange.max != null) f.raisedMax = raisedRange.max;
+    if (updatedWithinDays != null) f.updatedWithinDays = updatedWithinDays;
     if (passedIds.size > 0) f.excludeStartupIds = Array.from(passedIds);
     return f;
-  }, [debouncedSearch, parentSector, subSector, subSectorTag, countryFilter, israelRelated, cityFilter, stageStep, headcountStep, momentumFilter, densityFilter, fundedWithinDays, passedIds]);
+  }, [debouncedSearch, parentSector, subSector, subSectorTag, countryFilter, israelRelated, cityFilter, stageSteps, headcountStep, momentumFilter, densityFilter, fundedWithinDays, valuationRange, raisedRange, updatedWithinDays, passedIds]);
 
   // Any filter change starts the user back on page 1.
-  useEffect(() => { setPage(1); }, [filters]);
+  useEffect(() => { setPage(1); }, [filters, sort]);
 
   useEffect(() => {
     let cancelled = false;
     setRowsLoading(true); setLoadError(null);
-    fetchStartupsPage(filters, page)
+    fetchStartupsPage(filters, page, sort)
       .then((data) => { if (!cancelled) setRows(data); })
       .catch((e) => { if (!cancelled) setLoadError(getErrorMessage(e)); })
       .finally(() => { if (!cancelled) setRowsLoading(false); });
     return () => { cancelled = true; };
-  }, [filters, page, refreshKey]);
+  }, [filters, page, sort, refreshKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3687,6 +3729,147 @@ export function Startups() {
       setExporting(false);
     }
   }
+
+  // ── Redesigned page (?ui=2): the same state, shown through FilterBar / FilterDrawer / table ──
+  const filterState: FilterState = {
+    parentSector, subSector, subSectorTag, country: countryFilter, city: cityFilter, israelRelated,
+    stageSteps, headcountStep, momentum: momentumFilter, density: densityFilter, fundedWithinDays,
+    valuation: valuationRange, raised: raisedRange, updatedWithinDays,
+  };
+  const filterActions: FilterActions = {
+    setSector: (parent, sub) => { setSubSectorTag(""); setParentSector(parent); setSubSector(sub); },
+    setCountry,
+    setStageSteps,
+    setHeadcountStep: (v) => setHeadcount(v as HeadcountStep),
+    setMomentum,
+    setDensity,
+    setValuation: (v) => setValuationRange(normalizeRange(v)),
+    setRaised: (v) => setRaisedRange(normalizeRange(v)),
+    setUpdatedWithinDays,
+    clearOne: (id) => {
+      switch (id) {
+        case "search": setSearch(""); break;
+        case "subSectorTag": setSubSectorTag(""); break;
+        case "sector": setParentSector(""); setSubSector(""); break;
+        case "stage": setStageSteps([]); break;
+        case "country": setCountry(""); break;
+        case "city": clearCityFilter(); break;
+        case "israel": setIsraelRelated(false); break;
+        case "headcount": setHeadcount("all"); break;
+        case "valuation": setValuationRange(EMPTY_RANGE); break;
+        case "raised": setRaisedRange(EMPTY_RANGE); break;
+        case "funded": setFundedWithinDays(null); break;
+        case "momentum": setMomentum(false); break;
+        case "density": setDensity("all"); break;
+        case "updated": setUpdatedWithinDays(null); break;
+      }
+    },
+    clearAll,
+  };
+  const chips = buildChips({
+    search, parentSector, subSector, subSectorTag, country: countryFilter, city: cityFilter, israelRelated,
+    stageLabels: stageSteps.map((v) => stageLabel(STAGE_STEPS.find((s) => s.value === v)?.label ?? "", t)),
+    headcountLabel: headcountStep !== "all" ? (HEADCOUNT_STEPS.find((h) => h.value === headcountStep)?.label ?? null) : null,
+    momentum: momentumFilter, density: densityFilter, fundedWithinDays,
+    valuation: valuationRange, raised: raisedRange, updatedWithinDays,
+  }, (key, vars, fallback) => t(`startups.v2.${key}`, { defaultValue: fallback, ...vars }) as string);
+  const selectedIds = useMemo(() => new Set(selected.keys()), [selected]);
+  const tourStepsV2 = tourSteps.filter((st) => /search-input|view-toggle|company-results/.test(st.target));
+
+  const resultsContent = (
+    <>
+            {loadError && rows.length === 0 ? (
+              <div className="flex flex-col items-center py-24 gap-3 text-center">
+                <AlertCircle className="w-8 h-8 text-red-400" />
+                <p className="text-sm font-semibold text-[#0F172A]">{t("startups.failedToLoad")}</p>
+                <p className="text-xs text-gray-400 max-w-xs">{loadError}</p>
+              </div>
+            ) : rowsLoading && rows.length === 0 ? (
+              <div className="flex items-center justify-center py-32"><Loader2 className="w-6 h-6 text-[#F59E0B] animate-spin" /></div>
+            ) : rows.length === 0 && activeFilterCount === 0 ? (
+              <div className="flex flex-col items-center justify-center py-32 text-center">
+                <div className="w-16 h-16 rounded-lg bg-amber-50 flex items-center justify-center mb-6"><Rocket className="w-7 h-7 text-[#F59E0B]" /></div>
+                <h2 className="text-xl font-bold text-[#0F172A] mb-3">{t("startups.noStartupsYet")}</h2>
+
+              </div>
+            ) : rows.length === 0 ? (
+              <div className="flex flex-col items-center py-20 gap-3 text-center">
+                <Building2 className="w-8 h-8 text-gray-300" />
+                <p className="text-sm font-semibold text-gray-400">{t("startups.noCompaniesMatch")}</p>
+                <button onClick={clearAll} className="text-xs text-gray-500 font-semibold hover:text-rose-600 transition-colors">{t("startups.clearAllFilters")}</button>
+                {/* Not in AlphaMap: the same "check a company" as My Area (same service, limits and privacy). */}
+                {debouncedSearch.trim().length >= 2 && (
+                  <div className="mt-4 max-w-sm rounded-xl border border-gray-200 bg-white px-5 py-4">
+                    <p className="text-sm text-gray-600">{t("startups.checkPrompt", { name: debouncedSearch.trim() })}</p>
+                    <button onClick={() => setCheckName(debouncedSearch.trim())}
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1e293b]">
+                      <ScanSearch className="h-4 w-4" />{t("startups.checkIt", { name: debouncedSearch.trim() })}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="relative">
+                {rowsLoading && (
+                  <div className="absolute inset-0 z-10 flex items-start justify-center pt-16 bg-white/50 backdrop-blur-[1px] rounded-[10px] transition-opacity">
+                    <Loader2 className="w-5 h-5 text-[#F59E0B] animate-spin" />
+                  </div>
+                )}
+                {viewMode === "grid" || (uiV2 && isMobile) ? (
+                  <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 transition-opacity duration-150 ${rowsLoading ? "opacity-40" : "opacity-100"}`}>
+                    {rows.map((s, i) => (
+                      <StartupCard key={s.id} startup={s} onSelect={() => setSelected(s)}
+                        selected={selected.has(s.id)} onToggleSelect={(e) => toggleSelect(s, e)}
+                        saved={watchlist.has("startup", s.id)}
+                        onSave={(e) => { e.stopPropagation(); handleSaveToggle(s); }}
+                        onOpenPass={(e) => { e.stopPropagation(); setPassReasonTarget(s); }}
+                        matchResult={matchScores.get(s.id)}
+                        dataTour={i === 0 ? "company-results" : undefined} />
+                    ))}
+                  </div>
+                ) : uiV2 ? (
+                  <StartupsTable
+                    rows={rows} sort={sort} density={density} loading={rowsLoading}
+                    onSort={(k: StartupSortKey) => setSort((cur) => nextSort(cur, k))}
+                    selectedIds={selectedIds}
+                    onToggleSelect={toggleSelect}
+                    onSelect={(row) => setSelected(row)}
+                    isSaved={(row) => watchlist.has("startup", row.id)}
+                    onSave={handleSaveToggle}
+                    onPass={(row) => setPassReasonTarget(row)}
+                    matchScores={matchScores}
+                  />
+                ) : (
+                  <div className={`bg-white rounded-[10px] border border-gray-100 shadow-[0_4px_20px_rgba(0,0,0,0.04)] overflow-hidden transition-opacity duration-150 ${rowsLoading ? "opacity-40" : "opacity-100"}`}>
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-gray-100 bg-[#F8FAFC]">
+                            {["", "Company", "Stage", "Location", "Valuation", "Raised", "Employees", "Founders", "Match", ""].map((h, i) => (
+                              <th key={i} className="text-left text-[9px] font-black text-gray-400 uppercase tracking-widest py-3 px-4 first:pl-5 first:pr-1 whitespace-nowrap">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((s, i) => (
+                            <StartupTableRow key={s.id} startup={s} onSelect={() => setSelected(s)}
+                              selected={selected.has(s.id)} onToggleSelect={(e) => toggleSelect(s, e)}
+                              saved={watchlist.has("startup", s.id)}
+                              onSave={(e) => { e.stopPropagation(); handleSaveToggle(s); }}
+                              onOpenPass={(e) => { e.stopPropagation(); setPassReasonTarget(s); }}
+                              matchResult={matchScores.get(s.id)}
+                              dataTour={i === 0 ? "company-results" : undefined} />
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+                <Pagination page={page} pageCount={pageCount} onChange={setPage} />
+              </div>
+            )}
+    </>
+  );
 
   return (
     <Layout>
@@ -3735,6 +3918,20 @@ export function Startups() {
       </div>
 
       {/* ── Sidebar + main content (shared SideFilterLayout shell) ───────── */}
+      {uiV2 ? (
+        <div className={`mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 pt-3 space-y-3 ${selected.size >= 1 ? "pb-28" : "pb-10"}`}>
+          <FilterBar
+            state={filterState} actions={filterActions} countries={countries} headcountSteps={HEADCOUNT_STEPS}
+            activeCount={activeFilterCount} onOpenDrawer={() => setDrawerOpen(true)}
+            density={density} onDensity={setTableDensity}
+          />
+          <FilterChips chips={chips} onClear={filterActions.clearOne} onClearAll={clearAll} />
+          <p className="text-am-caption text-am-ink-3 tabular-nums" aria-live="polite">
+            {t("startups.v2.companyCount", { defaultValue: "{{count}} companies", count: totalCount.toLocaleString() })}
+          </p>
+          {resultsContent}
+        </div>
+      ) : (
       <SideFilterLayout
         search={search}
         onSearchChange={setSearch}
@@ -3849,87 +4046,11 @@ export function Startups() {
           </>
         }
       >
-            {loadError && rows.length === 0 ? (
-              <div className="flex flex-col items-center py-24 gap-3 text-center">
-                <AlertCircle className="w-8 h-8 text-red-400" />
-                <p className="text-sm font-semibold text-[#0F172A]">{t("startups.failedToLoad")}</p>
-                <p className="text-xs text-gray-400 max-w-xs">{loadError}</p>
-              </div>
-            ) : rowsLoading && rows.length === 0 ? (
-              <div className="flex items-center justify-center py-32"><Loader2 className="w-6 h-6 text-[#F59E0B] animate-spin" /></div>
-            ) : rows.length === 0 && activeFilterCount === 0 ? (
-              <div className="flex flex-col items-center justify-center py-32 text-center">
-                <div className="w-16 h-16 rounded-lg bg-amber-50 flex items-center justify-center mb-6"><Rocket className="w-7 h-7 text-[#F59E0B]" /></div>
-                <h2 className="text-xl font-bold text-[#0F172A] mb-3">{t("startups.noStartupsYet")}</h2>
-
-              </div>
-            ) : rows.length === 0 ? (
-              <div className="flex flex-col items-center py-20 gap-3 text-center">
-                <Building2 className="w-8 h-8 text-gray-300" />
-                <p className="text-sm font-semibold text-gray-400">{t("startups.noCompaniesMatch")}</p>
-                <button onClick={clearAll} className="text-xs text-gray-500 font-semibold hover:text-rose-600 transition-colors">{t("startups.clearAllFilters")}</button>
-                {/* Not in AlphaMap: the same "check a company" as My Area (same service, limits and privacy). */}
-                {debouncedSearch.trim().length >= 2 && (
-                  <div className="mt-4 max-w-sm rounded-xl border border-gray-200 bg-white px-5 py-4">
-                    <p className="text-sm text-gray-600">{t("startups.checkPrompt", { name: debouncedSearch.trim() })}</p>
-                    <button onClick={() => setCheckName(debouncedSearch.trim())}
-                      className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1e293b]">
-                      <ScanSearch className="h-4 w-4" />{t("startups.checkIt", { name: debouncedSearch.trim() })}
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="relative">
-                {rowsLoading && (
-                  <div className="absolute inset-0 z-10 flex items-start justify-center pt-16 bg-white/50 backdrop-blur-[1px] rounded-[10px] transition-opacity">
-                    <Loader2 className="w-5 h-5 text-[#F59E0B] animate-spin" />
-                  </div>
-                )}
-                {viewMode === "grid" ? (
-                  <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 transition-opacity duration-150 ${rowsLoading ? "opacity-40" : "opacity-100"}`}>
-                    {rows.map((s, i) => (
-                      <StartupCard key={s.id} startup={s} onSelect={() => setSelected(s)}
-                        selected={selected.has(s.id)} onToggleSelect={(e) => toggleSelect(s, e)}
-                        saved={watchlist.has("startup", s.id)}
-                        onSave={(e) => { e.stopPropagation(); handleSaveToggle(s); }}
-                        onOpenPass={(e) => { e.stopPropagation(); setPassReasonTarget(s); }}
-                        matchResult={matchScores.get(s.id)}
-                        dataTour={i === 0 ? "company-results" : undefined} />
-                    ))}
-                  </div>
-                ) : (
-                  <div className={`bg-white rounded-[10px] border border-gray-100 shadow-[0_4px_20px_rgba(0,0,0,0.04)] overflow-hidden transition-opacity duration-150 ${rowsLoading ? "opacity-40" : "opacity-100"}`}>
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead>
-                          <tr className="border-b border-gray-100 bg-[#F8FAFC]">
-                            {["", "Company", "Stage", "Location", "Valuation", "Raised", "Employees", "Founders", "Match", ""].map((h, i) => (
-                              <th key={i} className="text-left text-[9px] font-black text-gray-400 uppercase tracking-widest py-3 px-4 first:pl-5 first:pr-1 whitespace-nowrap">{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {rows.map((s, i) => (
-                            <StartupTableRow key={s.id} startup={s} onSelect={() => setSelected(s)}
-                              selected={selected.has(s.id)} onToggleSelect={(e) => toggleSelect(s, e)}
-                              saved={watchlist.has("startup", s.id)}
-                              onSave={(e) => { e.stopPropagation(); handleSaveToggle(s); }}
-                              onOpenPass={(e) => { e.stopPropagation(); setPassReasonTarget(s); }}
-                              matchResult={matchScores.get(s.id)}
-                              dataTour={i === 0 ? "company-results" : undefined} />
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-                <Pagination page={page} pageCount={pageCount} onChange={setPage} />
-              </div>
-            )}
+        {resultsContent}
       </SideFilterLayout>
+      )}
 
-      <ProductTour steps={tourSteps} open={tourOpen} onClose={closeTour} />
+      <ProductTour steps={uiV2 ? tourStepsV2 : tourSteps} open={tourOpen} onClose={closeTour} />
       {checkName !== null && <CheckCompanyDialog initial={{ ...emptyCheckForm(), name: checkName }} onClose={() => setCheckName(null)} />}
 
       {tearsheetStartup && (
@@ -3969,7 +4090,7 @@ export function Startups() {
       )}
 
       {/* ── Floating Compare FAB ────────────────────────────────────────── */}
-      {selected.size >= 1 && (
+      {!uiV2 && selected.size >= 1 && (
         <div className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] right-6 z-40 flex flex-col items-end gap-2.5">
           {watchlistError && (
             <div className="flex items-center gap-1.5 max-w-[280px] px-3.5 py-2 rounded-[8px] text-[11px] font-semibold bg-rose-950/90 border border-rose-800/60 text-rose-300 backdrop-blur-sm shadow-[0_4px_20px_rgba(0,0,0,0.45)]">
@@ -4023,6 +4144,23 @@ export function Startups() {
             </button>
           </div>
         </div>
+      )}
+
+      {uiV2 && (
+        <>
+          <FilterDrawer
+            open={drawerOpen} onOpenChange={setDrawerOpen} state={filterState} actions={filterActions}
+            countries={countries} headcountSteps={HEADCOUNT_STEPS} totalCount={totalCount}
+          />
+          <SelectionBar
+            count={selected.size}
+            singleSaved={selected.size === 1 && watchlist.has("startup", Array.from(selected.keys())[0])}
+            busy={watchlistBusy} error={watchlistError}
+            onClear={() => setSelectedMap(new Map())}
+            onWatch={toggleWatchlistForSelected}
+            onCompare={() => { if (selected.size >= 2) setShowCompare(true); }}
+          />
+        </>
       )}
 
     </Layout>
