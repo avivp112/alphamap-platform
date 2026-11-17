@@ -1,3 +1,4 @@
+import { isThirdPartyPage } from "./subject.ts";
 /**
  * lib/enrichment/people.ts — deterministic, source-grounded helpers for
  * founders and leadership.
@@ -50,7 +51,7 @@ function sentencesOf(text: string): string[] {
 function namesAfterBy(rest: string): string[] {
   const list = rest
     .replace(/\([^)]*\)/g, "")
-    .split(/\b(?:in|on|back in|during)\s+(?:\d{4}|[A-Z][a-z]+ \d{4})\b|[;:]|\bto\b|\bwho\b|\bwith the\b/)[0];
+    .split(/\b(?:in|on|back in|during)\s+(?:\d{4}|[A-Z][a-z]+ \d{4})\b|[;:]|\bto\b|\bwho\b|\bwith the\b|\bas\s+(?:an?|the)\b|\bthat\b|\bwhich\b/)[0];
   // The names run until the first item that is not one: "founded by A and
   // B, raised $8M ... angel investors C, D" are A and B — not C and D
   // (huskeys.io, 2026-10-18: a missed sentence break made the angels founders).
@@ -372,6 +373,13 @@ export function teamPeopleCount(text: string): { count: number; quote: string } 
 export function foundersFromMentions(text: string, companyName: string): Array<{ name: string; title: string; quote: string }> {
   const out: Array<{ name: string; title: string; quote: string }> = [];
   for (const s of sentencesOf(text)) {
+    // "Sherlok founder Adam Grocke explains…": the company's own name, then the title, then the person (owner, round 10: Sherlok).
+    const nameRe = companyName.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+    for (const m of s.matchAll(new RegExp(`\\b${nameRe}\\s+((?:co-?\\s?)?founders?)\\s*,?\\s+`, "giu"))) {
+      const nm = s.slice(m.index! + m[0].length).match(/^(\p{Lu}[\p{L}'’.-]+(?:\s+\p{Lu}[\p{L}'’.-]+){1,2})/u);
+      const name = nm ? personName(nm[1]) : null;
+      if (name && !out.some((o) => samePersonName(o.name, name))) out.push({ name, title: /co-?\s?founder/i.test(m[1]) ? "Co-founder" : "Founder", quote: s.slice(0, 240) });
+    }
     for (const m of s.matchAll(/(\p{Lu}[\p{L}'’.-]+(?:\s+\p{Lu}[\p{L}'’.-]+){1,3})\s*,?\s+(?:the\s+)?((?:co-?\s?)?founders?(?:\s*(?:and|&)\s*[\p{L}-]+(?:\s+officer)?)?)\s+(?:of|at)\s+(\p{Lu}[\p{L}\d.&'’-]*(?:\s+\p{Lu}[\p{L}\d.&'’-]*){0,3})/gu)) {
       // A sentence-opening word glued to the name ("Said Ann Lee", "According Ann Lee") is not part of it.
       const lead = new Set(["said", "says", "told", "according", "meet", "met", "by", "and", "with", "from", "also", "today", "then", "while"]);
@@ -403,6 +411,7 @@ export function groundFounders<T extends { name: string }>(
     // The source that grounds the founder is kept with it (owner, 2026-11-02: every value with its source), and the words that ground him as his quote (round 10).
     let found: { url: string; quote: string } | null = null;
     for (const src of sources) {
+      if (src.source_type === "company_site" && isThirdPartyPage(src.url)) continue;   // a customer / project / case-study page (subject.ts)
       // Another company's LinkedIn page ("linkedin.com/company/ceragem" for Ybrain) never grounds one.
       const li = src.url.match(/linkedin\.com\/company\/([^/?#]+)/i)?.[1]?.toLowerCase().replace(/[^a-z0-9]/g, "");
       const ownSlug = companyName.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -733,4 +742,39 @@ export function mergeFoundersByName<T extends { name: string; title?: string | n
     for (const k of Object.keys(f) as Array<keyof T>) if (same[k] == null || same[k] === "") same[k] = f[k];
   }
   return out;
+}
+
+
+const FOUNDER_PART = /^(?:co-?\s?)?founders?$/i;
+/** A role part as a pattern: "CEO" also reads "Chief Executive Officer", "Chief Product Officer" also "CPO". */
+export function roleRegex(part: string): RegExp {
+  const t = part.trim().toLowerCase();
+  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const alts = [esc(t)];
+  if (t === "ceo") alts.push("chief executive(?: officer)?", "managing director");
+  const chief = t.match(/^chief (\w+)(?: \w+)? officer$/);
+  if (chief) alts.push(`c${chief[1][0]}o`);
+  if (/^c[a-z]o$/.test(t)) alts.push(`chief ${t[1] === "e" ? "executive" : t[1] === "p" ? "product" : t[1] === "t" ? "technology" : t[1] === "f" ? "financial" : t[1] === "o" ? "operating" : t[1] === "m" ? "marketing" : t[1] === "r" ? "revenue" : "\\w+"} officer`);
+  return new RegExp(`(?<![\\p{L}\\p{N}])(?:${alts.join("|")})(?![\\p{L}\\p{N}])`, "iu");
+}
+
+/**
+ * The sentence (or line) of a source that names the person AND the executive role (owner, round 10, batch 6: Sherlok's "founder Adam Grocke explains…" is no proof that he is its CEO):
+ * every executive part of the role ("Founder & CEO" → "CEO"; "Founder" alone is the founders' field) must be in it. Null when no source says it.
+ */
+export function leaderRoleEvidence(name: string, role: string, sources: Array<{ url: string; title?: string | null; content?: string | null }>): { url: string; quote: string } | null {
+  const parts = role.split(/\s*(?:&|,|\/|·|\band\b)\s*/i).map((x) => x.trim()).filter((x) => x && !FOUNDER_PART.test(x));
+  if (!parts.length) return null;
+  const res = parts.map(roleRegex);
+  const last = fold(name.trim().split(/\s+/).pop() ?? name).toLowerCase();
+  for (const src of sources) {
+    const text = `${src.title ?? ""}\n${src.content ?? ""}`;
+    for (const piece of text.split(/(?<=[.!?])\s+|\n+/)) {
+      const t = piece.trim();
+      if (t.length < 8 || t.length > 320) continue;
+      if (!fold(t).toLowerCase().includes(last)) continue;
+      if (res.every((re) => re.test(t))) return { url: src.url, quote: t };
+    }
+  }
+  return null;
 }

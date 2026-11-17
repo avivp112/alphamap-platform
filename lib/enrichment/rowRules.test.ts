@@ -214,3 +214,64 @@ describe("registers as columns of their own (owner, round 10)", () => {
     expect(ilDate("2019")).toBe("2019");
   });
 });
+
+import { sentenceIsAboutCompany, isThirdPartyPage } from "./subject";
+import { quoteIsNotASentence } from "./evidence";
+import { foundedYearFromSite } from "./siteFacts";
+import { companyLanguage, localQueries } from "./localSearch";
+import { techOverride, techAccepted, sectorDecision } from "./techOverrides";
+import { leaderRoleEvidence } from "./people";
+describe("batch 6 (owner, round 10)", () => {
+  it("a sentence is evidence about the company only when it is its subject", () => {
+    expect(sentenceIsAboutCompany("DHNY was founded in 2022 in collaboration with AlleyCorp.", "Canopy", { ownSite: true })).toBe(false);
+    expect(sentenceIsAboutCompany("Founded in 1901, the Whitechapel Gallery sits in the heart of London's East End.", "Spin Studio", { ownSite: true })).toBe(false);
+    expect(sentenceIsAboutCompany("Estimote, Inc. was founded in 2012 by Jakub and Lukasz", "Estimote")).toBe(true);
+    expect(sentenceIsAboutCompany("We were founded in 2015 in Austin.", "Acme", { ownSite: true })).toBe(true);
+    expect(sentenceIsAboutCompany("We were founded in 2015 in Austin.", "Acme", { ownSite: false })).toBe(false);
+    expect(sentenceIsAboutCompany("Founded in 2013", "Acme", { ownSite: true })).toBe(true);
+  });
+  it("customer, project and partner pages say nothing of the company's own founding", () => {
+    expect(isThirdPartyPage("https://spin.co.uk/projects/whitechapel-gallery")).toBe(true);
+    expect(isThirdPartyPage("https://x.com/case-studies/acme")).toBe(true);
+    expect(isThirdPartyPage("https://x.com/about")).toBe(false);
+    const text = "Founded in 1901, the Whitechapel Gallery sits in the heart of London.";
+    expect(foundedYearFromSite(text, 2026, { companyName: "Spin Studio", ownSite: true })).toBeNull();
+    expect(foundedYearFromSite("Spin Studio was founded in 2009.", 2026, { companyName: "Spin Studio", ownSite: true })?.year).toBe(2009);
+  });
+  it("a quote is a sentence, not page code", () => {
+    expect(quoteIsNotASentence("Title: SPIN Studio URL Source: https://spin.co.uk/ Markdown Content: [Spin](https://spin.co.uk/)")).toBe(true);
+    expect(quoteIsNotASentence("1. $1M Pre-seed Pre-seed, $1M, $1M raised to date")).toBe(true);
+    expect(quoteIsNotASentence("Estimote sells indoor location and sensing technology.")).toBe(false);
+  });
+  it("a round type no quote names is Unknown, in the report too", () => {
+    const row = (after: string, quote: string) => ({ field: "round", company: "Ripio", after, source_url: "u", quote });
+    const out = (r: ReturnType<typeof row>) => applyRowRules([r], "Ripio", TODAY).rows[0].after;
+    expect(out(row("Series A $1.9M · 2017-01-03", "Argentinian bitcoin startup Ripio has announced what may be the first funding round of the new year, raising $1.9m"))).toMatch(/^Unknown \$1\.9M/);
+    expect(out(row("Other $100M · 2020-12-17", "The $100 million round was led by Grok Ventures"))).toMatch(/^Unknown \$100M/);
+    expect(out(row("Seed $3.1M · 2013-12", "Estimote secured $3.1 million in Seed funding from Bessemer"))).toMatch(/^Seed \$3\.1M/);
+  });
+  it("the language of a company without a country: its domain, then its site", () => {
+    expect(companyLanguage({ website: "https://kiwify.com.br" })).toBe("pt");
+    expect(companyLanguage({ website: "https://supaero.fr" })).toBe("fr");
+    expect(companyLanguage({ website: "https://zand.ae" })).toBe("ar");
+    expect(companyLanguage({ website: "https://spin.co.uk" })).toBeNull();
+    expect(companyLanguage({ country: "Poland" })).toBe("pl");
+    expect(companyLanguage({ website: "https://ripio.com", siteText: "Nuestro equipo es una empresa para todos. Somos una empresa más." })).toBe("es");
+    expect(localQueries("Kiwify", "", "pt").map(([l]) => l)).toEqual(["founders_local", "founded_local", "headquarters_local", "raises_local", "acquired_local"]);
+    expect(localQueries("Kiwify", "", "pt")[0][1]).toContain("fundador");
+  });
+  it("the owner's tech and sector decisions of batch 6", () => {
+    expect(techOverride("Spin Studio")).not.toBeNull();
+    expect(techOverride("zpharm")).not.toBeNull();
+    expect(techAccepted("Datahut")).toBe(true);
+    expect(techAccepted("Holu")).toBe(true);
+    expect(sectorDecision("Kiwify")).toEqual({ sector: "Consumer & Media", sub_sector: "EdTech" });
+    expect(sectorDecision("Sherlok")).toEqual({ sector: "Fintech", sub_sector: "Lending" });
+    expect(sectorDecision("Estimote")?.sub_sector).toBe("IoT & Connectivity");
+  });
+  it("a leader's executive role must be in a sentence with the name", () => {
+    const src = [{ url: "u1", content: "In this demo, Sherlok founder Adam Grocke explains how Sherlok helps brokers." }, { url: "u2", content: "Paradox Hires Marc Chesley As CPO To Drive Product Innovation." }];
+    expect(leaderRoleEvidence("Adam Grocke", "Founder & CEO", src)).toBeNull();
+    expect(leaderRoleEvidence("Marc Chesley", "Chief Product Officer", src)?.url).toBe("u2");
+  });
+});

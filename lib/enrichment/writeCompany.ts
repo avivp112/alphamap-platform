@@ -18,7 +18,7 @@ import { normalizeIsoDate, appendNew, reconcileOnFile, isSameRound } from "./ass
 import { fetchArticleOgImage } from "./ogImage.ts";
 import { detectAcquisition } from "./acquisition.ts";
 import { brandFromTexts } from "./rowRules.ts";
-import { cleanPeople, mergeFoundersByName, isFounderEntry, cleanFounderTitle, canonicalTitle } from "./people.ts";
+import { leaderRoleEvidence, cleanPeople, mergeFoundersByName, isFounderEntry, cleanFounderTitle, canonicalTitle } from "./people.ts";
 import { samePersonName } from "./linkedin.ts";
 import { checkHeadcountOutlier } from "./validation.ts";
 import { screenPoints, type HistoryPoint } from "./headcountHistory.ts";
@@ -458,7 +458,20 @@ export async function writeCollected(
   // The board is its own group and its own field (owner, 2026-11-09): carried through as group "board" (it was dropped here, so board
   // members were written as leaders with the role "Board member"), and written only when the board field is open.
   const boardOk = !OPEN || writesBoard(OPEN);
-  const cleanLeadership = cleanPeople((profile.leadership ?? []).filter((l) => l.group !== "board" || boardOk).map((l) => keepBio({
+  // An executive role is written only when a source says it next to the person's name (owner, round 10: "Founder & CEO" on a quote that says "founder"; "CEO" on a page title).
+  const roleEvidence = new Map<string, { url: string; quote: string }>();
+  const roleSources = allSources.filter((x) => profileSourceAllowed(x, row.name));
+  // (A collection stored by a user check keeps no page text: nothing can be checked there, so nothing is dropped.)
+  const canCheckRoles = roleSources.some((x) => (x.content ?? "").length > 40);
+  const leadersWithRole = (profile.leadership ?? []).filter((l) => {
+    if (l.group === "board" || !canCheckRoles) return true;
+    const ev = leaderRoleEvidence(l.name, l.role ?? "", roleSources);
+    if (ev) { roleEvidence.set(l.name, ev); return true; }
+    console.log(`    🚫  leader ${l.name} (${l.role}) not written — no source states the role next to the name`);
+    bump(summary.droppedByReason, "leader_role_not_in_source");
+    return false;
+  });
+  const cleanLeadership = cleanPeople(leadersWithRole.filter((l) => l.group !== "board" || boardOk).map((l) => keepBio({
     name: l.name, role: canonicalTitle(l.role), bio: l.bio, linkedin_url: l.linkedin_url?.value, joined_date: l.joined_date,
     had_prior_exit: l.had_prior_exit, elite_background: l.elite_background, notable_pedigree: l.notable_pedigree,
     ...(l.group === "board" ? { group: "board" as const } : {}),
@@ -794,11 +807,12 @@ export async function writeCollected(
       } else if (k === "leadership") {
         for (const l of newOf<{ name: string; role?: string | null; group?: string | null; bio?: string | null }>(patch.leadership, rowOf.leadership, (a, b) => samePersonName(a.name ?? "", b.name))) {
           // The page that names the person: the bio's allowed source, else the first allowed page that does (so the value has a source on file).
+          const roleEv = [...roleEvidence].find(([n]) => samePersonName(n, l.name))?.[1];
           const ids = (profile.leadership ?? []).find((x) => samePersonName(x.name, l.name))?.bio_source_ids;
-          const src = ((ids ?? []).map((id) => sourceById.get(id)).find((x) => x && profileSourceAllowed(x, row.name)))
+          const src = (roleEv ? allSources.find((x) => x.url === roleEv.url) : undefined) ?? ((ids ?? []).map((id) => sourceById.get(id)).find((x) => x && profileSourceAllowed(x, row.name)))
             ?? allSources.find((x) => profileSourceAllowed(x, row.name) && `${x.title ?? ""} ${x.content ?? ""}`.toLowerCase().includes((l.name.trim().split(/\s+/).pop() ?? l.name).toLowerCase()));
           const last = (l.name.trim().split(/\s+/).pop() ?? l.name).toLowerCase();
-          const quote = src ? (`${src.title ?? ""}. ${src.content ?? ""}`.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/).find((sen) => sen.length <= 300 && sen.toLowerCase().includes(last)) ?? null) : null;
+          const quote = roleEv ? roleEv.quote : src ? (`${src.title ?? ""}. ${src.content ?? ""}`.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/).find((sen) => sen.length <= 300 && sen.toLowerCase().includes(last)) ?? null) : null;
           // The board is its own group, never a leader (owner, 2026-11-09): reported, marked and verified as "board".
           one((l as { group?: string | null }).group === "board" ? "board" : "leader", `${l.name} — ${l.role ?? ""}${l.bio ? ` · ${l.bio}` : ""}`, src?.url ?? null, quote);
         }

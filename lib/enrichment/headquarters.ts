@@ -1,3 +1,4 @@
+import { isThirdPartyPage } from "./subject.ts";
 /**
  * lib/enrichment/headquarters.ts — which city is the headquarters (owner,
  * 2026-11-01). The headquarters is what a source declares, in so many words
@@ -96,6 +97,7 @@ const sentencesOf = (text: string) => text.replace(/\s+/g, " ").split(/(?<=[.!?]
 
 /** Every sentence of a source that declares a headquarters city for this company. */
 export function hqStatementsIn(s: LabeledSource, companyName: string): HqStatement[] {
+  if (s.source_type === "company_site" && isThirdPartyPage(s.url)) return [];
   const weak = !statementKind(s) && isWeakPress(s);
   const kind = weak ? "press" : statementKind(s);
   if (!kind) return [];
@@ -234,6 +236,7 @@ const THIRD_PARTY_ADDRESS = /\b(gdpr|eu representative|uk representative|represe
  * The company's seat as an Impressum / imprint states it: "Sitz der Gesellschaft: Berlin" (owner, round 10). That is the headquarters, declared, from the company's own legal page.
  */
 export function impressumSeat(s: Pick<LabeledSource, "url" | "source_type" | "content" | "source_id" | "also_urls">): HqStatement[] {
+  if (isThirdPartyPage(s.url)) return [];
   if (s.source_type !== "company_site" || ![s.url, ...(s.also_urls ?? [])].some((u) => isLegalPageUrl(u))) return [];
   const out: HqStatement[] = [];
   for (const line of s.content.split(/\n+/)) {
@@ -250,6 +253,7 @@ export function impressumSeat(s: Pick<LabeledSource, "url" | "source_type" | "co
 }
 
 export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type" | "content" | "source_id" | "also_urls">): HqStatement[] {
+  if (isThirdPartyPage(s.url)) return [];
   // Any page of the company's own site — the Contact page, the footer every page repeats, an About page (owner, round 10); a legal page is read apart (impressumSeat) and its
   // address is an office. A single address anywhere on the site is the headquarters; several are offices (decideHeadquarters).
   if (s.source_type !== "company_site" || [s.url, ...(s.also_urls ?? [])].some((u) => isLegalPageUrl(u))) return [];

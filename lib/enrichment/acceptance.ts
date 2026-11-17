@@ -2,6 +2,9 @@
  * lib/enrichment/acceptance.ts — automatic acceptance checks of a batch report (owner, round 10): every fix the owner asked for is a line of eval/acceptance_batch5.json with its
  * expected result, and the report is not sent until every line says PASS. Reads the report rows (pilot_report_dry.csv) and the list of companies not enriched.
  */
+import { quoteIsNotASentence } from "./evidence.ts";
+import { roleRegex } from "./people.ts";
+
 export interface Row { company: string; field: string; after: string; source_url: string; quote: string }
 export type Severity = "error" | "gap";
 export type Check = (
@@ -13,6 +16,9 @@ export type Check = (
   | { id: string; why: string; kind: "no_url_quote" }
   | { id: string; why: string; kind: "present_quote"; company: string; field: string; match: string }
   | { id: string; why: string; kind: "single_value"; fields: string[] }
+  | { id: string; why: string; kind: "round_type_in_quote" }
+  | { id: string; why: string; kind: "no_non_sentence_quotes" }
+  | { id: string; why: string; kind: "leader_role_in_quote" }
 ) & { severity?: Severity }
   | { id: string; why: string; kind: "news_dates_before_run" }
   | { id: string; why: string; kind: "tags_include"; company: string; include: string; not_only?: string }
@@ -66,6 +72,29 @@ export function runAcceptance(checks: Check[], rows: Row[], notEnriched: string[
         for (const r of rows.filter((x) => c.fields.includes(x.field))) { const k = `${fold(r.company)}|${fam(r.field)}`; per.set(k, (per.get(k) ?? 0) + 1); }
         const bad = [...per].filter(([, n]) => n > 1);
         return { ...base, pass: bad.length === 0, detail: bad.length ? `more than one: ${bad.slice(0, 3).map(([k]) => k).join(" | ")}` : "one value per company" };
+      }
+      case "round_type_in_quote": {
+        // A round's type is written only when its quote names it; a type no quote names is "Unknown" (owner, round 10).
+        const NAMED: Array<[string, RegExp]> = [["Pre-Seed", /pre[- ]?seed/i], ["Seed", /\bseed\b/i], ["Series A", /series[- ]a\b/i], ["Series B", /series[- ]b\b/i], ["Series C", /series[- ]c\b/i], ["Series D", /series[- ]d\b/i], ["Series E", /series[- ]e\b/i], ["Series F+", /series[- ][f-z]\b/i], ["Growth", /growth/i], ["Bridge", /bridge/i]];
+        const bad = rows.filter((r) => r.field === "round").filter((r) => {
+          const t = r.after.match(/^(Pre-Seed|Seed|Series [A-F]\+?|Growth|Bridge|Other)\b/)?.[1];
+          if (!t) return false;
+          if (t === "Other") return !/strategic|crowd|token|placement|pipe\b|spac\b|revenue.based|corporate/i.test(r.quote);
+          return !(NAMED.find(([n]) => n === t)?.[1] ?? /./).test(r.quote);
+        });
+        return { ...base, pass: bad.length === 0, detail: bad.length ? `type not in its quote: ${bad.slice(0, 3).map((r) => `${r.company} "${r.after.slice(0, 40)}"`).join(" | ")}` : "every named type is in its quote" };
+      }
+      case "no_non_sentence_quotes": {
+        const bad = rows.filter((r) => quoteIsNotASentence(r.quote));
+        return { ...base, pass: bad.length === 0, detail: bad.length ? `${bad.length} quote(s) are page code: ${bad.slice(0, 2).map((r) => `${r.company} ${r.field}`).join(" | ")}` : "every quote is a sentence" };
+      }
+      case "leader_role_in_quote": {
+        const bad = rows.filter((r) => r.field === "leader" && r.quote).filter((r) => {
+          const role = r.after.split(" — ").slice(1).join(" — ").split(" · ")[0];
+          const parts = role.split(/\s*(?:&|,|\/|\band\b)\s*/i).map((x) => x.trim()).filter((x) => x && !/^(?:co-?\s?)?founders?$/i.test(x));
+          return parts.length > 0 && !parts.every((p) => roleRegex(p).test(r.quote));
+        });
+        return { ...base, pass: bad.length === 0, detail: bad.length ? `role not in its quote: ${bad.slice(0, 3).map((r) => `${r.company} ${r.after.slice(0, 40)}`).join(" | ")}` : "every leader's role is in its quote" };
       }
       case "no_duplicates": {
         const seen = new Map<string, number>();

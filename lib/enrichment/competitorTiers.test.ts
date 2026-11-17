@@ -46,7 +46,7 @@ describe("X vs Y pages", () => {
     expect(vsTitleCompetitor("Port vs Compass · Port vs Cortex · Port vs OpsLevel · Port vs Backstage · Roadmap", "Port")).toBeNull();
     expect(vsTitleCompetitor("Datadog vs Splunk", "Port")).toBeNull();
   });
-  it("accepts the company's own page and the competitor's own page, not a third site's", () => {
+  it("accepts the company's own page only — not the competitor's own page, not a third site's (owner, round 10)", () => {
     const results = [
       { url: "https://www.port.io/compare/backstage", title: "Port vs Backstage" },
       { url: "https://rippling.com/compare/hibob", title: "Rippling vs HiBob" },
@@ -54,7 +54,7 @@ describe("X vs Y pages", () => {
     ];
     const sources = srcs(results.map((r) => ({ url: r.url, title: r.title, content: r.title })));
     expect(vsPageClaims(results.slice(0, 1), sources, "Port", "port.io").map((c) => c.name)).toEqual(["Backstage"]);
-    expect(vsPageClaims(results.slice(1), sources, "HiBob", "hibob.com").map((c) => c.name)).toEqual(["Rippling"]);
+    expect(vsPageClaims(results.slice(1), sources, "HiBob", "hibob.com").map((c) => c.name)).toEqual([]);
   });
 });
 
@@ -102,7 +102,7 @@ describe("the tiers for one company, searches injected (owner, 2026-11-07)", () 
       addSource: (r: { url: string; title?: string | null; content?: string | null }, label: string) => { added.push({ url: r.url, label }); return { source_id: `X${++n}`, url: r.url, title: r.title ?? "", content: r.content ?? r.title ?? "", provider: "serper" as const, query_label: label, source_type: label === "vs_page" && r.url.includes("hibob.com") ? "company_site" as const : "news" as const }; },
     };
   };
-  it("asks, in order: the company's own vs pages, the competitors' vs pages, then the hints — three searches — and finds all three kinds", async () => {
+  it("asks, in order: the company's own vs pages, then the hints — two searches — and finds both kinds", async () => {
     const m = mk();
     const search = async (q: string, label: string) => {
       m.queries.push(`${label}: ${q}`);
@@ -111,11 +111,10 @@ describe("the tiers for one company, searches injected (owner, 2026-11-07)", () 
       return [{ url: "https://techcrunch.com/2026/05/01/hr", title: "HR", content: "HiBob and Gusto are leading players in the mid-market HR software space." }];
     };
     const r = await competitorTierClaims({ companyName: "HiBob", domain: "hibob.com", sources: m.sources, hints: ["Gusto", "Zenefits"], search, addSource: m.addSource, known: new Set(["hibob"]) });
-    expect(m.queries.map((q) => q.split(":")[0])).toEqual(["vs_own", "vs_other", "market_peers"]);
+    expect(m.queries.map((q) => q.split(":")[0])).toEqual(["vs_own", "market_peers"]);
     expect(m.queries[0]).toContain("site:hibob.com");
-    expect(m.queries[1]).toContain("-site:hibob.com");
-    expect(m.queries[2]).toContain('"Gusto" OR "Zenefits"');
-    expect(r.claims.map((c) => [c.name, c.tier]).sort()).toEqual([["Gusto", "market"], ["Paylocity", "declared"], ["Rippling", "declared"], ["Workday", "declared"]].sort());
+    expect(m.queries[1]).toContain('"Gusto" OR "Zenefits"');
+    expect(r.claims.map((c) => [c.name, c.tier]).sort()).toEqual([["Gusto", "market"], ["Rippling", "declared"], ["Workday", "declared"]].sort());
     expect(r.unconfirmedHints).toEqual(["Zenefits"]);
   });
   it("with the extra budget spent (searches return nothing) only the free sentences remain", async () => {
@@ -155,9 +154,9 @@ describe("a vs page on the competitor's own site needs a known competitor (owner
   it("an unknown small company's page is dropped", () => {
     expect(vsClaims(results, sources, "Vulcan Cyber", "vulcan.io", () => false)).toEqual([]);
   });
-  it("a known company's page is kept; without the check the old behaviour stands", () => {
-    expect(vsClaims(results, sources, "Vulcan Cyber", "vulcan.io", () => true).map((c) => c.name)).toEqual(["SecPortal"]);
-    expect(vsClaims(results, sources, "Vulcan Cyber", "vulcan.io").map((c) => c.name)).toEqual(["SecPortal"]);
+  it("a page on a competitor's own site is no source at all now (owner, round 10)", () => {
+    expect(vsClaims(results, sources, "Vulcan Cyber", "vulcan.io", () => true)).toEqual([]);
+    expect(vsClaims(results, sources, "Vulcan Cyber", "vulcan.io")).toEqual([]);
   });
   it("the company's own comparison page needs no such check", () => {
     const own = [{ url: "https://vulcan.io/compare/vulcan-vs-kenna", title: "Vulcan Cyber vs Kenna" }];
@@ -182,13 +181,14 @@ describe("the competitors sheet of 2026-11-08 through the tiers", () => {
     const results = [{ url, title: "Comparing Bolt vs. Lovable", content: "Bolt.new vs Lovable: two AI app builders." }];
     const sources = [{ source_id: "X2", url, title: results[0].title, content: results[0].content, source_type: "news_article" }] as never;
     expect(vsPages(results, sources, "Bolt", "bolt.com", () => true, "Bolt is a one-click checkout for online stores")).toEqual([]);
-    // the same page for a company that IS the one compared stays
-    expect(vsPages(results, sources, "Bolt", "bolt.new", () => true, "Bolt builds apps with AI").map((c) => c.name)).toEqual(["Lovable"]);
+    // …and no page of another company's site is read at all (owner, round 10)
+    expect(vsPages(results, sources, "Bolt", "bolt.new", () => true, "Bolt builds apps with AI")).toEqual([]);
   });
-  it("the pages the owner marked right stay (Phorest vs Fresha, Snyk vs Wiz)", () => {
+  it("a page on the company's own domain stays (Phorest vs Fresha on phorest.com); the same page seen from Fresha does not", () => {
     const r = [{ url: "https://www.phorest.com/compare/phorest-vs-fresha/", title: "Phorest vs Fresha - Compare Salon & Clinic Software" }];
-    const s = [{ source_id: "X3", url: r[0].url, title: r[0].title, content: "", source_type: "news_article" }] as never;
-    expect(vsPages(r, s, "Fresha", "fresha.com", () => true, "Fresha is a booking platform for salons").map((c) => c.name)).toEqual(["Phorest"]);
+    const s = [{ source_id: "X3", url: r[0].url, title: r[0].title, content: "", source_type: "company_site" }] as never;
+    expect(vsPages(r, s, "Phorest", "phorest.com", () => true, "Phorest is a booking platform for salons").map((c) => c.name)).toEqual(["Fresha"]);
+    expect(vsPages(r, s, "Fresha", "fresha.com", () => true, "Fresha is a booking platform for salons")).toEqual([]);
   });
 });
 
@@ -201,5 +201,18 @@ describe("own-site comparison pages (owner, round 10)", () => {
   it("ignores categories", () => {
     expect(comparisonTitleCompetitor("Alternative to spreadsheets", "Port")).toBeNull();
     expect(comparisonTitleCompetitor("A better alternative to traditional banks", "Port")).toBeNull();
+  });
+});
+
+describe("batch 6 comparison pages (owner, round 10)", () => {
+  it("cleans a year and brackets: 'SAMCO Vs Dhan (2026): Which Broker Is Better'", () => {
+    expect(vsTitleCompetitor("SAMCO Vs Dhan (2026): Which Broker Is Better For Active Traders", "SAMCO")).toBe("Dhan");
+  });
+  it("an IPO page, an investment type and a page of another site are no competitor", () => {
+    expect(comparisonTitleCompetitor("Gaja Alternative Asset Management Limited IPO Date, Price, Review", "SAMCO")).toBeNull();
+    expect(comparisonTitleCompetitor("Compare - StockBasket Vs Real Estate", "SAMCO")).toBeNull();
+    const r = [{ url: "https://www.xe.com/compare/mbank-vs-xe/", title: "Compare mBank vs Xe" }];
+    const s = [{ source_id: "X1", url: r[0].url, title: r[0].title, content: "", source_type: "news_article" }] as never;
+    expect(vsPageClaims(r, s, "MBank", "mbank.ae")).toEqual([]);
   });
 });

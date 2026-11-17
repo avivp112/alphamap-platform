@@ -1,0 +1,181 @@
+[
+ {
+  "id": "canopy_no_dhny",
+  "why": "Canopy: no founding year from a sentence about DHNY",
+  "kind": "absent",
+  "company": "Canopy",
+  "field": "founded_year",
+  "quote_match": "DHNY"
+ },
+ {
+  "id": "spin_no_gallery",
+  "why": "Spin Studio: no founding year from the gallery's sentence",
+  "kind": "absent",
+  "company": "Spin Studio",
+  "field": "founded_year"
+ },
+ {
+  "id": "no_xe",
+  "why": "MBank: no competitor Xe (a page of another site)",
+  "kind": "absent",
+  "company": "MBank",
+  "field": "competitor_declared",
+  "match": "^Xe$"
+ },
+ {
+  "id": "no_gaja",
+  "why": "SAMCO: no competitor Gaja (an IPO page)",
+  "kind": "absent",
+  "company": "SAMCO",
+  "field": "competitor_declared",
+  "match": "Gaja"
+ },
+ {
+  "id": "no_real_estate_competitor",
+  "why": "SAMCO: no competitor 'Real Estate' (an investment type)",
+  "kind": "absent",
+  "company": "SAMCO",
+  "field": "competitor_declared",
+  "match": "Real Estate"
+ },
+ {
+  "id": "competitor_clean_name",
+  "why": "No competitor name carries a year or a bracket",
+  "kind": "absent",
+  "field": "competitor_declared",
+  "match": "\\(|\\b20\\d\\d\\b"
+ },
+ {
+  "id": "spin_not_enriched",
+  "why": "Spin Studio is not enriched (a design studio: services)",
+  "kind": "not_enriched",
+  "company": "Spin Studio"
+ },
+ {
+  "id": "zpharm_not_enriched",
+  "why": "zpharm is not enriched (a consumer product)",
+  "kind": "not_enriched",
+  "company": "zpharm"
+ },
+ {
+  "id": "kiwify_edtech",
+  "why": "Kiwify sector Consumer & Media, tag EdTech",
+  "kind": "present",
+  "company": "Kiwify",
+  "field": "tags",
+  "match": "EdTech"
+ },
+ {
+  "id": "kiwify_sector",
+  "why": "Kiwify sector is Consumer & Media (not Fintech)",
+  "kind": "present",
+  "company": "Kiwify",
+  "field": "sector",
+  "match": "Consumer & Media"
+ },
+ {
+  "id": "sherlok_fintech",
+  "why": "Sherlok sector is Fintech",
+  "kind": "present",
+  "company": "Sherlok",
+  "field": "sector",
+  "match": "Fintech"
+ },
+ {
+  "id": "sherlok_lending",
+  "why": "Sherlok tag Lending",
+  "kind": "present",
+  "company": "Sherlok",
+  "field": "tags",
+  "match": "Lending"
+ },
+ {
+  "id": "sherlok_not_proptech",
+  "why": "Sherlok is not Real Estate / PropTech",
+  "kind": "absent",
+  "company": "Sherlok",
+  "match": "Real Estate|PropTech"
+ },
+ {
+  "id": "estimote_not_real_estate",
+  "why": "Estimote is not Real Estate",
+  "kind": "absent",
+  "company": "Estimote",
+  "field": "sector",
+  "match": "Real Estate"
+ },
+ {
+  "id": "estimote_iot",
+  "why": "Estimote tag IoT & Connectivity",
+  "kind": "present",
+  "company": "Estimote",
+  "field": "tags",
+  "match": "IoT & Connectivity"
+ },
+ {
+  "id": "brighte_100_unknown",
+  "why": "Brighte's $100M round is not typed Other",
+  "kind": "absent",
+  "company": "Brighte",
+  "field": "round",
+  "match": "^Other"
+ },
+ {
+  "id": "ripio_no_series_a",
+  "why": "Ripio's $1.9M round is not typed Series A",
+  "kind": "absent",
+  "company": "Ripio",
+  "field": "round",
+  "match": "^Series A \\$1\\.9M"
+ },
+ {
+  "id": "sherlok_round_unknown",
+  "why": "Sherlok's $3.4M round is not typed Other",
+  "kind": "absent",
+  "company": "Sherlok",
+  "field": "round",
+  "match": "^Other"
+ },
+ {
+  "id": "okra_no_listing_quote",
+  "why": "Okra: no round rests on a data-table quote",
+  "kind": "absent",
+  "company": "Okra",
+  "field": "round",
+  "quote_match": "Pre-seed Pre-seed|raised to date"
+ },
+ {
+  "id": "spin_no_page_code",
+  "why": "Spin Studio: no tag rests on page code",
+  "kind": "absent",
+  "company": "Spin Studio",
+  "quote_match": "Markdown Content|URL Source"
+ },
+ {
+  "id": "sherlok_founder",
+  "why": "Sherlok: founder Adam Grocke",
+  "kind": "present",
+  "company": "Sherlok",
+  "field": "founder",
+  "match": "Adam Grocke",
+  "severity": "gap"
+ },
+ {
+  "id": "kiwify_founders",
+  "why": "Kiwify: founders Artur Ribas and Marinho Gomes",
+  "kind": "present",
+  "company": "Kiwify",
+  "field": "founder",
+  "match": "Artur Ribas",
+  "severity": "gap"
+ },
+ {
+  "id": "kiwify_founder2",
+  "why": "Kiwify: Marinho Gomes",
+  "kind": "present",
+  "company": "Kiwify",
+  "field": "founder",
+  "match": "Marinho Gomes",
+  "severity": "gap"
+ }
+]

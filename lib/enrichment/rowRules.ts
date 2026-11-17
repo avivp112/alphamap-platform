@@ -8,10 +8,13 @@ import { isExplainer, namesCompanyUpFront } from "./newsRelevance.ts";
 import { foundedYearFromSite } from "./siteFacts.ts";
 import { NOT_A_PRODUCT_SENTENCE } from "./quoteFinder.ts";
 import { detectAcquisition } from "./acquisition.ts";
-import { normalizeForMatch } from "./evidence.ts";
+import { normalizeForMatch, quoteIsNotASentence } from "./evidence.ts";
 import { sectorDecision } from "./techOverrides.ts";
+import { sentenceIsAboutCompany, isThirdPartyPage } from "./subject.ts";
 import { amountFromAddress } from "./hints.ts";
 import { extractNumbersFromText } from "./evidence.ts";
+import { statedRoundLabels } from "./assemble.ts";
+import { refineRoundType } from "./rounds.ts";
 
 export interface RowLike { company?: string; field: string; after: string; source_url?: string | null; quote?: string | null; payload?: string | null; before?: string | null; [k: string]: unknown }
 
@@ -60,6 +63,7 @@ export function brandFromTexts(companyName: string, texts: string[]): string | n
 export function rowProblem(r: RowLike, companyName: string, today: string, weekBefore = 0): string | null {
   const url = r.source_url ?? "";
   if (r.quote && looksLikeAddress(r.quote)) return "its quote is an address, not text of the page";
+  if (r.quote && quoteIsNotASentence(r.quote)) return "its quote is page code, not a sentence";
   const bad = isListingOrSponsoredUrl(url);
   if (bad) return bad === "sponsored_content" ? "its source is sponsored content" : "its source is a tag, list or search page, not the article";
   const quote = r.quote ?? "";
@@ -75,6 +79,8 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
   if (r.field === "founded_year") {
     if (/!\[|\]\(/.test(quote)) return "its quote is an image or a link";
     if (/\bsince\b/i.test(quote) && !foundedYearFromSite(quote)) return "\"since <year>\" here is not a founding statement";
+    if (quote && !sentenceIsAboutCompany(quote, companyName, { ownSite: true })) return "its sentence is not about the company";
+    if (isThirdPartyPage(url)) return "a customer, project or partner page does not say when the company was founded";
   }
   if (r.field === "tags") {
     if (!url) return "no source";
@@ -112,6 +118,20 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
     }
     const why = r.field === "(nothing)" ? null : rowProblem(r, companyName, today);
     if (why) { dropped.push(`${r.field}: ${String(r.after).slice(0, 60)} — ${why}`); continue; }
+    // A round type no quote names is Unknown (owner, round 10): "Series A" for "raising $1.9m", "Other" for a round nothing calls strategic or crowdfunded.
+    if (r.field === "round") {
+      const t = r.after.match(/^(Pre-Seed|Seed|Series [A-F]\+?|Growth|Bridge|Other)\b/)?.[1];
+      if (t) {
+        let amountQuote = r.quote ?? "";
+        try { const pl = JSON.parse(String(r.payload ?? "{}")) as { evidence?: Array<{ field?: string; quote?: string }> }; amountQuote += " " + (pl.evidence ?? []).filter((e) => e.field === "amount_raised").map((e) => e.quote ?? "").join(" "); } catch { /* no payload */ }
+        const stated = t === "Other" ? refineRoundType("Other", amountQuote) === "Other" : statedRoundLabels(amountQuote).includes(t);
+        if (!stated) {
+          dropped.push(`round: type ${t} → Unknown — no quote of the round names it`);
+          r = { ...r, after: r.after.replace(/^[A-Za-z+\- ]+?(?= \$| amount)/, "Unknown") };
+          if (r.payload) { try { const pl = JSON.parse(String(r.payload)); if (pl.round) pl.round.round_type = "Unknown"; r = { ...r, payload: JSON.stringify(pl) }; } catch { /* keep */ } }
+        }
+      }
+    }
     if (r.field === "round" && r.payload) {
       const out = stripUngroundedLead(r);
       if (out.stripped) dropped.push(`round: lead investor ${out.stripped} taken out — no quote of the round names it`);

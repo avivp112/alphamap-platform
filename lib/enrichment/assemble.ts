@@ -157,6 +157,9 @@ export function groundRoundType(round: V2Round, sources: LabeledSource[]): { rou
   // beside THIS figure — never because another figure in the same sentence is the loan.
   const amount = round.amount_raised?.value ?? null;
   const evidence = `${quotes}\n${roundTypeEvidence(round, byId)}`;
+  // What may NAME the type (owner, round 10: Ripio's "Series A" for a source that says only "raising $1.9m"; Brighte's, Ripio's and Sherlok's "Other"): the round's own quotes, the sentence of its
+  // amount and a headline that reports the amount — not the ±400 characters around them, where another round, another year or the word "strategic" may stand.
+  const narrowEvidence = `${quotes}\n${amountSentenceAndHeadline(round, byId)}`;
   const loanIsAnotherFigure = amount != null && !debtNextToAmount(evidence, amount) && otherFigureIsDebt(evidence, amount);
   if ((type === "Debt" || type === "Venture Debt") && loanIsAnotherFigure) {
     const named = statedRoundLabels(amountSentenceAndHeadline(round, byId));
@@ -181,7 +184,7 @@ export function groundRoundType(round: V2Round, sources: LabeledSource[]): { rou
     const named = statedRoundLabels(amountSentenceAndHeadline(round, byId));
     if (named.length === 1) return { round_type: named[0], stated: true };
     // "Other" is a type a source names (strategic, crowdfunding, a token sale…); a round whose sources do not say what kind it is, is Unknown (owner, 2026-11-14: KrillTech, Hydrostor).
-    return { round_type: refineRoundType(type, evidence), stated: true };
+    return { round_type: refineRoundType(type, narrowEvidence), stated: true };
   }
   // The amount's own sentence or headline names another round: that one
   // (owner, 2026-11-01 — Forbes' "Synthesia raises $50 million in Series B"
@@ -192,7 +195,7 @@ export function groundRoundType(round: V2Round, sources: LabeledSource[]): { rou
   }
   const re = TYPE_STATED[type];
   if (!re) return { round_type: type, stated: true };
-  return re.test(roundTypeEvidence(round, byId)) ? { round_type: type, stated: true } : { round_type: "Unknown", stated: false };
+  return re.test(narrowEvidence) ? { round_type: type, stated: true } : { round_type: "Unknown", stated: false };
 }
 
 /**

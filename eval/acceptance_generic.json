@@ -57,5 +57,27 @@
   "fields": [
    "sector"
   ]
+ },
+ {
+  "id": "round_type_in_quote",
+  "why": "A round's type is written only when its quote names it (else Unknown)",
+  "kind": "round_type_in_quote"
+ },
+ {
+  "id": "no_non_sentence_quotes",
+  "why": "Every quote is a sentence, not page code",
+  "kind": "no_non_sentence_quotes"
+ },
+ {
+  "id": "leader_role_in_quote",
+  "why": "A leader's executive role is in its quote",
+  "kind": "leader_role_in_quote"
+ },
+ {
+  "id": "no_customer_page_founded",
+  "why": "No founding year rests on a customer / project / partner page",
+  "kind": "absent",
+  "field": "founded_year",
+  "source_match": "/(projects?|case-stud[a-z]*|clients?|customers?|work|portfolio|partners?|success-stories?)/"
  }
 ]
