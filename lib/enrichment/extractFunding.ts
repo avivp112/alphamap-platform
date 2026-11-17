@@ -104,7 +104,7 @@ export function roundToRoundLike(round: V2Round): RoundLike {
     // (like v1's own insertNewRounds()) must normalize defensively rather
     // than trust the raw string ever reaching rounds.ts's dedup or a DB
     // insert unnormalized.
-    round_type: refineRoundType(round.round_type, [round.amount_raised, round.valuation, round.announcement_date, round.lead_investor].map((f) => f?.evidence_quote ?? "").join(" ")),
+    round_type: refineRoundType(round.round_type, round.amount_raised?.evidence_quote ?? ""),
     amount_raised: amount.usd,
     ...(amount.currency ? { amount_original: amount.original, amount_currency: amount.currency } : {}),
     valuation: valuation.usd,
@@ -256,7 +256,7 @@ ${context}`;
 
 // ── Response processing (pure, testable without any live call) ──────────
 
-export type DropReasonCode = "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found" | "round_without_evidence";
+export type DropReasonCode = "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "source_not_found" | "round_without_evidence" | "quote_not_a_sentence";
 
 export interface DroppedField { field: string; reason: DropReasonCode }
 

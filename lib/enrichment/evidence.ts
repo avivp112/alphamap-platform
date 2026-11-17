@@ -197,7 +197,21 @@ export function valueAppearsInQuote(value: string | number, quote: string): bool
   return normalizeForMatch(quote).includes(normValue);
 }
 
-export type EvidenceDropReason = "source_not_found" | "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source";
+export type EvidenceDropReason = "source_not_found" | "evidence_mismatch" | "value_not_in_quote" | "url_not_in_source" | "quote_not_a_sentence";
+
+/**
+ * A quote is a sentence of the page, not its code (owner, round 10, batch 6: Spin Studio's "Title: SPIN Studio URL Source: … Markdown Content: [Spin](https://…", Okra's "1. $1M Pre-seed Pre-seed,
+ * $1M, $1M raised to date"): the reader's header lines, markdown images and links, a numbered figure list and a word said twice in a row are page furniture.
+ */
+export function quoteIsNotASentence(quote: string | null | undefined): boolean {
+  const q = (quote ?? "").trim();
+  if (!q) return false;
+  if (/\b(?:URL Source|Markdown Content|Published Time):|^\s*Title:/i.test(q)) return true;
+  if (/!\[|\]\(https?:/.test(q)) return true;
+  if (/^\s*\d+\.\s*[$€£]/.test(q)) return true;
+  if (/\b([\p{L}][\p{L}-]{3,})\s+\1\b/iu.test(q)) return true;
+  return false;
+}
 
 export interface EvidenceClaim {
   field: string;
@@ -247,6 +261,8 @@ export function verifyEvidence(
   if (typeof claim.evidence_quote !== "string" || !claim.evidence_quote.trim()) {
     return { verified: false, drop_reason: "evidence_mismatch" };
   }
+
+  if (quoteIsNotASentence(claim.evidence_quote)) return { verified: false, drop_reason: "quote_not_a_sentence" };
 
   const { matched, similarity } = quoteMatchesSource(claim.evidence_quote, source.content);
   if (!matched) return { verified: false, drop_reason: "evidence_mismatch", similarity };

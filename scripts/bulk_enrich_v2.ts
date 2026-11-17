@@ -54,6 +54,7 @@ import { createSearchProviderState, jinaDisabled, readPageCached, type SearchPro
 import { techOverride } from "../lib/enrichment/techOverrides.ts";
 import { classifyDescription, mainTag } from "../lib/enrichment/postClassify.ts";
 import { acceptanceReport, specPathsFor } from "./acceptance_check.ts";
+import { traceTable } from "../lib/enrichment/runTrace.ts";
 import { rowProblem, applyRowRules, acquiredFromNews, brandAsWritten, brandFromTexts } from "../lib/enrichment/rowRules.ts";
 import { loadKnown, saveKnown, remember, applyKnown, markKey, NOT_REMEMBERED, KNOWN_PATH, type KnownStore, type KnownEntry } from "../lib/enrichment/knownSources.ts";
 import { injectKnown } from "../lib/enrichment/knownInject.ts";
@@ -713,6 +714,7 @@ async function main() {
     const ncell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
     writeFileSync("not_enriched.csv", "\uFEFF" + ["company,website,why,detail", ...notEnrichedRows.map((r) => [r.company, r.website, r.why, r.detail].map(ncell).join(","))].join("\r\n") + "\r\n");
     console.log(`📋  ${notEnrichedRows.length} company(ies) not enriched, with the reason, in not_enriched.csv.`);
+    { const tt = traceTable(); if (tt) console.log(`\n${tt}\n`); }
     // Companies whose address on file is another business or unreadable and whose own site was not found: a list of their own (owner, round 10).
     const unresolved = notEnrichedRows.filter((r) => r.why === "domain_unresolved");
     if (unresolved.length) {

@@ -745,6 +745,9 @@ export async function fetchArticleTexts(urls: string[], state: SearchProviderSta
  * Everything is checked against looksLikeRealContent(), so a generic 404
  * page isn't counted as a real source whichever provider fetched it.
  */
+/** Per site: how many pages its sitemap offered and how many pages were read (for the run's trace table). */
+export const sitemapStats = new Map<string, { found: number; read: number }>();
+
 /**
  * The sitemap's pages worth reading (sitemap.ts), cached per site; [] when the site has none. Read through the page readers like every page of the company's site — never a direct
  * fetch (providerOrder.test.ts) — so what comes back is text: the addresses are taken from it whether or not the XML tags survived.
@@ -819,12 +822,14 @@ export async function fetchCompanyWebsitePages(
   }
   // The site's own sitemap (owner, round 10): sitemap.xml, or the Sitemap line of robots.txt; the pages whose path says about / team / leadership / contact / press / news / careers /
   // impressum / legal / investors (and the same words in the site's language) replace the fixed list, at most 30 pages. No sitemap: the fixed list stays.
+  let sitemapFound = 0;
   if (process.env.SITEMAP !== "off") {
     const fromMap = await sitemapPagesFor(root, state);
     if (fromMap.length) {
       const next = [urls[0], ...fromMap.filter((u) => u.replace(/\/+$/, "") !== urls[0].replace(/\/+$/, ""))].slice(0, MAX_SITE_PAGES);
       console.log(`    🗺️   sitemap: ${fromMap.length} page(s) chosen (${next.length} read, cap ${MAX_SITE_PAGES}) instead of the ${urls.length} fixed addresses.`);
       urls = next;
+      sitemapFound = fromMap.length;
     }
   }
   // Sixteen addresses on a site that does not answer would cost minutes: after four misses in a row the rest of the pages are not tried.
@@ -873,5 +878,6 @@ export async function fetchCompanyWebsitePages(
     pages.push({ url, content: capped, prompt_content: sent, provider, dev_links: devLinksFromText(content) });
     console.log(`    🌐  fetched ${url} (${content.length} chars, ${provider}${cachedPage ? ", cached" : ""}; ${sent.length} sent to the model)`);
   }
+  if (sitemapFound) sitemapStats.set(root.replace(/\/+$/, ""), { found: sitemapFound, read: pages.length });
   return pages;
 }

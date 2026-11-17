@@ -19,7 +19,7 @@ import { pickDevLinks } from "./devLinks";
 import Anthropic from "@anthropic-ai/sdk";
 import {
   verifyDomainMatch, webSearch, readPageCached, fetchPageHtml, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, fetchArticleTexts,
-  searchMostlyFailed, type SearchProviderState,
+  searchMostlyFailed, sitemapStats, type SearchProviderState,
 } from "./searchProviders.ts";
 import { filterByEntity, deriveIdentityKeywords, nameQualifiersOnOwnSite, isNamesakeDrop, type EntityAnchors } from "./entity.ts";
 import { buildLabeledSources, markCompanyLinkedFiles, mergeDuplicateResults, classifySourceType, type RawSearchResult, type LabeledSource } from "./sources.ts";
@@ -33,10 +33,12 @@ import { judgeNews, finishNews } from "./newsGate.ts";
 import { reconcileSector, subSectorUnsupported } from "./sectors.ts";
 import { siteBelongsToAnotherCompany, acquisitionHeadline, rebrandedAs, redirectBrand } from "./siteOwner.ts";
 import { resolveDomain, judgeSite } from "./domainResolve.ts";
-import { techOverride, sectorDecision } from "./techOverrides.ts";
+import { techOverride, sectorDecision, techAccepted } from "./techOverrides.ts";
+import { isThirdPartyPage, sentenceIsAboutCompany } from "./subject.ts";
 import { acquirerIn } from "./acquisition.ts";
 import { roundsFromNews } from "./newsRounds.ts";
 import { companyLanguage, localQueries, type Lang } from "./localSearch.ts";
+import { traceOf } from "./runTrace.ts";
 import { pageNamesCompany } from "./ownDomain.ts";
 import { translateItems } from "./translate.ts";
 import { foundedYearFromSite, copyrightStartYear, foundedInCityYear } from "./siteFacts.ts";
@@ -395,7 +397,7 @@ export async function collectCompany(
 
   // A company turned away as not technology stays turned away for a time (techMemory.ts): the same answer every run, and no searches spent.
   if (!ctx.update) {
-    const before = storedRejection(row.id);
+    const before = techAccepted(row.name) ? null : storedRejection(row.id);
     if (before) {
       console.log(`    🧪  Technology: turned away on ${before.date} (${before.kind} check) — ${before.reason.slice(0, 160)}; reused (TECH_RECHECK=true looks again).`);
       return { outcome: "rejected", reason: "not_technology", detail: `earlier decision ${before.date}: ${before.reason}` };
@@ -482,7 +484,7 @@ export async function collectCompany(
     if (gate.verdict) console.log(`    🧪  Technology check: ${gate.verdict.enough_information === false ? "no decision (too little information)" : gate.verdict.is_tech_company ? "technology" : "not technology"} (${gate.verdict.confidence}${cachedVerdict ? ", from the saved verdict" : ""}) — ${gate.verdict.reason}`);
     else console.log("    🧪  Technology check: the model gave no verdict — the profile call decides.");
     if (gate.verdict && gate.verdict.enough_information === false) { console.log(`    ❔  Technology check: no decision — ${gate.verdict.reason}`); }
-    if (shouldSkipAsNonTech(gate.verdict)) {
+    if (shouldSkipAsNonTech(gate.verdict) && !techAccepted(row.name)) {
       console.log(`    🚫  REJECTED before searching — not a technology company: ${gate.verdict!.reason}`);
       // A site that shows another business than the company's own description is a website to fix.
       if (gate.verdict!.site_matches_description === false) ctx.onWebsiteIssue?.("content_mismatch", gate.verdict!.reason);
@@ -492,9 +494,17 @@ export async function collectCompany(
     }
   }
   ctx.onStage?.("searching");
+  const localLang = companyLanguage({ country: row.country, website: effectiveWebsite, siteText: websitePages.map((p) => p.content).join("\n") });
   const rawSearchResults = ctx.update
     ? await runUpdateSearches(row, anchor, existingRounds.length > 0, gapFillDue, searchState)
-    : await runAllSearches(row.name, anchor, searchState, companyLanguage({ country: row.country, website: effectiveWebsite, siteText: websitePages.map((p) => p.content).join("\n") }));
+    : await runAllSearches(row.name, anchor, searchState, localLang);
+  {
+    const t = traceOf(row.name);
+    t.lang = localLang;
+    t.local = Object.fromEntries(["founders_local", "founded_local", "headquarters_local", "raises_local", "acquired_local"].map((l) => [l, rawSearchResults.filter((r) => r.query_label === l).length]));
+    try { t.sitemap = effectiveWebsite ? sitemapStats.get(new URL(effectiveWebsite.startsWith("http") ? effectiveWebsite : `https://${effectiveWebsite}`).origin) ?? null : null; } catch { t.sitemap = null; }
+    console.log(`    🌐  Language of the company: ${localLang ?? "English / unknown"}${localLang ? ` — local searches returned ${Object.entries(t.local).map(([k, n]) => `${k.replace(/_local$/, "")} ${n}`).join(", ")}` : ""}; sitemap: ${t.sitemap ? `${t.sitemap.found} page(s) offered, ${t.sitemap.read} read` : "none used"}.`);
+  }
   // One source per URL — the same page returned by several queries used to
   // reach Claude several times (billed as input on every call).
   const { results: mergedResults, merged: duplicateResults } = mergeDuplicateResults(rawSearchResults);
@@ -695,7 +705,7 @@ export async function collectCompany(
       console.log(`    ❔  Technology undetermined — ${profile.tech_reason ?? "nothing to describe the company with"}; not enriched, to be tried again.`);
       return { outcome: "low_evidence", reason: "technology_undetermined", detail: `profile: ${profile.tech_reason ?? "the sources do not say what the company does"}` };
     }
-    if (decision === "reject") {
+    if (decision === "reject" && !techAccepted(row.name)) {
       console.log("    🚫  REJECTED — not a technology-driven company");
       rememberRejection(row.id, { reason: profile.tech_reason ?? profile.profile.description?.slice(0, 200) ?? "not technology", kind: "profile" });
       return { outcome: "rejected", reason: "not_technology", detail: `profile: ${profile.tech_reason ?? profile.profile.description?.slice(0, 200) ?? "the model gave no reason"}` };
@@ -890,7 +900,7 @@ export async function collectCompany(
     // A full name shown with the title Founder / Co-founder (in any language) on the company's own team or about page, or "<Name>, founder of <this company>" in an allowed article
     // (owner, round 10). "Founder of <another company>", "Founding engineer / member / team / partner" and "Founder's office" are not founders.
     for (const src of allSources) {
-      if (!statementKind(src) || !profileSourceAllowed(src, row.name)) continue;
+      if (!statementKind(src) || !profileSourceAllowed(src, row.name) || isThirdPartyPage(src.url)) continue;
       const text = `${src.title ?? ""}\n${src.content}`;
       const found = [...(src.source_type === "company_site" ? foundersFromCards(text, row.name) : []), ...foundersFromMentions(text, row.name)];
       for (const raw of found) {
@@ -1206,13 +1216,24 @@ export async function collectCompany(
     }
   }
 
+  // A founding year stands only on a sentence whose subject is the company (subject.ts; owner, round 10: Canopy's "DHNY was founded in 2022", Spin Studio's "Founded in 1901, the Whitechapel Gallery").
+  {
+    const fy = profile.profile.founded_year as { value: number; source_id: string; evidence_quote: string } | undefined;
+    const fsrc = fy ? sourceById.get(fy.source_id) : undefined;
+    if (fy && fsrc && fsrc.source_type !== "registry" && (isThirdPartyPage(fsrc.url) || !sentenceIsAboutCompany(fy.evidence_quote, row.name, { ownSite: fsrc.source_type === "company_site" }))) {
+      console.log(`    🚫  founded_year ${fy.value} not written — its sentence is not about ${row.name}: "${fy.evidence_quote.slice(0, 110)}" (${fsrc.url})`);
+      bump(stats.droppedByReason, "founded_year_subject_not_company");
+      profile.profile.founded_year = undefined;
+    }
+  }
   // a2. Founding year from a clear structure on the company's own site ("Founded in 2013", "Since 2013", "Est. 2013"); an article needs a sentence "founded in <city> in <year>" naming the company
   // (owner, round 10). The © year of the footer decides nothing; it only flags a founding year later than the first year of the © range.
   if (!ctx.update && !allowedFact(profile.profile.founded_year)) {
     let fromSite: { year: number; quote: string; src: LabeledSource } | null = null;
     for (const src of allSources) {
       if (src.source_type !== "company_site" || !profileSourceAllowed(src, row.name)) continue;
-      const hit = foundedYearFromSite(src.content);
+      if (isThirdPartyPage(src.url)) continue;   // a page about a customer, project or partner (subject.ts)
+      const hit = foundedYearFromSite(src.content, undefined, { companyName: row.name, ownSite: true });
       if (hit) { fromSite = { ...hit, src }; break; }
     }
     if (fromSite) {
@@ -2048,7 +2069,7 @@ export async function collectCompany(
     if (domain) headcountExtra.push(...await waybackHeadcount(domain, row.name, io));
     // The company's own pages as they are now (owner, round 10): "Team of 50+", "over 200 people" → a lower bound, site_stated; a team page that shows N people → "N+", observed.
     for (const src of allSources) {
-      if (src.source_type !== "company_site" || !profileSourceAllowed(src, row.name)) continue;
+      if (src.source_type !== "company_site" || !profileSourceAllowed(src, row.name) || isThirdPartyPage(src.url)) continue;
       const stated = sizeStatement(src.content);
       if (stated && !headcountExtra.some((p) => p.type === "site_stated" && p.sourceUrl === src.url)) {
         headcountExtra.push({ date: today, value: stated.value, ...(stated.lowerBound ? { lowerBound: true } : {}), type: "site_stated", measure: "count_at_date", sourceUrl: src.url, quote: stated.sentence });
