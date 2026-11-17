@@ -36,6 +36,7 @@ import { resolveDomain, judgeSite } from "./domainResolve.ts";
 import { techOverride, sectorDecision } from "./techOverrides.ts";
 import { acquirerIn } from "./acquisition.ts";
 import { roundsFromNews } from "./newsRounds.ts";
+import { companyLanguage, localQueries, type Lang } from "./localSearch.ts";
 import { pageNamesCompany } from "./ownDomain.ts";
 import { translateItems } from "./translate.ts";
 import { foundedYearFromSite, copyrightStartYear, foundedInCityYear } from "./siteFacts.ts";
@@ -76,6 +77,7 @@ import { namesCompany } from "./headcount.ts";
 import { companiesHouseHeadcount, brregHeadcount, waybackHeadcount, type HeadcountIo } from "./headcountCollect.ts";
 import type { HistoryPoint } from "./headcountHistory.ts";
 import { sizeStatement } from "./headcountSources.ts";
+import { chooseRegistryRecord, type RegistryRecord } from "./registerRecord.ts";
 import { lookupRegisters, nodeRegisterIo, registerDecides, type RegisterContext, type RegisterFinding } from "./registers.ts";
 import { stripHonorific, mergeLeadersByPerson } from "./people.ts";
 import { countryFromLocationQuote } from "./location.ts";
@@ -236,6 +238,8 @@ export interface CollectedCompany {
   outcome: "collected";
   /** The company's own site, found by name when the address on file was another business or unreadable (domainResolve.ts): a proposal, never applied. */
   websiteProposal?: { from: string | null; to: string; reason: string };
+  /** What the registers add (registerRecord.ts): own columns, never the headquarters or the founding year. */
+  registry?: { record: RegistryRecord; sourceId: string; dateSourceId: string };
   /** What kind of company this was, for the stratified precision sample (owner, round 10). */
   flags?: { translated: boolean; sources: number; techBorderline: boolean };
   /** Headcount points from registers, plans and archived pages (headcountHistory.ts); each with its source and type. */
@@ -286,7 +290,7 @@ const EMPTY_FUNDING_OUTCOME: NonNullable<Awaited<ReturnType<typeof extractFundin
 /** Hints searched per company and run (three searches each at most); the rest wait for the next run. */
 const MAX_HINTS_SEARCHED = 3;
 
-export async function runAllSearches(name: string, anchor: string, state: SearchProviderState): Promise<RawSearchResult[]> {
+export async function runAllSearches(name: string, anchor: string, state: SearchProviderState, lang: Lang | null = null): Promise<RawSearchResult[]> {
   const queries: Array<[string, string]> = [
     // history/amounts/backers (three overlapping funding queries) merged
     // into one general query plus one aimed at the funding databases.
@@ -314,6 +318,8 @@ export async function runAllSearches(name: string, anchor: string, state: Search
   // SEARCH_SKIP=acquisitions,financials — leaves those core queries out, to measure what they add on the
   // golden set (owner, 2026-11-05: search is ~60% of the cost). Unset in every normal run.
   const skip = new Set((process.env.SEARCH_SKIP ?? "").split(",").map((x) => x.trim()).filter(Boolean));
+  // The same fixed searches in the language of the company's country (owner, round 10; localSearch.ts).
+  if (lang && process.env.LOCAL_SEARCH !== "off") queries.push(...localQueries(name, anchor, lang));
   const [searchBatches, newsResults] = await Promise.all([
     Promise.all(queries.filter(([label]) => !skip.has(label)).map(([label, q]) => webSearch(q, label, state))),
     // Serper's News endpoint is primary for news; the site:-heavy query is
@@ -325,8 +331,8 @@ export async function runAllSearches(name: string, anchor: string, state: Search
     ),
   ]);
   // Which fixed searches ran, and what each returned (owner, round 10): a missing value is either a search that found nothing or an extraction that missed it.
-  const fixed = ["raises", "funding_round", "founded_by", "headquarters"].filter((l) => !skip.has(l) && queries.some(([q]) => q === l));
-  console.log(`    🔎  Fixed searches: ${fixed.map((l) => `${l} (${searchBatches.flat().filter((r) => r.query_label === l).length} result(s))`).join(", ")}`);
+  const fixed = ["raises", "funding_round", "founded_by", "headquarters", ...(lang ? ["founders_local", "founded_local", "headquarters_local", "raises_local", "acquired_local"] : [])].filter((l) => !skip.has(l) && queries.some(([q]) => q === l));
+  console.log(`    🔎  Fixed searches${lang ? ` (+ in ${lang})` : ""}: ${fixed.map((l) => `${l} (${searchBatches.flat().filter((r) => r.query_label === l).length} result(s))`).join(", ")}`);
   return [...searchBatches.flat(), ...newsResults];
 }
 
@@ -488,7 +494,7 @@ export async function collectCompany(
   ctx.onStage?.("searching");
   const rawSearchResults = ctx.update
     ? await runUpdateSearches(row, anchor, existingRounds.length > 0, gapFillDue, searchState)
-    : await runAllSearches(row.name, anchor, searchState);
+    : await runAllSearches(row.name, anchor, searchState, companyLanguage({ country: row.country, website: effectiveWebsite, siteText: websitePages.map((p) => p.content).join("\n") }));
   // One source per URL — the same page returned by several queries used to
   // reach Claude several times (billed as input on every call).
   const { results: mergedResults, merged: duplicateResults } = mergeDuplicateResults(rawSearchResults);
@@ -1147,6 +1153,7 @@ export async function collectCompany(
   // its quote for an HQ word again (Anonymised's "7 Bell Yard, London" — model check 2026-11-02).
   let hqDecided = false;
   let statementsAll: HqStatement[] = [];
+  let registry: { record: RegistryRecord; sourceId: string; dateSourceId: string } | undefined;
   // Extra searches (EXTRA_SEARCHES, default 4, owner 2026-11-07): competitors by tier and the founders' background share them.
   let extraSearchesLeft = Math.max(0, Number(process.env.EXTRA_SEARCHES ?? 4) || 0);
   const extraSearch = async (query: string, label: string): Promise<RawSearchResult[]> => {
@@ -1765,6 +1772,8 @@ export async function collectCompany(
       founders: (profile.profile.founders ?? []).map((f) => f.name).filter(Boolean),
       legalName: legal.legalName ?? null,
       statedFoundingCountry: profile.profile.founding_country?.value ?? null,
+      country: row.country ?? profile.profile.country?.value ?? null,
+      domain,
     });
     // A register decides founding only for the company's own entity in its headquarters country
     // (registers.ts registerDecides): Wiz's UK subsidiary, Upwind's, Black Forest Labs' US parent.
@@ -1774,6 +1783,19 @@ export async function collectCompany(
       if (d.decides) continue;
       console.log(`    🏛️   Register ${f.register}: ${f.entity} (${f.number}) not used for founded year / founding country — ${d.why === "local_subsidiary" ? "a local subsidiary (a country in its name)" : d.why === "headquarters_unknown" ? "no headquarters decided to compare its country with" : `the headquarters is not in ${f.founding_country}`}.`);
       bump(stats.droppedByReason, `register_${d.why}`);
+    }
+    // What the registers add as columns of their own (registerRecord.ts): the legal name, number, jurisdiction, address and the earliest incorporation date.
+    const record = chooseRegistryRecord(findings, row.name, hqCountry);
+    if (record) {
+      const rs: LabeledSource = { url: record.primary.url, title: `${record.legal_name} — register`, content: record.primary.quote, provider: "registry", query_label: "register_record", source_id: `R${allSources.length + 1}`, source_type: "registry" };
+      allSources.push(rs); sourceById.set(rs.source_id, rs);
+      let ds = rs;
+      if (record.dateFrom && record.dateFrom !== record.primary) {
+        ds = { url: record.dateFrom.url, title: `${record.dateFrom.entity} — register`, content: record.dateFrom.quote, provider: "registry", query_label: "register_record", source_id: `R${allSources.length + 1}`, source_type: "registry" };
+        allSources.push(ds); sourceById.set(ds.source_id, ds);
+      }
+      registry = { record, sourceId: rs.source_id, dateSourceId: ds.source_id };
+      console.log(`    🏛️   Register record: ${record.legal_name} (${record.company_number}), ${record.incorporation_jurisdiction}${record.incorporation_date ? `, incorporated ${record.incorporation_date}` : ""}${record.registered_address ? `, ${record.registered_address}` : ""}`);
     }
     const reg = findings.find((f) => registerDecides(f, row.name, hqCountry).decides);
     if (reg) { registerLegalName = reg.entity; registerCountry = reg.founding_country; if (reg.register === "uk_companies_house") ukRegisterEntity = { number: reg.number, entity: reg.entity }; }
@@ -2057,6 +2079,7 @@ export async function collectCompany(
   return {
     outcome: "collected",
     ...(websiteProposal ? { websiteProposal } : {}),
+    ...(registry ? { registry } : {}),
     flags: {
       translated: allSources.some((x) => x.translation_offset != null),
       sources: allSources.length,

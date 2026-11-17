@@ -23,6 +23,10 @@ export const FIELD_COLUMNS: Record<string, string[]> = {
   competitor_declared: ["competitors"], competitor_market: ["competitors"],
   patent: ["patents", "patent_count", "patent_fields"],
   news: ["news"],
+  // A purchase (owner, round 10): the status, who bought, when, and the name it trades under afterwards. Derived from the accepted news (acquisition.ts).
+  // What the registers hold (owner, round 10; registerRecord.ts): each its own field, opened by marks like every other.
+  legal_name: ["legal_name"], registered_address: ["registered_address"], incorporation_date: ["incorporation_date"], incorporation_jurisdiction: ["incorporation_jurisdiction"], company_number: ["company_number"],
+  acquired: ["status", "acquired_by", "exit_date", "brand_after_acquisition"],
   // Not columns of their own: the rounds table, and the bios inside founders / leadership.
   round: [], founder_background: [],
 };

@@ -218,7 +218,7 @@ vi.mock("@anthropic-ai/sdk", () => ({ default: class { messages = { create: crea
 
 describe("PILOT=true: only HQ, founded year and founding country are written (owner, 2026-11-01)", () => {
   beforeAll(async () => {
-    process.env.DOMAIN_RESOLVE = "false"; process.env.PREFLIGHT = "off"; process.env.TRANSLATE = "false"; process.env.TECH_DECISIONS = `${process.env.TMPDIR ?? "/tmp"}/tech_decisions_smoke_${Date.now()}.json`; process.env.KNOWN_SOURCES = "off";
+    process.env.DOMAIN_RESOLVE = "false"; process.env.PREFLIGHT = "off"; process.env.SITEMAP = "off"; process.env.TRANSLATE = "false"; process.env.TECH_DECISIONS = `${process.env.TMPDIR ?? "/tmp"}/tech_decisions_smoke_${Date.now()}.json`; process.env.KNOWN_SOURCES = "off";
     process.env.DRY_RUN = "false";
     process.env.PILOT = "true";
     process.env.ONLY = "st-1";

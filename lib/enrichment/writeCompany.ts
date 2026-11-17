@@ -16,6 +16,8 @@ import { filterCrossSectorTags, industryFromTaxonomy, type SectorTaxonomy } from
 import { normalizeUrlForMatch } from "./extractMarket.ts";
 import { normalizeIsoDate, appendNew, reconcileOnFile, isSameRound } from "./assemble.ts";
 import { fetchArticleOgImage } from "./ogImage.ts";
+import { detectAcquisition } from "./acquisition.ts";
+import { brandFromTexts } from "./rowRules.ts";
 import { cleanPeople, mergeFoundersByName, isFounderEntry, cleanFounderTitle, canonicalTitle } from "./people.ts";
 import { samePersonName } from "./linkedin.ts";
 import { checkHeadcountOutlier } from "./validation.ts";
@@ -389,6 +391,45 @@ export async function writeCollected(
   for (const tagName of tagNames) {
     const { data: tagId } = await supabase.rpc("sector_id_by_name", { p_name: tagName });
     if (tagId) tagSectorIds.push(tagId as string);
+  }
+
+  // A purchase (owner, round 10): status acquired / majority_acquired, who bought, when (the date of the headline), and the name it trades under afterwards — from the company's
+  // accepted news alone, only for a company still "active" on file, and only when the acquired field is open. Each value has its provenance row: the headline's page.
+  {
+    const hit = row.status === "active" || row.status == null
+      ? detectAcquisition((market.news ?? []).map((n) => ({ url: n.url, title: n.title, content: "", date: n.published_date ?? null })), row.name)
+      : null;
+    if (hit) {
+      let src = allSources.find((x) => x.url === hit.url);
+      if (!src) {
+        src = { source_id: `A${allSources.length + 1}`, source_type: "news", url: hit.url, title: hit.quote, content: hit.quote, provider: "serper", query_label: "acquired_news" } as LabeledSource;
+        allSources.push(src); sourceById.set(src.source_id, src);
+      }
+      const ev = { source_id: src.source_id, evidence_quote: hit.quote };
+      patch.status = hit.status; provenance("status", hit.status, ev);
+      patch.acquired_by = hit.acquirer; provenance("acquired_by", hit.acquirer, ev);
+      if (hit.date) { patch.exit_date = hit.date; provenance("exit_date", hit.date, ev); }
+      const descTexts = [profile.profile.description ?? "", ...(profile.profile.description_sentences ?? []).map((x) => x.text)];
+      const brand = brandFromTexts(row.name, descTexts);
+      if (brand) {
+        const d = profile.profile.description_sentences?.find((x) => x.text.includes(brand));
+        const dsrc = d?.source_ids?.[0] ? sourceById.get(d.source_ids[0]) : undefined;
+        patch.brand_after_acquisition = brand;
+        provenance("brand_after_acquisition", brand, { source_id: dsrc?.source_id ?? src.source_id, evidence_quote: d?.quote ?? d?.text ?? hit.quote });
+      }
+      console.log(`    🏁  ${hit.status === "acquired" ? "Acquired" : "Majority-acquired"} by ${hit.acquirer} (${hit.date ?? "undated"})${brand ? `; now ${brand}` : ""} — from "${hit.quote.slice(0, 80)}"`);
+    }
+  }
+
+  // What the registers hold, as columns of their own (registerRecord.ts): never the headquarters, never the founding year.
+  if (collected.registry) {
+    const { record, sourceId, dateSourceId } = collected.registry;
+    const ev = { source_id: sourceId, evidence_quote: record.primary.quote };
+    patch.legal_name = record.legal_name; provenance("legal_name", record.legal_name, ev);
+    patch.company_number = record.company_number; provenance("company_number", record.company_number, ev);
+    patch.incorporation_jurisdiction = record.incorporation_jurisdiction; provenance("incorporation_jurisdiction", record.incorporation_jurisdiction, ev);
+    if (record.registered_address) { patch.registered_address = record.registered_address; provenance("registered_address", record.registered_address, ev); }
+    if (record.incorporation_date) { patch.incorporation_date = record.incorporation_date; provenance("incorporation_date", record.incorporation_date, { source_id: dateSourceId, evidence_quote: (record.dateFrom ?? record.primary).quote }); }
   }
 
   // Leadership & founders (additive merge, never destructive)

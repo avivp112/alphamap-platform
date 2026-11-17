@@ -171,3 +171,46 @@ describe("round 5 follow-up (owner, round 10)", () => {
     expect(renderAcceptance(err)).toMatch(/1 ERROR/);
   });
 });
+
+import { chooseRegistryRecord } from "./registerRecord";
+import { matchOpenCorporates, extractRegisterNumbers, parseKrsExtract, parseCnpj, matchByNumber, ilDate, type RegisterFinding } from "./registers";
+describe("registers as columns of their own (owner, round 10)", () => {
+  const f = (o: Partial<RegisterFinding>): RegisterFinding => ({ register: "uk_companies_house", entity: "Acme Ltd", number: "01", founded_year: 2018, founding_country: "United Kingdom", url: "u", quote: "q", match: "m", ...o });
+  const ctx = { name: "Acme", siteText: "", siteCities: [] as string[] };
+  it("the record is the entity in the headquarters country; a foreign register does not decide alone", () => {
+    expect(chooseRegistryRecord([f({ founding_country: "Israel", entity: "Acme Ltd", incorporation_date: "2019-01-01" })], "Acme", "United Kingdom")).toBeNull();
+    expect(chooseRegistryRecord([f({ incorporation_date: "2018-05-02" })], "Acme", null)).toBeNull();
+    const r = chooseRegistryRecord([f({ incorporation_date: "2018-05-02", registered_address: "1 High St, London" })], "Acme", "United Kingdom")!;
+    expect(r).toMatchObject({ legal_name: "Acme Ltd", incorporation_jurisdiction: "United Kingdom", registered_address: "1 High St, London", incorporation_date: "2018-05-02" });
+  });
+  it("incorporation date: the earliest among entries of the same company; a local subsidiary is not the company", () => {
+    const us = f({ register: "us_sec_form_d", founding_country: "United States", incorporation_date: "2016", number: "CIK1" });
+    const uk = f({ incorporation_date: "2018-05-02" });
+    expect(chooseRegistryRecord([uk, us], "Acme", "United Kingdom")!.incorporation_date).toBe("2016");
+    expect(chooseRegistryRecord([f({ entity: "Acme UK Ltd", incorporation_date: "2021-01-01" })], "Acme", "United Kingdom")).toBeNull();
+  });
+  it("OpenCorporates: name + country + a second signal; several entries → nothing written", () => {
+    const item = (num: string, addr: string) => ({ company: { name: "Acme Ltd", company_number: num, jurisdiction_code: "gb", incorporation_date: "2018-05-02", registered_address_in_full: addr } });
+    const one = matchOpenCorporates([item("111", "1 High St, London")], { ...ctx, siteCities: ["London"], country: "United Kingdom" });
+    expect(one.finding?.number).toBe("111");
+    const two = matchOpenCorporates([item("111", "1 High St, London"), item("222", "9 Low Rd, London")], { ...ctx, siteCities: ["London"], country: "United Kingdom" });
+    expect(two.finding).toBeNull();
+    expect(two.ambiguous).toHaveLength(2);
+    expect(matchOpenCorporates([item("111", "1 High St, London")], { ...ctx, siteCities: ["London"], country: "Israel" }).finding).toBeNull();
+    expect(matchOpenCorporates([item("111", "1 High St, Leeds")], { ...ctx, siteCities: ["London"], country: "United Kingdom" }).finding).toBeNull();
+  });
+  it("KRS and CNPJ by the number the site gives", () => {
+    expect(extractRegisterNumbers("Spółka wpisana do KRS 0000123456, NIP 123").krs).toBe("0000123456");
+    expect(extractRegisterNumbers("CNPJ: 12.345.678/0001-90").cnpj).toBe("12345678000190");
+    const krs = parseKrsExtract({ odpis: { naglowekA: { dataRejestracjiWKRS: "14.03.2019" }, dane: { dzial1: { danePodmiotu: { nazwa: "ACME SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ" }, siedzibaIAdres: { adres: { ulica: "ul. Prosta", nrDomu: "1", kodPocztowy: "00-001", miejscowosc: "Warszawa" } } } } } }, "0000123456")!;
+    expect(krs).toMatchObject({ date: "2019-03-14", address: "ul. Prosta 1, 00-001 Warszawa" });
+    expect(parseCnpj({ razao_social: "ACME LTDA", data_inicio_atividade: "2015-02-10", logradouro: "RUA A", numero: "5", municipio: "SAO PAULO", uf: "SP", cep: "01000000" })?.date).toBe("2015-02-10");
+    expect(matchByNumber("pl_krs", "0000123456", { entity: "ACME SP. Z O.O.", date: "2019-03-14", address: null }, { name: "Acme", siteText: "", siteCities: [] })?.incorporation_date).toBe("2019-03-14");
+    expect(matchByNumber("pl_krs", "0000123456", { entity: "OTHER SP. Z O.O.", date: "2019-03-14", address: null }, { name: "Acme", siteText: "", siteCities: [] })).toBeNull();
+  });
+  it("the Israeli registrar's date", () => {
+    expect(ilDate("14/03/2019")).toBe("2019-03-14");
+    expect(ilDate("2019-03-14")).toBe("2019-03-14");
+    expect(ilDate("2019")).toBe("2019");
+  });
+});

@@ -159,7 +159,7 @@ describe("bulk_enrich_v2 MODE=update end to end (all I/O faked)", () => {
     const outDir = mkdtempSync(join(tmpdir(), "out-"));
     process.env.BATCH_DIR = join(outDir, "field_review");
     process.env.PILOT_REPORT = join(outDir, "report.csv");
-    process.env.PREFLIGHT = "off";
+    process.env.PREFLIGHT = "off"; process.env.SITEMAP = "off";
     Object.assign(process.env, {
       MODE: "update", DRY_RUN: "false", SEARCH_CACHE: "false", DELAY_MS: "0", REFRESH_EVERY: "0",
       SERP_KEY: "test", TAVILY_API_KEY: "test", SEEN_URLS_DIR: mkdtempSync(join(tmpdir(), "seen-")),
