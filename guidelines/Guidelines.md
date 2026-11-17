@@ -1,3 +1,14 @@
+# AlphaMap design tokens
+
+New and rebuilt UI uses the `am-` tokens defined in `src/styles/theme.css`. Do not add literal hex colours, ad-hoc radii or `text-[10px]` sizes to new code.
+
+* Colour: `text-am-ink` / `text-am-ink-2` / `text-am-ink-3`, `bg-am-canvas`, `bg-am-surface`, `border-am-line`, `text-am-accent`, `text-am-pos`, `text-am-neg`, `text-am-warn`, `text-am-star`.
+* One accent hue (`am-accent`, blue) for selection, links and focus. Green and red only for a positive or negative change. Amber (`am-star`) only for saved items. Stage and category labels are neutral, never colour-coded.
+* Radius: `rounded-am-card` (12px) for cards and panels, `rounded-am-ctl` (8px) for inputs and buttons, `rounded-full` only for avatars and chips.
+* Shadow: `shadow-am-1` for cards, `shadow-am-2` for floating layers (popovers, drawers).
+* Type: `text-am-caption` 12px (the minimum for any text), `text-am-body` 13px, `text-am-title` 15px, `text-am-kpi` 20px, `text-am-display` 28px. Numbers in tables use `tabular-nums` and are right-aligned.
+* Use logical properties (`ms-`, `me-`, `ps-`, `pe-`, `text-start`, `text-end`) so right-to-left layouts work later.
+
 **Add your own guidelines here**
 <!--
 
