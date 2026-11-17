@@ -91,14 +91,14 @@ type MenuId = 'data';
 
 const topLinkCls =
   "relative px-3.5 py-2 text-sm font-medium transition-colors rounded-lg";
-const topLinkActive = "text-[#0F172A] font-semibold";
-const topLinkInactive = "text-gray-500 hover:text-[#0F172A] hover:bg-gray-50";
+const topLinkActive = "text-am-ink font-semibold";
+const topLinkInactive = "text-gray-500 hover:text-am-ink hover:bg-gray-50";
 
 function ActiveIndicator({ show }: { show: boolean }) {
   return (
     <span
       className={cn(
-        "pointer-events-none absolute left-3.5 right-3.5 bottom-0.5 h-[2px] rounded-full bg-[#0F172A] transition-opacity duration-150",
+        "pointer-events-none absolute left-3.5 right-3.5 bottom-0.5 h-[2px] rounded-full bg-am-ink transition-opacity duration-150",
         show ? "opacity-100" : "opacity-0",
       )}
     />
@@ -165,7 +165,7 @@ function NavDropdown({
                     style={{ background: accent.bg }}
                   >
                     <div className="flex items-center justify-center w-11 h-11 rounded-lg bg-white shadow-sm">
-                      <Icon className="h-5 w-5 text-[#0F172A]/50" />
+                      <Icon className="h-5 w-5 text-am-ink/50" />
                     </div>
                   </div>
                   <div className="p-3">
@@ -183,7 +183,7 @@ function NavDropdown({
                 onClick={onSelect}
                 className={({ isActive: linkActive }) => cn(
                   "group flex flex-col rounded-lg border transition-all",
-                  linkActive ? "border-[#0F172A]/15 bg-gray-50" : "border-gray-100 hover:border-gray-200 hover:shadow-[0_4px_16px_rgba(15,23,42,0.08)]",
+                  linkActive ? "border-am-ink/15 bg-gray-50" : "border-gray-100 hover:border-gray-200 hover:shadow-[0_4px_16px_rgba(15,23,42,0.08)]",
                 )}
               >
                 <div
@@ -191,11 +191,11 @@ function NavDropdown({
                   style={{ background: accent.bg }}
                 >
                   <div className="flex items-center justify-center w-11 h-11 rounded-lg bg-white shadow-sm transition-transform duration-200 group-hover:scale-105">
-                    <Icon className="h-5 w-5 text-[#0F172A]" />
+                    <Icon className="h-5 w-5 text-am-ink" />
                   </div>
                 </div>
                 <div className="p-3">
-                  <p className="text-[15px] font-bold text-[#0F172A] leading-snug" style={{ fontFamily: "'Playfair Display', serif" }}>{t(labelKey)}</p>
+                  <p className="text-[15px] font-bold text-am-ink leading-snug" style={{ fontFamily: "'Playfair Display', serif" }}>{t(labelKey)}</p>
                   <p className="text-[11px] text-gray-500 leading-relaxed mt-1">{description}</p>
                 </div>
               </NavLink>
@@ -222,7 +222,7 @@ function MobileAccordion({
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center justify-between py-3 text-sm font-semibold text-[#0F172A]"
+        className="flex w-full items-center justify-between py-3 text-sm font-semibold text-am-ink"
       >
         {label}
         <ChevronDown className={cn("h-4 w-4 text-gray-400 transition-transform duration-150", expanded && "rotate-180")} />
@@ -237,7 +237,7 @@ function MobileAccordion({
                 onClick={onSelect}
                 className={({ isActive }) => cn(
                   "flex items-center gap-2.5 py-2.5 text-sm",
-                  isActive ? "font-semibold text-[#0F172A]" : "text-gray-600",
+                  isActive ? "font-semibold text-am-ink" : "text-gray-600",
                 )}
               >
                 <Icon className="h-4 w-4 text-gray-400" />
@@ -481,10 +481,10 @@ export function TopNav() {
           type="button"
           onClick={async () => navigate(await homePathNow("/"))}
           aria-label={t('nav.goHome')}
-          className="flex items-center gap-2 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/30 flex-none"
+          className="flex items-center gap-2 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-am-ink/30 flex-none"
         >
           <BrandMark size={32} />
-          <BrandWordmark className="text-xl tracking-tight text-[#111827] hidden sm:block" />
+          <BrandWordmark className="text-xl tracking-tight text-am-ink hidden sm:block" />
         </button>
 
         {showAppNav && (
@@ -493,7 +493,7 @@ export function TopNav() {
             onClick={() => setMobileOpen((o) => !o)}
             aria-expanded={mobileOpen}
             aria-label={t('nav.toggleNavigation')}
-            className="flex md:hidden items-center p-2 ml-1 text-[#0F172A]"
+            className="flex md:hidden items-center p-2 ml-1 text-am-ink"
           >
             {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
@@ -547,7 +547,7 @@ export function TopNav() {
           <Link
             to="/dashboard"
             onClick={() => setMobileOpen(false)}
-            className="block border-b border-gray-100 py-3 text-sm font-semibold text-[#0F172A]"
+            className="block border-b border-gray-100 py-3 text-sm font-semibold text-am-ink"
           >
             {t('nav.home')}
           </Link>
@@ -561,7 +561,7 @@ export function TopNav() {
           <Link
             to="/my-area"
             onClick={() => setMobileOpen(false)}
-            className="block py-3 text-sm font-semibold text-[#0F172A]"
+            className="block py-3 text-sm font-semibold text-am-ink"
           >
             {t('nav.myArea')}
           </Link>
@@ -590,7 +590,7 @@ export function TopNav() {
                 aria-expanded={notifOpen}
                 aria-haspopup="menu"
                 aria-label={t('header.notifications')}
-                className="relative rounded-full p-2.5 text-gray-500 hover:bg-gray-100 hover:text-[#111827] transition-colors native:h-10 native:w-10 native:flex native:items-center native:justify-center"
+                className="relative rounded-full p-2.5 text-gray-500 hover:bg-gray-100 hover:text-am-ink transition-colors native:h-10 native:w-10 native:flex native:items-center native:justify-center"
               >
                 {/* Phase 10: was a permanent decorative dot -- now only
                     renders when there's something real to show, and carries
@@ -609,11 +609,11 @@ export function TopNav() {
                   className="absolute right-0 top-[calc(100%+8px)] w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-gray-100 bg-white shadow-[0_12px_32px_rgba(15,23,42,0.12)] overflow-hidden"
                 >
                   <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-gray-100">
-                    <span className="text-xs font-bold text-[#111827]">{t('header.notifications')}</span>
+                    <span className="text-xs font-bold text-am-ink">{t('header.notifications')}</span>
                     {unreadCount > 0 && (
                       <button
                         onClick={handleMarkAllRead}
-                        className="flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-[#111827] transition-colors"
+                        className="flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-am-ink transition-colors"
                       >
                         <CheckCheck className="h-3 w-3" /> {t('header.markAllRead')}
                       </button>
@@ -648,7 +648,7 @@ export function TopNav() {
                             )}
                           />
                           <div className="min-w-0 flex-1">
-                            <p className="text-xs font-bold text-[#111827] truncate">{n.title}</p>
+                            <p className="text-xs font-bold text-am-ink truncate">{n.title}</p>
                             <p className="text-[11px] text-gray-500 leading-snug line-clamp-2 mt-0.5">{n.body}</p>
                             <p className="text-[10px] text-gray-400 mt-1">{timeAgo(n.created_at)}</p>
                           </div>
@@ -677,12 +677,12 @@ export function TopNav() {
                     nothing to balance against. */}
                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 flex-none">
                   {initials ? (
-                    <span className="text-[11px] font-bold text-[#0F172A]">{initials}</span>
+                    <span className="text-[11px] font-bold text-am-ink">{initials}</span>
                   ) : (
                     <User className="h-4 w-4 text-gray-600" />
                   )}
                 </div>
-                <span className="hidden sm:block max-w-[140px] truncate text-sm font-medium text-[#111827]">
+                <span className="hidden sm:block max-w-[140px] truncate text-sm font-medium text-am-ink">
                   {displayName}
                 </span>
                 <ChevronDown className="hidden sm:block h-3.5 w-3.5 text-gray-400 flex-none" />
@@ -695,7 +695,7 @@ export function TopNav() {
                 >
                   {(user?.name || user?.email) && (
                     <div className="px-3.5 py-2 mb-1 border-b border-gray-100">
-                      {user?.name && <p className="text-sm font-semibold text-[#111827] truncate">{user.name}</p>}
+                      {user?.name && <p className="text-sm font-semibold text-am-ink truncate">{user.name}</p>}
                       {user?.email && <p className="text-xs text-gray-400 truncate">{user.email}</p>}
                     </div>
                   )}
@@ -703,7 +703,7 @@ export function TopNav() {
                     to="/profile"
                     onClick={() => setMenuOpen(false)}
                     role="menuitem"
-                    className="flex items-center gap-2.5 px-3.5 py-2 text-sm text-[#111827] hover:bg-gray-50 transition-colors"
+                    className="flex items-center gap-2.5 px-3.5 py-2 text-sm text-am-ink hover:bg-gray-50 transition-colors"
                   >
                     <UserCircle className="h-4 w-4 text-gray-400" />
                     {t('header.profile')}
@@ -713,12 +713,12 @@ export function TopNav() {
                       to="/admin/review"
                       onClick={() => setMenuOpen(false)}
                       role="menuitem"
-                      className="flex items-center gap-2.5 px-3.5 py-2 text-sm text-[#111827] hover:bg-gray-50 transition-colors"
+                      className="flex items-center gap-2.5 px-3.5 py-2 text-sm text-am-ink hover:bg-gray-50 transition-colors"
                     >
                       <ShieldCheck className="h-4 w-4 text-gray-400" />
                       {t('header.reviewQueue')}
                       {pendingReview > 0 && (
-                        <span className="ml-auto rounded-full bg-[#0F172A] px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                        <span className="ml-auto rounded-full bg-am-ink px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
                           {pendingReview > 99 ? '99+' : pendingReview}
                         </span>
                       )}
@@ -743,13 +743,13 @@ export function TopNav() {
           <div className="flex items-center gap-2">
             <Link
               to="/login"
-              className="rounded-lg px-3.5 py-2 text-sm font-semibold text-[#111827] hover:bg-gray-50 transition-colors"
+              className="rounded-lg px-3.5 py-2 text-sm font-semibold text-am-ink hover:bg-gray-50 transition-colors"
             >
               {t('header.logIn')}
             </Link>
             <Link
               to="/signup"
-              className="rounded-lg bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-gray-900 transition-colors"
+              className="rounded-lg bg-am-ink px-4 py-2 text-sm font-semibold text-white hover:bg-gray-900 transition-colors"
             >
               {t('header.signUp')}
             </Link>
