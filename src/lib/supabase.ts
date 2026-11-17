@@ -357,6 +357,10 @@ export async function fetchStartups(): Promise<Startup[]> {
 export interface StartupListRow {
   id: string;
   name: string;
+  /** active | acquired | majority_acquired | ipo | closed (startups.status, carried by the search view). */
+  status?: string | null;
+  acquired_by?: string | null;
+  exit_date?: string | null;
   website: string | null;
   description: string | null;
   industry: string | null;
