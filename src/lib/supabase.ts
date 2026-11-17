@@ -10,6 +10,7 @@ import {
 import { documentPath, type CrmCompany, type CrmDocument, type DealTerm } from "./crm";
 
 import { countryFilterOr } from "./countryFilter";
+import { valuationOrClause, EMPTY_RANGE, type StartupSort } from "./startupFilters";
 const rawUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
@@ -416,6 +417,16 @@ export interface StartupSearchFilters {
   /** Startups the signed-in user has explicitly passed on — permanently
    * excluded, not just hidden for the session (see fetchPassedStartupIds). */
   excludeStartupIds?: string[];
+  /** Whole USD. Applies to startups_market.latest_valuation. */
+  valuationMin?: number;
+  valuationMax?: number;
+  /** With a valuation bound: also keep companies that have no valuation on record. */
+  valuationIncludeUnknown?: boolean;
+  /** Whole USD. Applies to startups_market.total_raised. */
+  raisedMin?: number;
+  raisedMax?: number;
+  /** Profile row updated within this many days of today. */
+  updatedWithinDays?: number;
 }
 
 export const STARTUPS_PAGE_SIZE = 40;
@@ -463,6 +474,22 @@ function applyStartupSearchFilters(
     const cutoff = new Date(Date.now() - filters.fundedWithinDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     q = q.gte("latest_round_date", cutoff);
   }
+  if (filters.valuationMin != null || filters.valuationMax != null) {
+    const range = { min: filters.valuationMin ?? null, max: filters.valuationMax ?? null, includeUnknown: filters.valuationIncludeUnknown ?? EMPTY_RANGE.includeUnknown };
+    const orClause = valuationOrClause(range);
+    if (orClause) {
+      q = q.or(orClause);
+    } else {
+      if (filters.valuationMin != null) q = q.gte("latest_valuation", filters.valuationMin);
+      if (filters.valuationMax != null) q = q.lte("latest_valuation", filters.valuationMax);
+    }
+  }
+  if (filters.raisedMin != null) q = q.gte("total_raised", filters.raisedMin);
+  if (filters.raisedMax != null) q = q.lte("total_raised", filters.raisedMax);
+  if (filters.updatedWithinDays != null) {
+    const cutoff = new Date(Date.now() - filters.updatedWithinDays * 24 * 60 * 60 * 1000).toISOString();
+    q = q.gte("updated_at", cutoff);
+  }
   if (filters.excludeStartupIds && filters.excludeStartupIds.length > 0) {
     q = q.not("id", "in", `(${filters.excludeStartupIds.join(",")})`);
   }
@@ -497,15 +524,20 @@ async function fromMarket<T>(run: (relation: string) => PromiseLike<{ data: T; e
 export async function fetchStartupsPage(
   filters: StartupSearchFilters,
   page: number,
+  sort?: StartupSort | null,
 ): Promise<StartupListRow[]> {
   const from = (page - 1) * STARTUPS_PAGE_SIZE;
   const to = from + STARTUPS_PAGE_SIZE - 1;
-  const { data, error } = await fromMarket((relation) =>
-    applyStartupSearchFilters(supabase.from(relation).select("*"), filters, relation)
-      .order("completeness_score", { ascending: false })
-      .order("updated_at", { ascending: false })
-      .range(from, to),
-  );
+  const { data, error } = await fromMarket((relation) => {
+    const base = applyStartupSearchFilters(supabase.from(relation).select("*"), filters, relation);
+    // An explicit sort puts rows with no value last whichever way it points, and ends on
+    // id so a row never repeats or vanishes between pages. Without one the order is
+    // unchanged: best-documented companies first, then most recently updated.
+    const ordered = sort
+      ? base.order(sort.key, { ascending: sort.dir === "asc", nullsFirst: false }).order("id", { ascending: true })
+      : base.order("completeness_score", { ascending: false }).order("updated_at", { ascending: false });
+    return ordered.range(from, to);
+  });
   if (error) throw error;
   return (data ?? []) as StartupListRow[];
 }
