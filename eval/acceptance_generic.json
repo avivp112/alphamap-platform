@@ -79,5 +79,16 @@
   "kind": "absent",
   "field": "founded_year",
   "source_match": "/(projects?|case-stud[a-z]*|clients?|customers?|work|portfolio|partners?|success-stories?)/"
+ },
+ {
+  "id": "memory_rows_pass_rules",
+  "why": "Every value that came from the memory passes this run's rules",
+  "kind": "memory_rows_pass_rules"
+ },
+ {
+  "id": "no_duplicate_competitors",
+  "why": "A competitor appears once under its clean name (no year, no bracket)",
+  "kind": "no_duplicates",
+  "field": "competitor_declared"
  }
 ]

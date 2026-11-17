@@ -158,7 +158,7 @@
   "company": "Sherlok",
   "field": "founder",
   "match": "Adam Grocke",
-  "severity": "gap"
+  "severity": "error"
  },
  {
   "id": "kiwify_founders",
@@ -167,7 +167,7 @@
   "company": "Kiwify",
   "field": "founder",
   "match": "Artur Ribas",
-  "severity": "gap"
+  "severity": "error"
  },
  {
   "id": "kiwify_founder2",
@@ -176,6 +176,22 @@
   "company": "Kiwify",
   "field": "founder",
   "match": "Marinho Gomes",
-  "severity": "gap"
+  "severity": "error"
+ },
+ {
+  "id": "samco_hq",
+  "why": "SAMCO: headquarters Mumbai (approved quote 'Mumbai-based online broker Samco')",
+  "kind": "present",
+  "company": "SAMCO",
+  "field": "hq_city",
+  "match": "Mumbai"
+ },
+ {
+  "id": "sherlok_hq",
+  "why": "Sherlok: headquarters Adelaide (approved quote 'Adelaide-based startup Sherlok')",
+  "kind": "present",
+  "company": "Sherlok",
+  "field": "hq_city",
+  "match": "Adelaide"
  }
 ]

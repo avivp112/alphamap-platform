@@ -10,7 +10,8 @@ import { NOT_A_PRODUCT_SENTENCE } from "./quoteFinder.ts";
 import { detectAcquisition } from "./acquisition.ts";
 import { normalizeForMatch, quoteIsNotASentence } from "./evidence.ts";
 import { sectorDecision } from "./techOverrides.ts";
-import { sentenceIsAboutCompany, isThirdPartyPage } from "./subject.ts";
+import { sentenceIsAboutCompany, isThirdPartyPage, sentenceWithYear } from "./subject.ts";
+import { vsTitleCompetitor, comparisonTitleCompetitor } from "./competitorTiers.ts";
 import { amountFromAddress } from "./hints.ts";
 import { extractNumbersFromText } from "./evidence.ts";
 import { statedRoundLabels } from "./assemble.ts";
@@ -20,6 +21,15 @@ export interface RowLike { company?: string; field: string; after: string; sourc
 
 const fold = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, "");
 const PERSON_PAGE = /\/(?:leadership|team|people|management|board|bio|biography|about\/team)\/[^/?#]+/i;
+
+const brandOf = (companyName: string) => fold(companyName.replace(/\b(ai|inc|ltd|llc|labs?|group|studio|studios|technologies|software|systems)\b/gi, ""));
+/** The source address is on the company's own domain (its name in the host). */
+export function ownDomain(url: string | null | undefined, companyName: string): boolean {
+  try { const h = new URL((url ?? "").startsWith("http") ? url! : `https://${url}`).hostname.toLowerCase(); const b = brandOf(companyName); return b.length >= 3 && fold(h).includes(b); } catch { return false; }
+}
+/** A competitor's name without a year or a bracket ("Dhan (2026)" → "Dhan"). */
+export const cleanCompetitorName = (n: string): string => n.replace(/\s*\([^)]*\)/g, "").replace(/\s+(?:19|20)\d{2}\b/g, "").replace(/\s+/g, " ").trim();
+const COMPETITOR_STOP = /^(?:the\s+)?(?:real[- ]estate|stocks?|shares?|equity|mutual funds?|bonds?|gold|silver|fixed deposits?|crypto(?:currency)?|etfs?|ipos?|forex|futures|options|insurance|loans?|savings|banks?|competitors?|alternatives?|tools?|software|platforms?)$/i;
 
 /** A quote that is an address or a slug, not text of the page (owner, round 10: Paradox Series C's quote was the URL). */
 export const looksLikeAddress = (q: string): boolean => { const t = q.trim(); return !!t && (/^https?:\/\//i.test(t) || (!/\s/.test(t) && /[a-z0-9]+(?:-[a-z0-9]+){3,}/i.test(t))); };
@@ -59,6 +69,19 @@ export function brandFromTexts(companyName: string, texts: string[]): string | n
   return null;
 }
 
+/** Date part of a round's text ("Series A $4M · 2017-09-05 …"): 3 day, 2 month, 1 year, 0 none. */
+export function datePrecision(after: string): number {
+  const d = after.match(/(\d{4}(?:-\d{2}(?:-\d{2})?)?)/)?.[1] ?? "";
+  return d.length === 10 ? 3 : d.length === 7 ? 2 : d.length === 4 ? 1 : 0;
+}
+/** Company + type + amount: the identity of a round, whatever its date or lead. */
+export function roundKey(r: { company?: string | null; after: string }): string {
+  const t = r.after.replace(/\s*·\s*lead\s+.*$/i, "").replace(/\(month only\)/i, "");
+  const type = t.match(/^\s*([A-Za-z][A-Za-z+\- ]*?)(?=\s+(?:\$|€|£|USD|amount)|\s*·|\s*$)/)?.[1] ?? "";
+  const amount = t.match(/([$€£]\s?[\d.,]+\s?[KMBkmb]?|amount not disclosed)/i)?.[1] ?? "";
+  return `${fold(r.company ?? "")}|${fold(type)}|${fold(amount)}`;
+}
+
 /** Why this value may not stand under today's rules, or null. */
 export function rowProblem(r: RowLike, companyName: string, today: string, weekBefore = 0): string | null {
   const url = r.source_url ?? "";
@@ -79,7 +102,7 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
   if (r.field === "founded_year") {
     if (/!\[|\]\(/.test(quote)) return "its quote is an image or a link";
     if (/\bsince\b/i.test(quote) && !foundedYearFromSite(quote)) return "\"since <year>\" here is not a founding statement";
-    if (quote && !sentenceIsAboutCompany(quote, companyName, { ownSite: true })) return "its sentence is not about the company";
+    if (quote && !sentenceIsAboutCompany(sentenceWithYear(quote, r.after.trim()), companyName, { ownSite: ownDomain(url, companyName) })) return "its sentence is not about the company";
     if (isThirdPartyPage(url)) return "a customer, project or partner page does not say when the company was founded";
   }
   if (r.field === "tags") {
@@ -89,6 +112,17 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
     // A source that is not the company's own must be about the company: the brand is in its quote or its address.
     const brand = fold(companyName.replace(/\b(ai|inc|ltd|llc|labs?|group)\b/gi, ""));
     if (brand.length >= 3 && !fold(quote).includes(brand) && !fold(url).includes(brand)) return "its quote and address do not name the company";
+  }
+  if (r.field === "competitor_declared") {
+    const name = cleanCompetitorName(r.after);
+    if (COMPETITOR_STOP.test(name)) return "its name is an investment type or a category, not a company";
+    // A comparison page counts only on the company's own domain, with its title naming the other side (xe.com's "mBank vs Xe", an IPO page, "Real Estate").
+    if (/\bIPO\b/.test(quote) && !ownDomain(url, companyName)) return "an IPO page of another site";
+    if (/\b(?:vs\.?|versus)\b/i.test(quote)) {
+      if (!ownDomain(url, companyName)) return "a comparison page of another site";
+      const side = vsTitleCompetitor(quote, companyName) ?? comparisonTitleCompetitor(quote, companyName);
+      if (side && fold(cleanCompetitorName(side)) !== fold(name)) return "its page's title names another company as the other side of the comparison";
+    }
   }
   return null;
 }
@@ -144,6 +178,7 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
   const merged: T[] = [];
   const seenBg = new Set<string>();
   const seenRound = new Map<string, T>();
+  const seenComp = new Set<string>();
   for (const r of kept) {
     if (r.field === "founder") {
       const [name, ...rest] = r.after.split(" — ");
@@ -156,10 +191,24 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
       continue;
     }
     if (r.field === "round") {
-      const key = `${fold(r.company ?? "")}|${r.after.replace(/\s*·\s*lead\s+.*$/i, "").toLowerCase().replace(/\s+/g, " ").trim()}`;
+      // One row per company, type and amount; the most precise date stays (day over month over year over none).
+      const key = roundKey(r);
       const have = seenRound.get(key);
-      if (have) { if ((r.after.length > have.after.length) || (!have.quote && r.quote)) Object.assign(have, r); dropped.push(`round: ${r.after.slice(0, 50)} listed twice — merged`); continue; }
+      if (have) {
+        dropped.push(`round: ${r.after.slice(0, 50)} listed twice — merged`);
+        const better = datePrecision(r.after) > datePrecision(have.after) || (datePrecision(r.after) === datePrecision(have.after) && ((r.after.length > have.after.length) || (!have.quote && !!r.quote)));
+        if (better) Object.assign(have, r);
+        continue;
+      }
       seenRound.set(key, r); merged.push(r); continue;
+    }
+    if (r.field === "competitor_declared" || r.field === "competitor_market") {
+      const clean = cleanCompetitorName(r.after);
+      const k = `${r.field}|${fold(r.company ?? "")}|${fold(clean)}`;
+      if (seenComp.has(k)) { dropped.push(`${r.field}: ${r.after} listed twice — merged`); continue; }
+      seenComp.add(k);
+      if (clean !== r.after) r.after = clean;
+      merged.push(r); continue;
     }
     if (r.field === "founder_background") {
       const m = r.after.match(/^(.*?):\s*([^—]+?)\s+—\s+(.*)$/);

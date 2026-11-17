@@ -88,7 +88,7 @@ const ENTRIES: Array<[string, string]> = [
   ["chengdu", "China"], ["wuhan", "China"], ["nanjing", "China"],
   ["osaka", "Japan"], ["kyoto", "Japan"], ["yokohama", "Japan"], ["fukuoka", "Japan"],
   ["busan", "South Korea"], ["incheon", "South Korea"],
-  ["sydney", "Australia"], ["melbourne", "Australia"], ["brisbane", "Australia"], ["perth", "Australia"],
+  ["sydney", "Australia"], ["melbourne", "Australia"], ["brisbane", "Australia"], ["perth", "Australia"], ["adelaide", "Australia"], ["canberra", "Australia"], ["gold coast", "Australia"], ["hobart", "Australia"], ["newcastle", "Australia"],
   ["toronto", "Canada"], ["vancouver", "Canada"], ["montreal", "Canada"], ["waterloo", "Canada"],
   ["calgary", "Canada"],
   ["sao paulo", "Brazil"], ["rio de janeiro", "Brazil"], ["belo horizonte", "Brazil"],

@@ -4,8 +4,9 @@
  */
 import { quoteIsNotASentence } from "./evidence.ts";
 import { roleRegex } from "./people.ts";
+import { rowProblem, roundKey, cleanCompetitorName } from "./rowRules.ts";
 
-export interface Row { company: string; field: string; after: string; source_url: string; quote: string }
+export interface Row { company: string; field: string; after: string; source_url: string; quote: string; origin?: string }
 export type Severity = "error" | "gap";
 export type Check = (
   | { id: string; why: string; kind: "absent"; company?: string; field?: string; match?: string; quote_match?: string; source_match?: string }
@@ -19,6 +20,7 @@ export type Check = (
   | { id: string; why: string; kind: "round_type_in_quote" }
   | { id: string; why: string; kind: "no_non_sentence_quotes" }
   | { id: string; why: string; kind: "leader_role_in_quote" }
+  | { id: string; why: string; kind: "memory_rows_pass_rules" }
 ) & { severity?: Severity }
   | { id: string; why: string; kind: "news_dates_before_run" }
   | { id: string; why: string; kind: "tags_include"; company: string; include: string; not_only?: string }
@@ -42,7 +44,7 @@ export function parseCsv(text: string): string[][] {
 export function rowsFromCsv(text: string): Row[] {
   const [head, ...body] = parseCsv(text);
   const ix = (n: string) => head.indexOf(n);
-  return body.map((r) => ({ company: r[ix("company")] ?? "", field: r[ix("field")] ?? "", after: r[ix("after")] ?? "", source_url: r[ix("source_url")] ?? "", quote: r[ix("quote")] ?? "" })).filter((r) => r.company && r.field && r.field !== "(nothing)");
+  return body.map((r) => ({ company: r[ix("company")] ?? "", field: r[ix("field")] ?? "", after: r[ix("after")] ?? "", source_url: r[ix("source_url")] ?? "", quote: r[ix("quote")] ?? "", origin: ix("origin") >= 0 ? r[ix("origin")] ?? "" : "" })).filter((r) => r.company && r.field && r.field !== "(nothing)");
 }
 
 const fold = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^\p{L}\p{N}]+/gu, "");
@@ -98,9 +100,13 @@ export function runAcceptance(checks: Check[], rows: Row[], notEnriched: string[
       }
       case "no_duplicates": {
         const seen = new Map<string, number>();
-        for (const r of rows.filter((x) => x.field === c.field)) { const k = `${fold(r.company)}|${r.after.toLowerCase().replace(/\s+/g, " ").replace(/\s*·\s*lead\s+.*$/, "").trim()}`; seen.set(k, (seen.get(k) ?? 0) + 1); }
+        for (const r of rows.filter((x) => x.field === c.field)) { const k = c.field === "round" ? roundKey(r) : /^competitor/.test(c.field) ? `${fold(r.company)}|${fold(cleanCompetitorName(r.after))}` : `${fold(r.company)}|${r.after.toLowerCase().replace(/\s+/g, " ").replace(/\s*·\s*lead\s+.*$/, "").trim()}`; seen.set(k, (seen.get(k) ?? 0) + 1); }
         const dup = [...seen].filter(([, n]) => n > 1);
         return { ...base, pass: dup.length === 0, detail: dup.length ? `twice: ${dup.slice(0, 3).map(([k]) => k.slice(0, 60)).join(" | ")}` : "no duplicates" };
+      }
+      case "memory_rows_pass_rules": {
+        const bad = rows.filter((r) => /known_source/.test(r.origin ?? "")).map((r) => ({ r, why: rowProblem({ field: r.field, after: r.after, source_url: r.source_url, quote: r.quote }, r.company, today) })).filter((x) => x.why);
+        return { ...base, pass: bad.length === 0, detail: bad.length ? `${bad.length} remembered value(s) break today's rules: ${bad.slice(0, 3).map((x) => `${x.r.company} ${x.r.field} "${x.r.after.slice(0, 40)}" (${x.why})`).join(" | ")}` : "every remembered value passes today's rules" };
       }
       case "no_url_quote": {
         const bad = rows.filter((r) => { const t = r.quote.trim(); return !!t && (/^https?:\/\//i.test(t) || (!/\s/.test(t) && /[a-z0-9]+(?:-[a-z0-9]+){3,}/i.test(t))); });
