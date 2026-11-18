@@ -54,6 +54,7 @@ import { createSearchProviderState, jinaDisabled, readPageCached, type SearchPro
 import { techOverride } from "../lib/enrichment/techOverrides.ts";
 import { classifyDescription, mainTag } from "../lib/enrichment/postClassify.ts";
 import { acceptanceReport, specPathsFor } from "./acceptance_check.ts";
+import { parseCsv as parseReportCsv } from "../lib/enrichment/acceptance.ts";
 import { traceTable } from "../lib/enrichment/runTrace.ts";
 import { rowProblem, applyRowRules, acquiredFromNews, brandAsWritten, brandFromTexts, closedFromNews } from "../lib/enrichment/rowRules.ts";
 import { loadKnown, saveKnown, remember, applyKnown, markKey, NOT_REMEMBERED, KNOWN_PATH, type KnownStore, type KnownEntry } from "../lib/enrichment/knownSources.ts";
@@ -567,6 +568,31 @@ async function main() {
       for (const u of a.unblockable) console.log(`    ⚠️  not blockable (no value to hold back): ${u}`);
     }
     process.env.REPLAY ??= "1";
+  }
+  // EXCLUDE=<report numbers> (owner, batch 6): values of the reviewed dry report that are not written. The numbers are those of the report ("d6.17" or "17"); they are read from the preflight pass's
+  // rows with the same numbering as the dry report. The writer works by field, so every other value of the same company and field is held back with them — listed, never silent.
+  if (!DRY_RUN && (process.env.EXCLUDE ?? "").trim()) {
+    const from = process.env.EXCLUDE_FROM ?? "pilot_report_preflight.csv";
+    if (!existsSync(from)) { console.error(`⛔  EXCLUDE needs the rows of the reviewed report (${from} is missing) — run with the preflight, or give EXCLUDE_FROM=<a dry report csv>.`); process.exit(1); }
+    const [head, ...body] = parseReportCsv(readFileSync(from, "utf8"));
+    const ix = (n: string) => head.indexOf(n);
+    const rows = body.map((r) => ({ company_id: r[ix("company_id")] ?? "", company: r[ix("company")] ?? "", field: r[ix("field")] ?? "", value: r[ix("after")] ?? "", source_url: r[ix("source_url")] ?? "", quote: r[ix("quote")] ?? "" })).filter((r) => r.company && r.field && r.field !== "(nothing)");
+    const numbered = numberValues(rows, BATCH_NO, "d");
+    if (process.env.EXPECT_TOTAL && Number(process.env.EXPECT_TOTAL) !== numbered.length) { console.error(`⛔  The rows to number are ${numbered.length}, the reviewed report had ${process.env.EXPECT_TOTAL} — the numbers would point at other values. Nothing written.`); process.exit(1); }
+    const wanted = (process.env.EXCLUDE ?? "").split(/[\s,]+/).map((x) => x.trim().replace(/^[dw]\d+\./i, "")).filter(Boolean).map(Number);
+    const bad = wanted.filter((n) => !Number.isInteger(n) || n < 1 || n > numbered.length);
+    if (bad.length) { console.error(`⛔  EXCLUDE has numbers that are not in the report (1–${numbered.length}): ${bad.join(", ")}`); process.exit(1); }
+    const chosen = wanted.map((n) => numbered[n - 1]);
+    const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    const lines: string[][] = [];
+    for (const c of chosen) {
+      (BLOCKED.get(foldName(c.company)) ?? BLOCKED.set(foldName(c.company), new Set()).get(foldName(c.company))!).add(c.field);
+      lines.push([c.id, c.company, c.field, c.value, "excluded by the owner"]);
+      for (const o of numbered.filter((x) => x.company_id === c.company_id && x.field === c.field && x.id !== c.id && !chosen.includes(x))) lines.push([o.id, o.company, o.field, o.value, `held back with ${c.id} (the writer works by field)`]);
+    }
+    writeFileSync("excluded_values.csv", "\uFEFF" + [["id", "company", "field", "value", "why"].join(","), ...lines.map((l) => l.map(q).join(","))].join("\r\n") + "\r\n");
+    console.log(`🚧  EXCLUDE: ${chosen.length} value(s) not written (excluded_values.csv):`);
+    for (const l of lines) console.log(`    ${l[0]}  ${l[1]} · ${l[2]}: ${l[3].slice(0, 70)} — ${l[4]}`);
   }
   if (!DRY_RUN) {
     runId = await registerRun();
