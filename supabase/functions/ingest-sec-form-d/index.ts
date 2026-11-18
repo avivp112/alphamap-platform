@@ -552,7 +552,7 @@ async function backfillEvidence(
       if (upErr) { failed++; results.push({ name: row.name, error: upErr.message }); continue; }
     }
     updated++;
-    results.push({ name: row.name, ok: true, address: extra.address ?? null, investors: extra.investors ?? null, signals: signals.items.map((i) => i.kind) });
+    results.push({ name: row.name, ok: true, address: extra.address ?? null, investors: extra.investors ?? null, signals: signals.items.map((i) => ({ level: i.level, text: i.text })) });
   }
   return json({ backfill: true, dryRun, found: rows?.length ?? 0, updated, noFiling, failed, results });
 }

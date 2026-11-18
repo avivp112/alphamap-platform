@@ -476,7 +476,7 @@ async function backfillEvidence(
     const toWatch = moveToWatch && !hasStrongSignal(signals.items);
     if (toWatch && !dryRun) await supabase.rpc("watch_candidate", { p_candidate_id: row.id });
     updated++;
-    results.push({ name: row.name, ok: true, address: extra.address ?? null, officers: officers?.length ?? 0, signals: signals.items.map((i) => i.kind), ...(moveToWatch ? { watching: toWatch } : {}) });
+    results.push({ name: row.name, ok: true, address: extra.address ?? null, officers: officers?.length ?? 0, signals: signals.items.map((i) => ({ level: i.level, text: i.text })), ...(moveToWatch ? { watching: toWatch } : {}) });
   }
   return json({ backfill: true, dryRun, found: rows?.length ?? 0, updated, notFound, failed, results });
 }
