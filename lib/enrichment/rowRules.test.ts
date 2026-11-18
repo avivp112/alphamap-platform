@@ -418,3 +418,22 @@ describe("batch 6: a dated press page is not the headcount of today", () => {
     expect(re.test("https://canopycare.us/about")).toBe(false);
   });
 });
+
+describe("batch 6: remembered headcount values obey the same rules", () => {
+  const T = "2026-11-18";
+  it("Brighte's 2021 year-in-review is not the headcount of the run day", () => {
+    const url = "https://brighte.com.au/media/press-releases/year-in-review-2021";
+    const q = "In 2021, the Brighte team grew from a team of 84 in Jan 2021 to a team of 181 in December 2021.";
+    expect(rowProblem({ field: "employee_count", after: "84", source_url: url, quote: q }, "Brighte", T)).toMatch(/not today's headcount/);
+    expect(rowProblem({ field: "employee_range", after: "51-200", source_url: url, quote: q }, "Brighte", T)).toMatch(/not today's headcount/);
+    expect(rowProblem({ field: "headcount_history", after: "84 on 2026-11-18 (site_stated)", source_url: url, quote: q }, "Brighte", T)).toMatch(/run day/);
+    expect(rowProblem({ field: "employee_count", after: "20", source_url: "https://canopycare.us/about", quote: "20 people" }, "Canopy", T)).toBeNull();
+  });
+  it("six archive copies of one statement are one point, at the earliest", () => {
+    const mk = (d: string, quote: string) => ({ field: "headcount_history", company: "Datahut", after: `42 on ${d} (site_stated)`, source_url: `https://web.archive.org/web/${d.replace(/-/g, "")}/https://datahut.co/about`, quote });
+    const rows = [mk("2025-01-20", "wth story We&rsquo;ve bootstrapped Datahut with a very small team and within three years we&rsquo;ve grown to 42 team members, a bigger office."), mk("2019-08-18", "Our growth story We’ve bootstrapped Datahut with a very small team and within three years we’ve grown to 42 team members, a bigger office.")];
+    const out = applyRowRules(rows as never, "Datahut", T).rows.filter((r) => r.field === "headcount_history");
+    expect(out).toHaveLength(1);
+    expect(out[0].after).toContain("2019-08-18");
+  });
+});
