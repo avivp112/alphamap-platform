@@ -86,7 +86,7 @@ Off by default, dry run by default:
 | `CANDIDATE_ENRICH_BATCH` | `5` | candidates per turn |
 | `CANDIDATE_ENRICH_MAX_AGE_DAYS` | `0` | only candidates first seen in the last N days; `0` = all, backlog included |
 | `CANDIDATE_ENRICH_EVERY_MS` | `300000` | wait between turns |
-| `CANDIDATE_ENRICH_MAX_SEARCHES_PER_DAY` | `300` | daily search ceiling (at most 3 searches per candidate) |
+| `CANDIDATE_ENRICH_MAX_SEARCHES_PER_DAY` | `200` | daily search ceiling (at most 3 searches per candidate) |
 
 Rules: only the company's own site is read (never Crunchbase, PitchBook, Dealroom, Wikipedia or forums);
 every page goes through `politeFetch` (robots.txt first); a site counts as the company's only with two

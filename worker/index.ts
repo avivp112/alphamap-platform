@@ -185,7 +185,7 @@ const CANDIDATE_BATCH = Number(process.env.CANDIDATE_ENRICH_BATCH ?? 5);
 /** Only candidates first seen in the last N days (0 = all, the backlog included). */
 const CANDIDATE_MAX_AGE_DAYS = Number(process.env.CANDIDATE_ENRICH_MAX_AGE_DAYS ?? 0);
 /** Searches per UTC day, the cost ceiling: 3 per candidate at most. */
-const CANDIDATE_MAX_SEARCHES_PER_DAY = Number(process.env.CANDIDATE_ENRICH_MAX_SEARCHES_PER_DAY ?? 300);
+const CANDIDATE_MAX_SEARCHES_PER_DAY = Number(process.env.CANDIDATE_ENRICH_MAX_SEARCHES_PER_DAY ?? 200);
 let lastCandidatesAt = 0;
 let candidateDay = "";
 let candidateSearchesToday = 0;
