@@ -4003,7 +4003,7 @@ export function Startups() {
 
   return (
     <Layout>
-     <div className={workspace ? "mx-auto w-full max-w-[1760px] h-[calc(100vh-5rem)] flex" : ""}>
+     <div className={workspace ? "mx-auto w-full max-w-[1760px] h-[calc(100vh-4rem)] flex" : ""}>
       <div className={workspace ? "flex-1 min-w-0 min-h-0 flex flex-col" : ""}>
 
       {/* ── Top bar: search + quick questions + help + view toggle ───────── */}

@@ -4,6 +4,31 @@
     "select": "选择语言"
   },
   "nav": {
+    "v2": {
+      "page_home": "首页",
+      "page_startups": "私募市场",
+      "page_vcs": "风投机构",
+      "page_deals": "交易",
+      "page_bench": "Your Alpha",
+      "hint_home": "向 AI 分析师提问",
+      "hint_startups": "初创公司与融资轮次",
+      "hint_vcs": "机构、单笔投资规模与基金备案",
+      "hint_deals": "SEC Form D 备案",
+      "hint_bench": "核心名单与日志",
+      "ask": "提问",
+      "recent": "最近的问题",
+      "goTo": "前往",
+      "companies": "公司",
+      "paletteTitle": "搜索 AlphaMap",
+      "palettePlaceholder": "提问，或跳转到页面或公司",
+      "noResults": "没有匹配项。",
+      "askPrefix": "询问 AlphaMap：",
+      "statCompanies": "{{n}} 家公司",
+      "statFirms": "{{n}} 家机构",
+      "statFiling": "最近备案 {{date}}",
+      "search": "提问或跳转…",
+      "dataUpdated": "数据更新于 {{when}}"
+    },
     "home": "首页",
     "data": "我们的数据",
     "privateMarket": "一级市场",
@@ -544,6 +569,28 @@
       "tab_matches": "主题匹配",
       "tab_alerts": "实时提醒",
       "tab_crm": "CRM"
+    }
+  },
+  "home": {
+    "v2": {
+      "askLabel": "询问 AlphaMap",
+      "ask": "提问",
+      "grounded": "答案严格来自 AlphaMap 数据库，每条回答都可打开来源。",
+      "recent": "继续上次的内容",
+      "clearRecent": "清除",
+      "onDevice": "仅保存在此设备",
+      "cat_companies": "公司",
+      "cat_investors": "投资人",
+      "cat_deals": "交易",
+      "p_companies_0": "员工规模稳定的欧洲 A 轮网络安全初创公司",
+      "p_companies_1": "快速扩张的 AI 基础设施公司",
+      "p_companies_2": "2020 年后成立的气候硬件初创公司",
+      "p_investors_0": "美国成长期金融科技投资人",
+      "p_investors_1": "哪些风投有开放中的基金募集？",
+      "p_investors_2": "单笔投资 100–300 万美元的种子轮投资人",
+      "p_deals_0": "过去 30 天最大的公司备案",
+      "p_deals_1": "仍向投资人开放的融资轮",
+      "p_deals_2": "本季度新备案的基金"
     }
   },
   "vcs": {
