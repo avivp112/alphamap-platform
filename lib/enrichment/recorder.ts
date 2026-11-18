@@ -123,11 +123,49 @@ export function quietOffline(): void {
 export function enterOfflineMode(): void { installHttpRecorder(); quietOffline(); }
 
 /** A default timeout for every fetch that has none (a dead site must not hold a run: CALL_TIMEOUT_MS, default 30 s). */
+// ── The pace of a many-company run (owner, batch 7: CONCURRENCY=10, the delay kept per domain) ──
+// Requests to ONE site (the company's own pages, an archive, a newspaper) start at least DOMAIN_DELAY_MS apart, however many companies run at once; a page read through the
+// reader (r.jina.ai/<address>) counts for the address' site. The search and model providers have no per-site pace but at most PROVIDER_CONCURRENCY calls in flight together.
+const PROVIDER_HOSTS = new Set(["google.serper.dev", "scrape.serper.dev", "api.tavily.com", "s.jina.ai", "api.anthropic.com", "r.jina.ai"]);
+const registrable = (h: string) => { const p = h.split("."); return p.slice(-(/\.(co|com|org|net|gov|ac)\.[a-z]{2}$/.test(h) ? 3 : 2)).join("."); };
+export function paceKey(input: unknown): { kind: "provider" | "site"; key: string } | null {
+  let u: URL;
+  try { u = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : (input as { url?: string })?.url ?? ""); } catch { return null; }
+  const host = u.hostname.toLowerCase();
+  if (host === "r.jina.ai") {
+    const target = u.pathname.replace(/^\//, "") + u.search;
+    try { return { kind: "site", key: registrable(new URL(/^https?:/i.test(target) ? target : `https://${target}`).hostname.toLowerCase()) }; } catch { return { kind: "provider", key: host }; }
+  }
+  if (PROVIDER_HOSTS.has(host)) return { kind: "provider", key: host };
+  return { kind: "site", key: registrable(host) };
+}
+const nextStart = new Map<string, number>();
+let inFlight = 0; const waiting: Array<() => void> = [];
+const sleepMs = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+async function pace(input: unknown): Promise<() => void> {
+  const gapMs = Number(process.env.DOMAIN_DELAY_MS ?? (Number(process.env.CONCURRENCY ?? 1) > 1 ? 1500 : 0));
+  const limit = Math.max(1, Number(process.env.PROVIDER_CONCURRENCY ?? 20));
+  const k = paceKey(input);
+  if (!k || (gapMs <= 0 && Number(process.env.CONCURRENCY ?? 1) <= 1)) return () => {};
+  if (k.kind === "site") {
+    const now = Date.now(); const at = Math.max(now, nextStart.get(k.key) ?? 0);
+    nextStart.set(k.key, at + gapMs);
+    if (at > now) await sleepMs(at - now);
+    return () => {};
+  }
+  if (inFlight >= limit) await new Promise<void>((r) => waiting.push(r));
+  inFlight++;
+  return () => { inFlight--; waiting.shift()?.(); };
+}
+
 export function installFetchTimeout(ms = Number(process.env.CALL_TIMEOUT_MS ?? 30_000)): void {
   const real = globalThis.fetch;
-  globalThis.fetch = ((input: any, init?: any) => {
-    if (init?.signal) return real(input, init);
-    return real(input, { ...(init ?? {}), signal: AbortSignal.timeout(ms) });
+  globalThis.fetch = (async (input: any, init?: any) => {
+    const done = await pace(input);
+    try {
+      if (init?.signal) return await real(input, init);
+      return await real(input, { ...(init ?? {}), signal: AbortSignal.timeout(ms) });
+    } finally { done(); }
   }) as typeof fetch;
 }
 
