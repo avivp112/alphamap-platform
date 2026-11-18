@@ -23,7 +23,11 @@ export function checkFresh(): FreshResult {
       git(["merge-base", "--is-ancestor", "origin/main", "HEAD"]);
     } catch {
       let behind = "?"; try { behind = git(["rev-list", "--count", "HEAD..origin/main"]); } catch { /* keep ? */ }
-      problems.push(`HEAD is missing ${behind} commit(s) of origin/main — local main and origin/main have diverged. run: git pull --no-rebase origin main (then resolve a conflict if any, then run again)`);
+      // Only commits that change what a run executes matter (the enrichment code, its checks, the worker, the memory and config); the UI does not (owner, batch 6).
+      let touched: string[] = [];
+      try { const base = git(["merge-base", "HEAD", "origin/main"]); touched = git(["diff", "--name-only", base, "origin/main", "--", "lib", "scripts", "eval", "worker", "cache", "config", "package.json", "package-lock.json"]).split("\n").filter(Boolean); } catch { touched = ["?"]; }
+      if (touched.length) problems.push(`HEAD is missing ${behind} commit(s) of origin/main that change code a run uses (${touched.slice(0, 4).join(", ")}${touched.length > 4 ? ", …" : ""}). run: git pull --no-rebase origin main (then resolve a conflict if any, then run again)`);
+      else warnings.push(`origin/main has ${behind} newer commit(s), none of them touch code a run uses (UI only) — run goes on`);
     }
   }
   try {
