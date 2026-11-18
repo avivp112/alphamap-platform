@@ -26,7 +26,8 @@ export type Check = (
 ) & { severity?: Severity }
   | { id: string; why: string; kind: "news_dates_before_run" }
   | { id: string; why: string; kind: "tags_include"; company: string; include: string; not_only?: string }
-export interface Result { id: string; why: string; pass: boolean; detail: string; severity: "error" | "gap" }
+/** `offenders`: the report rows that broke the check — what a wet run does not write when the check is an ERROR (owner, batch 6). field "*" = the whole company. */
+export interface Result { id: string; why: string; pass: boolean; detail: string; severity: "error" | "gap"; offenders?: Row[] }
 
 export function parseCsv(text: string): string[][] {
   const rows: string[][] = []; let row: string[] = [], cur = "", q = false;
@@ -60,7 +61,7 @@ export function runAcceptance(checks: Check[], rows: Row[], notEnriched: string[
     switch (c.kind) {
       case "absent": {
         const hits = of(c).filter((r) => (!c.match || re(c.match).test(r.after)) && (!c.quote_match || re(c.quote_match).test(r.quote)) && (!c.source_match || re(c.source_match).test(r.source_url)));
-        return { ...base, pass: hits.length === 0, detail: hits.length ? `found: ${hits.slice(0, 2).map((r) => `${r.company} ${r.field} "${r.after.slice(0, 60)}"`).join(" | ")}` : "none found" };
+        return { ...base, pass: hits.length === 0, detail: hits.length ? `found: ${hits.slice(0, 2).map((r) => `${r.company} ${r.field} "${r.after.slice(0, 60)}"`).join(" | ")}` : "none found", offenders: hits };
       }
       case "present": {
         const hits = of(c).filter((r) => re(c.match).test(r.after));
@@ -86,11 +87,11 @@ export function runAcceptance(checks: Check[], rows: Row[], notEnriched: string[
           if (t === "Other") return !/strategic|crowd|token|placement|pipe\b|spac\b|revenue.based|corporate/i.test(r.quote);
           return !(NAMED.find(([n]) => n === t)?.[1] ?? /./).test(r.quote);
         });
-        return { ...base, pass: bad.length === 0, detail: bad.length ? `type not in its quote: ${bad.slice(0, 3).map((r) => `${r.company} "${r.after.slice(0, 40)}"`).join(" | ")}` : "every named type is in its quote" };
+        return { ...base, pass: bad.length === 0, detail: bad.length ? `type not in its quote: ${bad.slice(0, 3).map((r) => `${r.company} "${r.after.slice(0, 40)}"`).join(" | ")}` : "every named type is in its quote", offenders: bad };
       }
       case "no_non_sentence_quotes": {
         const bad = rows.filter((r) => quoteIsNotASentence(r.quote));
-        return { ...base, pass: bad.length === 0, detail: bad.length ? `${bad.length} quote(s) are page code: ${bad.slice(0, 2).map((r) => `${r.company} ${r.field}`).join(" | ")}` : "every quote is a sentence" };
+        return { ...base, pass: bad.length === 0, detail: bad.length ? `${bad.length} quote(s) are page code: ${bad.slice(0, 2).map((r) => `${r.company} ${r.field}`).join(" | ")}` : "every quote is a sentence", offenders: bad };
       }
       case "leader_role_in_quote": {
         const bad = rows.filter((r) => r.field === "leader" && r.quote).filter((r) => {
@@ -98,26 +99,27 @@ export function runAcceptance(checks: Check[], rows: Row[], notEnriched: string[
           const parts = role.split(/\s*(?:&|,|\/|\band\b)\s*/i).map((x) => x.trim()).filter((x) => x && !/^(?:co-?\s?)?founders?$/i.test(x));
           return parts.length > 0 && !parts.every((p) => roleRegex(p).test(r.quote));
         });
-        return { ...base, pass: bad.length === 0, detail: bad.length ? `role not in its quote: ${bad.slice(0, 3).map((r) => `${r.company} ${r.after.slice(0, 40)}`).join(" | ")}` : "every leader's role is in its quote" };
+        return { ...base, pass: bad.length === 0, detail: bad.length ? `role not in its quote: ${bad.slice(0, 3).map((r) => `${r.company} ${r.after.slice(0, 40)}`).join(" | ")}` : "every leader's role is in its quote", offenders: bad };
       }
       case "no_duplicates": {
         const seen = new Map<string, number>();
-        for (const r of rows.filter((x) => x.field === c.field)) { const k = c.field === "round" ? roundKey(r) : /^competitor/.test(c.field) ? `${fold(r.company)}|${fold(cleanCompetitorName(r.after))}` : `${fold(r.company)}|${r.after.toLowerCase().replace(/\s+/g, " ").replace(/\s*·\s*lead\s+.*$/, "").trim()}`; seen.set(k, (seen.get(k) ?? 0) + 1); }
+        const dupRows: Row[] = [];
+        for (const r of rows.filter((x) => x.field === c.field)) { const k = c.field === "round" ? roundKey(r) : /^competitor/.test(c.field) ? `${fold(r.company)}|${fold(cleanCompetitorName(r.after))}` : `${fold(r.company)}|${r.after.toLowerCase().replace(/\s+/g, " ").replace(/\s*·\s*lead\s+.*$/, "").trim()}`; if (seen.has(k)) dupRows.push(r); seen.set(k, (seen.get(k) ?? 0) + 1); }
         const dup = [...seen].filter(([, n]) => n > 1);
-        return { ...base, pass: dup.length === 0, detail: dup.length ? `twice: ${dup.slice(0, 3).map(([k]) => k.slice(0, 60)).join(" | ")}` : "no duplicates" };
+        return { ...base, pass: dup.length === 0, detail: dup.length ? `twice: ${dup.slice(0, 3).map(([k]) => k.slice(0, 60)).join(" | ")}` : "no duplicates", offenders: dupRows };
       }
       case "memory_rows_pass_rules": {
         const bad = rows.filter((r) => /known_source/.test(r.origin ?? "")).map((r) => ({ r, why: rowProblem({ field: r.field, after: r.after, source_url: r.source_url, quote: r.quote }, r.company, today) })).filter((x) => x.why);
-        return { ...base, pass: bad.length === 0, detail: bad.length ? `${bad.length} remembered value(s) break today's rules: ${bad.slice(0, 3).map((x) => `${x.r.company} ${x.r.field} "${x.r.after.slice(0, 40)}" (${x.why})`).join(" | ")}` : "every remembered value passes today's rules" };
+        return { ...base, pass: bad.length === 0, detail: bad.length ? `${bad.length} remembered value(s) break today's rules: ${bad.slice(0, 3).map((x) => `${x.r.company} ${x.r.field} "${x.r.after.slice(0, 40)}" (${x.why})`).join(" | ")}` : "every remembered value passes today's rules", offenders: bad.map((x) => x.r) };
       }
       case "hq_quote_valid": {
         const DECL = /headquarter|\bhq\b|head ?office|\bbased\b|-based|\bsede\b|\bsitz\b|siège|matriz|siedzib|مقر|本社|본사|штаб/i;
         const bad = rows.filter((r) => r.field === "hq_city" && r.quote && !isAddressLine(r.quote) && !DECL.test(r.quote));
-        return { ...base, pass: bad.length === 0, detail: bad.length ? `${bad.length} headquarters without an address or a declaration: ${bad.slice(0, 3).map((r) => `${r.company} "${r.after}" ← "${r.quote.slice(0, 60)}"`).join(" | ")}` : "every headquarters rests on an address or a declaration" };
+        return { ...base, pass: bad.length === 0, detail: bad.length ? `${bad.length} headquarters without an address or a declaration: ${bad.slice(0, 3).map((r) => `${r.company} "${r.after}" ← "${r.quote.slice(0, 60)}"`).join(" | ")}` : "every headquarters rests on an address or a declaration", offenders: bad };
       }
       case "no_url_quote": {
         const bad = rows.filter((r) => { const t = r.quote.trim(); return !!t && (/^https?:\/\//i.test(t) || (!/\s/.test(t) && /[a-z0-9]+(?:-[a-z0-9]+){3,}/i.test(t))); });
-        return { ...base, pass: bad.length === 0, detail: bad.length ? `${bad.length} quote(s) are addresses: ${bad.slice(0, 2).map((r) => `${r.company} ${r.field}`).join(" | ")}` : "no quote is an address" };
+        return { ...base, pass: bad.length === 0, detail: bad.length ? `${bad.length} quote(s) are addresses: ${bad.slice(0, 2).map((r) => `${r.company} ${r.field}`).join(" | ")}` : "no quote is an address", offenders: bad };
       }
       case "present_quote": {
         const hits = of(c).filter((r) => re(c.match).test(r.quote));
@@ -125,11 +127,11 @@ export function runAcceptance(checks: Check[], rows: Row[], notEnriched: string[
       }
       case "not_enriched": {
         const listed = notEnriched.some((x) => same(x, c.company)), has = rows.some((r) => same(r.company, c.company));
-        return { ...base, pass: listed || !has, detail: listed ? "listed as not enriched" : has ? "has values in the report" : "no values" };
+        return { ...base, pass: listed || !has, detail: listed ? "listed as not enriched" : has ? "has values in the report" : "no values", offenders: listed || !has ? [] : rows.filter((r) => same(r.company, c.company)).map((r) => ({ ...r, field: "*" })) };
       }
       case "news_dates_before_run": {
         const bad = rows.filter((r) => r.field === "news" && /^\d{4}-\d{2}-\d{2}/.test(r.after) && r.after.slice(0, 10) >= today);
-        return { ...base, pass: bad.length === 0, detail: bad.length ? `dated ${today} or later: ${bad.slice(0, 2).map((r) => `${r.company} ${r.after.slice(0, 50)}`).join(" | ")}` : `no news dated ${today} or later` };
+        return { ...base, pass: bad.length === 0, detail: bad.length ? `dated ${today} or later: ${bad.slice(0, 2).map((r) => `${r.company} ${r.after.slice(0, 50)}`).join(" | ")}` : `no news dated ${today} or later`, offenders: bad };
       }
       case "tags_include": {
         const tags = of({ company: c.company, field: "tags" }).flatMap((r) => r.after.split(/\s*,\s*/));

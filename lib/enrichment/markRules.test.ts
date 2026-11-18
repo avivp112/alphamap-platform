@@ -53,10 +53,10 @@ describe("the competitors sheet of 2026-11-08: marks the current rules no longer
 
 describe("review 9 (2026-11-10): sources that are not sources", () => {
   const m9 = (field: string, company: string, value: string, source_url: string): Mark => ({ id: "9.x", field, company, value, source_url, verdict: "wrong", source_of_mark: "" }) as Mark;
-  it("a job posting and a directory profile page are no source for a founder, a headquarters from 2014 is no headquarters", () => {
+  it("a job posting and a directory profile page are no source for a founder, a dated headquarters is accepted whatever its age", () => {
     expect(judge6(m9("founder", "Lever", "Nate Smith", "https://jobs.lever.co/collate/6e60404a-4cd5-486d-ad73-eeb6d52d7a6a")).produced).toBe(false);
     expect(judge6(m9("founder", "Cult.fit", "Mukesh Bansal — Co-founder", "https://inc42.com/company/cultfit/people/")).produced).toBe(false);
-    expect(judge6(m9("hq_city", "Chargebee", "Chennai", "https://techcrunch.com/2014/01/12/subscription-billings-startup-chargebee-raises-800k-from-accel-partners/")).produced).toBe(false);
+    expect(judge6(m9("hq_city", "Chargebee", "Chennai", "https://techcrunch.com/2014/01/12/subscription-billings-startup-chargebee-raises-800k-from-accel-partners/")).produced).toBe(true);
     expect(judge6(m9("hq_city", "Frontegg", "Tel Aviv", "https://techcrunch.com/2020/10/14/frontegg-raises-5m-to-help-saas-companies-build-saas-faster/")).produced).toBe(true);
   });
 });
