@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   personName, textHasPerson, plainName, matchSignals, isVerified, siteSignals, quoteInText, pickSiteCandidates,
-  isForbiddenDomain, cityOf, aboutLink, enrichCandidate, displayName, MAX_SEARCHES,
+  isForbiddenDomain, cityOf, aboutLink, originOf, enrichCandidate, displayName, MAX_SEARCHES,
   type CandidateInput, type Page, type IdentityDeps,
 } from "./candidateIdentity.ts";
 import type { SearchResult } from "./search.ts";
@@ -100,14 +100,21 @@ describe("choosing sites", () => {
     ]);
     expect(pickSiteCandidates(uk, r).map((s) => s.domain)).toEqual(["highline.ai"]);
   });
-  it("accepts a domain without the name only when the result names the company and a director", () => {
-    const r = result([["https://hl-labs.io/", "Highline AI — team", "Ioannis Ropas, CEO of Highline AI"]]);
-    expect(pickSiteCandidates(uk, r)).toEqual([{ url: "https://hl-labs.io/", domain: "hl-labs.io", via: "person" }]);
-    expect(pickSiteCandidates(uk, result([["https://hl-labs.io/", "Highline AI", "a company"]]))).toEqual([]);
+  it("a page that only mentions the company and a director is not its site (StreetInsider, JustRaisedFunding)", () => {
+    const r = result([
+      ["https://www.streetinsider.com/SEC+Filings/Form+D/x", "Highline AI Form D", "Ioannis Ropas, Highline AI Limited"],
+      ["https://justraisedfunding.com/founders/ioannis-ropas", "Highline AI", "Ioannis Ropas, Highline AI"],
+      ["https://hl-labs.io/", "Highline AI — team", "Ioannis Ropas, CEO of Highline AI"],
+    ]);
+    expect(pickSiteCandidates(uk, r)).toEqual([]);
   });
   it("forbidden domains", () => {
-    for (const d of ["crunchbase.com", "x.pitchbook.com", "dealroom.co", "en.wikipedia.org", "opencorporates.com"]) expect(isForbiddenDomain(d)).toBe(true);
+    for (const d of ["crunchbase.com", "x.pitchbook.com", "dealroom.co", "en.wikipedia.org", "opencorporates.com", "streetinsider.com", "justraisedfunding.com", "sec.report"]) expect(isForbiddenDomain(d)).toBe(true);
     expect(isForbiddenDomain("highline.ai")).toBe(false);
+  });
+  it("the stored website is the front page, not the deep link the search returned", () => {
+    expect(originOf("https://www.broccoli.com/privacy-policy")).toBe("https://www.broccoli.com/");
+    expect(originOf("https://tabiconnect.com/privacy-policy/?x=1")).toBe("https://tabiconnect.com/");
   });
   it("finds an about page on the same site only", () => {
     const home = page("https://highline.ai/", "", `<a href="https://other.com/about">x</a><a href="/about-us">About</a>`);
@@ -158,6 +165,8 @@ describe("enrichCandidate", () => {
     const e = await enrichCandidate(uk, mkDeps({ fetch: (async () => html(other)) as typeof fetch }));
     expect(e.status).toBe("unverified");
     expect(e.description_he).toBeNull();
+    expect(e.notes.join(" ")).toContain("רק התאמה אחת");
+    expect(e.website).toBe("https://highline.ai/");
   });
   it("robots.txt-blocked pages (451) give a note, not a verdict", async () => {
     const e = await enrichCandidate(uk, mkDeps({ fetch: (async () => new Response("", { status: 451 })) as typeof fetch }));

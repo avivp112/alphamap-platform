@@ -103,6 +103,9 @@ const FORBIDDEN_DOMAINS = [
   "crunchbase.com", "pitchbook.com", "dealroom.co", "wikipedia.org", "wikidata.org", "reddit.com",
   "quora.com", "tracxn.com", "cbinsights.com", "zoominfo.com", "owler.com", "apollo.io", "rocketreach.co",
   "craft.co", "growjo.com", "opencorporates.com", "companycheck.co.uk", "endole.co.uk", "northdata.com",
+  // Filing and funding-news aggregators: they list every Form D, they are not the company (seen in the first dry runs, 2026-11-18).
+  "streetinsider.com", "justraisedfunding.com", "secform4.com", "sec.report", "formds.com", "fundz.net",
+  "tipranks.com", "marketscreener.com", "globenewswire.com", "prnewswire.com", "businesswire.com",
 ];
 
 export function isForbiddenDomain(domain: string): boolean {
@@ -255,25 +258,26 @@ export function quoteInText(quote: string, text: string): boolean {
 
 // ── Choosing sites from search results (pure) ────────────────────────────────
 
-export interface SiteCandidate { url: string; domain: string; via: "name" | "person" }
+export interface SiteCandidate { url: string; domain: string; via: "name" }
 
-/** Distinct root domains whose name carries the company's name, never a forbidden source. At most `max`. */
+/**
+ * Distinct root domains whose name carries the company's name, never a forbidden
+ * source. At most `max`. Only the domain counts: a result that merely mentions the
+ * company and one of its people is a news item or a listing (StreetInsider,
+ * JustRaisedFunding showed up that way in the first dry runs), not its own site —
+ * and "missing is better than wrong".
+ */
 export function pickSiteCandidates(c: CandidateInput, result: SearchResult, max = 3): SiteCandidate[] {
   const out: SiteCandidate[] = [];
   const seen = new Set<string>();
-  const people = candidatePeople(c, 3);
   for (const r of result.organic) {
     const host = websiteDomain(r.url);
     if (!host) continue;
     const root = rootDomain(host);
     if (seen.has(root) || isForbiddenDomain(root)) continue;
-    const byName = domainNameMatch(root, plainName(c.name)) >= 1;
-    // A result whose own words name the company AND one of its people, on a domain not named after it.
-    const snippet = `${r.title ?? ""} ${r.content ?? ""}`;
-    const byPerson = !byName && people.some((p) => textHasPerson(snippet, p.name)) && wordsOf(snippet).join(" ").includes(wordsOf(plainName(c.name)).join(" "));
-    if (!byName && !byPerson) continue;
+    if (domainNameMatch(root, plainName(c.name)) < 1) continue;
     seen.add(root);
-    out.push({ url: r.url, domain: root, via: byName ? "name" : "person" });
+    out.push({ url: r.url, domain: root, via: "name" });
     if (out.length >= max) break;
   }
   return out;
@@ -337,6 +341,11 @@ async function readSite(url: string, f: typeof fetch): Promise<Page[]> {
   return pages;
 }
 
+/** "https://www.acme.ai/privacy-policy" -> "https://www.acme.ai/". */
+export function originOf(url: string): string {
+  try { return `${new URL(url).origin}/`; } catch { return url; }
+}
+
 const blank = (now: Date): Enrichment => ({
   status: "no_site", website: null, match_signals: [], site_signals: [], description_he: null,
   description_quote: null, description_source_url: null, source_urls: [], search_calls: 0,
@@ -396,14 +405,15 @@ export async function enrichCandidate(c: CandidateInput, deps: IdentityDeps): Pr
     if (hit && !best.signals.some((s) => s.kind === "director")) best.signals.push({ kind: "director", text: displayName(people[0].raw), url: hit.url });
   }
 
-  out.website = best.site.url;
+  out.website = originOf(best.site.url);
   out.match_signals = best.signals;
   out.source_urls = best.pages.map((p) => p.url);
   out.site_signals = siteSignals(best.pages);
 
   if (!isVerified(best.signals)) {
     out.status = "unverified";
-    out.notes.push(`נמצא אתר ${best.site.domain} אבל רק ${new Set(best.signals.map((s) => s.kind)).size} התאמה לרשומה: לא מאומת`);
+    const n = new Set(best.signals.map((s) => s.kind)).size;
+    out.notes.push(`נמצא אתר ${best.site.domain} אבל ${n === 0 ? "אין בו אף התאמה לרשומה" : "יש בו רק התאמה אחת לרשומה"}: לא מאומת`);
     return out;
   }
   out.status = "verified";
