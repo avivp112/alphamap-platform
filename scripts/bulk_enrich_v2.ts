@@ -627,7 +627,7 @@ async function main() {
       // "<Company>:<field>" or "<Company>:<field>:<part of the value>" (the value narrows which of the field's rows is meant; the writer still holds the whole field).
       const [co, field = "", ...v] = t.split(":"); const value = v.join(":").trim();
       const foldV = (z: string) => z.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-      const hit = numbered.filter((x) => foldName(x.company) === foldName(co) && (x.field === field.trim() || x.field.startsWith(field.trim())) && (!value || foldV(x.value).includes(foldV(value))));
+      const hit = numbered.filter((x) => foldName(x.company) === foldName(co) && (field.trim() === "*" || x.field === field.trim() || x.field.startsWith(field.trim())) && (!value || foldV(x.value).includes(foldV(value))));
       if (!hit.length) noMatch.push(t);
       return hit;
     });
