@@ -161,10 +161,10 @@ export function BenchTab({ data, onTab }: { data: AlphaData; onTab: (tab: string
                   <button type="button" disabled={busy} onClick={() => unseat(row.id)} aria-label={tt("removeFromBench", "Remove from the bench")}
                     className="-mt-1 -mr-1 p-1.5 rounded-full text-am-ink-3 hover:bg-am-canvas hover:text-am-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-am-accent/40"><X className="w-4 h-4" aria-hidden="true" /></button>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
                   <span className="text-am-caption text-am-ink-3">{tt("conviction", "Conviction")}</span>
                   <ConvictionDots value={row.conviction} onChange={(v) => rate(row.id, v)} label={tt("conviction", "Conviction")} />
-                  <span className="flex-1" />
+                  <span className="flex-1 min-w-0" />
                   {crmStage && <StageChip stage={crmStage} label={tt(`stage_${crmStage}`, crmStage.replace("_", " "))} />}
                 </div>
                 <p className={`text-am-body leading-relaxed border-s-2 border-am-line ps-3 ${note ? "text-am-ink-2" : "text-am-ink-3"}`}>

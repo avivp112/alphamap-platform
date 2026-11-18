@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { NotebookPen } from "lucide-react";
@@ -66,6 +66,16 @@ function Composer({ data, editing, onDone }: { data: AlphaData; editing: AlphaNo
 
   useEffect(() => { setText(initial.text); setMentions(initial.mentions); if (editing) ref.current?.focus(); }, [initial, editing]);
 
+  const pendingCaret = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (pendingCaret.current == null) return;
+    const c = pendingCaret.current;
+    pendingCaret.current = null;
+    ref.current?.focus();
+    ref.current?.setSelectionRange(c, c);
+    setCaret(c);
+  }, [text]);
+
   const query = activeMentionQuery(text, caret);
   useEffect(() => {
     if (!query || query.query.trim().length < 2) { setRemote([]); return; }
@@ -96,7 +106,7 @@ function Composer({ data, editing, onDone }: { data: AlphaData; editing: AlphaNo
     const r = applyMention(text, query.start, caret, `@${s.name}`);
     setText(r.text);
     setMentions((m) => (m.some((x) => refKey(x.ref) === refKey(s.ref)) ? m : [...m, { name: s.name, ref: s.ref }]));
-    requestAnimationFrame(() => { ref.current?.focus(); ref.current?.setSelectionRange(r.caret, r.caret); setCaret(r.caret); });
+    pendingCaret.current = r.caret;
   }
 
   async function save() {
@@ -174,7 +184,7 @@ export function JournalTab({ data }: { data: AlphaData }) {
       ...data.notes.map((n) => ({ id: `n:${n.id}`, at: n.createdAt, kind: "note" as const, data: n })),
       ...(alerts ?? []).map((a) => ({ id: `a:${a.id}`, at: a.created_at, kind: "alert" as const, data: a })),
     ].filter((e) => matchesFilter(e.kind, filter));
-    return mergeTimeline(entries);
+    return mergeTimeline(list);
   }, [data.notes, alerts, filter]);
   const groups = useMemo(() => groupByDay(entries, new Date()), [entries]);
 
