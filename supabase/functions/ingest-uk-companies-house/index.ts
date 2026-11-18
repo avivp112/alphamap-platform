@@ -15,6 +15,9 @@
 //          POST { "from": "2026-07-01", "to": "2026-07-24" }
 //          POST { "dryRun": true }            -> classify, fetch no officers,
 //                                                write nothing
+//          POST { "backfillEvidence": true, "limit": 20, "dryRun": true }
+//                                             -> add the registry detail to pending
+//                                                candidates ingested before it was kept
 //          POST { "withOfficers": false }     -> skip the per-company officer
 //                                                call (1 request instead of 2)
 //
@@ -49,6 +52,7 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { withRunLog, countKeys } from "../_shared/run-log.ts";
 import { gateUkCompany, type GateTier } from "../_shared/company-gate.ts";
+import { mergeCandidateEvidence, DETAIL_STAMP } from "../_shared/candidate-evidence.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -64,6 +68,7 @@ const MAX_LIMIT = 200;
 const PAGE_SIZE = 100;          // advanced-search maximum
 const REQUEST_DELAY_MS = 600;   // ~1.7/s against a 2/s sustained ceiling
 const FETCH_TIMEOUT_MS = 20_000;
+const BACKFILL_MAX = 25;        // 2 requests each at REQUEST_DELAY_MS: ~30 s, inside the function's time limit
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -254,6 +259,72 @@ async function chFetch(url: string, apiKey: string) {
   return { ok: res.ok, status: res.status, body: res.ok ? await res.json() : null };
 }
 
+
+// ── Backfill: candidates already waiting for review ─────────────────────────
+
+/**
+ * Read the company profile and officers again for pending candidates that were
+ * ingested before the registry detail was kept, and add it to their evidence.
+ * Two requests per candidate, REQUEST_DELAY_MS apart (the register allows 600
+ * per five minutes). A candidate is read once: DETAIL_STAMP marks it. Writes
+ * nothing for a decided candidate (the update is conditional on pending).
+ */
+async function backfillEvidence(
+  supabase: SupabaseClient, apiKey: string, limit: number, dryRun: boolean, withOfficers: boolean,
+): Promise<Response> {
+  const { data: rows, error } = await supabase
+    .from("company_candidates")
+    .select("id, name, entity_number, evidence")
+    .eq("source", "uk_companies_house").eq("status", "pending")
+    .not("entity_number", "is", null)
+    .filter(`evidence->>${DETAIL_STAMP}`, "is", null)
+    .order("first_seen_at", { ascending: false })
+    .limit(limit);
+  if (error) return json({ error: `company_candidates: ${error.message}` }, 500);
+
+  const results: Array<Record<string, unknown>> = [];
+  let updated = 0, notFound = 0, failed = 0;
+  for (const row of rows ?? []) {
+    const number = encodeURIComponent(String(row.entity_number));
+    const now = new Date().toISOString();
+    const profile = await chFetch(`${API}/company/${number}`, apiKey);
+    await sleep(REQUEST_DELAY_MS);
+    if (profile.status === 429) { results.push({ name: row.name, error: "rate limited, stopped" }); break; }
+
+    let extra: Record<string, unknown> = {};
+    let officers: Array<Record<string, unknown>> | undefined;
+    if (profile.ok && profile.body) {
+      const body = profile.body as Record<string, unknown>;
+      // A profile spells the company type "type"; the advanced search spells it "company_type".
+      const c = mapCompany({ ...body, company_type: body.company_type ?? body.type });
+      if (c) extra = ukEvidenceExtra(c);
+      if (withOfficers) {
+        const o = await chFetch(`${API}/company/${number}/officers`, apiKey);
+        await sleep(REQUEST_DELAY_MS);
+        if (o.status === 429) { results.push({ name: row.name, error: "rate limited, stopped" }); break; }
+        if (o.ok && o.body) officers = mapOfficers(o.body as Record<string, unknown>) as unknown as Array<Record<string, unknown>>;
+      }
+    } else if (profile.status === 404) {
+      notFound++;            // gone from the register: stamp it so it is not asked again
+    } else {
+      failed++;
+      results.push({ name: row.name, error: `HTTP ${profile.status}` });
+      continue;              // not stamped: the next run tries again
+    }
+
+    const merged = mergeCandidateEvidence(row.evidence as Record<string, unknown>, extra, officers, now);
+    if (!dryRun) {
+      const { error: upErr } = await supabase
+        .from("company_candidates").update({ evidence: merged })
+        .eq("id", row.id).eq("status", "pending");
+      if (upErr) { failed++; results.push({ name: row.name, error: upErr.message }); continue; }
+    }
+    updated++;
+    results.push({ name: row.name, ok: true, address: extra.address ?? null, officers: officers?.length ?? 0 });
+  }
+  return json({ backfill: true, dryRun, found: rows?.length ?? 0, updated, notFound, failed, results });
+}
+
 // ── Handler ─────────────────────────────────────────────────────────────────
 
 Deno.serve(withRunLog("uk_companies_house", countKeys("ingested"), async (req: Request): Promise<Response> => {
@@ -276,6 +347,7 @@ Deno.serve(withRunLog("uk_companies_house", countKeys("ingested"), async (req: R
   let limit = DEFAULT_LIMIT;
   let dryRun = false;
   let withOfficers = true;
+  let backfill = false;
   const yesterday = ymd(new Date(Date.now() - 86_400_000));
   let from = yesterday;
   let to = yesterday;
@@ -286,11 +358,15 @@ Deno.serve(withRunLog("uk_companies_house", countKeys("ingested"), async (req: R
     if (Number.isFinite(n) && n > 0) limit = Math.min(Math.floor(n), MAX_LIMIT);
     dryRun = b?.dryRun === true;
     if (b?.withOfficers === false) withOfficers = false;
+    backfill = b?.backfillEvidence === true;
     const iso = /^\d{4}-\d{2}-\d{2}$/;
     if (typeof b?.date === "string" && iso.test(b.date)) { from = b.date; to = b.date; }
     if (typeof b?.from === "string" && iso.test(b.from)) from = b.from;
     if (typeof b?.to === "string" && iso.test(b.to)) to = b.to;
   } catch { /* defaults */ }
+
+  // POST { "backfillEvidence": true, "limit": 20 } — see backfillEvidence().
+  if (backfill) return await backfillEvidence(supabase, apiKey, Math.min(limit, BACKFILL_MAX), dryRun, withOfficers);
 
   try {
     const candidates: CHCompany[] = [];
@@ -390,7 +466,7 @@ Deno.serve(withRunLog("uk_companies_house", countKeys("ingested"), async (req: R
       let evidenceError: string | undefined;
       if (candidateId) {
         const { error: mergeError } = await supabase.rpc("merge_candidate_evidence", {
-          p_candidate_id: candidateId, p_extra: ukEvidenceExtra(c),
+          p_candidate_id: candidateId, p_extra: { ...ukEvidenceExtra(c), [DETAIL_STAMP]: new Date().toISOString() },
         });
         if (mergeError) evidenceError = mergeError.message;
       }

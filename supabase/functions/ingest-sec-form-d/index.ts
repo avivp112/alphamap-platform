@@ -15,6 +15,9 @@
 //                                              (last 7 + backfill), newest first,
 //                                              ALL Form D / D/A filings, until a
 //                                              100 s budget is spent
+//          POST { "backfillEvidence": true, "limit": 50, "dryRun": true }
+//                                           -> add the Form D detail to pending
+//                                              candidates ingested before it was kept
 //          POST { "date": "2026-07-24" }    -> that day only
 //          POST { "date": ..., "dryRun": true, "limit": 20 } -> classify, write nothing
 //
@@ -70,6 +73,7 @@ import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supa
 import { withRunLog, countKeys } from "../_shared/run-log.ts";
 import { gateFormD, secIndustryScope, type GateTier } from "../_shared/company-gate.ts";
 
+import { mergeCandidateEvidence, DETAIL_STAMP } from "../_shared/candidate-evidence.ts";
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -443,6 +447,68 @@ async function secFetch(url: string, userAgent: string): Promise<{ ok: boolean; 
   return { ok: res.ok, status: res.status, body: res.ok ? await res.text() : "" };
 }
 
+
+// ── Backfill: candidates already waiting for review ─────────────────────────
+
+const BACKFILL_MAX = 100;
+
+/**
+ * Read the primary_doc.xml again for pending candidates ingested before the
+ * Form D detail was kept (address, investors, exemptions, placement agents,
+ * related-person addresses) and add it to their evidence. One request each,
+ * REQUEST_DELAY_MS apart. A candidate is read once: DETAIL_STAMP marks it.
+ */
+async function backfillEvidence(
+  supabase: SupabaseClient, userAgent: string, limit: number, dryRun: boolean,
+): Promise<Response> {
+  const { data: rows, error } = await supabase
+    .from("company_candidates")
+    .select("id, name, cik, evidence")
+    .eq("source", "sec_form_d").eq("status", "pending")
+    .filter(`evidence->>${DETAIL_STAMP}`, "is", null)
+    .order("first_seen_at", { ascending: false })
+    .limit(limit);
+  if (error) return json({ error: `company_candidates: ${error.message}` }, 500);
+
+  const results: Array<Record<string, unknown>> = [];
+  let updated = 0, noFiling = 0, failed = 0;
+  for (const row of rows ?? []) {
+    const now = new Date().toISOString();
+    const { data: filing, error: fErr } = await supabase
+      .from("raw_gov_filings").select("accession_number, cik")
+      .eq("candidate_id", row.id).order("filing_date", { ascending: false }).limit(1).maybeSingle();
+    if (fErr) { failed++; results.push({ name: row.name, error: fErr.message }); continue; }
+
+    let extra: Record<string, unknown> = {};
+    let officers: Array<Record<string, unknown>> | undefined;
+    const cik = (filing?.cik ?? row.cik) as string | null;
+    if (!filing?.accession_number || !cik) {
+      noFiling++;                      // nothing to read: stamp it so it is not asked again
+    } else {
+      const doc = await secFetch(primaryDocUrl(cik, filing.accession_number as string), userAgent);
+      await sleep(REQUEST_DELAY_MS);
+      if (doc.status === 429 || doc.status === 403) { results.push({ name: row.name, error: `HTTP ${doc.status}, stopped` }); break; }
+      if (!doc.ok) { failed++; results.push({ name: row.name, error: `HTTP ${doc.status}` }); continue; }   // not stamped: tried again next run
+      const parsed = parseFormD(doc.body);
+      if (parsed) {
+        extra = formDEvidenceExtra(parsed);
+        officers = parsed.officers as unknown as Array<Record<string, unknown>>;
+      }
+    }
+
+    const merged = mergeCandidateEvidence(row.evidence as Record<string, unknown>, extra, officers, now);
+    if (!dryRun) {
+      const { error: upErr } = await supabase
+        .from("company_candidates").update({ evidence: merged })
+        .eq("id", row.id).eq("status", "pending");
+      if (upErr) { failed++; results.push({ name: row.name, error: upErr.message }); continue; }
+    }
+    updated++;
+    results.push({ name: row.name, ok: true, address: extra.address ?? null, investors: extra.investors ?? null });
+  }
+  return json({ backfill: true, dryRun, found: rows?.length ?? 0, updated, noFiling, failed, results });
+}
+
 // ── Which days to process ───────────────────────────────────────────────────
 
 export type DayStatus = "pending" | "waiting" | "in_progress" | "complete" | "no_index";
@@ -511,13 +577,14 @@ Deno.serve(withRunLog("sec_form_d", countKeys("ingested", "fundsRecorded"), asyn
 
   const supabase: SupabaseClient = createClient(SUPABASE_URL, SERVICE_KEY);
 
-  let dryRun = false, reprocess = false;
+  let dryRun = false, reprocess = false, backfill = false;
   let limit = MAX_PER_RUN;
   let onlyDate: string | null = null;
   try {
     const body = await req.json();
     dryRun = body?.dryRun === true;
     reprocess = body?.reprocess === true;
+    backfill = body?.backfillEvidence === true;
     const n = Number(body?.limit);
     if (Number.isFinite(n) && n > 0) limit = Math.min(Math.floor(n), MAX_PER_RUN);
     if (typeof body?.date === "string") {
@@ -529,6 +596,8 @@ Deno.serve(withRunLog("sec_form_d", countKeys("ingested", "fundsRecorded"), asyn
   } catch {
     /* no body — worker mode */
   }
+  // POST { "backfillEvidence": true, "limit": 50, "dryRun": true } — see backfillEvidence().
+  if (backfill) return await backfillEvidence(supabase, userAgent, Math.min(limit, BACKFILL_MAX), dryRun);
   if (dryRun && !onlyDate) return json({ error: "dryRun needs a date" }, 400);
 
   const now = new Date();
@@ -691,7 +760,7 @@ Deno.serve(withRunLog("sec_form_d", countKeys("ingested", "fundsRecorded"), asyn
                 let evidenceError: string | undefined;
                 if (candidateId) {
                   const { error: mergeError } = await supabase.rpc("merge_candidate_evidence", {
-                    p_candidate_id: candidateId, p_extra: formDEvidenceExtra(f),
+                    p_candidate_id: candidateId, p_extra: { ...formDEvidenceExtra(f), [DETAIL_STAMP]: new Date().toISOString() },
                   });
                   if (mergeError) evidenceError = mergeError.message;
                 }

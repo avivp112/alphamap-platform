@@ -29,7 +29,8 @@ async function load(name) {
   .replace(/^import\s+\{[^}]*\}\s+from\s+"\.\.\/_shared\/run-log\.ts";\s*$/m,
     "const withRunLog = (_s: string, _c: unknown, h: unknown) => h; const countKeys = (..._k: string[]) => () => 0;")
   // _shared/company-gate.ts (pure) is imported for real, by absolute path from the temp copy.
-  .replace('"../_shared/company-gate.ts"', JSON.stringify(new URL("../_shared/company-gate.ts", import.meta.url).pathname));
+  .replace('"../_shared/company-gate.ts"', JSON.stringify(new URL("../_shared/company-gate.ts", import.meta.url).pathname))
+  .replace('"../_shared/candidate-evidence.ts"', JSON.stringify(new URL("../_shared/candidate-evidence.ts", import.meta.url).pathname));
   if (out === source) { console.error(`no remote import to strip in ${name}`); process.exit(1); }
   writeFileSync(stripped, out);
   execFileSync("npx", ["--yes", "esbuild@0.21.5", stripped, "--bundle", "--format=esm",
