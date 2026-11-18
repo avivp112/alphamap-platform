@@ -26,6 +26,7 @@
 
 import { isListingOrSponsoredUrl } from "./pageKind.ts";
 import { isDataPlatformUrl, LISTING_SITES } from "./dataPlatforms";
+import { acquisitionHeadline } from "./siteOwner";
 import { domainClasses, standingOfClass } from "./domainClass";
 import { isRegionalWireHost } from "./primarySources";
 
@@ -315,6 +316,9 @@ export function isPartyRelease(url: string, headline: string | null | undefined,
   // A short form of the name ("lwolf" for "Lone Wolf"): its letters, in order, from the first letter, are most of the name.
   const flat = label.replace(/[^a-z0-9]/g, "");
   if (flat.length >= 4 && [...list, ...joined].some((w) => w.length >= flat.length && w[0] === flat[0] && flat.length >= w.length * 0.6 && isSubsequence(flat, w))) return true;
+  // A corporate newsroom, investor-relations site or blog whose headline is the acquisition of the company: whoever publishes it announces its own deal (owner, batch 7: Euronet on Ria's purchase
+  // of Sikhona — the buyer's parent; no word of the headline is the site's name). Not an explainer ("Why X bought Y").
+  if (dealPage && o.companyName && headline && !/^(?:why|how|what|when|where|lessons|top|best|\d+)\b/i.test(headline.trim()) && acquisitionHeadline(headline, o.companyName)) return true;
   // The page itself says the deal and names its own site beside the buyer ("Ria, a Euronet company, acquired Sikhona"): the buyer's parent.
   const c = o.content ?? "";
   if (dealPage && o.companyName && c) {

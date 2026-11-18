@@ -37,6 +37,7 @@ export function claims(sentence: string, companyName: string): { numbers: string
   const own = new Set(norm(companyName).split(" "));
   const names: string[] = [];
   const words = sentence.split(/\s+/);
+  let placeRunEnd = -9;
   words.forEach((w, i) => {
     const bare = w.replace(/^[("'“]+|[)"'”.,;:!?]+$/g, "");
     if (i === 0 || !/^[A-Z][\p{L}\d&-]{1,}$/u.test(bare)) return;
@@ -45,6 +46,11 @@ export function claims(sentence: string, companyName: string): { numbers: string
     if (/^[A-Z]{2,}s?$/.test(bare) || /^[A-Z]{2,}s?-\p{L}+$/u.test(bare) || TERMS.has(k)) return;
     // Only the names of companies, products and people are checked against the sources: not a country, a nationality or a language ("Brazil" on a page that says "Brasil"), and not a compound with a
     // plain word ("ETF-based", "Cloud-native", "Wi-Fi") (owner, batch 7).
+    // A place after "in" / "near" / "across" is a place, whatever its name ("in Pietermaritzburg"): only companies, products and people are checked.
+    const prev = (words[i - 1] ?? "").toLowerCase().replace(/[^\p{L}]/gu, "");
+    if (/^(?:in|near|across|throughout|around|within|outside)$/.test(prev)) { placeRunEnd = i; return; }
+    // "… in Pietermaritzburg and Durban": the list of places goes on after "and" / "or" / a comma.
+    if (placeRunEnd === i - 2 && /^(?:and|or)$/.test(prev) || placeRunEnd === i - 1 && /,$/.test(words[i - 1] ?? "")) { placeRunEnd = i; return; }
     if (GEO_WORDS.has(k) || (bare.includes("-") && bare.split("-").some((part) => /^\p{Ll}/u.test(part) || part.length <= 2))) return;
     if (!COMMON_CAPS.has(k) && !own.has(k)) names.push(bare);
   });

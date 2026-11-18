@@ -471,7 +471,7 @@ export async function collectCompany(
   const rebrandedTo = ctx.update || siteOwnerIssue ? null : (rebrandedAs(row.name, websitePages) ?? redirectBrand(row.name, effectiveWebsite, websitePages));
   if (rebrandedTo) console.log(`    🔁  Rebranded: ${row.name} is now "${rebrandedTo}" (the site says so) — described under the new name; name update proposed: name = "${rebrandedTo}", former_names += "${row.name}" (for the owner's review, not applied).`);
   if (siteOwnerIssue) {
-    console.log(`    🛠️   ${siteOwnerIssue} — no description or sector is written; listed for review.`);
+    console.log(`    🛠️   ${siteOwnerIssue} — the site is left out of the description; listed for review.`);
     ctx.onWebsiteIssue?.("content_mismatch", siteOwnerIssue);
   }
   let techGateVerdict: TechGateVerdict | null = null;
@@ -1974,17 +1974,16 @@ export async function collectCompany(
   // v2's own description (descriptionBuilder.ts, owner 2026-11-08): replaces the extraction's free text; without a
   // verified "what" and "for whom" there is none. Written later only for a company with no description on file.
   // Acquired (owner, round 10): derived only from the news that was accepted — bulk_enrich_v2.ts reads the company's news rows (rowRules.ts acquiredFromNews); there is no separate extraction.
-  if (componentOn("description_v2") && !ctx.update && siteOwnerIssue) {
-    profile.profile.description = undefined;
-    profile.profile.description_source_ids = undefined;
-    bump(stats.droppedByReason, "description_company_acquired_or_rebranded");
-  } else if (componentOn("description_v2") && !ctx.update) {
+  // A site that is another company's now (the address moved to the buyer's, or it never names the company) is no source of this company's description — but an acquired company is enriched as
+  // usual (owner, batch 7: Sikhona): the description is built from the other allowed sources (the press about the company), the site left out.
+  if (componentOn("description_v2") && !ctx.update && siteOwnerIssue) bump(stats.droppedByReason, "description_company_acquired_or_rebranded_site_left_out");
+  if (componentOn("description_v2") && !ctx.update) {
     const before = profile.profile.description;
     profile.profile.description = undefined;
     profile.profile.description_source_ids = undefined;
     try {
       // Not the extra searches' pages (founders, rivals): they did not pass the entity filter the first pass did.
-      const usable = descriptionSources(allSources, (x) => profileSourceAllowed(x, row.name) && !/^(founder_background|vs_own|vs_other|market_peers)/.test(x.query_label ?? ""));
+      const usable = descriptionSources(allSources, (x) => profileSourceAllowed(x, row.name) && !/^(founder_background|vs_own|vs_other|market_peers)/.test(x.query_label ?? "") && !(siteOwnerIssue && x.source_type === "company_site"));
       if (usable.length) {
         const msg = await ctx.anthropic.messages.create(requestFor(buildDescriptionRequest(row.name, usable), ctx.models.profile));
         ctx.recordCost(ctx.models.profile, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 });
