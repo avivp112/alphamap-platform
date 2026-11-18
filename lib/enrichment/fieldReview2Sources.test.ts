@@ -140,9 +140,9 @@ describe("domain decisions of 2026-11-04 (run 3)", () => {
     expect(roundSourceStanding("https://www.mynewsdesk.com/se/larian/pressreleases/x-1", { companyName: "Larian Studios" })).toMatchObject({ kind: "allowed", tier: 1, lowConfidence: true });
     expect(roundSourceStanding("https://www.mynewsdesk.com/se/larian/pressreleases/x-1").kind).toBe("unlisted");
   });
-  it("nasdaq.com's press releases: only with an allowed original", () => {
+  it("nasdaq.com's press releases are a wire (owner, batch 7; before: only with an allowed original)", () => {
     const n = "https://www.nasdaq.com/press-release/masttro-secures-$43-million-growth-equity-investment-led-by-ftv-capital-2023-03-09";
-    expect(roundSourceStanding(n).kind).toBe("denied");
+    expect(roundSourceStanding(n)).toMatchObject({ kind: "allowed", tier: 1 });
     expect(roundSourceStanding(n, { content: "NEW YORK--(BUSINESS WIRE)--Masttro, the global wealth platform…" })).toMatchObject({ kind: "allowed", tier: 1 });
     expect(roundSourceStanding("https://www.nasdaq.com/articles/x").kind).toBe("unlisted");
   });
@@ -214,5 +214,28 @@ describe("domains of 2026-11-05", () => {
     expect(roundSourceStanding("https://www.bci.ca/news/x").kind).toBe("unlisted");
     expect(roundSourceStanding("https://www.bci.ca/news/x", { investors: ["Accel", "British Columbia Investment Management Corporation"] })).toMatchObject({ kind: "allowed", tier: 1, why: "investor_site" });
     expect(roundSourceStanding("https://www.bci.ca/news/x", { investors: ["Accel"] }).kind).toBe("unlisted");
+  });
+});
+
+import { roundSourceStanding } from "./roundSources";
+describe("the other party's announcement of the deal is a source for the event (owner, batch 7)", () => {
+  it("LionDesk: lwolf.com press release", () => {
+    expect(isPartyRelease("https://www.lwolf.com/press-releases/lone-wolf-acquires-liondesk-and-homespotter-expanding-real-estates-leading-end-to-end-technology-suite", "Lone Wolf acquires LionDesk and HomeSpotter, expanding real estate's leading end-to-end technology suite", { companyName: "LionDesk" })).toBe(true);
+  });
+  it("UltraVox: inworld.ai blog", () => {
+    expect(isPartyRelease("https://inworld.ai/blog/inworld-acquires-ultravox", "We have acquired Ultravox to Advance Realtime Voice AI", { companyName: "UltraVox" })).toBe(true);
+  });
+  it("Outvest: the seller's company-news page and the buyer's newsroom", () => {
+    expect(isPartyRelease("https://www.outsurance.co.za/company-news/outsurance-sale-of-outvest-proprietary-limited-to-alexforbes/", "OUTsurance Sale Of OUTvest Proprietary Limited To Alexforbes", { companyName: "Outvest" })).toBe(true);
+    expect(isPartyRelease("https://www.alexforbes.com/za/en/newsroom/news/digital-investments-platform-outsurance.html", "Alexforbes acquires digital investments platform from outsurance", { companyName: "Outvest" })).toBe(true);
+  });
+  it("Sikhona: euronet.com use case that names the buyer's group on its own page; nasdaq.com press-release is a wire", () => {
+    const content = "Ria acquires Sikhona. Ria Money Transfer, a Euronet company, acquired Sikhona in South Africa. Euronet is a leading global financial technology company. Euronet serves clients worldwide.";
+    expect(isPartyRelease("https://www.euronet.com/use-cases/ria-acquires-sikhona/", "Ria Acquires Sikhona in South Africa", { companyName: "Sikhona", content })).toBe(true);
+    expect(roundSourceStanding("https://www.nasdaq.com/press-release/ria-money-transfer-expands-presence-in-south-africa-through-acquisition-of-sikhona", { companyName: "Sikhona" }).kind).toBe("allowed");
+  });
+  it("a stranger's blog about a deal is not a party", () => {
+    expect(isPartyRelease("https://randomblog.com/blog/why-lone-wolf-acquired-liondesk", "Why Lone Wolf acquired LionDesk", { companyName: "LionDesk", content: "Opinion piece about the deal." })).toBe(false);
+    expect(isPartyRelease("https://hireaiva.com/blog/liondesk-reviews/", "A Comprehensive Review of Liondesk CRM", { companyName: "LionDesk" })).toBe(false);
   });
 });

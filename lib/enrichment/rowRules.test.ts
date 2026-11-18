@@ -521,3 +521,15 @@ describe("batch 7: evidence rules", () => {
     expect(caseName("Mon Petit Placement")).toBe("Mon Petit Placement");
   });
 });
+
+import { siteBelongsToAnotherCompany } from "./siteOwner";
+describe("acquired companies are enriched as usual (owner, batch 7)", () => {
+  const page = (content: string) => [{ url: "https://sikhona.co.za", content } as never];
+  const filler = " Sikhona money transfers to and from South Africa. Send money safely with Sikhona at any branch.".repeat(8);
+  it("a page that says the company was bought and still names it is its own page", () => {
+    expect(siteBelongsToAnotherCompany("Sikhona", "https://sikhona.co.za", page(`Ria Money Transfer acquired Sikhona. ${filler}`))).toBeNull();
+  });
+  it("a page that names the company once, in the sale, is not", () => {
+    expect(siteBelongsToAnotherCompany("Hofy", "https://other.com", page(`Deel acquires Hofy. ${"Deel runs global payroll for teams everywhere. ".repeat(20)}`))).toMatch(/acquired \/ rebranded/);
+  });
+});

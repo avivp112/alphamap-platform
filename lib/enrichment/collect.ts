@@ -34,7 +34,7 @@ import { reconcileSector, subSectorUnsupported } from "./sectors.ts";
 import { siteBelongsToAnotherCompany, acquisitionHeadline, rebrandedAs, redirectBrand } from "./siteOwner.ts";
 import { resolveDomain, judgeSite } from "./domainResolve.ts";
 import { techOverride, sectorDecision, techAccepted } from "./techOverrides.ts";
-import { isThirdPartyPage, sentenceIsAboutCompany, sentenceWithYear } from "./subject.ts";
+import { isThirdPartyPage, foundingSentenceIsAboutCompany } from "./subject.ts";
 import { acquirerIn } from "./acquisition.ts";
 import { roundsFromNews } from "./newsRounds.ts";
 import { companyLanguage, localQueries, type Lang } from "./localSearch.ts";
@@ -1256,7 +1256,7 @@ export async function collectCompany(
   {
     const fy = profile.profile.founded_year as { value: number; source_id: string; evidence_quote: string } | undefined;
     const fsrc = fy ? sourceById.get(fy.source_id) : undefined;
-    if (fy && fsrc && fsrc.source_type !== "registry" && (isThirdPartyPage(fsrc.url) || !sentenceIsAboutCompany(sentenceWithYear(fy.evidence_quote, fy.value), row.name, { ownSite: fsrc.source_type === "company_site" }))) {
+    if (fy && fsrc && fsrc.source_type !== "registry" && (isThirdPartyPage(fsrc.url) || !foundingSentenceIsAboutCompany(fy.evidence_quote, fy.value, row.name, { ownSite: fsrc.source_type === "company_site", url: fsrc.url, title: (fsrc as { title?: string }).title }))) {
       console.log(`    🚫  founded_year ${fy.value} not written — its sentence is not about ${row.name}: "${fy.evidence_quote.slice(0, 110)}" (${fsrc.url})`);
       bump(stats.droppedByReason, "founded_year_subject_not_company");
       profile.profile.founded_year = undefined;
@@ -1643,7 +1643,8 @@ export async function collectCompany(
         console.log(`    🏷️   leader ${l.name}: only "${partial}" of "${role}" is beside the name in an allowed source — written as "${partial}"`);
         bump(stats.droppedByReason, "leader_title_reduced_to_verified");
         record("verified_text");
-        keptLeaders.push({ ...l, role: partial });
+        // Only the chair of "Chairman and CEO" is beside the name (owner, batch 7: Yomoni): the chair is the board's seat, not a management title — written as the board's, not dropped by the closed list of leadership roles.
+        keptLeaders.push(partial === "Chair" ? { ...l, role: "Chairman", group: "board" } as typeof l : { ...l, role: partial });
         continue;
       }
       const namedIn = allowedTexts.filter((t) => personMentionedIn(l.name, t)).length;
