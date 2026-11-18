@@ -34,6 +34,15 @@ export function acquirerIn(text: string, companyName: string): { acquirer: strin
     const a = lead && trimName(lead[1]);
     if (a && !GENERIC_BUYER.test(a) && !sameName(a, companyName)) return { acquirer: a, majority };
   }
+  // "Sale of <Company> … to X", "<Company> sold to X" (the seller's headline)
+  if (/\b(?:sale of|sells?|sold|divest(?:s|ed|iture of)?)\s*$/i.test(text.slice(Math.max(0, nm.index - 14), nm.index)) || /^[^.:;|]{0,60}?\b(?:sale|sold|divestiture)\b/i.test(afterName)) {
+    const to = afterName.match(/\b[Tt][Oo]\s+(?=\p{Lu})/u);
+    if (to && to.index != null) {
+      const lead = afterName.slice(to.index + to[0].length).match(LEADING);
+      const a = lead && trimName(lead[1]);
+      if (a && !GENERIC_BUYER.test(a) && !sameName(a, companyName)) return { acquirer: a, majority };
+    }
+  }
   // "X acquires … <Company>": the verb before the name, the buyer just before the verb
   const before = text.slice(0, nm.index);
   const verb = [...before.matchAll(new RegExp(`\\b${BUY}\\b`, "gi"))].pop();
@@ -69,4 +78,17 @@ export function detectAcquisition(articles: Array<{ url: string; title?: string 
   const f = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
   const same = claims.filter((c) => f(c.acquirer) === f(pick.acquirer) && c.date);
   return same.length ? same[same.length - 1] : pick;
+}
+
+/** The buyers that at least `minAgree` of these headlines name for the company: with them known, an article that says they bought it is about this company, not one of the same name (owner, batch 7: OUTvest, Alexforbes). */
+export function knownAcquirers(titles: string[], companyName: string, minAgree = 2): string[] {
+  const f = (x: string) => x.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  const count = new Map<string, { name: string; n: number }>();
+  for (const t of titles) {
+    const hit = acquirerIn(t, companyName);
+    if (!hit) continue;
+    const k = f(hit.acquirer), e = count.get(k) ?? { name: hit.acquirer, n: 0 };
+    e.n++; count.set(k, e);
+  }
+  return [...count.values()].filter((e) => e.n >= minAgree).map((e) => e.name);
 }

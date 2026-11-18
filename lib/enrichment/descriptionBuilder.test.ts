@@ -28,7 +28,7 @@ describe("sentences are checked against their own sources", () => {
     expect(sentenceProblem(S("edge", "Nuova builds quantum batteries for orbiting satellites."), "Nuova", byId, ok)).toBe("no_supporting_sentence");
   });
   it("claims: numbers and capitalised names, not the first word or the company", () => {
-    expect(claims("Nuova sells to Siemens and 45 others in Germany.", "Nuova")).toEqual({ numbers: ["45"], names: ["Siemens", "Germany"] });
+    expect(claims("Nuova sells to Siemens and 45 others in Germany.", "Nuova")).toEqual({ numbers: ["45"], names: ["Siemens"] });
   });
 });
 

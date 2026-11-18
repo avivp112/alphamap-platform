@@ -2,7 +2,8 @@
 /**
  * scripts/rejected_review.ts — the owner's check of what the rules turned away (rejected_sample_30.csv), without editing a spreadsheet.
  *   npx tsx scripts/rejected_review.ts                  → prints the 30 rejections, numbered, each with its reason code, value, source and evidence
- *   WRONG=3,7,12 npx tsx scripts/rejected_review.ts     → those numbers are rejections that were WRONG (the value was right); every other number is a right rejection.
+ *   SHOW=1,4,8 npx tsx scripts/rejected_review.ts      → only those numbers, in full (the whole reason and quote)
+ *   WRONG=<the numbers> npx tsx scripts/rejected_review.ts  → those numbers are rejections that were WRONG (the value was right); every other number is a right rejection.
  *                                                         Writes the verdicts into the file and prints, per reason code, the share of wrong rejections (over 20% = widen the rule).
  */
 import { readFileSync, writeFileSync } from "fs";
@@ -13,12 +14,14 @@ const file = process.env.FILE ?? "rejected_sample_30.csv";
 const [head, ...rows] = parseCsv(readFileSync(file, "utf8"));
 const ix = (c: string) => head.findIndex((h) => h.startsWith(c));
 const wrongEnv = (process.env.WRONG ?? "").trim();
+const only = new Set((process.env.SHOW ?? "").split(/[,\s]+/).filter(Boolean).map(Number));
 if (!wrongEnv && !process.env.RIGHT_ALL) {
-  for (const r of rows) {
+  for (const r of rows.filter((x) => !only.size || only.has(Number(x[ix("n")])))) {
     console.log(`#${r[ix("n")]}  ${r[ix("company")]} · ${r[ix("field")]} · ${r[ix("value")].slice(0, 110)}`);
     console.log(`     reason: ${r[ix("reason_code")]} — ${r[ix("reason")].slice(0, 170)}`);
     if (r[ix("source_url")]) console.log(`     source: ${r[ix("source_url")].slice(0, 150)}`);
-    if (r[ix("evidence")]) console.log(`     quote:  ${r[ix("evidence")].slice(0, 220)}`);
+    if (r[ix("evidence")]) console.log(`     quote:  ${r[ix("evidence")].slice(0, only.size ? 600 : 220)}`);
+    if (only.size && r[ix("reason")].length > 170) console.log(`     (full reason) ${r[ix("reason")]}`);
     console.log("");
   }
   console.log(`Mark the WRONG rejections (the value was right):  WRONG=<numbers, comma-separated> npx tsx scripts/rejected_review.ts     (none wrong: RIGHT_ALL=1)`);

@@ -34,7 +34,7 @@ export type SourceTier = 1 | 2 | 3 | 4;
 /** Wires and registers (tier 1 beside the company's and the investor's own sites). */
 export const TIER1_DOMAINS = [
   // Official press wires
-  "prnewswire.com", "businesswire.com", "globenewswire.com", "accesswire.com", "einpresswire.com", "newswire.com", "pr.com", "businesswireindia.com", "prweb.com",
+  "prnewswire.com", "businesswire.com", "globenewswire.com", "accesswire.com", "accessnewswire.com", "einpresswire.com", "newswire.com", "pr.com", "businesswireindia.com", "prweb.com",
   // Registers and filings
   "sec.gov", "find-and-update.company-information.service.gov.uk", "companieshouse.gov.uk", "data.gov.il",
   "maya.tase.co.il", "handelsregister.de", "unternehmensregister.de", "infogreffe.fr", "mca.gov.in",

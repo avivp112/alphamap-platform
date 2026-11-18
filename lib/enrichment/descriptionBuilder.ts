@@ -20,13 +20,20 @@ export interface BuiltDescription { description: string; sentences: DescriptionS
 /** Words that sell instead of describe. Used alone they say nothing; a sentence with one is rewritten or dropped. */
 export const MARKETING = /\b(leading|leader in|innovative|innovation|revolutionary|revolutionize[sd]?|ai-native|cutting-edge|state-of-the-art|world-class|best-in-class|next-generation|next-gen|game-chang\w+|seamless(ly)?|unparalleled|disruptive|industry-leading|pioneering|transformative|powerful|robust|end-to-end|lowest|highest|best|fastest|first|largest|biggest|smallest|most|top|greatest|unmatched|unrivall?ed|premier|foremost|ultimate|market leader|number one|#1|reinvent\w*|reimagin\w+)\b/i;
 
+import { numberStatedIn } from "./numberForms.ts";
 const norm = (s: string) => s.toLowerCase().replace(/(\d),(\d)/g, "$1$2").replace(/[^\p{L}\p{N}$%.+ ]/gu, " ").replace(/\s+/g, " ");
 const COMMON_CAPS = new Set(["the", "a", "an", "it", "its", "this", "that", "they", "their", "for", "to", "and", "in", "of", "with", "by", "on", "from", "ai", "api", "saas", "b2b", "b2c", "it", "ml", "sdk", "iot", "cloud", "ceo", "cto", "us", "usa", "eu", "uk"]);
 
 /** The numbers and the capitalised names of a sentence (not its first word, not the company's own name). */
 const TERMS = new Set(["saas", "paas", "iaas", "iot", "nosql", "devops", "fintech", "proptech", "edtech", "healthtech", "insurtech", "regtech", "adtech", "foodtech", "agtech", "biotech", "cleantech"]);
+/** Countries, nationalities, languages, continents and regions: places and peoples, no company, product or person. */
+const GEO_WORDS = new Set(`afghanistan albania algeria argentina armenia australia austria azerbaijan bahrain bangladesh belarus belgium bolivia bosnia botswana brazil britain bulgaria cambodia cameroon canada chile china colombia congo croatia cuba cyprus czechia denmark ecuador egypt estonia ethiopia finland france georgia germany ghana greece guatemala hungary iceland india indonesia iran iraq ireland israel italy jamaica japan jordan kazakhstan kenya korea kuwait latvia lebanon libya lithuania luxembourg malaysia mexico morocco mozambique myanmar namibia nepal netherlands nigeria norway oman pakistan palestine panama paraguay peru philippines poland portugal qatar romania russia rwanda senegal serbia singapore slovakia slovenia somalia spain sudan sweden switzerland syria taiwan tanzania thailand tunisia turkey uganda ukraine uruguay uzbekistan venezuela vietnam yemen zambia zimbabwe
+america americas africa asia europe oceania antarctica emea apac latam mena scandinavia nordics nordic benelux balkans caribbean
+american african asian european british english french german spanish italian portuguese brazilian mexican canadian australian indian chinese japanese korean russian turkish dutch swedish danish norwegian finnish polish swiss israeli arab arabic hebrew latin
+usa uk uae eu us sa
+january february march april may june july august september october november december monday tuesday wednesday thursday friday saturday sunday`.split(/\s+/));
 export function claims(sentence: string, companyName: string): { numbers: string[]; names: string[] } {
-  const numbers = (sentence.match(/\$?\d[\d,.]*\s?(?:[kKmMbB]\b|%|\+)?/g) ?? []).map((n) => n.replace(/[$,\s+]/g, "").replace(/\.$/, "")).filter(Boolean);
+  const numbers = (sentence.match(/(?<![\p{L}\d])\$?\d[\d,.]*\s?(?:[kKmMbB]\b|%|\+)?/gu) ?? []).map((n) => n.replace(/[$,\s+]/g, "").replace(/\.$/, "")).filter(Boolean);
   const own = new Set(norm(companyName).split(" "));
   const names: string[] = [];
   const words = sentence.split(/\s+/);
@@ -35,7 +42,10 @@ export function claims(sentence: string, companyName: string): { numbers: string
     if (i === 0 || !/^[A-Z][\p{L}\d&-]{1,}$/u.test(bare)) return;
     const k = bare.toLowerCase();
     // Acronyms and trade terms (MOFs, AMRs, APIs, SaaS) are vocabulary, not names of companies, products or people (owner, round 10: Promethean's "MOFs").
-    if (/^[A-Z]{2,}s?$/.test(bare) || TERMS.has(k)) return;
+    if (/^[A-Z]{2,}s?$/.test(bare) || /^[A-Z]{2,}s?-\p{L}+$/u.test(bare) || TERMS.has(k)) return;
+    // Only the names of companies, products and people are checked against the sources: not a country, a nationality or a language ("Brazil" on a page that says "Brasil"), and not a compound with a
+    // plain word ("ETF-based", "Cloud-native", "Wi-Fi") (owner, batch 7).
+    if (GEO_WORDS.has(k) || (bare.includes("-") && bare.split("-").some((part) => /^\p{Ll}/u.test(part) || part.length <= 2))) return;
     if (!COMMON_CAPS.has(k) && !own.has(k)) names.push(bare);
   });
   return { numbers, names: [...new Set(names)] };
@@ -93,6 +103,13 @@ export function companyVoice(text: string, companyName: string): string {
   return `${companyName} ${third}${we[2]}`;
 }
 
+/** A country's name in the page's own language: the sentence is in English, the page in another ("Central Bank of Brazil" on a page that says "Banco Central do Brasil"). */
+const EXONYMS: Record<string, string[]> = {
+  brazil: ["brasil"], germany: ["deutschland", "alemanha", "alemania", "allemagne"], spain: ["españa", "espanha", "espagne"], italy: ["italia", "itália", "italie"], france: ["frança", "francia"], japan: ["japão", "japón", "japon", "日本"],
+  switzerland: ["schweiz", "suisse", "svizzera", "suíça", "suiza"], netherlands: ["nederland", "países bajos", "holanda", "pays-bas"], poland: ["polska", "polen", "polonia", "pologne"], portugal: ["portugal"], mexico: ["méxico"],
+  "united states": ["estados unidos", "états-unis", "vereinigte staaten", "eua"], "united kingdom": ["reino unido", "royaume-uni", "vereinigtes königreich"], sweden: ["sverige", "suécia", "suecia", "suède"], denmark: ["danmark", "dinamarca"], norway: ["norge", "noruega", "norvège"],
+  finland: ["suomi", "finlândia", "finlandia", "finlande"], austria: ["österreich", "áustria", "autriche"], belgium: ["belgique", "belgië", "bélgica"], ireland: ["éire", "irlanda", "irlande"], turkey: ["türkiye", "turquia", "turquía", "turquie"], india: ["índia", "inde"],
+};
 export function sentenceProblem(
   s: { role: string; text: string; source_ids: string[] }, companyName: string,
   byId: Record<string, { content: string; translation_offset?: number; source_type?: string }>, allowed: (id: string) => boolean, aliases: string[] = [],
@@ -113,8 +130,10 @@ export function sentenceProblem(
   if (s.role === "what" && !ownVoice(s, byId) && ![companyName, ...aliases].some((n) => leadsWithCompany(s.text, n))) return "what_describes_a_product";
   const hay = norm(s.source_ids.map((id) => byId[id].content).join(" "));
   const c = claims(s.text, [companyName, ...aliases].join(" "));
-  for (const n of c.numbers) if (!hay.includes(norm(n))) return `number_not_in_sources:${n}`;
-  for (const n of c.names) if (!hay.includes(norm(n))) return `name_not_in_sources:${n}`;
+  // "2,500" is "2.500" on a Portuguese, German or Spanish page: a dot before exactly three digits is a thousands mark too.
+  const raw = s.source_ids.map((id) => byId[id].content).join("\n");
+  for (const n of c.numbers) if (!hay.includes(norm(n)) && !numberStatedIn(n, raw)) return `number_not_in_sources:${n}`;
+  for (const n of c.names) if (!hay.includes(norm(n)) && !(EXONYMS[n.toLowerCase()] ?? []).some((e) => hay.includes(e))) return `name_not_in_sources:${n}`;
   // A page that was translated is matched with one word less: the translation paraphrases ("doctor" for "physician") (owner, round 10: Sami).
   const need = (id: string) => (byId[id].translation_offset != null ? 2 : 3);
   if (!s.source_ids.some((id) => bestSentence(byId[id].content, s.text, need(id)))) return "no_supporting_sentence";
