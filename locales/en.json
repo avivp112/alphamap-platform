@@ -359,7 +359,10 @@
       "updatedToday": "Profile updated today",
       "updatedAgo": "Profile updated {{ago}} ago",
       "valuationEstimated": "Valuation is estimated",
-      "sections": "Sections"
+      "sections": "Sections",
+      "copyLink": "Copy link",
+      "linkCopied": "Link copied",
+      "companyPanel": "Company"
     },
     "allCountries": "All Countries",
     "origin": {

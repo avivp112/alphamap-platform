@@ -12,6 +12,7 @@ import { FilterBar, FilterChips } from "../components/startups/FilterBar";
 import { FilterDrawer } from "../components/startups/FilterDrawer";
 import { StartupsTable, SelectionBar } from "../components/startups/StartupsTable";
 import { TearsheetHeader } from "../components/startups/TearsheetHeader";
+import { companyPermalinkPath } from "../../lib/companyLink";
 import type { FilterActions, FilterState } from "../components/startups/filterTypes";
 import { equityRaised, debtRaised, capitalKind } from "../../lib/capital";
 import { visiblePatents } from "../../lib/patentList";
@@ -1265,7 +1266,8 @@ function OverviewTab({
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {/* Four across when the card is wide (the window), two when it is a narrow column (the side panel). */}
+      <div className="grid grid-cols-2 @xl:grid-cols-4 gap-3">
         <StatCard icon={Calendar}  label="Founded"     value={startup.founded_year ? String(startup.founded_year) : "—"} accent="#F59E0B" />
         <StatCard icon={MapPin}    label={offices ? t("startups.offices") : origin ? t("startups.origin.headquarters") : "Location"} value={location} accent="#0e7490" note={origin} />
         <StatCard icon={Users}     label="Employees"   value={employeeValue} accent="#6d28d7" />
@@ -2108,11 +2110,13 @@ function tabsWithData(s: Startup): Set<TearsheetTab> {
 
 function TearsheetModal({
   startup, onClose, onNavigate, onFilterByMainSector, onFilterBySubSectorTag, saved, onSave, onOpenPass,
-  mandateSectors, hasCrmWebhook, redesign,
+  mandateSectors, hasCrmWebhook, redesign, layout,
 }: {
   startup: StartupListRow;
   /** The redesigned header and five-section layout (?ui=2). */
   redesign: boolean;
+  /** "modal": a window over the page. "panel": a column beside the list, which stays usable. */
+  layout: "modal" | "panel";
   onClose: () => void;
   onNavigate: (row: StartupListRow) => void;
   onFilterByMainSector: (parent: string) => void;
@@ -2359,6 +2363,21 @@ function TearsheetModal({
   const [crmError, setCrmError]     = useState<string | null>(null);
   const [crmPromptVisible, setCrmPromptVisible] = useState(false);
 
+  // "Copy link": the shareable /company/<name>-<id> address (see lib/companyLink.ts).
+  const [linkNotice, setLinkNotice] = useState<string | null>(null);
+  async function handleCopyLink() {
+    const url = `${window.location.origin}${companyPermalinkPath(startup.name, startup.id)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setLinkNotice(t("startups.v2.linkCopied", { defaultValue: "Link copied" }));
+      setTimeout(() => setLinkNotice(null), 2500);
+    } catch {
+      // Clipboard blocked (older browser, embedded view): show the address so it can be copied by hand.
+      setLinkNotice(url);
+      setTimeout(() => setLinkNotice(null), 8000);
+    }
+  }
+
   async function handleSyncToCrm() {
     if (crmSyncing) return;
     if (!hasCrmWebhook) {
@@ -2383,20 +2402,23 @@ function TearsheetModal({
     }
   }
 
+  const asPanel = layout === "panel";
   return (
     <div
-      className="fixed inset-0 z-50 flex items-stretch sm:items-center justify-center p-0 sm:p-6"
-      style={{ background: "rgba(6,13,25,0.55)", backdropFilter: "blur(10px)" }}
-      onClick={onClose}
+      className={asPanel ? "h-full" : "fixed inset-0 z-50 flex items-stretch sm:items-center justify-center p-0 sm:p-6"}
+      style={asPanel ? undefined : { background: "rgba(6,13,25,0.55)", backdropFilter: "blur(10px)" }}
+      onClick={asPanel ? undefined : onClose}
     >
       <div
-        className="relative flex flex-col w-full h-full sm:w-[90vw] sm:h-[85vh] sm:max-w-6xl sm:rounded-[10px] bg-white"
-        style={{
+        className={asPanel
+          ? "relative flex flex-col h-full rounded-am-card border border-am-line bg-am-surface shadow-am-1 overflow-hidden"
+          : "relative flex flex-col w-full h-full sm:w-[90vw] sm:h-[85vh] sm:max-w-6xl sm:rounded-[10px] bg-white"}
+        style={asPanel ? undefined : {
           border: "1px solid rgba(15,23,42,0.08)",
           overflow: "hidden",
           boxShadow: "0 32px 80px rgba(15,23,42,0.35), 0 0 0 1px rgba(15,23,42,0.02)",
         }}
-        onClick={(e) => e.stopPropagation()}
+        onClick={asPanel ? undefined : (e) => e.stopPropagation()}
       >
         {redesign ? (
           <TearsheetHeader
@@ -2420,7 +2442,8 @@ function TearsheetModal({
             downloadDisabled={detailLoading || !detail}
             onSyncCrm={handleSyncToCrm}
             crmState={crmSyncing ? "busy" : crmDone ? "done" : "idle"}
-            crmNotice={crmPromptVisible
+            onCopyLink={handleCopyLink}
+            crmNotice={linkNotice ? linkNotice : crmPromptVisible
               ? <>{t("startups.crmNotConfigured")} <Link to="/profile" className="underline text-am-ink">{t("startups.crmSetUpLink")}</Link></>
               : crmError}
             match={matchResult}
@@ -2622,7 +2645,7 @@ function TearsheetModal({
 
         {/* ── Scrollable tab content (white) ── */}
         <div
-          className="flex-1 overflow-y-auto px-6 py-5 bg-white"
+          className="@container flex-1 overflow-y-auto px-6 py-5 bg-white"
           style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(15,23,42,0.15) transparent" }}
         >
           {detailLoading ? (
@@ -3489,8 +3512,12 @@ export function Startups() {
   // startups_search until its next refresh — say so instead of doing nothing.
   const companyParam = searchParams.get("company");
   const [deepLinkMissing, setDeepLinkMissing] = useState(false);
+  // The id of the open card, readable inside effects without making them depend on it.
+  const tearsheetIdRef = useRef<string | null>(null);
+  tearsheetIdRef.current = tearsheetStartup?.id ?? null;
   useEffect(() => {
     if (!companyParam) return;
+    if (tearsheetIdRef.current === companyParam) return;   // opened from the list: already showing it
     let cancelled = false;
     fetchStartupListRowById(companyParam)
       .then((row) => {
@@ -3506,6 +3533,15 @@ export function Startups() {
     const id = setTimeout(() => setDeepLinkMissing(false), 6000);
     return () => clearTimeout(id);
   }, [deepLinkMissing]);
+  // Redesigned page: the address always names the open company, so refresh and "copy the URL" work.
+  useEffect(() => {
+    if (!uiV2 || !tearsheetStartup) return;
+    if (searchParams.get("company") === tearsheetStartup.id) return;
+    setSearchParams((p) => { p.set("company", tearsheetStartup.id); return p; }, { replace: true });
+  }, [uiV2, tearsheetStartup?.id]);  // eslint-disable-line react-hooks/exhaustive-deps
+  function dropCompanyParam() {
+    if (searchParams.has("company")) setSearchParams((p) => { p.delete("company"); return p; }, { replace: true });
+  }
   function closeTearsheet() {
     setSelected(null);
     if (searchParams.has("company")) {
@@ -3590,6 +3626,7 @@ export function Startups() {
       setPassedIds((prev) => new Set(prev).add(target.id));
       setRows((prev) => prev.filter((r) => r.id !== target.id));
       setSelected((cur) => (cur?.id === target.id ? null : cur));
+      if (searchParams.get("company") === target.id) dropCompanyParam();
       setPassReasonTarget(null);
     } catch (err) {
       setWatchlistError(watchlistErrorMessage(err));
@@ -3665,6 +3702,7 @@ export function Startups() {
   // subSectorTag: the two axes are mutually exclusive (see its declaration).
   function handleFilterByMainSector(parent: string) {
     setSelected(null);
+    dropCompanyParam();
     setSearch("");
     setSubSectorTag("");
     setParentSector(parent);
@@ -3680,6 +3718,7 @@ export function Startups() {
   // own main sector (e.g. a biotech company also tagged "AI Agents").
   function handleFilterBySubSectorTag(tag: string) {
     setSelected(null);
+    dropCompanyParam();
     setSearch("");
     setParentSector("");
     setSubSector("");
@@ -3836,6 +3875,25 @@ export function Startups() {
   const selectedIds = useMemo(() => new Set(selected.keys()), [selected]);
   const tourStepsV2 = tourSteps.filter((st) => /search-input|view-toggle|company-results/.test(st.target));
 
+  // Desktop, redesigned page: the company card is a column beside the list; phones keep the window.
+  const panelOpen = uiV2 && !isMobile && !!tearsheetStartup;
+  const renderTearsheet = (layout: "modal" | "panel") => tearsheetStartup && (
+    <TearsheetModal
+      startup={tearsheetStartup}
+      onClose={closeTearsheet}
+      onNavigate={(row) => setSelected(row)}
+      onFilterByMainSector={handleFilterByMainSector}
+      onFilterBySubSectorTag={handleFilterBySubSectorTag}
+      saved={watchlist.has("startup", tearsheetStartup.id)}
+      onSave={() => handleSaveToggle(tearsheetStartup)}
+      onOpenPass={() => setPassReasonTarget(tearsheetStartup)}
+      mandateSectors={mandateSectors}
+      hasCrmWebhook={hasCrmWebhook}
+      redesign={uiV2}
+      layout={layout}
+    />
+  );
+
   const resultsContent = (
     <>
             {loadError && rows.length === 0 ? (
@@ -3898,6 +3956,8 @@ export function Startups() {
                     onSave={handleSaveToggle}
                     onPass={(row) => setPassReasonTarget(row)}
                     matchScores={matchScores}
+                    narrow={panelOpen}
+                    activeId={tearsheetStartup?.id ?? null}
                   />
                 ) : (
                   <div className={`bg-white rounded-[10px] border border-gray-100 shadow-[0_4px_20px_rgba(0,0,0,0.04)] overflow-hidden transition-opacity duration-150 ${rowsLoading ? "opacity-40" : "opacity-100"}`}>
@@ -3979,7 +4039,9 @@ export function Startups() {
 
       {/* ── Sidebar + main content (shared SideFilterLayout shell) ───────── */}
       {uiV2 ? (
-        <div className={`mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 pt-3 space-y-3 ${selected.size >= 1 ? "pb-28" : "pb-10"}`}>
+        <div className={`mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 pt-3 ${selected.size >= 1 ? "pb-28" : "pb-10"}`}>
+         <div className={panelOpen ? "flex items-start gap-4" : ""}>
+          <div className="min-w-0 flex-1 space-y-3">
           <FilterBar
             state={filterState} actions={filterActions} countries={countries} headcountSteps={HEADCOUNT_STEPS}
             activeCount={activeFilterCount} onOpenDrawer={() => setDrawerOpen(true)}
@@ -3990,6 +4052,14 @@ export function Startups() {
             {t("startups.v2.companyCount", { defaultValue: "{{count}} companies", count: totalCount.toLocaleString() })}
           </p>
           {resultsContent}
+          </div>
+          {panelOpen && (
+            <aside aria-label={t("startups.v2.companyPanel", { defaultValue: "Company" })}
+              className="flex-none w-[min(640px,48vw)] sticky top-24 h-[calc(100vh-7rem)]">
+              {renderTearsheet("panel")}
+            </aside>
+          )}
+         </div>
         </div>
       ) : (
       <SideFilterLayout
@@ -4113,21 +4183,7 @@ export function Startups() {
       <ProductTour steps={uiV2 ? tourStepsV2 : tourSteps} open={tourOpen} onClose={closeTour} />
       {checkName !== null && <CheckCompanyDialog initial={{ ...emptyCheckForm(), name: checkName }} onClose={() => setCheckName(null)} />}
 
-      {tearsheetStartup && (
-        <TearsheetModal
-          startup={tearsheetStartup}
-          onClose={closeTearsheet}
-          onNavigate={(row) => setSelected(row)}
-          onFilterByMainSector={handleFilterByMainSector}
-          onFilterBySubSectorTag={handleFilterBySubSectorTag}
-          saved={watchlist.has("startup", tearsheetStartup.id)}
-          onSave={() => handleSaveToggle(tearsheetStartup)}
-          onOpenPass={() => setPassReasonTarget(tearsheetStartup)}
-          mandateSectors={mandateSectors}
-          hasCrmWebhook={hasCrmWebhook}
-          redesign={uiV2}
-        />
-      )}
+      {tearsheetStartup && !panelOpen && renderTearsheet("modal")}
 
       {showCompare && selectedStartups.length >= 2 && (
         <CompareModal startups={selectedStartups}

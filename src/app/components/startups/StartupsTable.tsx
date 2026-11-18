@@ -28,7 +28,7 @@ interface Column {
 }
 
 export function StartupsTable({
-  rows, sort, onSort, density, selectedIds, onToggleSelect, onSelect, isSaved, onSave, onPass, matchScores, loading,
+  rows, sort, onSort, density, selectedIds, onToggleSelect, onSelect, isSaved, onSave, onPass, matchScores, loading, narrow = false, activeId = null,
 }: {
   rows: StartupListRow[];
   sort: StartupSort | null;
@@ -42,6 +42,10 @@ export function StartupsTable({
   onPass: (row: StartupListRow) => void;
   matchScores: ReadonlyMap<string, MatchScoreResult>;
   loading: boolean;
+  /** A company card is open beside the table: keep only the columns that identify a company. */
+  narrow?: boolean;
+  /** The company whose card is open; its row is marked. */
+  activeId?: string | null;
 }) {
   const { t } = useTranslation();
   const tt = useV2T();
@@ -56,6 +60,8 @@ export function StartupsTable({
     { id: "match", label: tt("colMatch", "Match"), numeric: true },
     { id: "updated", label: tt("colUpdated", "Updated"), sortKey: "updated_at", numeric: true },
   ];
+  const NARROW_IDS = ["company", "stage", "valuation", "match"];
+  const shown = narrow ? cols.filter((c) => NARROW_IDS.includes(c.id)) : cols;
   const now = Date.now();
   const cell = `px-3.5 ${compact ? "py-1.5" : "py-3"}`;
 
@@ -63,25 +69,25 @@ export function StartupsTable({
     <div className={`relative bg-am-surface border border-am-line rounded-am-card shadow-am-1 transition-opacity ${loading ? "opacity-60" : ""}`}>
       {loading && <Loader2 className="absolute top-3 end-3 w-4 h-4 text-am-ink-3 animate-spin z-20" aria-label={tt("loading", "Loading")} />}
       <div className="overflow-auto max-h-[calc(100vh-17rem)] rounded-am-card">
-        <table className="w-full min-w-[1180px] table-fixed border-separate border-spacing-0 text-am-body text-am-ink">
+        <table className={`w-full ${narrow ? "min-w-[520px]" : "min-w-[1180px]"} table-fixed border-separate border-spacing-0 text-am-body text-am-ink`}>
           {/* Fixed column widths: a long name or place can never widen the table past its box.
               Company takes whatever is left. */}
           <colgroup>
             <col style={{ width: 44 }} />
             <col />
             <col style={{ width: 104 }} />
-            <col style={{ width: 176 }} />
-            <col style={{ width: 112 }} />
-            <col style={{ width: 96 }} />
-            <col style={{ width: 156 }} />
-            <col style={{ width: 120 }} />
-            <col style={{ width: 84 }} />
-            <col style={{ width: 84 }} />
+            {!narrow && <col style={{ width: 176 }} />}
+            <col style={{ width: narrow ? 104 : 112 }} />
+            {!narrow && <col style={{ width: 96 }} />}
+            {!narrow && <col style={{ width: 156 }} />}
+            <col style={{ width: narrow ? 100 : 120 }} />
+            {!narrow && <col style={{ width: 84 }} />}
+            <col style={{ width: narrow ? 76 : 84 }} />
           </colgroup>
           <thead>
             <tr>
               <th className="sticky top-0 z-10 bg-am-surface border-b border-am-line w-10 ps-4" scope="col"><span className="sr-only">{tt("select", "Select")}</span></th>
-              {cols.map((c) => {
+              {shown.map((c) => {
                 const active = sort?.key === c.sortKey;
                 return (
                   <th key={c.id} scope="col"
@@ -108,8 +114,8 @@ export function StartupsTable({
               const trend = trendView(r.growth_trend);
               const m = matchScores.get(r.id);
               return (
-                <tr key={r.id} data-tour={idx === 0 ? "company-results" : undefined} onClick={() => onSelect(r)} aria-selected={selected}
-                  className={`group cursor-pointer border-b border-am-line-soft transition-colors ${selected ? "bg-am-accent-soft" : "hover:bg-am-canvas"}`}>
+                <tr key={r.id} data-tour={idx === 0 ? "company-results" : undefined} onClick={() => onSelect(r)} aria-selected={selected} aria-current={activeId === r.id ? "true" : undefined}
+                  className={`group cursor-pointer border-b border-am-line-soft transition-colors ${selected ? "bg-am-accent-soft" : activeId === r.id ? "bg-am-canvas shadow-[inset_3px_0_0_var(--am-accent)]" : "hover:bg-am-canvas"}`}>
                   <td className={`${cell} ps-4 w-10 border-b border-am-line-soft`}>
                     <button type="button" role="checkbox" aria-checked={selected} aria-label={tt("selectCompany", "Select {{name}} for comparison", { name: r.name })}
                       onClick={(e) => onToggleSelect(r, e)}
@@ -134,16 +140,21 @@ export function StartupsTable({
                         ? <span className="inline-block px-2.5 py-0.5 rounded-full border border-am-line bg-am-canvas text-am-caption font-medium text-am-ink-2">{roundTypeLabel(r.latest_round_type)}</span>
                         : <span className="text-am-ink-3">—</span>}
                   </td>
-                  <td className={`${cell} border-b border-am-line-soft text-am-ink-2 whitespace-nowrap overflow-hidden text-ellipsis`} title={place(r.city, r.country)}>{place(r.city, r.country)}</td>
+                  {!narrow && (
+                    <td className={`${cell} border-b border-am-line-soft text-am-ink-2 whitespace-nowrap overflow-hidden text-ellipsis`} title={place(r.city, r.country)}>{place(r.city, r.country)}</td>
+                  )}
                   <td className={`${cell} border-b border-am-line-soft text-end tabular-nums whitespace-nowrap`}>
                     {r.latest_valuation
                       ? <>{formatUsdShort(r.latest_valuation)}{r.latest_round_is_estimated && <span className="ms-1.5 px-1 rounded border border-am-line text-[11px] text-am-ink-3 align-middle" title={tt("estimatedHint", "Estimated, not reported")}>Est.</span>}</>
                       : <span className="text-am-ink-3">—</span>}
                   </td>
-                  <td className={`${cell} border-b border-am-line-soft text-end tabular-nums whitespace-nowrap`}>
+                  {!narrow && (
+                    <td className={`${cell} border-b border-am-line-soft text-end tabular-nums whitespace-nowrap`}>
                     {r.total_raised ? formatUsdShort(r.total_raised) : <span className="text-am-ink-3">—</span>}
                   </td>
-                  <td className={`${cell} border-b border-am-line-soft text-end tabular-nums whitespace-nowrap`}>
+                  )}
+                  {!narrow && (
+                    <td className={`${cell} border-b border-am-line-soft text-end tabular-nums whitespace-nowrap`}>
                     {r.employee_count != null ? r.employee_count.toLocaleString() : <span className="text-am-ink-3">—</span>}
                     {trend.tone !== "none" && (
                       <span className={`ms-2 text-am-caption ${trend.tone === "pos" ? "text-am-pos" : trend.tone === "neg" ? "text-am-neg" : "text-am-ink-3"}`}>
@@ -151,6 +162,7 @@ export function StartupsTable({
                       </span>
                     )}
                   </td>
+                  )}
                   <td className={`${cell} border-b border-am-line-soft text-end tabular-nums whitespace-nowrap`}>
                     {m ? (
                       <span className="inline-flex items-center justify-end gap-2" title={t("startups.matchHint", { defaultValue: "Match to your mandate" })}>
@@ -159,9 +171,11 @@ export function StartupsTable({
                       </span>
                     ) : <span className="text-am-ink-3 text-am-caption" title={t("startups.calibrating")}>—</span>}
                   </td>
-                  <td className={`${cell} border-b border-am-line-soft text-end tabular-nums whitespace-nowrap text-am-caption ${isStale(days) ? "text-am-warn font-medium" : "text-am-ink-3"}`}>
+                  {!narrow && (
+                    <td className={`${cell} border-b border-am-line-soft text-end tabular-nums whitespace-nowrap text-am-caption ${isStale(days) ? "text-am-warn font-medium" : "text-am-ink-3"}`}>
                     {freshnessLabel(days)}
                   </td>
+                  )}
                   <td className={`${cell} pe-3 border-b border-am-line-soft`}>
                     <div className="flex items-center justify-end gap-0.5">
                       <button type="button" onClick={(e) => { e.stopPropagation(); onSave(r); }} aria-pressed={saved}

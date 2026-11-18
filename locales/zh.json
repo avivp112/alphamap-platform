@@ -356,7 +356,10 @@
       "updatedToday": "资料今天已更新",
       "updatedAgo": "资料更新于{{ago}}前",
       "valuationEstimated": "估值为估算值",
-      "sections": "栏目"
+      "sections": "栏目",
+      "copyLink": "复制链接",
+      "linkCopied": "链接已复制",
+      "companyPanel": "公司"
     },
     "allCountries": "所有国家",
     "origin": {

@@ -356,7 +356,10 @@
       "updatedToday": "プロフィールは本日更新",
       "updatedAgo": "プロフィールは{{ago}}前に更新",
       "valuationEstimated": "企業価値は推定値です",
-      "sections": "セクション"
+      "sections": "セクション",
+      "copyLink": "リンクをコピー",
+      "linkCopied": "リンクをコピーしました",
+      "companyPanel": "企業"
     },
     "allCountries": "すべての国",
     "origin": {

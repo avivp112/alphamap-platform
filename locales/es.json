@@ -356,7 +356,10 @@
       "updatedToday": "Perfil actualizado hoy",
       "updatedAgo": "Perfil actualizado hace {{ago}}",
       "valuationEstimated": "La valoración es estimada",
-      "sections": "Secciones"
+      "sections": "Secciones",
+      "copyLink": "Copiar enlace",
+      "linkCopied": "Enlace copiado",
+      "companyPanel": "Empresa"
     },
     "allCountries": "Todos los países",
     "origin": {

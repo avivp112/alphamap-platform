@@ -1,7 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import {
-  CheckCircle2, Download, Globe, Layers, Loader2, MapPin, MoreHorizontal, Calendar, Star, Webhook, X, XCircle,
+  CheckCircle2, Download, Globe, Layers, Link2, Loader2, MapPin, MoreHorizontal, Calendar, Star, Webhook, X, XCircle,
 } from "lucide-react";
 import type { MatchScoreResult, StartupListRow } from "../../../lib/supabase";
 import { daysSince, formatUsdShort, freshnessLabel, isStale, trendView } from "../../../lib/startupFilters";
@@ -24,7 +24,7 @@ type Busy = "idle" | "busy" | "done";
 export function TearsheetHeader({
   startup, website, location, origin, founded, statusBadge, roundLabel, acquiredNote,
   saved, onSave, onClose, onPass, onLookalikes, onDownload, downloadState, downloadDisabled,
-  onSyncCrm, crmState, crmNotice, match, matchLoading, tabs, activeTab, onTab,
+  onSyncCrm, crmState, crmNotice, onCopyLink, match, matchLoading, tabs, activeTab, onTab,
 }: {
   startup: StartupListRow;
   website: string | null;
@@ -44,6 +44,7 @@ export function TearsheetHeader({
   downloadState: Busy;
   downloadDisabled: boolean;
   onSyncCrm: () => void;
+  onCopyLink: () => void;
   crmState: Busy;
   /** Short message under the header: "set up a webhook first" or a sync error. */
   crmNotice: React.ReactNode | null;
@@ -106,6 +107,9 @@ export function TearsheetHeader({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-[240px] p-1.5 rounded-am-card border border-am-line bg-am-surface shadow-am-2 z-[80]">
+              <DropdownMenuItem className={itemCls} onSelect={onCopyLink}>
+                <Link2 className="w-4 h-4 text-am-ink-3" aria-hidden="true" />{tt("copyLink", "Copy link")}
+              </DropdownMenuItem>
               <DropdownMenuItem className={itemCls} onSelect={onLookalikes}>
                 <Layers className="w-4 h-4 text-am-ink-3" aria-hidden="true" />{t("startups.lookalikes")}
               </DropdownMenuItem>
