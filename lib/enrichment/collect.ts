@@ -66,6 +66,7 @@ import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtra
 import { pickArticlesToRead } from "./articles.ts";
 import { runTechGate, shouldSkipAsNonTech, techDecision, type TechGateVerdict } from "./techGate.ts";
 import type { RuleHit } from "./ruleRegistry.ts";
+import { caseName } from "./nameCase.ts";
 import { approvedQuotes, profileQuotes, hqFromApprovedQuotes, foundersFromApprovedQuotes } from "./approvedQuotes.ts";
 import { teamPeopleCount, foundersFromText, foundersFromCards, foundersFromMentions, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, supportedRoleSubset, personCardsInHtml, bioFromCard, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
 import { componentOn } from "./components.ts";
@@ -209,7 +210,7 @@ export interface CollectContext {
   /** The website on file shows another business, or none of it could be read (owner, 2026-11-02: "website to fix" list). */
   /** The company's own address now shows a page that never names the company: the domain may have been given to someone else (owner, batch 6: Okra). For review, not a verdict. */
   onDomainRepurposed?: (detail: string) => void;
-  onWebsiteIssue?: (reason: "content_mismatch" | "unreadable", detail: string) => void;
+  onWebsiteIssue?: (reason: "content_mismatch" | "unreadable" | "domain_mismatch", detail: string) => void;
   /** Company registers (registers.ts); tests pass a stand-in. */
   registerLookup?: (ctx: RegisterContext) => Promise<RegisterFinding[]>;
   /** Hints earlier runs stored for this company (data_hints, status open): searched for again (hints.ts). */
@@ -1385,6 +1386,17 @@ export async function collectCompany(
     statementsAll = statements;
     const hq = decideHeadquarters(statements, undefined, (profile.profile.offices ?? []).map((o) => o.city));
     if (hq.kind === "none" && !fates.hq) fates.hq = mc ? `no allowed source states the headquarters: the model's "${mc.evidence_quote.slice(0, 100)}" is not a headquarters statement (${mcSource?.url ?? mc.source_id})` : "no source states the headquarters";
+    // A single street address on a country-code site whose country is another one (trustlayer.co.uk with an Austin address) may be another company of the same name: held, and listed for the website review (owner, batch 7).
+    const siteCountry = countryOfHost(row.website ? new URL(/^https?:/i.test(row.website) ? row.website : `https://${row.website}`).hostname : null);
+    if (hq.kind === "declared" && hq.statement.viaAddress && siteCountry && countryOfCity(hq.statement.city) && countryOfCity(hq.statement.city) !== siteCountry) {
+      const st = hq.statement;
+      const detail = `domain_mismatch: ${row.website} is a ${siteCountry} domain, the only address on it is in ${st.city} (${countryOfCity(st.city)}): "${st.quote.slice(0, 120)}"`;
+      fates.hq = detail;
+      console.log(`    🌐  Headquarters ${st.city} held — ${detail}`);
+      ctx.onWebsiteIssue?.("domain_mismatch", detail);
+      profile.profile.city = undefined;
+      profile.profile.country = undefined;
+    } else
     if (hq.kind === "declared") {
       const st = hq.statement;
       if (approvedHq.some((a) => a.source_id === st.source_id && canonicalCity(a.city) === canonicalCity(st.city))) { ruleHits.push({ field: "hq_city", rule: "hq_from_approved_quote", value: st.city }, { field: "hq_country", rule: "hq_from_approved_quote" }); }
@@ -1697,7 +1709,7 @@ export async function collectCompany(
           const k = normalizeForMatch(cl.name);
           if (!k || have.has(k) || market.competitors.length >= 8) continue;
           have.add(k);
-          market.competitors.push({ name: cl.name, how_it_competes: cl.how_it_competes, source_ids: [cl.source_id], source_id: cl.source_id, evidence_quote: cl.evidence_quote, tier: cl.tier });
+          market.competitors.push({ name: caseName(cl.name), how_it_competes: cl.how_it_competes, source_ids: [cl.source_id], source_id: cl.source_id, evidence_quote: cl.evidence_quote, tier: cl.tier });
           console.log(`    🥊  ${cl.tier} competitor ${cl.name} (${how}): "${cl.evidence_quote.slice(0, 110)}"`);
           bump(stats.droppedByReason, `competitor_${cl.tier}_${how}`);
         }

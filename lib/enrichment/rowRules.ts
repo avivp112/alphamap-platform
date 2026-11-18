@@ -24,13 +24,20 @@ export interface RowLike { company?: string; field: string; after: string; sourc
 const fold = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, "");
 const PERSON_PAGE = /\/(?:leadership|team|people|management|board|bio|biography|about\/team)\/[^/?#]+/i;
 
+const PAID_DISTRIBUTION = /(?:^|\/\/|\.)(?:marketersmedia\.com|yespress\.com|openpr\.com|send2press\.com|prlog\.org|newswire\.net|pr\.com)(?:\/|$)/i;
+const SPONSORED_PATH = /\/(?:patrocinado|patrocinados|sponsored|sponsor|brand-?studio|advertorial|partner-?content|paid-?post|content-?hub|branded)(?:\/|-|$)/i;
+const PRODUCT_REVIEW = /\breviews?\b|\bhonest (?:verdict|review|opinion)\b|\bour verdict\b|\bworth it\b|\bunboxing\b|\bbest (?:\w+ ){0,3}(?:of|in|for) 20\d{2}\b|\btop \d+\b/i;
+const CAREERS_OR_LEGAL = /\/(?:careers?|carreiras?|jobs?|vagas?|empleos?|karriere|emplois?|recrutement|trabalhe-conosco|terms|termos|terminos|privacy|privacidade|legal|impressum|cookies?)(?:[\/-]|$)/i;
+const JOB_AD = /\b(?:experi[eê]ncia comprovada|experience (?:required|with|in)|responsibilities|requirements|qualifications|we are hiring|apply now|years of experience|salary|bachelor['’]s degree|you will|ensino superior)\b/i;
 const brandOf = (companyName: string) => fold(companyName.replace(/\b(ai|inc|ltd|llc|labs?|group|studio|studios|technologies|software|systems)\b/gi, ""));
 /** The source address is on the company's own domain (its name in the host). */
 export function ownDomain(url: string | null | undefined, companyName: string): boolean {
   try { const h = new URL((url ?? "").startsWith("http") ? url! : `https://${url}`).hostname.toLowerCase(); const b = brandOf(companyName); return b.length >= 3 && fold(h).includes(b); } catch { return false; }
 }
 /** A competitor's name without a year or a bracket ("Dhan (2026)" → "Dhan"). */
-export const cleanCompetitorName = (n: string): string => n.replace(/\s*\([^)]*\)/g, "").replace(/\s+(?:19|20)\d{2}\b/g, "").replace(/\s+/g, " ").trim();
+import { caseName } from "./nameCase.ts";
+import { roundSourceStanding } from "./roundSources.ts";
+export const cleanCompetitorName = (n: string): string => caseName(n).replace(/\s*\([^)]*\)/g, "").replace(/\s+(?:19|20)\d{2}\b/g, "").replace(/\s+/g, " ").trim();
 const COMPETITOR_STOP = /^(?:the\s+)?(?:real[- ]estate|stocks?|shares?|equity|mutual funds?|bonds?|gold|silver|fixed deposits?|crypto(?:currency)?|etfs?|ipos?|forex|futures|options|insurance|loans?|savings|banks?|competitors?|alternatives?|tools?|software|platforms?)$/i;
 
 /** A quote that is an address or a slug, not text of the page (owner, round 10: Paradox Series C's quote was the URL). */
@@ -92,6 +99,11 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
   const bad = isListingOrSponsoredUrl(url);
   if (bad) return bad === "sponsored_content" ? "its source is sponsored content" : "its source is a tag, list or search page, not the article";
   const quote = r.quote ?? "";
+  // A source no field may rest on (owner, batch 7): paid distribution services, sponsored / brand-studio paths, a republisher with no allowed original, a data platform.
+  if (["news", "tags", "round", "competitor_declared", "competitor_market"].includes(r.field) && url) {
+    if (PAID_DISTRIBUTION.test(url)) return "a paid press-distribution service, not a newsroom";
+    if (SPONSORED_PATH.test(url)) return "sponsored or brand-studio content";
+  }
   if (r.field === "news") {
     const m = r.after.match(/^(\d{4}-\d{2}-\d{2})\s+—\s+(.*)$/);
     const date = m?.[1] ?? null, title = (m?.[2] ?? r.after).trim();
@@ -99,6 +111,7 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
     // The memory holds no page text to find a date in: a date in the week before the run is not kept from it (the run reads the page itself).
     if (date && weekBefore > 0 && date >= new Date(Date.parse(today) - weekBefore * 86_400_000).toISOString().slice(0, 10)) return `its date (${date}) is in the week before the run`;
     if (isExplainer(title)) return "a guide or explainer, not news";
+    if (PRODUCT_REVIEW.test(title)) return "a product review or a ranking, not news about the company";
     if (!namesCompanyUpFront({ title, content: "" }, companyName)) return "its headline does not name the company";
   }
   if (r.field === "founded_year") {
@@ -110,6 +123,11 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
   if (r.field === "tags") {
     if (!url) return "no source";
     if (NOT_A_PRODUCT_SENTENCE.test(quote)) return "its quote is not a product sentence";
+    // The words of a tag are a sentence about the product (owner, batch 7): not a careers or legal page, a job advertisement, a menu, or a person's speech.
+    try { if (CAREERS_OR_LEGAL.test(new URL(url.startsWith("http") ? url : `https://${url}`).pathname)) return "a careers or legal page is no evidence for a tag"; } catch { /* no address */ }
+    if (JOB_AD.test(quote)) return "its quote is a job advertisement";
+    if ((quote.match(/[·|•]/g) ?? []).length >= 3) return "its quote is a menu, not a sentence";
+    if (/\b(?:said|says|told)\b,?\s*['"“‘’]{1,2}/i.test(quote)) return "its quote is a person's speech, not a sentence about the product";
     if (PERSON_PAGE.test(url)) return "a person's page does not support a tag";
     // A source that is not the company's own must be about the company: the brand is in its quote or its address.
     const brand = fold(companyName.replace(/\b(ai|inc|ltd|llc|labs?|group)\b/gi, ""));
@@ -122,6 +140,8 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
     // A press statement needs a date; the latest wins (owner, batch 6). An address that carries only a year ("/2014/sticker-beacon…") gives none.
     if (url && !ownDomain(url, companyName) && !articleDate({ url, content: quote }) && /\/(?:19|20)\d{2}\/[^/]/.test(url)) return "the article's date is only a year";
   }
+  if (r.field === "office" && !quote.trim()) return "an office needs a quote";
+  if (r.field === "employee_range" && /\bpeople with a name and a role are shown\b|\bpeople? (?:are )?shown on the page\b/i.test(quote)) return "a count of people shown on a page is a lower bound: no range";
   if (r.field === "employee_range" || r.field === "employee_count" || r.field === "headcount_history") {
     // A dated page of the company's own site (a press release, a post) states the size of ITS day, not of today (owner, batch 6: Brighte's 2021 year in review gave "84" for the run day).
     // The page's date must be in its address or its quote; a point dated the run day from such a page is the old figure under a new date.
@@ -143,6 +163,11 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
       const side = vsTitleCompetitor(quote, companyName) ?? comparisonTitleCompetitor(quote, companyName);
       if (side && fold(cleanCompetitorName(side)) !== fold(name)) return "its page's title names another company as the other side of the comparison";
     }
+  }
+  // Last: where the source stands (a data platform, a republisher with no allowed original…) — after the field's own checks, which say more.
+  if (["news", "tags", "round", "competitor_declared", "competitor_market"].includes(r.field) && url) {
+    const standing = roundSourceStanding(url, { companyName, isCompanySite: ownDomain(url, companyName), content: quote, headline: r.field === "news" ? r.after : null });
+    if (standing.kind === "denied") return `its source is not allowed (${standing.why})`;
   }
   return null;
 }

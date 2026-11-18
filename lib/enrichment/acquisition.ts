@@ -4,7 +4,7 @@
  * A controlling / majority stake is "majority_acquired". A partner, a buyer or a company that only joins something is not acquired.
  */
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const BUY = "(?:acquires?|acquired|buys|bought|buyout of|snaps up|picks up|takes over|to acquire|to buy|przejmuje|przejął|przejęła|kupuje|adquiere|adquirió|adquirida|compra|compró|übernimmt|übernahm|rachète|rachètent|acquiert|רוכשת|רכשה|רוכש)";
+const BUY = "(?:completes (?:its |the )?acquisition of|completed (?:its |the )?acquisition of|announces (?:its |the )?acquisition of|acquires?|acquired|buys|bought|buyout of|snaps up|picks up|takes over|to acquire|to buy|przejmuje|przejął|przejęła|kupuje|adquiere|adquirió|adquirida|compra|compró|übernimmt|übernahm|rachète|rachètent|acquiert|רוכשת|רכשה|רוכש)";
 const BOUGHT_BY = "(?:acquired by|bought by|sold to|taken over by|to be acquired by|is being acquired by|adquirida por|przejęta przez|übernommen von|racheté par|נרכשה על ידי|נרכשת על ידי)";
 const MAJORITY = /\b(?:controlling|majority)\s+(?:stake|share|interest)|\bstake\s+in\b|\bprzejmuje\s+(?:większościowy|kontrolny)|\bparticipaci[oó]n\s+mayoritaria|\bmehrheit|\bparticipation\s+majoritaire|\bמניית\s+שליטה/i;
 
@@ -15,7 +15,9 @@ const WORD = "\\p{Lu}[\\p{L}\\d&.'’-]*";
 const TRAILING = new RegExp(`((?:${WORD}\\s+){0,3}${WORD})\\W*$`, "u");
 const LEADING = new RegExp(`^\\W*((?:${WORD}\\s+){0,3}${WORD})`, "u");
 const GENERIC_BUYER = /^(?:US|UK|EU|The|An?|Its|It|Investors?|Group|Company|Firm)$/i;
-const trimName = (s: string) => s.replace(/[.,;]+$/, "").replace(/\s+(?:Group|Inc|Ltd|LLC|Limited|Corp|plc)$/i, (m) => m).trim();
+/** A country, a region or a demonym in front of the buyer's name ("Egypts Raseedi", "Egypt's Raseedi", "UK-based Acme", "Indian Acme") is not part of it (owner, batch 7). */
+const REGION_PREFIX = /^(?:(?:Egypt|India|Nigeria|Kenya|Ghana|Brazil|Mexico|Argentina|Chile|Colombia|Israel|Germany|France|Spain|Italy|Poland|Japan|China|Korea|UK|US|USA|UAE|Saudi|Canada|Australia|Singapore|Turkey|Sweden|Norway|Denmark|Finland|Ireland|Netherlands|Switzerland|Africa|Europe|Asia|Britain|American|British|Indian|Egyptian|German|French|Spanish|Italian|Polish|Japanese|Chinese|Korean|Israeli|Nigerian|Brazilian|Mexican|Canadian|Australian|Swedish|Dutch|Swiss|Emirati|Turkish|African|European|Asian)(?:['’]s|s)?|[A-Za-z]{2,4}-based)\s+(?=\p{Lu})/u;
+const trimName = (s: string) => s.replace(REGION_PREFIX, "").replace(/[.,;]+$/, "").replace(/\s+(?:Group|Inc|Ltd|LLC|Limited|Corp|plc)$/i, (m) => m).trim();
 
 /** Who bought `companyName` according to one sentence or headline, or null when it is not stated that the company was acquired. */
 export function acquirerIn(text: string, companyName: string): { acquirer: string; majority: boolean } | null {
@@ -62,5 +64,9 @@ export function detectAcquisition(articles: Array<{ url: string; title?: string 
   if (!claims.length) return null;
   // A full acquisition after a majority stake: the full one stands; otherwise the newest.
   claims.sort((x, y) => (y.date ?? "").localeCompare(x.date ?? ""));
-  return claims.find((c) => c.status === "acquired") ?? claims[0];
+  const pick = claims.find((c) => c.status === "acquired") ?? claims[0];
+  // The date of the purchase is the date of its first announcement: later reports of the same purchase by the same buyer do not move it (owner, batch 7: Kashat, two reports ten days apart).
+  const f = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  const same = claims.filter((c) => f(c.acquirer) === f(pick.acquirer) && c.date);
+  return same.length ? same[same.length - 1] : pick;
 }

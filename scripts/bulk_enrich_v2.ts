@@ -104,7 +104,10 @@ const UPDATE = process.env.MODE === "update";
 const UPDATE_ACTIVE_DAYS = Number(process.env.UPDATE_ACTIVE_DAYS ?? ACTIVE_DAYS);
 const UPDATE_QUIET_DAYS = Number(process.env.UPDATE_QUIET_DAYS ?? QUIET_DAYS);
 // Stop the run after this many failures in a row (systemic problem guard).
-const MAX_CONSECUTIVE_ERRORS = Number(process.env.MAX_CONSECUTIVE_ERRORS ?? 5);
+// Under CONCURRENCY the errors of OTHER companies running at the same time must not count against this one (batch 7: "5, 6, 7, 8 companies in a row failed" while ten ran together):
+// a company failed when its own run says so (failedNames), and the limit is at least the number running together.
+const MAX_CONSECUTIVE_ERRORS = Math.max(Number(process.env.MAX_CONSECUTIVE_ERRORS ?? 5), Number(process.env.CONCURRENCY ?? 1) > 1 ? Number(process.env.CONCURRENCY) : 0);
+const failedNames = new Set<string>();
 const ONLY = (process.env.ONLY ?? "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean);
 assertEnrichmentWritesAllowed("bulk_enrich_v2", !DRY_RUN, PILOT ? { fields: PILOT_FIELDS, companies: ONLY.length } : undefined);
 // The tracker is the gate (owner, 2026-11-05). A field is written only when it is open in
@@ -305,7 +308,7 @@ async function processCompany(
       await enrichCompany(row, existingRounds, taxonomy, startupByDomain, summary, searchState);
     } catch (err) {
       console.error(`    💥  Unhandled error processing "${row.name}": ${String(err)}`);
-      summary.tally.error++;
+      summary.tally.error++; failedNames.add(row.name);
     }
     // Every outcome moves the company to the back of the queue (the queue
     // is ordered by last_enriched_at). Without this, a company that is
@@ -393,11 +396,12 @@ async function enrichCompany(
   }
   // An outage is not a verdict on the company: not stamped (see "settled"), so it is tried again.
   if (collected.outcome === "error" && collected.reason === "search_unavailable") {
-    summary.tally.search_unavailable++;
+    summary.tally.search_unavailable++; failedNames.add(row.name);
     return;   // an outage is not a verdict on the company: not counted as "not enriched"
   }
   if (collected.outcome !== "collected") {
     summary.tally[collected.outcome]++;
+    if (collected.outcome === "error") failedNames.add(row.name);
     notEnrich(row, collected.outcome, (collected as { reason?: string }).reason, (collected as { detail?: string }).detail);
     return;
   }
@@ -484,6 +488,10 @@ async function enrichCompany(
       } }
     // Nothing held back reaches the report by another road (a tag classified just now, a remembered value).
     if (BLOCKED.size) companyRows = companyRows.filter((r) => !heldRow(r.company, r.field));
+    // A field that is not open is never in the report, whatever road its value came by (owner, batch 7: competitor_market was reported for Yomoni and written never).
+    { const allowed = SHOW_ALL ? ASKED : openFieldsFor(row.name);
+      const closedRows = companyRows.filter((r) => { const f = r.field === "description_what_only" ? "description" : r.field; return PILOT_FIELDS.includes(f) && !allowed.includes(f); });
+      if (closedRows.length) { console.log(`    🔒  Field not open, not reported: ${[...new Set(closedRows.map((r) => r.field))].join(", ")}`); companyRows = companyRows.filter((r) => !closedRows.includes(r)); } }
     const missing = ASKED.filter((f) => OPEN_FIELDS.includes(f) && !companyRows.some((r) => r.field === f || r.field.startsWith(f)));
     recordGaps(gapStore, row.id, row.name, missing, companyLines(), runId ?? "dry", RUN_DATE);
     console.log(`    📚  Known sources (${row.name}): from memory ${[...new Set([...injectedNow, ...carry.carried.map((r) => r.field)])].join(", ") || "none"}${injectedNow.length ? ` (${injectedNow.join(", ")} entered the write stage)` : ""}${carry.carried.length ? ` (${carry.carried.length} more value(s) carried in the report)` : ""}; from this run's search ${[...freshFound].filter((f) => !injectedNow.includes(f)).join(", ") || "none"}; still missing ${missing.join(", ") || "none"}${carry.recheck.length ? `; back to review (quote gone): ${carry.recheck.join(" | ")}` : ""}${carry.refreshDue.length ? `; older than the refresh time, searched again: ${carry.refreshDue.join(" | ")}` : ""}${carry.locked.length ? `; locked (marked correct) kept: ${carry.locked.join(" | ")}` : ""}${before ? "" : " [no memory yet]"}`);
@@ -764,14 +772,14 @@ async function main() {
       if (CONCURRENCY > 1) {
         const g = gathered(job);
         const first = await Promise.race([g, timeout]);
-        if (first === "timeout") { timedOut = true; console.log(`⏱️  ${row.name}: still running after ${COMPANY_TIMEOUT_MS / 60_000} min — given up (counted as an error); its work is abandoned.`); summary.tally.error++; notEnrich(row, "error", "timeout", `the company took longer than ${COMPANY_TIMEOUT_MS / 60_000} minutes`); }
-        else { console.log(`┌── ${row.name}\n${first.lines.join("\n")}\n└── ${row.name} done`); if (first.error) { console.error(`💥  ${row.name}: ${String(first.error)}`); summary.tally.error++; } }
+        if (first === "timeout") { timedOut = true; console.log(`⏱️  ${row.name}: still running after ${COMPANY_TIMEOUT_MS / 60_000} min — given up (counted as an error); its work is abandoned.`); summary.tally.error++; failedNames.add(row.name); notEnrich(row, "error", "timeout", `the company took longer than ${COMPANY_TIMEOUT_MS / 60_000} minutes`); }
+        else { console.log(`┌── ${row.name}\n${first.lines.join("\n")}\n└── ${row.name} done`); if (first.error) { console.error(`💥  ${row.name}: ${String(first.error)}`); summary.tally.error++; failedNames.add(row.name); } }
       } else {
         const first = await Promise.race([job().then(() => "ok" as const), timeout]);
-        if (first === "timeout") { timedOut = true; console.log(`⏱️  ${row.name}: still running after ${COMPANY_TIMEOUT_MS / 60_000} min — given up (counted as an error).`); summary.tally.error++; notEnrich(row, "error", "timeout", `the company took longer than ${COMPANY_TIMEOUT_MS / 60_000} minutes`); }
+        if (first === "timeout") { timedOut = true; console.log(`⏱️  ${row.name}: still running after ${COMPANY_TIMEOUT_MS / 60_000} min — given up (counted as an error).`); summary.tally.error++; failedNames.add(row.name); notEnrich(row, "error", "timeout", `the company took longer than ${COMPANY_TIMEOUT_MS / 60_000} minutes`); }
       }
       running.delete(row.name); finished++;
-      consecutiveErrors = summary.tally.error + summary.tally.error_incomplete_extraction + summary.tally.search_unavailable > errorsBefore ? consecutiveErrors + 1 : 0;
+      consecutiveErrors = failedNames.has(row.name) ? consecutiveErrors + 1 : 0;
       if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
         console.error(`\n⛔  ${consecutiveErrors} companies in a row failed — this looks systemic (API key, credits, provider outage), not company-specific. Stopping so the rest of the queue isn't burned.`);
         stopSystemic = true; return;
