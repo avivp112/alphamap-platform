@@ -492,7 +492,9 @@ async function collectFormDSignals(
 
 // ── Backfill: candidates already waiting for review ─────────────────────────
 
-const BACKFILL_MAX = 60;       // one document request each, plus the database lookups for signals
+const BACKFILL_MAX = 40;       // one document request each, plus the database lookups for signals
+/** The backfill goes slower than the daily ingest: SEC answered 429 at ~8 requests/second from the shared Supabase address (2026-11-18). */
+const BACKFILL_DELAY_MS = 400;
 
 /**
  * Read the primary_doc.xml again for pending candidates ingested before the
@@ -532,7 +534,7 @@ async function backfillEvidence(
       noFiling++;                      // nothing to read: stamp it so it is not asked again
     } else {
       const doc = await secFetch(primaryDocUrl(cik, filing.accession_number as string), userAgent);
-      await sleep(REQUEST_DELAY_MS);
+      await sleep(BACKFILL_DELAY_MS);
       if (doc.status === 429 || doc.status === 403) { results.push({ name: row.name, error: `HTTP ${doc.status}, stopped` }); break; }
       if (!doc.ok) { failed++; results.push({ name: row.name, error: `HTTP ${doc.status}` }); continue; }   // not stamped: tried again next run
       const parsed = parseFormD(doc.body);
