@@ -72,7 +72,7 @@ import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePerso
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
 import { validateEnrichment, checkNarratives } from "./validation.ts";
-import { legalPageHq, hqStatementsIn, decideHeadquarters, statementKind, isLegalPageUrl, articleDate, countryOfCity, countryOfTld, contactPageAddresses, impressumSeat, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, canonicalCity, type HqStatement } from "./headquarters.ts";
+import { legalPageHq, hqStatementsIn, decideHeadquarters, statementKind, isLegalPageUrl, articleDate, countryOfCity, contactPageAddresses, impressumSeat, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, canonicalCity, type HqStatement } from "./headquarters.ts";
 import { profileSourceAllowed, roundSourceStanding, unwrapRedirect, corroboratedInvestors } from "./roundSources.ts";
 import { aboutParagraph, aboutIsOf, factsFromAbout, legalFacts, releasePointsTo, type LegalFacts } from "./companyFacts.ts";
 import { checkFoundingCountry } from "./origin.ts";
@@ -1012,6 +1012,9 @@ export async function collectCompany(
     const extra = approvedFounders.filter((f) => !have.some((h) => samePersonName(h.name, f.name)));
     if (approvedFounders.length) console.log(`    👤  Founders named in approved quotes: ${approvedFounders.map((f) => f.name).join(", ")}`);
     if (extra.length) profile.profile.founders = [...have, ...extra.map((f) => ({ name: f.name, title: f.title }))] as typeof have;
+    // A bare surname ("Kwiatkowsky") beside a full name that ends with it ("Lavi Kwiatkowsky") is the same person, not a second founder: the full name stays (full name against full name).
+    const all = profile.profile.founders ?? [];
+    profile.profile.founders = all.filter((f) => !(f.name.trim().split(/\s+/).length === 1 && all.some((o) => o !== f && o.name.trim().split(/\s+/).length > 1 && o.name.trim().split(/\s+/).pop()!.toLowerCase() === f.name.trim().toLowerCase()))) as typeof have;
   }
   const grounded = groundFounders(profile.profile.founders ?? [], allSources.filter((s) => profileSourceAllowed(s, row.name)), row.name, roundInvestors);
   // The approved quote is the ground itself (it was checked against its page, in the page's language, before it was approved): a founder it names stays with it.
@@ -1375,7 +1378,7 @@ export async function collectCompany(
       statements.push({ city: mc.value, quote: mc.evidence_quote, source_id: mc.source_id, url: mcSource.url, kind: mcKind, date: mcKind === "company" && mcSource.source_type === "company_site" ? null : articleDate(mcSource) });
     }
     statementsAll = statements;
-    const hq = decideHeadquarters(statements, undefined, (profile.profile.offices ?? []).map((o) => o.city), countryOfTld(domain));
+    const hq = decideHeadquarters(statements, undefined, (profile.profile.offices ?? []).map((o) => o.city));
     if (hq.kind === "none" && !fates.hq) fates.hq = mc ? `no allowed source states the headquarters: the model's "${mc.evidence_quote.slice(0, 100)}" is not a headquarters statement (${mcSource?.url ?? mc.source_id})` : "no source states the headquarters";
     if (hq.kind === "declared") {
       const st = hq.statement;

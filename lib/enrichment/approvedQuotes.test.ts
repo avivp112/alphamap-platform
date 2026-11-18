@@ -7,15 +7,13 @@ const src = (url: string, content: string, domain: string) => buildLabeledSource
 const round = (s: { source_id: string }, quote: string) => ({ round_type: "Seed", amount_raised: { value: 1, source_id: s.source_id, evidence_quote: quote } }) as never;
 
 describe("approved quotes also feed HQ and founders (owner, batch 6)", () => {
-  it("SAMCO: 'Mumbai-based online broker Samco' (2018, tier 4) → Mumbai, accepted because samco.in is India", () => {
+  it("SAMCO: 'Mumbai-based online broker Samco' (2018, tier 4) → Mumbai, the latest dated statement decides", () => {
     const q = "Mumbai-based online broker Samco has raised Rs 20 crore in funding.";
     const s = src("https://www.techcircle.in/2018/03/01/samco-raises", `${q} Published 2018-03-01`, "samco.in");
     const st = hqFromApprovedQuotes(approvedQuotes([round(s, q)], [s]), "Samco");
     expect(st.map((x) => x.city)).toEqual(["Mumbai"]);
-    expect(decideHeadquarters(st, "2026-11-17", [], null).kind).not.toBe("declared");
-    const d = decideHeadquarters(st, "2026-11-17", [], "India");
-    expect(d.kind === "declared" && d.statement.city).toBe("Mumbai");
-    expect(decideHeadquarters(st, "2026-11-17", [], "Brazil").kind).toBe("none");
+    const d = decideHeadquarters(st, "2026-11-17", []);
+    expect(d.kind === "declared" && d.statement.city).toBe("Mumbai");   // dated 2018-04-30; the latest dated statement decides, whatever its age
   });
   it("Sherlok: 'Adelaide-based startup Sherlok'", () => {
     const q = "Adelaide-based startup Sherlok has closed a $1.5M seed round.";

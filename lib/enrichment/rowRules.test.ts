@@ -339,9 +339,8 @@ describe("batch 6, round 4: one set of rules for new and remembered headquarters
   const T = "2026-11-17";
   it("Kiwify's Dubai from prize text, Estimote's New York from a 2014 article", () => {
     expect(rowProblem({ field: "hq_city", after: "Dubai", source_url: "https://kiwify.com.br", quote: "Quando você atingir R$10 milhões na Kiwify, além de uma placa exclusiva, você e + 1 acompanhante vão ganhar uma viagem de Dubai" }, "Kiwify", T)).toMatch(/neither a street address/);
-    expect(rowProblem({ field: "hq_city", after: "New York", source_url: "https://www.geekwire.com/2014/sticker-beacon-estimote-launching-tiny-nearables/", quote: "New York-based Estimote is launching" }, "Estimote", T)).toMatch(/older than eight/);
-    expect(rowProblem({ field: "hq_city", after: "Mumbai", source_url: "https://www.techcircle.in/2018/04/30/samco-raises", quote: "Mumbai-based online broker Samco" }, "SAMCO", T)).toMatch(/older than eight/);
-    expect(rowProblem({ field: "hq_city", after: "Mumbai", source_url: "https://www.techcircle.in/2018/04/30/samco-raises", quote: "Mumbai-based online broker Samco" }, "SAMCO", T, 0, { domain: "samco.in" })).toBeNull();
+    expect(rowProblem({ field: "hq_city", after: "New York", source_url: "https://www.geekwire.com/2014/sticker-beacon-estimote-launching-tiny-nearables/", quote: "New York-based Estimote is launching" }, "Estimote", T)).toMatch(/only a year/);
+    expect(rowProblem({ field: "hq_city", after: "Mumbai", source_url: "https://www.techcircle.in/2018/04/30/samco-raises", quote: "Mumbai-based online broker Samco" }, "SAMCO", T)).toBeNull();   // a dated article of any age
     expect(rowProblem({ field: "hq_city", after: "Adelaide", source_url: "https://www.mpamag.com/au/news/x", quote: "Adelaide-based startup Sherlok has secured $3.4 million" }, "Sherlok", T)).toBeNull();
   });
 });
@@ -354,5 +353,18 @@ describe("closed company from its accepted news", () => {
     expect(r?.after).toBe("status = closed · Closed (2025-06-01)");
     expect(r?.quote).toBe("Okra shuts down after failing to raise funds");
     expect(closedFromNews([...news, { field: "news", after: "2023-02-02 — Envision Pharma Group acquires Okra", source_url: "https://x.com/a", quote: "" }], "Okra", "id1")).toBeNull();
+  });
+});
+
+describe("an ERROR points at the values that broke it (owner, batch 6)", () => {
+  it("offenders are the rows, a missing value has none", () => {
+    const checks = [
+      { id: "no_dubai", why: "x", kind: "absent", company: "Kiwify", field: "hq_city", match: "Dubai" },
+      { id: "needs_mumbai", why: "x", kind: "present", company: "SAMCO", field: "hq_city", match: "Mumbai" },
+    ] as never;
+    const rows = [{ company: "Kiwify", field: "hq_city", after: "Dubai", source_url: "u", quote: "q" }, { company: "Kiwify", field: "founder", after: "A B", source_url: "u", quote: "q" }];
+    const res = runAcceptance(checks, rows, [], "2026-11-17");
+    expect(res[0].offenders).toEqual([rows[0]]);
+    expect(res[1].offenders).toBeUndefined();
   });
 });

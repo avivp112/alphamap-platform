@@ -151,9 +151,9 @@ describe("review 9 (2026-11-10): the Contact page's addresses and an article of 
     const d = decideHeadquarters([st({ viaAddress: true }), st({ city: "Tel Aviv", viaAddress: true }), st({ city: "Tel Aviv", quote: "headquartered in Tel Aviv" })], "2026-11-10");
     expect(d).toMatchObject({ kind: "declared", statement: { city: "Tel Aviv", quote: "headquartered in Tel Aviv" } });
   });
-  it("Chargebee: an article of 2014 alone is not today's headquarters; of 2021 it is", () => {
+  it("a dated article decides, however old; the latest wins; an undated one decides nothing (owner, batch 6 — the 8-year rule is cancelled)", () => {
     const press = (date: string | null, city = "Chennai"): HqStatement => ({ city, quote: `${city}-based`, source_id: "S2", url: "https://techcrunch.com/x", kind: "press", date });
-    expect(decideHeadquarters([press("2014-01-12")], "2026-11-10").kind).toBe("none");
+    expect(decideHeadquarters([press("2014-01-12")], "2026-11-10")).toMatchObject({ kind: "declared", statement: { city: "Chennai" } });
     expect(decideHeadquarters([press("2021-12-17", "New York")], "2026-11-10")).toMatchObject({ kind: "declared" });
     expect(decideHeadquarters([press(null)], "2026-11-10").kind).toBe("none");   // owner, batch 6: an undated article is no headquarters (Estimote, GeekWire 2014)
     expect(decideHeadquarters([press("2014-01-12"), press("2024-05-01", "San Francisco")], "2026-11-10")).toMatchObject({ kind: "declared", statement: { city: "San Francisco" } });

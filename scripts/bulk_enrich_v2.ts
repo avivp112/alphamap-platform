@@ -127,6 +127,17 @@ const FIELDS_ASKED = [...new Set(FIELDS_RAW.flatMap((f) => (PILOT_FIELDS.include
 const ASKED: string[] = FIELDS_ASKED.length ? PILOT_FIELDS.filter((f) => FIELDS_ASKED.includes(f)) : [...PILOT_FIELDS];
 const OPEN_NOW = openFieldNames();
 const SHOW_ALL = DRY_RUN && process.env.ALL_FIELDS === "true";
+/** Values a failed check pointed at, by company (folded name) → the fields not written for it this run; "*" = the whole company. */
+const BLOCKED = new Map<string, Set<string>>();
+const foldName = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, "");
+/** The open fields minus the ones a failed check held back for this company ("*": none). A row field such as founder_bio belongs to the open field it starts with. */
+function openFieldsFor(company: string): string[] {
+  const held = BLOCKED.get(foldName(company));
+  if (!held || !held.size) return OPEN_FIELDS;
+  if (held.has("*")) return [];
+  if (held.has("hq_city") || held.has("hq_country")) { held.add("hq_city"); held.add("hq_country"); }   // a city and its country stand or fall together
+  return OPEN_FIELDS.filter((f) => ![...held].some((h) => h === f || h.startsWith(f)));
+}
 const OPEN_FIELDS: string[] = SHOW_ALL ? ASKED : ASKED.filter((f) => OPEN_NOW.includes(f));
 {
   const closed = ASKED.filter((f) => !OPEN_FIELDS.includes(f));
@@ -402,9 +413,9 @@ async function enrichCompany(
 
   // ── Stage 10: write (lib/enrichment/writeCompany.ts) ───────────────────
   const outcome = await writeCollected(row, collected, {
-    db: supabase, dryRun: DRY_RUN, update: UPDATE, verbose: VERBOSE, thresholds: THRESHOLDS,
+    db: supabase, dryRun: DRY_RUN || (BLOCKED.size > 0 && openFieldsFor(row.name).length === 0), update: UPDATE, verbose: VERBOSE, thresholds: THRESHOLDS,
     taxonomy, startupByDomain, seen: PILOT ? null : seen, runId,
-    openFields: OPEN_FIELDS, pilot: PILOT,
+    openFields: openFieldsFor(row.name), pilot: PILOT,
   }, summary);
   let companyRows = (outcome?.pilot ?? []).map((c) => ({ company_id: row.id, company: row.name, field: c.field, before: c.before == null ? "" : String(c.before), after: String(c.after), source_url: c.source_url ?? "", quote: c.quote ?? "", origin: "new", quote_original: c.quote_original ?? "", quote_translated: c.quote_translated ?? "", ...(c.payload ? { payload: JSON.stringify(c.payload) } : {}) }));
   if (KNOWN_ON) {
@@ -547,7 +558,14 @@ async function main() {
     if (child.status !== 0) { console.error(`⛔  The preflight dry pass failed (exit ${child.status}) — nothing written. See preflight.log.`); process.exit(1); }
     const a = acceptanceReport("pilot_report_preflight.csv", specPathsFor(BATCH_NO));
     console.log(`\n── Preflight acceptance ──\n${a.text}\n`);
-    if (a.failed) { console.error("⛔  Acceptance has an ERROR — nothing was written. Fix it, or read preflight.log and pilot_report_preflight.csv."); process.exit(1); }
+    // An ERROR no longer stops the whole run (owner, batch 6): the values that broke a check are not written and are listed in blocked_values.csv; everything else is written.
+    if (a.failed) {
+      const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+      writeFileSync("blocked_values.csv", "\uFEFF" + [["company", "field", "value", "source_url", "check", "why"].join(","), ...a.blocked.map((b) => [b.company, b.field, b.after, b.source_url, b.check, b.why].map(q).join(","))].join("\r\n") + "\r\n");
+      for (const b of a.blocked) { const k = foldName(b.company); (BLOCKED.get(k) ?? BLOCKED.set(k, new Set()).get(k)!).add(b.field); }
+      console.log(`🚧  ${a.failed} acceptance ERROR(s): ${a.blocked.length} value(s) will NOT be written (blocked_values.csv); everything else is written.`);
+      for (const u of a.unblockable) console.log(`    ⚠️  not blockable (no value to hold back): ${u}`);
+    }
     process.env.REPLAY ??= "1";
   }
   if (!DRY_RUN) {

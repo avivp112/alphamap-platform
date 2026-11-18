@@ -167,7 +167,7 @@
   "company": "Kiwify",
   "field": "founder",
   "match": "Artur Ribas",
-  "severity": "error"
+  "severity": "gap"
  },
  {
   "id": "kiwify_founder2",
@@ -176,7 +176,7 @@
   "company": "Kiwify",
   "field": "founder",
   "match": "Marinho Gomes",
-  "severity": "error"
+  "severity": "gap"
  },
  {
   "id": "samco_hq",

@@ -12,7 +12,7 @@ import { detectClosure } from "./closure.ts";
 import { normalizeForMatch, quoteIsNotASentence } from "./evidence.ts";
 import { sectorDecision } from "./techOverrides.ts";
 import { sentenceIsAboutCompany, isThirdPartyPage, sentenceWithYear } from "./subject.ts";
-import { isAddressLine, articleDate, HQ_MAX_AGE_DAYS, countryOfCity, countryOfTld } from "./headquarters.ts";
+import { isAddressLine, articleDate } from "./headquarters.ts";
 import { vsTitleCompetitor, comparisonTitleCompetitor } from "./competitorTiers.ts";
 import { amountFromAddress } from "./hints.ts";
 import { extractNumbersFromText } from "./evidence.ts";
@@ -119,12 +119,8 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
     // The same tests for a new value and a remembered one (owner, batch 6): a headquarters rests on a street address or on a sentence that declares it, and on a site that is not the company's own it is not older than eight years.
     const DECL = /headquarter|\bhq\b|head ?office|\bbased\b|-based|\bsede\b|\bsitz\b|siège|matriz|siedzib|مقر|本社|본사|штаб/i;
     if (quote && !isAddressLine(quote) && !DECL.test(quote)) return "its quote is neither a street address nor a headquarters statement";
-    if (url && !ownDomain(url, companyName)) {
-      const d = articleDate({ url, content: quote });
-      // One city whose country is the country of the company's own domain keeps an old statement (SAMCO: samco.in, "Mumbai-based" in 2018) — the same exception as decideHeadquarters.
-      const corroborated = !!o.domain && countryOfTld(o.domain) === (r.field === "hq_city" ? countryOfCity(r.after) : r.after);
-      if (d && !corroborated && Date.parse(today) - Date.parse(d) > HQ_MAX_AGE_DAYS * 86_400_000) return "a headquarters from an article older than eight years";
-    }
+    // A press statement needs a date; the latest wins (owner, batch 6). An address that carries only a year ("/2014/sticker-beacon…") gives none.
+    if (url && !ownDomain(url, companyName) && !articleDate({ url, content: quote }) && /\/(?:19|20)\d{2}\/[^/]/.test(url)) return "the article's date is only a year";
   }
   if (r.field === "competitor_declared") {
     const name = cleanCompetitorName(r.after);
