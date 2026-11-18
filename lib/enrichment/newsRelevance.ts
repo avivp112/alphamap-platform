@@ -311,6 +311,8 @@ export function completeFromSlug(title: string, url: string): string | null {
   const sw = slug.toLowerCase().split(/[-_]+/).filter(Boolean);
   const norm = (w: string) => w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
   const tw = title.replace(/[…]|\.{3}$/g, "").split(/\s+/).map(norm).filter(Boolean);
+  // A short headline that is the whole of the address' slug is whole ("Alexforbes buys Outvest" at …/alexforbes-buys-outvest/): the address confirms it.
+  if (tw.length >= 3 && sw.length === tw.length && tw.every((w, i) => sw[i] === w)) return title.replace(/[…]|\.{3}$/g, "").trim();
   if (tw.length < 4 || sw.length <= tw.length) return null;
   // The title's words are the slug's first words (an apostrophe's s is glued in the slug: "estate's" → "estates").
   if (!tw.every((w, i) => sw[i] === w)) return null;

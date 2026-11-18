@@ -99,7 +99,7 @@ export function siteBelongsToAnotherCompany(companyName: string, website: string
   // name (twice or more, or on an address that carries the name), is still the company's page. The purchase is the news's business (acquired from the accepted news), not a reason to describe nothing.
   const nameCount = (home.match(new RegExp(`\\b${nameRe}\\b`, "gi")) ?? []).length;
   const movedAway = pages.slice(0, 3).some((p) => { const fin = p.content.slice(0, 1200).match(/Final URL:\s*(https?:\/\/[^\s]+)/i)?.[1]; try { return !!fin && !!asked && !isTrackingHost(new URL(fin).hostname) && labelOf(new URL(fin).hostname) !== asked && !labelOf(new URL(fin).hostname).includes(asked) && !asked.includes(labelOf(new URL(fin).hostname)); } catch { return false; } });
-  const stillItself = nameCount >= 2 && !movedAway;
+  const stillItself = nameCount >= 1 && !movedAway;   // the page names the company (in the sale's own sentence at least) and the address stayed
   for (const [i, re] of said.entries()) {
     const m = home.match(re);
     if (m && i < 2 && stillItself) continue;
