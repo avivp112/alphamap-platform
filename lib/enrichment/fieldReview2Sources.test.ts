@@ -239,3 +239,13 @@ describe("the other party's announcement of the deal is a source for the event (
     expect(isPartyRelease("https://hireaiva.com/blog/liondesk-reviews/", "A Comprehensive Review of Liondesk CRM", { companyName: "LionDesk" })).toBe(false);
   });
 });
+
+describe("a corporate newsroom or blog announcing the purchase of the company is a party (owner, batch 7: Euronet / Sikhona)", () => {
+  it("is, for the acquisition headline; is not for an explainer or a headline that is no purchase", () => {
+    expect(isPartyRelease("https://ir.euronetworldwide.com/news-releases/news-release-details/ria-money-transfer-expands-presence-south-africa-through", "Ria Money Transfer Expands Presence in South Africa Through Acquisition of Sikhona", { companyName: "Sikhona" })).toBe(true);
+    expect(isPartyRelease("https://ir.euronetworldwide.com/news-releases/news-release-details/ria-acquires-sikhona", "Ria acquires Sikhona", { companyName: "Sikhona" })).toBe(true);
+    expect(isPartyRelease("https://www.euronet.com/use-cases/ria-acquires-sikhona/", "Ria Acquires Sikhona in South Africa", { companyName: "Sikhona" })).toBe(true);
+    expect(isPartyRelease("https://randomblog.com/blog/why-lone-wolf-acquired-liondesk", "Why Lone Wolf acquired LionDesk", { companyName: "LionDesk" })).toBe(false);
+    expect(isPartyRelease("https://randomblog.com/blog/liondesk-pricing", "LionDesk pricing explained", { companyName: "LionDesk" })).toBe(false);
+  });
+});
