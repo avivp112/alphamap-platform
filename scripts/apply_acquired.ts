@@ -27,6 +27,8 @@ for (const r of body) {
   const f = r[ix("field")], id = r[ix("company_id")];
   if (f === "acquired") {
     const m = (r[ix("after")] ?? "").match(/^status = (acquired|majority_acquired) · Acquired by (.+?) \((\d{4}-\d{2}-\d{2}|undated)\)$/);
+    const cl = (r[ix("after")] ?? "").match(/^status = closed · Closed \((\d{4}-\d{2}-\d{2}|undated)\)$/);
+    if (cl) byId.set(id, { id, name: r[ix("company")], status: "closed", acquirer: "", date: cl[1] === "undated" ? null : cl[1], url: r[ix("source_url")], quote: r[ix("quote")] } as Purchase);
     if (m) byId.set(id, { ...(byId.get(id) ?? {}), id, name: r[ix("company")], status: m[1], acquirer: m[2], date: m[3] === "undated" ? null : m[3], url: r[ix("source_url")], quote: r[ix("quote")] } as Purchase);
   }
 }
@@ -54,7 +56,7 @@ if (runErr || !run) { console.error(`could not register the run: ${runErr?.messa
 const runId = (run as { run_id: string }).run_id;
 for (const p of todo) {
   const f = onFile.get(p.id)!;
-  const patch: Record<string, unknown> = { status: p.status, acquired_by: p.acquirer, ...(p.date ? { exit_date: p.date } : {}), ...(p.brand ? { brand_after_acquisition: p.brand } : {}) };
+  const patch: Record<string, unknown> = { status: p.status, ...(p.acquirer ? { acquired_by: p.acquirer } : {}), ...(p.date ? { exit_date: p.date } : {}), ...(p.brand ? { brand_after_acquisition: p.brand } : {}) };
   const { error: upErr } = await db.from("startups").update(patch).eq("id", p.id).eq("status", "active");
   if (upErr) { console.error(`${p.name}: ${upErr.message} (migration 20261202000000 applied?)`); continue; }
   const old: Record<string, unknown> = { status: f.status, acquired_by: f.acquired_by, exit_date: f.exit_date, brand_after_acquisition: null };

@@ -55,7 +55,7 @@ import { techOverride } from "../lib/enrichment/techOverrides.ts";
 import { classifyDescription, mainTag } from "../lib/enrichment/postClassify.ts";
 import { acceptanceReport, specPathsFor } from "./acceptance_check.ts";
 import { traceTable } from "../lib/enrichment/runTrace.ts";
-import { rowProblem, applyRowRules, acquiredFromNews, brandAsWritten, brandFromTexts } from "../lib/enrichment/rowRules.ts";
+import { rowProblem, applyRowRules, acquiredFromNews, brandAsWritten, brandFromTexts, closedFromNews } from "../lib/enrichment/rowRules.ts";
 import { loadKnown, saveKnown, remember, applyKnown, markKey, NOT_REMEMBERED, KNOWN_PATH, type KnownStore, type KnownEntry } from "../lib/enrichment/knownSources.ts";
 import { injectKnown } from "../lib/enrichment/knownInject.ts";
 import { readMarks } from "../lib/enrichment/fieldReview.ts";
@@ -183,6 +183,8 @@ const RUN_DATE = new Date().toISOString().slice(0, 10);
 // Websites to fix (owner, 2026-11-02): another business on the site, or none of it readable.
 // Always in website_review.csv; noted in the website_review table on a wet run.
 const websiteRows: Array<Record<string, string>> = [];
+// Addresses whose pages no longer name the company (domain_repurposed): a file for the owner's review, no database note.
+const repurposedRows: Array<Record<string, string>> = [];
 // Kept for parity/visibility only -- v2 gates per field (issue 9), never on
 // one whole-company score. Printed in the run header, never read.
 const MIN_CONFIDENCE = Number(process.env.MIN_CONFIDENCE ?? 40);
@@ -329,6 +331,7 @@ async function enrichCompany(
     },
     recordCost: (model, usage) => recordCost(summary, model, usage),
     peerLookup: makePeerLookup(supabase),
+    onDomainRepurposed: (detail) => { repurposedRows.push({ company_id: row.id, company: row.name, website: row.website ?? "", reason: "domain_repurposed", detail }); },
     onWebsiteIssue: (reason, detail) => {
       websiteIssueOf.set(row.id, reason);
       websiteRows.push({ company_id: row.id, company: row.name, website: row.website ?? "", reason, detail });
@@ -409,16 +412,18 @@ async function enrichCompany(
     const back = companyRows.filter((r) => ownerWrong(r.company, r.field, r.after));
     if (back.length) { console.log(`    🚫  Marked wrong by the owner, not reported again: ${back.map((r) => `${r.field}: ${r.after.slice(0, 60)}`).join(" | ")}`); companyRows = companyRows.filter((r) => !back.includes(r)); }
     // What this run found is remembered; what was verified before and is still confirmed is carried (no model, no search for it).
-    { const g = applyRowRules(companyRows, row.name, RUN_DATE); companyRows = g.rows; for (const d of g.dropped) console.log(`    🧹  ${d}`); }
+    { const g = applyRowRules(companyRows, row.name, RUN_DATE, { domain: row.website }); companyRows = g.rows; for (const d of g.dropped) console.log(`    🧹  ${d}`); }
     const freshFound = new Set(companyRows.map((r) => r.field));
     const before = Object.keys(knownStore[row.id] ?? []).length;
     const carry = await applyKnown(knownStore, row.id, companyRows, RUN_DATE, readKnownPage, lockedMarks);
     remember(knownStore, companyRows, runId ?? "dry", RUN_DATE, isWrongValue);
     companyRows = carry.rows.map((r) => ({ ...r, origin: r.origin ?? "new" })) as typeof companyRows;
-    { const g = applyRowRules(companyRows, row.name, RUN_DATE); companyRows = g.rows; for (const d of g.dropped) console.log(`    🧹  ${d}`);
+    { const g = applyRowRules(companyRows, row.name, RUN_DATE, { domain: row.website }); companyRows = g.rows; for (const d of g.dropped) console.log(`    🧹  ${d}`);
       // acquired comes only from the accepted news (owner, round 10): any acquired row found another way (a profile page, a blog) is dropped.
       companyRows = companyRows.filter((r) => r.field !== "acquired");
       const acq = acquiredFromNews(companyRows, row.name, row.id);
+      const closed = acq ? null : closedFromNews(companyRows, row.name, row.id);
+      if (closed) { companyRows.push(closed as (typeof companyRows)[number]); console.log(`    🏁  closed — read from the company's news: ${closed.after}`); }
       if (acq) {
         companyRows.push(acq as (typeof companyRows)[number]); console.log(`    🏁  acquired — read from the company's news: ${acq.after}`);
         // A rename after a purchase is a purchase: the new name is the brand after the acquisition, written as the company's own pages write it, never a name proposal.
@@ -753,11 +758,12 @@ async function main() {
     writeFileSync("domain_classes_new.csv", domainClassesCsv(domainClasses.newThisRun()));
     console.log(`📋  ${domainClasses.newThisRun().length} source domain(s) classified for the first time, for your check, in domain_classes_new.csv.`);
   }
-  if (websiteRows.length && !process.env.VITEST) {
+  const allWebsiteRows = [...websiteRows, ...repurposedRows];
+  if (allWebsiteRows.length && !process.env.VITEST) {
     const wcols = ["company_id", "company", "website", "reason", "detail"];
     const wcell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-    writeFileSync("website_review.csv", "\uFEFF" + [wcols.join(","), ...websiteRows.map((r) => wcols.map((c) => wcell(r[c] ?? "")).join(","))].join("\r\n") + "\r\n");
-    console.log(`🛠️   ${websiteRows.length} website(s) to fix in website_review.csv${DRY_RUN ? "" : " (and the website_review table)"}.`);
+    writeFileSync("website_review.csv", "\uFEFF" + [wcols.join(","), ...allWebsiteRows.map((r) => wcols.map((c) => wcell(r[c] ?? "")).join(","))].join("\r\n") + "\r\n");
+    console.log(`🛠️   ${allWebsiteRows.length} website(s) to fix in website_review.csv${DRY_RUN ? "" : " (and the website_review table)"}.`);
   }
   if (KNOWN_ON) {
     saveGaps(gapStore);

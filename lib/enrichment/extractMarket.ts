@@ -31,6 +31,9 @@ import { competitorRelation, type RelationDrop } from "./competitorRelation";
 import { competitorEvidenceProblem, type CompetitorEvidenceDrop } from "./competitorEvidence";
 import { isDataPlatformUrl } from "./dataPlatforms";
 
+/** Scripts that are not Latin: a headline in them is read in its own language and kept with its translation. */
+const NON_LATIN = /[\u0590-\u06FF\u0400-\u04FF\u0370-\u03FF\u0E00-\u0E7F\u3040-\u30FF\u4E00-\u9FFF\uAC00-\uD7AF]/;
+
 export interface EvidencedValue<T> {
   value: T;
   source_id: string;
@@ -45,7 +48,7 @@ export interface V2Competitor {
   source_id?: string; evidence_quote?: string;
 }
 export interface V2Acquisition { company_name: string; website?: string; acquired_date?: string; amount?: number; description?: string; source_ids?: string[] }
-export interface V2NewsItem { title_joined?: boolean; title: string; url: string; source?: string; published_date?: string; summary?: string; image_url?: string }
+export interface V2NewsItem { /** The headline as the page writes it, when it is not in English: the check runs on this one, the translation is the title. */ title_original?: string; title_joined?: boolean; title: string; url: string; source?: string; published_date?: string; summary?: string; image_url?: string }
 /** A patent from the EPO register (epoPatents.ts) — the only source of patents. */
 export interface V2PatentRecord { title: string; patent_number?: string; filing_date?: string | null; url?: string; summary?: string; source?: "epo" }
 export interface V2Technology {
@@ -345,6 +348,13 @@ export function processMarketExtractionResponse(
     // No date from the model: the article's own address may give it (Business Wire, /YYYY/MM/DD/).
     if (!publishedDate) publishedDate = dateFromUrl(src.url) ?? undefined;
     const headline = sourceHeadlineDetail(n.title, src);
+    // A headline in another script is checked against the page's own title; the model's translation stays beside it as the title (owner, batch 6: Ruya, Arabic).
+    const srcTitle = String(src.title ?? "").trim();
+    if (!headline && NON_LATIN.test(srcTitle) && srcTitle.length >= 12 && srcTitle.replace(/\s+/g, " ").length <= 300) {
+      news.push({ ...n, title: String(n.title).trim(), title_original: srcTitle, url: src.url, published_date: publishedDate });
+      if (news.length >= 8) break;
+      continue;
+    }
     if (!headline) {
       console.log(`    🚫  news title not in its source — model: "${String(n.title).slice(0, 110)}" | source title: "${String(src.title ?? "").slice(0, 110)}" | ${src.url}`);
       dropped.push({ field: "news", reason: "news_title_not_in_source" }); continue;

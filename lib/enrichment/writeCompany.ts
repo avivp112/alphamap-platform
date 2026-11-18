@@ -17,6 +17,7 @@ import { normalizeUrlForMatch } from "./extractMarket.ts";
 import { normalizeIsoDate, appendNew, reconcileOnFile, isSameRound } from "./assemble.ts";
 import { fetchArticleOgImage } from "./ogImage.ts";
 import { detectAcquisition } from "./acquisition.ts";
+import { detectClosure } from "./closure.ts";
 import { brandFromTexts } from "./rowRules.ts";
 import { leaderRoleEvidence, cleanPeople, mergeFoundersByName, isFounderEntry, cleanFounderTitle, canonicalTitle } from "./people.ts";
 import { samePersonName } from "./linkedin.ts";
@@ -421,6 +422,23 @@ export async function writeCollected(
     }
   }
 
+  // A closure (owner, batch 6): status = closed, the headline's date, the page and the headline as provenance — from the accepted news alone, only for a company still active, and never together with a purchase.
+  {
+    const newsArticles = (market.news ?? []).map((n) => ({ url: n.url, title: n.title, content: "", date: n.published_date ?? null }));
+    const shut = (row.status === "active" || row.status == null) && !detectAcquisition(newsArticles, row.name) ? detectClosure(newsArticles, row.name) : null;
+    if (shut) {
+      let src = allSources.find((x) => x.url === shut.url);
+      if (!src) {
+        src = { source_id: `A${allSources.length + 1}`, source_type: "news", url: shut.url, title: shut.quote, content: shut.quote, provider: "serper", query_label: "closed_news" } as LabeledSource;
+        allSources.push(src); sourceById.set(src.source_id, src);
+      }
+      const ev = { source_id: src.source_id, evidence_quote: shut.quote };
+      patch.status = "closed"; provenance("status", "closed", ev);
+      if (shut.date) { patch.exit_date = shut.date; provenance("exit_date", shut.date, ev); }
+      console.log(`    🏁  Closed (${shut.date ?? "undated"}) — from "${shut.quote.slice(0, 80)}"`);
+    }
+  }
+
   // What the registers hold, as columns of their own (registerRecord.ts): never the headquarters, never the founding year.
   if (collected.registry) {
     const { record, sourceId, dateSourceId } = collected.registry;
@@ -790,7 +808,7 @@ export async function writeCollected(
       const fw = fieldWrites.find((w) => w.field.replace(/^(profile|metrics)\./, "") === k);
       const one = (field: string, after: string, source_url: string | null, quote: string | null = null) => reportLines.push({ field, before: null, after, source_url, quote });
       if (k === "news") {
-        for (const n of newOf<{ url?: string; title: string; published_date?: string | null }>(patch.news, rowOf.news, (a, b) => a.url === b.url)) one("news", `${n.published_date || "no date"} — ${n.title}`, n.url ?? null);
+        for (const n of newOf<{ url?: string; title: string; title_original?: string; published_date?: string | null }>(patch.news, rowOf.news, (a, b) => a.url === b.url)) one("news", `${n.published_date || "no date"} — ${n.title}`, n.url ?? null, n.title_original ?? null);
       } else if (k === "founders") {
         for (const f of newOf<{ name: string; title?: string | null; bio?: string | null }>(patch.founders, rowOf.founders, (a, b) => samePersonName(a.name ?? "", b.name))) {
           const grounded = (profile.profile.founders ?? []).find((g) => samePersonName(g.name, f.name)) as { grounded_url?: string | null; grounded_quote?: string } | undefined;

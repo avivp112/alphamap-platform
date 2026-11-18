@@ -123,7 +123,7 @@ function fmtEmp(n: number | null): string {
 /** An acquired company shows "Acquired" where the stage badge would be (owner, round 10): the status of the record, not its last funding round. */
 const ACQUIRED_BADGE_STYLE = "bg-slate-800 text-white";
 function acquiredBadge(s: { status?: string | null } | null | undefined): string | null {
-  return s?.status === "acquired" ? "Acquired" : s?.status === "majority_acquired" ? "Majority acquired" : null;
+  return s?.status === "acquired" ? "Acquired" : s?.status === "majority_acquired" ? "Majority acquired" : s?.status === "closed" ? "Closed" : null;
 }
 
 function formatEmployeeValue(startup: Pick<Startup, "employee_count" | "employee_range">): string {
