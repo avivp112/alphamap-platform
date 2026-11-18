@@ -3878,13 +3878,10 @@ export function Startups() {
 
   // Desktop, redesigned page: the company card is a column beside the list; phones keep the window.
   const panelOpen = uiV2 && !isMobile && !!tearsheetStartup;
-  // When the card opens, bring it up under the navigation bar so its full height is on screen.
-  const panelRef = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    if (!panelOpen) return;
-    const top = panelRef.current?.getBoundingClientRect().top ?? 0;
-    if (top > 100) window.scrollBy({ top: top - 92, behavior: "smooth" });
-  }, [panelOpen]);
+  // Desktop, redesigned page: one workspace exactly as tall as the screen below the navigation bar.
+  // The list and the company card each scroll inside their own box, so both always reach the bottom
+  // of the screen and nothing is left hanging below them.
+  const workspace = uiV2 && !isMobile;
   const renderTearsheet = (layout: "modal" | "panel") => tearsheetStartup && (
     <TearsheetModal
       startup={tearsheetStartup}
@@ -3935,14 +3932,14 @@ export function Startups() {
                 )}
               </div>
             ) : (
-              <div className="relative">
+              <div className={workspace ? "relative flex flex-col h-full min-h-0" : "relative"}>
                 {rowsLoading && (
                   <div className="absolute inset-0 z-10 flex items-start justify-center pt-16 bg-white/50 backdrop-blur-[1px] rounded-[10px] transition-opacity">
                     <Loader2 className="w-5 h-5 text-[#F59E0B] animate-spin" />
                   </div>
                 )}
                 {viewMode === "grid" || (uiV2 && isMobile) ? (
-                  <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 transition-opacity duration-150 ${rowsLoading ? "opacity-40" : "opacity-100"}`}>
+                  <div className={`${workspace ? "flex-1 min-h-0 overflow-y-auto pb-1 " : ""}grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 transition-opacity duration-150 ${rowsLoading ? "opacity-40" : "opacity-100"}`}>
                     {rows.map((s, i) => (
                       <StartupCard key={s.id} startup={s} onSelect={() => setSelected(s)}
                         selected={selected.has(s.id)} onToggleSelect={(e) => toggleSelect(s, e)}
@@ -3954,7 +3951,9 @@ export function Startups() {
                     ))}
                   </div>
                 ) : uiV2 ? (
+                  <div className={workspace ? "flex-1 min-h-0" : ""}>
                   <StartupsTable
+                    fill={workspace}
                     rows={rows} sort={sort} density={density} loading={rowsLoading}
                     onSort={(k: StartupSortKey) => setSort((cur) => nextSort(cur, k))}
                     selectedIds={selectedIds}
@@ -3967,6 +3966,7 @@ export function Startups() {
                     narrow={panelOpen}
                     activeId={tearsheetStartup?.id ?? null}
                   />
+                  </div>
                 ) : (
                   <div className={`bg-white rounded-[10px] border border-gray-100 shadow-[0_4px_20px_rgba(0,0,0,0.04)] overflow-hidden transition-opacity duration-150 ${rowsLoading ? "opacity-40" : "opacity-100"}`}>
                     <div className="overflow-x-auto">
@@ -3993,7 +3993,9 @@ export function Startups() {
                     </div>
                   </div>
                 )}
-                <Pagination page={page} pageCount={pageCount} onChange={setPage} />
+                <div className={workspace ? "flex-none" : ""}>
+                  <Pagination page={page} pageCount={pageCount} onChange={setPage} />
+                </div>
               </div>
             )}
     </>
@@ -4001,9 +4003,11 @@ export function Startups() {
 
   return (
     <Layout>
+     <div className={workspace ? "mx-auto w-full max-w-[1760px] h-[calc(100vh-5rem)] flex" : ""}>
+      <div className={workspace ? "flex-1 min-w-0 min-h-0 flex flex-col" : ""}>
 
       {/* ── Top bar: search + quick questions + help + view toggle ───────── */}
-      <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 pt-6 pb-2">
+      <div className={`mx-auto w-full max-w-[1600px] px-4 sm:px-6 lg:px-8 flex-none ${workspace ? "pt-4 pb-1" : "pt-6 pb-2"}`}>
         <div className="flex items-center gap-2.5">
           <div className="relative flex-1 max-w-xl">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-300" />
@@ -4047,9 +4051,9 @@ export function Startups() {
 
       {/* ── Sidebar + main content (shared SideFilterLayout shell) ───────── */}
       {uiV2 ? (
-        <div className={`mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 pt-3 ${panelOpen ? "pb-40" : selected.size >= 1 ? "pb-28" : "pb-10"}`}>
-         <div className={panelOpen ? "flex items-start gap-4" : ""}>
-          <div className="min-w-0 flex-1 space-y-3">
+        <div className={workspace
+          ? `flex-1 min-h-0 flex flex-col space-y-3 px-4 sm:px-6 lg:px-8 pt-3 ${selected.size >= 1 ? "pb-20" : "pb-4"}`
+          : `mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 pt-3 space-y-3 ${selected.size >= 1 ? "pb-28" : "pb-10"}`}>
           <FilterBar
             state={filterState} actions={filterActions} countries={countries} headcountSteps={HEADCOUNT_STEPS}
             activeCount={activeFilterCount} onOpenDrawer={() => setDrawerOpen(true)}
@@ -4059,15 +4063,7 @@ export function Startups() {
           <p className="text-am-caption text-am-ink-3 tabular-nums" aria-live="polite">
             {t("startups.v2.companyCount", { defaultValue: "{{count}} companies", count: totalCount.toLocaleString() })}
           </p>
-          {resultsContent}
-          </div>
-          {panelOpen && (
-            <aside ref={panelRef} aria-label={t("startups.v2.companyPanel", { defaultValue: "Company" })}
-              className="flex-none w-[min(640px,48vw)] sticky top-[5.75rem] h-[calc(100vh-6.5rem)]">
-              {renderTearsheet("panel")}
-            </aside>
-          )}
-         </div>
+          <div className={workspace ? "flex-1 min-h-0" : ""}>{resultsContent}</div>
         </div>
       ) : (
       <SideFilterLayout
@@ -4187,6 +4183,14 @@ export function Startups() {
         {resultsContent}
       </SideFilterLayout>
       )}
+      </div>
+      {panelOpen && (
+        <aside aria-label={t("startups.v2.companyPanel", { defaultValue: "Company" })}
+          className="flex-none w-[min(640px,48vw)] h-full py-4 pe-4 lg:pe-8">
+          {renderTearsheet("panel")}
+        </aside>
+      )}
+     </div>
 
       <ProductTour steps={uiV2 ? tourStepsV2 : tourSteps} open={tourOpen} onClose={closeTour} />
       {checkName !== null && <CheckCompanyDialog initial={{ ...emptyCheckForm(), name: checkName }} onClose={() => setCheckName(null)} />}
