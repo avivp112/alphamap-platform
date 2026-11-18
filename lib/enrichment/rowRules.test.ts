@@ -429,11 +429,12 @@ describe("batch 6: remembered headcount values obey the same rules", () => {
     expect(rowProblem({ field: "headcount_history", after: "84 on 2026-11-18 (site_stated)", source_url: url, quote: q }, "Brighte", T)).toMatch(/run day/);
     expect(rowProblem({ field: "employee_count", after: "20", source_url: "https://canopycare.us/about", quote: "20 people" }, "Canopy", T)).toBeNull();
   });
-  it("six archive copies of one statement are one point, at the earliest", () => {
+  it("archive copies of one statement keep the first and the last, the ones between are merged", () => {
     const mk = (d: string, quote: string) => ({ field: "headcount_history", company: "Datahut", after: `42 on ${d} (site_stated)`, source_url: `https://web.archive.org/web/${d.replace(/-/g, "")}/https://datahut.co/about`, quote });
-    const rows = [mk("2025-01-20", "wth story We&rsquo;ve bootstrapped Datahut with a very small team and within three years we&rsquo;ve grown to 42 team members, a bigger office."), mk("2019-08-18", "Our growth story We’ve bootstrapped Datahut with a very small team and within three years we’ve grown to 42 team members, a bigger office.")];
-    const out = applyRowRules(rows as never, "Datahut", T).rows.filter((r) => r.field === "headcount_history");
-    expect(out).toHaveLength(1);
-    expect(out[0].after).toContain("2019-08-18");
+    const q1 = "Our growth story We’ve bootstrapped Datahut with a very small team and within three years we’ve grown to 42 team members, a bigger office.";
+    const q2 = "wth story We&rsquo;ve bootstrapped Datahut with a very small team and within three years we&rsquo;ve grown to 42 team members, a bigger office.";
+    const rows = [mk("2025-01-20", q2), mk("2019-08-18", q1), mk("2021-01-27", q1), mk("2023-01-30", q2)];
+    const out = applyRowRules(rows as never, "Datahut", T).rows.filter((r) => r.field === "headcount_history").map((r) => r.after.match(/on (\d{4}-\d{2}-\d{2})/)![1]).sort();
+    expect(out).toEqual(["2019-08-18", "2025-01-20"]);
   });
 });

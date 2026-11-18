@@ -790,7 +790,7 @@ export async function writeCollected(
     for (const k of Object.keys(patch)) delete patch[k];
     Object.assign(patch, cut.patch);
     for (let i = fieldWrites.length - 1; i >= 0; i--) {
-      if (!(fieldWrites[i].field.replace(/^(profile|metrics)\./, "") in patch)) fieldWrites.splice(i, 1);
+      if (!(fieldWrites[i].field.replace(/^(profile|metrics|market)\./, "") in patch)) fieldWrites.splice(i, 1);
     }
     if (!writesEmployeeHistory(OPEN)) headcountPoints.length = 0;
     if (!patch.news) newsAdded = 0;
@@ -806,7 +806,7 @@ export async function writeCollected(
     const newOf = <T,>(next: unknown, prev: unknown, same: (a: T, b: T) => boolean): T[] =>
       ((next ?? []) as T[]).filter((n) => !((prev ?? []) as T[]).some((p) => p && same(p, n)));
     for (const k of Object.keys(patch)) {
-      const fw = fieldWrites.find((w) => w.field.replace(/^(profile|metrics)\./, "") === k);
+      const fw = fieldWrites.find((w) => w.field.replace(/^(profile|metrics|market)\./, "") === k);
       const one = (field: string, after: string, source_url: string | null, quote: string | null = null) => reportLines.push({ field, before: null, after, source_url, quote });
       if (k === "news") {
         for (const n of newOf<{ url?: string; title: string; title_original?: string; published_date?: string | null }>(patch.news, rowOf.news, (a, b) => a.url === b.url)) one("news", `${n.published_date || "no date"} — ${n.title}`, n.url ?? null, n.title_original ?? null);
@@ -855,7 +855,7 @@ export async function writeCollected(
           console.log(`    🚫  ${fieldOfColumn(k) ?? k} not written — no source on file for "${String(patch[k]).slice(0, 60)}".`);
           bump(summary.droppedByReason, "no_source_no_value");
           delete patch[k];
-          for (let i = fieldWrites.length - 1; i >= 0; i--) if (fieldWrites[i].field.replace(/^(profile|metrics)\./, "") === k) fieldWrites.splice(i, 1);
+          for (let i = fieldWrites.length - 1; i >= 0; i--) if (fieldWrites[i].field.replace(/^(profile|metrics|market)\./, "") === k) fieldWrites.splice(i, 1);
           continue;
         }
         // A sector is shown by its name, not by the id the column holds, and once: the industry column carries the parent sector (one report line for both).
@@ -937,7 +937,7 @@ export async function writeCollected(
         if (!parsed.lead && r.lead_investor) r.lead_investor = null as never;
       }
       if (dropInserts.size) plan.inserts = plan.inserts.filter((_, k) => !dropInserts.has(k));
-      for (let i = fieldWrites.length - 1; i >= 0; i--) if (!(fieldWrites[i].field.replace(/^(profile|metrics)\./, "") in patch)) fieldWrites.splice(i, 1);
+      for (let i = fieldWrites.length - 1; i >= 0; i--) if (!(fieldWrites[i].field.replace(/^(profile|metrics|market)\./, "") in patch)) fieldWrites.splice(i, 1);
       const out: PilotChange[] = [];
       reportLines.forEach((l, i) => { if (g.drop.has(i)) return; out.push(g.after.has(i) ? { ...l, after: g.after.get(i)! } : l); });
       reportLines.length = 0; reportLines.push(...out);

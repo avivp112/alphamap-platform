@@ -200,7 +200,6 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
   const seenRound = new Map<string, T>();
   const seenComp = new Set<string>();
   const seenNews = new Map<string, T>();
-  const seenHeadcount = new Map<string, T>();
   for (const r of kept) {
     if (r.field === "founder") {
       const [name, ...rest] = r.after.split(" — ");
@@ -223,24 +222,6 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
         continue;
       }
       seenRound.set(key, r); merged.push(r); continue;
-    }
-    if (r.field === "headcount_history") {
-      // The same figure in the same words on several archive copies is one point, at the earliest copy (owner, batch 6: Datahut's 42 on six dates).
-      const m = r.after.match(/^(\d+\+?)\s+on\s+(\d{4}-\d{2}-\d{2})/);
-      if (m) {
-        const q = String(r.quote ?? "").replace(/&rsquo;|&amp;|&#\d+;/g, " ");
-        const i = q.indexOf(m[1].replace("+", ""));
-        const win = fold(i >= 0 ? q.slice(Math.max(0, i - 12), i + 40) : q);
-        const k = `${fold(r.company ?? "")}|${m[1]}|${win}`;
-        const have = seenHeadcount.get(k);
-        if (have) {
-          dropped.push(`headcount_history: ${r.after.slice(0, 40)} is the same statement as ${have.after.slice(0, 40)} — merged`);
-          const hd = have.after.match(/on (\d{4}-\d{2}-\d{2})/)?.[1] ?? "9999";
-          if (m[2] < hd) Object.assign(have, r);
-          continue;
-        }
-        seenHeadcount.set(k, r);
-      }
     }
     if (r.field === "news") {
       // One address, one news item: the fresh one over the remembered one, else the earlier date (owner, batch 6: Okra's two copies of the same article).
@@ -269,6 +250,28 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
       seenBg.add(key);
     }
     merged.push(r);
+  }
+  // The same figure in the same words on several archive copies: the first and the last copy stay (the first dates it, the last shows it still stood), the ones between are merged
+  // (owner, batch 6: Datahut's 42 on six dates).
+  {
+    const dateOf = (x: T) => x.after.match(/on (\d{4}-\d{2}-\d{2})/)?.[1] ?? "9999";
+    const groups = new Map<string, T[]>();
+    for (const r of merged) {
+      if (r.field !== "headcount_history") continue;
+      const m = r.after.match(/^(\d+\+?)\s+on\s+\d{4}-\d{2}-\d{2}/);
+      if (!m) continue;
+      const q = String(r.quote ?? "").replace(/&rsquo;|&amp;|&#\d+;/g, " ");
+      const i = q.indexOf(m[1].replace("+", ""));
+      const k = `${fold(r.company ?? "")}|${m[1]}|${fold(i >= 0 ? q.slice(Math.max(0, i - 12), i + 40) : q)}`;
+      groups.set(k, [...(groups.get(k) ?? []), r]);
+    }
+    const drop = new Set<T>();
+    for (const g of groups.values()) {
+      if (g.length < 3) continue;
+      const sorted = [...g].sort((a, b) => dateOf(a).localeCompare(dateOf(b)));
+      for (const mid of sorted.slice(1, -1)) { drop.add(mid); dropped.push(`headcount_history: ${mid.after.slice(0, 40)} is the same statement as ${sorted[0].after.slice(0, 40)} — merged`); }
+    }
+    if (drop.size) for (let i = merged.length - 1; i >= 0; i--) if (drop.has(merged[i])) merged.splice(i, 1);
   }
   // one value per single-valued field (owner, round 10: Medipass had two descriptions): the run's own over the memory's, else the first.
   const family = (f: string) => (f === "description_what_only" ? "description" : f);
