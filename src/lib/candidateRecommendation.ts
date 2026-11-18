@@ -69,7 +69,7 @@ const STRONG = new Set(["share_allotment", "known_company_link", "known_company_
 const SHELL_WARNINGS = new Set(["many_directorships", "holding_psc", "shared_address"]);
 
 const MATCH_HE: Record<string, string> = {
-  director: "שם דירקטור", company_number: "מספר חברה", postcode: "מיקוד", legal_name: "שם משפטי מלא", city: "עיר", founded: "שנת הקמה",
+  director: "שם דירקטור", company_number: "מספר חברה", postcode: "מיקוד", legal_name: "שם משפטי מלא", city: "עיר", founded: "שנת הקמה", domain_name: "דומיין זהה לשם החברה",
 };
 
 const uniq = <T,>(xs: T[]): T[] => [...new Set(xs)];

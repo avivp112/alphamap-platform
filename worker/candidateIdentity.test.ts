@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   personName, textHasPerson, plainName, matchSignals, isVerified, siteSignals, quoteInText, pickSiteCandidates,
-  isForbiddenDomain, cityOf, aboutLink, originOf, extraLinks, MAX_PAGES, probeDomains, enrichCandidate, displayName, MAX_SEARCHES,
+  isForbiddenDomain, cityOf, aboutLink, originOf, extraLinks, MAX_PAGES, probeDomains, withDomainMatch, enrichCandidate, displayName, MAX_SEARCHES,
   type CandidateInput, type Page, type IdentityDeps,
 } from "./candidateIdentity.ts";
 import type { SearchResult } from "./search.ts";
@@ -66,6 +66,40 @@ describe("matching the site to the record", () => {
   it("only directors and officers count, not a promoter", () => {
     expect(matchSignals(sec, [page("u", "Sam Iyer is our friend")]).length).toBe(0);
     expect(matchSignals(sec, [page("u", "CEO Ada Lovelace, Austin")]).map((x) => x.kind).sort()).toEqual(["city", "director"]);
+  });
+});
+
+describe("a domain named exactly like the company", () => {
+  const site = (domain: string) => ({ url: `https://${domain}/`, domain });
+  const sig = (kind: string) => ({ kind, text: "x", url: "u" }) as never;
+  it("counts as the second match next to a director, the company number or the postcode", () => {
+    for (const kind of ["director", "company_number", "postcode"]) {
+      const s = withDomainMatch([sig(kind)], uk, site("highline.ai"));
+      expect(s.map((x) => x.kind)).toEqual([kind, "domain_name"]);
+      expect(isVerified(s)).toBe(true);
+    }
+  });
+  it("counts for nothing alone, or next to a city, a year or a legal name", () => {
+    expect(withDomainMatch([], uk, site("highline.ai"))).toEqual([]);
+    for (const kind of ["city", "founded", "legal_name"]) {
+      expect(withDomainMatch([sig(kind)], uk, site("highline.ai")).map((x) => x.kind)).toEqual([kind]);
+    }
+  });
+  it("needs the domain to BE the name, not just contain a word of it", () => {
+    expect(withDomainMatch([sig("director")], uk, site("highline-bikes.com")).map((x) => x.kind)).toEqual(["director"]);
+    expect(isVerified(withDomainMatch([sig("director")], uk, site("highline-bikes.com")))).toBe(false);
+  });
+  it("makes HoneyHive-style cases verify: exact domain + a director of the filing", async () => {
+    const e = await enrichCandidate(
+      { ...uk, name: "HoneyHive Inc.", source: "sec_form_d", entity_number: null, evidence: { officers: [{ name: "Mohak Sharma", relationships: ["Executive Officer"] }] } },
+      {
+        search: async () => result([["https://www.honeyhive.ai/"]]),
+        fetch: (async () => new Response("<html><body>Meet Mohak Sharma, CEO.</body></html>", { headers: { "content-type": "text/html" } })) as typeof fetch,
+        describe: async () => null, now: () => new Date("2026-12-04T00:00:00Z"),
+      },
+    );
+    expect(e.status).toBe("verified");
+    expect(e.match_signals.map((m) => m.kind).sort()).toEqual(["director", "domain_name"]);
   });
 });
 
@@ -143,7 +177,7 @@ describe("enrichCandidate", () => {
     const e = await enrichCandidate(uk, mkDeps({}, searches));
     expect(e.status).toBe("verified");
     expect(e.website).toBe("https://highline.ai/");
-    expect(e.match_signals.map((s) => s.kind).sort()).toEqual(["director", "legal_name", "postcode"]);
+    expect(e.match_signals.map((s) => s.kind).sort()).toEqual(["director", "domain_name", "legal_name", "postcode"]);
     expect(e.description_quote).toBe("Highline AI Limited builds autonomous drones for wildfire detection.");
     expect(e.description_he).toBe("בונה רחפנים אוטונומיים לזיהוי שריפות יער");
     expect(e.site_signals.map((s) => s.kind)).toContain("jobs");
@@ -192,13 +226,21 @@ describe("enrichCandidate", () => {
     expect(e.status).toBe("unverified");
     expect(e.description_he).toBeNull();
   });
-  it("a namesake site with one match is unverified and carries no description", async () => {
-    const other = `Highline AI sells bike helmets. Ioannis Ropas is our advisor.`;
+  it("a namesake site that shares nothing but the name is unverified and carries no description", async () => {
+    const other = `Highline AI sells bike helmets in Leeds.`;
     const e = await enrichCandidate(uk, mkDeps({ fetch: (async () => html(other)) as typeof fetch }));
     expect(e.status).toBe("unverified");
     expect(e.description_he).toBeNull();
-    expect(e.notes.join(" ")).toContain("רק התאמה אחת");
+    expect(e.notes.join(" ")).toContain("אין בו אף התאמה");
     expect(e.website).toBe("https://highline.ai/");
+  });
+  it("a namesake with the same domain AND a director's name on it is verified: the accepted risk of the domain rule", async () => {
+    // Owner's decision, 2026-11-18: an exact-name domain plus a director of the filing is enough. A common
+    // director name on another company's site of the same name would pass. The log shows what matched.
+    const other = `Highline AI sells bike helmets. Ioannis Ropas is our advisor.`;
+    const e = await enrichCandidate(uk, mkDeps({ fetch: (async () => html(other)) as typeof fetch }));
+    expect(e.status).toBe("verified");
+    expect(e.match_signals.map((m) => m.kind).sort()).toEqual(["director", "domain_name"]);
   });
   it("robots.txt-blocked pages (451) give a note, not a verdict", async () => {
     const e = await enrichCandidate(uk, mkDeps({ fetch: (async () => new Response("", { status: 451 })) as typeof fetch }));

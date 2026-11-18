@@ -55,7 +55,7 @@ export interface CandidateInput {
   } & Record<string, unknown>;
 }
 
-export type MatchKind = "director" | "company_number" | "postcode" | "legal_name" | "city" | "founded";
+export type MatchKind = "director" | "company_number" | "postcode" | "legal_name" | "city" | "founded" | "domain_name";
 
 export interface MatchSignal {
   kind: MatchKind;
@@ -213,6 +213,22 @@ export function matchSignals(c: CandidateInput, pages: Page[]): MatchSignal[] {
     }
   }
   return [...found.values()];
+}
+
+/** The identity kinds that let a domain named exactly like the company count as the second match (not legal_name: a namesake's footer carries one too). */
+const DOMAIN_BONUS_NEEDS: ReadonlySet<MatchKind> = new Set(["director", "company_number", "postcode"]);
+
+/**
+ * A domain that IS the company's name (slazer.ai for Slazer Labs) counts as a second match, but only next to
+ * a match that is specific to this record: a director of the filing, its company number or its postcode (owner,
+ * 2026-11-18). On its own, or next to a city or a year, it counts for nothing: broccoli.com is not Broccoli
+ * Intelligence just because a city matches.
+ */
+export function withDomainMatch(signals: MatchSignal[], c: CandidateInput, site: { url: string; domain: string }): MatchSignal[] {
+  if (signals.some((s) => s.kind === "domain_name")) return signals;
+  if (!signals.some((s) => DOMAIN_BONUS_NEEDS.has(s.kind))) return signals;
+  if (domainNameMatch(site.domain, plainName(c.name)) !== 2) return signals;
+  return [...signals, { kind: "domain_name", text: site.domain, url: site.url }];
 }
 
 export function isVerified(signals: MatchSignal[]): boolean {
@@ -433,7 +449,7 @@ export async function enrichCandidate(c: CandidateInput, deps: IdentityDeps): Pr
   for (const site of sites.slice(0, probing ? sites.length : 2)) {
     const pages = await readSite(site.url, deps.fetch);
     if (pages.length === 0) { if (!probing) out.notes.push(`האתר ${site.domain} לא נקרא (חסום ב-robots.txt או לא זמין)`); continue; }
-    const signals = matchSignals(c, pages);
+    const signals = withDomainMatch(matchSignals(c, pages), c, site);
     if (!best || new Set(signals.map((s) => s.kind)).size > new Set(best.signals.map((s) => s.kind)).size) best = { site, pages, signals };
     if (isVerified(signals)) break;
   }

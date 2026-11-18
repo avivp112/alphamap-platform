@@ -48,7 +48,7 @@ export interface CandidateEnrichment {
 }
 
 const MATCH_LABEL: Record<string, string> = {
-  director: "שם דירקטור", company_number: "מספר חברה", postcode: "מיקוד", legal_name: "שם משפטי מלא", city: "עיר", founded: "שנת הקמה",
+  director: "שם דירקטור", company_number: "מספר חברה", postcode: "מיקוד", legal_name: "שם משפטי מלא", city: "עיר", founded: "שנת הקמה", domain_name: "דומיין זהה לשם החברה",
 };
 
 /** The website line of the card, in Hebrew; "no verified digital identity" is said outright, never softened. */
