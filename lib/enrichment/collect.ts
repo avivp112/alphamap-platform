@@ -65,6 +65,7 @@ import {
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
 import { pickArticlesToRead } from "./articles.ts";
 import { runTechGate, shouldSkipAsNonTech, techDecision, type TechGateVerdict } from "./techGate.ts";
+import type { RuleHit } from "./ruleRegistry.ts";
 import { approvedQuotes, profileQuotes, hqFromApprovedQuotes, foundersFromApprovedQuotes } from "./approvedQuotes.ts";
 import { teamPeopleCount, foundersFromText, foundersFromCards, foundersFromMentions, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, supportedRoleSubset, personCardsInHtml, bioFromCard, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
 import { componentOn } from "./components.ts";
@@ -241,6 +242,8 @@ export type LinkedInPersonPatch = { name: string; title?: string; role?: string;
 
 export interface CollectedCompany {
   outcome: "collected";
+  /** Values some rule made, by rule code (ruleRegistry.ts): the report line carries the code. */
+  ruleHits?: RuleHit[];
   /** The company's own site, found by name when the address on file was another business or unreadable (domainResolve.ts): a proposal, never applied. */
   websiteProposal?: { from: string | null; to: string; reason: string };
   /** What the registers add (registerRecord.ts): own columns, never the headquarters or the founding year. */
@@ -412,7 +415,7 @@ export async function collectCompany(
   const domainVerification = ctx.update ? { verified: undefined, note: "" } : await verifyDomainMatch(row.name, row.website, searchState);
   let effectiveWebsite = domainVerification.verified === false ? null : row.website;
   if (domainVerification.verified === false) console.warn(`    ⚠️  Domain verification: ${domainVerification.note}`);
-  else if (domainVerification.verified === true) console.log(`    ✅  Domain verified via Crunchbase/LinkedIn`);
+  else if (domainVerification.verified === true) console.log(`    ✅  Domain confirmed by a Crunchbase/LinkedIn search result (the snippet only: neither page is read, nothing from it is a source of a value)`);
 
   let domain = websiteDomain(effectiveWebsite);
   let anchor = domain ? ` "${domain}"` : row.country ? ` ${row.country} (startup OR tech company)` : "";
@@ -1025,6 +1028,7 @@ export async function collectCompany(
       grounded.kept.push({ name: f.name, title: f.title, grounded_url: f.url, grounded_quote: f.quote.slice(0, 240) } as (typeof grounded.kept)[number]);
     }
   }
+  for (const f of approvedFounders) if (grounded.kept.some((k) => samePersonName(k.name, f.name))) ruleHits.push({ field: "founder", rule: "founder_from_approved_quote", value: f.name });
   for (const d of grounded.dropped) {
     fates.founders.set(d.name, d.reason === "founder_is_investor" ? "named among the investors" : `no allowed source says they founded the company (${allSources.filter((x) => profileSourceAllowed(x, row.name)).length} allowed source(s) read)`);
     console.log(`    👤  ${d.name} not kept as a founder (${d.reason === "founder_is_investor" ? "named among the investors" : "no source says they founded this company"}).`);
@@ -1190,6 +1194,7 @@ export async function collectCompany(
   // The HQ the decision took (a Contact-page address, an About paragraph): validation does not ask
   // its quote for an HQ word again (Anonymised's "7 Bell Yard, London" — model check 2026-11-02).
   let hqDecided = false;
+  const ruleHits: RuleHit[] = [];
   /** Sources whose quote was approved for a round and also says where the company is: allowed for the headquarters (owner, batch 6). */
   const approvedSourceIds = new Set<string>();
   let statementsAll: HqStatement[] = [];
@@ -1382,6 +1387,8 @@ export async function collectCompany(
     if (hq.kind === "none" && !fates.hq) fates.hq = mc ? `no allowed source states the headquarters: the model's "${mc.evidence_quote.slice(0, 100)}" is not a headquarters statement (${mcSource?.url ?? mc.source_id})` : "no source states the headquarters";
     if (hq.kind === "declared") {
       const st = hq.statement;
+      if (approvedHq.some((a) => a.source_id === st.source_id && canonicalCity(a.city) === canonicalCity(st.city))) { ruleHits.push({ field: "hq_city", rule: "hq_from_approved_quote", value: st.city }, { field: "hq_country", rule: "hq_from_approved_quote" }); }
+      else if (st.viaAddress) ruleHits.push({ field: "hq_city", rule: "hq_from_site_address", value: st.city }, { field: "hq_country", rule: "hq_from_site_address" });
       // The model's own quote stands only when it cites the statement's source: the same city
       // from a denied page (Anonymised's London from prospeo.io, model check 2026-11-02) would
       // otherwise carry the HQ to the source check and drop it there.
@@ -1500,7 +1507,11 @@ export async function collectCompany(
       (profile.profile as Record<string, unknown>)[key] = undefined;
       continue;
     }
-    if (s && (profileSourceAllowed(s, row.name) || (approvedSourceIds.has(f.source_id) && !isLegalPageUrl(s.url)))) continue;
+    if (s && !profileSourceAllowed(s, row.name) && approvedSourceIds.has(f.source_id) && !isLegalPageUrl(s.url)) {
+      ruleHits.push({ field: key === "city" ? "hq_city" : key === "country" ? "hq_country" : key, rule: "source_approved_by_round" });
+      continue;
+    }
+    if (s && profileSourceAllowed(s, row.name)) continue;
     if (key === "city" || key === "country") fates.hq = `${key} ${JSON.stringify(f.value)}: its source is not on the allowed list (${s?.url ?? f.source_id})`;
     console.log(`    🚫  ${key} ${JSON.stringify(f.value)} not written — its source is not on the allowed list: ${s?.url ?? f.source_id}`);
     rejectedDomains.note(key, s?.url, `${key} ${JSON.stringify(f.value)}`);
@@ -1893,6 +1904,7 @@ export async function collectCompany(
         }
         continue;
       }
+      ruleHits.push({ field: "round", rule: "round_from_news_headline", quote: r.amount_raised!.evidence_quote });
       const grounded = groundRoundDetails(r, allSources);
       const like = roundToRoundLike(grounded.round);
       if (incompleteRound(like)) continue;
@@ -2109,6 +2121,7 @@ export async function collectCompany(
       const pageDate = dated ? articleDate(src) : null;
       if (stated && dated && !pageDate) continue;
       if (stated && !headcountExtra.some((p) => p.type === "site_stated" && p.sourceUrl === src.url)) {
+        if (pageDate) ruleHits.push({ field: "headcount_history", rule: "headcount_from_dated_page", value: `on ${pageDate}` });
         headcountExtra.push({ date: pageDate ?? today, value: stated.value, ...(stated.lowerBound ? { lowerBound: true } : {}), type: "site_stated", measure: "count_at_date", sourceUrl: src.url, quote: stated.sentence });
       }
       if (/\/(team|people|our-team|the-team|leadership|about-us|about|company)(\/|$)/i.test(src.url)) {
@@ -2147,5 +2160,6 @@ export async function collectCompany(
     linkedinFounders, linkedinLeaders, existingRefs, validation, plan,
     cityConfidence, countryConfidence, domain, verifiedFacts, patentsFromRegister, roundHints, confirmedHints, unlistedDomains,
     ...(headcountExtra.length ? { headcountExtra } : {}),
+    ...(ruleHits.length ? { ruleHits } : {}),
   };
 }

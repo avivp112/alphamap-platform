@@ -79,7 +79,8 @@ import type { RoundHint } from "../lib/enrichment/hints.ts";
 // ── Configuration (ground rule 3: same env vars as v1) ──────────────────
 const BATCH_SIZE     = Number(process.env.BATCH_SIZE     ?? 9999);
 const OFFSET         = Number(process.env.OFFSET         ?? 0);
-const DELAY_MS       = Number(process.env.DELAY_MS       ?? (replayMode() !== "off" ? 0 : 20_000));
+// With CONCURRENCY above 1 the pace is kept per domain (recorder.ts), not per company: no wait between companies unless DELAY_MS is given.
+const DELAY_MS       = Number(process.env.DELAY_MS       ?? (replayMode() !== "off" || Number(process.env.CONCURRENCY ?? 1) > 1 ? 0 : 20_000));
 const DRY_RUN        = process.env.DRY_RUN               !== "false";
 // PILOT=true: the partial wet run (writeGate.ts) — only PILOT_FIELDS, only the companies in ONLY=<ids>.
 const PILOT          = process.env.PILOT                 === "true";
@@ -430,7 +431,7 @@ async function enrichCompany(
     taxonomy, startupByDomain, seen: PILOT ? null : seen, runId,
     openFields: openFieldsFor(row.name), pilot: PILOT,
   }, summary);
-  let companyRows = (outcome?.pilot ?? []).map((c) => ({ company_id: row.id, company: row.name, field: c.field, before: c.before == null ? "" : String(c.before), after: String(c.after), source_url: c.source_url ?? "", quote: c.quote ?? "", origin: "new", quote_original: c.quote_original ?? "", quote_translated: c.quote_translated ?? "", ...(c.payload ? { payload: JSON.stringify(c.payload) } : {}) }));
+  let companyRows = (outcome?.pilot ?? []).map((c) => ({ company_id: row.id, company: row.name, field: c.field, before: c.before == null ? "" : String(c.before), after: String(c.after), source_url: c.source_url ?? "", quote: c.quote ?? "", origin: "new", rule: c.rule ?? "", quote_original: c.quote_original ?? "", quote_translated: c.quote_translated ?? "", ...(c.payload ? { payload: JSON.stringify(c.payload) } : {}) }));
   if (KNOWN_ON) {
     // A value the owner marked wrong does not come back in the report, however it was found again.
     const back = companyRows.filter((r) => ownerWrong(r.company, r.field, r.after));
@@ -454,9 +455,9 @@ async function enrichCompany(
       const acquiredOpen = openFieldsFor(row.name).includes("acquired");
       const acq = acquiredOpen ? acquiredFromNews(companyRows, row.name, row.id) : null;
       const closed = acq || !acquiredOpen ? null : closedFromNews(companyRows, row.name, row.id);
-      if (closed) { companyRows.push(closed as (typeof companyRows)[number]); console.log(`    🏁  closed — read from the company's news: ${closed.after}`); }
+      if (closed) { companyRows.push({ ...(closed as object), rule: "closed_from_news" } as (typeof companyRows)[number]); console.log(`    🏁  closed — read from the company's news: ${closed.after}`); }
       if (acq) {
-        companyRows.push(acq as (typeof companyRows)[number]); console.log(`    🏁  acquired — read from the company's news: ${acq.after}`);
+        companyRows.push({ ...(acq as object), rule: "acquired_from_news" } as (typeof companyRows)[number]); console.log(`    🏁  acquired — read from the company's news: ${acq.after}`);
         // A rename after a purchase is a purchase: the new name is the brand after the acquisition, written as the company's own pages write it, never a name proposal.
         const texts = companyRows.flatMap((x) => [x.after, x.quote ?? ""]);
         const written = brandFromTexts(row.name, texts);
@@ -476,7 +477,7 @@ async function enrichCompany(
           const tag = mainTag(choice, taxonomy);
           const sectorRow = companyRows.find((r) => r.field === "sector");
           if (tag && choice && (!sectorRow || sectorRow.after.replace(/\s*\(industry:[^)]*\)\s*$/, "").trim() === choice.sector_name)) {
-            companyRows.push({ ...desc, field: "tags", before: "", after: tag, origin: "classified" } as (typeof companyRows)[number]);
+            companyRows.push({ ...desc, field: "tags", before: "", after: tag, origin: "classified", rule: "tag_classified_from_description" } as (typeof companyRows)[number]);
             console.log(`    🏷️   Tag ${tag} — the main sub-sector of the verified description (classified now: ${choice.sector_name} › ${tag}).`);
           }
         } catch (e) { console.log(`    ⚠️  tag classification skipped: ${(e as Error).message}`); }
@@ -488,7 +489,7 @@ async function enrichCompany(
     console.log(`    📚  Known sources (${row.name}): from memory ${[...new Set([...injectedNow, ...carry.carried.map((r) => r.field)])].join(", ") || "none"}${injectedNow.length ? ` (${injectedNow.join(", ")} entered the write stage)` : ""}${carry.carried.length ? ` (${carry.carried.length} more value(s) carried in the report)` : ""}; from this run's search ${[...freshFound].filter((f) => !injectedNow.includes(f)).join(", ") || "none"}; still missing ${missing.join(", ") || "none"}${carry.recheck.length ? `; back to review (quote gone): ${carry.recheck.join(" | ")}` : ""}${carry.refreshDue.length ? `; older than the refresh time, searched again: ${carry.refreshDue.join(" | ")}` : ""}${carry.locked.length ? `; locked (marked correct) kept: ${carry.locked.join(" | ")}` : ""}${before ? "" : " [no memory yet]"}`);
   }
   for (const c of companyRows) {
-    pilotRows.push({ company_id: c.company_id, company: c.company, field: c.field, before: c.before, after: c.after, source_url: c.source_url, quote: c.quote, origin: c.origin, quote_original: (c as { quote_original?: string }).quote_original ?? "", quote_translated: (c as { quote_translated?: string }).quote_translated ?? "" });
+    pilotRows.push({ company_id: c.company_id, company: c.company, field: c.field, before: c.before, after: c.after, source_url: c.source_url, quote: c.quote, origin: c.origin, rule: (c as { rule?: string }).rule ?? "", quote_original: (c as { quote_original?: string }).quote_original ?? "", quote_translated: (c as { quote_translated?: string }).quote_translated ?? "" });
   }
   if (PILOT && !companyRows.length) pilotRows.push({ company_id: row.id, company: row.name, field: "(nothing)", before: "", after: "", source_url: "", quote: "" });
 }
@@ -599,13 +600,13 @@ async function main() {
   }
   // EXCLUDE=<report numbers> (owner, batch 6): values of the reviewed dry report that are not written. The numbers are those of the report ("d6.17" or "17"); they are read from the preflight pass's
   // rows with the same numbering as the dry report. The writer works by field, so every other value of the same company and field is held back with them — listed, never silent.
-  if (!DRY_RUN && (process.env.EXCLUDE ?? "").trim()) {
+  if (!DRY_RUN && ((process.env.EXCLUDE ?? "").trim() || (process.env.EXCLUDE_RULE ?? "").trim())) {
     const from = process.env.EXCLUDE_FROM ?? "pilot_report_preflight.csv";
     if (!existsSync(from)) { console.error(`⛔  EXCLUDE needs the rows of the reviewed report (${from} is missing) — run with the preflight, or give EXCLUDE_FROM=<a dry report csv>.`); process.exit(1); }
     const [head, ...body] = parseReportCsv(readFileSync(from, "utf8"));
     const ix = (n: string) => head.indexOf(n);
-    const rows = body.map((r) => ({ company_id: r[ix("company_id")] ?? "", company: r[ix("company")] ?? "", field: r[ix("field")] ?? "", value: r[ix("after")] ?? "", source_url: r[ix("source_url")] ?? "", quote: r[ix("quote")] ?? "" })).filter((r) => r.company && r.field && r.field !== "(nothing)");
-    const numbered = numberValues(rows, BATCH_NO, "d");
+    const rows = body.map((r) => ({ company_id: r[ix("company_id")] ?? "", company: r[ix("company")] ?? "", field: r[ix("field")] ?? "", value: r[ix("after")] ?? "", source_url: r[ix("source_url")] ?? "", quote: r[ix("quote")] ?? "", rule: ix("rule") >= 0 ? r[ix("rule")] ?? "" : "" })).filter((r) => r.company && r.field && r.field !== "(nothing)");
+    const numbered = numberValues(rows, BATCH_NO, "d") as Array<ReturnType<typeof numberValues>[number] & { rule?: string }>;
     if (process.env.EXPECT_TOTAL && Number(process.env.EXPECT_TOTAL) !== numbered.length) { console.error(`⛔  The rows to number are ${numbered.length}, the reviewed report had ${process.env.EXPECT_TOTAL} — the numbers would point at other values. Nothing written.`); process.exit(1); }
     // Entries are report numbers ("17", "d6.17") or "<Company>:<field>" (stable when the report is numbered again after a rule change: "Ripio:tags").
     const tokens = (process.env.EXCLUDE ?? "").split(/,/).map((x) => x.trim()).filter(Boolean);
@@ -615,18 +616,24 @@ async function main() {
     if (bad.length) { console.error(`⛔  EXCLUDE has numbers that are not in the report (1–${numbered.length}): ${bad.join(", ")}`); process.exit(1); }
     const noMatch: string[] = [];
     const byName = named.flatMap((t) => {
-      const [co, ...f] = t.split(":"); const field = f.join(":").trim();
-      const hit = numbered.filter((x) => foldName(x.company) === foldName(co) && (x.field === field || x.field.startsWith(field)));
+      // "<Company>:<field>" or "<Company>:<field>:<part of the value>" (the value narrows which of the field's rows is meant; the writer still holds the whole field).
+      const [co, field = "", ...v] = t.split(":"); const value = v.join(":").trim();
+      const foldV = (z: string) => z.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+      const hit = numbered.filter((x) => foldName(x.company) === foldName(co) && (x.field === field.trim() || x.field.startsWith(field.trim())) && (!value || foldV(x.value).includes(foldV(value))));
       if (!hit.length) noMatch.push(t);
       return hit;
     });
+    // EXCLUDE_RULE=<code>[,<code>]: every value a rule made (ruleRegistry.ts) — for a rule found to be wrong.
+    const ruleCodes = (process.env.EXCLUDE_RULE ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+    const byRule = ruleCodes.length ? numbered.filter((x) => ruleCodes.includes(x.rule ?? "")) : [];
+    for (const c of ruleCodes) if (!numbered.some((x) => x.rule === c)) console.log(`    ℹ️  EXCLUDE_RULE=${c}: no value of this run was made by that rule.`);
     if (noMatch.length) console.log(`    ℹ️  EXCLUDE entries that match no value of the dry pass (nothing to hold back): ${noMatch.join(", ")}`);
-    const chosen = [...new Set([...wanted.map((n) => numbered[n - 1]), ...byName])];
+    const chosen = [...new Set([...wanted.map((n) => numbered[n - 1]), ...byName, ...byRule])];
     const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
     const lines: string[][] = [];
     for (const c of chosen) {
       (BLOCKED.get(foldName(c.company)) ?? BLOCKED.set(foldName(c.company), new Set()).get(foldName(c.company))!).add(c.field);
-      lines.push([c.id, c.company, c.field, c.value, "excluded by the owner"]);
+      lines.push([c.id, c.company, c.field, c.value, byRule.includes(c) && !byName.includes(c) ? `excluded: rule ${c.rule}` : "excluded by the owner"]);
       for (const o of numbered.filter((x) => x.company_id === c.company_id && x.field === c.field && x.id !== c.id && !chosen.includes(x))) lines.push([o.id, o.company, o.field, o.value, `held back with ${c.id} (the writer works by field)`]);
     }
     writeFileSync("excluded_values.csv", "\uFEFF" + [["id", "company", "field", "value", "why"].join(","), ...lines.map((l) => l.map(q).join(","))].join("\r\n") + "\r\n");
@@ -864,7 +871,7 @@ async function main() {
   }
   if (KNOWN_ON && Object.keys(knownStore).length) { saveKnown(knownStore); console.log(`📚  Known sources saved: ${KNOWN_PATH} (${Object.values(knownStore).reduce((n, l) => n + l.length, 0)} value(s) of ${Object.keys(knownStore).length} compan(ies)).`); }
   if (PILOT || pilotRows.length > 0) {
-    const cols = ["company_id", "company", "field", "before", "after", "source_url", "quote", "origin", "quote_original", "quote_translated"];
+    const cols = ["company_id", "company", "field", "before", "after", "source_url", "quote", "origin", "quote_original", "quote_translated", "rule"];
     const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
     writeFileSync(PILOT_REPORT, "\uFEFF" + [cols.join(","), ...pilotRows.map((r) => cols.map((c) => cell(r[c] ?? "")).join(","))].join("\r\n") + "\r\n");
     // The numbered report of this batch (owner, 2026-11-05): the owner answers with the wrong numbers.
@@ -877,6 +884,35 @@ async function main() {
     if (numbered.length) console.log("\n" + renderBatchReport(numbered, { batchNo, runId, dry: DRY_RUN, csvPath: DRY_RUN ? undefined : batchPath }));
     if (specPathsFor(BATCH_NO).length) { try { const a = acceptanceReport(PILOT_REPORT, specPathsFor(BATCH_NO)); console.log(`\n── Acceptance checks (${specPathsFor(BATCH_NO).join(" + ")}) ──\n${a.text}\n`); } catch (e) { console.log(`⚠️  acceptance checks not run: ${(e as Error).message}`); } }
     console.log(`📝  Pilot report: ${PILOT_REPORT} — ${pilotRows.filter((r) => r.field !== "(nothing)").length} field(s) ${DRY_RUN ? "that would be written" : "written"} for ${new Set(pilotRows.map((r) => r.company_id)).size} compan(ies).${runId ? ` Undo: RUN_ID=${runId} npx tsx scripts/undo_run.ts` : ""}`);
+    // The short report of a batch (owner, batch 7): who was enriched, who was turned away and why, the coverage per field, what was held back, the run.
+    {
+      const enrichedIds = new Set(pilotRows.filter((r) => r.field !== "(nothing)").map((r) => r.company_id));
+      const byWhy = new Map<string, number>();
+      for (const n of notEnrichedRows) byWhy.set(n.why, (byWhy.get(n.why) ?? 0) + 1);
+      const total = queue.length, enrichedN = enrichedIds.size;
+      const fieldsShown = (SHOW_ALL ? ASKED : OPEN_FIELDS);
+      const fam = (f: string) => (f === "description_what_only" ? "description" : f);
+      const cover = fieldsShown.map((f) => {
+        const n = new Set(pilotRows.filter((r) => fam(r.field) === f || (f === "round" && r.field === "round")).map((r) => r.company_id)).size;
+        return `${f} ${n}/${enrichedN || 0}`;
+      });
+      const held = [...BLOCKED.entries()].map(([c, fs]) => `${c}: ${[...fs].join("+")}`);
+      const mins = ((Date.now() - runStartedAt) / 60_000).toFixed(1);
+      const lines = [
+        `# Batch ${BATCH_NO} — ${DRY_RUN ? "dry" : "wet"} run`,
+        "",
+        `- companies in the batch: ${total}`,
+        `- enriched (with values in the report): ${enrichedN}`,
+        `- not enriched: ${notEnrichedRows.length}${notEnrichedRows.length ? ` — ${[...byWhy].map(([w, n]) => `${w} ${n}`).join(", ")}` : ""}`,
+        `- coverage by field (companies with a value / enriched companies): ${cover.join(" · ")}`,
+        `- held back (excluded or blocked): ${held.length ? held.join(" | ") : "none"}${existsSync("blocked_values.csv") && !DRY_RUN ? " (blocked_values.csv)" : ""}${existsSync("excluded_values.csv") && !DRY_RUN ? " (excluded_values.csv)" : ""}`,
+        `- remembered values not written: ${carriedNotWritten.length}${carriedNotWritten.length ? " (carried_not_written.csv)" : ""}`,
+        `- time ${mins} min · model cost $${summary.totalCostUsd.toFixed(2)}`,
+        `- run_id: ${runId ?? "— (dry)"}${runId ? ` · undo: RUN_ID=${runId} DRY_RUN=false npx tsx scripts/undo_run.ts` : ""}`,
+      ];
+      console.log("\n" + lines.join("\n"));
+      if (!process.env.VITEST) { try { writeFileSync(`batch_${BATCH_NO}_summary.md`, lines.join("\n") + "\n"); } catch { /* a convenience */ } }
+    }
     // After a wet run: every value of the report is in the database (owner, batch 6: seven reported values were not). A missing one undoes the run.
     if (!DRY_RUN && runId && process.exitCode !== 1) {
       const { spawnSync } = await import("child_process");
