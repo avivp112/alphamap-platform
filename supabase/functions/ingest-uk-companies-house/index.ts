@@ -18,6 +18,12 @@
 //          POST { "backfillEvidence": true, "limit": 20, "dryRun": true }
 //                                             -> add the registry detail to pending
 //                                                candidates ingested before it was kept
+//          POST { "backfillEvidence": true, "moveToWatch": true }
+//                                             -> also move pending candidates with no
+//                                                strong signal to the watchlist
+//          POST { "watchCheck": true, "limit": 40, "minAgeDays": 7, "dryRun": true }
+//                                             -> surface watched candidates where
+//                                                something happened at the register
 //          POST { "withOfficers": false }     -> skip the per-company officer
 //                                                call (1 request instead of 2)
 //
@@ -51,12 +57,13 @@
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { withRunLog, countKeys } from "../_shared/run-log.ts";
-import { gateUkCompany, type GateTier } from "../_shared/company-gate.ts";
+import { gateUkCompany, countDirectors, type GateTier } from "../_shared/company-gate.ts";
 import { mergeCandidateEvidence, DETAIL_STAMP, SIGNALS_PATH } from "../_shared/candidate-evidence.ts";
 import {
   officerAppointmentsSignals, pscSignals, capitalSignals, sharedAddressSignals, buildSignalSet,
   type Signal, type SignalSet, type KnownCompanies,
 } from "../_shared/candidate-signals.ts";
+import { hasStrongSignal, watchEvents, promotionReason } from "../_shared/candidate-watch.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -73,6 +80,7 @@ const PAGE_SIZE = 100;          // advanced-search maximum
 const REQUEST_DELAY_MS = 600;   // ~1.7/s against a 2/s sustained ceiling
 const FETCH_TIMEOUT_MS = 20_000;
 const BACKFILL_MAX = 10;        // up to 8 requests each at REQUEST_DELAY_MS: ~50 s, inside the function's time limit
+const WATCH_MAX = 40;           // 2 requests each: ~50 s
 const MAX_SIGNAL_DIRECTORS = 4; // appointments are read for at most this many directors
 const SIGNALS_BUDGET_MS = 100_000; // after this much of a run, new candidates get their signals from the backfill instead
 
@@ -326,6 +334,72 @@ async function collectUkSignals(
   return buildSignalSet(items, new Date().toISOString());
 }
 
+
+// ── Watchlist: UK candidates with no strong signal wait for an event ────────
+
+/**
+ * Re-read the register for candidates in 'watching' (checked at most every
+ * minAgeDays) and surface the ones where something happened: a share
+ * allotment, a new share class or articles, a third director, or the same name
+ * in another source (watchEvents). Two requests each. A surfaced candidate gets
+ * the events in evidence.watch_events and promoted_reason, then goes to 'pending'.
+ * Nothing is rejected here: a candidate with no event is only marked checked.
+ */
+async function watchCheck(
+  supabase: SupabaseClient, apiKey: string, limit: number, minAgeDays: number, dryRun: boolean,
+): Promise<Response> {
+  const cutoff = new Date(Date.now() - minAgeDays * 86_400_000).toISOString();
+  const { data: rows, error } = await supabase
+    .from("company_candidates")
+    .select("id, name, entity_number, evidence")
+    .eq("source", "uk_companies_house").eq("status", "watching")
+    .not("entity_number", "is", null)
+    .or(`watch_checked_at.is.null,watch_checked_at.lt.${cutoff}`)
+    .order("watch_checked_at", { ascending: true, nullsFirst: true })
+    .limit(limit);
+  if (error) return json({ error: `company_candidates: ${error.message}` }, 500);
+
+  const results: Array<Record<string, unknown>> = [];
+  let promoted = 0, quiet = 0, failed = 0;
+  for (const row of rows ?? []) {
+    const number = encodeURIComponent(String(row.entity_number));
+    const history = await chFetch(`${API}/company/${number}/filing-history?items_per_page=50`, apiKey);
+    await sleep(REQUEST_DELAY_MS);
+    if (history.status === 429) { results.push({ name: row.name, error: "rate limited, stopped" }); break; }
+    const off = await chFetch(`${API}/company/${number}/officers`, apiKey);
+    await sleep(REQUEST_DELAY_MS);
+    if (off.status === 429) { results.push({ name: row.name, error: "rate limited, stopped" }); break; }
+    if (!history.ok && history.status !== 404) { failed++; results.push({ name: row.name, error: `HTTP ${history.status}` }); continue; }
+
+    const officersNow = off.ok && off.body ? mapOfficers(off.body as Record<string, unknown>) : null;
+    const startOfficers = ((row.evidence as Record<string, unknown> | null)?.officers ?? []) as Array<{ relationships?: string[] }>;
+    const { data: cross } = await supabase.rpc("candidate_cross_source_matches", { p_candidate_id: row.id });
+    const events = watchEvents({
+      companyNumber: String(row.entity_number),
+      filingHistory: history.ok ? (history.body as Record<string, unknown>) : null,
+      directorsNow: officersNow ? countDirectors(officersNow) : null,
+      directorsAtStart: countDirectors(startOfficers as never),
+      crossSource: (cross ?? []) as Array<{ source: string; name: string; status: string }>,
+    });
+
+    if (events.length === 0) {
+      quiet++;
+      if (!dryRun) await supabase.from("company_candidates").update({ watch_checked_at: new Date().toISOString() }).eq("id", row.id).eq("status", "watching");
+      results.push({ name: row.name, events: [] });
+      continue;
+    }
+    if (!dryRun) {
+      // Events first (the merge reaches a watching candidate), then the move to review.
+      await supabase.rpc("merge_candidate_evidence", { p_candidate_id: row.id, p_extra: { watch_events: events } });
+      const { error: pErr } = await supabase.rpc("promote_candidate", { p_candidate_id: row.id, p_reason: promotionReason(events) });
+      if (pErr) { failed++; results.push({ name: row.name, error: pErr.message }); continue; }
+    }
+    promoted++;
+    results.push({ name: row.name, events: events.map((e) => e.kind), reason: promotionReason(events) });
+  }
+  return json({ watchCheck: true, dryRun, found: rows?.length ?? 0, promoted, quiet, failed, results });
+}
+
 // ── Backfill: candidates already waiting for review ─────────────────────────
 
 /**
@@ -336,7 +410,7 @@ async function collectUkSignals(
  * nothing for a decided candidate (the update is conditional on pending).
  */
 async function backfillEvidence(
-  supabase: SupabaseClient, apiKey: string, limit: number, dryRun: boolean, withOfficers: boolean,
+  supabase: SupabaseClient, apiKey: string, limit: number, dryRun: boolean, withOfficers: boolean, moveToWatch: boolean,
 ): Promise<Response> {
   const { data: rows, error } = await supabase
     .from("company_candidates")
@@ -398,8 +472,11 @@ async function backfillEvidence(
         .eq("id", row.id).eq("status", "pending");
       if (upErr) { failed++; results.push({ name: row.name, error: upErr.message }); continue; }
     }
+    // Only on request: a candidate already in the queue moves out of it to the watchlist.
+    const toWatch = moveToWatch && !hasStrongSignal(signals.items);
+    if (toWatch && !dryRun) await supabase.rpc("watch_candidate", { p_candidate_id: row.id });
     updated++;
-    results.push({ name: row.name, ok: true, address: extra.address ?? null, officers: officers?.length ?? 0, signals: signals.items.map((i) => i.kind) });
+    results.push({ name: row.name, ok: true, address: extra.address ?? null, officers: officers?.length ?? 0, signals: signals.items.map((i) => i.kind), ...(moveToWatch ? { watching: toWatch } : {}) });
   }
   return json({ backfill: true, dryRun, found: rows?.length ?? 0, updated, notFound, failed, results });
 }
@@ -428,6 +505,9 @@ Deno.serve(withRunLog("uk_companies_house", countKeys("ingested"), async (req: R
   let dryRun = false;
   let withOfficers = true;
   let backfill = false;
+  let watch = false;
+  let moveToWatch = false;
+  let minAgeDays = 7;
   const yesterday = ymd(new Date(Date.now() - 86_400_000));
   let from = yesterday;
   let to = yesterday;
@@ -439,6 +519,10 @@ Deno.serve(withRunLog("uk_companies_house", countKeys("ingested"), async (req: R
     dryRun = b?.dryRun === true;
     if (b?.withOfficers === false) withOfficers = false;
     backfill = b?.backfillEvidence === true;
+    watch = b?.watchCheck === true;
+    moveToWatch = b?.moveToWatch === true;
+    const age = Number(b?.minAgeDays);
+    if (Number.isFinite(age) && age >= 0) minAgeDays = Math.floor(age);
     const iso = /^\d{4}-\d{2}-\d{2}$/;
     if (typeof b?.date === "string" && iso.test(b.date)) { from = b.date; to = b.date; }
     if (typeof b?.from === "string" && iso.test(b.from)) from = b.from;
@@ -446,7 +530,9 @@ Deno.serve(withRunLog("uk_companies_house", countKeys("ingested"), async (req: R
   } catch { /* defaults */ }
 
   // POST { "backfillEvidence": true, "limit": 20 } — see backfillEvidence().
-  if (backfill) return await backfillEvidence(supabase, apiKey, Math.min(limit, BACKFILL_MAX), dryRun, withOfficers);
+  if (backfill) return await backfillEvidence(supabase, apiKey, Math.min(limit, BACKFILL_MAX), dryRun, withOfficers, moveToWatch);
+  // POST { "watchCheck": true, "limit": 40, "minAgeDays": 7, "dryRun": true } — see watchCheck().
+  if (watch) return await watchCheck(supabase, apiKey, Math.min(limit, WATCH_MAX), minAgeDays, dryRun);
 
   try {
     const candidates: CHCompany[] = [];
@@ -544,6 +630,7 @@ Deno.serve(withRunLog("uk_companies_house", countKeys("ingested"), async (req: R
       // candidate already exists, the card just shows less without it.
       const candidateId = (data as Record<string, unknown> | null)?.candidate_id as string | null | undefined;
       let evidenceError: string | undefined;
+      let watching = false;
       if (candidateId) {
         const extra: Record<string, unknown> = { ...ukEvidenceExtra(c), [DETAIL_STAMP]: new Date().toISOString() };
         // Signals cost up to 6 requests: past the budget the backfill collects them instead.
@@ -553,8 +640,14 @@ Deno.serve(withRunLog("uk_companies_house", countKeys("ingested"), async (req: R
         }
         const { error: mergeError } = await supabase.rpc("merge_candidate_evidence", { p_candidate_id: candidateId, p_extra: extra });
         if (mergeError) evidenceError = mergeError.message;
+        // No strong signal: the candidate waits on the watchlist instead of the review queue.
+        const set = extra.signals as SignalSet | undefined;
+        if (!mergeError && set && !hasStrongSignal(set.items)) {
+          const { data: moved } = await supabase.rpc("watch_candidate", { p_candidate_id: candidateId });
+          watching = moved === true;
+        }
       }
-      results.push({ name: c.companyName, ok: true, sic: c.sicCodes, officers: officers.length, gate, ...(data as Record<string, unknown>), ...(evidenceError ? { evidenceError } : {}) });
+      results.push({ name: c.companyName, ok: true, sic: c.sicCodes, officers: officers.length, gate, ...(data as Record<string, unknown>), ...(watching ? { watching } : {}), ...(evidenceError ? { evidenceError } : {}) });
     }
 
     return json({ from, to, dryRun, scanned, nonTech, ingested, gate: tiers, results });

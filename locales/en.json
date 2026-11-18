@@ -509,7 +509,7 @@
   "adminReview": {
     "title": "Company review queue",
     "subtitle": "Companies the sourcing engine found in government filings. Nothing enters the database until you approve it; rejected companies are never proposed again.",
-    "status": { "pending": "Pending", "approved": "Approved", "rejected": "Rejected" },
+    "status": { "pending": "Pending", "watching": "Watching", "approved": "Approved", "rejected": "Rejected" },
     "allSources": "All sources",
     "tier": { "alert": "Alerts users", "queue": "Review only" },
     "firstSeen": "First seen {{ago}}",
@@ -532,7 +532,7 @@
     "approvedFlash_other": "Approved {{count}} — they are now in the database.",
     "rejectedFlash_one": "Rejected — it will not be proposed again.",
     "rejectedFlash_other": "Rejected {{count}} — they will not be proposed again.",
-    "empty": { "pending": "Nothing waiting for review", "approved": "No approved companies yet", "rejected": "No rejected companies yet" },
+    "empty": { "pending": "Nothing waiting for review", "watching": "No companies on the watchlist", "approved": "No approved companies yet", "rejected": "No rejected companies yet" },
     "emptyPendingBlurb": "New candidates arrive after the nightly runs of SEC Form D, UK Companies House and EPO.",
     "loadMore": "Load more",
     "openCompany": "Open company",

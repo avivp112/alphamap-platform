@@ -28,7 +28,8 @@ const withoutRemoteImport = source.replace(/^import\s+.*?from\s+"https:\/\/[^"]+
   // _shared/company-gate.ts (pure) is imported for real, by absolute path from the temp copy.
   .replace('"../_shared/company-gate.ts"', JSON.stringify(new URL("../_shared/company-gate.ts", import.meta.url).pathname))
   .replace('"../_shared/candidate-evidence.ts"', JSON.stringify(new URL("../_shared/candidate-evidence.ts", import.meta.url).pathname))
-  .replace('"../_shared/candidate-signals.ts"', JSON.stringify(new URL("../_shared/candidate-signals.ts", import.meta.url).pathname));
+  .replace('"../_shared/candidate-signals.ts"', JSON.stringify(new URL("../_shared/candidate-signals.ts", import.meta.url).pathname))
+  .replace('"../_shared/candidate-watch.ts"', JSON.stringify(new URL("../_shared/candidate-watch.ts", import.meta.url).pathname));
 if (withoutRemoteImport === source) {
   console.error("expected a remote import to strip — has index.ts changed shape?");
   process.exit(1);

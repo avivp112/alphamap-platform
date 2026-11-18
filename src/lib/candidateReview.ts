@@ -7,7 +7,8 @@
 // startups row only when an admin approves it.
 
 export type CandidateSource = "sec_form_d" | "uk_companies_house" | "epo_ops" | "oss_github" | "hf_org";
-export type CandidateStatus = "pending" | "approved" | "rejected";
+/** watching / expired: a UK candidate with no strong signal waits on the watchlist (20261205000000); expired = no event in 12 months. */
+export type CandidateStatus = "pending" | "approved" | "rejected" | "watching" | "expired";
 export type CandidateTier = "queue" | "alert";
 
 export interface CandidateOfficer {
@@ -68,6 +69,8 @@ export interface CandidateEvidence {
   date_of_first_sale?: string;
   // Added by the signals step (stage 2): absent until the candidate has been checked.
   signals?: { checked_at: string; items: CandidateSignal[] };
+  /** What surfaced a watched candidate (stage 3). */
+  watch_events?: Array<{ kind: string; text: string; url?: string }>;
   // oss_github (migration 20261125000000): a growing GitHub project with a homepage of its own.
   github_url?: string;
   owner?: string;
@@ -119,6 +122,11 @@ export interface CompanyCandidate {
   startup_id: string | null;
   reviewed_at: string | null;
   review_note: string | null;
+  watch_started_at?: string | null;
+  watch_checked_at?: string | null;
+  promoted_at?: string | null;
+  /** Why a watched candidate came to review, e.g. "Share allotment filed (1, latest 2026-12-01)". */
+  promoted_reason?: string | null;
 }
 
 /** What get_candidate_preview() returns: everything for a live candidate, only id + status once rejected. */
@@ -214,7 +222,9 @@ export interface EvidenceLine {
 }
 
 /** What the reviewer needs to decide, in the order that matters for each source. */
-export function evidenceLines(c: Pick<CompanyCandidate, "source" | "evidence" | "country" | "founded_year">): EvidenceLine[] {
+export function evidenceLines(
+  c: Pick<CompanyCandidate, "source" | "evidence" | "country" | "founded_year"> & Partial<Pick<CompanyCandidate, "promoted_reason" | "watch_started_at">>,
+): EvidenceLine[] {
   const e = c.evidence ?? {};
   const lines: EvidenceLine[] = [];
   const add = (label: string, value: string | null | undefined) => {
@@ -276,6 +286,8 @@ export function evidenceLines(c: Pick<CompanyCandidate, "source" | "evidence" | 
   }
   add("Company type", c.source === "uk_companies_house" ? e.form_type : null);
   add("Jurisdiction", e.jurisdiction);
+  add("Surfaced from watchlist", c.promoted_reason);
+  add("Watching since", c.watch_started_at ? c.watch_started_at.slice(0, 10) : null);
   const good = signalTexts(e, "positive"), notes = signalTexts(e, "info"), warns = signalTexts(e, "warning");
   add("Signals", good.join(" · "));
   add("Warnings", warns.join(" · "));

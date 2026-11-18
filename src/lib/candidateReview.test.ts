@@ -173,3 +173,17 @@ describe("stage 2 signals on the card", () => {
     expect(evidenceLines({ source: "sec_form_d", country: null, founded_year: null, evidence: {} })).toEqual([]);
   });
 });
+
+describe("stage 3 watchlist on the card", () => {
+  it("shows why a watched candidate surfaced and since when it was watched", () => {
+    const lines = Object.fromEntries(evidenceLines({
+      source: "uk_companies_house", country: "United Kingdom", founded_year: 2026, evidence: {},
+      promoted_reason: "Share allotment filed (1, latest 2026-12-01)", watch_started_at: "2026-11-20T05:20:00Z",
+    }).map((l) => [l.label, l.value]));
+    expect(lines["Surfaced from watchlist"]).toBe("Share allotment filed (1, latest 2026-12-01)");
+    expect(lines["Watching since"]).toBe("2026-11-20");
+  });
+  it("adds nothing for a candidate that never was on the watchlist", () => {
+    expect(evidenceLines({ source: "uk_companies_house", country: null, founded_year: null, evidence: {} })).toEqual([]);
+  });
+});

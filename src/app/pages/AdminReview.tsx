@@ -27,7 +27,8 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PAGE = 50;
-const STATUSES: CandidateStatus[] = ["pending", "approved", "rejected"];
+// "expired" (no event in 12 months on the UK watchlist) has no tab: those candidates are set aside quietly.
+const STATUSES: CandidateStatus[] = ["pending", "watching", "approved", "rejected"];
 const SOURCES: Array<CandidateSource | "all"> = ["all", "sec_form_d", "uk_companies_house", "epo_ops", "oss_github", "hf_org"];
 
 function timeAgo(iso: string | null): string {

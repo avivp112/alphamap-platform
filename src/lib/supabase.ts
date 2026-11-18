@@ -1376,7 +1376,7 @@ export async function fetchCompanyCandidates(opts: {
     .eq("status", opts.status)
     // Alert tier first (those reach users), then newest.
     .order("gate_tier", { ascending: true })
-    .order(opts.status === "pending" ? "first_seen_at" : "reviewed_at", { ascending: false })
+    .order(opts.status === "pending" ? "first_seen_at" : opts.status === "watching" ? "watch_started_at" : "reviewed_at", { ascending: false })
     .range(offset, offset + limit - 1);
   if (opts.source && opts.source !== "all") q = q.eq("source", opts.source);
   const { data, error } = await q;
