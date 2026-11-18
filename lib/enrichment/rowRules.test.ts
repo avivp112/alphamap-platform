@@ -302,3 +302,35 @@ describe("batch 6, round 2: rounds and competitors unified, subject test", () =>
     expect(rowProblem({ field: "competitor_declared", after: "Xe", source_url: "https://www.xe.com/mbank-vs-xe", quote: "mBank vs Xe" }, "MBank", TODAY)).toMatch(/another site/);
   });
 });
+
+describe("batch 6, round 3: legal suffix does not split the founding sentence", () => {
+  it("Estimote, Inc. was founded in 2012 stays", () => {
+    expect(rowProblem({ field: "founded_year", after: "2012", source_url: "https://estimote.com/about", quote: "Estimote, Inc. was founded in 2012 and builds beacons." }, "Estimote", TODAY)).toBeNull();
+    expect(rowProblem({ field: "founded_year", after: "2012", source_url: "https://www.crunchbase.com/x", quote: "Estimote, Inc. was founded in 2012." }, "Estimote", TODAY)).toBeNull();
+  });
+});
+
+describe("IPO pages give no competitor", () => {
+  it("Gaja on an IPO page of the company's own site", () => {
+    expect(rowProblem({ field: "competitor_declared", after: "Gaja", source_url: "https://www.samco.in/ipo/gaja-capital-ipo", quote: "Gaja Capital India Ltd" }, "SAMCO", TODAY)).toMatch(/IPO/);
+    expect(rowProblem({ field: "competitor_declared", after: "Dhan", source_url: "https://www.samco.in/dhan-vs-samco", quote: "Samco vs Dhan" }, "SAMCO", TODAY)).toBeNull();
+  });
+});
+
+describe("hq_quote_valid", () => {
+  it("prize text and event list fail; address and declaration pass", () => {
+    const c = [{ id: "x", why: "x", kind: "hq_quote_valid" }] as never;
+    const row = (company: string, quote: string) => ({ company, field: "hq_city", after: "X", source_url: "u", quote });
+    expect(runAcceptance(c, [row("Kiwify", "além de uma placa exclusiva, você ganha uma viagem de Dubai"), row("Brighte", "Events: SXSW Sydney, Forbes")], [], "2026-11-17")[0].pass).toBe(false);
+    expect(runAcceptance(c, [row("Canopy", "New York, NY 10003-1502"), row("Sherlok", "Adelaide-based startup Sherlok has secured $3.4 million")], [], "2026-11-17")[0].pass).toBe(true);
+  });
+});
+
+import { missingRows, NOT_YET_BUILT_FIELDS } from "./knownGaps";
+describe("missing list leaves out fields that cannot be filled yet", () => {
+  it("registers are not listed", () => {
+    const g = { c1: { company: "A", fields: { company_number: { field: "company_number", searched: [], rejected_candidates: [], last_run: "x", run_id: "r" }, hq_city: { field: "hq_city", searched: [], rejected_candidates: [], last_run: "x", run_id: "r" } } } } as never;
+    expect(missingRows(g, ["c1"], new Set()).map((r) => r.field)).toEqual(["hq_city"]);
+    expect(NOT_YET_BUILT_FIELDS.has("registered_address")).toBe(true);
+  });
+});

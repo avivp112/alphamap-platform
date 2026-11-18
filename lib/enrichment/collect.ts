@@ -997,16 +997,24 @@ export async function collectCompany(
     return [like.lead_investor, ...(like.other_investors ?? [])].filter((n): n is string => !!n);
   });
   // Only an allowed source grounds a founder (owner, 2026-11-02: the list applies to every field).
+  let approvedFounders: Array<{ name: string; title: string; quote: string; url: string }> = [];
   // An approved quote that names a founder ("founded in 2020 by A and B", "Founder and CEO A said") also feeds the founders; the grounding below still decides.
   {
     const have = profile.profile.founders ?? [];
-    const extra = foundersFromApprovedQuotes(approvedQuotes(funding.funding_rounds, allSources), row.name).filter((f) => !have.some((h) => samePersonName(h.name, f.name)));
-    if (extra.length) {
-      console.log(`    👤  Founders named in approved quotes: ${extra.map((f) => f.name).join(", ")}`);
-      profile.profile.founders = [...have, ...extra.map((f) => ({ name: f.name, title: f.title }))] as typeof have;
-    }
+    approvedFounders = foundersFromApprovedQuotes(approvedQuotes(funding.funding_rounds, allSources), row.name);
+    const extra = approvedFounders.filter((f) => !have.some((h) => samePersonName(h.name, f.name)));
+    if (approvedFounders.length) console.log(`    👤  Founders named in approved quotes: ${approvedFounders.map((f) => f.name).join(", ")}`);
+    if (extra.length) profile.profile.founders = [...have, ...extra.map((f) => ({ name: f.name, title: f.title }))] as typeof have;
   }
   const grounded = groundFounders(profile.profile.founders ?? [], allSources.filter((s) => profileSourceAllowed(s, row.name)), row.name, roundInvestors);
+  // The approved quote is the ground itself (it was checked against its page, in the page's language, before it was approved): a founder it names stays with it.
+  for (const f of approvedFounders) {
+    const i = grounded.dropped.findIndex((d) => d.name === f.name && d.reason === "founder_not_grounded");
+    if (i >= 0 && !roundInvestors.some((n) => samePersonName(n, f.name))) {
+      grounded.dropped.splice(i, 1);
+      grounded.kept.push({ name: f.name, title: f.title, grounded_url: f.url, grounded_quote: f.quote.slice(0, 240) } as (typeof grounded.kept)[number]);
+    }
+  }
   for (const d of grounded.dropped) {
     fates.founders.set(d.name, d.reason === "founder_is_investor" ? "named among the investors" : `no allowed source says they founded the company (${allSources.filter((x) => profileSourceAllowed(x, row.name)).length} allowed source(s) read)`);
     console.log(`    👤  ${d.name} not kept as a founder (${d.reason === "founder_is_investor" ? "named among the investors" : "no source says they founded this company"}).`);
@@ -1172,6 +1180,8 @@ export async function collectCompany(
   // The HQ the decision took (a Contact-page address, an About paragraph): validation does not ask
   // its quote for an HQ word again (Anonymised's "7 Bell Yard, London" — model check 2026-11-02).
   let hqDecided = false;
+  /** Sources whose quote was approved for a round and also says where the company is: allowed for the headquarters (owner, batch 6). */
+  const approvedHqSources = new Set<string>();
   let statementsAll: HqStatement[] = [];
   let registry: { record: RegistryRecord; sourceId: string; dateSourceId: string } | undefined;
   // Extra searches (EXTRA_SEARCHES, default 4, owner 2026-11-07): competitors by tier and the founders' background share them.
@@ -1339,6 +1349,7 @@ export async function collectCompany(
   // empty and both cities become offices (headquarters.ts, owner 2026-11-01).
   {
     const approvedHq = hqFromApprovedQuotes(approvedQuotes(keptRounds, allSources), row.name);
+    for (const st of approvedHq) approvedHqSources.add(st.source_id);
     for (const st of approvedHq) console.log(`    🏢  An approved quote also says where the company is — ${st.city}: "${st.quote.slice(0, 120)}" (${st.url})`);
     const statements = [...allSources.flatMap((s) => hqStatementsIn(s, row.name)), ...approvedHq, ...allSources.flatMap((s) => impressumSeat(s)), ...extraStatements.filter((x, i, xs) => xs.findIndex((y) => y.city === x.city && y.source_id === x.source_id) === i)];
     // One street address on the Contact page is the headquarters (owner, 2026-11-02).
@@ -1479,7 +1490,7 @@ export async function collectCompany(
       (profile.profile as Record<string, unknown>)[key] = undefined;
       continue;
     }
-    if (s && profileSourceAllowed(s, row.name)) continue;
+    if (s && (profileSourceAllowed(s, row.name) || ((key === "city" || key === "country") && approvedHqSources.has(f.source_id) && !isLegalPageUrl(s.url)))) continue;
     if (key === "city" || key === "country") fates.hq = `${key} ${JSON.stringify(f.value)}: its source is not on the allowed list (${s?.url ?? f.source_id})`;
     console.log(`    🚫  ${key} ${JSON.stringify(f.value)} not written — its source is not on the allowed list: ${s?.url ?? f.source_id}`);
     rejectedDomains.note(key, s?.url, `${key} ${JSON.stringify(f.value)}`);

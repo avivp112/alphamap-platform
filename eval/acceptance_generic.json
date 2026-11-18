@@ -90,5 +90,10 @@
   "why": "A competitor appears once under its clean name (no year, no bracket)",
   "kind": "no_duplicates",
   "field": "competitor_declared"
+ },
+ {
+  "id": "hq_quote_is_address_or_declaration",
+  "why": "A headquarters city rests on a street address or on a sentence that declares it (<city>-based, headquartered in, head office)",
+  "kind": "hq_quote_valid"
  }
 ]

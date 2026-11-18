@@ -155,7 +155,7 @@ describe("review 9 (2026-11-10): the Contact page's addresses and an article of 
     const press = (date: string | null, city = "Chennai"): HqStatement => ({ city, quote: `${city}-based`, source_id: "S2", url: "https://techcrunch.com/x", kind: "press", date });
     expect(decideHeadquarters([press("2014-01-12")], "2026-11-10").kind).toBe("none");
     expect(decideHeadquarters([press("2021-12-17", "New York")], "2026-11-10")).toMatchObject({ kind: "declared" });
-    expect(decideHeadquarters([press(null)], "2026-11-10")).toMatchObject({ kind: "declared" });
+    expect(decideHeadquarters([press(null)], "2026-11-10").kind).toBe("none");   // owner, batch 6: an undated article is no headquarters (Estimote, GeekWire 2014)
     expect(decideHeadquarters([press("2014-01-12"), press("2024-05-01", "San Francisco")], "2026-11-10")).toMatchObject({ kind: "declared", statement: { city: "San Francisco" } });
   });
 });
@@ -225,4 +225,16 @@ describe("a legal page's address as the headquarters (owner, round 10)", () => {
     expect(legalPageHq({ ...base, domain: "acme.de", quote: "Our EU representative under GDPR is located at Torstrasse 1, Berlin" })).toBeNull();
   });
   it("maps a country code", () => { expect(countryOfTld("www.acme.co.il")).toBe("Israel"); expect(countryOfTld("acme.com")).toBeNull(); });
+});
+
+import { isAddressLine } from "./headquarters";
+describe("a line is an address only with address parts (owner, batch 6)", () => {
+  it("prize text and event lists are not addresses; real ones are", () => {
+    expect(isAddressLine("Quando você atingir R$10 milhões na Kiwify, além de uma placa exclusiva, você e + 1 acompanhante vão ganhar uma viagem de Dubai")).toBe(false);
+    expect(isAddressLine("Events we've been invited to attend - SXSW Sydney, Forbes Women's Summit, All Energy and Intersekt 24.")).toBe(false);
+    expect(isAddressLine("New York, NY 10003-1502")).toBe(true);
+    expect(isAddressLine("Rua Funchal 418, São Paulo, SP 04551-060")).toBe(true);
+    expect(isAddressLine("ul. Marszałkowska 10, 00-590 Warszawa")).toBe(true);
+    expect(isAddressLine("Level 3, 100 George St, Sydney NSW 2000")).toBe(true);
+  });
 });

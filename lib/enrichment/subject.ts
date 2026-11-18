@@ -41,6 +41,8 @@ export function sentenceIsAboutCompany(sentence: string, companyName: string, o:
 
 /** The part of a stitched quote ("... ... ...") or of a long one that holds the year: the sentence the founding year stands on. */
 export function sentenceWithYear(quote: string, year: number | string): string {
-  const parts = quote.split(/\s\.\.\.\s|(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean);
+  // A legal suffix's dot ("Estimote, Inc. was founded in 2012") does not end the sentence.
+  const masked = quote.replace(/\b(inc|ltd|llc|corp|co|s\.a|s\.r\.l|gmbh|ag|pty|sp|z o\.o|b\.v|n\.v|a\.s|oy|ab|plc|ltda|sas|srl|sa)\./gi, (m) => m.replace(".", "\u0000"));
+  const parts = masked.split(/\s\.\.\.\s|(?<=[.!?])\s+/).map((x) => x.replace(/\u0000/g, ".").trim()).filter(Boolean);
   return parts.find((x) => x.includes(String(year))) ?? quote;
 }

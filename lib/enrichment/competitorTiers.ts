@@ -132,6 +132,8 @@ export function vsPageClaims(results: Array<{ url: string; title?: string | null
     const title = (r.title ?? "").trim();
     // A forum thread or user post is not a source for a competitor, even on the company's own domain (owner, 2026-11-08: Hailo's community).
     if (isUserContentUrl(r.url)) continue;
+    // An IPO page (a share offering, "Gaja Capital IPO") is not a comparison with a competitor (owner, batch 6: SAMCO).
+    if (/\bIPOs?\b/i.test(title) || /\/(?:[\w-]*-)?ipos?(?:[-/]|$)/i.test(r.url)) continue;
     const host = hostOf(r.url);
     const own = !!ownDomain && (host === ownDomain || host.endsWith(`.${ownDomain}`));
     const other = title ? vsTitleCompetitor(title, companyName) ?? (own ? comparisonTitleCompetitor(title, companyName) : null) : null;
