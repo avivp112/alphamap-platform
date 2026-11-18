@@ -463,7 +463,7 @@ async function enrichCompany(
       }
       // A description with no tag: classified here, from the verified description (the memory carried it, so this run's classification never saw it).
       const desc = companyRows.find((r) => r.field === "description" || r.field === "description_what_only");
-      if (desc && !companyRows.some((r) => r.field === "tags") && anthropic) {
+      if (desc && !companyRows.some((r) => r.field === "tags") && anthropic && !heldRow(row.name, "tags")) {
         try {
           const choice = await classifyDescription({ anthropic, model: ENRICH_MODEL, taxonomy, name: row.name, description: desc.after, complete: desc.field === "description" });
           const tag = mainTag(choice, taxonomy);
@@ -473,7 +473,9 @@ async function enrichCompany(
             console.log(`    🏷️   Tag ${tag} — the main sub-sector of the verified description (classified now: ${choice.sector_name} › ${tag}).`);
           }
         } catch (e) { console.log(`    ⚠️  tag classification skipped: ${(e as Error).message}`); }
-      } } 
+      } }
+    // Nothing held back reaches the report by another road (a tag classified just now, a remembered value).
+    if (BLOCKED.size) companyRows = companyRows.filter((r) => !heldRow(r.company, r.field));
     const missing = ASKED.filter((f) => OPEN_FIELDS.includes(f) && !companyRows.some((r) => r.field === f || r.field.startsWith(f)));
     recordGaps(gapStore, row.id, row.name, missing, companyLines(), runId ?? "dry", RUN_DATE);
     console.log(`    📚  Known sources (${row.name}): from memory ${[...new Set([...injectedNow, ...carry.carried.map((r) => r.field)])].join(", ") || "none"}${injectedNow.length ? ` (${injectedNow.join(", ")} entered the write stage)` : ""}${carry.carried.length ? ` (${carry.carried.length} more value(s) carried in the report)` : ""}; from this run's search ${[...freshFound].filter((f) => !injectedNow.includes(f)).join(", ") || "none"}; still missing ${missing.join(", ") || "none"}${carry.recheck.length ? `; back to review (quote gone): ${carry.recheck.join(" | ")}` : ""}${carry.refreshDue.length ? `; older than the refresh time, searched again: ${carry.refreshDue.join(" | ")}` : ""}${carry.locked.length ? `; locked (marked correct) kept: ${carry.locked.join(" | ")}` : ""}${before ? "" : " [no memory yet]"}`);
