@@ -170,7 +170,7 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
     }
   }
   // Last: where the source stands (a data platform, a republisher with no allowed original…) — after the field's own checks, which say more.
-  if (["news", "tags", "round", "competitor_declared", "competitor_market"].includes(r.field) && url) {
+  if (["news", "tags", "round", "competitor_declared", "competitor_market", "founder"].includes(r.field) && url) {
     const standing = roundSourceStanding(url, { companyName, isCompanySite: ownDomain(url, companyName), content: quote, headline: r.field === "news" ? r.after : null });
     if (standing.kind === "denied") return `its source is not allowed (${standing.why})`;
   }
