@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { registryUrl, formatUsd, formatPeople, evidenceLines, companyPath, SOURCE_LABEL } from "./candidateReview";
+import { registryUrl, formatUsd, formatPeople, formatPeopleDetails, evidenceLines, companyPath, SOURCE_LABEL } from "./candidateReview";
 
 describe("registryUrl", () => {
   it("links each source to its official record", () => {
@@ -112,5 +112,47 @@ describe("hf_org candidates (stage 7b)", () => {
     const t = Object.fromEntries(evidenceLines({ source: "hf_org", evidence: { ...evidence, num_users: 6, plan: "team", verified: true }, country: null, founded_year: null }).map((l) => [l.label, l.value]));
     expect(t["Team"]).toBe("6 members, team plan, verified");
     expect(SOURCE_LABEL.hf_org).toBe("Hugging Face org");
+  });
+});
+
+describe("stage 1 evidence (address, people detail, Form D extras)", () => {
+  const by = (c: Parameters<typeof evidenceLines>[0]) => Object.fromEntries(evidenceLines(c).map((l) => [l.label, l.value]));
+
+  it("formatPeopleDetails shows only people with something beyond a name", () => {
+    expect(formatPeopleDetails([
+      { name: "BLOGGS, Jo", appointed_on: "2026-07-20", nationality: "British", country_of_residence: "United Kingdom", born: "1985-03" },
+      { name: "PATEL, Anya" },
+    ])).toBe("BLOGGS, Jo: appointed 2026-07-20, British, lives in United Kingdom, born 1985-03");
+    expect(formatPeopleDetails([{ name: "X" }])).toBeNull();
+    expect(formatPeopleDetails(undefined)).toBeNull();
+  });
+
+  it("a UK candidate shows the registered office with c/o, status and director detail", () => {
+    const l = by({ source: "uk_companies_house", country: "United Kingdom", founded_year: 2026, evidence: {
+      address: "20, Wenlock Road, London, N1 7GU", care_of: "Quickform Ltd", company_status: "active",
+      officers: [{ name: "BLOGGS, Jo", relationships: ["director"], appointed_on: "2026-07-20", nationality: "British" }],
+    } });
+    expect(l["Registered office"]).toBe("c/o Quickform Ltd, 20, Wenlock Road, London, N1 7GU");
+    expect(l["Status"]).toBe("active");
+    expect(l["Director details"]).toBe("BLOGGS, Jo: appointed 2026-07-20, British");
+  });
+
+  it("a Form D candidate shows address, revenue, investors, exemption, placement agents", () => {
+    const l = by({ source: "sec_form_d", country: "United States", founded_year: 2025, evidence: {
+      address: "100 MAIN ST, AUSTIN, TX", phone: "512-555-0100", revenue_range: "No Revenues", investors: 14, non_accredited: 2,
+      min_investment: 25000, exemptions: ["06b"], placement_agents: [{ name: "ACME SECURITIES LLC", crd: "123456" }, { name: "NO CRD", crd: "None" }],
+      date_of_first_sale: "2026-10-01", entity_type: "Corporation",
+    } });
+    expect(l["Address"]).toBe("100 MAIN ST, AUSTIN, TX");
+    expect(l["Revenue"]).toBe("No Revenues");
+    expect(l["Investors"]).toBe("14 in so far (2 non-accredited)");
+    expect(l["Min. investment"]).toBe("$25K");
+    expect(l["Exemption"]).toBe("06b");
+    expect(l["Placement agents"]).toBe("ACME SECURITIES LLC (CRD 123456), NO CRD");
+    expect(l["First sale"]).toBe("2026-10-01");
+  });
+
+  it("candidates saved before this change render exactly as before", () => {
+    expect(evidenceLines({ source: "uk_companies_house", country: null, founded_year: null, evidence: {} })).toEqual([]);
   });
 });

@@ -13,6 +13,20 @@ export type CandidateTier = "queue" | "alert";
 export interface CandidateOfficer {
   name?: string;
   relationships?: string[];
+  // UK Companies House (register spelling, stored as-is).
+  appointed_on?: string;
+  nationality?: string;
+  country_of_residence?: string;
+  /** "YYYY-MM": the register publishes month and year of birth only. */
+  born?: string;
+  appointments_url?: string;
+  // SEC Form D related person.
+  address?: string;
+}
+
+export interface CandidatePlacementAgent {
+  name?: string;
+  crd?: string | null;
 }
 
 export interface CandidateEvidence {
@@ -27,6 +41,22 @@ export interface CandidateEvidence {
   title?: string;
   abstract?: string;
   filing_date?: string;
+  // Added after the ingest by merge_candidate_evidence (20261204000000).
+  /** UK registered office / SEC issuer's principal place of business, one line. */
+  address?: string;
+  postal_code?: string;
+  care_of?: string;
+  company_status?: string;
+  date_of_creation?: string;
+  phone?: string;
+  entity_type?: string;
+  revenue_range?: string;
+  investors?: number;
+  non_accredited?: number;
+  min_investment?: number;
+  exemptions?: string[];
+  placement_agents?: CandidatePlacementAgent[];
+  date_of_first_sale?: string;
   // oss_github (migration 20261125000000): a growing GitHub project with a homepage of its own.
   github_url?: string;
   owner?: string;
@@ -140,6 +170,28 @@ export function formatPeople(officers: CandidateOfficer[] | undefined, max = 4):
   return people.length > max ? `${shown.join(", ")} +${people.length - max}` : shown.join(", ");
 }
 
+/**
+ * "Jo Bloggs: appointed 2026-07-20, British, lives in United Kingdom, born 1985-03" —
+ * only the people for whom the register or the form gave something beyond a name.
+ */
+export function formatPeopleDetails(officers: CandidateOfficer[] | undefined, max = 4): string | null {
+  const rows = (officers ?? [])
+    .filter((o) => o?.name && o.name.trim())
+    .map((o) => {
+      const bits = [
+        o.appointed_on ? `appointed ${o.appointed_on}` : null,
+        o.nationality ? o.nationality : null,
+        o.country_of_residence ? `lives in ${o.country_of_residence}` : null,
+        o.born ? `born ${o.born}` : null,
+        o.address ? o.address : null,
+      ].filter(Boolean);
+      return bits.length ? `${o.name!.trim()}: ${bits.join(", ")}` : null;
+    })
+    .filter((x): x is string => x !== null);
+  if (rows.length === 0) return null;
+  return rows.length > max ? `${rows.slice(0, max).join("; ")}; +${rows.length - max}` : rows.join("; ");
+}
+
 export interface EvidenceLine {
   label: string;
   value: string;
@@ -159,6 +211,17 @@ export function evidenceLines(c: Pick<CompanyCandidate, "source" | "evidence" | 
     const raising = formatUsd(e.total_offering);
     const sold = formatUsd(e.total_sold);
     add("Raising", raising && sold ? `${raising} (sold ${sold})` : raising ?? sold);
+    add("Revenue", e.revenue_range);
+    add("Investors", e.investors != null
+      ? `${e.investors} in so far${e.non_accredited ? ` (${e.non_accredited} non-accredited)` : ""}`
+      : null);
+    add("Min. investment", formatUsd(e.min_investment));
+    add("Exemption", e.exemptions && e.exemptions.length ? e.exemptions.join(", ") : null);
+    add("Placement agents", e.placement_agents && e.placement_agents.length
+      ? e.placement_agents.filter((a) => a?.name).map((a) => a.crd && /^\d+$/.test(a.crd) ? `${a.name} (CRD ${a.crd})` : a.name).join(", ")
+      : null);
+    add("First sale", e.date_of_first_sale);
+    add("Entity type", e.entity_type);
   }
   if (c.source === "oss_github") {
     add("Project", e.owner && e.repo ? `${e.owner}/${e.repo}${e.owner_type ? ` (${e.owner_type.toLowerCase()})` : ""}` : null);
@@ -187,6 +250,14 @@ export function evidenceLines(c: Pick<CompanyCandidate, "source" | "evidence" | 
   add(c.source === "uk_companies_house" ? "SIC codes" : c.source === "epo_ops" ? "CPC codes" : "Codes",
     e.codes && e.codes.length ? e.codes.slice(0, 8).join(" ") + (e.codes.length > 8 ? " …" : "") : null);
   add(people, formatPeople(e.officers));
+  add(c.source === "uk_companies_house" ? "Director details" : c.source === "sec_form_d" ? "People details" : "",
+    c.source === "uk_companies_house" || c.source === "sec_form_d" ? formatPeopleDetails(e.officers) : null);
+  if (c.source === "uk_companies_house" || c.source === "sec_form_d") {
+    add(c.source === "uk_companies_house" ? "Registered office" : "Address",
+      [e.care_of ? `c/o ${e.care_of}` : null, e.address].filter(Boolean).join(", "));
+    add("Phone", e.phone);
+    add("Status", c.source === "uk_companies_house" ? e.company_status : null);
+  }
   add("Company type", c.source === "uk_companies_house" ? e.form_type : null);
   add("Jurisdiction", e.jurisdiction);
   add("Founded", c.founded_year ? String(c.founded_year) : null);

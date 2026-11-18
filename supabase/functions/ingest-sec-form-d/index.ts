@@ -190,7 +190,9 @@ function tagNumber(xml: string, name: string): number | null {
 
 // ── Form D model ────────────────────────────────────────────────────────────
 
-export interface FormDOfficer { name: string; relationships: string[]; }
+export interface FormDOfficer { name: string; relationships: string[]; address?: string; }
+
+export interface FormDPlacementAgent { name: string; crd: string | null; }
 
 export interface FormD {
   submissionType: string | null;
@@ -210,6 +212,29 @@ export interface FormD {
   totalOffering: number | null;
   totalSold: number | null;
   dateOfFirstSale: string | null;
+  /** Issuer's principal place of business, one line. */
+  issuerAddress: string | null;
+  issuerPhone: string | null;
+  /** Corporation, Limited Liability Company, ... */
+  entityType: string | null;
+  /** Declared revenue bracket ("No Revenues", "$1 - $1,000,000", ...) or net-asset-value bracket. */
+  revenueRange: string | null;
+  /** totalNumberAlreadyInvested: investors who have put money in so far. */
+  investorsCount: number | null;
+  nonAccreditedCount: number | null;
+  minInvestment: number | null;
+  /** Federal exemption items claimed, e.g. "06b" (Rule 506(b)). */
+  exemptions: string[];
+  /** Broker-dealers paid to raise the round: a sign of an organised raise. */
+  placementAgents: FormDPlacementAgent[];
+}
+
+/** One line from a Form D address block (issuer or related person). */
+function addressLine(block: string | null): string | null {
+  if (!block) return null;
+  const parts = ["street1", "street2", "city", "stateOrCountry", "zipCode"]
+    .map((t) => tagText(block, t)).filter((x): x is string => !!x);
+  return parts.length ? parts.join(", ") : null;
 }
 
 /**
@@ -254,11 +279,13 @@ export function parseFormD(xml: string): FormD | null {
     ].filter(Boolean).join(" ").trim();
     if (!name) continue;
     const relBlock = tagBlock(person, "relatedPersonRelationshipList") ?? "";
+    const personAddress = addressLine(tagBlock(person, "relatedPersonAddress"));
     officers.push({
       name,
       relationships: tagBlocks(relBlock, "relationship")
         .map((r) => decodeEntities(r).trim())
         .filter(Boolean),
+      ...(personAddress ? { address: personAddress } : {}),
     });
   }
 
@@ -279,6 +306,19 @@ export function parseFormD(xml: string): FormD | null {
     totalOffering: tagNumber(amounts, "totalOfferingAmount"),
     totalSold: tagNumber(amounts, "totalAmountSold"),
     dateOfFirstSale: tagText(tagBlock(offering, "typeOfFiling") ?? "", "dateOfFirstSale"),
+    issuerAddress: addressLine(tagBlock(issuer, "issuerAddress")),
+    issuerPhone: tagText(issuer, "issuerPhoneNumber"),
+    entityType: tagText(issuer, "entityType"),
+    revenueRange: tagText(tagBlock(offering, "issuerSize") ?? "", "revenueRange")
+      ?? tagText(tagBlock(offering, "issuerSize") ?? "", "aggregateNetAssetValueRange"),
+    investorsCount: tagNumber(offering, "totalNumberAlreadyInvested"),
+    nonAccreditedCount: tagNumber(offering, "numberNonAccreditedInvestors"),
+    minInvestment: tagNumber(offering, "minimumInvestmentAccepted"),
+    exemptions: tagBlocks(tagBlock(offering, "federalExemptionsExclusions") ?? "", "item")
+      .map((i) => decodeEntities(i).trim()).filter(Boolean),
+    placementAgents: tagBlocks(tagBlock(offering, "salesCompensationList") ?? "", "recipient")
+      .map((r) => ({ name: tagText(r, "recipientName") ?? "", crd: tagText(r, "recipientCRDNumber") }))
+      .filter((r) => r.name !== ""),
   };
 }
 
@@ -308,6 +348,17 @@ export function classifyFiling(f: FormD | null): { eligible: boolean; reason?: R
 
 /** Incorporated within five years or not yet formed — Form D's own flags. */
 export const isNewCompany = (f: FormD): boolean => f.withinFiveYears || f.yetToBeFormed;
+
+/** What the review card shows beyond the columns. Merged into company_candidates.evidence (merge_candidate_evidence). */
+export function formDEvidenceExtra(f: FormD): Record<string, unknown> {
+  return {
+    address: f.issuerAddress, phone: f.issuerPhone, entity_type: f.entityType, revenue_range: f.revenueRange,
+    investors: f.investorsCount, non_accredited: f.nonAccreditedCount, min_investment: f.minInvestment,
+    exemptions: f.exemptions.length ? f.exemptions : null,
+    placement_agents: f.placementAgents.length ? f.placementAgents : null,
+    date_of_first_sale: f.dateOfFirstSale,
+  };
+}
 
 /** Short human digest. Derived only — never a substitute for the columns. */
 export function techSummary(f: FormD): string {
@@ -634,7 +685,17 @@ Deno.serve(withRunLog("sec_form_d", countKeys("ingested", "fundsRecorded"), asyn
                 results.push({ entity: f.entityName, accession: row.accession, ok: false, reason: error.message });
               } else {
                 ingested++;
-                results.push({ entity: f.entityName, accession: row.accession, ok: true, industryGroup: f.industryGroup, gate, ...(data as Record<string, unknown>) });
+                // Address, investors, exemption... for the review card. Additive
+                // and non-fatal: the candidate exists, the card just shows less.
+                const candidateId = (data as Record<string, unknown> | null)?.candidate_id as string | null | undefined;
+                let evidenceError: string | undefined;
+                if (candidateId) {
+                  const { error: mergeError } = await supabase.rpc("merge_candidate_evidence", {
+                    p_candidate_id: candidateId, p_extra: formDEvidenceExtra(f),
+                  });
+                  if (mergeError) evidenceError = mergeError.message;
+                }
+                results.push({ entity: f.entityName, accession: row.accession, ok: true, industryGroup: f.industryGroup, gate, ...(data as Record<string, unknown>), ...(evidenceError ? { evidenceError } : {}) });
               }
             }
           }

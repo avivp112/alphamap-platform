@@ -80,6 +80,17 @@ check("maps a search item", CH.mapCompany(chItem), {
   companyType: "ltd",
   sicCodes: ["62012", "72190"],
   locality: "London",
+  address: "London, EC1A 1BB",
+  postalCode: "EC1A 1BB",
+  careOf: null,
+});
+check("full registered office on one line, c/o kept", (({ address, postalCode, careOf }) => ({ address, postalCode, careOf }))(CH.mapCompany({
+  ...chItem,
+  registered_office_address: { care_of: "Quickform Ltd", premises: "20", address_line_1: "Wenlock Road", locality: "London", region: "Greater London", postal_code: "N1 7GU", country: "England" },
+})), { address: "20, Wenlock Road, London, Greater London, N1 7GU, England", postalCode: "N1 7GU", careOf: "Quickform Ltd" });
+check("no address at all -> nulls", (({ address, postalCode }) => ({ address, postalCode }))(CH.mapCompany({ ...chItem, registered_office_address: undefined })), { address: null, postalCode: null });
+check("evidence extra carries address and status", CH.ukEvidenceExtra(CH.mapCompany(chItem)), {
+  address: "London, EC1A 1BB", postal_code: "EC1A 1BB", care_of: null, company_status: "active", date_of_creation: "2026-07-20",
 });
 check("no company number -> null", CH.mapCompany({ company_name: "X" }), null);
 check("missing sic_codes becomes an empty array", CH.mapCompany({ ...chItem, sic_codes: undefined }).sicCodes, []);
@@ -101,6 +112,17 @@ check("formation-agent secretary excluded, resigned excluded",
   CH.mapOfficers(officers).map((o) => o.name), ["BLOGGS, Jo", "PATEL, Anya"]);
 check("role kept as a relationship", CH.mapOfficers(officers)[0].relationships, ["director"]);
 check("empty payload is fine", CH.mapOfficers({}), []);
+const detailed = CH.mapOfficers({ items: [{
+  name: "BLOGGS, Jo", officer_role: "director", appointed_on: "2026-07-20", nationality: "British",
+  country_of_residence: "United Kingdom", date_of_birth: { month: 3, year: 1985 },
+  links: { officer: { appointments: "/officers/abc123/appointments" } },
+}] })[0];
+check("officer detail kept (appointed, nationality, residence, birth month, appointments link)", detailed, {
+  name: "BLOGGS, Jo", relationships: ["director"], appointed_on: "2026-07-20", nationality: "British",
+  country_of_residence: "United Kingdom", born: "1985-03", appointments_url: "/officers/abc123/appointments",
+});
+check("birth year without month", CH.mapOfficers({ items: [{ name: "X, Y", officer_role: "director", date_of_birth: { year: 1990 } }] })[0].born, "1990");
+check("officer with no extras stays {name, relationships}", CH.mapOfficers({ items: [{ name: "X, Y", officer_role: "director" }] })[0], { name: "X, Y", relationships: ["director"] });
 
 console.log("\n── Companies House: URL ──");
 check("search url",

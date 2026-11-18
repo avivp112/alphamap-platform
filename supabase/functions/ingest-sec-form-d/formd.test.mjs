@@ -89,6 +89,43 @@ const operatingCo = `<?xml version="1.0"?>
   </offeringData>
 </edgarSubmission>`;
 
+
+// Hand-built to the documented schema (issuerAddress, relatedPersonAddress, issuerSize,
+// federalExemptionsExclusions, salesCompensationList, investors): NOT captured from sec.gov.
+const richFiling = `<?xml version="1.0"?>
+<edgarSubmission>
+  <submissionType>D</submissionType>
+  <primaryIssuer>
+    <cik>0001777666</cik>
+    <entityName>LUMEN QUANTUM, INC.</entityName>
+    <issuerAddress><street1>100 MAIN ST</street1><street2>SUITE 4</street2><city>AUSTIN</city><stateOrCountry>TX</stateOrCountry><stateOrCountryDescription>TEXAS</stateOrCountryDescription><zipCode>78701</zipCode></issuerAddress>
+    <issuerPhoneNumber>512-555-0100</issuerPhoneNumber>
+    <jurisdictionOfInc>DELAWARE</jurisdictionOfInc>
+    <entityType>Corporation</entityType>
+    <yearOfInc><withinFiveYears>true</withinFiveYears><value>2025</value></yearOfInc>
+  </primaryIssuer>
+  <relatedPersonsList>
+    <relatedPersonInfo>
+      <relatedPersonName><firstName>Ada</firstName><lastName>Lovelace</lastName></relatedPersonName>
+      <relatedPersonAddress><street1>1 Ada Way</street1><city>AUSTIN</city><stateOrCountry>TX</stateOrCountry><zipCode>78702</zipCode></relatedPersonAddress>
+      <relatedPersonRelationshipList><relationship>Executive Officer</relationship></relatedPersonRelationshipList>
+    </relatedPersonInfo>
+  </relatedPersonsList>
+  <offeringData>
+    <industryGroup><industryGroupType>Technology</industryGroupType></industryGroup>
+    <issuerSize><revenueRange>No Revenues</revenueRange></issuerSize>
+    <federalExemptionsExclusions><item>06b</item><item>3C</item></federalExemptionsExclusions>
+    <typeOfFiling><newOrAmendment><isAmendment>false</isAmendment></newOrAmendment><dateOfFirstSale>2026-10-01</dateOfFirstSale></typeOfFiling>
+    <minimumInvestmentAccepted>25000</minimumInvestmentAccepted>
+    <offeringSalesAmounts><totalOfferingAmount>3000000</totalOfferingAmount><totalAmountSold>1200000</totalAmountSold></offeringSalesAmounts>
+    <investors><hasNonAccreditedInvestors>true</hasNonAccreditedInvestors><numberNonAccreditedInvestors>2</numberNonAccreditedInvestors><totalNumberAlreadyInvested>14</totalNumberAlreadyInvested></investors>
+    <salesCompensationList>
+      <recipient><recipientName>ACME SECURITIES LLC</recipientName><recipientCRDNumber>123456</recipientCRDNumber></recipient>
+      <recipient><recipientName>NO CRD BROKER</recipientName><recipientCRDNumber>None</recipientCRDNumber></recipient>
+    </salesCompensationList>
+  </offeringData>
+</edgarSubmission>`;
+
 // A venture fund — the majority of any given day's Form D filings.
 const ventureFund = `<?xml version="1.0"?>
 <edgarSubmission>
@@ -279,6 +316,28 @@ check("a day not published yet is waited for, not written off",
   M.missingIndexStatus("2026-10-15", friday), "waiting");
 check("an index still missing after 3 days was a holiday",
   M.missingIndexStatus("2026-10-12", friday), "no_index");
+
+console.log("\n── Form D: address, investors, exemptions, placement agents ──");
+const rich = M.parseFormD(richFiling);
+check("issuer address on one line", rich.issuerAddress, "100 MAIN ST, SUITE 4, AUSTIN, TX, 78701");
+check("issuer phone and entity type", [rich.issuerPhone, rich.entityType], ["512-555-0100", "Corporation"]);
+check("revenue bracket", rich.revenueRange, "No Revenues");
+check("investors so far / non-accredited / minimum", [rich.investorsCount, rich.nonAccreditedCount, rich.minInvestment], [14, 2, 25000]);
+check("exemptions", rich.exemptions, ["06b", "3C"]);
+check("placement agents with CRD", rich.placementAgents, [{ name: "ACME SECURITIES LLC", crd: "123456" }, { name: "NO CRD BROKER", crd: "None" }]);
+check("related person address", rich.officers[0].address, "1 Ada Way, AUSTIN, TX, 78702");
+check("first sale still parsed", rich.dateOfFirstSale, "2026-10-01");
+const plain = M.parseFormD(operatingCo);
+check("a filing without the new blocks gets nulls and empty lists",
+  [plain.issuerAddress, plain.issuerPhone, plain.revenueRange, plain.investorsCount, plain.minInvestment, plain.exemptions, plain.placementAgents],
+  [null, null, null, null, null, [], []]);
+check("officers without an address have no address key", "address" in plain.officers[0], false);
+check("evidence extra", M.formDEvidenceExtra(rich), {
+  address: "100 MAIN ST, SUITE 4, AUSTIN, TX, 78701", phone: "512-555-0100", entity_type: "Corporation", revenue_range: "No Revenues",
+  investors: 14, non_accredited: 2, min_investment: 25000, exemptions: ["06b", "3C"],
+  placement_agents: [{ name: "ACME SECURITIES LLC", crd: "123456" }, { name: "NO CRD BROKER", crd: "None" }], date_of_first_sale: "2026-10-01",
+});
+check("evidence extra omits empty lists", M.formDEvidenceExtra(plain).exemptions, null);
 
 rmSync(dir, { recursive: true, force: true });
 console.log(failed === 0 ? "\nALL PASS" : `\n${failed} FAILURE(S)`);

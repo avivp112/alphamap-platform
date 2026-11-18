@@ -112,6 +112,11 @@ export interface CHCompany {
   companyType: string | null;
   sicCodes: string[];
   locality: string | null;
+  /** Registered office as one line, from every part the register gives. */
+  address: string | null;
+  postalCode: string | null;
+  /** "c/o ..." line — a formation agent's address often carries one. */
+  careOf: string | null;
 }
 
 /**
@@ -126,6 +131,12 @@ export function mapCompany(item: Record<string, unknown>): CHCompany | null {
   const companyName = String(item?.company_name ?? "").trim();
   if (!companyNumber || !companyName) return null;
   const addr = (item?.registered_office_address ?? {}) as Record<string, unknown>;
+  const part = (k: string): string | null => {
+    const v = String(addr?.[k] ?? "").trim();
+    return v === "" ? null : v;
+  };
+  const address = ["premises", "address_line_1", "address_line_2", "locality", "region", "postal_code", "country"]
+    .map(part).filter((x): x is string => x !== null).join(", ");
   return {
     companyNumber,
     companyName,
@@ -134,10 +145,35 @@ export function mapCompany(item: Record<string, unknown>): CHCompany | null {
     companyType: (item?.company_type as string) ?? null,
     sicCodes: Array.isArray(item?.sic_codes) ? (item!.sic_codes as unknown[]).map(String) : [],
     locality: (addr?.locality as string) ?? null,
+    address: address === "" ? null : address,
+    postalCode: part("postal_code"),
+    careOf: part("care_of"),
   };
 }
 
-export interface CHOfficer { name: string; relationships: string[]; }
+/**
+ * What the review card shows beyond the columns, for a UK candidate. Merged
+ * into company_candidates.evidence after the ingest (merge_candidate_evidence).
+ */
+export function ukEvidenceExtra(c: CHCompany): Record<string, unknown> {
+  return {
+    address: c.address, postal_code: c.postalCode, care_of: c.careOf,
+    company_status: c.companyStatus, date_of_creation: c.dateOfCreation,
+  };
+}
+
+export interface CHOfficer {
+  name: string;
+  relationships: string[];
+  /** Companies House officer fields, kept as the register spells them (snake_case, stored in jsonb). */
+  appointed_on?: string;
+  nationality?: string;
+  country_of_residence?: string;
+  /** "YYYY-MM": the register publishes the month and year of birth only. */
+  born?: string;
+  /** Path of the officer's other appointments, e.g. /officers/<id>/appointments. */
+  appointments_url?: string;
+}
 
 /**
  * Officers, filtered to the ones that mean something for founder tracking.
@@ -157,7 +193,23 @@ export function mapOfficers(payload: Record<string, unknown>): CHOfficer[] {
     // Resigned officers are not current founders.
     if (it?.resigned_on) continue;
     if (/secretary/i.test(role)) continue;
-    out.push({ name, relationships: role ? [role] : [] });
+    const text = (v: unknown): string | undefined => {
+      const t = String(v ?? "").trim();
+      return t === "" ? undefined : t;
+    };
+    const dob = (it?.date_of_birth ?? {}) as Record<string, unknown>;
+    const year = Number(dob?.year), month = Number(dob?.month);
+    const born = Number.isInteger(year) && year > 1900
+      ? `${year}${Number.isInteger(month) && month >= 1 && month <= 12 ? `-${String(month).padStart(2, "0")}` : ""}`
+      : undefined;
+    const officer: CHOfficer = { name, relationships: role ? [role] : [] };
+    const extras: Partial<CHOfficer> = {
+      appointed_on: text(it?.appointed_on), nationality: text(it?.nationality),
+      country_of_residence: text(it?.country_of_residence), born,
+      appointments_url: text(((it?.links ?? {}) as Record<string, any>)?.officer?.appointments),
+    };
+    for (const [k, v] of Object.entries(extras)) if (v !== undefined) (officer as any)[k] = v;
+    out.push(officer);
   }
   return out;
 }
@@ -332,7 +384,17 @@ Deno.serve(withRunLog("uk_companies_house", countKeys("ingested"), async (req: R
 
       if (error) { results.push({ name: c.companyName, ok: false, reason: error.message }); continue; }
       ingested++;
-      results.push({ name: c.companyName, ok: true, sic: c.sicCodes, officers: officers.length, gate, ...(data as Record<string, unknown>) });
+      // Address and status for the review card. Additive and non-fatal: the
+      // candidate already exists, the card just shows less without it.
+      const candidateId = (data as Record<string, unknown> | null)?.candidate_id as string | null | undefined;
+      let evidenceError: string | undefined;
+      if (candidateId) {
+        const { error: mergeError } = await supabase.rpc("merge_candidate_evidence", {
+          p_candidate_id: candidateId, p_extra: ukEvidenceExtra(c),
+        });
+        if (mergeError) evidenceError = mergeError.message;
+      }
+      results.push({ name: c.companyName, ok: true, sic: c.sicCodes, officers: officers.length, gate, ...(data as Record<string, unknown>), ...(evidenceError ? { evidenceError } : {}) });
     }
 
     return json({ from, to, dryRun, scanned, nonTech, ingested, gate: tiers, results });
