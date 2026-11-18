@@ -27,7 +27,11 @@ Return JSON: {"quote": string|null, "description_he": string|null}.
 Return only the JSON.`;
 
 /** The model asked for a quote; the caller (enrichCandidate) checks it is on the page. */
-export function makeDescriber(anthropic: Anthropic, model: string, onUsage?: (input: number, output: number) => void): Describer {
+export function makeDescriber(
+  anthropic: Anthropic, model: string, onUsage?: (input: number, output: number) => void,
+  /** Called with the start of the model's answer when it gave no usable quote: why is the description so often missing? */
+  onMiss?: (raw: string) => void,
+): Describer {
   return async ({ name, text }) => {
     const msg = await anthropic.messages.create({
       model, max_tokens: 400, system: DESCRIBE_SYSTEM,
@@ -36,7 +40,9 @@ export function makeDescriber(anthropic: Anthropic, model: string, onUsage?: (in
     onUsage?.(msg.usage?.input_tokens ?? 0, msg.usage?.output_tokens ?? 0);
     const block = msg.content.find((b) => b.type === "text");
     const raw = block && block.type === "text" ? block.text : "";
-    return parseDescription(raw);
+    const parsed = parseDescription(raw);
+    if (!parsed) onMiss?.(raw.replace(/\s+/g, " ").slice(0, 200));
+    return parsed;
   };
 }
 

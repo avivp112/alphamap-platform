@@ -201,7 +201,7 @@ async function candidatesTurn(): Promise<void> {
   if (candidateSearchesToday + 3 * CANDIDATE_BATCH > CANDIDATE_MAX_SEARCHES_PER_DAY) return;   // today's budget is spent
   try {
     const r = await candidateBatch(
-      { db, search: serperSearch(cfg.serpKey, candidateMeter), fetch: candidateFetch, describe: makeDescriber(anthropic, cfg.enrichModel) },
+      { db, search: serperSearch(cfg.serpKey, candidateMeter), fetch: candidateFetch, describe: makeDescriber(anthropic, cfg.enrichModel, undefined, (raw) => console.log(`[worker] describe: no usable quote — ${raw}`)) },
       { limit: CANDIDATE_BATCH, write: CANDIDATE_WRITE, skip: candidateSeen, maxAgeDays: CANDIDATE_MAX_AGE_DAYS },
     );
     candidateSearchesToday += r.searches;

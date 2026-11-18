@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseDescription, candidateBatch } from "./candidates.ts";
+import { parseDescription, candidateBatch, makeDescriber } from "./candidates.ts";
 
 describe("parseDescription", () => {
   it("reads the JSON answer, even inside prose or a code fence", () => {
@@ -10,6 +10,22 @@ describe("parseDescription", () => {
     expect(parseDescription('{"quote":"x"}')).toBeNull();
     expect(parseDescription("no json here")).toBeNull();
     expect(parseDescription('{"quote":"","description_he":"x"}')).toBeNull();
+  });
+});
+
+describe("makeDescriber reports a miss", () => {
+  const fake = (text: string) => ({ messages: { create: async () => ({ content: [{ type: "text", text }], usage: { input_tokens: 1, output_tokens: 1 } }) } }) as never;
+  it("passes the start of the answer on when there is no usable quote", async () => {
+    const misses: string[] = [];
+    const d = makeDescriber(fake('{"quote": null, "description_he": null}'), "m", undefined, (r) => misses.push(r));
+    expect(await d({ name: "X", text: "t" })).toBeNull();
+    expect(misses).toEqual(['{"quote": null, "description_he": null}']);
+  });
+  it("stays silent when the answer is usable", async () => {
+    const misses: string[] = [];
+    const d = makeDescriber(fake('{"quote": "We build drones for farms.", "description_he": "בונה רחפנים"}'), "m", undefined, (r) => misses.push(r));
+    expect(await d({ name: "X", text: "t" })).toEqual({ quote: "We build drones for farms.", description_he: "בונה רחפנים" });
+    expect(misses).toEqual([]);
   });
 });
 

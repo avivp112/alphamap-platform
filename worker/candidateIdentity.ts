@@ -428,6 +428,8 @@ export async function enrichCandidate(c: CandidateInput, deps: IdentityDeps): Pr
       out.description_source_url = best.pages.find((p) => quoteInText(d.quote, p.text))?.url ?? best.pages[0].url;
     } else if (d) {
       out.notes.push("הציטוט שהמודל החזיר לא נמצא בטקסט האתר: התיאור נזרק");
+    } else {
+      out.notes.push("המודל לא החזיר משפט שמתאר את החברה: אין תיאור");
     }
   } catch (e) {
     out.notes.push(`תיאור לא נוצר: ${String(e).slice(0, 120)}`);
