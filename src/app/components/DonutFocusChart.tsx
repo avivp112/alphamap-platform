@@ -14,7 +14,19 @@ interface Props {
   data:        SectorWeight[];
   accentColor: string;    // firm accent — fallback for unknown sector keys
   height?:     number;
+  /**
+   * "legacy": the original look (one fixed colour per sector, glow, for dark surfaces).
+   * "am": the redesigned pages — flat colours on a light surface, dark text, no glow.
+   */
+  variant?:    "legacy" | "am";
+  /** variant "am": colours by rank, largest slice first. Unknown sector names then still get a colour. */
+  ramp?:       readonly string[];
+  /** variant "am": a fixed colour per sector name; wins over the ramp. */
+  fixedColors?: Record<string, string>;
 }
+
+/** Largest slice in the accent, then lighter steps. Differ in lightness, not only in hue. */
+export const AM_DONUT_RAMP = ["#2F5BD9", "#0F172A", "#7C9BEA", "#64748B", "#B6C8F3", "#CBD2DC"] as const;
 
 // ── Sector colour palette ─────────────────────────────────────────────────────
 // Fixed per-sector colours so the same sector reads the same colour on every
@@ -50,7 +62,15 @@ function topSector(entries: SectorWeight[]): SectorWeight | null {
 
 type PieDatum = { sector: string; weight: number; pct: number; color: string };
 
-function DarkTooltip({ d }: { d: PieDatum }) {
+function DarkTooltip({ d, light }: { d: PieDatum; light?: boolean }) {
+  if (light) {
+    return (
+      <div className="absolute z-20 pointer-events-none rounded-lg border border-am-line bg-am-surface px-3 py-1.5 shadow-am-2 text-am-caption" style={{ top: 6, right: 6, maxWidth: 150 }}>
+        <div className="font-semibold text-am-ink">{d.sector}</div>
+        <div className="text-am-ink-3">{d.pct}%</div>
+      </div>
+    );
+  }
   return (
     <div
       className="absolute z-20 pointer-events-none"
@@ -74,7 +94,8 @@ function DarkTooltip({ d }: { d: PieDatum }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function DonutFocusChart({ data, accentColor, height = 190 }: Props) {
+export function DonutFocusChart({ data, accentColor, height = 190, variant = "legacy", ramp = AM_DONUT_RAMP, fixedColors }: Props) {
+  const am = variant === "am";
   const [hovered, setHovered] = useState<PieDatum | null>(null);
 
   // Memoized so hover state (which re-renders this component on every slice
@@ -88,7 +109,7 @@ export function DonutFocusChart({ data, accentColor, height = 190 }: Props) {
 
     // Normalise weights → whole-number percentages; suppress micro-slivers < 4%
     // so the chart never looks cluttered when a firm has 5-6 narrow slivers.
-    const pieData: PieDatum[] = data
+    let pieData: PieDatum[] = data
       .map(d => ({
         sector: d.sector,
         weight: d.weight,
@@ -97,13 +118,14 @@ export function DonutFocusChart({ data, accentColor, height = 190 }: Props) {
       }))
       .filter(d => d.pct >= 4)
       .sort((a, b) => b.weight - a.weight);
+    if (am) pieData = pieData.map((d, i) => ({ ...d, color: fixedColors?.[d.sector] ?? ramp[Math.min(i, ramp.length - 1)] }));
 
     const top      = topSector(pieData.map(d => ({ sector: d.sector, weight: d.weight })));
-    const topColor = top ? sectorColor(top.sector, accentColor) : accentColor;
+    const topColor = top ? (pieData.find(d => d.sector === top.sector)?.color ?? accentColor) : accentColor;
     const topPct   = top && total > 0 ? Math.round((top.weight / total) * 100) : null;
 
     return { pieData, top, topColor, topPct };
-  }, [data, accentColor]);
+  }, [data, accentColor, am, ramp, fixedColors]);
 
   // Edge-case: all sectors are below the 4% threshold → show full ring in accent
   if (pieData.length === 0) {
@@ -124,7 +146,7 @@ export function DonutFocusChart({ data, accentColor, height = 190 }: Props) {
             nameKey="sector"
             innerRadius="54%"
             outerRadius="80%"
-            paddingAngle={pieData.length > 1 ? 3 : 0}
+            paddingAngle={pieData.length > 1 ? (am ? 2 : 3) : 0}
             startAngle={90}
             endAngle={-270}
             strokeWidth={0}
@@ -137,9 +159,9 @@ export function DonutFocusChart({ data, accentColor, height = 190 }: Props) {
               <Cell
                 key={entry.sector}
                 fill={entry.color}
-                opacity={0.90}
+                opacity={am ? 1 : 0.90}
                 style={{
-                  filter:  `drop-shadow(0 0 5px ${entry.color}60)`,
+                  filter:  am ? "none" : `drop-shadow(0 0 5px ${entry.color}60)`,
                   outline: "none",
                   cursor:  "default",
                 }}
@@ -151,12 +173,19 @@ export function DonutFocusChart({ data, accentColor, height = 190 }: Props) {
         </PieChart>
       </ResponsiveContainer>
 
-      {hovered && <DarkTooltip d={hovered} />}
+      {hovered && <DarkTooltip d={hovered} light={am} />}
 
       {/* ── Center metric ──────────────────────────────────────────────────── */}
       {/* Occupies the empty real-estate inside the donut ring to surface the   */}
       {/* dominant sector at a glance — no wasted space.                        */}
-      {top && topPct !== null && (
+      {am && top && topPct !== null && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none" style={{ gap: 2 }}>
+          <span className="text-am-caption text-am-ink-3 leading-none">Top focus</span>
+          <span className="text-am-body font-semibold text-am-ink text-center leading-tight" style={{ maxWidth: 84 }}>{top.sector}</span>
+          <span className="text-am-kpi font-semibold tabular-nums leading-none text-am-ink">{topPct}%</span>
+        </div>
+      )}
+      {!am && top && topPct !== null && (
         <div
           className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none"
           style={{ gap: 1 }}

@@ -24,7 +24,7 @@ const chipBase = "px-3 py-1.5 rounded-full text-am-caption font-medium border tr
 const chipOn = "bg-am-accent-soft border-am-accent text-am-accent";
 const chipOff = "bg-am-surface border-am-line text-am-ink-2 hover:border-am-ink-3";
 
-function Chips<T extends string | number | null>({ options, value, onPick, multi }: {
+export function Chips<T extends string | number | null>({ options, value, onPick, multi }: {
   options: readonly { value: T; label: string }[];
   value: readonly T[];
   onPick: (v: T) => void;
