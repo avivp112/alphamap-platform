@@ -211,7 +211,7 @@ export function DealsRedesign() {
 
   return (
     <Layout>
-      <div className={workspace ? "mx-auto w-full max-w-[1760px] h-[calc(100vh-5rem)] flex" : ""}>
+      <div className={workspace ? "mx-auto w-full max-w-[1760px] h-[calc(100vh-4rem)] flex" : ""}>
         <div className={`${workspace ? "flex-1 min-w-0 min-h-0 flex flex-col" : ""} px-4 sm:px-6 lg:px-8 pt-5 pb-4 gap-3.5 flex flex-col`}>
           {/* Title row */}
           <div className="flex-none flex flex-wrap items-end justify-between gap-3">

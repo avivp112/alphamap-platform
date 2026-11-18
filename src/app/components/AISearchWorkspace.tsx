@@ -9,6 +9,8 @@ import { CompanyLogo } from "./CompanyLogo";
 import type { SemanticMatch } from "../../lib/semanticSearch";
 import { streamChatAnalyst, parseAnswerSegments, type ChatHistoryTurn } from "../../lib/chatAnalyst";
 import { cleanNarrative } from "../../../lib/enrichment/narrative";
+import { HomeStart } from "./home/HomeStart";
+import { clearRecent, loadRecent, saveRecent } from "../../lib/recentQuestions";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AISearchWorkspace — the multi-turn AlphaMap AI Analyst on the Market
@@ -96,8 +98,10 @@ function useKeyboardInset(): number {
   return inset;
 }
 
-export function AISearchWorkspace() {
+export function AISearchWorkspace({ redesign = false, initialQuery = null }: { redesign?: boolean; initialQuery?: string | null }) {
   const { t } = useTranslation();
+  const [recent, setRecent]         = useState<string[]>(() => loadRecent());
+  const askedInitial = useRef(false);
   const [input, setInput]           = useState("");
   const [turns, setTurns]           = useState<Turn[]>([]);
   const [citeTarget, setCiteTarget] = useState<SemanticMatch | null>(null);
@@ -135,6 +139,7 @@ export function AISearchWorkspace() {
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
+    setRecent(saveRecent(text));
 
     const history: ChatHistoryTurn[] = [
       ...turns.map((t) => ({ role: t.role, content: t.content })),
@@ -163,6 +168,11 @@ export function AISearchWorkspace() {
     });
   }, [turns, updateLastTurn]);
 
+  // Ctrl+K "Ask AlphaMap" arrives as /dashboard?q=...: ask it once.
+  useEffect(() => {
+    if (initialQuery && !askedInitial.current) { askedInitial.current = true; sendMessage(initialQuery); }
+  }, [initialQuery, sendMessage]);
+
   const newConversation = () => {
     abortRef.current?.abort();
     setTurns([]);
@@ -173,6 +183,16 @@ export function AISearchWorkspace() {
 
   const isSending = turns.length > 0 && turns[turns.length - 1].status === "streaming";
   const hasConversation = turns.length > 0;
+
+  if (redesign && !hasConversation) {
+    return (
+      <>
+        <HomeStart input={input} onInput={setInput} inputRef={inputRef} onAsk={sendMessage} sending={isSending}
+          recent={recent} onClearRecent={() => { clearRecent(); setRecent([]); }} />
+        {citeTarget && <CitationModal match={citeTarget} onClose={() => setCiteTarget(null)} />}
+      </>
+    );
+  }
 
   return (
     <section className="relative overflow-hidden rounded-[10px] border border-gray-100 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">

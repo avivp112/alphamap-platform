@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useLocation, Link, NavLink } from 'react-router';
+import { useNavigate, useLocation, useSearchParams, Link, NavLink } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import {
   Bell, User, ChevronDown, UserCircle, LogOut, Menu, X,
@@ -17,6 +17,9 @@ import { homePathNow } from '../../lib/navHome';
 import { useBackClose } from '../../lib/hardwareBack';
 import { BrandMark, BrandWordmark } from './BrandMark';
 import { LanguageSelector } from './LanguageSelector';
+import { resolveUiV2 } from '../../lib/uiFlag';
+import { fetchNavStats, fetchLastFiling, type NavStats } from '../../lib/navStats';
+import { monthYear } from '../../lib/alpha';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -93,6 +96,10 @@ const topLinkCls =
   "relative px-3.5 py-2 text-sm font-medium transition-colors rounded-lg";
 const topLinkActive = "text-am-ink font-semibold";
 const topLinkInactive = "text-gray-500 hover:text-am-ink hover:bg-gray-50";
+// The redesigned bar (?ui=2): quiet pill tabs, the active one filled.
+const topLinkV2 = "relative h-9 px-3.5 inline-flex items-center rounded-lg text-[13px] font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-am-accent/40";
+const topLinkV2Active = "bg-am-ink text-white font-semibold";
+const topLinkV2Inactive = "text-am-ink-2 hover:bg-am-canvas hover:text-am-ink";
 
 function ActiveIndicator({ show }: { show: boolean }) {
   return (
@@ -109,8 +116,11 @@ function ActiveIndicator({ show }: { show: boolean }) {
 // cursor from the trigger into the panel doesn't close it) and opens on
 // click too, so it works the same for a mouse, a touch tap, or a keyboard.
 function NavDropdown({
-  id, label, items, openMenu, onOpen, onCloseSoon, onSelect,
+  id, label, items, openMenu, onOpen, onCloseSoon, onSelect, v2, statFor,
 }: {
+  v2?: boolean;
+  /** One real figure per menu entry (a count, a date), or null to show none. */
+  statFor?: (to: string) => string | null;
   id: MenuId;
   label: string;
   items: NavItem[];
@@ -135,14 +145,46 @@ function NavDropdown({
         onClick={() => onOpen(id)}
         aria-expanded={open}
         aria-haspopup="menu"
-        className={cn(topLinkCls, "flex items-center gap-1.5", isActive || open ? topLinkActive : topLinkInactive)}
+        className={v2
+          ? cn(topLinkV2, "gap-1.5", isActive ? topLinkV2Active : open ? "bg-am-canvas text-am-ink" : topLinkV2Inactive)
+          : cn(topLinkCls, "flex items-center gap-1.5", isActive || open ? topLinkActive : topLinkInactive)}
       >
         {label}
         <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-150", open && "rotate-180")} />
-        <ActiveIndicator show={isActive} />
+        {!v2 && <ActiveIndicator show={isActive} />}
       </button>
 
-      <div
+      {v2 && (
+        <div
+          role="menu"
+          className={cn(
+            "absolute left-0 top-full mt-2 w-[660px] max-w-[calc(100vw-2rem)] rounded-2xl border border-am-line bg-am-surface p-2 shadow-am-2 transition-all duration-150 ease-out z-40",
+            open ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 -translate-y-1 pointer-events-none",
+          )}
+        >
+          <div className="grid grid-cols-3 gap-1">
+            {items.map(({ labelKey, to, icon: Icon, description }) => {
+              const stat = to && statFor ? statFor(to) : null;
+              const body = (
+                <>
+                  <span className="grid h-9 w-9 flex-none place-items-center rounded-[10px] bg-am-accent-soft text-am-accent"><Icon className="h-[18px] w-[18px]" aria-hidden="true" /></span>
+                  <span className="min-w-0">
+                    <span className="block text-[14px] font-semibold text-am-ink">{t(labelKey)}</span>
+                    <span className="mt-0.5 block text-[12px] leading-snug text-am-ink-3">{description}</span>
+                    {stat && <span className="mt-1.5 block text-[12px] font-semibold tabular-nums text-am-ink">{stat}</span>}
+                  </span>
+                </>
+              );
+              return to ? (
+                <NavLink key={to} to={to} role="menuitem" onClick={onSelect}
+                  className={({ isActive: a }) => cn("flex gap-3 rounded-xl p-3 transition-colors", a ? "bg-am-canvas" : "hover:bg-am-canvas")}>{body}</NavLink>
+              ) : <div key={labelKey} className="flex gap-3 rounded-xl p-3 opacity-60">{body}</div>;
+            })}
+          </div>
+        </div>
+      )}
+
+      {!v2 && <div
         role="menu"
         className={cn(
           "absolute left-0 top-full mt-1.5 w-[420px] rounded-lg border border-gray-100 bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.10)] transition-all duration-150 ease-out z-40",
@@ -202,7 +244,7 @@ function NavDropdown({
             );
           })}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }
@@ -262,7 +304,7 @@ function MobileAccordion({
 }
 
 export function TopNav() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const [user, setUser]           = useState<AuthedUser | null>(null);
@@ -287,6 +329,12 @@ export function TopNav() {
   const [mobileExpanded, setMobileExpanded] = useState<MenuId | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navItemsRef = useRef<HTMLDivElement>(null);
+
+  // The redesigned bar (?ui=2): same links and menus, restyled, with real figures in the Data menu.
+  const [searchParams] = useSearchParams();
+  const [v2] = useState(() => resolveUiV2(searchParams.get('ui')));
+  const [stats, setStats] = useState<NavStats | null>(null);
+  const [lastFiling, setLastFiling] = useState<string | null>(null);
 
   // Hardware back button (Android) closes whichever of these is open —
   // mobile nav, account menu, notification bell — before it ever falls
@@ -427,6 +475,28 @@ export function TopNav() {
   // their own nav flash away.
   const showAppNav = loadingUser || !!user;
 
+  useEffect(() => {
+    if (!v2 || !user) return;
+    let cancelled = false;
+    fetchNavStats().then((s) => { if (!cancelled) setStats(s); });
+    return () => { cancelled = true; };
+  }, [v2, user?.email]);
+
+  useEffect(() => {
+    if (!v2 || openMenu !== 'data') return;
+    let cancelled = false;
+    fetchLastFiling().then((d) => { if (!cancelled) setLastFiling(d); });
+    return () => { cancelled = true; };
+  }, [v2, openMenu]);
+
+
+  const statFor = (to: string): string | null => {
+    if (to === '/startups') return stats?.companies != null ? t('nav.v2.statCompanies', { n: stats.companies.toLocaleString(), defaultValue: '{{n}} companies' }) as string : null;
+    if (to === '/vcs') return stats?.firms != null ? t('nav.v2.statFirms', { n: stats.firms.toLocaleString(), defaultValue: '{{n}} firms' }) as string : null;
+    if (to === '/deals') return lastFiling ? t('nav.v2.statFiling', { date: monthYear(lastFiling, i18n.language), defaultValue: 'Latest filing {{date}}' }) as string : null;
+    return null;
+  };
+
   function openNow(id: MenuId) {
     if (closeTimer.current) clearTimeout(closeTimer.current);
     setOpenMenu(id);
@@ -472,7 +542,9 @@ export function TopNav() {
   const initials = user ? getInitials(user) : null;
 
   return (
-    <header className="sticky top-0 z-30 relative flex min-h-[84px] sm:min-h-20 w-full items-center justify-between border-b border-white native:border-gray-100 bg-white px-4 lg:px-6 native:pl-5 native:pr-4 pt-[env(safe-area-inset-top)] shadow-sm">
+    <header className={v2
+      ? "sticky top-0 z-30 relative flex min-h-16 w-full items-center gap-3 border-b border-am-line bg-white px-4 lg:px-8 pt-[env(safe-area-inset-top)]"
+      : "sticky top-0 z-30 relative flex min-h-[84px] sm:min-h-20 w-full items-center justify-between border-b border-white native:border-gray-100 bg-white px-4 lg:px-6 native:pl-5 native:pr-4 pt-[env(safe-area-inset-top)] shadow-sm"}>
       {/* Logo (+ mobile nav trigger) */}
       <div className="flex items-center gap-1 native:gap-2 flex-none min-w-0">
         {/* Was a plain <div>, so clicking it did nothing — the one thing every
@@ -503,16 +575,18 @@ export function TopNav() {
       {/* Primary nav — centered in the space between the logo and the
           right-side controls, rather than crowded against either. */}
       {showAppNav && (
-        <div ref={navItemsRef} className="hidden md:flex flex-1 items-center justify-center gap-0.5">
+        <div ref={navItemsRef} className={v2 ? "hidden md:flex flex-none items-center gap-1 ml-4" : "hidden md:flex flex-1 items-center justify-center gap-0.5"}>
           <NavLink
             to="/dashboard"
             end
-            className={({ isActive }) => cn(topLinkCls, isActive ? topLinkActive : topLinkInactive)}
+            className={({ isActive }) => v2
+              ? cn(topLinkV2, isActive ? topLinkV2Active : topLinkV2Inactive)
+              : cn(topLinkCls, isActive ? topLinkActive : topLinkInactive)}
           >
             {({ isActive }) => (
               <>
                 {t('nav.home')}
-                <ActiveIndicator show={isActive} />
+                {!v2 && <ActiveIndicator show={isActive} />}
               </>
             )}
           </NavLink>
@@ -525,21 +599,26 @@ export function TopNav() {
             onOpen={openNow}
             onCloseSoon={closeSoon}
             onSelect={() => setOpenMenu(null)}
+            v2={v2}
+            statFor={statFor}
           />
 
           <NavLink
             to="/my-area"
-            className={({ isActive }) => cn(topLinkCls, isActive ? topLinkActive : topLinkInactive)}
+            className={({ isActive }) => v2
+              ? cn(topLinkV2, isActive ? topLinkV2Active : topLinkV2Inactive)
+              : cn(topLinkCls, isActive ? topLinkActive : topLinkInactive)}
           >
             {({ isActive }) => (
               <>
                 {t('nav.myArea')}
-                <ActiveIndicator show={isActive} />
+                {!v2 && <ActiveIndicator show={isActive} />}
               </>
             )}
           </NavLink>
         </div>
       )}
+
 
       {/* Mobile panel */}
       {showAppNav && mobileOpen && (
@@ -573,8 +652,8 @@ export function TopNav() {
           they read as one consistent group in the app; unchanged on web.
           native:gap-3 (wider than the sm:gap-4 desktop default collapses
           to on a narrow phone) keeps them from crowding each other. */}
-      <div className="flex items-center gap-2.5 sm:gap-4 native:gap-3 flex-none">
-        {/* Available signed in or out — a visitor reading the marketing copy
+      <div className={cn("flex items-center gap-2.5 sm:gap-4 native:gap-3 flex-none", v2 && "ml-auto")}>
+        {/* Available signed in or out: a visitor reading the marketing copy
             needs the switcher just as much as an account holder. */}
         <LanguageSelector />
 

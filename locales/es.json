@@ -4,6 +4,31 @@
     "select": "Seleccionar idioma"
   },
   "nav": {
+    "v2": {
+      "page_home": "Inicio",
+      "page_startups": "Mercado privado",
+      "page_vcs": "VCs",
+      "page_deals": "Operaciones",
+      "page_bench": "Tu Alpha",
+      "hint_home": "Pregunta al analista de IA",
+      "hint_startups": "Startups y rondas de financiación",
+      "hint_vcs": "Firmas, tamaños de cheque y presentaciones de fondos",
+      "hint_deals": "Presentaciones SEC Form D",
+      "hint_bench": "Banquillo y Diario",
+      "ask": "Preguntar",
+      "recent": "Preguntas recientes",
+      "goTo": "Ir a",
+      "companies": "Empresas",
+      "paletteTitle": "Buscar en AlphaMap",
+      "palettePlaceholder": "Haz una pregunta o salta a una página o empresa",
+      "noResults": "Nada coincide.",
+      "askPrefix": "Preguntar a AlphaMap:",
+      "statCompanies": "{{n}} empresas",
+      "statFirms": "{{n}} firmas",
+      "statFiling": "Última presentación {{date}}",
+      "search": "Pregunta o ve a…",
+      "dataUpdated": "Datos actualizados {{when}}"
+    },
     "home": "Inicio",
     "data": "Nuestros datos",
     "privateMarket": "Mercado privado",
@@ -544,6 +569,28 @@
       "tab_matches": "Coincidencias",
       "tab_alerts": "Alertas",
       "tab_crm": "CRM"
+    }
+  },
+  "home": {
+    "v2": {
+      "askLabel": "Pregunta a AlphaMap",
+      "ask": "Preguntar",
+      "grounded": "Respuestas basadas únicamente en la base de datos de AlphaMap. Las fuentes se abren desde cada respuesta.",
+      "recent": "Continúa donde lo dejaste",
+      "clearRecent": "Borrar",
+      "onDevice": "Guardado en este dispositivo",
+      "cat_companies": "Empresas",
+      "cat_investors": "Inversores",
+      "cat_deals": "Operaciones",
+      "p_companies_0": "Startups europeas de ciberseguridad en Serie A con plantilla estable",
+      "p_companies_1": "Empresas de infraestructura de IA que escalan rápido",
+      "p_companies_2": "Startups de hardware climático fundadas después de 2020",
+      "p_investors_0": "Inversores fintech de etapa de crecimiento en EE. UU.",
+      "p_investors_1": "¿Qué VCs tienen una oferta de fondo abierta?",
+      "p_investors_2": "Inversores seed con cheques de 1–3 M$",
+      "p_deals_0": "Mayores presentaciones de empresas en los últimos 30 días",
+      "p_deals_1": "Rondas aún abiertas a inversores",
+      "p_deals_2": "Fondos nuevos presentados este trimestre"
     }
   },
   "vcs": {
