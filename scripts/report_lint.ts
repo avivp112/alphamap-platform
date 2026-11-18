@@ -147,7 +147,7 @@ if (existsSync("batch4_dry.log")) {
 // ── Rejection audit (owner, batch 7: "the rules reject correct values"): a rejection that a rule of today would not make is a gap, and a gap is an error ──
 if (existsSync("rejected_all.csv")) {
   const [rh, ...rr] = parseCsv(readFileSync("rejected_all.csv", "utf8"));
-  const ri = (c: string) => rh.findIndex((h) => h.startsWith(c));
+  const ri = (c: string) => { const e = rh.findIndex((h) => h === c); return e >= 0 ? e : rh.findIndex((h) => h.startsWith(c)); };
   for (const r of rr) {
     const company = r[ri("company")], field = r[ri("field")], value = r[ri("value")], code = r[ri("reason_code")], reason = r[ri("reason")], url = r[ri("source_url")], evidence = r[ri("evidence")];
     // a. the sentence of a founding year: a short name, "the company", a label of the site

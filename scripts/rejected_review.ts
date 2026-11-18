@@ -12,7 +12,7 @@ import { rejectionStats } from "../lib/enrichment/rejections.ts";
 
 const file = process.env.FILE ?? "rejected_sample_30.csv";
 const [head, ...rows] = parseCsv(readFileSync(file, "utf8"));
-const ix = (c: string) => head.findIndex((h) => h.startsWith(c));
+const ix = (c: string) => { const e = head.findIndex((h) => h === c); return e >= 0 ? e : head.findIndex((h) => h.startsWith(c)); };
 const wrongEnv = (process.env.WRONG ?? "").trim();
 const only = new Set((process.env.SHOW ?? "").split(/[,\s]+/).filter(Boolean).map(Number));
 if (!wrongEnv && !process.env.RIGHT_ALL) {
