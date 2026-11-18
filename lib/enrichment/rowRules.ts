@@ -8,9 +8,11 @@ import { isExplainer, namesCompanyUpFront } from "./newsRelevance.ts";
 import { foundedYearFromSite } from "./siteFacts.ts";
 import { NOT_A_PRODUCT_SENTENCE } from "./quoteFinder.ts";
 import { detectAcquisition } from "./acquisition.ts";
+import { detectClosure } from "./closure.ts";
 import { normalizeForMatch, quoteIsNotASentence } from "./evidence.ts";
 import { sectorDecision } from "./techOverrides.ts";
 import { sentenceIsAboutCompany, isThirdPartyPage, sentenceWithYear } from "./subject.ts";
+import { isAddressLine, articleDate, HQ_MAX_AGE_DAYS, countryOfCity, countryOfTld } from "./headquarters.ts";
 import { vsTitleCompetitor, comparisonTitleCompetitor } from "./competitorTiers.ts";
 import { amountFromAddress } from "./hints.ts";
 import { extractNumbersFromText } from "./evidence.ts";
@@ -83,7 +85,7 @@ export function roundKey(r: { company?: string | null; after: string }): string 
 }
 
 /** Why this value may not stand under today's rules, or null. */
-export function rowProblem(r: RowLike, companyName: string, today: string, weekBefore = 0): string | null {
+export function rowProblem(r: RowLike, companyName: string, today: string, weekBefore = 0, o: { domain?: string | null } = {}): string | null {
   const url = r.source_url ?? "";
   if (r.quote && looksLikeAddress(r.quote)) return "its quote is an address, not text of the page";
   if (r.quote && quoteIsNotASentence(r.quote)) return "its quote is page code, not a sentence";
@@ -113,6 +115,17 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
     const brand = fold(companyName.replace(/\b(ai|inc|ltd|llc|labs?|group)\b/gi, ""));
     if (brand.length >= 3 && !fold(quote).includes(brand) && !fold(url).includes(brand)) return "its quote and address do not name the company";
   }
+  if (r.field === "hq_city" || r.field === "hq_country") {
+    // The same tests for a new value and a remembered one (owner, batch 6): a headquarters rests on a street address or on a sentence that declares it, and on a site that is not the company's own it is not older than eight years.
+    const DECL = /headquarter|\bhq\b|head ?office|\bbased\b|-based|\bsede\b|\bsitz\b|siège|matriz|siedzib|مقر|本社|본사|штаб/i;
+    if (quote && !isAddressLine(quote) && !DECL.test(quote)) return "its quote is neither a street address nor a headquarters statement";
+    if (url && !ownDomain(url, companyName)) {
+      const d = articleDate({ url, content: quote });
+      // One city whose country is the country of the company's own domain keeps an old statement (SAMCO: samco.in, "Mumbai-based" in 2018) — the same exception as decideHeadquarters.
+      const corroborated = !!o.domain && countryOfTld(o.domain) === (r.field === "hq_city" ? countryOfCity(r.after) : r.after);
+      if (d && !corroborated && Date.parse(today) - Date.parse(d) > HQ_MAX_AGE_DAYS * 86_400_000) return "a headquarters from an article older than eight years";
+    }
+  }
   if (r.field === "competitor_declared") {
     const name = cleanCompetitorName(r.after);
     if (COMPETITOR_STOP.test(name)) return "its name is an investment type or a category, not a company";
@@ -128,7 +141,7 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
 }
 
 /** Drops what breaks a rule; merges one founder per person and one background fact per person and organisation; takes the lead investor out of a round no source names it in. */
-export function applyRowRules<T extends RowLike>(rows: T[], companyName: string, today: string): { rows: T[]; dropped: string[] } {
+export function applyRowRules<T extends RowLike>(rows: T[], companyName: string, today: string, o: { domain?: string | null } = {}): { rows: T[]; dropped: string[] } {
   const dropped: string[] = [];
   const kept: T[] = [];
   const locked = sectorDecision(companyName);
@@ -150,7 +163,7 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
       } else if (/amount not disclosed/i.test(r.after) && amt) { dropped.push(`round: ${r.after.slice(0, 50)} — its address states ${amt.label} but no headline of the page is known to quote`); continue; }
       else if (r.quote && looksLikeAddress(r.quote)) { dropped.push(`round: ${r.after.slice(0, 50)} — its quote is an address`); continue; }
     }
-    const why = r.field === "(nothing)" ? null : rowProblem(r, companyName, today);
+    const why = r.field === "(nothing)" ? null : rowProblem(r, companyName, today, 0, o);
     if (why) { dropped.push(`${r.field}: ${String(r.after).slice(0, 60)} — ${why}`); continue; }
     // A round type no quote names is Unknown (owner, round 10): "Series A" for "raising $1.9m", "Other" for a round nothing calls strategic or crowdfunded.
     if (r.field === "round") {
@@ -258,4 +271,16 @@ export function acquiredFromNews<T extends RowLike>(rows: T[], companyName: stri
   const acq = detectAcquisition(articles, companyName);
   if (!acq) return null;
   return { company_id: companyId, company: companyName, field: "acquired", before: "", after: `status = ${acq.status} · Acquired by ${acq.acquirer} (${acq.date ?? "undated"})`, source_url: acq.url, quote: acq.quote, origin: "news" } as unknown as T;
+}
+
+/** A closure read from the accepted news: one `acquired`-field row saying status = closed, with the headline as quote and its page as source. Null when an acquisition is stated (a purchase wins). */
+export function closedFromNews<T extends RowLike>(rows: T[], companyName: string, companyId: string): T | null {
+  const articles = rows.filter((r) => r.field === "news").map((r) => {
+    const m = r.after.match(/^(\d{4}-\d{2}-\d{2})\s+—\s+(.*)$/);
+    return { url: r.source_url ?? "", title: m?.[2] ?? r.after, content: "", date: m?.[1] ?? null };
+  });
+  if (detectAcquisition(articles, companyName)) return null;
+  const c = detectClosure(articles, companyName);
+  if (!c) return null;
+  return { company_id: companyId, company: companyName, field: "acquired", before: "", after: `status = closed · Closed (${c.date ?? "undated"})`, source_url: c.url, quote: c.quote, origin: "news" } as unknown as T;
 }

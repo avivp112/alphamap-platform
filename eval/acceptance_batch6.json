@@ -225,5 +225,41 @@
   "company": "Estimote",
   "field": "hq_city",
   "source_match": "geekwire.com/2014"
+ },
+ {
+  "id": "okra_closed",
+  "why": "Okra: status closed from a shut-down headline (if the news has one)",
+  "kind": "present",
+  "company": "Okra",
+  "field": "acquired",
+  "match": "status = closed",
+  "severity": "gap"
+ },
+ {
+  "id": "flexee_founded",
+  "why": "Flexee: founded 2020 (ain.ua is one source for every field)",
+  "kind": "present",
+  "company": "Flexee",
+  "field": "founded_year",
+  "match": "2020",
+  "severity": "gap"
+ },
+ {
+  "id": "sherlok_founded",
+  "why": "Sherlok: founded 2019 (mpamag.com is one source for every field)",
+  "kind": "present",
+  "company": "Sherlok",
+  "field": "founded_year",
+  "match": "2019",
+  "severity": "gap"
+ },
+ {
+  "id": "ruya_news_in_arabic_source",
+  "why": "Ruya: the Dubai Charity item is kept (headline checked against the Arabic original)",
+  "kind": "present",
+  "company": "Ruya",
+  "field": "news",
+  "match": "Dubai Charity",
+  "severity": "gap"
  }
 ]

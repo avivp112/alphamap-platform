@@ -65,7 +65,7 @@ import {
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
 import { pickArticlesToRead } from "./articles.ts";
 import { runTechGate, shouldSkipAsNonTech, techDecision, type TechGateVerdict } from "./techGate.ts";
-import { approvedQuotes, hqFromApprovedQuotes, foundersFromApprovedQuotes } from "./approvedQuotes.ts";
+import { approvedQuotes, profileQuotes, hqFromApprovedQuotes, foundersFromApprovedQuotes } from "./approvedQuotes.ts";
 import { teamPeopleCount, foundersFromText, foundersFromCards, foundersFromMentions, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, supportedRoleSubset, personCardsInHtml, bioFromCard, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
 import { componentOn } from "./components.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "./linkedin.ts";
@@ -206,6 +206,8 @@ export interface CollectContext {
   /** The company's patents from the EPO register (epoPatents.ts); tests pass a stand-in. */
   patentLookup?: (company: CompanyIdentity) => Promise<EpoPatentResult | null>;
   /** The website on file shows another business, or none of it could be read (owner, 2026-11-02: "website to fix" list). */
+  /** The company's own address now shows a page that never names the company: the domain may have been given to someone else (owner, batch 6: Okra). For review, not a verdict. */
+  onDomainRepurposed?: (detail: string) => void;
   onWebsiteIssue?: (reason: "content_mismatch" | "unreadable", detail: string) => void;
   /** Company registers (registers.ts); tests pass a stand-in. */
   registerLookup?: (ctx: RegisterContext) => Promise<RegisterFinding[]>;
@@ -431,6 +433,11 @@ export async function collectCompany(
   // Mismatch: the pages never name the company (a "No such app" error page, a design agency's homepage), and a model shown that homepage says with high confidence that it is not the company.
   let addressMismatch = /never names/.test(siteOwnerIssue ?? "");
   const readable = websitePages.filter((p) => p.content.replace(/\s+/g, " ").length >= 300);
+  if (!ctx.update && readable.length > 0 && !readable.slice(0, 3).some((p) => pageNamesCompany({ content: p.content }, row.name))) {
+    const detail = `${effectiveWebsite}: none of its first ${Math.min(3, readable.length)} page(s) names ${row.name} — "${readable[0].content.replace(/\s+/g, " ").slice(0, 120)}"`;
+    console.log(`    🔁  domain_repurposed? ${detail}`);
+    ctx.onDomainRepurposed?.(detail);
+  }
   if (!ctx.update && process.env.DOMAIN_RESOLVE !== "false" && !addressMismatch && readable.length > 0 && !readable.slice(0, 3).some((p) => pageNamesCompany({ content: p.content }, row.name))) {
     const v = await judgeSite(ctx.anthropic, ctx.models.enrich, { name: row.name, country: row.country, industry: row.industry, description: row.description }, readable[0].content, readable[0].url, domain).catch(() => null);
     if (v?.is_the_company === false && v.confidence === "high") { addressMismatch = true; console.log(`    🧭  The homepage of ${row.website} is another business: ${v.reason ?? ""}`); }
@@ -1001,7 +1008,7 @@ export async function collectCompany(
   // An approved quote that names a founder ("founded in 2020 by A and B", "Founder and CEO A said") also feeds the founders; the grounding below still decides.
   {
     const have = profile.profile.founders ?? [];
-    approvedFounders = foundersFromApprovedQuotes(approvedQuotes(funding.funding_rounds, allSources), row.name);
+    approvedFounders = foundersFromApprovedQuotes([...approvedQuotes(funding.funding_rounds, allSources), ...profileQuotes([profile.profile.city, profile.profile.country, profile.profile.founded_year, profile.profile.founding_country, ...(profile.profile.offices ?? []), profile.metrics.employee_range, profile.metrics.employee_count] as never, allSources)], row.name);
     const extra = approvedFounders.filter((f) => !have.some((h) => samePersonName(h.name, f.name)));
     if (approvedFounders.length) console.log(`    👤  Founders named in approved quotes: ${approvedFounders.map((f) => f.name).join(", ")}`);
     if (extra.length) profile.profile.founders = [...have, ...extra.map((f) => ({ name: f.name, title: f.title }))] as typeof have;
@@ -1181,7 +1188,7 @@ export async function collectCompany(
   // its quote for an HQ word again (Anonymised's "7 Bell Yard, London" — model check 2026-11-02).
   let hqDecided = false;
   /** Sources whose quote was approved for a round and also says where the company is: allowed for the headquarters (owner, batch 6). */
-  const approvedHqSources = new Set<string>();
+  const approvedSourceIds = new Set<string>();
   let statementsAll: HqStatement[] = [];
   let registry: { record: RegistryRecord; sourceId: string; dateSourceId: string } | undefined;
   // Extra searches (EXTRA_SEARCHES, default 4, owner 2026-11-07): competitors by tier and the founders' background share them.
@@ -1349,7 +1356,7 @@ export async function collectCompany(
   // empty and both cities become offices (headquarters.ts, owner 2026-11-01).
   {
     const approvedHq = hqFromApprovedQuotes(approvedQuotes(keptRounds, allSources), row.name);
-    for (const st of approvedHq) approvedHqSources.add(st.source_id);
+    for (const q of approvedQuotes(keptRounds, allSources)) approvedSourceIds.add(q.source.source_id);   // a source whose quote was approved for a round is one source for every field (owner, batch 6: ain.ua, mpamag.com)
     for (const st of approvedHq) console.log(`    🏢  An approved quote also says where the company is — ${st.city}: "${st.quote.slice(0, 120)}" (${st.url})`);
     const statements = [...allSources.flatMap((s) => hqStatementsIn(s, row.name)), ...approvedHq, ...allSources.flatMap((s) => impressumSeat(s)), ...extraStatements.filter((x, i, xs) => xs.findIndex((y) => y.city === x.city && y.source_id === x.source_id) === i)];
     // One street address on the Contact page is the headquarters (owner, 2026-11-02).
@@ -1490,7 +1497,7 @@ export async function collectCompany(
       (profile.profile as Record<string, unknown>)[key] = undefined;
       continue;
     }
-    if (s && (profileSourceAllowed(s, row.name) || ((key === "city" || key === "country") && approvedHqSources.has(f.source_id) && !isLegalPageUrl(s.url)))) continue;
+    if (s && (profileSourceAllowed(s, row.name) || (approvedSourceIds.has(f.source_id) && !isLegalPageUrl(s.url)))) continue;
     if (key === "city" || key === "country") fates.hq = `${key} ${JSON.stringify(f.value)}: its source is not on the allowed list (${s?.url ?? f.source_id})`;
     console.log(`    🚫  ${key} ${JSON.stringify(f.value)} not written — its source is not on the allowed list: ${s?.url ?? f.source_id}`);
     rejectedDomains.note(key, s?.url, `${key} ${JSON.stringify(f.value)}`);
@@ -1504,7 +1511,7 @@ export async function collectCompany(
   // release, a register, the press of tiers 1–3 (rounds: 1–4, roundSources.ts). LinkedIn,
   // data platforms and unlisted sites are never the source of a written value.
   {
-    const allowedId = (id?: string | null) => { const src = id ? sourceById.get(id) : undefined; return !!src && profileSourceAllowed(src, row.name); };
+    const allowedId = (id?: string | null) => { const src = id ? sourceById.get(id) : undefined; return !!src && (profileSourceAllowed(src, row.name) || approvedSourceIds.has(src.source_id)); };
     const drop = (what: string, reason: string, url?: string) => { console.log(`    🚫  ${what} not written — ${url ? `its source is not on the allowed list: ${url}` : "no allowed source"}`); if (url) { const d = describeRejected(what); rejectedDomains.note(d.field, url, d.title); } bump(stats.droppedByReason, reason); };
     // Size: employee count and range.
     for (const key of ["employee_range", "employee_count"] as const) {

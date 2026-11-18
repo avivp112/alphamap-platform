@@ -22,6 +22,18 @@ export function approvedQuotes(rounds: V2Round[], sources: LabeledSource[]): App
   return out;
 }
 
+/** The evidence quotes of the profile's own facts (city, country, founding year, size, offices) with their sources. */
+export function profileQuotes(facts: Array<{ source_id: string; evidence_quote?: string } | undefined | null>, sources: LabeledSource[]): ApprovedQuote[] {
+  const byId = new Map(sources.map((s) => [s.source_id, s]));
+  const out: ApprovedQuote[] = [];
+  for (const f of facts) {
+    const src = f ? byId.get(f.source_id) : undefined;
+    const quote = f?.evidence_quote?.trim();
+    if (src && quote && !out.some((o) => o.quote === quote && o.source.source_id === src.source_id)) out.push({ quote, source: src });
+  }
+  return out;
+}
+
 /** Headquarters statements from approved quotes: the quote says "<City>-based <Company>" / "headquartered in <City>" of this company. */
 export function hqFromApprovedQuotes(quotes: ApprovedQuote[], companyName: string): HqStatement[] {
   const out: HqStatement[] = [];
@@ -40,7 +52,10 @@ export function foundersFromApprovedQuotes(quotes: ApprovedQuote[], companyName:
   const add = (name: string, title: string, quote: string, url: string) => { if (!out.some((o) => o.name.toLowerCase() === name.toLowerCase())) out.push({ name, title, quote, url }); };
   for (const { quote, source } of quotes) {
     if (!namesCompany(quote, companyName)) continue;
-    for (const f of foundersFromText(quote, companyName, { url: source.url, title: source.title })) add(f.name, f.title, quote, source.url);
+    // "Founded in 2020 by A and B, Kiwify raised …": the company is the subject that follows; read it as "<Company> was founded in 2020 by A and B".
+    const lead = quote.replace(/^\[machine translation\]\s*/i, "").match(/^\W*((?:co-?\s?)?founded\b[^,.]*\bby\s+[^,.]+)/i);
+    const asSentence = lead ? `${companyName} was ${lead[1].charAt(0).toLowerCase()}${lead[1].slice(1)}.` : null;
+    for (const f of [...foundersFromText(quote, companyName, { url: source.url, title: source.title }), ...(asSentence ? foundersFromText(asSentence, companyName) : [])]) add(f.name, f.title, quote, source.url);
     for (const f of foundersFromMentions(quote, companyName)) add(f.name, f.title, quote, source.url);
     for (const m of quote.matchAll(new RegExp(`\\b((?:co-?\\s?)?founder)(?:\\s*(?:and|&)\\s*(?:CEO|chief executive(?: officer)?|CTO|chairman|MD))?,?\\s+(${PERSON})(?=\\s+(?:said|says|told|explains|explained|added|noted|will|has|is)\\b|[,.;]|$)`, "giu"))) {
       add(m[2].trim().replace(/[.,;]+$/, ""), /co-?\s?founder/i.test(m[1]) ? "Co-founder" : "Founder", quote, source.url);

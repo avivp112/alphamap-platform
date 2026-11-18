@@ -334,3 +334,25 @@ describe("missing list leaves out fields that cannot be filled yet", () => {
     expect(NOT_YET_BUILT_FIELDS.has("registered_address")).toBe(true);
   });
 });
+
+describe("batch 6, round 4: one set of rules for new and remembered headquarters", () => {
+  const T = "2026-11-17";
+  it("Kiwify's Dubai from prize text, Estimote's New York from a 2014 article", () => {
+    expect(rowProblem({ field: "hq_city", after: "Dubai", source_url: "https://kiwify.com.br", quote: "Quando você atingir R$10 milhões na Kiwify, além de uma placa exclusiva, você e + 1 acompanhante vão ganhar uma viagem de Dubai" }, "Kiwify", T)).toMatch(/neither a street address/);
+    expect(rowProblem({ field: "hq_city", after: "New York", source_url: "https://www.geekwire.com/2014/sticker-beacon-estimote-launching-tiny-nearables/", quote: "New York-based Estimote is launching" }, "Estimote", T)).toMatch(/older than eight/);
+    expect(rowProblem({ field: "hq_city", after: "Mumbai", source_url: "https://www.techcircle.in/2018/04/30/samco-raises", quote: "Mumbai-based online broker Samco" }, "SAMCO", T)).toMatch(/older than eight/);
+    expect(rowProblem({ field: "hq_city", after: "Mumbai", source_url: "https://www.techcircle.in/2018/04/30/samco-raises", quote: "Mumbai-based online broker Samco" }, "SAMCO", T, 0, { domain: "samco.in" })).toBeNull();
+    expect(rowProblem({ field: "hq_city", after: "Adelaide", source_url: "https://www.mpamag.com/au/news/x", quote: "Adelaide-based startup Sherlok has secured $3.4 million" }, "Sherlok", T)).toBeNull();
+  });
+});
+
+import { closedFromNews } from "./rowRules";
+describe("closed company from its accepted news", () => {
+  it("Okra shuts down → one acquired-field row, status closed, headline as quote; a purchase wins", () => {
+    const news = [{ field: "news", after: "2025-06-01 — Okra shuts down after failing to raise funds", source_url: "https://techcabal.com/okra", quote: "" }];
+    const r = closedFromNews(news, "Okra", "id1");
+    expect(r?.after).toBe("status = closed · Closed (2025-06-01)");
+    expect(r?.quote).toBe("Okra shuts down after failing to raise funds");
+    expect(closedFromNews([...news, { field: "news", after: "2023-02-02 — Envision Pharma Group acquires Okra", source_url: "https://x.com/a", quote: "" }], "Okra", "id1")).toBeNull();
+  });
+});
