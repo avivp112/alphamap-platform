@@ -869,7 +869,7 @@ export async function writeCollected(
       }
     }
     for (const r of plan.inserts) {
-      const amount = r.amount_raised == null ? "amount not disclosed" : `$${+(r.amount_raised / 1e6).toFixed(1)}M`;
+      const amount = r.amount_raised == null ? "amount not disclosed" : `$${+(r.amount_raised / 1e6).toFixed(2)}M`;
       // The quote that states the amount, so the report (and report_lint) can see the figure and its unit in the source's own words (owner, round 10: Hydrostor "$25M" against "$250 million").
       const amountEvidence = roundFieldEvidence(r as never, funding.funding_rounds).find((e) => e.field === "amount_raised");
       reportLines.push({ field: "round", before: null, after: `${r.round_type} ${amount} · ${dateByPrecision(r.announcement_date, r.announcement_date_precision)}${r.lead_investor ? ` · lead ${r.lead_investor}` : ""}`, source_url: r.source_url ?? null, quote: amountEvidence?.evidence_quote ?? null,

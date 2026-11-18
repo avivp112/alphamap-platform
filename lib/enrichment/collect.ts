@@ -1029,6 +1029,7 @@ export async function collectCompany(
       grounded.kept.push({ name: f.name, title: f.title, grounded_url: f.url, grounded_quote: f.quote.slice(0, 240) } as (typeof grounded.kept)[number]);
     }
   }
+  const ruleHits: RuleHit[] = [];
   for (const f of approvedFounders) if (grounded.kept.some((k) => samePersonName(k.name, f.name))) ruleHits.push({ field: "founder", rule: "founder_from_approved_quote", value: f.name });
   for (const d of grounded.dropped) {
     fates.founders.set(d.name, d.reason === "founder_is_investor" ? "named among the investors" : `no allowed source says they founded the company (${allSources.filter((x) => profileSourceAllowed(x, row.name)).length} allowed source(s) read)`);
@@ -1195,7 +1196,6 @@ export async function collectCompany(
   // The HQ the decision took (a Contact-page address, an About paragraph): validation does not ask
   // its quote for an HQ word again (Anonymised's "7 Bell Yard, London" — model check 2026-11-02).
   let hqDecided = false;
-  const ruleHits: RuleHit[] = [];
   /** Sources whose quote was approved for a round and also says where the company is: allowed for the headquarters (owner, batch 6). */
   const approvedSourceIds = new Set<string>();
   let statementsAll: HqStatement[] = [];
