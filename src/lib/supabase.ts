@@ -10,6 +10,9 @@ import {
 import { documentPath, type CrmCompany, type CrmDocument, type DealTerm } from "./crm";
 
 import { countryFilterOr } from "./countryFilter";
+import { valuationOrClause, EMPTY_RANGE, type StartupSort } from "./startupFilters";
+import { filedCutoff, NO_MATCH_ID } from "./dealFilters";
+import type { FundFiling } from "./vcFirms";
 const rawUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
@@ -425,6 +428,16 @@ export interface StartupSearchFilters {
   /** Startups the signed-in user has explicitly passed on — permanently
    * excluded, not just hidden for the session (see fetchPassedStartupIds). */
   excludeStartupIds?: string[];
+  /** Whole USD. Applies to startups_market.latest_valuation. */
+  valuationMin?: number;
+  valuationMax?: number;
+  /** With a valuation bound: also keep companies that have no valuation on record. */
+  valuationIncludeUnknown?: boolean;
+  /** Whole USD. Applies to startups_market.total_raised. */
+  raisedMin?: number;
+  raisedMax?: number;
+  /** Profile row updated within this many days of today. */
+  updatedWithinDays?: number;
 }
 
 export const STARTUPS_PAGE_SIZE = 40;
@@ -472,6 +485,22 @@ function applyStartupSearchFilters(
     const cutoff = new Date(Date.now() - filters.fundedWithinDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     q = q.gte("latest_round_date", cutoff);
   }
+  if (filters.valuationMin != null || filters.valuationMax != null) {
+    const range = { min: filters.valuationMin ?? null, max: filters.valuationMax ?? null, includeUnknown: filters.valuationIncludeUnknown ?? EMPTY_RANGE.includeUnknown };
+    const orClause = valuationOrClause(range);
+    if (orClause) {
+      q = q.or(orClause);
+    } else {
+      if (filters.valuationMin != null) q = q.gte("latest_valuation", filters.valuationMin);
+      if (filters.valuationMax != null) q = q.lte("latest_valuation", filters.valuationMax);
+    }
+  }
+  if (filters.raisedMin != null) q = q.gte("total_raised", filters.raisedMin);
+  if (filters.raisedMax != null) q = q.lte("total_raised", filters.raisedMax);
+  if (filters.updatedWithinDays != null) {
+    const cutoff = new Date(Date.now() - filters.updatedWithinDays * 24 * 60 * 60 * 1000).toISOString();
+    q = q.gte("updated_at", cutoff);
+  }
   if (filters.excludeStartupIds && filters.excludeStartupIds.length > 0) {
     q = q.not("id", "in", `(${filters.excludeStartupIds.join(",")})`);
   }
@@ -506,15 +535,20 @@ async function fromMarket<T>(run: (relation: string) => PromiseLike<{ data: T; e
 export async function fetchStartupsPage(
   filters: StartupSearchFilters,
   page: number,
+  sort?: StartupSort | null,
 ): Promise<StartupListRow[]> {
   const from = (page - 1) * STARTUPS_PAGE_SIZE;
   const to = from + STARTUPS_PAGE_SIZE - 1;
-  const { data, error } = await fromMarket((relation) =>
-    applyStartupSearchFilters(supabase.from(relation).select("*"), filters, relation)
-      .order("completeness_score", { ascending: false })
-      .order("updated_at", { ascending: false })
-      .range(from, to),
-  );
+  const { data, error } = await fromMarket((relation) => {
+    const base = applyStartupSearchFilters(supabase.from(relation).select("*"), filters, relation);
+    // An explicit sort puts rows with no value last whichever way it points, and ends on
+    // id so a row never repeats or vanishes between pages. Without one the order is
+    // unchanged: best-documented companies first, then most recently updated.
+    const ordered = sort
+      ? base.order(sort.key, { ascending: sort.dir === "asc", nullsFirst: false }).order("id", { ascending: true })
+      : base.order("completeness_score", { ascending: false }).order("updated_at", { ascending: false });
+    return ordered.range(from, to);
+  });
   if (error) throw error;
   return (data ?? []) as StartupListRow[];
 }
@@ -918,6 +952,27 @@ export async function fetchRecentActiveInvestorNames(months = 24): Promise<Set<s
     }
   }
   return names;
+}
+
+/**
+ * SEC Form D filings of venture funds that belong to a firm in the directory (deal_feed, kind = fund,
+ * investor_id set). Real filings only: the offering and the amount sold are what the filing reports.
+ */
+export async function fetchVcFundFilings(limit = 3000): Promise<FundFiling[]> {
+  const { data, error } = await supabase
+    .from("deal_feed")
+    .select("investor_id,name,fund_series,deal_date,updated_date,target_amount,amount_raised,source_url")
+    .eq("kind", "fund")
+    .not("investor_id", "is", null)
+    .order("deal_date", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  type Row = { investor_id: string; name: string; fund_series: number | null; deal_date: string; updated_date: string | null; target_amount: number | null; amount_raised: number | null; source_url: string | null };
+  return ((data ?? []) as Row[]).map((r) => ({
+    investorId: r.investor_id, name: r.name, fundSeries: r.fund_series, filedOn: r.deal_date,
+    amendedOn: r.updated_date && r.updated_date !== r.deal_date ? r.updated_date : null,
+    offering: r.target_amount, sold: r.amount_raised, url: r.source_url,
+  }));
 }
 
 export async function fetchInvestors(): Promise<InvestorRow[]> {
@@ -1481,13 +1536,43 @@ export async function setAlertsFiltered(on: boolean): Promise<void> {
 
 // ─── Deal Flow: the gated SEC feed (deal_feed view, 20261020000000) ─────────
 
-export interface DealFeedQuery {
+export interface DealFeedFilters {
+  /** Sectors as deal_feed names them (company deals). */
+  sectors?: string[];
+  /** Filed within this many days of today. */
+  filedWithinDays?: number;
+  /** Filed after this date (YYYY-MM-DD), for "new since your last visit". */
+  filedAfter?: string;
+  /** Amount sold, whole USD. */
+  soldMin?: number;
+  soldMax?: number;
+  status?: "verified" | "unreviewed";
+  /** Only deals of these watchlisted companies (company deals) or firms (fund deals). An empty list matches nothing. */
+  followIds?: string[];
+}
+
+export interface DealFeedQuery extends DealFeedFilters {
   kind: DealKind;
   search?: string;
   sort: DealSort;
   ascending: boolean;
   limit: number;
   offset: number;
+}
+
+// The filters of the redesigned page. Each one is a plain column of deal_feed, so a query without any
+// of them is exactly the query the page has always made.
+function applyDealFeedFilters<T>(query: T, kind: DealKind, f: DealFeedFilters): T {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q: any = query;
+  if (f.sectors && f.sectors.length > 0) q = q.in("sector", f.sectors);
+  if (f.filedWithinDays != null) q = q.gte("deal_date", filedCutoff(f.filedWithinDays));
+  if (f.filedAfter) q = q.gt("deal_date", f.filedAfter);
+  if (f.soldMin != null) q = q.gte("amount_raised", f.soldMin);
+  if (f.soldMax != null) q = q.lte("amount_raised", f.soldMax);
+  if (f.status) q = q.eq("review_status", f.status);
+  if (f.followIds) q = q.in(kind === "fund" ? "investor_id" : "startup_id", f.followIds.length > 0 ? f.followIds : [NO_MATCH_ID]);
+  return q as T;
 }
 
 function dealFeedSelect(q: Omit<DealFeedQuery, "limit" | "offset">, count: boolean) {
@@ -1503,7 +1588,21 @@ function dealFeedSelect(q: Omit<DealFeedQuery, "limit" | "offset">, count: boole
       ? query.or(`name.ilike.*${term}*,firm_name.ilike.*${term}*`)
       : query.ilike("name", `*${term}*`);
   }
-  return query;
+  return applyDealFeedFilters(query, q.kind, q);
+}
+
+/** How many deals match, without fetching them (the "new since your last visit" count). */
+export async function fetchDealFeedCount(q: { kind: DealKind; search?: string } & DealFeedFilters): Promise<number> {
+  let query = supabase.from("deal_feed").select("id", { count: "exact", head: true }).eq("kind", q.kind);
+  const term = sanitizeSearch(q.search ?? "");
+  if (term) {
+    query = q.kind === "fund"
+      ? query.or(`name.ilike.*${term}*,firm_name.ilike.*${term}*`)
+      : query.ilike("name", `*${term}*`);
+  }
+  const { count, error } = await applyDealFeedFilters(query, q.kind, q);
+  if (error) throw error;
+  return count ?? 0;
 }
 
 /** One page of the feed plus the total matching the filters. */
