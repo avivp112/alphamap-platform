@@ -343,7 +343,23 @@
         "crowded": "Crowded market",
         "blueOcean": "Blue ocean",
         "updated": "Updated in the last {{count}} days"
-      }
+      },
+      "founded": "Founded {{year}}",
+      "website": "Website",
+      "saved": "Saved",
+      "saveToWatchlist": "Save to watchlist",
+      "moreActions": "More actions",
+      "downloadTearSheet": "Download tear sheet (PDF)",
+      "passOnCompany": "Pass on this company…",
+      "kpiValuation": "Valuation",
+      "kpiRaised": "Total raised",
+      "kpiHeadcount": "Headcount",
+      "kpiMatch": "Match to your mandate",
+      "updatedUnknown": "Profile update date unknown",
+      "updatedToday": "Profile updated today",
+      "updatedAgo": "Profile updated {{ago}} ago",
+      "valuationEstimated": "Valuation is estimated",
+      "sections": "Sections"
     },
     "allCountries": "All Countries",
     "origin": {

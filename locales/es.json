@@ -340,7 +340,23 @@
         "crowded": "Mercado saturado",
         "blueOcean": "Océano azul",
         "updated": "Actualizada en los últimos {{count}} días"
-      }
+      },
+      "founded": "Fundada en {{year}}",
+      "website": "Sitio web",
+      "saved": "Guardada",
+      "saveToWatchlist": "Guardar en seguimiento",
+      "moreActions": "Más acciones",
+      "downloadTearSheet": "Descargar ficha (PDF)",
+      "passOnCompany": "Descartar esta empresa…",
+      "kpiValuation": "Valoración",
+      "kpiRaised": "Total captado",
+      "kpiHeadcount": "Plantilla",
+      "kpiMatch": "Afinidad con tu mandato",
+      "updatedUnknown": "Fecha de actualización desconocida",
+      "updatedToday": "Perfil actualizado hoy",
+      "updatedAgo": "Perfil actualizado hace {{ago}}",
+      "valuationEstimated": "La valoración es estimada",
+      "sections": "Secciones"
     },
     "allCountries": "Todos los países",
     "origin": {

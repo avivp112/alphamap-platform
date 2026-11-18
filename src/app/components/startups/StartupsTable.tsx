@@ -63,7 +63,21 @@ export function StartupsTable({
     <div className={`relative bg-am-surface border border-am-line rounded-am-card shadow-am-1 transition-opacity ${loading ? "opacity-60" : ""}`}>
       {loading && <Loader2 className="absolute top-3 end-3 w-4 h-4 text-am-ink-3 animate-spin z-20" aria-label={tt("loading", "Loading")} />}
       <div className="overflow-auto max-h-[calc(100vh-17rem)] rounded-am-card">
-        <table className="w-full min-w-[920px] border-separate border-spacing-0 text-am-body text-am-ink">
+        <table className="w-full min-w-[1180px] table-fixed border-separate border-spacing-0 text-am-body text-am-ink">
+          {/* Fixed column widths: a long name or place can never widen the table past its box.
+              Company takes whatever is left. */}
+          <colgroup>
+            <col style={{ width: 44 }} />
+            <col />
+            <col style={{ width: 104 }} />
+            <col style={{ width: 176 }} />
+            <col style={{ width: 112 }} />
+            <col style={{ width: 96 }} />
+            <col style={{ width: 156 }} />
+            <col style={{ width: 120 }} />
+            <col style={{ width: 84 }} />
+            <col style={{ width: 84 }} />
+          </colgroup>
           <thead>
             <tr>
               <th className="sticky top-0 z-10 bg-am-surface border-b border-am-line w-10 ps-4" scope="col"><span className="sr-only">{tt("select", "Select")}</span></th>
@@ -104,11 +118,11 @@ export function StartupsTable({
                     </button>
                   </td>
                   <td className={`${cell} border-b border-am-line-soft`}>
-                    <div className="flex items-center gap-3 min-w-[220px]">
+                    <div className="flex items-center gap-3 min-w-0">
                       <CompanyLogo name={r.name} website={r.website} size={compact ? 24 : 32} rounded="rounded-lg" />
                       <div className="min-w-0">
-                        <div className="font-semibold leading-tight truncate max-w-[260px]">{r.name}</div>
-                        {!compact && r.industry && <div className="text-am-caption text-am-ink-3 truncate max-w-[260px]">{r.industry}</div>}
+                        <div className="font-semibold leading-tight truncate">{r.name}</div>
+                        {!compact && r.industry && <div className="text-am-caption text-am-ink-3 truncate">{r.industry}</div>}
                       </div>
                     </div>
                   </td>
@@ -120,7 +134,7 @@ export function StartupsTable({
                         ? <span className="inline-block px-2.5 py-0.5 rounded-full border border-am-line bg-am-canvas text-am-caption font-medium text-am-ink-2">{roundTypeLabel(r.latest_round_type)}</span>
                         : <span className="text-am-ink-3">—</span>}
                   </td>
-                  <td className={`${cell} border-b border-am-line-soft text-am-ink-2 whitespace-nowrap`}>{place(r.city, r.country)}</td>
+                  <td className={`${cell} border-b border-am-line-soft text-am-ink-2 whitespace-nowrap overflow-hidden text-ellipsis`} title={place(r.city, r.country)}>{place(r.city, r.country)}</td>
                   <td className={`${cell} border-b border-am-line-soft text-end tabular-nums whitespace-nowrap`}>
                     {r.latest_valuation
                       ? <>{formatUsdShort(r.latest_valuation)}{r.latest_round_is_estimated && <span className="ms-1.5 px-1 rounded border border-am-line text-[11px] text-am-ink-3 align-middle" title={tt("estimatedHint", "Estimated, not reported")}>Est.</span>}</>

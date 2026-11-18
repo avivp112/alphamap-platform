@@ -11,6 +11,7 @@ import {
 import { FilterBar, FilterChips } from "../components/startups/FilterBar";
 import { FilterDrawer } from "../components/startups/FilterDrawer";
 import { StartupsTable, SelectionBar } from "../components/startups/StartupsTable";
+import { TearsheetHeader } from "../components/startups/TearsheetHeader";
 import type { FilterActions, FilterState } from "../components/startups/filterTypes";
 import { equityRaised, debtRaised, capitalKind } from "../../lib/capital";
 import { visiblePatents } from "../../lib/patentList";
@@ -2068,6 +2069,18 @@ const TEARSHEET_TABS: { id: TearsheetTab; label: string }[] = [
 ];
 
 /**
+ * The redesigned card folds seven tabs into five: Cap Table sits with Funding, and
+ * Acquisitions & IP sits with Market. A group shows its sections one under the other.
+ */
+const TEARSHEET_TAB_GROUPS: { id: string; label: string; ids: TearsheetTab[] }[] = [
+  { id: "overview",    label: "Overview",              ids: ["overview"] },
+  { id: "funding",     label: "Funding & cap table",   ids: ["funding", "captable"] },
+  { id: "talent",      label: "Team & talent",         ids: ["talent"] },
+  { id: "market",      label: "Market, M&A and IP",    ids: ["competitors", "acquisitions"] },
+  { id: "news",        label: "News",                  ids: ["news"] },
+];
+
+/**
  * Which tearsheet tabs have anything to show. A tab whose content would be
  * only a "Data requires filling" notice is left out of the tab bar.
  */
@@ -2095,9 +2108,11 @@ function tabsWithData(s: Startup): Set<TearsheetTab> {
 
 function TearsheetModal({
   startup, onClose, onNavigate, onFilterByMainSector, onFilterBySubSectorTag, saved, onSave, onOpenPass,
-  mandateSectors, hasCrmWebhook,
+  mandateSectors, hasCrmWebhook, redesign,
 }: {
   startup: StartupListRow;
+  /** The redesigned header and five-section layout (?ui=2). */
+  redesign: boolean;
   onClose: () => void;
   onNavigate: (row: StartupListRow) => void;
   onFilterByMainSector: (parent: string) => void;
@@ -2160,6 +2175,15 @@ function TearsheetModal({
   useEffect(() => {
     if (!visibleTabs.some((tab) => tab.id === activeTab)) setActiveTab("overview");
   }, [visibleTabs, activeTab]);
+  // Redesigned card: a group is offered when any of its sections has data, and shows those sections together.
+  const visibleGroups = useMemo(
+    () => TEARSHEET_TAB_GROUPS.filter((g) => g.ids.some((id) => visibleTabs.some((tab) => tab.id === id))),
+    [visibleTabs],
+  );
+  const activeGroup = TEARSHEET_TAB_GROUPS.find((g) => g.ids.includes(activeTab)) ?? TEARSHEET_TAB_GROUPS[0];
+  const shownIds: TearsheetTab[] = redesign
+    ? activeGroup.ids.filter((id) => visibleTabs.some((tab) => tab.id === id))
+    : [activeTab];
   const latestLiveRound = useMemo(
     () => [...(detail?.funding_rounds ?? [])]
       .filter((r) => r.round_type)
@@ -2263,8 +2287,8 @@ function TearsheetModal({
   }, [startup.id]);
 
   useEffect(() => {
-    dwellRef.current?.tabsVisited.add(activeTab);
-  }, [activeTab]);
+    for (const id of redesign ? shownIds : [activeTab]) dwellRef.current?.tabsVisited.add(id);
+  }, [activeTab, redesign, shownIds.join(",")]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -2374,6 +2398,39 @@ function TearsheetModal({
         }}
         onClick={(e) => e.stopPropagation()}
       >
+        {redesign ? (
+          <TearsheetHeader
+            startup={startup}
+            website={live.website}
+            location={location}
+            origin={origin}
+            founded={live.founded_year ?? null}
+            statusBadge={acquiredBadge(acq)}
+            roundLabel={roundType ? roundTypeLabel(roundType) : null}
+            acquiredNote={(acq.status === "acquired" || acq.status === "majority_acquired") && acq.acquired_by
+              ? `${acq.status === "majority_acquired" ? "Majority acquired by" : "Acquired by"} ${acq.acquired_by}${acq.exit_date ? ` (${acq.exit_date.slice(0, 10)})` : ""}${acq.brand_after_acquisition ? ` · now ${acq.brand_after_acquisition}` : ""}`
+              : null}
+            saved={saved}
+            onSave={onSave}
+            onClose={onClose}
+            onPass={onOpenPass}
+            onLookalikes={handleOpenLookalikes}
+            onDownload={handleGenerateTearSheet}
+            downloadState={pdfGenerating ? "busy" : pdfDone ? "done" : "idle"}
+            downloadDisabled={detailLoading || !detail}
+            onSyncCrm={handleSyncToCrm}
+            crmState={crmSyncing ? "busy" : crmDone ? "done" : "idle"}
+            crmNotice={crmPromptVisible
+              ? <>{t("startups.crmNotConfigured")} <Link to="/profile" className="underline text-am-ink">{t("startups.crmSetUpLink")}</Link></>
+              : crmError}
+            match={matchResult}
+            matchLoading={matchLoading}
+            tabs={visibleGroups.map((g) => ({ id: g.id, label: g.label }))}
+            activeTab={activeGroup.id}
+            onTab={(id) => { const g = TEARSHEET_TAB_GROUPS.find((x) => x.id === id); if (g) setActiveTab(g.ids.find((i) => visibleTabs.some((tab) => tab.id === i)) ?? g.ids[0]); }}
+          />
+        ) : (
+          <>
         {/* ── Fixed header (blue-gray) ──
             Three stacked rows on every width: (1) logo + name + close button,
             always reachable regardless of how many action buttons exist;
@@ -2560,6 +2617,9 @@ function TearsheetModal({
           </div>
         </div>
 
+          </>
+        )}
+
         {/* ── Scrollable tab content (white) ── */}
         <div
           className="flex-1 overflow-y-auto px-6 py-5 bg-white"
@@ -2573,25 +2633,25 @@ function TearsheetModal({
               <p className="text-sm font-semibold text-[#0F172A]">{t("startups.failedToLoadCompany")}</p>
             </div>
           ) : (
-            <>
-              {activeTab === "overview" && (
+            <div className="space-y-8">
+              {shownIds.includes("overview") && (
                 <OverviewTab
                   startup={detail} alphaScore={alphaScore} alphaLoading={alphaLoading} alphaErr={alphaErr}
                   matchResult={matchResult} matchLoading={matchLoading} mandateSectors={mandateSectors}
                   onFilterByMainSector={onFilterByMainSector} onFilterBySubSectorTag={onFilterBySubSectorTag}
                 />
               )}
-              {activeTab === "funding" && (
+              {shownIds.includes("funding") && (
                 <FundingValuationTab startup={detail} sortedRounds={sortedRounds} fundingHistoryComplete={detail.funding_history_complete} />
               )}
-              {activeTab === "captable" && <CapTableTab startup={detail} />}
-              {activeTab === "talent" && (
+              {shownIds.includes("captable") && <CapTableTab startup={detail} />}
+              {shownIds.includes("talent") && (
                 <TalentGrowthTab startup={detail} alphaScore={alphaScore} alphaLoading={alphaLoading} />
               )}
-              {activeTab === "competitors" && <CompetitorsMarketTab startup={detail} onNavigate={handleNavigateToLinked} />}
-              {activeTab === "acquisitions" && <AcquisitionsIPTab startup={detail} onNavigate={handleNavigateToLinked} />}
-              {activeTab === "news" && <NewsTab startup={detail} />}
-            </>
+              {shownIds.includes("competitors") && <CompetitorsMarketTab startup={detail} onNavigate={handleNavigateToLinked} />}
+              {shownIds.includes("acquisitions") && <AcquisitionsIPTab startup={detail} onNavigate={handleNavigateToLinked} />}
+              {shownIds.includes("news") && <NewsTab startup={detail} />}
+            </div>
           )}
         </div>
       </div>
@@ -4065,6 +4125,7 @@ export function Startups() {
           onOpenPass={() => setPassReasonTarget(tearsheetStartup)}
           mandateSectors={mandateSectors}
           hasCrmWebhook={hasCrmWebhook}
+          redesign={uiV2}
         />
       )}
 

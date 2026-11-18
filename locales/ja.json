@@ -340,7 +340,23 @@
         "crowded": "競合が多い市場",
         "blueOcean": "ブルーオーシャン",
         "updated": "過去{{count}}日以内に更新"
-      }
+      },
+      "founded": "{{year}}年設立",
+      "website": "ウェブサイト",
+      "saved": "保存済み",
+      "saveToWatchlist": "ウォッチリストに保存",
+      "moreActions": "その他の操作",
+      "downloadTearSheet": "ティアシートをダウンロード(PDF)",
+      "passOnCompany": "この企業を見送る…",
+      "kpiValuation": "企業価値",
+      "kpiRaised": "累計調達額",
+      "kpiHeadcount": "従業員数",
+      "kpiMatch": "あなたの方針とのマッチ度",
+      "updatedUnknown": "プロフィールの更新日は不明",
+      "updatedToday": "プロフィールは本日更新",
+      "updatedAgo": "プロフィールは{{ago}}前に更新",
+      "valuationEstimated": "企業価値は推定値です",
+      "sections": "セクション"
     },
     "allCountries": "すべての国",
     "origin": {

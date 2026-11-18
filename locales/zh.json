@@ -340,7 +340,23 @@
         "crowded": "竞争激烈的市场",
         "blueOcean": "蓝海",
         "updated": "最近{{count}}天内更新"
-      }
+      },
+      "founded": "成立于{{year}}年",
+      "website": "网站",
+      "saved": "已保存",
+      "saveToWatchlist": "加入关注列表",
+      "moreActions": "更多操作",
+      "downloadTearSheet": "下载公司简报(PDF)",
+      "passOnCompany": "放弃这家公司…",
+      "kpiValuation": "估值",
+      "kpiRaised": "累计融资额",
+      "kpiHeadcount": "员工数",
+      "kpiMatch": "与你的投资方向匹配度",
+      "updatedUnknown": "资料更新日期未知",
+      "updatedToday": "资料今天已更新",
+      "updatedAgo": "资料更新于{{ago}}前",
+      "valuationEstimated": "估值为估算值",
+      "sections": "栏目"
     },
     "allCountries": "所有国家",
     "origin": {
