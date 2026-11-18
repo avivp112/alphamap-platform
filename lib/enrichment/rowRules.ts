@@ -256,7 +256,10 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
     if (r.field === "news") {
       // One address, one news item: the fresh one over the remembered one, else the earlier date (owner, batch 6: Okra's two copies of the same article).
       const k = `${fold(r.company ?? "")}|${(r.source_url ?? "").replace(/^https?:\/\/(www\.)?/, "").replace(/[?#].*$/, "").replace(/\/$/, "")}`;
-      const have = seenNews.get(k);
+      // ... and one headline on one date is one item whatever the address (owner, batch 7: Inipharm's "…to Present Pharmacokinetic Data" twice).
+      const kt = `${fold(r.company ?? "")}|T|${fold(r.after)}`;
+      const have = seenNews.get(k) ?? seenNews.get(kt);
+      seenNews.set(kt, have ?? r);
       if (have) {
         dropped.push(`news: ${r.after.slice(0, 50)} listed twice — merged`);
         const mem = (x: T) => /known_source/.test(String(x.origin ?? ""));

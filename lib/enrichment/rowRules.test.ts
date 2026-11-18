@@ -595,3 +595,13 @@ describe("news: a headline cut in a print, and a company that was bought (owner,
     expect(newsProblem2(item, "Outvest", "A robo-advisor for retirement savings.", { acquirers: ["Alexforbes"] })).toBeNull();
   });
 });
+
+describe("one headline on one date is one news item whatever the address (owner, batch 7)", () => {
+  it("merges", () => {
+    const rows = [
+      { company: "Inipharm", field: "news", after: "2024-05-22 — Inipharm to Present Pharmacokinetic Data at a conference", source_url: "https://inipharm.com/news/a", quote: "Inipharm to Present Pharmacokinetic Data" },
+      { company: "Inipharm", field: "news", after: "2024-05-22 — Inipharm to Present Pharmacokinetic Data at a conference", source_url: "https://www.globenewswire.com/news-release/b", quote: "Inipharm to Present Pharmacokinetic Data" },
+    ];
+    expect(applyRowRules(rows as never, "Inipharm", "2026-11-18").rows.length).toBe(1);
+  });
+});
