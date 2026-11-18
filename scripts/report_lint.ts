@@ -144,10 +144,18 @@ if (existsSync("batch4_dry.log")) {
   const fold = (x: string) => x.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
   const family = (f: string) => (f === "description_what_only" ? "description" : f);
   let missing = 0;
+  // Remembered values this run did not write are listed in carried_not_written.csv, with their source: that listing is their reason.
+  const carriedKeys = new Set<string>();
+  if (existsSync("carried_not_written.csv")) {
+    const [head, ...cr] = parseCsv(readFileSync("carried_not_written.csv", "utf8"));
+    const ix = (c: string) => head.indexOf(c);
+    for (const r of cr) carriedKeys.add(`${r[ix("company_id")]}|${family(r[ix("field")])}|${fold(r[ix("value")] ?? "")}`);
+  }
   for (const [id, list] of Object.entries(store)) {
     const inReport = rows.filter((r) => r.id === id);
     if (!inReport.length) continue;                                     // the company was not in this run's report
     for (const e of list) {
+      if (carriedKeys.has(`${id}|${family(e.field)}|${fold(e.value)}`)) continue;
       if (e.status === "quote_gone" || e.status === "superseded" || wrong(e.company, e.field, e.value) || refreshDue(e, today)) continue;   // flagged, with its reason
       // A remembered value that the rules of today reject is not in the report, and the rule is its reason (the new source and name rules, batch 7).
       if (rowProblem({ field: e.field, after: e.value, source_url: e.source_url, quote: e.quote, payload: e.payload }, e.company, today)) continue;
