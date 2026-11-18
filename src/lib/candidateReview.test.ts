@@ -187,3 +187,27 @@ describe("stage 3 watchlist on the card", () => {
     expect(evidenceLines({ source: "uk_companies_house", country: null, founded_year: null, evidence: {} })).toEqual([]);
   });
 });
+
+describe("stage 4 website on the card", () => {
+  const base = { source: "sec_form_d", country: "United States", founded_year: 2025 } as const;
+  const enr = (over: Record<string, unknown>) => ({ status: "verified", website: "https://lumen.ai/", match_signals: [{ kind: "director", text: "Ada Lovelace", url: "u" }, { kind: "postcode", text: "x", url: "u" }],
+    site_signals: [{ kind: "jobs", level: "product", text: "יש עמוד משרות", url: "u" }], description_he: "בונה מחשבי קוונטים", description_quote: "We build quantum computers.", description_source_url: "u", source_urls: [], notes: [], enriched_at: "t", ...over });
+  const lines = (e: object) => Object.fromEntries(evidenceLines({ ...base, evidence: { enrichment: e as never } }).map((l) => [l.label, l.value]));
+
+  it("a verified site shows the site, what matched, the one-line description and the site signals", () => {
+    const l = lines(enr({}));
+    expect(l["אתר רשמי"]).toBe("https://lumen.ai/ (מאומת לפי: שם דירקטור, מיקוד)");
+    expect(l["מה החברה עושה"]).toBe("בונה מחשבי קוונטים");
+    expect(l["סיגנלי אתר"]).toBe("יש עמוד משרות");
+  });
+  it("no site says it outright", () => {
+    expect(lines(enr({ status: "no_site", website: null, match_signals: [] }))["אתר רשמי"]).toBe("לא נמצאה זהות דיגיטלית מאומתת");
+  });
+  it("an unverified site is not presented as the company's and has no description", () => {
+    const l = lines(enr({ status: "unverified", match_signals: [{ kind: "director", text: "x", url: "u" }] }));
+    expect(l["אתר רשמי"]).toContain("לא מאומת");
+    expect(l["אתר רשמי"]).toContain("לא נמצאה זהות דיגיטלית מאומתת");
+    expect(l["מה החברה עושה"]).toBeUndefined();
+    expect(l["סיגנלי אתר"]).toBeUndefined();
+  });
+});

@@ -34,6 +34,32 @@ export interface CandidateSignal {
   url?: string;
 }
 
+export interface CandidateEnrichment {
+  status: "verified" | "unverified" | "no_site";
+  website: string | null;
+  match_signals: Array<{ kind: string; text: string; url: string }>;
+  site_signals: Array<{ kind: string; level: "product" | "services"; text: string; url: string }>;
+  description_he: string | null;
+  description_quote: string | null;
+  description_source_url: string | null;
+  source_urls: string[];
+  notes: string[];
+  enriched_at: string;
+}
+
+const MATCH_LABEL: Record<string, string> = {
+  director: "שם דירקטור", company_number: "מספר חברה", postcode: "מיקוד", legal_name: "שם משפטי מלא", city: "עיר", founded: "שנת הקמה",
+};
+
+/** The website line of the card, in Hebrew; "no verified digital identity" is said outright, never softened. */
+export function websiteLine(e: CandidateEnrichment | undefined): string | null {
+  if (!e) return null;
+  if (e.status === "no_site") return "לא נמצאה זהות דיגיטלית מאומתת";
+  const matches = [...new Set(e.match_signals.map((m) => MATCH_LABEL[m.kind] ?? m.kind))].join(", ");
+  if (e.status === "verified") return `${e.website} (מאומת לפי: ${matches})`;
+  return `${e.website} — לא מאומת (התאמה אחת בלבד${matches ? `: ${matches}` : ""}); לא נמצאה זהות דיגיטלית מאומתת`;
+}
+
 export interface CandidatePlacementAgent {
   name?: string;
   crd?: string | null;
@@ -69,6 +95,8 @@ export interface CandidateEvidence {
   date_of_first_sale?: string;
   // Added by the signals step (stage 2): absent until the candidate has been checked.
   signals?: { checked_at: string; items: CandidateSignal[] };
+  /** Stage 4: the candidate's own website, verified against the registry record (worker/candidateIdentity.ts). */
+  enrichment?: CandidateEnrichment;
   /** What surfaced a watched candidate (stage 3). */
   watch_events?: Array<{ kind: string; text: string; url?: string }>;
   // oss_github (migration 20261125000000): a growing GitHub project with a homepage of its own.
@@ -286,6 +314,9 @@ export function evidenceLines(
   }
   add("Company type", c.source === "uk_companies_house" ? e.form_type : null);
   add("Jurisdiction", e.jurisdiction);
+  add("אתר רשמי", websiteLine(e.enrichment));
+  add("מה החברה עושה", e.enrichment?.status === "verified" ? e.enrichment.description_he : null);
+  add("סיגנלי אתר", e.enrichment?.status === "verified" ? (e.enrichment.site_signals ?? []).map((x) => x.text).join(" · ") : null);
   add("Surfaced from watchlist", c.promoted_reason);
   add("Watching since", c.watch_started_at ? c.watch_started_at.slice(0, 10) : null);
   const good = signalTexts(e, "positive"), notes = signalTexts(e, "info"), warns = signalTexts(e, "warning");
