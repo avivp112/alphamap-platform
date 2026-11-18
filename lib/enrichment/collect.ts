@@ -2104,8 +2104,12 @@ export async function collectCompany(
     for (const src of allSources) {
       if (src.source_type !== "company_site" || !profileSourceAllowed(src, row.name) || isThirdPartyPage(src.url)) continue;
       const stated = sizeStatement(src.content);
+      // A dated page of the site (a press release, a blog post) states the size of ITS day, never of today; undated, it states nothing about now (owner, batch 6: Brighte's 2021 year in review).
+      const dated = /\/(news|blog|press|media|insights|stories|updates)(\/|-)/i.test(src.url);
+      const pageDate = dated ? articleDate(src) : null;
+      if (stated && dated && !pageDate) continue;
       if (stated && !headcountExtra.some((p) => p.type === "site_stated" && p.sourceUrl === src.url)) {
-        headcountExtra.push({ date: today, value: stated.value, ...(stated.lowerBound ? { lowerBound: true } : {}), type: "site_stated", measure: "count_at_date", sourceUrl: src.url, quote: stated.sentence });
+        headcountExtra.push({ date: pageDate ?? today, value: stated.value, ...(stated.lowerBound ? { lowerBound: true } : {}), type: "site_stated", measure: "count_at_date", sourceUrl: src.url, quote: stated.sentence });
       }
       if (/\/(team|people|our-team|the-team|leadership|about-us|about|company)(\/|$)/i.test(src.url)) {
         const seen = teamPeopleCount(src.content);

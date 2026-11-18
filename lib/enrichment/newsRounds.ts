@@ -13,6 +13,9 @@ const AMOUNT = /(?:USD\s*|US\s*)?([$€£])\s?(\d[\d.,]*)\s?(billion|million|mln
 const NOT_THE_RAISE_BETWEEN = /\b(?:valuation|valued|revenue|arr|sales|worth|customers|users)\b/i;
 const STAGE = /\b(pre-?seed|seed|series\s+[a-h]\+?|growth round|bridge round)\b/i;
 
+/** Borrowed money is not a venture round (owner, batch 6): a loan, a credit facility, bonds, a securitisation. */
+const DEBT = /\b(?:debt|loans?|credit (?:facility|line)|facility|bonds?|notes|securiti[sz]ation|warehouse|financing facility|finance corporation|development bank|export[- ]import bank)\b/i;
+
 const MULT: Record<string, number> = { k: 1e3, m: 1e6, mm: 1e6, mln: 1e6, million: 1e6, b: 1e9, bn: 1e9, billion: 1e9 };
 
 export function normalizeStage(s: string): string {
@@ -44,7 +47,7 @@ export function roundFromHeadline(title: string, companyName: string): { type: s
   if (amount < 100_000) return null;
   // the same raise verb with a sum that is a valuation: "valuation soars to $850 million" is not read — only the first sum after the verb is
   const stage = t.slice(verb.index).match(STAGE);
-  return { type: stage ? normalizeStage(stage[1]) : "Unknown", amount, quote: t };
+  return { type: DEBT.test(t) && !stage ? "Debt" : stage ? normalizeStage(stage[1]) : "Unknown", amount, quote: t };
 }
 
 /** V2 rounds for the accepted news items of a company. Each item is one round at most. */

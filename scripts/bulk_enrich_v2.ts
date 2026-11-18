@@ -73,6 +73,7 @@ import { wrapAnthropic, installHttpRecorder, quietOffline, installFetchTimeout, 
 import { installCompanyLog, installLineTap, gathered, withCompany, companyLines } from "../lib/enrichment/companyLog.ts";
 import { loadGaps, saveGaps, recordGaps, purgeWrong, ownerWrongTest, missingRows, missingCsv, GAPS_PATH, type GapStore } from "../lib/enrichment/knownGaps.ts";
 import { domainClasses, domainClassesCsv } from "../lib/enrichment/domainClass.ts";
+import { checkFresh } from "../lib/enrichment/gitFresh.ts";
 import { numberValues, renderBatchReport, batchCsv } from "../lib/enrichment/batchReport.ts";
 import type { RoundHint } from "../lib/enrichment/hints.ts";
 // ── Configuration (ground rule 3: same env vars as v1) ──────────────────
@@ -511,6 +512,13 @@ async function registerRun(): Promise<string> {
 }
 
 async function main() {
+  // A run starts only on current code, and says which (owner, batch 6).
+  if (process.env.GIT_CHECK !== "off" && !process.env.VITEST) {
+    const f = checkFresh();
+    console.log(`🔖  Running on commit ${f.commit} — ${f.subject}`);
+    for (const w of f.warnings) console.log(`    ⚠️  ${w}`);
+    if (!f.ok) { for (const p of f.problems) console.error(`⛔  ${p}`); console.error("⛔  Nothing was run. (GIT_CHECK=off skips this check.)"); process.exit(1); }
+  }
   await initV1Context();
   installFetchTimeout();
   installHttpRecorder();   // every web response is recorded (live), or answered from the recording (REPLAY)
@@ -555,7 +563,7 @@ async function main() {
     const { openSync } = await import("fs");
     console.log("🛂  Preflight: a dry pass of the same companies, then the acceptance checks — nothing is written until they pass.");
     const out = openSync("preflight.log", "w");
-    const child = spawnSync("npx", ["tsx", "scripts/bulk_enrich_v2.ts"], { env: { ...process.env, DRY_RUN: "true", REPLAY: process.env.REPLAY ?? "1", PILOT_REPORT: "pilot_report_preflight.csv", PREFLIGHT: "off", BATCH_NO: String(BATCH_NO) }, stdio: ["ignore", out, out] });
+    const child = spawnSync("npx", ["tsx", "scripts/bulk_enrich_v2.ts"], { env: { ...process.env, GIT_CHECK: "off", DRY_RUN: "true", REPLAY: process.env.REPLAY ?? "1", PILOT_REPORT: "pilot_report_preflight.csv", PREFLIGHT: "off", BATCH_NO: String(BATCH_NO) }, stdio: ["ignore", out, out] });
     if (child.status !== 0) { console.error(`⛔  The preflight dry pass failed (exit ${child.status}) — nothing written. See preflight.log.`); process.exit(1); }
     const a = acceptanceReport("pilot_report_preflight.csv", specPathsFor(BATCH_NO));
     console.log(`\n── Preflight acceptance ──\n${a.text}\n`);
@@ -832,6 +840,29 @@ async function main() {
     if (numbered.length) console.log("\n" + renderBatchReport(numbered, { batchNo, runId, dry: DRY_RUN, csvPath: DRY_RUN ? undefined : batchPath }));
     if (specPathsFor(BATCH_NO).length) { try { const a = acceptanceReport(PILOT_REPORT, specPathsFor(BATCH_NO)); console.log(`\n── Acceptance checks (${specPathsFor(BATCH_NO).join(" + ")}) ──\n${a.text}\n`); } catch (e) { console.log(`⚠️  acceptance checks not run: ${(e as Error).message}`); } }
     console.log(`📝  Pilot report: ${PILOT_REPORT} — ${pilotRows.filter((r) => r.field !== "(nothing)").length} field(s) ${DRY_RUN ? "that would be written" : "written"} for ${new Set(pilotRows.map((r) => r.company_id)).size} compan(ies).${runId ? ` Undo: RUN_ID=${runId} npx tsx scripts/undo_run.ts` : ""}`);
+    // After a wet run: what was written must be what the dry pass reported, row against row (owner, batch 6). Any difference undoes the run.
+    if (!DRY_RUN && runId && existsSync("pilot_report_preflight.csv") && process.env.PREFLIGHT !== "off") {
+      const [h, ...b] = parseReportCsv(readFileSync("pilot_report_preflight.csv", "utf8"));
+      const at = (n: string) => h.indexOf(n);
+      const keyOf = (c: string, f: string, a: string) => `${foldName(c)}|${f}|${a.replace(/\s+/g, " ").trim()}`;
+      const held = (c: string, f: string) => { const hs = BLOCKED.get(foldName(c)); return !!hs && (hs.has("*") || [...hs].some((x) => f === x || f.startsWith(x) || x.startsWith(f))); };
+      const expected = new Map(b.filter((r) => r[at("field")] && r[at("field")] !== "(nothing)" && !held(r[at("company")], r[at("field")])).map((r) => [keyOf(r[at("company")], r[at("field")], r[at("after")]), `${r[at("company")]} · ${r[at("field")]}: ${r[at("after")].slice(0, 70)}`]));
+      const written = new Map(pilotRows.filter((r) => r.field !== "(nothing)").map((r) => [keyOf(r.company, r.field, r.after), `${r.company} · ${r.field}: ${r.after.slice(0, 70)}`]));
+      const extra = [...written].filter(([k]) => !expected.has(k)).map(([, v]) => v);
+      const missing = [...expected].filter(([k]) => !written.has(k)).map(([, v]) => v);
+      console.log(`🔎  Written vs the dry pass: ${written.size} written, ${expected.size} expected — ${extra.length} not in the dry pass, ${missing.length} in it but not written.`);
+      if (extra.length || missing.length) {
+        for (const e of extra) console.log(`    ➕ written, not in the dry report: ${e}`);
+        for (const m of missing) console.log(`    ➖ in the dry report, not written: ${m}`);
+        if (process.env.AUTO_UNDO !== "false") {
+          console.error("⛔  The database differs from the reviewed report — undoing this run.");
+          const { spawnSync } = await import("child_process");
+          const u = spawnSync("npx", ["tsx", "scripts/undo_run.ts"], { env: { ...process.env, RUN_ID: runId, DRY_RUN: "false" }, stdio: "inherit" });
+          console.error(u.status === 0 ? `↩️   Run ${runId} undone.` : `⚠️  The automatic undo failed (exit ${u.status}) — run: RUN_ID=${runId} DRY_RUN=false npx tsx scripts/undo_run.ts`);
+          process.exitCode = 1;
+        }
+      }
+    }
   }
 }
 

@@ -368,3 +368,45 @@ describe("an ERROR points at the values that broke it (owner, batch 6)", () => {
     expect(res[1].offenders).toBeUndefined();
   });
 });
+
+import { gateLines, parseRoundLine } from "./reportGate";
+describe("the write follows the report (owner, batch 6: wet 1 wrote what the dry report had already removed)", () => {
+  const T = "2026-11-18";
+  it("a news item that does not name the company, a patent from a search page, a round type no quote names", () => {
+    const lines = [
+      { field: "news", after: "2025-12-10 — UAE telecom operator E& aims to offer stablecoin payments", source_url: "https://laraontheblock.com/uae", quote: "" },
+      { field: "patent", after: "US3537134A MACHINE FOR CONTINUOUSLY BLOW-MOLDING", source_url: "https://worldwide.espacenet.com/patent/search?q=pn%3DUS3537134A", quote: "" },
+      { field: "round", before: null, after: "Other $40M · 2025-11-04", source_url: "https://fintech.global/2025/11/04/brighte-secures-40m", quote: "Brighte secures $40m CEFC funding for home energy push" },
+      { field: "round", before: null, after: "Series A $4M · 2017-09-05 · lead Mike Cannon-Brookes", source_url: "https://www.smartcompany.com.au/x", quote: "Brighte raised a $4M Series A round led by Mike Cannon-Brookes" },
+    ];
+    const g = gateLines(lines as never, "MBank", T);
+    expect([...g.drop].sort()).toContain(0);
+    expect([...g.drop]).toContain(1);
+    const g2 = gateLines([lines[2]] as never, "Brighte", T);
+    expect(g2.after.get(0)).toMatch(/^Unknown \$40M/);
+    expect(parseRoundLine("Unknown $40M · 2025-11-04").type).toBe("Unknown");
+    expect(parseRoundLine("Series A $4M · 2017-09-05 · lead Mike Cannon-Brookes")).toEqual({ type: "Series A", lead: "Mike Cannon-Brookes" });
+  });
+});
+
+import { closureIn } from "./closure";
+import { roundFromHeadline } from "./newsRounds";
+import { sizeStatement } from "./headcountSources";
+describe("batch 6, wet 1 findings", () => {
+  it("Okra: 'Co-Founder Exits as Startup Shuts Down' is a closure of Okra", () => {
+    expect(closureIn("Dabafinance - Okra Co-Founder Fara Ashiru Jituboh Exits as Startup Shuts Down", "Okra")).toBe(true);
+    expect(closureIn("Okra raises $10M as startup grows", "Okra")).toBe(false);
+  });
+  it("one news item per address", () => {
+    const a = { field: "news", company: "Okra", after: "2025-07-04 — Okra Co-Founder Exits", source_url: "https://dabafinance.com/en/news/okra", quote: "", origin: "new" };
+    const b = { field: "news", company: "Okra", after: "2025-07-18 — Okra Co-Founder Exits", source_url: "https://www.dabafinance.com/en/news/okra", quote: "", origin: "known_source" };
+    expect(applyRowRules([b, a] as never, "Okra", TODAY).rows.filter((r) => r.field === "news").map((r) => r.after)).toEqual(["2025-07-04 — Okra Co-Founder Exits"]);
+  });
+  it("a loan is a Debt round, not an equity one", () => {
+    expect(roundFromHeadline("Brighte secures $40m loan facility to fund home energy", "Brighte")?.type).toBe("Debt");
+    expect(roundFromHeadline("Brighte raises $4m Series A", "Brighte")?.type).toBe("Series A");
+  });
+  it("headcount: the last figure of 'grew from … to …'", () => {
+    expect(sizeStatement("In 2021, the Brighte team grew from a team of 84 in Jan 2021 to a team of 181 in December 2021.")?.value).toBe(181);
+  });
+});

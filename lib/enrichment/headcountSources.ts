@@ -123,7 +123,9 @@ export function sizeStatement(text: string): SizeStatement | null {
     if (!years.length && MILESTONE.test(sentence)) continue;
     if (figureIsBiographical(sentence, true) || figureIsJobPosting(sentence) || figureIsAwardCategory(sentence)) continue;
     for (const re of PATTERNS) {
-      const m = sentence.match(re);
+      // "grew from a team of 84 in January 2021 to a team of 181 in December 2021": the figure of today is the last one (owner, batch 6: Brighte).
+      const all = [...sentence.matchAll(new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`))];
+      const m = /\b(?:grew|grown|from)\b[^.]{0,80}\bto\b/i.test(sentence) && all.length > 1 ? all[all.length - 1] : sentence.match(re);
       if (!m) continue;
       const num = m.slice(1).find((x) => x && /^\d[\d,]*$/.test(x));
       const value = Number((num ?? "").replace(/,/g, ""));

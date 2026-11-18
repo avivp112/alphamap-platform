@@ -188,6 +188,7 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
   const seenBg = new Set<string>();
   const seenRound = new Map<string, T>();
   const seenComp = new Set<string>();
+  const seenNews = new Map<string, T>();
   for (const r of kept) {
     if (r.field === "founder") {
       const [name, ...rest] = r.after.split(" — ");
@@ -210,6 +211,18 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
         continue;
       }
       seenRound.set(key, r); merged.push(r); continue;
+    }
+    if (r.field === "news") {
+      // One address, one news item: the fresh one over the remembered one, else the earlier date (owner, batch 6: Okra's two copies of the same article).
+      const k = `${fold(r.company ?? "")}|${(r.source_url ?? "").replace(/^https?:\/\/(www\.)?/, "").replace(/[?#].*$/, "").replace(/\/$/, "")}`;
+      const have = seenNews.get(k);
+      if (have) {
+        dropped.push(`news: ${r.after.slice(0, 50)} listed twice — merged`);
+        const mem = (x: T) => /known_source/.test(String(x.origin ?? ""));
+        if ((mem(have) && !mem(r)) || (mem(have) === mem(r) && r.after < have.after)) Object.assign(have, r);
+        continue;
+      }
+      seenNews.set(k, r); merged.push(r); continue;
     }
     if (r.field === "competitor_declared" || r.field === "competitor_market") {
       const clean = cleanCompetitorName(r.after);
