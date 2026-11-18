@@ -122,6 +122,17 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
     // A press statement needs a date; the latest wins (owner, batch 6). An address that carries only a year ("/2014/sticker-beacon…") gives none.
     if (url && !ownDomain(url, companyName) && !articleDate({ url, content: quote }) && /\/(?:19|20)\d{2}\/[^/]/.test(url)) return "the article's date is only a year";
   }
+  if (r.field === "employee_range" || r.field === "employee_count" || r.field === "headcount_history") {
+    // A dated page of the company's own site (a press release, a post) states the size of ITS day, not of today (owner, batch 6: Brighte's 2021 year in review gave "84" for the run day).
+    // The page's date must be in its address or its quote; a point dated the run day from such a page is the old figure under a new date.
+    const datedPath = /\/(news|newsroom|blog|press|press-releases?|media|insights|stories|updates)(\/|-|$)/i.test(url);
+    if (datedPath && ownDomain(url, companyName)) {
+      const pageDate = articleDate({ url, content: quote });
+      const pointDate = r.field === "headcount_history" ? r.after.match(/\bon (\d{4}-\d{2}-\d{2})\b/)?.[1] : null;
+      if (r.field !== "headcount_history" && !pageDate) return "a dated page of the site with no date is not today's headcount";
+      if (r.field === "headcount_history" && pointDate && pointDate >= new Date(Date.parse(today) - 7 * 86_400_000).toISOString().slice(0, 10) && (!pageDate || pageDate < pointDate)) return "a dated page's figure carries the run day as its date";
+    }
+  }
   if (r.field === "competitor_declared") {
     const name = cleanCompetitorName(r.after);
     if (COMPETITOR_STOP.test(name)) return "its name is an investment type or a category, not a company";
@@ -189,6 +200,7 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
   const seenRound = new Map<string, T>();
   const seenComp = new Set<string>();
   const seenNews = new Map<string, T>();
+  const seenHeadcount = new Map<string, T>();
   for (const r of kept) {
     if (r.field === "founder") {
       const [name, ...rest] = r.after.split(" — ");
@@ -211,6 +223,24 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
         continue;
       }
       seenRound.set(key, r); merged.push(r); continue;
+    }
+    if (r.field === "headcount_history") {
+      // The same figure in the same words on several archive copies is one point, at the earliest copy (owner, batch 6: Datahut's 42 on six dates).
+      const m = r.after.match(/^(\d+\+?)\s+on\s+(\d{4}-\d{2}-\d{2})/);
+      if (m) {
+        const q = String(r.quote ?? "").replace(/&rsquo;|&amp;|&#\d+;/g, " ");
+        const i = q.indexOf(m[1].replace("+", ""));
+        const win = fold(i >= 0 ? q.slice(Math.max(0, i - 12), i + 40) : q);
+        const k = `${fold(r.company ?? "")}|${m[1]}|${win}`;
+        const have = seenHeadcount.get(k);
+        if (have) {
+          dropped.push(`headcount_history: ${r.after.slice(0, 40)} is the same statement as ${have.after.slice(0, 40)} — merged`);
+          const hd = have.after.match(/on (\d{4}-\d{2}-\d{2})/)?.[1] ?? "9999";
+          if (m[2] < hd) Object.assign(have, r);
+          continue;
+        }
+        seenHeadcount.set(k, r);
+      }
     }
     if (r.field === "news") {
       // One address, one news item: the fresh one over the remembered one, else the earlier date (owner, batch 6: Okra's two copies of the same article).
