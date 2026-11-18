@@ -10,6 +10,7 @@
 // script's globals.
 // =============================================================================
 
+import type { LabeledSource } from "./sources.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CollectedCompany, V2StartupRow } from "./collect.ts";
 import { filterCrossSectorTags, industryFromTaxonomy, type SectorTaxonomy } from "./extractProfile.ts";
