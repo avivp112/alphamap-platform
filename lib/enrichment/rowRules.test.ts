@@ -540,3 +540,12 @@ describe("a founder from a republisher with no allowed original (owner, batch 7:
     expect(rowProblem(r as never, "Snupit", "2026-11-18")).toMatch(/not allowed/);
   });
 });
+
+import { runAcceptance } from "./acceptance";
+describe("round_type_in_quote leaves a 'filled' row alone (owner, batch 7: Inipharm)", () => {
+  it("is not an offender", () => {
+    const rows = [{ company: "Inipharm", field: "round", after: 'Series A filled: {"lead_investor":"5AM Ventures"}', quote: "5AM Ventures and Wu Capital joined existing investors Frazier.", source_url: "https://biospace.com/x" }];
+    const res = runAcceptance([{ id: "round_type_in_quote", why: "w", kind: "round_type_in_quote" }] as never, rows as never, [], "2026-11-18");
+    expect(res[0].pass).toBe(true);
+  });
+});
