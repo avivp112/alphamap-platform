@@ -71,7 +71,9 @@ export interface CandidateBatchResult {
 const SELECT = "id, source, name, country, founded_year, entity_number, website, evidence";
 
 /** Pending candidates still to be looked up: SEC Form D, and UK ones that came up from the watchlist. */
-export async function pickCandidates(db: SupabaseClient, limit: number, exclude: ReadonlySet<string> = new Set()): Promise<CandidateInput[]> {
+export async function pickCandidates(
+  db: SupabaseClient, limit: number, exclude: ReadonlySet<string> = new Set(), maxAgeDays = 0,
+): Promise<CandidateInput[]> {
   let q = db
     .from("company_candidates").select(SELECT)
     .eq("status", "pending")
@@ -80,6 +82,8 @@ export async function pickCandidates(db: SupabaseClient, limit: number, exclude:
     .order("gate_tier", { ascending: true })        // alert tier first
     .order("first_seen_at", { ascending: false });
   // Already looked at since this worker started (a dry run saves nothing, so it would pick the same ones every turn).
+  // Only candidates that arrived in the last N days (0 = no limit): the backlog is left alone.
+  if (maxAgeDays > 0) q = q.gte("first_seen_at", new Date(Date.now() - maxAgeDays * 86_400_000).toISOString());
   if (exclude.size > 0) q = q.not("id", "in", `(${[...exclude].join(",")})`);
   const { data, error } = await q.limit(limit);
   if (error) throw new Error(`company_candidates: ${error.message}`);
@@ -95,10 +99,10 @@ export async function saveEnrichment(db: SupabaseClient, c: CandidateInput, e: E
   }
 }
 
-export async function candidateBatch(d: CandidateBatchDeps, opts: { limit: number; write: boolean; skip?: Set<string> }): Promise<CandidateBatchResult> {
+export async function candidateBatch(d: CandidateBatchDeps, opts: { limit: number; write: boolean; skip?: Set<string>; maxAgeDays?: number }): Promise<CandidateBatchResult> {
   const log = d.log ?? ((m: string) => console.log(`[worker] ${m}`));
   const out: CandidateBatchResult = { checked: 0, verified: 0, unverified: 0, no_site: 0, failed: 0, searches: 0, wrote: opts.write, results: [] };
-  const rows = await pickCandidates(d.db, opts.limit, opts.skip);
+  const rows = await pickCandidates(d.db, opts.limit, opts.skip, opts.maxAgeDays);
   const deps: IdentityDeps = { search: d.search, fetch: d.fetch, describe: d.describe };
   for (const c of rows) {
     opts.skip?.add(c.id);

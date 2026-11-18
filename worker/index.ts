@@ -182,6 +182,8 @@ const CANDIDATE_ENRICH = process.env.CANDIDATE_ENRICH === "true";
 const CANDIDATE_WRITE = process.env.CANDIDATE_ENRICH_WRITE === "true";
 const CANDIDATE_EVERY_MS = Number(process.env.CANDIDATE_ENRICH_EVERY_MS ?? 300_000);
 const CANDIDATE_BATCH = Number(process.env.CANDIDATE_ENRICH_BATCH ?? 5);
+/** Only candidates first seen in the last N days (0 = all, the backlog included). */
+const CANDIDATE_MAX_AGE_DAYS = Number(process.env.CANDIDATE_ENRICH_MAX_AGE_DAYS ?? 0);
 /** Searches per UTC day, the cost ceiling: 3 per candidate at most. */
 const CANDIDATE_MAX_SEARCHES_PER_DAY = Number(process.env.CANDIDATE_ENRICH_MAX_SEARCHES_PER_DAY ?? 300);
 let lastCandidatesAt = 0;
@@ -200,7 +202,7 @@ async function candidatesTurn(): Promise<void> {
   try {
     const r = await candidateBatch(
       { db, search: serperSearch(cfg.serpKey, candidateMeter), fetch: candidateFetch, describe: makeDescriber(anthropic, cfg.enrichModel) },
-      { limit: CANDIDATE_BATCH, write: CANDIDATE_WRITE, skip: candidateSeen },
+      { limit: CANDIDATE_BATCH, write: CANDIDATE_WRITE, skip: candidateSeen, maxAgeDays: CANDIDATE_MAX_AGE_DAYS },
     );
     candidateSearchesToday += r.searches;
     if (r.checked > 0 || r.failed > 0) {

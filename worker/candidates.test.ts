@@ -17,7 +17,7 @@ describe("candidateBatch", () => {
   const rows = [{ id: "1", source: "sec_form_d", name: "Lumen Quantum, Inc.", country: "US", founded_year: 2025, entity_number: null, website: null, evidence: {} }];
   const chain = (data: unknown, rpcs: Array<{ fn: string; args: unknown }>) => {
     const q: Record<string, unknown> = {};
-    for (const m of ["select", "eq", "or", "filter", "order", "is", "update", "not"]) q[m] = () => q;
+    for (const m of ["select", "eq", "or", "filter", "order", "is", "update", "not", "gte"]) q[m] = () => q;
     q.limit = async () => ({ data, error: null });
     return { from: () => q, rpc: async (fn: string, args: unknown) => { rpcs.push({ fn, args }); return { error: null }; } };
   };
@@ -43,6 +43,10 @@ describe("candidateBatch", () => {
     const skip = new Set<string>();
     await candidateBatch(deps([]), { limit: 5, write: false, skip });
     expect([...skip]).toEqual(["1"]);
+  });
+  it("accepts an age limit that leaves the backlog alone", async () => {
+    const r = await candidateBatch(deps([]), { limit: 5, write: false, maxAgeDays: 14 });
+    expect(r.checked).toBe(1);
   });
   it("a rejected search key stops the batch", async () => {
     const many = [...rows, { ...rows[0], id: "2", name: "Other Co" }];

@@ -84,6 +84,7 @@ Off by default, dry run by default:
 | `CANDIDATE_ENRICH` | `false` | `true` turns it on (it spends search and model calls) |
 | `CANDIDATE_ENRICH_WRITE` | `false` | `true` saves results; otherwise it only logs what it would save |
 | `CANDIDATE_ENRICH_BATCH` | `5` | candidates per turn |
+| `CANDIDATE_ENRICH_MAX_AGE_DAYS` | `0` | only candidates first seen in the last N days; `0` = all, backlog included |
 | `CANDIDATE_ENRICH_EVERY_MS` | `300000` | wait between turns |
 | `CANDIDATE_ENRICH_MAX_SEARCHES_PER_DAY` | `300` | daily search ceiling (at most 3 searches per candidate) |
 
