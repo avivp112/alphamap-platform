@@ -138,7 +138,16 @@ function openFieldsFor(company: string): string[] {
   if (!held || !held.size) return OPEN_FIELDS;
   if (held.has("*")) return [];
   if (held.has("hq_city") || held.has("hq_country")) { held.add("hq_city"); held.add("hq_country"); }   // a city and its country stand or fall together
-  return OPEN_FIELDS.filter((f) => ![...held].some((h) => h === f || h.startsWith(f)));
+  // A row field that is itself an open field (founder_background) holds that one only; one that is not (founder_bio, description_what_only) holds the open field it is a part of.
+  return OPEN_FIELDS.filter((f) => ![...held].some((h) => h === f || (h.startsWith(`${f}_`) && !OPEN_FIELDS.includes(h))));
+}
+/** A report row of a field held back for its company (EXCLUDE, a failed check): it is not written, and the memory must not bring it back into the report either. */
+function heldRow(company: string, field: string): boolean {
+  const hs = BLOCKED.get(foldName(company));
+  if (!hs) return false;
+  if (hs.has("*")) return true;
+  const pair = (f: string) => (f === "hq_city" ? "hq_country" : f === "hq_country" ? "hq_city" : f);   // a city and its country stand or fall together
+  return [...hs].some((x) => field === x || field === pair(x) || field.startsWith(`${x}_`));
 }
 const OPEN_FIELDS: string[] = SHOW_ALL ? ASKED : ASKED.filter((f) => OPEN_NOW.includes(f));
 {
@@ -432,6 +441,8 @@ async function enrichCompany(
     remember(knownStore, companyRows, runId ?? "dry", RUN_DATE, isWrongValue);
     companyRows = carry.rows.map((r) => ({ ...r, origin: r.origin ?? "new" })) as typeof companyRows;
     { const g = applyRowRules(companyRows, row.name, RUN_DATE, { domain: row.website }); companyRows = g.rows; for (const d of g.dropped) console.log(`    🧹  ${d}`);
+      // What was held back stays out of the report even when the memory still has it (owner, batch 6: the excluded values came back as remembered rows).
+      if (BLOCKED.size) { const kept = companyRows.filter((r) => !heldRow(r.company, r.field)); if (kept.length !== companyRows.length) console.log(`    🚧  Held back, not reported: ${companyRows.filter((r) => heldRow(r.company, r.field)).map((r) => `${r.field}: ${r.after.slice(0, 40)}`).join(" | ")}`); companyRows = kept; }
       // acquired comes only from the accepted news (owner, round 10): any acquired row found another way (a profile page, a blog) is dropped.
       companyRows = companyRows.filter((r) => r.field !== "acquired");
       const acq = acquiredFromNews(companyRows, row.name, row.id);
@@ -856,7 +867,7 @@ async function main() {
       const [h, ...b] = parseReportCsv(readFileSync("pilot_report_preflight.csv", "utf8"));
       const at = (n: string) => h.indexOf(n);
       const keyOf = (c: string, f: string, a: string) => `${foldName(c)}|${f}|${a.replace(/\s+/g, " ").trim()}`;
-      const held = (c: string, f: string) => { const hs = BLOCKED.get(foldName(c)); return !!hs && (hs.has("*") || [...hs].some((x) => f === x || f.startsWith(x) || x.startsWith(f))); };
+      const held = heldRow;
       const expected = new Map(b.filter((r) => r[at("field")] && r[at("field")] !== "(nothing)" && !held(r[at("company")], r[at("field")])).map((r) => [keyOf(r[at("company")], r[at("field")], r[at("after")]), `${r[at("company")]} · ${r[at("field")]}: ${r[at("after")].slice(0, 70)}`]));
       const written = new Map(pilotRows.filter((r) => r.field !== "(nothing)").map((r) => [keyOf(r.company, r.field, r.after), `${r.company} · ${r.field}: ${r.after.slice(0, 70)}`]));
       const extra = [...written].filter(([k]) => !expected.has(k)).map(([, v]) => v);
