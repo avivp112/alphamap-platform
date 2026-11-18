@@ -28,7 +28,7 @@ interface Column {
 }
 
 export function StartupsTable({
-  rows, sort, onSort, density, selectedIds, onToggleSelect, onSelect, isSaved, onSave, onPass, matchScores, loading, narrow = false, activeId = null,
+  rows, sort, onSort, density, selectedIds, onToggleSelect, onSelect, isSaved, onSave, onPass, matchScores, loading, narrow = false, activeId = null, fill = false,
 }: {
   rows: StartupListRow[];
   sort: StartupSort | null;
@@ -46,6 +46,8 @@ export function StartupsTable({
   narrow?: boolean;
   /** The company whose card is open; its row is marked. */
   activeId?: string | null;
+  /** Fill the height of the box it sits in and scroll inside it (the redesigned workspace). */
+  fill?: boolean;
 }) {
   const { t } = useTranslation();
   const tt = useV2T();
@@ -66,9 +68,9 @@ export function StartupsTable({
   const cell = `px-3.5 ${compact ? "py-1.5" : "py-3"}`;
 
   return (
-    <div className={`relative bg-am-surface border border-am-line rounded-am-card shadow-am-1 transition-opacity ${loading ? "opacity-60" : ""}`}>
+    <div className={`relative bg-am-surface border border-am-line rounded-am-card shadow-am-1 transition-opacity ${fill ? "h-full flex flex-col" : ""} ${loading ? "opacity-60" : ""}`}>
       {loading && <Loader2 className="absolute top-3 end-3 w-4 h-4 text-am-ink-3 animate-spin z-20" aria-label={tt("loading", "Loading")} />}
-      <div className="overflow-auto max-h-[calc(100vh-17rem)] rounded-am-card">
+      <div className={`overflow-auto rounded-am-card ${fill ? "flex-1 min-h-0" : "max-h-[calc(100vh-17rem)]"}`}>
         <table className={`w-full ${narrow ? "min-w-[520px]" : "min-w-[1180px]"} table-fixed border-separate border-spacing-0 text-am-body text-am-ink`}>
           {/* Fixed column widths: a long name or place can never widen the table past its box.
               Company takes whatever is left. */}
