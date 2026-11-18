@@ -587,10 +587,21 @@ async function main() {
     const rows = body.map((r) => ({ company_id: r[ix("company_id")] ?? "", company: r[ix("company")] ?? "", field: r[ix("field")] ?? "", value: r[ix("after")] ?? "", source_url: r[ix("source_url")] ?? "", quote: r[ix("quote")] ?? "" })).filter((r) => r.company && r.field && r.field !== "(nothing)");
     const numbered = numberValues(rows, BATCH_NO, "d");
     if (process.env.EXPECT_TOTAL && Number(process.env.EXPECT_TOTAL) !== numbered.length) { console.error(`⛔  The rows to number are ${numbered.length}, the reviewed report had ${process.env.EXPECT_TOTAL} — the numbers would point at other values. Nothing written.`); process.exit(1); }
-    const wanted = (process.env.EXCLUDE ?? "").split(/[\s,]+/).map((x) => x.trim().replace(/^[dw]\d+\./i, "")).filter(Boolean).map(Number);
+    // Entries are report numbers ("17", "d6.17") or "<Company>:<field>" (stable when the report is numbered again after a rule change: "Ripio:tags").
+    const tokens = (process.env.EXCLUDE ?? "").split(/,/).map((x) => x.trim()).filter(Boolean);
+    const named = tokens.filter((t) => t.includes(":"));
+    const wanted = tokens.filter((t) => !t.includes(":")).flatMap((t) => t.split(/\s+/)).map((x) => x.trim().replace(/^[dw]\d+\./i, "")).filter(Boolean).map(Number);
     const bad = wanted.filter((n) => !Number.isInteger(n) || n < 1 || n > numbered.length);
     if (bad.length) { console.error(`⛔  EXCLUDE has numbers that are not in the report (1–${numbered.length}): ${bad.join(", ")}`); process.exit(1); }
-    const chosen = wanted.map((n) => numbered[n - 1]);
+    const noMatch: string[] = [];
+    const byName = named.flatMap((t) => {
+      const [co, ...f] = t.split(":"); const field = f.join(":").trim();
+      const hit = numbered.filter((x) => foldName(x.company) === foldName(co) && (x.field === field || x.field.startsWith(field)));
+      if (!hit.length) noMatch.push(t);
+      return hit;
+    });
+    if (noMatch.length) console.log(`    ℹ️  EXCLUDE entries that match no value of the dry pass (nothing to hold back): ${noMatch.join(", ")}`);
+    const chosen = [...new Set([...wanted.map((n) => numbered[n - 1]), ...byName])];
     const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
     const lines: string[][] = [];
     for (const c of chosen) {
