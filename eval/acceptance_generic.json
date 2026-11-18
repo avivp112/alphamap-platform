@@ -95,5 +95,38 @@
   "id": "hq_quote_is_address_or_declaration",
   "why": "A headquarters city rests on a street address or on a sentence that declares it (<city>-based, headquartered in, head office)",
   "kind": "hq_quote_valid"
+ },
+ {
+  "id": "no_sponsored_paths",
+  "why": "No value rests on a sponsored / brand-studio / patrocinado path",
+  "kind": "absent",
+  "source_match": "/(patrocinado|sponsored|brand-studio)/"
+ },
+ {
+  "id": "no_yahoo_republish",
+  "why": "No news or round rests on a yahoo republication",
+  "kind": "absent",
+  "field": "news",
+  "source_match": "(^|//)([a-z]+\\.)?yahoo\\.com/"
+ },
+ {
+  "id": "no_paid_distribution",
+  "why": "No value rests on a paid distribution service",
+  "kind": "absent",
+  "source_match": "marketersmedia|yespress|einpresswire|openpr\\.com|prlog\\.org"
+ },
+ {
+  "id": "no_product_review_news",
+  "why": "No news item is a product review",
+  "kind": "absent",
+  "field": "news",
+  "quote_match": "honest verdict|\\breview:|\\bbest \\w+ (of|for) 20"
+ },
+ {
+  "id": "no_job_ad_tags",
+  "why": "No tag rests on a job ad or a menu",
+  "kind": "absent",
+  "field": "tags",
+  "source_match": "/(careers?|jobs?)/"
  }
 ]

@@ -93,6 +93,9 @@ export function cleanPersonName(name: string): string {
   for (let i = 0; i < 3; i++) {
     const before = n;
     n = n.replace(NAME_PREFIX_RE, "").replace(/^(?:\p{Ll}[\p{L}'’-]*\s+)+(?=\p{Lu})/u, "").trim();
+    // A function word glued to the front ("As Karim Nour") and a role fragment glued to the end ("Karim Nour Co", "… CEO") are not part of a name (owner, batch 7: Kashat).
+    n = n.replace(/^(?:as|the|by|and|meet|with|from|also|said|says|told|according|our|his|her)\s+(?=\p{Lu}\p{L}+\s+\p{Lu})/iu, "");
+    n = n.replace(/^(\p{Lu}[\p{L}'’.-]*(?:\s+\p{Lu}[\p{L}'’.-]*)+?)\s+(?:Co|CEO|CTO|CFO|COO|Founder|Co-?founder|President|Chairman|Chair)$/u, "$1");
     if (n === before) break;
   }
   return n.replace(/[\s,;]+$/, "");

@@ -474,3 +474,50 @@ describe("pace and rule codes (batch 7)", () => {
     expect(ruleOf({ field: "hq_city", after: "Sydney" }, [{ field: "hq_city", rule: "hq_from_approved_quote", value: "Adelaide" }])).toBe("");
   });
 });
+
+import { cleanPersonName } from "./people";
+describe("batch 7: names of people", () => {
+  it("no function word before, no role fragment after", () => {
+    expect(cleanPersonName("As Karim Nour")).toBe("Karim Nour");
+    expect(cleanPersonName("Karim Nour Co")).toBe("Karim Nour");
+    expect(cleanPersonName("Sumair Farooqui")).toBe("Sumair Farooqui");
+    expect(cleanPersonName("Jakub Krzych CEO")).toBe("Jakub Krzych");
+    expect(cleanPersonName("Co Lee")).toBe("Co Lee");
+  });
+});
+
+import { detectAcquisition, acquirerIn } from "./acquisition";
+describe("batch 7: the buyer's name and the purchase date", () => {
+  it("no country in front of the buyer; the first announcement dates it", () => {
+    expect(acquirerIn("Egypts Raseedi Acquires Kashat To Expand Fintech", "Kashat")?.acquirer).toBe("Raseedi");
+    expect(acquirerIn("Egypt's Raseedi acquires Kashat", "Kashat")?.acquirer).toBe("Raseedi");
+    expect(acquirerIn("Kashat acquired by UK-based Acme", "Kashat")?.acquirer).toBe("Acme");
+    const c = detectAcquisition([{ url: "a", title: "Raseedi completes acquisition of Kashat", date: "2025-01-13" }, { url: "b", title: "Egypts Raseedi Acquires Kashat To Expand Fintech", date: "2025-01-23" }], "Kashat");
+    expect(c?.acquirer).toBe("Raseedi");
+    expect(c?.date).toBe("2025-01-13");
+  });
+});
+
+import { caseName } from "./nameCase";
+describe("batch 7: evidence rules", () => {
+  const T = "2026-11-20";
+  it("tags: a careers page, a job advertisement, a menu and a person's speech are no evidence", () => {
+    expect(rowProblem({ field: "tags", after: "Healthcare SaaS", source_url: "https://www.nilosaude.com.br/carreiras-account-executive", quote: "Experiência comprovada em vendas B2B de tecnologia" }, "Nilo Saúde", T)).toMatch(/careers|job/);
+    expect(rowProblem({ field: "tags", after: "Mobility", source_url: "https://www.zuldigital.com.br/entrar", quote: "Digital CRLV · ZUL+ Tag · Taxes · Auto Insurance · Rodízio." }, "Zul+", T)).toMatch(/menu/);
+    expect(rowProblem({ field: "tags", after: "Marketplaces", source_url: "https://snupit.co.za/x", quote: "Samlall said, ''At Snupit we like to keep a finger on the market's pulse." }, "Snupit", T)).toMatch(/speech/);
+    expect(rowProblem({ field: "tags", after: "D2C", source_url: "https://gousto.co.uk", quote: "Gousto sells recipe boxes, delivered to the customer's door, that contain fresh ingredients." }, "Gousto", T)).toBeNull();
+  });
+  it("news: paid distribution, sponsored paths, republishers and product reviews", () => {
+    expect(rowProblem({ field: "news", after: "2020-03-30 — Snupit Expands Internationally", source_url: "https://news.marketersmedia.com/snupit-expands/88951584/", quote: "" }, "Snupit", T)).toMatch(/paid press/);
+    expect(rowProblem({ field: "news", after: "2023-06-22 — Zul Digital expande operações", source_url: "https://valor.globo.com/patrocinado/dino/noticia/2023/06/22/zul", quote: "" }, "Zul Digital", T)).toMatch(/sponsored/);
+    expect(rowProblem({ field: "news", after: "2026-07-01 — Gousto review 2026, here's my honest verdict", source_url: "https://www.the-independent.com/extras/gousto-review", quote: "" }, "Gousto", T)).toMatch(/review/);
+    expect(rowProblem({ field: "news", after: "2019-04-15 — Snupit Releases Results From its Popular Small Business Survey", source_url: "https://finance.yahoo.com/news/snupit-releases-results-popular-small-143800986.html", quote: "" }, "Snupit", T)).toMatch(/not allowed|republish/);
+  });
+  it("office needs a quote; people shown on a page give no range; capitals become a name", () => {
+    expect(rowProblem({ field: "office", after: "São Paulo", source_url: "https://www.nilosaude.com.br/terms", quote: "" }, "Nilo Saúde", T)).toMatch(/needs a quote/);
+    expect(rowProblem({ field: "employee_range", after: "1-10", source_url: "https://sycamore.ng/about-us", quote: "5 people with a name and a role are shown on the page" }, "Sycamore", T)).toMatch(/lower bound/);
+    expect(caseName("MICROSOFT")).toBe("Microsoft");
+    expect(caseName("IBM")).toBe("IBM");
+    expect(caseName("Mon Petit Placement")).toBe("Mon Petit Placement");
+  });
+});
