@@ -450,8 +450,10 @@ async function enrichCompany(
       if (BLOCKED.size) { const kept = companyRows.filter((r) => !heldRow(r.company, r.field)); if (kept.length !== companyRows.length) console.log(`    🚧  Held back, not reported: ${companyRows.filter((r) => heldRow(r.company, r.field)).map((r) => `${r.field}: ${r.after.slice(0, 40)}`).join(" | ")}`); companyRows = kept; }
       // acquired comes only from the accepted news (owner, round 10): any acquired row found another way (a profile page, a blog) is dropped.
       companyRows = companyRows.filter((r) => r.field !== "acquired");
-      const acq = acquiredFromNews(companyRows, row.name, row.id);
-      const closed = acq ? null : closedFromNews(companyRows, row.name, row.id);
+      // Only when the acquired field is open: a row the write cannot take is not a row of the report (owner, batch 6: Okra's "closed" was reported and not written).
+      const acquiredOpen = openFieldsFor(row.name).includes("acquired");
+      const acq = acquiredOpen ? acquiredFromNews(companyRows, row.name, row.id) : null;
+      const closed = acq || !acquiredOpen ? null : closedFromNews(companyRows, row.name, row.id);
       if (closed) { companyRows.push(closed as (typeof companyRows)[number]); console.log(`    🏁  closed — read from the company's news: ${closed.after}`); }
       if (acq) {
         companyRows.push(acq as (typeof companyRows)[number]); console.log(`    🏁  acquired — read from the company's news: ${acq.after}`);
