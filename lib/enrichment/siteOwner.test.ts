@@ -6,7 +6,8 @@ const filler = " The platform helps customers collect feedback and measure exper
 describe("a website that belongs to another company now (review 7, 2026-11-09)", () => {
   it("Cinsay: the pages say it is now part of aibuy", () => {
     const r = siteBelongsToAnotherCompany("Cinsay", "https://cinsay.com", [{ url: "https://cinsay.com", content: "Cinsay is now part of aibuy. Shoppable video for brands." + filler }]);
-    expect(r).toMatch(/^acquired \/ rebranded/);
+    // Owner, batch 7: an acquired company is enriched as usual; its page that says it was bought is still its page (the description needs a sentence that names the company anyway).
+    expect(r).toBeNull();
   });
   it("CheckMarket: the pages never name it and carry the buyer's copyright", () => {
     const r = siteBelongsToAnotherCompany("CheckMarket", "https://checkmarket.com", [{ url: "https://checkmarket.com", content: "Medallia Experience Cloud." + filler + " © 2026 Medallia Inc." }]);
@@ -71,7 +72,7 @@ describe("renamed is not acquired (owner, round 10: TymeBank → GoTyme Bank)", 
     expect(rebrandedAs("TymeBank", pages)).toBe("GoTyme Bank");
     expect(siteBelongsToAnotherCompany("TymeBank", "https://tymebank.co.za", pages)).toBeNull();
     expect(rebrandedAs("Acme", [{ url: "u", content: "Acme is now part of Globex." }])).toBeNull();
-    expect(siteBelongsToAnotherCompany("Acme", "https://acme.com", [{ url: "u", content: "Acme has been acquired by Globex Corporation and is now part of it." }])).toMatch(/acquired/);
+    expect(siteBelongsToAnotherCompany("Acme", "https://acme.com", [{ url: "u", content: "Acme has been acquired by Globex Corporation and is now part of it." }])).toBeNull();
   });
 });
 

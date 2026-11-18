@@ -529,8 +529,9 @@ describe("acquired companies are enriched as usual (owner, batch 7)", () => {
   it("a page that says the company was bought and still names it is its own page", () => {
     expect(siteBelongsToAnotherCompany("Sikhona", "https://sikhona.co.za", page(`Ria Money Transfer acquired Sikhona. ${filler}`))).toBeNull();
   });
-  it("a page that names the company once, in the sale, is not", () => {
-    expect(siteBelongsToAnotherCompany("Hofy", "https://other.com", page(`Deel acquires Hofy. ${"Deel runs global payroll for teams everywhere. ".repeat(20)}`))).toMatch(/acquired \/ rebranded/);
+  it("a page that names the company once, in the sale, still is (owner, batch 7: Sikhona); one the address moved away from is not", () => {
+    expect(siteBelongsToAnotherCompany("Hofy", "https://other.com", page(`Deel acquires Hofy. ${"Deel runs global payroll for teams everywhere. ".repeat(20)}`))).toBeNull();
+    expect(siteBelongsToAnotherCompany("Hofy", "https://hofy.com", [{ url: "https://hofy.com", content: `Final URL: https://www.deel.com/it/\n\nMarkdown Content:\nDeel acquires Hofy. ${"Deel runs global payroll for teams everywhere. ".repeat(20)}` } as never])).toMatch(/acquired \/ rebranded/);
   });
 });
 
@@ -593,5 +594,22 @@ describe("news: a headline cut in a print, and a company that was bought (owner,
     const item = { title: titles[0], content: "" };
     expect(newsProblem2(item, "Outvest", "A robo-advisor for retirement savings.")).toBe("different_product");
     expect(newsProblem2(item, "Outvest", "A robo-advisor for retirement savings.", { acquirers: ["Alexforbes"] })).toBeNull();
+  });
+});
+
+describe("one headline on one date is one news item whatever the address (owner, batch 7)", () => {
+  it("merges", () => {
+    const rows = [
+      { company: "Inipharm", field: "news", after: "2024-05-22 — Inipharm to Present Pharmacokinetic Data at a conference", source_url: "https://inipharm.com/news/a", quote: "Inipharm to Present Pharmacokinetic Data" },
+      { company: "Inipharm", field: "news", after: "2024-05-22 — Inipharm to Present Pharmacokinetic Data at a conference", source_url: "https://www.globenewswire.com/news-release/b", quote: "Inipharm to Present Pharmacokinetic Data" },
+    ];
+    expect(applyRowRules(rows as never, "Inipharm", "2026-11-18").rows.length).toBe(1);
+  });
+});
+
+describe("a short headline that is its address' whole slug is whole (owner, batch 7)", () => {
+  it("confirms it", () => {
+    expect(completeFromSlug("Alexforbes buys Outvest", "https://dailyinvestor.com/finance/43233/alexforbes-buys-outvest/")).toBe("Alexforbes buys Outvest");
+    expect(completeFromSlug("Alexforbes buys Outvest", "https://dailyinvestor.com/finance/43233/something-else-entirely/")).toBeNull();
   });
 });
