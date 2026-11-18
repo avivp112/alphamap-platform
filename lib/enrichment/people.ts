@@ -452,7 +452,7 @@ const stem = (w: string) => w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").slice
  */
 const ROLES: Array<[RegExp, RegExp]> = [
   [/\b(vp|vice[- ]president)\b/i, /\b(vp|vice[- ]president)\b/i],
-  [/\bceo\b|chief executive/i, /\bceo\b|chief executive/i],
+  [/\bceo\b|chief executive|directeur g[ée]n[ée]ral|\bpdg\b/i, /\bceo\b|chief executive|directeur g[ée]n[ée]ral|\bpdg\b/i],
   [/\bcto\b|chief technology|chief technical/i, /\bcto\b|chief technolog|chief technical/i],
   [/\bcoo\b|chief operating/i, /\bcoo\b|chief operating/i],
   [/\bcfo\b|chief financial/i, /\bcfo\b|chief financial/i],
@@ -623,6 +623,8 @@ export function roleAtCompany(role: string | null | undefined, companyName: stri
     if (!m) return false;
     const org = fold(m[1]).toLowerCase().trim();
     if (/^(the )?(board|company|directors|advisors|advisory board)$/.test(org)) return false;
+    // A second role after the comma is not an organisation ("Co-Founder, Chief Executive Officer", "Co-founder, CTO": owner, batch 7 — Inipharm, Snupit, UltraVox).
+    if (/\b(ceo|cto|coo|cfo|cmo|cpo|cro|ciso|chief|officer|founder|co-?founder|president|vice|vp|svp|evp|head|director|manager|executive|chair\w*|partner|lead|principal|owner|managing)\b/i.test(org)) return false;
     return !(org.includes(ownName) || ownName.includes(org));
   };
   const own = parts.filter((p) => !elsewhere(p));

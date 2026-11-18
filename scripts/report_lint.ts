@@ -14,6 +14,10 @@ import { extractNumbersFromText } from "../lib/enrichment/evidence.ts";
 import { SECTOR_TAXONOMY } from "../src/lib/taxonomy.ts";
 import { loadKnown, refreshDue, markKey } from "../lib/enrichment/knownSources.ts";
 import { rowProblem } from "../lib/enrichment/rowRules.ts";
+import { foundingSentenceIsAboutCompany } from "../lib/enrichment/subject.ts";
+import { roleAtCompany } from "../lib/enrichment/people.ts";
+import { isPartyRelease } from "../lib/enrichment/roundSources.ts";
+import { isTrackingHost } from "../lib/enrichment/siteOwner.ts";
 import { recentRules } from "../lib/enrichment/ruleRegistry.ts";
 import { loadGaps, ownerWrongTest } from "../lib/enrichment/knownGaps.ts";
 
@@ -135,6 +139,31 @@ if (existsSync("batch4_dry.log")) {
   const proposedNoneKept = [...log.matchAll(/Headquarters: the model proposed (?!no city)[^\n]*kept no city(?![^\n]*not kept:)/g)].length;
   if (proposedNoneKept) err("(log)", `${proposedNoneKept} headquarters proposed and not kept without a reason on the same line`);
   if (noDesc) console.log(`(log) ${noDesc} company(ies) without a description; ${dropLines} dropped sentence(s) named.`);
+}
+
+// ── Rejection audit (owner, batch 7: "the rules reject correct values"): a rejection that a rule of today would not make is a gap, and a gap is an error ──
+if (existsSync("rejected_all.csv")) {
+  const [rh, ...rr] = parseCsv(readFileSync("rejected_all.csv", "utf8"));
+  const ri = (c: string) => rh.findIndex((h) => h.startsWith(c));
+  for (const r of rr) {
+    const company = r[ri("company")], field = r[ri("field")], value = r[ri("value")], code = r[ri("reason_code")], reason = r[ri("reason")], url = r[ri("source_url")], evidence = r[ri("evidence")];
+    // a. the sentence of a founding year: a short name, "the company", a label of the site
+    if (code === "sentence_not_about_company" && field === "founded_year" && evidence && foundingSentenceIsAboutCompany(evidence, value, company, { url, ownSite: false })) err(company, `founded_year ${value} was rejected, and its sentence is about the company ("${evidence.slice(0, 90)}")`);
+    // b. a second role after the comma is not another company
+    if (code === "title_at_another_company") { const t = reason.match(/the title "([^"]+)"/)?.[1]; if (t && roleAtCompany(t, company).role !== null) err(company, `founder ${value} was rejected for a title "${t}" that is at no other company`); }
+    // f. the other party's announcement of the deal is a source for the event
+    if (code === "source_not_allowed" && field === "news" && url && isPartyRelease(url, value, { companyName: company })) err(company, `news "${value.slice(0, 60)}" was rejected, and it is a party's own announcement of the deal (${url.slice(0, 80)})`);
+  }
+}
+if (existsSync("website_review.csv")) {
+  const [wh, ...wr] = parseCsv(readFileSync("website_review.csv", "utf8"));
+  const wi = (c: string) => wh.findIndex((h) => h.startsWith(c));
+  for (const r of wr) {
+    const detail = r[wi("detail")] ?? "";
+    // e. an address that passes through an advertising / tracking endpoint is a broken redirect, not another company
+    const host = detail.match(/leads to (\S+)/)?.[1];
+    if (host && isTrackingHost(host)) err(r[wi("company")], `${host} is an advertising / tracking address, listed as another company's site`);
+  }
 }
 
 // ── Every value of the memory is in the report, or flagged with a reason (owner, round 10) ──

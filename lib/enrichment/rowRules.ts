@@ -11,7 +11,7 @@ import { detectAcquisition } from "./acquisition.ts";
 import { detectClosure } from "./closure.ts";
 import { normalizeForMatch, quoteIsNotASentence } from "./evidence.ts";
 import { sectorDecision } from "./techOverrides.ts";
-import { sentenceIsAboutCompany, isThirdPartyPage, sentenceWithYear } from "./subject.ts";
+import { foundingSentenceIsAboutCompany, isThirdPartyPage } from "./subject.ts";
 import { isAddressLine, articleDate } from "./headquarters.ts";
 import { vsTitleCompetitor, comparisonTitleCompetitor } from "./competitorTiers.ts";
 import { amountFromAddress } from "./hints.ts";
@@ -122,7 +122,7 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
   if (r.field === "founded_year") {
     if (/!\[|\]\(/.test(quote)) return "its quote is an image or a link";
     if (/\bsince\b/i.test(quote) && !foundedYearFromSite(quote)) return "\"since <year>\" here is not a founding statement";
-    if (quote && !sentenceIsAboutCompany(sentenceWithYear(quote, r.after.trim()), companyName, { ownSite: ownDomain(url, companyName) })) return "its sentence is not about the company";
+    if (quote && !foundingSentenceIsAboutCompany(quote, r.after.trim(), companyName, { ownSite: ownDomain(url, companyName), url })) return "its sentence is not about the company";
     if (isThirdPartyPage(url)) return "a customer, project or partner page does not say when the company was founded";
   }
   if (r.field === "tags") {

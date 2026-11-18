@@ -70,6 +70,7 @@ import { openFieldNames } from "../lib/enrichment/fieldReview.ts";
 import { writeFileSync, mkdirSync, readdirSync, readFileSync, existsSync } from "fs";
 import { rejectedDomains, rejectedDomainsCsv } from "../lib/enrichment/rejectedDomains.ts";
 import { wrapAnthropic, installHttpRecorder, quietOffline, installFetchTimeout, recorderSummary, replayMode } from "../lib/enrichment/recorder.ts";
+import { parseRejections, sampleRejections, rejectionsCsv, type Rejection } from "../lib/enrichment/rejections.ts";
 import { installCompanyLog, installLineTap, gathered, withCompany, companyLines } from "../lib/enrichment/companyLog.ts";
 import { loadGaps, saveGaps, recordGaps, purgeWrong, ownerWrongTest, missingRows, missingCsv, GAPS_PATH, type GapStore } from "../lib/enrichment/knownGaps.ts";
 import { domainClasses, domainClassesCsv } from "../lib/enrichment/domainClass.ts";
@@ -211,6 +212,8 @@ const RUN_DATE = new Date().toISOString().slice(0, 10);
 const websiteRows: Array<Record<string, string>> = [];
 // Addresses whose pages no longer name the company (domain_repurposed): a file for the owner's review, no database note.
 const repurposedRows: Array<Record<string, string>> = [];
+// Everything the rules turned away, with its reason code (owner, batch 7): rejected_all.csv, and a stratified sample of 30 for the owner to mark.
+const rejectedAll: Rejection[] = [];
 // Remembered values this run did not write (not in the report): carried_not_written.csv.
 const carriedNotWritten: Array<Record<string, string>> = [];
 // Kept for parity/visibility only -- v2 gates per field (issue 9), never on
@@ -494,6 +497,7 @@ async function enrichCompany(
       if (closedRows.length) { console.log(`    🔒  Field not open, not reported: ${[...new Set(closedRows.map((r) => r.field))].join(", ")}`); companyRows = companyRows.filter((r) => !closedRows.includes(r)); } }
     const missing = ASKED.filter((f) => OPEN_FIELDS.includes(f) && !companyRows.some((r) => r.field === f || r.field.startsWith(f)));
     recordGaps(gapStore, row.id, row.name, missing, companyLines(), runId ?? "dry", RUN_DATE);
+    rejectedAll.push(...parseRejections(companyLines(), row.name, row.id));
     console.log(`    📚  Known sources (${row.name}): from memory ${[...new Set([...injectedNow, ...carry.carried.map((r) => r.field)])].join(", ") || "none"}${injectedNow.length ? ` (${injectedNow.join(", ")} entered the write stage)` : ""}${carry.carried.length ? ` (${carry.carried.length} more value(s) carried in the report)` : ""}; from this run's search ${[...freshFound].filter((f) => !injectedNow.includes(f)).join(", ") || "none"}; still missing ${missing.join(", ") || "none"}${carry.recheck.length ? `; back to review (quote gone): ${carry.recheck.join(" | ")}` : ""}${carry.refreshDue.length ? `; older than the refresh time, searched again: ${carry.refreshDue.join(" | ")}` : ""}${carry.locked.length ? `; locked (marked correct) kept: ${carry.locked.join(" | ")}` : ""}${before ? "" : " [no memory yet]"}`);
   }
   for (const c of companyRows) {
@@ -868,6 +872,13 @@ async function main() {
     const wcell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
     writeFileSync("website_review.csv", "\uFEFF" + [wcols.join(","), ...allWebsiteRows.map((r) => wcols.map((c) => wcell(r[c] ?? "")).join(","))].join("\r\n") + "\r\n");
     console.log(`🛠️   ${allWebsiteRows.length} website(s) to fix in website_review.csv${DRY_RUN ? "" : " (and the website_review table)"}.`);
+  }
+  if (rejectedAll.length) {
+    writeFileSync("rejected_all.csv", rejectionsCsv(rejectedAll, false));
+    const sample = sampleRejections(rejectedAll, Number(process.env.REJECTED_SAMPLE ?? 30));
+    writeFileSync("rejected_sample_30.csv", rejectionsCsv(sample, true));
+    const byCode = new Map<string, number>(); for (const r of rejectedAll) byCode.set(r.reason_code, (byCode.get(r.reason_code) ?? 0) + 1);
+    console.log(`🚫  ${rejectedAll.length} rejected value(s) (rejected_all.csv) — ${[...byCode].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([c, n]) => `${c}×${n}`).join(", ")}; ${sample.length} of them, stratified by reason, in rejected_sample_30.csv — mark right/wrong, then: npx tsx scripts/rejected_stats.ts`);
   }
   if (KNOWN_ON) {
     saveGaps(gapStore);

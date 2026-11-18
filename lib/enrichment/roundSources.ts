@@ -155,7 +155,9 @@ export const HINT_ONLY_DOMAINS = ["finsmes.com", "techfundingnews.com", "thesaas
  */
 export const SYNDICATION_HOSTS = ["finance.yahoo.com", "tradingview.com", "financialcontent.com"];
 /** Republishers on part of a site only (owner, 2026-11-04): nasdaq.com's press releases. */
-const SYNDICATION_PATHS: Array<[string, RegExp]> = [["nasdaq.com", /^\/press-release\//]];
+const SYNDICATION_PATHS: Array<[string, RegExp]> = [];
+/** nasdaq.com/press-release/… is a wire (owner, batch 7: Ria on Sikhona), tier 1 like the wires it carries. */
+const WIRE_PATHS: Array<[string, RegExp]> = [["nasdaq.com", /^\/press-release\//]];
 
 /**
  * A company's own newsroom on a newsroom service (owner, 2026-11-04): mynewsdesk.com/<country>/<newsroom>/…
@@ -288,20 +290,39 @@ export function isDirectoryPage(url: string): boolean {
  * host), and the site's name is a word of its headline, or the site is a government's.
  */
 const RELEASE_PATH = /\/(news|newsroom|press|press-releases?|news-releases?|media|media-center|esd-media-center|releases?)(\/|-|$)/i;
-export function isPartyRelease(url: string, headline: string | null | undefined): boolean {
+/** The party's own pages about the deal that are no "release" by their path: a blog, a use case, a company-news page (owner, batch 7: inworld.ai/blog, euronet.com/use-cases, outsurance.co.za/company-news). */
+const PARTY_PAGE_PATH = /\/(?:[\w-]*news[\w-]*|[\w-]*press[\w-]*|blog|use-cases?|insights?|announcements?|stories|story|media|releases?)(?:\/|$)/i;
+const DEAL_WORDS = /acqui|\bbuys?\b|bought|sale-of|sale of|\bsells?\b|sold|merge|takeover|take-over|divest/i;
+const isSubsequence = (small: string, big: string) => { let i = 0; for (const c of big) if (c === small[i]) i++; return i === small.length; };
+export function isPartyRelease(url: string, headline: string | null | undefined, o: { content?: string | null; companyName?: string | null } = {}): boolean {
   const host = hostOf(url);
   if (!host) return false;
   let path = "";
   try { path = new URL(url.startsWith("http") ? url : `https://${url}`).pathname; } catch { return false; }
   const releaseHost = /^(investors?|ir|news|press|media|newsroom)\./.test(host);
-  if (!RELEASE_PATH.test(path) && !releaseHost) return false;
+  const dealPage = DEAL_WORDS.test(path) || DEAL_WORDS.test(headline ?? "");
+  // The path of a release; or, for a deal, a blog / use case / company-news page of the party's site.
+  if (!RELEASE_PATH.test(path) && !releaseHost && !(dealPage && PARTY_PAGE_PATH.test(path))) return false;
   if (/\.gov(\.[a-z]{2})?$|\.gov\.[a-z]{2}$|\.gc\.ca$|\.europa\.eu$/.test(host)) return true;
   const label = (reviewDomain(url) ?? host).split(".")[0];
-  const list = (headline ?? "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  // The words of the headline and of the address' own slug: the party's name is among them ("inworld-acquires-ultravox", "OUTsurance Sale Of OUTvest To Alexforbes").
+  const list = `${headline ?? ""} ${path.replace(/[/_-]+/g, " ")}`.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
   const words = new Set(list.filter((w) => w.length >= 3));
   // A name of two words is one word in the address (bakerhughes.com, generalmills.com): adjacent headline words joined count too.
-  for (let i = 0; i + 1 < list.length; i++) { words.add(list[i] + list[i + 1]); if (i + 2 < list.length) words.add(list[i] + list[i + 1] + list[i + 2]); }
-  return label.split("-").some((part, i) => (i === 0 || part.length >= 4) && part.length >= 3 && words.has(part));
+  const joined: string[] = [];
+  for (let i = 0; i + 1 < list.length; i++) { const a = list[i] + list[i + 1]; words.add(a); joined.push(a); if (i + 2 < list.length) { const b = a + list[i + 2]; words.add(b); joined.push(b); } }
+  if (label.split("-").some((part, i) => (i === 0 || part.length >= 4) && part.length >= 3 && words.has(part))) return true;
+  // A short form of the name ("lwolf" for "Lone Wolf"): its letters, in order, from the first letter, are most of the name.
+  const flat = label.replace(/[^a-z0-9]/g, "");
+  if (flat.length >= 4 && [...list, ...joined].some((w) => w.length >= flat.length && w[0] === flat[0] && flat.length >= w.length * 0.6 && isSubsequence(flat, w))) return true;
+  // The page itself says the deal and names its own site beside the buyer ("Ria, a Euronet company, acquired Sikhona"): the buyer's parent.
+  const c = o.content ?? "";
+  if (dealPage && o.companyName && c) {
+    const nm = o.companyName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const m = c.match(new RegExp(`[^.\\n]{0,200}\\b${nm}\\b[^.\\n]{0,200}`, "i"));
+    if (m && DEAL_WORDS.test(m[0]) && c.toLowerCase().split(flat).length - 1 >= 2) return true;
+  }
+  return false;
 }
 
 export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean; leadInvestor?: string | null; investors?: Array<string | null | undefined>; content?: string | null; headline?: string | null; companyName?: string | null } = {}): SourceStanding {
@@ -322,6 +343,7 @@ export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean
     const standing = original ? roundSourceStanding(`https://${original}/`) : null;
     return standing?.kind === "allowed" ? { ...standing, why: `republished_from:${original}` } : { kind: "denied", why: "republished_without_allowed_original" };
   }
+  if (WIRE_PATHS.some(([d, re]) => onList(host, [d]) && re.test((() => { try { return new URL(url.startsWith("http") ? url : `https://${url}`).pathname; } catch { return ""; } })()))) return { kind: "allowed", tier: 1, lowConfidence: false, why: "wire_or_register" };
   if (onList(host, TIER1_DOMAINS) || isRegionalWireHost(host)) return { kind: "allowed", tier: 1, lowConfidence: onList(host, LOW_CONFIDENCE_DOMAINS), why: "wire_or_register" };
   // A directory page of an allowed outlet is refused; of an unlisted one it stays unlisted (domain review).
   if (isDirectoryPage(url) && (onList(host, TIER2_DOMAINS) || onList(host, TIER3_DOMAINS) || onList(host, TIER4_DOMAINS) ||
@@ -333,7 +355,7 @@ export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean
   if (onList(host, TIER3_DOMAINS)) return { kind: "allowed", tier: 3, lowConfidence: false, why: "tier3_press" };
   if (onList(host, TIER4_DOMAINS)) return { kind: "allowed", tier: 4, lowConfidence: true, why: "tier4_press" };
   // Tier 1 for the event itself; the profile's fields take it as tier 2 (profileSourceAllowed).
-  if (isPartyRelease(url, opts.headline)) return { kind: "allowed", tier: 1, lowConfidence: false, why: "party_release" };
+  if (isPartyRelease(url, opts.headline, { content: opts.content, companyName: opts.companyName })) return { kind: "allowed", tier: 1, lowConfidence: false, why: "party_release" };
   // A domain on no list that was classified once (domainClass.ts): outlets and wires are tier 4, the weakest; directories, blogs and other
   // companies' own sites are blocked; an investor follows the investor rule above.
   const cls = domainClasses.get(url);

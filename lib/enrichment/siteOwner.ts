@@ -48,6 +48,7 @@ export function redirectBrand(companyName: string, website: string | null | unde
     const fin = p.content.slice(0, 1200).match(/Final URL:\s*(https?:\/\/[^\s]+)/i)?.[1];
     if (!fin) continue;
     let host = ""; try { host = new URL(fin).hostname; } catch { continue; }
+    if (isTrackingHost(host)) continue;
     const got = labelOf(host);
     if (!got || got === asked || got.includes(asked) || asked.includes(got)) continue;
     const body = p.content.replace(/^[\s\S]{0,1600}?Markdown Content:/i, "");
@@ -56,6 +57,12 @@ export function redirectBrand(companyName: string, website: string | null | unde
     if (name && name.length >= 3 && core(name) !== core(companyName)) return name.replace(/\s+/g, " ");
   }
   return null;
+}
+
+/** An advertising / tracking / affiliate endpoint: an address that passes through one is a broken redirect, not another company's site (owner, batch 7: MyHR → match.adsrvr.org). */
+export function isTrackingHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/^www\./, "");
+  return /(?:^|\.)(?:adsrvr\.org|doubleclick\.net|googleadservices\.com|googlesyndication\.com|googletagmanager\.com|google-analytics\.com|adnxs\.com|criteo\.(?:com|net)|rubiconproject\.com|pubmatic\.com|taboola\.com|outbrain\.com|scorecardresearch\.com|demdex\.net|bidswitch\.net|casalemedia\.com|openx\.net|adform\.net|smartadserver\.com|awin1\.com|linksynergy\.com|shareasale\.com|tradedoubler\.com|impactradius\.com|facebook\.com\/tr|clickcease\.com|mgid\.com|yieldmo\.com|2mdn\.net|adsymptotic\.com|bat\.bing\.com)$/.test(h) || /^(?:match|sync|pixel|px|track|tracking|ads?|adserver|click|clk|cm|cs|rtb|bid|dsp)\d*\./.test(h);
 }
 
 /** null, or the reason ("acquired / rebranded: …") the pages are no description of this company. */
@@ -71,6 +78,7 @@ export function siteBelongsToAnotherCompany(companyName: string, website: string
     const fin = p.content.slice(0, 1200).match(/Final URL:\s*(https?:\/\/[^\s]+)/i)?.[1];
     if (!fin || !asked) continue;
     let finHost = ""; try { finHost = new URL(fin).hostname; } catch { continue; }
+    if (isTrackingHost(finHost)) continue;
     const got = labelOf(finHost);
     const related = got === asked || got.includes(asked) || asked.includes(got) || (key0.length >= 3 && (got.includes(key0) || key0.includes(got)));
     // The company's name (TymeBank Limited) on the page the address leads to: the same company under a new address (owner, 2026-11-15: tymebank.co.za → gotyme.co.za).
@@ -87,8 +95,14 @@ export function siteBelongsToAnotherCompany(companyName: string, website: string
     new RegExp(`\\b[A-Z][\\w&.-]*\\s+(?:is now|has (?:rebranded|renamed itself) (?:as|to)|is becoming|became|rebrands? as|has become)\\s+${nameRe}\\b`),
     new RegExp(`\\b${nameRe}\\b\\s*\\((?:formerly|previously|fka|f/k/a)\\s+[A-Z]`, "i"),
   ];
-  for (const re of said) {
+  // An acquired company is enriched as usual (owner's decision, round 10; batch 7: Sikhona, "Ria Money Transfer acquired Sikhona"): a page that says it was bought, and still speaks of the company by its
+  // name (twice or more, or on an address that carries the name), is still the company's page. The purchase is the news's business (acquired from the accepted news), not a reason to describe nothing.
+  const nameCount = (home.match(new RegExp(`\\b${nameRe}\\b`, "gi")) ?? []).length;
+  const movedAway = pages.slice(0, 3).some((p) => { const fin = p.content.slice(0, 1200).match(/Final URL:\s*(https?:\/\/[^\s]+)/i)?.[1]; try { return !!fin && !!asked && !isTrackingHost(new URL(fin).hostname) && labelOf(new URL(fin).hostname) !== asked && !labelOf(new URL(fin).hostname).includes(asked) && !asked.includes(labelOf(new URL(fin).hostname)); } catch { return false; } });
+  const stillItself = nameCount >= 2 && !movedAway;
+  for (const [i, re] of said.entries()) {
     const m = home.match(re);
+    if (m && i < 2 && stillItself) continue;
     if (m) return `acquired / rebranded: the site says "${m[0].replace(/\s+/g, " ").slice(0, 140)}"`;
   }
   // 2. The company is never named, and another company's name is the page's own ("© 2026 aibuy", "Medallia" in the title).
