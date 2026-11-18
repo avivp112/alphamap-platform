@@ -82,6 +82,6 @@ const SYMBOL: Partial<Record<Currency, string>> = { EUR: "€", GBP: "£", INR: 
 /** "€102.5M", "CHF 20M" — the source's own figure, short. */
 export function formatOriginal(amount: number, currency: string): string {
   const sym = SYMBOL[currency as Currency];
-  const short = amount >= 1e9 ? `${+(amount / 1e9).toFixed(2)}B` : amount >= 1e6 ? `${+(amount / 1e6).toFixed(1)}M` : amount >= 1e3 ? `${+(amount / 1e3).toFixed(0)}K` : String(amount);
+  const short = amount >= 1e9 ? `${+(amount / 1e9).toFixed(2)}B` : amount >= 1e6 ? `${+(amount / 1e6).toFixed(2)}M` : amount >= 1e3 ? `${+(amount / 1e3).toFixed(0)}K` : String(amount);
   return sym ? `${sym}${short}` : `${currency} ${short}`;
 }

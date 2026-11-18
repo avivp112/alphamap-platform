@@ -19,6 +19,7 @@ import { extractNumbersFromText } from "./evidence.ts";
 import { statedRoundLabels } from "./assemble.ts";
 import { refineRoundType } from "./rounds.ts";
 
+import { cleanPersonName } from "./people.ts";
 export interface RowLike { company?: string; field: string; after: string; source_url?: string | null; quote?: string | null; payload?: string | null; before?: string | null; [k: string]: unknown }
 
 const fold = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, "");
@@ -96,6 +97,10 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
   const url = r.source_url ?? "";
   if (r.quote && looksLikeAddress(r.quote)) return "its quote is an address, not text of the page";
   if (r.quote && quoteIsNotASentence(r.quote)) return "its quote is page code, not a sentence";
+  if ((r.field === "founder" || r.field === "leader") && r.after) {
+    const nm = r.after.split(" — ")[0];
+    if (nm !== cleanPersonName(nm)) return "the name carries a function word or a role fragment (\"As Karim Nour\", \"Karim Nour Co\")";
+  }
   const bad = isListingOrSponsoredUrl(url);
   if (bad) return bad === "sponsored_content" ? "its source is sponsored content" : "its source is a tag, list or search page, not the article";
   const quote = r.quote ?? "";

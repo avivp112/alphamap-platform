@@ -13,6 +13,7 @@ import { acquisitionHeadline } from "../lib/enrichment/siteOwner.ts";
 import { extractNumbersFromText } from "../lib/enrichment/evidence.ts";
 import { SECTOR_TAXONOMY } from "../src/lib/taxonomy.ts";
 import { loadKnown, refreshDue, markKey } from "../lib/enrichment/knownSources.ts";
+import { rowProblem } from "../lib/enrichment/rowRules.ts";
 import { recentRules } from "../lib/enrichment/ruleRegistry.ts";
 import { loadGaps, ownerWrongTest } from "../lib/enrichment/knownGaps.ts";
 
@@ -148,6 +149,8 @@ if (existsSync("batch4_dry.log")) {
     if (!inReport.length) continue;                                     // the company was not in this run's report
     for (const e of list) {
       if (e.status === "quote_gone" || e.status === "superseded" || wrong(e.company, e.field, e.value) || refreshDue(e, today)) continue;   // flagged, with its reason
+      // A remembered value that the rules of today reject is not in the report, and the rule is its reason (the new source and name rules, batch 7).
+      if (rowProblem({ field: e.field, after: e.value, source_url: e.source_url, quote: e.quote, payload: e.payload }, e.company, today)) continue;
       if (inReport.some((r) => family(r.field) === family(e.field) && fold(r.after) === fold(e.value))) continue;
       // A single-valued field whose value is now another one is a supersession, which remember() marks; anything else is a value that went missing.
       if (inReport.some((r) => family(r.field) === family(e.field)) && ["hq_city", "hq_country", "founded_year", "founding_country", "sector", "description", "tags", "employee_count", "employee_range"].includes(family(e.field))) continue;
