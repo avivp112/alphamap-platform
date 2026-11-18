@@ -94,7 +94,7 @@ export interface CandidateEvidence {
   placement_agents?: CandidatePlacementAgent[];
   date_of_first_sale?: string;
   // Added by the signals step (stage 2): absent until the candidate has been checked.
-  signals?: { checked_at: string; items: CandidateSignal[] };
+  signals?: { checked_at: string; v?: number; items: CandidateSignal[] };
   /** Stage 4: the candidate's own website, verified against the registry record (worker/candidateIdentity.ts). */
   enrichment?: CandidateEnrichment;
   /** What surfaced a watched candidate (stage 3). */

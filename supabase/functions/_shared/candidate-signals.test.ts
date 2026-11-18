@@ -9,10 +9,20 @@ const appt = (n: string, name: string, status = "active", resigned?: string, rol
 const none: KnownCompanies = new Map();
 
 describe("officerAppointmentsSignals", () => {
-  it("ignores the company itself and reports other active directorships", () => {
+  it("ignores the company itself and the resigned ones; a single other directorship is only a note (v2)", () => {
     const s = officerAppointmentsSignals("BLOGGS, Jo", { items: [appt("1", "THIS LTD"), appt("2", "OTHER ONE LTD"), appt("3", "OLD LTD", "active", "2024-01-01")] }, "1", none, "/officers/x/appointments");
-    expect(s).toEqual([{ kind: "serial_founder", level: "positive", url: "https://find-and-update.company-information.service.gov.uk/officers/x/appointments",
+    expect(s).toEqual([{ kind: "serial_founder", level: "info", url: "https://find-and-update.company-information.service.gov.uk/officers/x/appointments",
       text: "BLOGGS, Jo: 1 other active directorship (OTHER ONE LTD)" }]);
+  });
+  it("two to five other active directorships make a serial founder", () => {
+    const two = officerAppointmentsSignals("A", { items: [appt("1", "THIS"), appt("2", "B LTD"), appt("3", "C LTD")] }, "1", none);
+    expect(two.map((x) => [x.kind, x.level])).toEqual([["serial_founder", "positive"]]);
+    const five = officerAppointmentsSignals("A", { items: [appt("1", "THIS"), ...[2, 3, 4, 5, 6].map((n) => appt(String(n), `C${n}`))] }, "1", none);
+    expect(five[0].level).toBe("positive");
+  });
+  it("six other active directorships are already a warning (v2)", () => {
+    const six = officerAppointmentsSignals("A", { items: [appt("1", "THIS"), ...[2, 3, 4, 5, 6, 7].map((n) => appt(String(n), `C${n}`))] }, "1", none);
+    expect(six.map((x) => [x.kind, x.level])).toEqual([["many_directorships", "warning"]]);
   });
   it("a sole appointment gives no signal", () => {
     expect(officerAppointmentsSignals("A", { items: [appt("1", "THIS LTD")] }, "1", none)).toEqual([]);

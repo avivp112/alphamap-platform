@@ -10,6 +10,9 @@ describe("hasStrongSignal", () => {
       expect(hasStrongSignal([sig(k, "positive")])).toBe(true);
     }
   });
+  it("one other directorship (a serial_founder note) is not strong", () => {
+    expect(hasStrongSignal([sig("serial_founder", "info")])).toBe(false);
+  });
   it("warnings, notes and a mere serial_founder note are not", () => {
     expect(hasStrongSignal([sig("many_directorships", "warning"), sig("psc_summary", "info"), sig("holding_psc", "warning")])).toBe(false);
     expect(hasStrongSignal([sig("serial_founder", "info")])).toBe(false);

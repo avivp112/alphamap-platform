@@ -105,7 +105,10 @@ export async function candidateBatch(d: CandidateBatchDeps, opts: { limit: numbe
       out.results.push({
         name: c.name, status: e.status, website: e.website, matches: e.match_signals.map((s) => s.kind), description: e.description_he,
       });
-      log(`candidate ${c.name}: ${e.status}${e.website ? ` ${e.website}` : ""}${opts.write ? "" : " (dry run, not saved)"}`);
+      // What matched is in the log line, so each verdict can be checked by eye: "is that really this company?"
+      const why = e.match_signals.map((s) => `${s.kind}: ${s.text}`).join("; ");
+      const said = e.description_quote ? ` | says: "${e.description_quote.slice(0, 140)}"` : "";
+      log(`candidate ${c.name} (${c.source}${c.entity_number ? ` ${c.entity_number}` : ""}): ${e.status}${e.website ? ` ${e.website}` : ""}${why ? ` [${why}]` : ""}${said}${opts.write ? "" : " (dry run, not saved)"}`);
       if (opts.write) await saveEnrichment(d.db, c, e);
     } catch (err) {
       out.failed++;

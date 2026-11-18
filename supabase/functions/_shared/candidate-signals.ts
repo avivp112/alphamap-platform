@@ -34,13 +34,24 @@ export interface Signal {
 
 export interface SignalSet {
   checked_at: string;
+  /** Version of the rules that set the levels (UK: UK_SIGNALS_VERSION). A candidate with an older one is re-collected by the backfill. */
+  v?: number;
   items: Signal[];
 }
 
-/** Other active directorships up to this many read as a founder with several ventures. */
+/** Bump when a rule below changes what is "positive" or a "warning": the backfill then re-collects the UK candidates. */
+export const UK_SIGNALS_VERSION = 2;
+
+/** PostgREST `or` filter: a UK candidate whose signals are missing or were set by an older rule. */
+export const UK_SIGNALS_STALE_OR =
+  `evidence->signals->>checked_at.is.null,evidence->signals->>v.is.null,evidence->signals->>v.neq.${UK_SIGNALS_VERSION}`;
+
+/** One other directorship is common to anyone (a side company); from two, the person reads as a founder with several ventures. */
+export const SERIAL_MIN = 2;
+/** Up to this many other active directorships is a serial founder. */
 export const SERIAL_MAX = 5;
-/** From this many other active directorships the person is flagged: a nominee / formation-agent pattern. */
-export const MANY_DIRECTORSHIPS = 15;
+/** From this many other active directorships the person is flagged: a nominee / formation-agent pattern (v2: was 15). */
+export const MANY_DIRECTORSHIPS = 6;
 /** This many candidates already seen at one registered address: a formation-agent address. */
 export const SHARED_ADDRESS_MIN = 5;
 /** How many share allotments are listed. */
@@ -72,7 +83,7 @@ export function officerAppointmentsSignals(
       text: `${directorName}: ${active.length} other active directorships (a nominee or formation-agent pattern is possible)` });
   } else if (active.length > 0) {
     const names = active.slice(0, 3).map(label).join(", ");
-    out.push({ kind: "serial_founder", level: active.length <= SERIAL_MAX ? "positive" : "info", url,
+    out.push({ kind: "serial_founder", level: active.length >= SERIAL_MIN && active.length <= SERIAL_MAX ? "positive" : "info", url,
       text: `${directorName}: ${active.length} other active directorship${active.length === 1 ? "" : "s"} (${names}${active.length > 3 ? ", …" : ""})` });
   }
   for (const i of others) {
@@ -187,6 +198,6 @@ export function formDPersonSignals(name: string, others: OtherIssuerRow[], funds
   return out;
 }
 
-export function buildSignalSet(items: Signal[], checkedAt: string): SignalSet {
-  return { checked_at: checkedAt, items };
+export function buildSignalSet(items: Signal[], checkedAt: string, version?: number): SignalSet {
+  return { checked_at: checkedAt, ...(version !== undefined ? { v: version } : {}), items };
 }

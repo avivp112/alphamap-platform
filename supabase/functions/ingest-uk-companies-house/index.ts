@@ -58,9 +58,9 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { withRunLog, countKeys } from "../_shared/run-log.ts";
 import { gateUkCompany, countDirectors, type GateTier } from "../_shared/company-gate.ts";
-import { mergeCandidateEvidence, DETAIL_STAMP, SIGNALS_PATH } from "../_shared/candidate-evidence.ts";
+import { mergeCandidateEvidence, DETAIL_STAMP } from "../_shared/candidate-evidence.ts";
 import {
-  officerAppointmentsSignals, pscSignals, capitalSignals, sharedAddressSignals, buildSignalSet,
+  officerAppointmentsSignals, pscSignals, capitalSignals, sharedAddressSignals, buildSignalSet, UK_SIGNALS_VERSION, UK_SIGNALS_STALE_OR,
   type Signal, type SignalSet, type KnownCompanies,
 } from "../_shared/candidate-signals.ts";
 import { hasStrongSignal, watchEvents, promotionReason } from "../_shared/candidate-watch.ts";
@@ -331,7 +331,7 @@ async function collectUkSignals(
       .eq("evidence->>address", address).neq("id", candidateId);
     items.push(...sharedAddressSignals(count ?? 0, address));
   }
-  return buildSignalSet(items, new Date().toISOString());
+  return buildSignalSet(items, new Date().toISOString(), UK_SIGNALS_VERSION);
 }
 
 
@@ -417,7 +417,7 @@ async function backfillEvidence(
     .select("id, name, entity_number, evidence")
     .eq("source", "uk_companies_house").eq("status", "pending")
     .not("entity_number", "is", null)
-    .filter(SIGNALS_PATH, "is", null)
+    .or(UK_SIGNALS_STALE_OR)
     .order("first_seen_at", { ascending: false })
     .limit(limit);
   if (error) return json({ error: `company_candidates: ${error.message}` }, 500);
@@ -462,7 +462,7 @@ async function backfillEvidence(
     let merged = mergeCandidateEvidence(row.evidence as Record<string, unknown>, extra, officers, now);
     // Signals: not for a company that is gone from the register (404), and only once the detail is in.
     const signals = profile.status === 404
-      ? buildSignalSet([], now)
+      ? buildSignalSet([], now, UK_SIGNALS_VERSION)
       : await collectUkSignals(supabase, apiKey, String(row.entity_number),
           (merged.officers ?? []) as Array<Record<string, any>>, (merged.address as string | undefined) ?? null, String(row.id));
     merged = { ...merged, signals };
