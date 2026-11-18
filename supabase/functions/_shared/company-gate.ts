@@ -136,7 +136,7 @@ const SEC_TECH_GROUPS = new Set(["technology", "computers", "telecommunications"
 
 /** Names of investment vehicles that slip past the industry-group filter (SPVs, series LLCs, co-invest funds). */
 const SEC_VEHICLE_NAME =
-  /\b(fund|funds|spv|a series of|series\s+[a-z0-9][\w-]*|l\.?p\.?|co-?invest\w*|opportunit(?:y|ies)|investors?|capital partners|holdings?|equit(?:y|ies))\b/i;
+  /\b(fund|funds|spv|a series of|series\s+[a-z0-9][\w-]*|l\.?p\.?|co-?invest\w*|opportunit(?:y|ies)|investors?|capital partners|partners\s+(?:[ivx]{1,5}|\d+)|holdings?|equit(?:y|ies))\b/i;
 
 /**
  * Industry groups that hold technology companies among many that are not:

@@ -34,7 +34,7 @@ import { domainNameMatch, rootDomain } from "./identify.ts";
 import type { Search, SearchResult } from "./search.ts";
 
 export const MAX_SEARCHES = 3;
-export const MAX_PAGES = 2;
+export const MAX_PAGES = 4;   // the front page + about, team, contact (owner, 2026-11-18: was 2)
 /** Matches needed to call a website the company's: at least two kinds, one of them an identity kind. */
 export const MIN_MATCH_KINDS = 2;
 
@@ -301,6 +301,12 @@ export interface IdentityDeps {
 const PAGE_TIMEOUT_MS = 12_000;
 const MAX_HTML = 400_000;
 const ABOUT_LINK = /\b(about|team|company|who-?we-?are|our-?story|leadership|contact)\b/i;
+/** One page of each kind: who they are, who is on the team, where to reach them. */
+const PAGE_KINDS: RegExp[] = [
+  /\b(about|company|who-?we-?are|our-?story|mission)\b/i,
+  /\b(team|people|leadership|founders?|management)\b/i,
+  /\bcontact\b/i,
+];
 
 async function getPage(url: string, f: typeof fetch): Promise<Page | null> {
   try {
@@ -313,18 +319,30 @@ async function getPage(url: string, f: typeof fetch): Promise<Page | null> {
   }
 }
 
-/** The first same-site link to an about/team/contact page, absolute. */
-export function aboutLink(home: Page): string | null {
+/** Same-site links from the front page, one per kind (about, team, contact), absolute, at most `max`. */
+export function extraLinks(home: Page, max = MAX_PAGES - 1): string[] {
   let base: URL;
-  try { base = new URL(home.url); } catch { return null; }
+  try { base = new URL(home.url); } catch { return []; }
+  const same: Array<{ url: string; text: string }> = [];
   for (const m of home.html.matchAll(LINK)) {
     try {
       const u = new URL(m[1], base);
       if (u.origin !== base.origin || u.pathname === "/" || u.pathname === base.pathname) continue;
-      if (ABOUT_LINK.test(u.pathname) || ABOUT_LINK.test(m[2].replace(/<[^>]+>/g, " "))) return u.toString();
+      same.push({ url: u.toString(), text: `${u.pathname} ${m[2].replace(/<[^>]+>/g, " ")}` });
     } catch { /* not a URL */ }
   }
-  return null;
+  const out: string[] = [];
+  for (const kind of PAGE_KINDS) {
+    const hit = same.find((l) => kind.test(l.text) && !out.includes(l.url));
+    if (hit) out.push(hit.url);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** The first same-site link to an about/team/contact page, absolute. */
+export function aboutLink(home: Page): string | null {
+  return extraLinks(home, 1)[0] ?? null;
 }
 
 async function readSite(url: string, f: typeof fetch): Promise<Page[]> {
@@ -333,9 +351,9 @@ async function readSite(url: string, f: typeof fetch): Promise<Page[]> {
   const home = await getPage(origin + "/", f);
   if (!home) return [];
   const pages = [home];
-  const about = aboutLink(home);
-  if (about && pages.length < MAX_PAGES) {
-    const p = await getPage(about, f);
+  for (const link of extraLinks(home)) {
+    if (pages.length >= MAX_PAGES) break;
+    const p = await getPage(link, f);
     if (p) pages.push(p);
   }
   return pages;
@@ -419,7 +437,7 @@ export async function enrichCandidate(c: CandidateInput, deps: IdentityDeps): Pr
   out.status = "verified";
 
   // 4. What the company says it does: a sentence the model quotes and the code finds on the page.
-  const text = best.pages.map((p) => promptText(p.text, 4000)).join("\n\n");
+  const text = best.pages.map((p) => promptText(p.text, 3000)).join("\n\n");
   try {
     const d = await deps.describe({ name, text });
     if (d && quoteInText(d.quote, text)) {

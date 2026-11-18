@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   personName, textHasPerson, plainName, matchSignals, isVerified, siteSignals, quoteInText, pickSiteCandidates,
-  isForbiddenDomain, cityOf, aboutLink, originOf, enrichCandidate, displayName, MAX_SEARCHES,
+  isForbiddenDomain, cityOf, aboutLink, originOf, extraLinks, MAX_PAGES, enrichCandidate, displayName, MAX_SEARCHES,
   type CandidateInput, type Page, type IdentityDeps,
 } from "./candidateIdentity.ts";
 import type { SearchResult } from "./search.ts";
@@ -115,6 +115,11 @@ describe("choosing sites", () => {
   it("the stored website is the front page, not the deep link the search returned", () => {
     expect(originOf("https://www.broccoli.com/privacy-policy")).toBe("https://www.broccoli.com/");
     expect(originOf("https://tabiconnect.com/privacy-policy/?x=1")).toBe("https://tabiconnect.com/");
+  });
+  it("reads up to four pages: the front page, about, team and contact", () => {
+    expect(MAX_PAGES).toBe(4);
+    const home = page("https://highline.ai/", "", `<a href="/about">About</a><a href="/team">Our team</a><a href="/contact-us">Contact</a><a href="/blog">Blog</a><a href="https://other.com/team">x</a>`);
+    expect(extraLinks(home)).toEqual(["https://highline.ai/about", "https://highline.ai/team", "https://highline.ai/contact-us"]);
   });
   it("finds an about page on the same site only", () => {
     const home = page("https://highline.ai/", "", `<a href="https://other.com/about">x</a><a href="/about-us">About</a>`);

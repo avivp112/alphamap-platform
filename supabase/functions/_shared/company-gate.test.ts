@@ -205,3 +205,17 @@ describe("EPO patent applicants", () => {
     expect(looksLikePerson("GreenFish hf.")).toBe(false);
   });
 });
+
+describe("SEC Form D: numbered 'Partners' vehicles (seen in the first stage 4 dry runs, 2026-11-18)", () => {
+  it("rejects 'Life Impact Partners 15 LLC' and the like, however technology-labelled", () => {
+    for (const name of ["Life Impact Partners 15 LLC", "Life Impact Partners 10 LLC", "Acme Growth Partners II LP", "North Star Partners IV, LLC"]) {
+      const g = gateFormD({ name, industryGroup: "Other Technology" });
+      expect(g.tier).toBe("reject");
+      expect(g.reasons.join(" ")).toMatch(/vehicle_name/);
+    }
+  });
+  it("leaves real companies whose name has 'Partners' without a numeral alone", () => {
+    expect(gateFormD({ name: "Partners Robotics Inc.", industryGroup: "Technology" }).tier).not.toBe("reject");
+    expect(gateFormD({ name: "Kinetic Partners AI, Inc.", industryGroup: "Technology" }).tier).not.toBe("reject");
+  });
+});
