@@ -51,15 +51,19 @@ export async function judgeNews(n: NewsItem, d: NewsDeps): Promise<NewsVerdict> 
   // A headline joined from a cut source title and the model's continuation is checked against the page's own title; the page's wins.
   if (n.title_joined) {
     // The page's own title; else the whole headline in the article's address, when it carries the words of the cut one (owner, batch 7: Lone Wolf's release, cut only in the log).
-    const full = titleFromHtml((await page()) ?? "", n.url) ?? completeFromSlug(title, n.url);
+    const fromPage = titleFromHtml((await page()) ?? "", n.url);
+    const full = fromPage ?? completeFromSlug(title, n.url);
     if (!full) return { keep: false, reason: "news_title_cut", message: "the source's headline is cut off and the page does not give the whole of it" };
     title = full;
   }
   // Cut off by its marks, or stopping in the middle of a sentence: the page must give the whole headline (a headline the page confirms stays).
   if (headlineLooksCut(title) || headlineIncomplete(title)) {
-    const full = titleFromHtml((await page()) ?? "", n.url) ?? completeFromSlug(title, n.url);
+    // The page's own title when it carries the headline; else the address' slug (a page title with the site's name in it does not carry it, the slug may).
     const a = title.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
-    if (full && full.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").startsWith(a.slice(0, Math.max(12, a.length - 2)))) title = full;
+    const carries = (f: string | null) => !!f && f.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").startsWith(a.slice(0, Math.max(12, a.length - 2)));
+    const fromPage = titleFromHtml((await page()) ?? "", n.url);
+    const full = carries(fromPage) ? fromPage : completeFromSlug(title, n.url);
+    if (carries(full)) title = full!;
     else return { keep: false, reason: "news_title_cut", message: "the headline is cut off and the page does not give the whole of it" };
   }
   // The page's own headline (og:title, then h1, then <title>) beats a search result's: Glilot's page says "…as mobile games break from

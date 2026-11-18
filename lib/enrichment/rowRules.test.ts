@@ -613,3 +613,10 @@ describe("a short headline that is its address' whole slug is whole (owner, batc
     expect(completeFromSlug("Alexforbes buys Outvest", "https://dailyinvestor.com/finance/43233/something-else-entirely/")).toBeNull();
   });
 });
+
+describe("a place after 'in' is not a name to check (owner, batch 7: Snupit, Pietermaritzburg)", () => {
+  it("is not claimed", () => {
+    expect(claims("Snupit connects customers with professionals such as plumbers in Pietermaritzburg and Durban.", "Snupit").names).toEqual([]);
+    expect(claims("Snupit connects customers with plumbers using Salesforce.", "Snupit").names).toEqual(["Salesforce"]);
+  });
+});
