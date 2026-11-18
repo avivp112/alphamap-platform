@@ -134,7 +134,7 @@ export function CrmTab() {
 }
 
 /** Add an AlphaMap company; not found -> check it (which adds it on its own). */
-function AddCompanyDialog({ onClose, onCheck }: { onClose: () => void; onCheck: (name: string) => void }) {
+export function AddCompanyDialog({ onClose, onCheck }: { onClose: () => void; onCheck: (name: string) => void }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   useBackClose(true, onClose);

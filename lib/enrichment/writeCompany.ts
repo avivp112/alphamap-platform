@@ -10,6 +10,7 @@
 // script's globals.
 // =============================================================================
 
+import type { LabeledSource } from "./sources.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CollectedCompany, V2StartupRow } from "./collect.ts";
 import { filterCrossSectorTags, industryFromTaxonomy, type SectorTaxonomy } from "./extractProfile.ts";
@@ -18,7 +19,7 @@ import { normalizeIsoDate, appendNew, reconcileOnFile, isSameRound } from "./ass
 import { fetchArticleOgImage } from "./ogImage.ts";
 import { detectAcquisition } from "./acquisition.ts";
 import { detectClosure } from "./closure.ts";
-import { gateLines, parseRoundLine } from "./reportGate.ts";
+import { gateLines, parseRoundLine, pruneOfficeFromPatch } from "./reportGate.ts";
 import { ruleOf } from "./ruleRegistry.ts";
 import { brandFromTexts } from "./rowRules.ts";
 import { leaderRoleEvidence, cleanPeople, mergeFoundersByName, isFounderEntry, cleanFounderTitle, canonicalTitle } from "./people.ts";
@@ -767,7 +768,9 @@ export async function writeCollected(
     if (cur) {
       headcountLowerBoundNow = cur.lowerBound;
       setIfChanged("employee_count", cur.count, row.employee_count);
-      setIfChanged("employee_range", cur.range, row.employee_range);
+      // A count of people shown on a page ("observed", a lower bound) gives no range with a ceiling (owner, batch 7: Sycamore, "5 people" → 1-10).
+      const fromObserved = cur.lowerBound && headcountPoints.find((p) => p.date === cur.date && p.count === cur.count)?.pointType === "observed";
+      if (!fromObserved) setIfChanged("employee_range", cur.range, row.employee_range);
       const from = headcountPoints.find((p) => p.date === cur.date && p.count === cur.count);
       let sid = from?.sourceUrl ? [...sourceById.entries()].find(([, x]) => x.url === from.sourceUrl)?.[0] : undefined;
       // A register, a plan or an archived copy is not among the pages read: it is registered as a source of its own, with the point's quote.
@@ -845,7 +848,7 @@ export async function writeCollected(
       } else if (k === "patents") {
         for (const pt of newOf<{ patent_number?: string | null; title: string; url?: string | null }>(patch.patents, rowOf.patents, (a, b) => a.patent_number === b.patent_number)) one("patent", `${pt.patent_number ?? ""} ${pt.title}`.trim(), pt.url ?? null);
       } else if (k === "offices") {
-        for (const o of newOf<{ city: string; country?: string | null; source_url?: string | null }>(patch.offices, rowOf.offices, (a, b) => a.city === b.city && (a.country ?? null) === (b.country ?? null))) one("office", [o.city, o.country].filter(Boolean).join(", "), o.source_url ?? null);
+        for (const o of newOf<{ city: string; country?: string | null; source_url?: string | null }>(patch.offices, rowOf.offices, (a, b) => a.city === b.city && (a.country ?? null) === (b.country ?? null))) one("office", [o.city, o.country].filter(Boolean).join(", "), o.source_url ?? null, (profile.profile.offices ?? []).find((x) => x.city === o.city)?.evidence_quote ?? null);
       } else if (k === "office_countries" || k === "patent_count" || k === "patent_fields") {
         // Derived from offices / patents: written beside them, not a value of their own.
       } else {
@@ -866,7 +869,7 @@ export async function writeCollected(
       }
     }
     for (const r of plan.inserts) {
-      const amount = r.amount_raised == null ? "amount not disclosed" : `$${+(r.amount_raised / 1e6).toFixed(1)}M`;
+      const amount = r.amount_raised == null ? "amount not disclosed" : `$${+(r.amount_raised / 1e6).toFixed(2)}M`;
       // The quote that states the amount, so the report (and report_lint) can see the figure and its unit in the source's own words (owner, round 10: Hydrostor "$25M" against "$250 million").
       const amountEvidence = roundFieldEvidence(r as never, funding.funding_rounds).find((e) => e.field === "amount_raised");
       reportLines.push({ field: "round", before: null, after: `${r.round_type} ${amount} · ${dateByPrecision(r.announcement_date, r.announcement_date_precision)}${r.lead_investor ? ` · lead ${r.lead_investor}` : ""}`, source_url: r.source_url ?? null, quote: amountEvidence?.evidence_quote ?? null,
@@ -921,6 +924,7 @@ export async function writeCollected(
           const name = text.split(" — ")[0];
           for (const key of ["founders", "leadership"]) if (Array.isArray(patch[key])) patch[key] = (patch[key] as Array<{ name?: string }>).filter((p) => !samePersonName(p.name ?? "", name));
         }
+        else if (l.field === "office") pruneOfficeFromPatch(patch, text);
         else if (l.field === "competitor_declared" || l.field === "competitor_market") patch.competitors = ((patch.competitors ?? []) as Array<{ name?: string }>).filter((c) => normalizeForMatch(c.name ?? "") !== normalizeForMatch(text));
         else {
           const cols = Object.keys(patch).filter((k) => fieldOfColumn(k) === l.field);

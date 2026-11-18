@@ -474,3 +474,199 @@ describe("pace and rule codes (batch 7)", () => {
     expect(ruleOf({ field: "hq_city", after: "Sydney" }, [{ field: "hq_city", rule: "hq_from_approved_quote", value: "Adelaide" }])).toBe("");
   });
 });
+
+import { cleanPersonName } from "./people";
+describe("batch 7: names of people", () => {
+  it("no function word before, no role fragment after", () => {
+    expect(cleanPersonName("As Karim Nour")).toBe("Karim Nour");
+    expect(cleanPersonName("Karim Nour Co")).toBe("Karim Nour");
+    expect(cleanPersonName("Sumair Farooqui")).toBe("Sumair Farooqui");
+    expect(cleanPersonName("Jakub Krzych CEO")).toBe("Jakub Krzych");
+    expect(cleanPersonName("Co Lee")).toBe("Co Lee");
+  });
+});
+
+import { detectAcquisition, acquirerIn } from "./acquisition";
+describe("batch 7: the buyer's name and the purchase date", () => {
+  it("no country in front of the buyer; the first announcement dates it", () => {
+    expect(acquirerIn("Egypts Raseedi Acquires Kashat To Expand Fintech", "Kashat")?.acquirer).toBe("Raseedi");
+    expect(acquirerIn("Egypt's Raseedi acquires Kashat", "Kashat")?.acquirer).toBe("Raseedi");
+    expect(acquirerIn("Kashat acquired by UK-based Acme", "Kashat")?.acquirer).toBe("Acme");
+    const c = detectAcquisition([{ url: "a", title: "Raseedi completes acquisition of Kashat", date: "2025-01-13" }, { url: "b", title: "Egypts Raseedi Acquires Kashat To Expand Fintech", date: "2025-01-23" }], "Kashat");
+    expect(c?.acquirer).toBe("Raseedi");
+    expect(c?.date).toBe("2025-01-13");
+  });
+});
+
+import { caseName } from "./nameCase";
+describe("batch 7: evidence rules", () => {
+  const T = "2026-11-20";
+  it("tags: a careers page, a job advertisement, a menu and a person's speech are no evidence", () => {
+    expect(rowProblem({ field: "tags", after: "Healthcare SaaS", source_url: "https://www.nilosaude.com.br/carreiras-account-executive", quote: "Experiência comprovada em vendas B2B de tecnologia" }, "Nilo Saúde", T)).toMatch(/careers|job/);
+    expect(rowProblem({ field: "tags", after: "Mobility", source_url: "https://www.zuldigital.com.br/entrar", quote: "Digital CRLV · ZUL+ Tag · Taxes · Auto Insurance · Rodízio." }, "Zul+", T)).toMatch(/menu/);
+    expect(rowProblem({ field: "tags", after: "Marketplaces", source_url: "https://snupit.co.za/x", quote: "Samlall said, ''At Snupit we like to keep a finger on the market's pulse." }, "Snupit", T)).toMatch(/speech/);
+    expect(rowProblem({ field: "tags", after: "D2C", source_url: "https://gousto.co.uk", quote: "Gousto sells recipe boxes, delivered to the customer's door, that contain fresh ingredients." }, "Gousto", T)).toBeNull();
+  });
+  it("news: paid distribution, sponsored paths, republishers and product reviews", () => {
+    expect(rowProblem({ field: "news", after: "2020-03-30 — Snupit Expands Internationally", source_url: "https://news.marketersmedia.com/snupit-expands/88951584/", quote: "" }, "Snupit", T)).toMatch(/paid press/);
+    expect(rowProblem({ field: "news", after: "2023-06-22 — Zul Digital expande operações", source_url: "https://valor.globo.com/patrocinado/dino/noticia/2023/06/22/zul", quote: "" }, "Zul Digital", T)).toMatch(/sponsored/);
+    expect(rowProblem({ field: "news", after: "2026-07-01 — Gousto review 2026, here's my honest verdict", source_url: "https://www.the-independent.com/extras/gousto-review", quote: "" }, "Gousto", T)).toMatch(/review/);
+    expect(rowProblem({ field: "news", after: "2019-04-15 — Snupit Releases Results From its Popular Small Business Survey", source_url: "https://finance.yahoo.com/news/snupit-releases-results-popular-small-143800986.html", quote: "" }, "Snupit", T)).toMatch(/not allowed|republish/);
+  });
+  it("office needs a quote; people shown on a page give no range; capitals become a name", () => {
+    expect(rowProblem({ field: "office", after: "São Paulo", source_url: "https://www.nilosaude.com.br/terms", quote: "" }, "Nilo Saúde", T)).toMatch(/needs a quote/);
+    expect(rowProblem({ field: "employee_range", after: "1-10", source_url: "https://sycamore.ng/about-us", quote: "5 people with a name and a role are shown on the page" }, "Sycamore", T)).toMatch(/lower bound/);
+    expect(caseName("MICROSOFT")).toBe("Microsoft");
+    expect(caseName("IBM")).toBe("IBM");
+    expect(caseName("Mon Petit Placement")).toBe("Mon Petit Placement");
+  });
+});
+
+import { siteBelongsToAnotherCompany } from "./siteOwner";
+describe("acquired companies are enriched as usual (owner, batch 7)", () => {
+  const page = (content: string) => [{ url: "https://sikhona.co.za", content } as never];
+  const filler = " Sikhona money transfers to and from South Africa. Send money safely with Sikhona at any branch.".repeat(8);
+  it("a page that says the company was bought and still names it is its own page", () => {
+    expect(siteBelongsToAnotherCompany("Sikhona", "https://sikhona.co.za", page(`Ria Money Transfer acquired Sikhona. ${filler}`))).toBeNull();
+  });
+  it("a page that names the company once, in the sale, still is (owner, batch 7: Sikhona); one the address moved away from is not", () => {
+    expect(siteBelongsToAnotherCompany("Hofy", "https://other.com", page(`Deel acquires Hofy. ${"Deel runs global payroll for teams everywhere. ".repeat(20)}`))).toBeNull();
+    expect(siteBelongsToAnotherCompany("Hofy", "https://hofy.com", [{ url: "https://hofy.com", content: `Final URL: https://www.deel.com/it/\n\nMarkdown Content:\nDeel acquires Hofy. ${"Deel runs global payroll for teams everywhere. ".repeat(20)}` } as never])).toMatch(/acquired \/ rebranded/);
+  });
+});
+
+describe("a founder from a republisher with no allowed original (owner, batch 7: Snupit, yahoo.com)", () => {
+  it("is not a row", () => {
+    const r = { field: "founder", after: "Avinash Samlall — Founder", source_url: "https://za.finance.yahoo.com/news/snupit-founder-123.html", quote: "Avinash Samlall is the founder of Snupit." };
+    expect(rowProblem(r as never, "Snupit", "2026-11-18")).toMatch(/not allowed/);
+  });
+});
+
+import { runAcceptance } from "./acceptance";
+describe("round_type_in_quote leaves a 'filled' row alone (owner, batch 7: Inipharm)", () => {
+  it("is not an offender", () => {
+    const rows = [{ company: "Inipharm", field: "round", after: 'Series A filled: {"lead_investor":"5AM Ventures"}', quote: "5AM Ventures and Wu Capital joined existing investors Frazier.", source_url: "https://biospace.com/x" }];
+    const res = runAcceptance([{ id: "round_type_in_quote", why: "w", kind: "round_type_in_quote" }] as never, rows as never, [], "2026-11-18");
+    expect(res[0].pass).toBe(true);
+  });
+});
+
+import { claims, sentenceProblem } from "./descriptionBuilder";
+import { roundSourceStanding as standingOf } from "./roundSources";
+describe("description checks that rejected correct sentences (owner, batch 7 sample)", () => {
+  it("B2B is not the number 2B; ETF-based is not a name", () => {
+    expect(claims("ShopX sells a B2B enterprise application that helps small retailers.", "ShopX").numbers).toEqual([]);
+    expect(claims("Yomoni offers online wealth management through ETF-based portfolios.", "Yomoni").names).toEqual([]);
+    expect(claims("more than 2,500 companies use it", "X").numbers).toEqual(["2500"]);
+  });
+  it("2,500 is 2.500 on a Portuguese page; Brazil is Brasil", () => {
+    const byId = { s1: { content: "Mais de 2.500 empresas usam a Contraktor. A plataforma de Contraktor é para equipes jurídicas, comerciais e operacionais das empresas.", source_type: "company_site" } };
+    expect(sentenceProblem({ role: "for_whom", text: "Its platform is built for legal, commercial and operational teams in companies, and more than 2,500 companies use Contraktor.", source_ids: ["s1"] }, "Contraktor", byId as never, () => true) ?? "").not.toMatch(/number_not_in_sources/);
+    const b2 = { s1: { content: "A Ksecurity vende serviços de segurança da informação a empresas, incluindo instituições financeiras que precisam cumprir as resoluções do Central Bank do Brasil.", source_type: "company_site" } };
+    expect(sentenceProblem({ role: "what", text: "Ksecurity sells its information security services to businesses, including financial institutions that must comply with Central Bank of Brazil resolutions.", source_ids: ["s1"] }, "KSecurity", b2 as never, () => true) ?? "").not.toMatch(/name_not_in_sources/);
+  });
+  it("accessnewswire.com is the wire accesswire.com became", () => {
+    expect(standingOf("https://www.accessnewswire.com/newsroom/en/x/kontent-ai-launches-1129445", { companyName: "Kontent.ai" }).kind).toBe("allowed");
+  });
+});
+
+describe("name claims are for companies, products and people (owner, batch 7)", () => {
+  it("not a country or a compound with a plain word", () => {
+    expect(claims("Ksecurity serves banks that must comply with Central Bank of Brazil rules in Germany and Latin America.", "KSecurity").names).not.toContain("Brazil");
+    expect(claims("Ksecurity serves banks in Germany.", "KSecurity").names).not.toContain("Germany");
+    expect(claims("It offers ETF-based and Cloud-native portfolios.", "Yomoni").names).toEqual([]);
+    expect(claims("The platform integrates with Salesforce and Stripe.", "Acme").names).toEqual(["Salesforce", "Stripe"]);
+  });
+});
+
+import { completeFromSlug, newsProblem as newsProblem2 } from "./newsRelevance";
+import { knownAcquirers } from "./acquisition";
+describe("news: a headline cut in a print, and a company that was bought (owner, batch 7)", () => {
+  it("completes a cut headline from its address", () => {
+    const url = "https://www.lwolf.com/press-releases/lone-wolf-acquires-liondesk-and-homespotter-expanding-real-estates-leading-end-to-end-technology-suite";
+    expect(completeFromSlug("Lone Wolf acquires LionDesk and HomeSpotter, expanding real ", url)).toBe("Lone Wolf acquires LionDesk and HomeSpotter, expanding real estates leading end to end technology suite");
+    expect(completeFromSlug("Something else entirely about a deal", url)).toBeNull();
+    expect(completeFromSlug("Short", url)).toBeNull();
+  });
+  it("the buyer of a company found in several headlines makes its acquisition headlines news about it", () => {
+    const titles = ["Alexforbes buys digital wealth platform OUTvest as it continues to snap up acquisitions", "OUTsurance Sale Of OUTvest Proprietary Limited To Alexforbes", "Alexforbes acquires digital investments platform from outsurance", "Outvest raises seed"];
+    expect(knownAcquirers(titles, "Outvest")).toContain("Alexforbes");
+    const item = { title: titles[0], content: "" };
+    expect(newsProblem2(item, "Outvest", "A robo-advisor for retirement savings.")).toBe("different_product");
+    expect(newsProblem2(item, "Outvest", "A robo-advisor for retirement savings.", { acquirers: ["Alexforbes"] })).toBeNull();
+  });
+});
+
+describe("one headline on one date is one news item whatever the address (owner, batch 7)", () => {
+  it("merges", () => {
+    const rows = [
+      { company: "Inipharm", field: "news", after: "2024-05-22 — Inipharm to Present Pharmacokinetic Data at a conference", source_url: "https://inipharm.com/news/a", quote: "Inipharm to Present Pharmacokinetic Data" },
+      { company: "Inipharm", field: "news", after: "2024-05-22 — Inipharm to Present Pharmacokinetic Data at a conference", source_url: "https://www.globenewswire.com/news-release/b", quote: "Inipharm to Present Pharmacokinetic Data" },
+    ];
+    expect(applyRowRules(rows as never, "Inipharm", "2026-11-18").rows.length).toBe(1);
+  });
+});
+
+describe("a short headline that is its address' whole slug is whole (owner, batch 7)", () => {
+  it("confirms it", () => {
+    expect(completeFromSlug("Alexforbes buys Outvest", "https://dailyinvestor.com/finance/43233/alexforbes-buys-outvest/")).toBe("Alexforbes buys Outvest");
+    expect(completeFromSlug("Alexforbes buys Outvest", "https://dailyinvestor.com/finance/43233/something-else-entirely/")).toBeNull();
+  });
+});
+
+describe("a place after 'in' is not a name to check (owner, batch 7: Snupit, Pietermaritzburg)", () => {
+  it("is not claimed", () => {
+    expect(claims("Snupit connects customers with professionals such as plumbers in Pietermaritzburg and Durban.", "Snupit").names).toEqual([]);
+    expect(claims("Snupit connects customers with plumbers using Salesforce.", "Snupit").names).toEqual(["Salesforce"]);
+  });
+});
+
+import { roundSourceStanding as standing2 } from "./roundSources";
+describe("rows the owner took out of the batch-7 report (reviewed 48, 7 wrong)", () => {
+  const p = (r: Record<string, unknown>, company: string) => rowProblem({ company, quote: "", ...r } as never, company, "2026-11-18");
+  it("Mama Money: no headcount from a privacy policy", () => {
+    expect(p({ field: "employee_count", after: "2", source_url: "https://www.mamamoney.co.za/privacy-policy", quote: "2 employees may access personal data" }, "Mama Money")).toMatch(/legal page/);
+    expect(p({ field: "employee_range", after: "1-10", source_url: "https://www.mamamoney.co.za/terms-and-conditions", quote: "up to 10 employees" }, "Mama Money")).toMatch(/legal page/);
+  });
+  it("UltraVox: GPT is a model, no competitor", () => {
+    expect(p({ field: "competitor_market", after: "GPT", source_url: "https://ultravox.ai/blog/x", quote: "an open-weight alternative to GPT-4o Realtime" }, "UltraVox")).toMatch(/product or a model/);
+    expect(p({ field: "competitor_declared", after: "GPT-4o", source_url: "https://ultravox.ai/blog/x", quote: "an open-weight alternative to GPT-4o Realtime" }, "UltraVox")).toMatch(/product or a model/);
+  });
+  it("Yomoni: assurance vie is no insurance", () => {
+    expect(p({ field: "tags", after: "Insurance / Insurtech", source_url: "https://www.yomoni.fr/produits", quote: "Yomoni propose l'assurance vie, le PER et le PEA en gestion pilotée." }, "Yomoni")).toMatch(/assurance vie/);
+    expect(p({ field: "tags", after: "Insurance / Insurtech", source_url: "https://acme.com/about", quote: "Acme sells life insurance online." }, "Acme")).toBeNull();
+  });
+  it("Contraktor: a forum is no source", () => {
+    expect(standing2("https://forum.devbrasil.com.br/t/contratos-digitais/123", { companyName: "Contraktor" })).toMatchObject({ kind: "denied", why: "forum_or_community" });
+    expect(standing2("https://stackoverflow.com/questions/123/x", { companyName: "Contraktor" }).kind).toBe("denied");
+    expect(standing2("https://community.contraktor.com.br/t/x", { companyName: "Contraktor", isCompanySite: true }).kind).toBe("allowed");
+  });
+  it("Uxcel: a guide on OKRs is no description of the product", () => {
+    expect(p({ field: "tags", after: "Generative AI", source_url: "https://uxcel.com/blog/okr-guide", quote: "OKRs help teams use generative AI to set goals." }, "Uxcel")).toMatch(/blog post or a guide/);
+    expect(p({ field: "tags", after: "EdTech", source_url: "https://uxcel.com/about", quote: "Uxcel is a design education platform with courses and certifications." }, "Uxcel")).toBeNull();
+  });
+  it("team page counts stay in the history, not employee_count", () => {
+    expect(p({ field: "employee_count", after: "8+", source_url: "https://kontent.ai/about-us/team", quote: "Jane Doe CEO. John Roe CTO." }, "Kontent.ai")).toMatch(/lower bound/);
+    expect(p({ field: "employee_count", after: "500+", source_url: "https://acme.com/about", quote: "Acme has more than 500 employees worldwide." }, "Acme")).toBeNull();
+  });
+  it("Hibank: a district of the city is the same office", () => {
+    const rows = [
+      { company: "Hibank", field: "office", after: "Jakarta, Indonesia", source_url: "https://hibank.co.id/contact", quote: "Jl. Sudirman, Jakarta" },
+      { company: "Hibank", field: "office", after: "Jakarta Selatan, Indonesia", source_url: "https://hibank.co.id/contact", quote: "Jl. Sudirman, Jakarta Selatan" },
+    ];
+    const g = applyRowRules(rows as never, "Hibank", "2026-11-18");
+    expect(g.rows.map((r) => r.after)).toEqual(["Jakarta, Indonesia"]);
+  });
+});
+
+import { pruneOfficeFromPatch } from "./reportGate";
+describe("a dropped office takes only itself out of the patch (owner, batch 7: Hibank)", () => {
+  it("keeps the others", () => {
+    const patch: Record<string, unknown> = { offices: [{ city: "Jakarta", country: "Indonesia" }, { city: "Jakarta Selatan", country: "Indonesia" }], office_countries: ["Indonesia"] };
+    pruneOfficeFromPatch(patch, "Jakarta Selatan, Indonesia");
+    expect(patch.offices).toEqual([{ city: "Jakarta", country: "Indonesia" }]);
+    pruneOfficeFromPatch(patch, "Jakarta, Indonesia");
+    expect(patch.offices).toBeUndefined();
+    expect(patch.office_countries).toBeUndefined();
+  });
+});

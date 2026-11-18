@@ -25,6 +25,7 @@ import { requestFor } from "./models.ts";
 import { sanitizeModelOutput, ensureArray } from "./sanitize";
 import { verifyEvidence, normalizeForMatch, dateFromUrl, type EvidenceSource } from "./evidence";
 import { sourceHeadlineDetail } from "./newsRelevance";
+import { caseName } from "./nameCase";
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
 import { debugDumpJson } from "./debugDump";
 import { competitorRelation, type RelationDrop } from "./competitorRelation";
@@ -310,6 +311,7 @@ export function processMarketExtractionResponse(
   const seenCompetitors = new Set<string>();
   const competitors = ensureArray<V2Competitor>(i.competitors).filter((c) => {
     if (!c?.name || !c.how_it_competes) return false;
+    c.name = caseName(c.name);
     const key = normalizeForMatch(c.name);
     if (!key || seenCompetitors.has(key)) return false;
     if (key === selfKey) { dropped.push({ field: "competitors", reason: "competitor_is_self" }); return false; }
@@ -347,6 +349,11 @@ export function processMarketExtractionResponse(
     }
     // No date from the model: the article's own address may give it (Business Wire, /YYYY/MM/DD/).
     if (!publishedDate) publishedDate = dateFromUrl(src.url) ?? undefined;
+    // An address that gives only the month (/2015/01/slug) dates the item to the month, not to the first of it (owner, batch 7: Mama Money, "2015-01-01").
+    if (publishedDate && /^\d{4}-\d{2}-01$/.test(publishedDate)) {
+      const um = src.url.match(/\/(\d{4})\/(\d{2})\/(?!\d{2}(?:\/|$))/);
+      if (um && publishedDate.startsWith(`${um[1]}-${um[2]}`)) publishedDate = `${um[1]}-${um[2]}`;
+    }
     const headline = sourceHeadlineDetail(n.title, src);
     // A headline in another script is checked against the page's own title; the model's translation stays beside it as the title (owner, batch 6: Ruya, Arabic).
     const srcTitle = String(src.title ?? "").trim();

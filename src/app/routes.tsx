@@ -1,4 +1,5 @@
-import { createBrowserRouter, Outlet, ScrollRestoration } from "react-router";
+import { createBrowserRouter, Outlet, redirect, ScrollRestoration, type LoaderFunctionArgs } from "react-router";
+import { parseCompanySlug } from "../lib/companyLink";
 import { LandingPage } from "./pages/LandingPage";
 import { Dashboard } from "./pages/Dashboard";
 import { Startups } from "./pages/Startups";
@@ -53,6 +54,15 @@ function RootLayout() {
   );
 }
 
+// A shared company link (/company/<name>-<id>) opens that company on the Private Market page.
+// It redirects instead of rendering its own page, so the filters and list the visitor sees are
+// the page's own state rather than a second copy of it.
+async function companyLinkLoader({ params }: LoaderFunctionArgs) {
+  await requireAuth();
+  const id = parseCompanySlug(params.slug);
+  throw redirect(id ? `/startups?company=${encodeURIComponent(id)}` : "/startups");
+}
+
 export const router = createBrowserRouter([
   {
     element: <RootLayout />,
@@ -66,6 +76,7 @@ export const router = createBrowserRouter([
   { path: "/markets",    Component: Dashboard, loader: requireOnboarding },  // legacy alias
   { path: "/vcs",        Component: VCs, loader: requireAuth },
   { path: "/startups",   Component: Startups, loader: requireAuth },
+  { path: "/company/:slug", Component: () => null, loader: companyLinkLoader },
   { path: "/deals",      Component: Deals, loader: requireAuth },
   { path: "/pricing",    Component: Pricing },
   { path: "/about",      Component: AboutUs },

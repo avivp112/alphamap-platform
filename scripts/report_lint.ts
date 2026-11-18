@@ -13,6 +13,14 @@ import { acquisitionHeadline } from "../lib/enrichment/siteOwner.ts";
 import { extractNumbersFromText } from "../lib/enrichment/evidence.ts";
 import { SECTOR_TAXONOMY } from "../src/lib/taxonomy.ts";
 import { loadKnown, refreshDue, markKey } from "../lib/enrichment/knownSources.ts";
+import { rowProblem } from "../lib/enrichment/rowRules.ts";
+import { foundingSentenceIsAboutCompany } from "../lib/enrichment/subject.ts";
+import { roleAtCompany } from "../lib/enrichment/people.ts";
+import { isPartyRelease, roundSourceStanding } from "../lib/enrichment/roundSources.ts";
+import { claims } from "../lib/enrichment/descriptionBuilder.ts";
+import { completeFromSlug } from "../lib/enrichment/newsRelevance.ts";
+import { knownAcquirers } from "../lib/enrichment/acquisition.ts";
+import { isTrackingHost } from "../lib/enrichment/siteOwner.ts";
 import { recentRules } from "../lib/enrichment/ruleRegistry.ts";
 import { loadGaps, ownerWrongTest } from "../lib/enrichment/knownGaps.ts";
 
@@ -136,6 +144,53 @@ if (existsSync("batch4_dry.log")) {
   if (noDesc) console.log(`(log) ${noDesc} company(ies) without a description; ${dropLines} dropped sentence(s) named.`);
 }
 
+// ── Every row of the report passes the rules of today (owner, batch 7: seven rows of 48 were wrong and no rule knew) ──
+for (const r of rows) {
+  const why = rowProblem({ company: r.company, field: r.field, after: r.after, source_url: r.url, quote: r.quote }, r.company, new Date().toISOString().slice(0, 10));
+  if (why) err(r.company, `${r.field} "${r.after.slice(0, 50)}" is in the report and breaks a rule: ${why}`);
+}
+
+// ── Rejection audit (owner, batch 7: "the rules reject correct values"): a rejection that a rule of today would not make is a gap, and a gap is an error ──
+if (existsSync("rejected_all.csv")) {
+  const [rh, ...rr] = parseCsv(readFileSync("rejected_all.csv", "utf8"));
+  const ri = (c: string) => { const e = rh.findIndex((h) => h === c); return e >= 0 ? e : rh.findIndex((h) => h.startsWith(c)); };
+  for (const r of rr) {
+    const company = r[ri("company")], field = r[ri("field")], value = r[ri("value")], code = r[ri("reason_code")], reason = r[ri("reason")], url = r[ri("source_url")], evidence = r[ri("evidence")];
+    // a. the sentence of a founding year: a short name, "the company", a label of the site
+    if (code === "sentence_not_about_company" && field === "founded_year" && evidence && foundingSentenceIsAboutCompany(evidence, value, company, { url, ownSite: false })) err(company, `founded_year ${value} was rejected, and its sentence is about the company ("${evidence.slice(0, 90)}")`);
+    // b. a second role after the comma is not another company
+    if (code === "title_at_another_company") { const t = reason.match(/the title "([^"]+)"/)?.[1]; if (t && roleAtCompany(t, company).role !== null) err(company, `founder ${value} was rejected for a title "${t}" that is at no other company`); }
+    // 1. a name is checked only when it names a company, a product or a person: not a country, not "ETF-based"
+    { const nm = code.match(/^description_sentence_name_not_in_sources:(.+)$/)?.[1];
+      if (nm && evidence && !claims(evidence, company).names.includes(nm)) err(company, `description sentence rejected for the name "${nm}", which is no company, product or person ("${evidence.slice(0, 80)}")`); }
+    // 2. a number is checked as a token of its own
+    { const nn = code.match(/^description_sentence_number_not_in_sources:(.+)$/)?.[1];
+      if (nn && evidence && !claims(evidence, company).numbers.includes(nn)) err(company, `description sentence rejected for the number "${nn}", which is no token of its own ("${evidence.slice(0, 80)}")`); }
+    // 3. a headline cut only in a print, whose address carries the whole of it
+    if (code === "news_headline_cut" && url && completeFromSlug(value, url)) err(company, `news "${value.slice(0, 60)}" rejected as cut off, and its address carries the whole headline`);
+    // 4. a company known to be bought: the buyer's headlines are about it
+    if (code === "news_same_name_other_company") {
+      const titles = rr.filter((x) => x[ri("company")] === company && x[ri("field")] === "news").map((x) => x[ri("value")]);
+      const buyers = knownAcquirers(titles, company);
+      if (buyers.some((b) => value.toLowerCase().includes(b.toLowerCase()))) err(company, `news "${value.slice(0, 60)}" rejected as another company's, and ${buyers.join(", ")} is its known buyer`);
+    }
+    // 6. a source rejected as not allowed that the standing rules allow
+    if (code === "source_not_allowed" && url && roundSourceStanding(url, { companyName: company, headline: value }).kind === "allowed") err(company, `${field} "${value.slice(0, 50)}" rejected as not on the allowed list, and ${url.slice(0, 70)} is allowed`);
+    // f. the other party's announcement of the deal is a source for the event
+    if (code === "source_not_allowed" && field === "news" && url && isPartyRelease(url, value, { companyName: company })) err(company, `news "${value.slice(0, 60)}" was rejected, and it is a party's own announcement of the deal (${url.slice(0, 80)})`);
+  }
+}
+if (existsSync("website_review.csv")) {
+  const [wh, ...wr] = parseCsv(readFileSync("website_review.csv", "utf8"));
+  const wi = (c: string) => wh.findIndex((h) => h.startsWith(c));
+  for (const r of wr) {
+    const detail = r[wi("detail")] ?? "";
+    // e. an address that passes through an advertising / tracking endpoint is a broken redirect, not another company
+    const host = detail.match(/leads to (\S+)/)?.[1];
+    if (host && isTrackingHost(host)) err(r[wi("company")], `${host} is an advertising / tracking address, listed as another company's site`);
+  }
+}
+
 // ── Every value of the memory is in the report, or flagged with a reason (owner, round 10) ──
 {
   const store = loadKnown(), wrong = ownerWrongTest(loadGaps());
@@ -143,11 +198,21 @@ if (existsSync("batch4_dry.log")) {
   const fold = (x: string) => x.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
   const family = (f: string) => (f === "description_what_only" ? "description" : f);
   let missing = 0;
+  // Remembered values this run did not write are listed in carried_not_written.csv, with their source: that listing is their reason.
+  const carriedKeys = new Set<string>();
+  if (existsSync("carried_not_written.csv")) {
+    const [head, ...cr] = parseCsv(readFileSync("carried_not_written.csv", "utf8"));
+    const ix = (c: string) => head.indexOf(c);
+    for (const r of cr) carriedKeys.add(`${r[ix("company_id")]}|${family(r[ix("field")])}|${fold(r[ix("value")] ?? "")}`);
+  }
   for (const [id, list] of Object.entries(store)) {
     const inReport = rows.filter((r) => r.id === id);
     if (!inReport.length) continue;                                     // the company was not in this run's report
     for (const e of list) {
+      if (carriedKeys.has(`${id}|${family(e.field)}|${fold(e.value)}`)) continue;
       if (e.status === "quote_gone" || e.status === "superseded" || wrong(e.company, e.field, e.value) || refreshDue(e, today)) continue;   // flagged, with its reason
+      // A remembered value that the rules of today reject is not in the report, and the rule is its reason (the new source and name rules, batch 7).
+      if (rowProblem({ field: e.field, after: e.value, source_url: e.source_url, quote: e.quote, payload: e.payload }, e.company, today)) continue;
       if (inReport.some((r) => family(r.field) === family(e.field) && fold(r.after) === fold(e.value))) continue;
       // A single-valued field whose value is now another one is a supersession, which remember() marks; anything else is a value that went missing.
       if (inReport.some((r) => family(r.field) === family(e.field)) && ["hq_city", "hq_country", "founded_year", "founding_country", "sector", "description", "tags", "employee_count", "employee_range"].includes(family(e.field))) continue;
@@ -174,7 +239,13 @@ console.log(`\n${errors.length} error(s), ${warnings.length} warning(s).`);
     for (const r of wb) if (/unreadable/i.test(r[wi("reason")] ?? "")) unreadable.add(r[wi("company")]);
   }
   const enriched = [...byCompany.keys()].filter((c) => !unreadable.has(c));
-  const has = (c: string, ...fs: string[]) => (byCompany.get(c) ?? []).some((r) => fs.includes(r.field));
+  // A company already written has its values in the database and the memory, not in a report of what would be written now: the coverage counts the report and carried_not_written.csv together.
+  const carriedFields = new Map<string, Set<string>>();
+  if (existsSync("carried_not_written.csv")) {
+    const [ch, ...cb] = parseCsv(readFileSync("carried_not_written.csv", "utf8"));
+    for (const r of cb) { const c = r[ch.indexOf("company")]; (carriedFields.get(c) ?? carriedFields.set(c, new Set()).get(c)!).add(r[ch.indexOf("field")]); }
+  }
+  const has = (c: string, ...fs: string[]) => (byCompany.get(c) ?? []).some((r) => fs.includes(r.field)) || fs.some((f) => carriedFields.get(c)?.has(f));
   const pct = (n: number) => enriched.length ? Math.round((100 * n) / enriched.length) : 0;
   const goals: Array<[string, number, number]> = [
     ["description", pct(enriched.filter((c) => has(c, "description", "description_what_only")).length), 80],

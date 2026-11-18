@@ -6,7 +6,8 @@ const filler = " The platform helps customers collect feedback and measure exper
 describe("a website that belongs to another company now (review 7, 2026-11-09)", () => {
   it("Cinsay: the pages say it is now part of aibuy", () => {
     const r = siteBelongsToAnotherCompany("Cinsay", "https://cinsay.com", [{ url: "https://cinsay.com", content: "Cinsay is now part of aibuy. Shoppable video for brands." + filler }]);
-    expect(r).toMatch(/^acquired \/ rebranded/);
+    // Owner, batch 7: an acquired company is enriched as usual; its page that says it was bought is still its page (the description needs a sentence that names the company anyway).
+    expect(r).toBeNull();
   });
   it("CheckMarket: the pages never name it and carry the buyer's copyright", () => {
     const r = siteBelongsToAnotherCompany("CheckMarket", "https://checkmarket.com", [{ url: "https://checkmarket.com", content: "Medallia Experience Cloud." + filler + " © 2026 Medallia Inc." }]);
@@ -71,7 +72,7 @@ describe("renamed is not acquired (owner, round 10: TymeBank → GoTyme Bank)", 
     expect(rebrandedAs("TymeBank", pages)).toBe("GoTyme Bank");
     expect(siteBelongsToAnotherCompany("TymeBank", "https://tymebank.co.za", pages)).toBeNull();
     expect(rebrandedAs("Acme", [{ url: "u", content: "Acme is now part of Globex." }])).toBeNull();
-    expect(siteBelongsToAnotherCompany("Acme", "https://acme.com", [{ url: "u", content: "Acme has been acquired by Globex Corporation and is now part of it." }])).toMatch(/acquired/);
+    expect(siteBelongsToAnotherCompany("Acme", "https://acme.com", [{ url: "u", content: "Acme has been acquired by Globex Corporation and is now part of it." }])).toBeNull();
   });
 });
 
@@ -81,5 +82,18 @@ describe("the brand a registered address leads to (owner, round 10)", () => {
     const pages = [{ url: "https://tymebank.co.za", content: "Title: GoTyme Bank\nURL Source: https://tymebank.co.za\nFinal URL: https://www.gotyme.co.za/\n\nMarkdown Content:\nGoTyme Bank, formerly TymeBank, is a digital bank. Open an account with GoTyme Bank today." }];
     expect(redirectBrand("TymeBank", "https://tymebank.co.za", pages)).toBe("GoTyme Bank");
     expect(redirectBrand("Acme", "https://acme.com", [{ url: "u", content: "Final URL: https://acme.com/\n\nMarkdown Content:\nAcme" }])).toBeNull();
+  });
+});
+
+import { isTrackingHost } from "./siteOwner";
+describe("a redirect through an advertising endpoint is no rebrand (owner, batch 7: MyHR → match.adsrvr.org)", () => {
+  it("recognises tracking hosts", () => {
+    for (const h of ["match.adsrvr.org", "ad.doubleclick.net", "www.googleadservices.com", "cm.g.doubleclick.net", "pixel.rubiconproject.com", "click.linksynergy.com"]) expect(isTrackingHost(h), h).toBe(true);
+    for (const h of ["myhr.works", "deel.com", "gotyme.co.za", "advisor.com"]) expect(isTrackingHost(h), h).toBe(false);
+  });
+  it("the address that leads through one is not another company's site", () => {
+    const pages = [{ url: "https://myhr.works", content: "Final URL: https://match.adsrvr.org/track/cmf/generic\n\nMarkdown Content:\nMyHR is the online HR department. " + "MyHR helps NZ businesses with HR, payroll and people tools. ".repeat(12) }];
+    expect(siteBelongsToAnotherCompany("MyHR", "https://myhr.works", pages)).toBeNull();
+    expect(redirectBrand("MyHR", "https://myhr.works", pages)).toBeNull();
   });
 });

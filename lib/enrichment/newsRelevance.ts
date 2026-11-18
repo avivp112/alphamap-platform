@@ -85,10 +85,13 @@ export function describedProduct(title: string | null | undefined, content: stri
 }
 
 /** Why an article is not news about this company, or null. `description` is what the company is (its own text). */
-export function newsProblem(item: { title?: string | null; content?: string | null }, companyName: string, description: string): "explainer" | "different_product" | "not_about_the_company" | null {
+export function newsProblem(item: { title?: string | null; content?: string | null }, companyName: string, description: string, o: { acquirers?: string[] } = {}): "explainer" | "different_product" | "not_about_the_company" | null {
   if (isExplainer(item.title)) return "explainer";
   // Its headline or first paragraph must name the company (TechCrunch+ roundups mention it in passing).
   if (!namesCompanyUpFront(item, companyName)) return "not_about_the_company";
+  // When the company is known to have been bought by X (several headlines agree), a headline in which X buys it is about this company, whatever the headline calls it.
+  const t = (item.title ?? "").toLowerCase();
+  if (o.acquirers?.some((a) => a.length >= 3 && t.includes(a.toLowerCase())) && /\b(?:acqui|buys?|bought|sale of|sells?|sold|takeover|merge)/i.test(item.title ?? "")) return null;
   const product = describedProduct(item.title, item.content, companyName);
   if (!product) return null;
   const pw = words(product);
@@ -295,4 +298,23 @@ export function sourceHeadlineDetail(modelTitle: string, source: { title?: strin
   const carried = modelWords.length ? modelWords.filter((w) => hay.has(w)).length / modelWords.length : 0;
   if (carried >= 0.6) return { title: model, joined: false };
   return null;
+}
+
+/**
+ * A headline cut by a search result, completed from the article's own address when the address' slug carries the headline's words and goes on ("…expanding real" +
+ * ".../lone-wolf-acquires-liondesk-and-homespotter-expanding-real-estates-leading-end-to-end-technology-suite"): the whole headline, in the slug's words. Null otherwise.
+ */
+export function completeFromSlug(title: string, url: string): string | null {
+  let slug = "";
+  try { slug = decodeURIComponent(new URL(url).pathname.split("/").filter(Boolean).pop() ?? ""); } catch { return null; }
+  slug = slug.replace(/\.(?:html?|article|php|aspx?)$/i, "").replace(/[-_]\d{4,}$/, "").replace(/^\d{4,}[-_]/, "");
+  const sw = slug.toLowerCase().split(/[-_]+/).filter(Boolean);
+  const norm = (w: string) => w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  const tw = title.replace(/[…]|\.{3}$/g, "").split(/\s+/).map(norm).filter(Boolean);
+  // A short headline that is the whole of the address' slug is whole ("Alexforbes buys Outvest" at …/alexforbes-buys-outvest/): the address confirms it.
+  if (tw.length >= 3 && sw.length === tw.length && tw.every((w, i) => sw[i] === w)) return title.replace(/[…]|\.{3}$/g, "").trim();
+  if (tw.length < 4 || sw.length <= tw.length) return null;
+  // The title's words are the slug's first words (an apostrophe's s is glued in the slug: "estate's" → "estates").
+  if (!tw.every((w, i) => sw[i] === w)) return null;
+  return `${title.replace(/[…]|\.{3}$/g, "").trim()} ${sw.slice(tw.length).join(" ")}`.replace(/\s+/g, " ").trim();
 }

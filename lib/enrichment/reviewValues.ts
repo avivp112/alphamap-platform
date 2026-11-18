@@ -23,7 +23,7 @@ export function wouldWrite(c: Awaited<ReturnType<typeof collectCompany>>, row: V
   /** The first of these sources that is on the allowed list (field review run 1 showed LinkedIn first). */
   const allowedId = (ids?: string[]) => (ids ?? []).find((id) => { const x = c.sourceById.get(id); return !!x && profileSourceAllowed(x); });
   const quoteOf = (id?: string | null) => (id ? (c.sourceById.get(id)?.content ?? "").replace(/\s+/g, " ").slice(0, 200) : "");
-  const usd = (n: number | null | undefined) => (n == null ? "amount not disclosed" : n >= 1e9 ? `$${+(n / 1e9).toFixed(2)}B` : `$${+(n / 1e6).toFixed(1)}M`);
+  const usd = (n: number | null | undefined) => (n == null ? "amount not disclosed" : n >= 1e9 ? `$${+(n / 1e9).toFixed(2)}B` : `$${+(n / 1e6).toFixed(2)}M`);
   const out: Value[] = [];
   const add = (field: Field, value: string, on_file: unknown, source_url = "", quote = "") => {
     if (!value) return;

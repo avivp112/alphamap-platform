@@ -81,7 +81,8 @@ export function runAcceptance(checks: Check[], rows: Row[], notEnriched: string[
       case "round_type_in_quote": {
         // A round's type is written only when its quote names it; a type no quote names is "Unknown" (owner, round 10).
         const NAMED: Array<[string, RegExp]> = [["Pre-Seed", /pre[- ]?seed/i], ["Seed", /\bseed\b/i], ["Series A", /series[- ]a\b/i], ["Series B", /series[- ]b\b/i], ["Series C", /series[- ]c\b/i], ["Series D", /series[- ]d\b/i], ["Series E", /series[- ]e\b/i], ["Series F+", /series[- ][f-z]\b/i], ["Growth", /growth/i], ["Bridge", /bridge/i]];
-        const bad = rows.filter((r) => r.field === "round").filter((r) => {
+        // A row that fills a missing detail of a round already on file ("Series A filled: {lead_investor…}") carries the lead investor's quote, not the type's: the type is the existing round's.
+        const bad = rows.filter((r) => r.field === "round" && !/^[^:{]*\sfilled:/.test(r.after)).filter((r) => {
           const t = r.after.match(/^(Pre-Seed|Seed|Series [A-F]\+?|Growth|Bridge|Other)\b/)?.[1];
           if (!t) return false;
           if (t === "Other") return !/strategic|crowd|token|placement|pipe\b|spac\b|revenue.based|corporate/i.test(r.quote);

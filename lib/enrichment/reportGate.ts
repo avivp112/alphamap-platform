@@ -28,3 +28,16 @@ export function parseRoundLine(after: string): { type: string; lead: string | nu
   const lead = after.match(/·\s*lead\s+(.+?)\s*$/i)?.[1]?.trim() ?? null;
   return { type, lead };
 }
+
+/**
+ * A report line "city, country" that the rules dropped takes that office out of the patch, and only that office (owner, batch 7: Hibank — the dropped "Jakarta Selatan" took the whole offices column,
+ * "Jakarta" with it, while the report kept "Jakarta" and the database check found it missing).
+ */
+export function pruneOfficeFromPatch(patch: Record<string, unknown>, lineText: string): void {
+  const key = (o: { city?: string; country?: string | null }) => [o.city, o.country].filter(Boolean).join(", ").toLowerCase();
+  if (!Array.isArray(patch.offices)) return;
+  const left = (patch.offices as Array<{ city?: string; country?: string | null }>).filter((o) => key(o) !== lineText.trim().toLowerCase());
+  if (!left.length) { delete patch.offices; delete patch.office_countries; return; }
+  patch.offices = left;
+  patch.office_countries = [...new Set(left.map((o) => o.country).filter((c): c is string => !!c))];
+}

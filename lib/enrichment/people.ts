@@ -93,6 +93,9 @@ export function cleanPersonName(name: string): string {
   for (let i = 0; i < 3; i++) {
     const before = n;
     n = n.replace(NAME_PREFIX_RE, "").replace(/^(?:\p{Ll}[\p{L}'’-]*\s+)+(?=\p{Lu})/u, "").trim();
+    // A function word glued to the front ("As Karim Nour") and a role fragment glued to the end ("Karim Nour Co", "… CEO") are not part of a name (owner, batch 7: Kashat).
+    n = n.replace(/^(?:as|the|by|and|meet|with|from|also|said|says|told|according|our|his|her)\s+(?=\p{Lu}\p{L}+\s+\p{Lu})/iu, "");
+    n = n.replace(/^(\p{Lu}[\p{L}'’.-]*(?:\s+\p{Lu}[\p{L}'’.-]*)+?)\s+(?:Co|CEO|CTO|CFO|COO|Founder|Co-?founder|President|Chairman|Chair)$/u, "$1");
     if (n === before) break;
   }
   return n.replace(/[\s,;]+$/, "");
@@ -449,7 +452,7 @@ const stem = (w: string) => w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").slice
  */
 const ROLES: Array<[RegExp, RegExp]> = [
   [/\b(vp|vice[- ]president)\b/i, /\b(vp|vice[- ]president)\b/i],
-  [/\bceo\b|chief executive/i, /\bceo\b|chief executive/i],
+  [/\bceo\b|chief executive|directeur g[ée]n[ée]ral|\bpdg\b/i, /\bceo\b|chief executive|directeur g[ée]n[ée]ral|\bpdg\b/i],
   [/\bcto\b|chief technology|chief technical/i, /\bcto\b|chief technolog|chief technical/i],
   [/\bcoo\b|chief operating/i, /\bcoo\b|chief operating/i],
   [/\bcfo\b|chief financial/i, /\bcfo\b|chief financial/i],
@@ -620,6 +623,8 @@ export function roleAtCompany(role: string | null | undefined, companyName: stri
     if (!m) return false;
     const org = fold(m[1]).toLowerCase().trim();
     if (/^(the )?(board|company|directors|advisors|advisory board)$/.test(org)) return false;
+    // A second role after the comma is not an organisation ("Co-Founder, Chief Executive Officer", "Co-founder, CTO": owner, batch 7 — Inipharm, Snupit, UltraVox).
+    if (/\b(ceo|cto|coo|cfo|cmo|cpo|cro|ciso|chief|officer|founder|co-?founder|president|vice|vp|svp|evp|head|director|manager|executive|chair\w*|partner|lead|principal|owner|managing)\b/i.test(org)) return false;
     return !(org.includes(ownName) || ownName.includes(org));
   };
   const own = parts.filter((p) => !elsewhere(p));

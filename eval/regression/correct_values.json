@@ -180,6 +180,51 @@
       "title": "Zenarate and HeyGen Deepen Strategic Partnership to Bring Lifelike AI Avatars to Enterprise Simulation and Coaching",
       "url": "https://www.prnewswire.com/news-releases/zenarate-and-heygen-deepen-strategic-partnership-to-bring-lifelike-ai-avatars-to-enterprise-simulation-and-coaching-302460202.html",
       "own_site": false
+    },
+    {
+      "batch": "batch_3",
+      "id": "w3.19",
+      "company": "HIL Applied Medical",
+      "date": "2019-03-17",
+      "title": "Cancer Treatment Company HIL to Set Up $5 Million Jerusalem Manufacture Center",
+      "url": "https://www.calcalistech.com/ctech/articles/0,7340,L-3758448,00.html",
+      "own_site": false
+    },
+    {
+      "batch": "batch_3",
+      "id": "w3.20",
+      "company": "HIL Applied Medical",
+      "date": "2016-05-31",
+      "title": "HIL Applied Medical acquires Nanolabz",
+      "url": "https://en.globes.co.il/en/article-hil-applied-medical-acquires-nanolabz-1001128814",
+      "own_site": false
+    },
+    {
+      "batch": "batch_3",
+      "id": "w3.21",
+      "company": "Synthflow",
+      "date": "2026-10-20",
+      "title": "Synthflow AI'S Voice Technology Goes Live on Zoom Phone and Zoom Contact Center, Powering Conversational CX at Scale",
+      "url": "https://www.businesswire.com/news/home/20261020764272/en/Synthflow-AIS-Voice-Technology-Goes-Live-on-Zoom-Phone-and-Zoom-Contact-Center-Powering-Conversational-CX-at-Scale",
+      "own_site": false
+    },
+    {
+      "batch": "batch_3",
+      "id": "w3.22",
+      "company": "Synthflow",
+      "date": "2026-06-23",
+      "title": "Synthflow AI and AVANT Partner to Accelerate Enterprise Adoption of Agentic Voice AI",
+      "url": "https://www.businesswire.com/news/home/20260623693124/en/Synthflow-AI-and-AVANT-Partner-to-Accelerate-Enterprise-Adoption-of-Agentic-Voice-AI",
+      "own_site": false
+    },
+    {
+      "batch": "batch_3",
+      "id": "w3.24",
+      "company": "Synthflow",
+      "date": "2025-06-24",
+      "title": "Synthflow AI Raises $20M to Transform the $168B Global Conversational AI Market With Enterprise AI Voice Agents",
+      "url": "https://www.businesswire.com/news/home/20250624442670/en/Synthflow-AI-Raises-%2420M-to-Transform-the-%24168B-Global-Conversational-AI-Market-With-Enterprise-AI-Voice-Agents",
+      "own_site": false
     }
   ],
   "round": [
@@ -202,6 +247,14 @@
       "value": "Series A filled: {\"valuation\":500000000,\"is_valuation_estimated\":false}",
       "url": "https://www.bloomberg.com/news/articles/2024-06-20/ai-video-startup-heygen-valued-at-500-million-in-funding-round",
       "quote": "has raised $60 million in a funding round that values the company at $500 million"
+    },
+    {
+      "batch": "batch_3",
+      "id": "w3.25",
+      "company": "Shift5",
+      "value": "Seed $2.5M · 2019-09-12",
+      "url": "https://www.prnewswire.com/news-releases/shift5-raises-2-5-million-in-seed-round-300916826.html",
+      "quote": ""
     }
   ]
 }

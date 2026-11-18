@@ -61,14 +61,14 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: #030213;
+  --primary: #0F172A;
   --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0.95 0.0058 264.53);
-  --secondary-foreground: #030213;
+  --secondary-foreground: #0F172A;
   --muted: #ececf0;
   --muted-foreground: #717182;
   --accent: #e9ebef;
-  --accent-foreground: #030213;
+  --accent-foreground: #0F172A;
   --destructive: #d4183d;
   --destructive-foreground: #ffffff;
   --border: rgba(0, 0, 0, 0.1);
@@ -86,12 +86,37 @@
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: #030213;
+  --sidebar-primary: #0F172A;
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.97 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* ── AlphaMap product tokens (prefix `am-`) ─────────────────────────────
+     One source for colour, radius, shadow and type size. The prefix keeps
+     them clear of shadcn's `--accent`, `--primary` etc. above, which mean
+     something else. New and rebuilt UI uses these (`text-am-ink`,
+     `bg-am-canvas`, `border-am-line`, `rounded-am-card`, `shadow-am-1`,
+     `text-am-body`); older screens still carry literal hex until they are
+     rebuilt. Light theme only for now — the `.dark` block does not set them. */
+  --am-ink:         #0F172A;  /* text, primary button */
+  --am-ink-2:       #475569;  /* secondary text */
+  --am-ink-3:       #64748B;  /* tertiary text, captions (4.8:1 on white) */
+  --am-line:        #E8EAEE;  /* borders, dividers */
+  --am-line-soft:   #F1F3F6;  /* row dividers */
+  --am-canvas:      #F6F7F9;  /* page background */
+  --am-surface:     #FFFFFF;  /* cards, popovers */
+  --am-accent:      #2F5BD9;  /* selection, links, focus — the only accent hue */
+  --am-accent-soft: #EAF0FE;
+  --am-pos:         #0A7D4F;  /* positive change only */
+  --am-neg:         #C2273D;  /* negative change only */
+  --am-warn:        #9A5B00;  /* stale or missing data */
+  --am-star:        #D99100;  /* saved / watchlisted, nothing else */
+  --am-r-card: 12px;
+  --am-r-ctl:  8px;
+  --am-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --am-shadow-2: 0 10px 30px rgba(15, 23, 42, 0.12);
 }
 
 .dark {
@@ -173,6 +198,36 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* AlphaMap tokens → Tailwind utilities */
+  --color-am-ink: var(--am-ink);
+  --color-am-ink-2: var(--am-ink-2);
+  --color-am-ink-3: var(--am-ink-3);
+  --color-am-line: var(--am-line);
+  --color-am-line-soft: var(--am-line-soft);
+  --color-am-canvas: var(--am-canvas);
+  --color-am-surface: var(--am-surface);
+  --color-am-accent: var(--am-accent);
+  --color-am-accent-soft: var(--am-accent-soft);
+  --color-am-pos: var(--am-pos);
+  --color-am-neg: var(--am-neg);
+  --color-am-warn: var(--am-warn);
+  --color-am-star: var(--am-star);
+  --radius-am-card: var(--am-r-card);
+  --radius-am-ctl: var(--am-r-ctl);
+  --shadow-am-1: var(--am-shadow-1);
+  --shadow-am-2: var(--am-shadow-2);
+  /* Type scale: 12 is the floor for any text. */
+  --text-am-caption: 0.75rem;
+  --text-am-caption--line-height: 1.4;
+  --text-am-body: 0.8125rem;
+  --text-am-body--line-height: 1.45;
+  --text-am-title: 0.9375rem;
+  --text-am-title--line-height: 1.4;
+  --text-am-kpi: 1.25rem;
+  --text-am-kpi--line-height: 1.25;
+  --text-am-display: 1.75rem;
+  --text-am-display--line-height: 1.15;
 }
 
 @layer base {
