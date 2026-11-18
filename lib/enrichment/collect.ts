@@ -1443,7 +1443,7 @@ export async function collectCompany(
       ...statementsAll.map((x) => x.city),
     ];
     const articleCountries = statementsAll.map((x) => countryOfCity(x.city)).filter((c): c is string => !!c);
-    const ok = legalPageHq({ city: legalSeat.city, quote: legalSeat.quote, otherAddressCities: others, domain: effectiveWebsite, siteText: siteSources.map((x) => x.content).join("\n"), articleCountries });
+    const ok = legalPageHq({ city: legalSeat.city, quote: legalSeat.quote, otherAddressCities: others, domain: effectiveWebsite, siteText: allSources.filter((s) => s.source_type === "company_site").map((x) => x.content).join("\n"), articleCountries });
     if (ok) {
       legalHqSourceId = legalSeat.source_id;
       profile.profile.city = { value: legalSeat.city, source_id: legalSeat.source_id, evidence_quote: legalSeat.quote };
