@@ -549,3 +549,22 @@ describe("round_type_in_quote leaves a 'filled' row alone (owner, batch 7: Iniph
     expect(res[0].pass).toBe(true);
   });
 });
+
+import { claims, sentenceProblem } from "./descriptionBuilder";
+import { roundSourceStanding as standingOf } from "./roundSources";
+describe("description checks that rejected correct sentences (owner, batch 7 sample)", () => {
+  it("B2B is not the number 2B; ETF-based is not a name", () => {
+    expect(claims("ShopX sells a B2B enterprise application that helps small retailers.", "ShopX").numbers).toEqual([]);
+    expect(claims("Yomoni offers online wealth management through ETF-based portfolios.", "Yomoni").names).toEqual([]);
+    expect(claims("more than 2,500 companies use it", "X").numbers).toEqual(["2500"]);
+  });
+  it("2,500 is 2.500 on a Portuguese page; Brazil is Brasil", () => {
+    const byId = { s1: { content: "Mais de 2.500 empresas usam a Contraktor. A plataforma de Contraktor é para equipes jurídicas, comerciais e operacionais das empresas.", source_type: "company_site" } };
+    expect(sentenceProblem({ role: "for_whom", text: "Its platform is built for legal, commercial and operational teams in companies, and more than 2,500 companies use Contraktor.", source_ids: ["s1"] }, "Contraktor", byId as never, () => true)).not.toMatch(/number_not_in_sources/);
+    const b2 = { s1: { content: "A Ksecurity vende serviços de segurança da informação a empresas, incluindo instituições financeiras que precisam cumprir as resoluções do Central Bank do Brasil.", source_type: "company_site" } };
+    expect(sentenceProblem({ role: "what", text: "Ksecurity sells its information security services to businesses, including financial institutions that must comply with Central Bank of Brazil resolutions.", source_ids: ["s1"] }, "KSecurity", b2 as never, () => true)).not.toMatch(/name_not_in_sources/);
+  });
+  it("accessnewswire.com is the wire accesswire.com became", () => {
+    expect(standingOf("https://www.accessnewswire.com/newsroom/en/x/kontent-ai-launches-1129445", { companyName: "Kontent.ai" }).kind).toBe("allowed");
+  });
+});

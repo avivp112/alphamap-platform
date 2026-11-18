@@ -26,7 +26,7 @@ const COMMON_CAPS = new Set(["the", "a", "an", "it", "its", "this", "that", "the
 /** The numbers and the capitalised names of a sentence (not its first word, not the company's own name). */
 const TERMS = new Set(["saas", "paas", "iaas", "iot", "nosql", "devops", "fintech", "proptech", "edtech", "healthtech", "insurtech", "regtech", "adtech", "foodtech", "agtech", "biotech", "cleantech"]);
 export function claims(sentence: string, companyName: string): { numbers: string[]; names: string[] } {
-  const numbers = (sentence.match(/\$?\d[\d,.]*\s?(?:[kKmMbB]\b|%|\+)?/g) ?? []).map((n) => n.replace(/[$,\s+]/g, "").replace(/\.$/, "")).filter(Boolean);
+  const numbers = (sentence.match(/(?<![\p{L}\d])\$?\d[\d,.]*\s?(?:[kKmMbB]\b|%|\+)?/gu) ?? []).map((n) => n.replace(/[$,\s+]/g, "").replace(/\.$/, "")).filter(Boolean);
   const own = new Set(norm(companyName).split(" "));
   const names: string[] = [];
   const words = sentence.split(/\s+/);
@@ -35,7 +35,7 @@ export function claims(sentence: string, companyName: string): { numbers: string
     if (i === 0 || !/^[A-Z][\p{L}\d&-]{1,}$/u.test(bare)) return;
     const k = bare.toLowerCase();
     // Acronyms and trade terms (MOFs, AMRs, APIs, SaaS) are vocabulary, not names of companies, products or people (owner, round 10: Promethean's "MOFs").
-    if (/^[A-Z]{2,}s?$/.test(bare) || TERMS.has(k)) return;
+    if (/^[A-Z]{2,}s?$/.test(bare) || /^[A-Z]{2,}s?-\p{L}+$/u.test(bare) || TERMS.has(k)) return;
     if (!COMMON_CAPS.has(k) && !own.has(k)) names.push(bare);
   });
   return { numbers, names: [...new Set(names)] };
@@ -93,6 +93,13 @@ export function companyVoice(text: string, companyName: string): string {
   return `${companyName} ${third}${we[2]}`;
 }
 
+/** A country's name in the page's own language: the sentence is in English, the page in another ("Central Bank of Brazil" on a page that says "Banco Central do Brasil"). */
+const EXONYMS: Record<string, string[]> = {
+  brazil: ["brasil"], germany: ["deutschland", "alemanha", "alemania", "allemagne"], spain: ["españa", "espanha", "espagne"], italy: ["italia", "itália", "italie"], france: ["frança", "francia"], japan: ["japão", "japón", "japon", "日本"],
+  switzerland: ["schweiz", "suisse", "svizzera", "suíça", "suiza"], netherlands: ["nederland", "países bajos", "holanda", "pays-bas"], poland: ["polska", "polen", "polonia", "pologne"], portugal: ["portugal"], mexico: ["méxico"],
+  "united states": ["estados unidos", "états-unis", "vereinigte staaten", "eua"], "united kingdom": ["reino unido", "royaume-uni", "vereinigtes königreich"], sweden: ["sverige", "suécia", "suecia", "suède"], denmark: ["danmark", "dinamarca"], norway: ["norge", "noruega", "norvège"],
+  finland: ["suomi", "finlândia", "finlandia", "finlande"], austria: ["österreich", "áustria", "autriche"], belgium: ["belgique", "belgië", "bélgica"], ireland: ["éire", "irlanda", "irlande"], turkey: ["türkiye", "turquia", "turquía", "turquie"], india: ["índia", "inde"],
+};
 export function sentenceProblem(
   s: { role: string; text: string; source_ids: string[] }, companyName: string,
   byId: Record<string, { content: string; translation_offset?: number; source_type?: string }>, allowed: (id: string) => boolean, aliases: string[] = [],
@@ -113,8 +120,10 @@ export function sentenceProblem(
   if (s.role === "what" && !ownVoice(s, byId) && ![companyName, ...aliases].some((n) => leadsWithCompany(s.text, n))) return "what_describes_a_product";
   const hay = norm(s.source_ids.map((id) => byId[id].content).join(" "));
   const c = claims(s.text, [companyName, ...aliases].join(" "));
-  for (const n of c.numbers) if (!hay.includes(norm(n))) return `number_not_in_sources:${n}`;
-  for (const n of c.names) if (!hay.includes(norm(n))) return `name_not_in_sources:${n}`;
+  // "2,500" is "2.500" on a Portuguese, German or Spanish page: a dot before exactly three digits is a thousands mark too.
+  const hayNum = hay.replace(/(\d)\.(\d{3})(?!\d)/g, "$1$2");
+  for (const n of c.numbers) if (!hay.includes(norm(n)) && !hayNum.includes(norm(n))) return `number_not_in_sources:${n}`;
+  for (const n of c.names) if (!hay.includes(norm(n)) && !(EXONYMS[n.toLowerCase()] ?? []).some((e) => hay.includes(e))) return `name_not_in_sources:${n}`;
   // A page that was translated is matched with one word less: the translation paraphrases ("doctor" for "physician") (owner, round 10: Sami).
   const need = (id: string) => (byId[id].translation_offset != null ? 2 : 3);
   if (!s.source_ids.some((id) => bestSentence(byId[id].content, s.text, need(id)))) return "no_supporting_sentence";
