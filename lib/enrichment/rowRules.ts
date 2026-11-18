@@ -105,7 +105,7 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
   if (bad) return bad === "sponsored_content" ? "its source is sponsored content" : "its source is a tag, list or search page, not the article";
   const quote = r.quote ?? "";
   // A source no field may rest on (owner, batch 7): paid distribution services, sponsored / brand-studio paths, a republisher with no allowed original, a data platform.
-  if (["news", "tags", "round", "competitor_declared", "competitor_market"].includes(r.field) && url) {
+  if (["news", "tags", "round", "competitor_declared", "competitor_market", "founder"].includes(r.field) && url) {
     if (PAID_DISTRIBUTION.test(url)) return "a paid press-distribution service, not a newsroom";
     if (SPONSORED_PATH.test(url)) return "sponsored or brand-studio content";
   }

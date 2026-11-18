@@ -214,7 +214,13 @@ console.log(`\n${errors.length} error(s), ${warnings.length} warning(s).`);
     for (const r of wb) if (/unreadable/i.test(r[wi("reason")] ?? "")) unreadable.add(r[wi("company")]);
   }
   const enriched = [...byCompany.keys()].filter((c) => !unreadable.has(c));
-  const has = (c: string, ...fs: string[]) => (byCompany.get(c) ?? []).some((r) => fs.includes(r.field));
+  // A company already written has its values in the database and the memory, not in a report of what would be written now: the coverage counts the report and carried_not_written.csv together.
+  const carriedFields = new Map<string, Set<string>>();
+  if (existsSync("carried_not_written.csv")) {
+    const [ch, ...cb] = parseCsv(readFileSync("carried_not_written.csv", "utf8"));
+    for (const r of cb) { const c = r[ch.indexOf("company")]; (carriedFields.get(c) ?? carriedFields.set(c, new Set()).get(c)!).add(r[ch.indexOf("field")]); }
+  }
+  const has = (c: string, ...fs: string[]) => (byCompany.get(c) ?? []).some((r) => fs.includes(r.field)) || fs.some((f) => carriedFields.get(c)?.has(f));
   const pct = (n: number) => enriched.length ? Math.round((100 * n) / enriched.length) : 0;
   const goals: Array<[string, number, number]> = [
     ["description", pct(enriched.filter((c) => has(c, "description", "description_what_only")).length), 80],

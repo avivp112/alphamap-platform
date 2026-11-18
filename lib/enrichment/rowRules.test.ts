@@ -533,3 +533,10 @@ describe("acquired companies are enriched as usual (owner, batch 7)", () => {
     expect(siteBelongsToAnotherCompany("Hofy", "https://other.com", page(`Deel acquires Hofy. ${"Deel runs global payroll for teams everywhere. ".repeat(20)}`))).toMatch(/acquired \/ rebranded/);
   });
 });
+
+describe("a founder from a republisher with no allowed original (owner, batch 7: Snupit, yahoo.com)", () => {
+  it("is not a row", () => {
+    const r = { field: "founder", after: "Avinash Samlall — Founder", source_url: "https://za.finance.yahoo.com/news/snupit-founder-123.html", quote: "Avinash Samlall is the founder of Snupit." };
+    expect(rowProblem(r as never, "Snupit", "2026-11-18")).toMatch(/not allowed/);
+  });
+});
