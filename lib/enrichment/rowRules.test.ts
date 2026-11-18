@@ -658,3 +658,15 @@ describe("rows the owner took out of the batch-7 report (reviewed 48, 7 wrong)",
     expect(g.rows.map((r) => r.after)).toEqual(["Jakarta, Indonesia"]);
   });
 });
+
+import { pruneOfficeFromPatch } from "./reportGate";
+describe("a dropped office takes only itself out of the patch (owner, batch 7: Hibank)", () => {
+  it("keeps the others", () => {
+    const patch: Record<string, unknown> = { offices: [{ city: "Jakarta", country: "Indonesia" }, { city: "Jakarta Selatan", country: "Indonesia" }], office_countries: ["Indonesia"] };
+    pruneOfficeFromPatch(patch, "Jakarta Selatan, Indonesia");
+    expect(patch.offices).toEqual([{ city: "Jakarta", country: "Indonesia" }]);
+    pruneOfficeFromPatch(patch, "Jakarta, Indonesia");
+    expect(patch.offices).toBeUndefined();
+    expect(patch.office_countries).toBeUndefined();
+  });
+});
