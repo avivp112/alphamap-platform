@@ -1406,6 +1406,15 @@ export async function rejectCompanyCandidate(id: string, note?: string): Promise
   if (error) throw error;
 }
 
+/**
+ * What the analyst's recommendation was when the owner decided (record_candidate_recommendation,
+ * 20261206000000): the basis for comparing recommendation with decision. Best effort.
+ */
+export async function recordCandidateRecommendation(id: string, verdict: string, rules: string[]): Promise<void> {
+  const { error } = await supabase.rpc("record_candidate_recommendation", { p_candidate_id: id, p_verdict: verdict, p_rules: rules });
+  if (error) throw error;
+}
+
 // ─── Admin: companies from users' checks (check_promotions, 20261025000000) ──
 // The research itself (check_promotions.collected) stays out of these reads:
 // the card shows the check's own profile.

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useSearchParams } from "react-router";
 import {
@@ -8,8 +8,9 @@ import { Layout } from "../components/Layout";
 import { RejectNote } from "../components/admin/RejectNote";
 import { CheckPromotionsSheet } from "../components/admin/CheckPromotionsSheet";
 import {
-  fetchCompanyCandidates, approveCompanyCandidate, rejectCompanyCandidate,
+  fetchCompanyCandidates, approveCompanyCandidate, rejectCompanyCandidate, recordCandidateRecommendation,
 } from "../../lib/supabase";
+import { recommend, VERDICT_ORDER, VERDICT_LABEL, type Recommendation, type Verdict } from "../../lib/candidateRecommendation";
 import {
   SOURCE_LABEL, registryUrl, evidenceLines, companyPath,
   type CompanyCandidate, type CandidateSource, type CandidateStatus,
@@ -60,6 +61,21 @@ export function AdminReview() {
   const [rejecting, setRejecting] = useState<string | "bulk" | null>(null);
   const [note, setNote] = useState("");
   const [flash, setFlash] = useState<string | null>(null);
+  const [verdictFilter, setVerdictFilter] = useState<Verdict | "all">("all");
+
+  // The analyst's recommendation for each loaded candidate (src/lib/candidateRecommendation.ts): recommended first.
+  const recs = useMemo(() => new Map(items.map((c) => [c.id, recommend(c)] as const)), [items]);
+  const ranked = status === "pending" || status === "watching";
+  const visible = useMemo(() => {
+    if (!ranked) return items;
+    const sorted = [...items].sort((a, b) => VERDICT_ORDER[recs.get(a.id)!.verdict] - VERDICT_ORDER[recs.get(b.id)!.verdict]);
+    return verdictFilter === "all" ? sorted : sorted.filter((c) => recs.get(c.id)!.verdict === verdictFilter);
+  }, [items, recs, ranked, verdictFilter]);
+  const verdictCounts = useMemo(() => {
+    const n: Record<Verdict, number> = { approve: 0, borderline: 0, reject: 0 };
+    for (const r of recs.values()) n[r.verdict]++;
+    return n;
+  }, [recs]);
 
   const load = useCallback(async (offset: number) => {
     setLoading(true);
@@ -104,6 +120,9 @@ export function AdminReview() {
     // its own transaction, and a failure must not hide the ones that worked.
     for (const id of ids) {
       try {
+        // What was recommended at the moment of the decision, kept to compare with it later (best effort: a failure never blocks the decision).
+        const rec = recs.get(id);
+        if (rec && status === "pending") await recordCandidateRecommendation(id, rec.verdict, rec.rules).catch(() => {});
         if (action === "approve") await approveCompanyCandidate(id, reviewNote);
         else await rejectCompanyCandidate(id, reviewNote);
         done.push(id);
@@ -119,7 +138,7 @@ export function AdminReview() {
     if (failed.length) setError(failed.join(" · "));
   }
 
-  const pendingIds = items.map((c) => c.id);
+  const pendingIds = visible.map((c) => c.id);
   const allSelected = status === "pending" && pendingIds.length > 0 && pendingIds.every((id) => selected.has(id));
   const toggle = (id: string) =>
     setSelected((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
@@ -176,6 +195,24 @@ export function AdminReview() {
             </button>
           ))}
         </div>
+
+        {/* The analyst's recommendation (pending and watching only) */}
+        {ranked && items.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 mb-6" dir="rtl">
+            <span className="text-xs font-semibold text-gray-400">המלצת האנליסט:</span>
+            {(["all", "approve", "borderline", "reject"] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => setVerdictFilter(v)}
+                className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                  verdictFilter === v ? "border-[#0F172A] bg-[#0F172A] text-white" : "border-gray-200 text-gray-600 hover:border-gray-300"
+                }`}
+              >
+                {v === "all" ? `הכל (${items.length})` : `${VERDICT_LABEL[v]} (${verdictCounts[v]})`}
+              </button>
+            ))}
+          </div>
+        )}
 
         {flash && (
           <div className="mb-4 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800">{flash}</div>
@@ -234,10 +271,11 @@ export function AdminReview() {
         )}
 
         <div className="space-y-3">
-          {items.map((c) => (
+          {visible.map((c) => (
             <CandidateCard
               key={c.id}
               c={c}
+              rec={ranked ? recs.get(c.id) : undefined}
               status={status}
               selected={selected.has(c.id)}
               busy={busy.has(c.id)}
@@ -275,6 +313,7 @@ export function AdminReview() {
 
 function CandidateCard(props: {
   c: CompanyCandidate;
+  rec?: Recommendation;
   status: CandidateStatus;
   selected: boolean;
   busy: boolean;
@@ -317,6 +356,8 @@ function CandidateCard(props: {
             {" · "}{t("adminReview.filings", { count: c.filings_count })}
             {!pending && c.reviewed_at && <>{" · "}{t(`adminReview.reviewed.${props.status}`, { ago: timeAgo(c.reviewed_at) })}</>}
           </p>
+
+          {props.rec && <RecommendationBlock rec={props.rec} />}
 
           {lines.length > 0 && (
             <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-[140px_1fr] text-sm">
@@ -369,6 +410,27 @@ function CandidateCard(props: {
           {pending && props.rejectingThis && props.rejectNote}
         </div>
       </div>
+    </div>
+  );
+}
+
+const VERDICT_STYLE: Record<Verdict, { chip: string; box: string }> = {
+  approve: { chip: "bg-emerald-600 text-white", box: "border-emerald-100 bg-emerald-50/60" },
+  borderline: { chip: "bg-amber-500 text-white", box: "border-amber-100 bg-amber-50/60" },
+  reject: { chip: "bg-rose-600 text-white", box: "border-rose-100 bg-rose-50/60" },
+};
+
+/** The recommendation and its reasons, in Hebrew. The reasons are the point: they say what the verdict rests on. */
+function RecommendationBlock({ rec }: { rec: Recommendation }) {
+  const st = VERDICT_STYLE[rec.verdict];
+  return (
+    <div dir="rtl" className={`mt-3 rounded-lg border px-4 py-3 ${st.box}`}>
+      <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-bold ${st.chip}`}>{rec.label}</span>
+      <ul className="mt-2 space-y-1 text-sm text-[#111827]">
+        {rec.reasons.map((r, i) => (
+          <li key={i} className="flex gap-2"><span className="text-gray-400">•</span><span className="break-words">{r}</span></li>
+        ))}
+      </ul>
     </div>
   );
 }
