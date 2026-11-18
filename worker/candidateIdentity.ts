@@ -30,7 +30,7 @@
 
 import { isGenericDirectoryDomain, websiteDomain } from "../lib/enrichment/websiteValidation.ts";
 import { htmlToText, promptText } from "../lib/enrichment/pageText.ts";
-import { domainNameMatch, rootDomain } from "./identify.ts";
+import { domainNameMatch, nameTokens, rootDomain } from "./identify.ts";
 import type { Search, SearchResult } from "./search.ts";
 
 export const MAX_SEARCHES = 3;
@@ -283,6 +283,26 @@ export function pickSiteCandidates(c: CandidateInput, result: SearchResult, max 
   return out;
 }
 
+// ── Domains from the name ────────────────────────────────────────────────────
+
+const PROBE_TLDS = ["com", "ai", "io", "co", "app"];
+
+/**
+ * When the search does not return the company's own domain (it varies from run to
+ * run: Tractian, Slazer Labs and others were found one time and missed the next),
+ * the name itself is tried as a domain: slazer.com, slazer.ai, slazerlabs.com...
+ * That is only a way to find a page to READ. It is the company's site only if the
+ * page then matches the registry record twice, like any other site — a namesake
+ * (broccoli.com for Broccoli Intelligence) stays "unverified".
+ */
+export function probeDomains(name: string, max = 5): string[] {
+  const { distinct, joined } = nameTokens(plainName(name));
+  const labels = [...new Set([distinct[0], joined].filter((l): l is string => !!l && l.length >= 4))];
+  const out: string[] = [];
+  for (const tld of PROBE_TLDS) for (const l of labels) out.push(`${l}.${tld}`);
+  return out.slice(0, max);
+}
+
 // ── The run ──────────────────────────────────────────────────────────────────
 
 export interface Describer {
@@ -397,6 +417,12 @@ export async function enrichCandidate(c: CandidateInput, deps: IdentityDeps): Pr
   if (sites.length === 0 && people.length > 0) {
     sites = pickSiteCandidates(c, await search(`"${name}" ${people.map((p) => `"${displayName(p.raw)}"`).join(" ")}`, "candidate_site_people"));
   }
+  // Still nothing: try the name as a domain (free: no search). Verified by the same two-match rule.
+  let probing = false;
+  if (sites.length === 0) {
+    sites = probeDomains(c.name).map((d) => ({ url: `https://${d}/`, domain: d, via: "name" as const }));
+    probing = true;
+  }
   if (sites.length === 0) {
     out.notes.push(`לא נמצא אתר שהדומיין שלו נושא את שם החברה. דומיינים בתוצאות: ${[...seen].slice(0, 8).join(", ") || "אין"}`);
     return out;
@@ -404,14 +430,18 @@ export async function enrichCandidate(c: CandidateInput, deps: IdentityDeps): Pr
 
   // 2. Read at most two pages of each of the first two sites and score them against the record.
   let best: { site: SiteCandidate; pages: Page[]; signals: MatchSignal[] } | null = null;
-  for (const site of sites.slice(0, 2)) {
+  for (const site of sites.slice(0, probing ? sites.length : 2)) {
     const pages = await readSite(site.url, deps.fetch);
-    if (pages.length === 0) { out.notes.push(`האתר ${site.domain} לא נקרא (חסום ב-robots.txt או לא זמין)`); continue; }
+    if (pages.length === 0) { if (!probing) out.notes.push(`האתר ${site.domain} לא נקרא (חסום ב-robots.txt או לא זמין)`); continue; }
     const signals = matchSignals(c, pages);
     if (!best || new Set(signals.map((s) => s.kind)).size > new Set(best.signals.map((s) => s.kind)).size) best = { site, pages, signals };
     if (isVerified(signals)) break;
   }
-  if (!best) return out;
+  if (!best) {
+    if (probing) out.notes.push(`החיפוש לא החזיר דומיין עם שם החברה, וגם דומיינים לפי השם (${sites.map((x) => x.domain).join(", ")}) לא נענו. דומיינים בתוצאות: ${[...seen].slice(0, 6).join(", ") || "אין"}`);
+    return out;
+  }
+  if (probing) out.notes.push(`האתר נמצא לפי שם החברה כדומיין (לא בחיפוש): ${best.site.domain}`);
 
   // 3. One more search, only when the best site is one match short: does the search engine tie a director to this domain?
   if (!isVerified(best.signals) && searches < MAX_SEARCHES && people.length > 0) {

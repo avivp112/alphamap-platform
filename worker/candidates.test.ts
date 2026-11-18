@@ -14,12 +14,18 @@ describe("parseDescription", () => {
 });
 
 describe("makeDescriber reports a miss", () => {
-  const fake = (text: string) => ({ messages: { create: async () => ({ content: [{ type: "text", text }], usage: { input_tokens: 1, output_tokens: 1 } }) } }) as never;
+  const fake = (text: string, stop = "end_turn") => ({ messages: { create: async () => ({ content: [{ type: "text", text }], stop_reason: stop, usage: { input_tokens: 1, output_tokens: 1 } }) } }) as never;
   it("passes the start of the answer on when there is no usable quote", async () => {
     const misses: string[] = [];
     const d = makeDescriber(fake('{"quote": null, "description_he": null}'), "m", undefined, (r) => misses.push(r));
     expect(await d({ name: "X", text: "t" })).toBeNull();
-    expect(misses).toEqual(['{"quote": null, "description_he": null}']);
+    expect(misses).toEqual(['end_turn: {"quote": null, "description_he": null}']);
+  });
+  it("says when the answer was cut off by the token limit", async () => {
+    const misses: string[] = [];
+    const d = makeDescriber(fake('{"quote": "We build drones for farms.", "description_he": "בונה רחפ', "max_tokens"), "m", undefined, (r) => misses.push(r));
+    expect(await d({ name: "X", text: "t" })).toBeNull();
+    expect(misses[0].startsWith("max_tokens:")).toBe(true);
   });
   it("stays silent when the answer is usable", async () => {
     const misses: string[] = [];

@@ -33,15 +33,17 @@ export function makeDescriber(
   onMiss?: (raw: string) => void,
 ): Describer {
   return async ({ name, text }) => {
+    // 1500: the first dry runs with 400 got answers cut off in the middle of the Hebrew line, or empty (2026-11-18) — the model
+    // spends part of the limit before it writes. The answer itself is ~150 tokens.
     const msg = await anthropic.messages.create({
-      model, max_tokens: 400, system: DESCRIBE_SYSTEM,
+      model, max_tokens: 1500, system: DESCRIBE_SYSTEM,
       messages: [{ role: "user", content: `Company: ${name}\n\nWebsite text:\n${text}` }],
     });
     onUsage?.(msg.usage?.input_tokens ?? 0, msg.usage?.output_tokens ?? 0);
     const block = msg.content.find((b) => b.type === "text");
     const raw = block && block.type === "text" ? block.text : "";
     const parsed = parseDescription(raw);
-    if (!parsed) onMiss?.(raw.replace(/\s+/g, " ").slice(0, 200));
+    if (!parsed) onMiss?.(`${(msg as { stop_reason?: string }).stop_reason ?? "?"}: ${raw.replace(/\s+/g, " ").slice(0, 200)}`);
     return parsed;
   };
 }

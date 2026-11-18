@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   personName, textHasPerson, plainName, matchSignals, isVerified, siteSignals, quoteInText, pickSiteCandidates,
-  isForbiddenDomain, cityOf, aboutLink, originOf, extraLinks, MAX_PAGES, enrichCandidate, displayName, MAX_SEARCHES,
+  isForbiddenDomain, cityOf, aboutLink, originOf, extraLinks, MAX_PAGES, probeDomains, enrichCandidate, displayName, MAX_SEARCHES,
   type CandidateInput, type Page, type IdentityDeps,
 } from "./candidateIdentity.ts";
 import type { SearchResult } from "./search.ts";
@@ -158,12 +158,39 @@ describe("enrichCandidate", () => {
     expect(e.notes.join(" ")).toContain("התיאור נזרק");
   });
   it("no site found: no_site, nothing guessed", async () => {
-    const e = await enrichCandidate(uk, mkDeps({ search: async () => result([["https://www.crunchbase.com/o/x"]]) }));
+    const e = await enrichCandidate(uk, mkDeps({
+      search: async () => result([["https://www.crunchbase.com/o/x"]]),
+      fetch: (async () => new Response("", { status: 404 })) as typeof fetch,   // no domain answers either
+    }));
     expect(e.status).toBe("no_site");
     expect(e.website).toBeNull();
     expect(e.description_he).toBeNull();
     // The audit trail: which domains the search returned, so a wrongly dropped site can be seen.
     expect(e.notes.join(" ")).toContain("crunchbase.com");
+  });
+  it("probe domains come from the name, shortest first, and need a real name token", () => {
+    expect(probeDomains("Slazer Labs, Inc.")).toEqual(["slazer.com", "slazerlabs.com", "slazer.ai", "slazerlabs.ai", "slazer.io"]);
+    expect(probeDomains("Tractian Inc.", 3)).toEqual(["tractian.com", "tractian.ai", "tractian.io"]);
+    expect(probeDomains("AI Co Inc.")).toEqual([]);
+  });
+  it("when the search misses the site, the name as a domain is tried and verified like any site", async () => {
+    const asked: string[] = [];
+    const e = await enrichCandidate(uk, mkDeps({
+      search: async () => result([["https://www.crunchbase.com/o/x"]]),
+      fetch: (async (u: RequestInfo | URL) => { asked.push(String(u)); return String(u).startsWith("https://highline.com/") ? html(site) : new Response("", { status: 404 }); }) as typeof fetch,
+    }));
+    expect(e.status).toBe("verified");
+    expect(e.website).toBe("https://highline.com/");
+    expect(e.notes.join(" ")).toContain("לפי שם החברה כדומיין");
+    expect(asked[0]).toBe("https://highline.com/");
+  });
+  it("a namesake found by name as a domain is unverified, never presented as the company", async () => {
+    const e = await enrichCandidate(uk, mkDeps({
+      search: async () => result([]),
+      fetch: (async (u: RequestInfo | URL) => String(u).startsWith("https://highline.com/") ? html("Highline sells bike helmets in Leeds.") : new Response("", { status: 404 })) as typeof fetch,
+    }));
+    expect(e.status).toBe("unverified");
+    expect(e.description_he).toBeNull();
   });
   it("a namesake site with one match is unverified and carries no description", async () => {
     const other = `Highline AI sells bike helmets. Ioannis Ropas is our advisor.`;
