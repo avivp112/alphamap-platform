@@ -4,6 +4,31 @@
     "select": "言語を選択"
   },
   "nav": {
+    "v2": {
+      "page_home": "ホーム",
+      "page_startups": "プライベートマーケット",
+      "page_vcs": "VC",
+      "page_deals": "ディール",
+      "page_bench": "Your Alpha",
+      "hint_home": "AIアナリストに質問",
+      "hint_startups": "スタートアップと資金調達ラウンド",
+      "hint_vcs": "ファーム、チェックサイズ、ファンド届出",
+      "hint_deals": "SEC Form D 届出",
+      "hint_bench": "ベンチとジャーナル",
+      "ask": "質問",
+      "recent": "最近の質問",
+      "goTo": "移動",
+      "companies": "企業",
+      "paletteTitle": "AlphaMap を検索",
+      "palettePlaceholder": "質問するか、ページや企業へ移動",
+      "noResults": "該当なし。",
+      "askPrefix": "AlphaMap に質問:",
+      "statCompanies": "{{n}} 社",
+      "statFirms": "{{n}} ファーム",
+      "statFiling": "最新の届出 {{date}}",
+      "search": "質問または移動…",
+      "dataUpdated": "データ更新: {{when}}"
+    },
     "home": "ホーム",
     "data": "私たちのデータ",
     "privateMarket": "未公開市場",
@@ -544,6 +569,28 @@
       "tab_matches": "テーゼマッチ",
       "tab_alerts": "ライブアラート",
       "tab_crm": "CRM"
+    }
+  },
+  "home": {
+    "v2": {
+      "askLabel": "AlphaMap に質問",
+      "ask": "質問",
+      "grounded": "回答は AlphaMap のデータベースのみに基づきます。各回答から情報源を開けます。",
+      "recent": "前回の続き",
+      "clearRecent": "クリア",
+      "onDevice": "この端末に保存",
+      "cat_companies": "企業",
+      "cat_investors": "投資家",
+      "cat_deals": "ディール",
+      "p_companies_0": "人員が安定している欧州シリーズAのサイバーセキュリティ企業",
+      "p_companies_1": "急成長中のAIインフラ企業",
+      "p_companies_2": "2020年以降に設立された気候ハードウェア企業",
+      "p_investors_0": "米国のグロースステージのフィンテック投資家",
+      "p_investors_1": "募集中のファンドがあるVCは？",
+      "p_investors_2": "100万〜300万ドルを出資するシード投資家",
+      "p_deals_0": "直近30日で最大の企業届出",
+      "p_deals_1": "投資家に開かれているラウンド",
+      "p_deals_2": "今四半期に届出された新ファンド"
     }
   },
   "vcs": {

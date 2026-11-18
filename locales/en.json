@@ -4,6 +4,31 @@
     "select": "Select language"
   },
   "nav": {
+    "v2": {
+      "page_home": "Home",
+      "page_startups": "Private Market",
+      "page_vcs": "VCs",
+      "page_deals": "Deals",
+      "page_bench": "Your Alpha",
+      "hint_home": "Ask the AI analyst",
+      "hint_startups": "Startups and funding rounds",
+      "hint_vcs": "Firms, check sizes and fund filings",
+      "hint_deals": "SEC Form D filings",
+      "hint_bench": "Bench and Journal",
+      "ask": "Ask",
+      "recent": "Recent questions",
+      "goTo": "Go to",
+      "companies": "Companies",
+      "paletteTitle": "Search AlphaMap",
+      "palettePlaceholder": "Ask a question, or jump to a page or company",
+      "noResults": "Nothing matches.",
+      "askPrefix": "Ask AlphaMap:",
+      "statCompanies": "{{n}} companies",
+      "statFirms": "{{n}} firms",
+      "statFiling": "Latest filing {{date}}",
+      "search": "Ask or jump to…",
+      "dataUpdated": "Data updated {{when}}"
+    },
     "home": "Home",
     "data": "Our Data",
     "privateMarket": "Private Market",
@@ -486,6 +511,28 @@
     "gridView": "Grid view",
     "listView": "List view",
     "allOf": "All {{sector}}"
+  },
+  "home": {
+    "v2": {
+      "askLabel": "Ask AlphaMap",
+      "ask": "Ask",
+      "grounded": "Answered strictly from the AlphaMap database. Sources open from every answer.",
+      "recent": "Pick up where you left off",
+      "clearRecent": "Clear",
+      "onDevice": "Kept on this device",
+      "cat_companies": "Companies",
+      "cat_investors": "Investors",
+      "cat_deals": "Deals",
+      "p_companies_0": "European Series A cybersecurity startups with stable headcount",
+      "p_companies_1": "AI infrastructure companies scaling fast",
+      "p_companies_2": "Climate hardware startups founded after 2020",
+      "p_investors_0": "Growth-stage fintech investors in the US",
+      "p_investors_1": "Which VCs have an open fund offering?",
+      "p_investors_2": "Seed investors writing $1-3M checks",
+      "p_deals_0": "Largest company filings in the last 30 days",
+      "p_deals_1": "Rounds that are still open to investors",
+      "p_deals_2": "New funds filed this quarter"
+    }
   },
   "vcs": {
     "v2": {
