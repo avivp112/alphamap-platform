@@ -150,6 +150,8 @@ describe("enrichCandidate", () => {
     expect(e.status).toBe("no_site");
     expect(e.website).toBeNull();
     expect(e.description_he).toBeNull();
+    // The audit trail: which domains the search returned, so a wrongly dropped site can be seen.
+    expect(e.notes.join(" ")).toContain("crunchbase.com");
   });
   it("a namesake site with one match is unverified and carries no description", async () => {
     const other = `Highline AI sells bike helmets. Ioannis Ropas is our advisor.`;

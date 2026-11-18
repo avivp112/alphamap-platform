@@ -349,7 +349,14 @@ export async function enrichCandidate(c: CandidateInput, deps: IdentityDeps): Pr
   const people = candidatePeople(c, 2);
   const city = cityOf(c);
   let searches = 0;
-  const search = async (q: string, label: string): Promise<SearchResult> => { searches++; out.search_calls = searches; return deps.search(q, label); };
+  // Domains the searches returned, so a "no site" can be audited: what was there, and was the right one wrongly dropped?
+  const seen = new Set<string>();
+  const search = async (q: string, label: string): Promise<SearchResult> => {
+    searches++; out.search_calls = searches;
+    const r = await deps.search(q, label);
+    for (const x of r.organic) { const h = websiteDomain(x.url); if (h) seen.add(rootDomain(h)); }
+    return r;
+  };
 
   // 1. Find candidate sites: name + place first, then name + people.
   let sites: SiteCandidate[] = [];
@@ -364,7 +371,7 @@ export async function enrichCandidate(c: CandidateInput, deps: IdentityDeps): Pr
     sites = pickSiteCandidates(c, await search(`"${name}" ${people.map((p) => `"${displayName(p.raw)}"`).join(" ")}`, "candidate_site_people"));
   }
   if (sites.length === 0) {
-    out.notes.push("לא נמצא אתר שהדומיין שלו נושא את שם החברה");
+    out.notes.push(`לא נמצא אתר שהדומיין שלו נושא את שם החברה. דומיינים בתוצאות: ${[...seen].slice(0, 8).join(", ") || "אין"}`);
     return out;
   }
 

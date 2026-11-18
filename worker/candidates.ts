@@ -71,15 +71,17 @@ export interface CandidateBatchResult {
 const SELECT = "id, source, name, country, founded_year, entity_number, website, evidence";
 
 /** Pending candidates still to be looked up: SEC Form D, and UK ones that came up from the watchlist. */
-export async function pickCandidates(db: SupabaseClient, limit: number): Promise<CandidateInput[]> {
-  const { data, error } = await db
+export async function pickCandidates(db: SupabaseClient, limit: number, exclude: ReadonlySet<string> = new Set()): Promise<CandidateInput[]> {
+  let q = db
     .from("company_candidates").select(SELECT)
     .eq("status", "pending")
     .or("source.eq.sec_form_d,and(source.eq.uk_companies_house,promoted_at.not.is.null)")
     .filter("evidence->enrichment->>enriched_at", "is", null)
     .order("gate_tier", { ascending: true })        // alert tier first
-    .order("first_seen_at", { ascending: false })
-    .limit(limit);
+    .order("first_seen_at", { ascending: false });
+  // Already looked at since this worker started (a dry run saves nothing, so it would pick the same ones every turn).
+  if (exclude.size > 0) q = q.not("id", "in", `(${[...exclude].join(",")})`);
+  const { data, error } = await q.limit(limit);
   if (error) throw new Error(`company_candidates: ${error.message}`);
   return (data ?? []) as unknown as CandidateInput[];
 }
@@ -93,12 +95,13 @@ export async function saveEnrichment(db: SupabaseClient, c: CandidateInput, e: E
   }
 }
 
-export async function candidateBatch(d: CandidateBatchDeps, opts: { limit: number; write: boolean }): Promise<CandidateBatchResult> {
+export async function candidateBatch(d: CandidateBatchDeps, opts: { limit: number; write: boolean; skip?: Set<string> }): Promise<CandidateBatchResult> {
   const log = d.log ?? ((m: string) => console.log(`[worker] ${m}`));
   const out: CandidateBatchResult = { checked: 0, verified: 0, unverified: 0, no_site: 0, failed: 0, searches: 0, wrote: opts.write, results: [] };
-  const rows = await pickCandidates(d.db, opts.limit);
+  const rows = await pickCandidates(d.db, opts.limit, opts.skip);
   const deps: IdentityDeps = { search: d.search, fetch: d.fetch, describe: d.describe };
   for (const c of rows) {
+    opts.skip?.add(c.id);
     try {
       const e = await enrichCandidate(c, deps);
       out.checked++; out.searches += e.search_calls; out[e.status]++;
@@ -107,8 +110,9 @@ export async function candidateBatch(d: CandidateBatchDeps, opts: { limit: numbe
       });
       // What matched is in the log line, so each verdict can be checked by eye: "is that really this company?"
       const why = e.match_signals.map((s) => `${s.kind}: ${s.text}`).join("; ");
-      const said = e.description_quote ? ` | says: "${e.description_quote.slice(0, 140)}"` : "";
-      log(`candidate ${c.name} (${c.source}${c.entity_number ? ` ${c.entity_number}` : ""}): ${e.status}${e.website ? ` ${e.website}` : ""}${why ? ` [${why}]` : ""}${said}${opts.write ? "" : " (dry run, not saved)"}`);
+      const said = e.description_quote ? ` | says: "${e.description_quote.slice(0, 140)}"` : e.status === "verified" ? " | no description" : "";
+      const why2 = e.notes.length ? ` | ${e.notes.join("; ")}` : "";
+      log(`candidate ${c.name} (${c.source}${c.entity_number ? ` ${c.entity_number}` : ""}): ${e.status}${e.website ? ` ${e.website}` : ""}${why ? ` [${why}]` : ""}${said}${why2}${opts.write ? "" : " (dry run, not saved)"}`);
       if (opts.write) await saveEnrichment(d.db, c, e);
     } catch (err) {
       out.failed++;

@@ -188,6 +188,7 @@ let lastCandidatesAt = 0;
 let candidateDay = "";
 let candidateSearchesToday = 0;
 const candidateMeter = newMeter();
+const candidateSeen = new Set<string>();   // looked at since this start: a dry run saves nothing and would repeat itself
 const candidateFetch = politeFetch(fetch, () => {});
 
 async function candidatesTurn(): Promise<void> {
@@ -199,7 +200,7 @@ async function candidatesTurn(): Promise<void> {
   try {
     const r = await candidateBatch(
       { db, search: serperSearch(cfg.serpKey, candidateMeter), fetch: candidateFetch, describe: makeDescriber(anthropic, cfg.enrichModel) },
-      { limit: CANDIDATE_BATCH, write: CANDIDATE_WRITE },
+      { limit: CANDIDATE_BATCH, write: CANDIDATE_WRITE, skip: candidateSeen },
     );
     candidateSearchesToday += r.searches;
     if (r.checked > 0 || r.failed > 0) {
