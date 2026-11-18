@@ -13,6 +13,7 @@ import { acquisitionHeadline } from "../lib/enrichment/siteOwner.ts";
 import { extractNumbersFromText } from "../lib/enrichment/evidence.ts";
 import { SECTOR_TAXONOMY } from "../src/lib/taxonomy.ts";
 import { loadKnown, refreshDue, markKey } from "../lib/enrichment/knownSources.ts";
+import { recentRules } from "../lib/enrichment/ruleRegistry.ts";
 import { loadGaps, ownerWrongTest } from "../lib/enrichment/knownGaps.ts";
 
 function parseCsv(text: string): string[][] {
@@ -34,8 +35,8 @@ const reportPath = process.env.PILOT_REPORT ?? "pilot_report_dry.csv";
 if (!existsSync(reportPath)) { console.error(`${reportPath} not found`); process.exit(1); }
 const [head, ...body] = parseCsv(readFileSync(reportPath, "utf8"));
 const ix = (n: string) => head.indexOf(n);
-type Row = { id: string; company: string; field: string; after: string; url: string; quote: string; original: string; translated: string };
-const rows: Row[] = body.map((r) => ({ id: r[ix("company_id")], company: r[ix("company")], field: r[ix("field")], after: r[ix("after")] ?? "", url: r[ix("source_url")] ?? "", quote: r[ix("quote")] ?? "", original: ix("quote_original") >= 0 ? r[ix("quote_original")] ?? "" : "", translated: ix("quote_translated") >= 0 ? r[ix("quote_translated")] ?? "" : "" })).filter((r) => r.field && r.field !== "(nothing)");
+type Row = { id: string; company: string; field: string; after: string; url: string; quote: string; original: string; translated: string; rule: string };
+const rows: Row[] = body.map((r) => ({ id: r[ix("company_id")], company: r[ix("company")], field: r[ix("field")], after: r[ix("after")] ?? "", url: r[ix("source_url")] ?? "", quote: r[ix("quote")] ?? "", original: ix("quote_original") >= 0 ? r[ix("quote_original")] ?? "" : "", translated: ix("quote_translated") >= 0 ? r[ix("quote_translated")] ?? "" : "", rule: ix("rule") >= 0 ? r[ix("rule")] ?? "" : "" })).filter((r) => r.field && r.field !== "(nothing)");
 
 const errors: string[] = [], warnings: string[] = [];
 const err = (c: string, m: string) => errors.push(`${c}: ${m}`);
@@ -211,24 +212,30 @@ console.log(`\n${errors.length} error(s), ${warnings.length} warning(s).`);
   const pool = rows.filter((r) => r.field !== "(nothing)" && r.after);
   let flags: Record<string, { generic: boolean; translated: boolean; sources: number; techBorderline: boolean }> = {};
   try { flags = JSON.parse(readFileSync("cache/company_flags.json", "utf8")); } catch { /* no flags: a random sample */ }
-  const strata: Array<[string, (c: string) => boolean]> = [
-    ["common/generic name", (c) => !!flags[c]?.generic],
-    ["translated sources", (c) => !!flags[c]?.translated],
-    ["borderline technology", (c) => !!flags[c]?.techBorderline],
-    ["small startup (few sources)", (c) => !!flags[c] && flags[c].sources > 0 && flags[c].sources < 15],
+  // Five strata of ten (owner, batch 7): a common or generic name · a translated source · a borderline technology company · the headquarters and the founders · the values a rule of the last week made.
+  // A stratum with too few values is filled from the rest. Values are taken per row, so the last two strata look at the value, the first three at the company.
+  const recent = recentRules(process.env.SAMPLE_TODAY ?? new Date().toISOString().slice(0, 10), Number(process.env.RECENT_RULE_DAYS ?? 7));
+  const strata: Array<[string, (r: Row) => boolean]> = [
+    ["common/generic name", (r) => !!flags[r.company]?.generic],
+    ["translated source", (r) => !!flags[r.company]?.translated || !!r.original && r.original !== r.quote],
+    ["borderline technology", (r) => !!flags[r.company]?.techBorderline],
+    ["headquarters / founders", (r) => ["hq_city", "hq_country", "founder"].includes(r.field)],
+    ["made by a rule of the last week", (r) => !!r.rule && recent.has(r.rule)],
   ];
+  const PER = Number(process.env.SAMPLE_PER_STRATUM ?? 10), TOTAL = PER * strata.length;
   const shuffle = <T,>(xs: T[]) => [...xs].sort(() => rnd() - 0.5);
   const chosen: Array<{ r: Row; stratum: string }> = [];
   const used = new Set<Row>();
   for (const [label, test] of strata) {
-    for (const r of shuffle(pool.filter((x) => test(x.company) && !used.has(x))).slice(0, 10)) { chosen.push({ r, stratum: label }); used.add(r); }
+    for (const r of shuffle(pool.filter((x) => test(x) && !used.has(x))).slice(0, PER)) { chosen.push({ r, stratum: label }); used.add(r); }
   }
-  for (const r of shuffle(pool.filter((x) => !used.has(x)))) { if (chosen.length >= 40) break; chosen.push({ r, stratum: "filled from the rest" }); used.add(r); }
-  const pick = chosen.slice(0, 40);
+  for (const r of shuffle(pool.filter((x) => !used.has(x)))) { if (chosen.length >= TOTAL) break; chosen.push({ r, stratum: "filled from the rest" }); used.add(r); }
+  const pick = chosen.slice(0, TOTAL);
   const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-  writeFileSync("sample_40.csv", "\uFEFF" + ["n,stratum,company,field,value,source_url,quote_original (the page's own words),quote_translated (English it was verified against),verdict (correct/wrong)", ...pick.map(({ r, stratum }, i) => [i + 1, stratum, r.company, r.field, r.after, r.url, r.original || r.quote.replace(/^\[machine translation\]\s*/, ""), r.translated, ""].map((x) => q(String(x))).join(","))].join("\r\n") + "\r\n");
+  const sampleFile = process.env.SAMPLE_FILE ?? `sample_${TOTAL}.csv`;
+  writeFileSync(sampleFile, "\uFEFF" + ["n,stratum,company,field,value,source_url,quote,quote_original (the page's own words),quote_translated (English it was verified against),rule,verdict (correct/wrong)", ...pick.map(({ r, stratum }, i) => [i + 1, stratum, r.company, r.field, r.after, r.url, r.quote.replace(/^\[machine translation\]\s*/, ""), r.original, r.translated, r.rule, ""].map((x) => q(String(x))).join(","))].join("\r\n") + "\r\n");
   console.log(`  strata: ${strata.map(([l]) => `${l} ${pick.filter((p) => p.stratum === l).length}`).join(" · ")} · filled ${pick.filter((p) => p.stratum === "filled from the rest").length}`);
-  console.log(`  ➖ precision: ${pick.length} value(s) in sample_40.csv (stratified) — mark each correct/wrong (target ≥95%)`);
+  console.log(`  ➖ precision: ${pick.length} value(s) in ${sampleFile} (stratified) — mark each correct/wrong (target ≥95%)`);
   console.log(`\n${gaps.length ? `מוכן לרטוב: לא — הפער: ${gaps.join("; ")}` : "מוכן לרטוב: כן (בכפוף לבדיקת הדיוק במדגם)"}`);
 }
 process.exit(errors.length ? 1 : 0);

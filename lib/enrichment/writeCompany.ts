@@ -19,6 +19,7 @@ import { fetchArticleOgImage } from "./ogImage.ts";
 import { detectAcquisition } from "./acquisition.ts";
 import { detectClosure } from "./closure.ts";
 import { gateLines, parseRoundLine } from "./reportGate.ts";
+import { ruleOf } from "./ruleRegistry.ts";
 import { brandFromTexts } from "./rowRules.ts";
 import { leaderRoleEvidence, cleanPeople, mergeFoundersByName, isFounderEntry, cleanFounderTitle, canonicalTitle } from "./people.ts";
 import { samePersonName } from "./linkedin.ts";
@@ -107,7 +108,7 @@ export function dateByPrecision(date: string | null | undefined, precision: "day
   return date;
 }
 
-export interface PilotChange { field: string; before: unknown; after: unknown; source_url: string | null; quote: string | null; quote_original?: string | null; quote_translated?: string | null; /** The structured value behind a report line, kept in the memory of verified sources (a round). */ payload?: unknown }
+export interface PilotChange { /** The rule that made this value, when one did (ruleRegistry.ts). */ rule?: string; field: string; before: unknown; after: unknown; source_url: string | null; quote: string | null; quote_original?: string | null; quote_translated?: string | null; /** The structured value behind a report line, kept in the memory of verified sources (a round). */ payload?: unknown }
 
 /** The run totals Stage 10 adds to (the bulk run's RunSummary has these). */
 export interface WriteSummary {
@@ -942,6 +943,14 @@ export async function writeCollected(
       reportLines.forEach((l, i) => { if (g.drop.has(i)) return; out.push(g.after.has(i) ? { ...l, after: g.after.get(i)! } : l); });
       reportLines.length = 0; reportLines.push(...out);
       if (g.drop.size || g.after.size) console.log(`    🚦  The rules of the report applied before the write: ${g.drop.size} value(s) not written, ${g.after.size} changed${cannotHold.length ? ` · could not be held back: ${cannotHold.join(" | ")}` : ""}`);
+    }
+    // Which rule made each value (ruleRegistry.ts): the hits the collection kept, and three that show in the source itself.
+    for (const l of reportLines) {
+      const src = allSources.find((x) => x.url === l.source_url);
+      l.rule = ruleOf(l, collected.ruleHits)
+        || (src?.source_type === "registry" ? "register_record" : "")
+        || (src?.query_label && /_local$/.test(src.query_label) ? "local_language_search" : "")
+        || ((l.field === "competitor_declared") && /\bvs\.?\b/i.test(l.quote ?? "") ? "competitor_from_own_comparison_page" : "");
     }
     for (const c of reportLines) console.log(`    ${DRY_RUN ? "[DRY] would write" : "✏️  writing"} ${c.field}: ${c.before == null ? "" : `${JSON.stringify(c.before)} → `}${typeof c.after === "string" ? c.after : JSON.stringify(c.after)}  (${c.source_url ?? "no source"})`);
     if (!reportLines.length) console.log("    🟠 nothing to write for the open fields");

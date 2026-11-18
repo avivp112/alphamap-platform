@@ -455,3 +455,22 @@ describe("the report against the database", () => {
     expect(r.missing.map((m) => m.field)).toEqual(["founded_year"]);
   });
 });
+
+import { paceKey } from "./recorder";
+import { recentRules, ruleOf, RULES } from "./ruleRegistry";
+describe("pace and rule codes (batch 7)", () => {
+  it("a page read through the reader belongs to the address' site; providers are not throttled per site", () => {
+    expect(paceKey("https://r.jina.ai/https://www.brighte.com.au/about")).toEqual({ kind: "site", key: "brighte.com.au" });
+    expect(paceKey("https://r.jina.ai/https://blog.estimote.com/post/1")).toEqual({ kind: "site", key: "estimote.com" });
+    expect(paceKey("https://google.serper.dev/search")).toEqual({ kind: "provider", key: "google.serper.dev" });
+    expect(paceKey("https://web.archive.org/web/2020/https://datahut.co/about")).toEqual({ kind: "site", key: "archive.org" });
+  });
+  it("recent rules are the ones added in the last seven days; a line gets its rule by field and text", () => {
+    const r = recentRules("2026-11-20");
+    expect(r.has("hq_from_approved_quote")).toBe(true);
+    expect(r.has("hq_from_site_address")).toBe(false);
+    expect(RULES.every((x) => /^\d{4}-\d{2}-\d{2}$/.test(x.added))).toBe(true);
+    expect(ruleOf({ field: "hq_city", after: "Adelaide" }, [{ field: "hq_city", rule: "hq_from_approved_quote", value: "Adelaide" }])).toBe("hq_from_approved_quote");
+    expect(ruleOf({ field: "hq_city", after: "Sydney" }, [{ field: "hq_city", rule: "hq_from_approved_quote", value: "Adelaide" }])).toBe("");
+  });
+});
