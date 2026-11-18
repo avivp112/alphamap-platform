@@ -10,6 +10,10 @@ import {
 import { CompanyLogo } from "../CompanyLogo";
 import { useV2T } from "./filterTypes";
 
+function acquiredLabel(status: string | null | undefined): string | null {
+  return status === "acquired" ? "Acquired" : status === "majority_acquired" ? "Majority acquired" : null;
+}
+
 const PLACEHOLDER_RE = /^(unknown|n\/a|none|-|—)$/i;
 function place(city: string | null, country: string | null): string {
   return [city, country].filter((p): p is string => !!p && !PLACEHOLDER_RE.test(p)).join(", ") || "—";
@@ -109,9 +113,12 @@ export function StartupsTable({
                     </div>
                   </td>
                   <td className={`${cell} border-b border-am-line-soft whitespace-nowrap`}>
-                    {r.latest_round_type
-                      ? <span className="inline-block px-2.5 py-0.5 rounded-full border border-am-line bg-am-canvas text-am-caption font-medium text-am-ink-2">{roundTypeLabel(r.latest_round_type)}</span>
-                      : <span className="text-am-ink-3">—</span>}
+                    {acquiredLabel(r.status)
+                      // An acquired company shows its status where the funding stage would be.
+                      ? <span className="inline-block px-2.5 py-0.5 rounded-full bg-am-ink text-white text-am-caption font-medium">{acquiredLabel(r.status)}</span>
+                      : r.latest_round_type
+                        ? <span className="inline-block px-2.5 py-0.5 rounded-full border border-am-line bg-am-canvas text-am-caption font-medium text-am-ink-2">{roundTypeLabel(r.latest_round_type)}</span>
+                        : <span className="text-am-ink-3">—</span>}
                   </td>
                   <td className={`${cell} border-b border-am-line-soft text-am-ink-2 whitespace-nowrap`}>{place(r.city, r.country)}</td>
                   <td className={`${cell} border-b border-am-line-soft text-end tabular-nums whitespace-nowrap`}>
