@@ -1267,7 +1267,7 @@ function OverviewTab({
       )}
 
       {/* Four across when the card is wide (the window), two when it is a narrow column (the side panel). */}
-      <div className="grid grid-cols-2 @xl:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 @2xl:grid-cols-4 gap-3">
         <StatCard icon={Calendar}  label="Founded"     value={startup.founded_year ? String(startup.founded_year) : "—"} accent="#F59E0B" />
         <StatCard icon={MapPin}    label={offices ? t("startups.offices") : origin ? t("startups.origin.headquarters") : "Location"} value={location} accent="#0e7490" note={origin} />
         <StatCard icon={Users}     label="Employees"   value={employeeValue} accent="#6d28d7" />
@@ -2411,7 +2411,7 @@ function TearsheetModal({
     >
       <div
         className={asPanel
-          ? "relative flex flex-col h-full rounded-am-card border border-am-line bg-am-surface shadow-am-1 overflow-hidden"
+          ? "relative flex flex-col h-full rounded-am-card border border-am-line bg-am-surface shadow-am-1 overflow-y-auto"
           : "relative flex flex-col w-full h-full sm:w-[90vw] sm:h-[85vh] sm:max-w-6xl sm:rounded-[10px] bg-white"}
         style={asPanel ? undefined : {
           border: "1px solid rgba(15,23,42,0.08)",
@@ -2448,6 +2448,7 @@ function TearsheetModal({
               : crmError}
             match={matchResult}
             matchLoading={matchLoading}
+            compact={asPanel}
             tabs={visibleGroups.map((g) => ({ id: g.id, label: g.label }))}
             activeTab={activeGroup.id}
             onTab={(id) => { const g = TEARSHEET_TAB_GROUPS.find((x) => x.id === id); if (g) setActiveTab(g.ids.find((i) => visibleTabs.some((tab) => tab.id === i)) ?? g.ids[0]); }}
@@ -2645,7 +2646,7 @@ function TearsheetModal({
 
         {/* ── Scrollable tab content (white) ── */}
         <div
-          className="@container flex-1 overflow-y-auto px-6 py-5 bg-white"
+          className={`@container px-6 py-5 bg-white ${asPanel ? "flex-none" : "flex-1 overflow-y-auto"}`}
           style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(15,23,42,0.15) transparent" }}
         >
           {detailLoading ? (
@@ -3537,15 +3538,15 @@ export function Startups() {
   useEffect(() => {
     if (!uiV2 || !tearsheetStartup) return;
     if (searchParams.get("company") === tearsheetStartup.id) return;
-    setSearchParams((p) => { p.set("company", tearsheetStartup.id); return p; }, { replace: true });
+    setSearchParams((p) => { p.set("company", tearsheetStartup.id); return p; }, { replace: true, preventScrollReset: true });
   }, [uiV2, tearsheetStartup?.id]);  // eslint-disable-line react-hooks/exhaustive-deps
   function dropCompanyParam() {
-    if (searchParams.has("company")) setSearchParams((p) => { p.delete("company"); return p; }, { replace: true });
+    if (searchParams.has("company")) setSearchParams((p) => { p.delete("company"); return p; }, { replace: true, preventScrollReset: true });
   }
   function closeTearsheet() {
     setSelected(null);
     if (searchParams.has("company")) {
-      setSearchParams((p) => { p.delete("company"); return p; }, { replace: true });
+      setSearchParams((p) => { p.delete("company"); return p; }, { replace: true, preventScrollReset: true });
     }
   }
 
@@ -3877,6 +3878,13 @@ export function Startups() {
 
   // Desktop, redesigned page: the company card is a column beside the list; phones keep the window.
   const panelOpen = uiV2 && !isMobile && !!tearsheetStartup;
+  // When the card opens, bring it up under the navigation bar so its full height is on screen.
+  const panelRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!panelOpen) return;
+    const top = panelRef.current?.getBoundingClientRect().top ?? 0;
+    if (top > 100) window.scrollBy({ top: top - 92, behavior: "smooth" });
+  }, [panelOpen]);
   const renderTearsheet = (layout: "modal" | "panel") => tearsheetStartup && (
     <TearsheetModal
       startup={tearsheetStartup}
@@ -4039,7 +4047,7 @@ export function Startups() {
 
       {/* ── Sidebar + main content (shared SideFilterLayout shell) ───────── */}
       {uiV2 ? (
-        <div className={`mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 pt-3 ${selected.size >= 1 ? "pb-28" : "pb-10"}`}>
+        <div className={`mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 pt-3 ${panelOpen ? "pb-40" : selected.size >= 1 ? "pb-28" : "pb-10"}`}>
          <div className={panelOpen ? "flex items-start gap-4" : ""}>
           <div className="min-w-0 flex-1 space-y-3">
           <FilterBar
@@ -4054,8 +4062,8 @@ export function Startups() {
           {resultsContent}
           </div>
           {panelOpen && (
-            <aside aria-label={t("startups.v2.companyPanel", { defaultValue: "Company" })}
-              className="flex-none w-[min(640px,48vw)] sticky top-24 h-[calc(100vh-7rem)]">
+            <aside ref={panelRef} aria-label={t("startups.v2.companyPanel", { defaultValue: "Company" })}
+              className="flex-none w-[min(640px,48vw)] sticky top-[5.75rem] h-[calc(100vh-6.5rem)]">
               {renderTearsheet("panel")}
             </aside>
           )}
