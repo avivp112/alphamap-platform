@@ -443,8 +443,8 @@ async function enrichCompany(
     remember(knownStore, companyRows, runId ?? "dry", RUN_DATE, isWrongValue);
     // The report is what the writer writes (owner, batch 6: seven values of the reviewed report were not in the database — remembered rows the write stage cannot take, office, headcount,
     // a second founder, a competitor, a round). A remembered row that this run did not write is not a value of the report: it is listed apart, with its source, for the owner to see.
-    for (const r of carry.rows.filter((x) => x.origin === "known_source")) carriedNotWritten.push({ company_id: r.company_id, company: r.company, field: r.field, value: r.after, source_url: r.source_url, quote: r.quote ?? "" });
-    companyRows = carry.rows.filter((x) => x.origin !== "known_source").map((r) => ({ ...r, origin: r.origin ?? "new" })) as typeof companyRows;
+    for (const r of carry.rows.filter((x) => String(x.origin ?? "").startsWith("known_source"))) carriedNotWritten.push({ company_id: r.company_id, company: r.company, field: r.field, value: r.after, source_url: r.source_url, quote: r.quote ?? "" });
+    companyRows = carry.rows.filter((x) => !String(x.origin ?? "").startsWith("known_source")).map((r) => ({ ...r, origin: r.origin ?? "new" })) as typeof companyRows;
     { const g = applyRowRules(companyRows, row.name, RUN_DATE, { domain: row.website }); companyRows = g.rows; for (const d of g.dropped) console.log(`    🧹  ${d}`);
       // What was held back stays out of the report even when the memory still has it (owner, batch 6: the excluded values came back as remembered rows).
       if (BLOCKED.size) { const kept = companyRows.filter((r) => !heldRow(r.company, r.field)); if (kept.length !== companyRows.length) console.log(`    🚧  Held back, not reported: ${companyRows.filter((r) => heldRow(r.company, r.field)).map((r) => `${r.field}: ${r.after.slice(0, 40)}`).join(" | ")}`); companyRows = kept; }
