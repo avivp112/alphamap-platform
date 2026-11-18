@@ -48,7 +48,6 @@ export interface VCFirm {
   stages:             Stage[];
   sectors:            string[];
   portfolio_count:    number;
-  recent_investments: number;
   notable_exits:      string[];
   website:            string;
   sector_weights:     SectorWeight[];
@@ -98,7 +97,6 @@ function rowToFirm(row: InvestorRow): VCFirm {
     stages:             (row.stages ?? []) as Stage[],
     sectors,
     portfolio_count:    row.portfolio_size ?? 0,
-    recent_investments: Math.max(1, Math.round((row.portfolio_size ?? 50) / 40)),
     notable_exits:      row.notable_investments ?? [],
     website:            row.website ?? "#",
     sector_weights,
@@ -138,7 +136,6 @@ const VC_EXPORT_COLUMNS: ExportColumn<VCFirm>[] = [
   { label: "Stages",              value: (v) => v.stages.join("; ") },
   { label: "Sectors",             value: (v) => v.sectors.join("; ") },
   { label: "Portfolio Count",     value: (v) => v.portfolio_count },
-  { label: "Recent Investments",  value: (v) => v.recent_investments },
   { label: "Notable Exits",       value: (v) => v.notable_exits.join("; ") },
   { label: "Website",             value: (v) => v.website },
 ];
@@ -160,11 +157,10 @@ const STAGE_PILL: Record<Stage, string> = {
 
 // ─── Sort ─────────────────────────────────────────────────────────────────────
 
-type SortKey = "recent_investments" | "portfolio_count" | "aum_millions" | "founded_year";
+type SortKey = "portfolio_count" | "aum_millions" | "founded_year";
 type SortDir = "desc" | "asc";
 
 const SORT_OPTIONS: { key: SortKey; labelKey: string }[] = [
-  { key: "recent_investments", labelKey: "vcs.mostActive" },
   { key: "portfolio_count",    labelKey: "common.portfolio" },
   { key: "aum_millions",       labelKey: "metrics.aum" },
   { key: "founded_year",       labelKey: "vcs.founded" },
@@ -186,7 +182,7 @@ interface VCQuickQuestion {
 }
 
 const VC_QUICK_QUESTIONS: VCQuickQuestion[] = [
-  { label: "Most active investors in the last 24 months",     activeOnly: true, sortKey: "recent_investments" },
+  { label: "Investors active in the last 24 months",     activeOnly: true, sortKey: "portfolio_count" },
   { label: "Largest funds by AUM ($2B+)",                      aumStep: "large", sortKey: "aum_millions" },
   { label: "Seed-stage investors in Israel",                   stages: ["Seed"], geo: "Israel" },
   { label: "Active AI-focused investors",                      sectors: ["AI"], activeOnly: true },
@@ -381,7 +377,7 @@ function VCCard({ firm, onClick, selected, onToggleSelect, dataTour }: {
       </div>
 
       {/* Key stats */}
-      <div className="grid grid-cols-3 gap-1.5 px-4 py-3 relative z-10">
+      <div className="grid grid-cols-2 gap-1.5 px-4 py-3 relative z-10">
         <div className="rounded-[10px] px-2.5 py-2.5 bg-gray-50 border border-gray-100">
           <div className="flex items-center gap-1 mb-1">
             <DollarSign className="w-2.5 h-2.5 text-emerald-600 flex-none" />
@@ -396,17 +392,6 @@ function VCCard({ firm, onClick, selected, onToggleSelect, dataTour }: {
             <span className="text-[8.5px] font-bold text-gray-400 uppercase tracking-wider">{t("common.portfolio")}</span>
           </div>
           <div className="text-sm font-bold text-cyan-600 leading-none">{firm.portfolio_count}</div>
-        </div>
-
-        <div className="rounded-[10px] px-2.5 py-2.5 bg-gray-50 border border-gray-100">
-          <div className="flex items-center gap-1 mb-1">
-            <Activity className="w-2.5 h-2.5 text-amber-600 flex-none" />
-            <span className="text-[8.5px] font-bold text-gray-400 uppercase tracking-wider">{t("vcs.dealsPerYear")}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <TrendingUp className="w-3 h-3 text-amber-600 flex-none" />
-            <span className="text-sm font-bold text-amber-600 leading-none">{firm.recent_investments}</span>
-          </div>
         </div>
       </div>
 
@@ -554,7 +539,6 @@ function VCCompareModal({ firms, onClose }: { firms: VCFirm[]; onClose: () => vo
     { label: t("vcs.founded"),       icon: Calendar,   value: (f) => f.founded_year ? String(f.founded_year) : "—" },
     { label: t("metrics.aum"),           icon: DollarSign, value: (f) => formatAUM(f.aum_millions) },
     { label: "Portfolio",     icon: Briefcase,  value: (f) => String(f.portfolio_count) },
-    { label: "Deals / yr",    icon: Activity,   value: (f) => String(f.recent_investments) },
     { label: "Check Size",    icon: DollarSign, value: (f) => f.typical_check_size ?? "—" },
     { label: "Stages",        icon: TrendingUp, value: (f) => f.stages.join(", ") || "—" },
     { label: "Sectors",       icon: Star,       value: (f) => f.sectors.join(", ") || "—" },
@@ -621,7 +605,7 @@ function VCsLegacy() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [search, setSearch]         = useState("");
   const [filters, setFilters]       = useState<Filters>(DEFAULT_FILTERS);
-  const [sortKey, setSortKey]       = useState<SortKey>("recent_investments");
+  const [sortKey, setSortKey]       = useState<SortKey>("portfolio_count");
   const [sortDir, setSortDir]       = useState<SortDir>("desc");
   const [page, setPage]             = useState(1);
   const [selectedFirm, setSelectedFirm] = useState<VCFirm | null>(null);
