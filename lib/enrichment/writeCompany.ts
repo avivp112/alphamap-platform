@@ -19,7 +19,7 @@ import { normalizeIsoDate, appendNew, reconcileOnFile, isSameRound } from "./ass
 import { fetchArticleOgImage } from "./ogImage.ts";
 import { detectAcquisition } from "./acquisition.ts";
 import { detectClosure } from "./closure.ts";
-import { gateLines, parseRoundLine } from "./reportGate.ts";
+import { gateLines, parseRoundLine, pruneOfficeFromPatch } from "./reportGate.ts";
 import { ruleOf } from "./ruleRegistry.ts";
 import { brandFromTexts } from "./rowRules.ts";
 import { leaderRoleEvidence, cleanPeople, mergeFoundersByName, isFounderEntry, cleanFounderTitle, canonicalTitle } from "./people.ts";
@@ -924,6 +924,7 @@ export async function writeCollected(
           const name = text.split(" — ")[0];
           for (const key of ["founders", "leadership"]) if (Array.isArray(patch[key])) patch[key] = (patch[key] as Array<{ name?: string }>).filter((p) => !samePersonName(p.name ?? "", name));
         }
+        else if (l.field === "office") pruneOfficeFromPatch(patch, text);
         else if (l.field === "competitor_declared" || l.field === "competitor_market") patch.competitors = ((patch.competitors ?? []) as Array<{ name?: string }>).filter((c) => normalizeForMatch(c.name ?? "") !== normalizeForMatch(text));
         else {
           const cols = Object.keys(patch).filter((k) => fieldOfColumn(k) === l.field);
