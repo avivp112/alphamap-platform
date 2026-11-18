@@ -875,6 +875,22 @@ async function main() {
     if (numbered.length) console.log("\n" + renderBatchReport(numbered, { batchNo, runId, dry: DRY_RUN, csvPath: DRY_RUN ? undefined : batchPath }));
     if (specPathsFor(BATCH_NO).length) { try { const a = acceptanceReport(PILOT_REPORT, specPathsFor(BATCH_NO)); console.log(`\n── Acceptance checks (${specPathsFor(BATCH_NO).join(" + ")}) ──\n${a.text}\n`); } catch (e) { console.log(`⚠️  acceptance checks not run: ${(e as Error).message}`); } }
     console.log(`📝  Pilot report: ${PILOT_REPORT} — ${pilotRows.filter((r) => r.field !== "(nothing)").length} field(s) ${DRY_RUN ? "that would be written" : "written"} for ${new Set(pilotRows.map((r) => r.company_id)).size} compan(ies).${runId ? ` Undo: RUN_ID=${runId} npx tsx scripts/undo_run.ts` : ""}`);
+    // After a wet run: every value of the report is in the database (owner, batch 6: seven reported values were not). A missing one undoes the run.
+    if (!DRY_RUN && runId && process.exitCode !== 1) {
+      const { spawnSync } = await import("child_process");
+      const v = spawnSync("npx", ["tsx", "scripts/verify_written.ts"], { env: { ...process.env, REPORT: PILOT_REPORT }, encoding: "utf8" });
+      const out = `${v.stdout ?? ""}${v.stderr ?? ""}`.split("\n").filter((l) => /Database vs|✗|✅|Error|error/.test(l)).join("\n");
+      console.log(`🗄️   ${out || "database check gave no output"}`);
+      if (v.status !== 0) {
+        console.error(v.status === 1 ? "⛔  A value of the report is not in the database." : "⚠️  The database check could not run.");
+        if (v.status === 1 && process.env.AUTO_UNDO !== "false") {
+          console.error("⛔  Undoing this run.");
+          const u = spawnSync("npx", ["tsx", "scripts/undo_run.ts"], { env: { ...process.env, RUN_ID: runId, DRY_RUN: "false" }, stdio: "inherit" });
+          console.error(u.status === 0 ? `↩️   Run ${runId} undone.` : `⚠️  The automatic undo failed (exit ${u.status}) — run: RUN_ID=${runId} DRY_RUN=false npx tsx scripts/undo_run.ts`);
+          process.exitCode = 1;
+        }
+      }
+    }
     // After a wet run: what was written must be what the dry pass reported, row against row (owner, batch 6). Any difference undoes the run.
     if (!DRY_RUN && runId && existsSync("pilot_report_preflight.csv") && process.env.PREFLIGHT !== "off") {
       const [h, ...b] = parseReportCsv(readFileSync("pilot_report_preflight.csv", "utf8"));

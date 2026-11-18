@@ -438,3 +438,20 @@ describe("batch 6: remembered headcount values obey the same rules", () => {
     expect(out).toEqual(["2019-08-18", "2025-01-20"]);
   });
 });
+
+import { isWritten, checkWritten } from "./writtenCheck";
+describe("the report against the database", () => {
+  const c = { id: "1", city: "Sydney", country: "Australia", founded_year: null, description: "Brighte provides easy finance for solar", industry: "Fintech", offices: [], founders: [{ name: "Katherine McConnell" }], leadership: [], competitors: [{ name: "Dhan" }], news: [{ url: "https://x.com/a" }], patents: [], status: "active",
+    rounds: [{ round_type: "Series A", amount_raised: 4_000_000, announcement_date: "2017-09-05" }], headcount: [{ employee_count: 181, snapshot_date: "2022-02-08" }] } as never;
+  it("finds what is there and names what is not", () => {
+    expect(isWritten({ company_id: "1", company: "B", field: "hq_city", after: "Sydney" }, c)).toBe("yes");
+    expect(isWritten({ company_id: "1", company: "B", field: "founded_year", after: "2015" }, c)).toBe("no");
+    expect(isWritten({ company_id: "1", company: "B", field: "round", after: "Series A $4M · 2017-09-05 · lead X" }, c)).toBe("yes");
+    expect(isWritten({ company_id: "1", company: "B", field: "round", after: "Unknown $0.4M · 2017-05-05" }, c)).toBe("no");
+    expect(isWritten({ company_id: "1", company: "B", field: "headcount_history", after: "181 on 2022-02-08 (site_stated)" }, c)).toBe("yes");
+    expect(isWritten({ company_id: "1", company: "B", field: "founder", after: "Pratik Adani — CTO" }, c)).toBe("no");
+    expect(isWritten({ company_id: "1", company: "B", field: "tags", after: "X" }, c)).toBe("not_checked");
+    const r = checkWritten([{ company_id: "1", company: "B", field: "hq_city", after: "Sydney" }, { company_id: "1", company: "B", field: "founded_year", after: "2015" }], new Map([["1", c]]));
+    expect(r.missing.map((m) => m.field)).toEqual(["founded_year"]);
+  });
+});
