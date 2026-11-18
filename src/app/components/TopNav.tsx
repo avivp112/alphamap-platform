@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import {
   Bell, User, ChevronDown, UserCircle, LogOut, Menu, X,
   Rocket, Landmark, Handshake,
-  CheckCheck, Loader2, ShieldCheck, Search,
+  CheckCheck, Loader2, ShieldCheck,
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -17,11 +17,9 @@ import { homePathNow } from '../../lib/navHome';
 import { useBackClose } from '../../lib/hardwareBack';
 import { BrandMark, BrandWordmark } from './BrandMark';
 import { LanguageSelector } from './LanguageSelector';
-import { CommandPalette } from './nav/CommandPalette';
 import { resolveUiV2 } from '../../lib/uiFlag';
 import { fetchNavStats, fetchLastFiling, type NavStats } from '../../lib/navStats';
-import { isPaletteShortcut } from '../../lib/commandPalette';
-import { relativeTime, monthYear } from '../../lib/alpha';
+import { monthYear } from '../../lib/alpha';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -99,7 +97,7 @@ const topLinkCls =
 const topLinkActive = "text-am-ink font-semibold";
 const topLinkInactive = "text-gray-500 hover:text-am-ink hover:bg-gray-50";
 // The redesigned bar (?ui=2): quiet pill tabs, the active one filled.
-const topLinkV2 = "relative h-9 px-3.5 inline-flex items-center rounded-full text-[13px] font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-am-accent/40";
+const topLinkV2 = "relative h-9 px-3.5 inline-flex items-center rounded-lg text-[13px] font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-am-accent/40";
 const topLinkV2Active = "bg-am-ink text-white font-semibold";
 const topLinkV2Inactive = "text-am-ink-2 hover:bg-am-canvas hover:text-am-ink";
 
@@ -332,13 +330,11 @@ export function TopNav() {
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navItemsRef = useRef<HTMLDivElement>(null);
 
-  // The redesigned bar (?ui=2): same links and menus, restyled, plus Ctrl+K search and a data-freshness line.
+  // The redesigned bar (?ui=2): same links and menus, restyled, with real figures in the Data menu.
   const [searchParams] = useSearchParams();
   const [v2] = useState(() => resolveUiV2(searchParams.get('ui')));
-  const [paletteOpen, setPaletteOpen] = useState(false);
   const [stats, setStats] = useState<NavStats | null>(null);
   const [lastFiling, setLastFiling] = useState<string | null>(null);
-  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
   // Hardware back button (Android) closes whichever of these is open —
   // mobile nav, account menu, notification bell — before it ever falls
@@ -493,14 +489,6 @@ export function TopNav() {
     return () => { cancelled = true; };
   }, [v2, openMenu]);
 
-  useEffect(() => {
-    if (!v2 || !user) return;
-    function onKey(e: KeyboardEvent) {
-      if (isPaletteShortcut(e)) { e.preventDefault(); setPaletteOpen((o) => !o); }
-    }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [v2, user?.email]);
 
   const statFor = (to: string): string | null => {
     if (to === '/startups') return stats?.companies != null ? t('nav.v2.statCompanies', { n: stats.companies.toLocaleString(), defaultValue: '{{n}} companies' }) as string : null;
@@ -631,22 +619,6 @@ export function TopNav() {
         </div>
       )}
 
-      {/* Search: one box for asking, jumping and finding (Ctrl+K). */}
-      {v2 && showAppNav && (
-        <div className="hidden md:flex flex-1 justify-end min-w-0">
-          <button
-            type="button"
-            onClick={() => setPaletteOpen(true)}
-            aria-label={t('nav.v2.search', { defaultValue: 'Ask or jump to…' }) as string}
-            className="flex h-9 w-full max-w-[340px] items-center gap-2.5 rounded-[10px] border border-am-line bg-am-canvas px-3 text-[13px] text-am-ink-3 transition-colors hover:border-am-ink-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-am-accent/40"
-          >
-            <Search className="h-4 w-4 flex-none" aria-hidden="true" />
-            <span className="flex-1 truncate text-left">{t('nav.v2.search', { defaultValue: 'Ask or jump to…' })}</span>
-            <kbd className="flex-none rounded-md border border-am-line bg-white px-1.5 py-px text-[11px] font-semibold">{isMac ? '⌘' : 'Ctrl'} K</kbd>
-          </button>
-        </div>
-      )}
-      {v2 && showAppNav && <div className="flex-1 md:hidden" />}
 
       {/* Mobile panel */}
       {showAppNav && mobileOpen && (
@@ -680,18 +652,8 @@ export function TopNav() {
           they read as one consistent group in the app; unchanged on web.
           native:gap-3 (wider than the sm:gap-4 desktop default collapses
           to on a narrow phone) keeps them from crowding each other. */}
-      <div className="flex items-center gap-2.5 sm:gap-4 native:gap-3 flex-none">
-        {v2 && user && stats?.updatedAt && (
-          <span className="hidden xl:flex items-center gap-1.5 text-[12px] text-am-ink-3 whitespace-nowrap" title={stats.updatedAt}>
-            <span aria-hidden="true" className="h-[7px] w-[7px] rounded-full bg-am-pos" />
-            {t('nav.v2.dataUpdated', { when: relativeTime(stats.updatedAt, i18n.language), defaultValue: 'Data updated {{when}}' })}
-          </span>
-        )}
-        {v2 && user && (
-          <button type="button" onClick={() => setPaletteOpen(true)} aria-label={t('nav.v2.search', { defaultValue: 'Ask or jump to…' }) as string}
-            className="md:hidden rounded-full p-2.5 text-gray-500 hover:bg-gray-100 hover:text-am-ink"><Search className="h-5 w-5" /></button>
-        )}
-        {/* Available signed in or out — a visitor reading the marketing copy
+      <div className={cn("flex items-center gap-2.5 sm:gap-4 native:gap-3 flex-none", v2 && "ml-auto")}>
+        {/* Available signed in or out: a visitor reading the marketing copy
             needs the switcher just as much as an account holder. */}
         <LanguageSelector />
 
@@ -873,7 +835,6 @@ export function TopNav() {
           </div>
         )}
       </div>
-      {v2 && user && <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />}
     </header>
   );
 }
