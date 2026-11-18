@@ -11,6 +11,7 @@ import { documentPath, type CrmCompany, type CrmDocument, type DealTerm } from "
 
 import { countryFilterOr } from "./countryFilter";
 import { valuationOrClause, EMPTY_RANGE, type StartupSort } from "./startupFilters";
+import { filedCutoff, NO_MATCH_ID } from "./dealFilters";
 const rawUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
@@ -1513,13 +1514,43 @@ export async function setAlertsFiltered(on: boolean): Promise<void> {
 
 // ─── Deal Flow: the gated SEC feed (deal_feed view, 20261020000000) ─────────
 
-export interface DealFeedQuery {
+export interface DealFeedFilters {
+  /** Sectors as deal_feed names them (company deals). */
+  sectors?: string[];
+  /** Filed within this many days of today. */
+  filedWithinDays?: number;
+  /** Filed after this date (YYYY-MM-DD), for "new since your last visit". */
+  filedAfter?: string;
+  /** Amount sold, whole USD. */
+  soldMin?: number;
+  soldMax?: number;
+  status?: "verified" | "unreviewed";
+  /** Only deals of these watchlisted companies (company deals) or firms (fund deals). An empty list matches nothing. */
+  followIds?: string[];
+}
+
+export interface DealFeedQuery extends DealFeedFilters {
   kind: DealKind;
   search?: string;
   sort: DealSort;
   ascending: boolean;
   limit: number;
   offset: number;
+}
+
+// The filters of the redesigned page. Each one is a plain column of deal_feed, so a query without any
+// of them is exactly the query the page has always made.
+function applyDealFeedFilters<T>(query: T, kind: DealKind, f: DealFeedFilters): T {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q: any = query;
+  if (f.sectors && f.sectors.length > 0) q = q.in("sector", f.sectors);
+  if (f.filedWithinDays != null) q = q.gte("deal_date", filedCutoff(f.filedWithinDays));
+  if (f.filedAfter) q = q.gt("deal_date", f.filedAfter);
+  if (f.soldMin != null) q = q.gte("amount_raised", f.soldMin);
+  if (f.soldMax != null) q = q.lte("amount_raised", f.soldMax);
+  if (f.status) q = q.eq("review_status", f.status);
+  if (f.followIds) q = q.in(kind === "fund" ? "investor_id" : "startup_id", f.followIds.length > 0 ? f.followIds : [NO_MATCH_ID]);
+  return q as T;
 }
 
 function dealFeedSelect(q: Omit<DealFeedQuery, "limit" | "offset">, count: boolean) {
@@ -1535,7 +1566,21 @@ function dealFeedSelect(q: Omit<DealFeedQuery, "limit" | "offset">, count: boole
       ? query.or(`name.ilike.*${term}*,firm_name.ilike.*${term}*`)
       : query.ilike("name", `*${term}*`);
   }
-  return query;
+  return applyDealFeedFilters(query, q.kind, q);
+}
+
+/** How many deals match, without fetching them (the "new since your last visit" count). */
+export async function fetchDealFeedCount(q: { kind: DealKind; search?: string } & DealFeedFilters): Promise<number> {
+  let query = supabase.from("deal_feed").select("id", { count: "exact", head: true }).eq("kind", q.kind);
+  const term = sanitizeSearch(q.search ?? "");
+  if (term) {
+    query = q.kind === "fund"
+      ? query.or(`name.ilike.*${term}*,firm_name.ilike.*${term}*`)
+      : query.ilike("name", `*${term}*`);
+  }
+  const { count, error } = await applyDealFeedFilters(query, q.kind, q);
+  if (error) throw error;
+  return count ?? 0;
 }
 
 /** One page of the feed plus the total matching the filters. */

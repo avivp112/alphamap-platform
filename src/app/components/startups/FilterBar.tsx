@@ -9,7 +9,7 @@ import {
 } from "./FilterPanels";
 import { useV2T, type FilterActions, type FilterState, type HeadcountOption } from "./filterTypes";
 
-function FilterTrigger({ label, summary, children, width = 320 }: {
+export function FilterTrigger({ label, summary, children, width = 320 }: {
   label: string; summary?: string; children: React.ReactNode; width?: number;
 }) {
   const on = !!summary;

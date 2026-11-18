@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import {
   DollarSign, TrendingUp, Search, X, ChevronUp, ChevronDown, Activity, Calendar,
@@ -11,6 +12,8 @@ import { ProductTour, type TourStep } from "../components/ProductTour";
 import { fetchDealFeed, fetchDealFeedForExport, fetchDealFeedStats } from "../../lib/supabase";
 import { fmtUsd, exportColumns, type DealFeedRow, type DealFeedStats, type DealKind, type DealSort } from "../../lib/dealFeed";
 import { exportRows, type ExportFormat } from "../../lib/exportData";
+import { resolveUiV2 } from "../../lib/uiFlag";
+import { DealsRedesign } from "./DealsRedesign";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Deal Flow — the deal_feed view (migration 20261020000000): SEC Form D
@@ -107,7 +110,7 @@ function ColHeader({ col, label, sort, asc, onSort }: {
 
 const GRID = "96px minmax(0,1fr) 150px 104px 104px 28px";
 
-export function Deals() {
+function DealsLegacy() {
   const { t } = useTranslation();
   const [kind, setKind] = useState<DealKind>("company");
   const [search, setSearch] = useState("");
@@ -367,4 +370,11 @@ export function Deals() {
       <ProductTour steps={tourSteps} open={tourOpen} onClose={closeTour} />
     </Layout>
   );
+}
+
+// The redesigned page is off unless ?ui=2 (see lib/uiFlag.ts), the same switch as the Private Market page.
+export function Deals() {
+  const [searchParams] = useSearchParams();
+  const [redesign] = useState(() => resolveUiV2(searchParams.get("ui")));
+  return redesign ? <DealsRedesign /> : <DealsLegacy />;
 }
