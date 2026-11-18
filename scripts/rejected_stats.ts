@@ -9,7 +9,7 @@ import { rejectionStats } from "../lib/enrichment/rejections.ts";
 
 const file = process.argv[2] ?? "rejected_sample_30.csv";
 const [head, ...rows] = parseCsv(readFileSync(file, "utf8"));
-const ix = (c: string) => head.findIndex((h) => h.startsWith(c));
+const ix = (c: string) => { const e = head.findIndex((h) => h === c); return e >= 0 ? e : head.findIndex((h) => h.startsWith(c)); };
 const verdicts = rows.map((r) => ({ reason_code: r[ix("reason_code")], verdict: r[ix("verdict")] ?? "" }));
 const st = rejectionStats(verdicts);
 const marked = st.reduce((n, x) => n + x.marked, 0), wrong = st.reduce((n, x) => n + x.wrong, 0);
