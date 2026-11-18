@@ -34,7 +34,7 @@ import { reconcileSector, subSectorUnsupported } from "./sectors.ts";
 import { siteBelongsToAnotherCompany, acquisitionHeadline, rebrandedAs, redirectBrand } from "./siteOwner.ts";
 import { resolveDomain, judgeSite } from "./domainResolve.ts";
 import { techOverride, sectorDecision, techAccepted } from "./techOverrides.ts";
-import { isThirdPartyPage, sentenceIsAboutCompany } from "./subject.ts";
+import { isThirdPartyPage, sentenceIsAboutCompany, sentenceWithYear } from "./subject.ts";
 import { acquirerIn } from "./acquisition.ts";
 import { roundsFromNews } from "./newsRounds.ts";
 import { companyLanguage, localQueries, type Lang } from "./localSearch.ts";
@@ -65,13 +65,14 @@ import {
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
 import { pickArticlesToRead } from "./articles.ts";
 import { runTechGate, shouldSkipAsNonTech, techDecision, type TechGateVerdict } from "./techGate.ts";
+import { approvedQuotes, hqFromApprovedQuotes, foundersFromApprovedQuotes } from "./approvedQuotes.ts";
 import { teamPeopleCount, foundersFromText, foundersFromCards, foundersFromMentions, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, supportedRoleSubset, personCardsInHtml, bioFromCard, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
 import { componentOn } from "./components.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
 import { validateEnrichment, checkNarratives } from "./validation.ts";
-import { legalPageHq, hqStatementsIn, decideHeadquarters, statementKind, isLegalPageUrl, articleDate, countryOfCity, contactPageAddresses, impressumSeat, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, canonicalCity, type HqStatement } from "./headquarters.ts";
+import { legalPageHq, hqStatementsIn, decideHeadquarters, statementKind, isLegalPageUrl, articleDate, countryOfCity, countryOfTld, contactPageAddresses, impressumSeat, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, canonicalCity, type HqStatement } from "./headquarters.ts";
 import { profileSourceAllowed, roundSourceStanding, unwrapRedirect, corroboratedInvestors } from "./roundSources.ts";
 import { aboutParagraph, aboutIsOf, factsFromAbout, legalFacts, releasePointsTo, type LegalFacts } from "./companyFacts.ts";
 import { checkFoundingCountry } from "./origin.ts";
@@ -996,6 +997,15 @@ export async function collectCompany(
     return [like.lead_investor, ...(like.other_investors ?? [])].filter((n): n is string => !!n);
   });
   // Only an allowed source grounds a founder (owner, 2026-11-02: the list applies to every field).
+  // An approved quote that names a founder ("founded in 2020 by A and B", "Founder and CEO A said") also feeds the founders; the grounding below still decides.
+  {
+    const have = profile.profile.founders ?? [];
+    const extra = foundersFromApprovedQuotes(approvedQuotes(funding.funding_rounds, allSources), row.name).filter((f) => !have.some((h) => samePersonName(h.name, f.name)));
+    if (extra.length) {
+      console.log(`    👤  Founders named in approved quotes: ${extra.map((f) => f.name).join(", ")}`);
+      profile.profile.founders = [...have, ...extra.map((f) => ({ name: f.name, title: f.title }))] as typeof have;
+    }
+  }
   const grounded = groundFounders(profile.profile.founders ?? [], allSources.filter((s) => profileSourceAllowed(s, row.name)), row.name, roundInvestors);
   for (const d of grounded.dropped) {
     fates.founders.set(d.name, d.reason === "founder_is_investor" ? "named among the investors" : `no allowed source says they founded the company (${allSources.filter((x) => profileSourceAllowed(x, row.name)).length} allowed source(s) read)`);
@@ -1220,7 +1230,7 @@ export async function collectCompany(
   {
     const fy = profile.profile.founded_year as { value: number; source_id: string; evidence_quote: string } | undefined;
     const fsrc = fy ? sourceById.get(fy.source_id) : undefined;
-    if (fy && fsrc && fsrc.source_type !== "registry" && (isThirdPartyPage(fsrc.url) || !sentenceIsAboutCompany(fy.evidence_quote, row.name, { ownSite: fsrc.source_type === "company_site" }))) {
+    if (fy && fsrc && fsrc.source_type !== "registry" && (isThirdPartyPage(fsrc.url) || !sentenceIsAboutCompany(sentenceWithYear(fy.evidence_quote, fy.value), row.name, { ownSite: fsrc.source_type === "company_site" }))) {
       console.log(`    🚫  founded_year ${fy.value} not written — its sentence is not about ${row.name}: "${fy.evidence_quote.slice(0, 110)}" (${fsrc.url})`);
       bump(stats.droppedByReason, "founded_year_subject_not_company");
       profile.profile.founded_year = undefined;
@@ -1328,7 +1338,9 @@ export async function collectCompany(
   // press of tiers 1–3; press of the last two years that disagrees leaves it
   // empty and both cities become offices (headquarters.ts, owner 2026-11-01).
   {
-    const statements = [...allSources.flatMap((s) => hqStatementsIn(s, row.name)), ...allSources.flatMap((s) => impressumSeat(s)), ...extraStatements.filter((x, i, xs) => xs.findIndex((y) => y.city === x.city && y.source_id === x.source_id) === i)];
+    const approvedHq = hqFromApprovedQuotes(approvedQuotes(keptRounds, allSources), row.name);
+    for (const st of approvedHq) console.log(`    🏢  An approved quote also says where the company is — ${st.city}: "${st.quote.slice(0, 120)}" (${st.url})`);
+    const statements = [...allSources.flatMap((s) => hqStatementsIn(s, row.name)), ...approvedHq, ...allSources.flatMap((s) => impressumSeat(s)), ...extraStatements.filter((x, i, xs) => xs.findIndex((y) => y.city === x.city && y.source_id === x.source_id) === i)];
     // One street address on the Contact page is the headquarters (owner, 2026-11-02).
     // The same city on every page (a footer) is one address.
     const contact = allSources.flatMap((s) => contactPageAddresses(s)).filter((c, i, a) => a.findIndex((d) => canonicalCity(d.city) === canonicalCity(c.city)) === i);
@@ -1345,7 +1357,7 @@ export async function collectCompany(
       statements.push({ city: mc.value, quote: mc.evidence_quote, source_id: mc.source_id, url: mcSource.url, kind: mcKind, date: mcKind === "company" && mcSource.source_type === "company_site" ? null : articleDate(mcSource) });
     }
     statementsAll = statements;
-    const hq = decideHeadquarters(statements, undefined, (profile.profile.offices ?? []).map((o) => o.city));
+    const hq = decideHeadquarters(statements, undefined, (profile.profile.offices ?? []).map((o) => o.city), countryOfTld(domain));
     if (hq.kind === "none" && !fates.hq) fates.hq = mc ? `no allowed source states the headquarters: the model's "${mc.evidence_quote.slice(0, 100)}" is not a headquarters statement (${mcSource?.url ?? mc.source_id})` : "no source states the headquarters";
     if (hq.kind === "declared") {
       const st = hq.statement;

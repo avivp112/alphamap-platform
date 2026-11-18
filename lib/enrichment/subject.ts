@@ -34,6 +34,13 @@ export function sentenceIsAboutCompany(sentence: string, companyName: string, o:
   const s = sentence.replace(/^\[machine translation\]\s*/i, "").trim();
   if (sentenceNamesCompany(s, companyName, o.aliases)) return true;
   if (!o.ownSite) return false;
-  if (/\b(?:we|our|ours|us|we're|we’ve|we've)\b/i.test(s)) return true;
+  // Subject forms only: "Contact us" and "canopycare.us" are an object and a domain, not the company speaking.
+  if (/(?<![\w.@])(?:we|our|ours|we're|we’ve|we've)(?![\w.@])/i.test(s)) return true;
   return s.split(/\s+/).length <= 9 && /^(?:founded|since|est\.?|established)\b/i.test(s);
+}
+
+/** The part of a stitched quote ("... ... ...") or of a long one that holds the year: the sentence the founding year stands on. */
+export function sentenceWithYear(quote: string, year: number | string): string {
+  const parts = quote.split(/\s\.\.\.\s|(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean);
+  return parts.find((x) => x.includes(String(year))) ?? quote;
 }

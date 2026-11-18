@@ -275,3 +275,30 @@ describe("batch 6 (owner, round 10)", () => {
     expect(leaderRoleEvidence("Marc Chesley", "Chief Product Officer", src)?.url).toBe("u2");
   });
 });
+
+describe("batch 6, round 2: rounds and competitors unified, subject test", () => {
+  it("founded_year: 'Contact us' and a .us domain are not the company speaking; the year's own sentence decides", () => {
+    const q = "Canopy was founded in 2022 by DHNY. ... Contact us at hello@canopycare.us";
+    expect(rowProblem({ field: "founded_year", after: "2022", source_url: "https://other.com/x", quote: "In 2022 the DHNY group launched a fund. Contact us today." }, "Canopy", TODAY)).toMatch(/not about the company/);
+    expect(rowProblem({ field: "founded_year", after: "2022", source_url: "https://canopy.com/about", quote: q }, "Canopy", TODAY)).toBeNull();
+  });
+  it("one round per company+type+amount; the day beats the month", () => {
+    const a = { field: "round", company: "Brighte", after: "Series A $4M · 2017-09 (month only)", source_url: "h", quote: "Brighte raised a $4M Series A round." };
+    const b = { field: "round", company: "Brighte", after: "Series A $4M · 2017-09-05", source_url: "h2", quote: "Brighte raised a $4M Series A round." };
+    const out = applyRowRules([a, b], "Brighte", TODAY).rows.filter((x) => x.field === "round");
+    expect(out).toHaveLength(1);
+    expect(out[0].after).toBe("Series A $4M · 2017-09-05");
+    const c = applyRowRules([{ ...a, after: "Series A $5M · 2018", quote: "Brighte raised a $5M Series A round." }, b], "Brighte", TODAY).rows.filter((x) => x.field === "round");
+    expect(c).toHaveLength(2);
+  });
+  it("competitors: names cleaned and merged; categories and other sites' comparison pages refused", () => {
+    const rows = [
+      { field: "competitor_declared", company: "SAMCO", after: "Dhan", source_url: "https://www.samco.in/dhan-vs-samco", quote: "Samco vs Dhan" },
+      { field: "competitor_declared", company: "SAMCO", after: "Dhan (2026)", source_url: "https://www.samco.in/dhan-vs-samco-2026", quote: "Samco vs Dhan 2026" },
+    ];
+    const out = applyRowRules(rows, "SAMCO", TODAY).rows.filter((x) => x.field === "competitor_declared");
+    expect(out.map((x) => x.after)).toEqual(["Dhan"]);
+    expect(rowProblem({ field: "competitor_declared", after: "Real Estate", source_url: "https://www.samco.in/x", quote: "Samco vs Real Estate" }, "SAMCO", TODAY)).toMatch(/category/);
+    expect(rowProblem({ field: "competitor_declared", after: "Xe", source_url: "https://www.xe.com/mbank-vs-xe", quote: "mBank vs Xe" }, "MBank", TODAY)).toMatch(/another site/);
+  });
+});

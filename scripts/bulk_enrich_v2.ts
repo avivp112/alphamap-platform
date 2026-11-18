@@ -109,7 +109,21 @@ assertEnrichmentWritesAllowed("bulk_enrich_v2", !DRY_RUN, PILOT ? { fields: PILO
 // current rules — in a pilot and in a wide run alike; PHASE1_PASSED does not lift it, and a field
 // with no marks is never written. A dry run shows what a wet run would write (the open fields);
 // ALL_FIELDS=true shows everything it found. FIELDS=news,competitor narrows any run to those fields.
-const FIELDS_ASKED = (process.env.FIELDS ?? "").split(",").map((f) => f.trim()).filter(Boolean);
+// A name that is not a field of the review is mapped when it is a plural or a short form (owner, round 10: FIELDS=…,city,country,founders,employees asked for no field at all, so batch 6
+// had no headquarters and no founders in its report), and named when it is not known.
+const FIELD_ALIASES: Record<string, string[]> = {
+  city: ["hq_city"], country: ["hq_country"], headquarters: ["hq_city", "hq_country"], hq: ["hq_city", "hq_country"], founders: ["founder"], employees: ["employee_range", "employee_count"], headcount: ["employee_count"],
+  leaders: ["leader"], competitors: ["competitor_declared", "competitor_market"], competitor: ["competitor_declared"], patents: ["patent"], rounds: ["round"], offices: ["office"], founded: ["founded_year", "founding_country"],
+  registers: ["legal_name", "registered_address", "incorporation_date", "incorporation_jurisdiction", "company_number"], register: ["legal_name", "registered_address", "incorporation_date", "incorporation_jurisdiction", "company_number"],
+};
+const FIELDS_RAW = (process.env.FIELDS ?? "").split(",").map((f) => f.trim()).filter(Boolean);
+const FIELDS_ASKED = [...new Set(FIELDS_RAW.flatMap((f) => (PILOT_FIELDS.includes(f) ? [f] : FIELD_ALIASES[f.toLowerCase()] ?? [])))];
+{
+  const unknown = FIELDS_RAW.filter((f) => !PILOT_FIELDS.includes(f) && !FIELD_ALIASES[f.toLowerCase()]);
+  const mapped = FIELDS_RAW.filter((f) => !PILOT_FIELDS.includes(f) && FIELD_ALIASES[f.toLowerCase()]);
+  if (mapped.length) console.log(`ℹ️   FIELDS: ${mapped.map((f) => `${f} → ${FIELD_ALIASES[f.toLowerCase()].join("+")}`).join(", ")}`);
+  if (unknown.length) { console.error(`⛔  FIELDS names that are no field of the review: ${unknown.join(", ")}.\n    The fields are: ${PILOT_FIELDS.join(", ")}`); process.exit(1); }
+}
 const ASKED: string[] = FIELDS_ASKED.length ? PILOT_FIELDS.filter((f) => FIELDS_ASKED.includes(f)) : [...PILOT_FIELDS];
 const OPEN_NOW = openFieldNames();
 const SHOW_ALL = DRY_RUN && process.env.ALL_FIELDS === "true";
@@ -148,7 +162,16 @@ if (KNOWN_ON) {
   for (const list of Object.values(knownStore)) for (let i = list.length - 1; i >= 0; i--) {
     const e = list[i];
     const why = rowProblem({ field: e.field, after: e.value, source_url: e.source_url, quote: e.quote, payload: e.payload }, e.company, today, 7);
-    if (why) { console.log(`🧹  memory: ${e.company} ${e.field} "${e.value.slice(0, 50)}" removed — ${why}`); list.splice(i, 1); purged++; }
+    if (why) {
+      console.log(`🧹  memory: ${e.company} ${e.field} "${e.value.slice(0, 50)}" removed — ${why}`); list.splice(i, 1); purged++;
+      // Recorded as a refused candidate with the reason (owner, round 10).
+      if (KNOWN_ON) {
+        const c = gapStore[e.company_id] ?? (gapStore[e.company_id] = { company: e.company, fields: {} });
+        const f = c.fields[e.field] ?? (c.fields[e.field] = { field: e.field, searched: [], rejected_candidates: [], last_run: today, run_id: "memory rules" });
+        const note = `rejected by today's rules (${why}): ${e.value.slice(0, 80)} (${e.source_url})`;
+        if (!f.rejected_candidates.includes(note)) f.rejected_candidates.push(note);
+      }
+    }
   }
   if (purged) console.log(`🧹  ${purged} remembered value(s) removed: they break today's rules.`);
 }

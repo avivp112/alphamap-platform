@@ -96,12 +96,13 @@ export function articleDate(s: Pick<LabeledSource, "url" | "content">): string |
 const sentencesOf = (text: string) => text.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/);
 
 /** Every sentence of a source that declares a headquarters city for this company. */
-export function hqStatementsIn(s: LabeledSource, companyName: string): HqStatement[] {
+export function hqStatementsIn(s: LabeledSource, companyName: string, approved?: { forceKind: "press"; date: string | null }): HqStatement[] {
   if (s.source_type === "company_site" && isThirdPartyPage(s.url)) return [];
-  const weak = !statementKind(s) && isWeakPress(s);
-  const kind = weak ? "press" : statementKind(s);
+  // An approved quote (it passed verification for a round) counts as press of its own source, whatever the outlet's tier (owner, batch 6).
+  const weak = !approved && !statementKind(s) && isWeakPress(s);
+  const kind = approved ? approved.forceKind : weak ? "press" : statementKind(s);
   if (!kind) return [];
-  const date = kind === "company" && s.source_type === "company_site" ? null : articleDate(s);
+  const date = approved ? approved.date : kind === "company" && s.source_type === "company_site" ? null : articleDate(s);
   const out: HqStatement[] = [];
   for (const sentence of sentencesOf(`${s.title ?? ""}. ${s.content}`)) {
     if (sentence.length > 400 || !HQ_WORD.test(sentence)) continue;
@@ -312,7 +313,7 @@ const sameCity = (a: string, b: string) => canonicalCity(a) === canonicalCity(b)
  * New York and Tel Aviv; a 2022 WSJ "Tel Aviv-based" does not decide it). An
  * undated article is not shown to be recent, so it counts as old.
  */
-export function decideHeadquarters(statements: HqStatement[], today = new Date().toISOString().slice(0, 10), siteOfficeCitiesIn: string[] = []): HqDecision {
+export function decideHeadquarters(statements: HqStatement[], today = new Date().toISOString().slice(0, 10), siteOfficeCitiesIn: string[] = [], corroboratingCountry: string | null = null): HqDecision {
   let siteOfficeCities = siteOfficeCitiesIn;
   const latestFirst = (xs: HqStatement[]) => [...xs].sort((a, b) => (b.date ?? "9999").localeCompare(a.date ?? "9999"));
   const allCompany = latestFirst(statements.filter((s) => s.kind === "company"));
@@ -345,7 +346,12 @@ export function decideHeadquarters(statements: HqStatement[], today = new Date()
   }
   // Declarations that are all from articles older than eight years are not today's headquarters (owner, 2026-11-10: Chargebee
   // "Chennai-based" in 2014). An undated article is not shown to be old, so it still counts.
-  if (press.every((s) => s.date && Date.parse(today) - Date.parse(s.date) > HQ_MAX_AGE_DAYS * DAY)) return { kind: "none" };
+  if (press.every((s) => s.date && Date.parse(today) - Date.parse(s.date) > HQ_MAX_AGE_DAYS * DAY)) {
+    // One city, uncontested, and its country is the country of the company's own domain: an old statement stands (owner, batch 6: SAMCO, samco.in, "Mumbai-based" in 2018).
+    const one = press.filter((s, i) => press.findIndex((t) => sameCity(t.city, s.city)) === i);
+    if (corroboratingCountry && one.length === 1 && countryOfCity(one[0].city) === corroboratingCountry) return { kind: "declared", statement: one[0] };
+    return { kind: "none" };
+  }
   // Nothing recent: the latest declaration decides, unless one within two years before it disagrees (the latest wins, owner 2026-11-10).
   const newest = press[0];
   const pool = recent.length ? recent : press.filter((x) => !newest.date || !x.date || Date.parse(newest.date) - Date.parse(x.date) <= 730 * DAY);
