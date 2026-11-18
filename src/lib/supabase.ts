@@ -12,6 +12,7 @@ import { documentPath, type CrmCompany, type CrmDocument, type DealTerm } from "
 import { countryFilterOr } from "./countryFilter";
 import { valuationOrClause, EMPTY_RANGE, type StartupSort } from "./startupFilters";
 import { filedCutoff, NO_MATCH_ID } from "./dealFilters";
+import type { FundFiling } from "./vcFirms";
 const rawUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
@@ -951,6 +952,27 @@ export async function fetchRecentActiveInvestorNames(months = 24): Promise<Set<s
     }
   }
   return names;
+}
+
+/**
+ * SEC Form D filings of venture funds that belong to a firm in the directory (deal_feed, kind = fund,
+ * investor_id set). Real filings only: the offering and the amount sold are what the filing reports.
+ */
+export async function fetchVcFundFilings(limit = 3000): Promise<FundFiling[]> {
+  const { data, error } = await supabase
+    .from("deal_feed")
+    .select("investor_id,name,fund_series,deal_date,updated_date,target_amount,amount_raised,source_url")
+    .eq("kind", "fund")
+    .not("investor_id", "is", null)
+    .order("deal_date", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  type Row = { investor_id: string; name: string; fund_series: number | null; deal_date: string; updated_date: string | null; target_amount: number | null; amount_raised: number | null; source_url: string | null };
+  return ((data ?? []) as Row[]).map((r) => ({
+    investorId: r.investor_id, name: r.name, fundSeries: r.fund_series, filedOn: r.deal_date,
+    amendedOn: r.updated_date && r.updated_date !== r.deal_date ? r.updated_date : null,
+    offering: r.target_amount, sold: r.amount_raised, url: r.source_url,
+  }));
 }
 
 export async function fetchInvestors(): Promise<InvestorRow[]> {

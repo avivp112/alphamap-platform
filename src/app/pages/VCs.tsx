@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import {
   TrendingUp, Globe, Star, ExternalLink, X, DollarSign, Briefcase, Activity,
   ChevronLeft, ChevronRight, ChevronDown, Search, Zap,
@@ -17,6 +17,8 @@ import { DonutFocusChart } from "../components/DonutFocusChart";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { useWatchlistMembership, addToWatchlist, removeFromWatchlist, watchlistErrorMessage } from "../../lib/watchlist";
 import { ProductTour, type TourStep } from "../components/ProductTour";
+import { resolveUiV2 } from "../../lib/uiFlag";
+import { VCsRedesign } from "./VCsRedesign";
 
 const TOUR_SEEN_KEY = "alphamap_tour_vcs_seen";
 
@@ -612,7 +614,7 @@ function VCCompareModal({ firms, onClose }: { firms: VCFirm[]; onClose: () => vo
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export function VCs() {
+function VCsLegacy() {
   const { t } = useTranslation();
   const [firms, setFirms]           = useState<VCFirm[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -1085,4 +1087,11 @@ export function VCs() {
       <ProductTour steps={tourSteps} open={tourOpen} onClose={closeTour} />
     </Layout>
   );
+}
+
+// The redesigned page is off unless ?ui=2 (see lib/uiFlag.ts), the same switch as the other pages.
+export function VCs() {
+  const [searchParams] = useSearchParams();
+  const [redesign] = useState(() => resolveUiV2(searchParams.get("ui")));
+  return redesign ? <VCsRedesign /> : <VCsLegacy />;
 }
