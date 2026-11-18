@@ -1057,8 +1057,13 @@ export async function writeCollected(
       const base = { startup_id: row.id, employee_count: p.count, snapshot_date: p.date, recorded_date: `${p.date}T00:00:00Z` };
       let { error: hcErr } = await supabase.from("headcount_history").upsert({
         ...base, point_type: p.pointType ?? "observed", source_url: p.sourceUrl ?? null, evidence_quote: p.quote ?? null,
-        measure: p.measure ?? null, is_lower_bound: !!p.lowerBound, employee_count_max: p.countMax ?? null,
+        measure: p.measure ?? null, is_lower_bound: !!p.lowerBound, employee_count_max: p.countMax ?? null, ...(runId ? { run_id: runId } : {}),
       }, { onConflict: "startup_id,snapshot_date,point_type" });
+      // Before migration 20261203000200 there is no run_id column: the point is written without it (and cannot be undone by run).
+      if (hcErr && /run_id/.test(hcErr.message)) ({ error: hcErr } = await supabase.from("headcount_history").upsert({
+        ...base, point_type: p.pointType ?? "observed", source_url: p.sourceUrl ?? null, evidence_quote: p.quote ?? null,
+        measure: p.measure ?? null, is_lower_bound: !!p.lowerBound, employee_count_max: p.countMax ?? null,
+      }, { onConflict: "startup_id,snapshot_date,point_type" }));
       // Before migration 20261117000000 the columns are missing: the point is still written (the older day key).
       if (hcErr && /point_type|source_url|evidence_quote|measure|is_lower_bound|employee_count_max|constraint/.test(hcErr.message)) ({ error: hcErr } = await supabase.from("headcount_history").upsert(base, { onConflict: "startup_id,snapshot_date" }));
       if (hcErr) console.warn(`    ⚠️  headcount_history upsert failed (${p.date}): ${hcErr.message}`);

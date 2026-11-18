@@ -75,7 +75,7 @@ async function list() {
 }
 
 async function undo() {
-  const { data: runs, error } = await db.from("enrichment_runs").select("run_id, started_at, finished_at").in("run_id", RUN_IDS);
+  const { data: runs, error } = await db.from("enrichment_runs").select("run_id, started_at").in("run_id", RUN_IDS);
   if (error) throw error;
   const missing = RUN_IDS.filter((id) => !(runs ?? []).some((r) => r.run_id === id));
   if (missing.length) { console.error(`Unknown run_id: ${missing.join(", ")} (LIST=true shows the runs).`); process.exit(1); }
@@ -147,15 +147,14 @@ async function undo() {
     if (!DRY_RUN && FIELDS.includes("competitors")) await db.from("field_provenance").delete().eq("run_id", run.run_id).eq("field", "market.competitors");
   }
 
-  // The headcount history is a table of its own with no run_id (owner, batch 6: wet 1 left its points behind): the rows the run inserted are the ones recorded inside its time window.
-  if (FIELDS.includes("all") || FIELDS.includes("employee_count") || FIELDS.length === 0 || process.env.HEADCOUNT_HISTORY !== "off") {
+  // The headcount history is a table of its own: its points carry the run that wrote them (migration 20261203000200) and are taken back with it.
+  if (process.env.HEADCOUNT_HISTORY !== "off") {
     for (const run of ordered) {
-      const from = String(run.started_at);
-      const to = (run as { finished_at?: string | null }).finished_at ?? new Date(Date.parse(from) + 3 * 3600_000).toISOString();
-      const { data: hc } = await db.from("headcount_history").select("id, company_id, headcount, snapshot_date, recorded_at").gte("recorded_at", from).lte("recorded_at", to);
-      const rows = (hc ?? []) as Array<{ id: string; company_id: string; headcount: number; snapshot_date: string }>;
+      const { data: hc, error: hcErr } = await db.from("headcount_history").select("id, startup_id, employee_count, snapshot_date").eq("run_id", run.run_id);
+      if (hcErr) { console.log(`  headcount_history: not checked (${hcErr.message}) — migration 20261203000200 applied?`); continue; }
+      const rows = (hc ?? []) as Array<{ id: string; startup_id: string; employee_count: number; snapshot_date: string }>;
       if (rows.length) {
-        console.log(`  headcount_history: ${rows.length} point(s) recorded during the run — ${rows.slice(0, 6).map((r) => `${r.company_id.slice(0, 8)} ${r.headcount}@${r.snapshot_date}`).join(", ")}${rows.length > 6 ? ", …" : ""}`);
+        console.log(`  headcount_history: ${rows.length} point(s) written by the run — ${rows.slice(0, 6).map((r) => `${r.startup_id.slice(0, 8)} ${r.employee_count}@${r.snapshot_date}`).join(", ")}${rows.length > 6 ? ", …" : ""}`);
         if (!DRY_RUN) for (let i = 0; i < rows.length; i += 200) await db.from("headcount_history").delete().in("id", rows.slice(i, i + 200).map((r) => r.id));
       }
     }
