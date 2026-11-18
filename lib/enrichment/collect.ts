@@ -35,7 +35,7 @@ import { siteBelongsToAnotherCompany, acquisitionHeadline, rebrandedAs, redirect
 import { resolveDomain, judgeSite } from "./domainResolve.ts";
 import { techOverride, sectorDecision, techAccepted } from "./techOverrides.ts";
 import { isThirdPartyPage, foundingSentenceIsAboutCompany } from "./subject.ts";
-import { acquirerIn } from "./acquisition.ts";
+import { acquirerIn, knownAcquirers } from "./acquisition.ts";
 import { roundsFromNews } from "./newsRounds.ts";
 import { companyLanguage, localQueries, type Lang } from "./localSearch.ts";
 import { traceOf } from "./runTrace.ts";
@@ -1733,10 +1733,14 @@ export async function collectCompany(
         if (ownDescription) {
           const fromDb = ctx.peerLookup ? await ctx.peerLookup(marketClaims.map((c) => c.name)) : new Map<string, PeerFacts>();
           let lookups = 0;
+          const budgetOut = new Set<string>();
+          const PEER_LOOKUPS = Number(process.env.PEER_LOOKUPS ?? 6);
           const resolve = async (name: string): Promise<PeerFacts | null> => {
             const hit = fromDb.get(name.toLowerCase());
             if (hit) return hit;
-            if (lookups >= 3 || ctx.update) return null;   // at most three searches per company for candidates not on file
+            if (ctx.update) return null;
+            // A candidate not looked up because the searches of this company ran out is not "not a company with a site" (owner, batch 7: Nielsen Norman Group).
+            if (lookups >= PEER_LOOKUPS) { budgetOut.add(name); return null; }
             lookups++;
             const claim = marketClaims.find((c) => c.name === name);
             const found = (await extraSearch(peerSiteQuery(name, claim?.evidence_quote ?? "", row.name), "peer_site")).filter((r) => r.url && !isDataPlatformUrl(r.url));
@@ -1753,7 +1757,7 @@ export async function collectCompany(
             return tool && tool.type === "tool_use" ? tool.input : null;
           };
           const judged = await judgeMarketPeers({ resolve, ask }, { name: row.name, description: ownDescription }, marketClaims as PeerClaim[], (c) => sourceById.get(c.source_id)?.url ?? "");
-          for (const d of judged.dropped) { console.log(`    🚫  market peer ${d.name} not written — ${d.why}`); bump(stats.droppedByReason, d.why.split(":")[0]); }
+          for (const d of judged.dropped) { if (d.why === "peer_not_a_company_with_a_site" && budgetOut.has(d.name)) d.why = "peer_lookup_budget_exhausted"; console.log(`    🚫  market peer ${d.name} not written — ${d.why}`); bump(stats.droppedByReason, d.why.split(":")[0]); }
           adoptable = [...claims.filter((c) => c.tier !== "market"), ...(judged.kept as unknown as TieredClaim[])];
         }
       }
@@ -1793,6 +1797,7 @@ export async function collectCompany(
     const keptNews: typeof market.news = [];
     const newsDeps = {
       companyName: row.name,
+      acquirers: knownAcquirers(market.news.map((x) => x.title ?? ""), row.name),
       content: (u: string) => sourceByUrl(u)?.content,
       isOwnSite: (u: string) => classifySourceType(u, domain) === "company_site" || sourceByUrl(u)?.source_type === "company_site",
       fetchHtml: async (u: string) => (ctx.update ? null : await fetchPageHtml(u, searchState)),

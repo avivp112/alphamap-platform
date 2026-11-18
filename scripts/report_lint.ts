@@ -16,7 +16,10 @@ import { loadKnown, refreshDue, markKey } from "../lib/enrichment/knownSources.t
 import { rowProblem } from "../lib/enrichment/rowRules.ts";
 import { foundingSentenceIsAboutCompany } from "../lib/enrichment/subject.ts";
 import { roleAtCompany } from "../lib/enrichment/people.ts";
-import { isPartyRelease } from "../lib/enrichment/roundSources.ts";
+import { isPartyRelease, roundSourceStanding } from "../lib/enrichment/roundSources.ts";
+import { claims } from "../lib/enrichment/descriptionBuilder.ts";
+import { completeFromSlug } from "../lib/enrichment/newsRelevance.ts";
+import { knownAcquirers } from "../lib/enrichment/acquisition.ts";
 import { isTrackingHost } from "../lib/enrichment/siteOwner.ts";
 import { recentRules } from "../lib/enrichment/ruleRegistry.ts";
 import { loadGaps, ownerWrongTest } from "../lib/enrichment/knownGaps.ts";
@@ -151,6 +154,22 @@ if (existsSync("rejected_all.csv")) {
     if (code === "sentence_not_about_company" && field === "founded_year" && evidence && foundingSentenceIsAboutCompany(evidence, value, company, { url, ownSite: false })) err(company, `founded_year ${value} was rejected, and its sentence is about the company ("${evidence.slice(0, 90)}")`);
     // b. a second role after the comma is not another company
     if (code === "title_at_another_company") { const t = reason.match(/the title "([^"]+)"/)?.[1]; if (t && roleAtCompany(t, company).role !== null) err(company, `founder ${value} was rejected for a title "${t}" that is at no other company`); }
+    // 1. a name is checked only when it names a company, a product or a person: not a country, not "ETF-based"
+    { const nm = code.match(/^description_sentence_name_not_in_sources:(.+)$/)?.[1];
+      if (nm && evidence && !claims(evidence, company).names.includes(nm)) err(company, `description sentence rejected for the name "${nm}", which is no company, product or person ("${evidence.slice(0, 80)}")`); }
+    // 2. a number is checked as a token of its own
+    { const nn = code.match(/^description_sentence_number_not_in_sources:(.+)$/)?.[1];
+      if (nn && evidence && !claims(evidence, company).numbers.includes(nn)) err(company, `description sentence rejected for the number "${nn}", which is no token of its own ("${evidence.slice(0, 80)}")`); }
+    // 3. a headline cut only in a print, whose address carries the whole of it
+    if (code === "news_headline_cut" && url && completeFromSlug(value, url)) err(company, `news "${value.slice(0, 60)}" rejected as cut off, and its address carries the whole headline`);
+    // 4. a company known to be bought: the buyer's headlines are about it
+    if (code === "news_same_name_other_company") {
+      const titles = rr.filter((x) => x[ri("company")] === company && x[ri("field")] === "news").map((x) => x[ri("value")]);
+      const buyers = knownAcquirers(titles, company);
+      if (buyers.some((b) => value.toLowerCase().includes(b.toLowerCase()))) err(company, `news "${value.slice(0, 60)}" rejected as another company's, and ${buyers.join(", ")} is its known buyer`);
+    }
+    // 6. a source rejected as not allowed that the standing rules allow
+    if (code === "source_not_allowed" && url && roundSourceStanding(url, { companyName: company, headline: value }).kind === "allowed") err(company, `${field} "${value.slice(0, 50)}" rejected as not on the allowed list, and ${url.slice(0, 70)} is allowed`);
     // f. the other party's announcement of the deal is a source for the event
     if (code === "source_not_allowed" && field === "news" && url && isPartyRelease(url, value, { companyName: company })) err(company, `news "${value.slice(0, 60)}" was rejected, and it is a party's own announcement of the deal (${url.slice(0, 80)})`);
   }

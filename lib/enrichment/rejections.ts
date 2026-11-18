@@ -25,6 +25,7 @@ const CODES: Array<[string, RegExp]> = [
   ["news_headline_cut", /headline is cut off/i],
   ["news_same_name_other_company", /about another company of the same name/i],
   ["entity_other_company", /another company's/i],
+  ["peer_lookup_budget_exhausted", /peer_lookup_budget_exhausted/i],
   ["peer_not_a_company_with_a_site", /peer_not_a_company_with_a_site/i],
   ["peer_not_comparable", /peer_not_comparable/i],
   ["description_no_source_on_file", /no source on file for/i],

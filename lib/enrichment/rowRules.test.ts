@@ -568,3 +568,30 @@ describe("description checks that rejected correct sentences (owner, batch 7 sam
     expect(standingOf("https://www.accessnewswire.com/newsroom/en/x/kontent-ai-launches-1129445", { companyName: "Kontent.ai" }).kind).toBe("allowed");
   });
 });
+
+describe("name claims are for companies, products and people (owner, batch 7)", () => {
+  it("not a country or a compound with a plain word", () => {
+    expect(claims("Ksecurity serves banks that must comply with Central Bank of Brazil rules in Germany and Latin America.", "KSecurity").names).not.toContain("Brazil");
+    expect(claims("Ksecurity serves banks in Germany.", "KSecurity").names).not.toContain("Germany");
+    expect(claims("It offers ETF-based and Cloud-native portfolios.", "Yomoni").names).toEqual([]);
+    expect(claims("The platform integrates with Salesforce and Stripe.", "Acme").names).toEqual(["Salesforce", "Stripe"]);
+  });
+});
+
+import { completeFromSlug, newsProblem as newsProblem2 } from "./newsRelevance";
+import { knownAcquirers } from "./acquisition";
+describe("news: a headline cut in a print, and a company that was bought (owner, batch 7)", () => {
+  it("completes a cut headline from its address", () => {
+    const url = "https://www.lwolf.com/press-releases/lone-wolf-acquires-liondesk-and-homespotter-expanding-real-estates-leading-end-to-end-technology-suite";
+    expect(completeFromSlug("Lone Wolf acquires LionDesk and HomeSpotter, expanding real ", url)).toBe("Lone Wolf acquires LionDesk and HomeSpotter, expanding real estates leading end to end technology suite");
+    expect(completeFromSlug("Something else entirely about a deal", url)).toBeNull();
+    expect(completeFromSlug("Short", url)).toBeNull();
+  });
+  it("the buyer of a company found in several headlines makes its acquisition headlines news about it", () => {
+    const titles = ["Alexforbes buys digital wealth platform OUTvest as it continues to snap up acquisitions", "OUTsurance Sale Of OUTvest Proprietary Limited To Alexforbes", "Alexforbes acquires digital investments platform from outsurance", "Outvest raises seed"];
+    expect(knownAcquirers(titles, "Outvest")).toContain("Alexforbes");
+    const item = { title: titles[0], content: "" };
+    expect(newsProblem2(item, "Outvest", "A robo-advisor for retirement savings.")).toBe("different_product");
+    expect(newsProblem2(item, "Outvest", "A robo-advisor for retirement savings.", { acquirers: ["Alexforbes"] })).toBeNull();
+  });
+});
