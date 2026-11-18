@@ -12,6 +12,7 @@ import { detectClosure } from "./closure.ts";
 import { normalizeForMatch, quoteIsNotASentence } from "./evidence.ts";
 import { sectorDecision } from "./techOverrides.ts";
 import { foundingSentenceIsAboutCompany, isThirdPartyPage } from "./subject.ts";
+import { isLegalPageUrl } from "./headquarters.ts";
 import { isAddressLine, articleDate } from "./headquarters.ts";
 import { vsTitleCompetitor, comparisonTitleCompetitor } from "./competitorTiers.ts";
 import { amountFromAddress } from "./hints.ts";
@@ -39,6 +40,8 @@ export function ownDomain(url: string | null | undefined, companyName: string): 
 import { caseName } from "./nameCase.ts";
 import { roundSourceStanding } from "./roundSources.ts";
 export const cleanCompetitorName = (n: string): string => caseName(n).replace(/\s*\([^)]*\)/g, "").replace(/\s+(?:19|20)\d{2}\b/g, "").replace(/\s+/g, " ").trim();
+/** A product or a model, no company ("an open-weight alternative to GPT-4o Realtime": GPT is OpenAI's model; owner, batch 7: UltraVox). */
+const PRODUCT_NOT_COMPANY = /^(?:chat\s?gpt|gpt(?:[- ]?\d[\w.]*)?|gemini(?: pro| ultra| nano)?|llama(?: ?\d[\w.]*)?|claude(?: ?\d[\w.]*)?|copilot|bard|dall[- ]?e(?: ?\d)?|whisper|codex|stable diffusion|sora|alexa|siri)$/i;
 const COMPETITOR_STOP = /^(?:the\s+)?(?:real[- ]estate|stocks?|shares?|equity|mutual funds?|bonds?|gold|silver|fixed deposits?|crypto(?:currency)?|etfs?|ipos?|forex|futures|options|insurance|loans?|savings|banks?|competitors?|alternatives?|tools?|software|platforms?)$/i;
 
 /** A quote that is an address or a slug, not text of the page (owner, round 10: Paradox Series C's quote was the URL). */
@@ -127,6 +130,10 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
   }
   if (r.field === "tags") {
     if (!url) return "no source";
+    // "assurance vie" is a French investment wrapper, not insurance (owner, batch 7: Yomoni, an automated investment service).
+    if (/insur|assuranc|seguro/i.test(r.after) && /assurances?[- ]vie/i.test(quote) && !/insur|assuranc|seguro/i.test(quote.replace(/assurances?[- ]vie/gi, ""))) return "\"assurance vie\" is an investment wrapper, not insurance";
+    // A guide or a blog post of the company's own site is content marketing, no description of what it sells (owner, batch 7: Uxcel's tag from a guide on OKRs).
+    if (ownDomain(url, companyName) && /\/(?:blog|guides?|articles?|tutorials?|how-to|resources?)(?:\/|$)/i.test((() => { try { return new URL(url.startsWith("http") ? url : `https://${url}`).pathname; } catch { return ""; } })())) return "a blog post or a guide is no description of the product";
     if (NOT_A_PRODUCT_SENTENCE.test(quote)) return "its quote is not a product sentence";
     // The words of a tag are a sentence about the product (owner, batch 7): not a careers or legal page, a job advertisement, a menu, or a person's speech.
     try { if (CAREERS_OR_LEGAL.test(new URL(url.startsWith("http") ? url : `https://${url}`).pathname)) return "a careers or legal page is no evidence for a tag"; } catch { /* no address */ }
@@ -147,6 +154,13 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
   }
   if (r.field === "office" && !quote.trim()) return "an office needs a quote";
   if (r.field === "employee_range" && /\bpeople with a name and a role are shown\b|\bpeople? (?:are )?shown on the page\b/i.test(quote)) return "a count of people shown on a page is a lower bound: no range";
+  // The size of a company is not in its privacy policy or terms (owner, batch 7: Mama Money's "2" from a legal text), and the people a team page shows are a lower bound, no count: it stays in the history.
+  if (r.field === "employee_range" || r.field === "employee_count") {
+    if (url && isLegalPageUrl(url)) return "a legal page (privacy, terms) says nothing of the company's size";
+    const teamPage = /\/(?:team|our-team|the-team|people|leadership|management|board|about\/team|meet-the-team|founders)(?:\/|$|-)/i.test(url);
+    const statesStaff = /\b(?:employ|staff|headcount|colleague|workforce|team members|people (?:work|at)|fte|mitarbeiter|empleados|funcionários|collaborateurs)/i.test(quote);
+    if (r.field === "employee_count" && /^\s*\d[\d,]*\s*\+\s*$/.test(r.after) && (teamPage || !statesStaff)) return "a count of the people a team page shows is a lower bound: kept in the history only";
+  }
   if (r.field === "employee_range" || r.field === "employee_count" || r.field === "headcount_history") {
     // A dated page of the company's own site (a press release, a post) states the size of ITS day, not of today (owner, batch 6: Brighte's 2021 year in review gave "84" for the run day).
     // The page's date must be in its address or its quote; a point dated the run day from such a page is the old figure under a new date.
@@ -158,9 +172,11 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
       if (r.field === "headcount_history" && pointDate && pointDate >= new Date(Date.parse(today) - 7 * 86_400_000).toISOString().slice(0, 10) && (!pageDate || pageDate < pointDate)) return "a dated page's figure carries the run day as its date";
     }
   }
+  if (r.field === "competitor_market" && PRODUCT_NOT_COMPANY.test(cleanCompetitorName(r.after))) return "its name is a product or a model, not a company";
   if (r.field === "competitor_declared") {
     const name = cleanCompetitorName(r.after);
     if (COMPETITOR_STOP.test(name)) return "its name is an investment type or a category, not a company";
+    if (PRODUCT_NOT_COMPANY.test(name)) return "its name is a product or a model, not a company";
     // A comparison page counts only on the company's own domain, with its title naming the other side (xe.com's "mBank vs Xe", an IPO page, "Real Estate").
     if (/\bIPOs?\b/i.test(quote) || /\/(?:[\w-]*-)?ipos?(?:[-/]|$)/i.test(url)) return "an IPO page, not a comparison with a competitor";
     if (/\b(?:vs\.?|versus)\b/i.test(quote)) {
@@ -227,6 +243,19 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
   const founders = new Map<string, T>();
   const merged: T[] = [];
   const seenBg = new Set<string>();
+  // An office that is a district of another office's city ("Jakarta Selatan" beside "Jakarta") is the same office (owner, batch 7: Hibank).
+  {
+    const DISTRICT = /^(?:selatan|utara|barat|timur|pusat|south|north|east|west|central|centre|center|sud|nord|ouest|est)$/i;
+    const cityOf = (r: T) => String(r.after).split(",")[0].toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    const offices = kept.filter((r) => r.field === "office");
+    const drop = new Set<T>();
+    for (const a of offices) for (const b of offices) {
+      if (a === b) continue;
+      const ca = cityOf(a), cb = cityOf(b);
+      if (cb.length >= 4 && ca.startsWith(cb + " ") && DISTRICT.test(ca.slice(cb.length + 1))) { drop.add(a); dropped.push(`office: ${String(a.after).slice(0, 40)} is a district of ${String(b.after).slice(0, 30)} — merged`); }
+    }
+    if (drop.size) for (let i = kept.length - 1; i >= 0; i--) if (drop.has(kept[i])) kept.splice(i, 1);
+  }
   const seenRound = new Map<string, T>();
   const seenComp = new Set<string>();
   const seenNews = new Map<string, T>();

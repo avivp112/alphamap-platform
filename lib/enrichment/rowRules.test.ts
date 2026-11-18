@@ -620,3 +620,41 @@ describe("a place after 'in' is not a name to check (owner, batch 7: Snupit, Pie
     expect(claims("Snupit connects customers with plumbers using Salesforce.", "Snupit").names).toEqual(["Salesforce"]);
   });
 });
+
+import { roundSourceStanding as standing2 } from "./roundSources";
+describe("rows the owner took out of the batch-7 report (reviewed 48, 7 wrong)", () => {
+  const p = (r: Record<string, unknown>, company: string) => rowProblem({ company, quote: "", ...r } as never, company, "2026-11-18");
+  it("Mama Money: no headcount from a privacy policy", () => {
+    expect(p({ field: "employee_count", after: "2", source_url: "https://www.mamamoney.co.za/privacy-policy", quote: "2 employees may access personal data" }, "Mama Money")).toMatch(/legal page/);
+    expect(p({ field: "employee_range", after: "1-10", source_url: "https://www.mamamoney.co.za/terms-and-conditions", quote: "up to 10 employees" }, "Mama Money")).toMatch(/legal page/);
+  });
+  it("UltraVox: GPT is a model, no competitor", () => {
+    expect(p({ field: "competitor_market", after: "GPT", source_url: "https://ultravox.ai/blog/x", quote: "an open-weight alternative to GPT-4o Realtime" }, "UltraVox")).toMatch(/product or a model/);
+    expect(p({ field: "competitor_declared", after: "GPT-4o", source_url: "https://ultravox.ai/blog/x", quote: "an open-weight alternative to GPT-4o Realtime" }, "UltraVox")).toMatch(/product or a model/);
+  });
+  it("Yomoni: assurance vie is no insurance", () => {
+    expect(p({ field: "tags", after: "Insurance / Insurtech", source_url: "https://www.yomoni.fr/produits", quote: "Yomoni propose l'assurance vie, le PER et le PEA en gestion pilotée." }, "Yomoni")).toMatch(/assurance vie/);
+    expect(p({ field: "tags", after: "Insurance / Insurtech", source_url: "https://acme.com/about", quote: "Acme sells life insurance online." }, "Acme")).toBeNull();
+  });
+  it("Contraktor: a forum is no source", () => {
+    expect(standing2("https://forum.devbrasil.com.br/t/contratos-digitais/123", { companyName: "Contraktor" })).toMatchObject({ kind: "denied", why: "forum_or_community" });
+    expect(standing2("https://stackoverflow.com/questions/123/x", { companyName: "Contraktor" }).kind).toBe("denied");
+    expect(standing2("https://community.contraktor.com.br/t/x", { companyName: "Contraktor", isCompanySite: true }).kind).toBe("allowed");
+  });
+  it("Uxcel: a guide on OKRs is no description of the product", () => {
+    expect(p({ field: "tags", after: "Generative AI", source_url: "https://uxcel.com/blog/okr-guide", quote: "OKRs help teams use generative AI to set goals." }, "Uxcel")).toMatch(/blog post or a guide/);
+    expect(p({ field: "tags", after: "EdTech", source_url: "https://uxcel.com/about", quote: "Uxcel is a design education platform with courses and certifications." }, "Uxcel")).toBeNull();
+  });
+  it("team page counts stay in the history, not employee_count", () => {
+    expect(p({ field: "employee_count", after: "8+", source_url: "https://kontent.ai/about-us/team", quote: "Jane Doe CEO. John Roe CTO." }, "Kontent.ai")).toMatch(/lower bound/);
+    expect(p({ field: "employee_count", after: "500+", source_url: "https://acme.com/about", quote: "Acme has more than 500 employees worldwide." }, "Acme")).toBeNull();
+  });
+  it("Hibank: a district of the city is the same office", () => {
+    const rows = [
+      { company: "Hibank", field: "office", after: "Jakarta, Indonesia", source_url: "https://hibank.co.id/contact", quote: "Jl. Sudirman, Jakarta" },
+      { company: "Hibank", field: "office", after: "Jakarta Selatan, Indonesia", source_url: "https://hibank.co.id/contact", quote: "Jl. Sudirman, Jakarta Selatan" },
+    ];
+    const g = applyRowRules(rows as never, "Hibank", "2026-11-18");
+    expect(g.rows.map((r) => r.after)).toEqual(["Jakarta, Indonesia"]);
+  });
+});

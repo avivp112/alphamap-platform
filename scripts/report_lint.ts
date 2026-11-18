@@ -144,6 +144,12 @@ if (existsSync("batch4_dry.log")) {
   if (noDesc) console.log(`(log) ${noDesc} company(ies) without a description; ${dropLines} dropped sentence(s) named.`);
 }
 
+// ── Every row of the report passes the rules of today (owner, batch 7: seven rows of 48 were wrong and no rule knew) ──
+for (const r of rows) {
+  const why = rowProblem({ company: r.company, field: r.field, after: r.after, source_url: r.url, quote: r.quote }, r.company, new Date().toISOString().slice(0, 10));
+  if (why) err(r.company, `${r.field} "${r.after.slice(0, 50)}" is in the report and breaks a rule: ${why}`);
+}
+
 // ── Rejection audit (owner, batch 7: "the rules reject correct values"): a rejection that a rule of today would not make is a gap, and a gap is an error ──
 if (existsSync("rejected_all.csv")) {
   const [rh, ...rr] = parseCsv(readFileSync("rejected_all.csv", "utf8"));

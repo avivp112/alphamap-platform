@@ -329,11 +329,23 @@ export function isPartyRelease(url: string, headline: string | null | undefined,
   return false;
 }
 
+export function isForumUrl(url: string): boolean {
+  const host = hostOf(url);
+  if (!host) return false;
+  let path = "";
+  try { path = new URL(url.startsWith("http") ? url : `https://${url}`).pathname; } catch { return false; }
+  return /^(?:forums?|community|communities|discuss|discourse|boards?|groups|ask|answers)\./.test(host)
+    || /(?:^|\.)(?:stackoverflow\.com|stackexchange\.com|reddit\.com|quora\.com|news\.ycombinator\.com|forum\.[a-z0-9.-]+)$/.test(host)
+    || /\/(?:forums?|threads?|topics?|discussions?|community\/(?:t|topic|post))\/[^/]/.test(path) && !/\/(?:blog|news|press)\//.test(path);
+}
+
 export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean; leadInvestor?: string | null; investors?: Array<string | null | undefined>; content?: string | null; headline?: string | null; companyName?: string | null } = {}): SourceStanding {
   const host = hostOf(url);
   if (!host) return { kind: "denied", why: "no_host" };
   if (opts.isCompanySite) return { kind: "allowed", tier: 1, lowConfidence: false, why: "company_site" };
   if (isDataPlatformUrl(url)) return { kind: "denied", why: "data_platform" };
+  // A forum, a community board or a Q&A site is no source (owner, batch 7: a developers' forum behind Contraktor's tags).
+  if (isForumUrl(url)) return { kind: "denied", why: "forum_or_community" };
   // A tag / list / search page, or sponsored content, is no article (owner, round 10).
   const notArticle = isListingOrSponsoredUrl(url);
   if (notArticle) return { kind: "denied", why: notArticle };
