@@ -156,3 +156,20 @@ describe("stage 1 evidence (address, people detail, Form D extras)", () => {
     expect(evidenceLines({ source: "uk_companies_house", country: null, founded_year: null, evidence: {} })).toEqual([]);
   });
 });
+
+describe("stage 2 signals on the card", () => {
+  it("groups the signals by level and shows nothing before a candidate is checked", () => {
+    const lines = Object.fromEntries(evidenceLines({ source: "uk_companies_house", country: "United Kingdom", founded_year: 2026, evidence: {
+      signals: { checked_at: "2026-12-04T00:00:00Z", items: [
+        { kind: "serial_founder", level: "positive", text: "BLOGGS, Jo: 1 other active directorship (X LTD)" },
+        { kind: "share_allotment", level: "positive", text: "1 share allotment filed: 2026-10-20" },
+        { kind: "holding_psc", level: "warning", text: "Controlled by Y HOLDINGS LTD (a holding company, by name)" },
+        { kind: "psc_summary", level: "info", text: "1 individual with significant control" },
+      ] },
+    } }).map((l) => [l.label, l.value]));
+    expect(lines["Signals"]).toBe("BLOGGS, Jo: 1 other active directorship (X LTD) · 1 share allotment filed: 2026-10-20");
+    expect(lines["Warnings"]).toBe("Controlled by Y HOLDINGS LTD (a holding company, by name)");
+    expect(lines["Notes"]).toBe("1 individual with significant control");
+    expect(evidenceLines({ source: "sec_form_d", country: null, founded_year: null, evidence: {} })).toEqual([]);
+  });
+});

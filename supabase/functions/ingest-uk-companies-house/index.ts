@@ -52,7 +52,11 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { withRunLog, countKeys } from "../_shared/run-log.ts";
 import { gateUkCompany, type GateTier } from "../_shared/company-gate.ts";
-import { mergeCandidateEvidence, DETAIL_STAMP } from "../_shared/candidate-evidence.ts";
+import { mergeCandidateEvidence, DETAIL_STAMP, SIGNALS_PATH } from "../_shared/candidate-evidence.ts";
+import {
+  officerAppointmentsSignals, pscSignals, capitalSignals, sharedAddressSignals, buildSignalSet,
+  type Signal, type SignalSet, type KnownCompanies,
+} from "../_shared/candidate-signals.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -68,7 +72,9 @@ const MAX_LIMIT = 200;
 const PAGE_SIZE = 100;          // advanced-search maximum
 const REQUEST_DELAY_MS = 600;   // ~1.7/s against a 2/s sustained ceiling
 const FETCH_TIMEOUT_MS = 20_000;
-const BACKFILL_MAX = 25;        // 2 requests each at REQUEST_DELAY_MS: ~30 s, inside the function's time limit
+const BACKFILL_MAX = 10;        // up to 8 requests each at REQUEST_DELAY_MS: ~50 s, inside the function's time limit
+const MAX_SIGNAL_DIRECTORS = 4; // appointments are read for at most this many directors
+const SIGNALS_BUDGET_MS = 100_000; // after this much of a run, new candidates get their signals from the backfill instead
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -260,6 +266,66 @@ async function chFetch(url: string, apiKey: string) {
 }
 
 
+
+// ── Signals: who the directors and owners are, and what was filed ───────────
+
+async function knownByChNumber(supabase: SupabaseClient, numbers: string[]): Promise<KnownCompanies> {
+  const known: KnownCompanies = new Map();
+  const list = [...new Set(numbers.filter(Boolean))].slice(0, 200);
+  if (list.length === 0) return known;
+  const { data } = await supabase
+    .from("company_identifiers").select("value, startups(id, name)")
+    .eq("kind", "ch_number").in("value", list);
+  for (const row of (data ?? []) as Array<Record<string, any>>) {
+    const st = Array.isArray(row.startups) ? row.startups[0] : row.startups;
+    if (st?.id && st?.name) known.set(String(row.value), { id: st.id, name: st.name });
+  }
+  return known;
+}
+
+/**
+ * Companies House facts about one candidate: each director's other
+ * appointments, who controls it (PSC), share allotments (SH01), and whether its
+ * registered address is shared with other candidates. At most
+ * MAX_SIGNAL_DIRECTORS + 2 requests, REQUEST_DELAY_MS apart. A 404 on PSC or
+ * filing history is normal for a company a day old and gives no signal.
+ */
+async function collectUkSignals(
+  supabase: SupabaseClient, apiKey: string, companyNumber: string,
+  officers: Array<Record<string, any>>, address: string | null, candidateId: string,
+): Promise<SignalSet> {
+  const num = encodeURIComponent(companyNumber);
+  const directors = officers
+    .filter((o) => /director/i.test((o.relationships ?? []).join(" ")) && typeof o.appointments_url === "string")
+    .slice(0, MAX_SIGNAL_DIRECTORS);
+
+  const get = async (url: string) => {
+    const r = await chFetch(url, apiKey);
+    await sleep(REQUEST_DELAY_MS);
+    return r.ok ? (r.body as Record<string, unknown>) : null;
+  };
+  const appts: Array<{ o: Record<string, any>; body: Record<string, unknown> | null }> = [];
+  for (const o of directors) appts.push({ o, body: await get(`${API}${o.appointments_url}?items_per_page=50`) });
+  const psc = await get(`${API}/company/${num}/persons-with-significant-control`);
+  const capital = await get(`${API}/company/${num}/filing-history?category=capital&items_per_page=25`);
+
+  const numbers: string[] = [];
+  for (const a of appts) for (const i of (Array.isArray(a.body?.items) ? a.body!.items as any[] : [])) numbers.push(String(i?.appointed_to?.company_number ?? ""));
+  for (const i of (Array.isArray(psc?.items) ? psc!.items as any[] : [])) numbers.push(String(i?.identification?.registration_number ?? ""));
+  const known = await knownByChNumber(supabase, numbers);
+
+  const items: Signal[] = [];
+  for (const a of appts) items.push(...officerAppointmentsSignals(String(a.o.name), a.body, companyNumber, known, a.o.appointments_url));
+  items.push(...pscSignals(psc, known, companyNumber));
+  items.push(...capitalSignals(capital, companyNumber));
+  if (address) {
+    const { count } = await supabase.from("company_candidates").select("id", { count: "exact", head: true })
+      .eq("evidence->>address", address).neq("id", candidateId);
+    items.push(...sharedAddressSignals(count ?? 0, address));
+  }
+  return buildSignalSet(items, new Date().toISOString());
+}
+
 // ── Backfill: candidates already waiting for review ─────────────────────────
 
 /**
@@ -277,7 +343,7 @@ async function backfillEvidence(
     .select("id, name, entity_number, evidence")
     .eq("source", "uk_companies_house").eq("status", "pending")
     .not("entity_number", "is", null)
-    .filter(`evidence->>${DETAIL_STAMP}`, "is", null)
+    .filter(SIGNALS_PATH, "is", null)
     .order("first_seen_at", { ascending: false })
     .limit(limit);
   if (error) return json({ error: `company_candidates: ${error.message}` }, 500);
@@ -287,13 +353,20 @@ async function backfillEvidence(
   for (const row of rows ?? []) {
     const number = encodeURIComponent(String(row.entity_number));
     const now = new Date().toISOString();
-    const profile = await chFetch(`${API}/company/${number}`, apiKey);
-    await sleep(REQUEST_DELAY_MS);
+    // Detail already kept (ingested after stage 1, or backfilled): only the signals are missing.
+    const hasDetail = Boolean((row.evidence as Record<string, unknown> | null)?.[DETAIL_STAMP]);
+    let profile: { ok: boolean; status: number; body: unknown } = { ok: true, status: 200, body: null };
+    if (!hasDetail) {
+      profile = await chFetch(`${API}/company/${number}`, apiKey);
+      await sleep(REQUEST_DELAY_MS);
+    }
     if (profile.status === 429) { results.push({ name: row.name, error: "rate limited, stopped" }); break; }
 
     let extra: Record<string, unknown> = {};
     let officers: Array<Record<string, unknown>> | undefined;
-    if (profile.ok && profile.body) {
+    if (hasDetail) {
+      /* nothing to fetch */
+    } else if (profile.ok && profile.body) {
       const body = profile.body as Record<string, unknown>;
       // A profile spells the company type "type"; the advanced search spells it "company_type".
       const c = mapCompany({ ...body, company_type: body.company_type ?? body.type });
@@ -312,7 +385,13 @@ async function backfillEvidence(
       continue;              // not stamped: the next run tries again
     }
 
-    const merged = mergeCandidateEvidence(row.evidence as Record<string, unknown>, extra, officers, now);
+    let merged = mergeCandidateEvidence(row.evidence as Record<string, unknown>, extra, officers, now);
+    // Signals: not for a company that is gone from the register (404), and only once the detail is in.
+    const signals = profile.status === 404
+      ? buildSignalSet([], now)
+      : await collectUkSignals(supabase, apiKey, String(row.entity_number),
+          (merged.officers ?? []) as Array<Record<string, any>>, (merged.address as string | undefined) ?? null, String(row.id));
+    merged = { ...merged, signals };
     if (!dryRun) {
       const { error: upErr } = await supabase
         .from("company_candidates").update({ evidence: merged })
@@ -320,7 +399,7 @@ async function backfillEvidence(
       if (upErr) { failed++; results.push({ name: row.name, error: upErr.message }); continue; }
     }
     updated++;
-    results.push({ name: row.name, ok: true, address: extra.address ?? null, officers: officers?.length ?? 0 });
+    results.push({ name: row.name, ok: true, address: extra.address ?? null, officers: officers?.length ?? 0, signals: signals.items.map((i) => i.kind) });
   }
   return json({ backfill: true, dryRun, found: rows?.length ?? 0, updated, notFound, failed, results });
 }
@@ -329,6 +408,7 @@ async function backfillEvidence(
 
 Deno.serve(withRunLog("uk_companies_house", countKeys("ingested"), async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  const startedAt = Date.now();
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -465,9 +545,13 @@ Deno.serve(withRunLog("uk_companies_house", countKeys("ingested"), async (req: R
       const candidateId = (data as Record<string, unknown> | null)?.candidate_id as string | null | undefined;
       let evidenceError: string | undefined;
       if (candidateId) {
-        const { error: mergeError } = await supabase.rpc("merge_candidate_evidence", {
-          p_candidate_id: candidateId, p_extra: { ...ukEvidenceExtra(c), [DETAIL_STAMP]: new Date().toISOString() },
-        });
+        const extra: Record<string, unknown> = { ...ukEvidenceExtra(c), [DETAIL_STAMP]: new Date().toISOString() };
+        // Signals cost up to 6 requests: past the budget the backfill collects them instead.
+        if (Date.now() - startedAt < SIGNALS_BUDGET_MS) {
+          extra.signals = await collectUkSignals(supabase, apiKey, c.companyNumber,
+            officers as unknown as Array<Record<string, any>>, c.address, candidateId);
+        }
+        const { error: mergeError } = await supabase.rpc("merge_candidate_evidence", { p_candidate_id: candidateId, p_extra: extra });
         if (mergeError) evidenceError = mergeError.message;
       }
       results.push({ name: c.companyName, ok: true, sic: c.sicCodes, officers: officers.length, gate, ...(data as Record<string, unknown>), ...(evidenceError ? { evidenceError } : {}) });

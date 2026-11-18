@@ -73,7 +73,11 @@ import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supa
 import { withRunLog, countKeys } from "../_shared/run-log.ts";
 import { gateFormD, secIndustryScope, type GateTier } from "../_shared/company-gate.ts";
 
-import { mergeCandidateEvidence, DETAIL_STAMP } from "../_shared/candidate-evidence.ts";
+import { mergeCandidateEvidence, DETAIL_STAMP, SIGNALS_PATH } from "../_shared/candidate-evidence.ts";
+import {
+  previousRaiseSignals, formDPersonSignals, buildSignalSet,
+  type Signal, type SignalSet, type FormDFilingRow,
+} from "../_shared/candidate-signals.ts";
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -448,9 +452,47 @@ async function secFetch(url: string, userAgent: string): Promise<{ ok: boolean; 
 }
 
 
+
+// ── Signals: the issuer's history and its people, from filings we already hold ──
+
+const MAX_SIGNAL_PEOPLE = 5;
+
+/**
+ * No network: earlier Form D offerings by the same CIK, and each executive /
+ * director as a related person on other issuers' Form D or as a manager of a
+ * fund we hold (raw_gov_filings, vc_fund_filings). People are matched by exact
+ * name, so the signal says "same name" and a common name can mislead: the
+ * reviewer decides.
+ */
+async function collectFormDSignals(
+  supabase: SupabaseClient, cik: string | null, officers: Array<{ name?: string; relationships?: string[] }>,
+): Promise<SignalSet> {
+  const items: Signal[] = [];
+  if (cik) {
+    const { data } = await supabase.from("raw_gov_filings")
+      .select("form_type, filing_date, total_offering").eq("source", "sec_form_d").eq("cik", cik);
+    items.push(...previousRaiseSignals((data ?? []) as FormDFilingRow[], cik));
+  }
+  const people = officers
+    .filter((o) => o?.name && /executive|director/i.test((o.relationships ?? []).join(" ")))
+    .slice(0, MAX_SIGNAL_PEOPLE);
+  for (const p of people) {
+    const name = String(p.name).trim();
+    let others = supabase.from("raw_gov_filings").select("entity_name, cik, filing_date")
+      .eq("source", "sec_form_d").contains("officers", [{ name }]).limit(5);
+    if (cik) others = others.neq("cik", cik);
+    const [{ data: o }, { data: f }] = await Promise.all([
+      others,
+      supabase.from("vc_fund_filings").select("fund_name, firm_name, fund_type").contains("managers", [{ name }]).limit(3),
+    ]);
+    items.push(...formDPersonSignals(name, (o ?? []) as any[], (f ?? []) as any[]));
+  }
+  return buildSignalSet(items, new Date().toISOString());
+}
+
 // ── Backfill: candidates already waiting for review ─────────────────────────
 
-const BACKFILL_MAX = 100;
+const BACKFILL_MAX = 60;       // one document request each, plus the database lookups for signals
 
 /**
  * Read the primary_doc.xml again for pending candidates ingested before the
@@ -465,7 +507,7 @@ async function backfillEvidence(
     .from("company_candidates")
     .select("id, name, cik, evidence")
     .eq("source", "sec_form_d").eq("status", "pending")
-    .filter(`evidence->>${DETAIL_STAMP}`, "is", null)
+    .filter(SIGNALS_PATH, "is", null)
     .order("first_seen_at", { ascending: false })
     .limit(limit);
   if (error) return json({ error: `company_candidates: ${error.message}` }, 500);
@@ -482,7 +524,11 @@ async function backfillEvidence(
     let extra: Record<string, unknown> = {};
     let officers: Array<Record<string, unknown>> | undefined;
     const cik = (filing?.cik ?? row.cik) as string | null;
-    if (!filing?.accession_number || !cik) {
+    // Detail already kept (ingested after stage 1, or backfilled): only the signals are missing.
+    const hasDetail = Boolean((row.evidence as Record<string, unknown> | null)?.[DETAIL_STAMP]);
+    if (hasDetail) {
+      /* nothing to fetch */
+    } else if (!filing?.accession_number || !cik) {
       noFiling++;                      // nothing to read: stamp it so it is not asked again
     } else {
       const doc = await secFetch(primaryDocUrl(cik, filing.accession_number as string), userAgent);
@@ -496,7 +542,9 @@ async function backfillEvidence(
       }
     }
 
-    const merged = mergeCandidateEvidence(row.evidence as Record<string, unknown>, extra, officers, now);
+    let merged = mergeCandidateEvidence(row.evidence as Record<string, unknown>, extra, officers, now);
+    const signals = await collectFormDSignals(supabase, cik, (merged.officers ?? []) as Array<{ name?: string; relationships?: string[] }>);
+    merged = { ...merged, signals };
     if (!dryRun) {
       const { error: upErr } = await supabase
         .from("company_candidates").update({ evidence: merged })
@@ -504,7 +552,7 @@ async function backfillEvidence(
       if (upErr) { failed++; results.push({ name: row.name, error: upErr.message }); continue; }
     }
     updated++;
-    results.push({ name: row.name, ok: true, address: extra.address ?? null, investors: extra.investors ?? null });
+    results.push({ name: row.name, ok: true, address: extra.address ?? null, investors: extra.investors ?? null, signals: signals.items.map((i) => i.kind) });
   }
   return json({ backfill: true, dryRun, found: rows?.length ?? 0, updated, noFiling, failed, results });
 }
@@ -760,7 +808,11 @@ Deno.serve(withRunLog("sec_form_d", countKeys("ingested", "fundsRecorded"), asyn
                 let evidenceError: string | undefined;
                 if (candidateId) {
                   const { error: mergeError } = await supabase.rpc("merge_candidate_evidence", {
-                    p_candidate_id: candidateId, p_extra: { ...formDEvidenceExtra(f), [DETAIL_STAMP]: new Date().toISOString() },
+                    p_candidate_id: candidateId,
+                    p_extra: {
+                      ...formDEvidenceExtra(f), [DETAIL_STAMP]: new Date().toISOString(),
+                      signals: await collectFormDSignals(supabase, f.cik ?? row.cik, f.officers),
+                    },
                   });
                   if (mergeError) evidenceError = mergeError.message;
                 }

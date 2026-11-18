@@ -24,6 +24,15 @@ export interface CandidateOfficer {
   address?: string;
 }
 
+/** A fact from the registers about the company or its people (supabase/functions/_shared/candidate-signals.ts). */
+export interface CandidateSignal {
+  kind: string;
+  level: "positive" | "info" | "warning";
+  text: string;
+  /** The page at the source where the fact can be checked. */
+  url?: string;
+}
+
 export interface CandidatePlacementAgent {
   name?: string;
   crd?: string | null;
@@ -57,6 +66,8 @@ export interface CandidateEvidence {
   exemptions?: string[];
   placement_agents?: CandidatePlacementAgent[];
   date_of_first_sale?: string;
+  // Added by the signals step (stage 2): absent until the candidate has been checked.
+  signals?: { checked_at: string; items: CandidateSignal[] };
   // oss_github (migration 20261125000000): a growing GitHub project with a homepage of its own.
   github_url?: string;
   owner?: string;
@@ -192,6 +203,11 @@ export function formatPeopleDetails(officers: CandidateOfficer[] | undefined, ma
   return rows.length > max ? `${rows.slice(0, max).join("; ")}; +${rows.length - max}` : rows.join("; ");
 }
 
+/** The signals of one level, newest facts first as stored, in one reviewer-facing sentence list. */
+export function signalTexts(e: CandidateEvidence | undefined, level: CandidateSignal["level"]): string[] {
+  return (e?.signals?.items ?? []).filter((i) => i?.level === level && i.text).map((i) => i.text);
+}
+
 export interface EvidenceLine {
   label: string;
   value: string;
@@ -260,6 +276,10 @@ export function evidenceLines(c: Pick<CompanyCandidate, "source" | "evidence" | 
   }
   add("Company type", c.source === "uk_companies_house" ? e.form_type : null);
   add("Jurisdiction", e.jurisdiction);
+  const good = signalTexts(e, "positive"), notes = signalTexts(e, "info"), warns = signalTexts(e, "warning");
+  add("Signals", good.join(" · "));
+  add("Warnings", warns.join(" · "));
+  add("Notes", notes.join(" · "));
   add("Founded", c.founded_year ? String(c.founded_year) : null);
   add("Country", c.country);
   add("Filed", e.filing_date);

@@ -17,6 +17,9 @@ export const INGEST_KEYS = [
 /** Set on every candidate whose registry detail has been read, so the backfill never reads one twice. */
 export const DETAIL_STAMP = "detail_checked_at";
 
+/** PostgREST path of the stamp inside evidence.signals: a candidate without it still needs its signals collected. */
+export const SIGNALS_PATH = "evidence->signals->>checked_at";
+
 type Json = Record<string, unknown>;
 
 const isEmpty = (v: unknown): boolean =>
