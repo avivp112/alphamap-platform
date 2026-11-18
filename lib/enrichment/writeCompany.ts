@@ -18,6 +18,7 @@ import { normalizeIsoDate, appendNew, reconcileOnFile, isSameRound } from "./ass
 import { fetchArticleOgImage } from "./ogImage.ts";
 import { detectAcquisition } from "./acquisition.ts";
 import { detectClosure } from "./closure.ts";
+import { gateLines, parseRoundLine } from "./reportGate.ts";
 import { brandFromTexts } from "./rowRules.ts";
 import { leaderRoleEvidence, cleanPeople, mergeFoundersByName, isFounderEntry, cleanFounderTitle, canonicalTitle } from "./people.ts";
 import { samePersonName } from "./linkedin.ts";
@@ -898,6 +899,50 @@ export async function writeCollected(
     }
     else if (tagNames.length > 0) console.log(`    ⏸️   tags held back — field not open: ${tagNames.join(", ")}`);
     for (const h of headcountPoints) reportLines.push({ field: "headcount_history", before: null, after: `${h.count}${h.lowerBound ? "+" : ""} on ${h.date} (${h.pointType ?? "observed"}${h.lowerBound ? ", lower bound" : ""})`, source_url: h.sourceUrl ?? null, quote: h.quote ?? null });
+    // The report's rules are the write's rules (owner, batch 6): what they drop is not written, what they change is written as changed.
+    {
+      const g = gateLines(reportLines as never, row.name, new Date().toISOString().slice(0, 10), { domain: row.website });
+      const insertLines = reportLines.map((l, i) => ({ l, i })).filter(({ l }) => l.field === "round" && l.before === null);
+      const cannotHold: string[] = [];
+      const dropInserts = new Set<number>();
+      for (const i of g.drop) {
+        const l = reportLines[i];
+        const text = typeof l.after === "string" ? l.after : JSON.stringify(l.after);
+        if (l.field === "news") { patch.news = ((patch.news ?? []) as Array<{ url?: string }>).filter((n) => n.url !== l.source_url); if (!(patch.news as unknown[]).length) { delete patch.news; newsAdded = 0; } }
+        else if (l.field === "patent") {
+          const num = text.split(/\s+/)[0];
+          patch.patents = ((patch.patents ?? []) as Array<{ patent_number?: string | null }>).filter((p) => p.patent_number !== num);
+          if (!(patch.patents as unknown[]).length) delete patch.patents;
+          if ("patent_count" in patch) patch.patent_count = ((patch.patents ?? []) as unknown[]).length || (row.patent_count ?? null);
+        }
+        else if (l.field === "round" && l.before === null) { const k = insertLines.findIndex((x) => x.i === i); if (k >= 0) dropInserts.add(k); }
+        else if (l.field === "founder" || l.field === "leader" || l.field === "board") {
+          const name = text.split(" — ")[0];
+          for (const key of ["founders", "leadership"]) if (Array.isArray(patch[key])) patch[key] = (patch[key] as Array<{ name?: string }>).filter((p) => !samePersonName(p.name ?? "", name));
+        }
+        else if (l.field === "competitor_declared" || l.field === "competitor_market") patch.competitors = ((patch.competitors ?? []) as Array<{ name?: string }>).filter((c) => normalizeForMatch(c.name ?? "") !== normalizeForMatch(text));
+        else {
+          const cols = Object.keys(patch).filter((k) => fieldOfColumn(k) === l.field);
+          if (cols.length) for (const k of cols) delete patch[k]; else cannotHold.push(`${l.field}: ${text.slice(0, 60)}`);
+        }
+      }
+      for (const [i, after] of g.after) {
+        const l = reportLines[i];
+        if (l.field !== "round" || l.before !== null) continue;
+        const k = insertLines.findIndex((x) => x.i === i);
+        const r = k >= 0 ? plan.inserts[k] : undefined;
+        if (!r) continue;
+        const parsed = parseRoundLine(after);
+        if (parsed.type && parsed.type !== r.round_type) r.round_type = parsed.type as typeof r.round_type;
+        if (!parsed.lead && r.lead_investor) r.lead_investor = null as never;
+      }
+      if (dropInserts.size) plan.inserts = plan.inserts.filter((_, k) => !dropInserts.has(k));
+      for (let i = fieldWrites.length - 1; i >= 0; i--) if (!(fieldWrites[i].field.replace(/^(profile|metrics)\./, "") in patch)) fieldWrites.splice(i, 1);
+      const out: PilotChange[] = [];
+      reportLines.forEach((l, i) => { if (g.drop.has(i)) return; out.push(g.after.has(i) ? { ...l, after: g.after.get(i)! } : l); });
+      reportLines.length = 0; reportLines.push(...out);
+      if (g.drop.size || g.after.size) console.log(`    🚦  The rules of the report applied before the write: ${g.drop.size} value(s) not written, ${g.after.size} changed${cannotHold.length ? ` · could not be held back: ${cannotHold.join(" | ")}` : ""}`);
+    }
     for (const c of reportLines) console.log(`    ${DRY_RUN ? "[DRY] would write" : "✏️  writing"} ${c.field}: ${c.before == null ? "" : `${JSON.stringify(c.before)} → `}${typeof c.after === "string" ? c.after : JSON.stringify(c.after)}  (${c.source_url ?? "no source"})`);
     if (!reportLines.length) console.log("    🟠 nothing to write for the open fields");
   }

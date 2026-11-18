@@ -16,6 +16,8 @@ export function closureIn(text: string, companyName: string): boolean {
   const name = esc(companyName.trim()).replace(/\s+/g, "\\s+");
   const re = new RegExp(`(?:^|[\\s"“'‘(])${name}(?:\\s+(?:Inc\\.?|Ltd\\.?|LLC|Limited|Technologies|Labs))?[\\s,]*(?:(?:has|have|had|is|are|was|will|to|plans? to|said it will|announced it will|announces it will)\\s+)?(?:(?:announced|confirmed|announces|confirms)\\s+(?:that\\s+)?(?:it\\s+)?(?:will\\s+|is\\s+|has\\s+)?)?${CLOSE}`, "iu");
   const m = text.match(re);
+  // "Okra Co-Founder Exits as Startup Shuts Down": the company is named in the headline and it is the startup that shuts down.
+  if (!m && new RegExp(`(?:^|[\\s"“'‘(])${name}(?![\\p{L}])`, "iu").test(text) && /\b(?:as|after|amid|following|when)\s+(?:the\s+|its\s+)?(?:startup|company|fintech|firm|business|platform)\s+(?:shuts? down|shut down|shutting down|winds? down|ceases? operations|closes? down|folds?)\b/i.test(text)) return true;
   if (!m || m.index == null) return false;
   const tail = text.slice(m.index + m[0].length);
   // "Okra shuts down the old API": an object right after the verb is a thing closed, not the company.

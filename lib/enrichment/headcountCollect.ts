@@ -131,5 +131,8 @@ export async function waybackHeadcount(domain: string, companyName: string, io: 
     }
     if (fetched >= max) break;
   }
-  return points.filter((p, i) => points.findIndex((x) => x.date === p.date && x.type === p.type) === i).sort((a, b) => a.date.localeCompare(b.date));
+  // The same figure in the same words on several copies is one point, at the earliest copy that shows it (owner, batch 6: Datahut's 42 on six dates).
+  const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const ordered = points.filter((p, i) => points.findIndex((x) => x.date === p.date && x.type === p.type) === i).sort((a, b) => a.date.localeCompare(b.date));
+  return ordered.filter((p, i) => ordered.findIndex((x) => x.value === p.value && norm(x.quote ?? "") === norm(p.quote ?? "")) === i);
 }
