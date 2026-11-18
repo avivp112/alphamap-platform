@@ -1527,7 +1527,7 @@ export async function collectCompany(
     const count = profile.metrics.employee_count;
     if (count) {
       const s = sourceById.get(count.source_id);
-      const ownPage = s?.source_type === "company_site" && !s.url.match(/\/(news|blog|press|insights)\//i);
+      const ownPage = s?.source_type === "company_site" && !s.url.match(/\/(news|newsroom|blog|press|press-releases?|media|insights|stories|updates)(\/|-|$)/i);
       const date = s && !ownPage ? articleDate(s) : null;
       const cutoff = new Date(Date.now() - 2 * 365.25 * 86_400_000).toISOString().slice(0, 10);
       if (!ownPage && (!date || date < cutoff)) {

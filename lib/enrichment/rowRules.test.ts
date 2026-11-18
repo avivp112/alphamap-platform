@@ -410,3 +410,11 @@ describe("batch 6, wet 1 findings", () => {
     expect(sizeStatement("In 2021, the Brighte team grew from a team of 84 in Jan 2021 to a team of 181 in December 2021.")?.value).toBe(181);
   });
 });
+
+describe("batch 6: a dated press page is not the headcount of today", () => {
+  it("the page-date regex of the current count covers /media/press-releases/", () => {
+    const re = /\/(news|newsroom|blog|press|press-releases?|media|insights|stories|updates)(\/|-|$)/i;
+    expect(re.test("https://brighte.com.au/media/press-releases/year-in-review-2021")).toBe(true);
+    expect(re.test("https://canopycare.us/about")).toBe(false);
+  });
+});
