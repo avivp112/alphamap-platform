@@ -7,6 +7,8 @@ import {
   CheckCheck, Radar, Star, SlidersHorizontal, Briefcase,
 } from "lucide-react";
 import { Layout } from "../components/Layout";
+import { MyAreaRedesign } from "./MyAreaRedesign";
+import { resolveUiV2 } from "../../lib/uiFlag";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { CrmTab } from "../components/crm/CrmTab";
 import {
@@ -83,7 +85,7 @@ function timeAgo(iso: string): string {
 }
 const FIRM_TYPE_LABEL: Record<string, string> = { vc: "VC", pe: "Private Equity", growth: "Growth" };
 
-export function MyArea() {
+function MyAreaLegacy() {
   const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { loggedIn, loading: authLoading } = useUserPlan();
@@ -132,6 +134,15 @@ export function MyArea() {
       </div>
     </Layout>
   );
+}
+
+// The redesigned page is off unless ?ui=2 (see lib/uiFlag.ts), the same switch as the other pages.
+export function MyArea() {
+  const [searchParams] = useSearchParams();
+  const [redesign] = useState(() => resolveUiV2(searchParams.get("ui")));
+  const { loggedIn, loading: authLoading } = useUserPlan();
+  if (!authLoading && !loggedIn) return <SignInGate />;
+  return redesign ? <MyAreaRedesign /> : <MyAreaLegacy />;
 }
 
 function SignInGate() {
