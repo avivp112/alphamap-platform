@@ -5,6 +5,7 @@
 import { quoteIsNotASentence } from "./evidence.ts";
 import { roleRegex } from "./people.ts";
 import { rowProblem, roundKey, cleanCompetitorName } from "./rowRules.ts";
+import { isAddressLine } from "./headquarters.ts";
 
 export interface Row { company: string; field: string; after: string; source_url: string; quote: string; origin?: string }
 export type Severity = "error" | "gap";
@@ -21,6 +22,7 @@ export type Check = (
   | { id: string; why: string; kind: "no_non_sentence_quotes" }
   | { id: string; why: string; kind: "leader_role_in_quote" }
   | { id: string; why: string; kind: "memory_rows_pass_rules" }
+  | { id: string; why: string; kind: "hq_quote_valid" }
 ) & { severity?: Severity }
   | { id: string; why: string; kind: "news_dates_before_run" }
   | { id: string; why: string; kind: "tags_include"; company: string; include: string; not_only?: string }
@@ -107,6 +109,11 @@ export function runAcceptance(checks: Check[], rows: Row[], notEnriched: string[
       case "memory_rows_pass_rules": {
         const bad = rows.filter((r) => /known_source/.test(r.origin ?? "")).map((r) => ({ r, why: rowProblem({ field: r.field, after: r.after, source_url: r.source_url, quote: r.quote }, r.company, today) })).filter((x) => x.why);
         return { ...base, pass: bad.length === 0, detail: bad.length ? `${bad.length} remembered value(s) break today's rules: ${bad.slice(0, 3).map((x) => `${x.r.company} ${x.r.field} "${x.r.after.slice(0, 40)}" (${x.why})`).join(" | ")}` : "every remembered value passes today's rules" };
+      }
+      case "hq_quote_valid": {
+        const DECL = /headquarter|\bhq\b|head ?office|\bbased\b|-based|\bsede\b|\bsitz\b|siège|matriz|siedzib|مقر|本社|본사|штаб/i;
+        const bad = rows.filter((r) => r.field === "hq_city" && r.quote && !isAddressLine(r.quote) && !DECL.test(r.quote));
+        return { ...base, pass: bad.length === 0, detail: bad.length ? `${bad.length} headquarters without an address or a declaration: ${bad.slice(0, 3).map((r) => `${r.company} "${r.after}" ← "${r.quote.slice(0, 60)}"`).join(" | ")}` : "every headquarters rests on an address or a declaration" };
       }
       case "no_url_quote": {
         const bad = rows.filter((r) => { const t = r.quote.trim(); return !!t && (/^https?:\/\//i.test(t) || (!/\s/.test(t) && /[a-z0-9]+(?:-[a-z0-9]+){3,}/i.test(t))); });

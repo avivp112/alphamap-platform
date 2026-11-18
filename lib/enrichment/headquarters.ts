@@ -90,7 +90,10 @@ export function articleDate(s: Pick<LabeledSource, "url" | "content">): string |
   ];
   for (const x of c) { const iso = x ? parseFullDate(x) : null; if (iso) return iso; }
   const ym = s.url.match(/\/(20\d{2})\/(\d{2})\//);
-  return ym ? `${ym[1]}-${ym[2]}-15` : null;
+  if (ym) return `${ym[1]}-${ym[2]}-15`;
+  // Only a year in the address ("/2014/sticker-beacon…"): the end of that year, the most recent it can be.
+  const y = s.url.match(/\/(20\d{2})\/[^/]/);
+  return y ? `${y[1]}-12-31` : null;
 }
 
 const sentencesOf = (text: string) => text.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/);
@@ -222,6 +225,24 @@ export const OFFICE_HEADING = /(?:^|[|*#>\s])(?:our\s+)?(?:offices?|locations?)\
 // ("BS1 6QH", "94105", "6789141").
 const ADDRESS_HINT = /(\b\d{1,5}\s+\p{L}{3,}|\p{L}{3,}\.?\s+\d{1,5}\b|\b[A-Z]{1,2}\d[A-Z\d]?\s\d[A-Z]{2}\b|\b\d{5}(?:-\d{4})?\b|\b\d{7}\b)/u;
 
+/**
+ * A line is a street address only with at least two address parts — a street with a number, a postcode, a state + zip, a suite / floor / box — and is not a sentence
+ * (owner, batch 6: Kiwify's "…uma viagem d[e Dubai]" prize text and Brighte's "SXSW Sydney" event list are not addresses; Canopy's "New York, NY 10003-1502" is).
+ */
+const STREET_WORD = "st|street|ave|avenue|road|rd|blvd|boulevard|drive|dr|lane|ln|way|place|pl|parkway|pkwy|square|sq|court|ct|highway|hwy|rua|av|avenida|calle|strasse|straße|str|platz|ul|ulica|aleja|al|rue|via|viale|piazza|plaza|paseo|carrer|rehov|rehob";
+const STREET_RE = new RegExp(`(?:\\b\\d{1,5}[A-Za-z]?[\\s,]+(?:[\\p{L}.'’-]+\\s+){0,3}(?:${STREET_WORD})\\b\\.?|\\b(?:${STREET_WORD})\\.?\\s+(?:[\\p{L}.'’-]+\\s+){0,4}[\\p{L}.'’-]+,?\\s*(?:n[º°o.]?\\s*)?\\d{1,5}\\b|\\p{L}+(?:straße|strasse|gatan|vägen|weg|laan|straat|gade|ulica)\\s*\\d{1,5}\\b)`, "iu");
+const POSTCODE_RE = /(\b[A-Z]{1,2}\d[A-Z\d]?\s\d[A-Z]{2}\b|\b\d{5}(?:-\d{4})?\b|\b\d{2}-\d{3}\b|\b\d{4,5}-\d{3}\b|\b\d{3}\s?\d{2}\b|\b\d{7}\b)/;
+const STATE_ZIP_RE = /,\s*[A-Z]{2}\s+\d{5}\b/;
+const UNIT_RE = /\b(?:suite|ste\.?|floor|fl\.?|unit|level|p\.?\s?o\.?\s?box|sala|piso|andar|conjunto|bloco|bldg|building)\b\s*#?\w*/i;
+const NAME_NUMBER_RE = /\p{Lu}[\p{L}'’.-]{3,}\s+\d{1,3}[A-Za-z]?\s*,\s*\p{Lu}/u;   // "Hamasger 34, Tel Aviv"
+const UK_POSTCODE_RE = /\b[A-Z]{1,2}\d[A-Z\d]?\s\d[A-Z]{2}\b/;
+export function isAddressLine(line: string): boolean {
+  if (line.split(/\s+/).length > 14) return false;
+  if (STREET_RE.test(line) || STATE_ZIP_RE.test(line) || NAME_NUMBER_RE.test(line) || UK_POSTCODE_RE.test(line)) return true;
+  // A postcode alone ("2024 Kiwify", "R$10 milhões") is not an address; with a unit, a box or a 4-digit code before the city it is.
+  return POSTCODE_RE.test(line) && (UNIT_RE.test(line) || /\b\d{4,5}\s+\p{Lu}/u.test(line)) || (/\b\d{4}\s+\p{Lu}[\p{L}]+/u.test(line) && /\//.test(line));
+}
+
 /** The word that declares an address the headquarters. */
 const HQ_LABEL = /\b(?:head ?quarters?|head office|main office|global office|corporate office|hq)\b/i;
 
@@ -272,8 +293,8 @@ export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type
     if (skipLeft > 0) { skipLeft--; continue; }
     if (OFFICE_HEADING.test(line)) underOfficeHeading = true;
     const marked = HQ_LABEL.test(line);
-    if (marked && !ADDRESS_HINT.test(line)) { hqMarkLeft = 3; continue; }   // a heading: the address follows within a few lines
-    if (line.length > 250 || !ADDRESS_HINT.test(line)) { if (hqMarkLeft > 0) hqMarkLeft--; continue; }
+    if (marked && !isAddressLine(line)) { hqMarkLeft = 3; continue; }   // a heading: the address follows within a few lines
+    if (line.length > 250 || !isAddressLine(line)) { if (hqMarkLeft > 0) hqMarkLeft--; continue; }
     const declared = marked || hqMarkLeft > 0;
     if (hqMarkLeft > 0) hqMarkLeft = 0;
     for (const m of line.matchAll(CITY_RE)) {
@@ -322,7 +343,8 @@ export function decideHeadquarters(statements: HqStatement[], today = new Date()
   const company = allCompany.filter((s) => !s.viaAddress || (addressCities.length < 2 && !s.officeList));
   if (company.length) return { kind: "declared", statement: company[0] };
   if ((addressCities.length >= 2 || allCompany.some((x) => x.viaAddress && x.officeList)) && !siteOfficeCities.length) siteOfficeCities = addressCities;
-  const pressWithWeak = latestFirst(statements.filter((s) => s.kind === "press"));
+  // A press statement counts only with a date (owner, batch 6: Estimote → New York from an undated 2014 GeekWire).
+  const pressWithWeak = latestFirst(statements.filter((s) => s.kind === "press" && !!s.date));
   const press = pressWithWeak.filter((s) => !s.weak);
   const recent = press.filter((s) => s.date && Date.parse(today) - Date.parse(s.date) <= 730 * DAY);
   const siteCities = siteOfficeCities.filter((c, i) => siteOfficeCities.findIndex((d) => sameCity(c, d)) === i);

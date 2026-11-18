@@ -103,6 +103,9 @@ export function ownerWrongTest(g: GapStore): (company: string, field: string, va
   return (company, field, value) => { const co = fold(company), v = fold(value); return list.some((x) => x.field === field && x.company === co && v.includes(x.text)); };
 }
 
+/** Fields no run can fill yet (registers need API keys, the headcount history is not built) or that are empty by nature (acquired): not listed as missing (owner, batch 6). */
+export const NOT_YET_BUILT_FIELDS = new Set(["legal_name", "registered_address", "incorporation_date", "incorporation_jurisdiction", "company_number", "employee_history", "acquired"]);
+
 export interface MissingRow { field: string; company: string; reason: string; searched: string; rejected: string }
 /** One row per missing field and company, with the commonest reason: no source found / found and refused (why) / the site was not read. */
 export function missingRows(g: GapStore, companyIds: string[], unreadable: Set<string>): MissingRow[] {
@@ -110,6 +113,7 @@ export function missingRows(g: GapStore, companyIds: string[], unreadable: Set<s
   for (const id of companyIds) {
     const c = g[id]; if (!c) continue;
     for (const f of Object.values(c.fields)) {
+      if (NOT_YET_BUILT_FIELDS.has(f.field) && process.env.MISSING_INCLUDE_UNBUILT !== "true") continue;
       const owner = f.rejected_candidates.find((x) => x.startsWith("marked wrong by the owner"));
       const reason = unreadable.has(c.company) ? "site not read" : f.rejected_candidates.length ? `found and refused: ${(owner ?? f.rejected_candidates[0]).replace(/^\s*[^\p{L}\p{N}]+/u, "").slice(0, 120)}` : "no source found";
       out.push({ field: f.field, company: c.company, reason, searched: f.searched.join(" | ").slice(0, 200), rejected: f.rejected_candidates.join(" | ").slice(0, 400) });

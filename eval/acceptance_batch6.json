@@ -193,5 +193,37 @@
   "company": "Sherlok",
   "field": "hq_city",
   "match": "Adelaide"
+ },
+ {
+  "id": "estimote_2012",
+  "why": "Estimote: founded 2012 (\"Estimote, Inc. was founded in 2012\")",
+  "kind": "present",
+  "company": "Estimote",
+  "field": "founded_year",
+  "match": "2012"
+ },
+ {
+  "id": "kiwify_no_dubai",
+  "why": "Kiwify: headquarters is not Dubai (prize text, not an address)",
+  "kind": "absent",
+  "company": "Kiwify",
+  "field": "hq_city",
+  "match": "Dubai"
+ },
+ {
+  "id": "brighte_no_sxsw_sydney",
+  "why": "Brighte: no headquarters from an event list (SXSW Sydney)",
+  "kind": "absent",
+  "company": "Brighte",
+  "field": "hq_city",
+  "quote_match": "SXSW"
+ },
+ {
+  "id": "estimote_no_undated_hq",
+  "why": "Estimote: no headquarters from an undated press article",
+  "kind": "absent",
+  "company": "Estimote",
+  "field": "hq_city",
+  "source_match": "geekwire.com/2014"
  }
 ]

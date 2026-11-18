@@ -117,7 +117,7 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
     const name = cleanCompetitorName(r.after);
     if (COMPETITOR_STOP.test(name)) return "its name is an investment type or a category, not a company";
     // A comparison page counts only on the company's own domain, with its title naming the other side (xe.com's "mBank vs Xe", an IPO page, "Real Estate").
-    if (/\bIPO\b/.test(quote) && !ownDomain(url, companyName)) return "an IPO page of another site";
+    if (/\bIPOs?\b/i.test(quote) || /\/(?:[\w-]*-)?ipos?(?:[-/]|$)/i.test(url)) return "an IPO page, not a comparison with a competitor";
     if (/\b(?:vs\.?|versus)\b/i.test(quote)) {
       if (!ownDomain(url, companyName)) return "a comparison page of another site";
       const side = vsTitleCompetitor(quote, companyName) ?? comparisonTitleCompetitor(quote, companyName);
