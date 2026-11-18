@@ -18,7 +18,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
 import { loadConfig, ConfigError, type WorkerConfig } from "./config.ts";
 import { Queue } from "./queue.ts";
-import { processOne, type Execute, type Meter } from "./runner.ts";
+import { processOne, newMeter, type Execute, type Meter } from "./runner.ts";
 import { runGates } from "./gates.ts";
 import { runIdentify, fetchSiteMeta } from "./identify.ts";
 import { serperSearch } from "./search.ts";
@@ -26,7 +26,8 @@ import { runEnrichment, runCollection } from "./enrich.ts";
 import { buildProfile, investorNames } from "./profile.ts";
 import { promoteOne, promotionHold, serializeCollected, domainIndex } from "./promote.ts";
 import { runDeepen, loadCompany, applyDirectWrites } from "./deepen.ts";
-import { boardsBatch, logBoardRun } from "./boards.ts";
+import { boardsBatch, logBoardRun, politeFetch } from "./boards.ts";
+import { candidateBatch, makeDescriber } from "./candidates.ts";
 import { writeCollected, newWriteSummary, BULK_THRESHOLDS } from "../lib/enrichment/writeCompany.ts";
 import { loadSectorTaxonomy, type SectorTaxonomy } from "../lib/enrichment/extractProfile.ts";
 import { isDistinctiveName } from "../lib/enrichment/entity.ts";
@@ -173,6 +174,42 @@ async function boardsTurn(): Promise<void> {
   }
 }
 
+
+// Review candidates: find and verify each one's website (worker/candidates.ts).
+// OFF unless CANDIDATE_ENRICH=true, because it spends search and model calls.
+// DRY RUN unless CANDIDATE_ENRICH_WRITE=true: it looks and logs, saves nothing.
+const CANDIDATE_ENRICH = process.env.CANDIDATE_ENRICH === "true";
+const CANDIDATE_WRITE = process.env.CANDIDATE_ENRICH_WRITE === "true";
+const CANDIDATE_EVERY_MS = Number(process.env.CANDIDATE_ENRICH_EVERY_MS ?? 300_000);
+const CANDIDATE_BATCH = Number(process.env.CANDIDATE_ENRICH_BATCH ?? 5);
+/** Searches per UTC day, the cost ceiling: 3 per candidate at most. */
+const CANDIDATE_MAX_SEARCHES_PER_DAY = Number(process.env.CANDIDATE_ENRICH_MAX_SEARCHES_PER_DAY ?? 300);
+let lastCandidatesAt = 0;
+let candidateDay = "";
+let candidateSearchesToday = 0;
+const candidateMeter = newMeter();
+const candidateFetch = politeFetch(fetch, () => {});
+
+async function candidatesTurn(): Promise<void> {
+  if (!CANDIDATE_ENRICH || Date.now() - lastCandidatesAt < CANDIDATE_EVERY_MS) return;
+  lastCandidatesAt = Date.now();
+  const day = new Date().toISOString().slice(0, 10);
+  if (day !== candidateDay) { candidateDay = day; candidateSearchesToday = 0; }
+  if (candidateSearchesToday + 3 * CANDIDATE_BATCH > CANDIDATE_MAX_SEARCHES_PER_DAY) return;   // today's budget is spent
+  try {
+    const r = await candidateBatch(
+      { db, search: serperSearch(cfg.serpKey, candidateMeter), fetch: candidateFetch, describe: makeDescriber(anthropic, cfg.enrichModel) },
+      { limit: CANDIDATE_BATCH, write: CANDIDATE_WRITE },
+    );
+    candidateSearchesToday += r.searches;
+    if (r.checked > 0 || r.failed > 0) {
+      console.log(`[worker] candidates: ${r.checked} checked (${r.verified} verified, ${r.unverified} unverified, ${r.no_site} no site), ${r.failed} failed, ${r.searches} searches${CANDIDATE_WRITE ? "" : " — dry run"}`);
+    }
+  } catch (e) {
+    console.error(`[worker] candidates: ${String(e)}`);
+  }
+}
+
 let stopping = false;
 let wake: (() => void) | null = null;
 for (const sig of ["SIGTERM", "SIGINT"] as const) {
@@ -204,6 +241,7 @@ async function main() {
       console.error(`[worker] queue error: ${String(e)}`);   // e.g. Supabase unreachable: wait and try again
     }
     if (!worked && !stopping) await boardsTurn();
+    if (!worked && !stopping) await candidatesTurn();
     if (!worked && !stopping) await idle(cfg.pollMs);
   }
   console.log("[worker] stopped");

@@ -70,3 +70,24 @@ fly deploy --config worker/fly.toml --dockerfile worker/Dockerfile
 
 Every run adds a row to `enrichment_runs` (`run_kind = 'on_demand'`) with its
 duration, search calls, tokens and estimated cost.
+
+## Review candidates: website and identity (stage 4)
+
+`worker/candidates.ts` finds and verifies each review candidate's own website (`worker/candidateIdentity.ts`)
+and saves the result in `company_candidates.evidence.enrichment` for the review card. It covers pending SEC
+Form D candidates and UK candidates that surfaced from the watchlist.
+
+Off by default, dry run by default:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `CANDIDATE_ENRICH` | `false` | `true` turns it on (it spends search and model calls) |
+| `CANDIDATE_ENRICH_WRITE` | `false` | `true` saves results; otherwise it only logs what it would save |
+| `CANDIDATE_ENRICH_BATCH` | `5` | candidates per turn |
+| `CANDIDATE_ENRICH_EVERY_MS` | `300000` | wait between turns |
+| `CANDIDATE_ENRICH_MAX_SEARCHES_PER_DAY` | `300` | daily search ceiling (at most 3 searches per candidate) |
+
+Rules: only the company's own site is read (never Crunchbase, PitchBook, Dealroom, Wikipedia or forums);
+every page goes through `politeFetch` (robots.txt first); a site counts as the company's only with two
+matches from the registry record, one of them an identity match; the one-line description is a sentence the
+model quotes and the code finds on the page word for word, otherwise there is no description.
