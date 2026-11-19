@@ -35,6 +35,16 @@ const JOB_AD_WEAK = /\b(?:experience (?:required|with|in)|responsibilities|requi
 /** A job advertisement: one clear marker, or two of the weak ones — a product sentence that says "you will" or "experience with" is not one (owner, batch 8: Berg System's CRM). */
 const isJobAd = (q: string) => JOB_AD_STRONG.test(q) || new Set((q.match(JOB_AD_WEAK) ?? []).map((x) => x.toLowerCase())).size >= 2;
 const brandOf = (companyName: string) => fold(companyName.replace(/\b(ai|inc|ltd|llc|labs?|group|studio|studios|technologies|software|systems)\b/gi, ""));
+const ROLE_NEED: Array<[string, RegExp, RegExp]> = [["COO", /\bcoo\b|chief operating officer/i, /\bcoo\b|chief operat/i], ["CTO", /\bcto\b|chief technology officer|chief technical officer/i, /\bcto\b|chief technolog|chief technical/i],
+  ["CFO", /\bcfo\b|chief financial officer/i, /\bcfo\b|chief financ/i], ["CMO", /\bcmo\b|chief marketing officer/i, /\bcmo\b|chief market/i], ["CEO", /\bceo\b|chief executive officer/i, /\bceo\b|chief exec|managing director|\bmd\b/i],
+  ["CPO", /\bcpo\b|chief product officer|chief people officer/i, /\bcpo\b|chief product|chief people/i], ["CRO", /\bcro\b|chief revenue officer/i, /\bcro\b|chief revenue|chief risk/i], ["President", /\bpresident\b/i, /president/i]];
+/** The executive titles of a role that its quote does not carry. */
+export const unsupportedRoles = (role: string, quote: string): string[] => ROLE_NEED.filter(([, inRole, inQuote]) => inRole.test(role) && !inQuote.test(quote)).map(([n]) => n);
+let ambiguous: Set<string> | null = null;
+const ambiguousName = (name: string): boolean => {
+  if (!ambiguous) { ambiguous = new Set(); try { for (const n of (JSON.parse(readFileSync("eval/ambiguous_names.json", "utf8")) as { names?: string[] }).names ?? []) ambiguous.add(fold(n)); } catch { /* none */ } }
+  return ambiguous.has(fold(name));
+};
 /** The source address is on the company's own domain (its name in the host). */
 export function ownDomain(url: string | null | undefined, companyName: string): boolean {
   try { const h = new URL((url ?? "").startsWith("http") ? url! : `https://${url}`).hostname.toLowerCase(); const b = brandOf(companyName); return (b.length >= 3 && fold(h).includes(b)) || extraDomainsOf(companyName).some((d) => h === d || h.endsWith(`.${d}`)); } catch { return false; }
@@ -42,6 +52,7 @@ export function ownDomain(url: string | null | undefined, companyName: string): 
 /** A competitor's name without a year or a bracket ("Dhan (2026)" → "Dhan"). */
 import { caseName } from "./nameCase.ts";
 import { roundSourceStanding } from "./roundSources.ts";
+import { readFileSync } from "fs";
 import { extraDomainsOf } from "./ownDomain.ts";
 export const cleanCompetitorName = (n: string): string => caseName(n).replace(/\s*\([^)]*\)/g, "").replace(/\s+(?:19|20)\d{2}\b/g, "").replace(/\s+/g, " ").trim();
 /** A product or a model, no company ("an open-weight alternative to GPT-4o Realtime": GPT is OpenAI's model; owner, batch 7: UltraVox). */
@@ -108,6 +119,28 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
     const nm = r.after.split(" — ")[0];
     if (nm !== cleanPersonName(nm)) return "the name carries a function word or a role fragment (\"As Karim Nour\", \"Karim Nour Co\")";
   }
+  if ((r.field === "founder" || r.field === "leader") && r.after && r.quote) {
+    const [nm, ...rest] = r.after.split(" — "); const role = rest.join(" — ");
+    const q = r.quote;
+    // A role at another company (owner, batch 8: Screaming Frog's Will Hodson is "Co-Founder – The Big Deal"): the quote gives the person's role beside another organisation, not this one.
+    const ROLE = "co-?founders?|founders?|ceo|cto|coo|cfo|cmo|cpo|president|chair\\w*|director|partner|head of [a-z ]{2,20}|managing director";
+    const near = new RegExp(`${nm.split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+")}[^.\\n]{0,60}?\\b(?:${ROLE})\\s*(?:[–—-]|@|\\bat\\b)\\s*([A-Z][\\w&.'’]*(?:\\s+[A-Z&][\\w&.'’]*){0,4})`, "i").exec(q);
+    if (near) {
+      const org = fold(near[1]);
+      const own = fold(companyName).replace(/(inc|ltd|llc|corp|gmbh|ag|bv|the)$/g, "");
+      if (org.length >= 3 && !/^(?:ceo|cto|coo|cfo|cmo|cpo|chief\w*|co-?founder|founder|president|chair\w*|director|partner|head|vice|vp|svp|evp|managing|general|executive)/i.test(near[1].trim()) && !(org.includes(own) || (own.length >= 3 && own.includes(org)))) return `a role at another company (${near[1].trim()}), not here`;
+    }
+    // The role must be in the quote (owner, batch 8: Weezy's COO) — a leader's title the model supplied from elsewhere is not written; a founder keeps the row, without the role (applyRowRules).
+    if (r.field === "leader") { const miss = unsupportedRoles(role, q); if (miss.length) return `its role (${miss.join(", ")}) is not in its quote`; }
+  }
+  // A name that several companies carry (owner, batch 8: Shyft — a Miami moving app, a Standard Bank FX app, The Shyft Group): a value stands only on the company's own domain on file, or on a source whose
+  // quote names that domain. eval/ambiguous_names.json: { "names": ["Shyft"] }.
+  if (o.domain && url && r.field !== "(nothing)" && ambiguousName(companyName)) {
+    const host = (u: string) => { try { return new URL(u.startsWith("http") ? u : `https://${u}`).hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; } };
+    const mine = host(o.domain), h = host(url);
+    const onMine = !!mine && (h === mine || h.endsWith(`.${mine}`));
+    if (!onMine && !(mine && (r.quote ?? "").toLowerCase().includes(mine))) return `${companyName} is a name several companies carry: the source is not the site on file (${mine}) and its quote does not name that domain`;
+  }
   const bad = isListingOrSponsoredUrl(url);
   if (bad) return bad === "sponsored_content" ? "its source is sponsored content" : "its source is a tag, list or search page, not the article";
   const quote = r.quote ?? "";
@@ -169,6 +202,13 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
     const teamPage = /\/(?:team|our-team|the-team|people|leadership|management|board|about\/team|meet-the-team|founders)(?:\/|$|-)/i.test(url);
     const statesStaff = /\b(?:employ|staff|headcount|colleague|workforce|team members|people (?:work|at)|fte|mitarbeiter|empleados|funcionários|collaborateurs)/i.test(quote);
     if (r.field === "employee_count" && /^\s*\d[\d,]*\s*\+\s*$/.test(r.after) && (teamPage || !statesStaff)) return "a count of the people a team page shows is a lower bound: kept in the history only";
+  }
+  // A profile page of a data platform (inc42.com/company/…, a "company" or "startup" profile) is no source for a round (owner, batch 8: Lendbox).
+  if (r.field === "round" && url && !ownDomain(url, companyName) && /\/(?:company|companies|startups?|organi[sz]ations?|profiles?)\/[^/]+\/?(?:[?#].*)?$/i.test((() => { try { return new URL(url.startsWith("http") ? url : `https://${url}`).pathname; } catch { return ""; } })())) return "a data platform's profile page is no source for a round";
+  // A story or history page states the size of the day it was written, not the run day (owner, batch 8): a point of the history carrying a date of the last week from such a page is out.
+  if (r.field === "headcount_history" && /\/(?:our-story|story|history|about\/history|about-us\/history|timeline|milestones|who-we-are)(?:\/|$|\.)/i.test(url)) {
+    const pt = r.after.match(/\bon (\d{4}-\d{2}-\d{2})\b/)?.[1];
+    if (pt && pt >= new Date(Date.parse(today) - 7 * 86_400_000).toISOString().slice(0, 10)) return "a story or history page does not date its figure with the run day";
   }
   if (r.field === "employee_range" || r.field === "employee_count" || r.field === "headcount_history") {
     // A dated page of the company's own site (a press release, a post) states the size of ITS day, not of today (owner, batch 6: Brighte's 2021 year in review gave "84" for the run day).
@@ -241,10 +281,9 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
         // (owner, regression gate: Paradox). Unknown only when no source says it.
         const amountOfRow = (() => { const m = r.after.match(/\$([\d.,]+)\s*([KMB])?\b/i); if (!m) return null; const mult = m[2]?.toUpperCase() === "B" ? 1e9 : m[2]?.toUpperCase() === "K" ? 1e3 : 1e6; return Number(m[1].replace(/,/g, "")) * mult; })();
         // The words of an address count as the page's own (owner, batch 8: lawhive's $60M — "…-raises-60m-series-b" in the addresses of bmmagazine and fortune).
-        const slugOf = (u: string | undefined) => { try { return new URL((u ?? "").startsWith("http") ? u! : `https://${u}`).pathname.split("/").filter(Boolean).pop()?.replace(/\.[a-z]{2,5}$/, "").replace(/[-_]+/g, " ") ?? ""; } catch { return ""; } };
         const sameEventRow = !amountOfRow ? undefined : rows.find((x) => {
           if (x.field !== "news" || fold(String(x.company ?? "")) !== fold(companyName)) return false;
-          const text = `${x.after} ${x.quote ?? ""} ${slugOf(x.source_url)}`;
+          const text = `${x.after} ${x.quote ?? ""}`;   // the type comes from words of the page, never from its address (owner, 2026-11-19: lawhive's Series B)
           const labels = statedRoundLabels(text);
           if (!(t === "Other" ? labels.length > 0 : labels.includes(t))) return false;
           const fromAddress = amountFromAddress(x.source_url ?? "")?.amount;
@@ -252,7 +291,7 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
           return sameAmount && !rowProblem(x, companyName, today, 0, o);
         });
         // A round typed "Other" (or "Unknown") whose event another source names ("Raises $200M Series C") takes that type; it is cited with it (the amount is in the headline as well).
-        const newsType = sameEventRow && t === "Other" ? statedRoundLabels(`${sameEventRow.after} ${sameEventRow.quote ?? ""} ${slugOf(sameEventRow.source_url)}`)[0] : undefined;
+        const newsType = sameEventRow && t === "Other" ? statedRoundLabels(`${sameEventRow.after} ${sameEventRow.quote ?? ""}`)[0] : undefined;
         if (newsType) {
           dropped.push(`round: type Other → ${newsType} — the headline of the same event states it`);
           r = { ...r, after: r.after.replace(/^Other\b/, newsType) };
@@ -295,7 +334,17 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
   const seenRound = new Map<string, T>();
   const seenComp = new Set<string>();
   const seenNews = new Map<string, T>();
-  for (const r of kept) {
+  for (const r0 of kept) {
+    let r = r0;
+    if (r.field === "founder" && r.quote && r.after.includes(" — ")) {
+      const [nm, ...rl] = r.after.split(" — "); const role = rl.join(" — "), miss = unsupportedRoles(role, r.quote);
+      if (miss.length) {
+        let left = role; for (const [n, inRole] of ROLE_NEED) if (miss.includes(n)) left = left.replace(new RegExp(inRole.source, "gi"), " ");
+        left = left.replace(/\b(?:and|&|chief|officer|executive|operating|technology|technical|financial|marketing|product|revenue|people|risk)\b/gi, " ").replace(/[\s,;/&·|-]+/g, " ").trim();
+        dropped.push(`founder: role ${miss.join(", ")} of ${nm} taken out — it is not in the quote`);
+        r = { ...r, after: /found/i.test(left) ? `${nm} — ${/co.?found/i.test(left) ? "Co-Founder" : "Founder"}` : nm };
+      }
+    }
     if (r.field === "founder") {
       const [name, ...rest] = r.after.split(" — ");
       const key = fold(name), title = rest.join(" — ");

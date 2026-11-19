@@ -948,11 +948,11 @@ describe("batch 8 sample check (owner, 2026-11-19)", () => {
     expect(acquirerIn("Clar acquires Lendo Group", "Lendo")).toBeNull();
     expect(acquirerIn("Clar acquires Lendo", "Lendo")?.acquirer).toBe("Clar");
   });
-  it("a lawhive-style round takes its type from the address of the same event's article", () => {
+  it("a type is never taken from an address (owner, 2026-11-19: lawhive reversed) — the round stays Unknown", () => {
     const g = applyRowRules([
       { company: "Acme", field: "round", after: "Other $60M · 2025-10", source_url: "https://techcrunch.com/2025/10/08/acme-raises/", quote: "raised $60M" },
       { company: "Acme", field: "news", after: "2025-10-08 — Acme raises $60M to expand", source_url: "https://fortune.com/2025/10/08/acme-raises-60m-series-b/", quote: "" },
     ] as never, "Acme", "2026-11-19");
-    expect(g.rows.find((r) => r.field === "round")?.after).toMatch(/^Series B \$60M/);
+    expect(g.rows.find((r) => r.field === "round")?.after).toMatch(/^Unknown \$60M/);
   });
 });
