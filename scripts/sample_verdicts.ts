@@ -19,6 +19,12 @@ const sample: SampleRow[] = rows.map((r) => ({ n: Number(r[ix("n")]), company: r
 const wrongEnv = (process.env.WRONG ?? "").trim();
 
 if (!wrongEnv && !process.env.RIGHT_ALL) {
+  // Values the owner asked to see whatever the sample holds (watch_values.csv): listed first, to be judged with the sample.
+  try {
+    const [wh, ...wr] = parseCsv(readFileSync("watch_values.csv", "utf8"));
+    const w = wr.filter((r) => Number(r[wh.indexOf("batch")]) === batch);
+    if (w.length) { console.log("WATCH (not in the numbering; if one is wrong, say so with pending_fixes.csv):"); for (const r of w) console.log(`  ${r[wh.indexOf("company")]} · ${r[wh.indexOf("field")]} · ${r[wh.indexOf("value")]} — ${r[wh.indexOf("reason")]}`); console.log(""); }
+  } catch { /* none */ }
   for (const r of rows) {
     console.log(`#${r[ix("n")]}  ${r[ix("company")]} · ${r[ix("field")]} · ${r[ix("value")].slice(0, 120)}`);
     console.log(`     ${(r[ix("source_url")] || "").slice(0, 130)}`);
