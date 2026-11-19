@@ -12,9 +12,18 @@ import { reviewDomain } from "../lib/enrichment/roundSources.ts";
 const TLD: Record<string, string> = { il: "Israel", uk: "United Kingdom", de: "Germany", fr: "France", pl: "Poland", es: "Spain", it: "Italy", nl: "Netherlands", se: "Sweden", no: "Norway", dk: "Denmark", fi: "Finland", ch: "Switzerland", at: "Austria", pt: "Portugal", br: "Brazil", mx: "Mexico", ar: "Argentina", cl: "Chile", co: "Colombia", in: "India", jp: "Japan", cn: "China", kr: "South Korea", au: "Australia", nz: "New Zealand", ca: "Canada", za: "South Africa", ng: "Nigeria", ke: "Kenya", eg: "Egypt", tr: "Turkey", ae: "UAE", sg: "Singapore", id: "Indonesia", ie: "Ireland", be: "Belgium", cz: "Czechia", ro: "Romania", ru: "Russia", ua: "Ukraine" };
 const q = (v: string | number) => { const s = String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
 
+if (process.argv[2] === "list") {
+  const [h, ...b] = parseCsv(readFileSync("domain_review.csv", "utf8"));
+  b.forEach((r, i) => console.log(`${String(i + 1).padStart(2)}  ${r[h.indexOf("domain")].padEnd(30)} ×${r[1]}  ${r[5]}\n      ${(r[2] ?? "").slice(0, 150)}`));
+  console.log("\nDecide: APPROVE=1,4,7 REJECT=2,3 npx tsx scripts/domain_review.ts apply   (numbers of this list; a domain name works too; a domain you leave out stays as it is)");
+  process.exit(0);
+}
 if (process.argv[2] === "apply") {
   const [h, ...b] = parseCsv(readFileSync("domain_review.csv", "utf8"));
   const dec = { approved: [] as string[], rejected: [] as string[] };
+  // Decisions on the command line: numbers of `list` (or domain names) — no file to edit.
+  const pick = (v?: string) => (v ?? "").split(",").map((x) => x.trim()).filter(Boolean).map((x) => (/^\d+$/.test(x) ? b[Number(x) - 1]?.[h.indexOf("domain")] : x)).filter((x): x is string => !!x);
+  dec.approved.push(...pick(process.env.APPROVE)); dec.rejected.push(...pick(process.env.REJECT));
   for (const r of b) { const d = (r[h.indexOf("decision")] ?? "").trim().toLowerCase(); const dom = r[h.indexOf("domain")]; if (/^(approve|yes|ok|אשר|מאשר)/.test(d)) dec.approved.push(dom); else if (/^(reject|no|דחה|דוחה)/.test(d)) dec.rejected.push(dom); }
   const prev = existsSync("eval/source_decisions.json") ? JSON.parse(readFileSync("eval/source_decisions.json", "utf8")) as typeof dec : { approved: [], rejected: [] };
   const out = { approved: [...new Set([...prev.approved, ...dec.approved])].sort(), rejected: [...new Set([...prev.rejected, ...dec.rejected])].sort() };
