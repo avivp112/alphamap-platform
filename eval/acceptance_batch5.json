@@ -83,11 +83,11 @@
  },
  {
   "id": "humi_acquired",
-  "why": "Humi acquired by Employment Hero, 2025-01-09 (from the accepted news)",
+  "why": "Humi acquired by Employment Hero, 2025-01-08 (BusinessWire, first announcement)",
   "kind": "present",
   "company": "Humi",
   "field": "acquired",
-  "match": "Employment Hero.*2025-01-09"
+  "match": "Employment Hero.*2025-01-08"
  },
  {
   "id": "medipass_acquired",
@@ -107,11 +107,11 @@
  },
  {
   "id": "dietly_acquired",
-  "why": "Dietly majority-acquired by Żabka, 2021-06",
+  "why": "Dietly majority-acquired by Żabka, first announcement 2021-05-31 or 2021-06-01",
   "kind": "present",
   "company": "Dietly",
   "field": "acquired",
-  "match": "majority_acquired.*Żabka.*2021-06-03"
+  "match": "majority_acquired.*Żabka.*2021-(05-31|06-01)"
  },
  {
   "id": "not_enriched_mototech",

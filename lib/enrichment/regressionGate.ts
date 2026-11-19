@@ -27,8 +27,22 @@ export const family = (f: string) => (f === "description_what_only" ? "descripti
 export const valueKey = (company: string, field: string, value: string) => `${fold(company).replace(/ /g, "")}:${family(field)}:${fold(value).slice(0, 200)}`;
 const slot = (company: string, field: string) => `${fold(company).replace(/ /g, "")}:${family(field)}`;
 
+/**
+ * A purchase is three values — the status, the buyer, the date — whether the report says it in one row ("status = acquired · Acquired by Raseedi (2025-01-13)") or the database holds it in three columns
+ * (owner, 2026-11-19: Kashat, LionDesk, Netcash… were "lost" only because a baseline kept three rows and the code gives one). Both sides are compared by content.
+ */
+export function explodeAcquired<T extends { field: string; value: string }>(rows: T[]): T[] {
+  return rows.flatMap((r) => {
+    if (r.field !== "acquired") return [r];
+    const m = r.value.match(/^status = (\S+)(?: · (?:Acquired by (.+?)|Closed) \(([^)]*)\))?\s*$/);
+    if (!m) return [r];
+    return [m[1], ...(m[2] ? [m[2]] : []), ...(m[3] && m[3] !== "undated" ? [m[3]] : [])].map((value) => ({ ...r, value }));
+  });
+}
+
 /** The values of a report that the gate watches. */
-export function watched(rows: RunRow[]): BaselineValue[] {
+export function watched(rows0: RunRow[]): BaselineValue[] {
+  const rows = explodeAcquired(rows0);
   const seen = new Set<string>(), out: BaselineValue[] = [];
   for (const r of rows) {
     if (!r.field || IGNORED_FIELDS.has(r.field) || !r.value?.trim()) continue;
@@ -40,7 +54,8 @@ export function watched(rows: RunRow[]): BaselineValue[] {
 }
 
 /** What a baseline held, against what a run gives now. `rejections` name why a lost value is gone, when the run said so. */
-export function compare(baseline: BaselineValue[], now: RunRow[], rejections: Rejected[] = []): Comparison {
+export function compare(baseline0: BaselineValue[], now: RunRow[], rejections: Rejected[] = []): Comparison {
+  const baseline = explodeAcquired(baseline0);
   const nowW = watched(now);
   const nowKeys = new Set(nowW.map((v) => valueKey(v.company, v.field, v.value)));
   const nowBySlot = new Map<string, BaselineValue[]>();

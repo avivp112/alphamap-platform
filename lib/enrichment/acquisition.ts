@@ -6,7 +6,7 @@
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const BUY = "(?:completes (?:its |the )?acquisition of|completed (?:its |the )?acquisition of|announces (?:its |the )?acquisition of|acquires?|acquired|buys|bought|buyout of|snaps up|picks up|takes over|to acquire|to buy|przejmuje|przejął|przejęła|kupuje|adquiere|adquirió|adquirida|compra|compró|übernimmt|übernahm|rachète|rachètent|acquiert|רוכשת|רכשה|רוכש)";
 const BOUGHT_BY = "(?:acquired by|bought by|sold to|taken over by|to be acquired by|is being acquired by|adquirida por|przejęta przez|übernommen von|racheté par|נרכשה על ידי|נרכשת על ידי)";
-const MAJORITY = /\b(?:controlling|majority)\s+(?:stake|share|interest)|\bstake\s+in\b|\bprzejmuje\s+(?:większościowy|kontrolny)|\bparticipaci[oó]n\s+mayoritaria|\bmehrheit|\bparticipation\s+majoritaire|\bמניית\s+שליטה/i;
+const MAJORITY = /\b(?:control\w*|majority)\s+(?:stake|share|shares|interest|package|holding)|\bstake\s+in\b|\bprzejmuje\s+(?:większościowy|kontrolny|kontrol)|\bpakiet\s+(?:kontrolny|większościowy)|\bwiększościow|\bparticipaci[oó]n\s+mayoritaria|\bmayor[ií]a\b|\bmehrheit|\bparticipation\s+majoritaire|\bprise\s+de\s+contr[oô]le|\bmajorit[eé]\b|\bmaggioranza|\bmaioria|\bcontrole\s+acion[aá]rio|\bמניית\s+שליטה|\bשליטה\s+ב/i;
 
 export interface AcquisitionClaim { status: "acquired" | "majority_acquired"; acquirer: string; quote: string; url: string; date: string | null }
 
@@ -58,6 +58,11 @@ export function acquirerIn(text: string, companyName: string): { acquirer: strin
   return null;
 }
 
+/** A buyer's name as a key: case, punctuation and a closing "Group", "Inc", "Ltd"… do not make it another buyer ("Żabka" and "Żabka Group"). */
+export function buyerKey(name: string): string {
+  return name.toLowerCase().replace(/[^\p{L}\p{N}\s]+/gu, " ").replace(/\s+(?:group|inc|ltd|llc|limited|corp|corporation|plc|holdings?|ag|gmbh|sa|s a)\s*$/u, "").replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
 function sameName(a: string, b: string): boolean {
   const f = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
   return f(a) === f(b) || f(a).includes(f(b)) || f(b).includes(f(a));
@@ -77,11 +82,19 @@ export function detectAcquisition(articles: Array<{ url: string; title?: string 
   if (!claims.length) return null;
   // A full acquisition after a majority stake: the full one stands; otherwise the newest.
   claims.sort((x, y) => (y.date ?? "").localeCompare(x.date ?? ""));
-  const pick = claims.find((c) => c.status === "acquired") ?? claims[0];
+  const pick0 = claims.find((c) => c.status === "acquired") ?? claims[0];
+  // One announcement said "acquires X" and another, days later, says what was bought: a controlling / majority stake. The more exact statement of the same event gives the status; the date stays the first
+  // announcement's (owner, regression gate: Dietly — "Żabka przejmuje platformę" 2021-06-01 and "Acquires Controlling Stake" 2021-06-03).
+  const fk = buyerKey;
+  const days = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) / 86400000;
+  const majoritySameEvent = pick0.status === "acquired" && claims.some((c) => c.status === "majority_acquired" && fk(c.acquirer) === fk(pick0.acquirer) && c.date && pick0.date && days(c.date, pick0.date) <= 14);
+  const pick = majoritySameEvent ? { ...pick0, status: "majority_acquired" as const } : pick0;
   // The date of the purchase is the date of its first announcement: later reports of the same purchase by the same buyer do not move it (owner, batch 7: Kashat, two reports ten days apart).
-  const f = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
-  const same = claims.filter((c) => f(c.acquirer) === f(pick.acquirer) && c.date);
-  return same.length ? same[same.length - 1] : pick;
+  const f = buyerKey;
+  // (the reports of one purchase: the same buyer; a majority stake and a full purchase count as one event only within four months — a stake taken years before is another event)
+  const same = claims.filter((c) => f(c.acquirer) === f(pick.acquirer) && c.date && (c.status === pick.status || !pick.date || days(c.date, pick.date) <= 120));
+  const first = same.length ? same[same.length - 1] : pick;
+  return majoritySameEvent ? { ...first, status: "majority_acquired" } : first;
 }
 
 /** The buyers that at least `minAgree` of these headlines name for the company: with them known, an article that says they bought it is about this company, not one of the same name (owner, batch 7: OUTvest, Alexforbes). */

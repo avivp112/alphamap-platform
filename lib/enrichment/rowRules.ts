@@ -7,7 +7,7 @@ import { isListingOrSponsoredUrl } from "./pageKind.ts";
 import { isExplainer, namesCompanyUpFront } from "./newsRelevance.ts";
 import { foundedYearFromSite } from "./siteFacts.ts";
 import { NOT_A_PRODUCT_SENTENCE } from "./quoteFinder.ts";
-import { detectAcquisition, knownAcquirers } from "./acquisition.ts";
+import { acquirerIn, detectAcquisition, knownAcquirers } from "./acquisition.ts";
 import { detectClosure } from "./closure.ts";
 import { normalizeForMatch, quoteIsNotASentence } from "./evidence.ts";
 import { sectorDecision } from "./techOverrides.ts";
@@ -188,7 +188,7 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
   }
   // Last: where the source stands (a data platform, a republisher with no allowed original…) — after the field's own checks, which say more.
   if (["news", "tags", "round", "competitor_declared", "competitor_market", "founder"].includes(r.field) && url) {
-    const standing = roundSourceStanding(url, { companyName, isCompanySite: ownDomain(url, companyName), content: quote, headline: r.field === "news" ? r.after : null, acquirers: o.acquirers });
+    const standing = roundSourceStanding(url, { companyName, isCompanySite: ownDomain(url, companyName), content: quote, headline: r.field === "news" ? r.after : null, acquirers: r.field === "news" ? [...(o.acquirers ?? []), ...(() => { const h = acquirerIn(String(r.after).replace(/^\d{4}-\d{2}-\d{2}\s+—\s+/, ""), companyName); return h ? [h.acquirer] : []; })()] : o.acquirers });
     if (standing.kind === "denied") return `its source is not allowed (${standing.why})`;
   }
   return null;
@@ -230,10 +230,17 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
         // The type is stated by the round's own quote, or by another source of the same event: a news headline of the company that names the type beside the same amount ("…Paradox Raises $200M Series C")
         // (owner, regression gate: Paradox). Unknown only when no source says it.
         const amountOfRow = (() => { const m = r.after.match(/\$([\d.,]+)\s*([KMB])?\b/i); if (!m) return null; const mult = m[2]?.toUpperCase() === "B" ? 1e9 : m[2]?.toUpperCase() === "K" ? 1e3 : 1e6; return Number(m[1].replace(/,/g, "")) * mult; })();
-        const sameEventRow = t === "Other" || !amountOfRow ? undefined : rows.find((x) => x.field === "news" && fold(String(x.company ?? "")) === fold(companyName) && statedRoundLabels(`${x.after} ${x.quote ?? ""}`).includes(t) && extractNumbersFromText(`${x.after} ${x.quote ?? ""}`).some((n) => Math.abs(n - amountOfRow) / amountOfRow < 0.006) && !rowProblem(x, companyName, today, 0, o));
+        const sameEventRow = !amountOfRow ? undefined : rows.find((x) => x.field === "news" && fold(String(x.company ?? "")) === fold(companyName) && (t === "Other" ? statedRoundLabels(`${x.after} ${x.quote ?? ""}`).length > 0 : statedRoundLabels(`${x.after} ${x.quote ?? ""}`).includes(t)) && extractNumbersFromText(`${x.after} ${x.quote ?? ""}`).some((n) => Math.abs(n - amountOfRow) / amountOfRow < 0.006) && !rowProblem(x, companyName, today, 0, o));
+        // A round typed "Other" (or "Unknown") whose event another source names ("Raises $200M Series C") takes that type; it is cited with it (the amount is in the headline as well).
+        const newsType = sameEventRow && t === "Other" ? statedRoundLabels(`${sameEventRow.after} ${sameEventRow.quote ?? ""}`)[0] : undefined;
+        if (newsType) {
+          dropped.push(`round: type Other → ${newsType} — the headline of the same event states it`);
+          r = { ...r, after: r.after.replace(/^Other\b/, newsType) };
+          if (r.payload) { try { const pl = JSON.parse(String(r.payload)); if (pl.round) pl.round.round_type = newsType; r = { ...r, payload: JSON.stringify(pl) }; } catch { /* keep */ } }
+        }
         const stated = !!sameEventRow || (t === "Other" ? refineRoundType("Other", amountQuote) === "Other" : statedRoundLabels(amountQuote).includes(t));
         // The source that states the type is cited with it: the round's quote and source become that headline and its page (the amount is in it as well).
-        if (sameEventRow && !statedRoundLabels(amountQuote).includes(t)) r = { ...r, quote: sameEventRow.after.replace(/^\d{4}-\d{2}-\d{2}\s+—\s+/, ""), source_url: sameEventRow.source_url };
+        if (sameEventRow && !statedRoundLabels(amountQuote).includes(newsType ?? t)) r = { ...r, quote: sameEventRow.after.replace(/^\d{4}-\d{2}-\d{2}\s+—\s+/, ""), source_url: sameEventRow.source_url };
         if (!stated) {
           dropped.push(`round: type ${t} → Unknown — no quote of the round names it`);
           r = { ...r, after: r.after.replace(/^[A-Za-z+\- ]+?(?= \$| amount)/, "Unknown") };

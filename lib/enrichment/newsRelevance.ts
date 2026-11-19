@@ -199,7 +199,7 @@ export function dedupeNewsEvents<T extends { title: string; url: string; publish
   for (const it of items) {
     const i = kept.findIndex((k) => sameNewsEvent(it, k, lead(it), lead(k)));
     if (i < 0) kept.push(it);
-    else if (rank(it) < rank(kept[i])) kept[i] = it;
+    else if (rank(it) < rank(kept[i]) || (rank(it) === rank(kept[i]) && prefer(it) && it.published_date && kept[i].published_date && it.published_date < kept[i].published_date)) kept[i] = it;   // of equal standing the earlier announcement
   }
   return kept;
 }

@@ -316,6 +316,8 @@ function recordCost(
   summary.totalCacheReadTokens += read;
   summary.totalCostUsd += callCostUsd(model, usage);
   LLM.add(model, usage);
+  // A hard stop (owner, 2026-11-19: MAX_COST=3 on the one-time recording run): the model cost of this run is over the cap — nothing more is asked, nothing is lost (replies are recorded as they come).
+  if (process.env.MAX_COST && summary.totalCostUsd > Number(process.env.MAX_COST)) { console.error(`⛔  MAX_COST=$${process.env.MAX_COST} reached (model cost $${summary.totalCostUsd.toFixed(2)}) — stopped.`); process.exit(3); }
 }
 
 

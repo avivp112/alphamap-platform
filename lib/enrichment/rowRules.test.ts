@@ -788,3 +788,37 @@ describe("regression gate round 2 (owner, 2026-11-19)", () => {
     expect(g.rows.find((r) => r.field === "round")?.quote).toMatch(/Raises \$200M Series C/);
   });
 });
+
+import { detectAcquisition as detect2 } from "./acquisition";
+import { explodeAcquired, compare as compare2 } from "./regressionGate";
+describe("regression gate round 3 (owner, 2026-11-19)", () => {
+  it("Paradox: a round typed Other takes the type the same event's headline states, and cites it", () => {
+    const g = applyRowRules([
+      { company: "Paradox AI", field: "round", after: "Other $200M · 2021-12 (month only)", source_url: "https://siliconangle.com/2021/12/28/x", quote: "Paradox valued at $1.5B following $200M funding round" },
+      { company: "Paradox AI", field: "news", after: "2021-12-27 — On a Mission to Build the Next Generation of HR Software, Paradox Raises $200M Series C", source_url: "https://www.prnewswire.com/news-releases/x", quote: "Paradox Raises $200M Series C" },
+    ] as never, "Paradox AI", "2026-11-19");
+    const r = g.rows.find((x) => x.field === "round")!;
+    expect(r.after).toMatch(/^Series C \$200M/);
+    expect(r.quote).toMatch(/Raises \$200M Series C/);
+    // no news that says it: Unknown
+    expect(applyRowRules([{ company: "Paradox AI", field: "round", after: "Other $200M · 2021-12 (month only)", source_url: "https://siliconangle.com/2021/12/28/x", quote: "valued at $1.5B following $200M funding round" }] as never, "Paradox AI", "2026-11-19").rows[0].after).toMatch(/^Unknown/);
+  });
+  it("Dietly: a controlling stake stated by a report of the same days gives majority_acquired, dated by the first announcement", () => {
+    const r = detect2([{ url: "a", title: "Żabka przejmuje platformę Dietly.pl", date: "2021-06-01" }, { url: "b", title: "Żabka Group Acquires Controllng Stake In Dietary Marketplace Dietly.pl", date: "2021-06-03" }], "Dietly");
+    expect(r).toMatchObject({ status: "majority_acquired", date: "2021-06-01" });
+    // a full purchase years later is not part of it
+    expect(detect2([{ url: "a", title: "Acme acquires a majority stake in Foo Labs", date: "2020-01-01" }, { url: "b", title: "Acme acquires Foo Labs", date: "2023-05-05" }], "Foo Labs")?.status).toBe("acquired");
+  });
+  it("gate: a purchase is compared by content, whether one row or three", () => {
+    const base = [{ company: "Kashat", field: "acquired", value: "2025-01-13" }, { company: "Kashat", field: "acquired", value: "acquired" }, { company: "Kashat", field: "acquired", value: "Raseedi" }];
+    const now = [{ company: "Kashat", field: "acquired", value: "status = acquired · Acquired by Raseedi (2025-01-13)" }];
+    const c = compare2(base, now);
+    expect(c.lost).toEqual([]);
+    expect(explodeAcquired(now)).toHaveLength(3);
+    expect(compare2(base, [{ company: "Kashat", field: "acquired", value: "status = acquired · Acquired by Other Co (2025-01-13)" }]).lost.map((l) => l.value)).toEqual(["Raseedi"]);
+  });
+  it("Medipass: the buyer's own announcement stands on a single headline", () => {
+    const g = applyRowRules([{ company: "Medipass", field: "news", after: "2021-05-12 — Tyro to acquire Medipass Solutions", source_url: "https://www.tyro.com/media/tyro-to-acquire-medipass-solutions/", quote: "" }] as never, "Medipass", "2026-11-19");
+    expect(g.rows).toHaveLength(1);
+  });
+});

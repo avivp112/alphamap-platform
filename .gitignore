@@ -31,3 +31,5 @@ regression/out/
 regression_pass_*.json
 rejected_all.csv
 rejected_sample_30.csv
+news_event_audit.csv
+regression_last.txt

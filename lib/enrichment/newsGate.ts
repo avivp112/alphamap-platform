@@ -10,7 +10,7 @@
  */
 import { isListingOrSponsoredUrl } from "./pageKind.ts";
 import { completeFromSlug } from "./newsRelevance.ts";
-import { acquirerIn } from "./acquisition.ts";
+import { acquirerIn, buyerKey } from "./acquisition.ts";
 import { newsProblem, ownSiteNewsOk, dateFromUrl, dateFromHtml, dedupeNewsEvents, cleanHeadline, headlineLooksCut, headlineIncomplete, titleFromHtml } from "./newsRelevance.ts";
 
 export interface NewsItem { title: string; url: string; published_date?: string | null; title_joined?: boolean; [k: string]: unknown }
@@ -113,7 +113,7 @@ export function finishNews<T extends NewsItem>(items: T[], d: Pick<NewsDeps, "is
   // One purchase is one event, whatever the days between the reports: of the items that say the same buyer bought the company, the earliest announcement stays (owner, regression gate: Humi's
   // "to be acquired" of 2026-05-20, read from the page's code, beside the announcement of 2025-01-08). A different buyer is another purchase (Six Degrees: Charlesbank 2015, Claranet 2026).
   if (d.companyName) {
-    const f = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+    const f = buyerKey;
     const buyer = (x: T) => { const h = acquirerIn(x.title, d.companyName!); return h ? f(h.acquirer) : ""; };
     const first = new Map<string, T>();
     for (const x of kept) { const b = buyer(x); if (!b) continue; const c = first.get(b); if (!c || String(x.published_date) < String(c.published_date)) first.set(b, x); }

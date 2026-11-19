@@ -33,7 +33,7 @@ function idsOf(n: number): string[] {
 }
 const readCsv = (p: string) => { const [head, ...body] = parseCsv(readFileSync(p, "utf8")); return { head, body, ix: (c: string) => { const e = head.findIndex((h) => h === c); return e >= 0 ? e : head.findIndex((h) => h.startsWith(c)); } }; };
 
-interface RunResult { n: number; rows: RunRow[]; rejections: Rejected[]; acceptance: Array<{ id: string; severity: string; pass: boolean; detail: string }>; cost: number; companies: number; misses: string[]; live: string; diag: Record<string, string[]> }
+interface RunResult { n: number; rows: RunRow[]; rejections: Rejected[]; acceptance: Array<{ id: string; severity: string; pass: boolean; detail: string }>; cost: number; companies: number; misses: string[]; live: string; diag: Record<string, string[]>; runLog: string[] }
 
 /** One batch, clean slate, from the recordings. */
 function runBatch(n: number, fill = false): RunResult {
@@ -43,7 +43,7 @@ function runBatch(n: number, fill = false): RunResult {
   console.log(`▶ batch ${n}: ${ids.length} compan(ies), REPLAY from the recordings …`);
   const child = spawnSync("npx", ["tsx", "scripts/bulk_enrich_v2.ts"], {
     env: { ...process.env, PILOT: "true", DRY_RUN: "true", REGRESSION: "1", REGRESSION_DIR: dir, REPLAY: "1", KNOWN_SOURCES: "off", ALL_FIELDS: "true", SITEMAP: "on", BATCH_NO: String(n),
-      CONCURRENCY: process.env.CONCURRENCY ?? "10", PILOT_MAX_COMPANIES: String(Math.max(ids.length, 1)), ONLY: ids.join(","), PILOT_REPORT: `${dir}/pilot_report.csv`, GIT_CHECK: "off", PREFLIGHT: "off", ...(fill ? { REPLAY_FILL: "1" } : {}) },
+      CONCURRENCY: process.env.CONCURRENCY ?? "10", PILOT_MAX_COMPANIES: String(Math.max(ids.length, 1)), ONLY: ids.join(","), PILOT_REPORT: `${dir}/pilot_report.csv`, GIT_CHECK: "off", PREFLIGHT: "off", ...(fill ? { REPLAY_FILL: "1", MAX_COST: process.env.MAX_COST ?? "3" } : {}) },
     encoding: "utf8", maxBuffer: 1 << 29,
   });
   writeFileSync(`${dir}/run.log`, `${child.stdout ?? ""}\n${child.stderr ?? ""}`);
@@ -79,7 +79,7 @@ function runBatch(n: number, fill = false): RunResult {
     let end = runLog.findIndex((l, i) => i > at && /^── .* \(/.test(l)); if (end < 0) end = runLog.length;
     diag[c.id] = runLog.slice(at, end).filter((l) => /🏁|acquisition|🚫  (news|Acquired|Seed|Series|Other|Growth)|🚦|🏷️|📅  news|\[DRY\] would write (acquired|round|tags|news)|✅ \d+ field|🟠 /.test(l) && !/🌐/.test(l)).map((l) => l.trim().slice(0, 190)).slice(0, 36);
   }
-  return { n, rows, rejections, acceptance, cost, companies: ids.length, misses, live, diag };
+  return { n, rows, rejections, acceptance, cost, companies: ids.length, misses, live, diag, runLog };
 }
 
 function baselineFrom(res: RunResult, source: string): Baseline {
@@ -151,8 +151,13 @@ if (cmd === "fill-estimate") {
 if (cmd === "fill") {
   const batches = (args.length ? args.map(Number) : writtenBatches()).filter((x) => Number.isInteger(x) && x > 0);
   let cost = 0;
+  const cap = Number(process.env.MAX_COST ?? 3);
   for (const n of batches) {
-    const res = runBatch(n, true); cost += res.cost;
+    let res: RunResult;
+    if (cap - cost <= 0.01) { console.log(`── batch ${n}: not run — the cap of $${cap} is spent`); process.exit(3); }
+    process.env.MAX_COST = String(cap - cost);
+    try { res = runBatch(n, true); } catch (e) { console.log(`── batch ${n}: stopped — ${String((e as Error).message).slice(0, 300)}${/MAX_COST/.test(String((e as Error).message)) ? "  (the cap was reached; what was recorded stays)" : ""}`); process.exit(3); }
+    cost += res.cost;
     console.log(`── batch ${n}: recordings completed · ${res.misses.length ? `still missing for ${res.misses.length} company(ies)` : "no response missing"}${res.live ? ` · ${res.live}` : ""} · model cost $${res.cost.toFixed(2)}`);
   }
   console.log(`cost of this run: $${cost.toFixed(2)} (web requests not included). Run the gate again: npx tsx scripts/regression.ts`);
@@ -182,6 +187,14 @@ for (const n of batches) {
   if (res.live) console.log(`   ${res.live.slice(0, 200)}`);
   for (const e of errs) { failed = true; console.log(`   ❌ acceptance ${e.id}: ${e.detail.slice(0, 160)}`); for (const l of res.diag[e.id] ?? []) console.log(`        │ ${l}`); }
   for (const l of cmp.lost) { failed = true; console.log(`   ❌ LOST ${l.company} · ${l.field} · ${l.value.slice(0, 90)}   [${l.reason_code}]`); }
+  // Why: that company's own lines of the run (what it found, dropped and why), once per company.
+  for (const co of [...new Set(cmp.lost.map((l) => l.company))].slice(0, 12)) {
+    const at = res.runLog.findIndex((l) => new RegExp(`^── ${co.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\(`).test(l));
+    if (at < 0) { console.log(`        │ ${co}: no block in the run's log`); continue; }
+    let end = res.runLog.findIndex((l, i) => i > at && /^── .* \(/.test(l)); if (end < 0) end = res.runLog.length;
+    console.log(`        │ ── ${co}`);
+    for (const l of res.runLog.slice(at, end).filter((x) => /🏁|🚫  (news|Acquired)|🚦|🧹|📅  news|\[DRY\] would write (acquired|news)|REPLAY MISS/.test(x) && !/🌐/.test(x)).map((x) => x.trim().slice(0, 190)).slice(0, 30)) console.log(`        │ ${l}`);
+  }
   if (cmp.changed.length) { console.log("   changed (one value per company, a different one now — not a failure, to look at):"); for (const c of cmp.changed.slice(0, 15)) console.log(`   ~ ${c.company} · ${c.field}: ${c.was.slice(0, 50)} → ${c.now.slice(0, 50)}`); if (cmp.changed.length > 15) console.log(`   … and ${cmp.changed.length - 15} more`); }
   if (cmp.added.length) { console.log("   new values:"); for (const a of cmp.added.slice(0, 25)) console.log(`   + ${a.company} · ${a.field} · ${a.value.slice(0, 90)}`); if (cmp.added.length > 25) console.log(`   … and ${cmp.added.length - 25} more`); }
 }

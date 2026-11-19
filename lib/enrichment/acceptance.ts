@@ -2,7 +2,7 @@
  * lib/enrichment/acceptance.ts — automatic acceptance checks of a batch report (owner, round 10): every fix the owner asked for is a line of eval/acceptance_batch5.json with its
  * expected result, and the report is not sent until every line says PASS. Reads the report rows (pilot_report_dry.csv) and the list of companies not enriched.
  */
-import { acquirerIn } from "./acquisition.ts";
+import { acquirerIn, buyerKey } from "./acquisition.ts";
 import { quoteIsNotASentence } from "./evidence.ts";
 import { roleRegex } from "./people.ts";
 import { rowProblem, roundKey, cleanCompetitorName } from "./rowRules.ts";
@@ -142,7 +142,7 @@ export function runAcceptance(checks: Check[], rows: Row[], notEnriched: string[
         for (const r of rows.filter((x) => x.field === "news")) {
           const m = r.after.match(/^(\d{4}-\d{2}-\d{2})\s+—\s+(.*)$/); if (!m) continue;
           const hit = acquirerIn(m[2], r.company); if (!hit) continue;
-          const k = `${fold(r.company)}|${fold(hit.acquirer)}`, prev = seen.get(k);
+          const k = `${fold(r.company)}|${buyerKey(hit.acquirer)}`, prev = seen.get(k);
           if (prev && prev.after.slice(0, 10) !== m[1]) bad.push(prev, r); else if (!prev) seen.set(k, r);
         }
         return { ...base, pass: bad.length === 0, detail: bad.length ? `the same purchase twice: ${[...new Set(bad.map((r) => `${r.company} ${r.after.slice(0, 70)}`))].slice(0, 3).join(" | ")}` : "one news item per purchase", offenders: bad };
