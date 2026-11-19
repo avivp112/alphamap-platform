@@ -18,7 +18,7 @@
 import { pickDevLinks } from "./devLinks";
 import Anthropic from "@anthropic-ai/sdk";
 import {
-  verifyDomainMatch, webSearch, readPageCached, fetchPageHtml, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, fetchArticleTexts,
+  verifyDomainMatch, webSearch, readPageCached, fetchPageHtml, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, homepageReadFailure, websiteRedirect, fetchArticleTexts,
   searchMostlyFailed, sitemapStats, type SearchProviderState,
 } from "./searchProviders.ts";
 import { filterByEntity, deriveIdentityKeywords, nameQualifiersOnOwnSite, isNamesakeDrop, type EntityAnchors } from "./entity.ts";
@@ -40,6 +40,7 @@ import { roundsFromNews } from "./newsRounds.ts";
 import { companyLanguage, localQueries, type Lang } from "./localSearch.ts";
 import { traceOf } from "./runTrace.ts";
 import { pageNamesCompany } from "./ownDomain.ts";
+import { websiteDecision } from "./websiteDecisions.ts";
 import { translateItems } from "./translate.ts";
 import { foundedYearFromSite, copyrightStartYear, foundedInCityYear } from "./siteFacts.ts";
 import { storedRejection, rememberRejection } from "./techMemory.ts";
@@ -394,6 +395,8 @@ export async function collectCompany(
   // skips them; both modes record what they send).
   const seen = ctx.seen;
   const gapFillDue = ctx.update && !!seen?.gapFillDue();
+  // An address the owner decided on (eval/website_decisions.json) replaces the one on file for this run.
+  { const decided = ctx.update ? null : websiteDecision(row.name); if (decided && decided !== row.website) { console.log(`    🧭  Address decided by the owner: ${decided} (on file: ${row.website ?? "none"}).`); row = { ...row, website: decided }; } }
 
   // The owner's hard list of not-technology companies: decided in code, before the model and before any search.
   const overridden = ctx.update ? null : techOverride(row.name);
@@ -425,10 +428,14 @@ export async function collectCompany(
   // The homepage is fetched first so a clearly non-tech company is
   // rejected before paying for ~11 searches and three extraction calls.
   let websitePages = ctx.update ? [] : await fetchCompanyWebsitePages(effectiveWebsite, searchState);
-  if (effectiveWebsite && !ctx.update && websitePages.length === 0) {
+  // A site the READING SERVICES failed on (Jina 4xx / 5xx, Serper 4xx / 5xx, aborted) while its own server never proved it dead is fetch_failed, not domain_unresolved (owner, 2026-11-19): it is no
+  // website to fix, no alternative domain is searched for it, and nothing about it is remembered. Run it again.
+  const readFailure = effectiveWebsite && !ctx.update && websitePages.length === 0 ? homepageReadFailure(effectiveWebsite) : null;
+  if (effectiveWebsite && !ctx.update && websitePages.length === 0 && readFailure !== "service") {
     console.log(`    🛠️   No page of ${effectiveWebsite} could be read — listed as a website to fix.`);
     ctx.onWebsiteIssue?.("unreadable", `No page of ${effectiveWebsite} could be read (Jina Reader and Serper scrape both failed).`);
   }
+
   // A site that belongs to another company now (acquired, rebranded): nothing is described from it (owner, 2026-11-09).
   let siteOwnerIssue = ctx.update ? null : siteBelongsToAnotherCompany(row.name, effectiveWebsite, websitePages);
   // The address on file is another business, or nothing of it can be read: the company's own site is looked for by name, country and field (domainResolve.ts). Found with
@@ -446,7 +453,33 @@ export async function collectCompany(
     const v = await judgeSite(ctx.anthropic, ctx.models.enrich, { name: row.name, country: row.country, industry: row.industry, description: row.description }, readable[0].content, readable[0].url, domain).catch(() => null);
     if (v?.is_the_company === false && v.confidence === "high") { addressMismatch = true; console.log(`    🧭  The homepage of ${row.website} is another business: ${v.reason ?? ""}`); }
   }
-  if (!ctx.update && process.env.DOMAIN_RESOLVE !== "false" && (readable.length === 0 || addressMismatch)) {
+  // The address leads to another company's site, and the company was acquired by that company (owner, 2026-11-19: nordigen.com → GoCardless): it is an acquired company, collected as usual — from
+  // everything but that site (nothing is read from the buyer's pages as if they were the company's). Not "another business", and no other domain is searched for it.
+  let movedToBuyer: string | null = null;
+  const movedTo = !ctx.update && effectiveWebsite && (readable.length === 0 || addressMismatch || !readable.slice(0, 3).some((p) => pageNamesCompany({ content: p.content }, row.name))) ? websiteRedirect(effectiveWebsite) : null;
+  if (movedTo) {
+    try {
+      const label = new URL(movedTo).hostname.replace(/^www\./, "").split(".")[0].toLowerCase().replace(/[^a-z0-9]/g, "");
+      const found = (await Promise.all([`"${row.name}" acquired`, `"${row.name}" acquired by`].map((q) => webSearch(q, "acquired_check", searchState)))).flat();
+      for (const r of found) {
+        const hit = acquirerIn((r.title ?? "").trim(), row.name);
+        const a = hit?.acquirer.toLowerCase().replace(/[^a-z0-9]/g, "") ?? "";
+        if (hit && a.length >= 3 && (label.includes(a) || a.includes(label))) { movedToBuyer = hit.acquirer; break; }
+      }
+    } catch { /* no verdict: the usual domain path follows */ }
+    if (movedToBuyer) {
+      console.log(`    🏁  The address ${effectiveWebsite} leads to ${movedTo}, the site of its buyer ${movedToBuyer}: an acquired company, collected as usual; nothing is read from that site as the company's own.`);
+      websitePages = []; effectiveWebsite = null; domain = null; anchor = row.country ? ` ${row.country} (startup OR tech company)` : "";
+      addressMismatch = false;
+      siteOwnerIssue = siteOwnerIssue ?? `the address moved to its buyer ${movedToBuyer} (${movedTo})`;
+    }
+  }
+  if (!ctx.update && !movedToBuyer && process.env.DOMAIN_RESOLVE !== "false" && (readable.length === 0 || addressMismatch)) {
+    if (readFailure === "service" && readable.length === 0 && !addressMismatch) {
+      console.log(`    🔌  fetch_failed: the reading services failed for ${effectiveWebsite} (not a domain problem) — no other domain is searched, nothing is remembered; run it again.`);
+      bump(stats.droppedByReason, "fetch_failed");
+      return { outcome: "no_data", reason: "fetch_failed", detail: `address ${row.website} — Jina Reader / Serper scrape failed (4xx, 5xx or aborted); the site was not shown to be dead` };
+    }
     const found = await resolveDomain(
       { name: row.name, country: row.country, industry: row.industry, description: row.description },
       domain,

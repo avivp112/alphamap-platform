@@ -6,10 +6,13 @@ const fold = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p
 
 export const TECH_OVERRIDES: ReadonlyArray<{ name: string; reason: string }> = [
   "noo.ma", "Plott", "Mototech", "Spin Studio", "zpharm", "Moft", "Routing", "ALUS Canada", "MindUP", "Grind", "Studio Feixen",
-].map((name) => ({ name, reason: "the owner decided: not a technology company (batch 5, round 10)" }));
+].map((name) => ({ name, reason: "the owner decided: not a technology company (batch 5, round 10)" })).concat([
+  { name: "3D Printing Systems", reason: "the owner decided: not a technology company — a reseller of 3D printers and scanners (batch 8, 2026-11-19)" },
+]);
 
 /** Decided as technology by the owner (batch 6): never rejected by the early check, the stored decisions or the profile call. */
-export const TECH_ACCEPTED: readonly string[] = ["Datahut", "Holu"];
+// Batch 8 (2026-11-19): Screaming Frog (its product is the SEO Spider) and Lendbox (a peer-to-peer lending platform).
+export const TECH_ACCEPTED: readonly string[] = ["Datahut", "Holu", "Screaming Frog", "Lendbox"];
 const ACCEPTED = new Set(TECH_ACCEPTED.map(fold));
 export const techAccepted = (companyName: string): boolean => ACCEPTED.has(fold(companyName));
 

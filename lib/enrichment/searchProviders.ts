@@ -1,3 +1,4 @@
+import { readFileSync } from "fs";
 /**
  * lib/enrichment/searchProviders.ts — v2's Serper/Tavily/Jina calling code.
  * Ground rule 4: "keep the current providers... do not add or remove
@@ -580,6 +581,37 @@ async function fetchViaSerperScrape(url: string, state: SearchProviderState): Pr
   }
 }
 
+/**
+ * Why a home page could not be read, by site (owner, 2026-11-19: 17 sites of batch 8 were "domain_unresolved" because Jina answered 422 and Serper 400 — the services failed, not the domains).
+ * `service`: the readers failed (HTTP 4xx / 5xx, aborted, empty) and the site's own server did not prove itself dead; `dead`: the site's server itself does not answer (DNS, refused, certificate).
+ */
+const readFailures = new Map<string, Record<string, string>>();
+const hostKey = (url: string) => { try { return new URL(/^https?:/.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, "").toLowerCase(); } catch { return url; } };
+const redirects = new Map<string, string>();
+/** Where a site's address ends up when it leads to another origin (nordigen.com → gocardless.com), when a read saw it. */
+export function websiteRedirect(website: string): string | null { return redirects.get(hostKey(website)) ?? null; }
+
+/**
+ * Pages that are not read at all (owner, 2026-11-19: a news page of onlyfanstg.shop turned up among Heartland's search results): domains of the abuse-prone cheap top-level domains, adult / gambling /
+ * pharmacy-spam words in the host, and the owner's list (eval/blocked_domains.json). Only third-party pages: a company's own home page is read whatever it is.
+ */
+const SUSPICIOUS_TLD = /\.(?:shop|lol|top|xyz|click|buzz|icu|cfd|sbs|rest|monster|cyou|quest|bond|gq|ml|cf|tk|ga|work|fit|loan|win|date|stream|download|racing|review|trade|webcam|party)$/i;
+const SUSPICIOUS_WORD = /onlyfans|porn|xxx|sex|escort|casino|betting|poker|viagra|cialis|payday|giveaway|jackpot|nsfw/i;
+let blockedFile: string[] | null = null;
+export function suspiciousUrl(url: string): boolean {
+  const host = hostKey(url);
+  if (blockedFile === null) { try { blockedFile = (JSON.parse(readFileSync("eval/blocked_domains.json", "utf8")) as { domains?: string[] }).domains ?? []; } catch { blockedFile = []; } }
+  return SUSPICIOUS_TLD.test(host) || SUSPICIOUS_WORD.test(host) || blockedFile.some((d) => host === d || host.endsWith(`.${d}`));
+}
+
+export function homepageReadFailure(website: string): "service" | "dead" | null {
+  const f = readFailures.get(hostKey(website));
+  if (!f) return null;
+  if (/ENOTFOUND|EAI_AGAIN|EAI_NODATA|getaddrinfo|ECONNREFUSED|ERR_TLS|CERT_|certificate/i.test(f["direct"] ?? "")) return "dead";
+  const service = (x?: string) => !x || /^HTTP [45]\d\d$|abort|timeout|timed out|threw|fetch failed|empty page/i.test(x);
+  return service(f["Jina Reader"]) && service(f["Serper scrape"]) ? "service" : null;
+}
+
 /** Jina Reader first; Serper scrape when Jina could not read it. */
 /** The page straight from its server (no reader service between), as text. */
 async function fetchDirect(url: string, ms = 10_000): Promise<string | null> {
@@ -587,6 +619,7 @@ async function fetchDirect(url: string, ms = 10_000): Promise<string | null> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), ms);
     const res = await fetch(url, { signal: controller.signal, redirect: "follow", headers: { "user-agent": "Mozilla/5.0 (compatible; AlphaMapBot)", accept: "text/html,application/xhtml+xml" } }).finally(() => clearTimeout(timer));
+    try { const fin = new URL(res.url); if (hostKey(res.url) !== hostKey(url)) redirects.set(hostKey(url), fin.origin); } catch { /* no final address */ }
     if (!res.ok) { lastFailure = `HTTP ${res.status}`; return null; }
     if (!/html|text/.test(res.headers.get("content-type") ?? "")) { lastFailure = `not a web page (${res.headers.get("content-type") ?? "no type"})`; return null; }
     const text = htmlToText(await res.text());
@@ -608,8 +641,10 @@ async function fetchFromArchive(url: string): Promise<string | null> {
  */
 async function readPage(url: string, state: SearchProviderState, fallbacks = false): Promise<{ text: string; provider: Provider } | null> {
   const trail: string[] = [];
-  const step = (name: string) => { trail.push(`${name} — ${lastFailure || "nothing"}`); lastFailure = ""; };
+  const fail: Record<string, string> = {};
+  const step = (name: string) => { fail[name] = lastFailure; trail.push(`${name} — ${lastFailure || "nothing"}`); lastFailure = ""; };
   lastFailure = "";
+  if (!fallbacks && suspiciousUrl(url)) { console.log(`    🛑  ${url} is not read — a suspicious domain (a cheap top-level domain, an adult / gambling word, or the owner's blocked list).`); return null; }
   const viaJina = await fetchViaJinaReader(url, state);
   if (viaJina) return { text: viaJina, provider: "jina" };
   step("Jina Reader");
@@ -629,6 +664,7 @@ async function readPage(url: string, state: SearchProviderState, fallbacks = fal
   if (!lastFailure) lastFailure = archived ? "snapshot too short" : "no snapshot";
   step("Internet Archive");
   console.log(`    📡  ${url} could not be read — ${trail.join("; ")}.`);
+  readFailures.set(hostKey(url), fail);
   return null;
 }
 
@@ -814,6 +850,7 @@ export async function fetchCompanyWebsitePages(
     const origin = finalOriginIn(homeRead.text);
     if (origin && bare(new URL(origin).hostname) !== bare(new URL(root).hostname)) {
       console.log(`    🔀  ${root} leads to ${origin}: its pages are read there.`);
+      redirects.set(hostKey(root), origin);
       root = origin; urls = candidatePaths.map((path) => root.replace(/\/+$/, "") + path);
     } else if (looksLikeRealContent(homeRead.text)) {
       fetched.set(home, { content: homeRead.text, provider: homeRead.provider, cached: !!cachedHome });
