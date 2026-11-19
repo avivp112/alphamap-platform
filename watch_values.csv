@@ -1,2 +1,1 @@
 batch,company,field,value,reason
-7,TrustLayer,tags,Email Security,"new in the gate (2026-11-19): looks wrong for TrustLayer — check against its description before tags of batch 7 are written"

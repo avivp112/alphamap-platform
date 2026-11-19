@@ -942,10 +942,18 @@ export async function writeCollected(
         if (parsed.type && parsed.type !== r.round_type) r.round_type = parsed.type as typeof r.round_type;
         if (!parsed.lead && r.lead_investor) r.lead_investor = null as never;
       }
+      // A round whose type another source of the same event states is cited with that source: its page and its headline (owner, regression gate: Paradox — never "Series C" with a quote that does not say it).
+      for (const [i, c] of g.cited) {
+        const l = reportLines[i];
+        if (l.field !== "round" || l.before !== null) continue;
+        const k = insertLines.findIndex((x) => x.i === i);
+        const r = k >= 0 ? plan.inserts[k] : undefined;
+        if (r && c.source_url) (r as { source_url?: string | null }).source_url = c.source_url;
+      }
       if (dropInserts.size) plan.inserts = plan.inserts.filter((_, k) => !dropInserts.has(k));
       for (let i = fieldWrites.length - 1; i >= 0; i--) if (!(fieldWrites[i].field.replace(/^(profile|metrics|market)\./, "") in patch)) fieldWrites.splice(i, 1);
       const out: PilotChange[] = [];
-      reportLines.forEach((l, i) => { if (g.drop.has(i)) return; out.push(g.after.has(i) ? { ...l, after: g.after.get(i)! } : l); });
+      reportLines.forEach((l, i) => { if (g.drop.has(i)) return; const c = g.cited.get(i); out.push(g.after.has(i) || c ? { ...l, ...(g.after.has(i) ? { after: g.after.get(i)! } : {}), ...(c ? { quote: c.quote, source_url: c.source_url } : {}) } : l); });
       reportLines.length = 0; reportLines.push(...out);
       for (const why of g.reasons) console.log(`    🚦    ${why}`);
       if (g.drop.size || g.after.size) console.log(`    🚦  The rules of the report applied before the write: ${g.drop.size} value(s) not written, ${g.after.size} changed${cannotHold.length ? ` · could not be held back: ${cannotHold.join(" | ")}` : ""}`);

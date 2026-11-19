@@ -22,7 +22,7 @@ const db = createClient(url, key, { auth: { persistSession: false } });
   const byId = new Map<string, DbCompany>();
   for (let i = 0; i < ids.length; i += 50) {
     const chunk = ids.slice(i, i + 50);
-    const { data: ss, error } = await db.from("startups").select("id, city, country, founded_year, founding_country, employee_range, employee_count, description, industry, offices, founders, leadership, competitors, news, patents, status").in("id", chunk);
+    const { data: ss, error } = await db.from("startups").select("id, city, country, founded_year, founding_country, employee_range, employee_count, description, industry, offices, founders, leadership, competitors, news, patents, status, acquired_by, exit_date").in("id", chunk);
     if (error) throw new Error(`startups: ${error.message}`);
     const { data: rs, error: e2 } = await db.from("funding_rounds").select("startup_id, round_type, amount_raised, announcement_date").in("startup_id", chunk);
     if (e2) throw new Error(`funding_rounds: ${e2.message}`);

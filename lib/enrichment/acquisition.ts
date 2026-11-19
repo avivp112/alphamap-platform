@@ -123,7 +123,7 @@ const dayDiff = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)
  * so the event is never left with nothing, owner: Medipass). The status is majority_acquired when any report of the event says a controlling / majority stake. A majority stake and a full purchase
  * more than four months apart are two events.
  */
-export function purchaseEvents<T extends PurchaseItem>(items: T[], companyName: string, eligible: (x: T) => boolean = () => true): Array<{ buyer: string; majority: boolean; members: T[]; rep: T }> {
+export function purchaseEvents<T extends PurchaseItem>(items: T[], companyName: string, eligible: (x: T) => boolean = () => true, isParty: (x: T) => boolean = () => false): Array<{ buyer: string; majority: boolean; members: T[]; rep: T }> {
   const dated = items.filter((x) => x.published_date);
   const hits = dated.map((x) => ({ x, h: acquirerIn(x.title, companyName) })).filter((e): e is { x: T; h: { acquirer: string; majority: boolean } } => !!e.h);
   const byBuyer = new Map<string, typeof hits>();
@@ -148,7 +148,9 @@ export function purchaseEvents<T extends PurchaseItem>(items: T[], companyName: 
     if (!ok.length) continue;
     const trusted = ok.filter((x) => x.date_basis !== "code");
     const pool = trusted.length ? trusted : ok;
-    const rep = [...pool].sort((a, b) => String(a.published_date).localeCompare(String(b.published_date)) || (hits.some((e) => e.x === b) ? 1 : 0) - (hits.some((e) => e.x === a) ? 1 : 0))[0];
+    // Always the same one, whatever the order the searches returned them in: a party's own announcement (the company's, the buyer's), then the earliest date, then the report that states the purchase, then the address.
+    const isHit = (x: T) => hits.some((e) => e.x === x);
+    const rep = [...pool].sort((a, b) => (isParty(b) ? 1 : 0) - (isParty(a) ? 1 : 0) || String(a.published_date).localeCompare(String(b.published_date)) || (isHit(b) ? 1 : 0) - (isHit(a) ? 1 : 0) || a.url.localeCompare(b.url))[0];
     out.push({ buyer: first.h.acquirer, majority, members, rep });
     void key;
   }

@@ -869,3 +869,35 @@ describe("gate comparison (owner, 2026-11-19)", () => {
     expect(c.added.filter((v) => v.field === "news")).toEqual([]);
   });
 });
+
+import { gateLines } from "./reportGate";
+import { isWritten } from "./writtenCheck";
+describe("regression gate round 5 (owner, 2026-11-19)", () => {
+  it("a round whose type comes from another source is cited with that source and headline", () => {
+    const lines = [
+      { field: "round", after: "Other $200M · 2021-12 (month only)", source_url: "https://siliconangle.com/2021/12/28/x", quote: "Paradox valued at $1.5B following $200M funding round" },
+      { field: "news", after: "2021-12-27 — On a Mission to Build the Next Generation of HR Software, Paradox Raises $200M Series C", source_url: "https://www.prnewswire.com/news-releases/x", quote: "" },
+    ];
+    const g = gateLines(lines as never, "Paradox AI", "2026-11-19");
+    expect(g.after.get(0)).toMatch(/^Series C \$200M/);
+    expect(g.cited.get(0)).toMatchObject({ source_url: "https://www.prnewswire.com/news-releases/x" });
+    expect(g.cited.get(0)!.quote).toMatch(/Raises \$200M Series C/);
+  });
+  it("the database check compares status, buyer and date", () => {
+    const r = { company_id: "1", company: "Kashat", field: "acquired", after: "status = acquired · Acquired by Raseedi (2025-01-14)" };
+    expect(isWritten(r, { id: "1", status: "acquired", acquired_by: "Raseedi", exit_date: "2025-01-14", rounds: [], headcount: [] })).toBe("yes");
+    expect(isWritten(r, { id: "1", status: "active", acquired_by: null, exit_date: null, rounds: [], headcount: [] })).toBe("no");
+    expect(isWritten(r, { id: "1", status: "acquired", acquired_by: "Raseedi", exit_date: "2025-01-13", rounds: [], headcount: [] })).toBe("no");
+  });
+  it("the representative of a purchase does not depend on the order the reports arrive in", () => {
+    const base = [
+      { title: "Claranet acquires Six Degrees", url: "https://www.claranet.com/uk/news/claranet-acquires-six-degrees/", published_date: "2026-06-29", date_basis: "code" },
+      { title: "Claranet picks up Six Degrees | Microscope", url: "https://www.computerweekly.com/microscope/news/366645257/Claranet-picks-up-Six-Degrees", published_date: "2026-06-29", date_basis: "code" },
+      { title: "Claranet Acquires Six Degrees", url: "https://www.6dg.co.uk/press-release/claranet-acquires-six-degrees/", published_date: "2026-06-30", date_basis: "code" },
+    ];
+    const pick = (xs: typeof base) => purchaseEvents(xs as never, "Six Degrees", () => true, (x) => /claranet\.com|6dg\.co\.uk/.test(x.url))[0].rep.url;
+    const want = pick(base);
+    for (const perm of [[0, 1, 2], [2, 1, 0], [1, 2, 0], [1, 0, 2]]) expect(pick(perm.map((i) => base[i]))).toBe(want);
+    expect(want).toMatch(/claranet\.com/);
+  });
+});

@@ -13,6 +13,7 @@ import { completeFromSlug } from "./newsRelevance.ts";
 import { knownAcquirers, purchaseEvents } from "./acquisition.ts";
 import { acquirerIn } from "./acquisition.ts";
 import { rowProblem } from "./rowRules.ts";
+import { isPartyRelease } from "./roundSources.ts";
 import { newsProblem, ownSiteNewsOk, dateFromUrl, dateFromHtml, dedupeNewsEvents, cleanHeadline, headlineLooksCut, headlineIncomplete, titleFromHtml } from "./newsRelevance.ts";
 
 export interface NewsItem { title: string; url: string; published_date?: string | null; title_joined?: boolean; [k: string]: unknown }
@@ -118,7 +119,7 @@ export function finishNews<T extends NewsItem>(items: T[], d: Pick<NewsDeps, "is
     const today = new Date().toISOString().slice(0, 10);
     const buyers = knownAcquirers(dated.map((x) => x.title), d.companyName, 1);
     const eligible = (x: T) => !rowProblem({ field: "news", after: `${x.published_date} — ${x.title}`, source_url: x.url, quote: "" } as never, d.companyName!, today, 0, { acquirers: buyers });
-    for (const ev of purchaseEvents(dated, d.companyName, eligible)) {
+    for (const ev of purchaseEvents(dated, d.companyName, eligible, (x) => d.isOwnSite(x.url) || isPartyRelease(x.url, x.title, { companyName: d.companyName, acquirers: buyers }))) {
       kept = kept.filter((x) => !ev.members.includes(x));
       Object.assign(ev.rep, { event_buyer: ev.buyer, event_majority: ev.majority });
       kept.push(ev.rep);

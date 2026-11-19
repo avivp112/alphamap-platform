@@ -22,6 +22,8 @@ if (!url || !key) { console.error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY ar
 const db = createClient(url, key, { auth: { persistSession: false } });
 const WRITE = process.env.DRY_RUN === "false";
 if (WRITE && process.env.APPROVED_BY !== "aviv") { console.error("⛔  The database is corrected only for values the owner approved: APPROVED_BY=aviv DRY_RUN=false npx tsx scripts/correct_db.ts"); process.exit(1); }
+const skip = (process.env.SKIP ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);   // "Company:column", e.g. SKIP="Dietly:acquired_by"
+const infos: string[] = [];
 const only = (process.env.ONLY ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 const fold = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, "");
 
@@ -51,6 +53,9 @@ interface Change { startup_id: string; company: string; table: "startups" | "fun
         if (!m || /^(?:Unknown|Other)$/.test(m[1])) continue;
         const amount = Number(m[2].replace(/,/g, "")) * (m[3] === "B" ? 1e9 : m[3] === "K" ? 1e3 : 1e6);
         const { data } = await db.from("funding_rounds").select("id, round_type, amount_raised").eq("startup_id", r.id);
+        const same = ((data ?? []) as Array<{ id: string; round_type: string | null; amount_raised: number | null }>).filter((x) => x.amount_raised != null && Math.abs(x.amount_raised - amount) / amount <= 0.01);
+        if (!same.length) infos.push(`${r.company} · round ${m[1].trim()} $${m[2]}${m[3] ?? "M"}: the database has no round of this amount (rounds on file: ${((data ?? []) as Array<{ round_type: string | null; amount_raised: number | null }>).map((x) => `${x.round_type} ${x.amount_raised}`).join(", ") || "none"})`);
+        for (const x of same) if (!/^(?:Unknown|Other)$/i.test(x.round_type ?? "") && fold(x.round_type ?? "") !== fold(m[1])) infos.push(`${r.company} · round $${m[2]}${m[3] ?? "M"}: the database says ${x.round_type}, the gate says ${m[1].trim()} — not changed (only Unknown / Other are corrected)`);
         for (const x of (data ?? []) as Array<{ id: string; round_type: string | null; amount_raised: number | null }>) {
           if (x.amount_raised == null || Math.abs(x.amount_raised - amount) / amount > 0.01) continue;
           if (fold(x.round_type ?? "") === fold(m[1]) || !/^(?:Unknown|Other)$/i.test(x.round_type ?? "")) continue;
@@ -59,6 +64,8 @@ interface Change { startup_id: string; company: string; table: "startups" | "fun
       }
     }
   }
+  for (const i of infos) console.log(`ℹ️  ${i}`);
+  for (let i = changes.length - 1; i >= 0; i--) if (skip.includes(`${changes[i].company}:${changes[i].column}`.toLowerCase())) { console.log(`• skipped (SKIP): ${changes[i].company} ${changes[i].column}`); changes.splice(i, 1); }
   if (!changes.length) { console.log("nothing in the database has a better value in the gate's reports."); return; }
   for (const c of changes) console.log(`${c.company} · ${c.table === "startups" ? c.column : `round ${c.column}`}: ${JSON.stringify(c.old)} ← ${JSON.stringify(c.now)}\n     ${c.source}${c.quote ? `\n     "${c.quote.slice(0, 160)}"` : ""}`);
   if (!WRITE) { console.log(`\n${changes.length} change(s) listed — nothing written. After the owner approves: APPROVED_BY=aviv DRY_RUN=false npx tsx scripts/correct_db.ts`); return; }
@@ -75,4 +82,10 @@ interface Change { startup_id: string; company: string; table: "startups" | "fun
     console.log(up.error ? `✗ ${c.company} ${c.column}: ${up.error.message}` : `✔ ${c.company} ${c.column} corrected`);
   }
   console.log(`recorded under run ${runId}`);
+  // The proof: the rows as they are now.
+  const ids = [...new Set(changes.filter((c) => c.table === "startups").map((c) => c.startup_id))];
+  if (ids.length) {
+    const { data } = await db.from("startups").select("name, status, acquired_by, exit_date").in("id", ids);
+    console.log("\nstartups now:"); for (const x of (data ?? []) as Array<{ name: string; status: string | null; acquired_by: string | null; exit_date: string | null }>) console.log(`  ${x.name.padEnd(14)} status=${x.status} acquired_by=${x.acquired_by} exit_date=${x.exit_date}`);
+  }
 })().catch((e) => { console.error(e); process.exit(1); });

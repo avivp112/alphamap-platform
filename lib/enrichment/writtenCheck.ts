@@ -6,7 +6,7 @@
 export interface ReportRow { company_id: string; company: string; field: string; after: string; source_url?: string }
 export interface DbCompany {
   id: string; city?: string | null; country?: string | null; founded_year?: number | null; founding_country?: string | null; employee_range?: string | null; employee_count?: number | null;
-  description?: string | null; industry?: string | null; offices?: unknown; founders?: unknown; leadership?: unknown; competitors?: unknown; news?: unknown; patents?: unknown; status?: string | null;
+  description?: string | null; industry?: string | null; offices?: unknown; founders?: unknown; leadership?: unknown; competitors?: unknown; news?: unknown; patents?: unknown; status?: string | null; acquired_by?: string | null; exit_date?: string | null;
   rounds: Array<{ round_type: string | null; amount_raised: number | null; announcement_date: string | null }>;
   headcount: Array<{ employee_count: number; snapshot_date: string }>;
 }
@@ -44,7 +44,13 @@ export function isWritten(r: ReportRow, c: DbCompany | undefined): Written {
       const m = a.match(/^(\d+)\+?\s+on\s+(\d{4}-\d{2}-\d{2})/);
       return m ? (c.headcount.some((h) => h.snapshot_date === m[2] && h.employee_count === Number(m[1])) ? "yes" : "no") : "not_checked";
     }
-    case "acquired": return /status = (\w+)/.test(a) && c.status === a.match(/status = (\w+)/)![1] ? "yes" : "no";
+    case "acquired": {
+      // status, buyer and date, each against its column (owner, 2026-11-19: batch 7's purchases were in the report and the columns still said "active", with nothing to say so).
+      const m = a.match(/^status = (\w+)(?: · (?:Acquired by (.+?)|Closed) \(([^)]*)\))?\s*$/);
+      if (!m) return "no";
+      const sameBuyer = (x: string, y: string) => fold(x) === fold(y);
+      return c.status === m[1] && (!m[2] || sameBuyer(c.acquired_by ?? "", m[2])) && (!m[3] || m[3] === "undated" || (c.exit_date ?? "").slice(0, 10) === m[3]) ? "yes" : "no";
+    }
     default: return "not_checked";   // tags, founder_background, name/website proposals: not a column of the company
   }
 }
