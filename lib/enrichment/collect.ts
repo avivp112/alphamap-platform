@@ -18,7 +18,7 @@
 import { pickDevLinks } from "./devLinks";
 import Anthropic from "@anthropic-ai/sdk";
 import {
-  verifyDomainMatch, webSearch, readPageCached, fetchPageHtml, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, homepageReadFailure, websiteRedirect, fetchArticleTexts,
+  verifyDomainMatch, webSearch, readPageCached, fetchPageHtml, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, homepageReadFailure, addressIsDead, websiteRedirect, fetchArticleTexts,
   searchMostlyFailed, sitemapStats, type SearchProviderState,
 } from "./searchProviders.ts";
 import { filterByEntity, deriveIdentityKeywords, nameQualifiersOnOwnSite, isNamesakeDrop, type EntityAnchors } from "./entity.ts";
@@ -397,7 +397,10 @@ export async function collectCompany(
   const seen = ctx.seen;
   const gapFillDue = ctx.update && !!seen?.gapFillDue();
   // An address the owner decided on (eval/website_decisions.json) replaces the one on file for this run.
-  { const decided = ctx.update ? null : websiteDecision(row.name); if (decided && decided !== row.website) { console.log(`    🧭  Address decided by the owner: ${decided} (on file: ${row.website ?? "none"}).`); row = { ...row, website: decided }; } }
+  { const decided = ctx.update ? null : websiteDecision(row.name);
+    // "dead": the owner rejected every address found for it — the company is left out as website_dead (Oktagon, 2026-11-19).
+    if (decided === "dead") { console.log(`    ⛔  website_dead: the owner decided that no address of ${row.name} can be used.`); bump(stats.droppedByReason, "website_dead"); return { outcome: "no_data", reason: "website_dead", detail: `address ${row.website ?? "none"} — the owner decided: the address is unusable and the proposal was rejected` }; }
+    if (decided && decided !== row.website) { console.log(`    🧭  Address decided by the owner: ${decided} (on file: ${row.website ?? "none"}).`); row = { ...row, website: decided }; } }
 
   // The owner's hard list of not-technology companies: decided in code, before the model and before any search.
   const overridden = ctx.update ? null : techOverride(row.name);
@@ -434,7 +437,9 @@ export async function collectCompany(
   let websitePages = ctx.update ? [] : await fetchCompanyWebsitePages(effectiveWebsite, searchState);
   // A site the READING SERVICES failed on (Jina 4xx / 5xx, Serper 4xx / 5xx, aborted) while its own server never proved it dead is fetch_failed, not domain_unresolved (owner, 2026-11-19): it is no
   // website to fix, no alternative domain is searched for it, and nothing about it is remembered. Run it again.
-  const readFailure = effectiveWebsite && !ctx.update && websitePages.length === 0 ? homepageReadFailure(effectiveWebsite) : null;
+  const deadByName = !!effectiveWebsite && !ctx.update && await addressIsDead(effectiveWebsite);
+  if (deadByName && websitePages.length > 0) { console.log(`    ⛔  ${effectiveWebsite} does not resolve (ENOTFOUND): what a reader returned for it (${websitePages.length} page(s)) is not the company's and is dropped.`); websitePages = []; }
+  const readFailure = effectiveWebsite && !ctx.update && websitePages.length === 0 ? (deadByName ? "dead" as const : homepageReadFailure(effectiveWebsite)) : null;
   if (effectiveWebsite && !ctx.update && websitePages.length === 0 && readFailure !== "service") {
     console.log(`    🛠️   No page of ${effectiveWebsite} could be read — listed as a website to fix.`);
     ctx.onWebsiteIssue?.("unreadable", `No page of ${effectiveWebsite} could be read (Jina Reader and Serper scrape both failed).`);
@@ -460,7 +465,7 @@ export async function collectCompany(
   // The address leads to another company's site, and the company was acquired by that company (owner, 2026-11-19: nordigen.com → GoCardless): it is an acquired company, collected as usual — from
   // everything but that site (nothing is read from the buyer's pages as if they were the company's). Not "another business", and no other domain is searched for it.
   let movedToBuyer: string | null = null;
-  const movedTo = !ctx.update && process.env.DOMAIN_RESOLVE !== "false" && effectiveWebsite && (readable.length === 0 || addressMismatch || !readable.slice(0, 3).some((p) => pageNamesCompany({ content: p.content }, row.name))) ? websiteRedirect(effectiveWebsite) : null;
+  const movedTo = !ctx.update && process.env.DOMAIN_RESOLVE !== "false" && effectiveWebsite && (readable.length === 0 || addressMismatch || !readable.slice(0, 3).some((p) => pageNamesCompany({ content: p.content }, row.name))) && !deadByName ? websiteRedirect(effectiveWebsite) : null;
   // A dead address (the name no longer resolves) of a company that was acquired (owner, 2026-11-19: nordigen.com, GoCardless): the acquisition searches run without a site, and the company is acquired when
   // at least two headlines name the same buyer.
   const deadAddress = !ctx.update && process.env.DOMAIN_RESOLVE !== "false" && !movedTo && !!effectiveWebsite && readable.length === 0 && readFailure === "dead";

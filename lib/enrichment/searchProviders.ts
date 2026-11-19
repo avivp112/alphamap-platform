@@ -624,6 +624,18 @@ export function suspiciousUrl(url: string): boolean {
   return SUSPICIOUS_TLD.test(host) || SUSPICIOUS_WORD.test(host) || blockedFile.some((d) => host === d || host.endsWith(`.${d}`));
 }
 
+/**
+ * The name of the address does not resolve at all (owner, 2026-11-19: nordigen.com is dead, yet a reader returned some page for it): then nothing a reader returned is the company's, and it is a dead address.
+ * A replay trusts what the live run (or probe_dead.ts) saw.
+ */
+export async function addressIsDead(website: string): Promise<boolean> {
+  const host = hostKey(website);
+  if (replayMode() !== "off") return persisted()[host] === "dead";
+  if (process.env.VITEST || process.env.DNS_CHECK === "off") return false;   // tests fake every page: their made-up hosts do not resolve
+  try { await (await import("dns/promises")).lookup(host); return false; }
+  catch (e) { const code = (e as { code?: string }).code ?? ""; if (code === "ENOTFOUND") { persistReadFailure(website, "dead"); return true; } return false; }
+}
+
 export function homepageReadFailure(website: string): "service" | "dead" | "unreachable" | null {
   const kind = classifyReadFailure(website);
   if (replayMode() !== "off") return persisted()[hostKey(website)] ?? kind;   // a replay trusts what the live run saw
