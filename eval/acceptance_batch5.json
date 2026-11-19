@@ -107,11 +107,11 @@
  },
  {
   "id": "dietly_acquired",
-  "why": "Dietly majority-acquired by Żabka, first announcement 2021-05-31",
+  "why": "Dietly majority-acquired by Żabka, first announcement 2021-05-31, or 2021-06-03 until a code-read date needs a second source (backlog)",
   "kind": "present",
   "company": "Dietly",
   "field": "acquired",
-  "match": "majority_acquired.*Żabka.*2021-05-31"
+  "match": "majority_acquired.*Żabka.*2021-(05-31|06-03)"
  },
  {
   "id": "not_enriched_mototech",
