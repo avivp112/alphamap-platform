@@ -17,7 +17,7 @@ import { join } from "path";
 
 export const recorderStats = {
   replayed: 0, live: 0, blockedFetches: new Map<string, number>(),
-  httpRecorded: 0, httpReplayed: 0,
+  httpRecorded: 0, httpReplayed: 0, filled: 0,
   /** company → host → count: a request that REPLAY needed and the recordings did not have. */
   misses: new Map<string, Map<string, number>>(),
   /** the model steps asked live in a REPLAY: step → count */
@@ -92,11 +92,15 @@ export function installHttpRecorder(): void {
           return resp;
         } catch (e) { if (e instanceof Error && !/Unexpected token|JSON/.test(e.message)) throw e; }
       }
+      // REPLAY_FILL=1 (the one-time "complete the recordings" run of the regression gate): what the recordings do not have is fetched live and recorded; what they have is replayed.
+      if (process.env.REPLAY_FILL === "1") { recorderStats.filled++; return fetchLive(); }
       const company = currentCompany();
       const m = recorderStats.misses.get(company) ?? new Map<string, number>();
       m.set(host, (m.get(host) ?? 0) + 1); recorderStats.misses.set(company, m);
       throw new Error(`offline (REPLAY): ${host} not fetched`);
     }
+    return fetchLive();
+    async function fetchLive(): Promise<Response> {
     // Live: record the answer (or the failure) and hand the answer on.
     const save = (rec: unknown) => { try { mkdirSync(httpDir(), { recursive: true }); writeFileSync(file, gzipSync(Buffer.from(JSON.stringify(rec)))); recorderStats.httpRecorded++; } catch { /* a convenience */ } };
     try {
@@ -107,6 +111,7 @@ export function installHttpRecorder(): void {
       } catch { /* a body that cannot be read twice is not recorded */ }
       return res;
     } catch (e) { save({ error: e instanceof Error ? e.message : String(e) }); throw e; }
+    }
   }) as typeof fetch;
 }
 
@@ -173,6 +178,7 @@ export function recorderSummary(): string[] {
   const out: string[] = [];
   if (replayMode() !== "off") {
     out.push(`  REPLAY=${replayMode()}: ${recorderStats.replayed} model reply(ies) from the recording, ${recorderStats.live} new (live); ${recorderStats.httpReplayed} web response(s) from the recording`);
+    if (recorderStats.filled) out.push(`  REPLAY_FILL: ${recorderStats.filled} web request(s) the recordings lacked were fetched live and recorded`);
     if (recorderStats.liveSteps.size) out.push(`  live model steps: ${[...recorderStats.liveSteps].map(([k, n]) => `${k}×${n}`).join(", ")}`);
     if (recorderStats.misses.size) {
       out.push(`  ⚠️ REPLAY CACHE MISSES — not a faithful replay for these companies (a live run records what is missing):`);

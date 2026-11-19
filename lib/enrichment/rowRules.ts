@@ -7,7 +7,7 @@ import { isListingOrSponsoredUrl } from "./pageKind.ts";
 import { isExplainer, namesCompanyUpFront } from "./newsRelevance.ts";
 import { foundedYearFromSite } from "./siteFacts.ts";
 import { NOT_A_PRODUCT_SENTENCE } from "./quoteFinder.ts";
-import { detectAcquisition } from "./acquisition.ts";
+import { detectAcquisition, knownAcquirers } from "./acquisition.ts";
 import { detectClosure } from "./closure.ts";
 import { normalizeForMatch, quoteIsNotASentence } from "./evidence.ts";
 import { sectorDecision } from "./techOverrides.ts";
@@ -96,7 +96,7 @@ export function roundKey(r: { company?: string | null; after: string }): string 
 }
 
 /** Why this value may not stand under today's rules, or null. */
-export function rowProblem(r: RowLike, companyName: string, today: string, weekBefore = 0, o: { domain?: string | null } = {}): string | null {
+export function rowProblem(r: RowLike, companyName: string, today: string, weekBefore = 0, o: { domain?: string | null; acquirers?: string[] } = {}): string | null {
   const url = r.source_url ?? "";
   if (r.quote && looksLikeAddress(r.quote)) return "its quote is an address, not text of the page";
   if (r.quote && quoteIsNotASentence(r.quote)) return "its quote is page code, not a sentence";
@@ -188,15 +188,17 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
   }
   // Last: where the source stands (a data platform, a republisher with no allowed original…) — after the field's own checks, which say more.
   if (["news", "tags", "round", "competitor_declared", "competitor_market", "founder"].includes(r.field) && url) {
-    const standing = roundSourceStanding(url, { companyName, isCompanySite: ownDomain(url, companyName), content: quote, headline: r.field === "news" ? r.after : null });
+    const standing = roundSourceStanding(url, { companyName, isCompanySite: ownDomain(url, companyName), content: quote, headline: r.field === "news" ? r.after : null, acquirers: o.acquirers });
     if (standing.kind === "denied") return `its source is not allowed (${standing.why})`;
   }
   return null;
 }
 
 /** Drops what breaks a rule; merges one founder per person and one background fact per person and organisation; takes the lead investor out of a round no source names it in. */
-export function applyRowRules<T extends RowLike>(rows: T[], companyName: string, today: string, o: { domain?: string | null } = {}): { rows: T[]; dropped: string[] } {
+export function applyRowRules<T extends RowLike>(rows: T[], companyName: string, today: string, o0: { domain?: string | null } = {}): { rows: T[]; dropped: string[] } {
   const dropped: string[] = [];
+  // The buyers that several headlines of the company name: the buyer's own announcement is a party's, whatever the page's domain class says (owner, regression gate: Medipass / tyro.com).
+  const o = { ...o0, acquirers: knownAcquirers(rows.filter((x) => x.field === "news").map((x) => String(x.after).replace(/^\d{4}-\d{2}-\d{2}\s+—\s+/, "")), companyName) };
   const kept: T[] = [];
   const locked = sectorDecision(companyName);
   for (const r0 of rows) {
@@ -228,8 +230,10 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
         // The type is stated by the round's own quote, or by another source of the same event: a news headline of the company that names the type beside the same amount ("…Paradox Raises $200M Series C")
         // (owner, regression gate: Paradox). Unknown only when no source says it.
         const amountOfRow = (() => { const m = r.after.match(/\$([\d.,]+)\s*([KMB])?\b/i); if (!m) return null; const mult = m[2]?.toUpperCase() === "B" ? 1e9 : m[2]?.toUpperCase() === "K" ? 1e3 : 1e6; return Number(m[1].replace(/,/g, "")) * mult; })();
-        const sameEventNews = t === "Other" || !amountOfRow ? false : rows.some((x) => x.field === "news" && fold(String(x.company ?? "")) === fold(companyName) && statedRoundLabels(`${x.after} ${x.quote ?? ""}`).includes(t) && extractNumbersFromText(`${x.after} ${x.quote ?? ""}`).some((n) => Math.abs(n - amountOfRow) / amountOfRow < 0.006));
-        const stated = sameEventNews || (t === "Other" ? refineRoundType("Other", amountQuote) === "Other" : statedRoundLabels(amountQuote).includes(t));
+        const sameEventRow = t === "Other" || !amountOfRow ? undefined : rows.find((x) => x.field === "news" && fold(String(x.company ?? "")) === fold(companyName) && statedRoundLabels(`${x.after} ${x.quote ?? ""}`).includes(t) && extractNumbersFromText(`${x.after} ${x.quote ?? ""}`).some((n) => Math.abs(n - amountOfRow) / amountOfRow < 0.006) && !rowProblem(x, companyName, today, 0, o));
+        const stated = !!sameEventRow || (t === "Other" ? refineRoundType("Other", amountQuote) === "Other" : statedRoundLabels(amountQuote).includes(t));
+        // The source that states the type is cited with it: the round's quote and source become that headline and its page (the amount is in it as well).
+        if (sameEventRow && !statedRoundLabels(amountQuote).includes(t)) r = { ...r, quote: sameEventRow.after.replace(/^\d{4}-\d{2}-\d{2}\s+—\s+/, ""), source_url: sameEventRow.source_url };
         if (!stated) {
           dropped.push(`round: type ${t} → Unknown — no quote of the round names it`);
           r = { ...r, after: r.after.replace(/^[A-Za-z+\- ]+?(?= \$| amount)/, "Unknown") };

@@ -36,14 +36,14 @@ const readCsv = (p: string) => { const [head, ...body] = parseCsv(readFileSync(p
 interface RunResult { n: number; rows: RunRow[]; rejections: Rejected[]; acceptance: Array<{ id: string; severity: string; pass: boolean; detail: string }>; cost: number; companies: number; misses: string[]; live: string; diag: Record<string, string[]> }
 
 /** One batch, clean slate, from the recordings. */
-function runBatch(n: number): RunResult {
+function runBatch(n: number, fill = false): RunResult {
   const dir = `${OUT}/batch_${n}`;
   rmSync(dir, { recursive: true, force: true }); mkdirSync(dir, { recursive: true });
   const ids = idsOf(n);
   console.log(`▶ batch ${n}: ${ids.length} compan(ies), REPLAY from the recordings …`);
   const child = spawnSync("npx", ["tsx", "scripts/bulk_enrich_v2.ts"], {
     env: { ...process.env, PILOT: "true", DRY_RUN: "true", REGRESSION: "1", REGRESSION_DIR: dir, REPLAY: "1", KNOWN_SOURCES: "off", ALL_FIELDS: "true", SITEMAP: "on", BATCH_NO: String(n),
-      CONCURRENCY: process.env.CONCURRENCY ?? "10", PILOT_MAX_COMPANIES: String(Math.max(ids.length, 1)), ONLY: ids.join(","), PILOT_REPORT: `${dir}/pilot_report.csv`, GIT_CHECK: "off", PREFLIGHT: "off" },
+      CONCURRENCY: process.env.CONCURRENCY ?? "10", PILOT_MAX_COMPANIES: String(Math.max(ids.length, 1)), ONLY: ids.join(","), PILOT_REPORT: `${dir}/pilot_report.csv`, GIT_CHECK: "off", PREFLIGHT: "off", ...(fill ? { REPLAY_FILL: "1" } : {}) },
     encoding: "utf8", maxBuffer: 1 << 29,
   });
   writeFileSync(`${dir}/run.log`, `${child.stdout ?? ""}\n${child.stderr ?? ""}`);
@@ -72,7 +72,10 @@ function runBatch(n: number): RunResult {
     if (!co || !r || r.pass || diag[c.id]) continue;
     if (Object.entries(diag).some(([id, v]) => (checks.find((k) => k.id === id) as { company?: string } | undefined)?.company === co && v[0] !== "(same company, above)")) { diag[c.id] = ["(same company, above)"]; continue; }
     const at = runLog.findIndex((l) => new RegExp(`^── ${co.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\(`).test(l));
-    if (at < 0) { diag[c.id] = [`(no block for ${co} in the run's log)`]; continue; }
+    if (at < 0) {
+      const near = runLog.filter((l) => l.toLowerCase().includes(co.toLowerCase()) && !/🌐/.test(l)).map((l) => l.trim().slice(0, 190)).slice(0, 12);
+      diag[c.id] = [`(no block "── ${co} (" in the run's log; ${near.length} line(s) name it)`, ...near]; continue;
+    }
     let end = runLog.findIndex((l, i) => i > at && /^── .* \(/.test(l)); if (end < 0) end = runLog.length;
     diag[c.id] = runLog.slice(at, end).filter((l) => /🏁|acquisition|🚫  (news|Acquired|Seed|Series|Other|Growth)|🚦|🏷️|📅  news|\[DRY\] would write (acquired|round|tags|news)|✅ \d+ field|🟠 /.test(l) && !/🌐/.test(l)).map((l) => l.trim().slice(0, 190)).slice(0, 36);
   }
@@ -126,6 +129,34 @@ if (cmd === "accept-lost") {
   }
   console.log(removed ? `${removed} value(s) taken out.` : "no value of the list is in a baseline.");
   process.exit(removed ? 0 : 1);
+}
+
+// One-time "complete the recordings" (owner, 2026-11-19): the replay lacks web responses that a later fix asked for (the acquisition searches). `fill-estimate` counts them from the last gate run's logs and
+// prices them; `fill` runs the batches again with REPLAY_FILL=1 — what the recordings have is replayed, what they lack is fetched live and recorded. Nothing is written (REGRESSION is a dry pass).
+const PRICE = { "google.serper.dev": 0.001, "api.tavily.com": 0.008, "s.jina.ai": 0.0005, "r.jina.ai": 0.0002 } as Record<string, number>;
+if (cmd === "fill-estimate") {
+  const total = new Map<string, number>(), cos = new Set<string>();
+  for (const n of writtenBatches()) {
+    const f = `${OUT}/batch_${n}/run.log`; if (!existsSync(f)) { console.log(`batch ${n}: no run.log — run the gate once first`); continue; }
+    for (const l of readFileSync(f, "utf8").split("\n")) { const m = l.match(/^\s*REPLAY MISS (.+?): (.*)$/); if (!m) continue; cos.add(`${n}:${m[1]}`); for (const h of m[2].split(", ")) { const x = h.match(/^(.+?)×(\d+)$/); if (x) total.set(x[1], (total.get(x[1]) ?? 0) + Number(x[2])); } }
+  }
+  let web = 0;
+  console.log(`companies with a missing response: ${cos.size}`);
+  for (const [h, c] of [...total].sort((a, b) => b[1] - a[1])) { const price = PRICE[h] ?? 0; web += price * c; console.log(`  ${h.padEnd(34)} ${String(c).padStart(4)} request(s) × $${price} ${PRICE[h] === undefined ? "(a page of a site: free)" : ""}`); }
+  console.log(`web requests: about $${web.toFixed(2)} (unit prices are assumptions: Serper $1 per 1000, Tavily $8 per 1000 credits, Jina a fraction of a cent)`);
+  console.log(`model: a new search result can change a prompt, and a changed prompt is a new model call; the run prints every one ("live model steps") and its cost. Upper bound used: ${cos.size} companies × 6 calls × $0.02 = $${(cos.size * 6 * 0.02).toFixed(2)}`);
+  console.log(`estimate: $${web.toFixed(2)} web + up to $${(cos.size * 6 * 0.02).toFixed(2)} model = at most $${(web + cos.size * 6 * 0.02).toFixed(2)}. Nothing is written.`);
+  process.exit(0);
+}
+if (cmd === "fill") {
+  const batches = (args.length ? args.map(Number) : writtenBatches()).filter((x) => Number.isInteger(x) && x > 0);
+  let cost = 0;
+  for (const n of batches) {
+    const res = runBatch(n, true); cost += res.cost;
+    console.log(`── batch ${n}: recordings completed · ${res.misses.length ? `still missing for ${res.misses.length} company(ies)` : "no response missing"}${res.live ? ` · ${res.live}` : ""} · model cost $${res.cost.toFixed(2)}`);
+  }
+  console.log(`cost of this run: $${cost.toFixed(2)} (web requests not included). Run the gate again: npx tsx scripts/regression.ts`);
+  process.exit(0);
 }
 
 if (cmd) usage();

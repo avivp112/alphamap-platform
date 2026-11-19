@@ -463,20 +463,25 @@ async function enrichCompany(
     openFields: openFieldsFor(row.name), pilot: PILOT,
   }, summary);
   let companyRows = (outcome?.pilot ?? []).map((c) => ({ company_id: row.id, company: row.name, field: c.field, before: c.before == null ? "" : String(c.before), after: String(c.after), source_url: c.source_url ?? "", quote: c.quote ?? "", origin: "new", rule: c.rule ?? "", quote_original: c.quote_original ?? "", quote_translated: c.quote_translated ?? "", ...(c.payload ? { payload: JSON.stringify(c.payload) } : {}) }));
+  let carry: Awaited<ReturnType<typeof applyKnown>> | null = null;
+  let freshFound = new Set<string>();
+  let before = 0;
   if (KNOWN_ON) {
     // A value the owner marked wrong does not come back in the report, however it was found again.
     const back = companyRows.filter((r) => ownerWrong(r.company, r.field, r.after));
     if (back.length) { console.log(`    🚫  Marked wrong by the owner, not reported again: ${back.map((r) => `${r.field}: ${r.after.slice(0, 60)}`).join(" | ")}`); companyRows = companyRows.filter((r) => !back.includes(r)); }
     // What this run found is remembered; what was verified before and is still confirmed is carried (no model, no search for it).
     { const g = applyRowRules(companyRows, row.name, RUN_DATE, { domain: row.website }); companyRows = g.rows; for (const d of g.dropped) console.log(`    🧹  ${d}`); }
-    const freshFound = new Set(companyRows.map((r) => r.field));
-    const before = Object.keys(knownStore[row.id] ?? []).length;
-    const carry = await applyKnown(knownStore, row.id, companyRows, RUN_DATE, readKnownPage, lockedMarks);
+    freshFound = new Set(companyRows.map((r) => r.field));
+    before = Object.keys(knownStore[row.id] ?? []).length;
+    carry = await applyKnown(knownStore, row.id, companyRows, RUN_DATE, readKnownPage, lockedMarks);
     remember(knownStore, companyRows, runId ?? "dry", RUN_DATE, isWrongValue);
     // The report is what the writer writes (owner, batch 6: seven values of the reviewed report were not in the database — remembered rows the write stage cannot take, office, headcount,
     // a second founder, a competitor, a round). A remembered row that this run did not write is not a value of the report: it is listed apart, with its source, for the owner to see.
     for (const r of carry.rows.filter((x) => String(x.origin ?? "").startsWith("known_source"))) carriedNotWritten.push({ company_id: r.company_id, company: r.company, field: r.field, value: r.after, source_url: r.source_url, quote: r.quote ?? "" });
     companyRows = carry.rows.filter((x) => !String(x.origin ?? "").startsWith("known_source")).map((r) => ({ ...r, origin: r.origin ?? "new" })) as typeof companyRows;
+  }
+  // The rest does not depend on the memory (the regression gate runs with KNOWN_SOURCES=off and must walk the same road a real run walks: acquired, brand, name proposal, tags).
     { const g = applyRowRules(companyRows, row.name, RUN_DATE, { domain: row.website }); companyRows = g.rows; for (const d of g.dropped) console.log(`    🧹  ${d}`);
       // What was held back stays out of the report even when the memory still has it (owner, batch 6: the excluded values came back as remembered rows).
       if (BLOCKED.size) { const kept = companyRows.filter((r) => !heldRow(r.company, r.field)); if (kept.length !== companyRows.length) console.log(`    🚧  Held back, not reported: ${companyRows.filter((r) => heldRow(r.company, r.field)).map((r) => `${r.field}: ${r.after.slice(0, 40)}`).join(" | ")}`); companyRows = kept; }
@@ -520,10 +525,9 @@ async function enrichCompany(
       const closedRows = companyRows.filter((r) => { const f = r.field === "description_what_only" ? "description" : r.field; return PILOT_FIELDS.includes(f) && !allowed.includes(f); });
       if (closedRows.length) { console.log(`    🔒  Field not open, not reported: ${[...new Set(closedRows.map((r) => r.field))].join(", ")}`); companyRows = companyRows.filter((r) => !closedRows.includes(r)); } }
     const missing = ASKED.filter((f) => OPEN_FIELDS.includes(f) && !companyRows.some((r) => r.field === f || r.field.startsWith(f)));
-    recordGaps(gapStore, row.id, row.name, missing, companyLines(), runId ?? "dry", RUN_DATE);
+    if (!REGRESSION) recordGaps(gapStore, row.id, row.name, missing, companyLines(), runId ?? "dry", RUN_DATE);
     rejectedAll.push(...parseRejections(companyLines(), row.name, row.id));
-    console.log(`    📚  Known sources (${row.name}): from memory ${[...new Set([...injectedNow, ...carry.carried.map((r) => r.field)])].join(", ") || "none"}${injectedNow.length ? ` (${injectedNow.join(", ")} entered the write stage)` : ""}${carry.carried.length ? ` (${carry.carried.length} more value(s) carried in the report)` : ""}; from this run's search ${[...freshFound].filter((f) => !injectedNow.includes(f)).join(", ") || "none"}; still missing ${missing.join(", ") || "none"}${carry.recheck.length ? `; back to review (quote gone): ${carry.recheck.join(" | ")}` : ""}${carry.refreshDue.length ? `; older than the refresh time, searched again: ${carry.refreshDue.join(" | ")}` : ""}${carry.locked.length ? `; locked (marked correct) kept: ${carry.locked.join(" | ")}` : ""}${before ? "" : " [no memory yet]"}`);
-  }
+    if (KNOWN_ON && carry) console.log(`    📚  Known sources (${row.name}): from memory ${[...new Set([...injectedNow, ...carry.carried.map((r) => r.field)])].join(", ") || "none"}${injectedNow.length ? ` (${injectedNow.join(", ")} entered the write stage)` : ""}${carry.carried.length ? ` (${carry.carried.length} more value(s) carried in the report)` : ""}; from this run's search ${[...freshFound].filter((f) => !injectedNow.includes(f)).join(", ") || "none"}; still missing ${missing.join(", ") || "none"}${carry.recheck.length ? `; back to review (quote gone): ${carry.recheck.join(" | ")}` : ""}${carry.refreshDue.length ? `; older than the refresh time, searched again: ${carry.refreshDue.join(" | ")}` : ""}${carry.locked.length ? `; locked (marked correct) kept: ${carry.locked.join(" | ")}` : ""}${before ? "" : " [no memory yet]"}`);
   for (const c of companyRows) {
     pilotRows.push({ company_id: c.company_id, company: c.company, field: c.field, before: c.before, after: c.after, source_url: c.source_url, quote: c.quote, origin: c.origin, rule: (c as { rule?: string }).rule ?? "", quote_original: (c as { quote_original?: string }).quote_original ?? "", quote_translated: (c as { quote_translated?: string }).quote_translated ?? "" });
   }

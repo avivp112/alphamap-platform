@@ -128,5 +128,10 @@
   "kind": "absent",
   "field": "tags",
   "source_match": "/(careers?|jobs?)/"
+ },
+ {
+  "id": "one_news_per_acquisition",
+  "why": "One purchase is one news item: no two items name the same buyer for the same company with different dates",
+  "kind": "one_news_per_acquisition"
  }
 ]

@@ -109,7 +109,16 @@ export function finishNews<T extends NewsItem>(items: T[], d: Pick<NewsDeps, "is
     dropped.push({ item: x, reason: "news_no_date", message: "no date in its address or its page" });
     return false;
   });
-  const kept = dedupeNewsEvents(dated, d.isOwnSite, (x) => (d.content(x.url) ?? "").slice(0, 300), (x) => !!d.companyName && !!acquirerIn(x.title, d.companyName));
+  let kept = dedupeNewsEvents(dated, d.isOwnSite, (x) => (d.content(x.url) ?? "").slice(0, 300), (x) => !!d.companyName && !!acquirerIn(x.title, d.companyName));
+  // One purchase is one event, whatever the days between the reports: of the items that say the same buyer bought the company, the earliest announcement stays (owner, regression gate: Humi's
+  // "to be acquired" of 2026-05-20, read from the page's code, beside the announcement of 2025-01-08). A different buyer is another purchase (Six Degrees: Charlesbank 2015, Claranet 2026).
+  if (d.companyName) {
+    const f = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+    const buyer = (x: T) => { const h = acquirerIn(x.title, d.companyName!); return h ? f(h.acquirer) : ""; };
+    const first = new Map<string, T>();
+    for (const x of kept) { const b = buyer(x); if (!b) continue; const c = first.get(b); if (!c || String(x.published_date) < String(c.published_date)) first.set(b, x); }
+    kept = kept.filter((x) => { const b = buyer(x); return !b || first.get(b) === x; });
+  }
   for (const x of dated) if (!kept.includes(x)) dropped.push({ item: x, reason: "news_same_event", message: "the same event as another item" });
   return { kept, dropped };
 }

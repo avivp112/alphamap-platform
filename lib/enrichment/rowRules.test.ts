@@ -745,3 +745,46 @@ describe("regression gate fixes (owner, 2026-11-19)", () => {
     for (const f of ["round", "news", "founder"]) expect(g.rows.filter((r) => r.field === f).length, f).toBeGreaterThanOrEqual(1);
   });
 });
+
+import { runAcceptance } from "./acceptance";
+describe("regression gate round 2 (owner, 2026-11-19)", () => {
+  const deps = { isOwnSite: () => false, content: () => "", companyName: "Humi" };
+  it("one purchase is one news item: the earliest announcement of the same buyer stays, a later report is the same event", () => {
+    const items = [
+      { title: "Humi to be acquired by Employment Hero in $69.5 million deal", url: "https://unleash.ai/a", published_date: "2026-05-20" },
+      { title: "Humi acquired by Australian HR software company Employment Hero", url: "https://betakit.com/b", published_date: "2025-01-08" },
+      { title: "Humi raises $15 million Series A", url: "https://betakit.com/c", published_date: "2020-06-23" },
+    ];
+    const r = finishNews(items as never, deps);
+    expect(r.kept.map((k) => k.published_date).sort()).toEqual(["2020-06-23", "2025-01-08"]);
+    expect(r.dropped.map((d) => d.reason)).toEqual(["news_same_event"]);
+  });
+  it("another buyer is another purchase", () => {
+    const r = finishNews([
+      { title: "Charlesbank Capital Partners to acquire Six Degrees from Penta Capital", url: "https://a.com/1", published_date: "2015-06-17" },
+      { title: "Claranet acquires Six Degrees", url: "https://b.com/2", published_date: "2026-06-29" },
+    ] as never, { ...deps, companyName: "Six Degrees" });
+    expect(r.kept).toHaveLength(2);
+  });
+  it("acceptance: the same purchase twice with different dates is an error", () => {
+    const row = (after: string) => ({ company: "Humi", field: "news", after, source_url: "https://x.com/a", quote: "" });
+    const chk = [{ id: "one", why: "", kind: "one_news_per_acquisition" }] as never;
+    expect(runAcceptance(chk, [row("2025-01-08 — Humi acquired by Employment Hero"), row("2026-05-20 — Humi to be acquired by Employment Hero in $69.5 million deal")] as never, [], "2026-11-19")[0].pass).toBe(false);
+    expect(runAcceptance(chk, [row("2025-01-08 — Humi acquired by Employment Hero"), row("2020-06-23 — Humi raises $15 million Series A")] as never, [], "2026-11-19")[0].pass).toBe(true);
+  });
+  it("Medipass: the buyer's page is allowed in the report's rules when several headlines name the buyer", () => {
+    const n = (a: string, u: string) => ({ company: "Medipass", field: "news", after: a, source_url: u, quote: "" });
+    const g = applyRowRules([
+      n("2021-05-10 — Tyro buys Medipass health payment app from NAB Ventures", "https://www.afr.com/companies/financial-services/tyro-buys-medipass"),
+      n("2021-05-12 — Tyro to acquire Medipass Solutions", "https://www.tyro.com/media/tyro-to-acquire-medipass-solutions/"),
+    ] as never, "Medipass", "2026-11-19");
+    expect(g.rows.map((r) => r.after.slice(0, 10)).sort()).toContain("2021-05-12");
+  });
+  it("Paradox: the round cites the headline that states its type", () => {
+    const g = applyRowRules([
+      { company: "Paradox AI", field: "round", after: "Series C $200M · 2021-12 (month only)", source_url: "https://siliconangle.com/2021/12/28/x", quote: "Paradox valued at $1.5B following $200M funding round" },
+      { company: "Paradox AI", field: "news", after: "2021-12-27 — On a Mission to Build the Next Generation of HR Software, Paradox Raises $200M Series C", source_url: "https://www.prnewswire.com/news-releases/x", quote: "Paradox Raises $200M Series C" },
+    ] as never, "Paradox AI", "2026-11-19");
+    expect(g.rows.find((r) => r.field === "round")?.quote).toMatch(/Raises \$200M Series C/);
+  });
+});
