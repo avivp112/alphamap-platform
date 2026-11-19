@@ -11,7 +11,7 @@ import { detectAcquisition } from "./acquisition.ts";
 import { detectClosure } from "./closure.ts";
 import { normalizeForMatch, quoteIsNotASentence } from "./evidence.ts";
 import { sectorDecision } from "./techOverrides.ts";
-import { foundingSentenceIsAboutCompany, isThirdPartyPage } from "./subject.ts";
+import { foundingSentenceIsAboutCompany, isThirdPartyPage, sentenceIsAboutCompany } from "./subject.ts";
 import { isLegalPageUrl } from "./headquarters.ts";
 import { isAddressLine, articleDate } from "./headquarters.ts";
 import { vsTitleCompetitor, comparisonTitleCompetitor } from "./competitorTiers.ts";
@@ -133,7 +133,8 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
     // "assurance vie" is a French investment wrapper, not insurance (owner, batch 7: Yomoni, an automated investment service).
     if (/insur|assuranc|seguro/i.test(r.after) && /assurances?[- ]vie/i.test(quote) && !/insur|assuranc|seguro/i.test(quote.replace(/assurances?[- ]vie/gi, ""))) return "\"assurance vie\" is an investment wrapper, not insurance";
     // A guide or a blog post of the company's own site is content marketing, no description of what it sells (owner, batch 7: Uxcel's tag from a guide on OKRs).
-    if (ownDomain(url, companyName) && /\/(?:blog|guides?|articles?|tutorials?|how-to|resources?)(?:\/|$)/i.test((() => { try { return new URL(url.startsWith("http") ? url : `https://${url}`).pathname; } catch { return ""; } })())) return "a blog post or a guide is no description of the product";
+    // — unless the sentence is about the company itself ("Mintifi offers supply chain financing…", "We provide…"): it is the topic of the page that does not describe the product, not the folder it is in.
+    if (ownDomain(url, companyName) && /\/(?:blog|guides?|articles?|tutorials?|how-to|resources?)(?:\/|$)/i.test((() => { try { return new URL(url.startsWith("http") ? url : `https://${url}`).pathname; } catch { return ""; } })()) && !sentenceIsAboutCompany(quote, companyName, { ownSite: true })) return "a blog post or a guide on another topic is no description of the product";
     if (NOT_A_PRODUCT_SENTENCE.test(quote)) return "its quote is not a product sentence";
     // The words of a tag are a sentence about the product (owner, batch 7): not a careers or legal page, a job advertisement, a menu, or a person's speech.
     try { if (CAREERS_OR_LEGAL.test(new URL(url.startsWith("http") ? url : `https://${url}`).pathname)) return "a careers or legal page is no evidence for a tag"; } catch { /* no address */ }
@@ -224,7 +225,11 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
       if (t) {
         let amountQuote = r.quote ?? "";
         try { const pl = JSON.parse(String(r.payload ?? "{}")) as { evidence?: Array<{ field?: string; quote?: string }> }; amountQuote += " " + (pl.evidence ?? []).filter((e) => e.field === "amount_raised").map((e) => e.quote ?? "").join(" "); } catch { /* no payload */ }
-        const stated = t === "Other" ? refineRoundType("Other", amountQuote) === "Other" : statedRoundLabels(amountQuote).includes(t);
+        // The type is stated by the round's own quote, or by another source of the same event: a news headline of the company that names the type beside the same amount ("…Paradox Raises $200M Series C")
+        // (owner, regression gate: Paradox). Unknown only when no source says it.
+        const amountOfRow = (() => { const m = r.after.match(/\$([\d.,]+)\s*([KMB])?\b/i); if (!m) return null; const mult = m[2]?.toUpperCase() === "B" ? 1e9 : m[2]?.toUpperCase() === "K" ? 1e3 : 1e6; return Number(m[1].replace(/,/g, "")) * mult; })();
+        const sameEventNews = t === "Other" || !amountOfRow ? false : rows.some((x) => x.field === "news" && fold(String(x.company ?? "")) === fold(companyName) && statedRoundLabels(`${x.after} ${x.quote ?? ""}`).includes(t) && extractNumbersFromText(`${x.after} ${x.quote ?? ""}`).some((n) => Math.abs(n - amountOfRow) / amountOfRow < 0.006));
+        const stated = sameEventNews || (t === "Other" ? refineRoundType("Other", amountQuote) === "Other" : statedRoundLabels(amountQuote).includes(t));
         if (!stated) {
           dropped.push(`round: type ${t} → Unknown — no quote of the round names it`);
           r = { ...r, after: r.after.replace(/^[A-Za-z+\- ]+?(?= \$| amount)/, "Unknown") };

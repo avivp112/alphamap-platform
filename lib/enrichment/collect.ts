@@ -1775,6 +1775,7 @@ export async function collectCompany(
       content: content ?? sourceByUrl(url)?.content,
       headline: headline ?? sourceByUrl(url)?.title,
       companyName: row.name,
+      acquirers: knownAcquirers(market.news.map((x) => x.title ?? ""), row.name),
     });
     // The company's acquisition, as news (owner, round 10): two fixed searches for every company; a headline in which the company is the one acquired is offered to the same
     // gate as every news item (source, entity, date). Nothing else derives "acquired": bulk_enrich_v2.ts reads it from the accepted news.

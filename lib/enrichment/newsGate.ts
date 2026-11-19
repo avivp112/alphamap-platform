@@ -100,14 +100,16 @@ export async function judgeNews(n: NewsItem, d: NewsDeps): Promise<NewsVerdict> 
   return { keep: true, item, dated };
 }
 
-export function finishNews<T extends NewsItem>(items: T[], d: Pick<NewsDeps, "isOwnSite" | "content">): { kept: T[]; dropped: Array<{ item: T; reason: string; message: string }> } {
+export function finishNews<T extends NewsItem>(items: T[], d: Pick<NewsDeps, "isOwnSite" | "content" | "companyName">): { kept: T[]; dropped: Array<{ item: T; reason: string; message: string }> } {
   const dropped: Array<{ item: T; reason: string; message: string }> = [];
-  const distinct = dedupeNewsEvents(items, d.isOwnSite, (x) => (d.content(x.url) ?? "").slice(0, 300), (x) => !!d.companyName && !!acquirerIn(x.title, d.companyName));
-  for (const x of items) if (!distinct.includes(x)) dropped.push({ item: x, reason: "news_same_event", message: "the same event as another item" });
-  const kept = distinct.filter((x) => {
+  // An item with no date is out first, under its own reason; only then are the dated ones merged to one per event. The other way round (merged first) kept an undated item as the event's one
+  // and dropped it for its date, and the dated items it had absorbed were reported as "the same event as another item" with no item left (owner, regression gate, Medipass).
+  const dated = items.filter((x) => {
     if (x.published_date) return true;
     dropped.push({ item: x, reason: "news_no_date", message: "no date in its address or its page" });
     return false;
   });
+  const kept = dedupeNewsEvents(dated, d.isOwnSite, (x) => (d.content(x.url) ?? "").slice(0, 300), (x) => !!d.companyName && !!acquirerIn(x.title, d.companyName));
+  for (const x of dated) if (!kept.includes(x)) dropped.push({ item: x, reason: "news_same_event", message: "the same event as another item" });
   return { kept, dropped };
 }

@@ -295,13 +295,17 @@ const RELEASE_PATH = /\/(news|newsroom|press|press-releases?|news-releases?|medi
 const PARTY_PAGE_PATH = /\/(?:[\w-]*news[\w-]*|[\w-]*press[\w-]*|blog|use-cases?|insights?|announcements?|stories|story|media|releases?)(?:\/|$)/i;
 const DEAL_WORDS = /acqui|\bbuys?\b|bought|sale-of|sale of|\bsells?\b|sold|merge|takeover|take-over|divest/i;
 const isSubsequence = (small: string, big: string) => { let i = 0; for (const c of big) if (c === small[i]) i++; return i === small.length; };
-export function isPartyRelease(url: string, headline: string | null | undefined, o: { content?: string | null; companyName?: string | null } = {}): boolean {
+export function isPartyRelease(url: string, headline: string | null | undefined, o: { content?: string | null; companyName?: string | null; acquirers?: string[] } = {}): boolean {
   const host = hostOf(url);
   if (!host) return false;
   let path = "";
   try { path = new URL(url.startsWith("http") ? url : `https://${url}`).pathname; } catch { return false; }
   const releaseHost = /^(investors?|ir|news|press|media|newsroom)\./.test(host);
   const dealPage = DEAL_WORDS.test(path) || DEAL_WORDS.test(headline ?? "");
+  // The site of the company's known buyer (several headlines name it): its own newsroom, blog or press page is the party's announcement, whatever the headline says ("Introducing Tyro Health" on tyro.com,
+  // owner, regression gate: Medipass). Whether the page is about the company is for the news gate to say.
+  const siteKey = (reviewDomain(url) ?? host).split(".")[0].replace(/[^a-z0-9]/g, "");
+  if (siteKey.length >= 3 && (o.acquirers ?? []).some((a) => a.toLowerCase().replace(/[^a-z0-9]/g, "") === siteKey) && (RELEASE_PATH.test(path) || releaseHost || PARTY_PAGE_PATH.test(path))) return true;
   // The path of a release; or, for a deal, a blog / use case / company-news page of the party's site.
   if (!RELEASE_PATH.test(path) && !releaseHost && !(dealPage && PARTY_PAGE_PATH.test(path))) return false;
   if (/\.gov(\.[a-z]{2})?$|\.gov\.[a-z]{2}$|\.gc\.ca$|\.europa\.eu$/.test(host)) return true;
@@ -339,7 +343,7 @@ export function isForumUrl(url: string): boolean {
     || /\/(?:forums?|threads?|topics?|discussions?|community\/(?:t|topic|post))\/[^/]/.test(path) && !/\/(?:blog|news|press)\//.test(path);
 }
 
-export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean; leadInvestor?: string | null; investors?: Array<string | null | undefined>; content?: string | null; headline?: string | null; companyName?: string | null } = {}): SourceStanding {
+export function roundSourceStanding(url: string, opts: { acquirers?: string[]; isCompanySite?: boolean; leadInvestor?: string | null; investors?: Array<string | null | undefined>; content?: string | null; headline?: string | null; companyName?: string | null } = {}): SourceStanding {
   const host = hostOf(url);
   if (!host) return { kind: "denied", why: "no_host" };
   if (opts.isCompanySite) return { kind: "allowed", tier: 1, lowConfidence: false, why: "company_site" };
@@ -371,7 +375,7 @@ export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean
   if (onList(host, TIER3_DOMAINS)) return { kind: "allowed", tier: 3, lowConfidence: false, why: "tier3_press" };
   if (onList(host, TIER4_DOMAINS)) return { kind: "allowed", tier: 4, lowConfidence: true, why: "tier4_press" };
   // Tier 1 for the event itself; the profile's fields take it as tier 2 (profileSourceAllowed).
-  if (isPartyRelease(url, opts.headline, { content: opts.content, companyName: opts.companyName })) return { kind: "allowed", tier: 1, lowConfidence: false, why: "party_release" };
+  if (isPartyRelease(url, opts.headline, { content: opts.content, companyName: opts.companyName, acquirers: opts.acquirers })) return { kind: "allowed", tier: 1, lowConfidence: false, why: "party_release" };
   // A domain on no list that was classified once (domainClass.ts): outlets and wires are tier 4, the weakest; directories, blogs and other
   // companies' own sites are blocked; an investor follows the investor rule above.
   const cls = domainClasses.get(url);

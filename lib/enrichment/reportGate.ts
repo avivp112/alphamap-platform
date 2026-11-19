@@ -7,19 +7,19 @@
 import { applyRowRules, type RowLike } from "./rowRules.ts";
 
 export interface GateLine { field: string; after: unknown; source_url?: string | null; quote?: string | null; payload?: unknown }
-export interface GateResult { drop: Set<number>; after: Map<number, string> }
+export interface GateResult { drop: Set<number>; after: Map<number, string>; /** why each dropped or changed line was (the rules' own words) */ reasons: string[] }
 
 /** The indexes of the lines the rules drop, and the new text of the ones they change. */
 export function gateLines(lines: GateLine[], companyName: string, today: string, o: { domain?: string | null } = {}): GateResult {
   const rows = lines.map((l, i) => ({ field: l.field, after: typeof l.after === "string" ? l.after : JSON.stringify(l.after), source_url: l.source_url ?? "", quote: l.quote ?? "", company: companyName, payload: l.payload ? JSON.stringify(l.payload) : undefined, _i: i }));
   // applyRowRules edits rows in place (type, lead): keep the first text of each to see the change.
   const before = new Map(rows.map((r) => [r._i, r.after]));
-  const { rows: kept } = applyRowRules(rows as unknown as Array<RowLike & { _i: number }>, companyName, today, o);
+  const { rows: kept, dropped } = applyRowRules(rows as unknown as Array<RowLike & { _i: number }>, companyName, today, o);
   const keptIdx = new Set(kept.map((r) => r._i));
   const drop = new Set<number>(); const after = new Map<number, string>();
   rows.forEach((r) => { if (!keptIdx.has(r._i)) drop.add(r._i); });
   for (const r of kept) if (r.after !== before.get(r._i)) after.set(r._i, r.after);
-  return { drop, after };
+  return { drop, after, reasons: dropped };
 }
 
 /** "Series A $4M · 2017-09-05 · lead X" → the parts the plan keeps. */

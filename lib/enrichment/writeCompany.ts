@@ -947,6 +947,7 @@ export async function writeCollected(
       const out: PilotChange[] = [];
       reportLines.forEach((l, i) => { if (g.drop.has(i)) return; out.push(g.after.has(i) ? { ...l, after: g.after.get(i)! } : l); });
       reportLines.length = 0; reportLines.push(...out);
+      for (const why of g.reasons) console.log(`    🚦    ${why}`);
       if (g.drop.size || g.after.size) console.log(`    🚦  The rules of the report applied before the write: ${g.drop.size} value(s) not written, ${g.after.size} changed${cannotHold.length ? ` · could not be held back: ${cannotHold.join(" | ")}` : ""}`);
     }
     // Which rule made each value (ruleRegistry.ts): the hits the collection kept, and three that show in the source itself.

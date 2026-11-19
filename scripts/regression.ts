@@ -33,7 +33,7 @@ function idsOf(n: number): string[] {
 }
 const readCsv = (p: string) => { const [head, ...body] = parseCsv(readFileSync(p, "utf8")); return { head, body, ix: (c: string) => { const e = head.findIndex((h) => h === c); return e >= 0 ? e : head.findIndex((h) => h.startsWith(c)); } }; };
 
-interface RunResult { n: number; rows: RunRow[]; rejections: Rejected[]; acceptance: Array<{ id: string; severity: string; pass: boolean; detail: string }>; cost: number; companies: number; misses: string[]; live: string }
+interface RunResult { n: number; rows: RunRow[]; rejections: Rejected[]; acceptance: Array<{ id: string; severity: string; pass: boolean; detail: string }>; cost: number; companies: number; misses: string[]; live: string; diag: Record<string, string[]> }
 
 /** One batch, clean slate, from the recordings. */
 function runBatch(n: number): RunResult {
@@ -63,7 +63,20 @@ function runBatch(n: number): RunResult {
   const out = String(child.stdout ?? "");
   const misses = out.split("\n").filter((l) => /^\s*REPLAY MISS /.test(l)).map((l) => l.trim());
   const live = out.split("\n").find((l) => /live model steps:/.test(l))?.trim() ?? "";
-  return { n, rows, rejections, acceptance, cost, companies: ids.length, misses, live };
+  // For a check that fails on a company, that company's own log lines (what the run found, what it dropped and why) — so the cause is read at once, not asked for.
+  const diag: Record<string, string[]> = {};
+  const runLog = out.split("\n");
+  for (const c of checks) {
+    const co = (c as { company?: string }).company;
+    const r = acceptance.find((x) => x.id === c.id);
+    if (!co || !r || r.pass || diag[c.id]) continue;
+    if (Object.entries(diag).some(([id, v]) => (checks.find((k) => k.id === id) as { company?: string } | undefined)?.company === co && v[0] !== "(same company, above)")) { diag[c.id] = ["(same company, above)"]; continue; }
+    const at = runLog.findIndex((l) => new RegExp(`^── ${co.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\(`).test(l));
+    if (at < 0) { diag[c.id] = [`(no block for ${co} in the run's log)`]; continue; }
+    let end = runLog.findIndex((l, i) => i > at && /^── .* \(/.test(l)); if (end < 0) end = runLog.length;
+    diag[c.id] = runLog.slice(at, end).filter((l) => /🏁|acquisition|🚫  (news|Acquired|Seed|Series|Other|Growth)|🚦|🏷️|📅  news|\[DRY\] would write (acquired|round|tags|news)|✅ \d+ field|🟠 /.test(l) && !/🌐/.test(l)).map((l) => l.trim().slice(0, 190)).slice(0, 36);
+  }
+  return { n, rows, rejections, acceptance, cost, companies: ids.length, misses, live, diag };
 }
 
 function baselineFrom(res: RunResult, source: string): Baseline {
@@ -136,7 +149,7 @@ for (const n of batches) {
   console.log(`\n── batch ${n}: ${base.values.length} baseline value(s) · lost ${cmp.lost.length} · new ${cmp.added.length} · changed ${cmp.changed.length} · acceptance ERRORs ${errs.length} · cost $${res.cost.toFixed(2)}`);
   if (res.misses.length) { console.log(`   ⚠️  the replay is not faithful for ${res.misses.length} compan(ies) — a web response the recordings do not have:`); for (const m of res.misses.slice(0, 12)) console.log(`      ${m.slice(0, 170)}`); }
   if (res.live) console.log(`   ${res.live.slice(0, 200)}`);
-  for (const e of errs) { failed = true; console.log(`   ❌ acceptance ${e.id}: ${e.detail.slice(0, 160)}`); }
+  for (const e of errs) { failed = true; console.log(`   ❌ acceptance ${e.id}: ${e.detail.slice(0, 160)}`); for (const l of res.diag[e.id] ?? []) console.log(`        │ ${l}`); }
   for (const l of cmp.lost) { failed = true; console.log(`   ❌ LOST ${l.company} · ${l.field} · ${l.value.slice(0, 90)}   [${l.reason_code}]`); }
   if (cmp.changed.length) { console.log("   changed (one value per company, a different one now — not a failure, to look at):"); for (const c of cmp.changed.slice(0, 15)) console.log(`   ~ ${c.company} · ${c.field}: ${c.was.slice(0, 50)} → ${c.now.slice(0, 50)}`); if (cmp.changed.length > 15) console.log(`   … and ${cmp.changed.length - 15} more`); }
   if (cmp.added.length) { console.log("   new values:"); for (const a of cmp.added.slice(0, 25)) console.log(`   + ${a.company} · ${a.field} · ${a.value.slice(0, 90)}`); if (cmp.added.length > 25) console.log(`   … and ${cmp.added.length - 25} more`); }

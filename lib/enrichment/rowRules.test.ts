@@ -690,3 +690,58 @@ describe("Humi: the acquisition headline survives the dedupe and the buyer is th
     expect(acquiredFromNews(rows as never, "Humi", "id")?.after).toMatch(/Employment Hero \(2025-01-08\)/);
   });
 });
+
+import { finishNews } from "./newsGate";
+import { isPartyRelease as party2, roundSourceStanding as standing3 } from "./roundSources";
+describe("regression gate fixes (owner, 2026-11-19)", () => {
+  it("Paradox: a round type that another source of the same event states is not Unknown", () => {
+    const rows = [
+      { company: "Paradox AI", field: "round", after: "Series C $200M · 2021-12 (month only)", source_url: "https://siliconangle.com/2021/12/28/x", quote: "Paradox valued at $1.5B following $200M funding round" },
+      { company: "Paradox AI", field: "news", after: "2021-12-27 — On a Mission to Build the Next Generation of HR Software, Paradox Raises $200M Series C", source_url: "https://www.prnewswire.com/news-releases/x", quote: "Paradox Raises $200M Series C" },
+    ];
+    const g = applyRowRules(rows as never, "Paradox AI", "2026-11-19");
+    expect(g.rows.find((r) => r.field === "round")?.after).toMatch(/^Series C \$200M/);
+    // …but not when no source states it, nor for another amount
+    const alone = applyRowRules([rows[0]] as never, "Paradox AI", "2026-11-19");
+    expect(alone.rows.find((r) => r.field === "round")?.after).toMatch(/^Unknown \$200M/);
+    const other = applyRowRules([rows[0], { ...rows[1], after: "2021-12-27 — Paradox Raises $40M Series C", quote: "Paradox Raises $40M Series C" }] as never, "Paradox AI", "2026-11-19");
+    expect(other.rows.find((r) => r.field === "round")?.after).toMatch(/^Unknown \$200M/);
+  });
+  it("Mintifi: a blog sentence about the company stands as the tag's evidence; one on another topic does not", () => {
+    const tag = (quote: string) => rowProblem({ company: "Mintifi", field: "tags", after: "Lending", source_url: "https://mintifi.com/blog/supply-chain-finance", quote } as never, "Mintifi", "2026-11-19");
+    expect(tag("Mintifi offers supply chain financing to small businesses through its own platform.")).toBeNull();
+    expect(tag("OKRs help teams use generative AI to set goals.")).toMatch(/another topic/);
+  });
+  it("Medipass: the known buyer's own newsroom or blog is a party", () => {
+    expect(party2("https://www.tyro.com/blog/introducing-tyro-health/", "Introducing Tyro Health", { companyName: "Medipass", acquirers: ["Tyro"] })).toBe(true);
+    expect(party2("https://www.tyro.com/blog/introducing-tyro-health/", "Introducing Tyro Health", { companyName: "Medipass" })).toBe(false);
+    expect(party2("https://www.example.com/blog/x", "Introducing X", { companyName: "Medipass", acquirers: ["Tyro"] })).toBe(false);
+    expect(standing3("https://www.tyro.com/blog/introducing-tyro-health/", { companyName: "Medipass", headline: "Introducing Tyro Health", acquirers: ["Tyro"] }).kind).toBe("allowed");
+  });
+  it("news: an event keeps one item, or its items go under their own reason — never 'the same event' with nothing left", () => {
+    const deps = { isOwnSite: () => false, content: () => "", companyName: "Medipass" };
+    // all undated: all dropped for the date, none as a duplicate
+    const undated = [{ title: "Tyro buys Medipass health payment app from NAB Ventures", url: "https://afr.com/a" }, { title: "Tyro to buy digital healthcare payments platform Medipass", url: "https://pulseit.news/b" }];
+    const r1 = finishNews(undated as never, deps);
+    expect(r1.kept).toHaveLength(0);
+    expect(r1.dropped.map((d) => d.reason)).toEqual(["news_no_date", "news_no_date"]);
+    // one dated among undated: exactly that one is kept
+    const mixed = [...undated, { title: "Tyro buys Medipass", url: "https://startupdaily.net/c", published_date: "2021-05-11" }];
+    const r2 = finishNews(mixed as never, deps);
+    expect(r2.kept.map((k) => k.url)).toEqual(["https://startupdaily.net/c"]);
+    // whatever the mix, an event with a dated item keeps one
+    for (const perm of [[0, 1, 2], [2, 1, 0], [1, 2, 0]]) expect(finishNews(perm.map((i) => mixed[i]) as never, deps).kept).toHaveLength(1);
+  });
+  it("merging never leaves an event with nothing: rounds, news, founders", () => {
+    const rows = [
+      { company: "X Robotics", field: "round", after: "Seed $2M · 2020-01-05", source_url: "https://a.com/1", quote: "X Robotics raised a $2M seed round" },
+      { company: "X Robotics", field: "round", after: "Seed $2M · 2020-01", source_url: "https://b.com/1", quote: "X Robotics raised a $2M seed round" },
+      { company: "X Robotics", field: "news", after: "2020-01-05 — X Robotics raises $2M seed", source_url: "https://a.com/1", quote: "" },
+      { company: "X Robotics", field: "news", after: "2020-01-05 — X Robotics raises $2M seed", source_url: "https://b.com/1", quote: "" },
+      { company: "X Robotics", field: "founder", after: "Jane Roe — CEO", source_url: "https://xrobotics.com/about", quote: "Jane Roe, CEO of X" },
+      { company: "X Robotics", field: "founder", after: "Jane Roe — Co-founder & CEO", source_url: "https://xrobotics.com/team", quote: "Jane Roe, Co-founder & CEO of X" },
+    ];
+    const g = applyRowRules(rows as never, "X Robotics", "2026-11-19");
+    for (const f of ["round", "news", "founder"]) expect(g.rows.filter((r) => r.field === f).length, f).toBeGreaterThanOrEqual(1);
+  });
+});
