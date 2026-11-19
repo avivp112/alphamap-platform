@@ -95,7 +95,7 @@
   "kind": "present",
   "company": "Medipass",
   "field": "acquired",
-  "match": "Tyro.*2021-05-11"
+  "match": "Tyro.*2021-05-10"
  },
  {
   "id": "six_degrees_acquired",

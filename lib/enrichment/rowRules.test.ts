@@ -901,3 +901,24 @@ describe("regression gate round 5 (owner, 2026-11-19)", () => {
     expect(want).toMatch(/claranet\.com/);
   });
 });
+
+describe("regression gate round 6 (owner, 2026-11-19)", () => {
+  it("Paradox: the type is cited from the other source even when other evidence of the round already says 'Series C'", () => {
+    const lines = [
+      { field: "round", after: "Other $200M · 2021-12 (month only)", source_url: "https://siliconangle.com/2021/12/28/x", quote: "Paradox valued at $1.5B following $200M funding round",
+        payload: JSON.stringify({ round: { round_type: "Other" }, evidence: [{ field: "amount_raised", quote: "valued at $1.5B following $200M funding round" }, { field: "lead_investor", quote: "Thoma Bravo led the Series C" }] }) },
+      { field: "news", after: "2021-12-27 — On a Mission to Build the Next Generation of HR Software, Paradox Raises $200M Series C", source_url: "https://www.prnewswire.com/news-releases/x", quote: "" },
+    ];
+    const g = gateLines(lines as never, "Paradox AI", "2026-11-19");
+    expect(g.cited.get(0)).toMatchObject({ source_url: "https://www.prnewswire.com/news-releases/x" });
+  });
+  it("Six Degrees: the buyer's own release stands before a trade-press report, even when its date is read from the page's code", () => {
+    const mk = (title: string, url: string, d: string, basis: string) => ({ title, url, published_date: d, date_basis: basis });
+    const xs = [
+      mk("Claranet picks up Six Degrees | Microscope", "https://www.computerweekly.com/microscope/news/366645257/Claranet-picks-up-Six-Degrees", "2026-06-29", "given"),
+      mk("Claranet acquires Six Degrees", "https://www.claranet.com/uk/news/claranet-acquires-six-degrees/", "2026-06-29", "code"),
+    ];
+    const ev = purchaseEvents(xs as never, "Six Degrees", () => true, (x) => /claranet\.com/.test(x.url));
+    expect(ev[0].rep.url).toMatch(/claranet\.com/);
+  });
+});

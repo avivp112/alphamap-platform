@@ -146,11 +146,14 @@ export function purchaseEvents<T extends PurchaseItem>(items: T[], companyName: 
     const majority = cluster.some((e) => e.h.majority);
     const ok = members.filter(eligible);
     if (!ok.length) continue;
-    const trusted = ok.filter((x) => x.date_basis !== "code");
-    const pool = trusted.length ? trusted : ok;
-    // Always the same one, whatever the order the searches returned them in: a party's own announcement (the company's, the buyer's), then the earliest date, then the report that states the purchase, then the address.
+    // The party's own announcements (the company's, the buyer's, a wire release) stand first; among the candidates a date that is not read from a page's code stands before one that is.
+    const partyOk = ok.filter(isParty);
+    const base = partyOk.length ? partyOk : ok;
+    const trusted = base.filter((x) => x.date_basis !== "code");
+    const pool = trusted.length ? trusted : base;
+    // Always the same one, whatever the order the searches returned them in: the earliest date, then the report that states the purchase, then the address.
     const isHit = (x: T) => hits.some((e) => e.x === x);
-    const rep = [...pool].sort((a, b) => (isParty(b) ? 1 : 0) - (isParty(a) ? 1 : 0) || String(a.published_date).localeCompare(String(b.published_date)) || (isHit(b) ? 1 : 0) - (isHit(a) ? 1 : 0) || a.url.localeCompare(b.url))[0];
+    const rep = [...pool].sort((a, b) => String(a.published_date).localeCompare(String(b.published_date)) || (isHit(b) ? 1 : 0) - (isHit(a) ? 1 : 0) || a.url.localeCompare(b.url))[0];
     out.push({ buyer: first.h.acquirer, majority, members, rep });
     void key;
   }

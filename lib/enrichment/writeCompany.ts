@@ -227,6 +227,8 @@ export async function writeCollected(
 
   // ── Stage 10: write ──────────────────────────────────────────────────────
   const patch: Record<string, unknown> = {};
+  // A round's type stated by another source of the same event (gateLines `cited`): the source and quote the type's provenance rests on, by plan insert.
+  const typeCites = new Map<unknown, { quote: string; source_url: string }>();
   const fieldWrites: Array<{ field: string; value: unknown; source_id: string; evidence_quote: string; source_type: SourceType }> = [];
   const provenance = (field: string, value: unknown, ev: { source_id: string; evidence_quote: string } | undefined) => {
     if (ev) fieldWrites.push({ field, value, source_id: ev.source_id, evidence_quote: ev.evidence_quote, source_type: sourceTypeFor(ev.source_id) ?? "model_inferred" });
@@ -948,7 +950,7 @@ export async function writeCollected(
         if (l.field !== "round" || l.before !== null) continue;
         const k = insertLines.findIndex((x) => x.i === i);
         const r = k >= 0 ? plan.inserts[k] : undefined;
-        if (r && c.source_url) (r as { source_url?: string | null }).source_url = c.source_url;
+        if (r && c.source_url) { (r as { source_url?: string | null }).source_url = c.source_url; typeCites.set(r, c); }
       }
       if (dropInserts.size) plan.inserts = plan.inserts.filter((_, k) => !dropInserts.has(k));
       for (let i = fieldWrites.length - 1; i >= 0; i--) if (!(fieldWrites[i].field.replace(/^(profile|metrics|market)\./, "") in patch)) fieldWrites.splice(i, 1);
@@ -1064,8 +1066,15 @@ export async function writeCollected(
     }
     // A round's amount / valuation / date / lead: field "funding_rounds.<id>.<column>".
     const roundProvenance = async (roundId: string, written: Parameters<typeof roundFieldEvidence>[0]) => {
+      const cite = typeCites.get(written);
       for (const e of roundFieldEvidence(written, funding.funding_rounds)) {
+        if (cite && e.field === "round_type") continue;   // the type rests on the source that states it (below), not on the amount's
         await writeProvenance({ field: `funding_rounds.${roundId}.${e.field}`, value: e.value, source_id: e.source_id, evidence_quote: e.evidence_quote, source_type: sourceTypeFor(e.source_id) ?? "model_inferred" });
+      }
+      if (cite) {
+        let src = allSources.find((x) => x.url === cite.source_url);
+        if (!src) { src = { source_id: `T${allSources.length + 1}`, source_type: "news", url: cite.source_url, title: cite.quote, content: cite.quote, provider: "serper", query_label: "round_type_cited" } as LabeledSource; allSources.push(src); sourceById.set(src.source_id, src); }
+        await writeProvenance({ field: `funding_rounds.${roundId}.round_type`, value: (written as { round_type?: string }).round_type ?? "", source_id: src.source_id, evidence_quote: cite.quote, source_type: sourceTypeFor(src.source_id) ?? "news" });
       }
     };
 

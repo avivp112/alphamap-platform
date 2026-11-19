@@ -240,7 +240,7 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
         }
         const stated = !!sameEventRow || (t === "Other" ? refineRoundType("Other", amountQuote) === "Other" : statedRoundLabels(amountQuote).includes(t));
         // The source that states the type is cited with it: the round's quote and source become that headline and its page (the amount is in it as well).
-        if (sameEventRow && !statedRoundLabels(amountQuote).includes(newsType ?? t)) r = { ...r, quote: sameEventRow.after.replace(/^\d{4}-\d{2}-\d{2}\s+—\s+/, ""), source_url: sameEventRow.source_url };
+        if (sameEventRow && (newsType || !statedRoundLabels(amountQuote).includes(t))) r = { ...r, quote: sameEventRow.after.replace(/^\d{4}-\d{2}-\d{2}\s+—\s+/, ""), source_url: sameEventRow.source_url };
         if (!stated) {
           dropped.push(`round: type ${t} → Unknown — no quote of the round names it`);
           r = { ...r, after: r.after.replace(/^[A-Za-z+\- ]+?(?= \$| amount)/, "Unknown") };
