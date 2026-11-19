@@ -1,0 +1,38 @@
+[
+ {
+  "id": "weezy_founded_year_not_getir",
+  "why": "Weezy's founded year is 2019 or missing — 2015 is Getir's (a sentence about Getir that names Weezy)",
+  "kind": "absent",
+  "company": "Weezy",
+  "field": "founded_year",
+  "match": "^2015$"
+ },
+ {
+  "id": "no_registered_address_as_hq_city",
+  "why": "A registered address is registered_address only: no headquarters city rests on it",
+  "kind": "absent",
+  "field": "hq_city",
+  "quote_match": "registered (office|address|seat)|registered in\\b"
+ },
+ {
+  "id": "no_registered_address_as_hq_country",
+  "why": "A registered address is registered_address only: no headquarters country rests on it",
+  "kind": "absent",
+  "field": "hq_country",
+  "quote_match": "registered (office|address|seat)|registered in\\b"
+ },
+ {
+  "id": "no_registered_address_as_office",
+  "why": "A registered address is registered_address only: no office rests on it",
+  "kind": "absent",
+  "field": "office",
+  "quote_match": "registered (office|address|seat)|registered in\\b"
+ },
+ {
+  "id": "no_range_from_a_plus_count",
+  "why": "A count with a plus (\"150+\") has no ceiling: no employee range rests on it",
+  "kind": "absent",
+  "field": "employee_range",
+  "quote_match": "\\d\\s*\\+"
+ }
+]

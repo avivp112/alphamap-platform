@@ -53,7 +53,12 @@ export function foundedInCityYear(sentences: string[], companyName: string): { y
   for (const s of sentences) {
     if (!name || !s.toLowerCase().includes(name)) continue;
     const m = s.match(new RegExp(`\\bfounded\\s+in\\s+([A-Z][\\p{L}.' -]{2,30}?)\\s+in\\s+(${YEAR})\\b`, "u"));
-    if (m) return { year: Number(m[2]), city: m[1].trim(), quote: s.slice(0, 240) };
+    if (!m) continue;
+    // The company is the subject of the founding clause: its name stands before "founded in", with no other proper name between them ("Getir, which was founded in Turkey in 2015, … the UK's Weezy" is Getir's year).
+    const before = s.slice(0, m.index ?? 0), at = before.toLowerCase().lastIndexOf(name);
+    if (at < 0) continue;
+    if (/\b\p{Lu}[\p{L}]{2,}\b/u.test(before.slice(at + name.length).replace(/^[\s,]+/, ""))) continue;
+    return { year: Number(m[2]), city: m[1].trim(), quote: s.slice(0, 240) };
   }
   return null;
 }

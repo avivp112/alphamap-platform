@@ -105,3 +105,57 @@ export function removePendingFix(batch: number, company: string, field: string, 
   append(path, PENDING_HEAD, keep.map((f) => [f.batch, f.company, f.field, f.value, f.reason, f.created, f.status]));
   return all.length - keep.length;
 }
+
+// ── the owner's rule for a field after the sample check (2026-11-19) ──────────────────────────────────────────────────────────────────────────────────────────────
+/** A field in which a wrong value is a wrong fact about the company itself: an error whose cause is unknown stops it. */
+export const DANGEROUS_FIELDS = ["hq_city", "hq_country", "founder", "leader", "round", "founded_year", "employee_count"];
+export const MAX_ERROR_COMPANIES = 5;
+export const MIN_SAMPLE_VALUES = 5;
+export const MIN_HISTORY_VALUES = 30;
+export interface FieldDecision { field: string; total: number; wrongValues: number; wrongCompanies: number; sampleEnough: boolean; historyEnough: boolean; hold: boolean; why: string }
+/**
+ * Errors in 1–5 companies: the value itself (and its siblings by rule and source) is excluded and the field is written. The field is held when its errors are in more than 5 companies; when it has
+ * too few values to judge (under 5 in the sample AND under 30 in the track record); or when it is a dangerous field and an error's cause is unknown (the mark carries no reason).
+ */
+export function fieldDecisions(sample: SampleRow[], wrong: Map<number, string>, record: TrackRecord = readTrackRecord(), batch?: number): FieldDecision[] {
+  const by = new Map<string, { total: number; wrongValues: number; companies: Set<string>; unknownCause: boolean }>();
+  for (const r of sample) {
+    const f = familyOf(r.field);
+    const e = by.get(f) ?? by.set(f, { total: 0, wrongValues: 0, companies: new Set(), unknownCause: false }).get(f)!;
+    e.total++;
+    if (wrong.has(r.n)) { e.wrongValues++; e.companies.add(r.company); if (!wrong.get(r.n) || /^wrong in the sample check$/.test(wrong.get(r.n)!)) e.unknownCause = true; }
+  }
+  return [...by.entries()].map(([field, e]) => {
+    // the history before this batch (the record already holds this batch's numbers when it was run twice: they are taken out)
+    const rec = record[field];
+    const history = Math.max(0, (rec?.reviewed ?? 0) - (batch !== undefined && rec?.batches.includes(batch) ? e.total : 0));
+    const sampleEnough = e.total >= MIN_SAMPLE_VALUES, historyEnough = history >= MIN_HISTORY_VALUES;
+    const reasons: string[] = [];
+    if (e.companies.size > MAX_ERROR_COMPANIES) reasons.push(`errors in ${e.companies.size} companies (more than ${MAX_ERROR_COMPANIES})`);
+    if (!sampleEnough && !historyEnough) reasons.push(`too few values to judge (${e.total} in the sample, ${history} in the history)`);
+    if (e.wrongValues && DANGEROUS_FIELDS.includes(field) && e.unknownCause) reasons.push("a dangerous field with an error of unknown cause");
+    return { field, total: e.total, wrongValues: e.wrongValues, wrongCompanies: e.companies.size, sampleEnough, historyEnough, hold: reasons.length > 0, why: reasons.join("; ") };
+  }).sort((a, b) => Number(b.hold) - Number(a.hold) || b.wrongCompanies - a.wrongCompanies || a.field.localeCompare(b.field));
+}
+
+/** Takes a batch's held-field rows of one source out of the file (a rebuild). Returns how many. */
+export function clearHeld(batch: number, source: string, path = "held_fields.csv"): number {
+  const all = readHeldFields(path);
+  const keep = all.filter((h) => !(h.batch === batch && h.source === source));
+  if (keep.length === all.length) return 0;
+  writeFileSync(path, "\uFEFF" + HELD_HEAD.join(",") + "\r\n");
+  append(path, HELD_HEAD, keep.map((h) => [h.batch, h.field, h.source, h.detail, h.created, h.completed]));
+  return all.length - keep.length;
+}
+
+// ── marks already given: a value (company, field, value) marked before keeps its mark ──────────────────────────────────────────────────────────────────────────────
+export interface Mark { company: string; field: string; value: string; verdict: "correct" | "wrong"; reason: string; batch: number }
+const MARKS_FILE = "sample_marks.json";
+const foldKey = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, "");
+export const markKey = (company: string, field: string, value: string) => `${foldKey(company)}|${familyOf(field)}|${foldKey(value).slice(0, 160)}`;
+export function readMarks(path = MARKS_FILE): Record<string, Mark> { try { return JSON.parse(readFileSync(path, "utf8")) as Record<string, Mark>; } catch { return {}; } }
+export function saveMarks(rows: Array<{ company: string; field: string; value: string; verdict: "correct" | "wrong"; reason: string }>, batch: number, path = MARKS_FILE): void {
+  const m = readMarks(path);
+  for (const r of rows) m[markKey(r.company, r.field, r.value)] = { company: r.company, field: r.field, value: r.value, verdict: r.verdict, reason: r.reason, batch };
+  writeFileSync(path, JSON.stringify(m, null, 1) + "\n");
+}

@@ -8,7 +8,7 @@
  */
 import { readFileSync, writeFileSync } from "fs";
 import { parseCsv } from "../lib/enrichment/acceptance.ts";
-import { addHeldFields, addPendingFixes, addToTrackRecord, ERROR_LIMIT, fieldErrors, type SampleRow } from "../lib/enrichment/batchProcess.ts";
+import { addHeldFields, addPendingFixes, addToTrackRecord, clearHeld, fieldDecisions, markKey, readMarks, readTrackRecord, saveMarks, type SampleRow } from "../lib/enrichment/batchProcess.ts";
 
 const batch = Number(process.env.BATCH ?? process.env.BATCH_NO);
 if (!Number.isInteger(batch) || batch < 1) { console.error("BATCH=<the batch number> is required."); process.exit(2); }
@@ -25,16 +25,20 @@ if (!wrongEnv && !process.env.RIGHT_ALL && !process.env.WRONG_BY) {
     const w = wr.filter((r) => Number(r[wh.indexOf("batch")]) === batch);
     if (w.length) { console.log("WATCH (not in the numbering; if one is wrong, say so with pending_fixes.csv):"); for (const r of w) console.log(`  ${r[wh.indexOf("company")]} · ${r[wh.indexOf("field")]} · ${r[wh.indexOf("value")]} — ${r[wh.indexOf("reason")]}`); console.log(""); }
   } catch { /* none */ }
-  for (const r of rows) {
+  const todo = rows.filter((r) => !(r[ix("verdict")] ?? "").trim());
+  console.log(`${rows.length} value(s) in the sample: ${rows.length - todo.length} already marked (kept), ${todo.length} NEW to mark.\n`);
+  for (const r of todo) {
     console.log(`#${r[ix("n")]}  ${r[ix("company")]} · ${r[ix("field")]} · ${r[ix("value")].slice(0, 120)}`);
     console.log(`     ${(r[ix("source_url")] || "").slice(0, 130)}`);
     if (r[ix("quote")]) console.log(`     "${r[ix("quote")].slice(0, 200)}"`);
   }
-  console.log(`\n${rows.length} value(s). The WRONG ones:  BATCH=${batch} WRONG=<numbers, comma-separated; N=reason optional> npx tsx scripts/sample_verdicts.ts   (none wrong: RIGHT_ALL=1)`);
+  console.log(`\n${todo.length} value(s) to mark. The WRONG ones:  BATCH=${batch} WRONG=<numbers, comma-separated; N=reason optional> npx tsx scripts/sample_verdicts.ts   (none wrong: RIGHT_ALL=1)`);
   process.exit(0);
 }
 
 const wrong = new Map<number, string>();
+// Marks given before (the verdict column carries them, from sample_marks.json): a value marked wrong stays wrong.
+{ const marks = readMarks(); for (const r of rows) if (/^wrong/i.test(r[ix("verdict")] ?? "")) wrong.set(Number(r[ix("n")]), marks[markKey(r[ix("company")], r[ix("field")], r[ix("value")])]?.reason || "marked wrong before"); }
 // Marks by content, for a sample whose numbers are not at hand: WRONG_BY="Company|field|value part=reason; Company|field=reason" (the value part and the field are optional). Every row that matches is wrong.
 {
   const fold = (x: string) => x.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, "");
@@ -59,19 +63,33 @@ for (const part of wrongEnv.split(",").map((x) => x.trim()).filter(Boolean)) {
   if (!sample.some((r) => r.n === num)) { console.error(`⛔  #${n} is not in ${file} (1–${sample.length}).`); process.exit(1); }
   wrong.set(num, reason.join("=").trim() || "wrong in the sample check");
 }
-const errors = fieldErrors(sample, new Set(wrong.keys()));
-// The record of what each field's samples found (field_track_record.json, committed): a field with no history gets a wider sample the next time (report_lint.ts).
-addToTrackRecord(batch, errors);
+// Every mark is kept: the same value (company, field, value) in a later sample is not shown again — and the decision below is taken on ALL the values of this batch ever marked, not on this file alone.
 const vi = ix("verdict");
 for (const r of rows) r[vi] = wrong.has(Number(r[ix("n")])) ? "wrong" : "correct";
 const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 writeFileSync(file, "﻿" + [head, ...rows].map((r) => r.map(q).join(",")).join("\r\n") + "\r\n");
+saveMarks(sample.map((r) => ({ company: r.company, field: r.field, value: r.value, verdict: wrong.has(r.n) ? "wrong" as const : "correct" as const, reason: wrong.get(r.n) ?? "" })), batch);
+const allMarks = Object.values(readMarks()).filter((m) => m.batch === batch);
+const sampleAll: SampleRow[] = allMarks.map((m, i) => ({ n: i + 1, company: m.company, field: m.field, value: m.value }));
+const wrongAll = new Map<number, string>(allMarks.flatMap((m, i) => (m.verdict === "wrong" ? [[i + 1, m.reason] as [number, string]] : [])));
 
-const heldFields = new Set(errors.filter((e) => e.held).map((e) => e.field));
-// A held field is held whole: its wrong values need no list of their own. The wrong values of the other fields are excluded by content.
-addPendingFixes(sample.filter((r) => wrong.has(r.n) && !heldFields.has(r.field === "description_what_only" ? "description" : r.field)).map((r) => ({ batch, company: r.company, field: r.field, value: r.value, reason: wrong.get(r.n)! })));
-addHeldFields(errors.filter((e) => e.held).map((e) => ({ batch, field: e.field, source: "sample_50", detail: `${e.wrong}/${e.total} wrong (${Math.round(e.share * 100)}%), over ${ERROR_LIMIT * 100}%` })));
+// The owner's rule (2026-11-19): errors in 1–5 companies → the wrong values (and their siblings by rule and source) are excluded and the field is written; held when the errors are in more than 5 companies,
+// when the field has too few values to judge (under 5 in the sample AND under 30 in the track record), or when a dangerous field has an error of unknown cause. FORCE_WRITE / FORCE_HOLD carry the
+// owner's decision for a field, printed with the rule's own verdict.
+const split = (v?: string) => (v ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+const forceWrite = split(process.env.FORCE_WRITE), forceHold = split(process.env.FORCE_HOLD);
+const decisions = fieldDecisions(sampleAll, wrongAll, readTrackRecord(), batch).map((d) =>
+  forceWrite.includes(d.field) ? { ...d, hold: false, why: d.hold ? `the owner decided: written (the rule says: ${d.why})` : d.why }
+  : forceHold.includes(d.field) ? { ...d, hold: true, why: `the owner decided: held${d.why ? ` (${d.why})` : ""}` } : d);
+// The record of what each field's samples found (field_track_record.json, committed).
+addToTrackRecord(batch, decisions.map((d) => ({ field: d.field, total: d.total, wrong: d.wrongValues })));
 
-console.log(`${sample.length} value(s) · ${wrong.size} wrong (${Math.round((wrong.size / sample.length) * 100)}%)\n`);
-for (const e of errors) console.log(`${e.held ? "⏸️  HELD    " : e.wrong ? "✂️  excluded" : "✅ ok      "}  ${e.field.padEnd(20)} ${e.wrong}/${e.total} wrong (${Math.round(e.share * 100)}%)`);
-console.log(`\n${wrong.size - [...wrong.keys()].filter((n) => heldFields.has(sample.find((r) => r.n === n)!.field)).length} value(s) → pending_fixes.csv · ${heldFields.size} field(s) → held_fields.csv${heldFields.size ? ` (${[...heldFields].join(", ")})` : ""}`);
+const heldFields = new Set(decisions.filter((d) => d.hold).map((d) => d.field));
+const fam = (f: string) => (f === "description_what_only" ? "description" : f);
+addPendingFixes(sampleAll.filter((r) => wrongAll.has(r.n) && !heldFields.has(fam(r.field))).map((r) => ({ batch, company: r.company, field: r.field, value: r.value, reason: wrongAll.get(r.n)! })));
+clearHeld(batch, "sample_50");   // a rebuild: the earlier rows of this check are replaced
+addHeldFields(decisions.filter((d) => d.hold).map((d) => ({ batch, field: d.field, source: "sample_50", detail: `${d.wrongCompanies} compan(ies) with errors, ${d.total} in the sample — ${d.why}` })));
+
+console.log(`${sampleAll.length} value(s) of batch ${batch} marked in all · ${wrongAll.size} wrong (${Math.round((wrongAll.size / Math.max(1, sampleAll.length)) * 100)}%)\n`);
+for (const d of decisions) console.log(`${d.hold ? "⏸️  HELD    " : d.wrongValues ? "✂️  excluded" : "✅ ok      "}  ${d.field.padEnd(20)} ${d.wrongValues}/${d.total} wrong in ${d.wrongCompanies} compan(ies)${d.why ? `  — ${d.why}` : ""}`);
+console.log(`\n${[...wrongAll.keys()].filter((n) => !heldFields.has(fam(sampleAll.find((r) => r.n === n)!.field))).length} value(s) → pending_fixes.csv · ${heldFields.size} field(s) → held_fields.csv${heldFields.size ? ` (${[...heldFields].join(", ")})` : ""}`);

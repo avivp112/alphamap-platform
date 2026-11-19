@@ -23,7 +23,7 @@ import { knownAcquirers } from "../lib/enrichment/acquisition.ts";
 import { isTrackingHost } from "../lib/enrichment/siteOwner.ts";
 import { recentRules } from "../lib/enrichment/ruleRegistry.ts";
 import { loadGaps, ownerWrongTest } from "../lib/enrichment/knownGaps.ts";
-import { addPendingFixes, familyOf, fieldsWithoutHistory, MIN_HISTORY, readTrackRecord } from "../lib/enrichment/batchProcess.ts";
+import { addPendingFixes, familyOf, fieldsWithoutHistory, markKey, MIN_HISTORY, readMarks, readTrackRecord } from "../lib/enrichment/batchProcess.ts";
 
 function parseCsv(text: string): string[][] {
   const rows: string[][] = []; let row: string[] = [], cur = "", q = false;
@@ -326,9 +326,12 @@ console.log(`\n${valueFaults.length} value(s) excluded, ${errors.length} rule ga
   if (newFields.length) console.log(`  fields with no history (under ${MIN_HISTORY} checked values so far), widened: ${newFields.map((f) => `${f} ${pick.filter((p) => familyOf(p.r.field) === f).length}/${pool.filter((x) => familyOf(x.field) === f).length}`).join(" · ")}`);
   const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   const sampleFile = process.env.SAMPLE_FILE ?? `sample_${TOTAL}.csv`;   // the extras of fields with no history are in the same file
-  writeFileSync(sampleFile, "\uFEFF" + ["n,stratum,company,field,value,source_url,quote,quote_original (the page's own words),quote_translated (English it was verified against),rule,verdict (correct/wrong)", ...pick.map(({ r, stratum }, i) => [i + 1, stratum, r.company, r.field, r.after, r.url, r.quote.replace(/^\[machine translation\]\s*/, ""), r.original, r.translated, r.rule, ""].map((x) => q(String(x))).join(","))].join("\r\n") + "\r\n");
+  // A value marked before (company, field, value) keeps its mark: it is not shown again (owner, 2026-11-19).
+  const marks = readMarks();
+  const already = pick.filter(({ r }) => marks[markKey(r.company, r.field, r.after)]).length;
+  writeFileSync(sampleFile, "\uFEFF" + ["n,stratum,company,field,value,source_url,quote,quote_original (the page's own words),quote_translated (English it was verified against),rule,verdict (correct/wrong)", ...pick.map(({ r, stratum }, i) => [i + 1, stratum, r.company, r.field, r.after, r.url, r.quote.replace(/^\[machine translation\]\s*/, ""), r.original, r.translated, r.rule, marks[markKey(r.company, r.field, r.after)]?.verdict ?? ""].map((x) => q(String(x))).join(","))].join("\r\n") + "\r\n");
   console.log(`  strata: ${strata.map(([l]) => `${l} ${pick.filter((p) => p.stratum === l).length}`).join(" · ")} · filled ${pick.filter((p) => p.stratum === "filled from the rest").length}`);
-  console.log(`  ➖ precision: ${pick.length} value(s) in ${sampleFile} (stratified) — mark each correct/wrong (target ≥95%)`);
+  console.log(`  ➖ ${pick.length} value(s) in ${sampleFile}: ${already} already marked before (kept), ${pick.length - already} NEW to mark — sample_verdicts.ts shows only those.`);
   console.log(`\nהחוסמים לרטוב: שגיאת acceptance (ראה ACCEPTANCE למעלה), או שדה שנכשל ב-sample_verdicts. כיסוי ושגיאות lint הם מידע; ערכים פגומים הוחרגו לפי תוכן (pending_fixes.csv).`);
 }
 process.exit(0);
