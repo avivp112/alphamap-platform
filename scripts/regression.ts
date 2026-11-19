@@ -14,7 +14,7 @@
  *   ONLY_BATCHES=7 npx tsx scripts/regression.ts        one batch, to look; no pass file is written for a part
  */
 import { spawnSync } from "child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { parseCsv, rowsFromCsv, runAcceptance, type Check } from "../lib/enrichment/acceptance.ts";
 import { specPathsFor } from "./acceptance_check.ts";
 import {
@@ -33,7 +33,7 @@ function idsOf(n: number): string[] {
 }
 const readCsv = (p: string) => { const [head, ...body] = parseCsv(readFileSync(p, "utf8")); return { head, body, ix: (c: string) => { const e = head.findIndex((h) => h === c); return e >= 0 ? e : head.findIndex((h) => h.startsWith(c)); } }; };
 
-interface RunResult { n: number; rows: RunRow[]; rejections: Rejected[]; acceptance: Array<{ id: string; severity: string; pass: boolean; detail: string }>; cost: number; companies: number }
+interface RunResult { n: number; rows: RunRow[]; rejections: Rejected[]; acceptance: Array<{ id: string; severity: string; pass: boolean; detail: string }>; cost: number; companies: number; misses: string[]; live: string }
 
 /** One batch, clean slate, from the recordings. */
 function runBatch(n: number): RunResult {
@@ -46,6 +46,7 @@ function runBatch(n: number): RunResult {
       CONCURRENCY: process.env.CONCURRENCY ?? "10", PILOT_MAX_COMPANIES: String(Math.max(ids.length, 1)), ONLY: ids.join(","), PILOT_REPORT: `${dir}/pilot_report.csv`, GIT_CHECK: "off", PREFLIGHT: "off" },
     encoding: "utf8", maxBuffer: 1 << 29,
   });
+  writeFileSync(`${dir}/run.log`, `${child.stdout ?? ""}\n${child.stderr ?? ""}`);
   if (child.status !== 0 || !existsSync(`${dir}/pilot_report.csv`)) throw new Error(`batch ${n}: the run failed (exit ${child.status}). ${String(child.stderr ?? "").slice(-400)}`);
   const rep = readCsv(`${dir}/pilot_report.csv`);
   const rows: RunRow[] = rep.body.map((r) => ({ company: r[rep.ix("company")] ?? "", field: r[rep.ix("field")] ?? "", value: r[rep.ix("after")] ?? "" }));
@@ -58,7 +59,11 @@ function runBatch(n: number): RunResult {
   const acceptance = runAcceptance(checks, rowsFromCsv(readFileSync(`${dir}/pilot_report.csv`, "utf8")), notEnriched, today).map((r) => ({ id: r.id, severity: r.severity, pass: r.pass, detail: r.detail }));
   const summary = existsSync(`${dir}/batch_${n}_summary.md`) ? readFileSync(`${dir}/batch_${n}_summary.md`, "utf8") : String(child.stdout ?? "");
   const cost = Number(summary.match(/model cost \$([\d.]+)/)?.[1] ?? 0);
-  return { n, rows, rejections, acceptance, cost, companies: ids.length };
+  // A web response the recordings did not have makes the replay unfaithful for that company: the gate says so (the log of the run is regression/out/batch_N/run.log).
+  const out = String(child.stdout ?? "");
+  const misses = out.split("\n").filter((l) => /^\s*REPLAY MISS /.test(l)).map((l) => l.trim());
+  const live = out.split("\n").find((l) => /live model steps:/.test(l))?.trim() ?? "";
+  return { n, rows, rejections, acceptance, cost, companies: ids.length, misses, live };
 }
 
 function baselineFrom(res: RunResult, source: string): Baseline {
@@ -129,6 +134,8 @@ for (const n of batches) {
   const errs = acceptanceErrors(res.acceptance);
   totalValues += base.values.length;
   console.log(`\n── batch ${n}: ${base.values.length} baseline value(s) · lost ${cmp.lost.length} · new ${cmp.added.length} · changed ${cmp.changed.length} · acceptance ERRORs ${errs.length} · cost $${res.cost.toFixed(2)}`);
+  if (res.misses.length) { console.log(`   ⚠️  the replay is not faithful for ${res.misses.length} compan(ies) — a web response the recordings do not have:`); for (const m of res.misses.slice(0, 12)) console.log(`      ${m.slice(0, 170)}`); }
+  if (res.live) console.log(`   ${res.live.slice(0, 200)}`);
   for (const e of errs) { failed = true; console.log(`   ❌ acceptance ${e.id}: ${e.detail.slice(0, 160)}`); }
   for (const l of cmp.lost) { failed = true; console.log(`   ❌ LOST ${l.company} · ${l.field} · ${l.value.slice(0, 90)}   [${l.reason_code}]`); }
   if (cmp.changed.length) { console.log("   changed (one value per company, a different one now — not a failure, to look at):"); for (const c of cmp.changed.slice(0, 15)) console.log(`   ~ ${c.company} · ${c.field}: ${c.was.slice(0, 50)} → ${c.now.slice(0, 50)}`); if (cmp.changed.length > 15) console.log(`   … and ${cmp.changed.length - 15} more`); }
