@@ -670,3 +670,23 @@ describe("a dropped office takes only itself out of the patch (owner, batch 7: H
     expect(patch.office_countries).toBeUndefined();
   });
 });
+
+import { dedupeNewsEvents as dedupe2 } from "./newsRelevance";
+import { acquirerIn as acquirer2 } from "./acquisition";
+describe("Humi: the acquisition headline survives the dedupe and the buyer is the name after the descriptor (regression gate, batch 5)", () => {
+  const items = [
+    { title: "Employment Hero Expands into Canada with Humi Acquisition", url: "https://smbtech.au/news/x", published_date: "2025-01-09" },
+    { title: "Humi acquired by Australian HR software company Employment Hero", url: "https://betakit.com/humi-acquired-by-australian-hr-software-company-employment-hero/", published_date: "2025-01-08" },
+    { title: "Humi to be acquired by Employment Hero in $69.5 million deal", url: "https://www.unleash.ai/x", published_date: "2026-05-20" },
+  ];
+  it("the buyer of a descriptor phrase", () => {
+    expect(acquirer2("Humi acquired by Australian HR software company Employment Hero", "Humi")?.acquirer).toBe("Employment Hero");
+    expect(acquirer2("Humi Acquired by Employment Hero to Provide a Comprehensive Solution", "Humi")?.acquirer).toBe("Employment Hero");
+    expect(acquirer2("Acme acquired by Globex", "Acme")?.acquirer).toBe("Globex");
+  });
+  it("the earliest announcement of the same buyer dates the purchase", () => {
+    const kept = dedupe2(items, () => false, () => "", (x) => !!acquirer2(x.title, "Humi"));
+    const rows = kept.map((k) => ({ field: "news", after: `${k.published_date} — ${k.title}`, source_url: k.url, company: "Humi" }));
+    expect(acquiredFromNews(rows as never, "Humi", "id")?.after).toMatch(/Employment Hero \(2025-01-08\)/);
+  });
+});

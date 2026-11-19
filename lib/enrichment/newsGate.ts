@@ -10,6 +10,7 @@
  */
 import { isListingOrSponsoredUrl } from "./pageKind.ts";
 import { completeFromSlug } from "./newsRelevance.ts";
+import { acquirerIn } from "./acquisition.ts";
 import { newsProblem, ownSiteNewsOk, dateFromUrl, dateFromHtml, dedupeNewsEvents, cleanHeadline, headlineLooksCut, headlineIncomplete, titleFromHtml } from "./newsRelevance.ts";
 
 export interface NewsItem { title: string; url: string; published_date?: string | null; title_joined?: boolean; [k: string]: unknown }
@@ -101,7 +102,7 @@ export async function judgeNews(n: NewsItem, d: NewsDeps): Promise<NewsVerdict> 
 
 export function finishNews<T extends NewsItem>(items: T[], d: Pick<NewsDeps, "isOwnSite" | "content">): { kept: T[]; dropped: Array<{ item: T; reason: string; message: string }> } {
   const dropped: Array<{ item: T; reason: string; message: string }> = [];
-  const distinct = dedupeNewsEvents(items, d.isOwnSite, (x) => (d.content(x.url) ?? "").slice(0, 300));
+  const distinct = dedupeNewsEvents(items, d.isOwnSite, (x) => (d.content(x.url) ?? "").slice(0, 300), (x) => !!d.companyName && !!acquirerIn(x.title, d.companyName));
   for (const x of items) if (!distinct.includes(x)) dropped.push({ item: x, reason: "news_same_event", message: "the same event as another item" });
   const kept = distinct.filter((x) => {
     if (x.published_date) return true;

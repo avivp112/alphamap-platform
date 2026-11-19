@@ -192,9 +192,10 @@ export function sameNewsEvent(a: EventItem, b: EventItem, leadA = "", leadB = ""
  * One row per event (owner, 2026-11-09): the same amount, or the same acquisition, within 7 days — or when either has no
  * date — is one report. The one kept is dated over undated, then an outlet over the company's own site, then the first.
  */
-export function dedupeNewsEvents<T extends { title: string; url: string; published_date?: string | null }>(items: T[], isOwnSite: (url: string) => boolean, lead: (item: T) => string = () => ""): T[] {
+export function dedupeNewsEvents<T extends { title: string; url: string; published_date?: string | null }>(items: T[], isOwnSite: (url: string) => boolean, lead: (item: T) => string = () => "", prefer: (item: T) => boolean = () => false): T[] {
   const kept: T[] = [];
-  const rank = (x: T) => (x.published_date ? 0 : 2) + (isOwnSite(x.url) ? 1 : 0);
+  // Of one event the item that states it as the headline of the event is kept (an acquisition headline over "X expands with the Y acquisition"): its date is the announcement's.
+  const rank = (x: T) => (prefer(x) ? -1 : 0) + (x.published_date ? 0 : 2) + (isOwnSite(x.url) ? 1 : 0);
   for (const it of items) {
     const i = kept.findIndex((k) => sameNewsEvent(it, k, lead(it), lead(k)));
     if (i < 0) kept.push(it);

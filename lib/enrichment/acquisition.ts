@@ -14,6 +14,7 @@ export interface AcquisitionClaim { status: "acquired" | "majority_acquired"; ac
 const WORD = "\\p{Lu}[\\p{L}\\d&.'’-]*";
 const TRAILING = new RegExp(`((?:${WORD}\\s+){0,3}${WORD})\\W*$`, "u");
 const LEADING = new RegExp(`^\\W*((?:${WORD}\\s+){0,3}${WORD})`, "u");
+const DESCRIPTOR_THEN_NAME = new RegExp(`^(?:[\\p{L}\\d-]+\\s+){0,6}?(?:company|firm|startup|start-up|giant|provider|maker|group|bank|platform|vendor|leader|player|unicorn|business|developer|operator|specialist|powerhouse)\\s+((?:${WORD}\\s+){0,3}${WORD})`, "u");
 const GENERIC_BUYER = /^(?:US|UK|EU|The|An?|Its|It|Investors?|Group|Company|Firm)$/i;
 /** A country, a region or a demonym in front of the buyer's name ("Egypts Raseedi", "Egypt's Raseedi", "UK-based Acme", "Indian Acme") is not part of it (owner, batch 7). */
 const REGION_PREFIX = /^(?:(?:Egypt|India|Nigeria|Kenya|Ghana|Brazil|Mexico|Argentina|Chile|Colombia|Israel|Germany|France|Spain|Italy|Poland|Japan|China|Korea|UK|US|USA|UAE|Saudi|Canada|Australia|Singapore|Turkey|Sweden|Norway|Denmark|Finland|Ireland|Netherlands|Switzerland|Africa|Europe|Asia|Britain|American|British|Indian|Egyptian|German|French|Spanish|Italian|Polish|Japanese|Chinese|Korean|Israeli|Nigerian|Brazilian|Mexican|Canadian|Australian|Swedish|Dutch|Swiss|Emirati|Turkish|African|European|Asian)(?:['’]s|s)?|[A-Za-z]{2,4}-based)\s+(?=\p{Lu})/u;
@@ -30,7 +31,10 @@ export function acquirerIn(text: string, companyName: string): { acquirer: strin
   const afterName = text.slice(nm.index + nm[0].length);
   const passive = afterName.match(new RegExp(`^[^.:;|]{0,60}?\\b${BOUGHT_BY}\\s+`, "i"));
   if (passive) {
-    const lead = afterName.slice(passive[0].length).match(LEADING);
+    const restText = afterName.slice(passive[0].length);
+    // "acquired by Australian HR software company Employment Hero": the buyer is the name after the descriptor noun, not the words that describe it (owner, batch 5 gate: Humi).
+    const apposed = restText.match(DESCRIPTOR_THEN_NAME);
+    const lead = apposed ? ([apposed[0], apposed[1]] as RegExpMatchArray) : restText.match(LEADING);
     const a = lead && trimName(lead[1]);
     if (a && !GENERIC_BUYER.test(a) && !sameName(a, companyName)) return { acquirer: a, majority };
   }
