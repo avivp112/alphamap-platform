@@ -18,7 +18,8 @@ const why = new RegExp(process.env.WHY ?? "fetch_failed|error|website_unreachabl
 const [h, ...b] = parseCsv(readFileSync("not_enriched.csv", "utf8"));
 const failed = b.filter((r) => why.test(r[h.indexOf("why")])).map((r) => r[h.indexOf("company")]);
 const pb = JSON.parse(readFileSync(`pilot_batch_${batch}.json`, "utf8")) as { companies: Array<{ id: string; name: string }> };
-const picked = pb.companies.filter((c) => failed.some((f) => fold(f) === fold(c.name)));
+const also = (process.env.ALSO ?? "").split(",").map((x) => x.trim()).filter(Boolean);   // companies to run again that the report does not list as failed (a new decision: an address, a technology call)
+const picked = pb.companies.filter((c) => failed.some((f) => fold(f) === fold(c.name)) || also.some((f) => fold(f) === fold(c.name)));
 console.log(`${picked.length} compan(ies): ${picked.map((c) => c.name).join(", ")}`);
 console.log(`estimate: about $${(picked.length * 0.015).toFixed(2)} (batch 8's first run: $0.61 for 50, most of these stopped early) and ${Math.ceil(picked.length / 3) * 3} min at 3 at a time`);
 if (process.env.GO !== "1") { console.log("nothing run. GO=1 runs."); process.exit(0); }

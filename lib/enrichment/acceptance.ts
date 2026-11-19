@@ -88,7 +88,9 @@ export function runAcceptance(checks: Check[], rows: Row[], notEnriched: string[
           const t = r.after.match(/^(Pre-Seed|Seed|Series [A-F]\+?|Growth|Bridge|Other)\b/)?.[1];
           if (!t) return false;
           if (t === "Other") return !/strategic|crowd|token|placement|pipe\b|spac\b|revenue.based|corporate/i.test(r.quote);
-          return !(NAMED.find(([n]) => n === t)?.[1] ?? /./).test(r.quote);
+          // The type may stand in the quote, or in the address of the article the round is cited with ("…-raises-60m-series-b": owner, batch 8, lawhive).
+          const slug = (() => { try { return new URL(r.source_url.startsWith("http") ? r.source_url : `https://${r.source_url}`).pathname.replace(/[-_/]+/g, " "); } catch { return ""; } })();
+          return !(NAMED.find(([n]) => n === t)?.[1] ?? /./).test(`${r.quote} ${slug}`);
         });
         return { ...base, pass: bad.length === 0, detail: bad.length ? `type not in its quote: ${bad.slice(0, 3).map((r) => `${r.company} "${r.after.slice(0, 40)}"`).join(" | ")}` : "every named type is in its quote", offenders: bad };
       }

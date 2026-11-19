@@ -1,4 +1,4 @@
-import { readFileSync } from "fs";
+import { mkdirSync, readFileSync, writeFileSync } from "fs";
 /**
  * lib/enrichment/searchProviders.ts — v2's Serper/Tavily/Jina calling code.
  * Ground rule 4: "keep the current providers... do not add or remove
@@ -45,6 +45,7 @@ import { websiteDomain } from "./websiteValidation";
 import type { SearchCache } from "./searchCache";
 import { cleanArticleText } from "./articles";
 import { componentOn } from "./components";
+import { replayMode } from "./recorder.ts";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -599,6 +600,14 @@ async function fetchViaSerperScrape(url: string, state: SearchProviderState): Pr
 const readFailures = new Map<string, Record<string, string>>();
 const hostKey = (url: string) => { try { return new URL(/^https?:/.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, "").toLowerCase(); } catch { return url; } };
 const redirects = new Map<string, string>();
+// What a live run saw of a dead / unreachable home page is kept in cache/read_failures.json: a REPLAY of the same run reads the recordings, in which a failed fetch has lost its cause, and must still tell a
+// dead site from a service failure (owner, 2026-11-19: nine dead sites came back as fetch_failed in the replay).
+const READ_FAILURES_FILE = "cache/read_failures.json";
+let persistedKinds: Record<string, "dead" | "unreachable" | "service"> | null = null;
+const persisted = () => { if (!persistedKinds) { try { persistedKinds = JSON.parse(readFileSync(READ_FAILURES_FILE, "utf8")); } catch { persistedKinds = {}; } } return persistedKinds!; };
+export function persistReadFailure(website: string, kind: "dead" | "unreachable" | "service"): void {
+  try { const m = persisted(); m[hostKey(website)] = kind; mkdirSync("cache", { recursive: true }); writeFileSync(READ_FAILURES_FILE, JSON.stringify(m, null, 1)); } catch { /* a convenience */ }
+}
 /** Where a site's address ends up when it leads to another origin (nordigen.com → gocardless.com), when a read saw it. */
 export function websiteRedirect(website: string): string | null { return redirects.get(hostKey(website)) ?? null; }
 
@@ -616,6 +625,12 @@ export function suspiciousUrl(url: string): boolean {
 }
 
 export function homepageReadFailure(website: string): "service" | "dead" | "unreachable" | null {
+  const kind = classifyReadFailure(website);
+  if (replayMode() !== "off") return persisted()[hostKey(website)] ?? kind;   // a replay trusts what the live run saw
+  if (kind) persistReadFailure(website, kind);
+  return kind;
+}
+function classifyReadFailure(website: string): "service" | "dead" | "unreachable" | null {
   const f = readFailures.get(hostKey(website));
   if (!f) return null;
   const direct = f["direct"] ?? "";
