@@ -29,6 +29,9 @@ npx tsx scripts/regression.ts init 5 6 7             # the first baselines (once
 - Each field passes its own acceptance checks. A field that fails is the only one not written; every other field is. Held fields are listed in `held_fields.csv`.
 - Every three batches one completion run writes the held fields, after their rules were fixed and passed the gate.
 
+## 3b. Fields with no history — `field_track_record.json`
+- `sample_verdicts.ts` adds every batch's checked values (per field: checked, wrong) to `field_track_record.json` (committed). `report_lint.ts` widens the next sample: a field with fewer than 15 checked values so far gets enough values of this batch to reach 15 (or all of them) on top of the five strata of ten.
+
 ## 4. Error threshold — `scripts/sample_verdicts.ts`
 - Up to **5%** wrong values in a field in `sample_50.csv` is fine: the wrong ones are excluded and listed (`pending_fixes.csv`), the rest is written.
 - Over 5% in a field: only that field is held (`held_fields.csv`).

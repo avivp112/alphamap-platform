@@ -23,6 +23,7 @@ import { knownAcquirers } from "../lib/enrichment/acquisition.ts";
 import { isTrackingHost } from "../lib/enrichment/siteOwner.ts";
 import { recentRules } from "../lib/enrichment/ruleRegistry.ts";
 import { loadGaps, ownerWrongTest } from "../lib/enrichment/knownGaps.ts";
+import { familyOf, fieldsWithoutHistory, MIN_HISTORY, readTrackRecord } from "../lib/enrichment/batchProcess.ts";
 
 function parseCsv(text: string): string[][] {
   const rows: string[][] = []; let row: string[] = [], cur = "", q = false;
@@ -302,8 +303,18 @@ console.log(`\n${errors.length} error(s), ${warnings.length} warning(s).`);
   }
   for (const r of shuffle(pool.filter((x) => !used.has(x)))) { if (chosen.length >= TOTAL) break; chosen.push({ r, stratum: "filled from the rest" }); used.add(r); }
   const pick = chosen.slice(0, TOTAL);
+  // Fields with no history (owner, 2026-11-19): a field whose earlier samples hold fewer than MIN_HISTORY checked values gets a sample of its own on top, so that each is checked on at least that many
+  // values of this batch (or on all of them). The record is field_track_record.json, filled by sample_verdicts.ts.
+  const record = readTrackRecord();
+  const newFields = fieldsWithoutHistory(pool.map((r) => r.field), record);
+  for (const f of newFields) {
+    const have = pick.filter((p) => familyOf(p.r.field) === f).length;
+    const need = Math.max(0, MIN_HISTORY - (record[f]?.reviewed ?? 0) - have);
+    for (const r of shuffle(pool.filter((x) => familyOf(x.field) === f && !used.has(x))).slice(0, need)) { pick.push({ r, stratum: `no history: ${f}` }); used.add(r); }
+  }
+  if (newFields.length) console.log(`  fields with no history (under ${MIN_HISTORY} checked values so far), widened: ${newFields.map((f) => `${f} ${pick.filter((p) => familyOf(p.r.field) === f).length}/${pool.filter((x) => familyOf(x.field) === f).length}`).join(" · ")}`);
   const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-  const sampleFile = process.env.SAMPLE_FILE ?? `sample_${TOTAL}.csv`;
+  const sampleFile = process.env.SAMPLE_FILE ?? `sample_${TOTAL}.csv`;   // the extras of fields with no history are in the same file
   writeFileSync(sampleFile, "\uFEFF" + ["n,stratum,company,field,value,source_url,quote,quote_original (the page's own words),quote_translated (English it was verified against),rule,verdict (correct/wrong)", ...pick.map(({ r, stratum }, i) => [i + 1, stratum, r.company, r.field, r.after, r.url, r.quote.replace(/^\[machine translation\]\s*/, ""), r.original, r.translated, r.rule, ""].map((x) => q(String(x))).join(","))].join("\r\n") + "\r\n");
   console.log(`  strata: ${strata.map(([l]) => `${l} ${pick.filter((p) => p.stratum === l).length}`).join(" · ")} · filled ${pick.filter((p) => p.stratum === "filled from the rest").length}`);
   console.log(`  ➖ precision: ${pick.length} value(s) in ${sampleFile} (stratified) — mark each correct/wrong (target ≥95%)`);

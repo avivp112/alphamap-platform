@@ -8,7 +8,7 @@
  */
 import { readFileSync, writeFileSync } from "fs";
 import { parseCsv } from "../lib/enrichment/acceptance.ts";
-import { addHeldFields, addPendingFixes, ERROR_LIMIT, fieldErrors, type SampleRow } from "../lib/enrichment/batchProcess.ts";
+import { addHeldFields, addPendingFixes, addToTrackRecord, ERROR_LIMIT, fieldErrors, type SampleRow } from "../lib/enrichment/batchProcess.ts";
 
 const batch = Number(process.env.BATCH ?? process.env.BATCH_NO);
 if (!Number.isInteger(batch) || batch < 1) { console.error("BATCH=<the batch number> is required."); process.exit(2); }
@@ -42,6 +42,8 @@ for (const part of wrongEnv.split(",").map((x) => x.trim()).filter(Boolean)) {
   wrong.set(num, reason.join("=").trim() || "wrong in the sample check");
 }
 const errors = fieldErrors(sample, new Set(wrong.keys()));
+// The record of what each field's samples found (field_track_record.json, committed): a field with no history gets a wider sample the next time (report_lint.ts).
+addToTrackRecord(batch, errors);
 const vi = ix("verdict");
 for (const r of rows) r[vi] = wrong.has(Number(r[ix("n")])) ? "wrong" : "correct";
 const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);

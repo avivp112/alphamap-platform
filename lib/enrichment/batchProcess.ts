@@ -69,3 +69,28 @@ export function fieldErrors(sample: SampleRow[], wrong: Set<number>, limit = ERR
   }
   return [...by.entries()].map(([field, e]) => ({ field, ...e, share: e.wrong / e.total, held: e.wrong / e.total > limit })).sort((a, b) => b.share - a.share || a.field.localeCompare(b.field));
 }
+
+// ── the track record of a field: how many of its values were checked in samples, and how many were wrong ──────────────────────────────────────────────────────────────
+export const MIN_HISTORY = 15;
+export interface FieldRecord { reviewed: number; wrong: number; batches: number[] }
+export type TrackRecord = Record<string, FieldRecord>;
+export const familyOf = (f: string) => (f === "description_what_only" ? "description" : f);
+export function readTrackRecord(path = "field_track_record.json"): TrackRecord {
+  try { return JSON.parse(readFileSync(path, "utf8")) as TrackRecord; } catch { return {}; }
+}
+/** A batch's sample verdicts added to the record (once per batch: a second call for the same batch replaces its numbers, never doubles them). */
+export function addToTrackRecord(batch: number, errors: Array<{ field: string; total: number; wrong: number }>, path = "field_track_record.json"): TrackRecord {
+  const rec = readTrackRecord(path);
+  const per = JSON.parse(readFileSync(path.replace(/\.json$/, "_by_batch.json"), { encoding: "utf8", flag: "a+" }) || "{}") as Record<string, Record<string, { total: number; wrong: number }>>;
+  per[String(batch)] = Object.fromEntries(errors.map((e) => [familyOf(e.field), { total: e.total, wrong: e.wrong }]));
+  writeFileSync(path.replace(/\.json$/, "_by_batch.json"), JSON.stringify(per, null, 1) + "\n");
+  const out: TrackRecord = {};
+  for (const [b, fields] of Object.entries(per)) for (const [f, v] of Object.entries(fields)) { const e = out[f] ?? (out[f] = { reviewed: 0, wrong: 0, batches: [] }); e.reviewed += v.total; e.wrong += v.wrong; e.batches.push(Number(b)); }
+  void rec;
+  writeFileSync(path, JSON.stringify(out, null, 1) + "\n");
+  return out;
+}
+/** The fields (of these) with fewer than MIN_HISTORY checked values in all earlier samples: their sample is widened so that each has at least that many (or all of them). */
+export function fieldsWithoutHistory(fields: string[], rec: TrackRecord = readTrackRecord(), min = MIN_HISTORY): string[] {
+  return [...new Set(fields.map(familyOf))].filter((f) => (rec[f]?.reviewed ?? 0) < min);
+}

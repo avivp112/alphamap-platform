@@ -14,6 +14,7 @@ import { config } from "dotenv";
 import { existsSync, readFileSync } from "fs";
 import { parseCsv } from "../lib/enrichment/acceptance.ts";
 import { writtenBatches } from "../lib/enrichment/regressionGate.ts";
+import { statedRoundLabels } from "../lib/enrichment/assemble.ts";
 import { roundUpdateChanges } from "../lib/enrichment/runChanges.ts";
 
 if (existsSync(".env")) config({ path: ".env" });
@@ -52,11 +53,13 @@ interface Change { startup_id: string; company: string; table: "startups" | "fun
         const m = r.after.match(/^([A-Za-z+\- ]+?) \$([\d.,]+)\s*([KMB])?\b/);
         if (!m || /^(?:Unknown|Other)$/.test(m[1])) continue;
         const amount = Number(m[2].replace(/,/g, "")) * (m[3] === "B" ? 1e9 : m[3] === "K" ? 1e3 : 1e6);
-        const { data } = await db.from("funding_rounds").select("id, round_type, amount_raised").eq("startup_id", r.id);
-        const same = ((data ?? []) as Array<{ id: string; round_type: string | null; amount_raised: number | null }>).filter((x) => x.amount_raised != null && Math.abs(x.amount_raised - amount) / amount <= 0.01);
+        const { data } = await db.from("funding_rounds").select("id, round_type, amount_raised, source_url").eq("startup_id", r.id);
+        const same = ((data ?? []) as Array<{ id: string; round_type: string | null; amount_raised: number | null; source_url?: string | null }>).filter((x) => x.amount_raised != null && Math.abs(x.amount_raised - amount) / amount <= 0.01);
         if (!same.length) infos.push(`${r.company} · round ${m[1].trim()} $${m[2]}${m[3] ?? "M"}: the database has no round of this amount (rounds on file: ${((data ?? []) as Array<{ round_type: string | null; amount_raised: number | null }>).map((x) => `${x.round_type} ${x.amount_raised}`).join(", ") || "none"})`);
         for (const x of same) if (fold(x.round_type ?? "") === fold(m[1])) infos.push(`${r.company} · round ${m[1].trim()} $${m[2]}${m[3] ?? "M"}: the database already has this type (${x.round_type}) — type nothing to correct`);
         for (const x of same) if (!/^(?:Unknown|Other)$/i.test(x.round_type ?? "") && fold(x.round_type ?? "") !== fold(m[1])) infos.push(`${r.company} · round $${m[2]}${m[3] ?? "M"}: the database says ${x.round_type}, the gate says ${m[1].trim()} — not changed (only Unknown / Other are corrected)`);
+        // The type stands on the source that states it: a round of the right type whose address is another page than the one whose quote says the type (Paradox: siliconangle for the amount, prnewswire for "Series C").
+        for (const x of same) if (fold(x.round_type ?? "") === fold(m[1]) && r.source && x.source_url !== r.source && statedRoundLabels(r.quote).includes(m[1].trim())) changes.push({ startup_id: r.id, company: r.company, table: "funding_rounds", id: x.id, column: "source_url", old: x.source_url ?? null, now: r.source, source: r.source, quote: r.quote });
         for (const x of (data ?? []) as Array<{ id: string; round_type: string | null; amount_raised: number | null }>) {
           if (x.amount_raised == null || Math.abs(x.amount_raised - amount) / amount > 0.01) continue;
           if (fold(x.round_type ?? "") === fold(m[1]) || !/^(?:Unknown|Other)$/i.test(x.round_type ?? "")) continue;
