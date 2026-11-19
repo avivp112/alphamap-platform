@@ -240,7 +240,7 @@ export function isLeadershipRole(role: string | null | undefined): boolean {
   if (/\b(not specified|unspecified|unknown|n\/a|none|employee|staff|team member|member of|intern|contractor|volunteer|student|candidate)\b/i.test(r)) return false;
   if (/\bchief\s+of\s+staff\b/i.test(r) && !/\b(ceo|cto|cfo|coo|founder|president)\b/i.test(r)) return false;
   // A VP of corporate affairs, communications or investor relations is a support function, not senior management (owner, batch 8: Kry's "VP Corporate Affairs").
-  if (/\b(?:vp|svp|evp|vice[- ]president)\b[^,;]{0,14}\b(?:(?:corporate|public|government|external|regulatory)\s+affairs|communications|public\s+relations|investor\s+relations)\b/i.test(r) && !/\b(ceo|cto|cfo|coo|founder|president\b(?!.*affairs))/i.test(r.replace(/vice[- ]president/gi, ""))) return false;
+  if (/\b(?:vp|svp|evp|vice[- ]president)\b[^;]{0,14}\b(?:(?:corporate|public|government|external|regulatory)\s+affairs|communications|public\s+relations|investor\s+relations)\b/i.test(r) && !/\b(ceo|cto|cfo|coo|founder|president\b(?!.*affairs))/i.test(r.replace(/vice[- ]president/gi, ""))) return false;
   // A past role is no leadership (owner, round 10: TymeBank "CEO (former TymeBank CEO)"), and "Founder" alone is not a management title: founders have their own field.
   if (/\b(former|formerly|ex-|outgoing|retired|stepped down)\b/i.test(r)) return false;
   if (!(/\b(ceo|cto|cfo|coo|cmo|cpo|cro|cio|ciso|cdo|cso|cco|clo|chro|cxo|chief\b|president|general manager|managing director|vp|svp|evp|vice[- ]president)\b/i.test(r) || EQUIVALENT_TITLE.test(r))) return false;
