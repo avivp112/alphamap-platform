@@ -1,0 +1,143 @@
+#!/usr/bin/env node
+/**
+ * scripts/regression.ts — the regression gate (owner, 2026-11-19). Every batch already written is run again, from the recordings and the cache (REPLAY=1, no search, no fetch, the memory off, the
+ * database's own values left out: a clean slate), and compared with its baseline (baseline/batch_<N>.json). It fails when
+ *   (a) an acceptance check returns ERROR, or
+ *   (b) a value that was good in the baseline is rejected now.
+ * Each loss is listed with its reason code; the values that are new are listed apart. On a pass it writes regression_pass_<commit>.json, which a wet run (DRY_RUN=false) needs for its code.
+ * A model call a fix made new runs live, for the values of these batches only; the cost is reported (aim: under $0.10 a run).
+ *
+ *   npx tsx scripts/regression.ts                       the gate: every written batch (baseline/batches.json)
+ *   npx tsx scripts/regression.ts init [5 6 7]          the baselines, from the code as it is now (a baseline that exists is replaced only with APPROVED_BY=aviv)
+ *   REPORT=pilot_report_write.csv npx tsx scripts/regression.ts init 7     a batch's baseline from the report that was WRITTEN (its values are the proven ones), not from the code
+ *   APPROVED_BY=aviv npx tsx scripts/regression.ts accept-lost "Company:field:value" …   takes values out of a baseline (a lost value that was really wrong) — only after the owner approved it
+ *   ONLY_BATCHES=7 npx tsx scripts/regression.ts        one batch, to look; no pass file is written for a part
+ */
+import { spawnSync } from "child_process";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
+import { parseCsv, rowsFromCsv, runAcceptance, type Check } from "../lib/enrichment/acceptance.ts";
+import { specPathsFor } from "./acceptance_check.ts";
+import {
+  acceptanceErrors, baselinePath, compare, family, headCommit, headTree, loadBaseline, saveBaseline, saveWrittenBatches, treeIsClean, valueKey, watched, writePass, writtenBatches,
+  type Baseline, type Rejected, type RunRow,
+} from "../lib/enrichment/regressionGate.ts";
+
+const OUT = "regression/out";
+const today = new Date().toISOString().slice(0, 10);
+
+function idsOf(n: number): string[] {
+  const f = `pilot_batch_${n}.json`;
+  if (!existsSync(f)) throw new Error(`${f} is missing — the batch's companies are not known`);
+  const j = JSON.parse(readFileSync(f, "utf8")) as { companies?: Array<{ id: string }> } | Array<{ id: string }>;
+  return (Array.isArray(j) ? j : j.companies ?? []).map((c) => c.id);
+}
+const readCsv = (p: string) => { const [head, ...body] = parseCsv(readFileSync(p, "utf8")); return { head, body, ix: (c: string) => { const e = head.findIndex((h) => h === c); return e >= 0 ? e : head.findIndex((h) => h.startsWith(c)); } }; };
+
+interface RunResult { n: number; rows: RunRow[]; rejections: Rejected[]; acceptance: Array<{ id: string; severity: string; pass: boolean; detail: string }>; cost: number; companies: number }
+
+/** One batch, clean slate, from the recordings. */
+function runBatch(n: number): RunResult {
+  const dir = `${OUT}/batch_${n}`;
+  rmSync(dir, { recursive: true, force: true }); mkdirSync(dir, { recursive: true });
+  const ids = idsOf(n);
+  console.log(`▶ batch ${n}: ${ids.length} compan(ies), REPLAY from the recordings …`);
+  const child = spawnSync("npx", ["tsx", "scripts/bulk_enrich_v2.ts"], {
+    env: { ...process.env, PILOT: "true", DRY_RUN: "true", REGRESSION: "1", REGRESSION_DIR: dir, REPLAY: "1", KNOWN_SOURCES: "off", ALL_FIELDS: "true", SITEMAP: "on", BATCH_NO: String(n),
+      CONCURRENCY: process.env.CONCURRENCY ?? "10", PILOT_MAX_COMPANIES: String(Math.max(ids.length, 1)), ONLY: ids.join(","), PILOT_REPORT: `${dir}/pilot_report.csv`, GIT_CHECK: "off", PREFLIGHT: "off" },
+    encoding: "utf8", maxBuffer: 1 << 29,
+  });
+  if (child.status !== 0 || !existsSync(`${dir}/pilot_report.csv`)) throw new Error(`batch ${n}: the run failed (exit ${child.status}). ${String(child.stderr ?? "").slice(-400)}`);
+  const rep = readCsv(`${dir}/pilot_report.csv`);
+  const rows: RunRow[] = rep.body.map((r) => ({ company: r[rep.ix("company")] ?? "", field: r[rep.ix("field")] ?? "", value: r[rep.ix("after")] ?? "" }));
+  const rejections: Rejected[] = [];
+  if (existsSync(`${dir}/rejected_all.csv`)) { const rj = readCsv(`${dir}/rejected_all.csv`); for (const r of rj.body) rejections.push({ company: r[rj.ix("company")] ?? "", field: r[rj.ix("field")] ?? "", value: r[rj.ix("value")] ?? "", reason_code: r[rj.ix("reason_code")] ?? "" }); }
+  // The acceptance checks of the batch, on this report; the list of the companies not enriched is this run's own.
+  const seen = new Set<string>();
+  const checks = specPathsFor(n).flatMap((p) => JSON.parse(readFileSync(p, "utf8")) as Check[]).filter((c) => !seen.has(c.id) && !!seen.add(c.id));
+  const notEnriched = existsSync(`${dir}/not_enriched.csv`) ? parseCsv(readFileSync(`${dir}/not_enriched.csv`, "utf8")).slice(1).map((r) => r[0]) : [];
+  const acceptance = runAcceptance(checks, rowsFromCsv(readFileSync(`${dir}/pilot_report.csv`, "utf8")), notEnriched, today).map((r) => ({ id: r.id, severity: r.severity, pass: r.pass, detail: r.detail }));
+  const summary = existsSync(`${dir}/batch_${n}_summary.md`) ? readFileSync(`${dir}/batch_${n}_summary.md`, "utf8") : String(child.stdout ?? "");
+  const cost = Number(summary.match(/model cost \$([\d.]+)/)?.[1] ?? 0);
+  return { n, rows, rejections, acceptance, cost, companies: ids.length };
+}
+
+function baselineFrom(res: RunResult, source: string): Baseline {
+  return { batch: res.n, commit: headCommit(), created_at: new Date().toISOString(), companies: res.companies, source, values: watched(res.rows), acceptance: res.acceptance.map(({ id, severity, pass }) => ({ id, severity, pass })) };
+}
+
+function usage(): never { console.error("usage: regression.ts [init [N…] | accept-lost \"Company:field:value\"… ]"); process.exit(2); }
+
+const [cmd, ...args] = process.argv.slice(2);
+
+if (cmd === "init") {
+  const batches = (args.length ? args.map(Number) : [5, 6, 7]).filter((x) => Number.isInteger(x) && x > 0);
+  if (!batches.length) usage();
+  const exists = batches.filter((n) => loadBaseline(n));
+  if (exists.length && process.env.APPROVED_BY !== "aviv") { console.error(`⛔  A baseline already exists for batch ${exists.join(", ")}. It is replaced only on an explicit command the owner approved: APPROVED_BY=aviv npx tsx scripts/regression.ts init ${exists.join(" ")}`); process.exit(1); }
+  let cost = 0;
+  for (const n of batches) {
+    let b: Baseline;
+    if (process.env.REPORT) {
+      // The values of a report that was written: they are the proven ones.
+      const rep = readCsv(process.env.REPORT);
+      const rows: RunRow[] = rep.body.map((r) => ({ company: r[rep.ix("company")] ?? "", field: r[rep.ix("field")] ?? "", value: r[rep.ix("after")] ?? "" }));
+      b = { batch: n, commit: headCommit(), created_at: new Date().toISOString(), companies: idsOf(n).length, source: `written report ${process.env.REPORT}`, values: watched(rows), acceptance: [] };
+    } else {
+      const res = runBatch(n); cost += res.cost;
+      b = baselineFrom(res, `the code at ${headCommit().slice(0, 10)}, from the recordings`);
+      const bad = acceptanceErrors(res.acceptance);
+      if (bad.length) console.log(`   ⚠️  batch ${n}: the baseline is made with acceptance ERRORs: ${bad.map((x) => x.id).join(", ")}`);
+    }
+    saveBaseline(b);
+    console.log(`✓ ${baselinePath(n)}: ${b.values.length} value(s), ${b.acceptance.length} acceptance result(s) — ${b.source}`);
+  }
+  saveWrittenBatches([...writtenBatches(), ...batches]);
+  console.log(`batches in the gate: ${writtenBatches().join(", ")}${cost ? ` · cost $${cost.toFixed(2)}` : ""}`);
+  process.exit(0);
+}
+
+if (cmd === "accept-lost") {
+  if (process.env.APPROVED_BY !== "aviv") { console.error("⛔  A baseline is changed only after the owner approved the values: APPROVED_BY=aviv npx tsx scripts/regression.ts accept-lost \"Company:field:value\" …"); process.exit(1); }
+  if (!args.length) usage();
+  let removed = 0;
+  for (const n of writtenBatches()) {
+    const b = loadBaseline(n); if (!b) continue;
+    const before = b.values.length;
+    b.values = b.values.filter((v) => !args.some((a) => { const [co, f, ...rest] = a.split(":"); return valueKey(v.company, v.field, v.value) === valueKey(co, f, rest.join(":")); }));
+    if (b.values.length !== before) { saveBaseline(b); removed += before - b.values.length; console.log(`✓ batch ${n}: ${before - b.values.length} value(s) taken out of the baseline`); }
+  }
+  console.log(removed ? `${removed} value(s) taken out.` : "no value of the list is in a baseline.");
+  process.exit(removed ? 0 : 1);
+}
+
+if (cmd) usage();
+
+// ── the gate ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+const all = writtenBatches();
+const only = (process.env.ONLY_BATCHES ?? "").split(",").map((x) => Number(x.trim())).filter(Boolean);
+const batches = only.length ? all.filter((n) => only.includes(n)) : all;
+if (!batches.length) { console.error("⛔  No written batch is in the gate (baseline/batches.json). Create the baselines first: npx tsx scripts/regression.ts init"); process.exit(1); }
+const missing = batches.filter((n) => !loadBaseline(n));
+if (missing.length) { console.error(`⛔  No baseline for batch ${missing.join(", ")}: npx tsx scripts/regression.ts init ${missing.join(" ")}`); process.exit(1); }
+
+let failed = false, cost = 0, totalValues = 0;
+for (const n of batches) {
+  const base = loadBaseline(n)!;
+  const res = runBatch(n);
+  cost += res.cost;
+  const cmp = compare(base.values, res.rows, res.rejections);
+  const errs = acceptanceErrors(res.acceptance);
+  totalValues += base.values.length;
+  console.log(`\n── batch ${n}: ${base.values.length} baseline value(s) · lost ${cmp.lost.length} · new ${cmp.added.length} · changed ${cmp.changed.length} · acceptance ERRORs ${errs.length} · cost $${res.cost.toFixed(2)}`);
+  for (const e of errs) { failed = true; console.log(`   ❌ acceptance ${e.id}: ${e.detail.slice(0, 160)}`); }
+  for (const l of cmp.lost) { failed = true; console.log(`   ❌ LOST ${l.company} · ${l.field} · ${l.value.slice(0, 90)}   [${l.reason_code}]`); }
+  if (cmp.changed.length) { console.log("   changed (one value per company, a different one now — not a failure, to look at):"); for (const c of cmp.changed.slice(0, 15)) console.log(`   ~ ${c.company} · ${c.field}: ${c.was.slice(0, 50)} → ${c.now.slice(0, 50)}`); if (cmp.changed.length > 15) console.log(`   … and ${cmp.changed.length - 15} more`); }
+  if (cmp.added.length) { console.log("   new values:"); for (const a of cmp.added.slice(0, 25)) console.log(`   + ${a.company} · ${a.field} · ${a.value.slice(0, 90)}`); if (cmp.added.length > 25) console.log(`   … and ${cmp.added.length - 25} more`); }
+}
+console.log(`\ncost of this run: $${cost.toFixed(2)}${cost > 0.1 ? "  ⚠️ over the aim of $0.10 (a model call a fix made new ran live)" : ""}`);
+
+if (failed) { console.log("\n⛔  REGRESSION GATE: FAILED — a good value was lost, or an acceptance check is an ERROR. No wet run is allowed for this code."); process.exit(1); }
+if (only.length) { console.log("\n✅  The batches asked for pass. A part of the batches writes no pass file: run the gate without ONLY_BATCHES."); process.exit(0); }
+if (!treeIsClean()) { console.log("\n✅  The gate passes, but the working tree has uncommitted changes: no pass file (the code that was checked is not a commit)."); process.exit(0); }
+const file = writePass({ commit: headCommit(), tree: headTree(), at: new Date().toISOString(), batches, values: totalValues, cost_usd: cost });
+console.log(`\n✅  REGRESSION GATE: PASSED for ${batches.length} batch(es), ${totalValues} value(s) — ${file}`);

@@ -67,7 +67,13 @@ import { websiteDomain, type DomainOwner } from "../lib/enrichment/websiteValida
 
 import { assertEnrichmentWritesAllowed, PILOT_FIELDS } from "../lib/enrichment/writeGate.ts";
 import { openFieldNames } from "../lib/enrichment/fieldReview.ts";
-import { writeFileSync, mkdirSync, readdirSync, readFileSync, existsSync } from "fs";
+import { writeFileSync as realWriteFileSync, mkdirSync, readdirSync, readFileSync, existsSync } from "fs";
+import { passFor, headCommit, headTree, addWrittenBatch, saveBaseline, watched, loadBaseline, writtenBatches } from "../lib/enrichment/regressionGate.ts";
+import { pendingExcludes, heldFieldsOf, addHeldFields } from "../lib/enrichment/batchProcess.ts";
+// The regression gate (owner, 2026-11-19): REGRESSION=1 runs a written batch again as a dry pass on a clean slate (the database's own values left out, the memory off) and its files go to REGRESSION_DIR.
+const REGRESSION = process.env.REGRESSION === "1";
+const REG_DIR = REGRESSION ? (process.env.REGRESSION_DIR ?? "regression/out") : "";
+const writeFileSync = (p: string, d: string): void => realWriteFileSync(REG_DIR && !/[\\/]/.test(p) && /\.(csv|md)$/.test(p) ? `${REG_DIR}/${p}` : p, d);
 import { rejectedDomains, rejectedDomainsCsv } from "../lib/enrichment/rejectedDomains.ts";
 import { wrapAnthropic, installHttpRecorder, quietOffline, installFetchTimeout, recorderSummary, replayMode } from "../lib/enrichment/recorder.ts";
 import { parseRejections, sampleRejections, rejectionsCsv, type Rejection } from "../lib/enrichment/rejections.ts";
@@ -134,20 +140,38 @@ const FIELDS_ASKED = [...new Set(FIELDS_RAW.flatMap((f) => (PILOT_FIELDS.include
 const ASKED: string[] = FIELDS_ASKED.length ? PILOT_FIELDS.filter((f) => FIELDS_ASKED.includes(f)) : [...PILOT_FIELDS];
 const OPEN_NOW = openFieldNames();
 const SHOW_ALL = DRY_RUN && process.env.ALL_FIELDS === "true";
+if (REGRESSION) {
+  if (!DRY_RUN) { console.error("⛔  REGRESSION=1 is a dry pass only."); process.exit(1); }
+  if (process.env.KNOWN_SOURCES !== "off") { console.error("⛔  REGRESSION=1 needs KNOWN_SOURCES=off (the memory would carry values the code no longer finds)."); process.exit(1); }
+  mkdirSync(REG_DIR, { recursive: true });
+}
+// A wet run needs the regression gate passed for the code it runs on (owner, 2026-11-19): the first thing it checks, before the tracker, the preflight, the database.
+if (!DRY_RUN && !process.env.VITEST) {
+  const commit = headCommit(), pass = passFor(commit, headTree());
+  if (!pass) {
+    console.error(`⛔  The regression gate has not passed for this code (${commit ? commit.slice(0, 10) : "no git commit found"}): a wet run is refused.\n    Run it: npx tsx scripts/regression.ts   — it writes regression_pass_${commit.slice(0, 12)}.json when every written batch still gives its good values.`);
+    process.exit(1);
+  }
+  console.log(`🚦  Regression gate passed at ${pass.at} for ${pass.batches.length} batch(es), ${pass.values} value(s).`);
+}
+/** Fields a batch holds back (held_fields.csv, the sample check or a failed acceptance): written for no company of the batch. */
+const HELD_ALL = new Set<string>();
 /** Values a failed check pointed at, by company (folded name) → the fields not written for it this run; "*" = the whole company. */
 const BLOCKED = new Map<string, Set<string>>();
 const foldName = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, "");
 /** The open fields minus the ones a failed check held back for this company ("*": none). A row field such as founder_bio belongs to the open field it starts with. */
 function openFieldsFor(company: string): string[] {
+  const open = HELD_ALL.size ? OPEN_FIELDS.filter((f) => !HELD_ALL.has(f) && !(HELD_ALL.has("hq_city") && f === "hq_country") && !(HELD_ALL.has("hq_country") && f === "hq_city")) : OPEN_FIELDS;
   const held = BLOCKED.get(foldName(company));
-  if (!held || !held.size) return OPEN_FIELDS;
+  if (!held || !held.size) return open;
   if (held.has("*")) return [];
   if (held.has("hq_city") || held.has("hq_country")) { held.add("hq_city"); held.add("hq_country"); }   // a city and its country stand or fall together
   // A row field that is itself an open field (founder_background) holds that one only; one that is not (founder_bio, description_what_only) holds the open field it is a part of.
-  return OPEN_FIELDS.filter((f) => ![...held].some((h) => h === f || (h.startsWith(`${f}_`) && !OPEN_FIELDS.includes(h))));
+  return open.filter((f) => ![...held].some((h) => h === f || (h.startsWith(`${f}_`) && !OPEN_FIELDS.includes(h))));
 }
 /** A report row of a field held back for its company (EXCLUDE, a failed check): it is not written, and the memory must not bring it back into the report either. */
 function heldRow(company: string, field: string): boolean {
+  if (HELD_ALL.size && ([...HELD_ALL].some((x) => field === x || field.startsWith(`${x}_`)) || (field === "hq_city" && HELD_ALL.has("hq_country")) || (field === "hq_country" && HELD_ALL.has("hq_city")))) return true;
   const hs = BLOCKED.get(foldName(company));
   if (!hs) return false;
   if (hs.has("*")) return true;
@@ -552,6 +576,11 @@ async function main() {
     for (const w of f.warnings) console.log(`    ⚠️  ${w}`);
     if (!f.ok) { for (const p of f.problems) console.error(`⛔  ${p}`); console.error("⛔  Nothing was run. (GIT_CHECK=off skips this check.)"); process.exit(1); }
   }
+  if (!DRY_RUN && !process.env.VITEST) {
+    // Fields this batch holds back (held_fields.csv): not written, whatever else is.
+    const heldFields = heldFieldsOf(BATCH_NO);
+    if (heldFields.length) { for (const f of heldFields) HELD_ALL.add(f); console.log(`⏸️   Held fields of batch ${BATCH_NO} (held_fields.csv) — not written: ${heldFields.join(", ")}`); }
+  }
   await initV1Context();
   installFetchTimeout();
   installHttpRecorder();   // every web response is recorded (live), or answered from the recording (REPLAY)
@@ -604,15 +633,25 @@ async function main() {
     if (a.failed) {
       const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
       writeFileSync("blocked_values.csv", "\uFEFF" + [["company", "field", "value", "source_url", "check", "why"].join(","), ...a.blocked.map((b) => [b.company, b.field, b.after, b.source_url, b.check, b.why].map(q).join(","))].join("\r\n") + "\r\n");
-      for (const b of a.blocked) { const k = foldName(b.company); (BLOCKED.get(k) ?? BLOCKED.set(k, new Set()).get(k)!).add(b.field); }
-      console.log(`🚧  ${a.failed} acceptance ERROR(s): ${a.blocked.length} value(s) will NOT be written (blocked_values.csv); everything else is written.`);
+      // A field that fails its own acceptance checks is not written for the batch; every other field is (owner, 2026-11-19). A whole-company block ("*") stays with the company.
+      const heldNow = new Map<string, { checks: Set<string>; n: number }>();
+      for (const b of a.blocked) {
+        if (b.field === "*") { const k = foldName(b.company); (BLOCKED.get(k) ?? BLOCKED.set(k, new Set()).get(k)!).add("*"); continue; }
+        HELD_ALL.add(b.field);
+        const e = heldNow.get(b.field) ?? heldNow.set(b.field, { checks: new Set(), n: 0 }).get(b.field)!; e.checks.add(b.check); e.n++;
+      }
+      addHeldFields([...heldNow].map(([field, e]) => ({ batch: BATCH_NO, field, source: `acceptance: ${[...e.checks].join("+")}`, detail: `${e.n} value(s) broke the check(s)` })));
+      console.log(`🚧  ${a.failed} acceptance ERROR(s): ${a.blocked.length} value(s) broke a check; ${heldNow.size ? `the field(s) ${[...heldNow.keys()].join(", ")} are held for the whole batch (held_fields.csv); ` : ""}everything else is written.`);
       for (const u of a.unblockable) console.log(`    ⚠️  not blockable (no value to hold back): ${u}`);
     }
     process.env.REPLAY ??= "1";
   }
   // EXCLUDE=<report numbers> (owner, batch 6): values of the reviewed dry report that are not written. The numbers are those of the report ("d6.17" or "17"); they are read from the preflight pass's
   // rows with the same numbering as the dry report. The writer works by field, so every other value of the same company and field is held back with them — listed, never silent.
-  if (!DRY_RUN && ((process.env.EXCLUDE ?? "").trim() || (process.env.EXCLUDE_RULE ?? "").trim())) {
+  // pending_fixes.csv: a wrong value found in a check of this batch is excluded by its content, and the rest is written (owner, 2026-11-19).
+  const pendingTokens = !DRY_RUN ? pendingExcludes(BATCH_NO).map((f) => f.token) : [];
+  if (pendingTokens.length) console.log(`📋  pending_fixes.csv: ${pendingTokens.length} value(s) of batch ${BATCH_NO} excluded by content: ${pendingTokens.map((t) => t.slice(0, 50)).join(" | ")}`);
+  if (!DRY_RUN && ((process.env.EXCLUDE ?? "").trim() || (process.env.EXCLUDE_RULE ?? "").trim() || pendingTokens.length)) {
     const from = process.env.EXCLUDE_FROM ?? "pilot_report_preflight.csv";
     if (!existsSync(from)) { console.error(`⛔  EXCLUDE needs the rows of the reviewed report (${from} is missing) — run with the preflight, or give EXCLUDE_FROM=<a dry report csv>.`); process.exit(1); }
     const [head, ...body] = parseReportCsv(readFileSync(from, "utf8"));
@@ -622,7 +661,7 @@ async function main() {
     if (process.env.EXPECT_TOTAL && Number(process.env.EXPECT_TOTAL) !== numbered.length) { console.error(`⛔  The rows to number are ${numbered.length}, the reviewed report had ${process.env.EXPECT_TOTAL} — the numbers would point at other values. Nothing written.`); process.exit(1); }
     // Entries are report numbers ("17", "d6.17") or "<Company>:<field>" (stable when the report is numbered again after a rule change: "Ripio:tags").
     const tokens = (process.env.EXCLUDE ?? "").split(/,/).map((x) => x.trim()).filter(Boolean);
-    const named = tokens.filter((t) => t.includes(":"));
+    const named = [...tokens.filter((t) => t.includes(":")), ...pendingTokens];
     const wanted = tokens.filter((t) => !t.includes(":")).flatMap((t) => t.split(/\s+/)).map((x) => x.trim().replace(/^[dw]\d+\./i, "")).filter(Boolean).map(Number);
     const bad = wanted.filter((n) => !Number.isInteger(n) || n < 1 || n > numbered.length);
     if (bad.length) { console.error(`⛔  EXCLUDE has numbers that are not in the report (1–${numbered.length}): ${bad.join(", ")}`); process.exit(1); }
@@ -674,6 +713,11 @@ async function main() {
     const arr = roundsByStartup.get(r.startup_id) ?? [];
     arr.push(r);
     roundsByStartup.set(r.startup_id, arr);
+  }
+  // REGRESSION=1: the companies run as if nothing were on file (what the database holds does not hide what the code finds), only the identity kept.
+  if (REGRESSION) {
+    const blank = ["description", "value_proposition", "industry", "founded_year", "country", "city", "founding_country", "employee_count", "employee_range", "growth_trend", "founders", "leadership", "competitors", "acquisitions", "news", "patent_count", "patent_fields", "patents", "tech_stack", "arr_milestones", "revenue_estimate", "valuation_benchmarks", "sector_id", "last_enriched_at"];
+    for (const s of startups) if (ONLY.includes(s.id.toLowerCase())) { for (const c of blank) (s as unknown as Record<string, unknown>)[c] = null; roundsByStartup.delete(s.id); }
   }
   const startupByDomain = new Map<string, DomainOwner>();
   for (const s of startups) {
@@ -948,6 +992,19 @@ async function main() {
         }
       }
     }
+    // The values this wet run wrote are the baseline of the batch from now on, and the batch joins the regression gate (owner, 2026-11-19).
+    const registerWritten = () => {
+      if (DRY_RUN || !runId || process.exitCode === 1 || process.env.VITEST) return;
+      try {
+        const values = watched(pilotRows.filter((r) => r.field !== "(nothing)").map((r) => ({ company: r.company, field: r.field, value: r.after })));
+        const had = loadBaseline(BATCH_NO);
+        // Another wet run of the same batch (a completion of its held fields) adds to its baseline.
+        const merged = watched([...(had?.values ?? []), ...values].map((v) => ({ company: v.company, field: v.field, value: v.value })));
+        saveBaseline({ batch: BATCH_NO, commit: headCommit(), created_at: new Date().toISOString(), companies: new Set(pilotRows.map((r) => r.company_id)).size, source: `wet run ${runId}`, values: merged, acceptance: had?.acceptance ?? [] });
+        addWrittenBatch(BATCH_NO);
+        console.log(`🚦  Batch ${BATCH_NO} joins the regression gate: baseline/batch_${BATCH_NO}.json (${merged.length} value(s)); written batches: ${writtenBatches().join(", ")}`);
+      } catch (e) { console.log(`⚠️  the batch could not be added to the regression gate: ${(e as Error).message}`); }
+    };
     // After a wet run: what was written must be what the dry pass reported, row against row (owner, batch 6). Any difference undoes the run.
     if (!DRY_RUN && runId && existsSync("pilot_report_preflight.csv") && process.env.PREFLIGHT !== "off") {
       const [h, ...b] = parseReportCsv(readFileSync("pilot_report_preflight.csv", "utf8"));
@@ -971,6 +1028,7 @@ async function main() {
         }
       }
     }
+    registerWritten();
   }
 }
 

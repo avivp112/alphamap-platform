@@ -751,7 +751,8 @@ export async function writeCollected(
   // The same check on points already on file — an earlier run wrote
   // Gladia's 70,000 point; it shouldn't stay on the growth chart forever.
   const finalHeadcount = (patch.employee_count as number | undefined) ?? row.employee_count;
-  const { data: hcOnFile } = await supabase.from("headcount_history").select("id, employee_count, snapshot_date").eq("startup_id", row.id);
+  // REGRESSION=1 runs as if nothing were on file (bulk_enrich_v2.ts).
+  const { data: hcOnFile } = process.env.REGRESSION === "1" ? { data: [] as Array<{ id: string; employee_count: number; snapshot_date: string }> } : await supabase.from("headcount_history").select("id, employee_count, snapshot_date").eq("startup_id", row.id);
   const badHeadcountOnFile = ((hcOnFile ?? []) as Array<{ id: string; employee_count: number; snapshot_date: string }>).filter((h) =>
     (!OPEN || writesHeadcount(OPEN)) && !!checkHeadcountOutlier(h.employee_count, totalRaisedEstimate, foundedForChecks) || (finalHeadcount != null && finalHeadcount > 0 && h.employee_count > finalHeadcount * 10),
   );
