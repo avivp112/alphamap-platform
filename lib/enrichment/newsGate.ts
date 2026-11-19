@@ -88,6 +88,11 @@ export async function judgeNews(n: NewsItem, d: NewsDeps): Promise<NewsVerdict> 
   const { title_joined: _j, ...rest } = n;
   const item = { ...rest, title };
   let dated: "address" | "page" | undefined;
+  // A date in the article's own address beats a date that came with the search result (owner, batch 8: DataGateway's item dated 2019-10-15, its address 20200714).
+  if (item.published_date) {
+    const u = dateFromUrl(item.url, d.today);
+    if (u && u !== item.published_date && Math.abs(Date.parse(u) - Date.parse(item.published_date)) > 3 * 86_400_000) { item.published_date = u; dated = "address"; }
+  }
   if (!item.published_date) {
     const fromUrl = dateFromUrl(item.url, d.today);
     const h = fromUrl ? null : await page();

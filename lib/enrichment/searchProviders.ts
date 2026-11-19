@@ -466,7 +466,7 @@ export async function verifyDomainMatch(
 
 // ── Company website fetch (Stage 2) ────────────────────────────────────────
 
-const JINA_TIMEOUT_MS = 15_000;
+const JINA_TIMEOUT_MS = Number(process.env.JINA_TIMEOUT_MS ?? 15_000);
 import { promptText, htmlToText } from "./pageText.ts";
 const MAX_WEBSITE_CHARS = Number(process.env.WEB_PAGE_PROMPT_CHARS ?? 6_000);   // what the model gets of a page; the verifier reads the whole page (up to MAX_PAGE_STORED)
 const MAX_PAGE_STORED = 120_000;
@@ -615,17 +615,21 @@ export function suspiciousUrl(url: string): boolean {
   return SUSPICIOUS_TLD.test(host) || SUSPICIOUS_WORD.test(host) || blockedFile.some((d) => host === d || host.endsWith(`.${d}`));
 }
 
-export function homepageReadFailure(website: string): "service" | "dead" | null {
+export function homepageReadFailure(website: string): "service" | "dead" | "unreachable" | null {
   const f = readFailures.get(hostKey(website));
   if (!f) return null;
-  if (/ENOTFOUND|EAI_AGAIN|EAI_NODATA|getaddrinfo|ECONNREFUSED|ERR_TLS|CERT_|certificate/i.test(f["direct"] ?? "")) return "dead";
+  const direct = f["direct"] ?? "";
+  // dead: the name does not resolve, or the home page itself answers "not found" (a parked / unconnected address)
+  if (/ENOTFOUND|EAI_NODATA|ECONNREFUSED|getaddrinfo|^HTTP (?:404|410)\b/i.test(direct)) return "dead";
+  // unreachable: the server exists and does not answer in time, or its certificate fails (to try once more with a longer timeout; else for the owner's list)
+  if (/TIMEOUT|ETIMEDOUT|ECONNRESET|ERR_TLS|CERT_|certificate/i.test(direct)) return "unreachable";
   const service = (x?: string) => !x || /^HTTP [45]\d\d$|abort|timeout|timed out|threw|fetch failed|empty page/i.test(x);
   return service(f["Jina Reader"]) && service(f["Serper scrape"]) ? "service" : null;
 }
 
 /** Jina Reader first; Serper scrape when Jina could not read it. */
 /** The page straight from its server (no reader service between), as text. */
-async function fetchDirect(url: string, ms = 10_000): Promise<string | null> {
+async function fetchDirect(url: string, ms = Number(process.env.DIRECT_TIMEOUT_MS ?? 10_000)): Promise<string | null> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), ms);

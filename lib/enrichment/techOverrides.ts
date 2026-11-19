@@ -35,3 +35,10 @@ export function sectorDecision(companyName: string): { sector: string; sub_secto
   const d = SECTOR_DECISIONS.find((x) => fold(x.name) === fold(companyName));
   return d ? { sector: d.sector, sub_sector: d.sub_sector } : null;
 }
+
+/** Companies the owner decided are listed on an exchange (batch 8, 2026-11-19): turned away as public, whatever the sources say. */
+export const PUBLIC_OVERRIDES: ReadonlyArray<{ name: string; reason: string }> = [
+  { name: "valu", reason: "EGX-listed since June 2025" },
+  { name: "Xintela", reason: "listed (Nasdaq First North Stockholm)" },
+];
+export const publicOverride = (companyName: string): { name: string; reason: string } | null => PUBLIC_OVERRIDES.find((o) => fold(o.name) === fold(companyName)) ?? null;

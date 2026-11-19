@@ -13,7 +13,7 @@ import { addHeldFields, addPendingFixes, addToTrackRecord, ERROR_LIMIT, fieldErr
 const batch = Number(process.env.BATCH ?? process.env.BATCH_NO);
 if (!Number.isInteger(batch) || batch < 1) { console.error("BATCH=<the batch number> is required."); process.exit(2); }
 const file = process.env.FILE ?? "sample_50.csv";
-const [head, ...rows] = parseCsv(readFileSync(file, "utf8"));
+const [head, ...rows] = parseCsv(readFileSync(file, "utf8").replace(/\r(?!\n)/g, ""));
 const ix = (c: string) => { const e = head.findIndex((h) => h === c); return e >= 0 ? e : head.findIndex((h) => h.startsWith(c)); };
 const sample: SampleRow[] = rows.map((r) => ({ n: Number(r[ix("n")]), company: r[ix("company")], field: r[ix("field")], value: r[ix("value")] }));
 const wrongEnv = (process.env.WRONG ?? "").trim();

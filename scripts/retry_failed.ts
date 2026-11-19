@@ -14,7 +14,7 @@ import { parseCsv } from "../lib/enrichment/acceptance.ts";
 const batch = Number(process.env.BATCH_NO);
 if (!Number.isInteger(batch) || batch < 1) { console.error("BATCH_NO=<n> is required"); process.exit(2); }
 const fold = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, "");
-const why = new RegExp(process.env.WHY ?? "fetch_failed|error|domain_unresolved");
+const why = new RegExp(process.env.WHY ?? "fetch_failed|error|website_unreachable|domain_unresolved");
 const [h, ...b] = parseCsv(readFileSync("not_enriched.csv", "utf8"));
 const failed = b.filter((r) => why.test(r[h.indexOf("why")]) && (r[h.indexOf("why")] !== "domain_unresolved" || /unreadable/.test(r[h.indexOf("detail")] ?? ""))).map((r) => r[h.indexOf("company")]);
 const pb = JSON.parse(readFileSync(`pilot_batch_${batch}.json`, "utf8")) as { companies: Array<{ id: string; name: string }> };
@@ -27,7 +27,7 @@ const FILES = ["pilot_report_dry.csv", "rejected_all.csv", "not_enriched.csv", "
 const dir = `archive/batch${batch}_first`;
 mkdirSync(dir, { recursive: true });
 for (const f of FILES) if (existsSync(f) && !existsSync(`${dir}/${f}`)) copyFileSync(f, `${dir}/${f}`);
-const run = spawnSync("npx", ["tsx", "scripts/bulk_enrich_v2.ts"], { stdio: "inherit", env: { ...process.env, PILOT: "true", DRY_RUN: "true", ALL_FIELDS: "true", SITEMAP: "on", CONCURRENCY: "3", PILOT_MAX_COMPANIES: String(Math.max(picked.length, 1)), ONLY: picked.map((c) => c.id).join(","), MAX_COST: process.env.MAX_COST ?? "3" } });
+const run = spawnSync("npx", ["tsx", "scripts/bulk_enrich_v2.ts"], { stdio: "inherit", env: { ...process.env, PILOT: "true", DRY_RUN: "true", ALL_FIELDS: "true", SITEMAP: "on", CONCURRENCY: "3", DIRECT_TIMEOUT_MS: process.env.DIRECT_TIMEOUT_MS ?? "45000", JINA_TIMEOUT_MS: process.env.JINA_TIMEOUT_MS ?? "60000", CALL_TIMEOUT_MS: process.env.CALL_TIMEOUT_MS ?? "90000", PILOT_MAX_COMPANIES: String(Math.max(picked.length, 1)), ONLY: picked.map((c) => c.id).join(","), MAX_COST: process.env.MAX_COST ?? "3" } });
 if (run.status !== 0) { console.error(`the run stopped (exit ${run.status}); the first run's files are in ${dir}/`); process.exit(run.status ?? 1); }
 const names = new Set(picked.map((c) => fold(c.name)));
 const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);

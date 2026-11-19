@@ -30,3 +30,21 @@ describe("batch 8 follow-up (owner, 2026-11-19)", () => {
     expect(websiteDecision("Other", f)).toBeNull();
   });
 });
+
+import { isLeadershipRole } from "./people";
+import { publicOverride } from "./techOverrides";
+describe("batch 8 follow-up 2 (owner, 2026-11-19)", () => {
+  it("a VP of corporate affairs is not senior management; a VP of product is", () => {
+    expect(isLeadershipRole("VP Corporate Affairs")).toBe(false);
+    expect(isLeadershipRole("SVP, Investor Relations")).toBe(false);
+    expect(isLeadershipRole("VP Product")).toBe(true);
+    expect(isLeadershipRole("CEO")).toBe(true);
+  });
+  it("dead and unreachable addresses are reasons of their own; valu and Xintela are public", () => {
+    expect(whyNotEnriched("no_data", "website_dead", undefined, "https://x.com")).toBe("website_dead");
+    expect(whyNotEnriched("no_data", "website_unreachable", undefined, "https://x.com")).toBe("website_unreachable");
+    expect(publicOverride("Valu")?.reason).toMatch(/EGX/);
+    expect(publicOverride("Xintela")).not.toBeNull();
+    expect(publicOverride("Stripe")).toBeNull();
+  });
+});

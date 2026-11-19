@@ -41,6 +41,7 @@ import { companyLanguage, localQueries, type Lang } from "./localSearch.ts";
 import { traceOf } from "./runTrace.ts";
 import { pageNamesCompany } from "./ownDomain.ts";
 import { websiteDecision } from "./websiteDecisions.ts";
+import { publicOverride } from "./techOverrides.ts";
 import { translateItems } from "./translate.ts";
 import { foundedYearFromSite, copyrightStartYear, foundedInCityYear } from "./siteFacts.ts";
 import { storedRejection, rememberRejection } from "./techMemory.ts";
@@ -405,6 +406,9 @@ export async function collectCompany(
     return { outcome: "rejected", reason: "not_technology", detail: `tech_overrides: ${overridden.reason}` };
   }
 
+  // The owner's list of companies listed on an exchange (batch 8: valu, EGX since June 2025; Xintela): archived as public, nothing is collected.
+  if (!ctx.update && publicOverride(row.name)) { console.log(`    🏛️   Listed on an exchange (the owner's decision) — nothing is collected.`); return { outcome: "public", listing: null }; }
+
   // A company turned away as not technology stays turned away for a time (techMemory.ts): the same answer every run, and no searches spent.
   if (!ctx.update) {
     const before = techAccepted(row.name) ? null : storedRejection(row.id);
@@ -456,25 +460,36 @@ export async function collectCompany(
   // The address leads to another company's site, and the company was acquired by that company (owner, 2026-11-19: nordigen.com → GoCardless): it is an acquired company, collected as usual — from
   // everything but that site (nothing is read from the buyer's pages as if they were the company's). Not "another business", and no other domain is searched for it.
   let movedToBuyer: string | null = null;
-  const movedTo = !ctx.update && effectiveWebsite && (readable.length === 0 || addressMismatch || !readable.slice(0, 3).some((p) => pageNamesCompany({ content: p.content }, row.name))) ? websiteRedirect(effectiveWebsite) : null;
-  if (movedTo) {
+  const movedTo = !ctx.update && process.env.DOMAIN_RESOLVE !== "false" && effectiveWebsite && (readable.length === 0 || addressMismatch || !readable.slice(0, 3).some((p) => pageNamesCompany({ content: p.content }, row.name))) ? websiteRedirect(effectiveWebsite) : null;
+  // A dead address (the name no longer resolves) of a company that was acquired (owner, 2026-11-19: nordigen.com, GoCardless): the acquisition searches run without a site, and the company is acquired when
+  // at least two headlines name the same buyer.
+  const deadAddress = !ctx.update && process.env.DOMAIN_RESOLVE !== "false" && !movedTo && !!effectiveWebsite && readable.length === 0 && readFailure === "dead";
+  if (movedTo || deadAddress) {
     try {
-      const label = new URL(movedTo).hostname.replace(/^www\./, "").split(".")[0].toLowerCase().replace(/[^a-z0-9]/g, "");
+      const label = movedTo ? new URL(movedTo).hostname.replace(/^www\./, "").split(".")[0].toLowerCase().replace(/[^a-z0-9]/g, "") : "";
       const found = (await Promise.all([`"${row.name}" acquired`, `"${row.name}" acquired by`].map((q) => webSearch(q, "acquired_check", searchState)))).flat();
-      for (const r of found) {
+      if (deadAddress) {
+        const titles = found.map((r) => (r.title ?? "").trim()).filter(Boolean);
+        movedToBuyer = knownAcquirers(titles, row.name, 2)[0] ?? null;
+      } else for (const r of found) {
         const hit = acquirerIn((r.title ?? "").trim(), row.name);
         const a = hit?.acquirer.toLowerCase().replace(/[^a-z0-9]/g, "") ?? "";
         if (hit && a.length >= 3 && (label.includes(a) || a.includes(label))) { movedToBuyer = hit.acquirer; break; }
       }
     } catch { /* no verdict: the usual domain path follows */ }
     if (movedToBuyer) {
-      console.log(`    🏁  The address ${effectiveWebsite} leads to ${movedTo}, the site of its buyer ${movedToBuyer}: an acquired company, collected as usual; nothing is read from that site as the company's own.`);
+      console.log(`    🏁  The address ${effectiveWebsite} ${movedTo ? `leads to ${movedTo}, the site of its buyer` : "is dead; the sources say it was bought by"} ${movedToBuyer}: an acquired company, collected as usual; nothing is read from any site as the company's own.`);
       websitePages = []; effectiveWebsite = null; domain = null; anchor = row.country ? ` ${row.country} (startup OR tech company)` : "";
       addressMismatch = false;
-      siteOwnerIssue = siteOwnerIssue ?? `the address moved to its buyer ${movedToBuyer} (${movedTo})`;
+      siteOwnerIssue = siteOwnerIssue ?? `the address ${movedTo ? `moved to its buyer ${movedToBuyer} (${movedTo})` : `is dead; its buyer is ${movedToBuyer}`}`;
     }
   }
   if (!ctx.update && !movedToBuyer && process.env.DOMAIN_RESOLVE !== "false" && (readable.length === 0 || addressMismatch)) {
+    if (readFailure === "unreachable" && readable.length === 0 && !addressMismatch) {
+      console.log(`    🔌  website_unreachable: the server of ${effectiveWebsite} exists and did not answer in time (or its certificate fails) — for the owner's list; run it again with a longer timeout.`);
+      bump(stats.droppedByReason, "website_unreachable");
+      return { outcome: "no_data", reason: "website_unreachable", detail: `address ${row.website} — the server answers too slowly or its certificate fails; not shown to be dead` };
+    }
     if (readFailure === "service" && readable.length === 0 && !addressMismatch) {
       console.log(`    🔌  fetch_failed: the reading services failed for ${effectiveWebsite} (not a domain problem) — no other domain is searched, nothing is remembered; run it again.`);
       bump(stats.droppedByReason, "fetch_failed");
@@ -492,12 +507,12 @@ export async function collectCompany(
     if (found.website) {
       // A proposed address is never collected from until the owner approves it (round 10: Plott's letsplott.com is another company than Plott on file). The company stays domain_unresolved.
       console.log(`    🧭  domain_unresolved: the address on file (${row.website ?? "none"}) ${websitePages.length === 0 ? "could not be read" : "shows another business"}. A site was proposed — ${found.website} (${found.reason}) — nothing is collected from it until the owner approves it.`);
-      bump(stats.droppedByReason, "domain_unresolved");
-      return { outcome: "no_data", reason: "domain_unresolved", detail: `address ${row.website ?? "none"} — ${readable.length === 0 ? "unreadable" : "another business"}; PROPOSAL (not used, awaiting approval): ${found.website} — ${found.reason}` };
+      bump(stats.droppedByReason, readFailure === "dead" && readable.length === 0 ? "website_dead" : "domain_unresolved");
+      return { outcome: "no_data", reason: readFailure === "dead" && readable.length === 0 ? "website_dead" : "domain_unresolved", detail: `address ${row.website ?? "none"} — ${readable.length === 0 ? "unreadable" : "another business"}; PROPOSAL (not used, awaiting approval): ${found.website} — ${found.reason}` };
     } else {
       console.log(`    🧭  domain_unresolved: the address on file (${row.website ?? "none"}) ${readable.length === 0 ? "could not be read" : "shows another business"} and no site of the company itself was found (tried: ${found.tried.join(", ") || "no candidate"}).`);
-      bump(stats.droppedByReason, "domain_unresolved");
-      return { outcome: "no_data", reason: "domain_unresolved", detail: `address ${row.website ?? "none"} — ${readable.length === 0 ? "unreadable" : "another business"}; candidates tried: ${found.tried.join(", ") || "none"}` };
+      bump(stats.droppedByReason, readFailure === "dead" && readable.length === 0 ? "website_dead" : "domain_unresolved");
+      return { outcome: "no_data", reason: readFailure === "dead" && readable.length === 0 ? "website_dead" : "domain_unresolved", detail: `address ${row.website ?? "none"} — ${readable.length === 0 ? "unreadable" : "another business"}; candidates tried: ${found.tried.join(", ") || "none"}` };
     }
   }
   // Renamed is not acquired (owner, round 10: TymeBank is GoTyme Bank): the description uses the new name, and the new name is a proposal for the owner.

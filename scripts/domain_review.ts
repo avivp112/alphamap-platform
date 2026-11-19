@@ -13,22 +13,23 @@ const TLD: Record<string, string> = { il: "Israel", uk: "United Kingdom", de: "G
 const q = (v: string | number) => { const s = String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
 
 if (process.argv[2] === "list") {
-  const [h, ...b] = parseCsv(readFileSync("domain_review.csv", "utf8"));
+  const [h, ...b] = parseCsv(readFileSync("domain_review.csv", "utf8").replace(/\r/g, ""));
   b.forEach((r, i) => console.log(`${String(i + 1).padStart(2)}  ${r[h.indexOf("domain")].padEnd(30)} ×${r[1]}  ${r[5]}\n      ${(r[2] ?? "").slice(0, 150)}`));
   console.log("\nDecide: APPROVE=1,4,7 REJECT=2,3 npx tsx scripts/domain_review.ts apply   (numbers of this list; a domain name works too; a domain you leave out stays as it is)");
   process.exit(0);
 }
 if (process.argv[2] === "apply") {
-  const [h, ...b] = parseCsv(readFileSync("domain_review.csv", "utf8"));
+  const [h, ...b] = parseCsv(readFileSync("domain_review.csv", "utf8").replace(/\r/g, ""));
+  const decCol = h.findIndex((x) => x.trim().toLowerCase().startsWith("decision"));
   const dec = { approved: [] as string[], rejected: [] as string[] };
   // Decisions on the command line: numbers of `list` (or domain names) — no file to edit.
   const pick = (v?: string) => (v ?? "").split(",").map((x) => x.trim()).filter(Boolean).map((x) => (/^\d+$/.test(x) ? b[Number(x) - 1]?.[h.indexOf("domain")] : x)).filter((x): x is string => !!x);
   dec.approved.push(...pick(process.env.APPROVE)); dec.rejected.push(...pick(process.env.REJECT));
-  for (const r of b) { const d = (r[h.indexOf("decision")] ?? "").trim().toLowerCase(); const dom = r[h.indexOf("domain")]; if (/^(approve|yes|ok|אשר|מאשר)/.test(d)) dec.approved.push(dom); else if (/^(reject|no|דחה|דוחה)/.test(d)) dec.rejected.push(dom); }
+  for (const r of b) { const d = (r[decCol] ?? "").trim().toLowerCase(); const dom = (r[h.indexOf("domain")] ?? "").trim(); if (!dom) continue; if (/^(approve|yes|ok|אשר|מאשר)/.test(d)) dec.approved.push(dom); else if (/^(reject|no|דחה|דוחה)/.test(d)) dec.rejected.push(dom); }
   const prev = existsSync("eval/source_decisions.json") ? JSON.parse(readFileSync("eval/source_decisions.json", "utf8")) as typeof dec : { approved: [], rejected: [] };
   const out = { approved: [...new Set([...prev.approved, ...dec.approved])].sort(), rejected: [...new Set([...prev.rejected, ...dec.rejected])].sort() };
   writeFileSync("eval/source_decisions.json", JSON.stringify(out, null, 1) + "\n");
-  console.log(`eval/source_decisions.json: ${out.approved.length} approved, ${out.rejected.length} rejected. Commit it, then REPLAY only.`);
+  console.log(`this file's decisions: ${dec.approved.length} approved, ${dec.rejected.length} rejected (of ${b.length} domains)${dec.approved.length + dec.rejected.length === 0 ? " — NO decision was read: the last column is empty or its words are not approve / reject" : ""}.\neval/source_decisions.json: ${out.approved.length} approved, ${out.rejected.length} rejected in all. Commit it, then REPLAY only.`);
   process.exit(0);
 }
 if (!existsSync("rejected_all.csv")) { console.error("rejected_all.csv not found (the dry run writes it)"); process.exit(1); }
