@@ -35,11 +35,6 @@ const JOB_AD_WEAK = /\b(?:experience (?:required|with|in)|responsibilities|requi
 /** A job advertisement: one clear marker, or two of the weak ones — a product sentence that says "you will" or "experience with" is not one (owner, batch 8: Berg System's CRM). */
 const isJobAd = (q: string) => JOB_AD_STRONG.test(q) || new Set((q.match(JOB_AD_WEAK) ?? []).map((x) => x.toLowerCase())).size >= 2;
 const brandOf = (companyName: string) => fold(companyName.replace(/\b(ai|inc|ltd|llc|labs?|group|studio|studios|technologies|software|systems)\b/gi, ""));
-const ROLE_NEED: Array<[string, RegExp, RegExp]> = [["COO", /\bcoo\b|chief operating officer/i, /\bcoo\b|chief operat/i], ["CTO", /\bcto\b|chief technology officer|chief technical officer/i, /\bcto\b|chief technolog|chief technical/i],
-  ["CFO", /\bcfo\b|chief financial officer/i, /\bcfo\b|chief financ/i], ["CMO", /\bcmo\b|chief marketing officer/i, /\bcmo\b|chief market/i], ["CEO", /\bceo\b|chief executive officer/i, /\bceo\b|chief exec|managing director|\bmd\b/i],
-  ["CPO", /\bcpo\b|chief product officer|chief people officer/i, /\bcpo\b|chief product|chief people/i], ["CRO", /\bcro\b|chief revenue officer/i, /\bcro\b|chief revenue|chief risk/i], ["President", /\bpresident\b/i, /president/i]];
-/** The executive titles of a role that its quote does not carry. */
-export const unsupportedRoles = (role: string, quote: string): string[] => ROLE_NEED.filter(([, inRole, inQuote]) => inRole.test(role) && !inQuote.test(quote)).map(([n]) => n);
 let ambiguous: Set<string> | null = null;
 const ambiguousDeny = (name: string): RegExp | null => { try { const j = JSON.parse(readFileSync("eval/ambiguous_names.json", "utf8")) as { deny?: Record<string, string> }; const k = Object.keys(j.deny ?? {}).find((x) => fold(x) === fold(name)); return k ? new RegExp(j.deny![k], "i") : null; } catch { return null; } };
 const ambiguousName = (name: string): boolean => {
@@ -131,8 +126,6 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
       const own = fold(companyName).replace(/(inc|ltd|llc|corp|gmbh|ag|bv|the)$/g, "");
       if (org.length >= 3 && !/^(?:ceo|cto|coo|cfo|cmo|cpo|chief\w*|co-?founder|founder|president|chair\w*|director|partner|head|vice|vp|svp|evp|managing|general|executive)/i.test(near[1].trim()) && !(org.includes(own) || (own.length >= 3 && own.includes(org)))) return `a role at another company (${near[1].trim()}), not here`;
     }
-    // The role must be in the quote (owner, batch 8: Weezy's COO) — a leader's title the model supplied from elsewhere is not written; a founder keeps the row, without the role (applyRowRules).
-    if (r.field === "leader") { const miss = unsupportedRoles(role, q); if (miss.length) return `its role (${miss.join(", ")}) is not in its quote`; }
   }
   // A name that several companies carry (owner, batch 8: Shyft — a Miami moving app, a Standard Bank FX app, The Shyft Group): a value stands only on the company's own domain on file, or on a source whose
   // quote names that domain. eval/ambiguous_names.json: { "names": ["Shyft"] }.
@@ -184,8 +177,6 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
     // A source that is not the company's own must be about the company: the brand is in its quote or its address.
     const brand = fold(companyName.replace(/\b(ai|inc|ltd|llc|labs?|group)\b/gi, ""));
     if (brand.length >= 3 && !fold(quote).includes(brand) && !fold(url).includes(brand)) return "its quote and address do not name the company";
-    // A tag rests on the verified description — a sentence that names the company (owner, 2026-11-19: DataGateway's menu text, TrustCert's technical specification, Lulalend's general sentence).
-    if (brand.length >= 3 && !fold(quote).includes(brand)) return "its quote does not name the company: a tag is taken from the verified description, not from another sentence";
     // A filing or a list of another company's document is no description of this one (owner, 2026-11-19: Orizuru's tag from a list in another company's 10-K).
     if (!ownDomain(url, companyName) && /(?:^|\/\/)(?:www\.)?sec\.gov\b|\/(?:10-?k|10-?q|20-?f|8-?k|annual-report)\b/i.test(url)) return "a filing of another company is no source for a tag";
   }
@@ -367,15 +358,6 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
   const seenNews = new Map<string, T>();
   for (const r0 of kept) {
     let r = r0;
-    if (r.field === "founder" && r.quote && r.after.includes(" — ")) {
-      const [nm, ...rl] = r.after.split(" — "); const role = rl.join(" — "), miss = unsupportedRoles(role, r.quote);
-      if (miss.length) {
-        let left = role; for (const [n, inRole] of ROLE_NEED) if (miss.includes(n)) left = left.replace(new RegExp(inRole.source, "gi"), " ");
-        left = left.replace(/\b(?:and|&|chief|officer|executive|operating|technology|technical|financial|marketing|product|revenue|people|risk)\b/gi, " ").replace(/[\s,;/&·|-]+/g, " ").trim();
-        dropped.push(`founder: role ${miss.join(", ")} of ${nm} taken out — it is not in the quote`);
-        r = { ...r, after: /found/i.test(left) ? `${nm} — ${/co.?found/i.test(left) ? "Co-Founder" : "Founder"}` : nm };
-      }
-    }
     if (r.field === "founder") {
       const [name, ...rest] = r.after.split(" — ");
       const key = fold(name), title = rest.join(" — ");
@@ -474,10 +456,7 @@ function stripUngroundedLead<T extends RowLike>(r: T): { row: T; stripped: strin
   if (!name) return { row: r, stripped: null };
   const core = normalizeForMatch(name.replace(/\b(inc|ltd|llc|lp|llp|plc|gmbh|sa|ag|bv|co)\b\.?/gi, ""));
   const texts = [r.quote ?? "", ...(payload.evidence ?? []).filter((e) => (e as { field?: string }).field !== "lead_investor").map((e) => e.quote ?? "")].map((t) => normalizeForMatch(t));
-  // A lead investor is named by a lead cue ("led by", "led the round"), not by being among the investors (owner, 2026-11-19: Nordigen's Seedcamp).
-  const rawTexts = [r.quote ?? "", ...(payload.evidence ?? []).filter((e) => (e as { field?: string }).field !== "lead_investor").map((e) => e.quote ?? "")];
-  const led = (t: string) => { const i = t.toLowerCase().indexOf(name.toLowerCase().replace(/\b(inc|ltd|llc|lp|llp|plc|gmbh|sa|ag|bv|co)\b\.?/gi, "").trim()); return i >= 0 && (/\b(?:led|lead|leads|leading|co-led|spearheaded|headed)\b/i.test(t.slice(Math.max(0, i - 80), i)) || /\b(?:led|leads|co-led)\b/i.test(t.slice(i, i + 50))); };
-  if (!core || (texts.some((t) => t.includes(core)) && rawTexts.some(led))) return { row: r, stripped: null };
+  if (!core || texts.some((t) => t.includes(core))) return { row: r, stripped: null };
   payload.round = { ...payload.round, lead_investor: null };
   return { row: { ...r, payload: JSON.stringify(payload), after: r.after.replace(new RegExp(`\\s*·\\s*lead\\s+${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i"), "") }, stripped: name };
 }

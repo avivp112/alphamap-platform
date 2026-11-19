@@ -108,25 +108,13 @@ export async function judgeNews(n: NewsItem, d: NewsDeps): Promise<NewsVerdict> 
   return { keep: true, item, dated };
 }
 
-const STOP_TITLE = new Set(["with", "from", "that", "this", "have", "will", "into", "over", "their", "about", "after", "more", "than", "news", "announces", "announced", "launches", "company"]);
 export function finishNews<T extends NewsItem>(items: T[], d: Pick<NewsDeps, "isOwnSite" | "content" | "companyName">): { kept: T[]; dropped: Array<{ item: T; reason: string; message: string }> } {
   const dropped: Array<{ item: T; reason: string; message: string }> = [];
   // An item with no date is out first, under its own reason; only then are the dated ones merged to one per event. The other way round (merged first) kept an undated item as the event's one
   // and dropped it for its date, and the dated items it had absorbed were reported as "the same event as another item" with no item left (owner, regression gate, Medipass).
-  const withDate = items.filter((x) => {
+  const dated = items.filter((x) => {
     if (x.published_date) return true;
     dropped.push({ item: x, reason: "news_no_date", message: "no date in its address or its page" });
-    return false;
-  });
-  // A date read from the page's code needs another source of the same event within 7 days (owner, batch 8: Ionity's 2020-11-10 — Hyundai joined in 2019). Another report of the event: a different address,
-  // within 7 days, and at least one significant word (5+ letters, not the company's name) of the headline in common.
-  const words = (t: string) => new Set(t.toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, " ").split(/\s+/).filter((w) => w.length >= 5 && !STOP_TITLE.has(w)));
-  const own = d.companyName ? words(d.companyName) : new Set<string>();
-  const confirmed = (x: T) => withDate.some((y) => y !== x && y.url !== x.url && Math.abs(Date.parse(y.published_date!) - Date.parse(x.published_date!)) <= 7 * 86_400_000
-    && [...words(x.title)].filter((w) => !own.has(w) && words(y.title).has(w)).length >= 1);
-  const dated = withDate.filter((x) => {
-    if ((x as { date_basis?: string }).date_basis !== "code" || confirmed(x)) return true;
-    dropped.push({ item: x, reason: "news_code_date_unconfirmed", message: "its date comes from the page's code and no other source of the event confirms it within 7 days" });
     return false;
   });
   let kept = dedupeNewsEvents(dated, d.isOwnSite, (x) => (d.content(x.url) ?? "").slice(0, 300), (x) => !!d.companyName && !!acquirerIn(x.title, d.companyName));

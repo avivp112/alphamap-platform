@@ -9,3 +9,9 @@
 - Fields held only for "too few values" with 0 errors (company_number, legal_name, registered_address, acquired, …): confirm that this is wanted.
 - Oiti Technologies: certiface.com.br blocks (403) — Aviv's list.
 - Nordigen, Triskell, Multiable: dry run (`rerun_some`) result to check.
+
+## Maintenance window after batch 10 (owner, 2026-11-19) — each item must pass the regression gate with 0 lost values
+- (a) A date read from the page's code is rejected only when another source of the same event gives a date more than 7 days apart. With no contradicting source the date stays.
+- (b) A tag whose quote is not the verified description: replace the quote with the verified description when the description supports the tag; delete only when it does not.
+- (c) A role that is not in the quote: delete only the role, never the founder. In the gate, founders are compared by name.
+- Reverted before the batch 8 write (gate failed with 45 lost values in batches 5-7): the three rules above in their strict form, and the lead-investor cue ("led by") of round 3, which lost Kontent.ai's and ShopX's lead.
