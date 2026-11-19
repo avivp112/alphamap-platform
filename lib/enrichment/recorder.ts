@@ -110,7 +110,7 @@ export function installHttpRecorder(): void {
         if (buf.length <= MAX_RECORDED_BYTES) save({ status: res.status, type: res.headers.get("content-type") ?? undefined, finalUrl: res.url || undefined, body: buf.toString("base64") });
       } catch { /* a body that cannot be read twice is not recorded */ }
       return res;
-    } catch (e) { save({ error: e instanceof Error ? e.message : String(e) }); throw e; }
+    } catch (e) { save({ error: `${e instanceof Error ? e.message : String(e)}${(e as { cause?: { code?: string } })?.cause?.code ? ` (${(e as { cause?: { code?: string } }).cause!.code})` : ""}` }); throw e; }
     }
   }) as typeof fetch;
 }

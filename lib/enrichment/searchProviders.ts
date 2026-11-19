@@ -860,6 +860,9 @@ export async function fetchCompanyWebsitePages(
   const home = urls[0];
   const cachedHome = state.cache?.get<{ content: string; provider: Provider }>(`page:${home}`);
   const homeRead = cachedHome ? { text: cachedHome.content, provider: cachedHome.provider } : await readPage(home, state, true);
+  // The home page could not be read and the reason is conclusive (the name does not resolve, the server does not answer, the readers fail): the other fixed pages and the sitemap are not tried one by one
+  // (batch 8: nine dead sites cost seven failed reads each, and two slow ones ran past the ten minutes of a company).
+  if (!homeRead && homepageReadFailure(root)) { console.log(`    ⛔  ${root} could not be read (${homepageReadFailure(root)}): its other pages are not tried.`); return []; }
   const needFallbacks = homeRead?.provider === "cheerio" || homeRead?.provider === "archive";
   if (homeRead) {
     const origin = finalOriginIn(homeRead.text);

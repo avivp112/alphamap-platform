@@ -14,9 +14,9 @@ import { parseCsv } from "../lib/enrichment/acceptance.ts";
 const batch = Number(process.env.BATCH_NO);
 if (!Number.isInteger(batch) || batch < 1) { console.error("BATCH_NO=<n> is required"); process.exit(2); }
 const fold = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, "");
-const why = new RegExp(process.env.WHY ?? "fetch_failed|error|website_unreachable|domain_unresolved");
+const why = new RegExp(process.env.WHY ?? "fetch_failed|error|website_unreachable|website_dead|domain_unresolved");
 const [h, ...b] = parseCsv(readFileSync("not_enriched.csv", "utf8"));
-const failed = b.filter((r) => why.test(r[h.indexOf("why")]) && (r[h.indexOf("why")] !== "domain_unresolved" || /unreadable/.test(r[h.indexOf("detail")] ?? ""))).map((r) => r[h.indexOf("company")]);
+const failed = b.filter((r) => why.test(r[h.indexOf("why")])).map((r) => r[h.indexOf("company")]);
 const pb = JSON.parse(readFileSync(`pilot_batch_${batch}.json`, "utf8")) as { companies: Array<{ id: string; name: string }> };
 const picked = pb.companies.filter((c) => failed.some((f) => fold(f) === fold(c.name)));
 console.log(`${picked.length} compan(ies): ${picked.map((c) => c.name).join(", ")}`);

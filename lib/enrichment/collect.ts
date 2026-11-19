@@ -761,7 +761,7 @@ export async function collectCompany(
   if (!ctx.update) {
     const decision = techDecision(techGateVerdict, profile, !!profile.profile.description);
     console.log(`    🧪  Technology decision: ${decision} — early check ${techGateVerdict ? `${techGateVerdict.enough_information === false ? "undecided" : techGateVerdict.is_tech_company ? "yes" : "no"} (${techGateVerdict.confidence})` : "none"}; profile ${String((profile as { tech_decision?: unknown }).tech_decision ?? "none")}${profile.tech_reason ? ` — ${profile.tech_reason}` : ""}`);
-    if (decision === "undetermined") {
+    if (decision === "undetermined" && !techAccepted(row.name)) {
       console.log(`    ❔  Technology undetermined — ${profile.tech_reason ?? "nothing to describe the company with"}; not enriched, to be tried again.`);
       return { outcome: "low_evidence", reason: "technology_undetermined", detail: `profile: ${profile.tech_reason ?? "the sources do not say what the company does"}` };
     }
