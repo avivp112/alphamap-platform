@@ -98,10 +98,12 @@ export const headCommit = () => git("rev-parse HEAD");
  * the gate, or the owner committing the baselines, does not make the code another code.
  */
 export function headTree(): string {
-  const listing = git("ls-tree -r HEAD").split("\n").filter((l) => l && !/\tbaseline\//.test(l) && !/\tregression_pass_/.test(l)).join("\n");
+  const listing = git(`ls-tree -r HEAD -- ${CODE_PATHS}`).split("\n").filter((l) => l).join("\n");
   return listing ? createHash("sha1").update(listing).digest("hex") : "";
 }
-export const treeIsClean = () => git("status --porcelain --untracked-files=no -- . :(exclude)baseline") === "";
+/** The code: what a run executes. Not the files runs themselves rewrite (missing_by_field.csv, preflight.log, reports), not the lock file, not baseline/. */
+const CODE_PATHS = "lib scripts eval src supabase package.json";
+export const treeIsClean = () => git(`status --porcelain --untracked-files=no -- ${CODE_PATHS}`) === "";
 export interface PassFile { commit: string; tree: string; at: string; batches: number[]; values: number; cost_usd: number }
 export const passFileName = (commit: string) => `regression_pass_${commit.slice(0, 12)}.json`;
 export function writePass(p: PassFile): string { const f = passFileName(p.commit); writeFileSync(f, JSON.stringify(p, null, 1) + "\n"); return f; }
