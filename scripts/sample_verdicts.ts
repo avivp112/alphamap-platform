@@ -41,7 +41,7 @@ const wrong = new Map<number, string>();
   for (const part of (process.env.WRONG_BY ?? "").split(";").map((x) => x.trim()).filter(Boolean)) {
     const [spec, ...reason] = part.split("=");
     const [co, f, v] = spec.split("|").map((x) => x?.trim());
-    const hits = sample.filter((r) => fold(r.company) === fold(co ?? "") && (!f || (r.field === "description_what_only" ? "description" : r.field) === f) && (!v || fold(r.value).includes(fold(v))));
+    const hits = sample.filter((r) => (!co || fold(r.company) === fold(co)) && (!f || (r.field === "description_what_only" ? "description" : r.field) === f) && (!v || fold(r.value).includes(fold(v))));
     if (!hits.length) console.log(`⚠️  no row of the sample matches "${spec}"`);
     for (const h of hits) wrong.set(h.n, reason.join("=").trim() || "wrong in the sample check");
   }
