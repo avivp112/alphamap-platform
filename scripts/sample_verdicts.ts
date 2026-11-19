@@ -18,7 +18,7 @@ const ix = (c: string) => { const e = head.findIndex((h) => h === c); return e >
 const sample: SampleRow[] = rows.map((r) => ({ n: Number(r[ix("n")]), company: r[ix("company")], field: r[ix("field")], value: r[ix("value")] }));
 const wrongEnv = (process.env.WRONG ?? "").trim();
 
-if (!wrongEnv && !process.env.RIGHT_ALL && !process.env.WRONG_BY) {
+if (!wrongEnv && !process.env.RIGHT_ALL && !process.env.WRONG_BY && !process.env.APPLY_MARKS) {
   // Values the owner asked to see whatever the sample holds (watch_values.csv): listed first, to be judged with the sample.
   try {
     const [wh, ...wr] = parseCsv(readFileSync("watch_values.csv", "utf8"));
@@ -65,10 +65,12 @@ for (const part of wrongEnv.split(",").map((x) => x.trim()).filter(Boolean)) {
 }
 // Every mark is kept: the same value (company, field, value) in a later sample is not shown again — and the decision below is taken on ALL the values of this batch ever marked, not on this file alone.
 const vi = ix("verdict");
-for (const r of rows) r[vi] = wrong.has(Number(r[ix("n")])) ? "wrong" : "correct";
+// APPLY_MARKS=1: only the marks already kept (sample_marks.json) decide — the values of this file that nobody marked yet are left alone (not taken as correct).
+const onlyMarks = !!process.env.APPLY_MARKS;
+if (!onlyMarks) for (const r of rows) r[vi] = wrong.has(Number(r[ix("n")])) ? "wrong" : "correct";
 const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-writeFileSync(file, "﻿" + [head, ...rows].map((r) => r.map(q).join(",")).join("\r\n") + "\r\n");
-saveMarks(sample.map((r) => ({ company: r.company, field: r.field, value: r.value, verdict: wrong.has(r.n) ? "wrong" as const : "correct" as const, reason: wrong.get(r.n) ?? "" })), batch);
+if (!onlyMarks) writeFileSync(file, "﻿" + [head, ...rows].map((r) => r.map(q).join(",")).join("\r\n") + "\r\n");
+if (!onlyMarks) saveMarks(sample.map((r) => ({ company: r.company, field: r.field, value: r.value, verdict: wrong.has(r.n) ? "wrong" as const : "correct" as const, reason: wrong.get(r.n) ?? "" })), batch);
 const allMarks = Object.values(readMarks()).filter((m) => m.batch === batch);
 const sampleAll: SampleRow[] = allMarks.map((m, i) => ({ n: i + 1, company: m.company, field: m.field, value: m.value }));
 const wrongAll = new Map<number, string>(allMarks.flatMap((m, i) => (m.verdict === "wrong" ? [[i + 1, m.reason] as [number, string]] : [])));
