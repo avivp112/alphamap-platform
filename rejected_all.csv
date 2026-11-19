@@ -1,5 +1,0 @@
-﻿n,company,field,value,reason_code,reason,source_url,evidence (quote)
-1,Ghost,employee_count,60,source_not_allowed,its source is not on the allowed list: https://www.linkedin.com/company/ghost-foundation,https://www.linkedin.com/company/ghost-foundation,
-2,Ghost,other,competitor Substack,source_not_allowed,its source is not on the allowed list: https://www.niemanlab.org/2025/ghost-newsletters,https://www.niemanlab.org/2025/ghost-newsletters,
-3,Ghost,other,competitor Beehiiv,source_not_allowed,its source is not on the allowed list: https://www.niemanlab.org/2025/ghost-newsletters,https://www.niemanlab.org/2025/ghost-newsletters,
-4,Ghost,news,Ghost 6.0 launches,source_not_allowed,its source is not on the allowed list: https://www.niemanlab.org/2025/ghost-6,https://www.niemanlab.org/2025/ghost-6,

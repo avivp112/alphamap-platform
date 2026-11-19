@@ -29,3 +29,5 @@ website_review.csv
 # the regression gate (scripts/regression.ts): its runs, and the pass files that say the gate passed for a commit. baseline/ IS committed: it is the proven values of every written batch.
 regression/out/
 regression_pass_*.json
+rejected_all.csv
+rejected_sample_30.csv
