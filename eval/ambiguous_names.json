@@ -1,1 +1,4 @@
-{ "names": ["Shyft"] }
+{
+  "names": ["Shyft"],
+  "deny": { "Shyft": "miami|\\bmoving\\b|relocat|aebi|schmidt|shyft group|special[- ]purpose vehicle" }
+}

@@ -926,7 +926,7 @@ describe("regression gate round 6 (owner, 2026-11-19)", () => {
 describe("batch 8 sample check (owner, 2026-11-19)", () => {
   const rp = (r: Record<string, string>) => rowProblem({ company: "Acme", after: "", source_url: "https://acme.com/x", quote: "", ...r } as never, "Acme", "2026-11-19");
   it("a product sentence with 'you will' is no job advertisement; two job markers or a strong one are", () => {
-    expect(rp({ field: "tags", after: "CRM", quote: "With our CRM you will see every customer in one place." })).toBeNull();
+    expect(rp({ field: "tags", after: "CRM", quote: "With the Acme CRM you will see every customer in one place." })).toBeNull();
     expect(rp({ field: "tags", after: "CRM", quote: "Requirements: experience with sales. Responsibilities: you will manage accounts." })).toMatch(/job advertisement/);
     expect(rp({ field: "tags", after: "CRM", quote: "We are hiring a CRM manager." })).toMatch(/job advertisement/);
   });

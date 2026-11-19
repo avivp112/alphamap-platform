@@ -69,7 +69,7 @@ import { assertEnrichmentWritesAllowed, PILOT_FIELDS } from "../lib/enrichment/w
 import { openFieldNames } from "../lib/enrichment/fieldReview.ts";
 import { writeFileSync as realWriteFileSync, mkdirSync, readdirSync, readFileSync, existsSync } from "fs";
 import { passFor, headCommit, headTree, addWrittenBatch, saveBaseline, watched, loadBaseline, writtenBatches } from "../lib/enrichment/regressionGate.ts";
-import { pendingExcludes, heldFieldsOf, addHeldFields } from "../lib/enrichment/batchProcess.ts";
+import { pendingExcludes, heldFieldsOf, addHeldFields, readMarks as readSampleMarks, markKey as sampleMarkKey } from "../lib/enrichment/batchProcess.ts";
 // The regression gate (owner, 2026-11-19): REGRESSION=1 runs a written batch again as a dry pass on a clean slate (the database's own values left out, the memory off) and its files go to REGRESSION_DIR.
 const REGRESSION = process.env.REGRESSION === "1";
 const REG_DIR = REGRESSION ? (process.env.REGRESSION_DIR ?? "regression/out") : "";
@@ -656,6 +656,22 @@ async function main() {
   // rows with the same numbering as the dry report. The writer works by field, so every other value of the same company and field is held back with them — listed, never silent.
   // pending_fixes.csv: a wrong value found in a check of this batch is excluded by its content, and the rest is written (owner, 2026-11-19).
   const pendingTokens = !DRY_RUN ? pendingExcludes(BATCH_NO).map((f) => f.token) : [];
+  // UNMARKED_FIELDS=tags,news (owner, 2026-11-19, batch 8): of these fields only the values the sample checked and marked correct are written; every other value of them is excluded by its content
+  // (the writer then holds that company's field back whole, as for any excluded value). Read from EXCLUDE_FROM (the reviewed dry report).
+  if (!DRY_RUN && (process.env.UNMARKED_FIELDS ?? "").trim()) {
+    const fields = process.env.UNMARKED_FIELDS!.split(",").map((x) => x.trim()).filter(Boolean);
+    const from = process.env.EXCLUDE_FROM ?? "pilot_report_preflight.csv";
+    if (!existsSync(from)) { console.error(`⛔  UNMARKED_FIELDS needs the reviewed dry report (${from} is missing): EXCLUDE_FROM=pilot_report_dry.csv.`); process.exit(1); }
+    const [h, ...b] = parseReportCsv(readFileSync(from, "utf8"));
+    const marks = readSampleMarks(); let n = 0;
+    for (const r of b) {
+      const co = r[h.indexOf("company")] ?? "", f = r[h.indexOf("field")] ?? "", v = r[h.indexOf("after")] ?? "";
+      if (!fields.includes(f) || !v) continue;
+      if (marks[sampleMarkKey(co, f, v)]?.verdict === "correct") continue;
+      pendingTokens.push(`${co}:${f}:${v.slice(0, 80)}`); n++;
+    }
+    console.log(`🧪  UNMARKED_FIELDS=${fields.join(",")}: ${n} value(s) the sample did not mark correct are not written.`);
+  }
   if (pendingTokens.length) console.log(`📋  pending_fixes.csv: ${pendingTokens.length} value(s) of batch ${BATCH_NO} excluded by content: ${pendingTokens.map((t) => t.slice(0, 50)).join(" | ")}`);
   if (!DRY_RUN && ((process.env.EXCLUDE ?? "").trim() || (process.env.EXCLUDE_RULE ?? "").trim() || pendingTokens.length)) {
     const from = process.env.EXCLUDE_FROM ?? "pilot_report_preflight.csv";

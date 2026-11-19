@@ -41,6 +41,7 @@ const ROLE_NEED: Array<[string, RegExp, RegExp]> = [["COO", /\bcoo\b|chief opera
 /** The executive titles of a role that its quote does not carry. */
 export const unsupportedRoles = (role: string, quote: string): string[] => ROLE_NEED.filter(([, inRole, inQuote]) => inRole.test(role) && !inQuote.test(quote)).map(([n]) => n);
 let ambiguous: Set<string> | null = null;
+const ambiguousDeny = (name: string): RegExp | null => { try { const j = JSON.parse(readFileSync("eval/ambiguous_names.json", "utf8")) as { deny?: Record<string, string> }; const k = Object.keys(j.deny ?? {}).find((x) => fold(x) === fold(name)); return k ? new RegExp(j.deny![k], "i") : null; } catch { return null; } };
 const ambiguousName = (name: string): boolean => {
   if (!ambiguous) { ambiguous = new Set(); try { for (const n of (JSON.parse(readFileSync("eval/ambiguous_names.json", "utf8")) as { names?: string[] }).names ?? []) ambiguous.add(fold(n)); } catch { /* none */ } }
   return ambiguous.has(fold(name));
@@ -135,6 +136,7 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
   }
   // A name that several companies carry (owner, batch 8: Shyft — a Miami moving app, a Standard Bank FX app, The Shyft Group): a value stands only on the company's own domain on file, or on a source whose
   // quote names that domain. eval/ambiguous_names.json: { "names": ["Shyft"] }.
+  { const deny = ambiguousDeny(companyName); if (deny && deny.test(`${r.after} ${r.quote ?? ""}`)) return `${companyName}: the value speaks of another company that carries the name (${(`${r.after} ${r.quote ?? ""}`.match(deny) ?? [""])[0]})`; }
   if (o.domain && url && r.field !== "(nothing)" && ambiguousName(companyName)) {
     const host = (u: string) => { try { return new URL(u.startsWith("http") ? u : `https://${u}`).hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; } };
     const mine = host(o.domain), h = host(url);
@@ -182,6 +184,10 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
     // A source that is not the company's own must be about the company: the brand is in its quote or its address.
     const brand = fold(companyName.replace(/\b(ai|inc|ltd|llc|labs?|group)\b/gi, ""));
     if (brand.length >= 3 && !fold(quote).includes(brand) && !fold(url).includes(brand)) return "its quote and address do not name the company";
+    // A tag rests on the verified description — a sentence that names the company (owner, 2026-11-19: DataGateway's menu text, TrustCert's technical specification, Lulalend's general sentence).
+    if (brand.length >= 3 && !fold(quote).includes(brand)) return "its quote does not name the company: a tag is taken from the verified description, not from another sentence";
+    // A filing or a list of another company's document is no description of this one (owner, 2026-11-19: Orizuru's tag from a list in another company's 10-K).
+    if (!ownDomain(url, companyName) && /(?:^|\/\/)(?:www\.)?sec\.gov\b|\/(?:10-?k|10-?q|20-?f|8-?k|annual-report)\b/i.test(url)) return "a filing of another company is no source for a tag";
   }
   // A registered address is registered_address and nothing else (owner, batch 8: Smarter Contracts, lawhive): no headquarters, no office.
   if ((r.field === "hq_city" || r.field === "hq_country" || r.field === "office") && /\bregistered\s+(?:office|address|seat)\b|\bregistered\s+in\b|\bsede\s+(?:legal|social)\b|\bsiège\s+social\b|\beingetragene[rn]?\s+sitz\b|\bsiedziba\s+(?:prawna|rejestrowa)\b/i.test(quote)) return "a registered address is no headquarters or office: it belongs to registered_address only";
@@ -194,6 +200,25 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
   }
   if (r.field === "office" && !quote.trim()) return "an office needs a quote";
   // "150+" is a lower bound without a ceiling: it may be over 200, so no range is derived from it (owner, batch 8) — except the open top range.
+  if (r.field === "round" && !/^[^:{]*\sfilled:/.test(r.after)) {
+    // A round rests on a quote that speaks of funding (owner, 2026-11-19: Orizuru's "round" had no quote and its page announced a launch).
+    if (!quote.trim()) return "a round needs a quote";
+    if (!/rais|fund|invest|financ|series|seed|round|capital|led by|backed|valuation|loan|debt|grant|\$|€|£|million|\d\s?[mk]\b/i.test(quote)) return "its quote does not speak of funding";
+  }
+  // A proposed name is a clean brand name, not a piece of a sentence (owner, 2026-11-19: Lulalend's "Lula. We").
+  if (r.field === "name_proposal") {
+    const nm = r.after.match(/name\s*=\s*"([^"]*)"/)?.[1] ?? "";
+    if (nm && (/[.!?]\s+\S/.test(nm) || (/[.!?]$/.test(nm) && !/\b(?:inc|ltd|llc|co|corp|plc|gmbh|s\.a|b\.v)\.$/i.test(nm)) || nm.split(/\s+/).length > 5)) return "a proposed name is a clean brand name, not a fragment of a sentence";
+  }
+  // A description in a sentence that names two employers belongs to the one it stands beside (owner, 2026-11-19: Weezy's "McKinsey, consumer goods" from "consumer goods at P&G … McKinsey").
+  if (r.field === "founder_background") {
+    const m = r.after.match(/—\s*([^,]+?),\s*(.+)$/);
+    if (m && quote) {
+      const employer = fold(m[1]), desc = m[2].trim().toLowerCase();
+      const at = new RegExp(`${desc.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+(?:at|for|with|in)\\s+([A-Z][\\w&.]*(?:\\s+[A-Z&][\\w&.]*){0,3})`, "i").exec(quote);
+      if (at && employer && !fold(at[1]).includes(employer) && !employer.includes(fold(at[1]))) return `the description "${m[2].trim()}" in the quote belongs to ${at[1].trim()}, not to ${m[1].trim()}`;
+    }
+  }
   if (r.field === "employee_range" && !/^10001\+$/.test(r.after.trim()) && /\b\d[\d,]*\s*\+\s*(?:employees|staff|people|team members|colleagues|mitarbeiter|empleados|funcion[aá]rios|collaborateurs)?/i.test(quote) && /\b\d[\d,]*\s*\+/.test(quote)) return "a count with a plus (\"150+\") has no ceiling: no range is derived from it";
   if (r.field === "employee_range" && /\bpeople with a name and a role are shown\b|\bpeople? (?:are )?shown on the page\b/i.test(quote)) return "a count of people shown on a page is a lower bound: no range";
   // The size of a company is not in its privacy policy or terms (owner, batch 7: Mama Money's "2" from a legal text), and the people a team page shows are a lower bound, no count: it stays in the history.
@@ -273,6 +298,12 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
     if (why) { dropped.push(`${r.field}: ${String(r.after).slice(0, 60)} — ${why}`); continue; }
     // A round type no quote names is Unknown (owner, round 10): "Series A" for "raising $1.9m", "Other" for a round nothing calls strategic or crowdfunded.
     if (r.field === "round") {
+      // "Debt" only when the source says debt, loan or facility (owner, 2026-11-19: Nordigen's $800K from two investors).
+      if (/^Debt\b/.test(r.after) && !/\b(?:debt|loan|loans|lending facility|credit|facility|borrow\w*|notes?|bonds?|venture debt)\b/i.test(`${r.quote ?? ""} ${(() => { try { return ((JSON.parse(String(r.payload ?? "{}")) as { evidence?: Array<{ quote?: string }> }).evidence ?? []).map((e) => e.quote ?? "").join(" "); } catch { return ""; } })()}`)) {
+        dropped.push("round: type Debt → Unknown — no quote says debt, loan or facility");
+        r = { ...r, after: r.after.replace(/^Debt\b/, "Unknown") };
+        if (r.payload) { try { const pl = JSON.parse(String(r.payload)); if (pl.round) pl.round.round_type = "Unknown"; r = { ...r, payload: JSON.stringify(pl) }; } catch { /* keep */ } }
+      }
       const t = r.after.match(/^(Pre-Seed|Seed|Series [A-F]\+?|Growth|Bridge|Other)\b/)?.[1];
       if (t) {
         let amountQuote = r.quote ?? "";
@@ -443,7 +474,10 @@ function stripUngroundedLead<T extends RowLike>(r: T): { row: T; stripped: strin
   if (!name) return { row: r, stripped: null };
   const core = normalizeForMatch(name.replace(/\b(inc|ltd|llc|lp|llp|plc|gmbh|sa|ag|bv|co)\b\.?/gi, ""));
   const texts = [r.quote ?? "", ...(payload.evidence ?? []).filter((e) => (e as { field?: string }).field !== "lead_investor").map((e) => e.quote ?? "")].map((t) => normalizeForMatch(t));
-  if (!core || texts.some((t) => t.includes(core))) return { row: r, stripped: null };
+  // A lead investor is named by a lead cue ("led by", "led the round"), not by being among the investors (owner, 2026-11-19: Nordigen's Seedcamp).
+  const rawTexts = [r.quote ?? "", ...(payload.evidence ?? []).filter((e) => (e as { field?: string }).field !== "lead_investor").map((e) => e.quote ?? "")];
+  const led = (t: string) => { const i = t.toLowerCase().indexOf(name.toLowerCase().replace(/\b(inc|ltd|llc|lp|llp|plc|gmbh|sa|ag|bv|co)\b\.?/gi, "").trim()); return i >= 0 && (/\b(?:led|lead|leads|leading|co-led|spearheaded|headed)\b/i.test(t.slice(Math.max(0, i - 80), i)) || /\b(?:led|leads|co-led)\b/i.test(t.slice(i, i + 50))); };
+  if (!core || (texts.some((t) => t.includes(core)) && rawTexts.some(led))) return { row: r, stripped: null };
   payload.round = { ...payload.round, lead_investor: null };
   return { row: { ...r, payload: JSON.stringify(payload), after: r.after.replace(new RegExp(`\\s*·\\s*lead\\s+${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i"), "") }, stripped: name };
 }

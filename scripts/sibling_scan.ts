@@ -7,7 +7,7 @@
  */
 import { existsSync, readFileSync } from "fs";
 import { parseCsv } from "../lib/enrichment/acceptance.ts";
-import { rowProblem } from "../lib/enrichment/rowRules.ts";
+import { ownDomain, rowProblem } from "../lib/enrichment/rowRules.ts";
 
 const fold = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, "");
 const reports = [process.env.OLD_REPORT ?? "archive/batch8_first/pilot_report_dry.csv", process.env.PILOT_REPORT ?? "pilot_report_dry.csv"];
@@ -23,7 +23,8 @@ for (const file of reports) {
     const company = r[ix("company")], field = r[ix("field")], after = r[ix("after")] ?? "", quote = r[ix("quote")] ?? "", url = r[ix("source_url")] ?? "";
     if (!after || field === "(nothing)") continue;
     let why = rowProblem({ company, field, after, source_url: url, quote }, company, today);
-    if (!why && ["tags", "hq_city", "hq_country", "office"].includes(field) && quote && !fold(quote).includes(fold(company).slice(0, 6))) why = "its quote does not name the company";
+    // a quote from the company's own domain is about the company, with or without its name (owner, 2026-11-19); tags are judged by rowProblem itself
+    if (!why && ["hq_city", "hq_country", "office"].includes(field) && quote && !ownDomain(url, company) && !fold(quote).includes(fold(company).slice(0, 6))) why = "its quote does not name the company";
     if (why) hits.push(`  ${company} · ${field} · ${after.slice(0, 70)} — ${why.slice(0, 120)}${known.has(`${fold(company)}|${field}`) ? "  (already in pending_fixes)" : ""}`);
   }
   console.log(`\n${file}: ${hits.length} value(s) that break a rule${hits.length ? ":" : " — none."}`);
