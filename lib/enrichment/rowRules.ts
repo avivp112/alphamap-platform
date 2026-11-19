@@ -30,19 +30,23 @@ const PAID_DISTRIBUTION = /(?:^|\/\/|\.)(?:marketersmedia\.com|yespress\.com|ope
 const SPONSORED_PATH = /\/(?:patrocinado|patrocinados|sponsored|sponsor|brand-?studio|advertorial|partner-?content|paid-?post|content-?hub|branded)(?:\/|-|$)/i;
 const PRODUCT_REVIEW = /\breviews?\b|\bhonest (?:verdict|review|opinion)\b|\bour verdict\b|\bworth it\b|\bunboxing\b|\bbest (?:\w+ ){0,3}(?:of|in|for) 20\d{2}\b|\btop \d+\b/i;
 const CAREERS_OR_LEGAL = /\/(?:careers?|carreiras?|jobs?|vagas?|empleos?|karriere|emplois?|recrutement|trabalhe-conosco|terms|termos|terminos|privacy|privacidade|legal|impressum|cookies?)(?:[\/-]|$)/i;
-const JOB_AD = /\b(?:experi[eê]ncia comprovada|experience (?:required|with|in)|responsibilities|requirements|qualifications|we are hiring|apply now|years of experience|salary|bachelor['’]s degree|you will|ensino superior)\b/i;
+const JOB_AD_STRONG = /\b(?:we are hiring|apply now|years of experience|salary|bachelor['’]s degree|ensino superior|experi[eê]ncia comprovada)\b/i;
+const JOB_AD_WEAK = /\b(?:experience (?:required|with|in)|responsibilities|requirements|qualifications|you will)\b/gi;
+/** A job advertisement: one clear marker, or two of the weak ones — a product sentence that says "you will" or "experience with" is not one (owner, batch 8: Berg System's CRM). */
+const isJobAd = (q: string) => JOB_AD_STRONG.test(q) || new Set((q.match(JOB_AD_WEAK) ?? []).map((x) => x.toLowerCase())).size >= 2;
 const brandOf = (companyName: string) => fold(companyName.replace(/\b(ai|inc|ltd|llc|labs?|group|studio|studios|technologies|software|systems)\b/gi, ""));
 /** The source address is on the company's own domain (its name in the host). */
 export function ownDomain(url: string | null | undefined, companyName: string): boolean {
-  try { const h = new URL((url ?? "").startsWith("http") ? url! : `https://${url}`).hostname.toLowerCase(); const b = brandOf(companyName); return b.length >= 3 && fold(h).includes(b); } catch { return false; }
+  try { const h = new URL((url ?? "").startsWith("http") ? url! : `https://${url}`).hostname.toLowerCase(); const b = brandOf(companyName); return (b.length >= 3 && fold(h).includes(b)) || extraDomainsOf(companyName).some((d) => h === d || h.endsWith(`.${d}`)); } catch { return false; }
 }
 /** A competitor's name without a year or a bracket ("Dhan (2026)" → "Dhan"). */
 import { caseName } from "./nameCase.ts";
 import { roundSourceStanding } from "./roundSources.ts";
+import { extraDomainsOf } from "./ownDomain.ts";
 export const cleanCompetitorName = (n: string): string => caseName(n).replace(/\s*\([^)]*\)/g, "").replace(/\s+(?:19|20)\d{2}\b/g, "").replace(/\s+/g, " ").trim();
 /** A product or a model, no company ("an open-weight alternative to GPT-4o Realtime": GPT is OpenAI's model; owner, batch 7: UltraVox). */
 const PRODUCT_NOT_COMPANY = /^(?:chat\s?gpt|gpt(?:[- ]?\d[\w.]*)?|gemini(?: pro| ultra| nano)?|llama(?: ?\d[\w.]*)?|claude(?: ?\d[\w.]*)?|copilot|bard|dall[- ]?e(?: ?\d)?|whisper|codex|stable diffusion|sora|alexa|siri)$/i;
-const COMPETITOR_STOP = /^(?:the\s+)?(?:real[- ]estate|stocks?|shares?|equity|mutual funds?|bonds?|gold|silver|fixed deposits?|crypto(?:currency)?|etfs?|ipos?|forex|futures|options|insurance|loans?|savings|banks?|competitors?|alternatives?|tools?|software|platforms?)$/i;
+const COMPETITOR_STOP = /^(?:the\s+)?(?:real[- ]estate|stocks?|shares?|equity|mutual funds?|bonds?|gold|silver|fixed deposits?|crypto(?:currency)?|etfs?|ipos?|forex|futures|options|insurance|loans?|savings|banks?|competitors?|competitor|concorrentes?|competidores?|competencia|concurrents?|konkurrenten?|concorrenti|konkurenci|alternatives?|tools?|software|platforms?)$/i;
 
 /** A quote that is an address or a slug, not text of the page (owner, round 10: Paradox Series C's quote was the URL). */
 export const looksLikeAddress = (q: string): boolean => { const t = q.trim(); return !!t && (/^https?:\/\//i.test(t) || (!/\s/.test(t) && /[a-z0-9]+(?:-[a-z0-9]+){3,}/i.test(t))); };
@@ -138,7 +142,7 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
     if (NOT_A_PRODUCT_SENTENCE.test(quote)) return "its quote is not a product sentence";
     // The words of a tag are a sentence about the product (owner, batch 7): not a careers or legal page, a job advertisement, a menu, or a person's speech.
     try { if (CAREERS_OR_LEGAL.test(new URL(url.startsWith("http") ? url : `https://${url}`).pathname)) return "a careers or legal page is no evidence for a tag"; } catch { /* no address */ }
-    if (JOB_AD.test(quote)) return "its quote is a job advertisement";
+    if (isJobAd(quote)) return "its quote is a job advertisement";
     if ((quote.match(/[·|•]/g) ?? []).length >= 3) return "its quote is a menu, not a sentence";
     if (/\b(?:said|says|told)\b,?\s*['"“‘’]{1,2}/i.test(quote)) return "its quote is a person's speech, not a sentence about the product";
     if (PERSON_PAGE.test(url)) return "a person's page does not support a tag";
@@ -146,6 +150,8 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
     const brand = fold(companyName.replace(/\b(ai|inc|ltd|llc|labs?|group)\b/gi, ""));
     if (brand.length >= 3 && !fold(quote).includes(brand) && !fold(url).includes(brand)) return "its quote and address do not name the company";
   }
+  // A registered address is registered_address and nothing else (owner, batch 8: Smarter Contracts, lawhive): no headquarters, no office.
+  if ((r.field === "hq_city" || r.field === "hq_country" || r.field === "office") && /\bregistered\s+(?:office|address|seat)\b|\bregistered\s+in\b|\bsede\s+(?:legal|social)\b|\bsiège\s+social\b|\beingetragene[rn]?\s+sitz\b|\bsiedziba\s+(?:prawna|rejestrowa)\b/i.test(quote)) return "a registered address is no headquarters or office: it belongs to registered_address only";
   if (r.field === "hq_city" || r.field === "hq_country") {
     // The same tests for a new value and a remembered one (owner, batch 6): a headquarters rests on a street address or on a sentence that declares it, and on a site that is not the company's own it is not older than eight years.
     const DECL = /headquarter|\bhq\b|head ?office|\bbased\b|-based|\bsede\b|\bsitz\b|siège|matriz|siedzib|مقر|本社|본사|штаб/i;
@@ -154,6 +160,8 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
     if (url && !ownDomain(url, companyName) && !articleDate({ url, content: quote }) && /\/(?:19|20)\d{2}\/[^/]/.test(url)) return "the article's date is only a year";
   }
   if (r.field === "office" && !quote.trim()) return "an office needs a quote";
+  // "150+" is a lower bound without a ceiling: it may be over 200, so no range is derived from it (owner, batch 8) — except the open top range.
+  if (r.field === "employee_range" && !/^10001\+$/.test(r.after.trim()) && /\b\d[\d,]*\s*\+\s*(?:employees|staff|people|team members|colleagues|mitarbeiter|empleados|funcion[aá]rios|collaborateurs)?/i.test(quote) && /\b\d[\d,]*\s*\+/.test(quote)) return "a count with a plus (\"150+\") has no ceiling: no range is derived from it";
   if (r.field === "employee_range" && /\bpeople with a name and a role are shown\b|\bpeople? (?:are )?shown on the page\b/i.test(quote)) return "a count of people shown on a page is a lower bound: no range";
   // The size of a company is not in its privacy policy or terms (owner, batch 7: Mama Money's "2" from a legal text), and the people a team page shows are a lower bound, no count: it stays in the history.
   if (r.field === "employee_range" || r.field === "employee_count") {
@@ -178,6 +186,8 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
     const name = cleanCompetitorName(r.after);
     if (COMPETITOR_STOP.test(name)) return "its name is an investment type or a category, not a company";
     if (PRODUCT_NOT_COMPANY.test(name)) return "its name is a product or a model, not a company";
+    // A rival named in a sentence about another company (WebBank's "Klarna competes with Affirm") is no competitor of this one: off the company's own site, the sentence must name the company.
+    { const brand = fold(companyName.replace(/\b(ai|inc|ltd|llc|labs?|group|bank|the)\b/gi, "")); if (!ownDomain(url, companyName) && brand.length >= 3 && quote && !fold(quote).includes(brand) && !vsTitleCompetitor(quote, companyName)) return "its sentence does not name the company: a rival of another company"; }
     // A comparison page counts only on the company's own domain, with its title naming the other side (xe.com's "mBank vs Xe", an IPO page, "Real Estate").
     if (/\bIPOs?\b/i.test(quote) || /\/(?:[\w-]*-)?ipos?(?:[-/]|$)/i.test(url)) return "an IPO page, not a comparison with a competitor";
     if (/\b(?:vs\.?|versus)\b/i.test(quote)) {
@@ -230,9 +240,19 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
         // The type is stated by the round's own quote, or by another source of the same event: a news headline of the company that names the type beside the same amount ("…Paradox Raises $200M Series C")
         // (owner, regression gate: Paradox). Unknown only when no source says it.
         const amountOfRow = (() => { const m = r.after.match(/\$([\d.,]+)\s*([KMB])?\b/i); if (!m) return null; const mult = m[2]?.toUpperCase() === "B" ? 1e9 : m[2]?.toUpperCase() === "K" ? 1e3 : 1e6; return Number(m[1].replace(/,/g, "")) * mult; })();
-        const sameEventRow = !amountOfRow ? undefined : rows.find((x) => x.field === "news" && fold(String(x.company ?? "")) === fold(companyName) && (t === "Other" ? statedRoundLabels(`${x.after} ${x.quote ?? ""}`).length > 0 : statedRoundLabels(`${x.after} ${x.quote ?? ""}`).includes(t)) && extractNumbersFromText(`${x.after} ${x.quote ?? ""}`).some((n) => Math.abs(n - amountOfRow) / amountOfRow < 0.006) && !rowProblem(x, companyName, today, 0, o));
+        // The words of an address count as the page's own (owner, batch 8: lawhive's $60M — "…-raises-60m-series-b" in the addresses of bmmagazine and fortune).
+        const slugOf = (u: string | undefined) => { try { return new URL((u ?? "").startsWith("http") ? u! : `https://${u}`).pathname.split("/").filter(Boolean).pop()?.replace(/\.[a-z]{2,5}$/, "").replace(/[-_]+/g, " ") ?? ""; } catch { return ""; } };
+        const sameEventRow = !amountOfRow ? undefined : rows.find((x) => {
+          if (x.field !== "news" || fold(String(x.company ?? "")) !== fold(companyName)) return false;
+          const text = `${x.after} ${x.quote ?? ""} ${slugOf(x.source_url)}`;
+          const labels = statedRoundLabels(text);
+          if (!(t === "Other" ? labels.length > 0 : labels.includes(t))) return false;
+          const fromAddress = amountFromAddress(x.source_url ?? "")?.amount;
+          const sameAmount = extractNumbersFromText(`${x.after} ${x.quote ?? ""}`).some((n) => Math.abs(n - amountOfRow) / amountOfRow < 0.006) || (fromAddress != null && Math.abs(fromAddress - amountOfRow) / amountOfRow < 0.006);
+          return sameAmount && !rowProblem(x, companyName, today, 0, o);
+        });
         // A round typed "Other" (or "Unknown") whose event another source names ("Raises $200M Series C") takes that type; it is cited with it (the amount is in the headline as well).
-        const newsType = sameEventRow && t === "Other" ? statedRoundLabels(`${sameEventRow.after} ${sameEventRow.quote ?? ""}`)[0] : undefined;
+        const newsType = sameEventRow && t === "Other" ? statedRoundLabels(`${sameEventRow.after} ${sameEventRow.quote ?? ""} ${slugOf(sameEventRow.source_url)}`)[0] : undefined;
         if (newsType) {
           dropped.push(`round: type Other → ${newsType} — the headline of the same event states it`);
           r = { ...r, after: r.after.replace(/^Other\b/, newsType) };

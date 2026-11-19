@@ -27,6 +27,9 @@ export function acquirerIn(text: string, companyName: string): { acquirer: strin
   const majority = MAJORITY.test(text);
   const nm = text.match(nameRe);
   if (!nm || nm.index == null) return null;
+  // "Clar acquires Lendo Group" is the purchase of Lendo Group (Sweden), not of a company called Lendo (owner, batch 8: lendo.sa): a name followed by a corporate or regional word the company's own name lacks
+  // is another entity's name.
+  { const next = text.slice(nm.index + nm[0].length).match(/^[\s,]+(Group|Holdings?|Holding|AB|Nordic|Sweden|International|Global|Europe|Bank|Finance|Capital)\b/); if (next && !new RegExp(`\\b${next[1]}\\b`, "i").test(companyName)) return null; }
   // "<Company> … acquired by X"
   const afterName = text.slice(nm.index + nm[0].length);
   const passive = afterName.match(new RegExp(`^[^.:;|]{0,60}?\\b${BOUGHT_BY}\\s+`, "i"));

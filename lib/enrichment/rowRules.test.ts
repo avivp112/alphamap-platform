@@ -922,3 +922,37 @@ describe("regression gate round 6 (owner, 2026-11-19)", () => {
     expect(ev[0].rep.url).toMatch(/claranet\.com/);
   });
 });
+
+describe("batch 8 sample check (owner, 2026-11-19)", () => {
+  const rp = (r: Record<string, string>) => rowProblem({ company: "Acme", after: "", source_url: "https://acme.com/x", quote: "", ...r } as never, "Acme", "2026-11-19");
+  it("a product sentence with 'you will' is no job advertisement; two job markers or a strong one are", () => {
+    expect(rp({ field: "tags", after: "CRM", quote: "With our CRM you will see every customer in one place." })).toBeNull();
+    expect(rp({ field: "tags", after: "CRM", quote: "Requirements: experience with sales. Responsibilities: you will manage accounts." })).toMatch(/job advertisement/);
+    expect(rp({ field: "tags", after: "CRM", quote: "We are hiring a CRM manager." })).toMatch(/job advertisement/);
+  });
+  it("a registered address is no headquarters and no office", () => {
+    expect(rp({ field: "hq_city", after: "London", quote: "Registered office: 1 Example Street, London EC1A 1AA" })).toMatch(/registered_address/);
+    expect(rp({ field: "office", after: "London, United Kingdom", quote: "Our registered address is 1 Example Street, London" })).toMatch(/registered_address/);
+    expect(rp({ field: "hq_city", after: "London", quote: "Acme is headquartered at 1 Example Street, London" })).toBeNull();
+  });
+  it("a count with a plus gives no employee range", () => {
+    expect(rp({ field: "employee_range", after: "51-200", quote: "We are a team of 150+ employees" })).toMatch(/no ceiling/);
+    expect(rp({ field: "employee_range", after: "51-200", quote: "Acme has 120 employees" })).toBeNull();
+  });
+  it("'Concorrentes' is a word; a rival named in a sentence about another company is no competitor", () => {
+    expect(rp({ field: "competitor_declared", after: "Concorrentes", source_url: "https://acme.com/vs", quote: "Concorrentes" })).toMatch(/not a company|category/);
+    expect(rp({ field: "competitor_declared", after: "Affirm", source_url: "https://techblog.example/p", quote: "Klarna competes with Affirm in buy now pay later." })).toMatch(/does not name the company/);
+  });
+  it("'Clar acquires Lendo Group' is not the purchase of Lendo", async () => {
+    const { acquirerIn } = await import("./acquisition");
+    expect(acquirerIn("Clar acquires Lendo Group", "Lendo")).toBeNull();
+    expect(acquirerIn("Clar acquires Lendo", "Lendo")?.acquirer).toBe("Clar");
+  });
+  it("a lawhive-style round takes its type from the address of the same event's article", () => {
+    const g = applyRowRules([
+      { company: "Acme", field: "round", after: "Other $60M · 2025-10", source_url: "https://techcrunch.com/2025/10/08/acme-raises/", quote: "raised $60M" },
+      { company: "Acme", field: "news", after: "2025-10-08 — Acme raises $60M to expand", source_url: "https://fortune.com/2025/10/08/acme-raises-60m-series-b/", quote: "" },
+    ] as never, "Acme", "2026-11-19");
+    expect(g.rows.find((r) => r.field === "round")?.after).toMatch(/^Series B \$60M/);
+  });
+});

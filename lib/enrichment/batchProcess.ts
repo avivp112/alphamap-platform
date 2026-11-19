@@ -94,3 +94,14 @@ export function addToTrackRecord(batch: number, errors: Array<{ field: string; t
 export function fieldsWithoutHistory(fields: string[], rec: TrackRecord = readTrackRecord(), min = MIN_HISTORY): string[] {
   return [...new Set(fields.map(familyOf))].filter((f) => (rec[f]?.reviewed ?? 0) < min);
 }
+
+/** Takes the pending fixes of a company's field out of the file (a value that was excluded by mistake). Returns how many. */
+export function removePendingFix(batch: number, company: string, field: string, path = "pending_fixes.csv"): number {
+  const fold = (x: string) => x.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  const all = readPendingFixes(path);
+  const keep = all.filter((f) => !(f.batch === batch && fold(f.company) === fold(company) && f.field === field));
+  if (keep.length === all.length) return 0;
+  writeFileSync(path, "\uFEFF" + PENDING_HEAD.join(",") + "\r\n");
+  append(path, PENDING_HEAD, keep.map((f) => [f.batch, f.company, f.field, f.value, f.reason, f.created, f.status]));
+  return all.length - keep.length;
+}

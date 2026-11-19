@@ -18,7 +18,7 @@ const ix = (c: string) => { const e = head.findIndex((h) => h === c); return e >
 const sample: SampleRow[] = rows.map((r) => ({ n: Number(r[ix("n")]), company: r[ix("company")], field: r[ix("field")], value: r[ix("value")] }));
 const wrongEnv = (process.env.WRONG ?? "").trim();
 
-if (!wrongEnv && !process.env.RIGHT_ALL) {
+if (!wrongEnv && !process.env.RIGHT_ALL && !process.env.WRONG_BY) {
   // Values the owner asked to see whatever the sample holds (watch_values.csv): listed first, to be judged with the sample.
   try {
     const [wh, ...wr] = parseCsv(readFileSync("watch_values.csv", "utf8"));
@@ -35,6 +35,24 @@ if (!wrongEnv && !process.env.RIGHT_ALL) {
 }
 
 const wrong = new Map<number, string>();
+// Marks by content, for a sample whose numbers are not at hand: WRONG_BY="Company|field|value part=reason; Company|field=reason" (the value part and the field are optional). Every row that matches is wrong.
+{
+  const fold = (x: string) => x.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, "");
+  for (const part of (process.env.WRONG_BY ?? "").split(";").map((x) => x.trim()).filter(Boolean)) {
+    const [spec, ...reason] = part.split("=");
+    const [co, f, v] = spec.split("|").map((x) => x?.trim());
+    const hits = sample.filter((r) => fold(r.company) === fold(co ?? "") && (!f || (r.field === "description_what_only" ? "description" : r.field) === f) && (!v || fold(r.value).includes(fold(v))));
+    if (!hits.length) console.log(`⚠️  no row of the sample matches "${spec}"`);
+    for (const h of hits) wrong.set(h.n, reason.join("=").trim() || "wrong in the sample check");
+  }
+}
+if (process.env.PREVIEW) {
+  const extra = (wrongEnv ? wrongEnv.split(",") : []).length;
+  console.log(`Marked wrong by content: ${wrong.size} row(s)${extra ? ` (+ the numbers of WRONG=)` : ""}:`);
+  for (const [n, why] of [...wrong].sort((a, b) => a[0] - b[0])) { const r = sample.find((x) => x.n === n)!; console.log(`  #${n}  ${r.company} · ${r.field} · ${r.value.slice(0, 80)} — ${why}`); }
+  console.log("\nNothing written. The same command without PREVIEW=1 writes (add the numbers of the rest with WRONG=…).");
+  process.exit(0);
+}
 for (const part of wrongEnv.split(",").map((x) => x.trim()).filter(Boolean)) {
   const [n, ...reason] = part.split("=");
   const num = Number(n);

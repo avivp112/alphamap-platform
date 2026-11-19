@@ -1327,6 +1327,31 @@ export async function collectCompany(
     }
   }
 
+  // A founding year two sources contradict is not written (owner, batch 8: Smarter Contracts — the site 2018, another source 2019). A register decides (below, registers); otherwise the company's own site
+  // and a statement elsewhere must agree.
+  if (!ctx.update) {
+    const fy = profile.profile.founded_year as { value: number; source_id: string } | undefined;
+    const fsrc = fy ? sourceById.get(fy.source_id) : undefined;
+    if (fy && fsrc && fsrc.source_type !== "registry") {
+      const years = new Map<number, string>([[fy.value, fsrc.url]]);
+      for (const src of allSources) {
+        if (src.source_type !== "company_site" || !profileSourceAllowed(src, row.name) || isThirdPartyPage(src.url)) continue;
+        const hit = foundedYearFromSite(src.content, undefined, { companyName: row.name, ownSite: true });
+        if (hit) { years.set(hit.year, src.url); break; }
+      }
+      for (const src of allSources) {
+        if (!statementKind(src) || !profileSourceAllowed(src, row.name)) continue;
+        const hit = foundedInCityYear(`${src.title ?? ""}. ${src.content}`.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/), row.name);
+        if (hit) { years.set(hit.year, src.url); break; }
+      }
+      if (years.size > 1) {
+        console.log(`    🚫  founded_year not written — the sources disagree: ${[...years].map(([y, u]) => `${y} (${u.slice(0, 70)})`).join(" vs ")}`);
+        bump(stats.droppedByReason, "founded_year_sources_disagree");
+        profile.profile.founded_year = undefined;
+      }
+    }
+  }
+
   // b. Its legal pages: legal name, company number, registered office (an office only).
   let legal: LegalFacts = {};
   let legalSeat: { city: string; quote: string; source_id: string } | null = null;

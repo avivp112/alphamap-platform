@@ -773,7 +773,8 @@ export async function writeCollected(
       setIfChanged("employee_count", cur.count, row.employee_count);
       // A count of people shown on a page ("observed", a lower bound) gives no range with a ceiling (owner, batch 7: Sycamore, "5 people" → 1-10).
       const fromObserved = cur.lowerBound && headcountPoints.find((p) => p.date === cur.date && p.count === cur.count)?.pointType === "observed";
-      if (!fromObserved) setIfChanged("employee_range", cur.range, row.employee_range);
+      // A lower bound ("150+") has no ceiling and may be over the range's: no range is derived from it, except the open top range (owner, batch 8).
+      if (!fromObserved && !(cur.lowerBound && cur.range !== "10001+")) setIfChanged("employee_range", cur.range, row.employee_range);
       const from = headcountPoints.find((p) => p.date === cur.date && p.count === cur.count);
       let sid = from?.sourceUrl ? [...sourceById.entries()].find(([, x]) => x.url === from.sourceUrl)?.[0] : undefined;
       // A register, a plan or an archived copy is not among the pages read: it is registered as a source of its own, with the point's quote.

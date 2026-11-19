@@ -6,6 +6,14 @@
  * Pure except finalHostOf (one fetch, injected where tested).
  */
 import { registrable } from "./addCompanies.ts";
+import { readFileSync } from "fs";
+
+/** More domains of one company (owner, 2026-11-19: Walley also at walleypay.com): eval/company_domains.json, { "<company>": ["domain", …] }. */
+let extra: Map<string, string[]> | null = null;
+export function extraDomainsOf(companyName: string): string[] {
+  if (!extra) { extra = new Map(); try { for (const [k, v] of Object.entries(JSON.parse(readFileSync("eval/company_domains.json", "utf8")) as Record<string, string[]>)) extra.set(k.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ""), v.map((d) => d.toLowerCase())); } catch { /* none */ } }
+  return extra.get(companyName.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "")) ?? [];
+}
 
 const SUFFIX = /\b(inc|ltd|llc|gmbh|ag|ab|as|oy|plc|corp|co|limited|technologies|technology|labs|group|holdings|ai|io)\b\.?/g;
 const squash = (s: string) => s.toLowerCase().replace(SUFFIX, " ").replace(/[^\p{L}\p{N}]/gu, "");
@@ -14,6 +22,7 @@ const squash = (s: string) => s.toLowerCase().replace(SUFFIX, " ").replace(/[^\p
 export function brandLabelMatches(url: string, companyName: string): boolean {
   try {
     const host = new URL(url.startsWith("http") ? url : `https://${url}`).hostname.toLowerCase().replace(/^www\./, "");
+    if (extraDomainsOf(companyName).includes(registrable(host))) return true;
     const label = registrable(host).split(".")[0].replace(/-/g, "");
     const name = squash(companyName);
     // a short or generic name ("Bold", "Ada") is not enough on its own: the page must name the company too (below)

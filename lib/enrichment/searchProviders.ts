@@ -389,8 +389,19 @@ async function searchWithBackup(primary: SearchOutcome, jinaQuery: string, tavil
   return merged;
 }
 
+/** A result whose address is a google.com/url?q=<target> redirect is the target (owner, 2026-11-19): the source is the real domain, never google.com. */
+function unwrapGoogleRedirect(url: string): string {
+  try {
+    const u = new URL(url);
+    if (!/(^|\.)google\.[a-z.]+$/.test(u.hostname) || u.pathname !== "/url") return url;
+    const target = u.searchParams.get("url") ?? u.searchParams.get("q") ?? "";
+    return /^https?:\/\//.test(target) ? target : url;
+  } catch { return url; }
+}
+const realAddresses = (rs: RawSearchResult[]): RawSearchResult[] => rs.map((r) => (r.url ? { ...r, url: unwrapGoogleRedirect(r.url) } : r));
+
 export async function webSearch(query: string, queryLabel: string, state: SearchProviderState, opts: SearchOptions = {}): Promise<RawSearchResult[]> {
-  return searchWithBackup(await serperCall("search", query, queryLabel, state), query, query, queryLabel, state, opts);
+  return realAddresses(await searchWithBackup(await serperCall("search", query, queryLabel, state), query, query, queryLabel, state, opts));
 }
 
 /**
@@ -401,7 +412,7 @@ export async function webSearch(query: string, queryLabel: string, state: Search
 export async function newsSearch(
   newsQuery: string, generalQuery: string, queryLabel: string, state: SearchProviderState, opts: SearchOptions = {},
 ): Promise<RawSearchResult[]> {
-  return searchWithBackup(await serperCall("news", newsQuery, queryLabel, state), generalQuery, generalQuery, queryLabel, state, opts);
+  return realAddresses(await searchWithBackup(await serperCall("news", newsQuery, queryLabel, state), generalQuery, generalQuery, queryLabel, state, opts));
 }
 
 // ── Domain verification (Stage 0) ──────────────────────────────────────────
