@@ -109,3 +109,57 @@ export function knownAcquirers(titles: string[], companyName: string, minAgree =
   }
   return [...count.values()].filter((e) => e.n >= minAgree).map((e) => e.name);
 }
+
+
+// ── the purchase as one event (owner, 2026-11-19: Dietly, UltraVox) ───────────────────────────────────────────────────────────────────────────────────────────
+export interface PurchaseItem { title: string; url: string; published_date?: string | null; date_basis?: string; [k: string]: unknown }
+const plain = (s: string) => s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const dayDiff = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) / 86400000;
+
+/**
+ * The reports of one purchase, from the dated items that passed the source and entity gates. A report is of the purchase when it says the same buyer bought the company, or when it names
+ * the company and the buyer within ten days of the first such report ("Dietly.pl … staje się częścią Grupy Żabka"). Of them the representative is the earliest — among those whose date is
+ * not read from the page's code when any is (a blog's meta date of 09-30 beside the press release's 10-01 in its address) — and only one that `eligible` says may be written (the writer's own rules,
+ * so the event is never left with nothing, owner: Medipass). The status is majority_acquired when any report of the event says a controlling / majority stake. A majority stake and a full purchase
+ * more than four months apart are two events.
+ */
+export function purchaseEvents<T extends PurchaseItem>(items: T[], companyName: string, eligible: (x: T) => boolean = () => true): Array<{ buyer: string; majority: boolean; members: T[]; rep: T }> {
+  const dated = items.filter((x) => x.published_date);
+  const hits = dated.map((x) => ({ x, h: acquirerIn(x.title, companyName) })).filter((e): e is { x: T; h: { acquirer: string; majority: boolean } } => !!e.h);
+  const byBuyer = new Map<string, typeof hits>();
+  // One buyer under several spellings ("Inworld", "Inworld AI", "AI Research Lab Inworld"): a key that contains another is the same buyer.
+  for (const e of [...hits].sort((a, b) => buyerKey(a.h.acquirer).length - buyerKey(b.h.acquirer).length)) {
+    const k0 = buyerKey(e.h.acquirer);
+    const k = [...byBuyer.keys()].find((x) => x.length >= 4 && k0.length >= 4 && (k0.includes(x) || x.includes(k0))) ?? k0;
+    (byBuyer.get(k) ?? byBuyer.set(k, []).get(k)!).push(e);
+  }
+  const out: Array<{ buyer: string; majority: boolean; members: T[]; rep: T }> = [];
+  for (const [key, list] of byBuyer) {
+    const sorted = [...list].sort((a, b) => String(a.x.published_date).localeCompare(String(b.x.published_date)));
+    const first = { ...sorted[0], h: { ...sorted[0].h, acquirer: [...list].map((e) => e.h.acquirer).sort((a, b) => a.length - b.length)[0] } };   // the cleanest spelling: the shortest
+    // the stake and the full purchase of another time are other events: only hits of the first one's kind, or within four months, belong here
+    const cluster = sorted.filter((e) => e.h.majority === first.h.majority || dayDiff(String(e.x.published_date), String(first.x.published_date)) <= 120);
+    const word = plain(first.h.acquirer).split(" ")[0];
+    const co = plain(companyName).split(" ")[0];
+    const mentions = dated.filter((x) => !cluster.some((e) => e.x === x) && !hits.some((e) => e.x === x) && word.length >= 4 && plain(x.title).includes(word) && plain(x.title).includes(co) && dayDiff(String(x.published_date), String(first.x.published_date)) <= 10);
+    const members = [...cluster.map((e) => e.x), ...mentions];
+    const majority = cluster.some((e) => e.h.majority);
+    const ok = members.filter(eligible);
+    if (!ok.length) continue;
+    const trusted = ok.filter((x) => x.date_basis !== "code");
+    const pool = trusted.length ? trusted : ok;
+    const rep = [...pool].sort((a, b) => String(a.published_date).localeCompare(String(b.published_date)) || (hits.some((e) => e.x === b) ? 1 : 0) - (hits.some((e) => e.x === a) ? 1 : 0))[0];
+    out.push({ buyer: first.h.acquirer, majority, members, rep });
+    void key;
+  }
+  return out;
+}
+
+/** The purchase the news items carry (set by finishNews on each event's representative); the later full purchase wins over an earlier stake. */
+export function claimFromEvents(items: Array<{ title: string; url: string; published_date?: string | null; event_buyer?: unknown; event_majority?: unknown }>): AcquisitionClaim | null {
+  const ev = items.filter((x) => typeof x.event_buyer === "string" && x.published_date);
+  if (!ev.length) return null;
+  const sorted = [...ev].sort((a, b) => String(b.published_date).localeCompare(String(a.published_date)));
+  const pick = sorted.find((x) => !x.event_majority) ?? sorted[0];
+  return { status: pick.event_majority ? "majority_acquired" : "acquired", acquirer: String(pick.event_buyer), quote: pick.title, url: pick.url, date: pick.published_date ?? null };
+}

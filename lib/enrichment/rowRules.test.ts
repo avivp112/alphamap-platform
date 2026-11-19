@@ -822,3 +822,50 @@ describe("regression gate round 3 (owner, 2026-11-19)", () => {
     expect(g.rows).toHaveLength(1);
   });
 });
+
+import { claimFromEvents, purchaseEvents } from "./acquisition";
+describe("a purchase is one event (owner, 2026-11-19: Dietly, UltraVox)", () => {
+  const deps = { isOwnSite: () => false, content: () => "", companyName: "Dietly" };
+  const it1 = (title: string, url: string, published_date: string, date_basis = "code") => ({ title, url, published_date, date_basis });
+  it("Dietly: one row, the earliest report's date, the status from the report that says the stake", () => {
+    const items = [
+      it1("Żabka przejmuje platformę Dietly.pl", "https://www.wirtualnemedia.pl/dietly-zabka", "2021-06-01"),
+      it1("Dietly.pl – platforma e-commerce w segmencie cateringu dietetycznego, staje się częścią Grupy Żabka", "https://nowymarketing.pl/dietly", "2021-05-31"),
+      it1("Żabka Group Acquires Controllng Stake In Dietary Marketplace Dietly.pl", "https://www.esmmagazine.com/technology/zabka-dietly", "2021-06-03"),
+    ];
+    const r = finishNews(items as never, deps);
+    expect(r.kept).toHaveLength(1);
+    expect(r.kept[0].published_date).toBe("2021-05-31");
+    const claim = claimFromEvents(r.kept as never);
+    expect(claim).toMatchObject({ status: "majority_acquired", date: "2021-05-31" });
+    // the report row carries it into the acquired field
+    const row = { company_id: "1", company: "Dietly", field: "news", before: "", after: `2021-05-31 — ${r.kept[0].title}`, source_url: r.kept[0].url, quote: "", origin: "new" };
+    expect(acquiredFromNews([row] as never, "Dietly", "1", r.kept as never)?.after).toMatch(/status = majority_acquired · Acquired by .*Żabka.* \(2021-05-31\)/);
+  });
+  it("UltraVox: a date read from a page's code does not beat the date in an article's address; the buyer's spellings are one buyer", () => {
+    const items = [
+      it1("Inworld acquires Ultravox to advance realtime voice AI", "https://inworld.ai/blog/inworld-acquires-ultravox", "2026-09-30", "code"),
+      it1("AI Research Lab Inworld Acquires Voice Agent Platform Ultravox", "https://www.businesswire.com/news/home/20261001868570/en/AI-Research-Lab-Inworld-Acquires-Voice-Agent-Platform-Ultravox", "2026-10-01", "address"),
+      it1("Seattle voice AI startup Ultravox, formerly known as Fixie, is acquired by Inworld AI", "https://www.geekwire.com/2026/seattle-voice-ai-startup-ultravox", "2026-10-02", "code"),
+    ];
+    const ev = purchaseEvents(items as never, "UltraVox");
+    expect(ev).toHaveLength(1);
+    expect(ev[0].rep.published_date).toBe("2026-10-01");
+    expect(ev[0].buyer).toBe("Inworld");
+  });
+  it("an event is never left with nothing: the representative is one the writer's rules accept", () => {
+    const items = [it1("Tyro buys Medipass health payment app from NAB Ventures", "https://www.afr.com/companies/financial-services/tyro-buys-medipass", "2021-05-10"), it1("Tyro to acquire Medipass Solutions", "https://www.tyro.com/media/tyro-to-acquire-medipass-solutions/", "2021-05-12")];
+    const ev = purchaseEvents(items as never, "Medipass", (x) => !/tyro\.com/.test(x.url));
+    expect(ev[0].rep.url).toMatch(/afr\.com/);
+    expect(purchaseEvents(items as never, "Medipass", () => false)).toEqual([]);
+  });
+});
+describe("gate comparison (owner, 2026-11-19)", () => {
+  it("a buyer under another spelling, and a news item by day and headline, are the same value", () => {
+    const base = [{ company: "UltraVox", field: "acquired", value: "Inworld AI" }, { company: "Kontent.ai", field: "news", value: "2026-01-21 — Kontent.ai Launches AI-Powered SEO and GEO Workflows to Cut Optimization Time" }];
+    const now = [{ company: "UltraVox", field: "acquired", value: "status = acquired · Acquired by Inworld (2026-10-01)" }, { company: "Kontent.ai", field: "news", value: "2026-01-21 — Kontent.ai Launches AI-Powered SEO and GEO Workflows to Cut Optimization Time by Up to 80%" }];
+    const c = compare2(base, now);
+    expect(c.lost).toEqual([]);
+    expect(c.added.filter((v) => v.field === "news")).toEqual([]);
+  });
+});

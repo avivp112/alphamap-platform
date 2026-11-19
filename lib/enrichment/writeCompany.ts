@@ -17,7 +17,7 @@ import { filterCrossSectorTags, industryFromTaxonomy, type SectorTaxonomy } from
 import { normalizeUrlForMatch } from "./extractMarket.ts";
 import { normalizeIsoDate, appendNew, reconcileOnFile, isSameRound } from "./assemble.ts";
 import { fetchArticleOgImage } from "./ogImage.ts";
-import { detectAcquisition } from "./acquisition.ts";
+import { claimFromEvents, detectAcquisition } from "./acquisition.ts";
 import { detectClosure } from "./closure.ts";
 import { gateLines, parseRoundLine, pruneOfficeFromPatch } from "./reportGate.ts";
 import { ruleOf } from "./ruleRegistry.ts";
@@ -401,7 +401,7 @@ export async function writeCollected(
   // accepted news alone, only for a company still "active" on file, and only when the acquired field is open. Each value has its provenance row: the headline's page.
   {
     const hit = row.status === "active" || row.status == null
-      ? detectAcquisition((market.news ?? []).map((n) => ({ url: n.url, title: n.title, content: "", date: n.published_date ?? null })), row.name)
+      ? claimFromEvents(market.news ?? []) ?? detectAcquisition((market.news ?? []).map((n) => ({ url: n.url, title: n.title, content: "", date: n.published_date ?? null })), row.name)
       : null;
     if (hit) {
       let src = allSources.find((x) => x.url === hit.url);

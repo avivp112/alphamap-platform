@@ -10,7 +10,9 @@
  */
 import { isListingOrSponsoredUrl } from "./pageKind.ts";
 import { completeFromSlug } from "./newsRelevance.ts";
-import { acquirerIn, buyerKey } from "./acquisition.ts";
+import { knownAcquirers, purchaseEvents } from "./acquisition.ts";
+import { acquirerIn } from "./acquisition.ts";
+import { rowProblem } from "./rowRules.ts";
 import { newsProblem, ownSiteNewsOk, dateFromUrl, dateFromHtml, dedupeNewsEvents, cleanHeadline, headlineLooksCut, headlineIncomplete, titleFromHtml } from "./newsRelevance.ts";
 
 export interface NewsItem { title: string; url: string; published_date?: string | null; title_joined?: boolean; [k: string]: unknown }
@@ -110,14 +112,17 @@ export function finishNews<T extends NewsItem>(items: T[], d: Pick<NewsDeps, "is
     return false;
   });
   let kept = dedupeNewsEvents(dated, d.isOwnSite, (x) => (d.content(x.url) ?? "").slice(0, 300), (x) => !!d.companyName && !!acquirerIn(x.title, d.companyName));
-  // One purchase is one event, whatever the days between the reports: of the items that say the same buyer bought the company, the earliest announcement stays (owner, regression gate: Humi's
-  // "to be acquired" of 2026-05-20, read from the page's code, beside the announcement of 2025-01-08). A different buyer is another purchase (Six Degrees: Charlesbank 2015, Claranet 2026).
+  // One purchase is one event, whatever the days between the reports (acquisition.ts purchaseEvents): its representative is the earliest report the writer's own rules accept, and it carries the
+  // event's buyer and status (a controlling stake said by any report of it) for the acquired field (owner, regression gate: Humi 2026-05-20 beside 2025-01-08; Dietly; UltraVox).
   if (d.companyName) {
-    const f = buyerKey;
-    const buyer = (x: T) => { const h = acquirerIn(x.title, d.companyName!); return h ? f(h.acquirer) : ""; };
-    const first = new Map<string, T>();
-    for (const x of kept) { const b = buyer(x); if (!b) continue; const c = first.get(b); if (!c || String(x.published_date) < String(c.published_date)) first.set(b, x); }
-    kept = kept.filter((x) => { const b = buyer(x); return !b || first.get(b) === x; });
+    const today = new Date().toISOString().slice(0, 10);
+    const buyers = knownAcquirers(dated.map((x) => x.title), d.companyName, 1);
+    const eligible = (x: T) => !rowProblem({ field: "news", after: `${x.published_date} — ${x.title}`, source_url: x.url, quote: "" } as never, d.companyName!, today, 0, { acquirers: buyers });
+    for (const ev of purchaseEvents(dated, d.companyName, eligible)) {
+      kept = kept.filter((x) => !ev.members.includes(x));
+      Object.assign(ev.rep, { event_buyer: ev.buyer, event_majority: ev.majority });
+      kept.push(ev.rep);
+    }
   }
   for (const x of dated) if (!kept.includes(x)) dropped.push({ item: x, reason: "news_same_event", message: "the same event as another item" });
   return { kept, dropped };

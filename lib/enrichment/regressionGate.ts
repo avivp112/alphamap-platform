@@ -24,7 +24,16 @@ export const SINGLE_FIELDS = new Set(["description", "sector", "hq_city", "hq_co
 
 export const fold = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 export const family = (f: string) => (f === "description_what_only" ? "description" : f);
-export const valueKey = (company: string, field: string, value: string) => `${fold(company).replace(/ /g, "")}:${family(field)}:${fold(value).slice(0, 200)}`;
+/** A buyer is the same under a closing "AI", "Inc", "Ltd", "Group"… (owner, 2026-11-19: "Inworld" and "Inworld AI"). */
+const buyerFold = (v: string) => fold(v).replace(/ (?:ai|inc|ltd|llc|limited|corp|corporation|plc|group|holdings?|gmbh|ag|sa|co)$/, "");
+export const valueKey = (company: string, field: string, value: string) => `${fold(company).replace(/ /g, "")}:${family(field)}:${(family(field) === "acquired" ? buyerFold(value) : fold(value)).slice(0, 200)}`;
+/** The same news item: the same day and the same headline (a headline cut at another place is still it) — whatever the page it was taken from. */
+const sameNews = (a: string, b: string): boolean => {
+  const da = a.slice(0, 10), db = b.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(da) || da !== db) return false;
+  const ta = fold(a.slice(10)), tb = fold(b.slice(10)), n = Math.min(ta.length, tb.length, 60);
+  return n >= 25 && ta.slice(0, n) === tb.slice(0, n);
+};
 const slot = (company: string, field: string) => `${fold(company).replace(/ /g, "")}:${family(field)}`;
 
 /**
@@ -69,13 +78,14 @@ export function compare(baseline0: BaselineValue[], now: RunRow[], rejections: R
   const lost: Lost[] = [], changed: Comparison["changed"] = [];
   for (const b of baseline) {
     if (nowKeys.has(valueKey(b.company, b.field, b.value))) continue;
+    if (family(b.field) === "news" && nowW.some((v) => family(v.field) === "news" && fold(v.company) === fold(b.company) && sameNews(v.value, b.value))) continue;
     if (SINGLE_FIELDS.has(family(b.field))) {
       const there = nowBySlot.get(slot(b.company, b.field));
       if (there?.length) { changed.push({ company: b.company, field: b.field, was: b.value, now: there[0].value }); continue; }
     }
     lost.push({ ...b, reason_code: why(b) });
   }
-  const added = nowW.filter((v) => !baseKeys.has(valueKey(v.company, v.field, v.value)) && !(SINGLE_FIELDS.has(family(v.field)) && baseline.some((b) => slot(b.company, b.field) === slot(v.company, v.field))));
+  const added = nowW.filter((v) => !baseKeys.has(valueKey(v.company, v.field, v.value)) && !(family(v.field) === "news" && baseline.some((b) => family(b.field) === "news" && fold(b.company) === fold(v.company) && sameNews(b.value, v.value))) && !(SINGLE_FIELDS.has(family(v.field)) && baseline.some((b) => slot(b.company, b.field) === slot(v.company, v.field))));
   return { lost, added, changed };
 }
 

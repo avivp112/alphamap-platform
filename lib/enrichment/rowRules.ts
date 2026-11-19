@@ -7,7 +7,7 @@ import { isListingOrSponsoredUrl } from "./pageKind.ts";
 import { isExplainer, namesCompanyUpFront } from "./newsRelevance.ts";
 import { foundedYearFromSite } from "./siteFacts.ts";
 import { NOT_A_PRODUCT_SENTENCE } from "./quoteFinder.ts";
-import { acquirerIn, detectAcquisition, knownAcquirers } from "./acquisition.ts";
+import { acquirerIn, claimFromEvents, detectAcquisition, knownAcquirers } from "./acquisition.ts";
 import { detectClosure } from "./closure.ts";
 import { normalizeForMatch, quoteIsNotASentence } from "./evidence.ts";
 import { sectorDecision } from "./techOverrides.ts";
@@ -383,12 +383,13 @@ function stripUngroundedLead<T extends RowLike>(r: T): { row: T; stripped: strin
  * The acquired row, derived only from the company's accepted news (owner, round 10: there is no separate extraction): a headline in which the company is the one acquired.
  * Any acquired row found another way is dropped by the caller first. The brand a company takes after the purchase is kept as brand_after_acquisition, never as a rename.
  */
-export function acquiredFromNews<T extends RowLike>(rows: T[], companyName: string, companyId: string): T | null {
+export function acquiredFromNews<T extends RowLike>(rows: T[], companyName: string, companyId: string, events: Array<{ title: string; url: string; published_date?: string | null; event_buyer?: unknown; event_majority?: unknown }> = []): T | null {
   const articles = rows.filter((r) => r.field === "news").map((r) => {
     const m = r.after.match(/^(\d{4}-\d{2}-\d{2})\s+—\s+(.*)$/);
     return { url: r.source_url ?? "", title: m?.[2] ?? r.after, content: "", date: m?.[1] ?? null };
   });
-  const acq = detectAcquisition(articles, companyName);
+  // The purchase as the news gate read it (one event, its status and first date), when its representative is a row of the report.
+  const acq = claimFromEvents(events.filter((e) => articles.some((a) => a.url === e.url))) ?? detectAcquisition(articles, companyName);
   if (!acq) return null;
   return { company_id: companyId, company: companyName, field: "acquired", before: "", after: `status = ${acq.status} · Acquired by ${acq.acquirer} (${acq.date ?? "undated"})`, source_url: acq.url, quote: acq.quote, origin: "news" } as unknown as T;
 }

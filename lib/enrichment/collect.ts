@@ -1815,6 +1815,7 @@ export async function collectCompany(
         const entity = await articleIsThisCompany(v.item.title, v.item.url, sourceByUrl(v.item.url)?.content ?? String((n as { summary?: string | null }).summary ?? ""));
         if (!entity.keep) { console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — another company's (${entity.reason}): ${n.url}`); bump(stats.droppedByReason, "news_other_company"); continue; }
         if (v.dated) { console.log(`    📅  news "${n.title.slice(0, 50)}" dated ${v.item.published_date} from ${v.dated === "address" ? "its address" : "the page's code"}`); bump(stats.droppedByReason, "news_date_recovered"); }
+        (v.item as { date_basis?: string }).date_basis = v.dated ? (v.dated === "address" ? "address" : "code") : "given";
         keptNews.push(v.item as typeof n); continue;
       }
       // A hint-only site (owner, 2026-11-03): its headline is searched for in an allowed source.
