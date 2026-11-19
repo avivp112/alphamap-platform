@@ -23,7 +23,7 @@ import { knownAcquirers } from "../lib/enrichment/acquisition.ts";
 import { isTrackingHost } from "../lib/enrichment/siteOwner.ts";
 import { recentRules } from "../lib/enrichment/ruleRegistry.ts";
 import { loadGaps, ownerWrongTest } from "../lib/enrichment/knownGaps.ts";
-import { familyOf, fieldsWithoutHistory, MIN_HISTORY, readTrackRecord } from "../lib/enrichment/batchProcess.ts";
+import { addPendingFixes, familyOf, fieldsWithoutHistory, MIN_HISTORY, readTrackRecord } from "../lib/enrichment/batchProcess.ts";
 
 function parseCsv(text: string): string[][] {
   const rows: string[][] = []; let row: string[] = [], cur = "", q = false;
@@ -49,6 +49,9 @@ const rows: Row[] = body.map((r) => ({ id: r[ix("company_id")], company: r[ix("c
 
 const errors: string[] = [], warnings: string[] = [];
 const err = (c: string, m: string) => errors.push(`${c}: ${m}`);
+// A fault in one value of the report (owner, 2026-11-19): the value is excluded by its content and listed in pending_fixes.csv — it does not stop the batch. A fault of a rule stays in `errors`, to be fixed before the next batch.
+const valueFaults: Array<{ company: string; field: string; value: string; reason: string }> = [];
+const errV = (r: { company: string; field: string; after: string }, m: string) => { valueFaults.push({ company: r.company, field: r.field === "description_what_only" ? "description" : r.field, value: r.after, reason: m }); };
 const warn = (c: string, m: string) => warnings.push(`${c}: ${m}`);
 
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
@@ -59,13 +62,13 @@ const byCompany = new Map<string, Row[]>();
 for (const r of rows) {
   (byCompany.get(r.company) ?? byCompany.set(r.company, []).get(r.company)!).push(r);
   // 1. a value without a source
-  if (!r.url) err(r.company, `${r.field} "${r.after.slice(0, 50)}" has no source address`);
+  if (!r.url) errV(r, `${r.field} "${r.after.slice(0, 50)}" has no source address`);
   // 2. an identifier where a value belongs
-  if (UUID.test(r.after)) err(r.company, `${r.field} shows an identifier: "${r.after.slice(0, 60)}"`);
+  if (UUID.test(r.after)) errV(r, `${r.field} shows an identifier: "${r.after.slice(0, 60)}"`);
   // 3. a value from a source that is blocked (or on no list)
   if (r.url && !/^\(/.test(r.url)) {
     const st = roundSourceStanding(r.url);
-    if (st.kind === "denied") err(r.company, `${r.field} comes from a blocked source (${st.why}): ${domainOf(r.url) ?? r.url}`);
+    if (st.kind === "denied") errV(r, `${r.field} comes from a blocked source (${st.why}): ${domainOf(r.url) ?? r.url}`);
     else if (st.kind === "unlisted") unlisted.set(domainOf(r.url) ?? r.url, (unlisted.get(domainOf(r.url) ?? r.url) ?? 0) + 1);   // mostly the companies' own sites
   }
   // 4. the same value twice
@@ -74,14 +77,14 @@ for (const r of rows) {
   // 5. a year-only or month-only round shown as a day
   if (r.field === "round" && /·\s\d{4}-01-01\b(?!\s\()/.test(r.after)) warn(r.company, `round dated 1 January without "(year only)": ${r.after.slice(0, 60)}`);
   // 5b. a round over $2B for a private company (Pet Circle's "$10200M")
-  if (r.field === "round") { const m = r.after.match(/\$(\d+(?:\.\d+)?)\s?(M|B)\b/); if (m && (m[2] === "B" ? Number(m[1]) * 1000 : Number(m[1])) >= 2000) err(r.company, `a round of $${m[1]}${m[2]} for a private company: ${r.after.slice(0, 70)}`); }
+  if (r.field === "round") { const m = r.after.match(/\$(\d+(?:\.\d+)?)\s?(M|B)\b/); if (m && (m[2] === "B" ? Number(m[1]) * 1000 : Number(m[1])) >= 2000) errV(r, `a round of $${m[1]}${m[2]} for a private company: ${r.after.slice(0, 70)}`); }
   // 5c. a value read from the Internet Archive: the domain of the original page
   const arch = r.url.match(/web\.archive\.org\/web\/\d+[a-z_]*\/(https?:\/\/[^/]+)/i);
   if (arch) archived.set(`${r.company} ← ${arch[1].replace(/^https?:\/\//, "")}`, (archived.get(`${r.company} ← ${arch[1].replace(/^https?:\/\//, "")}`) ?? 0) + 1);
   // 6. news without a date
-  if (r.field === "news" && /^no date\b/.test(r.after)) err(r.company, `news without a date: ${r.after.slice(0, 60)}`);
+  if (r.field === "news" && /^no date\b/.test(r.after)) errV(r, `news without a date: ${r.after.slice(0, 60)}`);
   // 7. a headcount point without a quote
-  if (r.field === "headcount_history" && !r.quote) err(r.company, `headcount point without its quote: ${r.after}`);
+  if (r.field === "headcount_history" && !r.quote) errV(r, `headcount point without its quote: ${r.after}`);
   // 8. a sector that is not a sector of the list
   if (r.field === "sector") {
     const name = r.after.replace(/\s*\(industry:[^)]*\)\s*$/, "").trim();
@@ -148,7 +151,7 @@ if (existsSync("batch4_dry.log")) {
 // ── Every row of the report passes the rules of today (owner, batch 7: seven rows of 48 were wrong and no rule knew) ──
 for (const r of rows) {
   const why = rowProblem({ company: r.company, field: r.field, after: r.after, source_url: r.url, quote: r.quote }, r.company, new Date().toISOString().slice(0, 10));
-  if (why) err(r.company, `${r.field} "${r.after.slice(0, 50)}" is in the report and breaks a rule: ${why}`);
+  if (why) errV(r, `${r.field} "${r.after.slice(0, 50)}" is in the report and breaks a rule: ${why}`);
 }
 
 // ── Rejection audit (owner, batch 7: "the rules reject correct values"): a rejection that a rule of today would not make is a gap, and a gap is an error ──
@@ -225,11 +228,19 @@ if (existsSync("website_review.csv")) {
 }
 
 console.log(`${rows.length} value(s) of ${byCompany.size} company(ies) checked.\n`);
-for (const e of errors) console.log(`❌ ${e}`);
+// Faulty values: excluded by content, listed in pending_fixes.csv for BATCH_NO (a wet run reads it); they do not stop the batch.
+if (valueFaults.length) {
+  const batchNo = Number(process.env.BATCH_NO);
+  console.log(`🚧 ${valueFaults.length} value(s) break a rule and are excluded by content${Number.isInteger(batchNo) && batchNo > 0 ? " (pending_fixes.csv)" : " — BATCH_NO is not set, so they are only listed"}:`);
+  for (const v of valueFaults) console.log(`   ${v.company} · ${v.field} · ${v.value.slice(0, 60)} — ${v.reason.slice(0, 140)}`);
+  if (Number.isInteger(batchNo) && batchNo > 0) addPendingFixes(valueFaults.map((v) => ({ batch: batchNo, company: v.company, field: v.field, value: v.value, reason: `report_lint: ${v.reason.slice(0, 200)}` })));
+}
+if (errors.length) console.log("Rule gaps (not blocking — to fix before the next batch):");
+for (const e of errors) console.log(`➖ ${e}`);
 for (const w of warnings) console.log(`⚠️  ${w}`);
 if (archived.size) console.log(`\nℹ️  Values read from the Internet Archive (original domain): ${[...archived].map(([k, n]) => `${k}×${n}`).join(", ")}`);
 if (unlisted.size) console.log(`\nℹ️  Values from domains on no list (the companies' own sites, or a source to place): ${[...unlisted].sort((x, y) => y[1] - x[1]).map(([d, n]) => `${d}×${n}`).slice(0, 30).join(", ")}`);
-console.log(`\n${errors.length} error(s), ${warnings.length} warning(s).`);
+console.log(`\n${valueFaults.length} value(s) excluded, ${errors.length} rule gap(s), ${warnings.length} warning(s).`);
 
 // ── Ready for a wet run? (owner, round 10) ───────────────────────────────────────────────────────────────────────────
 {
@@ -257,8 +268,8 @@ console.log(`\n${errors.length} error(s), ${warnings.length} warning(s).`);
   ];
   const gaps: string[] = [];
   console.log(`\n── Ready for a wet run? (${enriched.length} enriched compan(ies) with a readable site) ──`);
-  if (errors.length) gaps.push(`lint: ${errors.length} error(s), target 0`);
-  for (const [name, got, want] of goals) { console.log(`  ${got >= want ? "✅" : "❌"} ${name}: ${got}% (target ≥${want}%)`); if (got < want) gaps.push(`${name} ${got}% < ${want}%`); }
+  // Information, not a gate (owner, 2026-11-19): what stops a batch is an acceptance ERROR and a field that fails the sample check (sample_verdicts.ts) — never a coverage target.
+  for (const [name, got, want] of goals) console.log(`  ${got >= want ? "✅" : "➖"} ${name}: ${got}% (earlier target ≥${want}%, information only)`);
   const prevPath = process.env.PREV;
   if (prevPath && existsSync(prevPath)) {
     const [ph, ...pb] = parseCsv(readFileSync(prevPath, "utf8"));
@@ -273,8 +284,7 @@ console.log(`\n${errors.length} error(s), ${warnings.length} warning(s).`);
     const lost = [...comparable].filter((k) => !now.has(k)).length;
     if (gone.length) console.log(`  ℹ️  ${gone.length} field(s) of ${new Set(gone.map((k) => k.split("|")[0])).size} compan(ies) that this run no longer enriches are not counted: ${[...new Set(gone.map((k) => k.split("|")[0]))].join(", ")}`);
     const lostPct = comparable.size ? Math.round((1000 * lost) / comparable.size) / 10 : 0;
-    console.log(`  ${lostPct < 5 ? "✅" : "❌"} stability: ${lost} of ${comparable.size} field(s) of ${prevPath} are gone (${lostPct}%, target <5%)`);
-    if (lostPct >= 5) gaps.push(`stability ${lostPct}% lost ≥ 5%`);
+    console.log(`  ${lostPct < 5 ? "✅" : "➖"} stability: ${lost} of ${comparable.size} field(s) of ${prevPath} are gone (${lostPct}%, information only)`);
   } else console.log("  ➖ stability: not measured (PREV=<earlier report.csv> compares two runs)");
   // A stratified sample of 40 values for the owner's precision check (round 10): 10 from companies with a common or generic name, 10 from companies whose sources were translated, 10
   // from borderline technology companies, 10 from small startups (few sources). A stratum with too few values is filled from the others. Each value with its source and quote; a translated
@@ -312,12 +322,13 @@ console.log(`\n${errors.length} error(s), ${warnings.length} warning(s).`);
     const need = Math.max(0, MIN_HISTORY - (record[f]?.reviewed ?? 0) - have);
     for (const r of shuffle(pool.filter((x) => familyOf(x.field) === f && !used.has(x))).slice(0, need)) { pick.push({ r, stratum: `no history: ${f}` }); used.add(r); }
   }
+  { const per = new Map<string, number>(); for (const p of pick) per.set(familyOf(p.r.field), (per.get(familyOf(p.r.field)) ?? 0) + 1); console.log(`  sample per field: ${[...per].sort((a, b) => b[1] - a[1]).map(([f, n]) => `${f} ${n}`).join(" · ")} (${pick.length} values)`); }
   if (newFields.length) console.log(`  fields with no history (under ${MIN_HISTORY} checked values so far), widened: ${newFields.map((f) => `${f} ${pick.filter((p) => familyOf(p.r.field) === f).length}/${pool.filter((x) => familyOf(x.field) === f).length}`).join(" · ")}`);
   const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   const sampleFile = process.env.SAMPLE_FILE ?? `sample_${TOTAL}.csv`;   // the extras of fields with no history are in the same file
   writeFileSync(sampleFile, "\uFEFF" + ["n,stratum,company,field,value,source_url,quote,quote_original (the page's own words),quote_translated (English it was verified against),rule,verdict (correct/wrong)", ...pick.map(({ r, stratum }, i) => [i + 1, stratum, r.company, r.field, r.after, r.url, r.quote.replace(/^\[machine translation\]\s*/, ""), r.original, r.translated, r.rule, ""].map((x) => q(String(x))).join(","))].join("\r\n") + "\r\n");
   console.log(`  strata: ${strata.map(([l]) => `${l} ${pick.filter((p) => p.stratum === l).length}`).join(" · ")} · filled ${pick.filter((p) => p.stratum === "filled from the rest").length}`);
   console.log(`  ➖ precision: ${pick.length} value(s) in ${sampleFile} (stratified) — mark each correct/wrong (target ≥95%)`);
-  console.log(`\n${gaps.length ? `מוכן לרטוב: לא — הפער: ${gaps.join("; ")}` : "מוכן לרטוב: כן (בכפוף לבדיקת הדיוק במדגם)"}`);
+  console.log(`\nהחוסמים לרטוב: שגיאת acceptance (ראה ACCEPTANCE למעלה), או שדה שנכשל ב-sample_verdicts. כיסוי ושגיאות lint הם מידע; ערכים פגומים הוחרגו לפי תוכן (pending_fixes.csv).`);
 }
-process.exit(errors.length ? 1 : 0);
+process.exit(0);

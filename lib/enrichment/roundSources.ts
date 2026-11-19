@@ -1,3 +1,4 @@
+import { readFileSync } from "fs";
 /**
  * lib/enrichment/roundSources.ts — the sources a funding round may be written
  * from (owner, 2026-11-01). An allowlist in tiers, not a denylist: the
@@ -221,6 +222,14 @@ export function hostOf(url: string): string | null {
   try { return new URL(url.startsWith("http") ? url : `https://${url}`).hostname.toLowerCase().replace(/^www\./, ""); } catch { return null; }
 }
 const onList = (host: string, list: string[]) => list.some((d) => host === d || host.endsWith(`.${d}`));
+// The owner's decisions on the domains the rules turned away most (scripts/domain_review.ts apply → eval/source_decisions.json): approved → tier 3 press, rejected → denied.
+(() => {
+  try {
+    const d = JSON.parse(readFileSync("eval/source_decisions.json", "utf8")) as { approved?: string[]; rejected?: string[] };
+    for (const x of d.approved ?? []) if (!TIER3_DOMAINS.includes(x)) TIER3_DOMAINS.push(x);
+    for (const x of d.rejected ?? []) if (!DENIED_DOMAINS.includes(x)) DENIED_DOMAINS.push(x);
+  } catch { /* no decisions yet */ }
+})();
 
 /** The registrable domain to review ("news.example.co.uk" → "example.co.uk", "blog.acme.com" → "acme.com"). */
 export function reviewDomain(url: string): string | null {
