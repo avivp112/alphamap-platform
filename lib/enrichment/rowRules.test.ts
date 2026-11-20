@@ -64,10 +64,12 @@ describe("the same rules for carried values (owner, round 10)", () => {
       "Six Degrees,founder,Alastair Mills — Founder,a,", "Six Degrees,founder,Alastair Mills — Founder and CEO,a,",
       "Mintifi,tags,Payments,https://mintifi.com,Drive growth"].join("\n"));
     const r = runAcceptance(checks, bad, [], TODAY);
-    for (const id of ["paradox_founded", "no_run_date_news", "six_degrees_founder_once", "mintifi_lending", "humi_acquired"]) expect(r.find((x) => x.id === id)!.pass).toBe(false);
+    // news dates and tags are candidate fields (tiers.ts): their checks do not run
+    for (const id of ["paradox_founded", "six_degrees_founder_once", "humi_acquired"]) expect(r.find((x) => x.id === id)!.pass).toBe(false);
+    expect(r.find((x) => x.id === "no_run_date_news")).toBeUndefined();
     const good = rowsFromCsv(["company,field,after,source_url,quote", "Paradox AI,round,Series C $200M · 2021-12-27,https://prnewswire.com/x,", "Mintifi,tags,\"Lending, Payments\",https://mintifi.com,x"].join("\n"));
     const g = runAcceptance(checks, good, ["Plott", "noo.ma", "Mototech"], TODAY);
-    for (const id of ["paradox_founded", "paradox_series_c", "mintifi_lending", "no_run_date_news", "not_enriched_plott", "not_enriched_mototech"]) expect(g.find((x) => x.id === id)!.pass).toBe(true);
+    for (const id of ["paradox_founded", "paradox_series_c", "not_enriched_plott", "not_enriched_mototech"]) expect(g.find((x) => x.id === id)!.pass).toBe(true);
   });
 });
 

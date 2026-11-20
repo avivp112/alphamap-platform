@@ -127,14 +127,13 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
       if (org.length >= 3 && !/^(?:ceo|cto|coo|cfo|cmo|cpo|chief\w*|co-?founder|founder|president|chair\w*|director|partner|head|vice|vp|svp|evp|managing|general|executive)/i.test(near[1].trim()) && !(org.includes(own) || (own.length >= 3 && own.includes(org)))) return `a role at another company (${near[1].trim()}), not here`;
     }
   }
-  // A name that several companies carry (owner, batch 8: Shyft — a Miami moving app, a Standard Bank FX app, The Shyft Group): a value stands only on the company's own domain on file, or on a source whose
-  // quote names that domain. eval/ambiguous_names.json: { "names": ["Shyft"] }.
+  // A name that several companies carry (owner, batch 8: Shyft — a Miami moving app, a Standard Bank FX app, The Shyft Group): a value stands only on the company's own domain on file (owner, 2026-11-20: Shyft only from getshyft.co.za). eval/ambiguous_names.json: { "names": ["Shyft"] }.
   { const deny = ambiguousDeny(companyName); if (deny && deny.test(`${r.after} ${r.quote ?? ""}`)) return `${companyName}: the value speaks of another company that carries the name (${(`${r.after} ${r.quote ?? ""}`.match(deny) ?? [""])[0]})`; }
   if (o.domain && url && r.field !== "(nothing)" && ambiguousName(companyName)) {
     const host = (u: string) => { try { return new URL(u.startsWith("http") ? u : `https://${u}`).hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; } };
     const mine = host(o.domain), h = host(url);
     const onMine = !!mine && (h === mine || h.endsWith(`.${mine}`));
-    if (!onMine && !(mine && (r.quote ?? "").toLowerCase().includes(mine))) return `${companyName} is a name several companies carry: the source is not the site on file (${mine}) and its quote does not name that domain`;
+    if (!onMine) return `${companyName} is a name several companies carry: a value stands only on the site on file (${mine})`;
   }
   const bad = isListingOrSponsoredUrl(url);
   if (bad) return bad === "sponsored_content" ? "its source is sponsored content" : "its source is a tag, list or search page, not the article";

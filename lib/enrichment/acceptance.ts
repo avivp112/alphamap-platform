@@ -7,6 +7,7 @@ import { quoteIsNotASentence } from "./evidence.ts";
 import { roleRegex } from "./people.ts";
 import { rowProblem, roundKey, cleanCompetitorName } from "./rowRules.ts";
 import { isAddressLine } from "./headquarters.ts";
+import { isCoreField } from "./tiers.ts";
 
 export interface Row { company: string; field: string; after: string; source_url: string; quote: string; origin?: string }
 export type Severity = "error" | "gap";
@@ -56,8 +57,16 @@ const fold = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g
 const same = (a: string, b: string) => fold(a) === fold(b);
 const re = (s: string) => new RegExp(s, "iu");
 
-export function runAcceptance(checks: Check[], rows: Row[], notEnriched: string[], today: string): Result[] {
-  const of = (c: { company?: string; field?: string }) => rows.filter((r) => (!c.company || same(r.company, c.company)) && (!c.field || r.field === c.field));
+export function runAcceptance(checks0: Check[], rows: Row[], notEnriched: string[], today: string): Result[] {
+  // Candidate fields (Tier 3, tiers.ts) are in no blocking check (owner, 2026-11-20): a check of one of their fields, or of the news dates, is not run; a check of no field looks at core fields only.
+  const checks = checks0.filter((c) => {
+    const cf = c as { field?: string; fields?: string[]; kind?: string };
+    if (cf.kind === "news_dates_before_run") return false;
+    if (cf.field && !isCoreField(cf.field)) return false;
+    if (cf.fields?.length && !cf.fields.some((f) => isCoreField(f))) return false;
+    return true;
+  });
+  const of = (c: { company?: string; field?: string }) => rows.filter((r) => (!c.company || same(r.company, c.company)) && (c.field ? r.field === c.field : isCoreField(r.field)));
   return checks.map((c): Result => {
     const base = { id: c.id, why: c.why, severity: (c.severity ?? "error") as Severity };
     switch (c.kind) {

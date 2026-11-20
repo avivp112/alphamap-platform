@@ -15,7 +15,8 @@ describe("owner rules, batch 8 sample round 2", () => {
   });
   it("a shared name stands only on the domain on file", () => {
     expect(p("hq_city", "Dallas", "Shyft is based in Dallas", "Shyft", "https://shyftdallas.com/about", { domain: "https://getshyft.co.za" })).toMatch(/several companies/);
-    expect(p("tags", "Fintech", "Shyft by Standard Bank, getshyft.co.za, sends money", "Shyft", "https://news.example/a", { domain: "https://getshyft.co.za" })).toBeNull();
+    expect(p("tags", "Fintech", "Shyft by Standard Bank, getshyft.co.za, sends money", "Shyft", "https://news.example/a", { domain: "https://getshyft.co.za" })).toMatch(/several companies/);
+    expect(p("tags", "Fintech", "Shyft sends money", "Shyft", "https://getshyft.co.za/about", { domain: "https://getshyft.co.za" })).toBeNull();
   });
   it("a shared name: words of the other companies are refused even on the domain", () => {
     expect(p("hq_city", "Miami", "Shyft is based in Miami", "Shyft", "https://getshyft.co.za/about", { domain: "https://getshyft.co.za" })).toMatch(/another company/);

@@ -1,48 +1,34 @@
-# The batch process (owner's update, 2026-11-19)
+# The batch process (owner's change of method, 2026-11-20)
 
-Goal: stop the repeated runs. Each batch gets **one dry run, one sample check, one write.**
+Goal: progress at a pace that finishes the database, with no wrong figure reaching a customer. This replaces the process of 2026-11-19 (sample of 50 *before* the write, tracker of 20 marks and 90%, held fields per sample).
 
-```
-regression gate  →  one dry run  →  sample + check  →  write
-```
+## 1. Two kinds of fields — `lib/enrichment/tiers.ts`
+**Core fields**, written to `startups` / `field_provenance` as before:
+- Tier 1 (accuracy 98% and above): `round` (amount, type, date, lead), `acquired` (acquired / majority_acquired / closed). Public-company status and domain identification are decided before the fields.
+- Tier 2 (95% and above): `description`, `sector`, `hq_city`, `hq_country`, `founded_year`, `founder` (name and role), the registers (`legal_name`, `company_number`, `incorporation_date`, `incorporation_jurisdiction`, `registered_address`).
 
-A second dry run only when the infrastructure failed (rate limit, cache, git) — never because of errors in the data.
+**Candidate fields (Tier 3)**: `tags`, `news`, `competitor_declared`, `competitor_market`, `employee_count`, `employee_range`, `headcount_history`, `leader` (not a founder), `founder_background`, `office`, `name_proposal`.
+Written only to `candidate_values` with full provenance (`scripts/write_candidates.ts`); never to `startups`, never shown. Not in the regression gate, the blocking acceptance checks or the audit. Their logic stays as it is.
+A field in neither list (`founding_country`, `board`, `patent`) is not written.
 
-## 1. The regression gate — `scripts/regression.ts`
-- Runs every batch already written (`baseline/batches.json`: 5, 6, 7 and every batch written from now on, added by its own wet run) again with `REPLAY=1 DRY_RUN=true`, from the recordings and the cache: no search, no fetch, the memory off, and the database's own values left out (a clean slate, `REGRESSION=1`).
-- Compares with `baseline/batch_<N>.json` (the good values `company:field:value` and the acceptance results). **Fails** when (a) an acceptance check is an ERROR, or (b) a value that was good is rejected now. Every loss is printed with its `reason_code`; the new values are printed apart; a single-valued field (description, sector, hq_*, founded_year…) that has *another* value now is listed as "changed", not as a failure.
-- Cost: a model call a fix made new (a prompt changed) runs live for the values of these batches only; the cost is printed (aim: under $0.10 a run).
-- On a pass it writes `regression_pass_<commit>.json`. **`bulk_enrich_v2.ts` with `DRY_RUN=false` refuses to run without a pass for the code it runs on** (the commit's own file, or a file of any commit whose code — all tracked files except `baseline/` — is the same, so a merge commit does not ask for a new run).
-- The baseline is changed only by an explicit command with the values, after the owner approves: `APPROVED_BY=aviv npx tsx scripts/regression.ts accept-lost "Company:field:value" …`. `init` makes a first baseline from the code as it is; a batch's baseline can also come from the report that was written: `REPORT=pilot_report_write.csv npx tsx scripts/regression.ts init 7`.
+## 2. One hold mechanism
+The old tracker (`field_review_tracker`, 20 marks and 90%) no longer opens or closes anything. What remains: `held_fields.csv` and `pending_fixes.csv`, for core fields only.
 
-```
-npx tsx scripts/regression.ts                        # the gate
-npx tsx scripts/regression.ts init 5 6 7             # the first baselines (once)
-```
+## 3. A batch: up to 500 companies, written automatically — `scripts/run_batch.ts`
+regression gate (core fields only) → one live run → acceptance → write if everything passed → `verify_written` → Tier 3 values to `candidate_values` → the audit sample.
+- No manual stop before the write. A gate loss or an acceptance ERROR stops the batch *before* the write and is shown to Aviv; `accept-lost` is his decision alone.
+- `MAX_COST` is required; the plan prints a cost estimate first (`BATCH_NO=N npx tsx scripts/run_batch.ts`, then `MAX_COST=… GO=1`).
+- Infrastructure failure (rate limit, timeout): `retry_failed.ts` once, for the companies that failed — never the whole batch.
+- Recordings carry the date of their day: a replay on another day runs with `PIN_DATE=<the live run's date>` and `NODE_OPTIONS="--require scripts/pin_date.cjs"` (the script does it).
 
-## 2. No re-run of a batch for a few data errors
-- A wrong value found in the check is excluded **by content** (`company:field[:value]`), written to `pending_fixes.csv` with its reason, and everything else is written. A wet run reads `pending_fixes.csv` for its batch by itself.
-- The rule's fix goes in before the next batch and passes the regression gate.
-- Values already written and hurt are corrected in **one clean-up every three batches** (`undo_value`, then REPLAY) — not in every batch.
+## 4. The audit after the write — `scripts/audit_sample.ts`, `scripts/audit_apply.ts`
+50 values of the core fields: 25 completely random (the real accuracy) and 25 aimed at hard cases (rule-made values, rounds with an unknown type, press-only headquarters…; at most two per company).
+- A wrong value is taken out of the database (recorded in `field_changes`, `undo_run.ts` puts it back) and written to `pending_fixes.csv`. The batch does not stop.
+- A field with errors in more than 5 companies of the targeted sample, or whose cumulative random accuracy (at least 20 values) is under its tier's bar, is undone for the run and held until the maintenance window.
+- The random sample accumulates in `eval/field_audit.json` (per field: audited, wrong).
 
-## 3. Acceptance per field
-- Each field passes its own acceptance checks. A field that fails is the only one not written; every other field is. Held fields are listed in `held_fields.csv`.
-- Every three batches one completion run writes the held fields, after their rules were fixed and passed the gate.
+## 5. Exposure in the pilot — `scripts/field_status.ts`, table `field_status`
+A field is visible in the pilot only after at least 150 random audited values with accuracy above its tier's bar. Until then the data is in the database and not shown. (The table and the script are in place; the application reads the table as the screens are connected to it.)
 
-## 3b. Fields with no history — `field_track_record.json`
-- `sample_verdicts.ts` adds every batch's checked values (per field: checked, wrong) to `field_track_record.json` (committed). `report_lint.ts` widens the next sample: a field with fewer than 15 checked values so far gets enough values of this batch to reach 15 (or all of them) on top of the five strata of ten.
-
-## 4. Error threshold — `scripts/sample_verdicts.ts`
-- Up to **5%** wrong values in a field in `sample_50.csv` is fine: the wrong ones are excluded and listed (`pending_fixes.csv`), the rest is written.
-- Over 5% in a field: only that field is held (`held_fields.csv`).
-
-```
-BATCH=8 npx tsx scripts/sample_verdicts.ts                       # the sample, numbered
-BATCH=8 WRONG=3,17=the reason npx tsx scripts/sample_verdicts.ts # the wrong numbers → pending_fixes.csv / held_fields.csv
-```
-
-## The order of a batch
-1. `npx tsx scripts/regression.ts` — must pass.
-2. One live dry run (`ALL_FIELDS=true …`), acceptance + lint.
-3. `sample_verdicts.ts` (and `rejected_review.ts` for the rejected sample) — one pass.
-4. The wet run (`REPLAY=1`): it reads `pending_fixes.csv` and `held_fields.csv` for the batch, checks the database against the report, and undoes itself on any difference; when it succeeds the batch joins the gate.
+## 6. New rules
+Only in a maintenance window, about every 2,000 companies (every 4 batches), and only with Aviv's approval. A rule is aimed at a stated condition ("no founding year from a sentence that mentions an acquisition"), never a global tightening of a field. Acceptance: a REPLAY of all earlier batches — zero lost values in Tier 1; in Tier 2 every lost value is shown to Aviv and the rule enters only with his approval. Between windows findings go to `backlog.md` only.

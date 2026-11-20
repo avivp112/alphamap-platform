@@ -66,7 +66,7 @@ import { ACTIVE_DAYS, QUIET_DAYS, SeenUrls, isUpdateDue } from "../lib/enrichmen
 import { websiteDomain, type DomainOwner } from "../lib/enrichment/websiteValidation.ts";
 
 import { assertEnrichmentWritesAllowed, PILOT_FIELDS } from "../lib/enrichment/writeGate.ts";
-import { openFieldNames } from "../lib/enrichment/fieldReview.ts";
+import { CORE_FIELDS, isCoreField } from "../lib/enrichment/tiers.ts";
 import { writeFileSync as realWriteFileSync, mkdirSync, readdirSync, readFileSync, existsSync } from "fs";
 import { passFor, headCommit, headTree, addWrittenBatch, saveBaseline, watched, loadBaseline, writtenBatches } from "../lib/enrichment/regressionGate.ts";
 import { pendingExcludes, heldFieldsOf, addHeldFields, readMarks as readSampleMarks, markKey as sampleMarkKey } from "../lib/enrichment/batchProcess.ts";
@@ -138,7 +138,8 @@ const FIELDS_ASKED = [...new Set(FIELDS_RAW.flatMap((f) => (PILOT_FIELDS.include
   if (unknown.length) { console.error(`⛔  FIELDS names that are no field of the review: ${unknown.join(", ")}.\n    The fields are: ${PILOT_FIELDS.join(", ")}`); process.exit(1); }
 }
 const ASKED: string[] = FIELDS_ASKED.length ? PILOT_FIELDS.filter((f) => FIELDS_ASKED.includes(f)) : [...PILOT_FIELDS];
-const OPEN_NOW = openFieldNames();
+// The old tracker (20 marks, 90%) is gone (owner, 2026-11-20): the core fields (tiers.ts) are written, the candidate fields are not written to startups.
+const OPEN_NOW: string[] = process.env.VITEST && process.env.OPEN_FIELDS_OVERRIDE ? process.env.OPEN_FIELDS_OVERRIDE.split(",") : [...CORE_FIELDS];   // the override is for tests only
 const SHOW_ALL = DRY_RUN && process.env.ALL_FIELDS === "true";
 if (REGRESSION) {
   if (!DRY_RUN) { console.error("⛔  REGRESSION=1 is a dry pass only."); process.exit(1); }
@@ -584,7 +585,7 @@ async function main() {
   }
   if (!DRY_RUN && !process.env.VITEST) {
     // Fields this batch holds back (held_fields.csv): not written, whatever else is.
-    const heldFields = heldFieldsOf(BATCH_NO);
+    const heldFields = heldFieldsOf(BATCH_NO).filter(isCoreField);   // held fields concern core fields only
     if (heldFields.length) { for (const f of heldFields) HELD_ALL.add(f); console.log(`⏸️   Held fields of batch ${BATCH_NO} (held_fields.csv) — not written: ${heldFields.join(", ")}`); }
   }
   await initV1Context();

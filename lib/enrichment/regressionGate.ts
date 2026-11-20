@@ -5,6 +5,7 @@
  * The pure part (keys, comparison, the pass file) is here; the runs are in scripts/regression.ts.
  */
 import { execSync } from "child_process";
+import { isCoreField } from "./tiers.ts";
 import { createHash } from "crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "fs";
 
@@ -54,7 +55,7 @@ export function watched(rows0: RunRow[]): BaselineValue[] {
   const rows = explodeAcquired(rows0);
   const seen = new Set<string>(), out: BaselineValue[] = [];
   for (const r of rows) {
-    if (!r.field || IGNORED_FIELDS.has(r.field) || !r.value?.trim()) continue;
+    if (!r.field || IGNORED_FIELDS.has(r.field) || !isCoreField(r.field) || !r.value?.trim()) continue;
     const k = valueKey(r.company, r.field, r.value);
     if (seen.has(k)) continue;
     seen.add(k); out.push({ company: r.company, field: family(r.field), value: r.value });
@@ -64,7 +65,7 @@ export function watched(rows0: RunRow[]): BaselineValue[] {
 
 /** What a baseline held, against what a run gives now. `rejections` name why a lost value is gone, when the run said so. */
 export function compare(baseline0: BaselineValue[], now: RunRow[], rejections: Rejected[] = []): Comparison {
-  const baseline = explodeAcquired(baseline0);
+  const baseline = explodeAcquired(baseline0).filter((v) => isCoreField(v.field));
   const nowW = watched(now);
   const nowKeys = new Set(nowW.map((v) => valueKey(v.company, v.field, v.value)));
   const nowBySlot = new Map<string, BaselineValue[]>();

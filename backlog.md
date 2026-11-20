@@ -15,3 +15,8 @@
 - (b) A tag whose quote is not the verified description: replace the quote with the verified description when the description supports the tag; delete only when it does not.
 - (c) A role that is not in the quote: delete only the role, never the founder. In the gate, founders are compared by name.
 - Reverted before the batch 8 write (gate failed with 45 lost values in batches 5-7): the three rules above in their strict form, and the lead-investor cue ("led by") of round 3, which lost Kontent.ai's and ShopX's lead.
+
+## Method of 2026-11-20 (docs/process.md)
+- New rules only in a maintenance window (every 4 batches) with Aviv's approval; a rule is aimed at a stated condition, not a global tightening.
+- The application does not yet read `field_status` (pilot visibility): the table and the script exist.
+- `sample_verdicts.ts`, `reason_marks.ts`, `import_marks.ts`, the old tracker scripts (`field_review*.ts`) belong to the old method and are not part of a batch.
