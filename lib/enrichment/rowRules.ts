@@ -455,7 +455,12 @@ function stripUngroundedLead<T extends RowLike>(r: T): { row: T; stripped: strin
   if (!name) return { row: r, stripped: null };
   const core = normalizeForMatch(name.replace(/\b(inc|ltd|llc|lp|llp|plc|gmbh|sa|ag|bv|co)\b\.?/gi, ""));
   const texts = [r.quote ?? "", ...(payload.evidence ?? []).filter((e) => (e as { field?: string }).field !== "lead_investor").map((e) => e.quote ?? "")].map((t) => normalizeForMatch(t));
-  if (!core || texts.some((t) => t.includes(core))) return { row: r, stripped: null };
+  // A lead investor is named by a lead cue (owner, maintenance window 2026-11-20): "led by", "co-led" or "leading the round" within a sentence's reach of the name — not by being one of the investors.
+  const rawTexts = [r.quote ?? "", ...(payload.evidence ?? []).filter((e) => (e as { field?: string }).field !== "lead_investor").map((e) => e.quote ?? "")];
+  const bare = name.replace(/\b(inc|ltd|llc|lp|llp|plc|gmbh|sa|ag|bv|co)\b\.?/gi, "").trim().toLowerCase();
+  const CUE = /\b(?:led by|co-?led|leading the round)\b/i;
+  const led = (t: string) => { const i = t.toLowerCase().indexOf(bare); return bare.length >= 2 && i >= 0 && (CUE.test(t.slice(Math.max(0, i - 90), i + bare.length)) || CUE.test(t.slice(i, i + bare.length + 40))); };
+  if (!core || (texts.some((t) => t.includes(core)) && rawTexts.some(led))) return { row: r, stripped: null };
   payload.round = { ...payload.round, lead_investor: null };
   return { row: { ...r, payload: JSON.stringify(payload), after: r.after.replace(new RegExp(`\\s*·\\s*lead\\s+${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i"), "") }, stripped: name };
 }

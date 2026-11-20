@@ -20,3 +20,7 @@
 - New rules only in a maintenance window (every 4 batches) with Aviv's approval; a rule is aimed at a stated condition, not a global tightening.
 - The application does not yet read `field_status` (pilot visibility): the table and the script exist.
 - `sample_verdicts.ts`, `reason_marks.ts`, `import_marks.ts`, the old tracker scripts (`field_review*.ts`) belong to the old method and are not part of a batch.
+
+## From batch 8 (2026-11-20)
+- `acquired` was not written in batch 8 (0/26) although found for Weezy (Getir, 2021-11-23, CNBC) and Nordigen: in a wet run the news rows are not open, and `acquired` is derived from them.
+- Zro: "Av. Brigadeiro Faria Lima" was read as Lima (Peru); it is an avenue in São Paulo.

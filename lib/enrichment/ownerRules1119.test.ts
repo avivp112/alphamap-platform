@@ -21,10 +21,16 @@ describe("owner rules, batch 8 sample round 2", () => {
   it("a shared name: words of the other companies are refused even on the domain", () => {
     expect(p("hq_city", "Miami", "Shyft is based in Miami", "Shyft", "https://getshyft.co.za/about", { domain: "https://getshyft.co.za" })).toMatch(/another company/);
   });
+  it("a lead investor needs a lead cue (led by / co-led / leading the round)", () => {
+    const mk = (quote: string, lead: string) => applyRowRules([{ company: "Acme", field: "round", after: `Series A $20M · 2021-01-13 · lead ${lead}`, quote, source_url: "https://techcrunch.com/x", payload: JSON.stringify({ round: { round_type: "Series A", lead_investor: lead }, evidence: [] }) }] as never, "Acme", T).rows[0].after;
+    expect(mk("Acme raised $20 million in a Series A funding led by New York-based fund Left Lane Capital", "Left Lane Capital")).toMatch(/lead Left Lane Capital/);
+    expect(mk("Acme raised $20 million from Fung Strategic Holdings and others", "Fung Strategic Holdings")).not.toMatch(/lead/);
+    expect(mk("Acme raised $20 million, co-led by IFC and Quona Capital", "Quona Capital")).toMatch(/lead Quona Capital/);
+  });
   it("a Debt type needs its words; a round needs a funding quote; a name is clean", () => {
     const g = applyRowRules([{ company: "Nordigen", field: "round", after: "Debt $0.8M · 2017-09-07 · lead Seedcamp", quote: "Nordigen has raised $800,000 from Inventure and Seedcamp", source_url: "https://tech.eu/x",
       payload: JSON.stringify({ round: { round_type: "Debt", lead_investor: "Seedcamp" }, evidence: [] }) }] as never, "Nordigen", T);
-    expect(g.rows[0].after).toBe("Unknown $0.8M · 2017-09-07 · lead Seedcamp");
+    expect(g.rows[0].after).toBe("Unknown $0.8M · 2017-09-07");   // Debt → Unknown, and Seedcamp has no lead cue
     expect(p("round", "Unknown", "", "Orizuru", "https://x.com/a")).toMatch(/needs a quote/);
     expect(p("name_proposal", 'name = "Lula. We", former_names += "Lulalend"', "", "Lulalend", "https://lula.co.za")).toMatch(/clean brand name/);
     expect(p("founder_background", "Kristof: previous role — McKinsey & Company, consumer goods", "Kristof worked in consumer goods at P&G and McKinsey", "Weezy", "https://x.com")).toMatch(/belongs to P&G/);
