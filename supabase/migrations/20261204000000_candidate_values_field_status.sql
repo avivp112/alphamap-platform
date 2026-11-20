@@ -15,7 +15,11 @@ create table if not exists public.candidate_values (
   run_label      text,
   created_at     timestamptz not null default now()
 );
-alter table public.candidate_values add constraint candidate_values_unique unique (startup_id, field, value_hash, batch);
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'candidate_values_unique') then
+    alter table public.candidate_values add constraint candidate_values_unique unique (startup_id, field, value_hash, batch);
+  end if;
+end $$;
 create index if not exists candidate_values_field on public.candidate_values (field);
 comment on table public.candidate_values is 'Tier 3 enrichment values (owner, 2026-11-20): written only here, with provenance; not part of startups and not shown in the app.';
 alter table public.candidate_values enable row level security;
