@@ -63,6 +63,14 @@ export const BULK_THRESHOLDS = { minProfileConfidence: 40, minFundingConfidence:
 
 let warnedNoEnrichedV2Column = false;
 
+/** The date column takes a full date: "2020-07" becomes 2020-07-01 (precision month) and "2020" 2020-01-01 (year) — batch 9: "invalid input syntax for type date: "2020-07"" lost a round. */
+export function roundDateForColumn(d: string | null | undefined): { date: string | null; precision: "month" | "year" | null } {
+  if (!d) return { date: null, precision: null };
+  if (/^\d{4}-\d{2}$/.test(d)) return { date: `${d}-01`, precision: "month" };
+  if (/^\d{4}$/.test(d)) return { date: `${d}-01-01`, precision: "year" };
+  return { date: d, precision: null };
+}
+
 export function bump(map: Map<string, number>, key: string): void {
   map.set(key, (map.get(key) ?? 0) + 1);
 }
@@ -1108,8 +1116,8 @@ export async function writeCollected(
         amount_raised: round.amount_raised ?? null, valuation: round.valuation ?? null,
         amount_original: round.amount_currency ? (round.amount_original ?? null) : null, amount_currency: round.amount_currency ?? null,
         is_valuation_estimated: round.valuation != null ? (round.is_valuation_estimated ?? null) : null,
-        announcement_date: round.announcement_date ?? null, source_url: round.source_url ?? null,
-        announcement_date_precision: round.announcement_date ? (round.announcement_date_precision ?? null) : null,
+        announcement_date: roundDateForColumn(round.announcement_date).date, source_url: round.source_url ?? null,
+        announcement_date_precision: round.announcement_date ? (round.announcement_date_precision ?? roundDateForColumn(round.announcement_date).precision) : null,
         lead_investor: round.lead_investor ?? null,
         investors: round.other_investors && round.other_investors.length > 0 ? round.other_investors : null,
         investor_amounts: round.investor_amounts && round.investor_amounts.length > 0 ? round.investor_amounts : null,
