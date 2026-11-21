@@ -28,6 +28,7 @@ export type Check = (
 ) & { severity?: Severity }
   | { id: string; why: string; kind: "news_dates_before_run" }
   | { id: string; why: string; kind: "one_news_per_acquisition" }
+  | { id: string; why: string; kind: "founder_name_is_person" }
   | { id: string; why: string; kind: "tags_include"; company: string; include: string; not_only?: string }
 /** `offenders`: the report rows that broke the check — what a wet run does not write when the check is an ERROR (owner, batch 6). field "*" = the whole company. */
 export interface Result { id: string; why: string; pass: boolean; detail: string; severity: "error" | "gap"; offenders?: Row[] }
@@ -144,6 +145,25 @@ export function runAcceptance(checks0: Check[], rows: Row[], notEnriched: string
       case "news_dates_before_run": {
         const bad = rows.filter((r) => r.field === "news" && /^\d{4}-\d{2}-\d{2}/.test(r.after) && r.after.slice(0, 10) >= today);
         return { ...base, pass: bad.length === 0, detail: bad.length ? `dated ${today} or later: ${bad.slice(0, 2).map((r) => `${r.company} ${r.after.slice(0, 50)}`).join(" | ")}` : `no news dated ${today} or later`, offenders: bad };
+      }
+      case "founder_name_is_person": {
+        // A founder's name is the name of a person (owner, 2026-11-21: Buildium's "Buildium Co" and "Publishes Lessons" from the headline "Buildium Co-Founder Publishes Lessons"): not the company's own name,
+        // not one word, no "Co" alone, no verb of a headline, no title word.
+        const VERBS = new Set(["publishes", "publish", "raises", "raised", "announces", "announced", "launches", "launched", "joins", "joined", "appoints", "appointed", "names", "named", "says", "said", "secures", "secured", "wins", "won", "unveils", "reveals", "releases", "shares", "explains", "becomes", "hires", "acquires", "buys", "sells", "closes", "opens", "expands", "introduces", "partners", "receives", "gets", "leads", "talks", "discusses", "tells", "writes", "warns", "plans", "backs", "invests", "lessons"]);
+        const NOT_NAME = new Set(["co", "inc", "ltd", "llc", "corp", "gmbh", "founder", "founders", "cofounder", "co-founder", "ceo", "cto", "cfo", "coo", "cmo", "chief", "president", "chairman", "director", "startup", "company", "team", "group"]);
+        const bad: Row[] = [], why: string[] = [];
+        for (const r of rows.filter((x) => x.field === "founder")) {
+          const name = r.after.split(" — ")[0].trim();
+          const tokens = name.split(/\s+/).map((t) => t.replace(/[.,;:()]/g, "").toLowerCase()).filter(Boolean);
+          const own = fold(r.company).replace(/(inc|ltd|llc|corp|gmbh|ag|bv|the)$/g, "");
+          let reason = "";
+          if (tokens.length < 2) reason = "one word";
+          else if (own.length >= 3 && fold(name).includes(own)) reason = "contains the company's name";
+          else if (tokens.some((t) => NOT_NAME.has(t))) reason = "a title or a company word";
+          else if (tokens.some((t) => VERBS.has(t))) reason = "a verb of a headline";
+          if (reason) { bad.push(r); why.push(`${r.company} "${name}" (${reason})`); }
+        }
+        return { ...base, pass: bad.length === 0, detail: bad.length ? `not a person's name: ${why.slice(0, 3).join(" | ")}` : "every founder name is a person's name", offenders: bad };
       }
       case "one_news_per_acquisition": {
         // One purchase is one news item: two items naming the same buyer for the same company with different dates are one event written twice (owner, regression gate: Humi 2025-01-08 and 2026-05-20).

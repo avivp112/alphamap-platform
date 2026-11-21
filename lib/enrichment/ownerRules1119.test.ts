@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyRowRules, rowProblem } from "./rowRules.ts";
+import { runAcceptance } from "./acceptance.ts";
 const T = "2026-11-19";
 const p = (field: string, after: string, quote: string, co: string, url: string, o = {}) => rowProblem({ field, after, quote, source_url: url } as never, co, T, 0, o);
 describe("owner rules, batch 8 sample round 2", () => {
@@ -34,5 +35,15 @@ describe("owner rules, batch 8 sample round 2", () => {
     expect(p("round", "Unknown", "", "Orizuru", "https://x.com/a")).toMatch(/needs a quote/);
     expect(p("name_proposal", 'name = "Lula. We", former_names += "Lulalend"', "", "Lulalend", "https://lula.co.za")).toMatch(/clean brand name/);
     expect(p("founder_background", "Kristof: previous role — McKinsey & Company, consumer goods", "Kristof worked in consumer goods at P&G and McKinsey", "Weezy", "https://x.com")).toMatch(/belongs to P&G/);
+  });
+  it("acceptance: a founder's name is a person's name", () => {
+    const run = (company: string, after: string) => runAcceptance([{ id: "founder_name_is_person", why: "", kind: "founder_name_is_person" }], [{ company, field: "founder", after, source_url: "", quote: "" }], [], T)[0].pass;
+    expect(run("Buildium", "Buildium Co — Founder")).toBe(false);
+    expect(run("Buildium", "Publishes Lessons — Founder")).toBe(false);
+    expect(run("Acme", "Raises — Founder")).toBe(false);          // one word
+    expect(run("Acme", "Jane Roe Co — Founder")).toBe(false);     // "Co" alone
+    expect(run("Acme", "Jane Acme — Founder")).toBe(false);       // the company's own name
+    expect(run("Acme", "Jane Roe — Co-Founder")).toBe(true);
+    expect(run("Acme", "Dominic Spooner — Founder CEO")).toBe(true);
   });
 });

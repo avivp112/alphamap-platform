@@ -307,6 +307,7 @@ interface RunSummary {
 // Claude's cost from the tokens each call reports, by model (lib/enrichment/models.ts:
 // Haiku 4.5, and Haiku 5.5's two rate cards — 100K-token prompts and under, and longer).
 const LLM = new UsageMeter();
+let costCapHit = false;
 function recordCost(
   summary: RunSummary, model: string,
   usage: { inputTokens: number; outputTokens: number; cacheWriteTokens?: number; cacheReadTokens?: number },
@@ -318,7 +319,8 @@ function recordCost(
   summary.totalCostUsd += callCostUsd(model, usage);
   LLM.add(model, usage);
   // A hard stop (owner, 2026-11-19: MAX_COST=3 on the one-time recording run): the model cost of this run is over the cap — nothing more is asked, nothing is lost (replies are recorded as they come).
-  if (process.env.MAX_COST && summary.totalCostUsd > Number(process.env.MAX_COST)) { console.error(`⛔  MAX_COST=$${process.env.MAX_COST} reached (model cost $${summary.totalCostUsd.toFixed(2)}) — stopped.`); process.exit(3); }
+  // At the cap no new company is started; the ones running finish, the reports are written, and the run ends with exit code 3 (owner, 2026-11-21: what was collected is written, not lost).
+  if (process.env.MAX_COST && summary.totalCostUsd > Number(process.env.MAX_COST) && !costCapHit) { costCapHit = true; console.error(`⛔  MAX_COST=$${process.env.MAX_COST} reached (model cost $${summary.totalCostUsd.toFixed(2)}) — no new company is started; the ones running finish and the reports are written.`); }
 }
 
 
@@ -827,7 +829,7 @@ async function main() {
   const running = new Set<string>();
   const heartbeat = CONCURRENCY > 1 ? setInterval(() => console.log(`⏳ ${finished}/${queue.length} done · running: ${[...running].join(", ") || "—"}`), 60_000) : null;
   const worker = async (w: number) => {
-    while (!stopRequested && !stopSystemic) {
+    while (!stopRequested && !stopSystemic && !costCapHit) {
       const i = next++;
       if (i >= queue.length) return;
       const row = queue[i];
@@ -865,6 +867,13 @@ async function main() {
   };
   await Promise.all(Array.from({ length: CONCURRENCY }, (_, w) => worker(w)));
   if (heartbeat) clearInterval(heartbeat);
+  // The cost cap was reached (MAX_COST): the companies not started are listed, the reports below are written for the others, and the run ends with exit code 3 (scripts/run_batch.ts goes on with what was collected).
+  if (costCapHit) {
+    const left = queue.slice(next).map((c) => c.id);
+    try { writeFileSync(`unprocessed_batch_${BATCH_NO}.json`, JSON.stringify({ reason: "MAX_COST", cost: summary.totalCostUsd, ids: left }, null, 1)); } catch { /* a convenience */ }
+    console.log(`💸  MAX_COST reached: ${left.length} compan(ies) were not started (unprocessed_batch_${BATCH_NO}.json); the others are reported and written as usual.`);
+    process.exitCode = 3;
+  }
   if (stopRequested) console.log("🛑  Stopped by request. Re-running continues from the companies not yet processed (queue is ordered by last_enriched_at).");
 
   if (!DRY_RUN && (summary.totalFieldsPatched > 0 || summary.totalRoundsInserted > 0 || summary.totalRoundsUpdated > 0)) {

@@ -21,6 +21,12 @@ regression gate (core fields only) → one live run → acceptance → write if 
 - Infrastructure failure (rate limit, timeout): `retry_failed.ts` once, for the companies that failed — never the whole batch.
 - Recordings carry the date of their day: a replay on another day runs with `PIN_DATE=<the live run's date>` and `NODE_OPTIONS="--require scripts/pin_date.cjs"` (the script does it).
 
+### Cost (owner, 2026-11-21)
+- The extraction of candidate fields is off: no competitor, team (headcount), LinkedIn or news search, no market extraction, no LinkedIn-people step (founder background), no EPO patents, no register / archive headcount points; the deep dive runs only for a gap in a core field. `TIER3_EXTRACTION=on` brings it all back; `TIER3_KEEP=news` keeps the news search and the market extraction only (round types and acquired read headlines).
+- At most 10 pages of a company's own site (about, team, contact, news / press first); no product, customer, privacy or terms pages (`MAX_SITE_PAGES`, `lib/enrichment/sitemap.ts`).
+- At `MAX_COST` no new company is started, the running ones finish, the reports are written, and `run_batch` goes on with what was collected; `unprocessed_batch_<N>.json` lists the rest.
+- Acceptance: a founder's name is the name of a person (`founder_name_is_person`).
+
 ## 4. The audit after the write — `scripts/audit_sample.ts`, `scripts/audit_apply.ts`
 50 values of the core fields: 25 completely random (the real accuracy) and 25 aimed at hard cases (rule-made values, rounds with an unknown type, press-only headquarters…; at most two per company).
 - A wrong value is taken out of the database (recorded in `field_changes`, `undo_run.ts` puts it back) and written to `pending_fixes.csv`. The batch does not stop.
