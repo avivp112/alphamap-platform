@@ -133,10 +133,5 @@
   "id": "one_news_per_acquisition",
   "why": "One purchase is one news item: no two items name the same buyer for the same company with different dates",
   "kind": "one_news_per_acquisition"
- },
- {
-  "id": "founder_name_is_person",
-  "why": "A founder's name is the name of a person: not the company's own name, no \"Co\" alone, no verb of a headline (Buildium: \"Buildium Co\", \"Publishes Lessons\")",
-  "kind": "founder_name_is_person"
  }
 ]

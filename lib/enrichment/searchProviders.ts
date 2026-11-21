@@ -873,7 +873,7 @@ export async function fetchCompanyWebsitePages(
   if (!website) return [];
   let root = website.startsWith("http") ? website : `https://${website}`;
   // The company's own pages are read on every run, whatever the search finds (owner, 2026-11-14): home, about, team / leadership, contact, news / press, and customers / solutions / industries / products / platform (where "for whom" is usually written).
-  const candidatePaths = ["", "/about", "/about-us", "/team", "/leadership", "/contact", "/news", "/press", "/newsroom", "/company"];   // at most 10 (owner, 2026-11-21): no product, customer, privacy or terms pages
+  const candidatePaths = ["", "/about", "/about-us", "/team", "/leadership", "/company", "/contact", "/contact-us", "/news", "/press", "/newsroom", "/customers", "/solutions", "/industries", "/products", "/platform"];
   let urls = candidatePaths.map((path) => root.replace(/\/+$/, "") + path);
   const pages: FetchedPage[] = [];
 

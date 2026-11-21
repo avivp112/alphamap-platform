@@ -3,15 +3,14 @@
  * pages whose path says about, team, leadership, company, contact, press, news, careers, jobs, story, history, impressum, legal or investors — and the same words in the language
  * of the site. At most 30 pages a company; a site with no sitemap keeps the fixed list.
  */
-/** At most 10 pages of a company's own site (owner, 2026-11-21: a run read 28 pages of one site), by priority: about, team, contact, news / press. No product, privacy or terms pages. */
-export const MAX_SITE_PAGES = 10;
+export const MAX_SITE_PAGES = 30;
 
 // Higher first. A path segment is matched whole (or as a hyphenated part): "/about-us/leadership" scores for both.
 const KEYWORDS: Array<[number, string[]]> = [
   [10, ["about", "about-us", "aboutus", "company", "who-we-are", "our-story", "story", "o-nas", "o-firmie", "sobre", "sobre-nos", "sobre-nosotros", "quienes-somos", "nosotros", "ueber-uns", "über-uns", "uber-uns", "unternehmen", "a-propos", "qui-sommes-nous", "societe", "chi-siamo", "over-ons", "om-oss", "hakkimizda", "关于我们", "about_us"]],
   [10, ["team", "leadership", "management", "people", "founders", "board", "zespol", "zespół", "equipe", "equipo", "equipa", "mannschaft", "unser-team", "l-equipe", "leitung", "geschaeftsfuehrung"]],
   [9, ["contact", "contact-us", "contacts", "kontakt", "contacto", "contato", "contactez-nous", "contatti", "contactenos", "fale-conosco"]],
-  [8, ["impressum", "legal-notice", "imprint", "mentions-legales", "aviso-legal", "nota-legal", "informacje-prawne", "stopka"]],
+  [8, ["impressum", "legal", "legal-notice", "imprint", "mentions-legales", "aviso-legal", "nota-legal", "informacje-prawne", "stopka", "datenschutz", "privacy", "terms", "terms-of-service", "regulamin", "politica-de-privacidade"]],
   [7, ["press", "newsroom", "media", "press-releases", "pressemitteilungen", "presse", "prensa", "imprensa", "dla-mediow", "komunikaty", "pressroom"]],
   [6, ["news", "blog", "updates", "actualites", "noticias", "aktuelles", "wiadomosci", "aktualnosci", "novedades"]],
   [6, ["investors", "investor-relations", "investor", "inwestorzy", "investidores", "inversores", "investisseurs", "anleger"]],

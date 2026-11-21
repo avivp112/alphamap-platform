@@ -24,3 +24,9 @@
 ## From batch 8 (2026-11-20)
 - `acquired` was not written in batch 8 (0/26) although found for Weezy (Getir, 2021-11-23, CNBC) and Nordigen: in a wet run the news rows are not open, and `acquired` is derived from them.
 - Zro: "Av. Brigadeiro Faria Lima" was read as Lima (Peru); it is an avenue in São Paulo.
+
+## Cost reduction (maintenance window, not now — owner, 2026-11-21)
+- Any change to which pages are read or which searches run must first pass a `REPLAY_FILL` run that completes the recordings of batches 5–8; only then compare in the gate. The news search stays on (round types and acquired come from it). The attempt of bd5bc10 (Tier 3 extraction off, 10 pages, deep dive for gaps only) lost 57 values in the gate and was reverted.
+- Screaming Frog: Will Hodson came back.
+- WebBank: must be excluded.
+- Paid-for sources (Lendo): to be excluded.

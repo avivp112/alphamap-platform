@@ -25,7 +25,7 @@ import { filterByEntity, deriveIdentityKeywords, nameQualifiersOnOwnSite, isName
 import { buildLabeledSources, markCompanyLinkedFiles, mergeDuplicateResults, classifySourceType, type RawSearchResult, type LabeledSource } from "./sources.ts";
 import { extractProfile, type SectorTaxonomy } from "./extractProfile.ts";
 import { extractFunding, roundToRoundLike, type V2Round } from "./extractFunding.ts";
-import { emptyMarketExtraction, extractMarket, normalizeUrlForMatch } from "./extractMarket.ts";
+import { extractMarket, normalizeUrlForMatch } from "./extractMarket.ts";
 import { normalizeForMatch } from "./evidence.ts";
 import { competitorTierClaims, type TieredClaim } from "./competitorTiers.ts";
 import { websiteLooksLikeAnotherCompany } from "./websiteIdentity.ts";
@@ -294,14 +294,6 @@ const EMPTY_FUNDING_OUTCOME: NonNullable<Awaited<ReturnType<typeof extractFundin
   stopReason: "skipped", inputTokens: 0, outputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0,
 };
 
-/**
- * The extraction of candidate fields (Tier 3, tiers.ts) is off (owner, 2026-11-21): they are not written to the database and cost about 40% of a run. TIER3_EXTRACTION=on brings it all back (the tests, a
- * comparison). TIER3_KEEP=news keeps only the news search and the market extraction — round types and the acquired status read headlines, so this is the one to try if the gate loses a round type.
- */
-const tier3All = () => process.env.TIER3_EXTRACTION === "on";
-const tier3Keeps = (what: string) => tier3All() || (process.env.TIER3_KEEP ?? "").split(",").map((x) => x.trim()).includes(what);
-const EMPTY_MARKET_OUTCOME = (): Awaited<ReturnType<typeof extractMarket>> => ({ extraction: { result: emptyMarketExtraction(), dropped: [] }, stopReason: "skipped", inputTokens: 0, outputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0 });
-
 // First-pass searches (10 web + 1 news): v1's query set, with its one overloaded "profile"
 // query (founders + HQ + headcount + acquisitions + patents + social links
 // in a single Google query) split into focused ones, one per section the
@@ -337,15 +329,13 @@ export async function runAllSearches(name: string, anchor: string, state: Search
   // SEARCH_SKIP=acquisitions,financials — leaves those core queries out, to measure what they add on the
   // golden set (owner, 2026-11-05: search is ~60% of the cost). Unset in every normal run.
   const skip = new Set((process.env.SEARCH_SKIP ?? "").split(",").map((x) => x.trim()).filter(Boolean));
-  // Searches for candidate fields only: competitors, headcount (team), LinkedIn company pages (owner, 2026-11-21).
-  if (!tier3All()) for (const l of ["competitors", "team", "linkedin"]) if (!tier3Keeps(l)) skip.add(l);
   // The same fixed searches in the language of the company's country (owner, round 10; localSearch.ts).
   if (lang && process.env.LOCAL_SEARCH !== "off") queries.push(...localQueries(name, anchor, lang));
   const [searchBatches, newsResults] = await Promise.all([
     Promise.all(queries.filter(([label]) => !skip.has(label)).map(([label, q]) => webSearch(q, label, state))),
     // Serper's News endpoint is primary for news; the site:-heavy query is
     // only used if Jina Search has to back it up (see newsSearch()).
-    !tier3Keeps("news") ? Promise.resolve([] as RawSearchResult[]) : newsSearch(
+    newsSearch(
       `"${name}"${anchor} news`,
       `"${name}"${anchor} news 2025 2026 site:techcrunch.com OR site:venturebeat.com OR site:prnewswire.com OR site:businesswire.com OR site:forbes.com OR site:sifted.eu launch funding announcement`,
       "news", state,
@@ -792,7 +782,7 @@ export async function collectCompany(
   if (skipFunding) console.log("    ⏭️   No funding/M&A words in the new pages — funding extraction skipped.");
   const [fundingOutcome, marketOutcome] = await Promise.all([
     skipFunding ? Promise.resolve(EMPTY_FUNDING_OUTCOME) : extractFunding(row.name, allSources, { client: ctx.anthropic, model: ctx.models.funding, request: shared("funding") }),
-    !ctx.update && !tier3Keeps("news") ? Promise.resolve(EMPTY_MARKET_OUTCOME()) : extractMarket(row.name, allSources, { client: ctx.anthropic, model: ctx.models.market, request: shared("market") }),
+    extractMarket(row.name, allSources, { client: ctx.anthropic, model: ctx.models.market, request: shared("market") }),
   ]);
   if (!fundingOutcome) {
     console.log("    ❌  Funding extraction returned no tool_use block at all.");
@@ -830,22 +820,21 @@ export async function collectCompany(
       bootstrapped: firstPassRounds.some((r) => normalizeRoundType(r.round_type) === "Bootstrapped"),
       hasDescription: !!(row.description || profile.profile.description),
       hasLocation: !!((row.city || profile.profile.city) && (row.country || profile.profile.country)),
-      // Headcount, competitors, news and patents are candidate fields: not a reason for a deep dive (owner, 2026-11-21); the deep dive runs only for a gap in a core field.
-      hasHeadcount: !tier3All() || row.employee_count != null || !!profile.metrics.employee_count || !!profile.metrics.employee_range,
+      hasHeadcount: row.employee_count != null || !!profile.metrics.employee_count || !!profile.metrics.employee_range,
       // Founders are covered by the "founded by" scan and the LinkedIn step
       // below; a whole profile deep dive just for them added nothing in a
       // 20-company run (+0 founders in every one).
       hasFounders: true,
-      competitorCount: !tier3All() ? 1 : (row.competitors?.length ?? 0) + market.competitors.length,
+      competitorCount: (row.competitors?.length ?? 0) + market.competitors.length,
       // Fresh news is worth a second look even when older articles are on file.
-      newsCount: !tier3All() ? 1 : market.news.length,
+      newsCount: market.news.length,
       hasFoundedYear: row.founded_year != null || !!profile.profile.founded_year,
       // Patent deep dive only when some source ties a patent to this company
       // — most startups have none, and searching for them anyway found
       // nothing in every real run while costing two searches + a call.
       // No patent deep dive: the first pass already searches Google Patents,
       // and the second search returned +0 patents in every real run.
-      patentCount: !tier3All() ? 1 : undefined,
+      patentCount: undefined,
     });
     // Funding deep dive only when NO financing round is known at all: with
     // rounds already found, the extra searches returned +0 rounds in 12 of
@@ -1008,7 +997,7 @@ export async function collectCompany(
       notable_pedigree: facts.eliteSchool ? true : undefined,
     };
   };
-  if (ctx.deepDive && (!ctx.update || gapFillDue) && componentOn("linkedin_people") && tier3Keeps("founder_background")) {
+  if (ctx.deepDive && (!ctx.update || gapFillDue) && componentOn("linkedin_people")) {
     const knownFounders = [
       ...(profile.profile.founders ?? []).map((f) => ({ name: f.name, linkedin_url: f.linkedin_url?.value, bio: f.bio })),
       ...(row.founders ?? []),
@@ -2180,7 +2169,7 @@ export async function collectCompany(
 
   // ── Stage 8b: patents — the EPO register only (epoPatents.ts) ───────────
   let patentsFromRegister = false;
-  if (componentOn("epo_patents") && tier3All()) try {
+  if (componentOn("epo_patents")) try {
     const legalName = registerLegalName ?? legal.legalName ?? null;
     // The anchor: the country of the register that gave the name, else the registered office on the legal pages.
     const legalNameCountry = registerLegalName ? registerCountry : legal.registeredCity ? countryOfCity(legal.registeredCity) ?? null : null;
@@ -2213,7 +2202,7 @@ export async function collectCompany(
   // Companies House only for the certain match whose country is the decided headquarters; Brreg for a Norwegian
   // headquarters; the Wayback copies of the company's About / Careers pages for every company with a website.
   const headcountExtra: HistoryPoint[] = [];
-  if (componentOn("headcount_sources") && tier3Keeps("headcount") && !ctx.update && !process.env.VITEST) {
+  if (componentOn("headcount_sources") && !ctx.update && !process.env.VITEST) {
     const hqNow = profile.profile.country?.value ?? (profile.profile.city ? countryOfCity(profile.profile.city.value) : null);
     const io: HeadcountIo = { ...nodeRegisterIo(), pause: () => new Promise((r) => setTimeout(r, 1000)) };
     const today = new Date().toISOString().slice(0, 10);

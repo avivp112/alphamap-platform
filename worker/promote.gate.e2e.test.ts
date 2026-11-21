@@ -189,7 +189,6 @@ import { openColumnsOf } from "../lib/enrichment/writeUnits";
 
 let stored: PromotionJob["collected"];
 beforeAll(async () => {
-  process.env.TIER3_EXTRACTION = "on";
   process.env.SERP_KEY = "test";
   process.env.TAVILY_API_KEY = "test";
   process.env.SEARCH_CACHE = "false";

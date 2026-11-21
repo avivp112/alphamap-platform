@@ -13,6 +13,7 @@
 import { spawnSync } from "child_process";
 import { existsSync, readFileSync, unlinkSync } from "fs";
 import { acceptanceReport, specPathsFor } from "./acceptance_check.ts";
+import { rowsFromCsv, runAcceptance } from "../lib/enrichment/acceptance.ts";
 import { addPendingFixes } from "../lib/enrichment/batchProcess.ts";
 
 const batch = Number(process.env.BATCH_NO);
@@ -21,7 +22,7 @@ const file = `pilot_batch_${batch}.json`;
 if (!existsSync(file)) { console.error(`${file} is missing`); process.exit(2); }
 const companies = (JSON.parse(readFileSync(file, "utf8")) as { companies: Array<{ id: string; name: string }> }).companies;
 if (companies.length > 500) { console.error(`${companies.length} companies: a batch is at most 500`); process.exit(2); }
-const perCompany = Number(process.env.COST_PER_COMPANY ?? 0.008);   // batch 8's live dry run: $0.012 a company with the candidate fields on; about 40% less with them off (owner, 2026-11-21)
+const perCompany = Number(process.env.COST_PER_COMPANY ?? 0.012);   // batch 8's live dry run: $0.61 for 50 companies
 const estimate = companies.length * perCompany;
 console.log(`Batch ${batch}: ${companies.length} compan(ies). Estimated model cost of the live run: about $${estimate.toFixed(2)} (at $${perCompany}/company; batch 8 cost $0.012). MAX_COST ${process.env.MAX_COST ?? "(not set)"}.`);
 if (process.env.RESUME === "1") console.log("RESUME=1: the live run replays what the recordings hold (companies that already ran) and fetches the rest live (REPLAY=1 REPLAY_FILL=1).");
@@ -39,26 +40,10 @@ const stop = (why: string): never => { console.error(`\n⛔  Batch ${batch} stop
 const common = (list: string[]) => ({ PILOT: "true", SITEMAP: "on", BATCH_NO: String(batch), CONCURRENCY: "10", PILOT_MAX_COMPANIES: String(list.length), ONLY: list.join(",") });
 const allIds = companies.map((c) => c.id);
 
-// 1. the gate (core fields): the replay of the written batches. Run on the recordings' day (PIN_DATE) when it is another day.
-// A loss of an acquired status or a round type with nothing else wrong comes from switching the news off (round types and acquired read headlines): the gate runs again at once with TIER3_KEEP=news, and the batch goes on with it (owner, 2026-11-21).
-const gate = (env: Record<string, string>) => {
-  console.log(`\n══ 1/7 regression gate${env.TIER3_KEEP ? ` (TIER3_KEEP=${env.TIER3_KEEP})` : ""} ══`);
-  // streamed to the screen and kept in regression_run.log, which is read below
-  const r = spawnSync("bash", ["-o", "pipefail", "-c", "npx tsx scripts/regression.ts 2>&1 | tee regression_run.log"], { stdio: "inherit", env: { ...process.env, ...(process.env.PIN_DATE ? { NODE_OPTIONS: `--require ${process.cwd()}/scripts/pin_date.cjs` } : {}), ...env } });
-  return { status: r.status ?? 1, out: existsSync("regression_run.log") ? readFileSync("regression_run.log", "utf8") : "" };
-};
-let g = gate({});
-if (g.status !== 0) {
-  const lost = [...g.out.matchAll(/❌ LOST .+? · (\w+) · /g)].map((m) => m[1]);
-  const accErr = [...g.out.matchAll(/❌ acceptance (\S+):/g)].map((m) => m[1]);
-  const newsRelated = lost.length + accErr.length > 0 && lost.every((f) => f === "acquired" || f === "round") && accErr.every((id) => /acquir|round|series/i.test(id));
-  if (!newsRelated) stop("the regression gate lost a value or an acceptance check is an ERROR — show it to Aviv; accept-lost is his decision alone");
-  console.log("\n⚠️  The gate lost only acquired / round values: trying again with the news kept (TIER3_KEEP=news).");
-  g = gate({ TIER3_KEEP: "news" });
-  if (g.status !== 0) stop("the regression gate still fails with TIER3_KEEP=news — show it to Aviv");
-  process.env.TIER3_KEEP = "news";
-  console.log("\n📣  REPORT: the gate passed only with TIER3_KEEP=news; this batch runs with the news search and the market extraction on (higher cost).");
-}
+// 1. the gate (core fields): the replay of the written batches. Run on the recordings' day (PIN_DATE) when it is another day. A loss or an acceptance ERROR stops the batch before anything is written.
+console.log("\n══ 1/7 regression gate ══");
+if (spawnSync("bash", ["-o", "pipefail", "-c", "npx tsx scripts/regression.ts 2>&1 | tee regression_run.log"], { stdio: "inherit", env: { ...process.env, ...(process.env.PIN_DATE ? { NODE_OPTIONS: `--require ${process.cwd()}/scripts/pin_date.cjs` } : {}) } }).status !== 0)
+  stop("the regression gate lost a value or an acceptance check is an ERROR — show it to Aviv; accept-lost is his decision alone (regression_run.log)");
 
 // 2. one live run (dry, everything found: the write reads its recordings)
 const liveDate = today();
@@ -84,17 +69,18 @@ if (liveStatus === 3) {
 }
 
 // 4. acceptance. A founder name that is not a person's name does not stop the batch: it is excluded by its content (pending_fixes.csv) and the rest is written (owner, 2026-11-21); any other ERROR stops it.
+// (This check is run here only: it is in no spec of the gate, whose result must stay what it was.)
 {
   console.log("\n══ 4/7 acceptance ══");
   const a = acceptanceReport("pilot_report_dry.csv", specPathsFor(batch));
   console.log(a.text);
-  const founder = a.blocked.filter((b) => b.check === "founder_name_is_person");
-  if (founder.length) {
-    addPendingFixes(founder.map((b) => ({ batch, company: b.company, field: b.field, value: b.after, reason: "acceptance: founder name is not a person's name" })));
-    console.log(`${founder.length} founder value(s) excluded by content (pending_fixes.csv): ${founder.slice(0, 5).map((b) => `${b.company}: ${b.after.slice(0, 40)}`).join(" | ")}`);
+  const founderCheck = runAcceptance([{ id: "founder_name_is_person", why: "A founder's name is the name of a person", kind: "founder_name_is_person" }], rowsFromCsv(readFileSync("pilot_report_dry.csv", "utf8")), [], today())[0];
+  if (!founderCheck.pass) {
+    const bad = founderCheck.offenders ?? [];
+    addPendingFixes(bad.map((b) => ({ batch, company: b.company, field: b.field, value: b.after, reason: "acceptance: founder name is not a person's name" })));
+    console.log(`${bad.length} founder value(s) excluded by content (pending_fixes.csv): ${bad.slice(0, 5).map((b) => `${b.company}: ${b.after.slice(0, 40)}`).join(" | ")}`);
   }
-  const other = new Set(a.blocked.filter((b) => b.check !== "founder_name_is_person").map((b) => b.check)).size + a.unblockable.length;
-  if (other > 0) stop(`${other} acceptance ERROR(s) on core fields`);
+  if (a.failed > 0) stop(`${a.failed} acceptance ERROR(s) on core fields`);
 }
 
 // 5. the write — from the live run's recordings; on another day than the live run, with the live run's date

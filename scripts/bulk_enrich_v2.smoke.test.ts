@@ -233,7 +233,7 @@ describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
     const tracker = join(mkdtempSync(join(tmpdir(), "review-")), "tracker.csv");
     writeFileSync(tracker, ["id,field,company,value,source_url,verdict,source_of_mark",
       ...WRITABLE_FIELDS.flatMap((f) => Array.from({ length: 20 }, (_, i) => `${f}.${i},${f},Co,v,,correct,test`))].join("\n"));
-    process.env.TIER3_EXTRACTION = "on"; process.env.OPEN_FIELDS_OVERRIDE = WRITABLE_FIELDS.join(",");
+    process.env.OPEN_FIELDS_OVERRIDE = WRITABLE_FIELDS.join(",");
     // Reports and batch files go to a temp dir, never into the repository.
     const outDir = mkdtempSync(join(tmpdir(), "out-"));
     process.env.BATCH_DIR = join(outDir, "field_review");
