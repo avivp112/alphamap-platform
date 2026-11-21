@@ -138,6 +138,7 @@
  */
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { retryingFetch } from "../lib/enrichment/dbFetch.ts";
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "dotenv";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
@@ -215,7 +216,7 @@ export async function initV1Context(): Promise<void> {
     console.warn("ℹ️   JINA_API_KEY not set — Jina Reader (company website fetch) will run unauthenticated, at a lower rate limit.\n");
   }
 
-  supabase  = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  supabase  = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { global: { fetch: retryingFetch() } });   // a network failure is tried again (dbFetch.ts)
   anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   // tavilyExhausted (declared further below, alongside the Tavily client

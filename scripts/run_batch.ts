@@ -38,7 +38,7 @@ const run = (label: string, cmd: string, args: string[], env: Record<string, str
   return r.status ?? 1;
 };
 const stop = (why: string): never => { console.error(`\n⛔  Batch ${batch} stopped: ${why}\n    Nothing was written by this script after this point.`); process.exit(1); };
-const common = (list: string[]) => ({ PILOT: "true", SITEMAP: "on", BATCH_NO: String(batch), CONCURRENCY: "10", PILOT_MAX_COMPANIES: String(list.length), ONLY: list.join(",") });
+const common = (list: string[]) => ({ PILOT: "true", SITEMAP: "on", BATCH_NO: String(batch), CONCURRENCY: process.env.CONCURRENCY ?? "10", PILOT_MAX_COMPANIES: String(list.length), ONLY: list.join(",") });
 const allIds = companies.map((c) => c.id);
 
 // FROM_STEP=5 (owner, 2026-11-21: the write failed on a network error): steps 2–4 are not repeated — no live run, no retry, no acceptance — and the write reads pilot_report_dry.csv and the recordings of that run. The companies the
