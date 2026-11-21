@@ -40,7 +40,8 @@ describe("owner rules, batch 8 sample round 2", () => {
     const run = (company: string, after: string) => runAcceptance([{ id: "founder_name_is_person", why: "", kind: "founder_name_is_person" }], [{ company, field: "founder", after, source_url: "", quote: "" }], [], T)[0].pass;
     expect(run("Buildium", "Buildium Co — Founder")).toBe(false);
     expect(run("Buildium", "Publishes Lessons — Founder")).toBe(false);
-    expect(run("Acme", "Raises — Founder")).toBe(false);          // one word
+    expect(run("Acme", "Raises — Founder")).toBe(false);          // a verb
+    expect(run("Acme", "Madonna — Founder")).toBe(true);          // one name is a person
     expect(run("Acme", "Jane Roe Co — Founder")).toBe(false);     // "Co" alone
     expect(run("Acme", "Jane Acme — Founder")).toBe(false);       // the company's own name
     expect(run("Acme", "Jane Roe — Co-Founder")).toBe(true);

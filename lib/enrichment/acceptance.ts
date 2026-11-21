@@ -157,8 +157,8 @@ export function runAcceptance(checks0: Check[], rows: Row[], notEnriched: string
           const tokens = name.split(/\s+/).map((t) => t.replace(/[.,;:()]/g, "").toLowerCase()).filter(Boolean);
           const own = fold(r.company).replace(/(inc|ltd|llc|corp|gmbh|ag|bv|the)$/g, "");
           let reason = "";
-          if (tokens.length < 2) reason = "one word";
-          else if (own.length >= 3 && fold(name).includes(own)) reason = "contains the company's name";
+          // (a person with one name is a person: no "one word" condition — owner, 2026-11-21)
+          if (own.length >= 3 && fold(name).includes(own)) reason = "contains the company's name";
           else if (tokens.some((t) => NOT_NAME.has(t))) reason = "a title or a company word";
           else if (tokens.some((t) => VERBS.has(t))) reason = "a verb of a headline";
           if (reason) { bad.push(r); why.push(`${r.company} "${name}" (${reason})`); }

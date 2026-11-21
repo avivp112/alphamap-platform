@@ -13,6 +13,7 @@
 import { spawnSync } from "child_process";
 import { existsSync, readFileSync, unlinkSync } from "fs";
 import { acceptanceReport, specPathsFor } from "./acceptance_check.ts";
+import { addPendingFixes } from "../lib/enrichment/batchProcess.ts";
 
 const batch = Number(process.env.BATCH_NO);
 if (!Number.isInteger(batch) || batch < 1) { console.error("BATCH_NO=<n> is required"); process.exit(2); }
@@ -39,7 +40,25 @@ const common = (list: string[]) => ({ PILOT: "true", SITEMAP: "on", BATCH_NO: St
 const allIds = companies.map((c) => c.id);
 
 // 1. the gate (core fields): the replay of the written batches. Run on the recordings' day (PIN_DATE) when it is another day.
-if (run("1/7 regression gate", "npx", ["tsx", "scripts/regression.ts"], process.env.PIN_DATE ? { NODE_OPTIONS: `--require ${process.cwd()}/scripts/pin_date.cjs` } : {}) !== 0) stop("the regression gate lost a value or an acceptance check is an ERROR — show it to Aviv; accept-lost is his decision alone");
+// A loss of an acquired status or a round type with nothing else wrong comes from switching the news off (round types and acquired read headlines): the gate runs again at once with TIER3_KEEP=news, and the batch goes on with it (owner, 2026-11-21).
+const gate = (env: Record<string, string>) => {
+  console.log(`\n══ 1/7 regression gate${env.TIER3_KEEP ? ` (TIER3_KEEP=${env.TIER3_KEEP})` : ""} ══`);
+  // streamed to the screen and kept in regression_run.log, which is read below
+  const r = spawnSync("bash", ["-o", "pipefail", "-c", "npx tsx scripts/regression.ts 2>&1 | tee regression_run.log"], { stdio: "inherit", env: { ...process.env, ...(process.env.PIN_DATE ? { NODE_OPTIONS: `--require ${process.cwd()}/scripts/pin_date.cjs` } : {}), ...env } });
+  return { status: r.status ?? 1, out: existsSync("regression_run.log") ? readFileSync("regression_run.log", "utf8") : "" };
+};
+let g = gate({});
+if (g.status !== 0) {
+  const lost = [...g.out.matchAll(/❌ LOST .+? · (\w+) · /g)].map((m) => m[1]);
+  const accErr = [...g.out.matchAll(/❌ acceptance (\S+):/g)].map((m) => m[1]);
+  const newsRelated = lost.length + accErr.length > 0 && lost.every((f) => f === "acquired" || f === "round") && accErr.every((id) => /acquir|round|series/i.test(id));
+  if (!newsRelated) stop("the regression gate lost a value or an acceptance check is an ERROR — show it to Aviv; accept-lost is his decision alone");
+  console.log("\n⚠️  The gate lost only acquired / round values: trying again with the news kept (TIER3_KEEP=news).");
+  g = gate({ TIER3_KEEP: "news" });
+  if (g.status !== 0) stop("the regression gate still fails with TIER3_KEEP=news — show it to Aviv");
+  process.env.TIER3_KEEP = "news";
+  console.log("\n📣  REPORT: the gate passed only with TIER3_KEEP=news; this batch runs with the news search and the market extraction on (higher cost).");
+}
 
 // 2. one live run (dry, everything found: the write reads its recordings)
 const liveDate = today();
@@ -64,17 +83,23 @@ if (liveStatus === 3) {
   } else console.log("\n══ 3/7 no infrastructure failure to retry ══");
 }
 
-// 4. acceptance
+// 4. acceptance. A founder name that is not a person's name does not stop the batch: it is excluded by its content (pending_fixes.csv) and the rest is written (owner, 2026-11-21); any other ERROR stops it.
 {
   console.log("\n══ 4/7 acceptance ══");
   const a = acceptanceReport("pilot_report_dry.csv", specPathsFor(batch));
   console.log(a.text);
-  if (a.failed > 0) stop(`${a.failed} acceptance ERROR(s) on core fields`);
+  const founder = a.blocked.filter((b) => b.check === "founder_name_is_person");
+  if (founder.length) {
+    addPendingFixes(founder.map((b) => ({ batch, company: b.company, field: b.field, value: b.after, reason: "acceptance: founder name is not a person's name" })));
+    console.log(`${founder.length} founder value(s) excluded by content (pending_fixes.csv): ${founder.slice(0, 5).map((b) => `${b.company}: ${b.after.slice(0, 40)}`).join(" | ")}`);
+  }
+  const other = new Set(a.blocked.filter((b) => b.check !== "founder_name_is_person").map((b) => b.check)).size + a.unblockable.length;
+  if (other > 0) stop(`${other} acceptance ERROR(s) on core fields`);
 }
 
 // 5. the write — from the live run's recordings; on another day than the live run, with the live run's date
 const pin = today() !== liveDate ? { PIN_DATE: liveDate, NODE_OPTIONS: `--require ${process.cwd()}/scripts/pin_date.cjs` } : {};
-if (run("5/7 write (core fields)", "npx", ["tsx", "scripts/bulk_enrich_v2.ts"], { ...common(processed), DRY_RUN: "false", REPLAY: "1", ...pin }) !== 0) stop("the write failed or was undone by its own check (see above)");
+if (run("5/7 write (core fields)", "npx", ["tsx", "scripts/bulk_enrich_v2.ts"], { ...common(processed), DRY_RUN: "false", REPLAY: "1", EXCLUDE_FROM: "pilot_report_dry.csv", ...pin }) !== 0) stop("the write failed or was undone by its own check (see above)");
 
 // 6. verify_written, then the Tier 3 values to candidate_values
 if (run("6/7 verify_written", "npx", ["tsx", "scripts/verify_written.ts"], { REPORT: "pilot_report_write.csv" }) !== 0) stop("a written value is missing from the database — undo with the run_id in batch_" + batch + "_summary.md");

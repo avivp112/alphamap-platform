@@ -136,7 +136,7 @@
  },
  {
   "id": "founder_name_is_person",
-  "why": "A founder's name is the name of a person: not the company's own name, not one word, no \"Co\" alone, no verb of a headline (Buildium: \"Buildium Co\", \"Publishes Lessons\")",
+  "why": "A founder's name is the name of a person: not the company's own name, no \"Co\" alone, no verb of a headline (Buildium: \"Buildium Co\", \"Publishes Lessons\")",
   "kind": "founder_name_is_person"
  }
 ]
