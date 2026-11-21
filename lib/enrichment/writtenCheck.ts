@@ -6,7 +6,7 @@
 export interface ReportRow { company_id: string; company: string; field: string; after: string; source_url?: string }
 export interface DbCompany {
   id: string; city?: string | null; country?: string | null; founded_year?: number | null; founding_country?: string | null; employee_range?: string | null; employee_count?: number | null;
-  description?: string | null; industry?: string | null; offices?: unknown; founders?: unknown; leadership?: unknown; competitors?: unknown; news?: unknown; patents?: unknown; status?: string | null; acquired_by?: string | null; exit_date?: string | null;
+  description?: string | null; industry?: string | null; sector_name?: string | null; offices?: unknown; founders?: unknown; leadership?: unknown; competitors?: unknown; news?: unknown; patents?: unknown; status?: string | null; acquired_by?: string | null; exit_date?: string | null;
   rounds: Array<{ round_type: string | null; amount_raised: number | null; announcement_date: string | null }>;
   headcount: Array<{ employee_count: number; snapshot_date: string }>;
 }
@@ -26,7 +26,12 @@ export function isWritten(r: ReportRow, c: DbCompany | undefined): Written {
     case "employee_range": return (c.employee_range ?? "") === a ? "yes" : "no";
     case "employee_count": return String(c.employee_count ?? "").replace(/\+$/, "") === a.replace(/\+$/, "") ? "yes" : "no";
     case "description": case "description_what_only": return fold(c.description ?? "").startsWith(fold(a).slice(0, 60)) ? "yes" : "no";
-    case "sector": return fold(c.industry ?? "") === fold(a.replace(/\s*\(industry:[^)]*\)\s*$/, "")) || low(c.industry).includes(fold(a.split("(")[0]).slice(0, 12)) ? "yes" : "no";
+    case "sector": {
+      // The sector is written to sector_id; the industry column is only filled when it was empty (writeCompany.ts), so a company that already had an industry keeps it (owner, 2026-11-21: batch 9 — 156 sectors "not in the database"
+      // that were there under sector_id). The sector name of sector_id counts as much as the industry column.
+      const want = fold(a.replace(/\s*\(industry:[^)]*\)\s*$/, ""));
+      return fold(c.sector_name ?? "") === want || fold(c.industry ?? "") === want || low(c.industry).includes(fold(a.split("(")[0]).slice(0, 12)) ? "yes" : "no";
+    }
     case "office": return low(c.offices).includes(a.split(",")[0].trim().toLowerCase()) ? "yes" : "no";
     case "founder": case "founder_bio": return low(c.founders).includes(a.split(" — ")[0].split(":")[0].trim().toLowerCase()) ? "yes" : "no";
     case "leader": case "board": return low(c.leadership).includes(a.split(" — ")[0].trim().toLowerCase()) ? "yes" : "no";

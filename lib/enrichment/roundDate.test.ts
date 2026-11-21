@@ -8,3 +8,13 @@ describe("roundDateForColumn", () => {
     expect(roundDateForColumn(null)).toEqual({ date: null, precision: null });
   });
 });
+
+import { isWritten } from "./writtenCheck.ts";
+describe("verify: a sector written to sector_id is in the database", () => {
+  const row = { company_id: "1", company: "Acme", field: "sector", after: "Health & Life Sciences" };
+  it("counts the sector name of sector_id, not only the industry column", () => {
+    expect(isWritten(row, { id: "1", industry: "Biotechnology", sector_name: "Health & Life Sciences", rounds: [], headcount: [] })).toBe("yes");
+    expect(isWritten(row, { id: "1", industry: "Biotechnology", sector_name: "Fintech", rounds: [], headcount: [] })).toBe("no");
+    expect(isWritten(row, { id: "1", industry: "Health & Life Sciences", rounds: [], headcount: [] })).toBe("yes");
+  });
+});
