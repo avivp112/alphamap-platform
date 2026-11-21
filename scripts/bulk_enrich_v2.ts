@@ -568,13 +568,25 @@ function batchNumber(): number {
 const BATCH_NO = batchNumber();
 
 async function registerRun(): Promise<string> {
-  const { data, error } = await supabase.from("enrichment_runs").insert({
-    pipeline: "v2", run_kind: "bulk", dry_run: false, git_sha: process.env.GIT_SHA ?? null,
-    profile_model: PROFILE_MODEL, funding_model: FUNDING_MODEL,
-    thresholds: { batch: BATCH_NO, MIN_PROFILE_CONFIDENCE, MIN_FUNDING_CONFIDENCE, MARKET_MODEL, MODE: PILOT ? "pilot" : UPDATE ? "update" : "full", ...(PILOT ? { PILOT_FIELDS, companies: ONLY.length } : {}) },
-  }).select("run_id").single();
-  if (error || !data) throw new Error(`could not register the run in enrichment_runs (${error?.message ?? "no row"}) — nothing written, since the run could not be undone`);
-  return (data as { run_id: string }).run_id;
+  // A network error against the database (owner, 2026-11-21: "fetch failed" on a batch of 500) is tried again, waiting between the tries; any other error stops at once.
+  const waits = [3_000, 10_000, 30_000];
+  let last = "no row";
+  for (let attempt = 0; attempt <= waits.length; attempt++) {
+    try {
+      const { data, error } = await supabase.from("enrichment_runs").insert({
+        pipeline: "v2", run_kind: "bulk", dry_run: false, git_sha: process.env.GIT_SHA ?? null,
+        profile_model: PROFILE_MODEL, funding_model: FUNDING_MODEL,
+        thresholds: { batch: BATCH_NO, MIN_PROFILE_CONFIDENCE, MIN_FUNDING_CONFIDENCE, MARKET_MODEL, MODE: PILOT ? "pilot" : UPDATE ? "update" : "full", ...(PILOT ? { PILOT_FIELDS, companies: ONLY.length } : {}) },
+      }).select("run_id").single();
+      if (!error && data) return (data as { run_id: string }).run_id;
+      last = error?.message ?? "no row";
+    } catch (e) { last = (e as Error).message; }
+    const network = /fetch failed|network|timeout|timed out|ECONN|ETIMEDOUT|EAI_AGAIN|socket|502|503|504|ENOTFOUND/i.test(last);
+    if (!network || attempt === waits.length) break;
+    console.log(`⚠️  enrichment_runs: ${last} — trying again in ${waits[attempt] / 1000} s (${attempt + 1}/${waits.length})`);
+    await new Promise((r) => setTimeout(r, waits[attempt]));
+  }
+  throw new Error(`could not register the run in enrichment_runs (${last}) — nothing written, since the run could not be undone`);
 }
 
 async function main() {

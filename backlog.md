@@ -30,3 +30,6 @@
 - Screaming Frog: Will Hodson came back.
 - WebBank: must be excluded.
 - Paid-for sources (Lendo): to be excluded.
+
+## Founder exclusion (maintenance window, from batch 9 — owner, 2026-11-21)
+- When a junk founder is excluded (Buildium / Monteiro, Nuro / Zhu and Ferguson, Travelier / Toister), the company's real founders must not be held back with it. The exclusion has to be by value, not by field.
