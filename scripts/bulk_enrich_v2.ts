@@ -67,7 +67,7 @@ import { websiteDomain, type DomainOwner } from "../lib/enrichment/websiteValida
 
 import { assertEnrichmentWritesAllowed, PILOT_FIELDS } from "../lib/enrichment/writeGate.ts";
 import { CORE_FIELDS, isCoreField } from "../lib/enrichment/tiers.ts";
-import { writeFileSync as realWriteFileSync, mkdirSync, readdirSync, readFileSync, existsSync } from "fs";
+import { writeFileSync as realWriteFileSync, appendFileSync, mkdirSync, readdirSync, readFileSync, existsSync } from "fs";
 import { passFor, headCommit, headTree, addWrittenBatch, saveBaseline, watched, loadBaseline, writtenBatches } from "../lib/enrichment/regressionGate.ts";
 import { pendingExcludes, heldFieldsOf, addHeldFields, readMarks as readSampleMarks, markKey as sampleMarkKey } from "../lib/enrichment/batchProcess.ts";
 // The regression gate (owner, 2026-11-19): REGRESSION=1 runs a written batch again as a dry pass on a clean slate (the database's own values left out, the memory off) and its files go to REGRESSION_DIR.
@@ -1026,7 +1026,16 @@ async function main() {
       const v = spawnSync("npx", ["tsx", "scripts/verify_written.ts"], { env: { ...process.env, REPORT: PILOT_REPORT }, encoding: "utf8" });
       const out = `${v.stdout ?? ""}${v.stderr ?? ""}`.split("\n").filter((l) => /Database vs|✗|✅|Error|error/.test(l)).join("\n");
       console.log(`🗄️   ${out || "database check gave no output"}`);
-      if (v.status !== 0) {
+      // A few values missing from the database do not undo the batch (owner, 2026-11-22): they are taken out of it (unwritten_values.csv, candidate_values). Many missing (more than 2% of the values, or 10) is a systematic
+      // fault — the batch is undone as before.
+      let systemic = v.status !== 0;
+      if (v.status === 1) {
+        const lines = `${v.stdout ?? ""}`.split("\n").map((l) => l.match(/^\s*✗ (.+?) · (\w+): (.*)$/)).filter((m): m is RegExpMatchArray => !!m);
+        const checked = Number(`${v.stdout ?? ""}`.match(/(\d+) value\(s\) checked/)?.[1] ?? 0);
+        const missingRows = lines.flatMap((m) => { const hit = pilotRows.find((r) => r.company === m[1] && r.field === m[2] && r.after.startsWith(m[3].trim().slice(0, 40))); return hit ? [{ company_id: hit.company_id, company: hit.company, field: hit.field, after: hit.after, source_url: hit.source_url, quote: hit.quote }] : []; });
+        if (lines.length > 0 && missingRows.length === lines.length && lines.length <= Math.max(10, Math.floor(checked * 0.02))) { await quarantineUnwritten(missingRows, "not in the database after the write"); systemic = false; }
+      }
+      if (v.status !== 0 && systemic) {
         console.error(v.status === 1 ? "⛔  A value of the report is not in the database." : "⚠️  The database check could not run.");
         if (v.status === 1 && process.env.AUTO_UNDO !== "false") {
           console.error("⛔  Undoing this run.");
@@ -1063,6 +1072,15 @@ async function main() {
       if (extra.length || missing.length) {
         for (const e of extra) console.log(`    ➕ written, not in the dry report: ${e}`);
         for (const m of missing) console.log(`    ➖ in the dry report, not written: ${m}`);
+        // Values the dry pass proposed and the write did not make are nothing wrong in the database: they are taken out of the batch and the rest stays (owner, 2026-11-22). Only a value written that nobody reviewed
+        // (extra) is a reason to undo — it cannot be taken out one by one.
+        if (missing.length) {
+          const missKeys = new Set([...expected].filter(([k]) => !written.has(k)).map(([k]) => k));
+          const rowsMissing = b.filter((r) => missKeys.has(keyOf(r[at("company")], r[at("field")], r[at("after")]))).map((r) => ({ company_id: r[at("company_id")] ?? "", company: r[at("company")], field: r[at("field")], after: r[at("after")], source_url: r[at("source_url")] ?? "", quote: r[at("quote")] ?? "" }));
+          await quarantineUnwritten(rowsMissing, "in the dry report, not written by the write");
+        }
+      }
+      if (extra.length) {
         if (process.env.AUTO_UNDO !== "false") {
           console.error("⛔  The database differs from the reviewed report — undoing this run.");
           const { spawnSync } = await import("child_process");
@@ -1074,6 +1092,24 @@ async function main() {
     }
     registerWritten();
   }
+}
+
+/**
+ * A core value that was not written, or is not in the database after the write, does not undo the batch (owner, 2026-11-22: two values of one company undid 500). It is taken out of the batch: listed in
+ * unwritten_values.csv and kept in candidate_values (rule "unwritten_core") with its source and quote, so nothing found is lost; everything else stays written.
+ */
+async function quarantineUnwritten(rows: Array<{ company_id: string; company: string; field: string; after: string; source_url?: string; quote?: string }>, why: string): Promise<void> {
+  if (!rows.length) return;
+  const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  try {
+    const had = existsSync("unwritten_values.csv");
+    appendFileSync("unwritten_values.csv", (had ? "" : "\uFEFF" + ["batch", "company", "field", "value", "why"].join(",") + "\r\n") + rows.map((r) => [BATCH_NO, r.company, r.field, r.after, why].map((c) => q(String(c))).join(",")).join("\r\n") + "\r\n");
+  } catch { /* a convenience */ }
+  try {
+    const { error } = await supabase.from("candidate_values").upsert(rows.filter((r) => r.company_id).map((r) => ({ startup_id: r.company_id, field: r.field, value: r.after, source_url: r.source_url || null, evidence_quote: r.quote || null, rule: "unwritten_core", batch: BATCH_NO, run_label: `batch_${BATCH_NO}` })), { onConflict: "startup_id,field,value_hash,batch", ignoreDuplicates: true });
+    if (error) console.log(`    ⚠️  candidate_values: ${error.message} (the values are in unwritten_values.csv)`);
+  } catch (e) { console.log(`    ⚠️  candidate_values: ${(e as Error).message} (the values are in unwritten_values.csv)`); }
+  console.log(`📤  ${rows.length} value(s) taken out of the batch (${why}): unwritten_values.csv and candidate_values; the rest stays written: ${rows.slice(0, 6).map((r) => `${r.company} · ${r.field}`).join(" | ")}${rows.length > 6 ? " …" : ""}`);
 }
 
 const isDirectlyInvoked = !!process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
