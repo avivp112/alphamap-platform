@@ -69,6 +69,7 @@ import { assertEnrichmentWritesAllowed, PILOT_FIELDS } from "../lib/enrichment/w
 import { CORE_FIELDS, isCoreField } from "../lib/enrichment/tiers.ts";
 import { writeFileSync as realWriteFileSync, appendFileSync, mkdirSync, readdirSync, readFileSync, existsSync } from "fs";
 import { passFor, headCommit, headTree, addWrittenBatch, saveBaseline, watched, loadBaseline, writtenBatches } from "../lib/enrichment/regressionGate.ts";
+import { parseVerifyMissing, quarantinable, dropRowsFromCsv } from "../lib/enrichment/postWrite.ts";
 import { pendingExcludes, heldFieldsOf, addHeldFields, readMarks as readSampleMarks, markKey as sampleMarkKey } from "../lib/enrichment/batchProcess.ts";
 // The regression gate (owner, 2026-11-19): REGRESSION=1 runs a written batch again as a dry pass on a clean slate (the database's own values left out, the memory off) and its files go to REGRESSION_DIR.
 const REGRESSION = process.env.REGRESSION === "1";
@@ -1030,10 +1031,16 @@ async function main() {
       // fault — the batch is undone as before.
       let systemic = v.status !== 0;
       if (v.status === 1) {
-        const lines = `${v.stdout ?? ""}`.split("\n").map((l) => l.match(/^\s*✗ (.+?) · (\w+): (.*)$/)).filter((m): m is RegExpMatchArray => !!m);
+        const lines = parseVerifyMissing(`${v.stdout ?? ""}`);
         const checked = Number(`${v.stdout ?? ""}`.match(/(\d+) value\(s\) checked/)?.[1] ?? 0);
-        const missingRows = lines.flatMap((m) => { const hit = pilotRows.find((r) => r.company === m[1] && r.field === m[2] && r.after.startsWith(m[3].trim().slice(0, 40))); return hit ? [{ company_id: hit.company_id, company: hit.company, field: hit.field, after: hit.after, source_url: hit.source_url, quote: hit.quote }] : []; });
-        if (lines.length > 0 && missingRows.length === lines.length && lines.length <= Math.max(10, Math.floor(checked * 0.02))) { await quarantineUnwritten(missingRows, "not in the database after the write"); systemic = false; }
+        const missingRows = lines.flatMap((m) => { const hit = pilotRows.find((r) => r.company === m.company && r.field === m.field && r.after.startsWith(m.valueStart.slice(0, 40))); return hit ? [{ company_id: hit.company_id, company: hit.company, field: hit.field, after: hit.after, source_url: hit.source_url, quote: hit.quote }] : []; });
+        if (missingRows.length === lines.length && quarantinable(lines.length, checked)) {
+          await quarantineUnwritten(missingRows, "not in the database after the write");
+          // The report, the baseline and the audit see only what was written: the values taken out leave pilotRows and the report file (verify_written then passes on the same file).
+          for (const m of missingRows) { const i = pilotRows.findIndex((r) => r.company === m.company && r.field === m.field && r.after === m.after); if (i >= 0) pilotRows.splice(i, 1); }
+          try { const cut = dropRowsFromCsv(readFileSync(PILOT_REPORT, "utf8"), missingRows); realWriteFileSync(PILOT_REPORT, cut.text); console.log(`    ✂️  ${cut.removed} row(s) taken out of ${PILOT_REPORT}`); } catch (e) { console.log(`    ⚠️  ${PILOT_REPORT} could not be cleaned: ${(e as Error).message}`); }
+          systemic = false;
+        }
       }
       if (v.status !== 0 && systemic) {
         console.error(v.status === 1 ? "⛔  A value of the report is not in the database." : "⚠️  The database check could not run.");
@@ -1059,7 +1066,7 @@ async function main() {
       } catch (e) { console.log(`⚠️  the batch could not be added to the regression gate: ${(e as Error).message}`); }
     };
     // After a wet run: what was written must be what the dry pass reported, row against row (owner, batch 6). Any difference undoes the run.
-    if (!DRY_RUN && runId && existsSync("pilot_report_preflight.csv") && process.env.PREFLIGHT !== "off") {
+    if (!DRY_RUN && runId && process.exitCode !== 1 && existsSync("pilot_report_preflight.csv") && process.env.PREFLIGHT !== "off") {
       const [h, ...b] = parseReportCsv(readFileSync("pilot_report_preflight.csv", "utf8"));
       const at = (n: string) => h.indexOf(n);
       const keyOf = (c: string, f: string, a: string) => `${foldName(c)}|${f}|${a.replace(/\s+/g, " ").trim()}`;
@@ -1098,7 +1105,10 @@ async function main() {
  * A core value that was not written, or is not in the database after the write, does not undo the batch (owner, 2026-11-22: two values of one company undid 500). It is taken out of the batch: listed in
  * unwritten_values.csv and kept in candidate_values (rule "unwritten_core") with its source and quote, so nothing found is lost; everything else stays written.
  */
-async function quarantineUnwritten(rows: Array<{ company_id: string; company: string; field: string; after: string; source_url?: string; quote?: string }>, why: string): Promise<void> {
+const quarantinedKeys = new Set<string>();
+async function quarantineUnwritten(rows0: Array<{ company_id: string; company: string; field: string; after: string; source_url?: string; quote?: string }>, why: string): Promise<void> {
+  // a value is taken out once, whichever check finds it first
+  const rows = rows0.filter((r) => { const k = `${foldName(r.company)}|${r.field}|${r.after.replace(/\s+/g, " ").trim()}`; if (quarantinedKeys.has(k)) return false; quarantinedKeys.add(k); return true; });
   if (!rows.length) return;
   const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   try {
