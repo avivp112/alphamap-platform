@@ -15,7 +15,9 @@ import { existsSync, readFileSync } from "fs";
 import { parseCsv } from "../lib/enrichment/acceptance.ts";
 import { writtenBatches } from "../lib/enrichment/regressionGate.ts";
 import { statedRoundLabels } from "../lib/enrichment/assemble.ts";
-import { roundUpdateChanges } from "../lib/enrichment/runChanges.ts";
+import { roundUpdateChanges, startupChanges } from "../lib/enrichment/runChanges.ts";
+import { samePersonName } from "../lib/enrichment/linkedin.ts";
+import { computeFieldConfidence } from "../lib/enrichment/confidence.ts";
 
 if (existsSync(".env")) config({ path: ".env" });
 const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -28,9 +30,51 @@ const infos: string[] = [];
 const only = (process.env.ONLY ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 const fold = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, "");
 
+/**
+ * FOUNDERS="Buildium:Michael Monteiro,Nuro:Jiajun Zhu" — founders the owner approved one by one (2026-11-23: real founders held back together with junk). Each is read, with its title, source and quote, from the
+ * carried_not_written.csv row (CARRIED=path), listed first; written only with APPROVED_BY=aviv DRY_RUN=false: appended to startups.founders (nobody is replaced or removed), with a field_changes row and a field_provenance row.
+ */
+async function foundersMode(list: string) {
+  const [head, ...body] = parseCsv(readFileSync(process.env.CARRIED ?? "carried_not_written.csv", "utf8").replace(/^\uFEFF/, ""));
+  const at = (c: string) => head.indexOf(c);
+  const rows = body.map((r) => ({ id: r[at("company_id")], company: r[at("company")], field: r[at("field")], value: r[at("value")] ?? "", source: r[at("source_url")] ?? "", quote: r[at("quote")] ?? "" })).filter((r) => r.field === "founder");
+  const picked: Array<{ id: string; company: string; name: string; title: string; value: string; source: string; quote: string }> = [];
+  for (const want of list.split(",").map((x) => x.trim()).filter(Boolean)) {
+    const [co, nm] = want.split(":").map((x) => x.trim());
+    const hit = rows.filter((r) => r.company.toLowerCase() === co.toLowerCase() && samePersonName(r.value.split(" — ")[0], nm));
+    if (hit.length !== 1) { console.log(`✗ ${want}: ${hit.length} row(s) in the file (exactly one is needed) — skipped`); continue; }
+    const h = hit[0]; picked.push({ id: h.id, company: h.company, name: h.value.split(" — ")[0].trim(), title: h.value.split(" — ").slice(1).join(" — ").trim(), value: h.value, source: h.source, quote: h.quote });
+  }
+  const todo: typeof picked = [];
+  for (const f of picked) {
+    const { data } = await db.from("startups").select("id, name, founders").eq("id", f.id).single();
+    const cur = ((data as { founders?: Array<{ name?: string; title?: string }> } | null)?.founders ?? []);
+    console.log(`\n${f.company} · founder: ${f.name} — ${f.title}\n   source: ${f.source}\n   quote: "${f.quote.slice(0, 400)}"\n   founders on file: ${cur.length ? cur.map((p) => `${p.name} (${p.title ?? ""})`).join("; ") : "none"}`);
+    console.log(`   quote names the person: ${samePersonName(f.name, f.quote) || f.quote.toLowerCase().includes(f.name.toLowerCase()) ? "yes" : "NO"} · says founder: ${/found/i.test(f.quote) ? "yes" : "NO"}`);
+    if (cur.some((p) => samePersonName(p.name ?? "", f.name))) { console.log("   already on file — nothing to write"); continue; }
+    todo.push(f);
+  }
+  if (!WRITE) { console.log(`\n${todo.length} founder(s) listed — nothing written. After the owner approves: FOUNDERS="…" APPROVED_BY=aviv DRY_RUN=false npx tsx scripts/correct_db.ts`); return; }
+  if (!todo.length) { console.log("nothing to write."); return; }
+  const { data: run, error } = await db.from("enrichment_runs").insert({ pipeline: "v2", run_kind: "on_demand", dry_run: false, thresholds: { MODE: "correct_db_founders", changes: todo.length } }).select("run_id").single();
+  if (error || !run) { console.error(`could not register the run (${error?.message}) — nothing changed`); process.exit(1); }
+  const runId = (run as { run_id: string }).run_id;
+  for (const f of todo) {
+    const { data } = await db.from("startups").select("founders").eq("id", f.id).single();
+    const cur = ((data as { founders?: Array<Record<string, unknown>> } | null)?.founders ?? []);
+    const next = [...cur, { name: f.name, title: f.title || null }];
+    const ch = await db.from("field_changes").insert(startupChanges(f.id, { founders: cur.length ? cur : null }, { founders: next }, runId)); if (ch.error) { console.error(`✗ ${f.company} ${f.name}: field_changes not recorded (${ch.error.message}) — not changed`); continue; }
+    const up = await db.from("startups").update({ founders: next }).eq("id", f.id); if (up.error) { console.error(`✗ ${f.company} ${f.name}: ${up.error.message}`); continue; }
+    const pv = await db.from("field_provenance").insert({ startup_id: f.id, field: `founders.${f.name}`, value: f.value, source_url: f.source, source_type: "news", confidence: computeFieldConfidence([{ source_type: "news" }]), run_id: runId, evidence_quote: f.quote, quote_original: f.quote });
+    console.log(pv.error ? `✔ ${f.company} ${f.name} added — ⚠️ provenance: ${pv.error.message}` : `✔ ${f.company} ${f.name} added`);
+  }
+  console.log(`recorded under run ${runId} (undo: RUN_ID=${runId} DRY_RUN=false npx tsx scripts/undo_run.ts)`);
+}
+
 interface Change { startup_id: string; company: string; table: "startups" | "funding_rounds"; id: string; column: string; old: unknown; now: unknown; source: string; quote: string }
 
 (async () => {
+  if (process.env.FOUNDERS) { await foundersMode(process.env.FOUNDERS); return; }
   const changes: Change[] = [];
   for (const n of writtenBatches()) {
     const f = `regression/out/batch_${n}/pilot_report.csv`;
