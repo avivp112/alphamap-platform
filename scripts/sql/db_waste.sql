@@ -10,10 +10,6 @@ select relname, pg_size_pretty(pg_relation_size(relid)) as heap,
        pg_size_pretty(pg_indexes_size(relid)) as indexes
 from pg_stat_user_tables where pg_relation_size(relid) > 5000000 order by pg_relation_size(relid) desc;
 -- 3. what makes startups big: the average stored size of each column (a sample of 2000 rows)
-select a.attname as column_name, a.atttypid::regtype as type,
-       (select avg(pg_column_size(t.*)) from (select 1) t) is null as dummy
-from pg_attribute a where a.attrelid = 'startups'::regclass and a.attnum > 0 and not a.attisdropped and false;
--- (use the next block instead: one query, one column at a time is not possible in plain SQL, so it lists the widest columns of a sample)
 with s as (select * from startups limit 2000)
 select key as column_name, round(avg(pg_column_size(value))) as avg_bytes, round(sum(pg_column_size(value)) / 1048576.0, 2) as mb_in_sample
 from s, lateral jsonb_each(to_jsonb(s)) group by key order by avg_bytes desc limit 12;
