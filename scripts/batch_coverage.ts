@@ -35,6 +35,19 @@ const load = (p: string) => { if (!existsSync(p)) return null; const [h, ...b] =
   const acq = [...(d.get("acquired") ?? [])];
   console.log(`\nacquired: found in the dry report ${acq.length} · written in the wet report ${w.get("acquired")?.size ?? 0} · database status now: ${acq.map((c) => String(rowsById.get(c)?.status ?? "?")).reduce((a: Record<string, number>, s) => (a[s] = (a[s] ?? 0) + 1, a), {} as Record<string, number>) && JSON.stringify(acq.map((c) => String(rowsById.get(c)?.status ?? "?")).reduce((a: Record<string, number>, s) => (a[s] = (a[s] ?? 0) + 1, a), {}))}`);
   for (const c of acq.slice(0, 15)) { const r = dry.find((x) => x.company_id === c && x.field === "acquired")!; console.log(`   ${r.company}: ${r.after} · origin ${r.origin}`); }
+  // Are the acquired values the run wrote the ones of the reviewed dry report? (the wet report has no acquired rows, the database does)
+  {
+    const { data } = await db.from("startups").select("id, name, status, acquired_by, exit_date").in("id", acq);
+    const dbById = new Map(((data ?? []) as Array<Record<string, unknown>>).map((x) => [x.id as string, x]));
+    const fold = (x: string) => x.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    let same = 0; const diff: string[] = [];
+    for (const c of acq) {
+      const r = dry.find((x) => x.company_id === c && x.field === "acquired")!, m = r.after.match(/^status = (\w+)(?: · (?:Acquired by (.+?)|Closed) \(([^)]*)\))?\s*$/), d = dbById.get(c);
+      const ok = !!m && !!d && d.status === m[1] && (!m[2] || fold(String(d.acquired_by ?? "")) === fold(m[2])) && (!m[3] || m[3] === "undated" || String(d.exit_date ?? "").slice(0, 10) === m[3]);
+      if (ok) same++; else diff.push(`${r.company}: report "${r.after}" · database ${d?.status}/${d?.acquired_by}/${d?.exit_date}`);
+    }
+    console.log(`acquired, report vs database: ${same} of ${acq.length} identical${diff.length ? "; different:\n   " + diff.join("\n   ") : ""}`);
+  }
   const runId = process.env.RUN_ID;
   if (runId && acq.length) {
     const { data } = await db.from("field_changes").select("startup_id, field, old_value, new_value").eq("run_id", runId).in("startup_id", acq).in("field", ["status", "acquired_by", "exit_date"]);
