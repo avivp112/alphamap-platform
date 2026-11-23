@@ -69,10 +69,11 @@ const fold = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").tri
   }
   console.log(`\nTotal: ${totalChecked} checked, ${totalMissing} missing.`);
   for (const nm of (process.env.SHOW ?? "").split(",").map((x) => x.trim()).filter(Boolean)) {
-    const { data } = await db.from("startups").select("id, name, city, country, description, status, updated_at").ilike("name", nm);
+    const { data } = await db.from("startups").select("id, name, city, country, description, status, acquired_by, exit_date, website, founders, updated_at").ilike("name", nm);
     for (const s of (data ?? []) as Array<Record<string, unknown>>) {
       console.log(`\n${nm}: city=${JSON.stringify(s.city)} country=${JSON.stringify(s.country)} description=${s.description ? JSON.stringify(String(s.description).slice(0, 80)) : "EMPTY"} status=${s.status} updated=${s.updated_at}`);
-      const { data: ch } = await db.from("field_changes").select("field, old_value, new_value, run_id, created_at").eq("startup_id", s.id as string).in("field", ["city", "country", "description"]).order("created_at");
+      console.log(`   id=${s.id} website=${s.website} acquired_by=${s.acquired_by} exit_date=${s.exit_date}\n   founders=${JSON.stringify(s.founders)?.slice(0, 400)}`);
+      const { data: ch } = await db.from("field_changes").select("field, old_value, new_value, run_id, created_at").eq("startup_id", s.id as string).in("field", ["city", "country", "description", "founders", "status"]).order("created_at");
       for (const c of (ch ?? []) as Array<Record<string, unknown>>) console.log(`   change ${c.field}: ${JSON.stringify(c.old_value)?.slice(0, 40)} → ${JSON.stringify(c.new_value)?.slice(0, 40)} run ${c.run_id} at ${c.created_at}`);
     }
   }
