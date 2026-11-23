@@ -46,7 +46,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { pathToFileURL } from "url";
 
 import { initV1Context, supabase } from "./bulk_enrich_all.ts";
-import { collectCompany, V2_STARTUP_COLUMNS, V2_ROUND_COLUMNS, type V2StartupRow, type V2FundingRoundRow } from "../lib/enrichment/collect.ts";
+import { collectCompany, V2_STARTUP_COLUMNS, V2_ROUND_COLUMNS, type V2StartupRow, type V2FundingRoundRow, type CollectResult } from "../lib/enrichment/collect.ts";
+import { saveCollected, loadCollected } from "../lib/enrichment/collectedStore.ts";
 import { writeCollected, BULK_THRESHOLDS } from "../lib/enrichment/writeCompany.ts";
 
 import { classifyTier, type TierRow, type TierRound } from "../lib/enrichment/queue.ts";
@@ -381,7 +382,12 @@ async function enrichCompany(
 ): Promise<void> {
   // ── Stages 0-9: collect (lib/enrichment/collect.ts; no writes) ─────────
   const seen = new SeenUrls(row.id);
-  const collected = await collectCompany(row, existingRounds, taxonomy, {
+  // FROM_COLLECTED=<dir> (owner, 2026-11-23, stage 3): the write reads what the live run collected for this company (SAVE_COLLECTED=<dir>) instead of collecting again — no model, no search, no replay of recordings.
+  // A company with no file, or whose rounds in the database changed since, is not written and is listed as not enriched (collected_missing / collected_stale).
+  const loaded = process.env.FROM_COLLECTED ? loadCollected(process.env.FROM_COLLECTED, row.id, existingRounds) : null;
+  const collected: CollectResult = loaded
+    ? (loaded.ok ? loaded.collected as unknown as CollectResult : { outcome: "error", reason: `collected_${loaded.reason}: ${loaded.detail}` })
+    : await collectCompany(row, existingRounds, taxonomy, {
     anthropic,
     models: { enrich: ENRICH_MODEL, profile: PROFILE_MODEL, funding: FUNDING_MODEL, market: MARKET_MODEL },
     update: UPDATE, deepDive: DEEP_DIVE, techGate: TECH_GATE, articlesToRead: ARTICLES_TO_READ, verbose: VERBOSE,
@@ -405,6 +411,10 @@ async function enrichCompany(
       return ((data ?? []) as Array<{ id: string; value: Omit<RoundHint, "source_url" | "id">; source_url: string | null }>).map((h) => ({ ...h.value, source_url: h.source_url, id: h.id }));
     },
   }, summary, searchState);
+  if (process.env.SAVE_COLLECTED && !loaded) {
+    try { saveCollected(process.env.SAVE_COLLECTED, row.id, collected, existingRounds); }
+    catch (e) { console.warn(`    ⚠️  collected not saved for ${row.name}: ${String(e)} — this company cannot be written from the live run`); }
+  }
 
   if (collected.outcome === "public") {
     summary.tally.removed_public++;

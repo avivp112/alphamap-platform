@@ -7,12 +7,12 @@
  *
  *   BATCH_NO=9 npx tsx scripts/run_batch.ts                       the plan and the cost estimate; runs nothing
  *   BATCH_NO=9 MAX_COST=8 GO=1 npx tsx scripts/run_batch.ts       runs (MAX_COST is the cap of the live run, in dollars; required; at the cap the batch goes on with what was collected)
- *   FROM_STEP=5 BATCH_NO=9 GO=1 GATE_PIN_DATE=2026-11-19 PIN_DATE=<day of the live run> …   steps 5–7 from the report and recordings of the live run (the gate first; no live run, no model call)
+ *   FROM_STEP=5 BATCH_NO=<n> GO=1 …   steps 4b–7 from collected/batch_<n>/ (what the live run kept): the gate, the backup, the write — no live run, no model call, no search, no replay of recordings (stage 3, 2026-11-23)
  *   RESUME=1 …                                                    a stopped batch: companies that already ran come from the recordings, the rest live
  * The companies are those of pilot_batch_<N>.json (scripts/pilot_sample.ts).
  */
 import { spawnSync } from "child_process";
-import { existsSync, readFileSync, unlinkSync } from "fs";
+import { existsSync, readFileSync, unlinkSync, rmSync } from "fs";
 import { acceptanceReport, specPathsFor } from "./acceptance_check.ts";
 import { rowsFromCsv, runAcceptance } from "../lib/enrichment/acceptance.ts";
 import { addPendingFixes } from "../lib/enrichment/batchProcess.ts";
@@ -56,7 +56,11 @@ console.log("\n══ 1/7 regression gate ══");
 if (spawnSync("bash", ["-o", "pipefail", "-c", "npx tsx scripts/regression.ts 2>&1 | tee regression_run.log"], { stdio: "inherit", env: { ...process.env, ...((process.env.GATE_PIN_DATE ?? process.env.PIN_DATE) ? { PIN_DATE: (process.env.GATE_PIN_DATE ?? process.env.PIN_DATE)!, NODE_OPTIONS: `--require ${process.cwd()}/scripts/pin_date.cjs` } : {}) } }).status !== 0)
   stop("the regression gate lost a value or an acceptance check is an ERROR — show it to Aviv; accept-lost is his decision alone (regression_run.log)");
 
+// What the live run collects for each company is kept (collected/batch_<N>/<company_id>.json) and the write reads it: no replay of recordings, no model call, no search (owner, 2026-11-23, stage 3).
+const collectedDir = `collected/batch_${batch}`;
 if (fromStep <= 4) {
+  rmSync(collectedDir, { recursive: true, force: true });   // a batch's collected companies are those of its own live run
+  process.env.SAVE_COLLECTED = collectedDir;                // inherited by the live run and by the retry of the infrastructure failures
   // 2. one live run (dry, everything found: the write reads its recordings)
   liveDate = today();
   // Exit code 3 = MAX_COST reached (owner, 2026-11-21): the companies not started are left out and everything that was collected goes on to the write; the rest waits for the next run.
@@ -95,9 +99,12 @@ if (fromStep <= 4) {
   }
 }
 
-// 5. the write — from the live run's recordings; on another day than the live run, with the live run's date
-const pin = fromStep >= 5 ? (process.env.PIN_DATE ? { PIN_DATE: process.env.PIN_DATE, NODE_OPTIONS: `--require ${process.cwd()}/scripts/pin_date.cjs` } : {}) : today() !== liveDate ? { PIN_DATE: liveDate, NODE_OPTIONS: `--require ${process.cwd()}/scripts/pin_date.cjs` } : {};
-if (run("5/7 write (core fields)", "npx", ["tsx", "scripts/bulk_enrich_v2.ts"], { ...common(processed), DRY_RUN: "false", REPLAY: fromStep >= 5 ? "strict" : "1", EXCLUDE_FROM: "pilot_report_dry.csv", ...pin }) !== 0) stop("the write failed or was undone by its own check (see above)");
+// 4b. the backup of the batch's rows (startups, funding_rounds, field_provenance) before anything is written; a backup that is not whole stops the batch
+if (run("4b/7 backup", "npx", ["tsx", "scripts/backup_batch.ts"], { BATCH_NO: String(batch), ONLY: processed.join(",") }) !== 0) stop("the backup is not whole — nothing was written");
+
+// 5. the write — from what the live run collected (collected/batch_<N>/), not from recordings: REPLAY=strict only keeps the web closed (the memory of verified sources reads its pages from the recordings).
+if (!existsSync(collectedDir)) stop(`${collectedDir} is missing — the live run keeps what it collected there; without it there is nothing to write from`);
+if (run("5/7 write (core fields)", "npx", ["tsx", "scripts/bulk_enrich_v2.ts"], { ...common(processed), DRY_RUN: "false", FROM_COLLECTED: collectedDir, REPLAY: "strict", EXCLUDE_FROM: "pilot_report_dry.csv" }) !== 0) stop("the write failed or was undone by its own check (see above)");
 
 // 6. verify_written, then the Tier 3 values to candidate_values
 if (run("6/7 verify_written", "npx", ["tsx", "scripts/verify_written.ts"], { REPORT: "pilot_report_write.csv" }) !== 0) stop("a written value is missing from the database — undo with the run_id in batch_" + batch + "_summary.md");

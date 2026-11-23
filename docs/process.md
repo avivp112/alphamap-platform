@@ -37,3 +37,10 @@ A field is visible in the pilot only after at least 150 random audited values wi
 
 ## 6. New rules
 Only in a maintenance window, about every 2,000 companies (every 4 batches), and only with Aviv's approval. A rule is aimed at a stated condition ("no founding year from a sentence that mentions an acquisition"), never a global tightening of a field. Acceptance: a REPLAY of all earlier batches — zero lost values in Tier 1; in Tier 2 every lost value is shown to Aviv and the rule enters only with his approval. Between windows findings go to `backlog.md` only.
+
+## The write reads what the live run kept (stage 3, 2026-11-23)
+- The live run saves what it collected for every company (`collected/batch_<N>/<company_id>.json`, lib/enrichment/collectedStore.ts; a file that does not come back identical is not saved). The write step (`bulk_enrich_v2.ts` with `FROM_COLLECTED`) loads it and calls `writeCollected` unchanged: no model call, no search, no replay of recordings. Pages the write still reads (the memory of verified sources, a news page's headline and image) come from the recordings (`REPLAY=strict`); a page not recorded means that value is not confirmed and is not written.
+- A company with no saved file, or whose rounds in the database changed since the live run, is not written: it is listed as not enriched (`collected_missing` / `collected_stale`).
+- Before the write: `scripts/backup_batch.ts` exports the batch's rows of startups, funding_rounds and field_provenance (`backups/batch_<N>_<time>/`); a backup that is not whole stops the batch.
+- `FROM_STEP=5` (gate, backup, write, verify, candidates, audit sample) is how a batch is written again from its own `collected/` directory. Batches written before this change (1–9) have no `collected/` directory.
+- Grouped writes (one upsert per table, also in verify and undo) are a separate change for the maintenance window, tested in the gate.
