@@ -39,3 +39,10 @@
 - A founder is declared only when the quote attributes the founding to our company: Usersnap's founders came from another blog quoted in a Usersnap post; CorPower's from Oscilla's SEC filing (a founder of another company, Oscilla); Bloom Security's name is not in its quote.
 - A founder's title must match its quote (Deliverect: the quote says CTO and CPO, the value CPO and President).
 - `acquired` is not written in a wet run (0/348 in batches 8 and 9): it is derived from the news rows, and in a wet run the news rows are not built because the news field is closed (Tier 3). Derive it from the news without writing the news. Found and not written: Buildium (RealPage), Weezy (Getir), Nordigen (GoCardless) and others in pilot_report_dry.csv.
+
+## Added 2026-11-23 (decisions of the owner; not for now)
+- Orb (batch 9): the dry report says "acquired by Adyen, 2026-06-11"; the database says active. Orb is one of the five strict-failed companies.
+- `acquired` is written to the database (43 of 46 in batch 9; 45 of 46 identical to the reviewed dry report) and does not appear in the wet report: the report is not a full record of what was written. Find where the write takes the acquired value from.
+- 75 companies of batch 9 have no HQ city and 73 no country (found for 40). Cause not known.
+- The baselines of batches 5–7 hold what today's code extracts from the recordings, not what the wet runs wrote (Humi, Mintifi, Mastertrust, Ruya, Okra, Brighte, Estimote, Conotoxia, Sami, Six Degrees: no provenance row for the values). Missing values are filled by the separate run for missing fields, after the maintenance window.
+- startups_search carries the 768-d `embedding` of startups (~25 MB), read by hybrid_lookalikes; leave it unless space needs it, and then change hybrid_lookalikes to read startups.embedding first.
