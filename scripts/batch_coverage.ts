@@ -35,6 +35,17 @@ const load = (p: string) => { if (!existsSync(p)) return null; const [h, ...b] =
   const acq = [...(d.get("acquired") ?? [])];
   console.log(`\nacquired: found in the dry report ${acq.length} · written in the wet report ${w.get("acquired")?.size ?? 0} · database status now: ${acq.map((c) => String(rowsById.get(c)?.status ?? "?")).reduce((a: Record<string, number>, s) => (a[s] = (a[s] ?? 0) + 1, a), {} as Record<string, number>) && JSON.stringify(acq.map((c) => String(rowsById.get(c)?.status ?? "?")).reduce((a: Record<string, number>, s) => (a[s] = (a[s] ?? 0) + 1, a), {}))}`);
   for (const c of acq.slice(0, 15)) { const r = dry.find((x) => x.company_id === c && x.field === "acquired")!; console.log(`   ${r.company}: ${r.after} · origin ${r.origin}`); }
+  const runId = process.env.RUN_ID;
+  if (runId && acq.length) {
+    const { data } = await db.from("field_changes").select("startup_id, field, old_value, new_value").eq("run_id", runId).in("startup_id", acq).in("field", ["status", "acquired_by", "exit_date"]);
+    const touched = new Set(((data ?? []) as Array<{ startup_id: string }>).map((x) => x.startup_id));
+    console.log(`acquired: of the ${acq.length} companies, run ${runId.slice(0, 8)} changed status/acquired_by/exit_date for ${touched.size}; the others already held it before the run.`);
+    for (const c of acq.filter((x) => String(rowsById.get(x)?.status) === "active")) console.log(`   status still active: ${dry.find((r) => r.company_id === c)?.company}`);
+  }
+  // companies of the batch whose field is EMPTY now — the fill-only writer can only fill these
+  const all = [...new Set(dry.map((r) => r.company_id).filter(Boolean))], emp = { description: 0, city: 0, country: 0 };
+  for (const c of all) { const s = rowsById.get(c); if (s && !s.description) emp.description++; if (s && !s.city) emp.city++; if (s && !s.country) emp.country++; }
+  console.log(`companies in the dry report ${all.length}: empty now — description ${emp.description}, hq_city ${emp.city}, hq_country ${emp.country}`);
   if (carried) {
     const by = new Map<string, number>(); for (const r of carried) by.set(r.field, (by.get(r.field) ?? 0) + 1);
     console.log(`\ncarried_not_written.csv: ${carried.length} row(s) by field: ${[...by].sort((a, b) => b[1] - a[1]).map(([f, n]) => `${f} ${n}`).join(" · ")}`);

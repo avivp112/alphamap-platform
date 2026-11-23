@@ -46,7 +46,16 @@ const fold = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").tri
       for (const h of (hs ?? []) as Array<Record<string, unknown> & { startup_id: string }>) byId.get(h.startup_id)?.headcount.push(h as never);
     }
     const rows: ReportRow[] = vals.map((v) => ({ company_id: idByName.get(fold(v.company)) ?? `NOT_FOUND:${v.company}`, company: v.company, field: v.field, after: v.value }));
-    const res = checkWritten(rows, byId);
+    // The baseline keeps an acquired value as three rows (status, buyer, date); each is compared with its own column. checkWritten expects the report's single "status = … · Acquired by …" row.
+    const acqRows = rows.filter((r) => r.field === "acquired"), otherRows = rows.filter((r) => r.field !== "acquired");
+    const acqMissing = acqRows.filter((r) => {
+      const c = byId.get(r.company_id); if (!c) return true; const v = r.after.trim();
+      if (/^(acquired|majority_acquired|closed)$/i.test(v)) return (c.status ?? "").toLowerCase() !== v.toLowerCase();
+      if (/^\d{4}-\d{2}(-\d{2})?$/.test(v)) return !(c.exit_date ?? "").startsWith(v);
+      return fold(c.acquired_by ?? "") !== fold(v);
+    });
+    const res0 = checkWritten(otherRows, byId);
+    const res = { missing: [...res0.missing, ...acqMissing], checked: res0.checked + acqRows.length, notChecked: res0.notChecked };
     totalMissing += res.missing.length; totalChecked += res.checked;
     console.log(`\n── batch ${n}: ${vals.length} core value(s) in the baseline · ${res.checked} checked against the database · ${res.notChecked} not checkable · ${res.missing.length} MISSING${amb.length ? ` · ambiguous name(s): ${[...new Set(amb)].join(", ")}` : ""}`);
     const missIds = [...new Set(res.missing.map((m) => m.company_id).filter((x) => !x.startsWith("NOT_FOUND")))];
@@ -55,7 +64,8 @@ const fold = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").tri
       const { data } = await db.from("field_changes").select("startup_id, run_id").in("startup_id", missIds.slice(i, i + 50));
       for (const r of (data ?? []) as Array<{ startup_id: string; run_id: string | null }>) { if (!runsOf.has(r.startup_id)) runsOf.set(r.startup_id, new Set()); if (r.run_id) runsOf.get(r.startup_id)!.add(r.run_id); }
     }
-    for (const m of res.missing) console.log(`  ✗ ${m.company} · ${m.field}: ${m.after.slice(0, 100)}${m.company_id.startsWith("NOT_FOUND") ? "  [company not found by name]" : `  [runs touching it: ${[...(runsOf.get(m.company_id) ?? [])].join(" ") || "none recorded"}]`}`);
+    const dbHolds = (m: ReportRow) => { const c = byId.get(m.company_id) as (DbCompany & Record<string, unknown>) | undefined; if (!c) return ""; const col: Record<string, unknown> = { hq_city: c.city, hq_country: c.country, founded_year: c.founded_year, description: c.description, sector: c.sector_name ?? c.industry, acquired: `${c.status} / ${c.acquired_by} / ${c.exit_date}` }; return m.field in col ? `  [database holds: ${col[m.field] == null || col[m.field] === "" ? "EMPTY" : String(col[m.field]).slice(0, 60)}]` : ""; };
+    for (const m of res.missing) console.log(`  ✗ ${m.company} · ${m.field}: ${m.after.slice(0, 100)}${dbHolds(m)}${m.company_id.startsWith("NOT_FOUND") ? "  [company not found by name]" : `  [runs touching it: ${[...(runsOf.get(m.company_id) ?? [])].join(" ") || "none recorded"}]`}`);
   }
   console.log(`\nTotal: ${totalChecked} checked, ${totalMissing} missing.`);
   for (const nm of (process.env.SHOW ?? "").split(",").map((x) => x.trim()).filter(Boolean)) {
