@@ -33,3 +33,9 @@
 
 ## Founder exclusion (maintenance window, from batch 9 — owner, 2026-11-21)
 - When a junk founder is excluded (Buildium / Monteiro, Nuro / Zhu and Ferguson, Travelier / Toister), the company's real founders must not be held back with it. The exclusion has to be by value, not by field.
+
+## From the batch 9 audit (2026-11-23) — for the maintenance window; each must pass the gate
+- A grant ("bags $2.5M grant from EC", MinerEye) and a contract ("$318M contract with the U.S. Department of War", Dataminr) are not funding rounds.
+- A founder is declared only when the quote attributes the founding to our company: Usersnap's founders came from another blog quoted in a Usersnap post; CorPower's from Oscilla's SEC filing (a founder of another company, Oscilla); Bloom Security's name is not in its quote.
+- A founder's title must match its quote (Deliverect: the quote says CTO and CPO, the value CPO and President).
+- `acquired` is not written in a wet run (0/348 in batches 8 and 9): it is derived from the news rows, and in a wet run the news rows are not built because the news field is closed (Tier 3). Derive it from the news without writing the news. Found and not written: Buildium (RealPage), Weezy (Getir), Nordigen (GoCardless) and others in pilot_report_dry.csv.

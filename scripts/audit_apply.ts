@@ -29,6 +29,8 @@ const wrong = new Map<number, string>();
 for (const p of (process.env.WRONG ?? "").split(",").map((x) => x.trim()).filter((x) => x && x !== "none")) { const [n, ...why] = p.split("="); const num = Number(n); if (!drawn.some((d) => d.n === num)) { console.error(`#${n} is not in ${file}`); process.exit(2); } wrong.set(num, why.join("=").trim() || "wrong in the audit"); }
 if (!process.env.WRONG) { console.error("WRONG=<numbers> (or WRONG=none) is required"); process.exit(2); }
 const WRITE = process.env.DRY_RUN === "false";
+// FIX_ROLE="28=Co-Founder & CTO;29=Co-Founder & CPO": a founder row marked wrong whose NAME is right and whose title the quote contradicts gets the title corrected instead of the person removed (owner, 2026-11-23: Deliverect).
+const fixRole = new Map<number, string>((process.env.FIX_ROLE ?? "").split(";").map((x) => x.trim()).filter(Boolean).map((x) => { const [n, ...t] = x.split("="); return [Number(n), t.join("=").trim()] as [number, string]; }));
 const AUDIT = "eval/field_audit.json";
 const cumBefore: FieldAudit = existsSync(AUDIT) ? JSON.parse(readFileSync(AUDIT, "utf8")) : {};
 const cum = accumulate(cumBefore, batch, drawn, new Set(wrong.keys()));
@@ -64,6 +66,16 @@ const SCALAR: Record<string, string[]> = { description: ["description", "value_p
         changes.push(...startupChanges(f.company_id, row as unknown as Record<string, unknown>, patch, run.run_id));
         const ch = await db.from("field_changes").insert(changes); if (ch.error) { manual.push(`${f.company} · ${field}: field_changes ${ch.error.message}`); continue; }
         const up = await db.from("startups").update(patch).eq("id", f.company_id); if (up.error) { manual.push(`${f.company} · ${field}: ${up.error.message}`); continue; }
+      } else if (field === "founder" && fixRole.has(f.n)) {
+        const name = f.value.split(" — ")[0].trim().toLowerCase(), title = fixRole.get(f.n)!;
+        const { data: row } = await db.from("startups").select("id, founders").eq("id", f.company_id).single();
+        const list = ((row as { founders?: Array<{ name?: string; title?: string }> } | null)?.founders ?? []);
+        if (!list.some((p) => (p.name ?? "").trim().toLowerCase() === name)) { manual.push(`${f.company} · founder ${name}: not in the list`); continue; }
+        const fixed = list.map((p) => ((p.name ?? "").trim().toLowerCase() === name ? { ...p, title } : p));
+        const ch = await db.from("field_changes").insert(startupChanges(f.company_id, { founders: list }, { founders: fixed }, run.run_id)); if (ch.error) { manual.push(`${f.company} · founder role: ${ch.error.message}`); continue; }
+        const up = await db.from("startups").update({ founders: fixed }).eq("id", f.company_id); if (up.error) { manual.push(`${f.company} · founder role: ${up.error.message}`); continue; }
+        console.log(`✓ ${f.company} · ${f.value.split(" — ")[0]}: title corrected to "${title}" (the person stays)`);
+        continue;
       } else if (field === "founder") {
         const name = f.value.split(" — ")[0].trim().toLowerCase();
         const { data: row } = await db.from("startups").select("id, founders").eq("id", f.company_id).single();
