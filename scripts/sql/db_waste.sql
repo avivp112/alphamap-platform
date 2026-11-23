@@ -17,9 +17,11 @@ from s, lateral jsonb_each(to_jsonb(s)) group by key order by avg_bytes desc lim
 select (select count(*) from startups) as startups_rows, (select count(*) from startups_search) as startups_search_rows;
 -- 5. the scheduled jobs that are active now, and the last 5 runs of each (are the crawl / ingest jobs really running?)
 select jobname, schedule, active from cron.job order by jobname;
--- 6. when each of the big tables last got a row (is it still being written?)
+-- 6. when the big tables were last written (job_signals and oss_projects have no timestamp column, so rows inserted/updated since the statistics began are used for them)
 select 'early_job_postings' as t, max(first_seen_at)::text as last_row, count(*) from early_job_postings
-union all select 'job_signals', max(created_at)::text, count(*) from job_signals
 union all select 'oss_project_metrics', max(observed_at)::text, count(*) from oss_project_metrics
-union all select 'oss_projects', max(created_at)::text, count(*) from oss_projects
 union all select 'field_changes', max(created_at)::text, count(*) from field_changes;
+select relname, n_tup_ins as inserted, n_tup_upd as updated, n_tup_del as deleted from pg_stat_user_tables where relname in ('job_signals','oss_projects','oss_project_metrics','early_job_postings');
+-- 7. pg_cron's own log is the third biggest table: how many rows, since when, and which jobs write it
+select count(*) as rows, min(start_time)::date as oldest, max(start_time)::date as newest from cron.job_run_details;
+select j.jobname, count(*) as runs from cron.job_run_details d join cron.job j on j.jobid = d.jobid group by 1 order by 2 desc limit 12;
