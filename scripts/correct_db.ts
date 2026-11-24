@@ -62,6 +62,40 @@ async function websiteMode(list: string) {
 }
 
 /**
+ * EXIT_DATE="Qnami=2026-05-28" with SOURCE=<address> QUOTE="<the sentence that states it>" — a purchase's date corrected (owner, 2026-11-24: Qnami, the first announcement is Quantum Design's press release of 28 May). Listed first: the date on
+ * file, the new one, the source and the quote. Written only with APPROVED_BY=aviv DRY_RUN=false: startups.exit_date, a field_changes row under a run of its own (undo_run.ts), and the field_provenance row of exit_date.
+ */
+async function exitDateMode(list: string) {
+  const source = process.env.SOURCE ?? "", quote = process.env.QUOTE ?? "";
+  const picks = list.split(",").map((x) => x.trim()).filter(Boolean).map((x) => { const i = x.indexOf("="); return { name: x.slice(0, i).trim(), date: x.slice(i + 1).trim() }; });
+  const todo: Array<{ id: string; name: string; old: string | null; date: string }> = [];
+  for (const p of picks) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(p.date)) { console.log(`✗ ${p.name}: "${p.date}" is not a date (YYYY-MM-DD) — skipped`); continue; }
+    const { data: cs } = await db.from("startups").select("id, name, status, acquired_by, exit_date").ilike("name", p.name);
+    const rows = (cs ?? []) as Array<{ id: string; name: string; status: string | null; acquired_by: string | null; exit_date: string | null }>;
+    if (rows.length !== 1) { console.log(`✗ ${p.name}: ${rows.length} compan(ies) match (exactly one is needed) — skipped`); continue; }
+    const c = rows[0];
+    console.log(`\n${c.name} (status ${c.status}, acquired by ${c.acquired_by}): exit_date ${c.exit_date} → ${p.date}\n   source: ${source || "(none given)"}\n   quote: "${quote.slice(0, 300)}"`);
+    if (!/acquired/.test(c.status ?? "")) { console.log("   ⛔ the company is not marked acquired — skipped"); continue; }
+    if (!source || !quote) { console.log("   ⛔ SOURCE and QUOTE are required (the date needs the sentence that states it) — skipped"); continue; }
+    todo.push({ id: c.id, name: c.name, old: c.exit_date, date: p.date });
+  }
+  if (!WRITE) { console.log(`\n${todo.length} date(s) listed — nothing written. After the owner approves: EXIT_DATE="…" SOURCE=… QUOTE=… APPROVED_BY=aviv DRY_RUN=false npx tsx scripts/correct_db.ts`); return; }
+  if (!todo.length) { console.log("nothing to write."); return; }
+  const { data: run, error } = await db.from("enrichment_runs").insert({ pipeline: "v2", run_kind: "on_demand", dry_run: false, thresholds: { MODE: "correct_db_exit_date", changes: todo.length } }).select("run_id").single();
+  if (error || !run) { console.error(`could not register the run (${error?.message}) — nothing changed`); process.exit(1); }
+  const runId = (run as { run_id: string }).run_id;
+  for (const t of todo) {
+    const ch = await db.from("field_changes").insert(startupChanges(t.id, { exit_date: t.old }, { exit_date: t.date }, runId)); if (ch.error) { console.error(`✗ ${t.name}: field_changes not recorded (${ch.error.message}) — not changed`); continue; }
+    const up = await db.from("startups").update({ exit_date: t.date }).eq("id", t.id);
+    if (up.error) { console.error(`✗ ${t.name}: ${up.error.message}`); continue; }
+    const pv = await db.from("field_provenance").insert({ startup_id: t.id, field: "exit_date", value: t.date, source_url: source, source_type: "company_site", confidence: computeFieldConfidence([{ source_type: "company_site" }]), run_id: runId, evidence_quote: quote });
+    console.log(pv.error ? `✔ ${t.name}: exit_date ${t.old} → ${t.date} — ⚠️ provenance: ${pv.error.message}` : `✔ ${t.name}: exit_date ${t.old} → ${t.date}`);
+  }
+  console.log(`recorded under run ${runId} (undo: RUN_ID=${runId} DRY_RUN=false npx tsx scripts/undo_run.ts)`);
+}
+
+/**
  * FOUNDERS="Buildium:Michael Monteiro,Nuro:Jiajun Zhu" — founders the owner approved one by one (2026-11-23: real founders held back together with junk). Each is read, with its title, source and quote, from the
  * carried_not_written.csv row (CARRIED=path), listed first; written only with APPROVED_BY=aviv DRY_RUN=false: appended to startups.founders (nobody is replaced or removed), with a field_changes row and a field_provenance row.
  */
@@ -105,6 +139,7 @@ async function foundersMode(list: string) {
 interface Change { startup_id: string; company: string; table: "startups" | "funding_rounds"; id: string; column: string; old: unknown; now: unknown; source: string; quote: string }
 
 (async () => {
+  if (process.env.EXIT_DATE) { await exitDateMode(process.env.EXIT_DATE); return; }
   if (process.env.WEBSITE) { await websiteMode(process.env.WEBSITE); return; }
   if (process.env.FOUNDERS) { await foundersMode(process.env.FOUNDERS); return; }
   const changes: Change[] = [];

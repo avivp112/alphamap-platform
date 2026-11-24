@@ -74,7 +74,7 @@ import { teamPeopleCount, foundersFromText, foundersFromCards, foundersFromMenti
 import { componentOn } from "./components.ts";
 import { preferBetterRoundSources } from "./roundSourcePreference.ts";
 import { ambiguousName } from "./rowRules.ts";
-import { identityOverlap, englishShare } from "./identityMismatch.ts";
+import { identityOverlap, englishShare, identityAbout, looksLikeErrorPage, MIN_ENGLISH } from "./identityMismatch.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts, findLinkedInLink } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
@@ -284,6 +284,8 @@ export interface CollectedCompany {
   /** Domains on no list (roundSources.ts) that a round came from: for the owner's review list. */
   unlistedDomains?: Array<{ domain: string; url: string }>;
   /** LinkedIn profile links found by a Google search (linkedin.ts findLinkedInLink): a link only, with the result that shows it; never a source of a field. */
+  /** The search profile did not fit the site's own pages and the entity check refused an article as another company's (identityMismatch.ts). */
+  identityMismatch?: { overlap: number };
   personLinks?: Array<{ name: string; kind: "founder" | "leader"; role?: string; url: string; source_url: string; quote: string }>;
 }
 
@@ -748,8 +750,14 @@ export async function collectCompany(
   // Why a proposed value was not kept, in the words of the step that dropped it (owner, 2026-11-15: no silent drop).
   const fates = { hq: null as string | null, founders: new Map<string, string>() };
   // Is an article about THIS company or a namesake (articleEntity.ts)? Compared with the profile: the country its domain suggests, what it does.
+  let identityState: { overlap: number } | null = null;   // set when the profile does not fit the site's own pages
+  let identityRejected = false;                          // and the entity check refused an article as another company's
   const articleIsThisCompany = async (title: string, url: string, text: string) => {
-    const company: CompanyProfileForMatch = { name: row.name, website: effectiveWebsite ?? row.website, countryHint: countryOfHost(domain) ?? row.country ?? null, about: [profile.profile.description, profile.profile.value_proposition, row.description].filter(Boolean).join(" ") };
+    // The company's own pages decide what it is when the profile from the search does not fit them (identityMismatch.ts; owner, 2026-11-24: Aperio, whose search profile was another company's).
+    const ownText = websitePages.map((p) => p.prompt_content ?? p.content).join(" ");
+    const idv = identityOverlap([profile.profile.description, profile.profile.value_proposition].filter(Boolean).join(" "), ownText);
+    identityState = idv?.mismatch ? { overlap: idv.share } : null;
+    const company: CompanyProfileForMatch = { name: row.name, website: effectiveWebsite ?? row.website, countryHint: countryOfHost(domain) ?? row.country ?? null, about: idv?.mismatch ? identityAbout(ownText) :  [profile.profile.description, profile.profile.value_proposition, row.description].filter(Boolean).join(" ") };
     return judgeArticleEntity(async (request) => {
       const msg = await ctx.anthropic.messages.create(requestFor(request, ctx.models.enrich));
       ctx.recordCost(ctx.models.enrich, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheReadTokens: 0, cacheWriteTokens: 0 } as never);
@@ -1880,6 +1888,7 @@ export async function collectCompany(
     // Does the profile the search gave describe the company whose site was read? (identityMismatch.ts; owner, 2026-11-24: Aperio). Logged only for now: the overlap of the profile's words with the site's own pages.
     { const own = websitePages.map((p) => p.prompt_content ?? p.content).join(" ");
       const ov = identityOverlap([profile.profile.description, profile.profile.value_proposition].filter(Boolean).join(" "), own);
+      if (!ov && own.length > 200 && (profile.profile.description || profile.profile.value_proposition)) console.log(`    🧭  identity: no verdict — ${looksLikeErrorPage(own) ? "the site's text is an error / block page" : englishShare(own) < MIN_ENGLISH ? `the site is not in English (english ${englishShare(own).toFixed(2)})` : "too little text to compare"}`);
       if (ov) { const pText = [profile.profile.description, profile.profile.value_proposition].filter(Boolean).join(" ");
         console.log(`    🧭  identity: the profile against the site's own pages — overlap ${ov.share.toFixed(2)} (${ov.profileWords} profile words, ${ov.siteWords} site words, english ${englishShare(own).toFixed(2)})${ov.mismatch ? " ⚠️ identity_mismatch" : ""}`);
         if (ov.mismatch) console.log(`        profile: ${pText.replace(/\s+/g, " ").slice(0, 150)}\n        site:    ${own.replace(/\s+/g, " ").slice(0, 150)}`); } }
@@ -1901,7 +1910,7 @@ export async function collectCompany(
         const v = await judgeNews(n, { ...newsDeps, about });
         if (!v.keep) { console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — ${v.message}: ${n.url}`); bump(stats.droppedByReason, v.reason); continue; }
         const entity = await articleIsThisCompany(v.item.title, v.item.url, sourceByUrl(v.item.url)?.content ?? String((n as { summary?: string | null }).summary ?? ""));
-        if (!entity.keep) { console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — another company's (${entity.reason}): ${n.url}`); bump(stats.droppedByReason, "news_other_company"); continue; }
+        if (!entity.keep) { if (identityState) identityRejected = true; console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — another company's (${entity.reason}): ${n.url}`); bump(stats.droppedByReason, "news_other_company"); continue; }
         if (v.dated) { console.log(`    📅  news "${n.title.slice(0, 50)}" dated ${v.item.published_date} from ${v.dated === "address" ? "its address" : "the page's code"}`); bump(stats.droppedByReason, "news_date_recovered"); }
         (v.item as { date_basis?: string }).date_basis = v.dated ? (v.dated === "address" ? "address" : "code") : "given";
         keptNews.push(v.item as typeof n); continue;
@@ -2309,5 +2318,6 @@ export async function collectCompany(
     ...(headcountExtra.length ? { headcountExtra } : {}),
     ...(ruleHits.length ? { ruleHits } : {}),
     ...(personLinks.length ? { personLinks } : {}),
+    ...(identityState && identityRejected ? { identityMismatch: { overlap: identityState.overlap } } : {}),
   };
 }

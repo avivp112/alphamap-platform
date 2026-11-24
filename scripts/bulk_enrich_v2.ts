@@ -526,6 +526,9 @@ async function enrichCompany(
         }
         companyRows = companyRows.filter((x) => x.field !== "name_proposal");
       }
+      // The search profile did not fit the company's own pages and an article was refused as another company's: a flag for the reviewer, never a value (lib/enrichment/identityMismatch.ts, owner 2026-11-24).
+      { const im = (collected as { identityMismatch?: { overlap: number } }).identityMismatch;
+        if (im) companyRows.push({ company_id: row.id, company: row.name, field: "identity_mismatch", before: "", after: `identity_mismatch: the profile from the search does not fit the site's own pages (word overlap ${im.overlap.toFixed(2)}); the site decides what the company is`, source_url: row.website ?? "", quote: "", origin: "text" } as (typeof companyRows)[number]); }
       // A description with no tag: classified here, from the verified description (the memory carried it, so this run's classification never saw it).
       const desc = companyRows.find((r) => r.field === "description" || r.field === "description_what_only");
       if (desc && !companyRows.some((r) => r.field === "tags") && anthropic && !heldRow(row.name, "tags")) {
