@@ -196,7 +196,9 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
     const host = (u: string) => { try { return new URL(u.startsWith("http") ? u : `https://${u}`).hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; } };
     const mine = host(o.domain), h = host(url);
     const onMine = !!mine && (h === mine || h.endsWith(`.${mine}`));
-    if (!onMine) return `${companyName} is a name several companies carry: a value stands only on the site on file (${mine})`;
+    // News and the purchase read from it are external sources by nature, and the entity check already compared each of them with the company's own pages (collect.ts articleIsThisCompany; identityMismatch.ts): they may stand on
+    // another site. Every other field stays "only from the site on file" (owner, 2026-11-24: Aperio — the purchase by Leica stands, the $4.5M round of Aperio Systems does not).
+    if (!onMine && !["news", "acquired"].includes(r.field)) return `${companyName} is a name several companies carry: a value stands only on the site on file (${mine})`;
   }
   const bad = isListingOrSponsoredUrl(url);
   if (bad) return bad === "sponsored_content" ? "its source is sponsored content" : "its source is a tag, list or search page, not the article";

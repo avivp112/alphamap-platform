@@ -177,7 +177,10 @@ export function purchaseEvents<T extends PurchaseItem>(items: T[], companyName: 
     // The date of the purchase is the earliest of the reports of that purchase (owner, 2026-11-24: Buildium 11-06 not 12-20, Enso, Rhebo): the announcement always comes before the completion, so no word of a headline
     // decides and no party's own later report stands before an earlier one. (A date read from a page's code still stands after one that is not, below.)
     const base = ok;
-    const trusted = base.filter((x) => x.date_basis !== "code");
+    // A date read from a page's code is trusted only on a wire release (prnewswire, businesswire, globenewswire: the dateline is the release's own date); on a buyer's site or a blog the code's date can be a draft's (owner, 2026-11-24: Aperio — Leica's
+    // release of 2012-08-21 on prnewswire; UltraVox — a blog's 09-30 beside the release of 10-01).
+    const wire = (x: T) => /(?:^|\.)(?:prnewswire|businesswire|globenewswire)\.[a-z.]+$/i.test((() => { try { return new URL(x.url).hostname; } catch { return ""; } })());
+    const trusted = base.filter((x) => x.date_basis !== "code" || wire(x));
     const pool = trusted.length ? trusted : base;
     // Always the same one, whatever the order the searches returned them in: the earliest date, then the report that states the purchase, then the address.
     const isHit = (x: T) => hits.some((e) => e.x === x);

@@ -14,6 +14,13 @@
    "approved_by": "aviv",
    "approved_on": "2026-11-24",
    "why": "Business Today, 2023-11-22, the first report; the reviewed date 2023-11-23 was a day later"
+  },
+  {
+   "company": "Qnami",
+   "after": "status = acquired · Acquired by Quantum Design (2026-06-04)",
+   "approved_by": "aviv",
+   "approved_on": "2026-11-24",
+   "why": "a known difference of one day: the database keeps 2026-06-03; Quantum Design's press release of 2026-05-28 (a PDF on qdusa.com) is not read (backlog.md)"
   }
  ],
  "excluded": [
