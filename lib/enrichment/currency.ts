@@ -15,7 +15,9 @@
  * original figure and no USD amount (never a guessed rate). Pure.
  */
 
-export type Currency = "USD" | "EUR" | "GBP" | "CHF" | "INR" | "ILS" | "JPY" | "CAD" | "AUD" | "SEK";
+export type Currency = "USD" | "EUR" | "GBP" | "CHF" | "INR" | "ILS" | "JPY" | "CAD" | "AUD" | "SEK"
+  // Without a yearly rate here (owner, 2026-11-23: Shengshu's RMB 600M and Mobilint's KRW 70 billion were read as dollars): kept as written, never converted.
+  | "CNY" | "KRW" | "BRL" | "MXN" | "SGD" | "HKD" | "NZD" | "AED" | "SAR" | "ZAR" | "NGN" | "KES" | "EGP" | "TRY" | "PLN" | "DKK" | "NOK" | "CZK" | "THB" | "IDR" | "MYR" | "PHP" | "TWD";
 
 // USD for one unit, yearly average (ECB / Federal Reserve H.10 annual
 // averages, rounded). An estimate: the round's own day may differ by a few percent.
@@ -42,6 +44,29 @@ const MARKERS: Array<[Currency, RegExp, RegExp]> = [
   ["CAD", /(C\$|\bCAD)\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(Canadian dollars?\b|CAD\b)/i],
   ["AUD", /(A\$|\bAUD)\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(Australian dollars?\b|AUD\b)/i],
   ["SEK", /\bSEK\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(kronor\b|SEK\b)/i],
+  ["CNY", /(\bRMB|\bCNY|\bCN¥|\bRenminbi)\s?$/i, /^\s?(million|billion|mn|bn|m|b|k)?\s*(yuan\b|RMB\b|CNY\b|renminbi\b|元)/i],
+  ["KRW", /(₩|\bKRW)\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(won\b|KRW\b)/i],
+  ["BRL", /(R\$|\bBRL)\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(reais\b|BRL\b)/i],
+  ["MXN", /(MX\$|\bMXN)\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(Mexican pesos?\b|MXN\b)/i],
+  ["SGD", /(S\$|\bSGD)\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(Singapore dollars?\b|SGD\b)/i],
+  ["HKD", /(HK\$|\bHKD)\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(Hong Kong dollars?\b|HKD\b)/i],
+  ["NZD", /(NZ\$|\bNZD)\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(New Zealand dollars?\b|NZD\b)/i],
+  ["AED", /\bAED\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(dirhams?\b|AED\b)/i],
+  ["SAR", /\bSAR\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(Saudi riyals?\b|SAR\b)/i],
+  ["ZAR", /\bZAR\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(rand\b|ZAR\b)/i],
+  ["NGN", /(₦|\bNGN)\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(naira\b|NGN\b)/i],
+  ["KES", /(\bKES|\bKSh)\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(Kenyan shillings?\b|KES\b)/i],
+  ["EGP", /\bEGP\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(Egyptian pounds?\b|EGP\b)/i],
+  ["TRY", /(₺|\bTRY)\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(lira\b|TRY\b)/i],
+  ["PLN", /\bPLN\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(zloty\b|złoty\b|PLN\b)/i],
+  ["DKK", /\bDKK\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(Danish kroner\b|DKK\b)/i],
+  ["NOK", /\bNOK\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(Norwegian kroner\b|NOK\b)/i],
+  ["CZK", /\bCZK\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(Czech korunas?\b|CZK\b)/i],
+  ["THB", /(฿|\bTHB)\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(baht\b|THB\b)/i],
+  ["IDR", /\bIDR\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(rupiah\b|IDR\b)/i],
+  ["MYR", /(\bMYR|\bRM)\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(ringgit\b|MYR\b)/i],
+  ["PHP", /(₱|\bPHP)\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(Philippine pesos?\b|PHP\b)/i],
+  ["TWD", /(NT\$|\bTWD)\s?$/, /^\s?(million|billion|mn|bn|m|b|k)?\s*(Taiwan dollars?\b|TWD\b)/i],
 ];
 
 const SCALE: Record<string, number> = { thousand: 1e3, k: 1e3, million: 1e6, mn: 1e6, m: 1e6, billion: 1e9, bn: 1e9, b: 1e9 };
@@ -62,6 +87,9 @@ export function currencyOfAmount(amount: number, quote: string | null | undefine
     const after = quote.slice(m.index! + m[1].length, m.index! + m[0].length + 24);
     if (/(US\$|\bUSD)\s?$/i.test(before)) return "USD";
     for (const [cur, pre, post] of MARKERS) if (pre.test(before) || post.test(after)) return cur;
+    // A three-letter code that is not USD right beside the figure is a currency this file does not know: kept as written, never read as dollars.
+    const code = /\b([A-Z]{3})\s?$/.exec(before)?.[1] ?? /^\s?(?:million|billion|mn|bn|m|b|k)?\s*([A-Z]{3})\b/.exec(after)?.[1];
+    if (code && code !== "USD" && !/^(AND|THE|FOR|NEW|OUR|ITS|ALL|ONE|TWO|BUT|ARE|WAS|HAS|CEO|CTO|COO|CFO|INC|LLC|LTD|AGO|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|JAN|FEB|MAR|APR)$/.test(code)) return code as Currency;
     return "USD";
   }
   return null;

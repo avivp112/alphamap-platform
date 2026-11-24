@@ -95,6 +95,15 @@ if (fromStep <= 4) {
       addPendingFixes(bad.map((b) => ({ batch, company: b.company, field: b.field, value: b.after, reason: "acceptance: founder name is not a person's name" })));
       console.log(`${bad.length} founder value(s) excluded by content (pending_fixes.csv): ${bad.slice(0, 5).map((b) => `${b.company}: ${b.after.slice(0, 40)}`).join(" | ")}`);
     }
+    // A round whose quote writes the amount in another currency than the line's: excluded by value, the batch goes on (owner, 2026-11-23; the row rules already drop it, this is the check behind them).
+    {
+      const cur = runAcceptance([{ id: "round_currency_matches_quote", why: "A round's currency is the currency of its quote", kind: "round_currency_matches_quote" }], rowsFromCsv(readFileSync("pilot_report_dry.csv", "utf8")), [], today())[0];
+      if (!cur.pass) {
+        const bad = cur.offenders ?? [];
+        addPendingFixes(bad.map((b) => ({ batch, company: b.company, field: b.field, value: b.after, reason: "acceptance: the currency is not the quote's" })));
+        console.log(`${bad.length} round(s) excluded by value, the currency is not the quote's (pending_fixes.csv): ${bad.slice(0, 5).map((b) => `${b.company}: ${b.after.slice(0, 40)}`).join(" | ")}`);
+      }
+    }
     if (a.failed > 0) stop(`${a.failed} acceptance ERROR(s) on core fields`);
   }
 }

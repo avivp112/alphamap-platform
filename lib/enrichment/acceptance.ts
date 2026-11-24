@@ -5,7 +5,7 @@
 import { acquirerIn, buyerKey } from "./acquisition.ts";
 import { quoteIsNotASentence } from "./evidence.ts";
 import { roleRegex } from "./people.ts";
-import { rowProblem, roundKey, cleanCompetitorName } from "./rowRules.ts";
+import { rowProblem, roundKey, cleanCompetitorName, roundCurrencyProblem } from "./rowRules.ts";
 import { isAddressLine } from "./headquarters.ts";
 import { isCoreField } from "./tiers.ts";
 
@@ -29,6 +29,7 @@ export type Check = (
   | { id: string; why: string; kind: "news_dates_before_run" }
   | { id: string; why: string; kind: "one_news_per_acquisition" }
   | { id: string; why: string; kind: "founder_name_is_person" }
+  | { id: string; why: string; kind: "round_currency_matches_quote" }
   | { id: string; why: string; kind: "tags_include"; company: string; include: string; not_only?: string }
 /** `offenders`: the report rows that broke the check — what a wet run does not write when the check is an ERROR (owner, batch 6). field "*" = the whole company. */
 export interface Result { id: string; why: string; pass: boolean; detail: string; severity: "error" | "gap"; offenders?: Row[] }
@@ -145,6 +146,11 @@ export function runAcceptance(checks0: Check[], rows: Row[], notEnriched: string
       case "news_dates_before_run": {
         const bad = rows.filter((r) => r.field === "news" && /^\d{4}-\d{2}-\d{2}/.test(r.after) && r.after.slice(0, 10) >= today);
         return { ...base, pass: bad.length === 0, detail: bad.length ? `dated ${today} or later: ${bad.slice(0, 2).map((r) => `${r.company} ${r.after.slice(0, 50)}`).join(" | ")}` : `no news dated ${today} or later`, offenders: bad };
+      }
+      case "round_currency_matches_quote": {
+        // The currency a round's quote writes the amount in is the currency of the line (owner, 2026-11-23: Shengshu's "RMB 600M" and Mobilint's KRW read as dollars).
+        const bad = rows.filter((x) => x.field === "round" && !/\sfilled:/.test(x.after) && roundCurrencyProblem(x.after, x.quote));
+        return { ...base, pass: bad.length === 0, detail: bad.length ? `currency differs from the quote: ${bad.slice(0, 3).map((x) => `${x.company} ${x.after.slice(0, 40)} (${roundCurrencyProblem(x.after, x.quote)})`).join(" | ")}` : "every round's currency is the quote's", offenders: bad };
       }
       case "founder_name_is_person": {
         // A founder's name is the name of a person (owner, 2026-11-21: Buildium's "Buildium Co" and "Publishes Lessons" from the headline "Buildium Co-Founder Publishes Lessons"): not the company's own name,

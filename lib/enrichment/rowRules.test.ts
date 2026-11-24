@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { rowProblem, applyRowRules, acquiredFromNews } from "./rowRules";
+import { rowProblem, applyRowRules, acquiredFromNews, titleMatchingQuote } from "./rowRules";
 import { runAcceptance, rowsFromCsv, type Check } from "./acceptance";
 import { onlyAsHyphenatedSuffix, namesCompanyUpFront } from "./newsRelevance";
 import { readFileSync } from "fs";
@@ -956,5 +956,53 @@ describe("batch 8 sample check (owner, 2026-11-19)", () => {
       { company: "Acme", field: "news", after: "2025-10-08 — Acme raises $60M to expand", source_url: "https://fortune.com/2025/10/08/acme-raises-60m-series-b/", quote: "" },
     ] as never, "Acme", "2026-11-19");
     expect(g.rows.find((r) => r.field === "round")?.after).toMatch(/^Unknown \$60M/);
+  });
+});
+
+describe("quality rules of the maintenance window (owner, 2026-11-23)", () => {
+  const rp = (field: string, after: string, quote: string, company = "Acme", url = "https://techcrunch.com/x") => rowProblem({ company, field, after, quote, source_url: url }, company, "2026-11-23");
+  it("a grant, a contract and an award are not a funding round (MinerEye, Dataminr)", () => {
+    expect(rp("round", "Unknown $2.5M · 2025", "MinerEye bags $2.5M grant from the European Commission", "MinerEye")).toMatch(/grant, a contract or an award/);
+    expect(rp("round", "Unknown $318M · 2025", "Dataminr wins a $318M contract with the U.S. Department of War", "Dataminr")).toMatch(/grant, a contract or an award/);
+    expect(rp("round", "Seed $5M · 2025", "Acme raised $5M in seed funding led by Index and was awarded a $1M grant", "Acme")).toBeNull();   // the grant is another figure
+  });
+  it("a plan to raise is not a round that closed", () => {
+    expect(rp("round", "Series A $20M · 2025", "Acme plans to raise $20M in a Series A round next year")).toMatch(/plan to raise/);
+    expect(rp("round", "Series A $20M · 2025", "Acme raised $20M in a Series A round; it plans to raise more next year")).toBeNull();
+  });
+  it("an amount in another currency is not a dollar amount (Shengshu RMB, Mobilint KRW)", () => {
+    expect(rp("round", "Series A $600M · 2025", "Shengshu closes an RMB 600 million Series A round", "Shengshu")).toMatch(/CNY/);
+    expect(rp("round", "Series C $70B · 2025", "Mobilint raised KRW 70 billion in a Series C", "Mobilint")).toMatch(/KRW/);
+    expect(rp("round", "Series A $10M · 2025", "Acme raised a $10 million Series A")).toBeNull();
+  });
+  it("a founder needs a quote that names the person and says the founding (Bloom Security)", () => {
+    expect(rp("founder", "Ann Lee — Founder", "Bloom Security is a cloud security company founded in 2022", "Bloom Security")).toMatch(/does not name the person/);
+    expect(rp("founder", "Ann Lee — CEO", "Ann Lee is the CEO of Acme", "Acme")).toMatch(/does not say the person founded/);
+    expect(rp("founder", "Jiajun Zhu — Co-Founder & Co-CEO", "Jiajun Zhu Co-Founder & Co-CEO", "Nuro", "https://www.nuro.ai/company")).toBeNull();
+  });
+  it("a founding of another company is not this company's (CorPower / Oscilla, Usersnap)", () => {
+    expect(rp("founder", "Ann Lee — Co-Founder", "Ann Lee, co-founder of Oscilla, signed the filing", "CorPower Ocean")).toMatch(/another company \(Oscilla\)/);
+    expect(rp("founder", "Ann Lee — Founder", "Quoted Blog was founded by Ann Lee and Bo Chen", "Usersnap")).toMatch(/another company/);
+    expect(rp("founder", "Michael Monteiro — Co-founder", "Buildium was founded in 2004 by Michael Monteiro and Dimitris Georgakopoulos", "Buildium")).toBeNull();
+  });
+  it("the role is written only as far as the quote gives it (Deliverect)", () => {
+    expect(titleMatchingQuote("Co-Founder & CPO", "Jelte Vrijhoef, Co-Founder and CTO of Deliverect")).toBe("Co-Founder");
+    expect(titleMatchingQuote("Co-Founder & CTO", "Jelte Vrijhoef, Co-Founder and CTO")).toBe("Co-Founder & CTO");
+    expect(titleMatchingQuote("Co-Founder & Chief Technology Officer", "co-founder and CTO")).toBe("Co-Founder & Chief Technology Officer");
+    const out = applyRowRules([{ company: "Deliverect", field: "founder", after: "Jérôme Laredo — President", quote: "Jérôme Laredo, Co-Founder and CPO of Deliverect", source_url: "https://deliverect.com/team" }], "Deliverect", "2026-11-23");
+    expect(out.rows[0].after).toBe("Jérôme Laredo — Founder");
+  });
+});
+
+describe("acceptance: round_currency_matches_quote (owner, 2026-11-23)", () => {
+  it("fails on a dollar line whose quote says RMB, passes on a matching one", () => {
+    const rows = [
+      { company: "Shengshu", field: "round", after: "Series A $600M · 2025", source_url: "https://x.test", quote: "closes an RMB 600 million Series A" },
+      { company: "Acme", field: "round", after: "Seed $5M · 2025", source_url: "https://x.test", quote: "raised $5 million in seed funding" },
+    ];
+    const r = runAcceptance([{ id: "c", why: "w", kind: "round_currency_matches_quote" }], rows as never, [], "2026-11-23")[0];
+    expect(r.pass).toBe(false);
+    expect((r.offenders ?? []).map((x) => x.company)).toEqual(["Shengshu"]);
+    expect(runAcceptance([{ id: "c", why: "w", kind: "round_currency_matches_quote" }], rows.slice(1) as never, [], "2026-11-23")[0].pass).toBe(true);
   });
 });

@@ -32,4 +32,15 @@ describe("a round keeps the currency its source states (owner, 2026-11-01: Helsi
     expect(formatOriginal(102_500_000, "EUR")).toBe("€102.5M");
     expect(formatOriginal(20_000_000, "CHF")).toBe("CHF 20M");
   });
+
+  it("RMB, KRW and the other currencies without a rate are read as what the quote says, never as dollars (owner, 2026-11-23: Shengshu, Mobilint)", () => {
+    expect(currencyOfAmount(600_000_000, "Shengshu closes an RMB 600 million Series A")).toBe("CNY");
+    expect(currencyOfAmount(600_000_000, "raised 600 million yuan")).toBe("CNY");
+    expect(currencyOfAmount(70_000_000_000, "Mobilint raised KRW 70 billion in Series C")).toBe("KRW");
+    expect(currencyOfAmount(70_000_000_000, "raised 70 billion won")).toBe("KRW");
+    expect(currencyOfAmount(5_000_000, "raised R$ 5 million")).toBe("BRL");
+    expect(currencyOfAmount(5_000_000, "raised XYZ 5 million")).toBe("XYZ");   // a code the file does not know stays as written
+    expect(currencyOfAmount(5_000_000, "raised $5 million")).toBe("USD");
+    expect(toUsd(600_000_000, "CNY", 2025)).toBeNull();                        // no rate: no USD amount, the original stands
+  });
 });

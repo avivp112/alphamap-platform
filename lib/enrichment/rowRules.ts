@@ -21,6 +21,7 @@ import { statedRoundLabels } from "./assemble.ts";
 import { refineRoundType } from "./rounds.ts";
 
 import { cleanPersonName } from "./people.ts";
+import { currencyOfAmount } from "./currency.ts";
 export interface RowLike { company?: string; field: string; after: string; source_url?: string | null; quote?: string | null; payload?: string | null; before?: string | null; [k: string]: unknown }
 
 const fold = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, "");
@@ -106,6 +107,59 @@ export function roundKey(r: { company?: string | null; after: string }): string 
   return `${fold(r.company ?? "")}|${fold(type)}|${fold(amount)}`;
 }
 
+
+// ── Quality rules of the maintenance window (owner, 2026-11-23) ─────────────────────────────────────────────────────────────────────────────────────
+const escRe = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const SCALE_OF: Record<string, number> = { thousand: 1e3, k: 1e3, million: 1e6, mn: 1e6, m: 1e6, billion: 1e9, bn: 1e9, b: 1e9 };
+const MONEY = "(?:[$€£¥₩]|US\\$|[A-Z]{3}\\s)?\\s?(\\d[\\d,]*\\.?\\d*)\\s?(thousand|million|billion|mn|bn|[kKmMbB])?\\b(?:\\s?(?:USD|EUR|GBP|RMB|CNY|KRW|yuan|won))?";
+const moneyValue = (num: string, scale?: string) => parseFloat(num.replace(/,/g, "")) * (scale ? SCALE_OF[scale.toLowerCase()] ?? 1 : 1);
+/** The figures a quote ties to a grant, a contract or an award ("bags $2.5M grant", "a $318M contract", "awarded $2M"). */
+export function grantLikeAmounts(quote: string): number[] {
+  const out: number[] = [];
+  for (const m of quote.matchAll(new RegExp(`${MONEY}\\s+(?:[\\w-]+\\s+){0,2}(?:grants?|contracts?|awards?)\\b`, "gi"))) out.push(moneyValue(m[1], m[2]));
+  for (const m of quote.matchAll(new RegExp(`\\b(?:grants?|contracts?|awards?|awarded)\\s+(?:of |worth |valued at |totall?ing |up to )?${MONEY}`, "gi"))) out.push(moneyValue(m[1], m[2]));
+  return out.filter((x) => x > 0);
+}
+/** The amount(s) of a round line: the dollar figure, and the source's own when the line carries "(CNY 600,000,000)". */
+function roundAmounts(after: string): { usd: number | null; original: { currency: string; amount: number } | null } {
+  const u = /\$([\d.,]+)\s?([KMB])?\b/.exec(after);
+  const o = /\(([A-Z]{3}) ([\d,]+)\)/.exec(after);
+  return { usd: u ? moneyValue(u[1], u[2]) : null, original: o ? { currency: o[1], amount: parseFloat(o[2].replace(/,/g, "")) } : null };
+}
+/** A round whose quote writes the amount in a currency other than the line's: "RMB 600 million" read as dollars (owner, 2026-11-23: Shengshu, Mobilint's KRW). */
+export function roundCurrencyProblem(after: string, quote: string | null | undefined): string | null {
+  if (!quote) return null;
+  const { usd, original } = roundAmounts(after);
+  if (original) { const c = currencyOfAmount(original.amount, quote); return c && c !== original.currency ? `the quote writes the amount in ${c}, the line says ${original.currency}` : null; }
+  if (usd) { const c = currencyOfAmount(usd, quote); return c && c !== "USD" ? `the quote writes the amount in ${c}, the line says dollars` : null; }
+  return null;
+}
+/** A person who is a founder of ANOTHER company in the quote ("X, co-founder of Oscilla"; "Oscilla was founded by X"), or null. */
+export function founderOfOtherCompany(name: string, quote: string, companyName: string): string | null {
+  const esc = name.trim().split(/\s+/).map(escRe).join("\\s+");
+  const NAME = "([A-Z][\\w&.'’-]*(?:\\s+[A-Z&][\\w&.'’-]*){0,3})";
+  const own = fold(companyName).replace(/(inc|ltd|llc|corp|gmbh|ag|bv|the)$/g, "");
+  const generic = /^(it|we|they|he|she|this|that|the|company|founders?|co-?founders?|our|his|her|their|who|and|which)$/i;
+  const other = (org: string) => { const f = fold(org); return f.length >= 3 && !generic.test(org.trim()) && !f.includes(own) && !(own.length >= 3 && own.includes(f)); };
+  const a = new RegExp(`${esc}[^.\\n]{0,80}?\\b(?:co-?)?founders?\\s+(?:of|at)\\s+(?:the\\s+)?${NAME}`).exec(quote);
+  if (a && other(a[1])) return a[1];
+  const b = new RegExp(`${NAME}\\s+(?:was\\s+|were\\s+|is\\s+)?(?:co-?)?founded\\s+by[^.\\n]{0,100}?${esc}`).exec(quote);
+  if (b && other(b[1])) return b[1];
+  return null;
+}
+const ROLE_FORMS: Array<[string, RegExp, RegExp]> = [
+  ["CEO", /\bceo\b/i, /chief executive|\bceo\b/i], ["CTO", /\bcto\b/i, /chief (?:technology|technical|tech)|\bcto\b/i], ["COO", /\bcoo\b/i, /chief operating|operations officer|\bcoo\b/i],
+  ["CFO", /\bcfo\b/i, /chief financial|\bcfo\b/i], ["CMO", /\bcmo\b/i, /chief marketing|\bcmo\b/i], ["CPO", /\bcpo\b/i, /chief (?:product|people|privacy)|\bcpo\b/i],
+  ["CRO", /\bcro\b/i, /chief revenue|\bcro\b/i], ["CIO", /\bcio\b/i, /chief information|\bcio\b/i], ["President", /\bpresident\b/i, /\bpresident\b/i],
+  ["Chairman", /\bchair(?:man|woman|person)?\b/i, /\bchair/i], ["Managing Director", /\bmanaging director\b/i, /managing director/i],
+];
+/** A title keeps only the roles its quote gives (owner, 2026-11-23: Deliverect's CTO and CPO, written as CPO and President): the others are taken out; "Co-Founder" is never touched here. */
+export function titleMatchingQuote(title: string, quote: string): string {
+  const parts = title.split(/\s*(?:&|,|\/|\band\b|\|)\s*/i).map((p) => p.trim()).filter(Boolean);
+  const kept = parts.filter((p) => { const f = ROLE_FORMS.find(([, t]) => t.test(p)); return !f || f[2].test(quote); });
+  return kept.length === parts.length ? title : kept.join(" & ");
+}
+
 /** Why this value may not stand under today's rules, or null. */
 export function rowProblem(r: RowLike, companyName: string, today: string, weekBefore = 0, o: { domain?: string | null; acquirers?: string[] } = {}): string | null {
   const url = r.source_url ?? "";
@@ -126,6 +180,15 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
       const own = fold(companyName).replace(/(inc|ltd|llc|corp|gmbh|ag|bv|the)$/g, "");
       if (org.length >= 3 && !/^(?:ceo|cto|coo|cfo|cmo|cpo|chief\w*|co-?founder|founder|president|chair\w*|director|partner|head|vice|vp|svp|evp|managing|general|executive)/i.test(near[1].trim()) && !(org.includes(own) || (own.length >= 3 && own.includes(org)))) return `a role at another company (${near[1].trim()}), not here`;
     }
+  }
+  // A founder is declared only when the quote attributes the founding to THIS company (owner, 2026-11-23: Usersnap's founders of another blog, CorPower's co-founder of Oscilla from an Oscilla filing, Bloom Security's name not in its quote).
+  if (r.field === "founder" && r.after && r.quote) {
+    const nm = r.after.split(" — ")[0].trim(), q = r.quote;
+    const surname = fold(nm.split(/\s+/).pop() ?? "");
+    if (surname.length >= 2 && !fold(q).includes(surname)) return "the quote does not name the person";
+    if (!/found|establish|started|set up|created/i.test(q)) return "the quote does not say the person founded the company";
+    const org = founderOfOtherCompany(nm, q, companyName);
+    if (org) return `the quote attributes the founding to another company (${org})`;
   }
   // A name that several companies carry (owner, batch 8: Shyft — a Miami moving app, a Standard Bank FX app, The Shyft Group): a value stands only on the company's own domain on file (owner, 2026-11-20: Shyft only from getshyft.co.za). eval/ambiguous_names.json: { "names": ["Shyft"] }.
   { const deny = ambiguousDeny(companyName); if (deny && deny.test(`${r.after} ${r.quote ?? ""}`)) return `${companyName}: the value speaks of another company that carries the name (${(`${r.after} ${r.quote ?? ""}`.match(deny) ?? [""])[0]})`; }
@@ -194,6 +257,11 @@ export function rowProblem(r: RowLike, companyName: string, today: string, weekB
     // A round rests on a quote that speaks of funding (owner, 2026-11-19: Orizuru's "round" had no quote and its page announced a launch).
     if (!quote.trim()) return "a round needs a quote";
     if (!/rais|fund|invest|financ|series|seed|round|capital|led by|backed|valuation|loan|debt|grant|\$|€|£|million|\d\s?[mk]\b/i.test(quote)) return "its quote does not speak of funding";
+    // A grant, a contract and an award are not a funding round; a plan to raise is not a round that closed (owner, 2026-11-23: MinerEye's $2.5M grant, Dataminr's $318M contract).
+    { const { usd, original } = roundAmounts(r.after); const mine = [usd, original?.amount].filter((x): x is number => x != null && x > 0);
+      if (mine.length && grantLikeAmounts(quote).some((g) => mine.some((a2) => Math.abs(g - a2) / a2 < 0.005))) return "a grant, a contract or an award is not a funding round"; }
+    if (/\b(?:plans?|planning|aims?|aiming|seeks?|seeking|looking|intends?|intending|hopes?|hoping|expects?|wants?)\s+(?:\w+\s+){0,2}?to\s+raise\b/i.test(quote) && !/\b(?:raised|has raised|closed|secured|completed|closes|completes)\b/i.test(quote)) return "a plan to raise is not a round that closed";
+    const cur = roundCurrencyProblem(r.after, quote); if (cur) return cur;
   }
   // A proposed name is a clean brand name, not a piece of a sentence (owner, 2026-11-19: Lulalend's "Lula. We").
   if (r.field === "name_proposal") {
@@ -269,6 +337,16 @@ export function applyRowRules<T extends RowLike>(rows: T[], companyName: string,
   for (const r0 of rows) {
     // A sector the owner locked (round 10: Dietly) stands whatever the memory or the model says.
     let r = r0;
+    // The role is written only as far as the quote gives it (owner, 2026-11-23: Deliverect's CTO and CPO were written as CPO and President).
+    if ((r.field === "founder" || r.field === "leader") && r.quote && r.after.includes(" — ")) {
+      const [nm, ...rest] = r.after.split(" — "), title = rest.join(" — ");
+      const fixed = titleMatchingQuote(title, r.quote);
+      if (fixed !== title) {
+        dropped.push(`${r.field}: ${nm} — role "${title}" → "${fixed || (r.field === "founder" ? "Founder" : "(none)")}": the quote does not give the rest`);
+        if (!fixed && r.field === "leader") continue;
+        r = { ...r, after: `${nm} — ${fixed || "Founder"}` };
+      }
+    }
     if (locked && r.field === "sector" && r.after !== locked.sector) { dropped.push(`sector: ${r.after} → ${locked.sector} (locked by the owner)`); r = { ...r, after: locked.sector }; }
     if (locked && r.field === "tags" && !r.after.split(/\s*,\s*/).includes(locked.sub_sector)) { dropped.push(`tags: ${r.after} → ${locked.sub_sector} (locked by the owner)`); r = { ...r, after: locked.sub_sector }; }
     // A round whose quote is an address, or that says "amount not disclosed" while its own announcement's address states one sum: the quote is the headline of the same
