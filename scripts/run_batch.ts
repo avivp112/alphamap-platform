@@ -53,7 +53,8 @@ if (fromStep >= 5) {
 }
 // 1. the gate (core fields) — always, also for FROM_STEP=5: the write needs the pass file of the code it runs on, and any change of code makes the earlier one void. The replay of the written batches. Run on the recordings' day (PIN_DATE) when it is another day. A loss or an acceptance ERROR stops the batch before anything is written.
 console.log("\n══ 1/7 regression gate ══");
-if (spawnSync("bash", ["-o", "pipefail", "-c", "npx tsx scripts/regression.ts 2>&1 | tee regression_run.log"], { stdio: "inherit", env: { ...process.env, ...((process.env.GATE_PIN_DATE ?? process.env.PIN_DATE) ? { PIN_DATE: (process.env.GATE_PIN_DATE ?? process.env.PIN_DATE)!, NODE_OPTIONS: `--require ${process.cwd()}/scripts/pin_date.cjs` } : {}) } }).status !== 0)
+if (process.env.DRY_ONLY === "1") console.log("DRY_ONLY=1: a dry run on this batch — no gate (nothing is written), no write after the acceptance.");
+else if (spawnSync("bash", ["-o", "pipefail", "-c", "npx tsx scripts/regression.ts 2>&1 | tee regression_run.log"], { stdio: "inherit", env: { ...process.env, ...((process.env.GATE_PIN_DATE ?? process.env.PIN_DATE) ? { PIN_DATE: (process.env.GATE_PIN_DATE ?? process.env.PIN_DATE)!, NODE_OPTIONS: `--require ${process.cwd()}/scripts/pin_date.cjs` } : {}) } }).status !== 0)
   stop("the regression gate lost a value or an acceptance check is an ERROR — show it to Aviv; accept-lost is his decision alone (regression_run.log)");
 
 // What the live run collects for each company is kept (collected/batch_<N>/<company_id>.json) and the write reads it: no replay of recordings, no model call, no search (owner, 2026-11-23, stage 3).
@@ -104,8 +105,15 @@ if (fromStep <= 4) {
         console.log(`${bad.length} round(s) excluded by value, the currency is not the quote's (pending_fixes.csv): ${bad.slice(0, 5).map((b) => `${b.company}: ${b.after.slice(0, 40)}`).join(" | ")}`);
       }
     }
-    if (a.failed > 0) stop(`${a.failed} acceptance ERROR(s) on core fields`);
+    if (a.failed > 0 && process.env.DRY_ONLY !== "1") stop(`${a.failed} acceptance ERROR(s) on core fields`);
   }
+}
+
+// A dry run ends here (owner, 2026-11-24): the measurement of the batch — cost and time per company, coverage per core field, a sample of 25 values — and nothing is written.
+if (process.env.DRY_ONLY === "1") {
+  run("measure", "npx", ["tsx", "scripts/batch_measure.ts"], { BATCH_NO: String(batch) });
+  console.log(`\n✓ Dry run of batch ${batch} done: nothing was written.`);
+  process.exit(0);
 }
 
 // 4b. the backup of the batch's rows (startups, funding_rounds, field_provenance) before anything is written; a backup that is not whole stops the batch

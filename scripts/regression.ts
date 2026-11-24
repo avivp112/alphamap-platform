@@ -15,6 +15,7 @@
  */
 import { spawnSync } from "child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { tierOf } from "../lib/enrichment/tiers.ts";
 import { parseCsv, rowsFromCsv, runAcceptance, type Check } from "../lib/enrichment/acceptance.ts";
 import { specPathsFor } from "./acceptance_check.ts";
 import {
@@ -53,7 +54,8 @@ function runBatch(n: number, fill = false, costBase = 0): RunResult {
   // The run's log goes to run.log and its progress lines — one per company: "batch N [i/M] … $x so far ($y in all)" — to the screen as they come (owner, 2026-11-24: a batch was silent for minutes).
   const env = { ...process.env, PILOT: "true", DRY_RUN: "true", REGRESSION: "1", REGRESSION_DIR: dir, REPLAY: "1", KNOWN_SOURCES: "off", ALL_FIELDS: "true", SITEMAP: "on", BATCH_NO: String(n),
     CONCURRENCY: process.env.CONCURRENCY ?? "10", PILOT_MAX_COMPANIES: String(Math.max(ids.length, 1)), ONLY: ids.join(","), PILOT_REPORT: `${dir}/pilot_report.csv`, GIT_CHECK: "off", PREFLIGHT: "off",
-    BATCH_LABEL: `batch ${n}`, COST_BASE: String(costBase), ...(fill ? { REPLAY_FILL: "1" } : {}) };
+    BATCH_LABEL: `batch ${n}`, COST_BASE: String(costBase), V2_COMPONENTS: process.env.V2_COMPONENTS ?? "linkedin_links=off",   // the LinkedIn searches are new web requests the recordings cannot answer; they are measured by the dry run, not by the gate
+    ...(fill ? { REPLAY_FILL: "1" } : {}) };
   const child = spawnSync("bash", ["-o", "pipefail", "-c", `npx tsx scripts/bulk_enrich_v2.ts 2>&1 | tee ${dir}/run.log | (grep --line-buffered -E '^(📍|⛔|💸)' || true)`], { stdio: "inherit", env, maxBuffer: 1 << 29 });
   const logText = existsSync(`${dir}/run.log`) ? readFileSync(`${dir}/run.log`, "utf8") : "";
   const capped = child.status === 3;   // MAX_COST reached: what was collected is reported and what was recorded stays (bulk_enrich_v2.ts)
@@ -203,7 +205,8 @@ for (const n of batches) {
   if (res.misses.length) { console.log(`   ⚠️  the replay is not faithful for ${res.misses.length} compan(ies) — a web response the recordings do not have:`); for (const m of res.misses.slice(0, 12)) console.log(`      ${m.slice(0, 170)}`); }
   if (res.live) console.log(`   ${res.live.slice(0, 200)}`);
   for (const e of errs) { failed = true; console.log(`   ❌ acceptance ${e.id}: ${e.detail.slice(0, 160)}`); for (const l of res.diag[e.id] ?? []) console.log(`        │ ${l}`); }
-  for (const l of cmp.lost) { failed = true; console.log(`   ❌ LOST ${l.company} · ${l.field} · ${l.value.slice(0, 90)}   [${l.reason_code}]`); }
+  for (const l of cmp.lost) { failed = true; console.log(`   ❌ LOST [Tier ${tierOf(l.field) ?? "?"}] ${l.company} · ${l.field} · ${l.value.slice(0, 90)}   [${l.reason_code}]`); }
+  if (cmp.lost.length) { const t1 = cmp.lost.filter((l) => tierOf(l.field) === 1).length; console.log(`   Tier 1 lost: ${t1} (must be 0) · Tier 2 lost: ${cmp.lost.length - t1} (each is shown to the owner; none is accepted by anyone else)`); }
   // Why: that company's own lines of the run (what it found, dropped and why), once per company.
   for (const co of [...new Set(cmp.lost.map((l) => l.company))].slice(0, 12)) {
     const at = res.runLog.findIndex((l) => new RegExp(`^── ${co.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\(`).test(l));
