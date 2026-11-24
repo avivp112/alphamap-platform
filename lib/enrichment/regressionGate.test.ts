@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { compare, watched, valueKey, acceptanceErrors, passFor, passFileName } from "./regressionGate";
+import { compare, sameRound, parseRound, watched, valueKey, acceptanceErrors, passFor, passFileName } from "./regressionGate";
 import { fieldErrors, ERROR_LIMIT } from "./batchProcess";
 
 const base = [
@@ -96,5 +96,38 @@ describe("pending_fixes.csv and held_fields.csv", () => {
       expect(outstandingHeld(hf)).toHaveLength(1);
       expect(heldFieldsOf(9, hf)).toEqual([]);
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe("a founder is the person, a round is the amount (owner, 2026-11-24)", () => {
+  const base = (company: string, field: string, value: string) => ({ company, field, value });
+  it("a founder whose role changed is changed, not lost; a founder who is gone is lost", () => {
+    const c = compare([base("Acme", "founder", "Ann Lee — Founder & CEO"), base("Acme", "founder", "Bo Ray — Co-founder")], [{ company: "Acme", field: "founder", value: "Ann Lee — Founder" }]);
+    expect(c.lost.map((l) => l.value)).toEqual(["Bo Ray — Co-founder"]);
+    expect(c.changed.map((x) => x.field)).toEqual(["founder"]);
+  });
+  it("the same amount a few days apart is the same round; ten days apart is not", () => {
+    expect(sameRound("Series B $200M · 2026-10-08", "Series B $200M · 2026-10-10")).toBe(true);
+    expect(sameRound("Series B $200M · 2026-10-08", "Series B $200M · 2026-10-18")).toBe(false);
+    expect(sameRound("Seed $100M · 2025-05-21", "Seed $100M · 2025-05-21 · lead X")).toBe(true);
+  });
+  it("a specific type that became Unknown is the same round; two different specific types are not", () => {
+    expect(sameRound("Series B $200M · 2026-10-08", "Unknown $200M · 2026-10-08")).toBe(true);
+    expect(sameRound("Series B $200M · 2026-10-08", "Series C $200M · 2026-10-08")).toBe(false);
+  });
+  it("a lead that was taken out is the same round; another lead is not", () => {
+    expect(sameRound("Series A $20M · 2021-02-01 · lead Alpha", "Series A $20M · 2021-02-01")).toBe(true);
+    expect(sameRound("Series A $20M · 2021-02-01 · lead Alpha", "Series A $20M · 2021-02-01 · lead Beta")).toBe(false);
+  });
+  it("a month or a year agrees with a day inside it; no date is no claim; another amount is another round", () => {
+    expect(sameRound("Seed $3.5M · 2021-11 (month only)", "Seed $3.5M · 2021-11-05")).toBe(true);
+    expect(sameRound("Seed $2M · no date", "Seed $2M · 2023-03-01")).toBe(true);
+    expect(sameRound("Series A $20M · 2021-02-01", "Series A $25M · 2021-02-01")).toBe(false);
+    expect(parseRound("Series A filled: {\"amount_raised\":20000000}")).toBeNull();
+  });
+  it("in the comparison: the Arena case is changed, an amount that is gone is lost", () => {
+    const c = compare([base("Arena", "round", "Series B $200M · 2026-10-08"), base("Flock", "round", "Unknown $275M · 2025-03-13")], [{ company: "Arena", field: "round", value: "Unknown $200M · 2026-10-10" }]);
+    expect(c.lost.map((l) => l.company)).toEqual(["Flock"]);
+    expect(c.changed.map((x) => x.company)).toEqual(["Arena"]);
   });
 });

@@ -37,6 +37,46 @@ const sameNews = (a: string, b: string): boolean => {
 };
 const slot = (company: string, field: string) => `${fold(company).replace(/ /g, "")}:${family(field)}`;
 
+// ── what is "the same" for a founder and for a round (owner, 2026-11-24: a changed role or a few days are not a lost value) ──────────────────────────────────────────────────────────
+
+const personOf = (v: string) => fold(v.split(" — ")[0]);
+
+export interface ParsedRound { type: string; amount: number | null; date: string; precision: "day" | "month" | "year" | "none"; lead: string | null }
+/** A round row of the report ("Series B $200M · 2026-10-08 · lead X", "Unknown $5M · 2021-04 (month only)", "Seed $1M · no date"); null for a fill ("Series A filled: {…}") or anything else. */
+export function parseRound(value: string): ParsedRound | null {
+  if (/ filled: /.test(value)) return null;
+  const m = value.match(/^(.+?) (amount not disclosed|[^\d\s]{0,3}(\d[\d.,]*)\s?([MBK])?)(?: · ([^·]+?))?(?: · lead (.+))?$/);
+  if (!m) return null;
+  const n = m[3] ? Number(m[3].replace(/,/g, "")) : null;
+  const amount = n == null || !Number.isFinite(n) ? null : n * ({ M: 1e6, B: 1e9, K: 1e3 } as Record<string, number>)[m[4] ?? ""] || n;
+  const d = (m[5] ?? "").trim();
+  const precision = /^\d{4}-\d{2}-\d{2}$/.test(d) ? "day" : /^\d{4}-\d{2} \(month only\)/.test(d) ? "month" : /^\d{4} \(year only\)/.test(d) ? "year" : "none";
+  return { type: m[1].trim(), amount, date: d.slice(0, precision === "day" ? 10 : precision === "month" ? 7 : precision === "year" ? 4 : 0), precision, lead: m[6]?.trim() ?? null };
+}
+const GENERIC_TYPES = new Set(["unknown", "other"]);
+/** Dates agree: two days within 7 days of each other; a month or a year agrees with a day inside it; a missing date agrees with any (no date is no claim). */
+function datesAgree(a: ParsedRound, b: ParsedRound): boolean {
+  if (a.precision === "none" || b.precision === "none") return true;
+  if (a.precision === "day" && b.precision === "day") return Math.abs(Date.parse(a.date) - Date.parse(b.date)) / 86400000 <= 7;
+  const len = Math.min(a.date.length, b.date.length);   // 7 (month) or 4 (year)
+  return a.date.slice(0, len) === b.date.slice(0, len);
+}
+/**
+ * The round the baseline holds is the round the run holds when the amount is the same and: the date agrees (above); the type is the same, or one of them is generic (Unknown / Other) — a specific type that became
+ * Unknown is less said, not another round; the lead is the same, or the run has none (a lead that was taken out is less said, never a different one). A different amount, two different specific types or two different
+ * leads are other rounds: the baseline's is lost.
+ */
+export function sameRound(base: string, now: string): boolean {
+  const a = parseRound(base), b = parseRound(now);
+  if (!a || !b || a.amount == null || b.amount == null) return false;
+  if (Math.abs(a.amount - b.amount) > Math.max(1, a.amount * 0.001)) return false;
+  if (!datesAgree(a, b)) return false;
+  const ta = fold(a.type), tb = fold(b.type);
+  if (ta !== tb && !GENERIC_TYPES.has(ta) && !GENERIC_TYPES.has(tb)) return false;
+  if (a.lead && b.lead && fold(a.lead) !== fold(b.lead)) return false;
+  return true;
+}
+
 /**
  * A purchase is three values — the status, the buyer, the date — whether the report says it in one row ("status = acquired · Acquired by Raseedi (2025-01-13)") or the database holds it in three columns
  * (owner, 2026-11-19: Kashat, LionDesk, Netcash… were "lost" only because a baseline kept three rows and the code gives one). Both sides are compared by content.
@@ -76,7 +116,7 @@ export function compare(baseline0: BaselineValue[], now: RunRow[], rejections: R
     const exact = same.find((r) => fold(r.value) && (fold(r.value).includes(fold(v.value).slice(0, 40)) || fold(v.value).includes(fold(r.value).slice(0, 40))));
     return (exact ?? same[0])?.reason_code ?? "not_found_now";
   };
-  const lost: Lost[] = [], changed: Comparison["changed"] = [];
+  const lost: Lost[] = [], changed: Comparison["changed"] = [], matchedNow = new Set<BaselineValue>();
   for (const b of baseline) {
     if (nowKeys.has(valueKey(b.company, b.field, b.value))) continue;
     if (family(b.field) === "news" && nowW.some((v) => family(v.field) === "news" && fold(v.company) === fold(b.company) && sameNews(v.value, b.value))) continue;
@@ -84,9 +124,18 @@ export function compare(baseline0: BaselineValue[], now: RunRow[], rejections: R
       const there = nowBySlot.get(slot(b.company, b.field));
       if (there?.length) { changed.push({ company: b.company, field: b.field, was: b.value, now: there[0].value }); continue; }
     }
+    // A founder is the person: a role that changed ("Founder & CEO" → "Founder") is changed, not lost. A round is the amount: a few days, a type that became Unknown, a lead that was taken out are changed, not lost.
+    if (family(b.field) === "founder") {
+      const there = (nowBySlot.get(slot(b.company, b.field)) ?? []).find((v) => personOf(v.value) === personOf(b.value));
+      if (there) { changed.push({ company: b.company, field: b.field, was: b.value, now: there.value }); matchedNow.add(there); continue; }
+    }
+    if (family(b.field) === "round") {
+      const there = (nowBySlot.get(slot(b.company, b.field)) ?? []).find((v) => sameRound(b.value, v.value));
+      if (there) { changed.push({ company: b.company, field: b.field, was: b.value, now: there.value }); matchedNow.add(there); continue; }
+    }
     lost.push({ ...b, reason_code: why(b) });
   }
-  const added = nowW.filter((v) => !baseKeys.has(valueKey(v.company, v.field, v.value)) && !(family(v.field) === "news" && baseline.some((b) => family(b.field) === "news" && fold(b.company) === fold(v.company) && sameNews(b.value, v.value))) && !(SINGLE_FIELDS.has(family(v.field)) && baseline.some((b) => slot(b.company, b.field) === slot(v.company, v.field))));
+  const added = nowW.filter((v) => !matchedNow.has(v) && !baseKeys.has(valueKey(v.company, v.field, v.value)) && !(family(v.field) === "news" && baseline.some((b) => family(b.field) === "news" && fold(b.company) === fold(v.company) && sameNews(b.value, v.value))) && !(SINGLE_FIELDS.has(family(v.field)) && baseline.some((b) => slot(b.company, b.field) === slot(v.company, v.field))));
   return { lost, added, changed };
 }
 
