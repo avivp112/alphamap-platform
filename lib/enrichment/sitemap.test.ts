@@ -39,4 +39,14 @@ describe("pages of a site from its sitemap (owner, round 10)", () => {
     expect(picked).toContain("https://a.com/about");
     expect(pickSitePages(["https://a.com/platform", "https://a.com/solutions"], "https://a.com")).toEqual(["https://a.com/solutions"]);
   });
+  it("a press page about a raise is a page of the company, at most three (owner, 2026-11-24: Kry's $300M)", () => {
+    expect(pageScore("/press/nyheter/kry-secures-over-300-million-investment")).toBe(9);
+    expect(pageScore("/newsroom/2024/acme-raises-series-b")).toBe(9);
+    expect(pageScore("/blog/how-we-raised-our-series-a")).toBe(0);                          // a blog post still is not
+    expect(pageScore("/press/nyheter/kry-acquires-physical-health-care-centres")).toBe(7);   // a general press page keeps its score
+    const urls = [1, 2, 3, 4, 5].map((i) => `https://a.com/press/news/acme-raises-round-${i}`).concat(["https://a.com/about", "https://a.com/contact"]);
+    const picked = pickSitePages(urls, "https://a.com");
+    expect(picked.filter((u) => /raises-round/.test(u)).length).toBe(3);
+    expect(picked).toContain("https://a.com/about");
+  });
 });

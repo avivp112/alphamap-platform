@@ -20,6 +20,16 @@ for (const [score, words] of KEYWORDS) for (const w of words) SCORE.set(w, Math.
 /** The one main product page a site may give (owner, 2026-11-24): /products, /solutions or /platform at the first level — the first that exists, in this order. No customers, industries, privacy, terms or jobs pages. */
 export const PRODUCT_PAGES = ["products", "solutions", "platform"] as const;
 const productRank = (pathname: string): number => { const segs = pathname.toLowerCase().split("/").filter(Boolean); return segs.length === 1 ? (PRODUCT_PAGES as readonly string[]).indexOf(segs[0]) : -1; };
+/**
+ * A press or news page of the company about money (owner, 2026-11-24: Kry's "kry-secures-over-300-million-investment", read when 30 pages were read, left out at 12): in a press / news section, a page whose
+ * last path segment speaks of a raise. Scored above the general press pages and the legal pages, at most three of them (pickSitePages).
+ */
+const PRESS_SECTION = new Set(["press", "newsroom", "news", "media", "nyheter", "pressemitteilungen", "presse", "prensa", "imprensa", "noticias", "actualites", "aktuelles", "press-releases", "pressroom"]);
+const FUNDING_SLUG = /(?:^|[-_])(?:raise[sd]?|raising|funding|series[-_][a-f]|seed|investments?|invests?|invested|secures?|secured|financing|round|capital|million|\d+m|usd\d+|us\d+)(?:[-_]|$)/i;
+export const isFundingPage = (pathname: string): boolean => {
+  const segs = pathname.toLowerCase().split("/").filter(Boolean).map((x) => decodeURIComponent(x).replace(/\.(html?|php|aspx?)$/, ""));
+  return segs.length >= 2 && segs.slice(0, -1).some((x) => PRESS_SECTION.has(x)) && FUNDING_SLUG.test(segs[segs.length - 1]);
+};
 const LEGAL_WORDS = new Set(["impressum", "legal", "legal-notice", "imprint", "mentions-legales", "aviso-legal", "nota-legal", "informacje-prawne", "stopka", "regulamin"]);
 const isLegalPath = (pathname: string) => pathname.toLowerCase().split("/").filter(Boolean).some((seg) => LEGAL_WORDS.has(seg) || seg.split(/[-_]/).some((w) => LEGAL_WORDS.has(w)));
 
@@ -40,6 +50,7 @@ const hostBare = (h: string) => h.toLowerCase().replace(/^www\./, "");
 export function pageScore(pathname: string): number {
   const segs = pathname.toLowerCase().split("/").filter(Boolean).map((s) => decodeURIComponent(s).replace(/\.(html?|php|aspx?)$/, ""));
   if (!segs.length) return 0;
+  if (isFundingPage(pathname)) return 9;
   if (productRank(pathname) >= 0) return 5;   // the main product page, at most one of them is taken (pickSitePages)
   let best = 0;
   for (const s of segs) {
@@ -76,13 +87,14 @@ export function pickSitePages(urls: string[], root: string, max = MAX_SITE_PAGES
   scored.sort((a, b) => b.score - a.score || a.depth - b.depth || a.url.length - b.url.length);
   // One legal page besides the impressum / imprint (owner, 2026-11-23): the legal notice, the terms of a site written in a language this list does not know, are not a page each.
   const out: string[] = [];
-  let legal = 0;
+  let legal = 0, funding = 0;
   // One product page: the best of products > solutions > platform among the ones the site has.
   const product = scored.filter((c) => productRank(new URL(c.url).pathname) >= 0).sort((a, b) => productRank(new URL(a.url).pathname) - productRank(new URL(b.url).pathname))[0]?.url;
   for (const c of scored) {
     if (out.length >= Math.max(0, max - 1)) break;
     const path = new URL(c.url).pathname;
     if (productRank(path) >= 0 && c.url !== product) continue;
+    if (isFundingPage(path)) { if (funding >= 3) continue; funding++; }
     if (isLegalPath(path)) { if (legal >= 2) continue; legal++; }
     out.push(c.url);
   }
