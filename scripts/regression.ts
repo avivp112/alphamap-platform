@@ -46,10 +46,10 @@ const readCsv = (p: string) => { const [head, ...body] = parseCsv(readFileSync(p
 interface RunResult { capped?: boolean; n: number; rows: RunRow[]; rejections: Rejected[]; acceptance: Array<{ id: string; severity: string; pass: boolean; detail: string }>; cost: number; companies: number; misses: string[]; live: string; diag: Record<string, string[]>; runLog: string[] }
 
 /** One batch, clean slate, from the recordings. */
-function runBatch(n: number, fill = false, costBase = 0): RunResult {
-  const dir = `${OUT}/batch_${n}`;
+function runBatch(n: number, fill = false, costBase = 0, only?: { ids: string[]; dir: string }): RunResult {
+  const dir = only?.dir ?? `${OUT}/batch_${n}`;
   rmSync(dir, { recursive: true, force: true }); mkdirSync(dir, { recursive: true });
-  const ids = idsOf(n);
+  const ids = only?.ids ?? idsOf(n);
   console.log(`▶ batch ${n}: ${ids.length} compan(ies), REPLAY from the recordings …`);
   // The run's log goes to run.log and its progress lines — one per company: "batch N [i/M] … $x so far ($y in all)" — to the screen as they come (owner, 2026-11-24: a batch was silent for minutes).
   const env = { ...process.env, PILOT: "true", DRY_RUN: "true", REGRESSION: "1", REGRESSION_DIR: dir, REPLAY: "1", KNOWN_SOURCES: "off", ALL_FIELDS: "true", SITEMAP: "on", BATCH_NO: String(n),
@@ -141,6 +141,38 @@ if (cmd === "accept-lost") {
   }
   console.log(removed ? `${removed} value(s) taken out.` : "no value of the list is in a baseline.");
   process.exit(removed ? 0 : 1);
+}
+
+// `acquired`: the purchases of batch 9 (owner, 2026-11-24, after the change of the news searches). The 46 companies whose reviewed dry report (REPORT, pilot_report_dry.csv of batch 9) holds an acquired row are
+// run again from the recordings (the cost cap is on), and each purchase is compared with the reviewed one: status, buyer and date. A purchase that is gone or different is a Tier 1 loss. Nothing is written.
+if (cmd === "acquired") {
+  const f = process.env.REPORT ?? "pilot_report_dry.csv";
+  if (!existsSync(f)) { console.error(`${f} is missing`); process.exit(2); }
+  const rep = readCsv(f);
+  const want = new Map<string, { company: string; after: string }>();
+  for (const r of rep.body) if (r[rep.ix("field")] === "acquired") want.set(r[rep.ix("company_id")], { company: r[rep.ix("company")], after: r[rep.ix("after")] });
+  const known = new Set(idsOf(9));
+  const inBatch = [...want.keys()].filter((id) => known.has(id));
+  if (!want.size || inBatch.length < want.size * 0.9) { console.error(`${f} does not look like the dry report of batch 9 (${want.size} acquired row(s), ${inBatch.length} of them in pilot_batch_9.json) — it may have been overwritten by a later dry run`); process.exit(2); }
+  const ids = [...want.keys()];
+  console.log(`\nacquired check: ${ids.length} compan(ies) of batch 9 with a reviewed purchase → up to $${(ids.length * PER_COMPANY).toFixed(2)} at $${PER_COMPANY} a company · cap $${CAP}`);
+  process.env.MAX_COST = String(CAP);
+  const res = runBatch(9, false, 0, { ids, dir: `${OUT}/acquired_9` });
+  const got = new Map<string, string>();
+  for (const r of res.rows) if (r.field === "acquired") got.set(r.company, r.value);
+  const fold = (x: string) => x.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  let same = 0; const lost: string[] = [], diff: string[] = [];
+  for (const { company, after } of want.values()) {
+    const g = got.get(company);
+    if (g == null) lost.push(`${company}: expected "${after}" — no purchase now`);
+    else if (fold(g) === fold(after)) same++;
+    else diff.push(`${company}: expected "${after}" · now "${g}"`);
+  }
+  console.log(`\n── purchases of batch 9: ${want.size} reviewed · identical ${same} · different ${diff.length} · lost ${lost.length} · cost $${res.cost.toFixed(2)}${res.capped ? " · ⛔ the cap was reached, the check is incomplete" : ""}`);
+  for (const l of lost) console.log(`   ❌ LOST [Tier 1] ${l}`);
+  for (const d of diff) console.log(`   ❌ DIFFERENT [Tier 1] ${d}`);
+  console.log(lost.length + diff.length === 0 && !res.capped ? "\n✅ every reviewed purchase is found again, identical." : "\n⛔  Tier 1: a purchase is lost or different — shown to the owner; nothing is accepted by anyone else.");
+  process.exit(lost.length + diff.length === 0 && !res.capped ? 0 : 1);
 }
 
 // One-time "complete the recordings" (owner, 2026-11-19): the replay lacks web responses that a later fix asked for (the acquisition searches). `fill-estimate` counts them from the last gate run's logs and
