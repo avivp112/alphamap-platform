@@ -27,13 +27,22 @@ describe("known sources (owner, round 10)", () => {
     expect(gone.recheck).toHaveLength(1);
     expect(store.c1[0].status).toBe("quote_gone");
   });
-  it("volatile values older than REFRESH_DAYS are not carried; stable ones always are", async () => {
+  it("only the stable fields are carried (founder, founded_year, legal_name, company_number); a volatile one is searched again, not remembered (owner, 2026-11-23)", async () => {
     const store: KnownStore = {};
     remember(store, [row("leader", "Ann — CEO"), row("founded_year", "2016")], "r1", "2026-01-01");
     expect(refreshDue({ field: "leader", verified_at: "2026-01-01" }, "2026-11-15")).toBe(true);
     const r = await applyKnown(store, "c1", [], "2026-11-15", page("Ann — CEO is here 2016 is here"));
     expect(r.rows.map((x) => x.field)).toEqual(["founded_year"]);
-    expect(r.refreshDue).toHaveLength(1);
+    expect(r.refreshDue).toHaveLength(0);   // the leader is not a carried field at all: nothing is "due"
+  });
+  it("rounds, descriptions and the like are never carried from the memory; a value the owner locked still is", async () => {
+    const store: KnownStore = {};
+    remember(store, [row("round", "Series A $5M · 2020"), row("hq_city", "Toronto"), row("description", "Pink Farms grows food"), row("founder", "Ann — Founder")], "r1", "2026-11-10");
+    const text = page("Series A $5M 2020 Toronto Pink Farms grows food Ann — Founder");
+    const free = await applyKnown(store, "c1", [], "2026-11-15", text);
+    expect(free.rows.map((x) => x.field)).toEqual(["founder"]);
+    const locked = await applyKnown(store, "c1", [], "2026-11-15", text, new Set([markKey("Pink Farms", "hq_city", "Toronto")]));
+    expect(locked.rows.map((x) => x.field).sort()).toEqual(["founder", "hq_city"]);
   });
   it("a locked value stays against a different new one; an unlocked one is replaced", async () => {
     const store: KnownStore = {};
@@ -68,7 +77,7 @@ describe("the memory only grows, and a first false 'gone' is not for ever (owner
   });
   it("a quote that the page still mostly shares is confirmed; one that shares little is 'gone', and is checked again next time", async () => {
     const store: KnownStore = {};
-    remember(store, [row("description", "Six Degrees sells cloud managed services", { quote: "Six Degrees delivers hybrid cloud, cyber security and modern work managed services to enterprises" })], "r1", "2026-11-10");
+    remember(store, [row("founder", "Alastair Mills — Founder", { quote: "Six Degrees delivers hybrid cloud, cyber security and modern work managed services to enterprises" })], "r1", "2026-11-10");
     const ok = await applyKnown(store, "c1", [], "2026-11-16", page("Hybrid cloud and cyber security: Six Degrees delivers modern work managed services for enterprise customers"));
     expect(ok.carried[0].origin).toBe("known_source");
     const gone = await applyKnown(store, "c1", [], "2026-11-16", page("A page about something else entirely: shipping rates and holiday opening times"));

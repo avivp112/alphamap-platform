@@ -27,6 +27,11 @@ export interface ReportRow { company_id: string; company: string; field: string;
 /** Report lines that are proposals for the owner, not verified values: never remembered, never carried (Plott's wrong address proposal came back from the memory). */
 export const NOT_REMEMBERED = new Set(["website_proposal", "name_proposal", "acquired", "brand_after_acquisition"]);
 export const VOLATILE_FIELDS = new Set(["leader", "headcount_history", "employee_count", "employee_range", "hq_city", "hq_country", "office", "news", "round", "acquired"]);
+/**
+ * The fields the memory carries into a run (owner, 2026-11-23, maintenance window): only the stable ones. Rounds, acquisitions, status and everything else that changes are searched every run and never
+ * taken from the memory; a value the owner marked correct (locked) is still carried.
+ */
+export const CARRIED_FIELDS = new Set(["founder", "founded_year", "legal_name", "company_number"]);
 /** Fields with one value: a locked (marked correct) value is kept against a different new one. */
 export const SINGLE_FIELDS = new Set(["tags", "founded_year", "founding_country", "hq_city", "hq_country", "sector", "description", "description_what_only", "employee_count", "employee_range"]);
 export const KNOWN_PATH = process.env.KNOWN_SOURCES ?? "cache/known_sources.json";
@@ -124,6 +129,7 @@ export async function applyKnown(
     if (e.status === "superseded" || NOT_REMEMBERED.has(e.field)) continue;
     if (have(e.field, e.value)) continue;
     const isLocked = locked.has(markKey(e.company, e.field, e.value));
+    if (!CARRIED_FIELDS.has(e.field) && !isLocked) continue;   // searched again, not remembered
     // A different new value for a single-valued field stands, unless the old one is locked.
     if (SINGLE_FIELDS.has(e.field) && hasField(e.field) && !isLocked) continue;
     if (!isLocked && refreshDue(e, today)) { due.push(`${e.field}: ${e.value.slice(0, 40)}`); continue; }
