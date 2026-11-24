@@ -30,7 +30,7 @@ describe("which source a round rests on (owner, 2026-11-24: Lendo / einpresswire
     expect(preferBetterRoundSources(r as never, sources, "Lendo")).toEqual([]);
   });
   it("when the own page does not hold the quote, a sentence of it that carries the same fact stands in (a wire reprints with another headline)", () => {
-    const own = "Riyadh — Lendo, the Saudi lending platform, announced it has raised $28 million in a Series B round. The round was led by Sanabil Investments, a PIF company. Lendo plans an IPO.";
+    const own = "Riyadh — Lendo, the Saudi lending platform, announced it has raised $28 million in a Series B round led by Sanabil Investments, a PIF company. Lendo plans an IPO.";
     const sources = [src("S1", "https://www.einpresswire.com/article/673", `${quote}. More text.`), src("W1", "https://www.lendo.sa/en/press-releases/series-b", own, "company_site")];
     const r = [round("S1")]; const moved = preferBetterRoundSources(r as never, sources, "Lendo");
     expect(moved.length).toBe(2);
@@ -38,5 +38,20 @@ describe("which source a round rests on (owner, 2026-11-24: Lendo / einpresswire
     expect(x.amount_raised.source_id).toBe("W1"); expect(x.amount_raised.evidence_quote).toContain("$28 million");
     expect(x.lead_investor.evidence_quote).toContain("led by Sanabil Investments");
     expect(own).toContain(x.lead_investor.evidence_quote);   // verbatim
+  });
+  it("a lead the amount's quote names is not left unnamed by the move: the amount moves only to a sentence that says both (owner, 2026-11-24: Lendo, Lulalend lost their lead)", () => {
+    const ownOnlyAmount = "Lendo announced it has raised $28 million in a Series B round. The round was led by Sanabil Investments.";
+    const ownBoth = "Lendo announced it has raised $28 million in a Series B round led by Sanabil Investments.";
+    const lead = (id: string) => ({ round_type: "Series B", amount_raised: { value: 28_000_000, source_id: id, evidence_quote: quote }, lead_investor: { value: "Sanabil Investments", source_id: id, evidence_quote: quote } }) as never;
+    // the amount and the lead stand in two sentences of the own page: the amount's quote would lose the lead — it stays where it is
+    const r1 = [lead("S1")]; preferBetterRoundSources(r1 as never, [src("S1", "https://www.einpresswire.com/a", quote), src("W1", "https://www.lendo.sa/p", "Lendo announced it has raised $28 million in a Series B round. It plans an IPO. The round was backed by Sanabil Investments.", "company_site")], "Lendo");
+    expect((r1[0] as { amount_raised: { source_id: string } }).amount_raised.source_id).toBe("S1");
+    // the lead in the next sentence: the two sentences together are the amount's quote
+    const r3 = [lead("S1")]; preferBetterRoundSources(r3 as never, [src("S1", "https://www.einpresswire.com/a", quote), src("W1", "https://www.lendo.sa/p", ownOnlyAmount, "company_site")], "Lendo");
+    const q3 = (r3[0] as { amount_raised: { source_id: string; evidence_quote: string } }).amount_raised;
+    expect(q3.source_id).toBe("W1"); expect(q3.evidence_quote).toBe(ownOnlyAmount); expect(ownOnlyAmount).toContain(q3.evidence_quote);
+    // one sentence says both: it moves
+    const r2 = [lead("S1")]; preferBetterRoundSources(r2 as never, [src("S1", "https://www.einpresswire.com/a", quote), src("W1", "https://www.lendo.sa/p", ownBoth, "company_site")], "Lendo");
+    expect((r2[0] as { amount_raised: { source_id: string } }).amount_raised.source_id).toBe("W1");
   });
 });
