@@ -47,3 +47,7 @@
 - The baselines of batches 5–7 hold what today's code extracts from the recordings, not what the wet runs wrote (Humi, Mintifi, Mastertrust, Ruya, Okra, Brighte, Estimote, Conotoxia, Sami, Six Degrees: no provenance row for the values). Missing values are filled by the separate run for missing fields, after the maintenance window.
 - startups_search carries the 768-d `embedding` of startups (~25 MB), read by hybrid_lookalikes; leave it unless space needs it, and then change hybrid_lookalikes to read startups.embedding first.
 - Travelier (batch 9 preview, 2026-11-24): `startups.founders` holds an entry named "<UNKNOWN>" with no title. Count how many companies have such an entry (`select count(*) from startups where founders::text ilike '%<UNKNOWN>%'`) and remove them in a maintenance window, with the owner's approval.
+
+- (2026-11-23) LinkedIn links of founders and leaders: the component `linkedin_people` has been off since 2026-11-02 ("LinkedIn is never a source for any field"). Stage 2 asks for a link found by a Google search and written only when the result names the person in full and the company; not built. Decide before it is.
+- (2026-11-23) Tavily is already a last resort (called only when Serper and Jina both failed); "only when the results are too few" is a different trigger and was not built.
+- (2026-11-23) The fixed search "funding_round" was dropped as overlapping "raises" and "funding": if the gate loses a Tier 1 round because of it, put it back.
