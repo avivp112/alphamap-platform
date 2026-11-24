@@ -1,9 +1,8 @@
 /**
  * lib/enrichment/writeUnits.ts — what each review field writes (owner, 2026-11-05).
  *
- * The tracker (eval/field_review_tracker.csv) is the gate: a field is written only when it is
- * open there, in a pilot and in a wide run alike — PHASE1_PASSED does not lift it. A field with
- * no marks is never written. Pure; no file access.
+ * The open fields are the core fields (tiers.ts); the old tracker (20 marks, 90%) is cancelled for good
+ * (owner, 2026-11-23). A field that is not open is never written. Pure; no file access.
  */
 
 /** The review fields, and the startups columns each one writes. */

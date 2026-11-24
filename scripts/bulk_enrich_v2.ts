@@ -120,11 +120,8 @@ const MAX_CONSECUTIVE_ERRORS = Math.max(Number(process.env.MAX_CONSECUTIVE_ERROR
 const failedNames = new Set<string>();
 const ONLY = (process.env.ONLY ?? "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean);
 assertEnrichmentWritesAllowed("bulk_enrich_v2", !DRY_RUN, PILOT ? { fields: PILOT_FIELDS, companies: ONLY.length } : undefined);
-// The tracker is the gate (owner, 2026-11-05). A field is written only when it is open in
-// eval/field_review_tracker.csv — at least 20 values marked, at least 90% correct against the
-// current rules — in a pilot and in a wide run alike; PHASE1_PASSED does not lift it, and a field
-// with no marks is never written. A dry run shows what a wet run would write (the open fields);
-// ALL_FIELDS=true shows everything it found. FIELDS=news,competitor narrows any run to those fields.
+// Which fields are written: the core fields (lib/enrichment/tiers.ts), in a pilot and in a wide run alike. The old tracker — 20 values marked, 90% correct — is cancelled for good (owner, 2026-11-23); the owner's marks
+// still lock a value (markList below). A dry run shows what a wet run would write; ALL_FIELDS=true shows everything it found. FIELDS=news,competitor narrows any run to those fields.
 // A name that is not a field of the review is mapped when it is a plural or a short form (owner, round 10: FIELDS=…,city,country,founders,employees asked for no field at all, so batch 6
 // had no headquarters and no founders in its report), and named when it is not known.
 const FIELD_ALIASES: Record<string, string[]> = {
@@ -185,7 +182,7 @@ function heldRow(company: string, field: string): boolean {
 const OPEN_FIELDS: string[] = SHOW_ALL ? ASKED : ASKED.filter((f) => OPEN_NOW.includes(f));
 {
   const closed = ASKED.filter((f) => !OPEN_FIELDS.includes(f));
-  console.log(`🔓  ${DRY_RUN ? "Would be written" : "Open for writing"}: ${OPEN_FIELDS.join(", ") || "none"}${closed.length ? ` · closed (fewer than 20 marked or under 90%): ${closed.join(", ")} — npx tsx scripts/field_review_status.ts` : ""}`);
+  console.log(`✍️   ${DRY_RUN ? "Would be written" : "Written"} to startups: ${OPEN_FIELDS.join(", ") || "none"}${closed.length ? ` · not written to startups (Tier 3, candidate_values only): ${closed.join(", ")}` : ""}`);
   if (!DRY_RUN && !OPEN_FIELDS.length) { console.error("⛔  No field is open for writing — nothing to write."); process.exit(1); }
 }
 if (PILOT && ONLY.length === 0) { console.error("⛔  PILOT=true needs ONLY=<company ids> (scripts/pilot_sample.ts writes them)."); process.exit(1); }

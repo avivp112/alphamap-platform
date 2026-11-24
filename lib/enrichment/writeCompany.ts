@@ -797,7 +797,7 @@ export async function writeCollected(
   if (profile.metrics.growth_trend) setIfChanged("growth_trend", profile.metrics.growth_trend, row.growth_trend);
 
   // ── The tracker is the gate (owner, 2026-11-05) ──
-  // Only the review fields open in eval/field_review_tracker.csv are written — in a pilot and in a
+  // Only the open fields (the core fields, tiers.ts; the old tracker is cancelled) are written — in a pilot and in a
   // wide run alike, PHASE1_PASSED or not. What is held back is named in the report. A pilot also
   // writes no tags, hints, domains, timestamps or score.
   const reportLines: PilotChange[] = [];
