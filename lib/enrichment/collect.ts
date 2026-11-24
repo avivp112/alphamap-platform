@@ -2017,7 +2017,10 @@ export async function collectCompany(
   }
 
   // A round that rests on a paid distribution page, when the company's own page or an article says the same sentence: the better source (roundSourcePreference.ts).
-  { const moved = preferBetterRoundSources(funding.funding_rounds, allSources, row.name); for (const m of moved) console.log(`    🔀  Round source: ${m}`); if (moved.length) bump(stats.droppedByReason, "round_source_preferred"); }
+  { const before = new Map(funding.funding_rounds.map((r) => [r, r.source_url ?? null] as const));
+    const moved = preferBetterRoundSources(funding.funding_rounds, allSources, row.name); for (const m of moved) console.log(`    🔀  Round source: ${m}`);
+    // the round lines were made from the rounds before this step: the row's source follows the move (owner, 2026-11-24: Lendo Series B stayed on einpresswire in the report)
+    for (const r of funding.funding_rounds) { const was = before.get(r); if (!was || !r.source_url || r.source_url === was) continue; for (const l of newRoundLikes) if (l.source_url === was && String(l.round_type).toLowerCase() === String(r.round_type).toLowerCase()) l.source_url = r.source_url; } if (moved.length) bump(stats.droppedByReason, "round_source_preferred"); }
   // ── Stage 6: validation (city/country/founded_year/headcount/rounds) ──
   // A no-amount round on the date of one with an amount is that round (assemble.ts).
   const absorbed = absorbAmountlessRounds(newRoundLikes);
