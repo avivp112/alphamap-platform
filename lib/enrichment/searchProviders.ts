@@ -471,7 +471,7 @@ export async function verifyDomainMatch(
 
 const JINA_TIMEOUT_MS = Number(process.env.JINA_TIMEOUT_MS ?? 15_000);
 import { promptText, htmlToText } from "./pageText.ts";
-const MAX_WEBSITE_CHARS = Number(process.env.WEB_PAGE_PROMPT_CHARS ?? 6_000);   // what the model gets of a page; the verifier reads the whole page (up to MAX_PAGE_STORED)
+const MAX_WEBSITE_CHARS = Number(process.env.WEB_PAGE_PROMPT_CHARS ?? 3_000);   // what the model gets of a page; the verifier reads the whole page (up to MAX_PAGE_STORED)
 const MAX_PAGE_STORED = 120_000;
 /** Why the last read failed, set by each step (readPage names every step of the chain when all fail). */
 let lastFailure = "";
@@ -875,6 +875,19 @@ async function sitemapPagesFor(root: string, state: SearchProviderState): Promis
   return picked;
 }
 
+/** A candidate site's home page and its /about, nothing else (the dead-domain check, owner 2026-11-23): their texts joined; null when neither could be read. */
+export async function fetchHomeAndAbout(website: string, state: SearchProviderState): Promise<string | null> {
+  const root = (website.startsWith("http") ? website : `https://${website}`).replace(/\/+$/, "");
+  const texts: string[] = [];
+  for (const path of ["", "/about"]) {
+    const url = root + path;
+    const cached = state.cache?.get<{ content: string; provider: Provider }>(`page:${url}`);
+    const read = cached ? { text: cached.content, provider: cached.provider } : await readPage(url, state, true);
+    if (read && looksLikeRealContent(read.text)) { texts.push(read.text); if (!cached) state.cache?.set(`page:${url}`, { content: read.text, provider: read.provider }); }
+  }
+  return texts.length ? texts.join("\n\n") : null;
+}
+
 export async function fetchCompanyWebsitePages(
   website: string | null | undefined,
   state: SearchProviderState,
@@ -882,7 +895,7 @@ export async function fetchCompanyWebsitePages(
   if (!website) return [];
   let root = website.startsWith("http") ? website : `https://${website}`;
   // The company's own pages are read on every run, whatever the search finds (owner, 2026-11-14): home, about, team / leadership, contact, news / press, and customers / solutions / industries / products / platform (where "for whom" is usually written).
-  const candidatePaths = ["", "/about", "/about-us", "/team", "/leadership", "/company", "/contact", "/contact-us", "/news", "/press", "/newsroom", "/customers", "/solutions", "/industries", "/products", "/platform"];
+  const candidatePaths = ["", "/about", "/about-us", "/team", "/leadership", "/company", "/contact", "/contact-us", "/news", "/press", "/newsroom", "/imprint", "/impressum", "/legal"];   // owner, 2026-11-23: no product, customer, solution or platform pages
   let urls = candidatePaths.map((path) => root.replace(/\/+$/, "") + path);
   const pages: FetchedPage[] = [];
 
@@ -912,7 +925,7 @@ export async function fetchCompanyWebsitePages(
     }
   }
   // The site's own sitemap (owner, round 10): sitemap.xml, or the Sitemap line of robots.txt; the pages whose path says about / team / leadership / contact / press / news / careers /
-  // impressum / legal / investors (and the same words in the site's language) replace the fixed list, at most 30 pages. No sitemap: the fixed list stays.
+  // impressum / legal / investors (and the same words in the site's language) replace the fixed list, at most 12 pages. No sitemap: the fixed list stays.
   let sitemapFound = 0;
   if (process.env.SITEMAP !== "off") {
     const fromMap = await sitemapPagesFor(root, state);

@@ -34,13 +34,26 @@ export function stripNavigation(text: string): string {
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/** Lines that carry what a page's bottom is kept for: the legal name, the company number, the registered address (owner, 2026-11-23). */
+const FOOTER_FACT = /\b(?:registered (?:office|address|in)|company (?:no|number|registration)|reg(?:istration)?\.? ?(?:no|number)|vat|handelsregister|hrb|kvk|siren|siret|cin\b|llc|ltd|limited|gmbh|inc\.?|corp(?:oration)?|b\.?v\.?|s\.?a\.?s?|pty|oy|ab\b|ag\b|plc|s\.?r\.?l|sp\. ?z ?o\.?o)\b|\b\d{1,5}\s+[A-Z][\w.'-]*(?:\s+[A-Z][\w.'-]*){0,3}\s+(?:street|st\.?|road|rd\.?|avenue|ave\.?|lane|blvd|boulevard|platz|straße|strasse|rue|via|calle)\b/i;
+/** The bottom of a page, `foot` characters: first the lines that state the legal name, the company number and the address, then the last lines up to the size. */
+export function footerWithFacts(clean: string, foot: number, alreadyIn = ""): string {
+  const tail = clean.slice(-Math.max(foot * 5, 3000)).split("\n").map((l) => l.trim()).filter(Boolean);
+  const chosen = new Set<number>();
+  let used = 0;
+  tail.forEach((l, i) => { if (FOOTER_FACT.test(l) && l.length <= 300 && !alreadyIn.includes(l) && used + l.length + 1 <= foot) { chosen.add(i); used += l.length + 1; } });
+  for (let i = tail.length - 1; i >= 0 && used < foot; i--) { if (chosen.has(i) || alreadyIn.includes(tail[i])) continue; if (used + tail[i].length + 1 > foot) break; chosen.add(i); used += tail[i].length + 1; }
+  return [...chosen].sort((a, b) => a - b).map((i) => tail[i]).join("\n");
+}
+
 /** The text sent to the model: at most `max` characters, nothing the verifier could not find in the full page. */
 export function promptText(full: string, max = 6000): string {
   let clean = stripNavigation(full);
   // The cleaning must not eat the page: when most of it went, the page itself (links and cookie lines aside) is what the model reads.
   if (clean.length < full.length * 0.4 && full.length - clean.length > 600) clean = full.replace(/\n{3,}/g, "\n\n").trim();
   if (clean.length <= max) return clean;
-  const head = Math.floor(max * 0.45), foot = Math.min(700, Math.floor(max * 0.1));
+  // At a small size (3,000 characters since 2026-11-23) the bottom of the page keeps a fifth and the passages are narrower: that is where the legal name, the company number and the address are.
+  const head = Math.floor(max * (max <= 4000 ? 0.4 : 0.45)), foot = max <= 4000 ? Math.floor(max * 0.2) : Math.min(700, Math.floor(max * 0.1));
   const picks: Array<[number, number]> = [[0, head]];
   const budget = max - head - foot;
   let used = 0;
@@ -48,14 +61,14 @@ export function promptText(full: string, max = 6000): string {
   for (const m of hits) {
     const at = m.index ?? 0;
     if (at < head || at > clean.length - foot) continue;
-    const a = Math.max(head, at - 220), b = Math.min(clean.length - foot, at + 380);
+    const small = max <= 4000, a = Math.max(head, at - (small ? 150 : 220)), b = Math.min(clean.length - foot, at + (small ? 300 : 380));
     if (picks.some(([x, y]) => a < y && b > x)) { const last = picks.find(([x, y]) => a < y && b > x)!; const grow = Math.max(0, b - last[1]); if (used + grow <= budget) { last[1] = Math.max(last[1], b); used += grow; } continue; }
     if (used + (b - a) > budget) continue;
     picks.push([a, b]); used += b - a;
   }
   picks.sort((p, q) => p[0] - q[0]);
   const parts = picks.map(([a, b]) => clean.slice(a, b));
-  parts.push(clean.slice(clean.length - foot));
+  parts.push(max <= 4000 ? footerWithFacts(clean, foot, parts.join("\n")) : clean.slice(clean.length - foot));
   return parts.join("\n…\n").slice(0, max);
 }
 

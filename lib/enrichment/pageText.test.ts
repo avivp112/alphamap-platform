@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { stripNavigation, promptText, htmlToText } from "./pageText.ts";
+import { stripNavigation, promptText, htmlToText, footerWithFacts } from "./pageText.ts";
 
 describe("a page for the model, and for the verifier (owner, 2026-11-15)", () => {
   const nav = "[Home](https://x.com)\n[Products](https://x.com/p)\nAbout\nPricing\nLogin\nContact\nBlog\n";
@@ -33,5 +33,13 @@ describe("a page for the model, and for the verifier (owner, 2026-11-15)", () =>
     expect(t).toContain("Plan work.");
     expect(t).toContain("[US shop](https://moft.com)");
     expect(t).not.toContain("x()");
+  });
+  it("the bottom of a page keeps the legal name, the company number and the address (owner, 2026-11-23)", () => {
+    const filler = Array.from({ length: 60 }, (_, i) => `Link ${i} to some other section of the site, nothing else.`).join("\n");
+    const page = `Acme sells robots.\n${filler}\nAcme Robotics Ltd, registered in England, company number 01234567\nRegistered office: 12 High Street, London EC1A 1BB\n${Array.from({ length: 30 }, (_, i) => `Footer link ${i}`).join("\n")}`;
+    const foot = footerWithFacts(page, 600);
+    expect(foot).toContain("company number 01234567");
+    expect(foot).toContain("12 High Street");
+    expect(foot.length).toBeLessThanOrEqual(600);
   });
 });

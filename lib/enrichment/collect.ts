@@ -18,7 +18,7 @@
 import { pickDevLinks } from "./devLinks";
 import Anthropic from "@anthropic-ai/sdk";
 import {
-  verifyDomainMatch, webSearch, readPageCached, fetchPageHtml, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, homepageReadFailure, addressIsDead, websiteRedirect, fetchArticleTexts,
+  verifyDomainMatch, webSearch, readPageCached, fetchPageHtml, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, fetchHomeAndAbout, homepageReadFailure, addressIsDead, websiteRedirect, fetchArticleTexts,
   searchMostlyFailed, sitemapStats, type SearchProviderState,
 } from "./searchProviders.ts";
 import { filterByEntity, deriveIdentityKeywords, nameQualifiersOnOwnSite, isNamesakeDrop, type EntityAnchors } from "./entity.ts";
@@ -506,7 +506,7 @@ export async function collectCompany(
       {
         client: ctx.anthropic, model: ctx.models.enrich,
         search: (q, label) => webSearch(q, label, searchState),
-        homepage: async (w) => (await fetchCompanyWebsitePages(w, searchState))[0]?.content ?? null,
+        homepage: (w) => fetchHomeAndAbout(w, searchState),
       },
     );
     if (found.website) {

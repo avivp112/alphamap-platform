@@ -83,7 +83,7 @@ export async function resolveDomain(facts: DomainFacts, currentHost: string | nu
   const results: Array<Pick<RawSearchResult, "url" | "title">> = [];
   for (const q of queries) results.push(...await deps.search(q, "domain_resolve").catch(() => []));
   const tried: string[] = [];
-  for (const c of candidateSites(results, currentHost)) {
+  for (const c of candidateSites(results, currentHost, 2)) {   // at most two candidate sites, each read at its home page and its about page (owner, 2026-11-23)
     tried.push(c.host);
     const text = await deps.homepage(c.website).catch(() => null);
     // The page must name the company itself — no model can talk a page into being the company's.
