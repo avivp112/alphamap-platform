@@ -844,9 +844,11 @@ export const sitemapStats = new Map<string, { found: number; read: number }>();
 async function sitemapPagesFor(root: string, state: SearchProviderState): Promise<string[]> {
   let origin: string;
   try { origin = new URL(root).origin; } catch { return []; }
-  const key = `sitemap:${origin}`;
+  // The cache keeps the sitemap's ADDRESSES (key sitemap2), not the pages picked from them: what is picked changes with the rules (owner, 2026-11-24: Kry's press page about its $300M round was never picked again because the
+  // list picked by the old rules sat in the cache under "sitemap:"). The pick is made on every call.
+  const key = `sitemap2:${origin}`;
   const cached = state.cache?.get<string[]>(key);
-  if (cached) return cached;
+  if (cached) return cached.length ? pickSitePages(cached, root) : [];
   const get = async (url: string): Promise<string | null> => (await readPage(url, state, false))?.text ?? null;
   const addresses = (text: string): { kind: "urlset" | "index"; urls: string[] } => {
     const parsed = parseSitemap(text);
@@ -872,8 +874,9 @@ async function sitemapPagesFor(root: string, state: SearchProviderState): Promis
     const robots = await get(`${origin}/robots.txt`);
     for (const sm of robots ? robotsSitemaps(robots).slice(0, 2) : []) await read(sm);
   }
-  const picked = urls.length ? pickSitePages(urls, root) : [];
-  state.cache?.set(key, picked);
+  const unique = [...new Set(urls)].slice(0, 5000);
+  const picked = unique.length ? pickSitePages(unique, root) : [];
+  state.cache?.set(key, unique);
   return picked;
 }
 
