@@ -312,13 +312,13 @@ export async function runAllSearches(name: string, anchor: string, state: Search
     ["team",         `"${name}"${anchor} employees team size headcount hiring`],
     ["linkedin",     `site:linkedin.com/company "${name}"`],
     // Sentences that say who it competes with — not "alternatives" lists (competitorEvidence.ts).
-    ["competitors",  `"${name}"${anchor} "competes with" OR "competitors include" OR "rival" OR "competing with"`],
+    ...(componentOn("competitors") ? [["competitors",  `"${name}"${anchor} "competes with" OR "competitors include" OR "rival" OR "competing with"`] as [string, string]] : []),
     ["acquisitions", `"${name}"${anchor} acquires OR acquired OR acquisition`],
     ["financials",   `"${name}"${anchor} ARR "annual recurring revenue" OR revenue estimate OR valued at OR valuation milestone`],
     // Fixed searches on every run (owner, 2026-11-15: values that came and went between runs — Motorway's $190M round, ZestMoney's Zip round, Pink Farms' São Paulo):
     // what a result list happens to contain must not decide whether a round, a founder or a headquarters is found.
     ["raises",       `"${name}"${anchor} raises`],
-    ["funding_round", `"${name}"${anchor} "funding round"`],
+    // ("funding_round" — `"name" "funding round"` — was merged into "raises" and the general "funding" query, which overlap it: owner, 2026-11-23, maintenance window)
     ["founded_by",   `"${name}"${anchor} "founded by"`],
     // The press's own HQ phrase ("Tel Aviv-based Hailo") — without the domain
     // anchor, which news articles rarely carry (owner, 2026-11-01; headquarters.ts).
@@ -342,7 +342,7 @@ export async function runAllSearches(name: string, anchor: string, state: Search
     ),
   ]);
   // Which fixed searches ran, and what each returned (owner, round 10): a missing value is either a search that found nothing or an extraction that missed it.
-  const fixed = ["raises", "funding_round", "founded_by", "headquarters", ...(lang ? ["founders_local", "founded_local", "headquarters_local", "raises_local", "acquired_local"] : [])].filter((l) => !skip.has(l) && queries.some(([q]) => q === l));
+  const fixed = ["raises", "founded_by", "headquarters", ...(lang ? ["founders_local", "founded_local", "headquarters_local", "raises_local", "acquired_local"] : [])].filter((l) => !skip.has(l) && queries.some(([q]) => q === l));
   console.log(`    🔎  Fixed searches${lang ? ` (+ in ${lang})` : ""}: ${fixed.map((l) => `${l} (${searchBatches.flat().filter((r) => r.query_label === l).length} result(s))`).join(", ")}`);
   return [...searchBatches.flat(), ...newsResults];
 }
@@ -820,14 +820,13 @@ export async function collectCompany(
       bootstrapped: firstPassRounds.some((r) => normalizeRoundType(r.round_type) === "Bootstrapped"),
       hasDescription: !!(row.description || profile.profile.description),
       hasLocation: !!((row.city || profile.profile.city) && (row.country || profile.profile.country)),
-      hasHeadcount: row.employee_count != null || !!profile.metrics.employee_count || !!profile.metrics.employee_range,
+      hasHeadcount: true,   // headcount, competitors, news and patents are Tier 3: the deep dive runs only for a missing core field (owner, 2026-11-23)
       // Founders are covered by the "founded by" scan and the LinkedIn step
       // below; a whole profile deep dive just for them added nothing in a
       // 20-company run (+0 founders in every one).
       hasFounders: true,
-      competitorCount: (row.competitors?.length ?? 0) + market.competitors.length,
-      // Fresh news is worth a second look even when older articles are on file.
-      newsCount: market.news.length,
+      competitorCount: 1,
+      newsCount: 1,
       hasFoundedYear: row.founded_year != null || !!profile.profile.founded_year,
       // Patent deep dive only when some source ties a patent to this company
       // — most startups have none, and searching for them anyway found
@@ -2208,7 +2207,7 @@ export async function collectCompany(
     const today = new Date().toISOString().slice(0, 10);
     if (ukRegisterEntity && (hqNow ?? "").toLowerCase().replace(/^uk$/, "united kingdom") === "united kingdom") headcountExtra.push(...await companiesHouseHeadcount(ukRegisterEntity.number, ukRegisterEntity.entity, io));
     if ((hqNow ?? "").toLowerCase() === "norway") headcountExtra.push(...await brregHeadcount(row.name, legal.legalName, io, today));
-    if (domain) headcountExtra.push(...await waybackHeadcount(domain, row.name, io));
+    if (domain && componentOn("headcount_archive")) headcountExtra.push(...await waybackHeadcount(domain, row.name, io));
     // The company's own pages as they are now (owner, round 10): "Team of 50+", "over 200 people" → a lower bound, site_stated; a team page that shows N people → "N+", observed.
     for (const src of allSources) {
       if (src.source_type !== "company_site" || !profileSourceAllowed(src, row.name) || isThirdPartyPage(src.url)) continue;

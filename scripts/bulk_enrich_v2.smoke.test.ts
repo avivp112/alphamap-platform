@@ -227,6 +227,7 @@ vi.mock("@anthropic-ai/sdk", () => ({ default: class { messages = { create: crea
 
 describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
   beforeAll(async () => {
+    process.env.V2_COMPONENTS = "competitors=on,competitor_tiers=on,market_compare=on,founder_background=on,epo_patents=on,headcount_archive=on";   // the legacy test covers the Tier 3 collectors, off by default since 2026-11-23
     process.env.DOMAIN_RESOLVE = "false"; process.env.PREFLIGHT = "off"; process.env.SITEMAP = "off"; process.env.TRANSLATE = "false"; process.env.TECH_DECISIONS = `${process.env.TMPDIR ?? "/tmp"}/tech_decisions_smoke_${Date.now()}.json`; process.env.KNOWN_SOURCES = "off";
     process.env.DRY_RUN = "false";
     // Every field open in the tracker (≥20 marked, ≥90% correct): the write path is under test, not the gate.

@@ -22,7 +22,7 @@ describe("buildSharedExtractionRequest — one cached prefix for all three calls
     expect(reqs.map((r) => r.tool_choice.name)).toEqual(["save_profile_extraction", "save_funding_extraction", "save_market_extraction"]);
     expect(reqs[0].messages[0].content).toContain("ACTIVELY SEARCH EVERY CATEGORY");
     expect(reqs[1].messages[0].content).toContain("DIG FOR EARLY ROUNDS");
-    expect(reqs[2].messages[0].content).toContain("Today's date is 2026-10-05");
+    expect(reqs[2].messages[0].content).not.toMatch(/today's date/i);
   });
 
   it("puts the sources in the cached system block, never in the user message", () => {

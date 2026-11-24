@@ -29,14 +29,24 @@ const raw: RawSearchResult[] = [
 const sources = buildLabeledSources(raw, "ghost.org");
 
 describe("buildMarketExtractionRequest", () => {
-  const req = buildMarketExtractionRequest("Ghost", sources, "2026-10-05");
-  it("forces its own tool, includes today's date for relative news dates, and names the competitor evidence types", () => {
+  const req = buildMarketExtractionRequest("Ghost", sources, "2026-10-05", true);
+  const off = buildMarketExtractionRequest("Ghost", sources, "2026-10-05", false);
+  it("forces its own tool, carries no date, and names the competitor evidence types", () => {
     expect(req.tool_choice).toEqual({ type: "tool", name: "save_market_extraction" });
     const text = req.messages[0].content as string;
-    expect(text).toContain("Today's date is 2026-10-05");
+    expect(text).not.toMatch(/today's date|2026-10-05/i);   // a date in the prompt breaks the prompt cache and the match of the recordings (owner, 2026-11-23)
     expect(text).toContain("EXPLICITLY says compete with Ghost");
     expect(text).toContain("LeadIQ");
     expect(text).toContain("never add a well-known company from your own knowledge");
+  });
+  it("competitors off (the default, owner 2026-11-23): no competitor or market-peer rule, field or requirement; news, acquisitions and technology stay", () => {
+    const text = off.messages[0].content as string;
+    expect(text.split("Labeled research")[0]).not.toMatch(/COMPETITORS|MARKET_PEERS|competes with/);   // the rules; the sources below may say anything
+    expect(text).toContain("NEWS —"); expect(text).toContain("ACQUISITIONS —"); expect(text).toContain("TECHNOLOGY —");
+    const schema = off.tools[0].input_schema as { properties: Record<string, unknown>; required: string[] };
+    expect(Object.keys(schema.properties)).toEqual(["acquisitions", "news", "technology"]);
+    expect(schema.required).toEqual(["news"]);
+    expect(buildMarketExtractionRequest("Ghost", sources).messages[0].content).toBe(text);   // off is the default
   });
 });
 
@@ -159,7 +169,7 @@ describe("a company it acquired is never also listed as a competitor", () => {
 import { buildMarketExtractionRequest as buildMarketReq, processMarketExtractionResponse as processMarket } from "./extractMarket";
 describe("market peers are asked for (review 6, 2026-11-08: 0 of 30 companies produced a hint)", () => {
   it("the prompt asks for them and the schema requires the field", () => {
-    const req = buildMarketReq("Nova", []);
+    const req = buildMarketReq("Nova", [], undefined, true);
     expect(req.messages[0].content as string).toMatch(/MARKET_PEERS/);
     expect((req.tools[0].input_schema as { required: string[] }).required).toContain("market_peers");
   });
