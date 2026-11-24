@@ -44,6 +44,7 @@ import type { Provider, RawSearchResult } from "./sources";
 import { websiteDomain } from "./websiteValidation";
 import type { SearchCache } from "./searchCache";
 import { cleanArticleText } from "./articles";
+import { noteRateLimit, waitIfLimited } from "./rateLimit.ts";
 import { componentOn } from "./components";
 import { replayMode } from "./recorder.ts";
 
@@ -171,6 +172,7 @@ async function serperCall(endpoint: "search" | "news", query: string, queryLabel
   if (cached) return { results: cached.map((r) => ({ ...r, query_label: queryLabel })), failed: false };
   state.searchAttempts = (state.searchAttempts ?? 0) + 1;
   try {
+    await waitIfLimited("serper");   // a 429 to any company pauses them all
     const res = await fetch(`https://google.serper.dev/${endpoint}`, {
       method: "POST",
       headers: { "X-API-KEY": process.env.SERP_KEY, "Content-Type": "application/json" },
@@ -180,7 +182,7 @@ async function serperCall(endpoint: "search" | "news", query: string, queryLabel
     if (res.status === 429 && attempt < 3) {
       const wait = 10_000 * 2 ** attempt;
       console.warn(`    ⚠️  ${name} 429 — waiting ${wait / 1000}s (retry ${attempt + 1}/3)…`);
-      await sleep(wait);
+      noteRateLimit("serper", wait);
       return serperCall(endpoint, query, queryLabel, state, attempt + 1);
     }
     if (!res.ok) {
@@ -489,9 +491,10 @@ export function jinaDisabled(now = Date.now()): string | null {
   return jinaDisabledReason;
 }
 
-async function fetchViaJinaReader(url: string, state: SearchProviderState): Promise<string | null> {
+async function fetchViaJinaReader(url: string, state: SearchProviderState, attempt = 0): Promise<string | null> {
   if (jinaDisabled()) return null;
   try {
+    await waitIfLimited("jina");
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), JINA_TIMEOUT_MS);
     const headers: Record<string, string> = { Accept: "text/plain" };
@@ -501,6 +504,12 @@ async function fetchViaJinaReader(url: string, state: SearchProviderState): Prom
     if (res.status === 402 || res.status === 401) {
       disableJina(res.status);
       return null;
+    }
+    if (res.status === 429 && attempt < 2) {
+      const wait = 10_000 * 2 ** attempt;
+      console.warn(`    ⚠️  Jina Reader 429 — every company waits ${wait / 1000}s (retry ${attempt + 1}/2)…`);
+      noteRateLimit("jina", wait);
+      return fetchViaJinaReader(url, state, attempt + 1);
     }
     if (!res.ok) {
       lastFailure = `HTTP ${res.status}`;

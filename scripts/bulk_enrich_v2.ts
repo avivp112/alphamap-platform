@@ -48,6 +48,7 @@ import { pathToFileURL } from "url";
 import { initV1Context, supabase } from "./bulk_enrich_all.ts";
 import { collectCompany, V2_STARTUP_COLUMNS, V2_ROUND_COLUMNS, type V2StartupRow, type V2FundingRoundRow, type CollectResult } from "../lib/enrichment/collect.ts";
 import { saveCollected, loadCollected } from "../lib/enrichment/collectedStore.ts";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { writeCollected, BULK_THRESHOLDS } from "../lib/enrichment/writeCompany.ts";
 
 import { classifyTier, type TierRow, type TierRound } from "../lib/enrichment/queue.ts";
@@ -326,6 +327,10 @@ function recordCost(
 }
 
 
+/** One attempt at one company (owner, 2026-11-23: 5 minutes, one retry). An attempt given up is marked cancelled; what it still holds stops at its next stage and writes and reports nothing. */
+const attemptStore = new AsyncLocalStorage<{ cancelled: boolean }>();
+const attemptCancelled = () => attemptStore.getStore()?.cancelled === true;
+
 async function processCompany(
   row: V2StartupRow,
   existingRounds: V2FundingRoundRow[],
@@ -341,6 +346,7 @@ async function processCompany(
     try {
       await enrichCompany(row, existingRounds, taxonomy, startupByDomain, summary, searchState);
     } catch (err) {
+      if (attemptCancelled()) return;   // an attempt that was given up: its end is no result of the company
       console.error(`    💥  Unhandled error processing "${row.name}": ${String(err)}`);
       summary.tally.error++; failedNames.add(row.name);
     }
@@ -392,6 +398,7 @@ async function enrichCompany(
     models: { enrich: ENRICH_MODEL, profile: PROFILE_MODEL, funding: FUNDING_MODEL, market: MARKET_MODEL },
     update: UPDATE, deepDive: DEEP_DIVE, techGate: TECH_GATE, articlesToRead: ARTICLES_TO_READ, verbose: VERBOSE,
     seen,
+    onStage: () => { if (attemptCancelled()) throw new Error("attempt given up"); },
     knownProvenanceUrls: async () => {
       const { data: prov } = await supabase.from("field_provenance").select("source_url").eq("startup_id", row.id).limit(2000);
       return ((prov ?? []) as Array<{ source_url: string | null }>).map((p) => p.source_url);
@@ -411,6 +418,7 @@ async function enrichCompany(
       return ((data ?? []) as Array<{ id: string; value: Omit<RoundHint, "source_url" | "id">; source_url: string | null }>).map((h) => ({ ...h.value, source_url: h.source_url, id: h.id }));
     },
   }, summary, searchState);
+  if (attemptCancelled()) return;   // given up while collecting: nothing is saved, written or reported
   if (process.env.SAVE_COLLECTED && !loaded) {
     try { saveCollected(process.env.SAVE_COLLECTED, row.id, collected, existingRounds); }
     catch (e) { console.warn(`    ⚠️  collected not saved for ${row.name}: ${String(e)} — this company cannot be written from the live run`); }
@@ -843,9 +851,9 @@ async function main() {
   let consecutiveErrors = 0;
   if (DRY_RUN) console.log("ℹ️  DRY_RUN: nothing is written, so the queue does not advance between dry runs — the same companies come first every time (use OFFSET=… or ONLY=… to look at others).\n");
 
-  // CONCURRENCY=5: five companies at once, each one's log gathered into one block, each held to COMPANY_TIMEOUT_MS (10 minutes) so a dead site cannot stall the run.
+  // CONCURRENCY=5: five companies at once, each one's log gathered into one block, each held to COMPANY_TIMEOUT_MS (5 minutes, one more try) so a dead site cannot stall the run.
   const CONCURRENCY = Math.max(1, Number(process.env.CONCURRENCY ?? 1));
-  const COMPANY_TIMEOUT_MS = Number(process.env.COMPANY_TIMEOUT_MS ?? 600_000);
+  const COMPANY_TIMEOUT_MS = Number(process.env.COMPANY_TIMEOUT_MS ?? 300_000);
   if (CONCURRENCY > 1) installCompanyLog();
   installLineTap();   // after the gathering patch: every line is also kept for the company's gaps
   let next = 0, finished = 0, stopSystemic = false;
@@ -864,15 +872,28 @@ async function main() {
       running.add(row.name);
       const job = () => withCompany(row.name, () => processCompany(row, roundsByStartup.get(row.id) ?? [], taxonomy, startupByDomain, summary));
       let timedOut = false;
-      const timeout = new Promise<"timeout">((r) => setTimeout(() => r("timeout"), COMPANY_TIMEOUT_MS));
-      if (CONCURRENCY > 1) {
-        const g = gathered(job);
-        const first = await Promise.race([g, timeout]);
-        if (first === "timeout") { timedOut = true; console.log(`⏱️  ${row.name}: still running after ${COMPANY_TIMEOUT_MS / 60_000} min — given up (counted as an error); its work is abandoned.`); summary.tally.error++; failedNames.add(row.name); notEnrich(row, "error", "timeout", `the company took longer than ${COMPANY_TIMEOUT_MS / 60_000} minutes`); }
-        else { console.log(`┌── ${row.name}\n${first.lines.join("\n")}\n└── ${row.name} done`); if (first.error) { console.error(`💥  ${row.name}: ${String(first.error)}`); summary.tally.error++; failedNames.add(row.name); } }
-      } else {
-        const first = await Promise.race([job().then(() => "ok" as const), timeout]);
-        if (first === "timeout") { timedOut = true; console.log(`⏱️  ${row.name}: still running after ${COMPANY_TIMEOUT_MS / 60_000} min — given up (counted as an error).`); summary.tally.error++; failedNames.add(row.name); notEnrich(row, "error", "timeout", `the company took longer than ${COMPANY_TIMEOUT_MS / 60_000} minutes`); }
+      // 5 minutes per attempt, all calls included (each also has its own timeout); an attempt that is stopped is tried once more, and a second stop is the company's error.
+      for (let attemptNo = 1; ; attemptNo++) {
+        const token = { cancelled: false };
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<"timeout">((r) => { timer = setTimeout(() => r("timeout"), COMPANY_TIMEOUT_MS); });
+        let stopped = false;
+        if (CONCURRENCY > 1) {
+          const g = attemptStore.run(token, () => gathered(job));
+          const first = await Promise.race([g, timeout]); clearTimeout(timer);
+          if (first === "timeout") stopped = true;
+          else { console.log(`┌── ${row.name}\n${first.lines.join("\n")}\n└── ${row.name} done`); if (first.error) { console.error(`💥  ${row.name}: ${String(first.error)}`); summary.tally.error++; failedNames.add(row.name); } }
+        } else {
+          const first = await Promise.race([attemptStore.run(token, () => job()).then(() => "ok" as const), timeout]); clearTimeout(timer);
+          if (first === "timeout") stopped = true;
+        }
+        if (!stopped) break;
+        token.cancelled = true;
+        if (attemptNo === 1) { console.log(`⏱️  ${row.name}: still running after ${COMPANY_TIMEOUT_MS / 60_000} min — stopped, tried once more.`); continue; }
+        timedOut = true;
+        console.log(`⏱️  ${row.name}: still running after ${COMPANY_TIMEOUT_MS / 60_000} min on the second try too — given up (counted as an error).`);
+        summary.tally.error++; failedNames.add(row.name); notEnrich(row, "error", "timeout", `the company took longer than ${COMPANY_TIMEOUT_MS / 60_000} minutes, twice`);
+        break;
       }
       running.delete(row.name); finished++;
       consecutiveErrors = failedNames.has(row.name) ? consecutiveErrors + 1 : 0;
