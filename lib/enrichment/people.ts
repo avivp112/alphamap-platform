@@ -346,12 +346,14 @@ export function foundersFromCards(text: string, companyName: string): Array<{ na
   const lines = text.split(/\n+/).map(stripMarkdown).filter(Boolean);
   const add = (name: string, title: string, quote: string) => {
     if (!hasFounderWord(title) || founderOfAnother(title, companyName)) return;
+    if (/\b(?:said|says)\b|:\s*$/i.test(title)) return;   // a sentence of a quote, not a title
     if (!out.some((o) => samePersonName(o.name, name))) out.push({ name, title: title.slice(0, 80), quote: quote.slice(0, 240) });
   };
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     // Name and title on one line.
-    const same = line.match(/^(.{3,60}?)\s*[,|–—:-]\s*(.{3,100})$/u);
+    // A hyphen inside a word ("Al-Raee") does not separate the name from the title; a spaced hyphen does (owner, 2026-11-24: Lendo).
+    const same = line.replace(/\b(Al|El|Abu|Abd|Ibn|Bin)\s*[–—]\s*(?=\p{Lu})/gu, "$1-").match(/^(.{3,60}?)(?:\s*[,|:–—]\s*|\s+-\s+)(.{3,100})$/u);
     if (same) { const n = personName(same[1]); if (n) { add(n, same[2], line); continue; } }
     // The name alone, the title right below.
     const n = personName(line);
@@ -369,7 +371,7 @@ export function teamPeopleCount(text: string): { count: number; quote: string } 
   const lines = text.split(/\n+/).map(stripMarkdown).filter(Boolean);
   const seen = new Set<string>();
   for (let i = 0; i < lines.length; i++) {
-    const same = lines[i].match(/^(.{3,60}?)\s*[,|–—:-]\s*(.{3,80})$/u);
+    const same = lines[i].match(/^(.{3,60}?)(?:\s*[,|:–—]\s*|\s+-\s+)(.{3,80})$/u);
     const name = same ? personName(same[1]) : personName(lines[i]);
     const title = same ? same[2] : lines[i + 1] ?? "";
     if (name && title.length <= 100 && ROLE_LINE.test(title) && !ROLE_LINE.test(name)) seen.add(name.toLowerCase());

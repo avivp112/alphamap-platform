@@ -308,3 +308,12 @@ d1124("a name with a dash is one name; a sentence after it is not part of it (ow
     expect1124(cleanName1124("Jane Doe, Jr.")).toBe("Jane Doe, Jr.");
   });
 });
+
+import { foundersFromCards as cards1124 } from "./people.ts";
+d1124("a hyphen inside a name does not split name from title (owner, 2026-11-24: Lendo's Al-Raee)", () => {
+  it1124("Osama Al-Raee, Chief Executive Officer and Co-Founder of Lendo, said:  is no card; a real card with a hyphen name is kept whole", () => {
+    expect1124(cards1124("Osama Al-Raee, Chief Executive Officer and Co-Founder of Lendo, said:", "Lendo")).toEqual([]);
+    const r = cards1124("Osama Al-Raee - Co-Founder & CEO", "Lendo");
+    expect1124(r[0]?.name).toBe("Osama Al-Raee");
+  });
+});
