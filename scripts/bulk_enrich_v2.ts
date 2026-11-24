@@ -863,7 +863,7 @@ async function main() {
       const row = queue[i];
       const elapsedMin = (Date.now() - runStartedAt) / 60_000;
       const t = summary.tally;
-      console.log(`📍 [${i + 1}/${queue.length}] ${elapsedMin.toFixed(0)} min | $${summary.totalCostUsd.toFixed(2)} so far | ✅ ${t.success} 🟠 ${t.partial} 🚫 ${t.rejected} 🔍 ${t.low_evidence + t.no_data} 💥 ${t.error}${t.search_unavailable ? ` 📡 ${t.search_unavailable}` : ""}${UPDATE ? ` 💤 ${t.no_change}` : ""}  → ${row.name}`);
+      console.log(`📍 ${process.env.BATCH_LABEL ? `${process.env.BATCH_LABEL} ` : ""}[${i + 1}/${queue.length}] ${elapsedMin.toFixed(0)} min | $${summary.totalCostUsd.toFixed(2)} so far${process.env.COST_BASE ? ` ($${(Number(process.env.COST_BASE) + summary.totalCostUsd).toFixed(2)} in all)` : ""} | ✅ ${t.success} 🟠 ${t.partial} 🚫 ${t.rejected} 🔍 ${t.low_evidence + t.no_data} 💥 ${t.error}${t.search_unavailable ? ` 📡 ${t.search_unavailable}` : ""}${UPDATE ? ` 💤 ${t.no_change}` : ""}  → ${row.name}`);
       const errorsBefore = summary.tally.error + summary.tally.error_incomplete_extraction + summary.tally.search_unavailable;
       const noChangeBefore = summary.tally.no_change;
       running.add(row.name);

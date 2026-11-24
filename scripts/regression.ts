@@ -23,6 +23,15 @@ import {
 } from "../lib/enrichment/regressionGate.ts";
 
 const OUT = "regression/out";
+/** A cost cap is always on (owner, 2026-11-24): MAX_COST dollars for the whole run, 5 when not given. The cost of a company is estimated at $0.012 (batch 8 measured it), the rest of the call is free from the recordings. */
+const CAP = Number(process.env.MAX_COST ?? 5);
+const PER_COMPANY = 0.012;
+function printPlan(batches: number[], what: string): void {
+  let total = 0;
+  console.log(`\n${what}: the companies of each batch and the estimate at $${PER_COMPANY} a company (what the recordings do not have is asked live; what they have is free):`);
+  for (const n of batches) { const k = idsOf(n).length; total += k; console.log(`  batch ${n}: ${String(k).padStart(4)} compan(ies) → up to $${(k * PER_COMPANY).toFixed(2)}`); }
+  console.log(`  total: ${total} compan(ies) → up to $${(total * PER_COMPANY).toFixed(2)} · the cap of this run: $${CAP} (MAX_COST=<dollars> changes it) — at the cap the run stops and what was recorded stays.\n`);
+}
 const today = new Date().toISOString().slice(0, 10);
 
 function idsOf(n: number): string[] {
@@ -33,21 +42,22 @@ function idsOf(n: number): string[] {
 }
 const readCsv = (p: string) => { const [head, ...body] = parseCsv(readFileSync(p, "utf8")); return { head, body, ix: (c: string) => { const e = head.findIndex((h) => h === c); return e >= 0 ? e : head.findIndex((h) => h.startsWith(c)); } }; };
 
-interface RunResult { n: number; rows: RunRow[]; rejections: Rejected[]; acceptance: Array<{ id: string; severity: string; pass: boolean; detail: string }>; cost: number; companies: number; misses: string[]; live: string; diag: Record<string, string[]>; runLog: string[] }
+interface RunResult { capped?: boolean; n: number; rows: RunRow[]; rejections: Rejected[]; acceptance: Array<{ id: string; severity: string; pass: boolean; detail: string }>; cost: number; companies: number; misses: string[]; live: string; diag: Record<string, string[]>; runLog: string[] }
 
 /** One batch, clean slate, from the recordings. */
-function runBatch(n: number, fill = false): RunResult {
+function runBatch(n: number, fill = false, costBase = 0): RunResult {
   const dir = `${OUT}/batch_${n}`;
   rmSync(dir, { recursive: true, force: true }); mkdirSync(dir, { recursive: true });
   const ids = idsOf(n);
   console.log(`▶ batch ${n}: ${ids.length} compan(ies), REPLAY from the recordings …`);
-  const child = spawnSync("npx", ["tsx", "scripts/bulk_enrich_v2.ts"], {
-    env: { ...process.env, PILOT: "true", DRY_RUN: "true", REGRESSION: "1", REGRESSION_DIR: dir, REPLAY: "1", KNOWN_SOURCES: "off", ALL_FIELDS: "true", SITEMAP: "on", BATCH_NO: String(n),
-      CONCURRENCY: process.env.CONCURRENCY ?? "10", PILOT_MAX_COMPANIES: String(Math.max(ids.length, 1)), ONLY: ids.join(","), PILOT_REPORT: `${dir}/pilot_report.csv`, GIT_CHECK: "off", PREFLIGHT: "off", ...(fill ? { REPLAY_FILL: "1", MAX_COST: process.env.MAX_COST ?? "3" } : {}) },
-    encoding: "utf8", maxBuffer: 1 << 29,
-  });
-  writeFileSync(`${dir}/run.log`, `${child.stdout ?? ""}\n${child.stderr ?? ""}`);
-  if (child.status !== 0 || !existsSync(`${dir}/pilot_report.csv`)) throw new Error(`batch ${n}: the run failed (exit ${child.status}). ${String(child.stderr ?? "").slice(-400)}`);
+  // The run's log goes to run.log and its progress lines — one per company: "batch N [i/M] … $x so far ($y in all)" — to the screen as they come (owner, 2026-11-24: a batch was silent for minutes).
+  const env = { ...process.env, PILOT: "true", DRY_RUN: "true", REGRESSION: "1", REGRESSION_DIR: dir, REPLAY: "1", KNOWN_SOURCES: "off", ALL_FIELDS: "true", SITEMAP: "on", BATCH_NO: String(n),
+    CONCURRENCY: process.env.CONCURRENCY ?? "10", PILOT_MAX_COMPANIES: String(Math.max(ids.length, 1)), ONLY: ids.join(","), PILOT_REPORT: `${dir}/pilot_report.csv`, GIT_CHECK: "off", PREFLIGHT: "off",
+    BATCH_LABEL: `batch ${n}`, COST_BASE: String(costBase), ...(fill ? { REPLAY_FILL: "1" } : {}) };
+  const child = spawnSync("bash", ["-o", "pipefail", "-c", `npx tsx scripts/bulk_enrich_v2.ts 2>&1 | tee ${dir}/run.log | (grep --line-buffered -E '^(📍|⛔|💸)' || true)`], { stdio: "inherit", env, maxBuffer: 1 << 29 });
+  const logText = existsSync(`${dir}/run.log`) ? readFileSync(`${dir}/run.log`, "utf8") : "";
+  const capped = child.status === 3;   // MAX_COST reached: what was collected is reported and what was recorded stays (bulk_enrich_v2.ts)
+  if ((child.status !== 0 && !capped) || !existsSync(`${dir}/pilot_report.csv`)) throw new Error(`batch ${n}: the run failed (exit ${child.status}). ${logText.slice(-400)}`);
   const rep = readCsv(`${dir}/pilot_report.csv`);
   const rows: RunRow[] = rep.body.map((r) => ({ company: r[rep.ix("company")] ?? "", field: r[rep.ix("field")] ?? "", value: r[rep.ix("after")] ?? "" }));
   const rejections: Rejected[] = [];
@@ -57,10 +67,10 @@ function runBatch(n: number, fill = false): RunResult {
   const checks = specPathsFor(n).flatMap((p) => JSON.parse(readFileSync(p, "utf8")) as Check[]).filter((c) => !seen.has(c.id) && !!seen.add(c.id));
   const notEnriched = existsSync(`${dir}/not_enriched.csv`) ? parseCsv(readFileSync(`${dir}/not_enriched.csv`, "utf8")).slice(1).map((r) => r[0]) : [];
   const acceptance = runAcceptance(checks, rowsFromCsv(readFileSync(`${dir}/pilot_report.csv`, "utf8")), notEnriched, today).map((r) => ({ id: r.id, severity: r.severity, pass: r.pass, detail: r.detail }));
-  const summary = existsSync(`${dir}/batch_${n}_summary.md`) ? readFileSync(`${dir}/batch_${n}_summary.md`, "utf8") : String(child.stdout ?? "");
+  const summary = existsSync(`${dir}/batch_${n}_summary.md`) ? readFileSync(`${dir}/batch_${n}_summary.md`, "utf8") : logText;
   const cost = Number(summary.match(/model cost \$([\d.]+)/)?.[1] ?? 0);
   // A web response the recordings did not have makes the replay unfaithful for that company: the gate says so (the log of the run is regression/out/batch_N/run.log).
-  const out = String(child.stdout ?? "");
+  const out = logText;
   const misses = out.split("\n").filter((l) => /^\s*REPLAY MISS /.test(l)).map((l) => l.trim());
   const live = out.split("\n").find((l) => /live model steps:/.test(l))?.trim() ?? "";
   // For a check that fails on a company, that company's own log lines (what the run found, what it dropped and why) — so the cause is read at once, not asked for.
@@ -79,7 +89,7 @@ function runBatch(n: number, fill = false): RunResult {
     let end = runLog.findIndex((l, i) => i > at && /^── .* \(/.test(l)); if (end < 0) end = runLog.length;
     diag[c.id] = runLog.slice(at, end).filter((l) => /🏁|acquisition|🚫  (news|Acquired|Seed|Series|Other|Growth)|🚦|🏷️|📅  news|\[DRY\] would write (acquired|round|tags|news)|✅ \d+ field|🟠 /.test(l) && !/🌐/.test(l)).map((l) => l.trim().slice(0, 190)).slice(0, 36);
   }
-  return { n, rows, rejections, acceptance, cost, companies: ids.length, misses, live, diag, runLog };
+  return { n, rows, rejections, acceptance, cost, companies: ids.length, misses, live, diag, runLog, capped };
 }
 
 function baselineFrom(res: RunResult, source: string): Baseline {
@@ -151,13 +161,16 @@ if (cmd === "fill-estimate") {
 if (cmd === "fill") {
   const batches = (args.length ? args.map(Number) : writtenBatches()).filter((x) => Number.isInteger(x) && x > 0);
   let cost = 0;
-  const cap = Number(process.env.MAX_COST ?? 3);
+  const cap = CAP;
+  printPlan(batches, "fill");
+  if (process.env.GO !== "1") { console.log("Nothing was run. To run it: GO=1 npx tsx scripts/regression.ts fill"); process.exit(0); }
   for (const n of batches) {
     let res: RunResult;
     if (cap - cost <= 0.01) { console.log(`── batch ${n}: not run — the cap of $${cap} is spent`); process.exit(3); }
     process.env.MAX_COST = String(cap - cost);
-    try { res = runBatch(n, true); } catch (e) { console.log(`── batch ${n}: stopped — ${String((e as Error).message).slice(0, 300)}${/MAX_COST/.test(String((e as Error).message)) ? "  (the cap was reached; what was recorded stays)" : ""}`); process.exit(3); }
+    try { res = runBatch(n, true, cost); } catch (e) { console.log(`── batch ${n}: stopped — ${String((e as Error).message).slice(0, 300)}${/MAX_COST/.test(String((e as Error).message)) ? "  (the cap was reached; what was recorded stays)" : ""}`); process.exit(3); }
     cost += res.cost;
+    if (res.capped) { console.log(`── batch ${n}: the cap of $${cap} was reached (cost so far $${cost.toFixed(2)}) — stopped; what was recorded stays. Run it again (GO=1 MAX_COST=<more>): the recordings made are used and cost nothing.`); process.exit(3); }
     console.log(`── batch ${n}: recordings completed · ${res.misses.length ? `still missing for ${res.misses.length} company(ies)` : "no response missing"}${res.live ? ` · ${res.live}` : ""} · model cost $${res.cost.toFixed(2)}`);
   }
   console.log(`cost of this run: $${cost.toFixed(2)} (web requests not included). Run the gate again: npx tsx scripts/regression.ts`);
@@ -175,10 +188,14 @@ const missing = batches.filter((n) => !loadBaseline(n));
 if (missing.length) { console.error(`⛔  No baseline for batch ${missing.join(", ")}: npx tsx scripts/regression.ts init ${missing.join(" ")}`); process.exit(1); }
 
 let failed = false, cost = 0, totalValues = 0;
+printPlan(batches, "the gate");
 for (const n of batches) {
   const base = loadBaseline(n)!;
-  const res = runBatch(n);
+  if (CAP - cost <= 0.01) { console.log(`\n💸  The cap of $${CAP} is spent: batch ${n} and the ones after it were not run. What was recorded stays; run the gate again (MAX_COST=<more>): the recordings made are used and cost nothing.`); process.exit(3); }
+  process.env.MAX_COST = String(CAP - cost);
+  const res = runBatch(n, false, cost);
   cost += res.cost;
+  if (res.capped) { console.log(`\n💸  The cap of $${CAP} was reached in batch ${n} (cost so far $${cost.toFixed(2)}): the gate stopped — it is neither passed nor failed. What was recorded stays; run it again (MAX_COST=<more>): the recordings made are used and cost nothing.`); process.exit(3); }
   const cmp = compare(base.values, res.rows, res.rejections);
   const errs = acceptanceErrors(res.acceptance);
   totalValues += base.values.length;
@@ -198,7 +215,7 @@ for (const n of batches) {
   if (cmp.changed.length) { console.log("   changed (one value per company, a different one now — not a failure, to look at):"); for (const c of cmp.changed.slice(0, 15)) console.log(`   ~ ${c.company} · ${c.field}: ${c.was.slice(0, 50)} → ${c.now.slice(0, 50)}`); if (cmp.changed.length > 15) console.log(`   … and ${cmp.changed.length - 15} more`); }
   if (cmp.added.length) { console.log("   new values:"); for (const a of cmp.added.slice(0, 25)) console.log(`   + ${a.company} · ${a.field} · ${a.value.slice(0, 90)}`); if (cmp.added.length > 25) console.log(`   … and ${cmp.added.length - 25} more`); }
 }
-console.log(`\ncost of this run: $${cost.toFixed(2)}${cost > 0.1 ? "  ⚠️ over the aim of $0.10 (a model call a fix made new ran live)" : ""}`);
+console.log(`\ncost of this run: $${cost.toFixed(2)} of the cap $${CAP}${cost > 0.1 ? "  ⚠️ over the aim of $0.10 (a model call a fix made new ran live)" : ""}`);
 
 if (failed) { console.log("\n⛔  REGRESSION GATE: FAILED — a good value was lost, or an acceptance check is an ERROR. No wet run is allowed for this code."); process.exit(1); }
 if (only.length) { console.log("\n✅  The batches asked for pass. A part of the batches writes no pass file: run the gate without ONLY_BATCHES."); process.exit(0); }
