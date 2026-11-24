@@ -143,6 +143,18 @@ if (cmd === "accept-lost") {
   process.exit(removed ? 0 : 1);
 }
 
+// `replace-value`: one value of a baseline replaced by another, only after the owner approved it (owner, 2026-11-24: CyberOwl's purchase date).
+//   APPROVED_BY=aviv npx tsx scripts/regression.ts replace-value 9 'CyberOwl:acquired:2024-10-02' '2024-09-25'
+if (cmd === "replace-value") {
+  if (process.env.APPROVED_BY !== "aviv") { console.error("⛔  A baseline is changed only after the owner approved the value: APPROVED_BY=aviv npx tsx scripts/regression.ts replace-value <batch> 'Company:field:old' 'new'"); process.exit(1); }
+  const [bn, oldSpec, newValue] = args; const b = bn ? loadBaseline(Number(bn)) : null;
+  if (!b || !oldSpec || newValue == null) usage();
+  const [co, f, ...rest] = oldSpec.split(":"); const key = valueKey(co, f, rest.join(":"));
+  const hit = b!.values.filter((v) => valueKey(v.company, v.field, v.value) === key);
+  if (hit.length !== 1) { console.error(`${hit.length} value(s) match "${oldSpec}" in batch ${bn} (exactly one is needed).`); process.exit(1); }
+  console.log(`✓ batch ${bn}: ${hit[0].company} · ${hit[0].field}: "${hit[0].value}" → "${newValue}"`); hit[0].value = newValue; saveBaseline(b!); process.exit(0);
+}
+
 // `acquired`: the purchases of batch 9 (owner, 2026-11-24, after the change of the news searches). The 46 companies whose reviewed dry report (REPORT, pilot_report_dry.csv of batch 9) holds an acquired row are
 // run again from the recordings (the cost cap is on), and each purchase is compared with the reviewed one: status, buyer and date. A purchase that is gone or different is a Tier 1 loss. Nothing is written.
 if (cmd === "acquired") {
@@ -151,6 +163,12 @@ if (cmd === "acquired") {
   const rep = readCsv(f);
   const want = new Map<string, { company: string; after: string }>();
   for (const r of rep.body) if (r[rep.ix("field")] === "acquired") want.set(r[rep.ix("company_id")], { company: r[rep.ix("company")], after: r[rep.ix("after")] });
+  // The values the owner changed after review (eval/regression/acquired_9_approved.json): the reviewed purchase is replaced by the approved one.
+  const approvedFile = "eval/regression/acquired_9_approved.json";
+  if (existsSync(approvedFile)) {
+    const ap = (JSON.parse(readFileSync(approvedFile, "utf8")).approved ?? []) as Array<{ company: string; after: string; approved_by?: string }>;
+    for (const a of ap) { if (a.approved_by !== "aviv") continue; for (const [id, w] of want) if (w.company === a.company) want.set(id, { company: w.company, after: a.after }); }
+  }
   const known = new Set(idsOf(9));
   const inBatch = [...want.keys()].filter((id) => known.has(id));
   if (!want.size || inBatch.length < want.size * 0.9) { console.error(`${f} does not look like the dry report of batch 9 (${want.size} acquired row(s), ${inBatch.length} of them in pilot_batch_9.json) — it may have been overwritten by a later dry run`); process.exit(2); }

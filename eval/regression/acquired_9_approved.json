@@ -1,0 +1,12 @@
+{
+ "_about": "Purchases of batch 9 whose reviewed value the owner changed (scripts/regression.ts acquired applies them to the reviewed dry report). Only the owner adds an entry.",
+ "approved": [
+  {
+   "company": "CyberOwl",
+   "after": "status = acquired · Acquired by DNV (2024-09-25)",
+   "approved_by": "aviv",
+   "approved_on": "2026-11-24",
+   "why": "smartmaritimenetwork 'DNV buys CyberOwl', 2024-09-25: earlier than the baseline date 2024-10-02"
+  }
+ ]
+}

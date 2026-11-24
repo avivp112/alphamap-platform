@@ -20,8 +20,32 @@ const GENERIC_BUYER = /^(?:US|UK|EU|The|An?|Its|It|Investors?|Group|Company|Firm
 const REGION_PREFIX = /^(?:(?:Egypt|India|Nigeria|Kenya|Ghana|Brazil|Mexico|Argentina|Chile|Colombia|Israel|Germany|France|Spain|Italy|Poland|Japan|China|Korea|UK|US|USA|UAE|Saudi|Canada|Australia|Singapore|Turkey|Sweden|Norway|Denmark|Finland|Ireland|Netherlands|Switzerland|Africa|Europe|Asia|Britain|American|British|Indian|Egyptian|German|French|Spanish|Italian|Polish|Japanese|Chinese|Korean|Israeli|Nigerian|Brazilian|Mexican|Canadian|Australian|Swedish|Dutch|Swiss|Emirati|Turkish|African|European|Asian)(?:['’]s|s)?|[A-Za-z]{2,4}-based)\s+(?=\p{Lu})/u;
 const trimName = (s: string) => s.replace(REGION_PREFIX, "").replace(/[.,;]+$/, "").replace(/\s+(?:Group|Inc|Ltd|LLC|Limited|Corp|plc)$/i, (m) => m).trim();
 
+/**
+ * The buyer by its brand name, not its legal entity (owner, 2026-11-24: Gastrofix → "Lightspeed", not "Lightspeed POS Inc"; Rhebo → "Everfield", not "Everfield Germany"): a legal suffix (Inc, LLC, Ltd,
+ * GmbH, AG, SA, BV, Corp, plc, Pty, SAS, AB) is taken off, and with it a descriptor left at the end ("POS"); a country or region closing the name (Germany, UK, USA, Europe …) is taken off. A name never
+ * loses its first word.
+ */
+export function brandName(name: string): string {
+  const LEGAL = /^(?:inc|llc|ltd|limited|gmbh|ag|sa|bv|nv|corp|corporation|plc|pty|sas|ab|co|oy|spa|srl|kg)\.?$/i;
+  const PLACE = /^(?:germany|deutschland|uk|u\.k\.|usa|u\.s\.|us|europe|emea|france|spain|italy|netherlands|nordics|canada|australia|india|asia|america|americas|international|global)$/i;
+  const toks = name.trim().split(/\s+/);
+  let legal = false;
+  for (;;) {
+    const last = toks[toks.length - 1]?.replace(/[.,]+$/, "") ?? "";
+    if (toks.length > 1 && LEGAL.test(last)) { toks.pop(); legal = true; continue; }
+    if (toks.length > 1 && legal && /^(?:pos|holdings?)$/i.test(last)) { toks.pop(); continue; }
+    if (toks.length > 1 && PLACE.test(last)) { toks.pop(); continue; }
+    break;
+  }
+  return toks.join(" ").replace(/[,;]+$/, "");
+}
+
 /** Who bought `companyName` according to one sentence or headline, or null when it is not stated that the company was acquired. */
 export function acquirerIn(text: string, companyName: string): { acquirer: string; majority: boolean } | null {
+  const hit = acquirerInRaw(text, companyName);
+  return hit ? { ...hit, acquirer: brandName(hit.acquirer) || hit.acquirer } : null;
+}
+function acquirerInRaw(text: string, companyName: string): { acquirer: string; majority: boolean } | null {
   const name = esc(companyName.trim()).replace(/\s+/g, "\\s+");
   const nameRe = new RegExp(`\\b${name}\\b`, "i");
   const majority = MAJORITY.test(text);
@@ -117,6 +141,8 @@ export function knownAcquirers(titles: string[], companyName: string, minAgree =
 // ── the purchase as one event (owner, 2026-11-19: Dietly, UltraVox) ───────────────────────────────────────────────────────────────────────────────────────────
 export interface PurchaseItem { title: string; url: string; published_date?: string | null; date_basis?: string; [k: string]: unknown }
 const plain = (s: string) => s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+/** A report that the purchase was completed, not announced. */
+const CLOSING = /\b(?:completes?|completed|completion of|closes?|closed|closing of|finali[sz]es?|finali[sz]ed)\b/i;
 const dayDiff = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) / 86400000;
 
 /**
@@ -150,8 +176,12 @@ export function purchaseEvents<T extends PurchaseItem>(items: T[], companyName: 
     const ok = members.filter(eligible);
     if (!ok.length) continue;
     // The party's own announcements (the company's, the buyer's, a wire release) stand first; among the candidates a date that is not read from a page's code stands before one that is.
-    const partyOk = ok.filter(isParty);
-    const base = partyOk.length ? partyOk : ok;
+    // The date of the purchase is its first announcement (owner, 2026-11-24: Buildium 11-06 not 12-20, Enso, Rhebo): a report that the purchase was completed ("completes", "has closed") stands only when the event has no
+    // announcement at all.
+    const announced = ok.filter((x) => !CLOSING.test(x.title));
+    const okA = announced.length ? announced : ok;
+    const partyOk = okA.filter(isParty);
+    const base = partyOk.length ? partyOk : okA;
     const trusted = base.filter((x) => x.date_basis !== "code");
     const pool = trusted.length ? trusted : base;
     // Always the same one, whatever the order the searches returned them in: the earliest date, then the report that states the purchase, then the address.
