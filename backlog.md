@@ -46,3 +46,4 @@
 - 75 companies of batch 9 have no HQ city and 73 no country (found for 40). Cause not known.
 - The baselines of batches 5–7 hold what today's code extracts from the recordings, not what the wet runs wrote (Humi, Mintifi, Mastertrust, Ruya, Okra, Brighte, Estimote, Conotoxia, Sami, Six Degrees: no provenance row for the values). Missing values are filled by the separate run for missing fields, after the maintenance window.
 - startups_search carries the 768-d `embedding` of startups (~25 MB), read by hybrid_lookalikes; leave it unless space needs it, and then change hybrid_lookalikes to read startups.embedding first.
+- Travelier (batch 9 preview, 2026-11-24): `startups.founders` holds an entry named "<UNKNOWN>" with no title. Count how many companies have such an entry (`select count(*) from startups where founders::text ilike '%<UNKNOWN>%'`) and remove them in a maintenance window, with the owner's approval.
