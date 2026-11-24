@@ -755,7 +755,11 @@ export async function collectCompany(
   const articleIsThisCompany = async (title: string, url: string, text: string) => {
     // The company's own pages decide what it is when the profile from the search does not fit them (identityMismatch.ts; owner, 2026-11-24: Aperio, whose search profile was another company's).
     const ownText = websitePages.map((p) => p.prompt_content ?? p.content).join(" ");
-    const idv = identityOverlap([profile.profile.description, profile.profile.value_proposition].filter(Boolean).join(" "), ownText);
+    const idv0 = identityOverlap([profile.profile.description, profile.profile.value_proposition].filter(Boolean).join(" "), ownText);
+    // Not when the site itself may be another company's (websiteIdentity.ts: the press names founders the site never shows — a domain that was sold or reused; owner, 2026-11-24: Rephrase.ai, whose domain now hosts a writing tool while
+    // the company Adobe bought is an Indian video startup): then the site cannot say what the company is, and the profile from the search stands.
+    const siteDoubtful = !!idv0?.mismatch && websiteLooksLikeAnotherCompany({ sitePages: allSources.filter((x) => x.source_type === "company_site").map((x) => x.content ?? ""), pressFounders: (profile.profile.founders ?? []).filter((f) => f.grounded_url && !(domain ? [domain] : []).some((d) => f.grounded_url!.includes(d))).map((f) => f.name) });
+    const idv = siteDoubtful ? null : idv0;
     identityState = idv?.mismatch ? { overlap: idv.share } : null;
     const company: CompanyProfileForMatch = { name: row.name, website: effectiveWebsite ?? row.website, countryHint: countryOfHost(domain) ?? row.country ?? null, about: idv?.mismatch ? identityAbout(ownText) :  [profile.profile.description, profile.profile.value_proposition, row.description].filter(Boolean).join(" ") };
     return judgeArticleEntity(async (request) => {
