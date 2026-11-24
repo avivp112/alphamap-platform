@@ -19,7 +19,7 @@ export function sourceRank(s: Pick<LabeledSource, "url" | "source_type">): numbe
 }
 
 const norm = (t: string) => t.toLowerCase().replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, " ").trim();
-const FIELDS = ["amount_raised", "valuation", "announcement_date", "lead_investor"] as const;
+const FIELDS = ["amount_raised", "valuation", "announcement_date"] as const;
 
 const sentencesOf = (t: string): string[] => t.split(/(?<=[.!?])\s+|\n+/).map((x) => x.replace(/\s+/g, " ").trim()).filter((x) => x.length >= 12 && x.length <= 320);
 const LEAD_CUE = /\b(?:led by|co-?led|leading the round)\b/i;
@@ -63,8 +63,6 @@ export function preferBetterRoundSources(rounds: V2Round[], sources: LabeledSour
   for (const r of rounds) {
     // A lead that the round's other quotes name with a cue must still be named after the move (rowRules.ts takes a lead out when no quote of the round names it): then the amount moves only to a sentence that says both.
     const leadName = (r.lead_investor as { value?: string } | undefined)?.value;
-    const otherQuotes = (["amount_raised", "valuation", "announcement_date"] as const).map((k) => (r[k] as { evidence_quote?: string } | undefined)?.evidence_quote ?? "");
-    const leadGrounded = !!leadName && otherQuotes.some((q) => namesLeadWithCue(q, leadName));
     for (const f of FIELDS) {
       const e = r[f] as { source_id: string; evidence_quote: string } | undefined;
       const cur = e && byId.get(e.source_id);
@@ -78,13 +76,13 @@ export function preferBetterRoundSources(rounds: V2Round[], sources: LabeledSour
         .sort((a, b) => sourceRank(a) - sourceRank(b));
       // the same quote word for word, else a sentence of that source that carries the same fact (the quote then is that sentence: it is a substring of the page it is shown with)
       const exact = candidates.find((s) => (text.get(s.source_id) ?? "").includes(q));
-      const byFact = exact ? null : candidates.map((s) => ({ s, sentence: sentenceForFact(f, (e as { value?: unknown }).value, `${s.title ?? ""}\n${s.content ?? ""}`, f !== "lead_investor" && leadGrounded ? leadName : undefined) })).find((x) => x.sentence);
+      const byFact = exact ? null : candidates.map((s) => ({ s, sentence: sentenceForFact(f, (e as { value?: unknown }).value, `${s.title ?? ""}\n${s.content ?? ""}`, leadName || undefined) })).find((x) => x.sentence);
       const better = exact ?? byFact?.s;
       if (!better) continue;
       moved.push(`${r.round_type} ${f}: ${cur.url} → ${better.url}${byFact ? " (same fact, the page's own sentence)" : ""}`);
       e.source_id = better.source_id;
       if (byFact?.sentence) e.evidence_quote = byFact.sentence;
-      if (r.source_url && r.source_url === cur.url) r.source_url = better.url;
+      if (f === "amount_raised" || (r.source_url && r.source_url === cur.url)) r.source_url = better.url;
     }
   }
   return moved;

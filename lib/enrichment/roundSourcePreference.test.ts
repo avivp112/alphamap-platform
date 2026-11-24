@@ -15,7 +15,7 @@ describe("which source a round rests on (owner, 2026-11-24: Lendo / einpresswire
   it("moves a field from the paid page to the company's own page that holds the same sentence", () => {
     const sources = [src("S1", "https://www.einpresswire.com/article/673", `${quote}. More text.`), src("W1", "https://www.lendo.sa/en/press-releases/series-b", `Press release: ${quote}.`, "company_site")];
     const r = [round("S1")]; const moved = preferBetterRoundSources(r as never, sources, "Lendo");
-    expect(moved.length).toBe(2);
+    expect(moved.length).toBe(1);
     expect((r[0] as { amount_raised: { source_id: string } }).amount_raised.source_id).toBe("W1");
   });
   it("leaves it alone when no better page holds the quote", () => {
@@ -33,11 +33,12 @@ describe("which source a round rests on (owner, 2026-11-24: Lendo / einpresswire
     const own = "Riyadh — Lendo, the Saudi lending platform, announced it has raised $28 million in a Series B round led by Sanabil Investments, a PIF company. Lendo plans an IPO.";
     const sources = [src("S1", "https://www.einpresswire.com/article/673", `${quote}. More text.`), src("W1", "https://www.lendo.sa/en/press-releases/series-b", own, "company_site")];
     const r = [round("S1")]; const moved = preferBetterRoundSources(r as never, sources, "Lendo");
-    expect(moved.length).toBe(2);
-    const x = r[0] as { amount_raised: { source_id: string; evidence_quote: string }; lead_investor: { source_id: string; evidence_quote: string } };
+    expect(moved.length).toBe(1);
+    const x = r[0] as { amount_raised: { source_id: string; evidence_quote: string }; lead_investor: { source_id: string } };
     expect(x.amount_raised.source_id).toBe("W1"); expect(x.amount_raised.evidence_quote).toContain("$28 million");
-    expect(x.lead_investor.evidence_quote).toContain("led by Sanabil Investments");
-    expect(own).toContain(x.lead_investor.evidence_quote);   // verbatim
+    expect(x.amount_raised.evidence_quote).toContain("led by Sanabil Investments");
+    expect(own).toContain(x.amount_raised.evidence_quote);   // verbatim
+    expect(x.lead_investor.source_id).toBe("S1");   // the lead's own evidence is never moved alone
   });
   it("a lead the amount's quote names is not left unnamed by the move: the amount moves only to a sentence that says both (owner, 2026-11-24: Lendo, Lulalend lost their lead)", () => {
     const ownOnlyAmount = "Lendo announced it has raised $28 million in a Series B round. The round was led by Sanabil Investments.";
