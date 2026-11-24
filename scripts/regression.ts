@@ -46,13 +46,13 @@ const readCsv = (p: string) => { const [head, ...body] = parseCsv(readFileSync(p
 interface RunResult { capped?: boolean; n: number; rows: RunRow[]; rejections: Rejected[]; acceptance: Array<{ id: string; severity: string; pass: boolean; detail: string }>; cost: number; companies: number; misses: string[]; live: string; diag: Record<string, string[]>; runLog: string[] }
 
 /** One batch, clean slate, from the recordings. */
-function runBatch(n: number, fill = false, costBase = 0, only?: { ids: string[]; dir: string }): RunResult {
+function runBatch(n: number, fill = false, costBase = 0, only?: { ids: string[]; dir: string; live?: boolean }): RunResult {
   const dir = only?.dir ?? `${OUT}/batch_${n}`;
   rmSync(dir, { recursive: true, force: true }); mkdirSync(dir, { recursive: true });
   const ids = only?.ids ?? idsOf(n);
-  console.log(`▶ batch ${n}: ${ids.length} compan(ies), REPLAY from the recordings …`);
+  console.log(only?.live ? `▶ batch ${n}: ${ids.length} compan(ies), LIVE web and model (what is read is recorded, the next replay is faithful) …` : `▶ batch ${n}: ${ids.length} compan(ies), REPLAY from the recordings …`);
   // The run's log goes to run.log and its progress lines — one per company: "batch N [i/M] … $x so far ($y in all)" — to the screen as they come (owner, 2026-11-24: a batch was silent for minutes).
-  const env = { ...process.env, PILOT: "true", DRY_RUN: "true", REGRESSION: "1", REGRESSION_DIR: dir, REPLAY: "1", KNOWN_SOURCES: "off", ALL_FIELDS: "true", SITEMAP: "on", BATCH_NO: String(n),
+  const env = { ...process.env, PILOT: "true", DRY_RUN: "true", REGRESSION: "1", REGRESSION_DIR: dir, REPLAY: only?.live ? "0" : "1", KNOWN_SOURCES: "off", ALL_FIELDS: "true", SITEMAP: "on", BATCH_NO: String(n),
     CONCURRENCY: process.env.CONCURRENCY ?? "10", PILOT_MAX_COMPANIES: String(Math.max(ids.length, 1)), ONLY: ids.join(","), PILOT_REPORT: `${dir}/pilot_report.csv`, GIT_CHECK: "off", PREFLIGHT: "off",
     BATCH_LABEL: `batch ${n}`, COST_BASE: String(costBase), V2_COMPONENTS: process.env.V2_COMPONENTS ?? "linkedin_links=off",   // the LinkedIn searches are new web requests the recordings cannot answer; they are measured by the dry run, not by the gate
     ...(fill ? { REPLAY_FILL: "1" } : {}) };
@@ -172,10 +172,15 @@ if (cmd === "acquired") {
   const known = new Set(idsOf(9));
   const inBatch = [...want.keys()].filter((id) => known.has(id));
   if (!want.size || inBatch.length < want.size * 0.9) { console.error(`${f} does not look like the dry report of batch 9 (${want.size} acquired row(s), ${inBatch.length} of them in pilot_batch_9.json) — it may have been overwritten by a later dry run`); process.exit(2); }
+  // LIVE_FOR="Aperio,Rubicon Carbon": these companies are run with the live web and model (a dry run, nothing is written), because the recordings of the web do not hold what the code now asks (REPLAY MISS): their web is read
+  // again and recorded, and the purchase is compared with the reviewed one. The cap of the run stays on.
+  const liveFor = (process.env.LIVE_FOR ?? "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+  if (liveFor.length) for (const [id, w] of [...want]) if (!liveFor.includes(w.company.toLowerCase())) want.delete(id);
+  if (liveFor.length && !want.size) { console.error(`none of ${liveFor.join(", ")} has a reviewed purchase in ${f}`); process.exit(2); }
   const ids = [...want.keys()];
   console.log(`\nacquired check: ${ids.length} compan(ies) of batch 9 with a reviewed purchase → up to $${(ids.length * PER_COMPANY).toFixed(2)} at $${PER_COMPANY} a company · cap $${CAP}`);
   process.env.MAX_COST = String(CAP);
-  const res = runBatch(9, false, 0, { ids, dir: `${OUT}/acquired_9` });
+  const res = runBatch(9, false, 0, { ids, dir: liveFor.length ? `${OUT}/acquired_9_live` : `${OUT}/acquired_9`, live: liveFor.length > 0 });
   const got = new Map<string, string>();
   for (const r of res.rows) if (r.field === "acquired") got.set(r.company, r.value);
   const fold = (x: string) => x.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
