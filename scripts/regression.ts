@@ -52,7 +52,7 @@ function runBatch(n: number, fill = false, costBase = 0, only?: { ids: string[];
   const ids = only?.ids ?? idsOf(n);
   console.log(only?.live ? `▶ batch ${n}: ${ids.length} compan(ies), LIVE web and model (what is read is recorded, the next replay is faithful) …` : `▶ batch ${n}: ${ids.length} compan(ies), REPLAY from the recordings …`);
   // The run's log goes to run.log and its progress lines — one per company: "batch N [i/M] … $x so far ($y in all)" — to the screen as they come (owner, 2026-11-24: a batch was silent for minutes).
-  const env = { ...process.env, PILOT: "true", DRY_RUN: "true", REGRESSION: "1", REGRESSION_DIR: dir, REPLAY: only?.live ? "0" : "1", KNOWN_SOURCES: "off", ALL_FIELDS: "true", SITEMAP: "on", BATCH_NO: String(n),
+  const env = { ...process.env, PILOT: "true", DRY_RUN: "true", REGRESSION: "1", REGRESSION_DIR: dir, REPLAY: only?.live ? "0" : (process.env.GATE_REPLAY ?? "1"), KNOWN_SOURCES: "off", ALL_FIELDS: "true", SITEMAP: "on", BATCH_NO: String(n),
     CONCURRENCY: process.env.CONCURRENCY ?? "10", PILOT_MAX_COMPANIES: String(Math.max(ids.length, 1)), ONLY: ids.join(","), PILOT_REPORT: `${dir}/pilot_report.csv`, GIT_CHECK: "off", PREFLIGHT: "off",
     BATCH_LABEL: `batch ${n}`, COST_BASE: String(costBase), V2_COMPONENTS: process.env.V2_COMPONENTS ?? "linkedin_links=off",   // the LinkedIn searches are new web requests the recordings cannot answer; they are measured by the dry run, not by the gate
     ...(fill ? { REPLAY_FILL: "1" } : {}) };
