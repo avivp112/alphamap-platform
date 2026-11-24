@@ -14,7 +14,15 @@ import { addToTrackRecord } from "../lib/enrichment/batchProcess.ts";
 
 if (process.env.APPROVED_BY !== "aviv") { console.error("⛔  A baseline is changed only after the owner approved: APPROVED_BY=aviv …"); process.exit(1); }
 const batch = Number(process.env.BATCH), names = (process.env.NAMES ?? "").split(",").map((s) => s.trim()).filter(Boolean), reasons = (process.env.REASONS ?? "").split("|").map((s) => s.trim());
-if (!Number.isInteger(batch) || !names.length || reasons.length !== names.length) { console.error("BATCH, NAMES and REASONS (one per name, separated by |) are required."); process.exit(1); }
+if (!Number.isInteger(batch) || (!process.env.SET_TOTAL && (!names.length || reasons.length !== names.length))) { console.error("BATCH, NAMES and REASONS (one per name, separated by |) are required."); process.exit(1); }
+// SET_TOTAL=46: only the number of acquired values checked in the batch is set in the track record (its wrong count stays); nothing else is touched. For when the baseline holds no acquired value (batch 9: they are checked by the acquired check).
+if (process.env.SET_TOTAL) {
+  const per0 = existsSync("field_track_record_by_batch.json") ? (JSON.parse(readFileSync("field_track_record_by_batch.json", "utf8")) as Record<string, Record<string, { total: number; wrong: number }>>) : {};
+  const cur0 = per0[String(batch)] ?? {}; const a = cur0.acquired ?? { total: 0, wrong: 0 };
+  cur0.acquired = { total: Number(process.env.SET_TOTAL), wrong: a.wrong };
+  addToTrackRecord(batch, Object.entries(cur0).map(([field, v]) => ({ field, total: v.total, wrong: v.wrong })));
+  console.log(`✓ field_track_record: acquired of batch ${batch}: ${cur0.acquired.wrong} wrong of ${cur0.acquired.total}`); process.exit(0);
+}
 const fold = (x: string) => x.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 const b = loadBaseline(batch); if (!b) { console.error(`baseline/batch_${batch}.json is missing`); process.exit(1); }
 const total = new Set(b.values.filter((v) => v.field === "acquired").map((v) => v.company)).size;
