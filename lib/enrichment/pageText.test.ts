@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { stripNavigation, promptText, htmlToText, footerWithFacts } from "./pageText.ts";
+import { stripNavigation, promptText, htmlToText, footerWithFacts, promptCharsFor } from "./pageText.ts";
 
 describe("a page for the model, and for the verifier (owner, 2026-11-15)", () => {
   const nav = "[Home](https://x.com)\n[Products](https://x.com/p)\nAbout\nPricing\nLogin\nContact\nBlog\n";
@@ -41,5 +41,9 @@ describe("a page for the model, and for the verifier (owner, 2026-11-15)", () =>
     expect(foot).toContain("company number 01234567");
     expect(foot).toContain("12 High Street");
     expect(foot.length).toBeLessThanOrEqual(600);
+  });
+  it("6,000 characters for about, news and press pages, 3,000 for the others (owner, 2026-11-24)", () => {
+    for (const u of ["https://a.com/about", "https://a.com/company", "https://a.com/news", "https://a.com/press", "https://a.com/press/kry-raises-usd66m", "https://a.com/en/press-releases/lendo-secures-28m", "https://a.com/newsroom/2024/x", "https://a.com/press/nyheter/kry-raises"]) expect(promptCharsFor(u)).toBe(6000);
+    for (const u of ["https://a.com/", "https://a.com/products", "https://a.com/contact", "https://a.com/team", "https://a.com/impressum", "https://a.com/pricing"]) expect(promptCharsFor(u)).toBe(3000);
   });
 });

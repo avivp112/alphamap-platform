@@ -84,3 +84,13 @@ export function htmlToText(html: string): string {
     .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
     .replace(/[ \t]+/g, " ").replace(/\n\s*\n+/g, "\n").trim();
 }
+
+/**
+ * How much of a page the model gets (owner, 2026-11-24): 3,000 characters for a general page, 6,000 for the pages that carry the announcements and the story — about / company, news, press,
+ * newsroom, media and press-release pages, the company's own included (a round in the third paragraph of a press page is what 3,000 cut off).
+ */
+export function promptCharsFor(url: string, general = 3000, long = 6000): number {
+  let path = "";
+  try { path = new URL(url).pathname.toLowerCase(); } catch { return general; }
+  return /(^|\/)(about|about-us|aboutus|company|who-we-are|our-story|story|news|newsroom|press|press-releases?|media|announcements?|pressemitteilungen|presse|prensa|imprensa|nyheter|actualites|aktuelles)(\/|-|\.|$)/.test(path) ? Math.max(general, long) : general;
+}

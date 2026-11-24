@@ -72,6 +72,7 @@ import { caseName } from "./nameCase.ts";
 import { approvedQuotes, profileQuotes, hqFromApprovedQuotes, foundersFromApprovedQuotes } from "./approvedQuotes.ts";
 import { teamPeopleCount, foundersFromText, foundersFromCards, foundersFromMentions, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, supportedRoleSubset, personCardsInHtml, bioFromCard, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
 import { componentOn } from "./components.ts";
+import { preferBetterRoundSources } from "./roundSourcePreference.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts, findLinkedInLink } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
@@ -2014,6 +2015,8 @@ export async function collectCompany(
     }
   }
 
+  // A round that rests on a paid distribution page, when the company's own page or an article says the same sentence: the better source (roundSourcePreference.ts).
+  { const moved = preferBetterRoundSources(funding.funding_rounds, allSources, row.name); for (const m of moved) console.log(`    🔀  Round source: ${m}`); if (moved.length) bump(stats.droppedByReason, "round_source_preferred"); }
   // ── Stage 6: validation (city/country/founded_year/headcount/rounds) ──
   // A no-amount round on the date of one with an amount is that round (assemble.ts).
   const absorbed = absorbAmountlessRounds(newRoundLikes);

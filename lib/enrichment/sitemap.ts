@@ -17,6 +17,9 @@ const KEYWORDS: Array<[number, string[]]> = [
 const SCORE = new Map<string, number>();
 for (const [score, words] of KEYWORDS) for (const w of words) SCORE.set(w, Math.max(score, SCORE.get(w) ?? 0));
 
+/** The one main product page a site may give (owner, 2026-11-24): /products, /solutions or /platform at the first level — the first that exists, in this order. No customers, industries, privacy, terms or jobs pages. */
+export const PRODUCT_PAGES = ["products", "solutions", "platform"] as const;
+const productRank = (pathname: string): number => { const segs = pathname.toLowerCase().split("/").filter(Boolean); return segs.length === 1 ? (PRODUCT_PAGES as readonly string[]).indexOf(segs[0]) : -1; };
 const LEGAL_WORDS = new Set(["impressum", "legal", "legal-notice", "imprint", "mentions-legales", "aviso-legal", "nota-legal", "informacje-prawne", "stopka", "regulamin"]);
 const isLegalPath = (pathname: string) => pathname.toLowerCase().split("/").filter(Boolean).some((seg) => LEGAL_WORDS.has(seg) || seg.split(/[-_]/).some((w) => LEGAL_WORDS.has(w)));
 
@@ -37,6 +40,7 @@ const hostBare = (h: string) => h.toLowerCase().replace(/^www\./, "");
 export function pageScore(pathname: string): number {
   const segs = pathname.toLowerCase().split("/").filter(Boolean).map((s) => decodeURIComponent(s).replace(/\.(html?|php|aspx?)$/, ""));
   if (!segs.length) return 0;
+  if (productRank(pathname) >= 0) return 5;   // the main product page, at most one of them is taken (pickSitePages)
   let best = 0;
   for (const s of segs) {
     const whole = SCORE.get(s);
@@ -73,9 +77,13 @@ export function pickSitePages(urls: string[], root: string, max = MAX_SITE_PAGES
   // One legal page besides the impressum / imprint (owner, 2026-11-23): the legal notice, the terms of a site written in a language this list does not know, are not a page each.
   const out: string[] = [];
   let legal = 0;
+  // One product page: the best of products > solutions > platform among the ones the site has.
+  const product = scored.filter((c) => productRank(new URL(c.url).pathname) >= 0).sort((a, b) => productRank(new URL(a.url).pathname) - productRank(new URL(b.url).pathname))[0]?.url;
   for (const c of scored) {
     if (out.length >= Math.max(0, max - 1)) break;
-    if (isLegalPath(new URL(c.url).pathname)) { if (legal >= 2) continue; legal++; }
+    const path = new URL(c.url).pathname;
+    if (productRank(path) >= 0 && c.url !== product) continue;
+    if (isLegalPath(path)) { if (legal >= 2) continue; legal++; }
     out.push(c.url);
   }
   return out;

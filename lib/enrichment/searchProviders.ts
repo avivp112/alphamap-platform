@@ -38,7 +38,9 @@ import { mkdirSync, readFileSync, writeFileSync } from "fs";
  * live API wrappers.
  */
 
-import { parseSitemap, robotsSitemaps, pickSitePages, MAX_SITE_PAGES } from "./sitemap.ts";
+import { parseSitemap, robotsSitemaps, pickSitePages, MAX_SITE_PAGES, PRODUCT_PAGES } from "./sitemap.ts";
+import { promptCharsFor } from "./pageText.ts";
+const isProductUrl = (u: string): boolean => { try { const segs = new URL(u).pathname.toLowerCase().split("/").filter(Boolean); return segs.length === 1 && (PRODUCT_PAGES as readonly string[]).includes(segs[0]); } catch { return false; } };
 import { devLinksFromText, type DevLinks } from "./devLinks";
 import type { Provider, RawSearchResult } from "./sources";
 import { websiteDomain } from "./websiteValidation";
@@ -895,7 +897,7 @@ export async function fetchCompanyWebsitePages(
   if (!website) return [];
   let root = website.startsWith("http") ? website : `https://${website}`;
   // The company's own pages are read on every run, whatever the search finds (owner, 2026-11-14): home, about, team / leadership, contact, news / press, and customers / solutions / industries / products / platform (where "for whom" is usually written).
-  const candidatePaths = ["", "/about", "/about-us", "/team", "/leadership", "/company", "/contact", "/contact-us", "/news", "/press", "/newsroom", "/imprint", "/impressum", "/legal"];   // owner, 2026-11-23: no product, customer, solution or platform pages
+  const candidatePaths = ["", "/about", "/about-us", "/team", "/leadership", "/company", "/contact", "/contact-us", "/news", "/press", "/newsroom", "/imprint", "/impressum", "/legal", "/products", "/solutions", "/platform"];   // owner, 2026-11-24: one main product page (the first that exists); no customers, industries, privacy, terms or jobs pages
   let urls = candidatePaths.map((path) => root.replace(/\/+$/, "") + path);
   const pages: FetchedPage[] = [];
 
@@ -938,13 +940,16 @@ export async function fetchCompanyWebsitePages(
   }
   // Sixteen addresses on a site that does not answer would cost minutes: after four misses in a row the rest of the pages are not tried.
   let misses = 0;
+  let productTaken = [...fetched.keys()].some(isProductUrl);
   for (const url of urls) {
     if (fetched.has(url)) continue;
+    if (fetched.size >= MAX_SITE_PAGES) break;   // at most 12 pages, however many addresses are tried
+    if (isProductUrl(url) && productTaken) continue;   // one product page: the first that exists
     const cachedPage = state.cache?.get<{ content: string; provider: Provider }>(`page:${url}`);
-    if (cachedPage) { fetched.set(url, { ...cachedPage, cached: true }); misses = 0; continue; }
+    if (cachedPage) { fetched.set(url, { ...cachedPage, cached: true }); misses = 0; if (isProductUrl(url)) productTaken = true; continue; }
     if (misses >= 4) continue;
     const read = await readPage(url, state, needFallbacks);
-    if (read && looksLikeRealContent(read.text)) { fetched.set(url, { content: read.text, provider: read.provider, cached: false }); misses = 0; }
+    if (read && looksLikeRealContent(read.text)) { fetched.set(url, { content: read.text, provider: read.provider, cached: false }); misses = 0; if (isProductUrl(url)) productTaken = true; }
     else misses++;
   }
   if (fetched.size === 0) {
@@ -978,7 +983,7 @@ export async function fetchCompanyWebsitePages(
       continue;
     }
     state.websitePagesFetched++;
-    const sent = promptText(capped, MAX_WEBSITE_CHARS);
+    const sent = promptText(capped, promptCharsFor(url, MAX_WEBSITE_CHARS));
     pages.push({ url, content: capped, prompt_content: sent, provider, dev_links: devLinksFromText(content) });
     console.log(`    🌐  fetched ${url} (${content.length} chars, ${provider}${cachedPage ? ", cached" : ""}; ${sent.length} sent to the model)`);
   }
