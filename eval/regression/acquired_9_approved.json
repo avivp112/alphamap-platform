@@ -7,6 +7,13 @@
    "approved_by": "aviv",
    "approved_on": "2026-11-24",
    "why": "smartmaritimenetwork 'DNV buys CyberOwl', 2024-09-25: earlier than the baseline date 2024-10-02"
+  },
+  {
+   "company": "Rephrase.ai",
+   "after": "status = acquired · Acquired by Adobe (2023-11-22)",
+   "approved_by": "aviv",
+   "approved_on": "2026-11-24",
+   "why": "Business Today, 2023-11-22, the first report; the reviewed date 2023-11-23 was a day later"
   }
  ],
  "excluded": [
