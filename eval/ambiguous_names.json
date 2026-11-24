@@ -1,4 +1,9 @@
 {
-  "names": ["Shyft"],
-  "deny": { "Shyft": "miami|\\bmoving\\b|relocat|aebi|schmidt|shyft group|special[- ]purpose vehicle" }
+ "names": [
+  "Shyft",
+  "Aperio"
+ ],
+ "deny": {
+  "Shyft": "miami|\\bmoving\\b|relocat|aebi|schmidt|shyft group|special[- ]purpose vehicle"
+ }
 }
