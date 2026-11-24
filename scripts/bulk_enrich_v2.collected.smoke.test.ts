@@ -222,7 +222,7 @@ describe("FROM_COLLECTED: the write reads what the live run kept (owner, 2026-11
   const setup = () => {
     process.env.DOMAIN_RESOLVE = "false"; process.env.PREFLIGHT = "off"; process.env.SITEMAP = "off"; process.env.TRANSLATE = "false"; process.env.TECH_DECISIONS = `${process.env.TMPDIR ?? "/tmp"}/tech_decisions_collected_test.json`;
     process.env.DRY_RUN = "false"; process.env.PILOT = "true"; process.env.ONLY = "st-1"; process.env.PILOT_REPORT = "/tmp/pilot_report_collected_test.csv";
-    process.env.OPEN_FIELDS_OVERRIDE = "hq_city,hq_country,founded_year,founding_country";
+    process.env.OPEN_FIELDS_OVERRIDE = "hq_city,hq_country,founded_year,founding_country,founder,founder_linkedin";
     process.env.BATCH_DIR = join(mkdtempSync(join(tmpdir(), "out-")), "field_review");
     process.env.SEARCH_CACHE = "false"; process.env.DELAY_MS = "0"; process.env.REFRESH_EVERY = "1"; process.env.SERP_KEY = "test"; process.env.TAVILY_API_KEY = "test";
   };
@@ -257,5 +257,12 @@ describe("FROM_COLLECTED: the write reads what the live run kept (owner, 2026-11
     const a = writes(first), b = writes(second);
     expect(b.length).toBeGreaterThan(0);
     expect(b).toEqual(a);
+  });
+  it("a founder's LinkedIn link is filed inside the founder, with its report line's provenance — a link only (owner, 2026-11-24)", () => {
+    const upd = first.filter((c) => c.table === "startups" && c.op === "update").map((c) => c.payload as { founders?: Array<{ name: string; linkedin_url?: string | null }> }).find((p) => p.founders);
+    expect(upd?.founders?.find((f) => /O'Nolan/.test(f.name))?.linkedin_url).toBe("https://www.linkedin.com/in/johnonolan");
+    expect(upd?.founders?.find((f) => /Wolfe/.test(f.name))?.linkedin_url ?? null).toBeNull();   // no result for her: no link
+    const prov = first.filter((c) => c.table === "field_provenance" && c.op === "insert").map((c) => (c.payload as { field: string }).field);
+    expect(prov).toContain("founders.John O'Nolan.linkedin_url");
   });
 });

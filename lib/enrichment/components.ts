@@ -82,6 +82,10 @@ export const V2_COMPONENTS = {
     on: true, since: "2026-11-08",
     what: "headcount points with date, source, quote and type: Companies House accounts (average employees), Brreg, and team-size sentences of archived About / Careers pages on the Wayback Machine (headcountCollect.ts); robots.txt honoured, one request a second",
   },
+  linkedin_links: {
+    on: true, since: "2026-11-24",
+    what: "a founder's or a leader's LinkedIn profile LINK, found by a Google search (never by reading LinkedIn) and kept only when the result names the person in full and the company; a link only, never a source of any field (linkedin.ts findLinkedInLink). Not linkedin_people, which stays off",
+  },
   profile_hints: {
     on: false, since: "2026-11-02", // off by the owner, 2026-11-02: 0 of 7 confirmed on the 10-company check
     what: "an HQ / founding year / founding country only a data platform states is not written, but searched for once in an allowed source that confirms it",

@@ -28,6 +28,8 @@ export const FIELD_COLUMNS: Record<string, string[]> = {
   acquired: ["status", "acquired_by", "exit_date", "brand_after_acquisition"],
   // Not columns of their own: the rounds table, and the bios inside founders / leadership.
   round: [], founder_background: [],
+  // A founder's or a leader's LinkedIn link (owner, 2026-11-24): a link only, never a source of a field. The founder's rides inside the founders column; the leader's is a candidate value.
+  founder_linkedin: [], leader_linkedin: [],
 };
 
 /** Every field a run may write once it is open. */
@@ -40,6 +42,7 @@ export function openColumnsOf(open: readonly string[]): Set<string> {
 
 export const writesRounds = (open: readonly string[]) => open.includes("round");
 export const writesBoard = (open: readonly string[]) => open.includes("board");
+export const writesFounderLinkedin = (open: readonly string[]) => open.includes("founder_linkedin");
 export const writesBios = (open: readonly string[]) => open.includes("founder_bio");
 /** Whether a competitor of this tier may be written: its own field is open ("competitor", the field's name before the tiers, counts as declared). */
 export const writesCompetitorTier = (open: readonly string[], tier: "declared" | "market" | undefined) =>

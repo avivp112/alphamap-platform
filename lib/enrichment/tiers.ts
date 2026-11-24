@@ -6,8 +6,8 @@
  * A field that is in no list (founding_country, board, patent) is not written at all.
  */
 export const TIER1: readonly string[] = ["round", "acquired"];   // rounds (amount, type, date, lead), acquired / majority_acquired / closed. Public status and domain identification are decided before the fields.
-export const TIER2: readonly string[] = ["description", "sector", "hq_city", "hq_country", "founded_year", "founder", "legal_name", "company_number", "incorporation_date", "incorporation_jurisdiction", "registered_address"];
-export const TIER3: readonly string[] = ["tags", "news", "competitor_declared", "competitor_market", "employee_count", "employee_range", "headcount_history", "employee_history", "leader", "founder_background", "office", "name_proposal"];
+export const TIER2: readonly string[] = ["description", "sector", "hq_city", "hq_country", "founded_year", "founder", "founder_linkedin", "legal_name", "company_number", "incorporation_date", "incorporation_jurisdiction", "registered_address"];
+export const TIER3: readonly string[] = ["tags", "news", "competitor_declared", "competitor_market", "employee_count", "employee_range", "headcount_history", "employee_history", "leader", "leader_linkedin", "founder_background", "office", "name_proposal"];
 export const CORE_FIELDS: readonly string[] = [...TIER1, ...TIER2];
 export const REQUIRED_ACCURACY: Readonly<Record<1 | 2, number>> = { 1: 0.98, 2: 0.95 };
 /** Random audited values a core field needs before the pilot shows it. */

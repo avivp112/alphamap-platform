@@ -486,6 +486,19 @@ export async function writeCollected(
     // (A cleaned title can be null; the founders column takes it as is.)
     setIfChanged("founders", cleanPeople(mergePeople(row.founders ?? [], aligned as NonNullable<V2StartupRow["founders"]>)), row.founders);
   }
+  // LinkedIn links of the founders (owner, 2026-11-24): a link only, filed inside the founder's entry, with its own report line and provenance row; never a source of a field.
+  const founderLinkRows: Array<{ name: string; url: string; source_url: string; quote: string }> = [];
+  if (collected.personLinks?.length && (!OPEN || OPEN.includes("founder_linkedin"))) {
+    const base = ((patch.founders ?? row.founders ?? []) as Array<{ name?: string; linkedin_url?: string | null }>);
+    let changed = false;
+    const next = base.map((f) => {
+      const l = collected.personLinks!.find((x) => x.kind === "founder" && f?.name && samePersonName(x.name, f.name));
+      if (!l || f.linkedin_url) return f;
+      changed = true; founderLinkRows.push({ name: f.name ?? l.name, url: l.url, source_url: l.source_url, quote: l.quote });
+      return { ...f, linkedin_url: l.url };
+    });
+    if (changed) patch.founders = next;
+  }
   // The board is its own group and its own field (owner, 2026-11-09): carried through as group "board" (it was dropped here, so board
   // members were written as leaders with the role "Board member"), and written only when the board field is open.
   const boardOk = !OPEN || writesBoard(OPEN);
@@ -821,6 +834,8 @@ export async function writeCollected(
     const rowOf = row as unknown as Record<string, unknown>;
     const newOf = <T,>(next: unknown, prev: unknown, same: (a: T, b: T) => boolean): T[] =>
       ((next ?? []) as T[]).filter((n) => !((prev ?? []) as T[]).some((p) => p && same(p, n)));
+    // A leader's LinkedIn link is a candidate value (candidate_values), not a column.
+    for (const l of collected.personLinks ?? []) if (l.kind === "leader") reportLines.push({ field: "leader_linkedin", before: null, after: `${l.name} — ${l.url}`, source_url: l.source_url, quote: l.quote });
     for (const k of Object.keys(patch)) {
       const fw = fieldWrites.find((w) => w.field.replace(/^(profile|metrics|market)\./, "") === k);
       const one = (field: string, after: string, source_url: string | null, quote: string | null = null) => reportLines.push({ field, before: null, after, source_url, quote });
@@ -832,6 +847,7 @@ export async function writeCollected(
           one("founder", `${f.name}${f.title ? ` — ${f.title}` : ""}`, grounded?.grounded_url ?? null, grounded?.grounded_quote ?? null);
           if (f.bio) one("founder_bio", `${f.name}: ${f.bio}`, grounded?.grounded_url ?? null);
         }
+        for (const l of founderLinkRows) one("founder_linkedin", `${l.name} — ${l.url}`, l.source_url, l.quote);
         for (const f of (patch.founders ?? []) as Array<{ name: string; background?: Array<{ kind: string; organization: string; role?: string; source_id: string; evidence_quote: string }> }>) {
           const filed = ((rowOf.founders ?? []) as Array<{ name?: string; background?: Array<{ kind: string; organization: string }> }>).find((x) => samePersonName(x.name ?? "", f.name))?.background ?? [];
           for (const b of f.background ?? []) {
@@ -1060,6 +1076,8 @@ export async function writeCollected(
     const listKey: Record<string, (after: unknown) => string> = {
       news: (a) => `news.${String(a).split(" — ").slice(1).join(" — ").slice(0, 120)}`,
       founder: (a) => `founders.${String(a).split(" — ")[0]}`,
+      founder_linkedin: (a) => `founders.${String(a).split(" — ")[0]}.linkedin_url`,
+      leader_linkedin: (a) => `leadership.${String(a).split(" — ")[0]}.linkedin_url`,
       leader: (a) => `leadership.${String(a).split(" — ")[0]}`,
       board: (a) => `leadership.${String(a).split(" — ")[0]}`,
       patent: (a) => `patents.${String(a).split(" ")[0]}`,

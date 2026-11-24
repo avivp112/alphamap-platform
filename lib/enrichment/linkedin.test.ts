@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  normalizeLinkedInProfileUrl, samePersonName, parseLinkedInPersonResult, findPersonProfile, discoverFounders, founderTitleFromHeadline,
+  normalizeLinkedInProfileUrl, samePersonName, parseLinkedInPersonResult, findPersonProfile, discoverFounders, founderTitleFromHeadline, findLinkedInLink,
 } from "./linkedin";
 
 const results = [
@@ -59,5 +59,20 @@ describe("background facts from the LinkedIn search snippet", async () => {
     const facts = parseLinkedInFacts("Experience: Acme · Location: Paris");
     expect(bioFromLinkedInFacts(facts, "Acme")).toBeNull();
     expect(parseLinkedInFacts("Education: Tel Aviv University").eliteSchool).toBeNull();
+  });
+});
+
+describe("findLinkedInLink (owner, 2026-11-24: a link only, the full name and the company in the result)", () => {
+  const hit = (title: string, content = "") => ({ url: "https://www.linkedin.com/in/jane-doe-123?trk=x", title, content });
+  it("takes a result whose title carries every word of the name and that names the company", () => {
+    const r = findLinkedInLink("Jane Doe", [hit("Jane Doe - Co-founder & CEO - Acme | LinkedIn", "Acme builds robots")], "Acme");
+    expect(r?.url).toBe("https://www.linkedin.com/in/jane-doe-123");
+    expect(r?.quote).toContain("Jane Doe");
+  });
+  it("not a partial name, not another company, not a page that is not a profile", () => {
+    expect(findLinkedInLink("Jane Marie Doe", [hit("Jane Doe - CEO - Acme | LinkedIn")], "Acme")).toBeNull();
+    expect(findLinkedInLink("Jane Doe", [hit("Jane Doe - CEO - Globex | LinkedIn")], "Acme")).toBeNull();
+    expect(findLinkedInLink("Jane Doe", [{ url: "https://www.linkedin.com/company/acme", title: "Jane Doe - Acme | LinkedIn" }], "Acme")).toBeNull();
+    expect(findLinkedInLink("Jane", [hit("Jane Doe - CEO - Acme | LinkedIn")], "Acme")).toBeNull();
   });
 });

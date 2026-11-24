@@ -189,3 +189,22 @@ export function bioFromLinkedInFacts(facts: LinkedInFacts, companyName: string):
   if (facts.eliteUnit) parts.push(`Served in ${facts.eliteUnit}.`);
   return parts.length > 0 ? parts.join(" ") : null;
 }
+
+const foldName = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+/**
+ * The LinkedIn profile link of a person (owner, 2026-11-24): found by a Google search, never by reading LinkedIn; kept only when the result's own title carries the person's FULL name (every
+ * word of it) and the result names the company. A link only — nothing of the snippet is used as a source for any field.
+ */
+export function findLinkedInLink(personName: string, results: Array<{ url: string; title?: string; content?: string }>, companyName: string): { url: string; quote: string } | null {
+  const want = foldName(personName).split(" ").filter(Boolean);
+  if (want.length < 2) return null;
+  for (const r of results) {
+    const p = parseLinkedInPersonResult(r, companyName);
+    if (!p) continue;
+    const got = new Set(foldName(p.name).split(" "));
+    if (!want.every((w) => got.has(w))) continue;
+    const quote = `${r.title ?? ""} — ${(r.content ?? "").replace(/\s+/g, " ").slice(0, 200)}`.trim();
+    return { url: p.url, quote };
+  }
+  return null;
+}

@@ -72,7 +72,7 @@ import { caseName } from "./nameCase.ts";
 import { approvedQuotes, profileQuotes, hqFromApprovedQuotes, foundersFromApprovedQuotes } from "./approvedQuotes.ts";
 import { teamPeopleCount, foundersFromText, foundersFromCards, foundersFromMentions, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, supportedRoleSubset, personCardsInHtml, bioFromCard, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
 import { componentOn } from "./components.ts";
-import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "./linkedin.ts";
+import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts, findLinkedInLink } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
 import { validateEnrichment, checkNarratives } from "./validation.ts";
@@ -280,6 +280,8 @@ export interface CollectedCompany {
   confirmedHints?: Array<RoundHint & { confirmed_source_url: string }>;
   /** Domains on no list (roundSources.ts) that a round came from: for the owner's review list. */
   unlistedDomains?: Array<{ domain: string; url: string }>;
+  /** LinkedIn profile links found by a Google search (linkedin.ts findLinkedInLink): a link only, with the result that shows it; never a source of a field. */
+  personLinks?: Array<{ name: string; kind: "founder" | "leader"; role?: string; url: string; source_url: string; quote: string }>;
 }
 
 export type CollectResult =
@@ -2243,6 +2245,26 @@ export async function collectCompany(
     for (const n of lost) console.log(`          · ${n} not kept: ${fates.founders.get(n) ?? "dropped by a later check (see the lines above)"}`);
   }
 
+  // LinkedIn links of the founders and the leaders (owner, 2026-11-24): one Google search each, at most five of each, for a person with no link on file. Nothing the result says is used as a source.
+  const personLinks: NonNullable<CollectedCompany["personLinks"]> = [];
+  if (componentOn("linkedin_links") && !ctx.update) {
+    const withLink = (list: Array<{ name?: string; linkedin_url?: unknown }> | null | undefined, n: string) => (list ?? []).some((p) => p?.name && samePersonName(p.name, n) && (typeof p.linkedin_url === "string" ? p.linkedin_url : (p.linkedin_url as { value?: string } | null | undefined)?.value));
+    const distinct = <T extends { name: string }>(xs: T[]) => xs.filter((x, i) => x.name && xs.findIndex((y) => samePersonName(y.name, x.name)) === i);
+    const founders = distinct([...(profile.profile.founders ?? []).map((f) => ({ name: f.name })), ...(row.founders ?? []).map((f) => ({ name: f.name ?? "" }))]).filter((f) => !withLink(profile.profile.founders as never, f.name) && !withLink(row.founders as never, f.name)).slice(0, 5);
+    const leaders = distinct([...(profile.leadership ?? []).map((l) => ({ name: l.name, role: l.role })), ...(row.leadership ?? []).map((l) => ({ name: l.name ?? "", role: (l as { role?: string }).role }))])
+      .filter((l) => !founders.some((f) => samePersonName(f.name, l.name)) && !withLink(profile.leadership as never, l.name) && !withLink(row.leadership as never, l.name)).slice(0, 5);
+    const people = [...founders.map((f) => ({ ...f, kind: "founder" as const })), ...leaders.map((l) => ({ ...l, kind: "leader" as const }))];
+    const found = await Promise.all(people.map(async (p) => {
+      try {
+        const results = await webSearch(`site:linkedin.com/in "${p.name}" "${row.name}"`, "linkedin_person", searchState);
+        const hit = findLinkedInLink(p.name, results, row.name);
+        return hit ? { name: p.name, kind: p.kind, ...("role" in p && p.role ? { role: p.role } : {}), url: hit.url, source_url: hit.url, quote: hit.quote } : null;
+      } catch { return null; }
+    }));
+    for (const f of found) if (f) personLinks.push(f);
+    if (people.length) console.log(`    🔗  LinkedIn links: ${personLinks.length} of ${people.length} person(s) found${personLinks.length ? ` (${personLinks.map((l) => l.name).join(", ")})` : ""}.`);
+  }
+
   return {
     outcome: "collected",
     ...(websiteProposal ? { websiteProposal } : {}),
@@ -2257,5 +2279,6 @@ export async function collectCompany(
     cityConfidence, countryConfidence, domain, verifiedFacts, patentsFromRegister, roundHints, confirmedHints, unlistedDomains,
     ...(headcountExtra.length ? { headcountExtra } : {}),
     ...(ruleHits.length ? { ruleHits } : {}),
+    ...(personLinks.length ? { personLinks } : {}),
   };
 }

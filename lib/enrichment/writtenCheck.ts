@@ -34,6 +34,7 @@ export function isWritten(r: ReportRow, c: DbCompany | undefined): Written {
     }
     case "office": return low(c.offices).includes(a.split(",")[0].trim().toLowerCase()) ? "yes" : "no";
     case "founder": case "founder_bio": return low(c.founders).includes(a.split(" — ")[0].split(":")[0].trim().toLowerCase()) ? "yes" : "no";
+    case "founder_linkedin": { const url = a.split(" — ").slice(1).join(" — ").trim().toLowerCase(); return url && low(c.founders).includes(url) ? "yes" : "no"; }
     case "leader": case "board": return low(c.leadership).includes(a.split(" — ")[0].trim().toLowerCase()) ? "yes" : "no";
     case "competitor_declared": case "competitor_market": return low(c.competitors).includes(a.trim().toLowerCase()) ? "yes" : "no";
     case "news": return r.source_url && low(c.news).includes((r.source_url ?? "").toLowerCase().replace(/[?#].*$/, "").slice(0, 60)) ? "yes" : "no";

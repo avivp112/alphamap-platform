@@ -76,6 +76,15 @@ const SCALAR: Record<string, string[]> = { description: ["description", "value_p
         const up = await db.from("startups").update({ founders: fixed }).eq("id", f.company_id); if (up.error) { manual.push(`${f.company} · founder role: ${up.error.message}`); continue; }
         console.log(`✓ ${f.company} · ${f.value.split(" — ")[0]}: title corrected to "${title}" (the person stays)`);
         continue;
+      } else if (field === "founder_linkedin") {
+        // A wrong link comes out of the founder's entry; the person stays.
+        const name = f.value.split(" — ")[0].trim().toLowerCase();
+        const { data: row } = await db.from("startups").select("id, founders").eq("id", f.company_id).single();
+        const list = ((row as { founders?: Array<{ name?: string; linkedin_url?: string | null }> } | null)?.founders ?? []);
+        if (!list.some((p) => (p.name ?? "").trim().toLowerCase() === name && p.linkedin_url)) { manual.push(`${f.company} · founder_linkedin ${name}: no link in the entry`); continue; }
+        const fixed = list.map((p) => ((p.name ?? "").trim().toLowerCase() === name ? { ...p, linkedin_url: null } : p));
+        const ch = await db.from("field_changes").insert(startupChanges(f.company_id, { founders: list }, { founders: fixed }, run.run_id)); if (ch.error) { manual.push(`${f.company} · founder_linkedin: ${ch.error.message}`); continue; }
+        const up = await db.from("startups").update({ founders: fixed }).eq("id", f.company_id); if (up.error) { manual.push(`${f.company} · founder_linkedin: ${up.error.message}`); continue; }
       } else if (field === "founder") {
         const name = f.value.split(" — ")[0].trim().toLowerCase();
         const { data: row } = await db.from("startups").select("id, founders").eq("id", f.company_id).single();
