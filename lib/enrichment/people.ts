@@ -90,6 +90,9 @@ export function cleanPersonName(name: string): string {
   // Invisible format characters (a right-to-left mark from a Hebrew page:
   // "Yonatan Boguslavsky\u200F", 2026-10-20) are never part of a name.
   let n = name.replace(/\p{Cf}/gu, "").replace(/^[^\p{L}]+/u, "").trim();
+  // A name with a dash is one name ("Osama Al-Raee" written "Osama Al — Raee"), and what a sentence puts after the name ("…, Chief Executive Officer and Co-Founder of Lendo, said:") is not part of it (owner, 2026-11-24: Lendo).
+  n = n.replace(/\b(Al|El|Abu|Abd|Ibn|Bin)\s*[–—]\s*(?=\p{Lu})/gu, "$1-");
+  { const cut = n.search(/:|,\s+(?=(?:[\p{L}'’.-]+\s+){2,}|\p{L}+\s+said)/u); if (cut > 0 && n.slice(0, cut).trim().split(/\s+/).length >= 2) n = n.slice(0, cut).trim(); }
   for (let i = 0; i < 3; i++) {
     const before = n;
     n = n.replace(NAME_PREFIX_RE, "").replace(/^(?:\p{Ll}[\p{L}'’-]*\s+)+(?=\p{Lu})/u, "").trim();

@@ -165,6 +165,9 @@ export function runAcceptance(checks0: Check[], rows: Row[], notEnriched: string
           let reason = "";
           // (a person with one name is a person: no "one word" condition — owner, 2026-11-21)
           if (own.length >= 3 && fold(name).includes(own)) reason = "contains the company's name";
+          else if (/[,:]/.test(name)) reason = "a comma or a colon: a sentence, not a name";
+          else if (/\b(?:said|says)\b/i.test(name)) reason = "a quote's verb";
+          else if (name.split(/\s+/).filter(Boolean).length > 5) reason = "more than 5 words";
           else if (tokens.some((t) => NOT_NAME.has(t))) reason = "a title or a company word";
           else if (tokens.some((t) => VERBS.has(t))) reason = "a verb of a headline";
           if (reason) { bad.push(r); why.push(`${r.company} "${name}" (${reason})`); }

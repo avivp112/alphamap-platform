@@ -55,4 +55,15 @@ describe("which source a round rests on (owner, 2026-11-24: Lendo / einpresswire
     const r2 = [lead("S1")]; preferBetterRoundSources(r2 as never, [src("S1", "https://www.einpresswire.com/a", quote), src("W1", "https://www.lendo.sa/p", ownBoth, "company_site")], "Lendo");
     expect((r2[0] as { amount_raised: { source_id: string } }).amount_raised.source_id).toBe("W1");
   });
+  it("the headline of a press release on the company's own site is a valid quote when it states the amount (owner, 2026-11-24: Lendo Series B)", () => {
+    const title = "Lendo Secures $28M in Series B Funding Led by Sanabil Investments";
+    const mk = () => [round("S1")];
+    const own = (t: string, type = "company_site") => ({ source_id: "W1", url: "https://www.lendo.sa/en/press-releases/series-b", title: t, content: "Riyadh. Read more.", source_type: type } as never);
+    const r = mk(); const moved = preferBetterRoundSources(r as never, [src("S1", "https://www.einpresswire.com/a", quote), own(title)], "Lendo");
+    expect(moved.length).toBe(1);
+    const a = (r[0] as { amount_raised: { source_id: string; evidence_quote: string }; source_url?: string }).amount_raised;
+    expect(a.source_id).toBe("W1"); expect(a.evidence_quote).toBe(title);
+    const r3 = mk(); preferBetterRoundSources(r3 as never, [src("S1", "https://www.einpresswire.com/a", quote), own("Lendo Secures $28M in Series B Funding Led by Other Capital")], "Lendo");
+    expect((r3[0] as { amount_raised: { source_id: string } }).amount_raised.source_id).toBe("S1");   // another lead
+  });
 });

@@ -55,6 +55,22 @@ function sentenceForFact(field: (typeof FIELDS)[number], value: unknown, content
   return null;
 }
 
+/**
+ * The headline of a press release on the company's own site is a valid quote for the round when it states the amount — and the type and the lead, when it writes them (owner, 2026-11-24: Lendo's Series B,
+ * "lendo.sa/en/press-releases/…" instead of einpresswire). Null when the headline writes another round type or another lead, or when the round has a lead the headline does not name (the lead would lose its quote).
+ */
+function ownPressTitleQuote(s: Pick<LabeledSource, "url" | "title" | "source_type">, value: unknown, roundType: string, leadName?: string): string | null {
+  const title = (s.title ?? "").replace(/\s+/g, " ").trim();
+  if (s.source_type !== "company_site" || !/press|news|media|blog|release/i.test(s.url) || title.length < 12 || title.length > 200) return null;
+  const v = Number(value); if (!(v > 0) || !amountForms(v).test(title)) return null;
+  const said = title.match(/\bseries\s+([a-z])\b|\b(pre-?seed|seed|bridge)\b/i);
+  if (said && !new RegExp(`\\b${(said[1] ? `series\\s+${said[1]}` : said[2]).replace(/-/g, "-?")}\\b`, "i").test(roundType)) return null;
+  const ledBy = title.match(/\b(?:led by|co-?led by)\s+(.+)$/i);
+  if (ledBy && leadName && !ledBy[1].toLowerCase().includes(leadName.replace(/\b(inc|ltd|llc|lp|plc|gmbh)\b\.?/gi, "").trim().toLowerCase())) return null;
+  if (leadName && !namesLeadWithCue(title, leadName)) return null;
+  return title;
+}
+
 /** Moves each round field that rests on a worse source to a better source that holds its quote; returns what moved, for the log. */
 export function preferBetterRoundSources(rounds: V2Round[], sources: LabeledSource[], companyName: string): string[] {
   const moved: string[] = [];
@@ -76,7 +92,7 @@ export function preferBetterRoundSources(rounds: V2Round[], sources: LabeledSour
         .sort((a, b) => sourceRank(a) - sourceRank(b));
       // the same quote word for word, else a sentence of that source that carries the same fact (the quote then is that sentence: it is a substring of the page it is shown with)
       const exact = candidates.find((s) => (text.get(s.source_id) ?? "").includes(q));
-      const byFact = exact ? null : candidates.map((s) => ({ s, sentence: sentenceForFact(f, (e as { value?: unknown }).value, `${s.title ?? ""}\n${s.content ?? ""}`, leadName || undefined) })).find((x) => x.sentence);
+      const byFact = exact ? null : candidates.map((s) => ({ s, sentence: ((f === "amount_raised" || f === "valuation") ? ownPressTitleQuote(s, (e as { value?: unknown }).value, r.round_type ?? "", leadName || undefined) : null) ?? sentenceForFact(f, (e as { value?: unknown }).value, `${s.title ?? ""}\n${s.content ?? ""}`, leadName || undefined) })).find((x) => x.sentence);
       const better = exact ?? byFact?.s;
       if (!better) continue;
       moved.push(`${r.round_type} ${f}: ${cur.url} → ${better.url}${byFact ? " (same fact, the page's own sentence)" : ""}`);

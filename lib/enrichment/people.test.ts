@@ -298,3 +298,13 @@ describe("a team page that shows N people (owner, round 10)", () => {
     expect(teamPeopleCount("Our mission\nWe build boats\nContact us")).toBeNull();
   });
 });
+
+import { cleanPersonName as cleanName1124 } from "./people.ts";
+import { describe as d1124, it as it1124, expect as expect1124 } from "vitest";
+d1124("a name with a dash is one name; a sentence after it is not part of it (owner, 2026-11-24: Lendo)", () => {
+  it1124("Al — Raee is Al-Raee and the role and the verb are cut", () => {
+    expect1124(cleanName1124("Osama Al — Raee, Chief Executive Officer and Co-Founder of Lendo, said:")).toBe("Osama Al-Raee");
+    expect1124(cleanName1124("Osama Al-Raee")).toBe("Osama Al-Raee");
+    expect1124(cleanName1124("Jane Doe, Jr.")).toBe("Jane Doe, Jr.");
+  });
+});
