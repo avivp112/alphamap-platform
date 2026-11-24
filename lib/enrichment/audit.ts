@@ -38,9 +38,13 @@ export function draw(rows: AuditRow[], batch: number, perKind = 25): Drawn[] {
   const shuffled = [...core].map((r) => ({ r, k: rand() })).sort((a, b) => a.k - b.k).map((x) => x.r);
   const random = shuffled.slice(0, perKind);
   const taken = new Set(random.map(key));
+  // Every acquired value of the batch is in the targeted sample (owner, 2026-11-24: Aperio, Phenom and Rubicon Carbon were wrong purchases that reached a batch); the hardest of the rest fill it up to `perKind`.
+  const acquired = core.filter((r) => familyOfField(r.field) === "acquired" && !taken.has(key(r)));
+  const accKeys = new Set(acquired.map(key));
   const perCompany = new Map<string, number>();
-  const targeted = core.filter((r) => !taken.has(key(r))).map((r, i) => ({ r, h: hardness(r), i })).sort((a, b) => b.h - a.h || a.i - b.i)
-    .filter(({ r }) => { const n = perCompany.get(r.company_id) ?? 0; if (n >= 2) return false; perCompany.set(r.company_id, n + 1); return true; }).slice(0, perKind).map((x) => x.r);
+  const others = core.filter((r) => !taken.has(key(r)) && !accKeys.has(key(r))).map((r, i) => ({ r, h: hardness(r), i })).sort((a, b) => b.h - a.h || a.i - b.i)
+    .filter(({ r }) => { const n = perCompany.get(r.company_id) ?? 0; if (n >= 2) return false; perCompany.set(r.company_id, n + 1); return true; }).slice(0, Math.max(0, perKind - acquired.length)).map((x) => x.r);
+  const targeted = [...acquired, ...others];
   return [...random.map((r) => ({ ...r, kind: "random" as const })), ...targeted.map((r) => ({ ...r, kind: "targeted" as const }))].map((r, i) => ({ ...r, n: i + 1 }));
 }
 

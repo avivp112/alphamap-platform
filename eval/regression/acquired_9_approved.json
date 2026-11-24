@@ -8,5 +8,31 @@
    "approved_on": "2026-11-24",
    "why": "smartmaritimenetwork 'DNV buys CyberOwl', 2024-09-25: earlier than the baseline date 2024-10-02"
   }
+ ],
+ "excluded": [
+  {
+   "company": "Aperio",
+   "why": "wrong value: Leica bought another Aperio (digital pathology, 2012); corrected, removed from the baseline",
+   "approved_by": "aviv",
+   "approved_on": "2026-11-24"
+  },
+  {
+   "company": "Phenom",
+   "why": "wrong value: Phenom is the buyer of Included (2026-01-14), not the acquired company; corrected, removed from the baseline",
+   "approved_by": "aviv",
+   "approved_on": "2026-11-24"
+  },
+  {
+   "company": "Rubicon Carbon",
+   "why": "wrong value: ByteDance bought carbon credits from Rubicon (businesswire 2025-06-25), not the company; corrected, removed from the baseline",
+   "approved_by": "aviv",
+   "approved_on": "2026-11-24"
+  },
+  {
+   "company": "Sharethrough",
+   "why": "search results unstable (the Equativ–Sharethrough merger, announced 2024-06-13, is kept in the database); a merger rule is in backlog.md",
+   "approved_by": "aviv",
+   "approved_on": "2026-11-24"
+  }
  ]
 }

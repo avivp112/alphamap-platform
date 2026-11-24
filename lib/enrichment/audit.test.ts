@@ -34,3 +34,15 @@ describe("post-write audit", () => {
     expect(JSON.stringify(b)).toBe(JSON.stringify(a));
   });
 });
+
+import { draw as draw1124 } from "./audit.ts";
+import { describe as d1124a, it as it1124a, expect as expect1124a } from "vitest";
+d1124a("every acquired value of a batch is audited (owner, 2026-11-24)", () => {
+  it1124a("all acquired rows are in the targeted sample, whatever the random draw takes", () => {
+    const rows = Array.from({ length: 120 }, (_, i) => ({ company: `C${i}`, company_id: `id${i}`, field: i % 6 === 0 ? "acquired" : "founded_year", value: i % 6 === 0 ? `status = acquired · Acquired by B${i}` : String(2000 + (i % 20)), source_url: "https://x.com", quote: "q".repeat(50) }));
+    const d = draw1124(rows, 9);
+    const randomAcq = d.filter((x) => x.kind === "random" && x.field === "acquired").length;
+    const targetedAcq = d.filter((x) => x.kind === "targeted" && x.field === "acquired").length;
+    expect1124a(randomAcq + targetedAcq).toBe(20);   // all 20 acquired rows of the batch
+  });
+});

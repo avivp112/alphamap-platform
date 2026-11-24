@@ -168,6 +168,9 @@ if (cmd === "acquired") {
   if (existsSync(approvedFile)) {
     const ap = (JSON.parse(readFileSync(approvedFile, "utf8")).approved ?? []) as Array<{ company: string; after: string; approved_by?: string }>;
     for (const a of ap) { if (a.approved_by !== "aviv") continue; for (const [id, w] of want) if (w.company === a.company) want.set(id, { company: w.company, after: a.after }); }
+    // Purchases the owner took out of the list (a wrong value that was corrected, or a search whose results are unstable): not checked, and said so.
+    const ex = ((JSON.parse(readFileSync(approvedFile, "utf8")).excluded ?? []) as Array<{ company: string; why: string; approved_by?: string }>).filter((x) => x.approved_by === "aviv");
+    for (const [id, w] of [...want]) { const x = ex.find((e) => e.company === w.company); if (x) { want.delete(id); console.log(`• ${w.company}: not checked — ${x.why}`); } }
   }
   const known = new Set(idsOf(9));
   const inBatch = [...want.keys()].filter((id) => known.has(id));
