@@ -141,8 +141,6 @@ export function knownAcquirers(titles: string[], companyName: string, minAgree =
 // ── the purchase as one event (owner, 2026-11-19: Dietly, UltraVox) ───────────────────────────────────────────────────────────────────────────────────────────
 export interface PurchaseItem { title: string; url: string; published_date?: string | null; date_basis?: string; [k: string]: unknown }
 const plain = (s: string) => s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-/** A report that the purchase was completed, not announced. */
-const CLOSING = /\b(?:completes?|completed|completion of|closes?|closed|closing of|finali[sz]es?|finali[sz]ed)\b/i;
 const dayDiff = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) / 86400000;
 
 /**
@@ -176,17 +174,17 @@ export function purchaseEvents<T extends PurchaseItem>(items: T[], companyName: 
     const ok = members.filter(eligible);
     if (!ok.length) continue;
     // The party's own announcements (the company's, the buyer's, a wire release) stand first; among the candidates a date that is not read from a page's code stands before one that is.
-    // The date of the purchase is its first announcement (owner, 2026-11-24: Buildium 11-06 not 12-20, Enso, Rhebo): a report that the purchase was completed ("completes", "has closed") stands only when the event has no
-    // announcement at all.
-    const announced = ok.filter((x) => !CLOSING.test(x.title));
-    const okA = announced.length ? announced : ok;
-    const partyOk = okA.filter(isParty);
-    const base = partyOk.length ? partyOk : okA;
+    // The date of the purchase is the earliest of the reports of that purchase (owner, 2026-11-24: Buildium 11-06 not 12-20, Enso, Rhebo): the announcement always comes before the completion, so no word of a headline
+    // decides and no party's own later report stands before an earlier one. (A date read from a page's code still stands after one that is not, below.)
+    const base = ok;
     const trusted = base.filter((x) => x.date_basis !== "code");
     const pool = trusted.length ? trusted : base;
     // Always the same one, whatever the order the searches returned them in: the earliest date, then the report that states the purchase, then the address.
     const isHit = (x: T) => hits.some((e) => e.x === x);
-    const rep = [...pool].sort((a, b) => String(a.published_date).localeCompare(String(b.published_date)) || (isHit(b) ? 1 : 0) - (isHit(a) ? 1 : 0) || a.url.localeCompare(b.url))[0];
+    // The earliest date wins; of the reports that carry that very date, the party's own release (the company's, the buyer's, a wire release) stands first, then the report that states the purchase, then the address.
+    const earliest = [...pool].map((x) => String(x.published_date)).sort()[0];
+    const sameDay = ok.filter((x) => String(x.published_date) === earliest);
+    const rep = [...(sameDay.length ? sameDay : pool)].sort((a, b) => (isParty(b) ? 1 : 0) - (isParty(a) ? 1 : 0) || (isHit(b) ? 1 : 0) - (isHit(a) ? 1 : 0) || a.url.localeCompare(b.url))[0];
     out.push({ buyer: first.h.acquirer, majority, members, rep });
     void key;
   }

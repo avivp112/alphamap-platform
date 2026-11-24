@@ -17,3 +17,11 @@ export function identityOverlap(profileText: string, siteText: string, cut = IDE
   const share = n / p.size;
   return { share, profileWords: p.size, siteWords: s.size, mismatch: share < cut };
 }
+
+const EN_STOP = new Set("the and of to in for with is are our you we your that this on by as at from it be or an a can all more not have has will they their which who what how why when where about into over than its but".split(" "));
+/** The share of a text's words that are common English words: a site in another language has a low one, and then a word overlap with an English profile says nothing about identity. */
+export function englishShare(text: string): number {
+  const toks = text.toLowerCase().match(/\p{L}+/gu) ?? [];
+  if (toks.length < 30) return 0;
+  return toks.filter((w) => EN_STOP.has(w)).length / toks.length;
+}

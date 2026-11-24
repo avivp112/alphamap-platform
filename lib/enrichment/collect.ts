@@ -74,7 +74,7 @@ import { teamPeopleCount, foundersFromText, foundersFromCards, foundersFromMenti
 import { componentOn } from "./components.ts";
 import { preferBetterRoundSources } from "./roundSourcePreference.ts";
 import { ambiguousName } from "./rowRules.ts";
-import { identityOverlap } from "./identityMismatch.ts";
+import { identityOverlap, englishShare } from "./identityMismatch.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts, findLinkedInLink } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
@@ -1880,7 +1880,9 @@ export async function collectCompany(
     // Does the profile the search gave describe the company whose site was read? (identityMismatch.ts; owner, 2026-11-24: Aperio). Logged only for now: the overlap of the profile's words with the site's own pages.
     { const own = websitePages.map((p) => p.prompt_content ?? p.content).join(" ");
       const ov = identityOverlap([profile.profile.description, profile.profile.value_proposition].filter(Boolean).join(" "), own);
-      if (ov) console.log(`    🧭  identity: the profile against the site's own pages — overlap ${ov.share.toFixed(2)} (${ov.profileWords} profile words, ${ov.siteWords} site words)${ov.mismatch ? " ⚠️ identity_mismatch" : ""}`); }
+      if (ov) { const pText = [profile.profile.description, profile.profile.value_proposition].filter(Boolean).join(" ");
+        console.log(`    🧭  identity: the profile against the site's own pages — overlap ${ov.share.toFixed(2)} (${ov.profileWords} profile words, ${ov.siteWords} site words, english ${englishShare(own).toFixed(2)})${ov.mismatch ? " ⚠️ identity_mismatch" : ""}`);
+        if (ov.mismatch) console.log(`        profile: ${pText.replace(/\s+/g, " ").slice(0, 150)}\n        site:    ${own.replace(/\s+/g, " ").slice(0, 150)}`); } }
     const keptNews: typeof market.news = [];
     const newsDeps = {
       companyName: row.name,
