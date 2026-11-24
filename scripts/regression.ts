@@ -155,6 +155,22 @@ if (cmd === "replace-value") {
   console.log(`✓ batch ${bn}: ${hit[0].company} · ${hit[0].field}: "${hit[0].value}" → "${newValue}"`); hit[0].value = newValue; saveBaseline(b!); process.exit(0);
 }
 
+// `restore-acquired`: a purchase back into a baseline, from the reviewed dry report (owner, 2026-11-24: Aperio's purchase was right). Only after the owner approved.
+//   REPORT=batch9_dry_report.csv APPROVED_BY=aviv npx tsx scripts/regression.ts restore-acquired 9 Aperio
+if (cmd === "restore-acquired") {
+  if (process.env.APPROVED_BY !== "aviv") { console.error("⛔  A baseline is changed only after the owner approved: APPROVED_BY=aviv …"); process.exit(1); }
+  const [bn, ...cos] = args; const b = bn ? loadBaseline(Number(bn)) : null; const f = process.env.REPORT ?? "pilot_report_dry.csv";
+  if (!b || !cos.length || !existsSync(f)) usage();
+  const rep = readCsv(f); const have = new Set(b!.values.map((v) => valueKey(v.company, v.field, v.value))); let added = 0;
+  for (const co of cos) {
+    const rows = rep.body.filter((r) => r[rep.ix("company")] === co && r[rep.ix("field")] === "acquired").map((r) => ({ company: co, field: "acquired", value: r[rep.ix("after")] ?? "" }));
+    if (!rows.length) { console.log(`• ${co}: no acquired row in ${f}`); continue; }
+    for (const v of watched(rows)) if (!have.has(valueKey(v.company, v.field, v.value))) { b!.values.push(v); added++; console.log(`✓ ${co} · ${v.field} · ${v.value}`); }
+  }
+  if (added) saveBaseline(b!); console.log(added ? `${added} value(s) put back into batch ${bn}.` : "nothing to put back (already there).");
+  process.exit(0);
+}
+
 // `acquired`: the purchases of batch 9 (owner, 2026-11-24, after the change of the news searches). The 46 companies whose reviewed dry report (REPORT, pilot_report_dry.csv of batch 9) holds an acquired row are
 // run again from the recordings (the cost cap is on), and each purchase is compared with the reviewed one: status, buyer and date. A purchase that is gone or different is a Tier 1 loss. Nothing is written.
 if (cmd === "acquired") {

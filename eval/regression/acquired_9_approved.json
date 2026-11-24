@@ -11,12 +11,6 @@
  ],
  "excluded": [
   {
-   "company": "Aperio",
-   "why": "wrong value: Leica bought another Aperio (digital pathology, 2012); corrected, removed from the baseline",
-   "approved_by": "aviv",
-   "approved_on": "2026-11-24"
-  },
-  {
    "company": "Phenom",
    "why": "wrong value: Phenom is the buyer of Included (2026-01-14), not the acquired company; corrected, removed from the baseline",
    "approved_by": "aviv",
@@ -34,5 +28,6 @@
    "approved_by": "aviv",
    "approved_on": "2026-11-24"
   }
- ]
+ ],
+ "_note_aperio": "2026-11-24 (owner): the row Aperio (aperio.com) is the digital pathology company, Leica Biosystems 2012-08-21 is right; it is checked again. The list's description of it (an industrial company) was wrong."
 }
