@@ -237,7 +237,10 @@ export function descriptionSources(all: LabeledSource[], allowed: (s: LabeledSou
   return [...ok.filter((s) => s.source_type === "company_site"), ...ok.filter((s) => s.source_type !== "company_site")].slice(0, max);
 }
 
-export function buildDescriptionRequest(companyName: string, sources: LabeledSource[]) {
+/** The marketing word a sentence uses, or null (owner, 2026-11-24: the retry names it). */
+export const marketingWordIn = (text: string): string | null => text.match(MARKETING)?.[0] ?? null;
+
+export function buildDescriptionRequest(companyName: string, sources: LabeledSource[], retryNote?: string) {
   const prompt = `Write the description of "${companyName}" from the research below, in English, as 2 to 4 sentences with a fixed shape.
 
 SENTENCES (one per role, in this order):
@@ -252,6 +255,7 @@ RULES:
 - Do not mention funding, investors, rankings, data platforms or where a fact was read. Do not start with the company name more than once.
 - Every sentence is a complete sentence with a verb: it says what the company sells (or to whom), not a title, a tagline or a clause cut from a longer sentence.
 - Give the "what" sentence whenever the sources support it, and the "for_whom" sentence too when a source says who buys the product. If only the "what" is supported, return the "what" alone; if not even that is supported, return no sentences.
+${retryNote ? `\n- RETRY — ${retryNote}` : ""}
 
 Labeled research:
 ${formatSourcesForPrompt(sources)}`;

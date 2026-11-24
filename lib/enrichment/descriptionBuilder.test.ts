@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { processDescription, sentenceProblem, claims, MARKETING } from "./descriptionBuilder";
+import { processDescription, sentenceProblem, claims, MARKETING, marketingWordIn, buildDescriptionRequest } from "./descriptionBuilder";
 
 const site = "Nuova predicts supply-chain disruptions for global manufacturers using machine learning on shipping and supplier data. Customers include automotive and electronics manufacturers in Europe. Nuova was founded in 2022 and has 45 employees.";
 const byId = { W1: { content: site }, S1: { content: "Acme Capital invested in Nuova. The startup raised $8 million in a seed round." } };
@@ -117,5 +117,18 @@ describe("'We' and 'Our' on the company's own site are the company (owner, round
     const sent = (id: string) => ({ role: "what", text: "We provide cloud and security services to large enterprises.", source_ids: [id] });
     expect(sp2(sent("W1"), "Six Degrees", own, () => true)).toBeNull();
     expect(sp2(sent("S1"), "Six Degrees", press, () => true)).toBe("what_without_company");
+  });
+});
+
+describe("the retry of a description that a marketing word emptied (owner, 2026-11-24: Multiable, Orizuru)", () => {
+  it("names the word the sentence used", () => {
+    expect(marketingWordIn("Acme sells a robust platform for banks")).toBe("robust");
+    expect(marketingWordIn("Acme sells a platform for banks")).toBeNull();
+  });
+  it("the second request carries the retry note, the first none", () => {
+    const first = buildDescriptionRequest("Acme", []).messages[0].content as string;
+    const second = buildDescriptionRequest("Acme", [], 'your first answer used the word(s) "robust".').messages[0].content as string;
+    expect(first).not.toContain("RETRY");
+    expect(second).toContain('RETRY — your first answer used the word(s) "robust".');
   });
 });

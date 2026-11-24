@@ -21,6 +21,26 @@ export function sourceRank(s: Pick<LabeledSource, "url" | "source_type">): numbe
 const norm = (t: string) => t.toLowerCase().replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, " ").trim();
 const FIELDS = ["amount_raised", "valuation", "announcement_date", "lead_investor"] as const;
 
+const sentencesOf = (t: string): string[] => t.split(/(?<=[.!?])\s+|\n+/).map((x) => x.replace(/\s+/g, " ").trim()).filter((x) => x.length >= 12 && x.length <= 320);
+const trim0 = (n: number) => String(+n.toFixed(2));
+/** The ways a source writes an amount ("$28 million", "28M", "US$28m"); the sentence must carry one of them. */
+function amountForms(v: number): RegExp {
+  const forms: string[] = [];
+  if (v >= 1e9) forms.push(`${trim0(v / 1e9)}\\s?(?:billion|bn|b)`); else if (v >= 1e6) forms.push(`${trim0(v / 1e6)}\\s?(?:million|mn|m)`); else if (v >= 1e3) forms.push(`${trim0(v / 1e3)}\\s?(?:thousand|k)`);
+  forms.push(String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ",")); forms.push(String(v));
+  return new RegExp(`(?:^|[^\\d.,])(?:${forms.join("|")})\\b`, "i");
+}
+/**
+ * A sentence of the better source that carries the same fact as the field's own quote, when that source does not hold the quote word for word (a wire reprints a press release with a dateline and a changed
+ * headline): the amount for an amount, the investor's name beside "led by" for a lead. Null for a date and for anything else — those move only with an exact quote.
+ */
+function sentenceForFact(field: (typeof FIELDS)[number], value: unknown, content: string): string | null {
+  const sentences = sentencesOf(content);
+  if (field === "amount_raised" || field === "valuation") { const v = Number(value); if (!(v > 0)) return null; const re = amountForms(v); return sentences.find((x) => re.test(x) && /rais|fund|invest|financ|series|seed|round|valuation|valued/i.test(x)) ?? null; }
+  if (field === "lead_investor") { const name = String(value ?? "").trim(); if (name.length < 3) return null; const low = name.toLowerCase(); return sentences.find((x) => x.toLowerCase().includes(low) && /\b(?:led by|co-?led|leading the round|lead investor)\b/i.test(x)) ?? null; }
+  return null;
+}
+
 /** Moves each round field that rests on a worse source to a better source that holds its quote; returns what moved, for the log. */
 export function preferBetterRoundSources(rounds: V2Round[], sources: LabeledSource[], companyName: string): string[] {
   const moved: string[] = [];
@@ -35,13 +55,17 @@ export function preferBetterRoundSources(rounds: V2Round[], sources: LabeledSour
       if (rank === 0) continue;
       const q = norm(e.evidence_quote);
       if (q.length < 12) continue;
-      const better = sources
-        .filter((s) => s.source_id !== e.source_id && sourceRank(s) < rank && (text.get(s.source_id) ?? "").includes(q)
-          && roundSourceStanding(s.url, { companyName, isCompanySite: s.source_type === "company_site", content: s.content }).kind === "allowed")
-        .sort((a, b) => sourceRank(a) - sourceRank(b))[0];
+      const candidates = sources
+        .filter((s) => s.source_id !== e.source_id && sourceRank(s) < rank && roundSourceStanding(s.url, { companyName, isCompanySite: s.source_type === "company_site", content: s.content }).kind === "allowed")
+        .sort((a, b) => sourceRank(a) - sourceRank(b));
+      // the same quote word for word, else a sentence of that source that carries the same fact (the quote then is that sentence: it is a substring of the page it is shown with)
+      const exact = candidates.find((s) => (text.get(s.source_id) ?? "").includes(q));
+      const byFact = exact ? null : candidates.map((s) => ({ s, sentence: sentenceForFact(f, (e as { value?: unknown }).value, `${s.title ?? ""}\n${s.content ?? ""}`) })).find((x) => x.sentence);
+      const better = exact ?? byFact?.s;
       if (!better) continue;
-      moved.push(`${r.round_type} ${f}: ${cur.url} → ${better.url}`);
+      moved.push(`${r.round_type} ${f}: ${cur.url} → ${better.url}${byFact ? " (same fact, the page's own sentence)" : ""}`);
       e.source_id = better.source_id;
+      if (byFact?.sentence) e.evidence_quote = byFact.sentence;
       if (r.source_url && r.source_url === cur.url) r.source_url = better.url;
     }
   }

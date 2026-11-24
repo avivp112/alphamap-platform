@@ -47,7 +47,7 @@ import { foundedYearFromSite, copyrightStartYear, foundedInCityYear } from "./si
 import { storedRejection, rememberRejection } from "./techMemory.ts";
 import { buildSectorRequest, parseSectorChoice, classifyWithRetry, type SectorChoice } from "./classifySector.ts";
 import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
-import { buildDescriptionRequest, descriptionSources, processDescription, describeAttempt } from "./descriptionBuilder.ts";
+import { buildDescriptionRequest, descriptionSources, processDescription, describeAttempt, marketingWordIn } from "./descriptionBuilder.ts";
 import { buildBackgroundRequest, processBackgroundResponse, backgroundSearchQuery, founderSearchQuery } from "./founderBackground.ts";
 import { requestFor } from "./models.ts";
 import { rejectedDomains, describeRejected } from "./rejectedDomains.ts";
@@ -73,6 +73,7 @@ import { approvedQuotes, profileQuotes, hqFromApprovedQuotes, foundersFromApprov
 import { teamPeopleCount, foundersFromText, foundersFromCards, foundersFromMentions, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, supportedRoleSubset, personCardsInHtml, bioFromCard, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
 import { componentOn } from "./components.ts";
 import { preferBetterRoundSources } from "./roundSourcePreference.ts";
+import { ambiguousName } from "./rowRules.ts";
 import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts, findLinkedInLink } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
@@ -2068,12 +2069,27 @@ export async function collectCompany(
     try {
       // Not the extra searches' pages (founders, rivals): they did not pass the entity filter the first pass did.
       const usable = descriptionSources(allSources, (x) => profileSourceAllowed(x, row.name) && !/^(founder_background|vs_own|vs_other|market_peers)/.test(x.query_label ?? "") && !(siteOwnerIssue && x.source_type === "company_site"));
-      if (usable.length) {
-        const msg = await ctx.anthropic.messages.create(requestFor(buildDescriptionRequest(row.name, usable), ctx.models.profile));
-        ctx.recordCost(ctx.models.profile, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 });
-        const tool = msg.content.find((b) => b.type === "tool_use");
-        const returned = tool && tool.type === "tool_use" && Array.isArray((tool.input as { sentences?: unknown[] }).sentences) ? (tool.input as { sentences: Array<{ role: string }> }).sentences.map((x) => x.role) : [];
-        const attempt = tool && tool.type === "tool_use" ? describeAttempt(tool.input, row.name, Object.fromEntries(usable.map((x) => [x.source_id, x])), (id) => allowedFact({ source_id: id }), rebrandedTo ? [rebrandedTo] : []) : null;
+      // A name several companies carry (eval/ambiguous_names.json): the description is built from the pages of the site on file only — a sentence from any other page would be dropped by the rows' rule anyway (owner, 2026-11-24: Shyft).
+      const hostOf = (u: string) => { try { return new URL(u).hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; } };
+      const own = ambiguousName(row.name) && domain ? usable.filter((x) => { const h = hostOf(x.url); return h === domain || h.endsWith(`.${domain}`); }) : usable;
+      if (own.length < usable.length) console.log(`    🧭  ${row.name} is a name several companies carry: the description is built from the ${own.length} page(s) of ${domain} only (${usable.length - own.length} other source(s) left out).`);
+      if (own.length) {
+        const ask = async (note?: string) => {
+          const msg = await ctx.anthropic.messages.create(requestFor(buildDescriptionRequest(row.name, own, note), ctx.models.profile));
+          ctx.recordCost(ctx.models.profile, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 });
+          const tool = msg.content.find((b) => b.type === "tool_use");
+          const returned = tool && tool.type === "tool_use" && Array.isArray((tool.input as { sentences?: unknown[] }).sentences) ? (tool.input as { sentences: Array<{ role: string }> }).sentences.map((x) => x.role) : [];
+          const attempt = tool && tool.type === "tool_use" ? describeAttempt(tool.input, row.name, Object.fromEntries(own.map((x) => [x.source_id, x])), (id) => allowedFact({ source_id: id }), rebrandedTo ? [rebrandedTo] : []) : null;
+          return { attempt, returned };
+        };
+        let { attempt, returned } = await ask();
+        // A description with no sentence left because of a marketing word is asked for once more, naming the word (owner, 2026-11-24: Multiable's "what" sentence, Orizuru's): the same fact in plain words.
+        const worded = attempt && !attempt.built ? [...new Set(attempt.dropped.filter((d) => d.why === "marketing_word").map((d) => marketingWordIn(d.text)).filter((w): w is string => !!w))] : [];
+        if (worded.length) {
+          console.log(`    🔁  Description: the first answer used ${worded.map((w) => `"${w}"`).join(", ")} — asked once more, in plain words.`);
+          const second = await ask(`your first answer used the word(s) ${worded.map((w) => `"${w}"`).join(", ")}. Say the same facts without them, in plain words, and keep every fact the sources state.`);
+          if (second.attempt?.built) { attempt = second.attempt; returned = second.returned; bump(stats.droppedByReason, "description_retried_marketing_word"); }
+        }
         const built = attempt?.built ?? null;
         // Every dropped sentence is named, also when no description came of it (owner, 2026-11-14: nine companies without one and nothing in the log).
         for (const d of attempt?.dropped ?? []) { console.log(`    🚫  description sentence dropped (${d.why}): "${d.text.slice(0, 160)}"${(d as { detail?: string }).detail ? `\n        ↳ checked against: ${(d as { detail?: string }).detail}` : ""}`); bump(stats.droppedByReason, `description_${d.why.split(":")[0]}`); }

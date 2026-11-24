@@ -29,4 +29,14 @@ describe("which source a round rests on (owner, 2026-11-24: Lendo / einpresswire
     const r = [round("W1")];
     expect(preferBetterRoundSources(r as never, sources, "Lendo")).toEqual([]);
   });
+  it("when the own page does not hold the quote, a sentence of it that carries the same fact stands in (a wire reprints with another headline)", () => {
+    const own = "Riyadh — Lendo, the Saudi lending platform, announced it has raised $28 million in a Series B round. The round was led by Sanabil Investments, a PIF company. Lendo plans an IPO.";
+    const sources = [src("S1", "https://www.einpresswire.com/article/673", `${quote}. More text.`), src("W1", "https://www.lendo.sa/en/press-releases/series-b", own, "company_site")];
+    const r = [round("S1")]; const moved = preferBetterRoundSources(r as never, sources, "Lendo");
+    expect(moved.length).toBe(2);
+    const x = r[0] as { amount_raised: { source_id: string; evidence_quote: string }; lead_investor: { source_id: string; evidence_quote: string } };
+    expect(x.amount_raised.source_id).toBe("W1"); expect(x.amount_raised.evidence_quote).toContain("$28 million");
+    expect(x.lead_investor.evidence_quote).toContain("led by Sanabil Investments");
+    expect(own).toContain(x.lead_investor.evidence_quote);   // verbatim
+  });
 });

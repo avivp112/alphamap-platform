@@ -38,7 +38,7 @@ const isJobAd = (q: string) => JOB_AD_STRONG.test(q) || new Set((q.match(JOB_AD_
 const brandOf = (companyName: string) => fold(companyName.replace(/\b(ai|inc|ltd|llc|labs?|group|studio|studios|technologies|software|systems)\b/gi, ""));
 let ambiguous: Set<string> | null = null;
 const ambiguousDeny = (name: string): RegExp | null => { try { const j = JSON.parse(readFileSync("eval/ambiguous_names.json", "utf8")) as { deny?: Record<string, string> }; const k = Object.keys(j.deny ?? {}).find((x) => fold(x) === fold(name)); return k ? new RegExp(j.deny![k], "i") : null; } catch { return null; } };
-const ambiguousName = (name: string): boolean => {
+export const ambiguousName = (name: string): boolean => {
   if (!ambiguous) { ambiguous = new Set(); try { for (const n of (JSON.parse(readFileSync("eval/ambiguous_names.json", "utf8")) as { names?: string[] }).names ?? []) ambiguous.add(fold(n)); } catch { /* none */ } }
   return ambiguous.has(fold(name));
 };
