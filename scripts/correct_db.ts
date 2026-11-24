@@ -31,6 +31,37 @@ const only = (process.env.ONLY ?? "").split(",").map((s) => s.trim().toLowerCase
 const fold = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, "");
 
 /**
+ * WEBSITE="Aperio=https://aperio.ai,Other=https://other.com" — a company's website corrected (owner, 2026-11-24: Aperio's address was the domain of another company of the same name). Listed first: the company, the website
+ * on file, the new one, and whether another company already has it (the column is unique). Written only with APPROVED_BY=aviv DRY_RUN=false: startups.website, a field_changes row under a run of its own (undo_run.ts).
+ * Nothing else of the company changes: what was enriched from the old address is a separate decision (undo_value).
+ */
+async function websiteMode(list: string) {
+  const picks = list.split(",").map((x) => x.trim()).filter(Boolean).map((x) => { const i = x.indexOf("="); return { name: x.slice(0, i).trim(), website: x.slice(i + 1).trim() }; });
+  const todo: Array<{ id: string; name: string; old: string | null; website: string }> = [];
+  for (const p of picks) {
+    if (!/^https:\/\/[^/\s]+\.[a-z]{2,}\/?$/i.test(p.website)) { console.log(`✗ ${p.name}: "${p.website}" is not a site address (https://host) — skipped`); continue; }
+    const { data: cs } = await db.from("startups").select("id, name, website").ilike("name", p.name);
+    const rows = (cs ?? []) as Array<{ id: string; name: string; website: string | null }>;
+    if (rows.length !== 1) { console.log(`✗ ${p.name}: ${rows.length} compan(ies) match (exactly one is needed) — skipped`); continue; }
+    const { data: other } = await db.from("startups").select("id, name").eq("website", p.website).neq("id", rows[0].id);
+    console.log(`\n${rows[0].name}: website ${rows[0].website} → ${p.website}${(other ?? []).length ? `  ⛔ already the website of ${(other as Array<{ name: string }>).map((o) => o.name).join(", ")} (unique) — skipped` : ""}`);
+    if ((other ?? []).length) continue;
+    todo.push({ id: rows[0].id, name: rows[0].name, old: rows[0].website, website: p.website });
+  }
+  if (!WRITE) { console.log(`\n${todo.length} website(s) listed — nothing written. After the owner approves: WEBSITE="…" APPROVED_BY=aviv DRY_RUN=false npx tsx scripts/correct_db.ts`); return; }
+  if (!todo.length) { console.log("nothing to write."); return; }
+  const { data: run, error } = await db.from("enrichment_runs").insert({ pipeline: "v2", run_kind: "on_demand", dry_run: false, thresholds: { MODE: "correct_db_website", changes: todo.length } }).select("run_id").single();
+  if (error || !run) { console.error(`could not register the run (${error?.message}) — nothing changed`); process.exit(1); }
+  const runId = (run as { run_id: string }).run_id;
+  for (const t of todo) {
+    const ch = await db.from("field_changes").insert(startupChanges(t.id, { website: t.old }, { website: t.website }, runId)); if (ch.error) { console.error(`✗ ${t.name}: field_changes not recorded (${ch.error.message}) — not changed`); continue; }
+    const up = await db.from("startups").update({ website: t.website }).eq("id", t.id);
+    console.log(up.error ? `✗ ${t.name}: ${up.error.message}` : `✔ ${t.name}: website ${t.old} → ${t.website}`);
+  }
+  console.log(`recorded under run ${runId} (undo: RUN_ID=${runId} DRY_RUN=false npx tsx scripts/undo_run.ts)`);
+}
+
+/**
  * FOUNDERS="Buildium:Michael Monteiro,Nuro:Jiajun Zhu" — founders the owner approved one by one (2026-11-23: real founders held back together with junk). Each is read, with its title, source and quote, from the
  * carried_not_written.csv row (CARRIED=path), listed first; written only with APPROVED_BY=aviv DRY_RUN=false: appended to startups.founders (nobody is replaced or removed), with a field_changes row and a field_provenance row.
  */
@@ -74,6 +105,7 @@ async function foundersMode(list: string) {
 interface Change { startup_id: string; company: string; table: "startups" | "funding_rounds"; id: string; column: string; old: unknown; now: unknown; source: string; quote: string }
 
 (async () => {
+  if (process.env.WEBSITE) { await websiteMode(process.env.WEBSITE); return; }
   if (process.env.FOUNDERS) { await foundersMode(process.env.FOUNDERS); return; }
   const changes: Change[] = [];
   for (const n of writtenBatches()) {
