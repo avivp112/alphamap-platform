@@ -1,18 +1,21 @@
 /**
  * lib/enrichment/sitemap.ts — the pages of a company's own site chosen from its sitemap (owner, round 10): sitemap.xml, or the Sitemap line of robots.txt; of its addresses, the
- * pages whose path says about, team, leadership, company, contact, press, news, impressum or legal — and the same words in the language
- * of the site. At most 12 pages a company; a site with no sitemap keeps the fixed list.
+ * pages whose path says about, team, leadership, company, contact, press, news, careers, jobs, story, history, impressum, legal or investors — and the same words in the language
+ * of the site. At most 30 pages a company; a site with no sitemap keeps the fixed list.
  */
-export const MAX_SITE_PAGES = 12;   // owner, 2026-11-23 (maintenance window): home, about, team, leadership, contact, news / press, impressum / imprint, one legal page — no product, privacy, terms or jobs pages
+export const MAX_SITE_PAGES = 30;   // back to what it was (owner, 2026-11-26: the reading cuts of the maintenance window are undone)
 
 // Higher first. A path segment is matched whole (or as a hyphenated part): "/about-us/leadership" scores for both.
 const KEYWORDS: Array<[number, string[]]> = [
   [10, ["about", "about-us", "aboutus", "company", "who-we-are", "our-story", "story", "o-nas", "o-firmie", "sobre", "sobre-nos", "sobre-nosotros", "quienes-somos", "nosotros", "ueber-uns", "über-uns", "uber-uns", "unternehmen", "a-propos", "qui-sommes-nous", "societe", "chi-siamo", "over-ons", "om-oss", "hakkimizda", "关于我们", "about_us"]],
   [10, ["team", "leadership", "management", "people", "founders", "board", "zespol", "zespół", "equipe", "equipo", "equipa", "mannschaft", "unser-team", "l-equipe", "leitung", "geschaeftsfuehrung"]],
   [9, ["contact", "contact-us", "contacts", "kontakt", "contacto", "contato", "contactez-nous", "contatti", "contactenos", "fale-conosco"]],
-  [8, ["impressum", "legal", "legal-notice", "imprint", "mentions-legales", "aviso-legal", "nota-legal", "informacje-prawne", "stopka", "regulamin"]],
+  [8, ["impressum", "legal", "legal-notice", "imprint", "mentions-legales", "aviso-legal", "nota-legal", "informacje-prawne", "stopka", "datenschutz", "privacy", "terms", "terms-of-service", "regulamin", "politica-de-privacidade"]],
   [7, ["press", "newsroom", "media", "press-releases", "pressemitteilungen", "presse", "prensa", "imprensa", "dla-mediow", "komunikaty", "pressroom"]],
-  [6, ["news", "updates", "actualites", "noticias", "aktuelles", "wiadomosci", "aktualnosci", "novedades"]],
+  [6, ["news", "blog", "updates", "actualites", "noticias", "aktuelles", "wiadomosci", "aktualnosci", "novedades"]],
+  [6, ["investors", "investor-relations", "investor", "inwestorzy", "investidores", "inversores", "investisseurs", "anleger"]],
+  [5, ["history", "historia", "histoire", "geschichte", "historico", "mission", "values"]],
+  [4, ["careers", "jobs", "career", "kariera", "carreiras", "carreras", "empleo", "karriere", "emplois", "recrutement", "trabalhe-conosco", "praca"]],
 ];
 const SCORE = new Map<string, number>();
 for (const [score, words] of KEYWORDS) for (const w of words) SCORE.set(w, Math.max(score, SCORE.get(w) ?? 0));
@@ -85,18 +88,5 @@ export function pickSitePages(urls: string[], root: string, max = MAX_SITE_PAGES
     scored.push({ url: clean, score, depth: u.pathname.split("/").filter(Boolean).length });
   }
   scored.sort((a, b) => b.score - a.score || a.depth - b.depth || a.url.length - b.url.length);
-  // One legal page besides the impressum / imprint (owner, 2026-11-23): the legal notice, the terms of a site written in a language this list does not know, are not a page each.
-  const out: string[] = [];
-  let legal = 0, funding = 0;
-  // One product page: the best of products > solutions > platform among the ones the site has.
-  const product = scored.filter((c) => productRank(new URL(c.url).pathname) >= 0).sort((a, b) => productRank(new URL(a.url).pathname) - productRank(new URL(b.url).pathname))[0]?.url;
-  for (const c of scored) {
-    if (out.length >= Math.max(0, max - 1)) break;
-    const path = new URL(c.url).pathname;
-    if (productRank(path) >= 0 && c.url !== product) continue;
-    if (isFundingPage(path)) { if (funding >= 3) continue; funding++; }
-    if (isLegalPath(path)) { if (legal >= 2) continue; legal++; }
-    out.push(c.url);
-  }
-  return out;
+  return scored.slice(0, Math.max(0, max - 1)).map((s) => s.url);
 }

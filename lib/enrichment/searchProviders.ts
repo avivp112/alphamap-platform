@@ -38,9 +38,8 @@ import { mkdirSync, readFileSync, writeFileSync } from "fs";
  * live API wrappers.
  */
 
-import { parseSitemap, robotsSitemaps, pickSitePages, MAX_SITE_PAGES, PRODUCT_PAGES } from "./sitemap.ts";
+import { parseSitemap, robotsSitemaps, pickSitePages, MAX_SITE_PAGES } from "./sitemap.ts";
 import { promptCharsFor } from "./pageText.ts";
-const isProductUrl = (u: string): boolean => { try { const segs = new URL(u).pathname.toLowerCase().split("/").filter(Boolean); return segs.length === 1 && (PRODUCT_PAGES as readonly string[]).includes(segs[0]); } catch { return false; } };
 import { devLinksFromText, type DevLinks } from "./devLinks";
 import type { Provider, RawSearchResult } from "./sources";
 import { websiteDomain } from "./websiteValidation";
@@ -473,7 +472,7 @@ export async function verifyDomainMatch(
 
 const JINA_TIMEOUT_MS = Number(process.env.JINA_TIMEOUT_MS ?? 15_000);
 import { promptText, htmlToText } from "./pageText.ts";
-const MAX_WEBSITE_CHARS = Number(process.env.WEB_PAGE_PROMPT_CHARS ?? 3_000);   // what the model gets of a page; the verifier reads the whole page (up to MAX_PAGE_STORED)
+const MAX_WEBSITE_CHARS = Number(process.env.WEB_PAGE_PROMPT_CHARS ?? 6_000);   // what the model gets of a page; the verifier reads the whole page (up to MAX_PAGE_STORED)
 const MAX_PAGE_STORED = 120_000;
 /** Why the last read failed, set by each step (readPage names every step of the chain when all fail). */
 let lastFailure = "";
@@ -900,7 +899,7 @@ export async function fetchCompanyWebsitePages(
   if (!website) return [];
   let root = website.startsWith("http") ? website : `https://${website}`;
   // The company's own pages are read on every run, whatever the search finds (owner, 2026-11-14): home, about, team / leadership, contact, news / press, and customers / solutions / industries / products / platform (where "for whom" is usually written).
-  const candidatePaths = ["", "/about", "/about-us", "/team", "/leadership", "/company", "/contact", "/contact-us", "/news", "/press", "/newsroom", "/imprint", "/impressum", "/legal", "/products", "/solutions", "/platform"];   // owner, 2026-11-24: one main product page (the first that exists); no customers, industries, privacy, terms or jobs pages
+  const candidatePaths = ["", "/about", "/about-us", "/team", "/leadership", "/company", "/contact", "/contact-us", "/news", "/press", "/newsroom", "/customers", "/solutions", "/industries", "/products", "/platform", "/imprint", "/impressum", "/legal"];   // owner, 2026-11-26: the product, customer and industry pages are back (the imprint, impressum and legal pages stay)
   let urls = candidatePaths.map((path) => root.replace(/\/+$/, "") + path);
   const pages: FetchedPage[] = [];
 
@@ -943,16 +942,14 @@ export async function fetchCompanyWebsitePages(
   }
   // Sixteen addresses on a site that does not answer would cost minutes: after four misses in a row the rest of the pages are not tried.
   let misses = 0;
-  let productTaken = [...fetched.keys()].some(isProductUrl);
   for (const url of urls) {
     if (fetched.has(url)) continue;
-    if (fetched.size >= MAX_SITE_PAGES) break;   // at most 12 pages, however many addresses are tried
-    if (isProductUrl(url) && productTaken) continue;   // one product page: the first that exists
+    if (fetched.size >= MAX_SITE_PAGES) break;   // at most MAX_SITE_PAGES pages, however many addresses are tried
     const cachedPage = state.cache?.get<{ content: string; provider: Provider }>(`page:${url}`);
-    if (cachedPage) { fetched.set(url, { ...cachedPage, cached: true }); misses = 0; if (isProductUrl(url)) productTaken = true; continue; }
+    if (cachedPage) { fetched.set(url, { ...cachedPage, cached: true }); misses = 0; continue; }
     if (misses >= 4) continue;
     const read = await readPage(url, state, needFallbacks);
-    if (read && looksLikeRealContent(read.text)) { fetched.set(url, { content: read.text, provider: read.provider, cached: false }); misses = 0; if (isProductUrl(url)) productTaken = true; }
+    if (read && looksLikeRealContent(read.text)) { fetched.set(url, { content: read.text, provider: read.provider, cached: false }); misses = 0;}
     else misses++;
   }
   if (fetched.size === 0) {
