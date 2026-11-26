@@ -59,6 +59,19 @@ export function wrapAnthropic<T extends { messages: { create: (...a: any[]) => a
   return client;
 }
 
+
+const SEARCH_HOSTS = new Set(["google.serper.dev", "api.tavily.com", "s.jina.ai"]);
+/**
+ * A recorded answer that is a failure of the moment, not an answer (owner, 2026-11-26: a Serper error replayed as "no results" made a gate lose values that a live run finds): a request that timed out or was reset, a status
+ * 408 / 425 / 429 / 5xx, and for the search providers 401 / 402 / 403 (a key or credits that ran out). Such a recording is not kept when it is made, and a replay treats it as missing (a MISS, counted against the company);
+ * REPLAY_FILL fetches it again. A page that answers 404, a site that does not resolve (ENOTFOUND: the dead-domain check) are answers and stay.
+ */
+export function isTransientRecording(rec: { status?: number; error?: string }, host: string): boolean {
+  if (rec.error) return !/ENOTFOUND|ECONNREFUSED|CERT_|certificate/i.test(rec.error) && /timeout|timed out|ETIMEDOUT|ECONNRESET|EAI_AGAIN|UND_ERR|socket|aborted|fetch failed|network/i.test(rec.error);
+  const st = rec.status ?? 200;
+  return st === 408 || st === 425 || st === 429 || st >= 500 || (SEARCH_HOSTS.has(host) && (st === 401 || st === 402 || st === 403));
+}
+
 const httpDir = () => process.env.HTTP_RECORD_DIR ?? join("cache", "http");
 const SKIP_HOSTS = ["api.anthropic.com", "supabase.co", "supabase.in"];
 const skipped = (host: string) => SKIP_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
@@ -86,11 +99,12 @@ export function installHttpRecorder(): void {
         try {
           const rec = JSON.parse(gunzipSync(readFileSync(file)).toString("utf8")) as { status?: number; type?: string; finalUrl?: string; body?: string; error?: string };
           recorderStats.httpReplayed++;
+          if (isTransientRecording(rec, host)) throw new Error("transient recording");   // a failure of the moment is missing, not an answer (falls to the MISS / REPLAY_FILL path below)
           if (rec.error) throw new Error(rec.error);
           const resp = new Response(Buffer.from(rec.body ?? "", "base64"), { status: rec.status ?? 200, headers: rec.type ? { "content-type": rec.type } : {} });
           Object.defineProperty(resp, "url", { value: rec.finalUrl ?? url });
           return resp;
-        } catch (e) { if (e instanceof Error && !/Unexpected token|JSON/.test(e.message)) throw e; }
+        } catch (e) { if (e instanceof Error && !/Unexpected token|JSON|transient recording/.test(e.message)) throw e; }
       }
       // REPLAY_FILL=1 (the one-time "complete the recordings" run of the regression gate): what the recordings do not have is fetched live and recorded; what they have is replayed.
       if (process.env.REPLAY_FILL === "1") { recorderStats.filled++; return fetchLive(); }
@@ -107,10 +121,10 @@ export function installHttpRecorder(): void {
       const res = await real(input, init);
       try {
         const buf = Buffer.from(await res.clone().arrayBuffer());
-        if (buf.length <= MAX_RECORDED_BYTES) save({ status: res.status, type: res.headers.get("content-type") ?? undefined, finalUrl: res.url || undefined, body: buf.toString("base64") });
+        if (buf.length <= MAX_RECORDED_BYTES && !isTransientRecording({ status: res.status }, host)) save({ status: res.status, type: res.headers.get("content-type") ?? undefined, finalUrl: res.url || undefined, body: buf.toString("base64") });
       } catch { /* a body that cannot be read twice is not recorded */ }
       return res;
-    } catch (e) { save({ error: `${e instanceof Error ? e.message : String(e)}${(e as { cause?: { code?: string } })?.cause?.code ? ` (${(e as { cause?: { code?: string } }).cause!.code})` : ""}` }); throw e; }
+    } catch (e) { const msg = `${e instanceof Error ? e.message : String(e)}${(e as { cause?: { code?: string } })?.cause?.code ? ` (${(e as { cause?: { code?: string } }).cause!.code})` : ""}`; if (!isTransientRecording({ error: msg }, host)) save({ error: msg }); throw e; }
     }
   }) as typeof fetch;
 }
