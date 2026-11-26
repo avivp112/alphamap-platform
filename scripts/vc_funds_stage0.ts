@@ -19,7 +19,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { config } from "dotenv";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { investorKey, hostOf, ambiguousClusters } from "../lib/funds/investorNames.ts";
+import { investorKey, hostOf, ambiguousClusters, splitLeadInvestors, looksLikePerson, looksLikeAngelGroup } from "../lib/funds/investorNames.ts";
 
 if (existsSync(".env")) config({ path: ".env" });
 for (const k of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]) if (!process.env[k]) { console.error(`Missing env var: ${k}`); process.exit(1); }
@@ -56,7 +56,7 @@ const parseCsv = (t: string): string[][] => { // minimal RFC4180
 
 interface Round { id: string; startup_id: string; lead_investor: string | null; investors: string[] | null; announcement_date: string | null; round_type: string | null }
 interface Inv { id: string; name: string; website: string | null; firm_type: string | null }
-interface Agg { variants: Set<string>; rounds: Set<string>; led: Set<string>; startups: Set<string>; first: string | null; last: string | null; loose: string }
+interface Agg { variants: Set<string>; rounds: Set<string>; led: Set<string>; startups: Set<string>; first: string | null; last: string | null; loose: string; r24: number }
 
 const main = async () => {
   const [rounds, invs] = await Promise.all([
@@ -64,24 +64,35 @@ const main = async () => {
     all<Inv>("investors", "id,name,website,firm_type"),
   ]);
   const agg = new Map<string, Agg>();
+  const since24 = new Date(); since24.setMonth(since24.getMonth() - 24); const cut24 = since24.toISOString().slice(0, 10);
   for (const r of rounds) {
-    const names = [r.lead_investor, ...(r.investors ?? [])].filter((n): n is string => !!n && !!n.trim());
+    const leads = new Set(splitLeadInvestors(r.lead_investor).map((n) => investorKey(n).exact_key));
+    const names = [...splitLeadInvestors(r.lead_investor), ...(r.investors ?? [])].filter((n) => !!n && !!n.trim());
     const seen = new Set<string>();
     for (const n of names) {
       const k = investorKey(n); if (!k.exact_key || seen.has(k.exact_key)) continue; seen.add(k.exact_key);
-      const a = agg.get(k.exact_key) ?? { variants: new Set(), rounds: new Set(), led: new Set(), startups: new Set(), first: null, last: null, loose: k.loose_key };
+      const a = agg.get(k.exact_key) ?? { variants: new Set(), rounds: new Set(), led: new Set(), startups: new Set(), first: null, last: null, loose: k.loose_key, r24: 0 };
       a.variants.add(n.trim()); a.rounds.add(r.id); a.startups.add(r.startup_id);
-      if (r.lead_investor && investorKey(r.lead_investor).exact_key === k.exact_key) a.led.add(r.id);
-      const d = r.announcement_date; if (d) { if (!a.first || d < a.first) a.first = d; if (!a.last || d > a.last) a.last = d; }
+      if (leads.has(k.exact_key)) a.led.add(r.id);
+      const d = r.announcement_date; if (d) { if (!a.first || d < a.first) a.first = d; if (!a.last || d > a.last) a.last = d; if (d >= cut24) a.r24++; }
       agg.set(k.exact_key, a);
     }
   }
   const invByHost = new Map<string, Inv[]>(); const invKeys = new Set<string>();
   for (const i of invs) { invKeys.add(investorKey(i.name).exact_key); const h = hostOf(i.website); if (h) invByHost.set(h, [...(invByHost.get(h) ?? []), i]); }
 
+  // entity_class: individuals and angel groups get no entity (owner, 2026-11-26). "individual" is set only for a rarely-seen name that looks like a person and is not in
+  // investors; a frequent one (Kleiner Perkins looks like a person too) stays possible_individual for the manual pass over the 100-200 most frequent names.
+  const RARE = Number(process.env.RARE_ROUNDS ?? 3);
+  const classOf = (exact_key: string, a: Agg): string => {
+    const v = [...a.variants][0];
+    if (looksLikeAngelGroup(v)) return "angel_group";
+    if (invKeys.has(exact_key) || !looksLikePerson(v)) return "institution_candidate";
+    return a.rounds.size <= RARE ? "individual" : "possible_individual";
+  };
   const rows = [...agg].map(([exact_key, a]) => ({
-    exact_key, loose_key: a.loose, raw_variants: [...a.variants].slice(0, 6), rounds: a.rounds.size, rounds_led: a.led.size, startups: a.startups.size,
-    first_round: a.first, last_round: a.last, in_investors_table: invKeys.has(exact_key),
+    exact_key, entity_class: classOf(exact_key, a), loose_key: a.loose, raw_variants: [...a.variants].slice(0, 6), rounds: a.rounds.size, rounds_led: a.led.size, startups: a.startups.size,
+    first_round: a.first, last_round: a.last, rounds_24m: a.r24, in_investors_table: invKeys.has(exact_key),
   })).sort((x, y) => y.rounds - x.rounds);
   writeFileSync(`${OUT}/investor_names.csv`, csv(rows));
 
@@ -105,7 +116,7 @@ const main = async () => {
     }
     writeFileSync(`${OUT}/list_coverage.csv`, csv(cover));
   }
-  const unlisted = rows.filter((r) => r.rounds >= MIN_ROUNDS_UNLISTED && !listed.has(r.exact_key));
+  const unlisted = rows.filter((r) => r.rounds >= MIN_ROUNDS_UNLISTED && !listed.has(r.exact_key) && r.entity_class !== "individual" && r.entity_class !== "angel_group");
   writeFileSync(`${OUT}/frequent_not_in_list.csv`, csv(unlisted));
 
   const tally = (s: string) => cover.filter((c) => c.status === s).length;

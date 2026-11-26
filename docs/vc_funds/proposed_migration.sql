@@ -1,23 +1,24 @@
 -- =============================================================================
--- PROPOSAL ONLY — not in supabase/migrations/, not applied, needs Aviv's approval (decisions 1-3 in the brief).
--- Funds project: firms / funds / people / investments / provenance / metrics / waitlist.
+-- PROPOSAL ONLY (v2, 2026-11-26) — not in supabase/migrations/, not applied, needs Aviv's approval.
+-- Funds project: firms (two depths) / funds / people / investments / events / provenance / metrics / waitlist.
 --
 -- Principles
---  * Purely additive: new tables only. No DROP, no DELETE, no ALTER of an existing table's data.
+--  * Purely additive: new tables only. No DROP, no DELETE, no ALTER of an existing table.
 --    `investors`, `vc_fund_filings`, `funding_rounds`, `field_provenance` are NOT touched, so v2 and the app are unaffected.
---  * `investors` stays what the VCs page reads today; each fund_firms row may point at it (legacy_investor_id).
---  * Provenance is its own table (fund_provenance), same columns as field_provenance, but polymorphic:
---    field_provenance.startup_id is NOT NULL REFERENCES startups, and its source_type CHECK has no 'legacy'.
---  * Internal only (RLS on, no public policy), like data_hints: source and quote are never shown in the app.
+--  * Institutions only: private individuals and angel networks/syndicates get no entity (stage 0 marks them; the round keeps the raw name).
+--  * Two depths: 'minimal' (name, domain, type — any institution that appears in rounds) and 'full' (the whole profile).
+--  * Every lead that exists today moves into fund_investments with role_source='legacy_unverified': kept, never counted, never shown as fact.
+--  * Provenance is its own table, polymorphic, with valid_from / valid_to. Internal only (RLS on, no policy); source and quote never reach the app.
 --
--- Rollback (only new tables, so it is safe to run after approval): DROP TABLE fund_metrics, fund_waitlist, fund_investments,
---   fund_performance, fund_lps, fund_people, fund_vehicles, fund_firms, fund_provenance CASCADE;   -- in this order
+-- Rollback (only new tables; run only after approval):
+--   DROP TABLE fund_metrics, fund_waitlist, fund_filing_links, fund_events, fund_investments, fund_performance, fund_lps,
+--              fund_people, fund_vehicles, fund_name_aliases, fund_firms, fund_provenance CASCADE;   -- views drop with them
 -- =============================================================================
 
 -- ── Provenance: one row per accepted value, for any fund entity ─────────────────────────────────
 CREATE TABLE IF NOT EXISTS fund_provenance (
   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  entity_type      text NOT NULL CHECK (entity_type IN ('firm','fund','person','investment','lp','performance')),
+  entity_type      text NOT NULL CHECK (entity_type IN ('firm','fund','person','investment','lp','performance','event')),
   entity_id        uuid NOT NULL,                       -- polymorphic: no FK on purpose; integrity is checked by report_lint / verify
   field            text NOT NULL,                       -- 'firm.hq_city', 'fund.size_final', 'investment.role' ...
   value            jsonb NOT NULL,
@@ -27,22 +28,30 @@ CREATE TABLE IF NOT EXISTS fund_provenance (
   quote_original   text,                                -- as v2: the page's own words ...
   quote_translated text,                                -- ... and the English it was verified against
   confidence       integer CHECK (confidence BETWEEN 0 AND 100),
+  match_method     text,                                -- how the entity was verified: 'domain' | 'name_and_city' | 'related_persons' | 'address' | ...
   as_of            date,                                -- the source's own date for the value (AUM, performance, hq statement)
-  run_id           uuid,                                -- enrichment_runs.run_id; FK added once its pipeline CHECK allows 'funds' (see decision A)
-  created_at       timestamptz NOT NULL DEFAULT now()
+  valid_from       date,                                -- when the value became true (as far as the source says)
+  valid_to         date,                                -- when it stopped being true; NULL = still current. Old values are closed, never deleted.
+  retrieved_at     timestamptz NOT NULL DEFAULT now(),
+  run_id           uuid,                                -- enrichment_runs.run_id; FK added once its pipeline CHECK allows 'funds' (decision A)
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  CHECK (valid_to IS NULL OR valid_from IS NULL OR valid_to >= valid_from)
 );
 CREATE INDEX IF NOT EXISTS idx_fund_prov_entity ON fund_provenance (entity_type, entity_id, field, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_fund_prov_run    ON fund_provenance (run_id);
 
--- ── Level 1: the management company ────────────────────────────────────────────────────────────
+-- ── Level 1: the management company / institution ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS fund_firms (
   id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name               text NOT NULL,                     -- given by Aviv
-  website            text NOT NULL,                     -- given by Aviv; identity is the DOMAIN, never the name
+  name               text NOT NULL,
+  website            text,                              -- given by Aviv for the list; found and verified for minimal-depth firms
   website_domain     text GENERATED ALWAYS AS (lower(regexp_replace(regexp_replace(website, '^[a-z]+://', ''), '^www\.|/.*$', '', 'g'))) STORED,
+  depth              text NOT NULL DEFAULT 'minimal' CHECK (depth IN ('minimal','full')),
+  queued_for_full    boolean NOT NULL DEFAULT false,    -- frequent in rounds but not on Aviv's list: shown to Aviv before it is built out
+  on_aviv_list       boolean NOT NULL DEFAULT false,
   legal_name         text,
-  investor_type      text CHECK (investor_type IN ('vc','cvc','micro_vc','accelerator','pe','family_office','angel_network')),
-  classification     jsonb,                             -- the saved gate decision (like tech_overrides): who/when/why
+  investor_type      text CHECK (investor_type IN ('vc','cvc','micro_vc','accelerator','pe','family_office')),   -- angel networks and individuals: out of scope for now
+  classification     jsonb,                             -- the saved gate decision: who/when/why
   scope_status       text NOT NULL DEFAULT 'pending' CHECK (scope_status IN ('pending','in_scope','skipped_out_of_scope','domain_unresolved','domain_repurposed','needs_aviv')),
   hq_city            text, hq_country text,
   offices            jsonb,
@@ -54,18 +63,20 @@ CREATE TABLE IF NOT EXISTS fund_firms (
   check_size_text    text,                              -- as written
   aum_text           text,                              -- as written: "over $1B"
   aum_as_of          date,                              -- date of that source; the latest one wins
+  accepts_pitches    boolean, pitch_url text,           -- a pitch form / general address the firm publishes
   team_size          integer,
   legacy_investor_id uuid REFERENCES investors (id) ON DELETE SET NULL,
   created_at         timestamptz NOT NULL DEFAULT now(),
   updated_at         timestamptz NOT NULL DEFAULT now()
 );
-CREATE UNIQUE INDEX IF NOT EXISTS uq_fund_firms_domain ON fund_firms (website_domain);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_fund_firms_domain ON fund_firms (website_domain) WHERE website_domain IS NOT NULL;
 
--- name variants seen in rounds / press, resolved to a firm only through a decided link (never by name alone)
+-- Names seen in rounds / press, resolved to a firm only through a decided link (conservative merge: see lib/funds/investorNames.ts).
 CREATE TABLE IF NOT EXISTS fund_name_aliases (
-  alias_exact_key text NOT NULL,                        -- lib/funds/investorNames.ts exact_key
+  alias_exact_key text NOT NULL,                        -- exact_key: legal suffixes removed, nothing else
   firm_id         uuid NOT NULL REFERENCES fund_firms (id) ON DELETE CASCADE,
-  basis           text NOT NULL CHECK (basis IN ('domain','full_name_and_city','aviv_decision')),
+  status          text NOT NULL CHECK (status IN ('candidate','confirmed','rejected')),
+  basis           text NOT NULL CHECK (basis IN ('exact_name','domain','full_name_and_city','aviv_decision')),
   decided_at      timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (alias_exact_key, firm_id)
 );
@@ -90,13 +101,29 @@ CREATE TABLE IF NOT EXISTS fund_vehicles (
 );
 CREATE INDEX IF NOT EXISTS idx_fund_vehicles_firm ON fund_vehicles (firm_id);
 
--- partners: only Partner / General / Managing / Founding Partner count; the rest are kept apart (rule 4)
+-- Form D filing → firm. A filing has no website, so the link is built in steps and one signal is only a candidate.
+--   1 name: fund name cleaned of "Fund III" / "L.P." equals a firm name      → signal 'name'
+--   2 persons: Form D related persons found by full name on the firm's team page → signal 'related_persons'
+--   3 address: Form D address equals an office of the firm                       → signal 'address'
+-- confirmed needs name + (persons or address); name alone, or persons alone → candidate. vc_fund_filings.investor_id (name-only) is left as it is.
+CREATE TABLE IF NOT EXISTS fund_filing_links (
+  filing_id  uuid NOT NULL REFERENCES vc_fund_filings (id) ON DELETE CASCADE,
+  firm_id    uuid NOT NULL REFERENCES fund_firms (id) ON DELETE CASCADE,
+  status     text NOT NULL CHECK (status IN ('candidate','confirmed','rejected')),
+  signals    jsonb NOT NULL DEFAULT '[]'::jsonb,        -- [{signal:'name'|'related_persons'|'address', detail:..., source_url:..., quote:...}]
+  decided_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (filing_id, firm_id),
+  CHECK (status <> 'confirmed' OR jsonb_array_length(signals) >= 2)
+);
+
+-- Partners: only Partner / General / Managing / Founding Partner count; the rest are kept apart (rule 4)
 CREATE TABLE IF NOT EXISTS fund_people (
   id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   firm_id    uuid NOT NULL REFERENCES fund_firms (id) ON DELETE CASCADE,
   full_name  text NOT NULL,
   title      text NOT NULL,                             -- as written
   role_class text NOT NULL CHECK (role_class IN ('partner','venture_partner','advisor','eir','operating_partner','other')),
+  background text,                                      -- former founder / operator / banker — only as the team page says
   UNIQUE (firm_id, full_name)
 );
 
@@ -106,7 +133,7 @@ CREATE TABLE IF NOT EXISTS fund_lps (
   lp_name text NOT NULL, UNIQUE (fund_id, lp_name)
 );
 
--- performance: official reports only, as-of mandatory (rule 6); the NOT NULLs enforce it
+-- Performance: official reports only, as-of mandatory (rule 6); the NOT NULLs enforce it
 CREATE TABLE IF NOT EXISTS fund_performance (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   fund_id uuid NOT NULL REFERENCES fund_vehicles (id) ON DELETE CASCADE,
@@ -119,28 +146,42 @@ CREATE TABLE IF NOT EXISTS fund_performance (
 );
 
 -- ── Table 3: the link to the company database ──────────────────────────────────────────────────
+-- One row per (round, investor name). The name is kept raw; firm_id is filled only when the name is resolved to an institution.
+-- Individuals and angel networks get no row (the round keeps the name).
 CREATE TABLE IF NOT EXISTS fund_investments (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   firm_id           uuid REFERENCES fund_firms (id) ON DELETE CASCADE,
   fund_id           uuid REFERENCES fund_vehicles (id) ON DELETE CASCADE,
+  investor_name_raw text NOT NULL,                      -- as written in the round / on the portfolio page
+  investor_key      text NOT NULL,                      -- exact_key of that name
+  resolution_status text NOT NULL DEFAULT 'unresolved' CHECK (resolution_status IN ('resolved','candidate','unresolved')),
   startup_id        uuid REFERENCES startups (id) ON DELETE CASCADE,        -- NULL while on the waitlist
   round_id          uuid REFERENCES funding_rounds (id) ON DELETE SET NULL,
   direction         text NOT NULL CHECK (direction IN ('from_fund_site','from_company_round')),
   match_basis       text CHECK (match_basis IN ('domain','full_name_and_city')),  -- rule 7; NULL only when startup_id IS NULL
   round_type        text,
-  role              text NOT NULL DEFAULT 'unknown' CHECK (role IN ('lead','co_lead','participant','unknown')),  -- rule 2
-  investment_date   date,
+  role              text NOT NULL DEFAULT 'unknown' CHECK (role IN ('lead','co_lead','participant','unknown')),   -- rule 2
+  -- Where the role comes from. 'legacy_unverified': the old lead_investor column (98.6% without a source) — kept, never counted, never shown as fact.
+  role_source       text NOT NULL DEFAULT 'none' CHECK (role_source IN ('verified_quote','legacy_unverified','none')),
+  investment_date   date,                               -- NULL when the only source is a portfolio page: such a row never enters pace metrics
   portfolio_status  text CHECK (portfolio_status IN ('active','exited','listed_in_portfolio')),                  -- rule 3
   scanned_on        date,                               -- date of the scan, for "listed_in_portfolio"
   created_at        timestamptz NOT NULL DEFAULT now(),
-  CHECK (firm_id IS NOT NULL OR fund_id IS NOT NULL),
-  CHECK (startup_id IS NULL OR match_basis IS NOT NULL)
+  CHECK (startup_id IS NULL OR match_basis IS NOT NULL),
+  CHECK (role = 'unknown' OR role_source <> 'none'),     -- a role always says where it comes from
+  CHECK (resolution_status <> 'resolved' OR firm_id IS NOT NULL OR fund_id IS NOT NULL)
 );
 CREATE INDEX IF NOT EXISTS idx_fund_inv_startup ON fund_investments (startup_id) WHERE startup_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_fund_inv_firm    ON fund_investments (firm_id);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_fund_inv_round ON fund_investments (firm_id, round_id) WHERE round_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_fund_inv_firm    ON fund_investments (firm_id) WHERE firm_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_fund_inv_key     ON fund_investments (investor_key);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_fund_inv_round_name ON fund_investments (round_id, investor_key) WHERE round_id IS NOT NULL;
 
--- companies seen in a portfolio / round that the match rule could not settle, or that are not in startups (decision 3)
+-- What metrics may read: roles with a quote, plus rows that claim no role. Legacy leads are excluded; undated rows are excluded from pace.
+CREATE OR REPLACE VIEW fund_investments_for_metrics AS
+  SELECT * FROM fund_investments
+   WHERE resolution_status = 'resolved' AND (role_source = 'verified_quote' OR role = 'unknown');
+
+-- Companies seen in a portfolio / round that the match rule could not settle, or that are not in startups (decision 3)
 CREATE TABLE IF NOT EXISTS fund_waitlist (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   firm_id       uuid NOT NULL REFERENCES fund_firms (id) ON DELETE CASCADE,
@@ -152,6 +193,19 @@ CREATE TABLE IF NOT EXISTS fund_waitlist (
   first_seen_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- ── Events: a dated timeline, never deleted ────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS fund_events (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  firm_id     uuid NOT NULL REFERENCES fund_firms (id) ON DELETE CASCADE,
+  fund_id     uuid REFERENCES fund_vehicles (id) ON DELETE SET NULL,
+  event_type  text NOT NULL CHECK (event_type IN ('fund_opened','fund_closed','partner_joined','partner_left','office_opened','investment','exit','thesis_changed','rebranded','merged','ceased')),
+  event_date  date NOT NULL,
+  detail      jsonb NOT NULL DEFAULT '{}'::jsonb,       -- source and quote live in fund_provenance (entity_type='event')
+  valid_from  date, valid_to date,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_fund_events_firm ON fund_events (firm_id, event_date DESC);
+
 -- ── Computed benchmark metrics (derived, never collected) ──────────────────────────────────────
 CREATE TABLE IF NOT EXISTS fund_metrics (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -160,8 +214,9 @@ CREATE TABLE IF NOT EXISTS fund_metrics (
   metric       text NOT NULL,                           -- 'deals_per_year','lead_rate','graduation_24m','exit_rate','mortality_rate',...
   slice        text NOT NULL DEFAULT 'all',             -- 'all' | 'stage=Seed' | 'year=2023' ...
   value        numeric,
-  n_points     integer NOT NULL,                        -- how many observations the value rests on; the app hides low n
+  n_points     integer NOT NULL,                        -- how many observations the value rests on; below the threshold it is not shown
   numerator    integer, denominator integer,
+  coverage     numeric,                                 -- share of the firm's rounds that the database knows (a weak coverage makes the metric an estimate)
   definition_version text NOT NULL,
   computed_at  timestamptz NOT NULL DEFAULT now(),
   CHECK (firm_id IS NOT NULL OR fund_id IS NOT NULL)
@@ -170,9 +225,11 @@ CREATE INDEX IF NOT EXISTS idx_fund_metrics_firm ON fund_metrics (firm_id, metri
 
 -- ── Access: service role only; nothing is readable from the site ───────────────────────────────
 DO $$ DECLARE t text; BEGIN
-  FOREACH t IN ARRAY ARRAY['fund_provenance','fund_firms','fund_name_aliases','fund_vehicles','fund_people','fund_lps','fund_performance','fund_investments','fund_waitlist','fund_metrics'] LOOP
+  FOREACH t IN ARRAY ARRAY['fund_provenance','fund_firms','fund_name_aliases','fund_vehicles','fund_filing_links','fund_people','fund_lps','fund_performance','fund_investments','fund_waitlist','fund_events','fund_metrics'] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('REVOKE ALL ON %I FROM anon, authenticated', t);
     EXECUTE format('GRANT ALL ON %I TO service_role', t);
   END LOOP;
 END $$;
+REVOKE ALL ON fund_investments_for_metrics FROM anon, authenticated;
+GRANT SELECT ON fund_investments_for_metrics TO service_role;
