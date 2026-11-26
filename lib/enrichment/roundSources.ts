@@ -1,3 +1,4 @@
+import { readFileSync } from "fs";
 /**
  * lib/enrichment/roundSources.ts — the sources a funding round may be written
  * from (owner, 2026-11-01). An allowlist in tiers, not a denylist: the
@@ -24,7 +25,10 @@
  * To add or move a domain, edit this file only.
  */
 
-import { isDataPlatformUrl } from "./dataPlatforms";
+import { isListingOrSponsoredUrl } from "./pageKind.ts";
+import { isDataPlatformUrl, LISTING_SITES } from "./dataPlatforms";
+import { acquisitionHeadline } from "./siteOwner";
+import { domainClasses, standingOfClass } from "./domainClass";
 import { isRegionalWireHost } from "./primarySources";
 
 export type SourceTier = 1 | 2 | 3 | 4;
@@ -32,7 +36,7 @@ export type SourceTier = 1 | 2 | 3 | 4;
 /** Wires and registers (tier 1 beside the company's and the investor's own sites). */
 export const TIER1_DOMAINS = [
   // Official press wires
-  "prnewswire.com", "businesswire.com", "globenewswire.com", "accesswire.com", "einpresswire.com", "newswire.com", "pr.com", "businesswireindia.com", "prweb.com",
+  "prnewswire.com", "businesswire.com", "globenewswire.com", "accesswire.com", "accessnewswire.com", "einpresswire.com", "newswire.com", "pr.com", "businesswireindia.com", "prweb.com",
   // Registers and filings
   "sec.gov", "find-and-update.company-information.service.gov.uk", "companieshouse.gov.uk", "data.gov.il",
   "maya.tase.co.il", "handelsregister.de", "unternehmensregister.de", "infogreffe.fr", "mca.gov.in",
@@ -46,6 +50,7 @@ export const TIER2_DOMAINS = [
   "nytimes.com", "washingtonpost.com", "theguardian.com", "economist.com", "apnews.com", "bbc.com", "bbc.co.uk",
   "barrons.com", "marketwatch.com", "latimes.com",
   "business-standard.com", // owner, 2026-11-12
+  "theaustralian.com.au", "smh.com.au", // owner, 2026-11-14
 ];
 
 export const TIER3_DOMAINS = [
@@ -67,9 +72,11 @@ export const TIER3_DOMAINS = [
   "afr.com", "smartcompany.com.au", "startupdaily.net", "betakit.com", "theglobeandmail.com",
   // United States, regional
   "geekwire.com", // owner, 2026-11-03
+  "observer.com", "bizjournals.com", // owner, 2026-11-14 (regional / general press)
   // Technology, its regional editions too (au.pcmag.com…) — owner, 2026-11-03
   "pcmag.com",
   // Owner, 2026-11-03 (rejected-domains table, runs 1–2)
+  "haaretz.com", "taipeitimes.com", "gulfnews.com", "khaleejtimes.com", // owner, 2026-11-14
   "seenews.com", "aninews.in", "thehansindia.com", "dbusiness.com", "prolificnorth.co.uk",
 ];
 
@@ -90,10 +97,14 @@ export const TIER4_DOMAINS = [
   "gamesbeat.com", "techtarget.com", "siliconangle.com", "bankinfosecurity.com", "biospace.com",
   "nosh.com", "gameworldobserver.com", "channele2e.com", "pymnts.com", "venturecapitaljournal.com",
   "phocuswire.com", "constructiondive.com", "datacenterdynamics.com", "gamedeveloper.com", "wealthmanagement.com",
+  "robotics247.com", // owner, 2026-11-14 (trade press)
+  "siliconrepublic.com", // owner, 2026-11-14: professional press, not national (tier 2 stays for the leading national and financial press)
+  "pocketgamer.biz", "mcvuk.com", "vehicle-electronics.biz", "hpcwire.com", "computerweekly.com", // owner, 2026-11-14 (trade press)
   "financemagnates.com", "fxnewsgroup.com", "defensedaily.com", "electronicsweekly.com", "paymentsdive.com", "industrialcyber.co",
   "roboticsandautomationnews.com", "globalaginvesting.com", "decrypt.co",
   // Owner, 2026-11-05
   "csoonline.com", "thequantuminsider.com",
+
 ];
 
 /** Lower confidence even though allowed. */
@@ -103,6 +114,11 @@ export const LOW_CONFIDENCE_DOMAINS = ["einpresswire.com", "accesswire.com", "ne
 
 /** Never a source for a round, beside every data platform (dataPlatforms.ts). */
 export const DENIED_DOMAINS = [
+  // Aggregators of "alternatives" and review / comparison listings (owner, 2026-11-14: bouncewatch.com) — the listing sites of dataPlatforms.ts too
+  "ossia.com", "biggo.com", // owner, 2026-11-14 (a company, not an outlet; an aggregator)
+  "contentgrip.com", "marktechpost.com", "yespress.io", "lounge.ai", "ai-market-watch.com", // owner, 2026-11-14 (rewriting blogs, paid PR distribution, company directories)
+  "bouncewatch.com", "slant.co", "toolify.ai", "futurepedia.io", "theresanaiforthat.com", "topai.tools", "aitools.fyi", "siftery.com",
+  ...LISTING_SITES,
   // Encyclopedias
   "wikipedia.org",
   // Social networks and publishing platforms
@@ -141,7 +157,9 @@ export const HINT_ONLY_DOMAINS = ["finsmes.com", "techfundingnews.com", "thesaas
  */
 export const SYNDICATION_HOSTS = ["finance.yahoo.com", "tradingview.com", "financialcontent.com"];
 /** Republishers on part of a site only (owner, 2026-11-04): nasdaq.com's press releases. */
-const SYNDICATION_PATHS: Array<[string, RegExp]> = [["nasdaq.com", /^\/press-release\//]];
+const SYNDICATION_PATHS: Array<[string, RegExp]> = [];
+/** nasdaq.com/press-release/… is a wire (owner, batch 7: Ria on Sikhona), tier 1 like the wires it carries. */
+const WIRE_PATHS: Array<[string, RegExp]> = [["nasdaq.com", /^\/press-release\//]];
 
 /**
  * A company's own newsroom on a newsroom service (owner, 2026-11-04): mynewsdesk.com/<country>/<newsroom>/…
@@ -204,6 +222,14 @@ export function hostOf(url: string): string | null {
   try { return new URL(url.startsWith("http") ? url : `https://${url}`).hostname.toLowerCase().replace(/^www\./, ""); } catch { return null; }
 }
 const onList = (host: string, list: string[]) => list.some((d) => host === d || host.endsWith(`.${d}`));
+// The owner's decisions on the domains the rules turned away most (scripts/domain_review.ts apply → eval/source_decisions.json): approved → tier 3 press, rejected → denied.
+(() => {
+  try {
+    const d = JSON.parse(readFileSync("eval/source_decisions.json", "utf8")) as { approved?: string[]; rejected?: string[] };
+    for (const x of d.approved ?? []) if (!TIER3_DOMAINS.includes(x)) TIER3_DOMAINS.push(x);
+    for (const x of d.rejected ?? []) if (!DENIED_DOMAINS.includes(x)) DENIED_DOMAINS.push(x);
+  } catch { /* no decisions yet */ }
+})();
 
 /** The registrable domain to review ("news.example.co.uk" → "example.co.uk", "blog.acme.com" → "acme.com"). */
 export function reviewDomain(url: string): string | null {
@@ -254,8 +280,17 @@ export type SourceStanding =
  * eu-startups.com/directory/docplanner) — never a source, even on an allowed outlet.
  */
 const NOT_ARTICLE_PATH = /\/(?:directory|directories|company-directory|startup-directory|company-profile|profiles?|rankings?)(?:\/|$)|\/(?:companies|company|startups?|organi[sz]ations?)\/[^/]+\/?$/i;
+/** The last path segment reads like an article's (a file with an extension, an id of six digits, or a slug of four or more words), not a company's name. */
+const articleSlug = (path: string): boolean => {
+  const last = path.split("/").filter(Boolean).pop() ?? "";
+  return /\.(html?|cms|ece|php|aspx?|article)$/i.test(last) || /\d{6,}/.test(last) || last.split("-").length >= 5;
+};
 export function isDirectoryPage(url: string): boolean {
-  try { return NOT_ARTICLE_PATH.test(new URL(url.startsWith("http") ? url : `https://${url}`).pathname); } catch { return false; }
+  try {
+    const path = new URL(url.startsWith("http") ? url : `https://${url}`).pathname;
+    // moneycontrol.com/news/business/companies/<a-long-headline>.html is an article under a "companies" section, not a directory page.
+    return NOT_ARTICLE_PATH.test(path) && !articleSlug(path);
+  } catch { return false; }
 }
 
 /**
@@ -265,24 +300,70 @@ export function isDirectoryPage(url: string): boolean {
  * host), and the site's name is a word of its headline, or the site is a government's.
  */
 const RELEASE_PATH = /\/(news|newsroom|press|press-releases?|news-releases?|media|media-center|esd-media-center|releases?)(\/|-|$)/i;
-export function isPartyRelease(url: string, headline: string | null | undefined): boolean {
+/** The party's own pages about the deal that are no "release" by their path: a blog, a use case, a company-news page (owner, batch 7: inworld.ai/blog, euronet.com/use-cases, outsurance.co.za/company-news). */
+const PARTY_PAGE_PATH = /\/(?:[\w-]*news[\w-]*|[\w-]*press[\w-]*|blog|use-cases?|insights?|announcements?|stories|story|media|releases?)(?:\/|$)/i;
+const DEAL_WORDS = /acqui|\bbuys?\b|bought|sale-of|sale of|\bsells?\b|sold|merge|takeover|take-over|divest/i;
+const isSubsequence = (small: string, big: string) => { let i = 0; for (const c of big) if (c === small[i]) i++; return i === small.length; };
+export function isPartyRelease(url: string, headline: string | null | undefined, o: { content?: string | null; companyName?: string | null; acquirers?: string[] } = {}): boolean {
   const host = hostOf(url);
   if (!host) return false;
   let path = "";
   try { path = new URL(url.startsWith("http") ? url : `https://${url}`).pathname; } catch { return false; }
   const releaseHost = /^(investors?|ir|news|press|media|newsroom)\./.test(host);
-  if (!RELEASE_PATH.test(path) && !releaseHost) return false;
+  const dealPage = DEAL_WORDS.test(path) || DEAL_WORDS.test(headline ?? "");
+  // The site of the company's known buyer (several headlines name it): its own newsroom, blog or press page is the party's announcement, whatever the headline says ("Introducing Tyro Health" on tyro.com,
+  // owner, regression gate: Medipass). Whether the page is about the company is for the news gate to say.
+  const siteKey = (reviewDomain(url) ?? host).split(".")[0].replace(/[^a-z0-9]/g, "");
+  if (siteKey.length >= 3 && (o.acquirers ?? []).some((a) => a.toLowerCase().replace(/[^a-z0-9]/g, "") === siteKey) && (RELEASE_PATH.test(path) || releaseHost || PARTY_PAGE_PATH.test(path))) return true;
+  // The path of a release; or, for a deal, a blog / use case / company-news page of the party's site.
+  if (!RELEASE_PATH.test(path) && !releaseHost && !(dealPage && PARTY_PAGE_PATH.test(path))) return false;
   if (/\.gov(\.[a-z]{2})?$|\.gov\.[a-z]{2}$|\.gc\.ca$|\.europa\.eu$/.test(host)) return true;
   const label = (reviewDomain(url) ?? host).split(".")[0];
-  const words = new Set((headline ?? "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3));
-  return label.split("-").some((part, i) => (i === 0 || part.length >= 4) && part.length >= 3 && words.has(part));
+  // The words of the headline and of the address' own slug: the party's name is among them ("inworld-acquires-ultravox", "OUTsurance Sale Of OUTvest To Alexforbes").
+  const list = `${headline ?? ""} ${path.replace(/[/_-]+/g, " ")}`.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const words = new Set(list.filter((w) => w.length >= 3));
+  // A name of two words is one word in the address (bakerhughes.com, generalmills.com): adjacent headline words joined count too.
+  const joined: string[] = [];
+  for (let i = 0; i + 1 < list.length; i++) { const a = list[i] + list[i + 1]; words.add(a); joined.push(a); if (i + 2 < list.length) { const b = a + list[i + 2]; words.add(b); joined.push(b); } }
+  if (label.split("-").some((part, i) => (i === 0 || part.length >= 4) && part.length >= 3 && words.has(part))) return true;
+  // A short form of the name ("lwolf" for "Lone Wolf"): its letters, in order, from the first letter, are most of the name.
+  const flat = label.replace(/[^a-z0-9]/g, "");
+  if (flat.length >= 4 && [...list, ...joined].some((w) => w.length >= flat.length && w[0] === flat[0] && flat.length >= w.length * 0.6 && isSubsequence(flat, w))) return true;
+  // A corporate newsroom, investor-relations site or blog whose headline is the acquisition of the company: whoever publishes it announces its own deal (owner, batch 7: Euronet on Ria's purchase
+  // of Sikhona — the buyer's parent; no word of the headline is the site's name). Not an explainer ("Why X bought Y").
+  if (dealPage && o.companyName && headline && !/^(?:why|how|what|when|where|lessons|top|best|\d+)\b/i.test(headline.trim()) && acquisitionHeadline(headline, o.companyName)) return true;
+  // The page itself says the deal and names its own site beside the buyer ("Ria, a Euronet company, acquired Sikhona"): the buyer's parent.
+  const c = o.content ?? "";
+  if (dealPage && o.companyName && c) {
+    const nm = o.companyName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const m = c.match(new RegExp(`[^.\\n]{0,200}\\b${nm}\\b[^.\\n]{0,200}`, "i"));
+    if (m && DEAL_WORDS.test(m[0]) && c.toLowerCase().split(flat).length - 1 >= 2) return true;
+  }
+  return false;
 }
 
-export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean; leadInvestor?: string | null; investors?: Array<string | null | undefined>; content?: string | null; headline?: string | null; companyName?: string | null } = {}): SourceStanding {
+export function isForumUrl(url: string): boolean {
+  const host = hostOf(url);
+  if (!host) return false;
+  let path = "";
+  try { path = new URL(url.startsWith("http") ? url : `https://${url}`).pathname; } catch { return false; }
+  return /^(?:forums?|community|communities|discuss|discourse|boards?|groups|ask|answers)\./.test(host)
+    || /(?:^|\.)(?:stackoverflow\.com|stackexchange\.com|reddit\.com|quora\.com|news\.ycombinator\.com|forum\.[a-z0-9.-]+)$/.test(host)
+    || /\/(?:forums?|threads?|topics?|discussions?|community\/(?:t|topic|post))\/[^/]/.test(path) && !/\/(?:blog|news|press)\//.test(path);
+}
+
+export function roundSourceStanding(url: string, opts: { acquirers?: string[]; isCompanySite?: boolean; leadInvestor?: string | null; investors?: Array<string | null | undefined>; content?: string | null; headline?: string | null; companyName?: string | null } = {}): SourceStanding {
   const host = hostOf(url);
   if (!host) return { kind: "denied", why: "no_host" };
   if (opts.isCompanySite) return { kind: "allowed", tier: 1, lowConfidence: false, why: "company_site" };
   if (isDataPlatformUrl(url)) return { kind: "denied", why: "data_platform" };
+  // A forum, a community board or a Q&A site is no source (owner, batch 7: a developers' forum behind Contraktor's tags).
+  if (isForumUrl(url)) return { kind: "denied", why: "forum_or_community" };
+  // A tag / list / search page, or sponsored content, is no article (owner, round 10).
+  const notArticle = isListingOrSponsoredUrl(url);
+  if (notArticle) return { kind: "denied", why: notArticle };
+  // A company profile page on a news site is a data page, not an article (owner, round 10: bloomberg.com/profile/company/…); its articles stay tier 2.
+  if (/(^|\.)bloomberg\.com$/.test(host) && (() => { try { return /^\/(?:profiles?|research\/stocks|quote)(?:\/|$)/i.test(new URL(url.startsWith("http") ? url : `https://${url}`).pathname); } catch { return false; } })()) return { kind: "denied", why: "directory_page" };
   if (onList(host, DENIED_DOMAINS)) return { kind: "denied", why: "denied_domain" };
   if (onList(host, HINT_ONLY_DOMAINS)) return { kind: "denied", why: "hint_only" };
   if (isOwnNewsroom(url, opts.companyName)) return { kind: "allowed", tier: 1, lowConfidence: true, why: "own_newsroom" };
@@ -291,6 +372,7 @@ export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean
     const standing = original ? roundSourceStanding(`https://${original}/`) : null;
     return standing?.kind === "allowed" ? { ...standing, why: `republished_from:${original}` } : { kind: "denied", why: "republished_without_allowed_original" };
   }
+  if (WIRE_PATHS.some(([d, re]) => onList(host, [d]) && re.test((() => { try { return new URL(url.startsWith("http") ? url : `https://${url}`).pathname; } catch { return ""; } })()))) return { kind: "allowed", tier: 1, lowConfidence: false, why: "wire_or_register" };
   if (onList(host, TIER1_DOMAINS) || isRegionalWireHost(host)) return { kind: "allowed", tier: 1, lowConfidence: onList(host, LOW_CONFIDENCE_DOMAINS), why: "wire_or_register" };
   // A directory page of an allowed outlet is refused; of an unlisted one it stays unlisted (domain review).
   if (isDirectoryPage(url) && (onList(host, TIER2_DOMAINS) || onList(host, TIER3_DOMAINS) || onList(host, TIER4_DOMAINS) ||
@@ -302,7 +384,12 @@ export function roundSourceStanding(url: string, opts: { isCompanySite?: boolean
   if (onList(host, TIER3_DOMAINS)) return { kind: "allowed", tier: 3, lowConfidence: false, why: "tier3_press" };
   if (onList(host, TIER4_DOMAINS)) return { kind: "allowed", tier: 4, lowConfidence: true, why: "tier4_press" };
   // Tier 1 for the event itself; the profile's fields take it as tier 2 (profileSourceAllowed).
-  if (isPartyRelease(url, opts.headline)) return { kind: "allowed", tier: 1, lowConfidence: false, why: "party_release" };
+  if (isPartyRelease(url, opts.headline, { content: opts.content, companyName: opts.companyName, acquirers: opts.acquirers })) return { kind: "allowed", tier: 1, lowConfidence: false, why: "party_release" };
+  // A domain on no list that was classified once (domainClass.ts): outlets and wires are tier 4, the weakest; directories, blogs and other
+  // companies' own sites are blocked; an investor follows the investor rule above.
+  const cls = domainClasses.get(url);
+  const auto = cls ? standingOfClass(cls.class) : null;
+  if (auto) return auto;
   return { kind: "unlisted", domain: reviewDomain(url) ?? host };
 }
 
@@ -336,8 +423,9 @@ export function profileSourceAllowed(s: { url: string; source_type?: string | nu
   if (isDirectoryPage(s.url)) return false;
   if (s.source_type === "press_release") return true;
   const standing = roundSourceStanding(s.url, { content: s.content, headline: s.title, companyName });
-  // A party's release counts as tier 2 for the profile (owner, 2026-11-03): still within 1–3.
-  const tier = standing.kind === "allowed" && standing.why === "party_release" ? 2 : standing.kind === "allowed" ? standing.tier : 99;
+  // A party's release (an acquirer's, a partner's, an authority's) is for the news and for the event it is a party to (owner, 2026-11-14),
+  // not for facts about the company (headquarters, employees, founders, what it does).
+  const tier = standing.kind === "allowed" && standing.why === "party_release" ? 99 : standing.kind === "allowed" ? standing.tier : 99;
   return tier <= 3;
 }
 

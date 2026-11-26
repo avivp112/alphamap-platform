@@ -93,8 +93,9 @@ describe("the headquarters (owner, 2026-11-01): the company's declaration, else 
     expect(contactPageAddresses(page("Get in touch\nKETS Quantum Security\nUnit DX, St Philips Central, Bristol BS2 0QR\nhello@kets-quantum.com")))
       .toMatchObject([{ city: "Bristol", kind: "company" }]);
     expect(contactPageAddresses(page("Offices\n1674 Broadway, New York, NY 10019\nHamasger 34, Tel Aviv"))).toHaveLength(2);
-    // Not the Contact page, or no street on the line.
-    expect(contactPageAddresses(page("Unit DX, Bristol BS2 0QR", "https://kets-quantum.com/about"))).toEqual([]);
+    // Any page of the company's own site (the footer, an About page — owner, round 10), but a legal page is read apart; no street on the line is no address.
+    expect(contactPageAddresses(page("Unit DX, Bristol BS2 0QR", "https://kets-quantum.com/about"))).toMatchObject([{ city: "Bristol" }]);
+    expect(contactPageAddresses(page("Unit DX, Bristol BS2 0QR", "https://kets-quantum.com/imprint"))).toEqual([]);
     expect(contactPageAddresses(page("We work with teams in Bristol and beyond."))).toEqual([]);
   });
   it("Bangalore and Bengaluru are one city — no 'conflict' between them (Unacademy, field review run 1)", () => {
@@ -150,11 +151,90 @@ describe("review 9 (2026-11-10): the Contact page's addresses and an article of 
     const d = decideHeadquarters([st({ viaAddress: true }), st({ city: "Tel Aviv", viaAddress: true }), st({ city: "Tel Aviv", quote: "headquartered in Tel Aviv" })], "2026-11-10");
     expect(d).toMatchObject({ kind: "declared", statement: { city: "Tel Aviv", quote: "headquartered in Tel Aviv" } });
   });
-  it("Chargebee: an article of 2014 alone is not today's headquarters; of 2021 it is", () => {
+  it("a dated article decides, however old; the latest wins; an undated one decides nothing (owner, batch 6 — the 8-year rule is cancelled)", () => {
     const press = (date: string | null, city = "Chennai"): HqStatement => ({ city, quote: `${city}-based`, source_id: "S2", url: "https://techcrunch.com/x", kind: "press", date });
-    expect(decideHeadquarters([press("2014-01-12")], "2026-11-10").kind).toBe("none");
+    expect(decideHeadquarters([press("2014-01-12")], "2026-11-10")).toMatchObject({ kind: "declared", statement: { city: "Chennai" } });
     expect(decideHeadquarters([press("2021-12-17", "New York")], "2026-11-10")).toMatchObject({ kind: "declared" });
-    expect(decideHeadquarters([press(null)], "2026-11-10")).toMatchObject({ kind: "declared" });
+    expect(decideHeadquarters([press(null)], "2026-11-10").kind).toBe("none");   // owner, batch 6: an undated article is no headquarters (Estimote, GeekWire 2014)
     expect(decideHeadquarters([press("2014-01-12"), press("2024-05-01", "San Francisco")], "2026-11-10")).toMatchObject({ kind: "declared", statement: { city: "San Francisco" } });
+  });
+});
+
+describe("tier-4 trade press only chooses among the site's offices (owner, round 9: Hydrostor)", () => {
+  const w = (city: string, url: string, date: string | null): HqStatement => ({ city, quote: `${city}-based Hydrostor`, source_id: url, url, kind: "press", date, weak: true });
+  const sites = ["Toronto", "Los Angeles"];
+  it("two sources (one tier 4) naming one office decide; tier 4 alone never does", () => {
+    const strong: HqStatement = { city: "Toronto", quote: "Toronto-based Hydrostor", source_id: "a", url: "https://reuters.com/a", kind: "press", date: "2026-03-01" };
+    expect(decideHeadquarters([strong, w("Toronto", "https://theenergymix.com/x", "2026-02-01")], "2026-11-15", sites)).toMatchObject({ kind: "declared", statement: { city: "Toronto" } });
+    expect(decideHeadquarters([w("Toronto", "https://theenergymix.com/x", "2026-02-01")], "2026-11-15", sites)).toMatchObject({ kind: "site_offices" });
+    expect(decideHeadquarters([w("Toronto", "https://theenergymix.com/x", "2026-02-01")], "2026-11-15", [])).toEqual({ kind: "none" });
+  });
+});
+
+describe("tier-4 press alone needs two sources (owner, round 10)", () => {
+  const w = (city: string, url: string): HqStatement => ({ city, quote: `${city}-based Hydrostor`, source_id: url, url, kind: "press", date: "2026-02-01", weak: true });
+  it("one trade article is nothing; two naming one city are the headquarters; two cities conflict", () => {
+    expect(decideHeadquarters([w("Toronto", "https://a.com/1")], "2026-11-15", [])).toEqual({ kind: "none" });
+    expect(decideHeadquarters([w("Toronto", "https://a.com/1"), w("Toronto", "https://b.com/2")], "2026-11-15", [])).toMatchObject({ kind: "declared", statement: { city: "Toronto" } });
+    expect(decideHeadquarters([w("Toronto", "https://a.com/1"), w("Calgary", "https://b.com/2")], "2026-11-15", [])).toEqual({ kind: "none" });
+  });
+});
+
+describe("every form of the city before the company (owner, round 10)", () => {
+  const city = (content: string, name: string) => hqStatementsIn(src("https://www.reuters.com/x", content), name).map((x) => x.city);
+  it("<city>-based, <city>-headquartered, <city> headquartered, <city> based, headquartered in <city>, based in <city>", () => {
+    expect(city("Tel Aviv-based Hailo raised money.", "Hailo")).toEqual(["Tel Aviv"]);
+    expect(city("Sydney-headquartered Pet Circle raised money.", "Pet Circle")).toEqual(["Sydney"]);
+    expect(city("Sydney headquartered Pet Circle has raised.", "Pet Circle")).toEqual(["Sydney"]);
+    expect(city("Sydney based Pet Circle has raised.", "Pet Circle")).toEqual(["Sydney"]);
+    expect(city("Pet Circle, headquartered in Sydney, has raised.", "Pet Circle")).toEqual(["Sydney"]);
+    expect(city("Pet Circle is based in Sydney and sells pet food.", "Pet Circle")).toEqual(["Sydney"]);
+  });
+  it("is not fooled by 'based on' or another company's headquarters", () => {
+    expect(city("Sydney based on a model, Pet Circle sells food.", "Pet Circle")).toEqual([]);
+    expect(city("Pet Circle partnered with Sydney headquartered Acme Corp.", "Pet Circle")).toEqual([]);
+  });
+});
+
+
+import { impressumSeat } from "./headquarters";
+describe("Impressum seat and third-party addresses (owner, round 10)", () => {
+  const page = (content: string, url: string) => ({ url, content, source_type: "company_site" as const, source_id: "W9" });
+  it("'Sitz der Gesellschaft' on the Impressum is the headquarters, declared", () => {
+    expect(impressumSeat(page("Acme GmbH\nSitz der Gesellschaft: Berlin\nHRB 12345", "https://acme.de/impressum"))).toMatchObject([{ city: "Berlin", kind: "company" }]);
+    expect(impressumSeat(page("Sitz der Gesellschaft: Berlin", "https://acme.de/about"))).toEqual([]);
+  });
+  it("an EU representative, a data protection officer or a registered agent is never the company's address", () => {
+    const text = "EU Representative\nExample Rep Ltd, 12 Rue de la Paix, Paris 75002\nContact\nUnit 4, 10 High Street, Bristol BS1 1AA";
+    expect(contactPageAddresses(page(text, "https://acme.com/contact")).map((a) => a.city)).toEqual(["Bristol"]);
+  });
+});
+
+import { legalPageHq, countryOfTld } from "./headquarters";
+describe("a legal page's address as the headquarters (owner, round 10)", () => {
+  const base = { city: "Berlin", quote: "Registered office: Torstrasse 1, Berlin", otherAddressCities: [] as string[] };
+  it("is the HQ when it is the only address and the country code agrees", () => {
+    expect(legalPageHq({ ...base, domain: "acme.de" })?.country).toBe("Germany");
+  });
+  it("is the HQ when the site language agrees", () => {
+    expect(legalPageHq({ ...base, domain: "acme.com", siteText: "Wir sind das Team und unser Produkt ist nicht kompliziert. Wir und die Kunden. Der Datenschutz und die Sicherheit." })?.country).toBe("Germany");
+  });
+  it("is an office when another address exists, when nothing names the country, or for a GDPR representative", () => {
+    expect(legalPageHq({ ...base, domain: "acme.de", otherAddressCities: ["London"] })).toBeNull();
+    expect(legalPageHq({ ...base, domain: "acme.com", siteText: "We build software for teams." })).toBeNull();
+    expect(legalPageHq({ ...base, domain: "acme.de", quote: "Our EU representative under GDPR is located at Torstrasse 1, Berlin" })).toBeNull();
+  });
+  it("maps a country code", () => { expect(countryOfTld("www.acme.co.il")).toBe("Israel"); expect(countryOfTld("acme.com")).toBeNull(); });
+});
+
+import { isAddressLine } from "./headquarters";
+describe("a line is an address only with address parts (owner, batch 6)", () => {
+  it("prize text and event lists are not addresses; real ones are", () => {
+    expect(isAddressLine("Quando você atingir R$10 milhões na Kiwify, além de uma placa exclusiva, você e + 1 acompanhante vão ganhar uma viagem de Dubai")).toBe(false);
+    expect(isAddressLine("Events we've been invited to attend - SXSW Sydney, Forbes Women's Summit, All Energy and Intersekt 24.")).toBe(false);
+    expect(isAddressLine("New York, NY 10003-1502")).toBe(true);
+    expect(isAddressLine("Rua Funchal 418, São Paulo, SP 04551-060")).toBe(true);
+    expect(isAddressLine("ul. Marszałkowska 10, 00-590 Warszawa")).toBe(true);
+    expect(isAddressLine("Level 3, 100 George St, Sydney NSW 2000")).toBe(true);
   });
 });

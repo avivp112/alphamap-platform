@@ -31,7 +31,7 @@ export const V2_COMPONENTS = {
     what: "adds a founder a \"founded by\" sentence names — only on the company's site or in the press of tiers 1–3 (owner, 2026-11-01; off 2026-10-29 – 11-01)",
   },
   epo_patents: {
-    on: true, since: "2026-10-26",
+    on: false, since: "2026-10-26", // off by the owner, 2026-11-23 (maintenance window): patents are not collected for now (Tier 3, not core)
     what: "Stage 8b — patents from the EPO register, the company as applicant",
   },
   hints: {
@@ -55,7 +55,7 @@ export const V2_COMPONENTS = {
     what: "its Terms / Privacy / Legal / Imprint pages: legal name (anchors the registers), company number, registered office (an office, not the HQ)",
   },
   competitor_tiers: {
-    on: true, since: "2026-11-07",
+    on: false, since: "2026-11-07", // off by the owner, 2026-11-23 (maintenance window): competitors are Tier 3
     what: "competitors by tier (competitorTiers.ts): declared — rival sentences of the pages read, \"X vs Y\" pages of the company's and the competitor's own site; market — the model's hints, each kept only when an allowed source puts both in one market. Searches come from the extra budget (EXTRA_SEARCHES, default 4)",
   },
   round_dates: {
@@ -67,19 +67,31 @@ export const V2_COMPONENTS = {
     what: "v2's own company description (descriptionBuilder.ts): 2–4 neutral English sentences (what / for whom / edge), each with its sources; a number or name not in them, or a marketing word, drops the sentence. One extra model call per company; written only where no description is on file",
   },
   founder_background: {
-    on: true, since: "2026-11-07",
+    on: false, since: "2026-11-07", // off by the owner, 2026-11-23 (maintenance window): founder background is Tier 3
     what: "structured facts per founder (previous company and role, exit, education, military unit), each with a quote from an allowed source (founderBackground.ts); one targeted search for the founders, from the extra budget",
+  },
+  competitors: {
+    on: false, since: "2026-11-23", // off by the owner, 2026-11-23 (maintenance window): competitors are Tier 3
+    what: "the competitors part of the market extraction call (and its market-peer hints), and the first-pass \"competes with\" search; news, acquisitions and technology stay",
+  },
+  headcount_archive: {
+    on: false, since: "2026-11-23", // off by the owner, 2026-11-23 (maintenance window): headcount points from archived pages are Tier 3
+    what: "headcount points from the team-size sentences of archived About / Careers pages on the Wayback Machine (headcountCollect.ts waybackHeadcount)",
   },
   headcount_sources: {
     on: true, since: "2026-11-08",
     what: "headcount points with date, source, quote and type: Companies House accounts (average employees), Brreg, and team-size sentences of archived About / Careers pages on the Wayback Machine (headcountCollect.ts); robots.txt honoured, one request a second",
+  },
+  linkedin_links: {
+    on: true, since: "2026-11-24",
+    what: "a founder's or a leader's LinkedIn profile LINK, found by a Google search (never by reading LinkedIn) and kept only when the result names the person in full and the company; a link only, never a source of any field (linkedin.ts findLinkedInLink). Not linkedin_people, which stays off",
   },
   profile_hints: {
     on: false, since: "2026-11-02", // off by the owner, 2026-11-02: 0 of 7 confirmed on the 10-company check
     what: "an HQ / founding year / founding country only a data platform states is not written, but searched for once in an allowed source that confirms it",
   },
   market_compare: {
-    on: true, since: "2026-11-12",
+    on: false, since: "2026-11-12", // off by the owner, 2026-11-23 (maintenance window): competitors are Tier 3
     what: "market competitors judged by what the two companies sell (marketComparison.ts): each candidate must be a company with a website, and one model call compares the two descriptions — the same kind of product for the same kind of customer; partners, complementary products, acquirers and unrelated companies in a broad field do not stay. One extra model call per company with candidates, plus a search and a page read for each candidate that is not in the database",
   },
   bios: {

@@ -16,6 +16,55 @@ const labelOf = (host: string): string => {
   return (parts[Math.max(0, parts.length - tld2)] ?? "").replace(/[^a-z0-9]/g, "");
 };
 
+const RENAME_NEW = (nameRe: string) => [
+  // "<Company> is now X", "has been renamed X", "now known as X": the company under a new name.
+  new RegExp(`\\b${nameRe}\\b[^.\\n]{0,60}\\b(?:is now(?! part of)|has become|has rebranded as|has been renamed(?: to)?|was renamed(?: to)?|rebranded (?:as|to)|(?:is )?now known as|is now called|now called)\\s+([A-Z][\\w&.-]*(?:\\s+[A-Z][\\w&.-]*){0,2})`),
+  // "X (formerly <Company>)", "X, formerly known as <Company>"
+  new RegExp(`\\b([A-Z][\\w&.-]*(?:\\s+[A-Z][\\w&.-]*){0,2})[\\s,]*\\(?\\s*(?:formerly|previously|fka|f/k/a)\\s+(?:known as\\s+)?${nameRe}\\b`, "i"),
+];
+
+/**
+ * The new name a company goes by (owner, round 10: TymeBank is GoTyme Bank — the same company, renamed; that is not an acquisition). Read from the
+ * pages' own words; a rename is a proposal for the owner, never applied by the pipeline. null when the pages do not say.
+ */
+export function rebrandedAs(companyName: string, pages: Page[]): string | null {
+  const text = pages.slice(0, 4).map((p) => p.content).join("\n").slice(0, 12000);
+  const nameRe = esc(companyName.trim()).replace(/\s+/g, "\\s+");
+  for (const re of RENAME_NEW(nameRe)) {
+    const m = text.match(re);
+    const to = m?.[1]?.trim();
+    if (to && core(to) !== core(companyName) && to.length >= 3) return to;
+  }
+  return null;
+}
+
+/**
+ * The brand a registered address now leads to (owner, round 10: tymebank.co.za → gotyme.co.za, "GoTyme Bank"): when the reader followed the address to another host whose
+ * page names the company too, the destination's own name as the page writes it ("GoTyme Bank") is the company's name now. null when there is no such redirect.
+ */
+export function redirectBrand(companyName: string, website: string | null | undefined, pages: Page[]): string | null {
+  let asked = ""; try { asked = labelOf(new URL(website?.startsWith("http") ? website : `https://${website}`).hostname); } catch { return null; }
+  for (const p of pages.slice(0, 3)) {
+    const fin = p.content.slice(0, 1200).match(/Final URL:\s*(https?:\/\/[^\s]+)/i)?.[1];
+    if (!fin) continue;
+    let host = ""; try { host = new URL(fin).hostname; } catch { continue; }
+    if (isTrackingHost(host)) continue;
+    const got = labelOf(host);
+    if (!got || got === asked || got.includes(asked) || asked.includes(got)) continue;
+    const body = p.content.replace(/^[\s\S]{0,1600}?Markdown Content:/i, "");
+    const m = body.match(new RegExp(`\\b(${got.split("").map((c) => esc(c)).join("[\\s-]?")}[A-Za-z]*(?:\\s+[A-Z][A-Za-z]+){0,2})`, "i"));
+    const name = m?.[1]?.trim();
+    if (name && name.length >= 3 && core(name) !== core(companyName)) return name.replace(/\s+/g, " ");
+  }
+  return null;
+}
+
+/** An advertising / tracking / affiliate endpoint: an address that passes through one is a broken redirect, not another company's site (owner, batch 7: MyHR → match.adsrvr.org). */
+export function isTrackingHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/^www\./, "");
+  return /(?:^|\.)(?:adsrvr\.org|doubleclick\.net|googleadservices\.com|googlesyndication\.com|googletagmanager\.com|google-analytics\.com|adnxs\.com|criteo\.(?:com|net)|rubiconproject\.com|pubmatic\.com|taboola\.com|outbrain\.com|scorecardresearch\.com|demdex\.net|bidswitch\.net|casalemedia\.com|openx\.net|adform\.net|smartadserver\.com|awin1\.com|linksynergy\.com|shareasale\.com|tradedoubler\.com|impactradius\.com|facebook\.com\/tr|clickcease\.com|mgid\.com|yieldmo\.com|2mdn\.net|adsymptotic\.com|bat\.bing\.com)$/.test(h) || /^(?:match|sync|pixel|px|track|tracking|ads?|adserver|click|clk|cm|cs|rtb|bid|dsp)\d*\./.test(h);
+}
+
 /** null, or the reason ("acquired / rebranded: …") the pages are no description of this company. */
 export function siteBelongsToAnotherCompany(companyName: string, website: string | null | undefined, pages: Page[]): string | null {
   if (!pages.length) return null;
@@ -29,21 +78,31 @@ export function siteBelongsToAnotherCompany(companyName: string, website: string
     const fin = p.content.slice(0, 1200).match(/Final URL:\s*(https?:\/\/[^\s]+)/i)?.[1];
     if (!fin || !asked) continue;
     let finHost = ""; try { finHost = new URL(fin).hostname; } catch { continue; }
+    if (isTrackingHost(finHost)) continue;
     const got = labelOf(finHost);
     const related = got === asked || got.includes(asked) || asked.includes(got) || (key0.length >= 3 && (got.includes(key0) || key0.includes(got)));
-    if (got && !related) return `acquired / rebranded: ${asked}'s address leads to ${finHost}`;
+    // The company's name (TymeBank Limited) on the page the address leads to: the same company under a new address (owner, 2026-11-15: tymebank.co.za → gotyme.co.za).
+    // Rebranded or acquired is then decided by what the page SAYS about it (step 1 below), not by the move alone.
+    const flatDest = pages.slice(0, 3).map((q) => q.content.replace(/^[\s\S]{0,1600}?Markdown Content:/i, "")).join(" ").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    if (got && !related && !(key0.length >= 4 && flatDest.includes(key0))) return `acquired / rebranded: ${asked}'s address leads to ${finHost}`;
   }
   // 1. The pages say, of this company, that it was acquired / is now part of / was renamed.
   const said = [
-    new RegExp(`\\b${nameRe}\\b[^.\\n]{0,80}\\b(?:has been|was|is now|is)\\s+(?:acquired by|part of|a part of|now part of|joined|merged into|renamed|rebranded|now known as|now called)\\s+([A-Z][\\w&.-]*(?:\\s+[A-Z][\\w&.-]*){0,2})`, "i"),
-    new RegExp(`\\b${nameRe}\\b[^.\\n]{0,60}\\b(?:is now|has become|has rebranded as|has been renamed)\\s+([A-Z][\\w&.-]*(?:\\s+[A-Z][\\w&.-]*){0,2})`),
-    new RegExp(`\\bformerly\\s+(?:known as\\s+)?${nameRe}\\b`, "i"),
+    new RegExp(`\\b${nameRe}\\b[^.\\n]{0,80}\\b(?:has been|was|is now|is)\\s+(?:acquired by|part of|a part of|now part of|joined|merged into)\\s+([A-Z][\\w&.-]*(?:\\s+[A-Z][\\w&.-]*){0,2})`, "i"),
+    // The buyer says it: "Deel acquires Hofy", "Deel has acquired Hofy".
+    new RegExp(`\\b[A-Z][\\w&.-]*(?:\\s+[A-Z][\\w&.-]*){0,2}\\s+(?:has\\s+)?(?:acquired|acquires|bought|buys)\\s+${nameRe}\\b`),
     // The other way round: the company's name is another company's new name ("Grammarly is now Superhuman", "(formerly Grammarly)").
     new RegExp(`\\b[A-Z][\\w&.-]*\\s+(?:is now|has (?:rebranded|renamed itself) (?:as|to)|is becoming|became|rebrands? as|has become)\\s+${nameRe}\\b`),
     new RegExp(`\\b${nameRe}\\b\\s*\\((?:formerly|previously|fka|f/k/a)\\s+[A-Z]`, "i"),
   ];
-  for (const re of said) {
+  // An acquired company is enriched as usual (owner's decision, round 10; batch 7: Sikhona, "Ria Money Transfer acquired Sikhona"): a page that says it was bought, and still speaks of the company by its
+  // name (twice or more, or on an address that carries the name), is still the company's page. The purchase is the news's business (acquired from the accepted news), not a reason to describe nothing.
+  const nameCount = (home.match(new RegExp(`\\b${nameRe}\\b`, "gi")) ?? []).length;
+  const movedAway = pages.slice(0, 3).some((p) => { const fin = p.content.slice(0, 1200).match(/Final URL:\s*(https?:\/\/[^\s]+)/i)?.[1]; try { return !!fin && !!asked && !isTrackingHost(new URL(fin).hostname) && labelOf(new URL(fin).hostname) !== asked && !labelOf(new URL(fin).hostname).includes(asked) && !asked.includes(labelOf(new URL(fin).hostname)); } catch { return false; } });
+  const stillItself = nameCount >= 1 && !movedAway;   // the page names the company (in the sale's own sentence at least) and the address stayed
+  for (const [i, re] of said.entries()) {
     const m = home.match(re);
+    if (m && i < 2 && stillItself) continue;
     if (m) return `acquired / rebranded: the site says "${m[0].replace(/\s+/g, " ").slice(0, 140)}"`;
   }
   // 2. The company is never named, and another company's name is the page's own ("© 2026 aibuy", "Medallia" in the title).
@@ -60,4 +119,15 @@ export function siteBelongsToAnotherCompany(companyName: string, website: string
     }
   }
   return null;
+}
+
+
+/** A headline in which the company is the one acquired ("Equifax acquires DataX", "Aerodrome … acquisition of FlyTech", "X is acquired by Y"); not one where it is the buyer or only joins something. */
+export function acquisitionHeadline(title: string, companyName: string): boolean {
+  const nameRe = esc(companyName.trim()).replace(/\s+/g, "\\s+");
+  const asTarget = new RegExp(`\\b(?:acquires?|acquired|acquisition of|buys|bought|to buy|to acquire|merges? with|takes? over)\\b[^.:;]{0,60}\\b${nameRe}\\b|\\b${nameRe}\\b[^.:;]{0,50}\\b(?:acquired by|bought by|sold to|to be acquired|is being acquired)\\b`, "i");
+  if (!asTarget.test(title)) return false;
+  // "Acme acquires Foo" with Acme as the company: it is the buyer.
+  const asBuyer = new RegExp(`^\\W*${nameRe}\\b(?!\\s+(?:is|was|has been|being|to be|will be|gets|got)\\b)[^.:;]{0,15}\\b(?:acquires?|acquired|buys|bought|to buy|to acquire)\\b`, "i");
+  return !asBuyer.test(title);
 }

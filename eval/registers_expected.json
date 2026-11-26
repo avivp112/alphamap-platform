@@ -1,0 +1,5 @@
+[
+  { "company": "Monzo", "website_country": "United Kingdom", "site_text": "Monzo Bank Limited is registered in England, company number 09446231", "expect": { "company_number": "09446231", "legal_name": "MONZO BANK LIMITED", "jurisdiction": "United Kingdom", "incorporation_date": null } },
+  { "company": "Revolut", "website_country": "United Kingdom", "site_text": "Revolut Ltd is registered in England and Wales with company number 08804411", "expect": { "company_number": "08804411", "legal_name": "REVOLUT LTD", "jurisdiction": "United Kingdom", "incorporation_date": null } },
+  { "company": "Wise", "legal_name_hint": "Wise Payments Limited", "website_country": "United Kingdom", "site_text": "Wise Payments Limited is registered in England with company number 07209813", "expect": { "company_number": "07209813", "legal_name": "WISE PAYMENTS LIMITED", "jurisdiction": "United Kingdom", "incorporation_date": null } }
+]

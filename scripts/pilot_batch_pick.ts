@@ -11,6 +11,7 @@ import { config } from "dotenv";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import { PILOT_MAX_COMPANIES } from "../lib/enrichment/writeGate.ts";
 import { pickBatch, shuffled } from "../lib/enrichment/pilotBatchPick.ts";
 import { dataGroup, spreadPick, type DataGroup } from "../lib/enrichment/dataGroups.ts";
 import type { PilotCandidate } from "../lib/enrichment/pilotSample.ts";
@@ -24,7 +25,7 @@ const N = process.env.N ?? "3";
 // GROUP=empty|partial|full: the batch comes from that group of v1 data (dataGroups.ts), spread over the countries of the websites' domains (owner, 2026-11-13).
 const GROUP = (process.env.GROUP ?? "") as DataGroup | "";
 if (GROUP && !["empty", "partial", "full"].includes(GROUP)) { console.error("GROUP must be empty, partial or full."); process.exit(1); }
-const SIZE = Math.min(Number(process.env.SIZE ?? 5), 25);   // a pilot writes at most 25 companies (writeGate.ts)
+const SIZE = Math.min(Number(process.env.SIZE ?? 5), PILOT_MAX_COMPANIES);   // a pilot writes at most PILOT_MAX_COMPANIES companies (writeGate.ts: 25 unless the stage is opened)
 const SEED = Number(process.env.SEED ?? Date.now() % 100000);
 const db = createClient(url, key, { auth: { persistSession: false } });
 

@@ -1,0 +1,137 @@
+[
+ {
+  "id": "no_run_date_news",
+  "why": "No news dated the day of the run or later",
+  "kind": "news_dates_before_run"
+ },
+ {
+  "id": "no_tag_pages_any",
+  "why": "No value of any field has a tag / list / search page as source",
+  "kind": "absent",
+  "source_match": "/tags?/|[?&](k|s|q)="
+ },
+ {
+  "id": "no_sponsored",
+  "why": "No value has businessinsider.com/sc/ as source",
+  "kind": "absent",
+  "source_match": "businessinsider\\.com/sc/"
+ },
+ {
+  "id": "no_cookie_tag",
+  "why": "No tag rests on a cookie or privacy sentence",
+  "kind": "absent",
+  "field": "tags",
+  "quote_match": "cookie|privacy policy"
+ },
+ {
+  "id": "acquired_only_from_news",
+  "why": "No acquired row rests on a profile page, a blog or a database",
+  "kind": "absent",
+  "field": "acquired",
+  "source_match": "pitchbook|ledgerlogic|summitpartners|crunchbase|dealroom"
+ },
+ {
+  "id": "no_duplicate_rounds",
+  "why": "No company has two identical rounds",
+  "kind": "no_duplicates",
+  "field": "round"
+ },
+ {
+  "id": "no_url_quotes",
+  "why": "No quote is an address or a slug",
+  "kind": "no_url_quote"
+ },
+ {
+  "id": "one_description",
+  "why": "No company has more than one description",
+  "kind": "single_value",
+  "fields": [
+   "description",
+   "description_what_only"
+  ]
+ },
+ {
+  "id": "one_sector",
+  "why": "No company has more than one sector",
+  "kind": "single_value",
+  "fields": [
+   "sector"
+  ]
+ },
+ {
+  "id": "round_type_in_quote",
+  "why": "A round's type is written only when its quote names it (else Unknown)",
+  "kind": "round_type_in_quote"
+ },
+ {
+  "id": "no_non_sentence_quotes",
+  "why": "Every quote is a sentence, not page code",
+  "kind": "no_non_sentence_quotes"
+ },
+ {
+  "id": "leader_role_in_quote",
+  "why": "A leader's executive role is in its quote",
+  "kind": "leader_role_in_quote"
+ },
+ {
+  "id": "no_customer_page_founded",
+  "why": "No founding year rests on a customer / project / partner page",
+  "kind": "absent",
+  "field": "founded_year",
+  "source_match": "/(projects?|case-stud[a-z]*|clients?|customers?|work|portfolio|partners?|success-stories?)/"
+ },
+ {
+  "id": "memory_rows_pass_rules",
+  "why": "Every value that came from the memory passes this run's rules",
+  "kind": "memory_rows_pass_rules"
+ },
+ {
+  "id": "no_duplicate_competitors",
+  "why": "A competitor appears once under its clean name (no year, no bracket)",
+  "kind": "no_duplicates",
+  "field": "competitor_declared"
+ },
+ {
+  "id": "hq_quote_is_address_or_declaration",
+  "why": "A headquarters city rests on a street address or on a sentence that declares it (<city>-based, headquartered in, head office)",
+  "kind": "hq_quote_valid"
+ },
+ {
+  "id": "no_sponsored_paths",
+  "why": "No value rests on a sponsored / brand-studio / patrocinado path",
+  "kind": "absent",
+  "source_match": "/(patrocinado|sponsored|brand-studio)/"
+ },
+ {
+  "id": "no_yahoo_republish",
+  "why": "No news or round rests on a yahoo republication",
+  "kind": "absent",
+  "field": "news",
+  "source_match": "(^|//)([a-z]+\\.)?yahoo\\.com/"
+ },
+ {
+  "id": "no_paid_distribution",
+  "why": "No value rests on a paid distribution service",
+  "kind": "absent",
+  "source_match": "marketersmedia|yespress|einpresswire|openpr\\.com|prlog\\.org"
+ },
+ {
+  "id": "no_product_review_news",
+  "why": "No news item is a product review",
+  "kind": "absent",
+  "field": "news",
+  "quote_match": "honest verdict|\\breview:|\\bbest \\w+ (of|for) 20"
+ },
+ {
+  "id": "no_job_ad_tags",
+  "why": "No tag rests on a job ad or a menu",
+  "kind": "absent",
+  "field": "tags",
+  "source_match": "/(careers?|jobs?)/"
+ },
+ {
+  "id": "one_news_per_acquisition",
+  "why": "One purchase is one news item: no two items name the same buyer for the same company with different dates",
+  "kind": "one_news_per_acquisition"
+ }
+]

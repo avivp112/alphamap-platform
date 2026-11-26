@@ -1,3 +1,4 @@
+import { mkdirSync, readFileSync, writeFileSync } from "fs";
 /**
  * lib/enrichment/searchProviders.ts — v2's Serper/Tavily/Jina calling code.
  * Ground rule 4: "keep the current providers... do not add or remove
@@ -37,12 +38,16 @@
  * live API wrappers.
  */
 
+import { parseSitemap, robotsSitemaps, pickSitePages, MAX_SITE_PAGES } from "./sitemap.ts";
+import { promptCharsFor } from "./pageText.ts";
 import { devLinksFromText, type DevLinks } from "./devLinks";
 import type { Provider, RawSearchResult } from "./sources";
 import { websiteDomain } from "./websiteValidation";
 import type { SearchCache } from "./searchCache";
 import { cleanArticleText } from "./articles";
+import { noteRateLimit, waitIfLimited } from "./rateLimit.ts";
 import { componentOn } from "./components";
+import { replayMode } from "./recorder.ts";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -168,6 +173,7 @@ async function serperCall(endpoint: "search" | "news", query: string, queryLabel
   if (cached) return { results: cached.map((r) => ({ ...r, query_label: queryLabel })), failed: false };
   state.searchAttempts = (state.searchAttempts ?? 0) + 1;
   try {
+    await waitIfLimited("serper");   // a 429 to any company pauses them all
     const res = await fetch(`https://google.serper.dev/${endpoint}`, {
       method: "POST",
       headers: { "X-API-KEY": process.env.SERP_KEY, "Content-Type": "application/json" },
@@ -177,7 +183,7 @@ async function serperCall(endpoint: "search" | "news", query: string, queryLabel
     if (res.status === 429 && attempt < 3) {
       const wait = 10_000 * 2 ** attempt;
       console.warn(`    ⚠️  ${name} 429 — waiting ${wait / 1000}s (retry ${attempt + 1}/3)…`);
-      await sleep(wait);
+      noteRateLimit("serper", wait);
       return serperCall(endpoint, query, queryLabel, state, attempt + 1);
     }
     if (!res.ok) {
@@ -387,8 +393,19 @@ async function searchWithBackup(primary: SearchOutcome, jinaQuery: string, tavil
   return merged;
 }
 
+/** A result whose address is a google.com/url?q=<target> redirect is the target (owner, 2026-11-19): the source is the real domain, never google.com. */
+function unwrapGoogleRedirect(url: string): string {
+  try {
+    const u = new URL(url);
+    if (!/(^|\.)google\.[a-z.]+$/.test(u.hostname) || u.pathname !== "/url") return url;
+    const target = u.searchParams.get("url") ?? u.searchParams.get("q") ?? "";
+    return /^https?:\/\//.test(target) ? target : url;
+  } catch { return url; }
+}
+const realAddresses = (rs: RawSearchResult[]): RawSearchResult[] => rs.map((r) => (r.url ? { ...r, url: unwrapGoogleRedirect(r.url) } : r));
+
 export async function webSearch(query: string, queryLabel: string, state: SearchProviderState, opts: SearchOptions = {}): Promise<RawSearchResult[]> {
-  return searchWithBackup(await serperCall("search", query, queryLabel, state), query, query, queryLabel, state, opts);
+  return realAddresses(await searchWithBackup(await serperCall("search", query, queryLabel, state), query, query, queryLabel, state, opts));
 }
 
 /**
@@ -399,7 +416,7 @@ export async function webSearch(query: string, queryLabel: string, state: Search
 export async function newsSearch(
   newsQuery: string, generalQuery: string, queryLabel: string, state: SearchProviderState, opts: SearchOptions = {},
 ): Promise<RawSearchResult[]> {
-  return searchWithBackup(await serperCall("news", newsQuery, queryLabel, state), generalQuery, generalQuery, queryLabel, state, opts);
+  return realAddresses(await searchWithBackup(await serperCall("news", newsQuery, queryLabel, state), generalQuery, generalQuery, queryLabel, state, opts));
 }
 
 // ── Domain verification (Stage 0) ──────────────────────────────────────────
@@ -453,8 +470,13 @@ export async function verifyDomainMatch(
 
 // ── Company website fetch (Stage 2) ────────────────────────────────────────
 
-const JINA_TIMEOUT_MS = 15_000;
-const MAX_WEBSITE_CHARS = 6_000; // spec stage 2: "cap content per page (for example 6,000 characters)" -- raised from v1's 3,000 now that each page is its own labeled [W#] source rather than one slot in a single shared context budget
+const JINA_TIMEOUT_MS = Number(process.env.JINA_TIMEOUT_MS ?? 15_000);
+import { promptText, htmlToText } from "./pageText.ts";
+const MAX_WEBSITE_CHARS = Number(process.env.WEB_PAGE_PROMPT_CHARS ?? 6_000);   // what the model gets of a page; the verifier reads the whole page (up to MAX_PAGE_STORED)
+const MAX_PAGE_STORED = 120_000;
+/** Why the last read failed, set by each step (readPage names every step of the chain when all fail). */
+let lastFailure = "";
+const DUMMY_WEBSITE_CHARS = 0; // spec stage 2: "cap content per page (for example 6,000 characters)" -- raised from v1's 3,000 now that each page is its own labeled [W#] source rather than one slot in a single shared context budget
 
 // Set on an HTTP 402/401 from Jina (out of credit / bad key): later pages go
 // straight to Tavily instead of paying a failed round trip and a warning line
@@ -470,9 +492,10 @@ export function jinaDisabled(now = Date.now()): string | null {
   return jinaDisabledReason;
 }
 
-async function fetchViaJinaReader(url: string, state: SearchProviderState): Promise<string | null> {
+async function fetchViaJinaReader(url: string, state: SearchProviderState, attempt = 0): Promise<string | null> {
   if (jinaDisabled()) return null;
   try {
+    await waitIfLimited("jina");
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), JINA_TIMEOUT_MS);
     const headers: Record<string, string> = { Accept: "text/plain" };
@@ -483,17 +506,26 @@ async function fetchViaJinaReader(url: string, state: SearchProviderState): Prom
       disableJina(res.status);
       return null;
     }
+    if (res.status === 429 && attempt < 2) {
+      const wait = 10_000 * 2 ** attempt;
+      console.warn(`    ⚠️  Jina Reader 429 — every company waits ${wait / 1000}s (retry ${attempt + 1}/2)…`);
+      noteRateLimit("jina", wait);
+      return fetchViaJinaReader(url, state, attempt + 1);
+    }
     if (!res.ok) {
+      lastFailure = `HTTP ${res.status}`;
       console.warn(`    ⚠️  Jina Reader HTTP ${res.status} for ${url} — Serper may read it instead.`);
       return null;
     }
     const text = (await res.text()).trim();
     if (!text) {
+      lastFailure = "empty page";
       console.warn(`    ⚠️  Jina Reader returned empty content for ${url} — Serper may read it instead.`);
       return null;
     }
     return text;
   } catch (err) {
+    lastFailure = describeFetchError(err);
     console.warn(`    ⚠️  Jina Reader threw for ${url}: ${describeFetchError(err)} — Serper may read it instead.`);
     return null;
   }
@@ -557,6 +589,7 @@ async function fetchViaSerperScrape(url: string, state: SearchProviderState): Pr
       body: JSON.stringify({ url, includeMarkdown: true }),
     }).finally(() => clearTimeout(timer));
     if (!res.ok) {
+      lastFailure = `HTTP ${res.status}`;
       console.warn(`    ⚠️  Serper scrape HTTP ${res.status} for ${url}`);
       return null;
     }
@@ -564,18 +597,127 @@ async function fetchViaSerperScrape(url: string, state: SearchProviderState): Pr
     if (text) state.serperScrapeCount = (state.serperScrapeCount ?? 0) + 1;
     return text;
   } catch (err) {
+    lastFailure = describeFetchError(err);
     console.warn(`    ⚠️  Serper scrape threw for ${url}: ${describeFetchError(err)}`);
     return null;
   }
 }
 
+/**
+ * Why a home page could not be read, by site (owner, 2026-11-19: 17 sites of batch 8 were "domain_unresolved" because Jina answered 422 and Serper 400 — the services failed, not the domains).
+ * `service`: the readers failed (HTTP 4xx / 5xx, aborted, empty) and the site's own server did not prove itself dead; `dead`: the site's server itself does not answer (DNS, refused, certificate).
+ */
+const readFailures = new Map<string, Record<string, string>>();
+const hostKey = (url: string) => { try { return new URL(/^https?:/.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, "").toLowerCase(); } catch { return url; } };
+const redirects = new Map<string, string>();
+// What a live run saw of a dead / unreachable home page is kept in cache/read_failures.json: a REPLAY of the same run reads the recordings, in which a failed fetch has lost its cause, and must still tell a
+// dead site from a service failure (owner, 2026-11-19: nine dead sites came back as fetch_failed in the replay).
+const READ_FAILURES_FILE = "cache/read_failures.json";
+let persistedKinds: Record<string, "dead" | "unreachable" | "service"> | null = null;
+const persisted = () => { if (!persistedKinds) { try { persistedKinds = JSON.parse(readFileSync(READ_FAILURES_FILE, "utf8")); } catch { persistedKinds = {}; } } return persistedKinds!; };
+export function persistReadFailure(website: string, kind: "dead" | "unreachable" | "service"): void {
+  try { const m = persisted(); m[hostKey(website)] = kind; mkdirSync("cache", { recursive: true }); writeFileSync(READ_FAILURES_FILE, JSON.stringify(m, null, 1)); } catch { /* a convenience */ }
+}
+/** Where a site's address ends up when it leads to another origin (nordigen.com → gocardless.com), when a read saw it. */
+export function websiteRedirect(website: string): string | null { return redirects.get(hostKey(website)) ?? null; }
+
+/**
+ * Pages that are not read at all (owner, 2026-11-19: a news page of onlyfanstg.shop turned up among Heartland's search results): domains of the abuse-prone cheap top-level domains, adult / gambling /
+ * pharmacy-spam words in the host, and the owner's list (eval/blocked_domains.json). Only third-party pages: a company's own home page is read whatever it is.
+ */
+const SUSPICIOUS_TLD = /\.(?:shop|lol|top|xyz|click|buzz|icu|cfd|sbs|rest|monster|cyou|quest|bond|gq|ml|cf|tk|ga|work|fit|loan|win|date|stream|download|racing|review|trade|webcam|party)$/i;
+const SUSPICIOUS_WORD = /onlyfans|porn|xxx|sex|escort|casino|betting|poker|viagra|cialis|payday|giveaway|jackpot|nsfw/i;
+let blockedFile: string[] | null = null;
+export function suspiciousUrl(url: string): boolean {
+  const host = hostKey(url);
+  if (blockedFile === null) { try { blockedFile = (JSON.parse(readFileSync("eval/blocked_domains.json", "utf8")) as { domains?: string[] }).domains ?? []; } catch { blockedFile = []; } }
+  return SUSPICIOUS_TLD.test(host) || SUSPICIOUS_WORD.test(host) || blockedFile.some((d) => host === d || host.endsWith(`.${d}`));
+}
+
+/**
+ * The name of the address does not resolve at all (owner, 2026-11-19: nordigen.com is dead, yet a reader returned some page for it): then nothing a reader returned is the company's, and it is a dead address.
+ * A replay trusts what the live run (or probe_dead.ts) saw.
+ */
+export async function addressIsDead(website: string): Promise<boolean> {
+  const host = hostKey(website);
+  if (replayMode() !== "off") return persisted()[host] === "dead";
+  if (process.env.VITEST || process.env.DNS_CHECK === "off") return false;   // tests fake every page: their made-up hosts do not resolve
+  try { await (await import("dns/promises")).lookup(host); return false; }
+  catch (e) { const code = (e as { code?: string }).code ?? ""; if (code === "ENOTFOUND") { persistReadFailure(website, "dead"); return true; } return false; }
+}
+
+export function homepageReadFailure(website: string): "service" | "dead" | "unreachable" | null {
+  const kind = classifyReadFailure(website);
+  if (replayMode() !== "off") return persisted()[hostKey(website)] ?? kind;   // a replay trusts what the live run saw
+  if (kind) persistReadFailure(website, kind);
+  return kind;
+}
+function classifyReadFailure(website: string): "service" | "dead" | "unreachable" | null {
+  const f = readFailures.get(hostKey(website));
+  if (!f) return null;
+  const direct = f["direct"] ?? "";
+  // dead: the name does not resolve, or the home page itself answers "not found" (a parked / unconnected address)
+  if (/ENOTFOUND|EAI_NODATA|ECONNREFUSED|getaddrinfo|^HTTP (?:404|410)\b/i.test(direct)) return "dead";
+  // unreachable: the server exists and does not answer in time, or its certificate fails (to try once more with a longer timeout; else for the owner's list)
+  if (/TIMEOUT|ETIMEDOUT|ECONNRESET|ERR_TLS|CERT_|certificate/i.test(direct)) return "unreachable";
+  const service = (x?: string) => !x || /^HTTP [45]\d\d$|abort|timeout|timed out|threw|fetch failed|empty page/i.test(x);
+  return service(f["Jina Reader"]) && service(f["Serper scrape"]) ? "service" : null;
+}
+
 /** Jina Reader first; Serper scrape when Jina could not read it. */
-async function readPage(url: string, state: SearchProviderState): Promise<{ text: string; provider: Provider } | null> {
+/** The page straight from its server (no reader service between), as text. */
+async function fetchDirect(url: string, ms = Number(process.env.DIRECT_TIMEOUT_MS ?? 10_000)): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    const res = await fetch(url, { signal: controller.signal, redirect: "follow", headers: { "user-agent": "Mozilla/5.0 (compatible; AlphaMapBot)", accept: "text/html,application/xhtml+xml" } }).finally(() => clearTimeout(timer));
+    try { const fin = new URL(res.url); if (hostKey(res.url) !== hostKey(url)) redirects.set(hostKey(url), fin.origin); } catch { /* no final address */ }
+    if (!res.ok) { lastFailure = `HTTP ${res.status}`; return null; }
+    if (!/html|text/.test(res.headers.get("content-type") ?? "")) { lastFailure = `not a web page (${res.headers.get("content-type") ?? "no type"})`; return null; }
+    const text = htmlToText(await res.text());
+    if (!text) lastFailure = "empty page";
+    return text || null;
+  } catch (e) { lastFailure = describeFetchError(e); return null; }
+}
+
+/** The last snapshot of the page in the Internet Archive, as text (the site down, blocked, or empty to a reader). */
+async function fetchFromArchive(url: string): Promise<string | null> {
+  const text = await fetchDirect(`https://web.archive.org/web/2/${url}`, 15_000);
+  return text ? text.replace(/^[\s\S]*?(?=\n#|\n[A-Z])/, "").trim() || text : null;
+}
+
+/**
+ * Jina Reader, then Serper's scrape, then the page straight from its server, then the Internet Archive: the first that gives real content.
+ * The reader services come first (the site's own server is not hit when they can read it); a site neither can read is tried directly, and then its last
+ * archived snapshot (owner, 2026-11-15: Aerobotix, Aida, FlyTech and KrillTech could not be read).
+ */
+async function readPage(url: string, state: SearchProviderState, fallbacks = false): Promise<{ text: string; provider: Provider } | null> {
+  const trail: string[] = [];
+  const fail: Record<string, string> = {};
+  const step = (name: string) => { fail[name] = lastFailure; trail.push(`${name} — ${lastFailure || "nothing"}`); lastFailure = ""; };
+  lastFailure = "";
+  if (!fallbacks && suspiciousUrl(url)) { console.log(`    🛑  ${url} is not read — a suspicious domain (a cheap top-level domain, an adult / gambling word, or the owner's blocked list).`); return null; }
   const viaJina = await fetchViaJinaReader(url, state);
   if (viaJina) return { text: viaJina, provider: "jina" };
-  if (!componentOn("search_backup")) return null;
-  const viaSerper = await fetchViaSerperScrape(url, state);
-  return viaSerper ? { text: viaSerper, provider: "serper_scrape" } : null;
+  step("Jina Reader");
+  if (componentOn("search_backup")) {
+    const viaSerper = await fetchViaSerperScrape(url, state);
+    if (viaSerper) return { text: viaSerper, provider: "serper_scrape" };
+    step("Serper scrape");
+  }
+  // The direct read and the archive only for a site the readers could not read at all (its home page): a missing sub-page of a readable site is just missing.
+  if (!fallbacks) return null;
+  const direct = await fetchDirect(url);
+  if (direct && looksLikeRealContent(direct)) return { text: direct, provider: "cheerio" };
+  if (direct) lastFailure = `only ${direct.length} characters (a shell page or a block page)`;
+  step("direct");
+  const archived = await fetchFromArchive(url);
+  if (archived && looksLikeRealContent(archived)) { console.log(`    🗄️  ${url} read from the Internet Archive (its last snapshot).`); return { text: archived, provider: "archive" }; }
+  if (!lastFailure) lastFailure = archived ? "snapshot too short" : "no snapshot";
+  step("Internet Archive");
+  console.log(`    📡  ${url} could not be read — ${trail.join("; ")}.`);
+  readFailures.set(hostKey(url), fail);
+  return null;
 }
 
 /** One page's text, cached with the company's searches (press releases, legal pages — companyFacts.ts). */
@@ -622,6 +764,8 @@ function extractedFor(extracted: Map<string, string>, url: string): string | und
 
 export interface FetchedPage {
   url: string; content: string; provider: Provider;
+  /** What the model gets of the page (pageText.ts); `content` is the whole page. */
+  prompt_content?: string;
   /** Pages of the site that rendered this same page (/contact → /about): the Contact page rule reads them (headquarters.ts). */
   also_urls?: string[];
   /** The organization links the site names (devLinks.ts), read from the whole page before the cap cut the footer off. */
@@ -689,22 +833,124 @@ export async function fetchArticleTexts(urls: string[], state: SearchProviderSta
  * Everything is checked against looksLikeRealContent(), so a generic 404
  * page isn't counted as a real source whichever provider fetched it.
  */
+/** Per site: how many pages its sitemap offered and how many pages were read (for the run's trace table). */
+export const sitemapStats = new Map<string, { found: number; read: number }>();
+
+/**
+ * The sitemap's pages worth reading (sitemap.ts), cached per site; [] when the site has none. Read through the page readers like every page of the company's site — never a direct
+ * fetch (providerOrder.test.ts) — so what comes back is text: the addresses are taken from it whether or not the XML tags survived.
+ */
+async function sitemapPagesFor(root: string, state: SearchProviderState): Promise<string[]> {
+  let origin: string;
+  try { origin = new URL(root).origin; } catch { return []; }
+  // The cache keeps the sitemap's ADDRESSES (key sitemap2), not the pages picked from them: what is picked changes with the rules (owner, 2026-11-24: Kry's press page about its $300M round was never picked again because the
+  // list picked by the old rules sat in the cache under "sitemap:"). The pick is made on every call.
+  const key = `sitemap2:${origin}`;
+  const cached = state.cache?.get<string[]>(key);
+  if (cached) return cached.length ? pickSitePages(cached, root) : [];
+  const get = async (url: string): Promise<string | null> => (await readPage(url, state, false))?.text ?? null;
+  const addresses = (text: string): { kind: "urlset" | "index"; urls: string[] } => {
+    const parsed = parseSitemap(text);
+    if (parsed.urls.length) return parsed;
+    // The reader turned the XML into text: every address in it is one.
+    return { kind: /sitemap[^\s]*\.xml/i.test(text) && !/<urlset/i.test(text) ? "index" : "urlset", urls: [...new Set((text.match(/https?:\/\/[^\s<>"')\]]+/g) ?? []).map((u) => u.replace(/[.,;]+$/, "")))] };
+  };
+  const urls: string[] = [];
+  const read = async (smUrl: string, depth = 0): Promise<void> => {
+    if (urls.length > 5000 || depth > 1) return;
+    const text = await get(smUrl);
+    if (!text || text.length < 40) return;
+    const parsed = addresses(text);
+    const isMap = (u: string) => /\.xml(\?|$)/i.test(u) && /sitemap/i.test(u);
+    const kids = parsed.urls.filter(isMap);
+    if (kids.length && depth === 0) {
+      for (const k of kids.filter((u) => !/(product|image|video|post|blog|article|category|tag)/i.test(u)).slice(0, 3)) await read(k, depth + 1);
+    }
+    urls.push(...parsed.urls.filter((u) => !isMap(u)));
+  };
+  await read(`${origin}/sitemap.xml`);
+  if (!urls.length) {
+    const robots = await get(`${origin}/robots.txt`);
+    for (const sm of robots ? robotsSitemaps(robots).slice(0, 2) : []) await read(sm);
+  }
+  const unique = [...new Set(urls)].slice(0, 5000);
+  const picked = unique.length ? pickSitePages(unique, root) : [];
+  state.cache?.set(key, unique);
+  return picked;
+}
+
+/** A candidate site's home page and its /about, nothing else (the dead-domain check, owner 2026-11-23): their texts joined; null when neither could be read. */
+export async function fetchHomeAndAbout(website: string, state: SearchProviderState): Promise<string | null> {
+  const root = (website.startsWith("http") ? website : `https://${website}`).replace(/\/+$/, "");
+  const texts: string[] = [];
+  for (const path of ["", "/about"]) {
+    const url = root + path;
+    const cached = state.cache?.get<{ content: string; provider: Provider }>(`page:${url}`);
+    const read = cached ? { text: cached.content, provider: cached.provider } : await readPage(url, state, true);
+    if (read && looksLikeRealContent(read.text)) { texts.push(read.text); if (!cached) state.cache?.set(`page:${url}`, { content: read.text, provider: read.provider }); }
+  }
+  return texts.length ? texts.join("\n\n") : null;
+}
+
 export async function fetchCompanyWebsitePages(
   website: string | null | undefined,
   state: SearchProviderState,
 ): Promise<FetchedPage[]> {
   if (!website) return [];
-  const root = website.startsWith("http") ? website : `https://${website}`;
-  const candidatePaths = ["", "/about", "/team", "/company", "/contact"];
-  const urls = candidatePaths.map((path) => root.replace(/\/+$/, "") + path);
+  let root = website.startsWith("http") ? website : `https://${website}`;
+  // The company's own pages are read on every run, whatever the search finds (owner, 2026-11-14): home, about, team / leadership, contact, news / press, and customers / solutions / industries / products / platform (where "for whom" is usually written).
+  const candidatePaths = ["", "/about", "/about-us", "/team", "/leadership", "/company", "/contact", "/contact-us", "/news", "/press", "/newsroom", "/customers", "/solutions", "/industries", "/products", "/platform", "/imprint", "/impressum", "/legal"];   // owner, 2026-11-26: the product, customer and industry pages are back (the imprint, impressum and legal pages stay)
+  let urls = candidatePaths.map((path) => root.replace(/\/+$/, "") + path);
   const pages: FetchedPage[] = [];
 
   const fetched = new Map<string, { content: string; provider: Provider; cached: boolean }>();
+  // The registered address may lead elsewhere (tymebank.co.za → gotyme.co.za): the reader names where the home page ended, and the fixed pages are read there.
+  const finalOriginIn = (text: string): string | null => {
+    const m = text.slice(0, 1500).match(/(?:Final URL|URL Source):\s*(https?:\/\/[^\s]+)/i)?.[1];
+    try { return m ? new URL(m).origin : null; } catch { return null; }
+  };
+  const bare = (h: string) => h.replace(/^www\./, "");
+  const home = urls[0];
+  const cachedHome = state.cache?.get<{ content: string; provider: Provider }>(`page:${home}`);
+  const homeRead = cachedHome ? { text: cachedHome.content, provider: cachedHome.provider } : await readPage(home, state, true);
+  // The home page could not be read and the reason is conclusive (the name does not resolve, the server does not answer, the readers fail): the other fixed pages and the sitemap are not tried one by one
+  // (batch 8: nine dead sites cost seven failed reads each, and two slow ones ran past the ten minutes of a company).
+  if (!homeRead && homepageReadFailure(root)) { console.log(`    ⛔  ${root} could not be read (${homepageReadFailure(root)}): its other pages are not tried.`); return []; }
+  const needFallbacks = homeRead?.provider === "cheerio" || homeRead?.provider === "archive";
+  if (homeRead) {
+    const origin = finalOriginIn(homeRead.text);
+    if (origin && bare(new URL(origin).hostname) !== bare(new URL(root).hostname)) {
+      console.log(`    🔀  ${root} leads to ${origin}: its pages are read there.`);
+      redirects.set(hostKey(root), origin);
+      root = origin; urls = candidatePaths.map((path) => root.replace(/\/+$/, "") + path);
+    } else if (looksLikeRealContent(homeRead.text)) {
+      fetched.set(home, { content: homeRead.text, provider: homeRead.provider, cached: !!cachedHome });
+      if (!cachedHome) state.cache?.set(`page:${home}`, { content: homeRead.text, provider: homeRead.provider });
+    }
+  }
+  // The site's own sitemap (owner, round 10): sitemap.xml, or the Sitemap line of robots.txt; the pages whose path says about / team / leadership / contact / press / news / careers /
+  // impressum / legal / investors (and the same words in the site's language) replace the fixed list, at most 12 pages. No sitemap: the fixed list stays.
+  let sitemapFound = 0;
+  if (process.env.SITEMAP !== "off") {
+    const fromMap = await sitemapPagesFor(root, state);
+    if (fromMap.length) {
+      const next = [urls[0], ...fromMap.filter((u) => u.replace(/\/+$/, "") !== urls[0].replace(/\/+$/, ""))].slice(0, MAX_SITE_PAGES);
+      console.log(`    🗺️   sitemap: ${fromMap.length} page(s) chosen (${next.length} read, cap ${MAX_SITE_PAGES}) instead of the ${urls.length} fixed addresses.`);
+      urls = next;
+      sitemapFound = fromMap.length;
+    }
+  }
+  // Sixteen addresses on a site that does not answer would cost minutes: after four misses in a row the rest of the pages are not tried.
+  let misses = 0;
   for (const url of urls) {
+    if (fetched.has(url)) continue;
+    if (fetched.size >= MAX_SITE_PAGES) break;   // at most MAX_SITE_PAGES pages, however many addresses are tried
     const cachedPage = state.cache?.get<{ content: string; provider: Provider }>(`page:${url}`);
-    if (cachedPage) { fetched.set(url, { ...cachedPage, cached: true }); continue; }
-    const read = await readPage(url, state);
-    if (read && looksLikeRealContent(read.text)) fetched.set(url, { content: read.text, provider: read.provider, cached: false });
+    if (cachedPage) { fetched.set(url, { ...cachedPage, cached: true }); misses = 0; continue; }
+    if (misses >= 4) continue;
+    const read = await readPage(url, state, needFallbacks);
+    if (read && looksLikeRealContent(read.text)) { fetched.set(url, { content: read.text, provider: read.provider, cached: false }); misses = 0;}
+    else misses++;
   }
   if (fetched.size === 0) {
     // Neither Jina nor Serper got anything from this site: Tavily Extract, one call.
@@ -726,7 +972,7 @@ export async function fetchCompanyWebsitePages(
       continue;
     }
     if (!cachedPage) state.cache?.set(`page:${url}`, { content, provider });
-    const capped = content.slice(0, MAX_WEBSITE_CHARS);
+    const capped = content.slice(0, MAX_PAGE_STORED);
     // /team, /company and /contact often redirect to (or render) the same
     // page as /about or the homepage — sending it again only costs tokens.
     const duplicateOf = pages.find((p) => isNearDuplicatePage(p.content, capped));
@@ -737,8 +983,10 @@ export async function fetchCompanyWebsitePages(
       continue;
     }
     state.websitePagesFetched++;
-    pages.push({ url, content: capped, provider, dev_links: devLinksFromText(content) });
-    console.log(`    🌐  fetched ${url} (${content.length} chars, ${provider}${cachedPage ? ", cached" : ""})`);
+    const sent = promptText(capped, promptCharsFor(url, MAX_WEBSITE_CHARS));
+    pages.push({ url, content: capped, prompt_content: sent, provider, dev_links: devLinksFromText(content) });
+    console.log(`    🌐  fetched ${url} (${content.length} chars, ${provider}${cachedPage ? ", cached" : ""}; ${sent.length} sent to the model)`);
   }
+  if (sitemapFound) sitemapStats.set(root.replace(/\/+$/, ""), { found: sitemapFound, read: pages.length });
   return pages;
 }

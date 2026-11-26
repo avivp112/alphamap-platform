@@ -75,14 +75,30 @@ describe("the classification as the pipeline runs it (one function for the colle
   const choice = (sector: string, sub?: string) => ({ sector_name: sector, sub_sector_name: sub, sub_sector_names: [] as string[] });
   it("a General gets a second look and a specific answer wins", async () => {
     const seen: Array<string | undefined> = [];
-    const r = await classifyWithRetry(async (f) => { seen.push(f); return f ? choice("Enterprise Software", "HR Tech") : choice("SaaS & Dev Tools", "SaaS / General"); }, malt);
+    const r = await classifyWithRetry(async (f) => { seen.push(f); return f ? choice("Enterprise Software", "HR Tech") : choice("Enterprise Software", "Enterprise / General"); }, malt);
     expect(r).toMatchObject({ sub_sector_name: "HR Tech" });
     expect(seen[0]).toBeUndefined();
     expect(seen[1]).toMatch(/last resort/);
   });
-  it("a General that stays General is accepted; an unsupported answer that stays unsupported is none", async () => {
+  it("the second look after a General keeps the main sector (owner, round 10: Posteo)", async () => {
+    const r = await classifyWithRetry(async (f) => (f ? choice("Enterprise Software", "HR Tech") : choice("Consumer & Media", "Consumer / General")), malt);
+    expect(r).toMatchObject({ sector_name: "Consumer & Media", sub_sector_name: "Consumer / General" });
+  });
+  it("a General that stays General is accepted; an unsupported answer that stays unsupported keeps the sector, without the sub-sector", async () => {
     expect(await classifyWithRetry(async () => choice("SaaS & Dev Tools", "SaaS / General"), malt)).toMatchObject({ sub_sector_name: "SaaS / General" });
-    expect(await classifyWithRetry(async () => choice("Real Estate", "PropTech"), malt)).toBeNull();
+    const stuck = await classifyWithRetry(async () => choice("Real Estate", "PropTech"), malt);
+    expect(stuck).toMatchObject({ sector_name: "Real Estate", sub_sector_name: undefined });
+  });
+  it("a classification always ends with a value after the retries (Motorway, Pet Circle, Versabox)", async () => {
+    let n = 0;
+    const r = await classifyWithRetry(async (f) => { n++; return f ? choice("Real Estate", "PropTech") : choice("Real Estate", "PropTech"); }, malt);
+    expect(r).not.toBeNull();
+    expect(n).toBe(3);
+  });
+  it("the last look asks for the closest sector with its General", async () => {
+    const seen: Array<string | undefined> = [];
+    await classifyWithRetry(async (f) => { seen.push(f); return choice("Real Estate", "PropTech"); }, malt);
+    expect(seen[2]).toMatch(/General/);
   });
   it("a good first answer is one call", async () => {
     let n = 0;
@@ -104,5 +120,42 @@ describe("Vertical SaaS is a tag, not the main sub-sector (owner, 2026-11-12: Sa
     const stuck = await classifyWithRetry(async () => choice("SaaS & Dev Tools", "Vertical SaaS"), sc);
     expect(stuck).toMatchObject({ sector_name: "SaaS & Dev Tools", sub_sector_name: undefined });
     expect(stuck?.sub_sector_names).toContain("Vertical SaaS");
+  });
+});
+
+import { buildSectorRequest as buildReq, NO_CUSTOMERS_NOTE } from "./classifySector";
+describe("a description with a 'what' and no 'for whom' (owner, 2026-11-14: Posteo)", () => {
+  const tax = { parentNames: ["Enterprise Software", "Consumer & Media"], subNames: ["Productivity & Collaboration", "Consumer / General"] };
+  it("tells the classifier not to assume business customers", () => {
+    const text = buildReq("Posteo", "Posteo sells secure email accounts that include an address book, calendar and notes.", tax, undefined, { noCustomers: true }).messages[0].content;
+    expect(text).toContain(NO_CUSTOMERS_NOTE);
+    expect(text).toContain("do not assume business customers");
+  });
+  it("says nothing of it when the description names its buyers", () => {
+    expect(buildReq("Posteo", "x", tax).messages[0].content).not.toContain(NO_CUSTOMERS_NOTE);
+  });
+});
+
+import { classifyWithRetry as cwr, sectorProblem as sp, ASSUMES_BUYERS } from "./classifySector";
+describe("a personal-tools answer for a description with no buyer (Posteo)", () => {
+  const d = "Posteo sells secure email accounts that include an address book, calendar and notes.";
+  const ent = { sector_name: "Enterprise Software", sub_sector_name: "Productivity & Collaboration", sub_sector_names: [] as string[] };
+  const con = { sector_name: "Consumer & Media", sub_sector_name: "Consumer / General", sub_sector_names: [] as string[] };
+  it("is a problem only when the description names no buyer", () => {
+    expect(sp(ent, d, { noCustomers: true })).toBe(ASSUMES_BUYERS);
+    expect(sp(ent, d)).toBeNull();
+  });
+  it("gets one second look; a consumer answer wins, an Enterprise answer chosen again stays (no third look)", async () => {
+    const seen: Array<string | undefined> = [];
+    expect(await cwr(async (f) => { seen.push(f); return f ? con : ent; }, d, undefined, { noCustomers: true })).toMatchObject({ sector_name: "Consumer & Media" });
+    expect(seen[1]).toContain("assumes business buyers");
+    // chosen again for an email account with no buyer named: the product decides
+    let n = 0;
+    expect(await cwr(async () => { n++; return ent; }, d, undefined, { noCustomers: true })).toMatchObject({ sector_name: "Consumer & Media", sub_sector_name: "Consumer Apps & Communication" });
+    expect(n).toBe(2);
+    // chosen again for something that is not a personal account: it stays
+    n = 0;
+    expect(await cwr(async () => { n++; return ent; }, "Acme sells a meeting notes tool with a shared workspace.", undefined, { noCustomers: true })).toMatchObject({ sector_name: "Enterprise Software" });
+    expect(n).toBe(2);
   });
 });

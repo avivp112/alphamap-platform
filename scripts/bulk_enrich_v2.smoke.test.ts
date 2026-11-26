@@ -227,12 +227,14 @@ vi.mock("@anthropic-ai/sdk", () => ({ default: class { messages = { create: crea
 
 describe("bulk_enrich_v2 main() end to end (all I/O faked)", () => {
   beforeAll(async () => {
+    process.env.V2_COMPONENTS = "competitors=on,competitor_tiers=on,market_compare=on,founder_background=on,epo_patents=on,headcount_archive=on,linkedin_links=off";   // the legacy test covers the Tier 3 collectors, off by default since 2026-11-23
+    process.env.DOMAIN_RESOLVE = "false"; process.env.PREFLIGHT = "off"; process.env.SITEMAP = "off"; process.env.TRANSLATE = "false"; process.env.TECH_DECISIONS = `${process.env.TMPDIR ?? "/tmp"}/tech_decisions_smoke_${Date.now()}.json`; process.env.KNOWN_SOURCES = "off";
     process.env.DRY_RUN = "false";
     // Every field open in the tracker (≥20 marked, ≥90% correct): the write path is under test, not the gate.
     const tracker = join(mkdtempSync(join(tmpdir(), "review-")), "tracker.csv");
     writeFileSync(tracker, ["id,field,company,value,source_url,verdict,source_of_mark",
       ...WRITABLE_FIELDS.flatMap((f) => Array.from({ length: 20 }, (_, i) => `${f}.${i},${f},Co,v,,correct,test`))].join("\n"));
-    process.env.FIELD_REVIEW_TRACKER = tracker;
+    process.env.OPEN_FIELDS_OVERRIDE = WRITABLE_FIELDS.join(",");
     // Reports and batch files go to a temp dir, never into the repository.
     const outDir = mkdtempSync(join(tmpdir(), "out-"));
     process.env.BATCH_DIR = join(outDir, "field_review");

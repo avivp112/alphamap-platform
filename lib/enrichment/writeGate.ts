@@ -26,7 +26,8 @@ export const PHASE1_PASSED = false;
 // Owner, 2026-11-05: the pilot writes any review field the tracker has opened, and only those
 // (writeUnits.ts) — the tracker is the gate, not a fixed list. News was the first to open.
 export const PILOT_FIELDS: readonly string[] = WRITABLE_FIELDS;
-export const PILOT_MAX_COMPANIES = 25;
+// The size of a pilot is a stage (owner, batch 7: 25, then 50, 100, 250, 500): PILOT_MAX_COMPANIES=<n> opens the stage, never above 500, 25 when it is not set.
+export const PILOT_MAX_COMPANIES = Math.min(500, Math.max(1, Number(process.env.PILOT_MAX_COMPANIES ?? 25) || 25));
 
 export interface PilotRequest { fields: readonly string[]; companies: number }
 

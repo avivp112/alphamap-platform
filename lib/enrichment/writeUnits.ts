@@ -1,9 +1,8 @@
 /**
  * lib/enrichment/writeUnits.ts — what each review field writes (owner, 2026-11-05).
  *
- * The tracker (eval/field_review_tracker.csv) is the gate: a field is written only when it is
- * open there, in a pilot and in a wide run alike — PHASE1_PASSED does not lift it. A field with
- * no marks is never written. Pure; no file access.
+ * The open fields are the core fields (tiers.ts); the old tracker (20 marks, 90%) is cancelled for good
+ * (owner, 2026-11-23). A field that is not open is never written. Pure; no file access.
  */
 
 /** The review fields, and the startups columns each one writes. */
@@ -23,8 +22,14 @@ export const FIELD_COLUMNS: Record<string, string[]> = {
   competitor_declared: ["competitors"], competitor_market: ["competitors"],
   patent: ["patents", "patent_count", "patent_fields"],
   news: ["news"],
+  // A purchase (owner, round 10): the status, who bought, when, and the name it trades under afterwards. Derived from the accepted news (acquisition.ts).
+  // What the registers hold (owner, round 10; registerRecord.ts): each its own field, opened by marks like every other.
+  legal_name: ["legal_name"], registered_address: ["registered_address"], incorporation_date: ["incorporation_date"], incorporation_jurisdiction: ["incorporation_jurisdiction"], company_number: ["company_number"],
+  acquired: ["status", "acquired_by", "exit_date", "brand_after_acquisition"],
   // Not columns of their own: the rounds table, and the bios inside founders / leadership.
   round: [], founder_background: [],
+  // A founder's or a leader's LinkedIn link (owner, 2026-11-24): a link only, never a source of a field. The founder's rides inside the founders column; the leader's is a candidate value.
+  founder_linkedin: [], leader_linkedin: [],
 };
 
 /** Every field a run may write once it is open. */
@@ -37,6 +42,7 @@ export function openColumnsOf(open: readonly string[]): Set<string> {
 
 export const writesRounds = (open: readonly string[]) => open.includes("round");
 export const writesBoard = (open: readonly string[]) => open.includes("board");
+export const writesFounderLinkedin = (open: readonly string[]) => open.includes("founder_linkedin");
 export const writesBios = (open: readonly string[]) => open.includes("founder_bio");
 /** Whether a competitor of this tier may be written: its own field is open ("competitor", the field's name before the tiers, counts as declared). */
 export const writesCompetitorTier = (open: readonly string[], tier: "declared" | "market" | undefined) =>

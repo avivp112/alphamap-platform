@@ -8,3 +8,18 @@ export function isNonDescriptivePage(url: string | null | undefined): boolean {
   if (!url) return false;
   try { const u = new URL(url); return NON_DESCRIPTIVE.test(`${u.hostname.startsWith("kb.") ? "kb." : ""}${u.pathname}`) || /^(?:kb|help|support|docs)\./i.test(u.hostname); } catch { return false; }
 }
+
+/**
+ * A page that is not an article (owner, round 10): a tag / topic / category / author / search or listing page (financemagnates.com/tag/…, cision.com/…?k=…),
+ * and sponsored content (businessinsider.com/sc/…). Its address is no source for a news item or a value.
+ */
+export function isListingOrSponsoredUrl(url: string | null | undefined): "listing_page" | "sponsored_content" | null {
+  if (!url) return null;
+  let u: URL;
+  try { u = new URL(url.startsWith("http") ? url : `https://${url}`); } catch { return null; }
+  const host = u.hostname.toLowerCase().replace(/^www\./, "");
+  if (/(^|\.)businessinsider\.com$/.test(host) && /^\/sc(?:\/|$)/i.test(u.pathname)) return "sponsored_content";
+  if (/\/(?:tags?|topics?|authors?|search|labels?|keywords?)(?:\/[^/]+)?\/?$/i.test(u.pathname)) return "listing_page";
+  for (const k of ["k", "s", "q", "query", "search", "tag", "keyword"]) if (u.searchParams.has(k)) return "listing_page";
+  return null;
+}

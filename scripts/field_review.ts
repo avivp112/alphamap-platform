@@ -37,6 +37,9 @@ import { buildProfile } from "../worker/profile.ts";
 import { profileSourceAllowed, roundSourceStanding } from "../lib/enrichment/roundSources.ts";
 import { capPerCompany, PER_COMPANY } from "../lib/enrichment/fieldReview.ts";
 import { majorPressNote } from "../lib/enrichment/unlistedDomains.ts";
+import { rejectedDomains, rejectedDomainsCsv } from "../lib/enrichment/rejectedDomains.ts";
+import { wrapAnthropic, installHttpRecorder, quietOffline, installFetchTimeout } from "../lib/enrichment/recorder.ts";
+import { domainClasses, domainClassesCsv } from "../lib/enrichment/domainClass.ts";
 import { definitionLines } from "../lib/enrichment/reviewDefinitions.ts";
 import { makePeerLookup } from "../lib/enrichment/peerLookup.ts";
 import { coverageReport, type CompetitorLists } from "../lib/enrichment/competitorCoverage.ts";
@@ -117,7 +120,10 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
   writeFileSync(DRAWN, JSON.stringify([...prev, ...drawn.map((d) => d.id)], null, 2));
   console.log(`Field review run ${runNo} — ${drawn.length} new random companies (seed ${SEED}), model ${MODEL}. Nothing is written to the database.\n`);
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  installFetchTimeout();
+  installHttpRecorder();
+  quietOffline();
+  const anthropic = wrapAnthropic(new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: Number(process.env.MODEL_TIMEOUT_MS ?? 120_000), maxRetries: 2 }));
   const taxonomy = await loadSectorTaxonomy(db);
   const meter = new UsageMeter();
   const values: Value[] = [];
@@ -198,6 +204,14 @@ async function drawCompanies(): Promise<PilotCandidate[]> {
   const per = REVIEW_FIELDS.map((f) => `${f} ${values.filter((v) => v.field === f).length}`).join(" · ");
   console.log(`\n${"═".repeat(62)}\nWould be written: ${values.length} value(s) — ${per}`);
   // The leaders' title rule (owner, 2026-11-03): how much it costs.
+  if (rejectedDomains.size) {
+    writeFileSync(join(DIR, `run_${runNo}_rejected_domains.csv`), rejectedDomainsCsv(rejectedDomains.rows_()));
+    console.log(`📋  ${rejectedDomains.size} source domain/field pair(s) turned away as not on the allowed list: ${join(DIR, `run_${runNo}_rejected_domains.csv`)}`);
+  }
+  if (domainClasses.newThisRun().length) {
+    writeFileSync(join(DIR, `run_${runNo}_domain_classes_new.csv`), domainClassesCsv(domainClasses.newThisRun()));
+    console.log(`📋  ${domainClasses.newThisRun().length} source domain(s) classified for the first time: ${join(DIR, `run_${runNo}_domain_classes_new.csv`)}`);
+  }
   if (unlistedSeen.size) {
     console.log(`Unlisted source domains this run (${unlistedSeen.size}): ${[...unlistedSeen.keys()].slice(0, 12).join(", ")}${unlistedSeen.size > 12 ? ", …" : ""}`);
     const press = majorPressNote([...unlistedSeen.keys()]);

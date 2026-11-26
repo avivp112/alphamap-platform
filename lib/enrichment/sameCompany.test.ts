@@ -35,3 +35,10 @@ describe("a name that matches a company in the database: the checks before the o
     expect(parseSameCompany(null).verdict).toBe("unclear");
   });
 });
+
+describe("the address a redirect shows", () => {
+  it("is the final address, without www, for the fix", async () => {
+    const r = await resolveCollision({ countryHint: () => null, finalHost: async () => "www.omie.com.br", homepageText: async () => "", ask: async () => ({}) }, db, "Omie", "https://omie.com.br");
+    expect(r).toMatchObject({ verdict: "same", how: "redirect", canonical: "https://omie.com.br" });
+  });
+});

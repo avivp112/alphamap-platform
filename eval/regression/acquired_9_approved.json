@@ -1,0 +1,47 @@
+{
+ "_about": "Purchases of batch 9 whose reviewed value the owner changed (scripts/regression.ts acquired applies them to the reviewed dry report). Only the owner adds an entry.",
+ "approved": [
+  {
+   "company": "CyberOwl",
+   "after": "status = acquired · Acquired by DNV (2024-09-25)",
+   "approved_by": "aviv",
+   "approved_on": "2026-11-24",
+   "why": "smartmaritimenetwork 'DNV buys CyberOwl', 2024-09-25: earlier than the baseline date 2024-10-02"
+  },
+  {
+   "company": "Rephrase.ai",
+   "after": "status = acquired · Acquired by Adobe (2023-11-22)",
+   "approved_by": "aviv",
+   "approved_on": "2026-11-24",
+   "why": "Business Today, 2023-11-22, the first report; the reviewed date 2023-11-23 was a day later"
+  },
+  {
+   "company": "Qnami",
+   "after": "status = acquired · Acquired by Quantum Design (2026-06-04)",
+   "approved_by": "aviv",
+   "approved_on": "2026-11-24",
+   "why": "a known difference of one day: the database keeps 2026-06-03; Quantum Design's press release of 2026-05-28 (a PDF on qdusa.com) is not read (backlog.md)"
+  }
+ ],
+ "excluded": [
+  {
+   "company": "Phenom",
+   "why": "wrong value: Phenom is the buyer of Included (2026-01-14), not the acquired company; corrected, removed from the baseline",
+   "approved_by": "aviv",
+   "approved_on": "2026-11-24"
+  },
+  {
+   "company": "Rubicon Carbon",
+   "why": "wrong value: ByteDance bought carbon credits from Rubicon (businesswire 2025-06-25), not the company; corrected, removed from the baseline",
+   "approved_by": "aviv",
+   "approved_on": "2026-11-24"
+  },
+  {
+   "company": "Sharethrough",
+   "why": "search results unstable (the Equativ–Sharethrough merger, announced 2024-06-13, is kept in the database); a merger rule is in backlog.md",
+   "approved_by": "aviv",
+   "approved_on": "2026-11-24"
+  }
+ ],
+ "_note_aperio": "2026-11-24 (owner): the row Aperio (aperio.com) is the digital pathology company, Leica Biosystems 2012-08-21 is right; it is checked again. The list's description of it (an industrial company) was wrong."
+}

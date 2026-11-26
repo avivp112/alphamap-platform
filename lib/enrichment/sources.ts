@@ -16,7 +16,7 @@ import type { SourceType } from "./sourceTypes";
 import { isDataPlatformUrl } from "./dataPlatforms";
 import { isPressWireUrl } from "./primarySources";
 
-export type Provider = "serper" | "tavily" | "jina" | "tavily_extract" | "cheerio" | "jina_search" | "serper_scrape" | "registry";
+export type Provider = "serper" | "tavily" | "jina" | "tavily_extract" | "cheerio" | "jina_search" | "serper_scrape" | "registry" | "archive";
 
 const REGISTRY_HOSTS = new Set([
   "sec.gov", "www.sec.gov", "efts.sec.gov",
@@ -77,6 +77,12 @@ export interface RawSearchResult {
   query_label: string;
   /** Website pages only: other paths that rendered this same page (/contact → /about). */
   also_urls?: string[];
+  /** Website pages: the text sent to the model (without navigation, the relevant passages when the page is long); `content` is the whole page, which the verifier reads. */
+  prompt_content?: string;
+  /** Set when the English translation was appended to `content` (translate.ts): where the translated half starts. */
+  translation_offset?: number;
+  /** The original line of every translated line (translate.ts), to give a quote beside the page's own words. */
+  translation_pairs?: Array<{ original: string; english: string }>;
 }
 
 export interface LabeledSource extends RawSearchResult {
@@ -84,7 +90,7 @@ export interface LabeledSource extends RawSearchResult {
   source_type: SourceType;
 }
 
-const WEBSITE_PROVIDERS = new Set<Provider>(["jina", "tavily_extract", "cheerio", "serper_scrape"]);
+const WEBSITE_PROVIDERS = new Set<Provider>(["jina", "tavily_extract", "cheerio", "serper_scrape", "archive"]);
 
 /**
  * Assigns "S1", "S2", ... to search-engine results and "W1", "W2", ... to
@@ -106,7 +112,7 @@ export function buildLabeledSources(raw: RawSearchResult[], companyDomain?: stri
 /** Renders the labeled sources into the "[S3] https://...\n<content>" blocks extract.ts's prompts embed. */
 export function formatSourcesForPrompt(sources: LabeledSource[]): string {
   return sources
-    .map((s) => `[${s.source_id}] ${s.url}${s.title ? `\n${s.title}` : ""}\n${s.content}`)
+    .map((s) => `[${s.source_id}] ${s.url}${s.title ? `\n${s.title}` : ""}\n${s.prompt_content ?? s.content}`)
     .join("\n---\n");
 }
 

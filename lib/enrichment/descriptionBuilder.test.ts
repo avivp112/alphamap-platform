@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { processDescription, sentenceProblem, claims, MARKETING } from "./descriptionBuilder";
+import { processDescription, sentenceProblem, claims, MARKETING, marketingWordIn, buildDescriptionRequest } from "./descriptionBuilder";
 
 const site = "Nuova predicts supply-chain disruptions for global manufacturers using machine learning on shipping and supplier data. Customers include automotive and electronics manufacturers in Europe. Nuova was founded in 2022 and has 45 employees.";
 const byId = { W1: { content: site }, S1: { content: "Acme Capital invested in Nuova. The startup raised $8 million in a seed round." } };
@@ -28,7 +28,7 @@ describe("sentences are checked against their own sources", () => {
     expect(sentenceProblem(S("edge", "Nuova builds quantum batteries for orbiting satellites."), "Nuova", byId, ok)).toBe("no_supporting_sentence");
   });
   it("claims: numbers and capitalised names, not the first word or the company", () => {
-    expect(claims("Nuova sells to Siemens and 45 others in Germany.", "Nuova")).toEqual({ numbers: ["45"], names: ["Siemens", "Germany"] });
+    expect(claims("Nuova sells to Siemens and 45 others in Germany.", "Nuova")).toEqual({ numbers: ["45"], names: ["Siemens"] });
   });
 });
 
@@ -44,8 +44,13 @@ describe("the description", () => {
     expect(r?.dropped.map((d) => d.why)).toEqual(["marketing_word"]);
     expect(r?.sentences[0].quote).toMatch(/machine learning/);
   });
-  it("without a verified what and for_whom there is no description", () => {
-    expect(processDescription({ sentences: [S("what", "Nuova predicts supply-chain disruptions for global manufacturers using machine learning.")] }, "Nuova", byId, ok)).toBeNull();
+  it("a verified what alone is a description, marked incomplete; with the for_whom it is complete", () => {
+    const only = processDescription({ sentences: [S("what", "Nuova predicts supply-chain disruptions for global manufacturers using machine learning.")] }, "Nuova", byId, ok);
+    expect(only?.complete).toBe(false);
+    expect(only?.sentences.map((x) => x.role)).toEqual(["what"]);
+    expect(processDescription({ sentences: [S("for_whom", "Customers include automotive and electronics manufacturers in Europe.")] }, "Nuova", byId, ok)).toBeNull();
+  });
+  it("without a verified what there is no description", () => {
     expect(processDescription({ sentences: [] }, "Nuova", byId, ok)).toBeNull();
     expect(processDescription(null, "Nuova", byId, ok)).toBeNull();
   });
@@ -95,5 +100,35 @@ describe("what the company sells is said of the company by name (review 9)", () 
     const byId = { W1: { content: "Acme sells rockets. The platform is built to power sales teams worldwide." } };
     expect(sentenceProblem({ role: "what", text: "The platform is built to power sales teams worldwide.", source_ids: ["W1"] }, "Acme", byId, () => true)).toBe("what_without_company");
     expect(sentenceProblem({ role: "for_whom", text: "The platform is built to power sales teams worldwide.", source_ids: ["W1"] }, "Acme", byId, () => true)).toBeNull();
+  });
+});
+
+import { companyVoice, sentenceProblem as sp2 } from "./descriptionBuilder";
+describe("'We' and 'Our' on the company's own site are the company (owner, round 10)", () => {
+  it("are written in the company's name", () => {
+    expect(companyVoice("We provide cloud and security services to enterprises.", "Six Degrees")).toBe("Six Degrees provides cloud and security services to enterprises.");
+    expect(companyVoice("We are a digital bank for individuals.", "STC Bank")).toBe("STC Bank is a digital bank for individuals.");
+    expect(companyVoice("We help teams ship faster.", "Acme")).toBe("Acme helps teams ship faster.");
+    expect(companyVoice("Our platform connects hospitals and patients.", "Acme")).toBe("Acme's platform connects hospitals and patients.");
+  });
+  it("is accepted only when every cited source is the company's own site", () => {
+    const own = { W1: { content: "We provide cloud and security services to large enterprises across the country.", source_type: "company_site" } };
+    const press = { S1: { content: "We provide cloud and security services to large enterprises across the country.", source_type: "news" } };
+    const sent = (id: string) => ({ role: "what", text: "We provide cloud and security services to large enterprises.", source_ids: [id] });
+    expect(sp2(sent("W1"), "Six Degrees", own, () => true)).toBeNull();
+    expect(sp2(sent("S1"), "Six Degrees", press, () => true)).toBe("what_without_company");
+  });
+});
+
+describe("the retry of a description that a marketing word emptied (owner, 2026-11-24: Multiable, Orizuru)", () => {
+  it("names the word the sentence used", () => {
+    expect(marketingWordIn("Acme sells a robust platform for banks")).toBe("robust");
+    expect(marketingWordIn("Acme sells a platform for banks")).toBeNull();
+  });
+  it("the second request carries the retry note, the first none", () => {
+    const first = buildDescriptionRequest("Acme", []).messages[0].content as string;
+    const second = buildDescriptionRequest("Acme", [], 'your first answer used the word(s) "robust".').messages[0].content as string;
+    expect(first).not.toContain("RETRY");
+    expect(second).toContain('RETRY — your first answer used the word(s) "robust".');
   });
 });

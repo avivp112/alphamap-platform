@@ -131,5 +131,14 @@ export async function waybackHeadcount(domain: string, companyName: string, io: 
     }
     if (fetched >= max) break;
   }
-  return points.filter((p, i) => points.findIndex((x) => x.date === p.date && x.type === p.type) === i).sort((a, b) => a.date.localeCompare(b.date));
+  // The same figure in the same words on several copies is one point, at the earliest copy that shows it (owner, batch 6: Datahut's 42 on six dates).
+  const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const ordered = points.filter((p, i) => points.findIndex((x) => x.date === p.date && x.type === p.type) === i).sort((a, b) => a.date.localeCompare(b.date));
+  // The words around the figure, whatever the page's markup did to the rest ("We’ve" / "We&rsquo;ve"): the same statement.
+  const around = (p: { value: number; quote?: string }) => { const q = (p.quote ?? "").replace(/&rsquo;|&amp;|&#\d+;/g, " "); const i = q.indexOf(String(p.value)); return norm(i >= 0 ? q.slice(Math.max(0, i - 12), i + 40) : q); };
+  // A statement that several copies repeat keeps its first and its last copy: the first dates the figure, the last shows it still stood (the current headcount may rest on it).
+  const groups = new Map<string, typeof ordered>();
+  for (const p of ordered) { const k = `${p.value}|${around(p)}`; groups.set(k, [...(groups.get(k) ?? []), p]); }
+  const keep = new Set([...groups.values()].flatMap((g) => (g.length > 1 ? [g[0], g[g.length - 1]] : g)));
+  return ordered.filter((p) => keep.has(p));
 }

@@ -1,0 +1,1008 @@
+import { describe, it, expect } from "vitest";
+import { rowProblem, applyRowRules, acquiredFromNews, titleMatchingQuote } from "./rowRules";
+import { runAcceptance, rowsFromCsv, type Check } from "./acceptance";
+import { onlyAsHyphenatedSuffix, namesCompanyUpFront } from "./newsRelevance";
+import { readFileSync } from "fs";
+
+const TODAY = "2026-11-16";
+describe("the same rules for carried values (owner, round 10)", () => {
+  it("news: run-day date, tag page, guide, no company in the headline", () => {
+    expect(rowProblem({ field: "news", after: "2026-11-16 — Żabka przejmuje Dietly", source_url: "https://mamstartup.pl/x/" }, "Dietly", TODAY)).toMatch(/day of the run/);
+    expect(rowProblem({ field: "news", after: "2025-10-29 — Conotoxia collapses", source_url: "https://www.financemagnates.com/tag/cinkciarzpl/" }, "Conotoxia", TODAY)).toMatch(/tag/);
+    expect(rowProblem({ field: "news", after: "2021-05-18 — Four rules for choosing a patient/doctor payments system", source_url: "https://www.medicalrepublic.com.au/x" }, "Medipass", TODAY)).toMatch(/guide/);
+    expect(rowProblem({ field: "news", after: "2021-10-22 — Poland's Żabka Trials 'Jush' Home-Delivery App", source_url: "https://www.esmmagazine.com/x" }, "Dietly", TODAY)).toMatch(/does not name/);
+    expect(rowProblem({ field: "news", after: "2021-06-03 — Żabka Group Acquires Controlling Stake In Dietly.pl", source_url: "https://www.esmmagazine.com/y" }, "Dietly", TODAY)).toBeNull();
+  });
+  it("any field: sponsored content", () => {
+    expect(rowProblem({ field: "sector", after: "Fintech", source_url: "https://www.businessinsider.com/sc/european-fintech-2018-6" }, "Conotoxia", TODAY)).toMatch(/sponsored/);
+  });
+  it("founded_year from a growth phrase in an image", () => {
+    expect(rowProblem({ field: "founded_year", after: "2020", source_url: "https://paradox.ai/news", quote: "[![Image 33: Paradox Named to List — Growing by More than 720% Since 2020](https://cdn/x.png)" }, "Paradox AI", TODAY)).toBeTruthy();
+    expect(rowProblem({ field: "founded_year", after: "2016", source_url: "https://paradox.ai/about", quote: "Founded in 2016, Paradox builds Olivia." }, "Paradox AI", TODAY)).toBeNull();
+  });
+  it("tags: a bio of a person, a slogan, a cookie notice, and another company's document", () => {
+    const t = (url: string, quote: string) => rowProblem({ field: "tags", after: "HR Tech", source_url: url, quote }, "Paradox AI", TODAY);
+    expect(t("https://www.paradox.ai/leadership/adam-godson", "Adam was previously Chief Technology Officer at Cielo")).toBeTruthy();
+    expect(t("https://www.sec.gov/Archives/edgar/data/1/workday.htm", "Workday offers HR and finance software")).toBeTruthy();
+    expect(t("https://www.paradox.ai/", "Paradox sells conversational hiring software")).toBeNull();
+  });
+  it("founders and background merged; lead investor stripped when no quote names it", () => {
+    const rows = [
+      { field: "founder", after: "Alastair Mills — Founder", source_url: "a", quote: "" },
+      { field: "founder", after: "Alastair Mills — Founder and CEO", source_url: "a", quote: "" },
+      { field: "founder_background", after: "Alastair Mills: previous role — SpiriTel PLC, led", source_url: "w", quote: "" },
+      { field: "founder_background", after: "Alastair Mills: previous role — SpiriTel PLC, led", source_url: "w2", quote: "" },
+      { field: "round", after: "Seed $1.5M · 2022-07-23 · lead Insud Pharma", source_url: "h", quote: "The startup announced a USD $1.5M seed round.", payload: JSON.stringify({ round: { lead_investor: "Insud Pharma" }, evidence: [{ quote: "The startup announced a USD $1.5M seed round." }] }) },
+    ];
+    const r = applyRowRules(rows, "Choiz", TODAY).rows;
+    expect(r.filter((x) => x.field === "founder")).toHaveLength(1);
+    expect(r.find((x) => x.field === "founder")!.after).toBe("Alastair Mills — Founder and CEO");
+    expect(r.filter((x) => x.field === "founder_background")).toHaveLength(1);
+    expect(r.find((x) => x.field === "round")!.after).not.toMatch(/Insud/);
+  });
+  it("acquired is read from the news rows, newest full acquisition first, no generic buyer", () => {
+    const news = (d: string, t: string) => ({ field: "news", after: `${d} — ${t}`, source_url: `https://x/${d}` });
+    const six = acquiredFromNews([news("2026-11-12", "London-based Six Degrees Group sold to US investors"), news("2026-06-29", "Claranet picks up Six Degrees | Microscope")], "Six Degrees", "id")!;
+    expect(six.after).toMatch(/Claranet.*2026-06/);
+    const hum = acquiredFromNews([news("2025-01-09", "Employment Hero acquires Canadian employment platform Humi in $100M+ global expansion move")], "Humi", "id")!;
+    expect(hum.after).toMatch(/Employment Hero.*2025-01/);
+    const med = acquiredFromNews([news("2021-05-11", "Payments platform Tyro buys medical fintech startup Medipass")], "Medipass", "id")!;
+    expect(med.after).toMatch(/Tyro.*2021-05/);
+    const die = acquiredFromNews([news("2021-06-03", "Żabka Group Acquires Controllng Stake In Dietary Marketplace Dietly.pl")], "Dietly", "id")!;
+    expect(die.after).toMatch(/majority_acquired.*Żabka.*2021-06/);
+  });
+  it("SW-Mototech is not Mototech", () => {
+    expect(onlyAsHyphenatedSuffix("SW-Mototech launches new panniers", "Mototech")).toBe(true);
+    expect(onlyAsHyphenatedSuffix("Mototech raises a round; SW-Mototech is unrelated", "Mototech")).toBe(false);
+    expect(namesCompanyUpFront({ title: "SW-Mototech launches new panniers", content: "" }, "Mototech")).toBe(false);
+  });
+  it("the acceptance checks: the owner's bad report fails, the corrected one passes", () => {
+    const checks = JSON.parse(readFileSync("eval/acceptance_batch5.json", "utf8")) as Check[];
+    const bad = rowsFromCsv(["company,field,after,source_url,quote",
+      "Paradox AI,founded_year,2020,https://paradox.ai/news,x",
+      "Dietly,news,2026-11-16 — Żabka przejmuje Dietly,https://mamstartup.pl/x,",
+      "Six Degrees,founder,Alastair Mills — Founder,a,", "Six Degrees,founder,Alastair Mills — Founder and CEO,a,",
+      "Mintifi,tags,Payments,https://mintifi.com,Drive growth"].join("\n"));
+    const r = runAcceptance(checks, bad, [], TODAY);
+    // news dates and tags are candidate fields (tiers.ts): their checks do not run
+    for (const id of ["paradox_founded", "six_degrees_founder_once", "humi_acquired"]) expect(r.find((x) => x.id === id)!.pass).toBe(false);
+    expect(r.find((x) => x.id === "no_run_date_news")).toBeUndefined();
+    const good = rowsFromCsv(["company,field,after,source_url,quote", "Paradox AI,round,Series C $200M · 2021-12-27,https://prnewswire.com/x,", "Mintifi,tags,\"Lending, Payments\",https://mintifi.com,x"].join("\n"));
+    const g = runAcceptance(checks, good, ["Plott", "noo.ma", "Mototech"], TODAY);
+    for (const id of ["paradox_founded", "paradox_series_c", "not_enriched_plott", "not_enriched_mototech"]) expect(g.find((x) => x.id === id)!.pass).toBe(true);
+  });
+});
+
+describe("a locked sector (owner, round 10: Dietly → E-commerce & Retail › Marketplaces)", () => {
+  it("replaces what the memory carried", () => {
+    const r = applyRowRules([{ field: "sector", after: "Fintech", source_url: "u", quote: "q" }, { field: "tags", after: "Payments", source_url: "u", quote: "Dietly is a diet catering marketplace" }], "Dietly", TODAY).rows;
+    expect(r.find((x) => x.field === "sector")!.after).toBe("E-commerce & Retail");
+    expect(r.find((x) => x.field === "tags")!.after).toBe("Marketplaces");
+  });
+});
+
+import { amountFromAddress } from "./hints";
+import { dateStatedIn } from "./newsGate";
+import { isListingOrSponsoredUrl as listing } from "./pageKind";
+import { aliasesOf } from "./aliases";
+describe("round 3 follow-up (owner, round 10)", () => {
+  it("an article under /topic/<section>/ is an article; /tag/<name>/ is a list", () => {
+    expect(listing("https://www.startupdaily.net/topic/fintech/payments-platform-tyro-buys-medical-fintech-startup-medipass/")).toBeNull();
+    expect(listing("https://www.financemagnates.com/tag/cinkciarzpl/")).toBe("listing_page");
+  });
+  it("the sum of an announcement's address", () => {
+    expect(amountFromAddress("https://www.prnewswire.com/news-releases/on-a-mission-to-build-the-next-generation-of-hr-paradox-raises-200m-series-c-301450591.html")?.amount).toBe(200_000_000);
+    expect(amountFromAddress("https://x.com/news/acme-raises-450-million-in-funding")?.amount).toBe(450_000_000);
+    expect(amountFromAddress("https://x.com/news/acme-launches-product")).toBeNull();
+  });
+  it("a carried round 'amount not disclosed' gets the sum from the address", () => {
+    const url = "https://www.prnewswire.com/news-releases/paradox-raises-200m-series-c-301450591.html";
+    const r = applyRowRules([{ field: "news", after: "2021-12-27 — Paradox Raises $200M Series C", source_url: url, quote: "" }, { field: "round", after: "Series C amount not disclosed · 2021-12-27 · lead Stripes", source_url: url, quote: "" }], "Paradox AI", TODAY).rows.filter((x) => x.field === "round");
+    expect(r[0].after).toMatch(/Series C \$200M/);
+  });
+  it("a lead investor named only in the model's own quote is taken out", () => {
+    const row = { field: "round", after: "Seed $1.5M · 2022-07-23 · lead Insud Pharma", source_url: "h", quote: "The startup announced a USD $1.5M seed round.", payload: JSON.stringify({ round: { lead_investor: "Insud Pharma" }, evidence: [{ field: "amount_raised", quote: "The startup announced a USD $1.5M seed round." }, { field: "lead_investor", quote: "Insud Pharma led the round" }] }) };
+    expect(applyRowRules([row], "Choiz", TODAY).rows[0].after).not.toMatch(/Insud/);
+  });
+  it("a date in the week before the run must be stated in words", () => {
+    expect(dateStatedIn("Published 12 November 2026 by Ann", "2026-11-12")).toBe(true);
+    expect(dateStatedIn("Sold to US investors. Related stories.", "2026-11-12")).toBe(false);
+    expect(rowProblem({ field: "news", after: "2026-11-12 — London-based Six Degrees Group sold to US investors", source_url: "https://x.com/a" }, "Six Degrees", TODAY, 7)).toMatch(/week/);
+  });
+  it("Conotoxia's news under the name Cinkciarz.pl", () => {
+    expect(aliasesOf("Conotoxia")).toContain("Cinkciarz.pl");
+    expect(rowProblem({ field: "news", after: "2025-10-29 — Cinkciarz.pl Collapses After Year-Long Scandal, Trustee Takes Control", source_url: "https://financefeeds.com/cinkciarz-pl-collapses" }, "Conotoxia", TODAY)).toBeNull();
+  });
+});
+
+import { brandAsWritten, looksLikeAddress } from "./rowRules";
+describe("round 4 follow-up (owner, round 10)", () => {
+  it("a round listed twice is one", () => {
+    const row = { field: "round", company: "Choiz", after: "Seed $1.5M · 2022-07-23", source_url: "h", quote: "The startup announced a USD $1.5M seed round." };
+    expect(applyRowRules([row, { ...row }], "Choiz", TODAY).rows.filter((r) => r.field === "round")).toHaveLength(1);
+  });
+  it("a quote is never an address: the headline of the same article stands in, else the round is not kept", () => {
+    const url = "https://www.prnewswire.com/news-releases/on-a-mission-paradox-raises-200m-series-c-301450591.html";
+    const slug = "on-a-mission-paradox-raises-200m-series-c-301450591.html";
+    expect(looksLikeAddress(slug)).toBe(true);
+    expect(looksLikeAddress("Paradox Raises $200M Series C")).toBe(false);
+    const news = { field: "news", company: "Paradox AI", after: "2021-12-27 — On a Mission to Build HR Software, Paradox Raises $200M Series C", source_url: url, quote: "" };
+    const round = { field: "round", company: "Paradox AI", after: "Series C amount not disclosed · 2021-12-27", source_url: url, quote: slug };
+    const r = applyRowRules([news, round], "Paradox AI", TODAY).rows.find((x) => x.field === "round")!;
+    expect(r.after).toMatch(/Series C \$200M/);
+    expect(r.quote).toMatch(/Raises \$200M Series C/);
+    expect(applyRowRules([round], "Paradox AI", TODAY).rows.filter((x) => x.field === "round")).toHaveLength(0);
+  });
+  it("the news of 'Paradox AI' written as 'Paradox' names the company", () => {
+    expect(rowProblem({ field: "news", after: "2021-12-27 — On a Mission, Paradox Raises $200M Series C", source_url: "https://www.prnewswire.com/news-releases/x.html" }, "Paradox AI", TODAY)).toBeNull();
+  });
+  it("the brand as the page writes it", () => {
+    expect(brandAsWritten("tyrohealth", ["Tyro Health, formerly Medipass, offers EFTPOS terminals"])).toBe("Tyro Health");
+    expect(brandAsWritten("Employment Hero CA", ["Humi, now part of Employment Hero, sells an all-in-one system"])).toBe("Employment Hero");
+    expect(brandAsWritten("zzz", ["nothing here"])).toBe("zzz");
+  });
+});
+
+import { brandFromTexts } from "./rowRules";
+import { renderAcceptance, runAcceptance as runAcc } from "./acceptance";
+describe("round 5 follow-up (owner, round 10)", () => {
+  it("the brand after a purchase, as the company's pages write it", () => {
+    expect(brandFromTexts("Medipass", ["Tyro Health, formerly Medipass, offers EFTPOS terminals"])).toBe("Tyro Health");
+    expect(brandFromTexts("Medipass", ["Tyro Health, which operates under the Medipass name, provides EFTPOS terminals"])).toBe("Tyro Health");
+    expect(brandFromTexts("Humi", ["Humi by Employment Hero is an all-in-one HR and payroll platform"])).toBe("Employment Hero");
+    expect(brandFromTexts("Humi", ["Humi, now part of Employment Hero, sells an all-in-one system"])).toBe("Employment Hero");
+    expect(brandFromTexts("Acme", ["Acme sells anvils."])).toBeNull();
+  });
+  it("one description per company: the run's own over the memory's", () => {
+    const rows = [
+      { field: "description", company: "Medipass", after: "Tyro Health, formerly Medipass, offers EFTPOS", origin: "new", source_url: "a", quote: "q" },
+      { field: "description", company: "Medipass", after: "Tyro Health, which operates under the Medipass name, provides EFTPOS", origin: "known_source", source_url: "a", quote: "q" },
+    ];
+    const r = applyRowRules(rows, "Medipass", TODAY).rows.filter((x) => x.field === "description");
+    expect(r).toHaveLength(1);
+    expect(r[0].origin).toBe("new");
+  });
+  it("an error blocks the report, a gap does not", () => {
+    const checks: any[] = [
+      { id: "wrong", why: "a wrong value", kind: "absent", field: "round", match: "bad" },
+      { id: "missing", why: "a missing value", kind: "present", company: "Humi", field: "round", match: "Series B", severity: "gap" },
+    ];
+    const gapOnly = runAcc(checks, [], [], TODAY);
+    expect(renderAcceptance(gapOnly)).toMatch(/no error — 1 gap/);
+    const err = runAcc(checks, [{ company: "X", field: "round", after: "bad round", source_url: "", quote: "" }], [], TODAY);
+    expect(renderAcceptance(err)).toMatch(/1 ERROR/);
+  });
+});
+
+import { chooseRegistryRecord } from "./registerRecord";
+import { matchOpenCorporates, extractRegisterNumbers, parseKrsExtract, parseCnpj, matchByNumber, ilDate, type RegisterFinding } from "./registers";
+describe("registers as columns of their own (owner, round 10)", () => {
+  const f = (o: Partial<RegisterFinding>): RegisterFinding => ({ register: "uk_companies_house", entity: "Acme Ltd", number: "01", founded_year: 2018, founding_country: "United Kingdom", url: "u", quote: "q", match: "m", ...o });
+  const ctx = { name: "Acme", siteText: "", siteCities: [] as string[] };
+  it("the record is the entity in the headquarters country; a foreign register does not decide alone", () => {
+    expect(chooseRegistryRecord([f({ founding_country: "Israel", entity: "Acme Ltd", incorporation_date: "2019-01-01" })], "Acme", "United Kingdom")).toBeNull();
+    expect(chooseRegistryRecord([f({ incorporation_date: "2018-05-02" })], "Acme", null)).toBeNull();
+    const r = chooseRegistryRecord([f({ incorporation_date: "2018-05-02", registered_address: "1 High St, London" })], "Acme", "United Kingdom")!;
+    expect(r).toMatchObject({ legal_name: "Acme Ltd", incorporation_jurisdiction: "United Kingdom", registered_address: "1 High St, London", incorporation_date: "2018-05-02" });
+  });
+  it("incorporation date: the earliest among entries of the same company; a local subsidiary is not the company", () => {
+    const us = f({ register: "us_sec_form_d", founding_country: "United States", incorporation_date: "2016", number: "CIK1" });
+    const uk = f({ incorporation_date: "2018-05-02" });
+    expect(chooseRegistryRecord([uk, us], "Acme", "United Kingdom")!.incorporation_date).toBe("2016");
+    expect(chooseRegistryRecord([f({ entity: "Acme UK Ltd", incorporation_date: "2021-01-01" })], "Acme", "United Kingdom")).toBeNull();
+  });
+  it("OpenCorporates: name + country + a second signal; several entries → nothing written", () => {
+    const item = (num: string, addr: string) => ({ company: { name: "Acme Ltd", company_number: num, jurisdiction_code: "gb", incorporation_date: "2018-05-02", registered_address_in_full: addr } });
+    const one = matchOpenCorporates([item("111", "1 High St, London")], { ...ctx, siteCities: ["London"], country: "United Kingdom" });
+    expect(one.finding?.number).toBe("111");
+    const two = matchOpenCorporates([item("111", "1 High St, London"), item("222", "9 Low Rd, London")], { ...ctx, siteCities: ["London"], country: "United Kingdom" });
+    expect(two.finding).toBeNull();
+    expect(two.ambiguous).toHaveLength(2);
+    expect(matchOpenCorporates([item("111", "1 High St, London")], { ...ctx, siteCities: ["London"], country: "Israel" }).finding).toBeNull();
+    expect(matchOpenCorporates([item("111", "1 High St, Leeds")], { ...ctx, siteCities: ["London"], country: "United Kingdom" }).finding).toBeNull();
+  });
+  it("KRS and CNPJ by the number the site gives", () => {
+    expect(extractRegisterNumbers("Spółka wpisana do KRS 0000123456, NIP 123").krs).toBe("0000123456");
+    expect(extractRegisterNumbers("CNPJ: 12.345.678/0001-90").cnpj).toBe("12345678000190");
+    const krs = parseKrsExtract({ odpis: { naglowekA: { dataRejestracjiWKRS: "14.03.2019" }, dane: { dzial1: { danePodmiotu: { nazwa: "ACME SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ" }, siedzibaIAdres: { adres: { ulica: "ul. Prosta", nrDomu: "1", kodPocztowy: "00-001", miejscowosc: "Warszawa" } } } } } }, "0000123456")!;
+    expect(krs).toMatchObject({ date: "2019-03-14", address: "ul. Prosta 1, 00-001 Warszawa" });
+    expect(parseCnpj({ razao_social: "ACME LTDA", data_inicio_atividade: "2015-02-10", logradouro: "RUA A", numero: "5", municipio: "SAO PAULO", uf: "SP", cep: "01000000" })?.date).toBe("2015-02-10");
+    expect(matchByNumber("pl_krs", "0000123456", { entity: "ACME SP. Z O.O.", date: "2019-03-14", address: null }, { name: "Acme", siteText: "", siteCities: [] })?.incorporation_date).toBe("2019-03-14");
+    expect(matchByNumber("pl_krs", "0000123456", { entity: "OTHER SP. Z O.O.", date: "2019-03-14", address: null }, { name: "Acme", siteText: "", siteCities: [] })).toBeNull();
+  });
+  it("the Israeli registrar's date", () => {
+    expect(ilDate("14/03/2019")).toBe("2019-03-14");
+    expect(ilDate("2019-03-14")).toBe("2019-03-14");
+    expect(ilDate("2019")).toBe("2019");
+  });
+});
+
+import { sentenceIsAboutCompany, isThirdPartyPage } from "./subject";
+import { quoteIsNotASentence } from "./evidence";
+import { foundedYearFromSite } from "./siteFacts";
+import { companyLanguage, localQueries } from "./localSearch";
+import { techOverride, techAccepted, sectorDecision } from "./techOverrides";
+import { leaderRoleEvidence } from "./people";
+describe("batch 6 (owner, round 10)", () => {
+  it("a sentence is evidence about the company only when it is its subject", () => {
+    expect(sentenceIsAboutCompany("DHNY was founded in 2022 in collaboration with AlleyCorp.", "Canopy", { ownSite: true })).toBe(false);
+    expect(sentenceIsAboutCompany("Founded in 1901, the Whitechapel Gallery sits in the heart of London's East End.", "Spin Studio", { ownSite: true })).toBe(false);
+    expect(sentenceIsAboutCompany("Estimote, Inc. was founded in 2012 by Jakub and Lukasz", "Estimote")).toBe(true);
+    expect(sentenceIsAboutCompany("We were founded in 2015 in Austin.", "Acme", { ownSite: true })).toBe(true);
+    expect(sentenceIsAboutCompany("We were founded in 2015 in Austin.", "Acme", { ownSite: false })).toBe(false);
+    expect(sentenceIsAboutCompany("Founded in 2013", "Acme", { ownSite: true })).toBe(true);
+  });
+  it("customer, project and partner pages say nothing of the company's own founding", () => {
+    expect(isThirdPartyPage("https://spin.co.uk/projects/whitechapel-gallery")).toBe(true);
+    expect(isThirdPartyPage("https://x.com/case-studies/acme")).toBe(true);
+    expect(isThirdPartyPage("https://x.com/about")).toBe(false);
+    const text = "Founded in 1901, the Whitechapel Gallery sits in the heart of London.";
+    expect(foundedYearFromSite(text, 2026, { companyName: "Spin Studio", ownSite: true })).toBeNull();
+    expect(foundedYearFromSite("Spin Studio was founded in 2009.", 2026, { companyName: "Spin Studio", ownSite: true })?.year).toBe(2009);
+  });
+  it("a quote is a sentence, not page code", () => {
+    expect(quoteIsNotASentence("Title: SPIN Studio URL Source: https://spin.co.uk/ Markdown Content: [Spin](https://spin.co.uk/)")).toBe(true);
+    expect(quoteIsNotASentence("1. $1M Pre-seed Pre-seed, $1M, $1M raised to date")).toBe(true);
+    expect(quoteIsNotASentence("Estimote sells indoor location and sensing technology.")).toBe(false);
+  });
+  it("a round type no quote names is Unknown, in the report too", () => {
+    const row = (after: string, quote: string) => ({ field: "round", company: "Ripio", after, source_url: "u", quote });
+    const out = (r: ReturnType<typeof row>) => applyRowRules([r], "Ripio", TODAY).rows[0].after;
+    expect(out(row("Series A $1.9M · 2017-01-03", "Argentinian bitcoin startup Ripio has announced what may be the first funding round of the new year, raising $1.9m"))).toMatch(/^Unknown \$1\.9M/);
+    expect(out(row("Other $100M · 2020-12-17", "The $100 million round was led by Grok Ventures"))).toMatch(/^Unknown \$100M/);
+    expect(out(row("Seed $3.1M · 2013-12", "Estimote secured $3.1 million in Seed funding from Bessemer"))).toMatch(/^Seed \$3\.1M/);
+  });
+  it("the language of a company without a country: its domain, then its site", () => {
+    expect(companyLanguage({ website: "https://kiwify.com.br" })).toBe("pt");
+    expect(companyLanguage({ website: "https://supaero.fr" })).toBe("fr");
+    expect(companyLanguage({ website: "https://zand.ae" })).toBe("ar");
+    expect(companyLanguage({ website: "https://spin.co.uk" })).toBeNull();
+    expect(companyLanguage({ country: "Poland" })).toBe("pl");
+    expect(companyLanguage({ website: "https://ripio.com", siteText: "Nuestro equipo es una empresa para todos. Somos una empresa más." })).toBe("es");
+    expect(localQueries("Kiwify", "", "pt").map(([l]) => l)).toEqual(["founders_local", "founded_local", "headquarters_local", "raises_local", "acquired_local"]);
+    expect(localQueries("Kiwify", "", "pt")[0][1]).toContain("fundador");
+  });
+  it("the owner's tech and sector decisions of batch 6", () => {
+    expect(techOverride("Spin Studio")).not.toBeNull();
+    expect(techOverride("zpharm")).not.toBeNull();
+    expect(techAccepted("Datahut")).toBe(true);
+    expect(techAccepted("Holu")).toBe(true);
+    expect(sectorDecision("Kiwify")).toEqual({ sector: "Consumer & Media", sub_sector: "EdTech" });
+    expect(sectorDecision("Sherlok")).toEqual({ sector: "Fintech", sub_sector: "Lending" });
+    expect(sectorDecision("Estimote")?.sub_sector).toBe("IoT & Connectivity");
+  });
+  it("a leader's executive role must be in a sentence with the name", () => {
+    const src = [{ url: "u1", content: "In this demo, Sherlok founder Adam Grocke explains how Sherlok helps brokers." }, { url: "u2", content: "Paradox Hires Marc Chesley As CPO To Drive Product Innovation." }];
+    expect(leaderRoleEvidence("Adam Grocke", "Founder & CEO", src)).toBeNull();
+    expect(leaderRoleEvidence("Marc Chesley", "Chief Product Officer", src)?.url).toBe("u2");
+  });
+});
+
+describe("batch 6, round 2: rounds and competitors unified, subject test", () => {
+  it("founded_year: 'Contact us' and a .us domain are not the company speaking; the year's own sentence decides", () => {
+    const q = "Canopy was founded in 2022 by DHNY. ... Contact us at hello@canopycare.us";
+    expect(rowProblem({ field: "founded_year", after: "2022", source_url: "https://other.com/x", quote: "In 2022 the DHNY group launched a fund. Contact us today." }, "Canopy", TODAY)).toMatch(/not about the company/);
+    expect(rowProblem({ field: "founded_year", after: "2022", source_url: "https://canopy.com/about", quote: q }, "Canopy", TODAY)).toBeNull();
+  });
+  it("one round per company+type+amount; the day beats the month", () => {
+    const a = { field: "round", company: "Brighte", after: "Series A $4M · 2017-09 (month only)", source_url: "h", quote: "Brighte raised a $4M Series A round." };
+    const b = { field: "round", company: "Brighte", after: "Series A $4M · 2017-09-05", source_url: "h2", quote: "Brighte raised a $4M Series A round." };
+    const out = applyRowRules([a, b], "Brighte", TODAY).rows.filter((x) => x.field === "round");
+    expect(out).toHaveLength(1);
+    expect(out[0].after).toBe("Series A $4M · 2017-09-05");
+    const c = applyRowRules([{ ...a, after: "Series A $5M · 2018", quote: "Brighte raised a $5M Series A round." }, b], "Brighte", TODAY).rows.filter((x) => x.field === "round");
+    expect(c).toHaveLength(2);
+  });
+  it("competitors: names cleaned and merged; categories and other sites' comparison pages refused", () => {
+    const rows = [
+      { field: "competitor_declared", company: "SAMCO", after: "Dhan", source_url: "https://www.samco.in/dhan-vs-samco", quote: "Samco vs Dhan" },
+      { field: "competitor_declared", company: "SAMCO", after: "Dhan (2026)", source_url: "https://www.samco.in/dhan-vs-samco-2026", quote: "Samco vs Dhan 2026" },
+    ];
+    const out = applyRowRules(rows, "SAMCO", TODAY).rows.filter((x) => x.field === "competitor_declared");
+    expect(out.map((x) => x.after)).toEqual(["Dhan"]);
+    expect(rowProblem({ field: "competitor_declared", after: "Real Estate", source_url: "https://www.samco.in/x", quote: "Samco vs Real Estate" }, "SAMCO", TODAY)).toMatch(/category/);
+    expect(rowProblem({ field: "competitor_declared", after: "Xe", source_url: "https://www.xe.com/mbank-vs-xe", quote: "mBank vs Xe" }, "MBank", TODAY)).toMatch(/another site/);
+  });
+});
+
+describe("batch 6, round 3: legal suffix does not split the founding sentence", () => {
+  it("Estimote, Inc. was founded in 2012 stays", () => {
+    expect(rowProblem({ field: "founded_year", after: "2012", source_url: "https://estimote.com/about", quote: "Estimote, Inc. was founded in 2012 and builds beacons." }, "Estimote", TODAY)).toBeNull();
+    expect(rowProblem({ field: "founded_year", after: "2012", source_url: "https://www.crunchbase.com/x", quote: "Estimote, Inc. was founded in 2012." }, "Estimote", TODAY)).toBeNull();
+  });
+});
+
+describe("IPO pages give no competitor", () => {
+  it("Gaja on an IPO page of the company's own site", () => {
+    expect(rowProblem({ field: "competitor_declared", after: "Gaja", source_url: "https://www.samco.in/ipo/gaja-capital-ipo", quote: "Gaja Capital India Ltd" }, "SAMCO", TODAY)).toMatch(/IPO/);
+    expect(rowProblem({ field: "competitor_declared", after: "Dhan", source_url: "https://www.samco.in/dhan-vs-samco", quote: "Samco vs Dhan" }, "SAMCO", TODAY)).toBeNull();
+  });
+});
+
+describe("hq_quote_valid", () => {
+  it("prize text and event list fail; address and declaration pass", () => {
+    const c = [{ id: "x", why: "x", kind: "hq_quote_valid" }] as never;
+    const row = (company: string, quote: string) => ({ company, field: "hq_city", after: "X", source_url: "u", quote });
+    expect(runAcceptance(c, [row("Kiwify", "além de uma placa exclusiva, você ganha uma viagem de Dubai"), row("Brighte", "Events: SXSW Sydney, Forbes")], [], "2026-11-17")[0].pass).toBe(false);
+    expect(runAcceptance(c, [row("Canopy", "New York, NY 10003-1502"), row("Sherlok", "Adelaide-based startup Sherlok has secured $3.4 million")], [], "2026-11-17")[0].pass).toBe(true);
+  });
+});
+
+import { missingRows, NOT_YET_BUILT_FIELDS } from "./knownGaps";
+describe("missing list leaves out fields that cannot be filled yet", () => {
+  it("registers are not listed", () => {
+    const g = { c1: { company: "A", fields: { company_number: { field: "company_number", searched: [], rejected_candidates: [], last_run: "x", run_id: "r" }, hq_city: { field: "hq_city", searched: [], rejected_candidates: [], last_run: "x", run_id: "r" } } } } as never;
+    expect(missingRows(g, ["c1"], new Set()).map((r) => r.field)).toEqual(["hq_city"]);
+    expect(NOT_YET_BUILT_FIELDS.has("registered_address")).toBe(true);
+  });
+});
+
+describe("batch 6, round 4: one set of rules for new and remembered headquarters", () => {
+  const T = "2026-11-17";
+  it("Kiwify's Dubai from prize text, Estimote's New York from a 2014 article", () => {
+    expect(rowProblem({ field: "hq_city", after: "Dubai", source_url: "https://kiwify.com.br", quote: "Quando você atingir R$10 milhões na Kiwify, além de uma placa exclusiva, você e + 1 acompanhante vão ganhar uma viagem de Dubai" }, "Kiwify", T)).toMatch(/neither a street address/);
+    expect(rowProblem({ field: "hq_city", after: "New York", source_url: "https://www.geekwire.com/2014/sticker-beacon-estimote-launching-tiny-nearables/", quote: "New York-based Estimote is launching" }, "Estimote", T)).toMatch(/only a year/);
+    expect(rowProblem({ field: "hq_city", after: "Mumbai", source_url: "https://www.techcircle.in/2018/04/30/samco-raises", quote: "Mumbai-based online broker Samco" }, "SAMCO", T)).toBeNull();   // a dated article of any age
+    expect(rowProblem({ field: "hq_city", after: "Adelaide", source_url: "https://www.mpamag.com/au/news/x", quote: "Adelaide-based startup Sherlok has secured $3.4 million" }, "Sherlok", T)).toBeNull();
+  });
+});
+
+import { closedFromNews } from "./rowRules";
+describe("closed company from its accepted news", () => {
+  it("Okra shuts down → one acquired-field row, status closed, headline as quote; a purchase wins", () => {
+    const news = [{ field: "news", after: "2025-06-01 — Okra shuts down after failing to raise funds", source_url: "https://techcabal.com/okra", quote: "" }];
+    const r = closedFromNews(news, "Okra", "id1");
+    expect(r?.after).toBe("status = closed · Closed (2025-06-01)");
+    expect(r?.quote).toBe("Okra shuts down after failing to raise funds");
+    expect(closedFromNews([...news, { field: "news", after: "2023-02-02 — Envision Pharma Group acquires Okra", source_url: "https://x.com/a", quote: "" }], "Okra", "id1")).toBeNull();
+  });
+});
+
+describe("an ERROR points at the values that broke it (owner, batch 6)", () => {
+  it("offenders are the rows, a missing value has none", () => {
+    const checks = [
+      { id: "no_dubai", why: "x", kind: "absent", company: "Kiwify", field: "hq_city", match: "Dubai" },
+      { id: "needs_mumbai", why: "x", kind: "present", company: "SAMCO", field: "hq_city", match: "Mumbai" },
+    ] as never;
+    const rows = [{ company: "Kiwify", field: "hq_city", after: "Dubai", source_url: "u", quote: "q" }, { company: "Kiwify", field: "founder", after: "A B", source_url: "u", quote: "q" }];
+    const res = runAcceptance(checks, rows, [], "2026-11-17");
+    expect(res[0].offenders).toEqual([rows[0]]);
+    expect(res[1].offenders).toBeUndefined();
+  });
+});
+
+import { gateLines, parseRoundLine } from "./reportGate";
+describe("the write follows the report (owner, batch 6: wet 1 wrote what the dry report had already removed)", () => {
+  const T = "2026-11-18";
+  it("a news item that does not name the company, a patent from a search page, a round type no quote names", () => {
+    const lines = [
+      { field: "news", after: "2025-12-10 — UAE telecom operator E& aims to offer stablecoin payments", source_url: "https://laraontheblock.com/uae", quote: "" },
+      { field: "patent", after: "US3537134A MACHINE FOR CONTINUOUSLY BLOW-MOLDING", source_url: "https://worldwide.espacenet.com/patent/search?q=pn%3DUS3537134A", quote: "" },
+      { field: "round", before: null, after: "Other $40M · 2025-11-04", source_url: "https://fintech.global/2025/11/04/brighte-secures-40m", quote: "Brighte secures $40m CEFC funding for home energy push" },
+      { field: "round", before: null, after: "Series A $4M · 2017-09-05 · lead Mike Cannon-Brookes", source_url: "https://www.smartcompany.com.au/x", quote: "Brighte raised a $4M Series A round led by Mike Cannon-Brookes" },
+    ];
+    const g = gateLines(lines as never, "MBank", T);
+    expect([...g.drop].sort()).toContain(0);
+    expect([...g.drop]).toContain(1);
+    const g2 = gateLines([lines[2]] as never, "Brighte", T);
+    expect(g2.after.get(0)).toMatch(/^Unknown \$40M/);
+    expect(parseRoundLine("Unknown $40M · 2025-11-04").type).toBe("Unknown");
+    expect(parseRoundLine("Series A $4M · 2017-09-05 · lead Mike Cannon-Brookes")).toEqual({ type: "Series A", lead: "Mike Cannon-Brookes" });
+  });
+});
+
+import { closureIn } from "./closure";
+import { roundFromHeadline } from "./newsRounds";
+import { sizeStatement } from "./headcountSources";
+describe("batch 6, wet 1 findings", () => {
+  it("Okra: 'Co-Founder Exits as Startup Shuts Down' is a closure of Okra", () => {
+    expect(closureIn("Dabafinance - Okra Co-Founder Fara Ashiru Jituboh Exits as Startup Shuts Down", "Okra")).toBe(true);
+    expect(closureIn("Okra raises $10M as startup grows", "Okra")).toBe(false);
+  });
+  it("one news item per address", () => {
+    const a = { field: "news", company: "Okra", after: "2025-07-04 — Okra Co-Founder Exits", source_url: "https://dabafinance.com/en/news/okra", quote: "", origin: "new" };
+    const b = { field: "news", company: "Okra", after: "2025-07-18 — Okra Co-Founder Exits", source_url: "https://www.dabafinance.com/en/news/okra", quote: "", origin: "known_source" };
+    expect(applyRowRules([b, a] as never, "Okra", TODAY).rows.filter((r) => r.field === "news").map((r) => r.after)).toEqual(["2025-07-04 — Okra Co-Founder Exits"]);
+  });
+  it("a loan is a Debt round, not an equity one", () => {
+    expect(roundFromHeadline("Brighte secures $40m loan facility to fund home energy", "Brighte")?.type).toBe("Debt");
+    expect(roundFromHeadline("Brighte raises $4m Series A", "Brighte")?.type).toBe("Series A");
+  });
+  it("headcount: the last figure of 'grew from … to …'", () => {
+    expect(sizeStatement("In 2021, the Brighte team grew from a team of 84 in Jan 2021 to a team of 181 in December 2021.")?.value).toBe(181);
+  });
+});
+
+describe("batch 6: a dated press page is not the headcount of today", () => {
+  it("the page-date regex of the current count covers /media/press-releases/", () => {
+    const re = /\/(news|newsroom|blog|press|press-releases?|media|insights|stories|updates)(\/|-|$)/i;
+    expect(re.test("https://brighte.com.au/media/press-releases/year-in-review-2021")).toBe(true);
+    expect(re.test("https://canopycare.us/about")).toBe(false);
+  });
+});
+
+describe("batch 6: remembered headcount values obey the same rules", () => {
+  const T = "2026-11-18";
+  it("Brighte's 2021 year-in-review is not the headcount of the run day", () => {
+    const url = "https://brighte.com.au/media/press-releases/year-in-review-2021";
+    const q = "In 2021, the Brighte team grew from a team of 84 in Jan 2021 to a team of 181 in December 2021.";
+    expect(rowProblem({ field: "employee_count", after: "84", source_url: url, quote: q }, "Brighte", T)).toMatch(/not today's headcount/);
+    expect(rowProblem({ field: "employee_range", after: "51-200", source_url: url, quote: q }, "Brighte", T)).toMatch(/not today's headcount/);
+    expect(rowProblem({ field: "headcount_history", after: "84 on 2026-11-18 (site_stated)", source_url: url, quote: q }, "Brighte", T)).toMatch(/run day/);
+    expect(rowProblem({ field: "employee_count", after: "20", source_url: "https://canopycare.us/about", quote: "20 people" }, "Canopy", T)).toBeNull();
+  });
+  it("archive copies of one statement keep the first and the last, the ones between are merged", () => {
+    const mk = (d: string, quote: string) => ({ field: "headcount_history", company: "Datahut", after: `42 on ${d} (site_stated)`, source_url: `https://web.archive.org/web/${d.replace(/-/g, "")}/https://datahut.co/about`, quote });
+    const q1 = "Our growth story We’ve bootstrapped Datahut with a very small team and within three years we’ve grown to 42 team members, a bigger office.";
+    const q2 = "wth story We&rsquo;ve bootstrapped Datahut with a very small team and within three years we&rsquo;ve grown to 42 team members, a bigger office.";
+    const rows = [mk("2025-01-20", q2), mk("2019-08-18", q1), mk("2021-01-27", q1), mk("2023-01-30", q2)];
+    const out = applyRowRules(rows as never, "Datahut", T).rows.filter((r) => r.field === "headcount_history").map((r) => r.after.match(/on (\d{4}-\d{2}-\d{2})/)![1]).sort();
+    expect(out).toEqual(["2019-08-18", "2025-01-20"]);
+  });
+});
+
+import { isWritten, checkWritten } from "./writtenCheck";
+describe("the report against the database", () => {
+  const c = { id: "1", city: "Sydney", country: "Australia", founded_year: null, description: "Brighte provides easy finance for solar", industry: "Fintech", offices: [], founders: [{ name: "Katherine McConnell" }], leadership: [], competitors: [{ name: "Dhan" }], news: [{ url: "https://x.com/a" }], patents: [], status: "active",
+    rounds: [{ round_type: "Series A", amount_raised: 4_000_000, announcement_date: "2017-09-05" }], headcount: [{ employee_count: 181, snapshot_date: "2022-02-08" }] } as never;
+  it("finds what is there and names what is not", () => {
+    expect(isWritten({ company_id: "1", company: "B", field: "hq_city", after: "Sydney" }, c)).toBe("yes");
+    expect(isWritten({ company_id: "1", company: "B", field: "founded_year", after: "2015" }, c)).toBe("no");
+    expect(isWritten({ company_id: "1", company: "B", field: "round", after: "Series A $4M · 2017-09-05 · lead X" }, c)).toBe("yes");
+    expect(isWritten({ company_id: "1", company: "B", field: "round", after: "Unknown $0.4M · 2017-05-05" }, c)).toBe("no");
+    expect(isWritten({ company_id: "1", company: "B", field: "headcount_history", after: "181 on 2022-02-08 (site_stated)" }, c)).toBe("yes");
+    expect(isWritten({ company_id: "1", company: "B", field: "founder", after: "Pratik Adani — CTO" }, c)).toBe("no");
+    expect(isWritten({ company_id: "1", company: "B", field: "tags", after: "X" }, c)).toBe("not_checked");
+    const r = checkWritten([{ company_id: "1", company: "B", field: "hq_city", after: "Sydney" }, { company_id: "1", company: "B", field: "founded_year", after: "2015" }], new Map([["1", c]]));
+    expect(r.missing.map((m) => m.field)).toEqual(["founded_year"]);
+  });
+});
+
+import { paceKey } from "./recorder";
+import { recentRules, ruleOf, RULES } from "./ruleRegistry";
+describe("pace and rule codes (batch 7)", () => {
+  it("a page read through the reader belongs to the address' site; providers are not throttled per site", () => {
+    expect(paceKey("https://r.jina.ai/https://www.brighte.com.au/about")).toEqual({ kind: "site", key: "brighte.com.au" });
+    expect(paceKey("https://r.jina.ai/https://blog.estimote.com/post/1")).toEqual({ kind: "site", key: "estimote.com" });
+    expect(paceKey("https://google.serper.dev/search")).toEqual({ kind: "provider", key: "google.serper.dev" });
+    expect(paceKey("https://web.archive.org/web/2020/https://datahut.co/about")).toEqual({ kind: "site", key: "archive.org" });
+  });
+  it("recent rules are the ones added in the last seven days; a line gets its rule by field and text", () => {
+    const r = recentRules("2026-11-20");
+    expect(r.has("hq_from_approved_quote")).toBe(true);
+    expect(r.has("hq_from_site_address")).toBe(false);
+    expect(RULES.every((x) => /^\d{4}-\d{2}-\d{2}$/.test(x.added))).toBe(true);
+    expect(ruleOf({ field: "hq_city", after: "Adelaide" }, [{ field: "hq_city", rule: "hq_from_approved_quote", value: "Adelaide" }])).toBe("hq_from_approved_quote");
+    expect(ruleOf({ field: "hq_city", after: "Sydney" }, [{ field: "hq_city", rule: "hq_from_approved_quote", value: "Adelaide" }])).toBe("");
+  });
+});
+
+import { cleanPersonName } from "./people";
+describe("batch 7: names of people", () => {
+  it("no function word before, no role fragment after", () => {
+    expect(cleanPersonName("As Karim Nour")).toBe("Karim Nour");
+    expect(cleanPersonName("Karim Nour Co")).toBe("Karim Nour");
+    expect(cleanPersonName("Sumair Farooqui")).toBe("Sumair Farooqui");
+    expect(cleanPersonName("Jakub Krzych CEO")).toBe("Jakub Krzych");
+    expect(cleanPersonName("Co Lee")).toBe("Co Lee");
+  });
+});
+
+import { detectAcquisition, acquirerIn } from "./acquisition";
+describe("batch 7: the buyer's name and the purchase date", () => {
+  it("no country in front of the buyer; the first announcement dates it", () => {
+    expect(acquirerIn("Egypts Raseedi Acquires Kashat To Expand Fintech", "Kashat")?.acquirer).toBe("Raseedi");
+    expect(acquirerIn("Egypt's Raseedi acquires Kashat", "Kashat")?.acquirer).toBe("Raseedi");
+    expect(acquirerIn("Kashat acquired by UK-based Acme", "Kashat")?.acquirer).toBe("Acme");
+    const c = detectAcquisition([{ url: "a", title: "Raseedi completes acquisition of Kashat", date: "2025-01-13" }, { url: "b", title: "Egypts Raseedi Acquires Kashat To Expand Fintech", date: "2025-01-23" }], "Kashat");
+    expect(c?.acquirer).toBe("Raseedi");
+    expect(c?.date).toBe("2025-01-13");
+  });
+});
+
+import { caseName } from "./nameCase";
+describe("batch 7: evidence rules", () => {
+  const T = "2026-11-20";
+  it("tags: a careers page, a job advertisement, a menu and a person's speech are no evidence", () => {
+    expect(rowProblem({ field: "tags", after: "Healthcare SaaS", source_url: "https://www.nilosaude.com.br/carreiras-account-executive", quote: "Experiência comprovada em vendas B2B de tecnologia" }, "Nilo Saúde", T)).toMatch(/careers|job/);
+    expect(rowProblem({ field: "tags", after: "Mobility", source_url: "https://www.zuldigital.com.br/entrar", quote: "Digital CRLV · ZUL+ Tag · Taxes · Auto Insurance · Rodízio." }, "Zul+", T)).toMatch(/menu/);
+    expect(rowProblem({ field: "tags", after: "Marketplaces", source_url: "https://snupit.co.za/x", quote: "Samlall said, ''At Snupit we like to keep a finger on the market's pulse." }, "Snupit", T)).toMatch(/speech/);
+    expect(rowProblem({ field: "tags", after: "D2C", source_url: "https://gousto.co.uk", quote: "Gousto sells recipe boxes, delivered to the customer's door, that contain fresh ingredients." }, "Gousto", T)).toBeNull();
+  });
+  it("news: paid distribution, sponsored paths, republishers and product reviews", () => {
+    expect(rowProblem({ field: "news", after: "2020-03-30 — Snupit Expands Internationally", source_url: "https://news.marketersmedia.com/snupit-expands/88951584/", quote: "" }, "Snupit", T)).toMatch(/paid press/);
+    expect(rowProblem({ field: "news", after: "2023-06-22 — Zul Digital expande operações", source_url: "https://valor.globo.com/patrocinado/dino/noticia/2023/06/22/zul", quote: "" }, "Zul Digital", T)).toMatch(/sponsored/);
+    expect(rowProblem({ field: "news", after: "2026-07-01 — Gousto review 2026, here's my honest verdict", source_url: "https://www.the-independent.com/extras/gousto-review", quote: "" }, "Gousto", T)).toMatch(/review/);
+    expect(rowProblem({ field: "news", after: "2019-04-15 — Snupit Releases Results From its Popular Small Business Survey", source_url: "https://finance.yahoo.com/news/snupit-releases-results-popular-small-143800986.html", quote: "" }, "Snupit", T)).toMatch(/not allowed|republish/);
+  });
+  it("office needs a quote; people shown on a page give no range; capitals become a name", () => {
+    expect(rowProblem({ field: "office", after: "São Paulo", source_url: "https://www.nilosaude.com.br/terms", quote: "" }, "Nilo Saúde", T)).toMatch(/needs a quote/);
+    expect(rowProblem({ field: "employee_range", after: "1-10", source_url: "https://sycamore.ng/about-us", quote: "5 people with a name and a role are shown on the page" }, "Sycamore", T)).toMatch(/lower bound/);
+    expect(caseName("MICROSOFT")).toBe("Microsoft");
+    expect(caseName("IBM")).toBe("IBM");
+    expect(caseName("Mon Petit Placement")).toBe("Mon Petit Placement");
+  });
+});
+
+import { siteBelongsToAnotherCompany } from "./siteOwner";
+describe("acquired companies are enriched as usual (owner, batch 7)", () => {
+  const page = (content: string) => [{ url: "https://sikhona.co.za", content } as never];
+  const filler = " Sikhona money transfers to and from South Africa. Send money safely with Sikhona at any branch.".repeat(8);
+  it("a page that says the company was bought and still names it is its own page", () => {
+    expect(siteBelongsToAnotherCompany("Sikhona", "https://sikhona.co.za", page(`Ria Money Transfer acquired Sikhona. ${filler}`))).toBeNull();
+  });
+  it("a page that names the company once, in the sale, still is (owner, batch 7: Sikhona); one the address moved away from is not", () => {
+    expect(siteBelongsToAnotherCompany("Hofy", "https://other.com", page(`Deel acquires Hofy. ${"Deel runs global payroll for teams everywhere. ".repeat(20)}`))).toBeNull();
+    expect(siteBelongsToAnotherCompany("Hofy", "https://hofy.com", [{ url: "https://hofy.com", content: `Final URL: https://www.deel.com/it/\n\nMarkdown Content:\nDeel acquires Hofy. ${"Deel runs global payroll for teams everywhere. ".repeat(20)}` } as never])).toMatch(/acquired \/ rebranded/);
+  });
+});
+
+describe("a founder from a republisher with no allowed original (owner, batch 7: Snupit, yahoo.com)", () => {
+  it("is not a row", () => {
+    const r = { field: "founder", after: "Avinash Samlall — Founder", source_url: "https://za.finance.yahoo.com/news/snupit-founder-123.html", quote: "Avinash Samlall is the founder of Snupit." };
+    expect(rowProblem(r as never, "Snupit", "2026-11-18")).toMatch(/not allowed/);
+  });
+});
+
+import { runAcceptance } from "./acceptance";
+describe("round_type_in_quote leaves a 'filled' row alone (owner, batch 7: Inipharm)", () => {
+  it("is not an offender", () => {
+    const rows = [{ company: "Inipharm", field: "round", after: 'Series A filled: {"lead_investor":"5AM Ventures"}', quote: "5AM Ventures and Wu Capital joined existing investors Frazier.", source_url: "https://biospace.com/x" }];
+    const res = runAcceptance([{ id: "round_type_in_quote", why: "w", kind: "round_type_in_quote" }] as never, rows as never, [], "2026-11-18");
+    expect(res[0].pass).toBe(true);
+  });
+});
+
+import { claims, sentenceProblem } from "./descriptionBuilder";
+import { roundSourceStanding as standingOf } from "./roundSources";
+describe("description checks that rejected correct sentences (owner, batch 7 sample)", () => {
+  it("B2B is not the number 2B; ETF-based is not a name", () => {
+    expect(claims("ShopX sells a B2B enterprise application that helps small retailers.", "ShopX").numbers).toEqual([]);
+    expect(claims("Yomoni offers online wealth management through ETF-based portfolios.", "Yomoni").names).toEqual([]);
+    expect(claims("more than 2,500 companies use it", "X").numbers).toEqual(["2500"]);
+  });
+  it("2,500 is 2.500 on a Portuguese page; Brazil is Brasil", () => {
+    const byId = { s1: { content: "Mais de 2.500 empresas usam a Contraktor. A plataforma de Contraktor é para equipes jurídicas, comerciais e operacionais das empresas.", source_type: "company_site" } };
+    expect(sentenceProblem({ role: "for_whom", text: "Its platform is built for legal, commercial and operational teams in companies, and more than 2,500 companies use Contraktor.", source_ids: ["s1"] }, "Contraktor", byId as never, () => true) ?? "").not.toMatch(/number_not_in_sources/);
+    const b2 = { s1: { content: "A Ksecurity vende serviços de segurança da informação a empresas, incluindo instituições financeiras que precisam cumprir as resoluções do Central Bank do Brasil.", source_type: "company_site" } };
+    expect(sentenceProblem({ role: "what", text: "Ksecurity sells its information security services to businesses, including financial institutions that must comply with Central Bank of Brazil resolutions.", source_ids: ["s1"] }, "KSecurity", b2 as never, () => true) ?? "").not.toMatch(/name_not_in_sources/);
+  });
+  it("accessnewswire.com is the wire accesswire.com became", () => {
+    expect(standingOf("https://www.accessnewswire.com/newsroom/en/x/kontent-ai-launches-1129445", { companyName: "Kontent.ai" }).kind).toBe("allowed");
+  });
+});
+
+describe("name claims are for companies, products and people (owner, batch 7)", () => {
+  it("not a country or a compound with a plain word", () => {
+    expect(claims("Ksecurity serves banks that must comply with Central Bank of Brazil rules in Germany and Latin America.", "KSecurity").names).not.toContain("Brazil");
+    expect(claims("Ksecurity serves banks in Germany.", "KSecurity").names).not.toContain("Germany");
+    expect(claims("It offers ETF-based and Cloud-native portfolios.", "Yomoni").names).toEqual([]);
+    expect(claims("The platform integrates with Salesforce and Stripe.", "Acme").names).toEqual(["Salesforce", "Stripe"]);
+  });
+});
+
+import { completeFromSlug, newsProblem as newsProblem2 } from "./newsRelevance";
+import { knownAcquirers } from "./acquisition";
+describe("news: a headline cut in a print, and a company that was bought (owner, batch 7)", () => {
+  it("completes a cut headline from its address", () => {
+    const url = "https://www.lwolf.com/press-releases/lone-wolf-acquires-liondesk-and-homespotter-expanding-real-estates-leading-end-to-end-technology-suite";
+    expect(completeFromSlug("Lone Wolf acquires LionDesk and HomeSpotter, expanding real ", url)).toBe("Lone Wolf acquires LionDesk and HomeSpotter, expanding real estates leading end to end technology suite");
+    expect(completeFromSlug("Something else entirely about a deal", url)).toBeNull();
+    expect(completeFromSlug("Short", url)).toBeNull();
+  });
+  it("the buyer of a company found in several headlines makes its acquisition headlines news about it", () => {
+    const titles = ["Alexforbes buys digital wealth platform OUTvest as it continues to snap up acquisitions", "OUTsurance Sale Of OUTvest Proprietary Limited To Alexforbes", "Alexforbes acquires digital investments platform from outsurance", "Outvest raises seed"];
+    expect(knownAcquirers(titles, "Outvest")).toContain("Alexforbes");
+    const item = { title: titles[0], content: "" };
+    expect(newsProblem2(item, "Outvest", "A robo-advisor for retirement savings.")).toBe("different_product");
+    expect(newsProblem2(item, "Outvest", "A robo-advisor for retirement savings.", { acquirers: ["Alexforbes"] })).toBeNull();
+  });
+});
+
+describe("one headline on one date is one news item whatever the address (owner, batch 7)", () => {
+  it("merges", () => {
+    const rows = [
+      { company: "Inipharm", field: "news", after: "2024-05-22 — Inipharm to Present Pharmacokinetic Data at a conference", source_url: "https://inipharm.com/news/a", quote: "Inipharm to Present Pharmacokinetic Data" },
+      { company: "Inipharm", field: "news", after: "2024-05-22 — Inipharm to Present Pharmacokinetic Data at a conference", source_url: "https://www.globenewswire.com/news-release/b", quote: "Inipharm to Present Pharmacokinetic Data" },
+    ];
+    expect(applyRowRules(rows as never, "Inipharm", "2026-11-18").rows.length).toBe(1);
+  });
+});
+
+describe("a short headline that is its address' whole slug is whole (owner, batch 7)", () => {
+  it("confirms it", () => {
+    expect(completeFromSlug("Alexforbes buys Outvest", "https://dailyinvestor.com/finance/43233/alexforbes-buys-outvest/")).toBe("Alexforbes buys Outvest");
+    expect(completeFromSlug("Alexforbes buys Outvest", "https://dailyinvestor.com/finance/43233/something-else-entirely/")).toBeNull();
+  });
+});
+
+describe("a place after 'in' is not a name to check (owner, batch 7: Snupit, Pietermaritzburg)", () => {
+  it("is not claimed", () => {
+    expect(claims("Snupit connects customers with professionals such as plumbers in Pietermaritzburg and Durban.", "Snupit").names).toEqual([]);
+    expect(claims("Snupit connects customers with plumbers using Salesforce.", "Snupit").names).toEqual(["Salesforce"]);
+  });
+});
+
+import { roundSourceStanding as standing2 } from "./roundSources";
+describe("rows the owner took out of the batch-7 report (reviewed 48, 7 wrong)", () => {
+  const p = (r: Record<string, unknown>, company: string) => rowProblem({ company, quote: "", ...r } as never, company, "2026-11-18");
+  it("Mama Money: no headcount from a privacy policy", () => {
+    expect(p({ field: "employee_count", after: "2", source_url: "https://www.mamamoney.co.za/privacy-policy", quote: "2 employees may access personal data" }, "Mama Money")).toMatch(/legal page/);
+    expect(p({ field: "employee_range", after: "1-10", source_url: "https://www.mamamoney.co.za/terms-and-conditions", quote: "up to 10 employees" }, "Mama Money")).toMatch(/legal page/);
+  });
+  it("UltraVox: GPT is a model, no competitor", () => {
+    expect(p({ field: "competitor_market", after: "GPT", source_url: "https://ultravox.ai/blog/x", quote: "an open-weight alternative to GPT-4o Realtime" }, "UltraVox")).toMatch(/product or a model/);
+    expect(p({ field: "competitor_declared", after: "GPT-4o", source_url: "https://ultravox.ai/blog/x", quote: "an open-weight alternative to GPT-4o Realtime" }, "UltraVox")).toMatch(/product or a model/);
+  });
+  it("Yomoni: assurance vie is no insurance", () => {
+    expect(p({ field: "tags", after: "Insurance / Insurtech", source_url: "https://www.yomoni.fr/produits", quote: "Yomoni propose l'assurance vie, le PER et le PEA en gestion pilotée." }, "Yomoni")).toMatch(/assurance vie/);
+    expect(p({ field: "tags", after: "Insurance / Insurtech", source_url: "https://acme.com/about", quote: "Acme sells life insurance online." }, "Acme")).toBeNull();
+  });
+  it("Contraktor: a forum is no source", () => {
+    expect(standing2("https://forum.devbrasil.com.br/t/contratos-digitais/123", { companyName: "Contraktor" })).toMatchObject({ kind: "denied", why: "forum_or_community" });
+    expect(standing2("https://stackoverflow.com/questions/123/x", { companyName: "Contraktor" }).kind).toBe("denied");
+    expect(standing2("https://community.contraktor.com.br/t/x", { companyName: "Contraktor", isCompanySite: true }).kind).toBe("allowed");
+  });
+  it("Uxcel: a guide on OKRs is no description of the product", () => {
+    expect(p({ field: "tags", after: "Generative AI", source_url: "https://uxcel.com/blog/okr-guide", quote: "OKRs help teams use generative AI to set goals." }, "Uxcel")).toMatch(/blog post or a guide/);
+    expect(p({ field: "tags", after: "EdTech", source_url: "https://uxcel.com/about", quote: "Uxcel is a design education platform with courses and certifications." }, "Uxcel")).toBeNull();
+  });
+  it("team page counts stay in the history, not employee_count", () => {
+    expect(p({ field: "employee_count", after: "8+", source_url: "https://kontent.ai/about-us/team", quote: "Jane Doe CEO. John Roe CTO." }, "Kontent.ai")).toMatch(/lower bound/);
+    expect(p({ field: "employee_count", after: "500+", source_url: "https://acme.com/about", quote: "Acme has more than 500 employees worldwide." }, "Acme")).toBeNull();
+  });
+  it("Hibank: a district of the city is the same office", () => {
+    const rows = [
+      { company: "Hibank", field: "office", after: "Jakarta, Indonesia", source_url: "https://hibank.co.id/contact", quote: "Jl. Sudirman, Jakarta" },
+      { company: "Hibank", field: "office", after: "Jakarta Selatan, Indonesia", source_url: "https://hibank.co.id/contact", quote: "Jl. Sudirman, Jakarta Selatan" },
+    ];
+    const g = applyRowRules(rows as never, "Hibank", "2026-11-18");
+    expect(g.rows.map((r) => r.after)).toEqual(["Jakarta, Indonesia"]);
+  });
+});
+
+import { pruneOfficeFromPatch } from "./reportGate";
+describe("a dropped office takes only itself out of the patch (owner, batch 7: Hibank)", () => {
+  it("keeps the others", () => {
+    const patch: Record<string, unknown> = { offices: [{ city: "Jakarta", country: "Indonesia" }, { city: "Jakarta Selatan", country: "Indonesia" }], office_countries: ["Indonesia"] };
+    pruneOfficeFromPatch(patch, "Jakarta Selatan, Indonesia");
+    expect(patch.offices).toEqual([{ city: "Jakarta", country: "Indonesia" }]);
+    pruneOfficeFromPatch(patch, "Jakarta, Indonesia");
+    expect(patch.offices).toBeUndefined();
+    expect(patch.office_countries).toBeUndefined();
+  });
+});
+
+import { dedupeNewsEvents as dedupe2 } from "./newsRelevance";
+import { acquirerIn as acquirer2 } from "./acquisition";
+describe("Humi: the acquisition headline survives the dedupe and the buyer is the name after the descriptor (regression gate, batch 5)", () => {
+  const items = [
+    { title: "Employment Hero Expands into Canada with Humi Acquisition", url: "https://smbtech.au/news/x", published_date: "2025-01-09" },
+    { title: "Humi acquired by Australian HR software company Employment Hero", url: "https://betakit.com/humi-acquired-by-australian-hr-software-company-employment-hero/", published_date: "2025-01-08" },
+    { title: "Humi to be acquired by Employment Hero in $69.5 million deal", url: "https://www.unleash.ai/x", published_date: "2026-05-20" },
+  ];
+  it("the buyer of a descriptor phrase", () => {
+    expect(acquirer2("Humi acquired by Australian HR software company Employment Hero", "Humi")?.acquirer).toBe("Employment Hero");
+    expect(acquirer2("Humi Acquired by Employment Hero to Provide a Comprehensive Solution", "Humi")?.acquirer).toBe("Employment Hero");
+    expect(acquirer2("Acme acquired by Globex", "Acme")?.acquirer).toBe("Globex");
+  });
+  it("the earliest announcement of the same buyer dates the purchase", () => {
+    const kept = dedupe2(items, () => false, () => "", (x) => !!acquirer2(x.title, "Humi"));
+    const rows = kept.map((k) => ({ field: "news", after: `${k.published_date} — ${k.title}`, source_url: k.url, company: "Humi" }));
+    expect(acquiredFromNews(rows as never, "Humi", "id")?.after).toMatch(/Employment Hero \(2025-01-08\)/);
+  });
+});
+
+import { finishNews } from "./newsGate";
+import { isPartyRelease as party2, roundSourceStanding as standing3 } from "./roundSources";
+describe("regression gate fixes (owner, 2026-11-19)", () => {
+  it("Paradox: a round type that another source of the same event states is not Unknown", () => {
+    const rows = [
+      { company: "Paradox AI", field: "round", after: "Series C $200M · 2021-12 (month only)", source_url: "https://siliconangle.com/2021/12/28/x", quote: "Paradox valued at $1.5B following $200M funding round" },
+      { company: "Paradox AI", field: "news", after: "2021-12-27 — On a Mission to Build the Next Generation of HR Software, Paradox Raises $200M Series C", source_url: "https://www.prnewswire.com/news-releases/x", quote: "Paradox Raises $200M Series C" },
+    ];
+    const g = applyRowRules(rows as never, "Paradox AI", "2026-11-19");
+    expect(g.rows.find((r) => r.field === "round")?.after).toMatch(/^Series C \$200M/);
+    // …but not when no source states it, nor for another amount
+    const alone = applyRowRules([rows[0]] as never, "Paradox AI", "2026-11-19");
+    expect(alone.rows.find((r) => r.field === "round")?.after).toMatch(/^Unknown \$200M/);
+    const other = applyRowRules([rows[0], { ...rows[1], after: "2021-12-27 — Paradox Raises $40M Series C", quote: "Paradox Raises $40M Series C" }] as never, "Paradox AI", "2026-11-19");
+    expect(other.rows.find((r) => r.field === "round")?.after).toMatch(/^Unknown \$200M/);
+  });
+  it("Mintifi: a blog sentence about the company stands as the tag's evidence; one on another topic does not", () => {
+    const tag = (quote: string) => rowProblem({ company: "Mintifi", field: "tags", after: "Lending", source_url: "https://mintifi.com/blog/supply-chain-finance", quote } as never, "Mintifi", "2026-11-19");
+    expect(tag("Mintifi offers supply chain financing to small businesses through its own platform.")).toBeNull();
+    expect(tag("OKRs help teams use generative AI to set goals.")).toMatch(/another topic/);
+  });
+  it("Medipass: the known buyer's own newsroom or blog is a party", () => {
+    expect(party2("https://www.tyro.com/blog/introducing-tyro-health/", "Introducing Tyro Health", { companyName: "Medipass", acquirers: ["Tyro"] })).toBe(true);
+    expect(party2("https://www.tyro.com/blog/introducing-tyro-health/", "Introducing Tyro Health", { companyName: "Medipass" })).toBe(false);
+    expect(party2("https://www.example.com/blog/x", "Introducing X", { companyName: "Medipass", acquirers: ["Tyro"] })).toBe(false);
+    expect(standing3("https://www.tyro.com/blog/introducing-tyro-health/", { companyName: "Medipass", headline: "Introducing Tyro Health", acquirers: ["Tyro"] }).kind).toBe("allowed");
+  });
+  it("news: an event keeps one item, or its items go under their own reason — never 'the same event' with nothing left", () => {
+    const deps = { isOwnSite: () => false, content: () => "", companyName: "Medipass" };
+    // all undated: all dropped for the date, none as a duplicate
+    const undated = [{ title: "Tyro buys Medipass health payment app from NAB Ventures", url: "https://afr.com/a" }, { title: "Tyro to buy digital healthcare payments platform Medipass", url: "https://pulseit.news/b" }];
+    const r1 = finishNews(undated as never, deps);
+    expect(r1.kept).toHaveLength(0);
+    expect(r1.dropped.map((d) => d.reason)).toEqual(["news_no_date", "news_no_date"]);
+    // one dated among undated: exactly that one is kept
+    const mixed = [...undated, { title: "Tyro buys Medipass", url: "https://startupdaily.net/c", published_date: "2021-05-11" }];
+    const r2 = finishNews(mixed as never, deps);
+    expect(r2.kept.map((k) => k.url)).toEqual(["https://startupdaily.net/c"]);
+    // whatever the mix, an event with a dated item keeps one
+    for (const perm of [[0, 1, 2], [2, 1, 0], [1, 2, 0]]) expect(finishNews(perm.map((i) => mixed[i]) as never, deps).kept).toHaveLength(1);
+  });
+  it("merging never leaves an event with nothing: rounds, news, founders", () => {
+    const rows = [
+      { company: "X Robotics", field: "round", after: "Seed $2M · 2020-01-05", source_url: "https://a.com/1", quote: "X Robotics raised a $2M seed round" },
+      { company: "X Robotics", field: "round", after: "Seed $2M · 2020-01", source_url: "https://b.com/1", quote: "X Robotics raised a $2M seed round" },
+      { company: "X Robotics", field: "news", after: "2020-01-05 — X Robotics raises $2M seed", source_url: "https://a.com/1", quote: "" },
+      { company: "X Robotics", field: "news", after: "2020-01-05 — X Robotics raises $2M seed", source_url: "https://b.com/1", quote: "" },
+      { company: "X Robotics", field: "founder", after: "Jane Roe — CEO", source_url: "https://xrobotics.com/about", quote: "Jane Roe, CEO of X" },
+      { company: "X Robotics", field: "founder", after: "Jane Roe — Co-founder & CEO", source_url: "https://xrobotics.com/team", quote: "Jane Roe, Co-founder & CEO of X" },
+    ];
+    const g = applyRowRules(rows as never, "X Robotics", "2026-11-19");
+    for (const f of ["round", "news", "founder"]) expect(g.rows.filter((r) => r.field === f).length, f).toBeGreaterThanOrEqual(1);
+  });
+});
+
+import { runAcceptance } from "./acceptance";
+describe("regression gate round 2 (owner, 2026-11-19)", () => {
+  const deps = { isOwnSite: () => false, content: () => "", companyName: "Humi" };
+  it("one purchase is one news item: the earliest announcement of the same buyer stays, a later report is the same event", () => {
+    const items = [
+      { title: "Humi to be acquired by Employment Hero in $69.5 million deal", url: "https://unleash.ai/a", published_date: "2026-05-20" },
+      { title: "Humi acquired by Australian HR software company Employment Hero", url: "https://betakit.com/b", published_date: "2025-01-08" },
+      { title: "Humi raises $15 million Series A", url: "https://betakit.com/c", published_date: "2020-06-23" },
+    ];
+    const r = finishNews(items as never, deps);
+    expect(r.kept.map((k) => k.published_date).sort()).toEqual(["2020-06-23", "2025-01-08"]);
+    expect(r.dropped.map((d) => d.reason)).toEqual(["news_same_event"]);
+  });
+  it("another buyer is another purchase", () => {
+    const r = finishNews([
+      { title: "Charlesbank Capital Partners to acquire Six Degrees from Penta Capital", url: "https://a.com/1", published_date: "2015-06-17" },
+      { title: "Claranet acquires Six Degrees", url: "https://b.com/2", published_date: "2026-06-29" },
+    ] as never, { ...deps, companyName: "Six Degrees" });
+    expect(r.kept).toHaveLength(2);
+  });
+  it("acceptance: the same purchase twice with different dates is an error", () => {
+    const row = (after: string) => ({ company: "Humi", field: "news", after, source_url: "https://x.com/a", quote: "" });
+    const chk = [{ id: "one", why: "", kind: "one_news_per_acquisition" }] as never;
+    expect(runAcceptance(chk, [row("2025-01-08 — Humi acquired by Employment Hero"), row("2026-05-20 — Humi to be acquired by Employment Hero in $69.5 million deal")] as never, [], "2026-11-19")[0].pass).toBe(false);
+    expect(runAcceptance(chk, [row("2025-01-08 — Humi acquired by Employment Hero"), row("2020-06-23 — Humi raises $15 million Series A")] as never, [], "2026-11-19")[0].pass).toBe(true);
+  });
+  it("Medipass: the buyer's page is allowed in the report's rules when several headlines name the buyer", () => {
+    const n = (a: string, u: string) => ({ company: "Medipass", field: "news", after: a, source_url: u, quote: "" });
+    const g = applyRowRules([
+      n("2021-05-10 — Tyro buys Medipass health payment app from NAB Ventures", "https://www.afr.com/companies/financial-services/tyro-buys-medipass"),
+      n("2021-05-12 — Tyro to acquire Medipass Solutions", "https://www.tyro.com/media/tyro-to-acquire-medipass-solutions/"),
+    ] as never, "Medipass", "2026-11-19");
+    expect(g.rows.map((r) => r.after.slice(0, 10)).sort()).toContain("2021-05-12");
+  });
+  it("Paradox: the round cites the headline that states its type", () => {
+    const g = applyRowRules([
+      { company: "Paradox AI", field: "round", after: "Series C $200M · 2021-12 (month only)", source_url: "https://siliconangle.com/2021/12/28/x", quote: "Paradox valued at $1.5B following $200M funding round" },
+      { company: "Paradox AI", field: "news", after: "2021-12-27 — On a Mission to Build the Next Generation of HR Software, Paradox Raises $200M Series C", source_url: "https://www.prnewswire.com/news-releases/x", quote: "Paradox Raises $200M Series C" },
+    ] as never, "Paradox AI", "2026-11-19");
+    expect(g.rows.find((r) => r.field === "round")?.quote).toMatch(/Raises \$200M Series C/);
+  });
+});
+
+import { detectAcquisition as detect2 } from "./acquisition";
+import { explodeAcquired, compare as compare2 } from "./regressionGate";
+describe("regression gate round 3 (owner, 2026-11-19)", () => {
+  it("Paradox: a round typed Other takes the type the same event's headline states, and cites it", () => {
+    const g = applyRowRules([
+      { company: "Paradox AI", field: "round", after: "Other $200M · 2021-12 (month only)", source_url: "https://siliconangle.com/2021/12/28/x", quote: "Paradox valued at $1.5B following $200M funding round" },
+      { company: "Paradox AI", field: "news", after: "2021-12-27 — On a Mission to Build the Next Generation of HR Software, Paradox Raises $200M Series C", source_url: "https://www.prnewswire.com/news-releases/x", quote: "Paradox Raises $200M Series C" },
+    ] as never, "Paradox AI", "2026-11-19");
+    const r = g.rows.find((x) => x.field === "round")!;
+    expect(r.after).toMatch(/^Series C \$200M/);
+    expect(r.quote).toMatch(/Raises \$200M Series C/);
+    // no news that says it: Unknown
+    expect(applyRowRules([{ company: "Paradox AI", field: "round", after: "Other $200M · 2021-12 (month only)", source_url: "https://siliconangle.com/2021/12/28/x", quote: "valued at $1.5B following $200M funding round" }] as never, "Paradox AI", "2026-11-19").rows[0].after).toMatch(/^Unknown/);
+  });
+  it("Dietly: a controlling stake stated by a report of the same days gives majority_acquired, dated by the first announcement", () => {
+    const r = detect2([{ url: "a", title: "Żabka przejmuje platformę Dietly.pl", date: "2021-06-01" }, { url: "b", title: "Żabka Group Acquires Controllng Stake In Dietary Marketplace Dietly.pl", date: "2021-06-03" }], "Dietly");
+    expect(r).toMatchObject({ status: "majority_acquired", date: "2021-06-01" });
+    // a full purchase years later is not part of it
+    expect(detect2([{ url: "a", title: "Acme acquires a majority stake in Foo Labs", date: "2020-01-01" }, { url: "b", title: "Acme acquires Foo Labs", date: "2023-05-05" }], "Foo Labs")?.status).toBe("acquired");
+  });
+  it("gate: a purchase is compared by content, whether one row or three", () => {
+    const base = [{ company: "Kashat", field: "acquired", value: "2025-01-13" }, { company: "Kashat", field: "acquired", value: "acquired" }, { company: "Kashat", field: "acquired", value: "Raseedi" }];
+    const now = [{ company: "Kashat", field: "acquired", value: "status = acquired · Acquired by Raseedi (2025-01-13)" }];
+    const c = compare2(base, now);
+    expect(c.lost).toEqual([]);
+    expect(explodeAcquired(now)).toHaveLength(3);
+    expect(compare2(base, [{ company: "Kashat", field: "acquired", value: "status = acquired · Acquired by Other Co (2025-01-13)" }]).lost.map((l) => l.value)).toEqual(["Raseedi"]);
+  });
+  it("Medipass: the buyer's own announcement stands on a single headline", () => {
+    const g = applyRowRules([{ company: "Medipass", field: "news", after: "2021-05-12 — Tyro to acquire Medipass Solutions", source_url: "https://www.tyro.com/media/tyro-to-acquire-medipass-solutions/", quote: "" }] as never, "Medipass", "2026-11-19");
+    expect(g.rows).toHaveLength(1);
+  });
+});
+
+import { claimFromEvents, purchaseEvents } from "./acquisition";
+describe("a purchase is one event (owner, 2026-11-19: Dietly, UltraVox)", () => {
+  const deps = { isOwnSite: () => false, content: () => "", companyName: "Dietly" };
+  const it1 = (title: string, url: string, published_date: string, date_basis = "code") => ({ title, url, published_date, date_basis });
+  it("Dietly: one row, the earliest report's date, the status from the report that says the stake", () => {
+    const items = [
+      it1("Żabka przejmuje platformę Dietly.pl", "https://www.wirtualnemedia.pl/dietly-zabka", "2021-06-01"),
+      it1("Dietly.pl – platforma e-commerce w segmencie cateringu dietetycznego, staje się częścią Grupy Żabka", "https://nowymarketing.pl/dietly", "2021-05-31"),
+      it1("Żabka Group Acquires Controllng Stake In Dietary Marketplace Dietly.pl", "https://www.esmmagazine.com/technology/zabka-dietly", "2021-06-03"),
+    ];
+    const r = finishNews(items as never, deps);
+    expect(r.kept).toHaveLength(1);
+    expect(r.kept[0].published_date).toBe("2021-05-31");
+    const claim = claimFromEvents(r.kept as never);
+    expect(claim).toMatchObject({ status: "majority_acquired", date: "2021-05-31" });
+    // the report row carries it into the acquired field
+    const row = { company_id: "1", company: "Dietly", field: "news", before: "", after: `2021-05-31 — ${r.kept[0].title}`, source_url: r.kept[0].url, quote: "", origin: "new" };
+    expect(acquiredFromNews([row] as never, "Dietly", "1", r.kept as never)?.after).toMatch(/status = majority_acquired · Acquired by .*Żabka.* \(2021-05-31\)/);
+  });
+  it("UltraVox: a date read from a page's code does not beat the date in an article's address; the buyer's spellings are one buyer", () => {
+    const items = [
+      it1("Inworld acquires Ultravox to advance realtime voice AI", "https://inworld.ai/blog/inworld-acquires-ultravox", "2026-09-30", "code"),
+      it1("AI Research Lab Inworld Acquires Voice Agent Platform Ultravox", "https://www.businesswire.com/news/home/20261001868570/en/AI-Research-Lab-Inworld-Acquires-Voice-Agent-Platform-Ultravox", "2026-10-01", "address"),
+      it1("Seattle voice AI startup Ultravox, formerly known as Fixie, is acquired by Inworld AI", "https://www.geekwire.com/2026/seattle-voice-ai-startup-ultravox", "2026-10-02", "code"),
+    ];
+    const ev = purchaseEvents(items as never, "UltraVox");
+    expect(ev).toHaveLength(1);
+    expect(ev[0].rep.published_date).toBe("2026-10-01");
+    expect(ev[0].buyer).toBe("Inworld");
+  });
+  it("an event is never left with nothing: the representative is one the writer's rules accept", () => {
+    const items = [it1("Tyro buys Medipass health payment app from NAB Ventures", "https://www.afr.com/companies/financial-services/tyro-buys-medipass", "2021-05-10"), it1("Tyro to acquire Medipass Solutions", "https://www.tyro.com/media/tyro-to-acquire-medipass-solutions/", "2021-05-12")];
+    const ev = purchaseEvents(items as never, "Medipass", (x) => !/tyro\.com/.test(x.url));
+    expect(ev[0].rep.url).toMatch(/afr\.com/);
+    expect(purchaseEvents(items as never, "Medipass", () => false)).toEqual([]);
+  });
+});
+describe("gate comparison (owner, 2026-11-19)", () => {
+  it("a buyer under another spelling, and a news item by day and headline, are the same value", () => {
+    const base = [{ company: "UltraVox", field: "acquired", value: "Inworld AI" }, { company: "Kontent.ai", field: "news", value: "2026-01-21 — Kontent.ai Launches AI-Powered SEO and GEO Workflows to Cut Optimization Time" }];
+    const now = [{ company: "UltraVox", field: "acquired", value: "status = acquired · Acquired by Inworld (2026-10-01)" }, { company: "Kontent.ai", field: "news", value: "2026-01-21 — Kontent.ai Launches AI-Powered SEO and GEO Workflows to Cut Optimization Time by Up to 80%" }];
+    const c = compare2(base, now);
+    expect(c.lost).toEqual([]);
+    expect(c.added.filter((v) => v.field === "news")).toEqual([]);
+  });
+});
+
+import { gateLines } from "./reportGate";
+import { isWritten } from "./writtenCheck";
+describe("regression gate round 5 (owner, 2026-11-19)", () => {
+  it("a round whose type comes from another source is cited with that source and headline", () => {
+    const lines = [
+      { field: "round", after: "Other $200M · 2021-12 (month only)", source_url: "https://siliconangle.com/2021/12/28/x", quote: "Paradox valued at $1.5B following $200M funding round" },
+      { field: "news", after: "2021-12-27 — On a Mission to Build the Next Generation of HR Software, Paradox Raises $200M Series C", source_url: "https://www.prnewswire.com/news-releases/x", quote: "" },
+    ];
+    const g = gateLines(lines as never, "Paradox AI", "2026-11-19");
+    expect(g.after.get(0)).toMatch(/^Series C \$200M/);
+    expect(g.cited.get(0)).toMatchObject({ source_url: "https://www.prnewswire.com/news-releases/x" });
+    expect(g.cited.get(0)!.quote).toMatch(/Raises \$200M Series C/);
+  });
+  it("the database check compares status, buyer and date", () => {
+    const r = { company_id: "1", company: "Kashat", field: "acquired", after: "status = acquired · Acquired by Raseedi (2025-01-14)" };
+    expect(isWritten(r, { id: "1", status: "acquired", acquired_by: "Raseedi", exit_date: "2025-01-14", rounds: [], headcount: [] })).toBe("yes");
+    expect(isWritten(r, { id: "1", status: "active", acquired_by: null, exit_date: null, rounds: [], headcount: [] })).toBe("no");
+    expect(isWritten(r, { id: "1", status: "acquired", acquired_by: "Raseedi", exit_date: "2025-01-13", rounds: [], headcount: [] })).toBe("no");
+  });
+  it("the representative of a purchase does not depend on the order the reports arrive in", () => {
+    const base = [
+      { title: "Claranet acquires Six Degrees", url: "https://www.claranet.com/uk/news/claranet-acquires-six-degrees/", published_date: "2026-06-29", date_basis: "code" },
+      { title: "Claranet picks up Six Degrees | Microscope", url: "https://www.computerweekly.com/microscope/news/366645257/Claranet-picks-up-Six-Degrees", published_date: "2026-06-29", date_basis: "code" },
+      { title: "Claranet Acquires Six Degrees", url: "https://www.6dg.co.uk/press-release/claranet-acquires-six-degrees/", published_date: "2026-06-30", date_basis: "code" },
+    ];
+    const pick = (xs: typeof base) => purchaseEvents(xs as never, "Six Degrees", () => true, (x) => /claranet\.com|6dg\.co\.uk/.test(x.url))[0].rep.url;
+    const want = pick(base);
+    for (const perm of [[0, 1, 2], [2, 1, 0], [1, 2, 0], [1, 0, 2]]) expect(pick(perm.map((i) => base[i]))).toBe(want);
+    expect(want).toMatch(/claranet\.com/);
+  });
+});
+
+describe("regression gate round 6 (owner, 2026-11-19)", () => {
+  it("Paradox: the type is cited from the other source even when other evidence of the round already says 'Series C'", () => {
+    const lines = [
+      { field: "round", after: "Other $200M · 2021-12 (month only)", source_url: "https://siliconangle.com/2021/12/28/x", quote: "Paradox valued at $1.5B following $200M funding round",
+        payload: JSON.stringify({ round: { round_type: "Other" }, evidence: [{ field: "amount_raised", quote: "valued at $1.5B following $200M funding round" }, { field: "lead_investor", quote: "Thoma Bravo led the Series C" }] }) },
+      { field: "news", after: "2021-12-27 — On a Mission to Build the Next Generation of HR Software, Paradox Raises $200M Series C", source_url: "https://www.prnewswire.com/news-releases/x", quote: "" },
+    ];
+    const g = gateLines(lines as never, "Paradox AI", "2026-11-19");
+    expect(g.cited.get(0)).toMatchObject({ source_url: "https://www.prnewswire.com/news-releases/x" });
+  });
+  it("Six Degrees: the buyer's own release stands before a trade-press report, even when its date is read from the page's code", () => {
+    const mk = (title: string, url: string, d: string, basis: string) => ({ title, url, published_date: d, date_basis: basis });
+    const xs = [
+      mk("Claranet picks up Six Degrees | Microscope", "https://www.computerweekly.com/microscope/news/366645257/Claranet-picks-up-Six-Degrees", "2026-06-29", "given"),
+      mk("Claranet acquires Six Degrees", "https://www.claranet.com/uk/news/claranet-acquires-six-degrees/", "2026-06-29", "code"),
+    ];
+    const ev = purchaseEvents(xs as never, "Six Degrees", () => true, (x) => /claranet\.com/.test(x.url));
+    expect(ev[0].rep.url).toMatch(/claranet\.com/);
+  });
+});
+
+describe("batch 8 sample check (owner, 2026-11-19)", () => {
+  const rp = (r: Record<string, string>) => rowProblem({ company: "Acme", after: "", source_url: "https://acme.com/x", quote: "", ...r } as never, "Acme", "2026-11-19");
+  it("a product sentence with 'you will' is no job advertisement; two job markers or a strong one are", () => {
+    expect(rp({ field: "tags", after: "CRM", quote: "With the Acme CRM you will see every customer in one place." })).toBeNull();
+    expect(rp({ field: "tags", after: "CRM", quote: "Requirements: experience with sales. Responsibilities: you will manage accounts." })).toMatch(/job advertisement/);
+    expect(rp({ field: "tags", after: "CRM", quote: "We are hiring a CRM manager." })).toMatch(/job advertisement/);
+  });
+  it("a registered address is no headquarters and no office", () => {
+    expect(rp({ field: "hq_city", after: "London", quote: "Registered office: 1 Example Street, London EC1A 1AA" })).toMatch(/registered_address/);
+    expect(rp({ field: "office", after: "London, United Kingdom", quote: "Our registered address is 1 Example Street, London" })).toMatch(/registered_address/);
+    expect(rp({ field: "hq_city", after: "London", quote: "Acme is headquartered at 1 Example Street, London" })).toBeNull();
+  });
+  it("a count with a plus gives no employee range", () => {
+    expect(rp({ field: "employee_range", after: "51-200", quote: "We are a team of 150+ employees" })).toMatch(/no ceiling/);
+    expect(rp({ field: "employee_range", after: "51-200", quote: "Acme has 120 employees" })).toBeNull();
+  });
+  it("'Concorrentes' is a word; a rival named in a sentence about another company is no competitor", () => {
+    expect(rp({ field: "competitor_declared", after: "Concorrentes", source_url: "https://acme.com/vs", quote: "Concorrentes" })).toMatch(/not a company|category/);
+    expect(rp({ field: "competitor_declared", after: "Affirm", source_url: "https://techblog.example/p", quote: "Klarna competes with Affirm in buy now pay later." })).toMatch(/does not name the company/);
+  });
+  it("'Clar acquires Lendo Group' is not the purchase of Lendo", async () => {
+    const { acquirerIn } = await import("./acquisition");
+    expect(acquirerIn("Clar acquires Lendo Group", "Lendo")).toBeNull();
+    expect(acquirerIn("Clar acquires Lendo", "Lendo")?.acquirer).toBe("Clar");
+  });
+  it("a type is never taken from an address (owner, 2026-11-19: lawhive reversed) — the round stays Unknown", () => {
+    const g = applyRowRules([
+      { company: "Acme", field: "round", after: "Other $60M · 2025-10", source_url: "https://techcrunch.com/2025/10/08/acme-raises/", quote: "raised $60M" },
+      { company: "Acme", field: "news", after: "2025-10-08 — Acme raises $60M to expand", source_url: "https://fortune.com/2025/10/08/acme-raises-60m-series-b/", quote: "" },
+    ] as never, "Acme", "2026-11-19");
+    expect(g.rows.find((r) => r.field === "round")?.after).toMatch(/^Unknown \$60M/);
+  });
+});
+
+describe("quality rules of the maintenance window (owner, 2026-11-23)", () => {
+  const rp = (field: string, after: string, quote: string, company = "Acme", url = "https://techcrunch.com/x") => rowProblem({ company, field, after, quote, source_url: url }, company, "2026-11-23");
+  it("a grant, a contract and an award are not a funding round (MinerEye, Dataminr)", () => {
+    expect(rp("round", "Unknown $2.5M · 2025", "MinerEye bags $2.5M grant from the European Commission", "MinerEye")).toMatch(/grant, a contract or an award/);
+    expect(rp("round", "Unknown $318M · 2025", "Dataminr wins a $318M contract with the U.S. Department of War", "Dataminr")).toMatch(/grant, a contract or an award/);
+    expect(rp("round", "Seed $5M · 2025", "Acme raised $5M in seed funding led by Index and was awarded a $1M grant", "Acme")).toBeNull();   // the grant is another figure
+  });
+  it("a plan to raise is not a round that closed", () => {
+    expect(rp("round", "Series A $20M · 2025", "Acme plans to raise $20M in a Series A round next year")).toMatch(/plan to raise/);
+    expect(rp("round", "Series A $20M · 2025", "Acme raised $20M in a Series A round; it plans to raise more next year")).toBeNull();
+  });
+  it("an amount in another currency is not a dollar amount (Shengshu RMB, Mobilint KRW)", () => {
+    expect(rp("round", "Series A $600M · 2025", "Shengshu closes an RMB 600 million Series A round", "Shengshu")).toMatch(/CNY/);
+    expect(rp("round", "Series C $70B · 2025", "Mobilint raised KRW 70 billion in a Series C", "Mobilint")).toMatch(/KRW/);
+    expect(rp("round", "Series A $10M · 2025", "Acme raised a $10 million Series A")).toBeNull();
+  });
+  it("a founder needs a quote that names the person and says the founding (Bloom Security)", () => {
+    expect(rp("founder", "Ann Lee — Founder", "Bloom Security is a cloud security company founded in 2022", "Bloom Security")).toMatch(/does not name the person/);
+    expect(rp("founder", "Ann Lee — CEO", "Ann Lee is the CEO of Acme", "Acme")).toMatch(/does not say the person founded/);
+    expect(rp("founder", "Jiajun Zhu — Co-Founder & Co-CEO", "Jiajun Zhu Co-Founder & Co-CEO", "Nuro", "https://www.nuro.ai/company")).toBeNull();
+  });
+  it("a founding of another company is not this company's (CorPower / Oscilla, Usersnap)", () => {
+    expect(rp("founder", "Ann Lee — Co-Founder", "Ann Lee, co-founder of Oscilla, signed the filing", "CorPower Ocean")).toMatch(/another company \(Oscilla\)/);
+    expect(rp("founder", "Ann Lee — Founder", "Quoted Blog was founded by Ann Lee and Bo Chen", "Usersnap")).toMatch(/another company/);
+    expect(rp("founder", "Michael Monteiro — Co-founder", "Buildium was founded in 2004 by Michael Monteiro and Dimitris Georgakopoulos", "Buildium")).toBeNull();
+  });
+  it("the role is written only as far as the quote gives it (Deliverect)", () => {
+    expect(titleMatchingQuote("Co-Founder & CPO", "Jelte Vrijhoef, Co-Founder and CTO of Deliverect")).toBe("Co-Founder");
+    expect(titleMatchingQuote("Co-Founder & CTO", "Jelte Vrijhoef, Co-Founder and CTO")).toBe("Co-Founder & CTO");
+    expect(titleMatchingQuote("Co-Founder & Chief Technology Officer", "co-founder and CTO")).toBe("Co-Founder & Chief Technology Officer");
+    const out = applyRowRules([{ company: "Deliverect", field: "founder", after: "Jérôme Laredo — President", quote: "Jérôme Laredo, Co-Founder and CPO of Deliverect", source_url: "https://deliverect.com/team" }], "Deliverect", "2026-11-23");
+    expect(out.rows[0].after).toBe("Jérôme Laredo — Founder");
+  });
+});
+
+describe("acceptance: round_currency_matches_quote (owner, 2026-11-23)", () => {
+  it("fails on a dollar line whose quote says RMB, passes on a matching one", () => {
+    const rows = [
+      { company: "Shengshu", field: "round", after: "Series A $600M · 2025", source_url: "https://x.test", quote: "closes an RMB 600 million Series A" },
+      { company: "Acme", field: "round", after: "Seed $5M · 2025", source_url: "https://x.test", quote: "raised $5 million in seed funding" },
+    ];
+    const r = runAcceptance([{ id: "c", why: "w", kind: "round_currency_matches_quote" }], rows as never, [], "2026-11-23")[0];
+    expect(r.pass).toBe(false);
+    expect((r.offenders ?? []).map((x) => x.company)).toEqual(["Shengshu"]);
+    expect(runAcceptance([{ id: "c", why: "w", kind: "round_currency_matches_quote" }], rows.slice(1) as never, [], "2026-11-23")[0].pass).toBe(true);
+  });
+});

@@ -63,7 +63,7 @@ export function form5500Columns(header: string[]): { sponsor: number; ein: numbe
  * engineers" at SolarEdge, Kitov's "CEO of Verint ... 1200 employees", Armorblox's "helping to grow Blue Jeans to 200+").
  * Past-career wording is always one; a role title only on the company's own pages (a press sentence names its speaker).
  */
-const BIO_STRONG = /\b(?:served as|prior to|previously|formerly|former|helping to grow|helped (?:to )?(?:grow|build|scale)|grew it from|managing a team|managed a team|led a team|leading a team|annual revenues?)\b/i;
+const BIO_STRONG = /\b(?:served as|prior to|previously|formerly|former|helping to grow|helped (?:to )?(?:grow|build|scale)|grew it from|managing a team|managed a team|led a team|leading a team|annual revenues?|led (?:its|the) (?:global )?expansion|(?:founded|co-?founded|started)\b[^.]{0,80}\bin (?:19|20)\d{2}\b[^.]{0,80}\b(?:expansion|grew|growth)\b)\b/i;
 const BIO_ROLE = /\b(?:CEO|CTO|CFO|COO|CMO|CRO|President|Vice President|VP|Chairman|Managing Director|Co-?Founder|Founder)\b/;
 export function figureIsBiographical(sentence: string, onOwnPage: boolean): boolean {
   return BIO_STRONG.test(sentence) || (onOwnPage && BIO_ROLE.test(sentence));
@@ -123,7 +123,9 @@ export function sizeStatement(text: string): SizeStatement | null {
     if (!years.length && MILESTONE.test(sentence)) continue;
     if (figureIsBiographical(sentence, true) || figureIsJobPosting(sentence) || figureIsAwardCategory(sentence)) continue;
     for (const re of PATTERNS) {
-      const m = sentence.match(re);
+      // "grew from a team of 84 in January 2021 to a team of 181 in December 2021": the figure of today is the last one (owner, batch 6: Brighte).
+      const all = [...sentence.matchAll(new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`))];
+      const m = /\b(?:grew|grown|from)\b[^.]{0,80}\bto\b/i.test(sentence) && all.length > 1 ? all[all.length - 1] : sentence.match(re);
       if (!m) continue;
       const num = m.slice(1).find((x) => x && /^\d[\d,]*$/.test(x));
       const value = Number((num ?? "").replace(/,/g, ""));

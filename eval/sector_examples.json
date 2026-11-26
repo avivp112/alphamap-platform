@@ -177,5 +177,37 @@
     "description": "AIVF develops AI-powered IVF solutions, including an AI platform that grades embryos and provides insights on embryo quality. AIVF sells its solutions to IVF clinics, embryology labs, clinicians and embryologists.",
     "expect": "Health & Life Sciences › MedTech",
     "was": "Health & Life Sciences › Healthcare SaaS / Digital Health (rejudge 2026-11-12)"
+  },
+  {
+    "company": "Posteo",
+    "description": "Posteo sells secure email accounts that include an address book, calendar and notes, with encryption that can be switched on.",
+    "expect": "Consumer & Media › Consumer / General",
+    "was": "Enterprise Software › Productivity & Collaboration",
+    "note": "owner 2026-11-14: what-only description; sold to private persons, not to businesses",
+    "noCustomers": true
+  },
+  {
+    "company": "KrillTech",
+    "description": "Krilltech sells liquid agricultural solutions containing spherical carbon nanoparticles that are applied to plants or soil to improve plant development and make plants more efficient and healthier.",
+    "expect": "Food & Agriculture › AgTech",
+    "was": "Climate & Energy (round 9 flip)"
+  },
+  {
+    "company": "Promethean Particles",
+    "description": "Promethean Particles produces metal-organic frameworks (MOFs) using a proprietary and patented continuous process. Its MOF materials are applied to carbon capture, and the company supplies them to industrial customers.",
+    "expect": "Climate & Energy › CleanTech",
+    "was": "flipped between Climate & Energy, Industrial & Manufacturing and DeepTech (round 10)"
+  },
+  {
+    "company": "Paradox AI",
+    "description": "Paradox sells conversational AI recruiting software, the Olivia assistant, that automates hiring tasks such as screening candidates and scheduling interviews for employers.",
+    "expect": "Enterprise Software › HR Tech",
+    "was": "Enterprise Software with no sub-sector (round 10)"
+  },
+  {
+    "company": "Mintifi",
+    "description": "Mintifi offers supply chain financing through a platform that provides check-out financing for buying inventory, smart term loans, electronic invoicing and payment (EIPP), and APIs that integrate with ERP systems. Its customers are small and medium businesses that buy inventory from suppliers.",
+    "expect": "Fintech › Lending",
+    "was": "Fintech › Payments (round 10)"
   }
 ]

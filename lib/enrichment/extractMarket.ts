@@ -25,11 +25,16 @@ import { requestFor } from "./models.ts";
 import { sanitizeModelOutput, ensureArray } from "./sanitize";
 import { verifyEvidence, normalizeForMatch, dateFromUrl, type EvidenceSource } from "./evidence";
 import { sourceHeadlineDetail } from "./newsRelevance";
+import { caseName } from "./nameCase";
 import { formatSourcesForPrompt, type LabeledSource } from "./sources";
 import { debugDumpJson } from "./debugDump";
 import { competitorRelation, type RelationDrop } from "./competitorRelation";
 import { competitorEvidenceProblem, type CompetitorEvidenceDrop } from "./competitorEvidence";
 import { isDataPlatformUrl } from "./dataPlatforms";
+import { componentOn } from "./components";
+
+/** Scripts that are not Latin: a headline in them is read in its own language and kept with its translation. */
+const NON_LATIN = /[\u0590-\u06FF\u0400-\u04FF\u0370-\u03FF\u0E00-\u0E7F\u3040-\u30FF\u4E00-\u9FFF\uAC00-\uD7AF]/;
 
 export interface EvidencedValue<T> {
   value: T;
@@ -45,7 +50,7 @@ export interface V2Competitor {
   source_id?: string; evidence_quote?: string;
 }
 export interface V2Acquisition { company_name: string; website?: string; acquired_date?: string; amount?: number; description?: string; source_ids?: string[] }
-export interface V2NewsItem { title_joined?: boolean; title: string; url: string; source?: string; published_date?: string; summary?: string; image_url?: string }
+export interface V2NewsItem { /** The headline as the page writes it, when it is not in English: the check runs on this one, the translation is the title. */ title_original?: string; title_joined?: boolean; title: string; url: string; source?: string; published_date?: string; summary?: string; image_url?: string }
 /** A patent from the EPO register (epoPatents.ts) — the only source of patents. */
 export interface V2PatentRecord { title: string; patent_number?: string; filing_date?: string | null; url?: string; summary?: string; source?: "epo" }
 export interface V2Technology {
@@ -101,10 +106,10 @@ function materialField(valueSchema: Record<string, unknown>, description: string
   };
 }
 
-function marketExtractionTool() {
-  return {
+function marketExtractionTool(withCompetitors = true) {
+  const all = {
     name: "save_market_extraction",
-    description: "Save the competitors, acquisitions, news, and technology for a private tech company.",
+    description: withCompetitors ? "Save the competitors, acquisitions, news, and technology for a private tech company." : "Save the acquisitions, news, and technology for a private tech company.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -153,7 +158,7 @@ function marketExtractionTool() {
               title: { type: "string" },
               url: { type: "string", description: "The article's URL exactly as shown in its source header." },
               source: { type: "string", description: "Publication name, e.g. 'TechCrunch'." },
-              published_date: { type: "string", description: "YYYY-MM-DD when determinable (convert relative dates like '3 days ago' using today's date); omit otherwise." },
+              published_date: { type: "string", description: "YYYY-MM-DD when the source states the date; omit it when the source gives only a relative date such as '3 days ago'." },
               summary: { type: "string", description: "1-2 sentences on what the article reports." },
             },
             required: ["title", "url"],
@@ -171,20 +176,33 @@ function marketExtractionTool() {
       required: ["competitors", "news", "market_peers"],
     },
   };
+  // Competitors are Tier 3 and switched off (owner, 2026-11-23, maintenance window): the call asks for the acquisitions, the news and the technology only.
+  if (withCompetitors) return all;
+  const { competitors: _c, market_peers: _m, ...properties } = all.input_schema.properties;
+  return { ...all, input_schema: { ...all.input_schema, properties, required: ["news"] } };
 }
 
-export function buildMarketExtractionRequest(companyName: string, sources: LabeledSource[], today = new Date().toISOString().slice(0, 10)) {
+/**
+ * `today` is accepted and unused: the prompt carries no date (owner, 2026-11-23: a date in the prompt breaks the prompt cache and the match of the recordings; the date checks are code, see newsDateIsGrounded).
+ * `withCompetitors` follows the `competitors` component (off): the competitor and market-peer rules and fields are left out of the call.
+ */
+export function buildMarketExtractionRequest(companyName: string, sources: LabeledSource[], _today?: string, withCompetitors = componentOn("competitors")) {
   const context = formatSourcesForPrompt(sources);
-  const prompt = `You are a market research analyst. From the labeled research below, extract the competitors, acquisitions, news coverage, and technology of the company "${companyName}". Today's date is ${today}.
+  const competitorRule = `COMPETITORS — only companies a source EXPLICITLY says compete with ${companyName}: "${companyName} competes with X", "X, a rival of ${companyName}", "${companyName}'s competitors include X", or ${companyName}'s own comparison page. The source must be ${companyName}'s own website, a press release, or an article in an established news outlet in which the journalist, or a quote from the company, says they compete. A "similar companies", "alternatives", "top N" or "X vs Y" list on a data platform (LeadIQ, Crunchbase, Tracxn, PitchBook, CB Insights, Dealroom, ZoomInfo and the like) or a review site (G2, Capterra and the like) is NOT evidence — a company named only there is not a competitor. Give each one's source_id and a verbatim evidence_quote that names it and says they compete. Fewer, or none, is correct when no source says so. For each, write 2-3 sentences: who the competitor is and exactly how it overlaps with ${companyName} — what each sells and to whom; never where it was listed, ranked or compared, and never a data platform. Never list ${companyName} itself, a parent company, an investor, a customer, a partner it works with, or a platform it runs on or integrates into — those are relationships, not competitors. Only name competitors that actually appear in the sources (cite them in source_ids) — never add a well-known company from your own knowledge that no source mentions.`;
+  const peersRule = `MARKET_PEERS — separately from COMPETITORS, list up to 5 companies you know sell the same kind of product to the same kind of customer as ${companyName}, even if no source below says they compete. These are search HINTS, not facts: each is looked up afterwards and kept only if an allowed source puts both companies in one market. Never list ${companyName} itself, a customer, an investor or a platform it runs on. [] when unsure.`;
+  const rules = [
+    ...(withCompetitors ? [competitorRule] : []),
+    `NEWS — include EVERY article in the sources that is about ${companyName} (funding, product launches, partnerships, acquisitions, executive hires, awards, interviews), up to 8, most recent first. Use the article URL exactly as it appears in that source's header line. A source's "Source:" and "Date:" lines give the publication and date. Do NOT list the company's own website pages ([W#] sources) or directory/profile pages (Crunchbase, LinkedIn, PitchBook, Tracxn, CB Insights profiles) as news.`,
+    `ACQUISITIONS — only companies ${companyName} itself bought. If ${companyName} was acquired BY someone, that is not an acquisition here.`,
+    `TECHNOLOGY — only technologies a source names (job posts, careers pages, engineering blogs, GitHub). Never infer from the sector.`,
+    `Never construct or guess a URL — every URL you output must appear verbatim in a source.`,
+    `Scan EVERY source below for each category, not just the ones whose label matches it. An empty list is correct only after that check.`,
+    ...(withCompetitors ? [peersRule] : []),
+  ].map((r, i) => `${i + 1}. ${r}`).join("\n");
+  const prompt = `You are a market research analyst. From the labeled research below, extract the ${withCompetitors ? "competitors, " : ""}acquisitions, news coverage, and technology of the company "${companyName}".
 
 RULES:
-1. COMPETITORS — only companies a source EXPLICITLY says compete with ${companyName}: "${companyName} competes with X", "X, a rival of ${companyName}", "${companyName}'s competitors include X", or ${companyName}'s own comparison page. The source must be ${companyName}'s own website, a press release, or an article in an established news outlet in which the journalist, or a quote from the company, says they compete. A "similar companies", "alternatives", "top N" or "X vs Y" list on a data platform (LeadIQ, Crunchbase, Tracxn, PitchBook, CB Insights, Dealroom, ZoomInfo and the like) or a review site (G2, Capterra and the like) is NOT evidence — a company named only there is not a competitor. Give each one's source_id and a verbatim evidence_quote that names it and says they compete. Fewer, or none, is correct when no source says so. For each, write 2-3 sentences: who the competitor is and exactly how it overlaps with ${companyName} — what each sells and to whom; never where it was listed, ranked or compared, and never a data platform. Never list ${companyName} itself, a parent company, an investor, a customer, a partner it works with, or a platform it runs on or integrates into — those are relationships, not competitors. Only name competitors that actually appear in the sources (cite them in source_ids) — never add a well-known company from your own knowledge that no source mentions.
-2. NEWS — include EVERY article in the sources that is about ${companyName} (funding, product launches, partnerships, acquisitions, executive hires, awards, interviews), up to 8, most recent first. Use the article URL exactly as it appears in that source's header line. A source's "Source:" and "Date:" lines give the publication and date. Do NOT list the company's own website pages ([W#] sources) or directory/profile pages (Crunchbase, LinkedIn, PitchBook, Tracxn, CB Insights profiles) as news.
-3. ACQUISITIONS — only companies ${companyName} itself bought. If ${companyName} was acquired BY someone, that is not an acquisition here.
-4. TECHNOLOGY — only technologies a source names (job posts, careers pages, engineering blogs, GitHub). Never infer from the sector.
-5. Never construct or guess a URL — every URL you output must appear verbatim in a source.
-6. Scan EVERY source below for each category, not just the ones whose label matches it. An empty list is correct only after that check.
-7. MARKET_PEERS — separately from COMPETITORS, list up to 5 companies you know sell the same kind of product to the same kind of customer as ${companyName}, even if no source below says they compete. These are search HINTS, not facts: each is looked up afterwards and kept only if an allowed source puts both companies in one market. Never list ${companyName} itself, a customer, an investor or a platform it runs on. [] when unsure.
+${rules}
 
 Labeled research (each source is tagged [S#] for a search result or [W#] for a fetched website page):
 ${context}`;
@@ -193,7 +211,7 @@ ${context}`;
     model: "",
     max_tokens: 8192,
     temperature: 0,
-    tools: [marketExtractionTool()],
+    tools: [marketExtractionTool(withCompetitors)],
     tool_choice: { type: "tool" as const, name: "save_market_extraction" },
     messages: [{ role: "user" as const, content: prompt }],
   };
@@ -307,6 +325,7 @@ export function processMarketExtractionResponse(
   const seenCompetitors = new Set<string>();
   const competitors = ensureArray<V2Competitor>(i.competitors).filter((c) => {
     if (!c?.name || !c.how_it_competes) return false;
+    c.name = caseName(c.name);
     const key = normalizeForMatch(c.name);
     if (!key || seenCompetitors.has(key)) return false;
     if (key === selfKey) { dropped.push({ field: "competitors", reason: "competitor_is_self" }); return false; }
@@ -344,7 +363,19 @@ export function processMarketExtractionResponse(
     }
     // No date from the model: the article's own address may give it (Business Wire, /YYYY/MM/DD/).
     if (!publishedDate) publishedDate = dateFromUrl(src.url) ?? undefined;
+    // An address that gives only the month (/2015/01/slug) dates the item to the month, not to the first of it (owner, batch 7: Mama Money, "2015-01-01").
+    if (publishedDate && /^\d{4}-\d{2}-01$/.test(publishedDate)) {
+      const um = src.url.match(/\/(\d{4})\/(\d{2})\/(?!\d{2}(?:\/|$))/);
+      if (um && publishedDate.startsWith(`${um[1]}-${um[2]}`)) publishedDate = `${um[1]}-${um[2]}`;
+    }
     const headline = sourceHeadlineDetail(n.title, src);
+    // A headline in another script is checked against the page's own title; the model's translation stays beside it as the title (owner, batch 6: Ruya, Arabic).
+    const srcTitle = String(src.title ?? "").trim();
+    if (!headline && NON_LATIN.test(srcTitle) && srcTitle.length >= 12 && srcTitle.replace(/\s+/g, " ").length <= 300) {
+      news.push({ ...n, title: String(n.title).trim(), title_original: srcTitle, url: src.url, published_date: publishedDate });
+      if (news.length >= 8) break;
+      continue;
+    }
     if (!headline) {
       console.log(`    🚫  news title not in its source — model: "${String(n.title).slice(0, 110)}" | source title: "${String(src.title ?? "").slice(0, 110)}" | ${src.url}`);
       dropped.push({ field: "news", reason: "news_title_not_in_source" }); continue;

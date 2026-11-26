@@ -1,0 +1,300 @@
+[
+ {
+  "id": "paradox_founded",
+  "why": "Paradox AI founded_year is 2016 or not written, never 2020",
+  "kind": "absent",
+  "company": "Paradox AI",
+  "field": "founded_year",
+  "match": "^2020$"
+ },
+ {
+  "id": "paradox_series_c",
+  "why": "Paradox AI round Series C amount = $200M",
+  "kind": "present",
+  "company": "Paradox AI",
+  "field": "round",
+  "match": "Series C \\$200M"
+ },
+ {
+  "id": "no_run_date_news",
+  "why": "No news dated the day of the run or later",
+  "kind": "news_dates_before_run"
+ },
+ {
+  "id": "no_tag_pages",
+  "why": "No source is a tag / list / search page",
+  "kind": "absent",
+  "field": "news",
+  "source_match": "/tags?/|[?&](k|s|q)="
+ },
+ {
+  "id": "no_tag_pages_any",
+  "why": "No value of any field has a tag / list / search page as source",
+  "kind": "absent",
+  "source_match": "/tags?/|[?&](k|s|q)="
+ },
+ {
+  "id": "medipass_guide",
+  "why": "Medipass news 'Four rules…' is not written",
+  "kind": "absent",
+  "company": "Medipass",
+  "field": "news",
+  "match": "Four rules"
+ },
+ {
+  "id": "six_degrees_founder_once",
+  "why": "Six Degrees: founder Alastair Mills once",
+  "kind": "max_count",
+  "company": "Six Degrees",
+  "field": "founder",
+  "match": "Alastair Mills",
+  "max": 1
+ },
+ {
+  "id": "six_degrees_background_once",
+  "why": "Six Degrees: founder_background of Alastair Mills once",
+  "kind": "max_count",
+  "company": "Six Degrees",
+  "field": "founder_background",
+  "match": "Alastair Mills",
+  "max": 1
+ },
+ {
+  "id": "no_sponsored",
+  "why": "No value has businessinsider.com/sc/ as source",
+  "kind": "absent",
+  "source_match": "businessinsider\\.com/sc/"
+ },
+ {
+  "id": "choiz_no_lead",
+  "why": "Choiz round has no lead (Insud Pharma is in no source)",
+  "kind": "absent",
+  "company": "Choiz",
+  "field": "round",
+  "match": "lead Insud"
+ },
+ {
+  "id": "mintifi_lending",
+  "why": "Mintifi tags include Lending, not Payments alone",
+  "kind": "tags_include",
+  "company": "Mintifi",
+  "include": "Lending",
+  "not_only": "Payments"
+ },
+ {
+  "id": "humi_acquired",
+  "why": "Humi acquired by Employment Hero, 2025-01-08 (BusinessWire, first announcement)",
+  "kind": "present",
+  "company": "Humi",
+  "field": "acquired",
+  "match": "Employment Hero.*2025-01-08"
+ },
+ {
+  "id": "medipass_acquired",
+  "why": "Medipass acquired by Tyro, 2021-05-11 (from the accepted news)",
+  "kind": "present",
+  "company": "Medipass",
+  "field": "acquired",
+  "match": "Tyro.*2021-05-10"
+ },
+ {
+  "id": "six_degrees_acquired",
+  "why": "Six Degrees acquired by Claranet, 2026-06",
+  "kind": "present",
+  "company": "Six Degrees",
+  "field": "acquired",
+  "match": "Claranet.*2026-06-(29|30)"
+ },
+ {
+  "id": "dietly_acquired",
+  "why": "Dietly majority-acquired by Żabka, first announcement 2021-05-31, or 2021-06-03 until a code-read date needs a second source (backlog)",
+  "kind": "present",
+  "company": "Dietly",
+  "field": "acquired",
+  "match": "majority_acquired.*Żabka.*2021-(05-31|06-03)"
+ },
+ {
+  "id": "not_enriched_mototech",
+  "why": "Mototech is not enriched",
+  "kind": "not_enriched",
+  "company": "Mototech"
+ },
+ {
+  "id": "not_enriched_nooma",
+  "why": "noo.ma is not enriched",
+  "kind": "not_enriched",
+  "company": "noo.ma"
+ },
+ {
+  "id": "not_enriched_plott",
+  "why": "Plott is not enriched",
+  "kind": "not_enriched",
+  "company": "Plott"
+ },
+ {
+  "id": "dietly_sector",
+  "why": "Dietly sector = E-commerce & Retail (locked)",
+  "kind": "present",
+  "company": "Dietly",
+  "field": "sector",
+  "match": "E-commerce & Retail"
+ },
+ {
+  "id": "paradox_tags_not_workday",
+  "why": "Paradox tags do not rest on a quote about Workday / another company",
+  "kind": "absent",
+  "company": "Paradox AI",
+  "field": "tags",
+  "quote_match": "Workday|Cielo"
+ },
+ {
+  "id": "no_cookie_tag",
+  "why": "No tag rests on a cookie or privacy sentence",
+  "kind": "absent",
+  "field": "tags",
+  "quote_match": "cookie|privacy policy"
+ },
+ {
+  "id": "acquired_only_from_news",
+  "why": "No acquired row rests on a profile page, a blog or a database",
+  "kind": "absent",
+  "field": "acquired",
+  "source_match": "pitchbook|ledgerlogic|summitpartners|crunchbase|dealroom"
+ },
+ {
+  "id": "medipass_not_ron",
+  "why": "Medipass is not the acquirer of RON",
+  "kind": "absent",
+  "company": "Medipass",
+  "field": "acquired",
+  "match": "RON"
+ },
+ {
+  "id": "no_name_proposal_when_acquired",
+  "why": "No name proposal for a company that was acquired (Humi, Medipass)",
+  "kind": "absent",
+  "field": "name_proposal",
+  "company": "Humi"
+ },
+ {
+  "id": "no_name_proposal_medipass",
+  "why": "No name proposal for Medipass",
+  "kind": "absent",
+  "field": "name_proposal",
+  "company": "Medipass"
+ },
+ {
+  "id": "conotoxia_collapse",
+  "why": "Conotoxia news about the collapse (Cinkciarz.pl) is back",
+  "kind": "present",
+  "company": "Conotoxia",
+  "field": "news",
+  "match": "Collapses",
+  "severity": "gap"
+ },
+ {
+  "id": "conotoxia_licence",
+  "why": "Conotoxia news about the licence withdrawal is back",
+  "kind": "present",
+  "company": "Conotoxia",
+  "field": "news",
+  "match": "licen[cs]e|Revokes"
+ },
+ {
+  "id": "six_degrees_no_crawl_date",
+  "why": "Six Degrees: no news 'sold to US investors' dated the week before the run without a stated date",
+  "kind": "absent",
+  "company": "Six Degrees",
+  "field": "news",
+  "match": "sold to US investors"
+ },
+ {
+  "id": "no_duplicate_rounds",
+  "why": "No company has two identical rounds",
+  "kind": "no_duplicates",
+  "field": "round"
+ },
+ {
+  "id": "no_url_quotes",
+  "why": "No quote is an address or a slug",
+  "kind": "no_url_quote"
+ },
+ {
+  "id": "paradox_series_c_headline",
+  "why": "Paradox Series C quote is the headline of the page",
+  "kind": "present_quote",
+  "company": "Paradox AI",
+  "field": "round",
+  "match": "Raises \\$200M Series C"
+ },
+ {
+  "id": "paradox_acquired",
+  "why": "Paradox AI acquired by Workday, 2025-10-01 (from the accepted news)",
+  "kind": "present",
+  "company": "Paradox AI",
+  "field": "acquired",
+  "match": "Workday.*2025-10",
+  "severity": "gap"
+ },
+ {
+  "id": "medipass_brand",
+  "why": "Medipass brand after the acquisition is written as the page writes it",
+  "kind": "present",
+  "company": "Medipass",
+  "field": "brand_after_acquisition",
+  "match": "Tyro Health",
+  "severity": "gap"
+ },
+ {
+  "id": "one_description",
+  "why": "No company has more than one description",
+  "kind": "single_value",
+  "fields": [
+   "description",
+   "description_what_only"
+  ]
+ },
+ {
+  "id": "one_sector",
+  "why": "No company has more than one sector",
+  "kind": "single_value",
+  "fields": [
+   "sector"
+  ]
+ },
+ {
+  "id": "humi_series_b",
+  "why": "Humi Series B $31M, 2022-05-25 (from the accepted headline)",
+  "kind": "present",
+  "company": "Humi",
+  "field": "round",
+  "match": "Series B \\$31M.*2022-05-25",
+  "severity": "gap"
+ },
+ {
+  "id": "mintifi_180",
+  "why": "Mintifi $180M round, 2024-12-10 (from the accepted headline)",
+  "kind": "present",
+  "company": "Mintifi",
+  "field": "round",
+  "match": "\\$180M.*2024-12-10",
+  "severity": "gap"
+ },
+ {
+  "id": "mintifi_series_d_dated",
+  "why": "Mintifi Series D $110M carries the date of its headline, 2023-03-09",
+  "kind": "present",
+  "company": "Mintifi",
+  "field": "round",
+  "match": "Series D \\$110M.*2023-03-09",
+  "severity": "gap"
+ },
+ {
+  "id": "mintifi_no_undated_d",
+  "why": "Mintifi Series D is not left undated",
+  "kind": "absent",
+  "company": "Mintifi",
+  "field": "round",
+  "match": "Series D.*no date"
+ }
+]

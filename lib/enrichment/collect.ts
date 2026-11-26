@@ -18,8 +18,8 @@
 import { pickDevLinks } from "./devLinks";
 import Anthropic from "@anthropic-ai/sdk";
 import {
-  verifyDomainMatch, webSearch, readPageCached, fetchPageHtml, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, fetchArticleTexts,
-  searchMostlyFailed, type SearchProviderState,
+  verifyDomainMatch, webSearch, readPageCached, fetchPageHtml, newsSearch, serperSearch, serperNewsSearch, fetchCompanyWebsitePages, fetchHomeAndAbout, homepageReadFailure, addressIsDead, websiteRedirect, fetchArticleTexts,
+  searchMostlyFailed, sitemapStats, type SearchProviderState,
 } from "./searchProviders.ts";
 import { filterByEntity, deriveIdentityKeywords, nameQualifiersOnOwnSite, isNamesakeDrop, type EntityAnchors } from "./entity.ts";
 import { buildLabeledSources, markCompanyLinkedFiles, mergeDuplicateResults, classifySourceType, type RawSearchResult, type LabeledSource } from "./sources.ts";
@@ -31,12 +31,29 @@ import { competitorTierClaims, type TieredClaim } from "./competitorTiers.ts";
 import { websiteLooksLikeAnotherCompany } from "./websiteIdentity.ts";
 import { judgeNews, finishNews } from "./newsGate.ts";
 import { reconcileSector, subSectorUnsupported } from "./sectors.ts";
-import { siteBelongsToAnotherCompany } from "./siteOwner.ts";
+import { siteBelongsToAnotherCompany, acquisitionHeadline, rebrandedAs, redirectBrand } from "./siteOwner.ts";
+import { resolveDomain, judgeSite } from "./domainResolve.ts";
+import { techOverride, sectorDecision, techAccepted } from "./techOverrides.ts";
+import { isThirdPartyPage, foundingSentenceIsAboutCompany } from "./subject.ts";
+import { acquirerIn, knownAcquirers } from "./acquisition.ts";
+import { roundsFromNews } from "./newsRounds.ts";
+import { companyLanguage, localQueries, type Lang } from "./localSearch.ts";
+import { traceOf } from "./runTrace.ts";
+import { pageNamesCompany } from "./ownDomain.ts";
+import { websiteDecision } from "./websiteDecisions.ts";
+import { publicOverride } from "./techOverrides.ts";
+import { translateItems } from "./translate.ts";
+import { foundedYearFromSite, copyrightStartYear, foundedInCityYear } from "./siteFacts.ts";
+import { storedRejection, rememberRejection } from "./techMemory.ts";
 import { buildSectorRequest, parseSectorChoice, classifyWithRetry, type SectorChoice } from "./classifySector.ts";
 import { pressOnlyDate, originalReleaseQuery, resolveRoundDate } from "./roundDates.ts";
-import { buildDescriptionRequest, descriptionSources, processDescription } from "./descriptionBuilder.ts";
+import { buildDescriptionRequest, descriptionSources, processDescription, describeAttempt, marketingWordIn } from "./descriptionBuilder.ts";
 import { buildBackgroundRequest, processBackgroundResponse, backgroundSearchQuery, founderSearchQuery } from "./founderBackground.ts";
 import { requestFor } from "./models.ts";
+import { rejectedDomains, describeRejected } from "./rejectedDomains.ts";
+import { classifyUnknownDomains } from "./domainClassify.ts";
+import { ownBrandSources, finalHostOf, brandLabelMatches } from "./ownDomain.ts";
+import { judgeArticleEntity, countryOfHost, type CompanyProfileForMatch } from "./articleEntity.ts";
 import { judgeMarketPeers, type PeerClaim, type PeerFacts, type buildPeerComparisonRequest } from "./marketComparison.ts";
 import { isDataPlatformUrl } from "./dataPlatforms.ts";
 import { peerSiteQuery, pickPeerSite } from "./peerSite.ts";
@@ -44,27 +61,35 @@ import { lookupEpoPatents, type CompanyIdentity, type EpoPatentResult } from "./
 import { hintFromRound, hintQueries, confirmHint, hintKey, recoverMissingAmount, type RoundHint } from "./hints.ts";
 import { detectGaps, buildDeepDiveQueries, hasNoFinancingRounds, type DeepDiveSection } from "./deepDive.ts";
 import {
-  groundRoundDetails, isUnstatedEvent, incompleteRound, absorbAmountlessRounds, rejectRound, roundSourceStandings, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
+  groundLeadInvestor, groundRoundDetails, isUnstatedEvent, incompleteRound, absorbAmountlessRounds, rejectRound, roundSourceStandings, planRoundWrites, mergeProfileExtractions, mergeFundingExtractions, mergeMarketExtractions,
   type ExistingRoundRef,
 } from "./assemble.ts";
 import { buildSharedExtractionRequest, type ExtractionKind } from "./sharedExtraction.ts";
 import { pickArticlesToRead } from "./articles.ts";
-import { runTechGate, shouldSkipAsNonTech, type TechGateVerdict } from "./techGate.ts";
-import { foundersFromText, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, supportedRoleSubset, personCardsInHtml, bioFromCard, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
+import { runTechGate, shouldSkipAsNonTech, techDecision, type TechGateVerdict } from "./techGate.ts";
+import type { RuleHit } from "./ruleRegistry.ts";
+import { caseName } from "./nameCase.ts";
+import { approvedQuotes, profileQuotes, hqFromApprovedQuotes, foundersFromApprovedQuotes } from "./approvedQuotes.ts";
+import { teamPeopleCount, foundersFromText, foundersFromCards, foundersFromMentions, personMentionedIn, groundFounders, founderNamesNotExtracted, supportedBio, roleSupported, supportedRoleSubset, personCardsInHtml, bioFromCard, roleAtCompany, titleFromCard, isLeadershipRole } from "./people.ts";
 import { componentOn } from "./components.ts";
-import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts } from "./linkedin.ts";
+import { preferBetterRoundSources } from "./roundSourcePreference.ts";
+import { ambiguousName } from "./rowRules.ts";
+import { identityOverlap, englishShare, identityAbout, looksLikeErrorPage, MIN_ENGLISH } from "./identityMismatch.ts";
+import { findPersonResult, discoverFounders, founderTitleFromHeadline, samePersonName, parseLinkedInFacts, bioFromLinkedInFacts, findLinkedInLink } from "./linkedin.ts";
 import { findListingStatement, type ListingStatement } from "./listing.ts";
 import { QUIET_DAYS, buildUpdateQueries, knownUrlSet, mentionsFunding, newResultsOnly, type SeenUrls } from "./update.ts";
 import { validateEnrichment, checkNarratives } from "./validation.ts";
-import { hqStatementsIn, decideHeadquarters, statementKind, isLegalPageUrl, articleDate, countryOfCity, contactPageAddresses, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, canonicalCity, type HqStatement } from "./headquarters.ts";
+import { legalPageHq, hqStatementsIn, decideHeadquarters, statementKind, isLegalPageUrl, articleDate, countryOfCity, contactPageAddresses, impressumSeat, diagnoseHq, quoteSaysHqOf, hqBelongsToAnother, canonicalCity, type HqStatement } from "./headquarters.ts";
 import { profileSourceAllowed, roundSourceStanding, unwrapRedirect, corroboratedInvestors } from "./roundSources.ts";
 import { aboutParagraph, aboutIsOf, factsFromAbout, legalFacts, releasePointsTo, type LegalFacts } from "./companyFacts.ts";
 import { checkFoundingCountry } from "./origin.ts";
 import { namesCompany } from "./headcount.ts";
 import { companiesHouseHeadcount, brregHeadcount, waybackHeadcount, type HeadcountIo } from "./headcountCollect.ts";
 import type { HistoryPoint } from "./headcountHistory.ts";
+import { sizeStatement } from "./headcountSources.ts";
+import { chooseRegistryRecord, type RegistryRecord } from "./registerRecord.ts";
 import { lookupRegisters, nodeRegisterIo, registerDecides, type RegisterContext, type RegisterFinding } from "./registers.ts";
-import { stripHonorific } from "./people.ts";
+import { stripHonorific, mergeLeadersByPerson } from "./people.ts";
 import { countryFromLocationQuote } from "./location.ts";
 import type { VerifiedFact } from "./narrative.ts";
 import { computeTotalRaised, normalizeRoundType, type RoundLike } from "./rounds.ts";
@@ -188,7 +213,9 @@ export interface CollectContext {
   /** The company's patents from the EPO register (epoPatents.ts); tests pass a stand-in. */
   patentLookup?: (company: CompanyIdentity) => Promise<EpoPatentResult | null>;
   /** The website on file shows another business, or none of it could be read (owner, 2026-11-02: "website to fix" list). */
-  onWebsiteIssue?: (reason: "content_mismatch" | "unreadable", detail: string) => void;
+  /** The company's own address now shows a page that never names the company: the domain may have been given to someone else (owner, batch 6: Okra). For review, not a verdict. */
+  onDomainRepurposed?: (detail: string) => void;
+  onWebsiteIssue?: (reason: "content_mismatch" | "unreadable" | "domain_mismatch", detail: string) => void;
   /** Company registers (registers.ts); tests pass a stand-in. */
   registerLookup?: (ctx: RegisterContext) => Promise<RegisterFinding[]>;
   /** Hints earlier runs stored for this company (data_hints, status open): searched for again (hints.ts). */
@@ -221,6 +248,14 @@ export type LinkedInPersonPatch = { name: string; title?: string; role?: string;
 
 export interface CollectedCompany {
   outcome: "collected";
+  /** Values some rule made, by rule code (ruleRegistry.ts): the report line carries the code. */
+  ruleHits?: RuleHit[];
+  /** The company's own site, found by name when the address on file was another business or unreadable (domainResolve.ts): a proposal, never applied. */
+  websiteProposal?: { from: string | null; to: string; reason: string };
+  /** What the registers add (registerRecord.ts): own columns, never the headquarters or the founding year. */
+  registry?: { record: RegistryRecord; sourceId: string; dateSourceId: string };
+  /** What kind of company this was, for the stratified precision sample (owner, round 10). */
+  flags?: { translated: boolean; sources: number; techBorderline: boolean };
   /** Headcount points from registers, plans and archived pages (headcountHistory.ts); each with its source and type. */
   headcountExtra?: import("./headcountHistory.ts").HistoryPoint[];
   profile: ProfileResult;
@@ -248,11 +283,15 @@ export interface CollectedCompany {
   confirmedHints?: Array<RoundHint & { confirmed_source_url: string }>;
   /** Domains on no list (roundSources.ts) that a round came from: for the owner's review list. */
   unlistedDomains?: Array<{ domain: string; url: string }>;
+  /** LinkedIn profile links found by a Google search (linkedin.ts findLinkedInLink): a link only, with the result that shows it; never a source of a field. */
+  /** The search profile did not fit the site's own pages and the entity check refused an article as another company's (identityMismatch.ts). */
+  identityMismatch?: { overlap: number };
+  personLinks?: Array<{ name: string; kind: "founder" | "leader"; role?: string; url: string; source_url: string; quote: string }>;
 }
 
 export type CollectResult =
   | CollectedCompany
-  | { outcome: "rejected" | "no_change" | "no_data" | "low_evidence"; reason?: string }
+  | { outcome: "rejected" | "no_change" | "no_data" | "low_evidence"; reason?: string; /** Why, in a sentence, for the batch report. */ detail?: string }
   | { outcome: "public"; listing: ListingStatement | null }
   | { outcome: "error"; reason: string };
 
@@ -269,7 +308,7 @@ const EMPTY_FUNDING_OUTCOME: NonNullable<Awaited<ReturnType<typeof extractFundin
 /** Hints searched per company and run (three searches each at most); the rest wait for the next run. */
 const MAX_HINTS_SEARCHED = 3;
 
-export async function runAllSearches(name: string, anchor: string, state: SearchProviderState): Promise<RawSearchResult[]> {
+export async function runAllSearches(name: string, anchor: string, state: SearchProviderState, lang: Lang | null = null): Promise<RawSearchResult[]> {
   const queries: Array<[string, string]> = [
     // history/amounts/backers (three overlapping funding queries) merged
     // into one general query plus one aimed at the funding databases.
@@ -280,9 +319,14 @@ export async function runAllSearches(name: string, anchor: string, state: Search
     ["team",         `"${name}"${anchor} employees team size headcount hiring`],
     ["linkedin",     `site:linkedin.com/company "${name}"`],
     // Sentences that say who it competes with — not "alternatives" lists (competitorEvidence.ts).
-    ["competitors",  `"${name}"${anchor} "competes with" OR "competitors include" OR "rival" OR "competing with"`],
+    ...(componentOn("competitors") ? [["competitors",  `"${name}"${anchor} "competes with" OR "competitors include" OR "rival" OR "competing with"`] as [string, string]] : []),
     ["acquisitions", `"${name}"${anchor} acquires OR acquired OR acquisition`],
     ["financials",   `"${name}"${anchor} ARR "annual recurring revenue" OR revenue estimate OR valued at OR valuation milestone`],
+    // Fixed searches on every run (owner, 2026-11-15: values that came and went between runs — Motorway's $190M round, ZestMoney's Zip round, Pink Farms' São Paulo):
+    // what a result list happens to contain must not decide whether a round, a founder or a headquarters is found.
+    ["raises",       `"${name}"${anchor} raises`],
+    ["funding_round", `"${name}"${anchor} "funding round"`],   // back (owner, 2026-11-26: the merge into "raises" lost rounds)
+    ["founded_by",   `"${name}"${anchor} "founded by"`],
     // The press's own HQ phrase ("Tel Aviv-based Hailo") — without the domain
     // anchor, which news articles rarely carry (owner, 2026-11-01; headquarters.ts).
     ...(componentOn("hq_search") ? [["headquarters", `"${name}" "headquartered in" OR "based in" OR "-based" startup`] as [string, string]] : []),
@@ -292,6 +336,8 @@ export async function runAllSearches(name: string, anchor: string, state: Search
   // SEARCH_SKIP=acquisitions,financials — leaves those core queries out, to measure what they add on the
   // golden set (owner, 2026-11-05: search is ~60% of the cost). Unset in every normal run.
   const skip = new Set((process.env.SEARCH_SKIP ?? "").split(",").map((x) => x.trim()).filter(Boolean));
+  // The same fixed searches in the language of the company's country (owner, round 10; localSearch.ts).
+  if (lang && process.env.LOCAL_SEARCH !== "off") queries.push(...localQueries(name, anchor, lang));
   const [searchBatches, newsResults] = await Promise.all([
     Promise.all(queries.filter(([label]) => !skip.has(label)).map(([label, q]) => webSearch(q, label, state))),
     // Serper's News endpoint is primary for news; the site:-heavy query is
@@ -302,6 +348,9 @@ export async function runAllSearches(name: string, anchor: string, state: Search
       "news", state,
     ),
   ]);
+  // Which fixed searches ran, and what each returned (owner, round 10): a missing value is either a search that found nothing or an extraction that missed it.
+  const fixed = ["raises", "funding_round", "founded_by", "headquarters", ...(lang ? ["founders_local", "founded_local", "headquarters_local", "raises_local", "acquired_local"] : [])].filter((l) => !skip.has(l) && queries.some(([q]) => q === l));
+  console.log(`    🔎  Fixed searches${lang ? ` (+ in ${lang})` : ""}: ${fixed.map((l) => `${l} (${searchBatches.flat().filter((r) => r.query_label === l).length} result(s))`).join(", ")}`);
   return [...searchBatches.flat(), ...newsResults];
 }
 
@@ -354,56 +403,180 @@ export async function collectCompany(
   // skips them; both modes record what they send).
   const seen = ctx.seen;
   const gapFillDue = ctx.update && !!seen?.gapFillDue();
+  // An address the owner decided on (eval/website_decisions.json) replaces the one on file for this run.
+  { const decided = ctx.update ? null : websiteDecision(row.name);
+    // "dead": the owner rejected every address found for it — the company is left out as website_dead (Oktagon, 2026-11-19).
+    if (decided === "dead") { console.log(`    ⛔  website_dead: the owner decided that no address of ${row.name} can be used.`); bump(stats.droppedByReason, "website_dead"); return { outcome: "no_data", reason: "website_dead", detail: `address ${row.website ?? "none"} — the owner decided: the address is unusable and the proposal was rejected` }; }
+    if (decided && decided !== row.website) { console.log(`    🧭  Address decided by the owner: ${decided} (on file: ${row.website ?? "none"}).`); row = { ...row, website: decided }; } }
+
+  // The owner's hard list of not-technology companies: decided in code, before the model and before any search.
+  const overridden = ctx.update ? null : techOverride(row.name);
+  if (overridden) {
+    console.log(`    🧪  Technology: ${overridden.reason} — nothing is collected.`);
+    return { outcome: "rejected", reason: "not_technology", detail: `tech_overrides: ${overridden.reason}` };
+  }
+
+  // The owner's list of companies listed on an exchange (batch 8: valu, EGX since June 2025; Xintela): archived as public, nothing is collected.
+  if (!ctx.update && publicOverride(row.name)) { console.log(`    🏛️   Listed on an exchange (the owner's decision) — nothing is collected.`); return { outcome: "public", listing: null }; }
+
+  // A company turned away as not technology stays turned away for a time (techMemory.ts): the same answer every run, and no searches spent.
+  if (!ctx.update) {
+    const before = techAccepted(row.name) ? null : storedRejection(row.id);
+    if (before) {
+      console.log(`    🧪  Technology: turned away on ${before.date} (${before.kind} check) — ${before.reason.slice(0, 160)}; reused (TECH_RECHECK=true looks again).`);
+      return { outcome: "rejected", reason: "not_technology", detail: `earlier decision ${before.date}: ${before.reason}` };
+    }
+  }
 
   // ── Stage 0: domain verification ──────────────────────────────────────
   // (an update trusts the website already checked by the full run)
   const domainVerification = ctx.update ? { verified: undefined, note: "" } : await verifyDomainMatch(row.name, row.website, searchState);
-  const effectiveWebsite = domainVerification.verified === false ? null : row.website;
+  let effectiveWebsite = domainVerification.verified === false ? null : row.website;
   if (domainVerification.verified === false) console.warn(`    ⚠️  Domain verification: ${domainVerification.note}`);
-  else if (domainVerification.verified === true) console.log(`    ✅  Domain verified via Crunchbase/LinkedIn`);
+  else if (domainVerification.verified === true) console.log(`    ✅  Domain confirmed by a Crunchbase/LinkedIn search result (the snippet only: neither page is read, nothing from it is a source of a value)`);
 
-  const domain = websiteDomain(effectiveWebsite);
-  const anchor = domain ? ` "${domain}"` : row.country ? ` ${row.country} (startup OR tech company)` : "";
+  let domain = websiteDomain(effectiveWebsite);
+  let anchor = domain ? ` "${domain}"` : row.country ? ` ${row.country} (startup OR tech company)` : "";
 
   // ── Stage 1: website (Jina, free) → tech pre-check → searches ─────────
   // The homepage is fetched first so a clearly non-tech company is
   // rejected before paying for ~11 searches and three extraction calls.
-  const websitePages = ctx.update ? [] : await fetchCompanyWebsitePages(effectiveWebsite, searchState);
-  if (effectiveWebsite && !ctx.update && websitePages.length === 0) {
+  let websitePages = ctx.update ? [] : await fetchCompanyWebsitePages(effectiveWebsite, searchState);
+  // A site the READING SERVICES failed on (Jina 4xx / 5xx, Serper 4xx / 5xx, aborted) while its own server never proved it dead is fetch_failed, not domain_unresolved (owner, 2026-11-19): it is no
+  // website to fix, no alternative domain is searched for it, and nothing about it is remembered. Run it again.
+  const deadByName = !!effectiveWebsite && !ctx.update && await addressIsDead(effectiveWebsite);
+  if (deadByName && websitePages.length > 0) { console.log(`    ⛔  ${effectiveWebsite} does not resolve (ENOTFOUND): what a reader returned for it (${websitePages.length} page(s)) is not the company's and is dropped.`); websitePages = []; }
+  const readFailure = effectiveWebsite && !ctx.update && websitePages.length === 0 ? (deadByName ? "dead" as const : homepageReadFailure(effectiveWebsite)) : null;
+  if (effectiveWebsite && !ctx.update && websitePages.length === 0 && readFailure !== "service") {
     console.log(`    🛠️   No page of ${effectiveWebsite} could be read — listed as a website to fix.`);
     ctx.onWebsiteIssue?.("unreadable", `No page of ${effectiveWebsite} could be read (Jina Reader and Serper scrape both failed).`);
   }
+
   // A site that belongs to another company now (acquired, rebranded): nothing is described from it (owner, 2026-11-09).
-  const siteOwnerIssue = ctx.update ? null : siteBelongsToAnotherCompany(row.name, effectiveWebsite, websitePages);
+  let siteOwnerIssue = ctx.update ? null : siteBelongsToAnotherCompany(row.name, effectiveWebsite, websitePages);
+  // The address on file is another business, or nothing of it can be read: the company's own site is looked for by name, country and field (domainResolve.ts). Found with
+  // high confidence → the run goes on with it and the new address is a proposal for the owner; not found → the company is left out (domain_unresolved), nothing is written about it.
+  let websiteProposal: { from: string | null; to: string; reason: string } | null = null;
+  // Mismatch: the pages never name the company (a "No such app" error page, a design agency's homepage), and a model shown that homepage says with high confidence that it is not the company.
+  let addressMismatch = /never names/.test(siteOwnerIssue ?? "");
+  const readable = websitePages.filter((p) => p.content.replace(/\s+/g, " ").length >= 300);
+  if (!ctx.update && readable.length > 0 && !readable.slice(0, 3).some((p) => pageNamesCompany({ content: p.content }, row.name))) {
+    const detail = `${effectiveWebsite}: none of its first ${Math.min(3, readable.length)} page(s) names ${row.name} — "${readable[0].content.replace(/\s+/g, " ").slice(0, 120)}"`;
+    console.log(`    🔁  domain_repurposed? ${detail}`);
+    ctx.onDomainRepurposed?.(detail);
+  }
+  if (!ctx.update && process.env.DOMAIN_RESOLVE !== "false" && !addressMismatch && readable.length > 0 && !readable.slice(0, 3).some((p) => pageNamesCompany({ content: p.content }, row.name))) {
+    const v = await judgeSite(ctx.anthropic, ctx.models.enrich, { name: row.name, country: row.country, industry: row.industry, description: row.description }, readable[0].content, readable[0].url, domain).catch(() => null);
+    if (v?.is_the_company === false && v.confidence === "high") { addressMismatch = true; console.log(`    🧭  The homepage of ${row.website} is another business: ${v.reason ?? ""}`); }
+  }
+  // The address leads to another company's site, and the company was acquired by that company (owner, 2026-11-19: nordigen.com → GoCardless): it is an acquired company, collected as usual — from
+  // everything but that site (nothing is read from the buyer's pages as if they were the company's). Not "another business", and no other domain is searched for it.
+  let movedToBuyer: string | null = null;
+  const movedTo = !ctx.update && process.env.DOMAIN_RESOLVE !== "false" && effectiveWebsite && (readable.length === 0 || addressMismatch || !readable.slice(0, 3).some((p) => pageNamesCompany({ content: p.content }, row.name))) && !deadByName ? websiteRedirect(effectiveWebsite) : null;
+  // A dead address (the name no longer resolves) of a company that was acquired (owner, 2026-11-19: nordigen.com, GoCardless): the acquisition searches run without a site, and the company is acquired when
+  // at least two headlines name the same buyer.
+  const deadAddress = !ctx.update && process.env.DOMAIN_RESOLVE !== "false" && !movedTo && !!effectiveWebsite && readable.length === 0 && readFailure === "dead";
+  if (movedTo || deadAddress) {
+    try {
+      const label = movedTo ? new URL(movedTo).hostname.replace(/^www\./, "").split(".")[0].toLowerCase().replace(/[^a-z0-9]/g, "") : "";
+      const found = (await Promise.all([`"${row.name}" acquired`, `"${row.name}" acquired by`].map((q) => webSearch(q, "acquired_check", searchState)))).flat();
+      if (deadAddress) {
+        const titles = found.map((r) => (r.title ?? "").trim()).filter(Boolean);
+        movedToBuyer = knownAcquirers(titles, row.name, 2)[0] ?? null;
+      } else for (const r of found) {
+        const hit = acquirerIn((r.title ?? "").trim(), row.name);
+        const a = hit?.acquirer.toLowerCase().replace(/[^a-z0-9]/g, "") ?? "";
+        if (hit && a.length >= 3 && (label.includes(a) || a.includes(label))) { movedToBuyer = hit.acquirer; break; }
+      }
+    } catch { /* no verdict: the usual domain path follows */ }
+    if (movedToBuyer) {
+      console.log(`    🏁  The address ${effectiveWebsite} ${movedTo ? `leads to ${movedTo}, the site of its buyer` : "is dead; the sources say it was bought by"} ${movedToBuyer}: an acquired company, collected as usual; nothing is read from any site as the company's own.`);
+      websitePages = []; effectiveWebsite = null; domain = null; anchor = row.country ? ` ${row.country} (startup OR tech company)` : "";
+      addressMismatch = false;
+      siteOwnerIssue = siteOwnerIssue ?? `the address ${movedTo ? `moved to its buyer ${movedToBuyer} (${movedTo})` : `is dead; its buyer is ${movedToBuyer}`}`;
+    }
+  }
+  if (!ctx.update && !movedToBuyer && process.env.DOMAIN_RESOLVE !== "false" && (readable.length === 0 || addressMismatch)) {
+    if (readFailure === "unreachable" && readable.length === 0 && !addressMismatch) {
+      console.log(`    🔌  website_unreachable: the server of ${effectiveWebsite} exists and did not answer in time (or its certificate fails) — for the owner's list; run it again with a longer timeout.`);
+      bump(stats.droppedByReason, "website_unreachable");
+      return { outcome: "no_data", reason: "website_unreachable", detail: `address ${row.website} — the server answers too slowly or its certificate fails; not shown to be dead` };
+    }
+    if (readFailure === "service" && readable.length === 0 && !addressMismatch) {
+      console.log(`    🔌  fetch_failed: the reading services failed for ${effectiveWebsite} (not a domain problem) — no other domain is searched, nothing is remembered; run it again.`);
+      bump(stats.droppedByReason, "fetch_failed");
+      return { outcome: "no_data", reason: "fetch_failed", detail: `address ${row.website} — Jina Reader / Serper scrape failed (4xx, 5xx or aborted); the site was not shown to be dead` };
+    }
+    const found = await resolveDomain(
+      { name: row.name, country: row.country, industry: row.industry, description: row.description },
+      domain,
+      {
+        client: ctx.anthropic, model: ctx.models.enrich,
+        search: (q, label) => webSearch(q, label, searchState),
+        homepage: (w) => fetchHomeAndAbout(w, searchState),
+      },
+    );
+    if (found.website) {
+      // A proposed address is never collected from until the owner approves it (round 10: Plott's letsplott.com is another company than Plott on file). The company stays domain_unresolved.
+      console.log(`    🧭  domain_unresolved: the address on file (${row.website ?? "none"}) ${websitePages.length === 0 ? "could not be read" : "shows another business"}. A site was proposed — ${found.website} (${found.reason}) — nothing is collected from it until the owner approves it.`);
+      bump(stats.droppedByReason, readFailure === "dead" && readable.length === 0 ? "website_dead" : "domain_unresolved");
+      return { outcome: "no_data", reason: readFailure === "dead" && readable.length === 0 ? "website_dead" : "domain_unresolved", detail: `address ${row.website ?? "none"} — ${readable.length === 0 ? "unreadable" : "another business"}; PROPOSAL (not used, awaiting approval): ${found.website} — ${found.reason}` };
+    } else {
+      console.log(`    🧭  domain_unresolved: the address on file (${row.website ?? "none"}) ${readable.length === 0 ? "could not be read" : "shows another business"} and no site of the company itself was found (tried: ${found.tried.join(", ") || "no candidate"}).`);
+      bump(stats.droppedByReason, readFailure === "dead" && readable.length === 0 ? "website_dead" : "domain_unresolved");
+      return { outcome: "no_data", reason: readFailure === "dead" && readable.length === 0 ? "website_dead" : "domain_unresolved", detail: `address ${row.website ?? "none"} — ${readable.length === 0 ? "unreadable" : "another business"}; candidates tried: ${found.tried.join(", ") || "none"}` };
+    }
+  }
+  // Renamed is not acquired (owner, round 10: TymeBank is GoTyme Bank): the description uses the new name, and the new name is a proposal for the owner.
+  const rebrandedTo = ctx.update || siteOwnerIssue ? null : (rebrandedAs(row.name, websitePages) ?? redirectBrand(row.name, effectiveWebsite, websitePages));
+  if (rebrandedTo) console.log(`    🔁  Rebranded: ${row.name} is now "${rebrandedTo}" (the site says so) — described under the new name; name update proposed: name = "${rebrandedTo}", former_names += "${row.name}" (for the owner's review, not applied).`);
   if (siteOwnerIssue) {
-    console.log(`    🛠️   ${siteOwnerIssue} — no description or sector is written; listed for review.`);
+    console.log(`    🛠️   ${siteOwnerIssue} — the site is left out of the description; listed for review.`);
     ctx.onWebsiteIssue?.("content_mismatch", siteOwnerIssue);
   }
+  let techGateVerdict: TechGateVerdict | null = null;
   if (ctx.techGate && !ctx.update) {
     // The verdict is cached with the search results, so seeing the same
     // company again (a re-run, the next cycle) costs nothing.
-    const cachedVerdict = searchState.cache?.get<TechGateVerdict>("techgate");
+    const cachedVerdict = searchState.cache?.get<TechGateVerdict>("techgate2");
     const gate = cachedVerdict
       ? { verdict: cachedVerdict, inputTokens: 0, outputTokens: 0 }
       : await runTechGate(row.name, websitePages[0]?.content ?? "", row.description, row.industry, { client: ctx.anthropic, model: ctx.models.enrich });
-    if (!cachedVerdict) searchState.cache?.set("techgate", gate.verdict);
+    if (!cachedVerdict) searchState.cache?.set("techgate2", gate.verdict);
+    // The site now shows another business than the one on file: it is not used (owner, 2026-11-15, domain_repurposed: flytech.co.il now teaches children technology).
+    if (gate.verdict?.site_matches_description === false && !siteOwnerIssue) siteOwnerIssue = `domain_repurposed: the site shows another business than the description on file — ${gate.verdict.reason}`;
     if (gate.verdict?.site_matches_description === false && !shouldSkipAsNonTech(gate.verdict)) {
       console.log(`    🛠️   The site shows another business than the description on file — listed as a website to fix: ${gate.verdict.reason}`);
       ctx.onWebsiteIssue?.("content_mismatch", gate.verdict.reason);
     }
     ctx.recordCost(ctx.models.enrich, gate);
-    if (shouldSkipAsNonTech(gate.verdict)) {
+    // Too little to go on (a suspended or unreadable homepage): there is no decision, and it is not "technology" either.
+    techGateVerdict = gate.verdict;
+    // Every company's early technology check is shown, whatever the answer (owner, round 10: ALUS Canada had no line at all).
+    if (gate.verdict) console.log(`    🧪  Technology check: ${gate.verdict.enough_information === false ? "no decision (too little information)" : gate.verdict.is_tech_company ? "technology" : "not technology"} (${gate.verdict.confidence}${cachedVerdict ? ", from the saved verdict" : ""}) — ${gate.verdict.reason}`);
+    else console.log("    🧪  Technology check: the model gave no verdict — the profile call decides.");
+    if (gate.verdict && gate.verdict.enough_information === false) { console.log(`    ❔  Technology check: no decision — ${gate.verdict.reason}`); }
+    if (shouldSkipAsNonTech(gate.verdict) && !techAccepted(row.name)) {
       console.log(`    🚫  REJECTED before searching — not a technology company: ${gate.verdict!.reason}`);
       // A site that shows another business than the company's own description is a website to fix.
       if (gate.verdict!.site_matches_description === false) ctx.onWebsiteIssue?.("content_mismatch", gate.verdict!.reason);
       stats.earlyRejected++;
-      return { outcome: "rejected", reason: gate.verdict!.site_matches_description === false ? "site_shows_another_business" : "not_technology" };
+      if (gate.verdict!.site_matches_description !== false) rememberRejection(row.id, { reason: gate.verdict!.reason, kind: "early" });
+      return { outcome: "rejected", reason: gate.verdict!.site_matches_description === false ? "site_shows_another_business" : "not_technology", detail: `early check: ${gate.verdict!.reason}` };
     }
   }
   ctx.onStage?.("searching");
+  const localLang = companyLanguage({ country: row.country, website: effectiveWebsite, siteText: websitePages.map((p) => p.content).join("\n") });
   const rawSearchResults = ctx.update
     ? await runUpdateSearches(row, anchor, existingRounds.length > 0, gapFillDue, searchState)
-    : await runAllSearches(row.name, anchor, searchState);
+    : await runAllSearches(row.name, anchor, searchState, localLang);
+  {
+    const t = traceOf(row.name);
+    t.lang = localLang;
+    t.local = Object.fromEntries(["founders_local", "founded_local", "headquarters_local", "raises_local", "acquired_local"].map((l) => [l, rawSearchResults.filter((r) => r.query_label === l).length]));
+    try { t.sitemap = effectiveWebsite ? sitemapStats.get(new URL(effectiveWebsite.startsWith("http") ? effectiveWebsite : `https://${effectiveWebsite}`).origin) ?? null : null; } catch { t.sitemap = null; }
+    console.log(`    🌐  Language of the company: ${localLang ?? "English / unknown"}${localLang ? ` — local searches returned ${Object.entries(t.local).map(([k, n]) => `${k.replace(/_local$/, "")} ${n}`).join(", ")}` : ""}; sitemap: ${t.sitemap ? `${t.sitemap.found} page(s) offered, ${t.sitemap.read} read` : "none used"}.`);
+  }
   // One source per URL — the same page returned by several queries used to
   // reach Claude several times (billed as input on every call).
   const { results: mergedResults, merged: duplicateResults } = mergeDuplicateResults(rawSearchResults);
@@ -425,7 +598,7 @@ export async function collectCompany(
 
   const allRaw: RawSearchResult[] = [
     ...searchResults,
-    ...websitePages.map((p) => ({ url: p.url, content: p.content, provider: p.provider, query_label: "website", ...(p.also_urls ? { also_urls: p.also_urls } : {}) })),
+    ...websitePages.map((p) => ({ url: p.url, content: p.content, ...(p.prompt_content ? { prompt_content: p.prompt_content } : {}), provider: p.provider, query_label: "website", ...(p.also_urls ? { also_urls: p.also_urls } : {}) })),
   ];
 
   if (allRaw.length === 0 && ctx.update) {
@@ -516,8 +689,48 @@ export async function collectCompany(
   // profile call goes first: it writes the cache, and it decides
   // public / non-tech — in which case the other two calls are never made.
   ctx.onStage?.("extracting");
+  // A page that is not in English is translated and the translation appended, so what is verified against it reads English (translate.ts); TRANSLATE=false switches it off.
+  if (!ctx.update && process.env.TRANSLATE !== "false") {
+    const first = [...usableResults].sort((a, b) => Number(isWebsiteResult(b)) - Number(isWebsiteResult(a)));
+    const n = await translateItems(first, ctx.anthropic, ctx.models.enrich, undefined, (m) => console.log(m));
+    if (n) bump(stats.droppedByReason, "pages_translated");
+  }
   let allSources: LabeledSource[] = buildLabeledSources(usableResults, domain);
   markCompanyLinkedFiles(allSources, websitePages);
+  // The company's own site is tier 1 even on another domain than the one on file (ownDomain.ts): where the registered website redirects to, or the same brand.
+  const redirectDomain = effectiveWebsite ? await finalHostOf(effectiveWebsite).catch(() => null) : null;
+  const registeredHost = effectiveWebsite ? (() => { try { return new URL(effectiveWebsite.startsWith("http") ? effectiveWebsite : `https://${effectiveWebsite}`).hostname.toLowerCase().replace(/^www\./, ""); } catch { return null; } })() : null;
+  const markOwnSites = () => {
+    const registered = { host: registeredHost, pages: websitePages.map((p) => ({ url: p.url, title: undefined, content: p.content })) };
+    for (const x of ownBrandSources(allSources, row.name, redirectDomain, registered)) {
+      const src = allSources.find((y) => y.url === x.url);
+      if (!src || src.source_type === "company_site") continue;
+      console.log(`    🏠  ${x.url} is the company's own site (${x.ownHow}) — tier 1.`);
+      src.source_type = "company_site";
+    }
+  };
+  markOwnSites();
+  // The registered address could not be read, and a site of the same brand turned up on another domain: the registered address may be the wrong one (listed for the owner).
+  if (!ctx.update && effectiveWebsite && websitePages.length === 0) {
+    const brand = allSources.find((x) => x.source_type !== "company_site" && brandLabelMatches(x.url, row.name));
+    if (brand) { const msg = `The registered address ${effectiveWebsite} could not be read, and a site of the same brand exists: ${brand.url.split("/").slice(0, 3).join("/")} — is the address on file the right one?`; console.log(`    🛠️   ${msg}`); ctx.onWebsiteIssue?.("unreadable", msg); }
+  }
+  // A domain on no list is classified once (domainClass.ts): outlets and wires become tier 4, directories and blogs are blocked. Run again when sources are added.
+  const classifyDomains = async () => {
+    try {
+      const n = await classifyUnknownDomains(allSources, {
+        isCompanySite: (u) => classifySourceType(u, domain) === "company_site" || allSources.some((x) => x.url === u && x.source_type === "company_site") || (!!redirectDomain && u.includes(redirectDomain)),
+        ask: async (request) => {
+          const msg = await ctx.anthropic.messages.create(requestFor(request, ctx.models.enrich));
+          ctx.recordCost(ctx.models.enrich, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheReadTokens: 0, cacheWriteTokens: 0 } as never);
+          const tool = msg.content.find((b) => b.type === "tool_use");
+          return tool && tool.type === "tool_use" ? tool.input : null;
+        },
+      });
+      if (n) console.log(`    🌐  ${n} new source domain(s) classified (domain_classes_new.csv)`);
+    } catch (e) { console.log(`    ⚠️  domain classification skipped: ${(e as Error).message}`); }
+  };
+  await classifyDomains();
   const shared = (kind: ExtractionKind) => buildSharedExtractionRequest(kind, row.name, allSources, { taxonomy });
   const profileOutcome = await extractProfile(row.name, allSources, { client: ctx.anthropic, model: ctx.models.profile, taxonomy, request: shared("profile") });
   if (!profileOutcome) {
@@ -528,6 +741,34 @@ export async function collectCompany(
   logExtraction("profile", row.name, profileOutcome);
   let profile = profileOutcome.extraction.result;
   for (const d of profileOutcome.extraction.dropped) bump(stats.droppedByReason, d.reason);
+  // What the model proposed for the headquarters and the founders, before any filter: the coverage line at the end says what became of it.
+  const proposed = {
+    city: profile.profile.city?.value as string | undefined, country: profile.profile.country?.value as string | undefined,
+    where: allSources.find((x) => x.source_id === (profile.profile.city?.source_id ?? profile.profile.country?.source_id))?.url,
+    founders: (profile.profile.founders ?? []).map((f) => f.name),
+  };
+  // Why a proposed value was not kept, in the words of the step that dropped it (owner, 2026-11-15: no silent drop).
+  const fates = { hq: null as string | null, founders: new Map<string, string>() };
+  // Is an article about THIS company or a namesake (articleEntity.ts)? Compared with the profile: the country its domain suggests, what it does.
+  let identityState: { overlap: number } | null = null;   // set when the profile does not fit the site's own pages
+  let identityRejected = false;                          // and the entity check refused an article as another company's
+  const articleIsThisCompany = async (title: string, url: string, text: string) => {
+    // The company's own pages decide what it is when the profile from the search does not fit them (identityMismatch.ts; owner, 2026-11-24: Aperio, whose search profile was another company's).
+    const ownText = websitePages.map((p) => p.prompt_content ?? p.content).join(" ");
+    const idv0 = identityOverlap([profile.profile.description, profile.profile.value_proposition].filter(Boolean).join(" "), ownText);
+    // Not when the site itself may be another company's (websiteIdentity.ts: the press names founders the site never shows — a domain that was sold or reused; owner, 2026-11-24: Rephrase.ai, whose domain now hosts a writing tool while
+    // the company Adobe bought is an Indian video startup): then the site cannot say what the company is, and the profile from the search stands.
+    const siteDoubtful = !!idv0?.mismatch && websiteLooksLikeAnotherCompany({ sitePages: allSources.filter((x) => x.source_type === "company_site").map((x) => x.content ?? ""), pressFounders: (profile.profile.founders ?? []).filter((f) => f.grounded_url && !(domain ? [domain] : []).some((d) => f.grounded_url!.includes(d))).map((f) => f.name) });
+    const idv = siteDoubtful ? null : idv0;
+    identityState = idv?.mismatch ? { overlap: idv.share } : null;
+    const company: CompanyProfileForMatch = { name: row.name, website: effectiveWebsite ?? row.website, countryHint: countryOfHost(domain) ?? row.country ?? null, about: idv?.mismatch ? identityAbout(ownText) :  [profile.profile.description, profile.profile.value_proposition, row.description].filter(Boolean).join(" ") };
+    return judgeArticleEntity(async (request) => {
+      const msg = await ctx.anthropic.messages.create(requestFor(request, ctx.models.enrich));
+      ctx.recordCost(ctx.models.enrich, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheReadTokens: 0, cacheWriteTokens: 0 } as never);
+      const tool = msg.content.find((b) => b.type === "tool_use");
+      return tool && tool.type === "tool_use" ? tool.input : null;
+    }, company, { title, url, text });
+  };
 
   // Backstop for the model's flag: "<Name>, Inc. (Nasdaq: XYZ)" in a source.
   const listing = profile.is_public_company ? null : findListingStatement(row.name, allSources, domain);
@@ -538,9 +779,19 @@ export async function collectCompany(
   }
   // An update reads a few news items, not the company's whole footprint —
   // the tech/non-tech decision from the full run stands.
-  if (!profile.is_tech_company && !ctx.update) {
-    console.log("    🚫  REJECTED — not a technology-driven company");
-    return { outcome: "rejected", reason: "not_technology" };
+  // One decision from the early check and the profile call (techGate.ts techDecision): the early check's yes stands; a "cannot tell" is no rejection.
+  if (!ctx.update) {
+    const decision = techDecision(techGateVerdict, profile, !!profile.profile.description);
+    console.log(`    🧪  Technology decision: ${decision} — early check ${techGateVerdict ? `${techGateVerdict.enough_information === false ? "undecided" : techGateVerdict.is_tech_company ? "yes" : "no"} (${techGateVerdict.confidence})` : "none"}; profile ${String((profile as { tech_decision?: unknown }).tech_decision ?? "none")}${profile.tech_reason ? ` — ${profile.tech_reason}` : ""}`);
+    if (decision === "undetermined" && !techAccepted(row.name)) {
+      console.log(`    ❔  Technology undetermined — ${profile.tech_reason ?? "nothing to describe the company with"}; not enriched, to be tried again.`);
+      return { outcome: "low_evidence", reason: "technology_undetermined", detail: `profile: ${profile.tech_reason ?? "the sources do not say what the company does"}` };
+    }
+    if (decision === "reject" && !techAccepted(row.name)) {
+      console.log("    🚫  REJECTED — not a technology-driven company");
+      rememberRejection(row.id, { reason: profile.tech_reason ?? profile.profile.description?.slice(0, 200) ?? "not technology", kind: "profile" });
+      return { outcome: "rejected", reason: "not_technology", detail: `profile: ${profile.tech_reason ?? profile.profile.description?.slice(0, 200) ?? "the model gave no reason"}` };
+    }
   }
 
   // An update whose new pages say nothing about money skips the funding call.
@@ -591,8 +842,8 @@ export async function collectCompany(
       // below; a whole profile deep dive just for them added nothing in a
       // 20-company run (+0 founders in every one).
       hasFounders: true,
-      competitorCount: (row.competitors?.length ?? 0) + market.competitors.length,
-      // Fresh news is worth a second look even when older articles are on file.
+      competitorCount: 1,
+      // Fresh news is worth a second look even when older articles on file.
       newsCount: market.news.length,
       hasFoundedYear: row.founded_year != null || !!profile.profile.founded_year,
       // Patent deep dive only when some source ties a patent to this company
@@ -728,7 +979,22 @@ export async function collectCompany(
         textFounders.push(`${f.name} [${src.source_id}]`);
       }
     }
-    if (textFounders.length > 0) console.log(`    👥  Founders from "founded by" sentences: ${textFounders.join(", ")}`);
+    // A full name shown with the title Founder / Co-founder (in any language) on the company's own team or about page, or "<Name>, founder of <this company>" in an allowed article
+    // (owner, round 10). "Founder of <another company>", "Founding engineer / member / team / partner" and "Founder's office" are not founders.
+    for (const src of allSources) {
+      if (!statementKind(src) || !profileSourceAllowed(src, row.name) || isThirdPartyPage(src.url)) continue;
+      const text = `${src.title ?? ""}\n${src.content}`;
+      const found = [...(src.source_type === "company_site" ? foundersFromCards(text, row.name) : []), ...foundersFromMentions(text, row.name)];
+      for (const raw of found) {
+        const f = { ...raw, name: stripHonorific(raw.name) };
+        if (!f.name.includes(" ")) continue;
+        const founders = profile.profile.founders ?? [];
+        if (founders.some((x) => x?.name && samePersonName(x.name, f.name))) continue;
+        profile.profile.founders = [...founders, { name: f.name, title: f.title }];
+        textFounders.push(`${f.name} [${src.source_id}] "${f.quote.replace(/\s+/g, " ").slice(0, 80)}"`);
+      }
+    }
+    if (textFounders.length > 0) console.log(`    👥  Founders from "founded by" sentences and from titles: ${textFounders.join(", ")}`);
   } else {
     const textOnly = founderNamesNotExtracted(profile.profile.founders ?? [], allSources, row.name);
     if (textOnly.length > 0) console.log(`    👥  Named as founder in a sentence but not extracted with evidence — not added: ${textOnly.join(", ")}`);
@@ -812,8 +1078,31 @@ export async function collectCompany(
     return [like.lead_investor, ...(like.other_investors ?? [])].filter((n): n is string => !!n);
   });
   // Only an allowed source grounds a founder (owner, 2026-11-02: the list applies to every field).
+  let approvedFounders: Array<{ name: string; title: string; quote: string; url: string }> = [];
+  // An approved quote that names a founder ("founded in 2020 by A and B", "Founder and CEO A said") also feeds the founders; the grounding below still decides.
+  {
+    const have = profile.profile.founders ?? [];
+    approvedFounders = foundersFromApprovedQuotes([...approvedQuotes(funding.funding_rounds, allSources), ...profileQuotes([profile.profile.city, profile.profile.country, profile.profile.founded_year, profile.profile.founding_country, ...(profile.profile.offices ?? []), profile.metrics.employee_range, profile.metrics.employee_count] as never, allSources)], row.name);
+    const extra = approvedFounders.filter((f) => !have.some((h) => samePersonName(h.name, f.name)));
+    if (approvedFounders.length) console.log(`    👤  Founders named in approved quotes: ${approvedFounders.map((f) => f.name).join(", ")}`);
+    if (extra.length) profile.profile.founders = [...have, ...extra.map((f) => ({ name: f.name, title: f.title }))] as typeof have;
+    // A bare surname ("Kwiatkowsky") beside a full name that ends with it ("Lavi Kwiatkowsky") is the same person, not a second founder: the full name stays (full name against full name).
+    const all = profile.profile.founders ?? [];
+    profile.profile.founders = all.filter((f) => !(f.name.trim().split(/\s+/).length === 1 && all.some((o) => o !== f && o.name.trim().split(/\s+/).length > 1 && o.name.trim().split(/\s+/).pop()!.toLowerCase() === f.name.trim().toLowerCase()))) as typeof have;
+  }
   const grounded = groundFounders(profile.profile.founders ?? [], allSources.filter((s) => profileSourceAllowed(s, row.name)), row.name, roundInvestors);
+  // The approved quote is the ground itself (it was checked against its page, in the page's language, before it was approved): a founder it names stays with it.
+  for (const f of approvedFounders) {
+    const i = grounded.dropped.findIndex((d) => d.name === f.name && d.reason === "founder_not_grounded");
+    if (i >= 0 && !roundInvestors.some((n) => samePersonName(n, f.name))) {
+      grounded.dropped.splice(i, 1);
+      grounded.kept.push({ name: f.name, title: f.title, grounded_url: f.url, grounded_quote: f.quote.slice(0, 240) } as (typeof grounded.kept)[number]);
+    }
+  }
+  const ruleHits: RuleHit[] = [];
+  for (const f of approvedFounders) if (grounded.kept.some((k) => samePersonName(k.name, f.name))) ruleHits.push({ field: "founder", rule: "founder_from_approved_quote", value: f.name });
   for (const d of grounded.dropped) {
+    fates.founders.set(d.name, d.reason === "founder_is_investor" ? "named among the investors" : `no allowed source says they founded the company (${allSources.filter((x) => profileSourceAllowed(x, row.name)).length} allowed source(s) read)`);
     console.log(`    👤  ${d.name} not kept as a founder (${d.reason === "founder_is_investor" ? "named among the investors" : "no source says they founded this company"}).`);
     bump(stats.droppedByReason, d.reason);
   }
@@ -846,14 +1135,19 @@ export async function collectCompany(
     }
     withAmounts.push(r);
   }
-  const keptRounds = withAmounts.filter((r) => {
+  // The lead investor must stand in a source the round cites (owner, round 10).
+  for (let i = 0; i < withAmounts.length; i++) {
+    const g = groundLeadInvestor(withAmounts[i], allSources);
+    if (g.dropped) { console.log(`    🚫  ${withAmounts[i].round_type}: lead investor ${g.dropped} not written — no source the round cites names it.`); bump(stats.droppedByReason, "lead_investor_not_in_source"); withAmounts[i] = g.round; }
+  }
+  const roundsPassingRules = withAmounts.filter((r) => {
     const why = rejectRound(r, row.name, allSources);
     if (!why) return true;
     if (why === "round_only_from_data_platform" || why === "round_source_not_listed") {
       platformOnly.push(r);
       // An unlisted domain goes to the owner's review list (roundSources.ts).
       for (const s of roundSourceStandings(r, allSources, row.name)) {
-        if (s.kind === "unlisted") unlistedDomains.push({ domain: s.domain, url: s.url });
+        if (s.kind === "unlisted") { unlistedDomains.push({ domain: s.domain, url: s.url }); rejectedDomains.note("round", s.url, `${r.round_type ?? "round"}`); }
       }
       if (why === "round_source_not_listed") bump(stats.droppedByReason, why);
       return false;
@@ -862,6 +1156,23 @@ export async function collectCompany(
     bump(stats.droppedByReason, why);
     return false;
   });
+  // A round reported by an outlet is checked against the profile too: the same name in another country or business is another company's round
+  // (DataX, owner 2026-11-13). The company's own site is the company, so it needs no check; one source that is this company's is enough.
+  const keptRounds: typeof roundsPassingRules = [];
+  for (const r of roundsPassingRules) {
+    const outlets = roundSourceStandings(r, allSources, row.name).map((s) => s.url).filter((u) => allSources.find((x) => x.url === u)?.source_type !== "company_site").slice(0, 2);
+    const ownSite = roundSourceStandings(r, allSources, row.name).some((s) => allSources.find((x) => x.url === s.url)?.source_type === "company_site");
+    if (ownSite || !outlets.length) { keptRounds.push(r); continue; }
+    let verdict: Awaited<ReturnType<typeof articleIsThisCompany>> | null = null;
+    for (const u of outlets) {
+      const src = allSources.find((x) => x.url === u);
+      const v = await articleIsThisCompany(src?.title ?? "", u, src?.content ?? "");
+      if (v.keep) { verdict = v; break; }
+      verdict = v;
+    }
+    if (verdict && !verdict.keep) { console.log(`    🚫  ${r.round_type} not written (another company's round: ${verdict.reason})`); bump(stats.droppedByReason, "round_other_company"); continue; }
+    keptRounds.push(r);
+  }
 
   // ── Stage 5b: hints — a round only a data platform states (hints.ts) ──
   // Searched for in primary sources; confirmed → written with that source
@@ -955,6 +1266,10 @@ export async function collectCompany(
   // The HQ the decision took (a Contact-page address, an About paragraph): validation does not ask
   // its quote for an HQ word again (Anonymised's "7 Bell Yard, London" — model check 2026-11-02).
   let hqDecided = false;
+  /** Sources whose quote was approved for a round and also says where the company is: allowed for the headquarters (owner, batch 6). */
+  const approvedSourceIds = new Set<string>();
+  let statementsAll: HqStatement[] = [];
+  let registry: { record: RegistryRecord; sourceId: string; dateSourceId: string } | undefined;
   // Extra searches (EXTRA_SEARCHES, default 4, owner 2026-11-07): competitors by tier and the founders' background share them.
   let extraSearchesLeft = Math.max(0, Number(process.env.EXTRA_SEARCHES ?? 4) || 0);
   const extraSearch = async (query: string, label: string): Promise<RawSearchResult[]> => {
@@ -1007,8 +1322,76 @@ export async function collectCompany(
     }
   }
 
+  // A founding year stands only on a sentence whose subject is the company (subject.ts; owner, round 10: Canopy's "DHNY was founded in 2022", Spin Studio's "Founded in 1901, the Whitechapel Gallery").
+  {
+    const fy = profile.profile.founded_year as { value: number; source_id: string; evidence_quote: string } | undefined;
+    const fsrc = fy ? sourceById.get(fy.source_id) : undefined;
+    if (fy && fsrc && fsrc.source_type !== "registry" && (isThirdPartyPage(fsrc.url) || !foundingSentenceIsAboutCompany(fy.evidence_quote, fy.value, row.name, { ownSite: fsrc.source_type === "company_site", url: fsrc.url, title: (fsrc as { title?: string }).title }))) {
+      console.log(`    🚫  founded_year ${fy.value} not written — its sentence is not about ${row.name}: "${fy.evidence_quote.slice(0, 110)}" (${fsrc.url})`);
+      bump(stats.droppedByReason, "founded_year_subject_not_company");
+      profile.profile.founded_year = undefined;
+    }
+  }
+  // a2. Founding year from a clear structure on the company's own site ("Founded in 2013", "Since 2013", "Est. 2013"); an article needs a sentence "founded in <city> in <year>" naming the company
+  // (owner, round 10). The © year of the footer decides nothing; it only flags a founding year later than the first year of the © range.
+  if (!ctx.update && !allowedFact(profile.profile.founded_year)) {
+    let fromSite: { year: number; quote: string; src: LabeledSource } | null = null;
+    for (const src of allSources) {
+      if (src.source_type !== "company_site" || !profileSourceAllowed(src, row.name)) continue;
+      if (isThirdPartyPage(src.url)) continue;   // a page about a customer, project or partner (subject.ts)
+      const hit = foundedYearFromSite(src.content, undefined, { companyName: row.name, ownSite: true });
+      if (hit) { fromSite = { ...hit, src }; break; }
+    }
+    if (fromSite) {
+      profile.profile.founded_year = { value: fromSite.year, source_id: fromSite.src.source_id, evidence_quote: fromSite.quote } as typeof profile.profile.founded_year;
+      console.log(`    📅  Founded ${fromSite.year} — the company's own site: "${fromSite.quote.slice(0, 100)}" (${fromSite.src.url})`);
+      bump(stats.droppedByReason, "founded_year_from_site");
+      const c = allSources.filter((x) => x.source_type === "company_site").map((x) => copyrightStartYear(x.content)).filter((y): y is number => y != null);
+      if (c.length && fromSite.year > Math.min(...c)) console.log(`    ⚠️  Founded ${fromSite.year} is later than the first © year of the site (${Math.min(...c)}): flagged for review.`);
+    } else {
+      for (const src of allSources) {
+        if (!statementKind(src) || !profileSourceAllowed(src, row.name)) continue;
+        const sentences = `${src.title ?? ""}. ${src.content}`.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/);
+        const hit = foundedInCityYear(sentences, row.name);
+        if (!hit) continue;
+        profile.profile.founded_year = { value: hit.year, source_id: src.source_id, evidence_quote: hit.quote } as typeof profile.profile.founded_year;
+        const cc = countryOfCity(hit.city);
+        if (cc && !profile.profile.founding_country) profile.profile.founding_country = { value: cc, source_id: src.source_id, evidence_quote: hit.quote } as typeof profile.profile.founding_country;
+        console.log(`    📅  Founded ${hit.year} in ${hit.city}${cc ? ` (${cc})` : ""} — "${hit.quote.slice(0, 100)}" (${src.url})`);
+        bump(stats.droppedByReason, "founded_year_from_article");
+        break;
+      }
+    }
+  }
+
+  // A founding year two sources contradict is not written (owner, batch 8: Smarter Contracts — the site 2018, another source 2019). A register decides (below, registers); otherwise the company's own site
+  // and a statement elsewhere must agree.
+  if (!ctx.update) {
+    const fy = profile.profile.founded_year as { value: number; source_id: string } | undefined;
+    const fsrc = fy ? sourceById.get(fy.source_id) : undefined;
+    if (fy && fsrc && fsrc.source_type !== "registry") {
+      const years = new Map<number, string>([[fy.value, fsrc.url]]);
+      for (const src of allSources) {
+        if (src.source_type !== "company_site" || !profileSourceAllowed(src, row.name) || isThirdPartyPage(src.url)) continue;
+        const hit = foundedYearFromSite(src.content, undefined, { companyName: row.name, ownSite: true });
+        if (hit) { years.set(hit.year, src.url); break; }
+      }
+      for (const src of allSources) {
+        if (!statementKind(src) || !profileSourceAllowed(src, row.name)) continue;
+        const hit = foundedInCityYear(`${src.title ?? ""}. ${src.content}`.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/), row.name);
+        if (hit) { years.set(hit.year, src.url); break; }
+      }
+      if (years.size > 1) {
+        console.log(`    🚫  founded_year not written — the sources disagree: ${[...years].map(([y, u]) => `${y} (${u.slice(0, 70)})`).join(" vs ")}`);
+        bump(stats.droppedByReason, "founded_year_sources_disagree");
+        profile.profile.founded_year = undefined;
+      }
+    }
+  }
+
   // b. Its legal pages: legal name, company number, registered office (an office only).
   let legal: LegalFacts = {};
+  let legalSeat: { city: string; quote: string; source_id: string } | null = null;
   if (componentOn("legal_pages") && !ctx.update && effectiveWebsite) {
     const root = (effectiveWebsite.startsWith("http") ? effectiveWebsite : `https://${effectiveWebsite}`).replace(/\/+$/, "");
     // A site that answers every path with its home page (Moon Active, Carbeniumtec: model check
@@ -1031,6 +1414,7 @@ export async function collectCompany(
       src.source_type = "company_site";
       console.log(`    ⚖️   ${root + path}: ${[legal.legalName && `legal name ${legal.legalName}`, legal.companyNumber && `company no. ${legal.companyNumber}`, legal.registeredCity && `registered office in ${legal.registeredCity}`].filter(Boolean).join(", ")}`);
       if (f.registeredCity) {
+        legalSeat ??= { city: f.registeredCity, quote: f.quote ?? f.registeredCity, source_id: src.source_id };
         const offices = profile.profile.offices ?? [];
         if (!offices.some((o) => canonicalCity(o.city) === canonicalCity(f.registeredCity!))) {
           offices.push({ city: f.registeredCity, ...(countryOfCity(f.registeredCity) ? { country: countryOfCity(f.registeredCity)! } : {}), source_id: src.source_id, evidence_quote: f.quote ?? f.registeredCity });
@@ -1075,9 +1459,13 @@ export async function collectCompany(
   // press of tiers 1–3; press of the last two years that disagrees leaves it
   // empty and both cities become offices (headquarters.ts, owner 2026-11-01).
   {
-    const statements = [...allSources.flatMap((s) => hqStatementsIn(s, row.name)), ...extraStatements.filter((x, i, xs) => xs.findIndex((y) => y.city === x.city && y.source_id === x.source_id) === i)];
+    const approvedHq = hqFromApprovedQuotes(approvedQuotes(keptRounds, allSources), row.name);
+    for (const q of approvedQuotes(keptRounds, allSources)) approvedSourceIds.add(q.source.source_id);   // a source whose quote was approved for a round is one source for every field (owner, batch 6: ain.ua, mpamag.com)
+    for (const st of approvedHq) console.log(`    🏢  An approved quote also says where the company is — ${st.city}: "${st.quote.slice(0, 120)}" (${st.url})`);
+    const statements = [...allSources.flatMap((s) => hqStatementsIn(s, row.name)), ...approvedHq, ...allSources.flatMap((s) => impressumSeat(s)), ...extraStatements.filter((x, i, xs) => xs.findIndex((y) => y.city === x.city && y.source_id === x.source_id) === i)];
     // One street address on the Contact page is the headquarters (owner, 2026-11-02).
-    const contact = allSources.flatMap((s) => contactPageAddresses(s));
+    // The same city on every page (a footer) is one address.
+    const contact = allSources.flatMap((s) => contactPageAddresses(s)).filter((c, i, a) => a.findIndex((d) => canonicalCity(d.city) === canonicalCity(c.city)) === i);
     if (contact.length === 1 && !statements.some((s) => s.kind === "company")) {
       console.log(`    🏢  The Contact page gives one address — ${contact[0].city}: "${contact[0].quote.slice(0, 120)}"`);
       statements.push(contact[0]);
@@ -1090,9 +1478,24 @@ export async function collectCompany(
       && quoteSaysHqOf(mc.evidence_quote, mc.value, row.name, mcSource.source_type === "company_site") && !statements.some((s) => s.city.toLowerCase() === mc.value.toLowerCase() && s.source_id === mc.source_id)) {
       statements.push({ city: mc.value, quote: mc.evidence_quote, source_id: mc.source_id, url: mcSource.url, kind: mcKind, date: mcKind === "company" && mcSource.source_type === "company_site" ? null : articleDate(mcSource) });
     }
+    statementsAll = statements;
     const hq = decideHeadquarters(statements, undefined, (profile.profile.offices ?? []).map((o) => o.city));
+    if (hq.kind === "none" && !fates.hq) fates.hq = mc ? `no allowed source states the headquarters: the model's "${mc.evidence_quote.slice(0, 100)}" is not a headquarters statement (${mcSource?.url ?? mc.source_id})` : "no source states the headquarters";
+    // A single street address on a country-code site whose country is another one (trustlayer.co.uk with an Austin address) may be another company of the same name: held, and listed for the website review (owner, batch 7).
+    const siteCountry = countryOfHost(row.website ? new URL(/^https?:/i.test(row.website) ? row.website : `https://${row.website}`).hostname : null);
+    if (hq.kind === "declared" && hq.statement.viaAddress && siteCountry && countryOfCity(hq.statement.city) && countryOfCity(hq.statement.city) !== siteCountry) {
+      const st = hq.statement;
+      const detail = `domain_mismatch: ${row.website} is a ${siteCountry} domain, the only address on it is in ${st.city} (${countryOfCity(st.city)}): "${st.quote.slice(0, 120)}"`;
+      fates.hq = detail;
+      console.log(`    🌐  Headquarters ${st.city} held — ${detail}`);
+      ctx.onWebsiteIssue?.("domain_mismatch", detail);
+      profile.profile.city = undefined;
+      profile.profile.country = undefined;
+    } else
     if (hq.kind === "declared") {
       const st = hq.statement;
+      if (approvedHq.some((a) => a.source_id === st.source_id && canonicalCity(a.city) === canonicalCity(st.city))) { ruleHits.push({ field: "hq_city", rule: "hq_from_approved_quote", value: st.city }, { field: "hq_country", rule: "hq_from_approved_quote" }); }
+      else if (st.viaAddress) ruleHits.push({ field: "hq_city", rule: "hq_from_site_address", value: st.city }, { field: "hq_country", rule: "hq_from_site_address" });
       // The model's own quote stands only when it cites the statement's source: the same city
       // from a denied page (Anonymised's London from prospeo.io, model check 2026-11-02) would
       // otherwise carry the HQ to the source check and drop it there.
@@ -1105,6 +1508,7 @@ export async function collectCompany(
       hqDecided = true;
       profile.profile.country = country;
     } else if (hq.kind === "conflict") {
+      fates.hq = `the press of the last two years disagrees: ${hq.cities.map((c) => c.city).join(" vs ")}`;
       console.log(`    🏢  Headquarters left empty — the press of the last two years disagrees: ${hq.cities.map((c) => `${c.city} (${c.url})`).join(" vs ")}. Both are offices.`);
       profile.profile.city = undefined;
       profile.profile.country = undefined;
@@ -1119,15 +1523,37 @@ export async function collectCompany(
       profile.profile.city = undefined;
       if (profile.profile.country?.evidence_quote === mc.evidence_quote) profile.profile.country = undefined;
     } else if (hq.kind === "site_offices") {
+      fates.hq = `the site lists several offices without naming a headquarters (${hq.cities.join(", ")})`;
       console.log(`    🏢  Headquarters left empty — the company's site lists ${hq.cities.join(", ")} without naming one, and no press declaration is from the last two years. They stay offices.`);
       profile.profile.city = undefined;
       profile.profile.country = undefined;
     }
   }
 
+  // A legal page's address is the headquarters only when it is the only address found AND the country agrees with other evidence (owner, round 10).
+  let legalHqSourceId: string | null = null;
+  if (legalSeat && !hqDecided && !profile.profile.city) {
+    const others = [
+      ...(profile.profile.offices ?? []).filter((o) => o.source_id !== legalSeat!.source_id).map((o) => o.city),
+      ...statementsAll.map((x) => x.city),
+    ];
+    const articleCountries = statementsAll.map((x) => countryOfCity(x.city)).filter((c): c is string => !!c);
+    const ok = legalPageHq({ city: legalSeat.city, quote: legalSeat.quote, otherAddressCities: others, domain: effectiveWebsite, siteText: allSources.filter((s) => s.source_type === "company_site").map((x) => x.content).join("\n"), articleCountries });
+    if (ok) {
+      legalHqSourceId = legalSeat.source_id;
+      profile.profile.city = { value: legalSeat.city, source_id: legalSeat.source_id, evidence_quote: legalSeat.quote };
+      profile.profile.country = { value: ok.country, source_id: legalSeat.source_id, evidence_quote: legalSeat.quote };
+      hqDecided = true;
+      console.log(`    🏢  Headquarters ${legalSeat.city} — the only address found, on a legal page; the country (${ok.country}) agrees with ${ok.basis}`);
+    } else {
+      console.log(`    🏢  The legal page's address (${legalSeat.city}) stays an office — it is not the only address found, or no other evidence names its country`);
+    }
+  }
+
   // "Founder, Sisense" never makes anyone a founder of this company (owner, 2026-11-04).
   profile.profile.founders = profile.profile.founders?.filter((f) => {
     if (!f.title || roleAtCompany(f.title, row.name).role !== null) return true;
+    fates.founders.set(f.name, `the title "${f.title}" is at another company`);
     console.log(`    🚫  founder ${f.name} not written — the title "${f.title}" is at another company`);
     bump(stats.droppedByReason, "founder_of_another_company");
     return false;
@@ -1174,7 +1600,7 @@ export async function collectCompany(
     if (!f) continue;
     const s = sourceById.get(f.source_id);
     // A legal page's address is the registered office, not the headquarters: an office, never the HQ (owner, 2026-11-08).
-    if (s && (key === "city" || key === "country") && isLegalPageUrl(s.url)) {
+    if (s && (key === "city" || key === "country") && isLegalPageUrl(s.url) && f.source_id !== legalHqSourceId) {
       console.log(`    🚫  ${key} ${JSON.stringify(f.value)} not written as the headquarters — it comes from a legal page (${s.url}); kept as an office`);
       bump(stats.droppedByReason, "hq_from_legal_page");
       if (key === "city") {
@@ -1188,18 +1614,26 @@ export async function collectCompany(
       (profile.profile as Record<string, unknown>)[key] = undefined;
       continue;
     }
+    if (s && !profileSourceAllowed(s, row.name) && approvedSourceIds.has(f.source_id) && !isLegalPageUrl(s.url)) {
+      ruleHits.push({ field: key === "city" ? "hq_city" : key === "country" ? "hq_country" : key, rule: "source_approved_by_round" });
+      continue;
+    }
     if (s && profileSourceAllowed(s, row.name)) continue;
+    if (key === "city" || key === "country") fates.hq = `${key} ${JSON.stringify(f.value)}: its source is not on the allowed list (${s?.url ?? f.source_id})`;
     console.log(`    🚫  ${key} ${JSON.stringify(f.value)} not written — its source is not on the allowed list: ${s?.url ?? f.source_id}`);
+    rejectedDomains.note(key, s?.url, `${key} ${JSON.stringify(f.value)}`);
     bump(stats.droppedByReason, "profile_source_not_listed");
     (profile.profile as Record<string, unknown>)[key] = undefined;
   }
 
+  markOwnSites();
+  await classifyDomains();
   // ── The allowed sources apply to every field (owner, 2026-11-02): the company's own site or
   // release, a register, the press of tiers 1–3 (rounds: 1–4, roundSources.ts). LinkedIn,
   // data platforms and unlisted sites are never the source of a written value.
   {
-    const allowedId = (id?: string | null) => { const src = id ? sourceById.get(id) : undefined; return !!src && profileSourceAllowed(src, row.name); };
-    const drop = (what: string, reason: string, url?: string) => { console.log(`    🚫  ${what} not written — ${url ? `its source is not on the allowed list: ${url}` : "no allowed source"}`); bump(stats.droppedByReason, reason); };
+    const allowedId = (id?: string | null) => { const src = id ? sourceById.get(id) : undefined; return !!src && (profileSourceAllowed(src, row.name) || approvedSourceIds.has(src.source_id)); };
+    const drop = (what: string, reason: string, url?: string) => { console.log(`    🚫  ${what} not written — ${url ? `its source is not on the allowed list: ${url}` : "no allowed source"}`); if (url) { const d = describeRejected(what); rejectedDomains.note(d.field, url, d.title); } bump(stats.droppedByReason, reason); };
     // Size: employee count and range.
     for (const key of ["employee_range", "employee_count"] as const) {
       const v = profile.metrics[key] as { value: unknown; source_id: string } | undefined;
@@ -1211,7 +1645,7 @@ export async function collectCompany(
     const count = profile.metrics.employee_count;
     if (count) {
       const s = sourceById.get(count.source_id);
-      const ownPage = s?.source_type === "company_site" && !s.url.match(/\/(news|blog|press|insights)\//i);
+      const ownPage = s?.source_type === "company_site" && !s.url.match(/\/(news|newsroom|blog|press|press-releases?|media|insights|stories|updates)(\/|-|$)/i);
       const date = s && !ownPage ? articleDate(s) : null;
       const cutoff = new Date(Date.now() - 2 * 365.25 * 86_400_000).toISOString().slice(0, 10);
       if (!ownPage && (!date || date < cutoff)) {
@@ -1304,7 +1738,8 @@ export async function collectCompany(
         console.log(`    🏷️   leader ${l.name}: only "${partial}" of "${role}" is beside the name in an allowed source — written as "${partial}"`);
         bump(stats.droppedByReason, "leader_title_reduced_to_verified");
         record("verified_text");
-        keptLeaders.push({ ...l, role: partial });
+        // Only the chair of "Chairman and CEO" is beside the name (owner, batch 7: Yomoni): the chair is the board's seat, not a management title — written as the board's, not dropped by the closed list of leadership roles.
+        keptLeaders.push(partial === "Chair" ? { ...l, role: "Chairman", group: "board" } as typeof l : { ...l, role: partial });
         continue;
       }
       const namedIn = allowedTexts.filter((t) => personMentionedIn(l.name, t)).length;
@@ -1318,10 +1753,15 @@ export async function collectCompany(
     // owner's 2026-11-03 placeholder for a person on the leadership page whose title could not be verified.
     profile.leadership = keptLeaders.filter((l) => {
       if (l.group === "board" || l.role === "Leadership team" || isLeadershipRole(l.role)) return true;
-      console.log(`    🚫  leader ${l.name} not written — "${l.role}" is not on the closed list of leadership roles`);
+      console.log(`    🚫  leader ${l.name} not written — "${l.role}" ${/\b(former|formerly|ex-)\b/i.test(l.role ?? "") ? "is a past role" : "is not on the closed list of leadership roles"}`);
       bump(stats.droppedByReason, "leader_role_not_on_list");
       return false;
     });
+    {
+      const merged = mergeLeadersByPerson(profile.leadership);
+      if (merged.length < profile.leadership.length) console.log(`    👥  ${profile.leadership.length - merged.length} leader entr${profile.leadership.length - merged.length === 1 ? "y" : "ies"} merged by person`);
+      profile.leadership = merged;
+    }
     // The founders' cards on the company's own pages: their biography word for word too.
     if (!ctx.update && componentOn("bios")) {
       for (const f of (profile.profile.founders ?? [])) {
@@ -1365,7 +1805,7 @@ export async function collectCompany(
           const k = normalizeForMatch(cl.name);
           if (!k || have.has(k) || market.competitors.length >= 8) continue;
           have.add(k);
-          market.competitors.push({ name: cl.name, how_it_competes: cl.how_it_competes, source_ids: [cl.source_id], source_id: cl.source_id, evidence_quote: cl.evidence_quote, tier: cl.tier });
+          market.competitors.push({ name: caseName(cl.name), how_it_competes: cl.how_it_competes, source_ids: [cl.source_id], source_id: cl.source_id, evidence_quote: cl.evidence_quote, tier: cl.tier });
           console.log(`    🥊  ${cl.tier} competitor ${cl.name} (${how}): "${cl.evidence_quote.slice(0, 110)}"`);
           bump(stats.droppedByReason, `competitor_${cl.tier}_${how}`);
         }
@@ -1388,10 +1828,14 @@ export async function collectCompany(
         if (ownDescription) {
           const fromDb = ctx.peerLookup ? await ctx.peerLookup(marketClaims.map((c) => c.name)) : new Map<string, PeerFacts>();
           let lookups = 0;
+          const budgetOut = new Set<string>();
+          const PEER_LOOKUPS = Number(process.env.PEER_LOOKUPS ?? 6);
           const resolve = async (name: string): Promise<PeerFacts | null> => {
             const hit = fromDb.get(name.toLowerCase());
             if (hit) return hit;
-            if (lookups >= 3 || ctx.update) return null;   // at most three searches per company for candidates not on file
+            if (ctx.update) return null;
+            // A candidate not looked up because the searches of this company ran out is not "not a company with a site" (owner, batch 7: Nielsen Norman Group).
+            if (lookups >= PEER_LOOKUPS) { budgetOut.add(name); return null; }
             lookups++;
             const claim = marketClaims.find((c) => c.name === name);
             const found = (await extraSearch(peerSiteQuery(name, claim?.evidence_quote ?? "", row.name), "peer_site")).filter((r) => r.url && !isDataPlatformUrl(r.url));
@@ -1408,7 +1852,7 @@ export async function collectCompany(
             return tool && tool.type === "tool_use" ? tool.input : null;
           };
           const judged = await judgeMarketPeers({ resolve, ask }, { name: row.name, description: ownDescription }, marketClaims as PeerClaim[], (c) => sourceById.get(c.source_id)?.url ?? "");
-          for (const d of judged.dropped) { console.log(`    🚫  market peer ${d.name} not written — ${d.why}`); bump(stats.droppedByReason, d.why.split(":")[0]); }
+          for (const d of judged.dropped) { if (d.why === "peer_not_a_company_with_a_site" && budgetOut.has(d.name)) d.why = "peer_lookup_budget_exhausted"; console.log(`    🚫  market peer ${d.name} not written — ${d.why}`); bump(stats.droppedByReason, d.why.split(":")[0]); }
           adoptable = [...claims.filter((c) => c.tier !== "market"), ...(judged.kept as unknown as TieredClaim[])];
         }
       }
@@ -1426,10 +1870,37 @@ export async function collectCompany(
       content: content ?? sourceByUrl(url)?.content,
       headline: headline ?? sourceByUrl(url)?.title,
       companyName: row.name,
+      acquirers: knownAcquirers(market.news.map((x) => x.title ?? ""), row.name),
     });
+    // The company's acquisition, as news (owner, round 10): two fixed searches for every company; a headline in which the company is the one acquired is offered to the same
+    // gate as every news item (source, entity, date). Nothing else derives "acquired": bulk_enrich_v2.ts reads it from the accepted news.
+    if (!ctx.update) {
+      try {
+        // A general name ("Paradox") is also searched with its domain; the results are printed so a missing acquisition can be seen to be missing from the search itself.
+        const queries = [`"${row.name}" acquired`, `"${row.name}" acquisition`, ...(domain ? [`"${domain}" acquired by OR acquires OR acquisition`] : [])];
+        const found = (await Promise.all(queries.map((q) => webSearch(q, "acquired_check", searchState)))).flat();
+        console.log(`    🔎  acquisition searches (${queries.join(" | ")}): ${found.length} result(s)${found.length ? "\n" + found.slice(0, 12).map((r) => `        · ${(r.title ?? "").slice(0, 100)} — ${r.url}`).join("\n") : ""}`);
+        for (const r of found) {
+          const t = (r.title ?? "").trim();
+          if (!r.url || !t || isDataPlatformUrl(r.url) || (!acquisitionHeadline(t, row.name) && !acquirerIn(t, row.name))) continue;
+          if (market.news.some((n) => unwrapRedirect(n.url) === r.url)) continue;
+          if (!allSources.some((x) => x.url === r.url)) newSource(r.url, r.content ?? "", t, "acquired_check");
+          market.news.push({ title: t, url: r.url, summary: (r.content ?? "").slice(0, 300) } as (typeof market.news)[number]);
+          console.log(`    🏁  acquisition headline offered to the news gate: "${t.slice(0, 90)}" ${r.url}`);
+        }
+      } catch (e) { console.log(`    ⚠️  acquisition search skipped: ${(e as Error).message}`); }
+    }
+    // Does the profile the search gave describe the company whose site was read? (identityMismatch.ts; owner, 2026-11-24: Aperio). Logged only for now: the overlap of the profile's words with the site's own pages.
+    { const own = websitePages.map((p) => p.prompt_content ?? p.content).join(" ");
+      const ov = identityOverlap([profile.profile.description, profile.profile.value_proposition].filter(Boolean).join(" "), own);
+      if (!ov && own.length > 200 && (profile.profile.description || profile.profile.value_proposition)) console.log(`    🧭  identity: no verdict — ${looksLikeErrorPage(own) ? "the site's text is an error / block page" : englishShare(own) < MIN_ENGLISH ? `the site is not in English (english ${englishShare(own).toFixed(2)})` : "too little text to compare"}`);
+      if (ov) { const pText = [profile.profile.description, profile.profile.value_proposition].filter(Boolean).join(" ");
+        console.log(`    🧭  identity: the profile against the site's own pages — overlap ${ov.share.toFixed(2)} (${ov.profileWords} profile words, ${ov.siteWords} site words, english ${englishShare(own).toFixed(2)})${ov.mismatch ? " ⚠️ identity_mismatch" : ""}`);
+        if (ov.mismatch) console.log(`        profile: ${pText.replace(/\s+/g, " ").slice(0, 150)}\n        site:    ${own.replace(/\s+/g, " ").slice(0, 150)}`); } }
     const keptNews: typeof market.news = [];
     const newsDeps = {
       companyName: row.name,
+      acquirers: knownAcquirers(market.news.map((x) => x.title ?? ""), row.name),
       content: (u: string) => sourceByUrl(u)?.content,
       isOwnSite: (u: string) => classifySourceType(u, domain) === "company_site" || sourceByUrl(u)?.source_type === "company_site",
       fetchHtml: async (u: string) => (ctx.update ? null : await fetchPageHtml(u, searchState)),
@@ -1443,7 +1914,10 @@ export async function collectCompany(
         const about = [profile.profile.description, profile.profile.value_proposition, profile.profile.industry, row.description].filter(Boolean).join(" ");
         const v = await judgeNews(n, { ...newsDeps, about });
         if (!v.keep) { console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — ${v.message}: ${n.url}`); bump(stats.droppedByReason, v.reason); continue; }
+        const entity = await articleIsThisCompany(v.item.title, v.item.url, sourceByUrl(v.item.url)?.content ?? String((n as { summary?: string | null }).summary ?? ""));
+        if (!entity.keep) { if (identityState) identityRejected = true; console.log(`    🚫  news "${n.title.slice(0, 60)}" not written — another company's (${entity.reason}): ${n.url}`); bump(stats.droppedByReason, "news_other_company"); continue; }
         if (v.dated) { console.log(`    📅  news "${n.title.slice(0, 50)}" dated ${v.item.published_date} from ${v.dated === "address" ? "its address" : "the page's code"}`); bump(stats.droppedByReason, "news_date_recovered"); }
+        (v.item as { date_basis?: string }).date_basis = v.dated ? (v.dated === "address" ? "address" : "code") : "given";
         keptNews.push(v.item as typeof n); continue;
       }
       // A hint-only site (owner, 2026-11-03): its headline is searched for in an allowed source.
@@ -1485,6 +1959,8 @@ export async function collectCompany(
       founders: (profile.profile.founders ?? []).map((f) => f.name).filter(Boolean),
       legalName: legal.legalName ?? null,
       statedFoundingCountry: profile.profile.founding_country?.value ?? null,
+      country: row.country ?? profile.profile.country?.value ?? null,
+      domain,
     });
     // A register decides founding only for the company's own entity in its headquarters country
     // (registers.ts registerDecides): Wiz's UK subsidiary, Upwind's, Black Forest Labs' US parent.
@@ -1494,6 +1970,19 @@ export async function collectCompany(
       if (d.decides) continue;
       console.log(`    🏛️   Register ${f.register}: ${f.entity} (${f.number}) not used for founded year / founding country — ${d.why === "local_subsidiary" ? "a local subsidiary (a country in its name)" : d.why === "headquarters_unknown" ? "no headquarters decided to compare its country with" : `the headquarters is not in ${f.founding_country}`}.`);
       bump(stats.droppedByReason, `register_${d.why}`);
+    }
+    // What the registers add as columns of their own (registerRecord.ts): the legal name, number, jurisdiction, address and the earliest incorporation date.
+    const record = chooseRegistryRecord(findings, row.name, hqCountry);
+    if (record) {
+      const rs: LabeledSource = { url: record.primary.url, title: `${record.legal_name} — register`, content: record.primary.quote, provider: "registry", query_label: "register_record", source_id: `R${allSources.length + 1}`, source_type: "registry" };
+      allSources.push(rs); sourceById.set(rs.source_id, rs);
+      let ds = rs;
+      if (record.dateFrom && record.dateFrom !== record.primary) {
+        ds = { url: record.dateFrom.url, title: `${record.dateFrom.entity} — register`, content: record.dateFrom.quote, provider: "registry", query_label: "register_record", source_id: `R${allSources.length + 1}`, source_type: "registry" };
+        allSources.push(ds); sourceById.set(ds.source_id, ds);
+      }
+      registry = { record, sourceId: rs.source_id, dateSourceId: ds.source_id };
+      console.log(`    🏛️   Register record: ${record.legal_name} (${record.company_number}), ${record.incorporation_jurisdiction}${record.incorporation_date ? `, incorporated ${record.incorporation_date}` : ""}${record.registered_address ? `, ${record.registered_address}` : ""}`);
     }
     const reg = findings.find((f) => registerDecides(f, row.name, hqCountry).decides);
     if (reg) { registerLegalName = reg.entity; registerCountry = reg.founding_country; if (reg.register === "uk_companies_house") ukRegisterEntity = { number: reg.number, entity: reg.entity }; }
@@ -1519,6 +2008,40 @@ export async function collectCompany(
     }
   }
 
+  // A round from an accepted headline (owner, round 10): "<company> raises / closes / secures $X Series Y" in a news item that passed the gate is a round — amount and type from the
+  // headline, date from the news item, the headline as the quote. A round already found with the same sum takes the date of the headline when it had none.
+  if (!ctx.update) {
+    for (const r of roundsFromNews(market.news, row.name, allSources)) {
+      const amount = r.amount_raised!.value;
+      const near = (v?: number | null) => v != null && Math.abs(v - amount) / amount < 0.01;
+      const idx = newRoundLikes.findIndex((l) => near(l.amount_raised) || near(l.amount_original));
+      if (idx >= 0) {
+        const like = newRoundLikes[idx];
+        if (!like.announcement_date) {
+          like.announcement_date = r.announcement_date!.value; like.announcement_date_precision = "day";
+          const v2 = funding.funding_rounds.find((x) => near(x.amount_raised?.value));
+          if (v2 && !v2.announcement_date) { v2.announcement_date = r.announcement_date; v2.announcement_date_precision = "day"; }
+          console.log(`    🗞️   ${like.round_type} ${amount}: dated ${like.announcement_date} by the headline "${r.amount_raised!.evidence_quote.slice(0, 80)}"`);
+          bump(stats.droppedByReason, "round_date_from_headline");
+        }
+        continue;
+      }
+      ruleHits.push({ field: "round", rule: "round_from_news_headline", quote: r.amount_raised!.evidence_quote });
+      const grounded = groundRoundDetails(r, allSources);
+      const like = roundToRoundLike(grounded.round);
+      if (incompleteRound(like)) continue;
+      funding.funding_rounds.push(r);
+      newRoundLikes.push(like);
+      console.log(`    🗞️   Round from an accepted headline: ${r.round_type} ${amount} · ${r.announcement_date!.value} — "${r.amount_raised!.evidence_quote.slice(0, 90)}"`);
+      bump(stats.droppedByReason, "round_from_headline");
+    }
+  }
+
+  // A round that rests on a paid distribution page, when the company's own page or an article says the same sentence: the better source (roundSourcePreference.ts).
+  { const before = new Map(funding.funding_rounds.map((r) => [r, r.source_url ?? null] as const));
+    const moved = preferBetterRoundSources(funding.funding_rounds, allSources, row.name); for (const m of moved) console.log(`    🔀  Round source: ${m}`);
+    // the round lines were made from the rounds before this step: the row's source follows the move (owner, 2026-11-24: Lendo Series B stayed on einpresswire in the report)
+    for (const r of funding.funding_rounds) { const was = before.get(r); if (!was || !r.source_url || r.source_url === was) continue; for (const l of newRoundLikes) if (l.source_url === was && String(l.round_type).toLowerCase() === String(r.round_type).toLowerCase()) l.source_url = r.source_url; } if (moved.length) bump(stats.droppedByReason, "round_source_preferred"); }
   // ── Stage 6: validation (city/country/founded_year/headcount/rounds) ──
   // A no-amount round on the date of one with an amount is that round (assemble.ts).
   const absorbed = absorbAmountlessRounds(newRoundLikes);
@@ -1559,32 +2082,56 @@ export async function collectCompany(
   }
   // v2's own description (descriptionBuilder.ts, owner 2026-11-08): replaces the extraction's free text; without a
   // verified "what" and "for whom" there is none. Written later only for a company with no description on file.
-  if (componentOn("description_v2") && !ctx.update && siteOwnerIssue) {
-    profile.profile.description = undefined;
-    profile.profile.description_source_ids = undefined;
-    bump(stats.droppedByReason, "description_company_acquired_or_rebranded");
-  } else if (componentOn("description_v2") && !ctx.update) {
+  // Acquired (owner, round 10): derived only from the news that was accepted — bulk_enrich_v2.ts reads the company's news rows (rowRules.ts acquiredFromNews); there is no separate extraction.
+  // A site that is another company's now (the address moved to the buyer's, or it never names the company) is no source of this company's description — but an acquired company is enriched as
+  // usual (owner, batch 7: Sikhona): the description is built from the other allowed sources (the press about the company), the site left out.
+  if (componentOn("description_v2") && !ctx.update && siteOwnerIssue) bump(stats.droppedByReason, "description_company_acquired_or_rebranded_site_left_out");
+  if (componentOn("description_v2") && !ctx.update) {
     const before = profile.profile.description;
     profile.profile.description = undefined;
     profile.profile.description_source_ids = undefined;
     try {
       // Not the extra searches' pages (founders, rivals): they did not pass the entity filter the first pass did.
-      const usable = descriptionSources(allSources, (x) => profileSourceAllowed(x, row.name) && !/^(founder_background|vs_own|vs_other|market_peers)/.test(x.query_label ?? ""));
-      if (usable.length) {
-        const msg = await ctx.anthropic.messages.create(requestFor(buildDescriptionRequest(row.name, usable), ctx.models.profile));
-        ctx.recordCost(ctx.models.profile, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 });
-        const tool = msg.content.find((b) => b.type === "tool_use");
-        const built = tool && tool.type === "tool_use" ? processDescription(tool.input, row.name, Object.fromEntries(usable.map((x) => [x.source_id, x])), (id) => allowedFact({ source_id: id })) : null;
-        for (const d of built?.dropped ?? []) { console.log(`    🚫  description sentence dropped (${d.why}): "${d.text.slice(0, 90)}"`); bump(stats.droppedByReason, `description_${d.why.split(":")[0]}`); }
+      const usable = descriptionSources(allSources, (x) => profileSourceAllowed(x, row.name) && !/^(founder_background|vs_own|vs_other|market_peers)/.test(x.query_label ?? "") && !(siteOwnerIssue && x.source_type === "company_site"));
+      // A name several companies carry (eval/ambiguous_names.json): the description is built from the pages of the site on file only — a sentence from any other page would be dropped by the rows' rule anyway (owner, 2026-11-24: Shyft).
+      const hostOf = (u: string) => { try { return new URL(u).hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; } };
+      const own = ambiguousName(row.name) && domain ? usable.filter((x) => { const h = hostOf(x.url); return h === domain || h.endsWith(`.${domain}`); }) : usable;
+      if (own.length < usable.length) console.log(`    🧭  ${row.name} is a name several companies carry: the description is built from the ${own.length} page(s) of ${domain} only (${usable.length - own.length} other source(s) left out).`);
+      if (own.length) {
+        const ask = async (note?: string) => {
+          const msg = await ctx.anthropic.messages.create(requestFor(buildDescriptionRequest(row.name, own, note), ctx.models.profile));
+          ctx.recordCost(ctx.models.profile, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 });
+          const tool = msg.content.find((b) => b.type === "tool_use");
+          const returned = tool && tool.type === "tool_use" && Array.isArray((tool.input as { sentences?: unknown[] }).sentences) ? (tool.input as { sentences: Array<{ role: string }> }).sentences.map((x) => x.role) : [];
+          const attempt = tool && tool.type === "tool_use" ? describeAttempt(tool.input, row.name, Object.fromEntries(own.map((x) => [x.source_id, x])), (id) => allowedFact({ source_id: id }), rebrandedTo ? [rebrandedTo] : []) : null;
+          return { attempt, returned };
+        };
+        let { attempt, returned } = await ask();
+        // A description with no sentence left because of a marketing word is asked for once more, naming the word (owner, 2026-11-24: Multiable's "what" sentence, Orizuru's): the same fact in plain words.
+        const worded = attempt && !attempt.built ? [...new Set(attempt.dropped.filter((d) => d.why === "marketing_word").map((d) => marketingWordIn(d.text)).filter((w): w is string => !!w))] : [];
+        if (worded.length) {
+          console.log(`    🔁  Description: the first answer used ${worded.map((w) => `"${w}"`).join(", ")} — asked once more, in plain words.`);
+          const second = await ask(`your first answer used the word(s) ${worded.map((w) => `"${w}"`).join(", ")}. Say the same facts without them, in plain words, and keep every fact the sources state.`);
+          if (second.attempt?.built) { attempt = second.attempt; returned = second.returned; bump(stats.droppedByReason, "description_retried_marketing_word"); }
+        }
+        const built = attempt?.built ?? null;
+        // Every dropped sentence is named, also when no description came of it (owner, 2026-11-14: nine companies without one and nothing in the log).
+        for (const d of attempt?.dropped ?? []) { console.log(`    🚫  description sentence dropped (${d.why}): "${d.text.slice(0, 160)}"${(d as { detail?: string }).detail ? `\n        ↳ checked against: ${(d as { detail?: string }).detail}` : ""}`); bump(stats.droppedByReason, `description_${d.why.split(":")[0]}`); }
         if (built) {
           profile.profile.description = built.description;
           profile.profile.description_source_ids = [...new Set(built.sentences.flatMap((x) => x.source_ids))];
           profile.profile.description_sentences = built.sentences;
-          console.log(`    📝  Description (v2): ${built.sentences.length} sentence(s) — ${built.description.slice(0, 120)}…`);
+          profile.profile.description_complete = built.complete;
+          if (rebrandedTo) (profile.profile as { rebrand_to?: string }).rebrand_to = rebrandedTo;
+          console.log(`    📝  Description (v2): ${built.sentences.length} sentence(s)${built.complete ? "" : " (what only: no source says who buys it)"} — ${built.description.slice(0, 120)}…`);
+          if (!built.complete) bump(stats.droppedByReason, "description_what_only");
         } else {
-          console.log(`    📝  Description (v2): no verified "what" and "for whom" — none written${before ? " (the extraction's free text is not used)" : ""}.`);
+          console.log(`    📝  Description (v2): no verified "what" — none written${before ? " (the extraction's free text is not used)" : ""}. Sources given: ${usable.length} (${usable.filter((x) => x.source_type === "company_site").length} of the company's own site, ${usable.filter((x) => x.source_type === "company_site").reduce((n, x) => n + (x.content?.length ?? 0), 0)} characters); the model returned ${returned.length ? returned.join("+") : "no sentences"}.`);
           bump(stats.droppedByReason, "description_not_verified");
         }
+      } else {
+        console.log(`    📝  Description (v2): no allowed source to describe the company from (${allSources.length} sources read, none allowed).`);
+        bump(stats.droppedByReason, "description_no_allowed_source");
       }
     } catch (e) {
       console.log(`    ⚠️  description skipped: ${(e as Error).message}`);
@@ -1604,15 +2151,17 @@ export async function collectCompany(
     try {
       const descText = profile.profile.description_sentences.map((x) => x.text).join(" ");
       const classify = async (feedback?: string): Promise<SectorChoice | null> => {
-        const msg = await ctx.anthropic.messages.create(requestFor(buildSectorRequest(row.name, descText, taxonomy, feedback), ctx.models.enrich));
+        const msg = await ctx.anthropic.messages.create(requestFor(buildSectorRequest(row.name, descText, taxonomy, feedback, { noCustomers: profile.profile.description_complete === false }), ctx.models.enrich));
         ctx.recordCost(ctx.models.enrich, { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, cacheWriteTokens: msg.usage.cache_creation_input_tokens ?? 0, cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0 });
         const tool = msg.content.find((b) => b.type === "tool_use");
         return tool && tool.type === "tool_use" ? parseSectorChoice(tool.input, taxonomy) : null;
       };
-      const choice = await classifyWithRetry(classify, descText, (m) => { console.log(`    🧭  Sector ${m}.`); bump(stats.droppedByReason, "sector_answer_rejected"); });
+      const choice = await classifyWithRetry(classify, descText, (m) => { console.log(`    🧭  Sector ${m}.`); bump(stats.droppedByReason, "sector_answer_retried"); }, { noCustomers: profile.profile.description_complete === false });
       if (choice) {
         console.log(`    🧭  Sector from the verified description: ${choice.sector_name}${choice.sub_sector_name ? ` › ${choice.sub_sector_name}` : ""}${choice.sub_sector_names.length ? ` (+ ${choice.sub_sector_names.join(", ")})` : ""}`);
         Object.assign(profile.profile, { sector_name: choice.sector_name, sub_sector_name: choice.sub_sector_name, sub_sector_names: choice.sub_sector_names });
+        const locked = sectorDecision(row.name);
+        if (locked) { console.log(`    🔒  Sector locked by the owner: ${locked.sector} › ${locked.sub_sector}`); Object.assign(profile.profile, { sector_name: locked.sector, sub_sector_name: locked.sub_sector, sub_sector_names: [locked.sub_sector] }); }
       } else {
         console.log(`    🧭  Sector not written — the classification of the verified description gave none.`);
         bump(stats.droppedByReason, "sector_classification_none");
@@ -1703,16 +2252,77 @@ export async function collectCompany(
     const today = new Date().toISOString().slice(0, 10);
     if (ukRegisterEntity && (hqNow ?? "").toLowerCase().replace(/^uk$/, "united kingdom") === "united kingdom") headcountExtra.push(...await companiesHouseHeadcount(ukRegisterEntity.number, ukRegisterEntity.entity, io));
     if ((hqNow ?? "").toLowerCase() === "norway") headcountExtra.push(...await brregHeadcount(row.name, legal.legalName, io, today));
-    if (domain) headcountExtra.push(...await waybackHeadcount(domain, row.name, io));
+    if (domain && componentOn("headcount_archive")) headcountExtra.push(...await waybackHeadcount(domain, row.name, io));
+    // The company's own pages as they are now (owner, round 10): "Team of 50+", "over 200 people" → a lower bound, site_stated; a team page that shows N people → "N+", observed.
+    for (const src of allSources) {
+      if (src.source_type !== "company_site" || !profileSourceAllowed(src, row.name) || isThirdPartyPage(src.url)) continue;
+      const stated = sizeStatement(src.content);
+      // A dated page of the site (a press release, a blog post) states the size of ITS day, never of today; undated, it states nothing about now (owner, batch 6: Brighte's 2021 year in review).
+      const dated = /\/(news|blog|press|media|insights|stories|updates)(\/|-)/i.test(src.url);
+      const pageDate = dated ? articleDate(src) : null;
+      if (stated && dated && !pageDate) continue;
+      if (stated && !headcountExtra.some((p) => p.type === "site_stated" && p.sourceUrl === src.url)) {
+        if (pageDate) ruleHits.push({ field: "headcount_history", rule: "headcount_from_dated_page", value: `on ${pageDate}` });
+        headcountExtra.push({ date: pageDate ?? today, value: stated.value, ...(stated.lowerBound ? { lowerBound: true } : {}), type: "site_stated", measure: "count_at_date", sourceUrl: src.url, quote: stated.sentence });
+      }
+      if (/\/(team|people|our-team|the-team|leadership|about-us|about|company)(\/|$)/i.test(src.url)) {
+        const seen = teamPeopleCount(src.content);
+        if (seen) headcountExtra.push({ date: today, value: seen.count, lowerBound: true, type: "observed", measure: "count_at_date", sourceUrl: src.url, quote: seen.quote });
+      }
+    }
     if (headcountExtra.length) console.log(`    👥  Headcount points: ${headcountExtra.map((p) => `${p.value}${p.lowerBound ? "+" : ""}@${p.date} (${p.type})`).join(", ")}`);
     else console.log("    👥  Headcount points: none from registers or archived pages.");
   }
 
+  // Coverage, per company (owner, 2026-11-14): the pages read, and what became of the headquarters and the founders the model proposed.
+  {
+    const short = (u: string) => { try { const x = new URL(u); return x.pathname === "/" ? x.hostname.replace(/^www\./, "") : x.pathname.replace(/\/$/, ""); } catch { return u; } };
+    const viaSearch = allSources.filter((x) => x.source_type === "company_site" && x.query_label !== "website");
+    if (viaSearch.length) console.log(`    🔍  Own-site pages that came as search results (they count as the site read): ${viaSearch.slice(0, 6).map((x) => short(x.url)).join(", ")}${viaSearch.length > 6 ? ` +${viaSearch.length - 6}` : ""}`);
+    console.log(`    🔍  Pages of the company read: ${websitePages.length ? websitePages.map((p) => `${short(p.url)} (${p.content.length}→${p.prompt_content?.length ?? p.content.length})`).join(", ") : "none"}${websitePages.length ? "" : viaSearch.length ? " — only through search results" : " — the site could not be read"}`);
+    const fin = profile.profile;
+    console.log(`        Headquarters: the model proposed ${proposed.city ?? "no city"}${proposed.country ? `, ${proposed.country}` : ""}${proposed.where ? ` from ${proposed.where.slice(0, 90)}` : ""}; kept ${fin.city?.value ?? "no city"}${fin.country?.value ? `, ${fin.country.value}` : ""}${hqDecided ? " (decided)" : ""}${proposed.city && !fin.city ? ` — not kept: ${fates.hq ?? "dropped by a later check (see the lines above)"}` : ""}.`);
+    const keptNames = (fin.founders ?? []).map((f) => f.name);
+    const lost = proposed.founders.filter((n) => !keptNames.some((k) => samePersonName(k, n)));
+    console.log(`        Founders: the model proposed ${proposed.founders.length ? proposed.founders.join(", ") : "none"}; kept ${keptNames.length ? keptNames.join(", ") : "none"}.`);
+    for (const n of lost) console.log(`          · ${n} not kept: ${fates.founders.get(n) ?? "dropped by a later check (see the lines above)"}`);
+  }
+
+  // LinkedIn links of the founders and the leaders (owner, 2026-11-24): one Google search each, at most five of each, for a person with no link on file. Nothing the result says is used as a source.
+  const personLinks: NonNullable<CollectedCompany["personLinks"]> = [];
+  if (componentOn("linkedin_links") && !ctx.update) {
+    const withLink = (list: Array<{ name?: string; linkedin_url?: unknown }> | null | undefined, n: string) => (list ?? []).some((p) => p?.name && samePersonName(p.name, n) && (typeof p.linkedin_url === "string" ? p.linkedin_url : (p.linkedin_url as { value?: string } | null | undefined)?.value));
+    const distinct = <T extends { name: string }>(xs: T[]) => xs.filter((x, i) => x.name && xs.findIndex((y) => samePersonName(y.name, x.name)) === i);
+    const founders = distinct([...(profile.profile.founders ?? []).map((f) => ({ name: f.name })), ...(row.founders ?? []).map((f) => ({ name: f.name ?? "" }))]).filter((f) => !withLink(profile.profile.founders as never, f.name) && !withLink(row.founders as never, f.name)).slice(0, 5);
+    const leaders = distinct([...(profile.leadership ?? []).map((l) => ({ name: l.name, role: l.role })), ...(row.leadership ?? []).map((l) => ({ name: l.name ?? "", role: (l as { role?: string }).role }))])
+      .filter((l) => !founders.some((f) => samePersonName(f.name, l.name)) && !withLink(profile.leadership as never, l.name) && !withLink(row.leadership as never, l.name)).slice(0, 5);
+    const people = [...founders.map((f) => ({ ...f, kind: "founder" as const })), ...leaders.map((l) => ({ ...l, kind: "leader" as const }))];
+    const found = await Promise.all(people.map(async (p) => {
+      try {
+        const results = await webSearch(`site:linkedin.com/in "${p.name}" "${row.name}"`, "linkedin_person", searchState);
+        const hit = findLinkedInLink(p.name, results, row.name);
+        return hit ? { name: p.name, kind: p.kind, ...("role" in p && p.role ? { role: p.role } : {}), url: hit.url, source_url: hit.url, quote: hit.quote } : null;
+      } catch { return null; }
+    }));
+    for (const f of found) if (f) personLinks.push(f);
+    if (people.length) console.log(`    🔗  LinkedIn links: ${personLinks.length} of ${people.length} person(s) found${personLinks.length ? ` (${personLinks.map((l) => l.name).join(", ")})` : ""}.`);
+  }
+
   return {
     outcome: "collected",
+    ...(websiteProposal ? { websiteProposal } : {}),
+    ...(registry ? { registry } : {}),
+    flags: {
+      translated: allSources.some((x) => x.translation_offset != null),
+      sources: allSources.length,
+      techBorderline: !!techGateVerdict && (techGateVerdict.confidence !== "high" || techGateVerdict.is_tech_company === false || (profile as { tech_decision?: string }).tech_decision === "cannot_tell"),
+    },
     profile, funding, market, allSources, sourceById, sourceTypeFor, sourceUrlFor,
     linkedinFounders, linkedinLeaders, existingRefs, validation, plan,
     cityConfidence, countryConfidence, domain, verifiedFacts, patentsFromRegister, roundHints, confirmedHints, unlistedDomains,
     ...(headcountExtra.length ? { headcountExtra } : {}),
+    ...(ruleHits.length ? { ruleHits } : {}),
+    ...(personLinks.length ? { personLinks } : {}),
+    ...(identityState && identityRejected ? { identityMismatch: { overlap: identityState.overlap } } : {}),
   };
 }

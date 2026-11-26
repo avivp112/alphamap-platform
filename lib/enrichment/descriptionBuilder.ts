@@ -6,7 +6,7 @@
  *   3. edge      optional, what sets it apart — only with a source that says so
  * Each sentence names the sources that support it. A sentence is dropped when a source it cites is not an allowed
  * one, when a number or a name in it is not in those sources, when it uses a marketing word, or when no sentence of
- * its sources comes near it. Without a "what" and a "for_whom" there is no description (missing is better than wrong).
+ * its sources comes near it. Without a verified "what" there is no description (missing is better than wrong); a verified "for_whom" completes it.
  * The current website comes first in the prompt: it beats an old article. Pure: the model call is the caller's.
  */
 import { articleDate } from "./headquarters.ts";
@@ -15,24 +15,43 @@ import { bestSentence } from "./quoteFinder.ts";
 
 export type SentenceRole = "what" | "for_whom" | "edge";
 export interface DescriptionSentence { role: SentenceRole; text: string; source_ids: string[]; quote: string }
-export interface BuiltDescription { description: string; sentences: DescriptionSentence[]; dropped: Array<{ text: string; why: string }> }
+export interface BuiltDescription { description: string; sentences: DescriptionSentence[]; dropped: Array<{ text: string; why: string; detail?: string }>; /** false when the sources gave a verified "what" but no verified "for whom" (owner, 2026-11-14: a what-only description is written, marked). */ complete: boolean }
 
 /** Words that sell instead of describe. Used alone they say nothing; a sentence with one is rewritten or dropped. */
 export const MARKETING = /\b(leading|leader in|innovative|innovation|revolutionary|revolutionize[sd]?|ai-native|cutting-edge|state-of-the-art|world-class|best-in-class|next-generation|next-gen|game-chang\w+|seamless(ly)?|unparalleled|disruptive|industry-leading|pioneering|transformative|powerful|robust|end-to-end|lowest|highest|best|fastest|first|largest|biggest|smallest|most|top|greatest|unmatched|unrivall?ed|premier|foremost|ultimate|market leader|number one|#1|reinvent\w*|reimagin\w+)\b/i;
 
+import { numberStatedIn } from "./numberForms.ts";
 const norm = (s: string) => s.toLowerCase().replace(/(\d),(\d)/g, "$1$2").replace(/[^\p{L}\p{N}$%.+ ]/gu, " ").replace(/\s+/g, " ");
 const COMMON_CAPS = new Set(["the", "a", "an", "it", "its", "this", "that", "they", "their", "for", "to", "and", "in", "of", "with", "by", "on", "from", "ai", "api", "saas", "b2b", "b2c", "it", "ml", "sdk", "iot", "cloud", "ceo", "cto", "us", "usa", "eu", "uk"]);
 
 /** The numbers and the capitalised names of a sentence (not its first word, not the company's own name). */
+const TERMS = new Set(["saas", "paas", "iaas", "iot", "nosql", "devops", "fintech", "proptech", "edtech", "healthtech", "insurtech", "regtech", "adtech", "foodtech", "agtech", "biotech", "cleantech"]);
+/** Countries, nationalities, languages, continents and regions: places and peoples, no company, product or person. */
+const GEO_WORDS = new Set(`afghanistan albania algeria argentina armenia australia austria azerbaijan bahrain bangladesh belarus belgium bolivia bosnia botswana brazil britain bulgaria cambodia cameroon canada chile china colombia congo croatia cuba cyprus czechia denmark ecuador egypt estonia ethiopia finland france georgia germany ghana greece guatemala hungary iceland india indonesia iran iraq ireland israel italy jamaica japan jordan kazakhstan kenya korea kuwait latvia lebanon libya lithuania luxembourg malaysia mexico morocco mozambique myanmar namibia nepal netherlands nigeria norway oman pakistan palestine panama paraguay peru philippines poland portugal qatar romania russia rwanda senegal serbia singapore slovakia slovenia somalia spain sudan sweden switzerland syria taiwan tanzania thailand tunisia turkey uganda ukraine uruguay uzbekistan venezuela vietnam yemen zambia zimbabwe
+america americas africa asia europe oceania antarctica emea apac latam mena scandinavia nordics nordic benelux balkans caribbean
+american african asian european british english french german spanish italian portuguese brazilian mexican canadian australian indian chinese japanese korean russian turkish dutch swedish danish norwegian finnish polish swiss israeli arab arabic hebrew latin
+usa uk uae eu us sa
+january february march april may june july august september october november december monday tuesday wednesday thursday friday saturday sunday`.split(/\s+/));
 export function claims(sentence: string, companyName: string): { numbers: string[]; names: string[] } {
-  const numbers = (sentence.match(/\$?\d[\d,.]*\s?(?:[kKmMbB]\b|%|\+)?/g) ?? []).map((n) => n.replace(/[$,\s+]/g, "").replace(/\.$/, "")).filter(Boolean);
+  const numbers = (sentence.match(/(?<![\p{L}\d])\$?\d[\d,.]*\s?(?:[kKmMbB]\b|%|\+)?/gu) ?? []).map((n) => n.replace(/[$,\s+]/g, "").replace(/\.$/, "")).filter(Boolean);
   const own = new Set(norm(companyName).split(" "));
   const names: string[] = [];
   const words = sentence.split(/\s+/);
+  let placeRunEnd = -9;
   words.forEach((w, i) => {
     const bare = w.replace(/^[("'“]+|[)"'”.,;:!?]+$/g, "");
     if (i === 0 || !/^[A-Z][\p{L}\d&-]{1,}$/u.test(bare)) return;
     const k = bare.toLowerCase();
+    // Acronyms and trade terms (MOFs, AMRs, APIs, SaaS) are vocabulary, not names of companies, products or people (owner, round 10: Promethean's "MOFs").
+    if (/^[A-Z]{2,}s?$/.test(bare) || /^[A-Z]{2,}s?-\p{L}+$/u.test(bare) || TERMS.has(k)) return;
+    // Only the names of companies, products and people are checked against the sources: not a country, a nationality or a language ("Brazil" on a page that says "Brasil"), and not a compound with a
+    // plain word ("ETF-based", "Cloud-native", "Wi-Fi") (owner, batch 7).
+    // A place after "in" / "near" / "across" is a place, whatever its name ("in Pietermaritzburg"): only companies, products and people are checked.
+    const prev = (words[i - 1] ?? "").toLowerCase().replace(/[^\p{L}]/gu, "");
+    if (/^(?:in|near|across|throughout|around|within|outside)$/.test(prev)) { placeRunEnd = i; return; }
+    // "… in Pietermaritzburg and Durban": the list of places goes on after "and" / "or" / a comma.
+    if (placeRunEnd === i - 2 && /^(?:and|or)$/.test(prev) || placeRunEnd === i - 1 && /,$/.test(words[i - 1] ?? "")) { placeRunEnd = i; return; }
+    if (GEO_WORDS.has(k) || (bare.includes("-") && bare.split("-").some((part) => /^\p{Ll}/u.test(part) || part.length <= 2))) return;
     if (!COMMON_CAPS.has(k) && !own.has(k)) names.push(bare);
   });
   return { numbers, names: [...new Set(names)] };
@@ -44,10 +63,12 @@ const DANGLING = /\b(?:and|or|for|to|the|of|with|in|on|a|an|by|that|from|at|as|i
  * A sentence that does not say what the company sells (DealHub, review 7, x67.26: a clause cut from a longer sentence).
  * A sentence starts like one, is long enough to carry a product and its use, ends where a sentence ends, and has a verb.
  */
-export function fragmentProblem(text: string, role = "what"): string | null {
+export function fragmentProblem(text: string, role = "what", companyName = ""): string | null {
   const t = text.trim();
   const words = t.split(/\s+/);
-  if (!/^[A-Z0-9"“(]/.test(t)) return "fragment_starts_lowercase";
+  // A company written in lower case (noo.ma, eBay, iRobot) may open its own sentence.
+  const opensWithName = !!companyName && t.toLowerCase().startsWith(companyName.trim().toLowerCase());
+  if (!/^[A-Z0-9"“(]/.test(t) && !opensWithName) return "fragment_starts_lowercase";
   if (words.length < 6) return "fragment_too_short";
   if (!/[.!?]["”)]?$/.test(t)) return "fragment_no_end";
   if (DANGLING.test(t.replace(/[.!?]["”)]?$/, ""))) return "fragment_dangling_word";
@@ -73,9 +94,31 @@ export function leadsWithCompany(sentence: string, companyName: string): boolean
   return toks.some((t) => t.startsWith(first) || first.startsWith(t) && t.length >= 4);
 }
 
+/** On the company's own site "We" and "Our" are the company (owner, round 10); the sentence is then written in the company's name. */
+const OWN_VOICE = /^(?:we|our)\b/i;
+const ownVoice = (s: { text: string; source_ids: string[] }, byId: Record<string, { source_type?: string }>) => OWN_VOICE.test(s.text.trim()) && s.source_ids.length > 0 && s.source_ids.every((id) => byId[id]?.source_type === "company_site");
+const IRREGULAR: Record<string, string> = { are: "is", have: "has", do: "does", go: "goes", can: "can", will: "will", may: "may", must: "must", could: "could", would: "would", should: "should" };
+export function companyVoice(text: string, companyName: string): string {
+  const t = text.trim();
+  const our = t.match(/^our\s+(.*)$/is);
+  if (our) return `${companyName}'s ${our[1]}`;
+  const we = t.match(/^we\s+(?:also\s+|now\s+|currently\s+)?([a-z]+)(.*)$/is);
+  if (!we) return t;
+  const verb = we[1].toLowerCase();
+  const third = IRREGULAR[verb] ?? (/(?:s|x|z|ch|sh)$/.test(verb) ? `${verb}es` : /[^aeiou]y$/.test(verb) ? `${verb.slice(0, -1)}ies` : `${verb}s`);
+  return `${companyName} ${third}${we[2]}`;
+}
+
+/** A country's name in the page's own language: the sentence is in English, the page in another ("Central Bank of Brazil" on a page that says "Banco Central do Brasil"). */
+const EXONYMS: Record<string, string[]> = {
+  brazil: ["brasil"], germany: ["deutschland", "alemanha", "alemania", "allemagne"], spain: ["españa", "espanha", "espagne"], italy: ["italia", "itália", "italie"], france: ["frança", "francia"], japan: ["japão", "japón", "japon", "日本"],
+  switzerland: ["schweiz", "suisse", "svizzera", "suíça", "suiza"], netherlands: ["nederland", "países bajos", "holanda", "pays-bas"], poland: ["polska", "polen", "polonia", "pologne"], portugal: ["portugal"], mexico: ["méxico"],
+  "united states": ["estados unidos", "états-unis", "vereinigte staaten", "eua"], "united kingdom": ["reino unido", "royaume-uni", "vereinigtes königreich"], sweden: ["sverige", "suécia", "suecia", "suède"], denmark: ["danmark", "dinamarca"], norway: ["norge", "noruega", "norvège"],
+  finland: ["suomi", "finlândia", "finlandia", "finlande"], austria: ["österreich", "áustria", "autriche"], belgium: ["belgique", "belgië", "bélgica"], ireland: ["éire", "irlanda", "irlande"], turkey: ["türkiye", "turquia", "turquía", "turquie"], india: ["índia", "inde"],
+};
 export function sentenceProblem(
   s: { role: string; text: string; source_ids: string[] }, companyName: string,
-  byId: Record<string, { content: string }>, allowed: (id: string) => boolean,
+  byId: Record<string, { content: string; translation_offset?: number; source_type?: string }>, allowed: (id: string) => boolean, aliases: string[] = [],
 ): string | null {
   if (!["what", "for_whom", "edge"].includes(s.role)) return "unknown_role";
   if (!s.text?.trim() || s.text.length > 400) return "bad_text";
@@ -85,37 +128,74 @@ export function sentenceProblem(
     if (!allowed(id)) return "source_not_allowed";
   }
   if (MARKETING.test(s.text)) return "marketing_word";
-  const frag = fragmentProblem(s.text, s.role);
+  const frag = fragmentProblem(s.text, s.role, companyName);
   if (frag) return frag;
   // What the company sells is said of the company by name (review 9: "aibuy offers …" for Cinsay, "Deel IT is …" for Hofy, "The platform is built to power …" for DealHub).
-  if (s.role === "what" && !namesTheCompany(s.text, companyName)) return "what_without_company";
+  if (s.role === "what" && !ownVoice(s, byId) && ![companyName, ...aliases].some((n) => namesTheCompany(s.text, n))) return "what_without_company";
   // ... and by the company, not by one of its products (run 10: "Franklin, by Genoox, is a free variant interpretation tool").
-  if (s.role === "what" && !leadsWithCompany(s.text, companyName)) return "what_describes_a_product";
+  if (s.role === "what" && !ownVoice(s, byId) && ![companyName, ...aliases].some((n) => leadsWithCompany(s.text, n))) return "what_describes_a_product";
   const hay = norm(s.source_ids.map((id) => byId[id].content).join(" "));
-  const c = claims(s.text, companyName);
-  for (const n of c.numbers) if (!hay.includes(norm(n))) return `number_not_in_sources:${n}`;
-  for (const n of c.names) if (!hay.includes(norm(n))) return `name_not_in_sources:${n}`;
-  if (!s.source_ids.some((id) => bestSentence(byId[id].content, s.text, 3))) return "no_supporting_sentence";
+  const c = claims(s.text, [companyName, ...aliases].join(" "));
+  // "2,500" is "2.500" on a Portuguese, German or Spanish page: a dot before exactly three digits is a thousands mark too.
+  const raw = s.source_ids.map((id) => byId[id].content).join("\n");
+  for (const n of c.numbers) if (!hay.includes(norm(n)) && !numberStatedIn(n, raw)) return `number_not_in_sources:${n}`;
+  for (const n of c.names) if (!hay.includes(norm(n)) && !(EXONYMS[n.toLowerCase()] ?? []).some((e) => hay.includes(e))) return `name_not_in_sources:${n}`;
+  // A page that was translated is matched with one word less: the translation paraphrases ("doctor" for "physician") (owner, round 10: Sami).
+  const need = (id: string) => (byId[id].translation_offset != null ? 2 : 3);
+  if (!s.source_ids.some((id) => bestSentence(byId[id].content, s.text, need(id)))) return "no_supporting_sentence";
   return null;
 }
 
+/**
+ * Why a sentence was refused, shown beside it (owner, round 10: Pink Farms "fragment_no_verb", Rooftop "no_supporting_sentence"): the verb test's view of the sentence, or
+ * the closest sentence of each cited source and how many content words it shares.
+ */
+export function dropDetail(why: string, s: { text: string; source_ids?: string[] }, byId: Record<string, { content: string; translation_offset?: number; source_type?: string }>): string | undefined {
+  if (why === "fragment_no_verb") return `no word of the sentence is on the verb list: ${s.text.split(/\s+/).slice(0, 14).join(" ")}…`;
+  if (why === "no_supporting_sentence") {
+    const found = (s.source_ids ?? []).filter((id) => byId[id]).map((id) => {
+      const close = bestSentence(byId[id].content, s.text, 1);
+      return `${id}: ${close ? `closest "${close.replace(/\s+/g, " ").slice(0, 200)}"` : "no sentence shares a content word"}`;
+    });
+    return found.join(" | ") || "no cited source";
+  }
+  return undefined;
+}
+
+/** What came of a description attempt: the description (or none), and every sentence that was dropped with its reason — also when there is no description. */
+export function describeAttempt(
+  input: unknown, companyName: string, byId: Record<string, { content: string; translation_offset?: number; source_type?: string }>, allowed: (id: string) => boolean, aliases: string[] = [],
+): { built: BuiltDescription | null; dropped: Array<{ text: string; why: string }>; returned: Array<{ role: string; text: string }> } {
+  const list = Array.isArray((input as { sentences?: unknown })?.sentences) ? (input as { sentences: Array<{ role: string; text: string }> }).sentences : [];
+  const built = processDescription(input, companyName, byId, allowed, aliases);
+  if (built) return { built, dropped: built.dropped, returned: list.map((s) => ({ role: s.role, text: s.text })) };
+  const dropped: Array<{ text: string; why: string }> = [];
+  for (const s of list as Array<{ role: string; text: string; source_ids: string[] }>) {
+    const why = sentenceProblem(s, companyName, byId, allowed, aliases);
+    if (why) dropped.push({ text: s?.text ?? "", why, detail: dropDetail(why, s, byId) });
+  }
+  return { built: null, dropped, returned: list.map((s) => ({ role: s.role, text: s.text })) };
+}
+
 export function processDescription(
-  input: unknown, companyName: string, byId: Record<string, { content: string }>, allowed: (id: string) => boolean,
+  input: unknown, companyName: string, byId: Record<string, { content: string; translation_offset?: number; source_type?: string }>, allowed: (id: string) => boolean, aliases: string[] = [],
 ): BuiltDescription | null {
   const list = Array.isArray((input as { sentences?: unknown })?.sentences) ? (input as { sentences: Array<{ role: string; text: string; source_ids: string[] }> }).sentences : [];
   const kept: DescriptionSentence[] = [];
   const dropped: BuiltDescription["dropped"] = [];
   for (const s of list) {
-    const why = sentenceProblem(s, companyName, byId, allowed);
-    if (why) { dropped.push({ text: s?.text ?? "", why }); continue; }
+    const why = sentenceProblem(s, companyName, byId, allowed, aliases);
+    if (why) { dropped.push({ text: s?.text ?? "", why, detail: dropDetail(why, s, byId) }); continue; }
     if (kept.some((k) => k.role === s.role)) { dropped.push({ text: s.text, why: "second_sentence_of_role" }); continue; }
-    const quote = s.source_ids.map((id) => bestSentence(byId[id].content, s.text, 3)).find(Boolean) ?? "";
-    kept.push({ role: s.role as SentenceRole, text: s.text.trim(), source_ids: s.source_ids, quote });
+    const quote = s.source_ids.map((id) => bestSentence(byId[id].content, s.text, byId[id].translation_offset != null ? 2 : 3)).find(Boolean) ?? "";
+    kept.push({ role: s.role as SentenceRole, text: ownVoice(s, byId) ? companyVoice(s.text, companyName) : s.text.trim(), source_ids: s.source_ids, quote });
   }
   const order: SentenceRole[] = ["what", "for_whom", "edge"];
   kept.sort((a, b) => order.indexOf(a.role) - order.indexOf(b.role));
-  if (!kept.some((k) => k.role === "what") || !kept.some((k) => k.role === "for_whom")) return null;
-  return { description: kept.map((k) => k.text).join(" "), sentences: kept, dropped };
+  // A verified "what" is a description; the "for whom" completes it when a source states it (owner, 2026-11-14: 10 of 18 companies had no description,
+  // the model leaving the "for whom" out when the site does not say who buys). Without a verified "what" there is none.
+  if (!kept.some((k) => k.role === "what")) return null;
+  return { description: kept.map((k) => k.text).join(" "), sentences: kept, dropped, complete: kept.some((k) => k.role === "for_whom") };
 }
 
 export function descriptionTool() {
@@ -157,7 +237,10 @@ export function descriptionSources(all: LabeledSource[], allowed: (s: LabeledSou
   return [...ok.filter((s) => s.source_type === "company_site"), ...ok.filter((s) => s.source_type !== "company_site")].slice(0, max);
 }
 
-export function buildDescriptionRequest(companyName: string, sources: LabeledSource[]) {
+/** The marketing word a sentence uses, or null (owner, 2026-11-24: the retry names it). */
+export const marketingWordIn = (text: string): string | null => text.match(MARKETING)?.[0] ?? null;
+
+export function buildDescriptionRequest(companyName: string, sources: LabeledSource[], retryNote?: string) {
   const prompt = `Write the description of "${companyName}" from the research below, in English, as 2 to 4 sentences with a fixed shape.
 
 SENTENCES (one per role, in this order):
@@ -171,7 +254,8 @@ RULES:
 - The company's own current website comes first; prefer it to an older article, and never describe it from an article older than two years. Describe the company as it is now.
 - Do not mention funding, investors, rankings, data platforms or where a fact was read. Do not start with the company name more than once.
 - Every sentence is a complete sentence with a verb: it says what the company sells (or to whom), not a title, a tagline or a clause cut from a longer sentence.
-- If the sources do not support a "what" and a "for_whom" sentence, return no sentences.
+- Give the "what" sentence whenever the sources support it, and the "for_whom" sentence too when a source says who buys the product. If only the "what" is supported, return the "what" alone; if not even that is supported, return no sentences.
+${retryNote ? `\n- RETRY — ${retryNote}` : ""}
 
 Labeled research:
 ${formatSourcesForPrompt(sources)}`;

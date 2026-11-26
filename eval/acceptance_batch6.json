@@ -1,0 +1,265 @@
+[
+ {
+  "id": "canopy_no_dhny",
+  "why": "Canopy: no founding year from a sentence about DHNY",
+  "kind": "absent",
+  "company": "Canopy",
+  "field": "founded_year",
+  "quote_match": "DHNY"
+ },
+ {
+  "id": "spin_no_gallery",
+  "why": "Spin Studio: no founding year from the gallery's sentence",
+  "kind": "absent",
+  "company": "Spin Studio",
+  "field": "founded_year"
+ },
+ {
+  "id": "no_xe",
+  "why": "MBank: no competitor Xe (a page of another site)",
+  "kind": "absent",
+  "company": "MBank",
+  "field": "competitor_declared",
+  "match": "^Xe$"
+ },
+ {
+  "id": "no_gaja",
+  "why": "SAMCO: no competitor Gaja (an IPO page)",
+  "kind": "absent",
+  "company": "SAMCO",
+  "field": "competitor_declared",
+  "match": "Gaja"
+ },
+ {
+  "id": "no_real_estate_competitor",
+  "why": "SAMCO: no competitor 'Real Estate' (an investment type)",
+  "kind": "absent",
+  "company": "SAMCO",
+  "field": "competitor_declared",
+  "match": "Real Estate"
+ },
+ {
+  "id": "competitor_clean_name",
+  "why": "No competitor name carries a year or a bracket",
+  "kind": "absent",
+  "field": "competitor_declared",
+  "match": "\\(|\\b20\\d\\d\\b"
+ },
+ {
+  "id": "spin_not_enriched",
+  "why": "Spin Studio is not enriched (a design studio: services)",
+  "kind": "not_enriched",
+  "company": "Spin Studio"
+ },
+ {
+  "id": "zpharm_not_enriched",
+  "why": "zpharm is not enriched (a consumer product)",
+  "kind": "not_enriched",
+  "company": "zpharm"
+ },
+ {
+  "id": "kiwify_edtech",
+  "why": "Kiwify sector Consumer & Media, tag EdTech",
+  "kind": "present",
+  "company": "Kiwify",
+  "field": "tags",
+  "match": "EdTech"
+ },
+ {
+  "id": "kiwify_sector",
+  "why": "Kiwify sector is Consumer & Media (not Fintech)",
+  "kind": "present",
+  "company": "Kiwify",
+  "field": "sector",
+  "match": "Consumer & Media"
+ },
+ {
+  "id": "sherlok_fintech",
+  "why": "Sherlok sector is Fintech",
+  "kind": "present",
+  "company": "Sherlok",
+  "field": "sector",
+  "match": "Fintech"
+ },
+ {
+  "id": "sherlok_lending",
+  "why": "Sherlok tag Lending",
+  "kind": "present",
+  "company": "Sherlok",
+  "field": "tags",
+  "match": "Lending"
+ },
+ {
+  "id": "sherlok_not_proptech",
+  "why": "Sherlok is not Real Estate / PropTech",
+  "kind": "absent",
+  "company": "Sherlok",
+  "match": "Real Estate|PropTech"
+ },
+ {
+  "id": "estimote_not_real_estate",
+  "why": "Estimote is not Real Estate",
+  "kind": "absent",
+  "company": "Estimote",
+  "field": "sector",
+  "match": "Real Estate"
+ },
+ {
+  "id": "estimote_iot",
+  "why": "Estimote tag IoT & Connectivity",
+  "kind": "present",
+  "company": "Estimote",
+  "field": "tags",
+  "match": "IoT & Connectivity"
+ },
+ {
+  "id": "brighte_100_unknown",
+  "why": "Brighte's $100M round is not typed Other",
+  "kind": "absent",
+  "company": "Brighte",
+  "field": "round",
+  "match": "^Other"
+ },
+ {
+  "id": "ripio_no_series_a",
+  "why": "Ripio's $1.9M round is not typed Series A",
+  "kind": "absent",
+  "company": "Ripio",
+  "field": "round",
+  "match": "^Series A \\$1\\.9M"
+ },
+ {
+  "id": "sherlok_round_unknown",
+  "why": "Sherlok's $3.4M round is not typed Other",
+  "kind": "absent",
+  "company": "Sherlok",
+  "field": "round",
+  "match": "^Other"
+ },
+ {
+  "id": "okra_no_listing_quote",
+  "why": "Okra: no round rests on a data-table quote",
+  "kind": "absent",
+  "company": "Okra",
+  "field": "round",
+  "quote_match": "Pre-seed Pre-seed|raised to date"
+ },
+ {
+  "id": "spin_no_page_code",
+  "why": "Spin Studio: no tag rests on page code",
+  "kind": "absent",
+  "company": "Spin Studio",
+  "quote_match": "Markdown Content|URL Source"
+ },
+ {
+  "id": "sherlok_founder",
+  "why": "Sherlok: founder Adam Grocke",
+  "kind": "present",
+  "company": "Sherlok",
+  "field": "founder",
+  "match": "Adam Grocke",
+  "severity": "error"
+ },
+ {
+  "id": "kiwify_founders",
+  "why": "Kiwify: founders Artur Ribas and Marinho Gomes",
+  "kind": "present",
+  "company": "Kiwify",
+  "field": "founder",
+  "match": "Artur Ribas",
+  "severity": "gap"
+ },
+ {
+  "id": "kiwify_founder2",
+  "why": "Kiwify: Marinho Gomes",
+  "kind": "present",
+  "company": "Kiwify",
+  "field": "founder",
+  "match": "Marinho Gomes",
+  "severity": "gap"
+ },
+ {
+  "id": "samco_hq",
+  "why": "SAMCO: headquarters Mumbai (approved quote 'Mumbai-based online broker Samco')",
+  "kind": "present",
+  "company": "SAMCO",
+  "field": "hq_city",
+  "match": "Mumbai"
+ },
+ {
+  "id": "sherlok_hq",
+  "why": "Sherlok: headquarters Adelaide (approved quote 'Adelaide-based startup Sherlok')",
+  "kind": "present",
+  "company": "Sherlok",
+  "field": "hq_city",
+  "match": "Adelaide"
+ },
+ {
+  "id": "estimote_2012",
+  "why": "Estimote: founded 2012 (\"Estimote, Inc. was founded in 2012\")",
+  "kind": "present",
+  "company": "Estimote",
+  "field": "founded_year",
+  "match": "2012"
+ },
+ {
+  "id": "kiwify_no_dubai",
+  "why": "Kiwify: headquarters is not Dubai (prize text, not an address)",
+  "kind": "absent",
+  "company": "Kiwify",
+  "field": "hq_city",
+  "match": "Dubai"
+ },
+ {
+  "id": "brighte_no_sxsw_sydney",
+  "why": "Brighte: no headquarters from an event list (SXSW Sydney)",
+  "kind": "absent",
+  "company": "Brighte",
+  "field": "hq_city",
+  "quote_match": "SXSW"
+ },
+ {
+  "id": "estimote_no_undated_hq",
+  "why": "Estimote: no headquarters from an undated press article",
+  "kind": "absent",
+  "company": "Estimote",
+  "field": "hq_city",
+  "source_match": "geekwire.com/2014"
+ },
+ {
+  "id": "okra_closed",
+  "why": "Okra: status closed from a shut-down headline (if the news has one)",
+  "kind": "present",
+  "company": "Okra",
+  "field": "acquired",
+  "match": "status = closed",
+  "severity": "gap"
+ },
+ {
+  "id": "flexee_founded",
+  "why": "Flexee: founded 2020 (ain.ua is one source for every field)",
+  "kind": "present",
+  "company": "Flexee",
+  "field": "founded_year",
+  "match": "2020",
+  "severity": "gap"
+ },
+ {
+  "id": "sherlok_founded",
+  "why": "Sherlok: founded 2019 (mpamag.com is one source for every field)",
+  "kind": "present",
+  "company": "Sherlok",
+  "field": "founded_year",
+  "match": "2019",
+  "severity": "gap"
+ },
+ {
+  "id": "ruya_news_in_arabic_source",
+  "why": "Ruya: the Dubai Charity item is kept (headline checked against the Arabic original)",
+  "kind": "present",
+  "company": "Ruya",
+  "field": "news",
+  "match": "Dubai Charity",
+  "severity": "gap"
+ }
+]

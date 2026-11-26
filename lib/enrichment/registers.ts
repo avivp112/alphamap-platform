@@ -29,11 +29,14 @@
  */
 
 export interface RegisterFinding {
-  register: "uk_companies_house" | "il_registrar" | "us_sec_form_d";
+  register: "uk_companies_house" | "il_registrar" | "us_sec_form_d" | "pl_krs" | "br_cnpj" | "opencorporates";
   entity: string;
   number: string;
   founded_year: number | null;
   founding_country: string;
+  /** The register's own record (owner, round 10; docs/registries_plan.md): the date of incorporation (YYYY-MM-DD, or YYYY when only the year is known) and the registered address. */
+  incorporation_date?: string | null;
+  registered_address?: string | null;
   url: string;
   /** The register's own line, quoted as the evidence. */
   quote: string;
@@ -53,6 +56,9 @@ export interface RegisterContext {
   founders?: string[];
   /** A founding country an allowed source states, if any (guards Form D). */
   statedFoundingCountry?: string | null;
+  /** The company's country on file and the domain of its site: ties for the registers that are searched by name (OpenCorporates). */
+  country?: string | null;
+  domain?: string | null;
 }
 
 export interface RegisterIo {
@@ -61,7 +67,7 @@ export interface RegisterIo {
   env?: Record<string, string | undefined>;
 }
 
-const SUFFIX = /\b(limited|ltd|plc|llp|inc|incorporated|corp|corporation|co|company|llc|l\.l\.c|gmbh|ag|sa|sas|bv|b\.v|בע"?מ|בעמ)\b\.?/gi;
+const SUFFIX = /\b(limited|ltd|plc|llp|inc|incorporated|corp|corporation|co|company|llc|l\.l\.c|gmbh|ag|sa|sas|bv|b\.v|ltda|eireli|spółka z ograniczoną odpowiedzialnością|sp\.? ?z ?o\.? ?o\.?|sp\.? ?k\.?|s\.a\.|בע"?מ|בעמ)(?=[\s.,]|$)\.?/gi;
 /** "KETS QUANTUM SECURITY LTD" and "KETS Quantum Security" → "kets quantum security". */
 export function legalName(name: string): string {
   return name.toLowerCase().replace(/&/g, " and ").replace(SUFFIX, " ").replace(/[^\p{L}\p{N} ]/gu, " ").replace(/\s+/g, " ").trim();
@@ -133,6 +139,7 @@ export function matchCompaniesHouse(items: ChItem[], ctx: RegisterContext, offic
     return {
       register: "uk_companies_house", entity: it.title!, number: it.company_number,
       founded_year: Number(it.date_of_creation.slice(0, 4)) || null, founding_country: "United Kingdom",
+      incorporation_date: /^\d{4}-\d{2}-\d{2}$/.test(it.date_of_creation) ? it.date_of_creation : null, registered_address: it.address_snippet ?? null,
       url: `https://find-and-update.company-information.service.gov.uk/company/${it.company_number}`,
       quote: `${it.title}, company number ${it.company_number}, incorporated on ${it.date_of_creation}${it.address_snippet ? `, registered office ${it.address_snippet}` : ""}`,
       match: `${kind === "exact" ? "same name" : "name plus one generic word"}; ${tie}`,
@@ -181,6 +188,17 @@ const field = (row: Record<string, unknown>, ...parts: string[]) => {
   return k == null || row[k] == null ? "" : String(row[k]).trim();
 };
 
+/** The registrar's date of incorporation as YYYY-MM-DD: "2019-03-14", "14/03/2019" or "14.03.2019"; a bare year stays a year (YYYY). */
+export function ilDate(raw: string): string | null {
+  const t = raw.trim();
+  let m = t.match(/\b((?:19|20)\d{2})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = t.match(/\b(\d{1,2})[/.](\d{1,2})[/.]((?:19|20)\d{2})\b/);
+  if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  m = t.match(/\b((?:19|20)\d{2})\b/);
+  return m ? m[1] : null;
+}
+
 export function matchIlRegistrar(rows: Array<Record<string, unknown>>, ctx: RegisterContext): RegisterFinding | null {
   const siteDigits = digits(ctx.siteText);
   for (const row of rows) {
@@ -199,6 +217,7 @@ export function matchIlRegistrar(rows: Array<Record<string, unknown>>, ctx: Regi
     return {
       register: "il_registrar", entity: english, number,
       founded_year: year, founding_country: "Israel",
+      incorporation_date: ilDate(incorporated), registered_address: [field(row, "רחוב"), field(row, "מספר בית"), city ?? field(row, "עיר")].filter(Boolean).join(" ") || null,
       url: `https://data.gov.il/dataset/ica_companies/resource/${IL_REGISTRAR_RESOURCE}?q=${number}`,
       quote: `${english} (${field(row, "שם חברה")}), company number ${number}, incorporated ${incorporated}${city ? `, ${city}` : ""}`,
       match: `${kind === "exact" ? "same name" : "name plus one generic word"}; ${tie}`,
@@ -252,7 +271,7 @@ export function matchFormD(issuer: FormDIssuer, ctx: RegisterContext, url: strin
   if (!tie) return null;
   return {
     register: "us_sec_form_d", entity: issuer.entityName, number: issuer.cik,
-    founded_year: issuer.year, founding_country: "United States", url,
+    founded_year: issuer.year, founding_country: "United States", incorporation_date: String(issuer.year), registered_address: [issuer.street, issuer.city, issuer.zip].filter(Boolean).join(", ") || null, url,
     quote: `${issuer.entityName} (CIK ${issuer.cik}), incorporated ${issuer.year}${issuer.jurisdiction ? ` in ${issuer.jurisdiction}` : ""}, ${[issuer.street, issuer.city, issuer.zip].filter(Boolean).join(", ")}${founder ? `; related person ${founder}` : ""}`,
     match: `${kind === "exact" ? "same name" : "name plus one generic word"}; ${tie}`,
   };
@@ -273,11 +292,122 @@ async function lookupFormD(ctx: RegisterContext, io: RegisterIo): Promise<Regist
   return null;
 }
 
+// ── Poland: KRS, Brazil: CNPJ (looked up by the number the company's own pages give) ──────────────────
+
+/** The register numbers a site states: "KRS 0000123456", "CNPJ 12.345.678/0001-90". */
+export function extractRegisterNumbers(text: string): { krs: string | null; cnpj: string | null } {
+  const krs = text.match(/\bKRS\s*(?:nr|no\.?|number|numer)?\s*[:.]?\s*(\d{10})\b/i)?.[1] ?? null;
+  const cnpj = text.match(/\bCNPJ\s*(?:n[ºo°.]?|nr)?\s*[:.]?\s*(\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2})\b/i)?.[1]?.replace(/\D/g, "") ?? null;
+  return { krs, cnpj };
+}
+
+/** KRS "odpis aktualny" (api-krs.ms.gov.pl): the name, the registration date (dd.mm.yyyy) and the seat's address. */
+export function parseKrsExtract(json: unknown, krs: string): { entity: string; date: string | null; address: string | null } | null {
+  const odpis = (json as { odpis?: { naglowekA?: { dataRejestracjiWKRS?: string }; dane?: { dzial1?: { danePodmiotu?: { nazwa?: string }; siedzibaIAdres?: { adres?: { ulica?: string; nrDomu?: string; kodPocztowy?: string; miejscowosc?: string } } } } } })?.odpis;
+  const name = odpis?.dane?.dzial1?.danePodmiotu?.nazwa;
+  if (!name) return null;
+  const d = odpis?.naglowekA?.dataRejestracjiWKRS?.match(/(\d{2})\.(\d{2})\.((?:19|20)\d{2})/);
+  const a = odpis?.dane?.dzial1?.siedzibaIAdres?.adres;
+  void krs;
+  return { entity: name, date: d ? `${d[3]}-${d[2]}-${d[1]}` : null, address: a ? [[a.ulica, a.nrDomu].filter(Boolean).join(" "), [a.kodPocztowy, a.miejscowosc].filter(Boolean).join(" ")].filter(Boolean).join(", ") : null };
+}
+
+/** BrasilAPI's CNPJ record: legal name, the start of activity and the address. */
+export function parseCnpj(json: unknown): { entity: string; date: string | null; address: string | null } | null {
+  const j = json as { razao_social?: string; nome_fantasia?: string; data_inicio_atividade?: string; logradouro?: string; numero?: string; municipio?: string; uf?: string; cep?: string; descricao_situacao_cadastral?: string } | null;
+  if (!j?.razao_social) return null;
+  if (j.descricao_situacao_cadastral && /baixada|inapta|nula/i.test(j.descricao_situacao_cadastral)) return null;
+  return { entity: j.razao_social, date: /^\d{4}-\d{2}-\d{2}$/.test(j.data_inicio_atividade ?? "") ? j.data_inicio_atividade! : null, address: [[j.logradouro, j.numero].filter(Boolean).join(" "), [j.municipio, j.uf].filter(Boolean).join(" - "), j.cep].filter(Boolean).join(", ") || null };
+}
+
+/** A register that was asked by the number the company's own pages state: the number is the tie, the name must match too. */
+export function matchByNumber(register: "pl_krs" | "br_cnpj", number: string, rec: { entity: string; date: string | null; address: string | null }, ctx: RegisterContext): RegisterFinding | null {
+  const kind = nameMatchAny(rec.entity, ctx);
+  if (!kind) return null;
+  const country = register === "pl_krs" ? "Poland" : "Brazil";
+  return {
+    register, entity: rec.entity, number, founded_year: rec.date ? Number(rec.date.slice(0, 4)) : null, founding_country: country,
+    incorporation_date: rec.date, registered_address: rec.address,
+    url: register === "pl_krs" ? `https://wyszukiwarka-krs.ms.gov.pl/details/${number}` : `https://brasilapi.com.br/api/cnpj/v1/${number}`,
+    quote: `${rec.entity}, ${register === "pl_krs" ? "KRS" : "CNPJ"} ${number}${rec.date ? `, registered ${rec.date}` : ""}${rec.address ? `, ${rec.address}` : ""}`,
+    match: `${kind === "exact" ? "same name" : "name plus one generic word"}; the site gives ${register === "pl_krs" ? "KRS" : "CNPJ"} ${number}`,
+  };
+}
+
+async function lookupKrs(ctx: RegisterContext, io: RegisterIo): Promise<RegisterFinding | null> {
+  const { krs } = extractRegisterNumbers(ctx.siteText);
+  if (!krs) return null;
+  const rec = parseKrsExtract(await io.fetchJson(`https://api-krs.ms.gov.pl/api/krs/OdpisAktualny/${krs}?rejestr=P&format=json`), krs);
+  return rec ? matchByNumber("pl_krs", krs, rec, ctx) : null;
+}
+
+async function lookupCnpj(ctx: RegisterContext, io: RegisterIo): Promise<RegisterFinding | null> {
+  const { cnpj } = extractRegisterNumbers(ctx.siteText);
+  if (!cnpj) return null;
+  const rec = parseCnpj(await io.fetchJson(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`));
+  return rec ? matchByNumber("br_cnpj", cnpj, rec, ctx) : null;
+}
+
+// ── OpenCorporates, last: finds the entry of a register we have no collector for (owner, round 10) ───────
+
+interface OcItem { company?: { name?: string; company_number?: string; jurisdiction_code?: string; incorporation_date?: string | null; current_status?: string | null; registered_address_in_full?: string | null; opencorporates_url?: string; dissolution_date?: string | null } }
+const OC_COUNTRY: Record<string, string> = { gb: "United Kingdom", il: "Israel", us: "United States", pl: "Poland", br: "Brazil", de: "Germany", fr: "France", es: "Spain", nl: "Netherlands", ie: "Ireland", ca: "Canada", au: "Australia", sg: "Singapore", in: "India", se: "Sweden", dk: "Denmark", no: "Norway", fi: "Finland", ch: "Switzerland", it: "Italy", pt: "Portugal", at: "Austria", be: "Belgium", ae: "United Arab Emirates", mx: "Mexico" };
+export const ocCountry = (code: string): string | null => OC_COUNTRY[code.toLowerCase().split("_")[0]] ?? null;
+
+/**
+ * The match rule of docs/registries_plan.md in one place: name AND country AND a second signal (the website's domain on the entry, or the entry's address city among the site's
+ * offices). With several entries that pass, nothing is written: they are returned for the owner's review.
+ */
+export function matchOpenCorporates(items: OcItem[], ctx: RegisterContext): { finding: RegisterFinding | null; ambiguous: string[] } {
+  const passing: Array<{ f: RegisterFinding; label: string }> = [];
+  const site = ctx.siteText.toLowerCase();
+  for (const it of items) {
+    const c = it.company;
+    if (!c?.name || !c.company_number || !c.jurisdiction_code) continue;
+    if (c.dissolution_date || /dissolved|inactive|struck|liquidat/i.test(c.current_status ?? "")) continue;
+    const kind = nameMatchAny(c.name, ctx);
+    const country = ocCountry(c.jurisdiction_code);
+    if (!kind || !country) continue;
+    // The country: the company's own, when it is known; a register of another country does not match by name alone.
+    if (ctx.country && countryKey(ctx.country) !== countryKey(country)) continue;
+    const addr = (c.registered_address_in_full ?? "").toLowerCase();
+    const domainOnEntry = !!ctx.domain && (addr.includes(ctx.domain.toLowerCase()) || site.includes(c.company_number.toLowerCase()));
+    const cityTie = ctx.siteCities.find((city) => city && addr.includes(city.toLowerCase()));
+    const tie = site.includes(c.company_number.toLowerCase()) ? `the site gives company number ${c.company_number}` : domainOnEntry ? "the domain is on the entry" : cityTie ? `registered in ${cityTie}, an office on the site` : null;
+    if (!tie) continue;
+    passing.push({
+      label: `${c.name} (${c.jurisdiction_code} ${c.company_number})`,
+      f: {
+        register: "opencorporates", entity: c.name, number: c.company_number, founded_year: c.incorporation_date ? Number(c.incorporation_date.slice(0, 4)) : null, founding_country: country,
+        incorporation_date: c.incorporation_date ?? null, registered_address: c.registered_address_in_full ?? null,
+        url: c.opencorporates_url ?? `https://opencorporates.com/companies/${c.jurisdiction_code}/${c.company_number}`,
+        quote: `${c.name}, ${c.jurisdiction_code} ${c.company_number}${c.incorporation_date ? `, incorporated ${c.incorporation_date}` : ""}${c.registered_address_in_full ? `, ${c.registered_address_in_full}` : ""}`,
+        match: `${kind === "exact" ? "same name" : "name plus one generic word"}; ${tie}`,
+      },
+    });
+  }
+  if (passing.length === 1) return { finding: passing[0].f, ambiguous: [] };
+  return { finding: null, ambiguous: passing.map((p) => p.label) };
+}
+
+async function lookupOpenCorporates(ctx: RegisterContext, io: RegisterIo, log: (m: string) => void): Promise<RegisterFinding | null> {
+  const token = io.env?.OPENCORPORATES_API_TOKEN;
+  if (!token) return null;
+  const items: OcItem[] = [];
+  for (const q of [ctx.name, ctx.legalName].filter((n): n is string => !!n)) {
+    const res = await io.fetchJson(`https://api.opencorporates.com/v0.4/companies/search?q=${encodeURIComponent(legalName(q))}&per_page=30&api_token=${token}`) as { results?: { companies?: OcItem[] } };
+    items.push(...(res.results?.companies ?? []));
+  }
+  const { finding, ambiguous } = matchOpenCorporates(items, ctx);
+  if (!finding && ambiguous.length > 1) log(`OpenCorporates: ${ambiguous.length} entries match ${ctx.name} (${ambiguous.join("; ")}) — nothing written, listed for review`);
+  return finding;
+}
+
 /** Every register that knows the company for certain; failures are logged and skipped. */
 export async function lookupRegisters(ctx: RegisterContext, io: RegisterIo, log: (m: string) => void = () => {}): Promise<RegisterFinding[]> {
   const out: RegisterFinding[] = [];
-  for (const [label, fn] of [["Companies House", lookupCompaniesHouse], ["Israeli registrar", lookupIlRegistrar], ["SEC Form D", lookupFormD]] as const) {
-    try { const f = await fn(ctx, io); if (f) out.push(f); }
+  for (const [label, fn] of [["Companies House", lookupCompaniesHouse], ["Israeli registrar", lookupIlRegistrar], ["KRS", lookupKrs], ["CNPJ", lookupCnpj], ["SEC Form D", lookupFormD], ["OpenCorporates", (c: RegisterContext, i: RegisterIo) => lookupOpenCorporates(c, i, log)]] as const) {
+    try { const f = await fn(ctx, io); if (f && !out.some((o) => o.register === f.register && o.number === f.number)) out.push(f); }
     catch (e) { log(`${label} lookup failed (${e instanceof Error ? e.message : String(e)}) — skipped`); }
   }
   return out;

@@ -21,6 +21,7 @@
  *     forces.
  */
 
+import { TECH_DEFINITION } from "./techGate.ts";
 import Anthropic from "@anthropic-ai/sdk";
 import { requestFor } from "./models.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -66,6 +67,23 @@ export async function loadSectorTaxonomy(supabase: SupabaseClient): Promise<Sect
     subNames: rows.filter((r) => r.parent_id !== null).map((r) => r.name).sort(),
     parentOf,
   };
+}
+
+/**
+ * The industry written to a company is a sector of the closed list, never free text (owner, 2026-11-13: "Design & Prototyping Software").
+ * The model's own word counts only when it is one of the sectors; otherwise the sector the company was classified into (or its parent).
+ */
+export function industryFromTaxonomy(industry: string | null | undefined, sectorName: string | null | undefined, taxonomy: SectorTaxonomy): string | null {
+  const parents = new Set(taxonomy.parentNames);
+  // The sector the company was classified into decides (owner, 2026-11-15: "Enterprise Software (industry: Consumer & Media)" was two answers to one question);
+  // the model's own word counts only when there is no sector.
+  if (sectorName) {
+    if (parents.has(sectorName)) return sectorName;
+    const parent = taxonomy.parentOf?.[sectorName];
+    if (parent && parents.has(parent)) return parent;
+  }
+  if (!sectorName && industry && parents.has(industry)) return industry;
+  return null;
 }
 
 const TAG_FILLER_WORDS = new Set(["general", "digital", "tech", "technology", "technologies", "and", "other", "services", "platforms", "platform", "software", "management", "solutions", "data"]);
@@ -119,6 +137,8 @@ export interface V2Founder extends PersonQualityTags {
   linkedin_url?: EvidencedValue<string>;
   /** The source that states this person founded the company (people.ts groundFounders). */
   grounded_url?: string;
+  /** The words of that source that ground him (round 10): shown as the founder's quote in the report. */
+  grounded_quote?: string;
   /** Structured background facts, each with a quote (founderBackground.ts); written only when the founder_background field is open. */
   background?: import("./founderBackground.ts").BackgroundFact[];
 }
@@ -141,6 +161,8 @@ export interface V2Profile {
   website?: EvidencedValue<string>;
   description?: string;
   description_source_ids?: string[];
+  /** false when the description is a verified "what" only (no source says who buys it). */
+  description_complete?: boolean;
   /** v2's own description, sentence by sentence with the sources behind each (descriptionBuilder.ts). */
   description_sentences?: Array<{ role: string; text: string; source_ids: string[]; quote: string }>;
   value_proposition?: string;
@@ -188,6 +210,10 @@ export interface V2Metrics {
 export interface V2ProfileExtraction {
   is_public_company: boolean;
   is_tech_company: boolean;
+  /** One sentence naming the product and its category (or why none): why the company is, or is not, a technology company. */
+  tech_reason?: string;
+  /** "cannot_tell" when the sources do not describe what the company sells: no decision, not a rejection. */
+  tech_decision?: "technology" | "not_technology" | "cannot_tell";
   profile: V2Profile;
   leadership: V2Leader[];
   metrics: V2Metrics;
@@ -250,7 +276,9 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
           { type: "boolean" },
           "TRUE only if THIS exact company is listed on a public stock exchange (NYSE, NASDAQ, LSE, TASE, Euronext, etc.) under its own ticker, with the specific exchange/ticker stated in the source. Being acquired by, or a subsidiary of, a public company does NOT make this company itself public. Omit the whole field entirely if you cannot point to that -- the default is private.",
         ),
-        is_tech_company: { type: "boolean", description: "TRUE for any company whose core product or competitive edge is its own technology/software/R&D (broad category — AI/ML, fintech, biotech, hardware, etc. all count)." },
+        is_tech_company: { type: "boolean", description: TECH_DEFINITION },
+        tech_decision: { type: "string", enum: ["technology", "not_technology", "cannot_tell"], description: "technology / not_technology by the definition above; cannot_tell when the sources do not describe what the company sells or does (an unreadable site, no product named). Never not_technology for lack of information." },
+        tech_reason: { type: "string", description: "One short sentence: the product and the technology category it falls in, or why it falls in none." },
         profile: {
           type: "object" as const,
           properties: {
@@ -297,7 +325,7 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
             sector_name: {
               type: "string",
               enum: taxonomy.parentNames.length > 0 ? taxonomy.parentNames : undefined,
-              description: "The single best-fit sector from the enumerated list — the most SPECIFIC one that fits. DeepTech only for a company whose core is quantum, robotics, space, semiconductors or hard science; never for software or DevOps. Real estate / property → Real Estate; advertising or marketing technology → Consumer & Media (AdTech); farming → Industrial & Manufacturing (AgTech); penetration testing / breach validation → Cybersecurity (Security Testing). Speech, voice, captioning or transcription → AI & ML (Voice & Speech AI); vulnerability remediation → Cybersecurity (Vulnerability Management); compliance review of marketing or communications → Fintech (RegTech); vehicles and automotive security → Automotive & Mobility; food or cultivated meat → Food & Agriculture (FoodTech); email, docs or productivity suites → Enterprise Software (Productivity & Collaboration); product-update, changelog or developer-facing tools → SaaS & Dev Tools (Developer Tools), not 'SaaS / General'. Computer Vision only for a company whose product processes images or video. Omit if genuinely uncertain — never guess.",
+              description: "The single best-fit sector from the enumerated list — the most SPECIFIC one that fits. carbon capture, CO2 removal and the materials made for it (sorbents, MOFs for carbon capture) → Climate & Energy; DeepTech only for a company whose core is quantum, general-purpose robotics research, space, semiconductors or hard science (robots that automate factory and warehouse work, AMR/AGV/cobots/pickers → Industrial & Manufacturing (Industrial Automation), with Robotics as a tag); never for software or DevOps. Real estate / property → Real Estate; advertising or marketing technology → Consumer & Media (AdTech); farming → Industrial & Manufacturing (AgTech); penetration testing / breach validation → Cybersecurity (Security Testing). Speech, voice, captioning or transcription → AI & ML (Voice & Speech AI); vulnerability remediation → Cybersecurity (Vulnerability Management); compliance review of marketing or communications → Fintech (RegTech); vehicles and automotive security → Automotive & Mobility; food or cultivated meat → Food & Agriculture (FoodTech); email, docs or productivity suites sold to businesses and teams → Enterprise Software (Productivity & Collaboration), but email or storage accounts sold to private individuals → Consumer & Media (Consumer Apps & Communication); product-update, changelog or developer-facing tools → SaaS & Dev Tools (Developer Tools), not 'SaaS / General'. Computer Vision only for a company whose product processes images or video. Omit if genuinely uncertain — never guess.",
             },
             sub_sector_name: {
               type: "string",
@@ -356,7 +384,7 @@ function profileExtractionTool(taxonomy: SectorTaxonomy) {
           },
         },
       },
-      required: ["is_tech_company"],
+      required: ["is_tech_company", "tech_decision", "tech_reason"],
     },
   };
 }
@@ -369,6 +397,8 @@ export function buildProfileExtractionRequest(
   const context = formatSourcesForPrompt(sources);
   const prompt = `You are a financial data analyst. Extract the company status, profile (overview, founding year, location, sector), founders, leadership team, and headcount for the private tech company "${companyName}" from the labeled research below.
 
+TECHNOLOGY: ${TECH_DEFINITION} Hardware, energy, materials, biotech and robotics companies count; "not software" is not a reason for not_technology. If the sources do not describe what the company does, answer cannot_tell.
+
 STRICT RULES:
 1. Only extract facts stated explicitly in the sources below. If a field is not stated, omit it entirely — never guess.
 2. Every material field (website, founded_year, country, city, founding_country, israel_rnd_center, employee_count, every headcount_history point, every LinkedIn/GitHub/Hugging Face URL) requires an evidence_quote copied VERBATIM (5-40 words) from its cited source, and the exact source_id ([S3], [W1], etc.) that quote came from.
@@ -376,6 +406,7 @@ STRICT RULES:
 4. city and country MUST come from the same source and the same sentence or address — never pair a city from one source with a country from another.
 4b. founding_country is WHERE THE COMPANY WAS FOUNDED, separate from the HQ: an Israeli-founded company headquartered in New York has country "United States" and founding_country "Israel". Set it only from a quote about the company ("founded in Tel Aviv", "the Israeli cybersecurity startup"); never from a founder's nationality or military service. israel_rnd_center: only when a source states its R&D / development / engineering centre or team is in Israel.
 5. Never infer founded_year from an article's publish date or from a funding round's date — only from an explicit founding statement.
+5b. FOUNDERS — list a person as a founder only when a source says that person founded THIS company (not another company, and not a company the page merely quotes or names); write the title exactly as the source gives it and never add a role the source does not state.
 6. Never estimate headcount or revenue — report only a figure a source explicitly states, with its date.
 7. ${BIO_DESCRIPTION}
 7b. WRITTEN TEXT (description, value_proposition, bios) says what the company or person does. Never name a data platform (Crunchbase, PitchBook, Tracxn, CB Insights, Dealroom, Harmonic, Specter, Dealigence and the like) — leave out any fact only such a platform states. A figure only the company itself claims may say so ('according to the company', 'per its press release'). Never write a fact that rests on LinkedIn, 'sources', reports, estimates, case studies or testimonials — leave it out. Naming the company's own competitors is fine.
@@ -614,6 +645,8 @@ export function processProfileExtractionResponse(
     result: {
       is_public_company: verifyIsPublicClaim(i.is_public_company, sourceLookup, dropped),
       is_tech_company: i.is_tech_company ?? true,
+      tech_reason: i.tech_reason,
+      tech_decision: (i as { tech_decision?: "technology" | "not_technology" | "cannot_tell" }).tech_decision,
       profile,
       leadership,
       metrics,

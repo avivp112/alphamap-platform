@@ -1,3 +1,4 @@
+import { isThirdPartyPage } from "./subject.ts";
 /**
  * lib/enrichment/headquarters.ts — which city is the headquarters (owner,
  * 2026-11-01). The headquarters is what a source declares, in so many words
@@ -34,6 +35,8 @@ export interface HqStatement {
   date: string | null;
   /** Read from a street address on the Contact page, without a word that declares a headquarters. */
   viaAddress?: boolean;
+  /** Trade press of tier 4: counts only in the multi-office tie-breaker, never alone (owner, round 9: Hydrostor, "Toronto-Based Hydrostor" in theenergymix). */
+  weak?: boolean;
   /** The address sits under an "Offices" / "Locations" heading: an office of the company, not its headquarters (Swimm, owner 2026-11-12). */
   officeList?: boolean;
 }
@@ -45,7 +48,7 @@ export type HqDecision =
   | { kind: "site_offices"; cities: string[] }
   | { kind: "none" };
 
-const HQ_WORD = /\b(headquarter(?:s|ed)?|hq|head office|based in|-based)\b/i;
+const HQ_WORD = /\b(headquarter(?:s|ed)?|hq|head office|based in|-based|based)\b/i;
 const CITY_NAMES = [...MAJOR_CITIES.keys()].sort((a, b) => b.length - a.length);
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const CITY_RE = new RegExp(`(^|[^\\p{L}])(${CITY_NAMES.map(esc).join("|")})(?=$|[^\\p{L}])`, "giu");
@@ -71,6 +74,13 @@ export function statementKind(s: Pick<LabeledSource, "url" | "source_type"> & { 
   return standing.kind === "allowed" && standing.tier <= 3 ? "press" : null;
 }
 
+/** An allowed outlet of tier 4 (trade press): usable only to choose among offices the site itself lists. */
+export function isWeakPress(s: Pick<LabeledSource, "url" | "source_type"> & { content?: string; title?: string }): boolean {
+  if (isLegalPageUrl(s.url) || s.source_type === "company_site" || isDirectoryPage(s.url) || s.source_type === "press_release") return false;
+  const standing = roundSourceStanding(s.url, { content: s.content, headline: s.title });
+  return standing.kind === "allowed" && standing.tier === 4;
+}
+
 /** The article's own date: a "Date:" / "Published Time:" line, a wire dateline or a /YYYY/MM/DD/ URL. */
 export function articleDate(s: Pick<LabeledSource, "url" | "content">): string | null {
   const c = [
@@ -80,23 +90,28 @@ export function articleDate(s: Pick<LabeledSource, "url" | "content">): string |
   ];
   for (const x of c) { const iso = x ? parseFullDate(x) : null; if (iso) return iso; }
   const ym = s.url.match(/\/(20\d{2})\/(\d{2})\//);
-  return ym ? `${ym[1]}-${ym[2]}-15` : null;
+  if (ym) return `${ym[1]}-${ym[2]}-15`;
+  // A year alone in the address is not a date: the statement stays undated, and an undated press statement decides nothing.
+  return null;
 }
 
 const sentencesOf = (text: string) => text.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/);
 
 /** Every sentence of a source that declares a headquarters city for this company. */
-export function hqStatementsIn(s: LabeledSource, companyName: string): HqStatement[] {
-  const kind = statementKind(s);
+export function hqStatementsIn(s: LabeledSource, companyName: string, approved?: { forceKind: "press"; date: string | null }): HqStatement[] {
+  if (s.source_type === "company_site" && isThirdPartyPage(s.url)) return [];
+  // An approved quote (it passed verification for a round) counts as press of its own source, whatever the outlet's tier (owner, batch 6).
+  const weak = !approved && !statementKind(s) && isWeakPress(s);
+  const kind = approved ? approved.forceKind : weak ? "press" : statementKind(s);
   if (!kind) return [];
-  const date = kind === "company" && s.source_type === "company_site" ? null : articleDate(s);
+  const date = approved ? approved.date : kind === "company" && s.source_type === "company_site" ? null : articleDate(s);
   const out: HqStatement[] = [];
   for (const sentence of sentencesOf(`${s.title ?? ""}. ${s.content}`)) {
     if (sentence.length > 400 || !HQ_WORD.test(sentence)) continue;
     for (const m of sentence.matchAll(CITY_RE)) {
       const city = title(m[2].toLowerCase());
       if (!saysOfCompany(sentence, m.index! + m[1].length, city, companyName, s.source_type === "company_site") || isRegionalOfficeQuote(sentence, city)) continue;
-      if (!out.some((o) => o.city === city)) out.push({ city, quote: sentence.trim(), source_id: s.source_id, url: s.url, kind, date });
+      if (!out.some((o) => o.city === city)) out.push({ city, quote: sentence.trim(), source_id: s.source_id, url: s.url, kind, date, ...(weak ? { weak: true } : {}) });
     }
   }
   return out;
@@ -160,7 +175,8 @@ export function diagnoseHq(s: LabeledSource, companyName: string): string[] {
  */
 function saysOfCompany(sentence: string, at: number, city: string, companyName: string, ownSite: boolean): boolean {
   const after = sentence.slice(at + city.length);
-  const based = after.match(/^-based\s+(.{0,60})/i);
+  // "Tel Aviv-based Hailo", "Sydney-headquartered Pet Circle", "Sydney headquartered Pet Circle", "Sydney based Pet Circle" (not "… based on …", "… headquartered in …", which the other branch reads).
+  const based = after.match(/^(?:-|\s+)(?:based|headquartered|hq'?d)\s+(?!on\b|in\b|at\b|upon\b|out\b)(.{0,60})/i);
   if (based) {
     // The company is the noun right after "-based" ("Tel Aviv-based Hailo", "Tel Aviv-based chipmaker
     // Hailo") — within its name's length plus three words, not as a possessive further on ("The
@@ -209,22 +225,77 @@ export const OFFICE_HEADING = /(?:^|[|*#>\s])(?:our\s+)?(?:offices?|locations?)\
 const ADDRESS_HINT = /(\b\d{1,5}\s+\p{L}{3,}|\p{L}{3,}\.?\s+\d{1,5}\b|\b[A-Z]{1,2}\d[A-Z\d]?\s\d[A-Z]{2}\b|\b\d{5}(?:-\d{4})?\b|\b\d{7}\b)/u;
 
 /**
+ * A line is a street address only with at least two address parts — a street with a number, a postcode, a state + zip, a suite / floor / box — and is not a sentence
+ * (owner, batch 6: Kiwify's "…uma viagem d[e Dubai]" prize text and Brighte's "SXSW Sydney" event list are not addresses; Canopy's "New York, NY 10003-1502" is).
+ */
+const STREET_WORD = "st|street|ave|avenue|road|rd|blvd|boulevard|drive|dr|lane|ln|way|place|pl|parkway|pkwy|square|sq|court|ct|highway|hwy|rua|av|avenida|calle|strasse|straße|str|platz|ul|ulica|aleja|al|rue|via|viale|piazza|plaza|paseo|carrer|rehov|rehob";
+const STREET_RE = new RegExp(`(?:\\b\\d{1,5}[A-Za-z]?[\\s,]+(?:[\\p{L}.'’-]+\\s+){0,3}(?:${STREET_WORD})\\b\\.?|\\b(?:${STREET_WORD})\\.?\\s+(?:[\\p{L}.'’-]+\\s+){0,4}[\\p{L}.'’-]+,?\\s*(?:n[º°o.]?\\s*)?\\d{1,5}\\b|\\p{L}+(?:straße|strasse|gatan|vägen|weg|laan|straat|gade|ulica)\\s*\\d{1,5}\\b)`, "iu");
+const POSTCODE_RE = /(\b[A-Z]{1,2}\d[A-Z\d]?\s\d[A-Z]{2}\b|\b\d{5}(?:-\d{4})?\b|\b\d{2}-\d{3}\b|\b\d{4,5}-\d{3}\b|\b\d{3}\s?\d{2}\b|\b\d{7}\b)/;
+const STATE_ZIP_RE = /,\s*[A-Z]{2}\s+\d{5}\b/;
+const UNIT_RE = /\b(?:suite|ste\.?|floor|fl\.?|unit|level|p\.?\s?o\.?\s?box|sala|piso|andar|conjunto|bloco|bldg|building)\b\s*#?\w*/i;
+const NAME_NUMBER_RE = /\p{Lu}[\p{L}'’.-]{3,}\s+\d{1,3}[A-Za-z]?\s*,\s*\p{Lu}/u;   // "Hamasger 34, Tel Aviv"
+const UK_POSTCODE_RE = /\b[A-Z]{1,2}\d[A-Z\d]?\s\d[A-Z]{2}\b/;
+export function isAddressLine(line: string): boolean {
+  if (line.split(/\s+/).length > 14) return false;
+  if (STREET_RE.test(line) || STATE_ZIP_RE.test(line) || NAME_NUMBER_RE.test(line) || UK_POSTCODE_RE.test(line)) return true;
+  // A postcode alone ("2024 Kiwify", "R$10 milhões") is not an address; with a unit, a box or a 4-digit code before the city it is.
+  return POSTCODE_RE.test(line) && (UNIT_RE.test(line) || /\b\d{4,5}\s+\p{Lu}/u.test(line)) || (/\b\d{4}\s+\p{Lu}[\p{L}]+/u.test(line) && /\//.test(line));
+}
+
+/** The word that declares an address the headquarters. */
+const HQ_LABEL = /\b(?:head ?quarters?|head office|main office|global office|corporate office|hq)\b/i;
+
+/**
  * The cities of the street addresses the company's Contact page gives
  * (owner, 2026-11-02): one address there is the headquarters, even without
  * the word. Lines that name a city on the list and carry a street number or
  * a postcode; a regional office's line is not counted.
  */
-export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type" | "content" | "source_id" | "also_urls">): HqStatement[] {
-  // The Contact page — or the page /contact rendered (Soda's /contact is its /about: dry run 2026-11-02).
-  if (s.source_type !== "company_site" || ![s.url, ...(s.also_urls ?? [])].some((u) => /\/contact/i.test(u))) return [];
+const THIRD_PARTY_ADDRESS = /\b(gdpr|eu representative|uk representative|representative in the (?:eu|uk|european union|united kingdom)|data protection officer|dpo\b|registered agent|art(?:icle|\.)?\s*27|vertreter|datenschutzbeauftragte)/i;
+
+/**
+ * The company's seat as an Impressum / imprint states it: "Sitz der Gesellschaft: Berlin" (owner, round 10). That is the headquarters, declared, from the company's own legal page.
+ */
+export function impressumSeat(s: Pick<LabeledSource, "url" | "source_type" | "content" | "source_id" | "also_urls">): HqStatement[] {
+  if (isThirdPartyPage(s.url)) return [];
+  if (s.source_type !== "company_site" || ![s.url, ...(s.also_urls ?? [])].some((u) => isLegalPageUrl(u))) return [];
   const out: HqStatement[] = [];
+  for (const line of s.content.split(/\n+/)) {
+    if (THIRD_PARTY_ADDRESS.test(line)) continue;
+    const m = line.match(/\b(?:Sitz der Gesellschaft|Gesellschaftssitz|Sitz des Unternehmens|Firmensitz|Registered seat|Siège social)\b\s*[:\-–]?\s*(?:\d{4,5}\s+)?(.{2,60})/i);
+    if (!m) continue;
+    for (const c of m[1].matchAll(CITY_RE)) {
+      const city = title(c[2].toLowerCase());
+      if (!out.some((o) => sameCity(o.city, city))) out.push({ city, quote: line.trim().slice(0, 240), source_id: s.source_id, url: s.url, kind: "company", date: null });
+      break;
+    }
+  }
+  return out;
+}
+
+export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type" | "content" | "source_id" | "also_urls">): HqStatement[] {
+  if (isThirdPartyPage(s.url)) return [];
+  // Any page of the company's own site — the Contact page, the footer every page repeats, an About page (owner, round 10); a legal page is read apart (impressumSeat) and its
+  // address is an office. A single address anywhere on the site is the headquarters; several are offices (decideHeadquarters).
+  if (s.source_type !== "company_site" || [s.url, ...(s.also_urls ?? [])].some((u) => isLegalPageUrl(u))) return [];
+  const out: HqStatement[] = [];
+  // An EU / UK representative, a data protection officer or a registered agent has an address that is never the company's (GDPR Art. 27 notices in footers).
+  let skipLeft = 0;
   let underOfficeHeading = false;
+  // An address marked Headquarters / Head office / HQ — on its own line or under such a heading — is the headquarters even among several (owner, 2026-11-15: Hydrostor).
+  let hqMarkLeft = 0;
   for (const raw of s.content.split(/\n+/)) {
     // Markdown images and links are not addresses: drop images, keep a link's text only
     // ("![Image 4: … return to main Palo Alto Networks site](…)" on Koi's page — 2026-11-02).
     const line = raw.replace(/!\[[^\]]*\]\([^)]*\)/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/https?:\/\/\S+/g, " ").trim();
+    if (THIRD_PARTY_ADDRESS.test(line)) { skipLeft = 2; continue; }
+    if (skipLeft > 0) { skipLeft--; continue; }
     if (OFFICE_HEADING.test(line)) underOfficeHeading = true;
-    if (line.length > 250 || !ADDRESS_HINT.test(line)) continue;
+    const marked = HQ_LABEL.test(line);
+    if (marked && !isAddressLine(line)) { hqMarkLeft = 3; continue; }   // a heading: the address follows within a few lines
+    if (line.length > 250 || !isAddressLine(line)) { if (hqMarkLeft > 0) hqMarkLeft--; continue; }
+    const declared = marked || hqMarkLeft > 0;
+    if (hqMarkLeft > 0) hqMarkLeft = 0;
     for (const m of line.matchAll(CITY_RE)) {
       const city = title(m[2].toLowerCase());
       // An address names the city before a comma, a postcode, a state code or the line's end —
@@ -234,7 +305,7 @@ export function contactPageAddresses(s: Pick<LabeledSource, "url" | "source_type
       // A street named after a city is not the city ("46430 Fremont Blvd": EnerVenue, model check 2026-11-02).
       if (/^\s+(blvd|boulevard|st|street|ave|avenue|rd|road|way|drive|dr|lane|ln|place|pl|parkway|pkwy|highway|hwy)\b\.?/i.test(line.slice(m.index! + m[0].length))) continue;
       if (isRegionalOfficeQuote(line, city)) continue;
-      if (!out.some((o) => sameCity(o.city, city))) out.push({ city, quote: line, source_id: s.source_id, url: s.url, kind: "company", date: null, viaAddress: true, ...(underOfficeHeading ? { officeList: true } : {}) });
+      if (!out.some((o) => sameCity(o.city, city))) out.push({ city, quote: line, source_id: s.source_id, url: s.url, kind: "company", date: null, viaAddress: !declared, ...(!declared && underOfficeHeading ? { officeList: true } : {}) });
     }
   }
   return out;
@@ -271,14 +342,29 @@ export function decideHeadquarters(statements: HqStatement[], today = new Date()
   const company = allCompany.filter((s) => !s.viaAddress || (addressCities.length < 2 && !s.officeList));
   if (company.length) return { kind: "declared", statement: company[0] };
   if ((addressCities.length >= 2 || allCompany.some((x) => x.viaAddress && x.officeList)) && !siteOfficeCities.length) siteOfficeCities = addressCities;
-  const press = latestFirst(statements.filter((s) => s.kind === "press"));
+  // A press statement counts only with a date (owner, batch 6: Estimote → New York from an undated 2014 GeekWire).
+  const pressWithWeak = latestFirst(statements.filter((s) => s.kind === "press" && !!s.date));
+  const press = pressWithWeak.filter((s) => !s.weak);
   const recent = press.filter((s) => s.date && Date.parse(today) - Date.parse(s.date) <= 730 * DAY);
   const siteCities = siteOfficeCities.filter((c, i) => siteOfficeCities.findIndex((d) => sameCity(c, d)) === i);
+  // Several offices on the site and none marked: an allowed source that says "<city>-based <Company>" / "headquartered in <city>" for one of them decides
+  // (owner, 2026-11-15: Motorway → London, Hydrostor → Toronto). A city that is not one of the offices does not.
+  if (siteCities.length >= 2) {
+    const named = pressWithWeak.filter((st) => siteCities.some((c) => sameCity(c, st.city)));
+    const cities = named.filter((st, i) => named.findIndex((o) => sameCity(o.city, st.city)) === i);
+    // Two allowed sources, or one of the last two years: a single older article does not outweigh the site of today (owner, 2026-11-02: Aidoc's 2022 "Tel Aviv-based").
+    const sources = new Set(named.map((x) => x.url || x.source_id));
+    if (cities.length === 1 && sources.size >= 2) return { kind: "declared", statement: named[0] };
+  }
   if (siteCities.length >= 2 && !recent.length) return { kind: "site_offices", cities: siteCities };
-  if (!press.length) return { kind: "none" };
-  // Declarations that are all from articles older than eight years are not today's headquarters (owner, 2026-11-10: Chargebee
-  // "Chennai-based" in 2014). An undated article is not shown to be old, so it still counts.
-  if (press.every((s) => s.date && Date.parse(today) - Date.parse(s.date) > HQ_MAX_AGE_DAYS * DAY)) return { kind: "none" };
+  // Trade press of tier 4 alone: two different sources naming the same city (and no other city) are the headquarters (owner, round 10: Hydrostor → Toronto);
+  // one source is not.
+  if (!press.length) {
+    const fresh = pressWithWeak;
+    const cities = fresh.filter((st, i) => fresh.findIndex((o) => sameCity(o.city, st.city)) === i);
+    if (cities.length === 1 && new Set(fresh.map((x) => x.url || x.source_id)).size >= 2) return { kind: "declared", statement: fresh[0] };
+    return { kind: "none" };
+  }
   // Nothing recent: the latest declaration decides, unless one within two years before it disagrees (the latest wins, owner 2026-11-10).
   const newest = press[0];
   const pool = recent.length ? recent : press.filter((x) => !newest.date || !x.date || Date.parse(newest.date) - Date.parse(x.date) <= 730 * DAY);
@@ -291,4 +377,63 @@ export function decideHeadquarters(statements: HqStatement[], today = new Date()
 export function countryOfCity(city: string): string | null {
   const set = MAJOR_CITIES.get(city.trim().toLowerCase());
   return set && set.size === 1 ? [...set][0] : null;
+}
+
+const TLD_COUNTRY: Record<string, string> = {
+  us: "United States", uk: "United Kingdom", gb: "United Kingdom", de: "Germany", fr: "France", es: "Spain", it: "Italy", nl: "Netherlands", be: "Belgium", ch: "Switzerland", at: "Austria",
+  se: "Sweden", no: "Norway", dk: "Denmark", fi: "Finland", pl: "Poland", pt: "Portugal", ie: "Ireland", il: "Israel", in: "India", br: "Brazil", mx: "Mexico", ar: "Argentina", cl: "Chile",
+  co: "Colombia", ca: "Canada", au: "Australia", nz: "New Zealand", jp: "Japan", kr: "South Korea", cn: "China", sg: "Singapore", hk: "Hong Kong", ae: "United Arab Emirates", za: "South Africa",
+  ng: "Nigeria", ke: "Kenya", eg: "Egypt", tr: "Turkey", cz: "Czechia", ro: "Romania", gr: "Greece", ee: "Estonia", lt: "Lithuania", lv: "Latvia", ua: "Ukraine", id: "Indonesia", my: "Malaysia",
+  th: "Thailand", vn: "Vietnam", ph: "Philippines", sa: "Saudi Arabia", pk: "Pakistan", lu: "Luxembourg",
+};
+
+/** The country a site's address points to ("example.de" → Germany); null for .com and the like. */
+export function countryOfTld(domainOrHost: string | null | undefined): string | null {
+  const last = (domainOrHost ?? "").toLowerCase().replace(/^https?:\/\//, "").replace(/[/:].*$/, "").split(".").pop() ?? "";
+  return TLD_COUNTRY[last] ?? null;
+}
+
+const LANG_COUNTRIES: Array<[RegExp, string[]]> = [
+  [/\b(und|der|die|das|nicht|wir|unser|datenschutz)\b/gi, ["Germany", "Austria", "Switzerland"]],
+  [/\b(le|la|les|des|nous|notre|et|pour|mentions légales)\b/gi, ["France", "Belgium", "Switzerland", "Canada", "Luxembourg"]],
+  [/\b(el|los|las|nuestro|y|para|aviso legal)\b/gi, ["Spain", "Mexico", "Argentina", "Chile", "Colombia"]],
+  [/\b(o|os|as|nosso|não|para|política de privacidade)\b/gi, ["Portugal", "Brazil"]],
+  [/\b(il|gli|nostro|per|che|informativa)\b/gi, ["Italy", "Switzerland"]],
+  [/\b(het|een|van|wij|onze|privacyverklaring)\b/gi, ["Netherlands", "Belgium"]],
+  [/\b(och|vi|att|integritetspolicy)\b/gi, ["Sweden", "Finland"]],
+  [/\b(i|og|vi|vårt|personvern)\b/gi, ["Norway", "Denmark"]],
+  [/\b(oraz|nasz|polityka prywatności)\b/gi, ["Poland"]],
+];
+
+/** The countries the site's language points to, or [] when it is English or unclear (a language is evidence only when it names few countries). */
+export function languageCountries(text: string): string[] {
+  const sample = text.slice(0, 6000);
+  const words = Math.max(1, (sample.match(/\p{L}+/gu) ?? []).length);
+  let best: { hits: number; countries: string[] } = { hits: 0, countries: [] };
+  for (const [re, countries] of LANG_COUNTRIES) {
+    const hits = (sample.match(re) ?? []).length;
+    if (hits > best.hits) best = { hits, countries };
+  }
+  return best.hits / words > 0.05 ? best.countries : [];
+}
+
+/**
+ * The company's only address, found on a Terms / Privacy / Legal page, is the headquarters only when it is the only address found anywhere AND its
+ * country agrees with other evidence: the site's country code, the site's language, or an article naming the same country. Otherwise it is an office.
+ * GDPR / EU-representative / DPO / registered-agent addresses are never the headquarters (owner, round 10).
+ */
+export function legalPageHq(o: {
+  city: string; quote: string;
+  otherAddressCities: string[];          // every other address city found (offices, contact pages, press statements)
+  domain?: string | null; siteText?: string; articleCountries?: string[];
+}): { country: string; basis: string } | null {
+  if (THIRD_PARTY_ADDRESS.test(o.quote)) return null;
+  const mine = canonicalCity(o.city);
+  if (o.otherAddressCities.some((c) => canonicalCity(c) !== mine)) return null;
+  const country = countryOfCity(o.city);
+  if (!country) return null;
+  if (countryOfTld(o.domain) === country) return { country, basis: `the site's country code (.${(o.domain ?? "").split(".").pop()})` };
+  if (languageCountries(o.siteText ?? "").includes(country)) return { country, basis: "the language of the site" };
+  if ((o.articleCountries ?? []).includes(country)) return { country, basis: "an article naming the same country" };
+  return null;
 }

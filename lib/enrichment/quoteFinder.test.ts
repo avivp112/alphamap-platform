@@ -52,3 +52,22 @@ describe("an error page supports nothing (review 6, 2026-11-08: Armorblox)", () 
     expect(supportedTags(["Data Security"], [{ id: "S1", content: blocked }]).kept).toEqual([]);
   });
 });
+
+import { sentencesOf as sentencesOf2, bestSentence as best2 } from "./quoteFinder";
+describe("lines without full stops are sentences too (owner, round 10)", () => {
+  it("a heading-and-paragraph page, as a translation comes, has usable sentences", () => {
+    const page = "Title: Sami\n\n## Health is complex but your care does not have to be\n\nSami offers health plans that include a personal doctor for every member\n\n## Plans for companies\n\nCompanies of every size can offer the plan to their employees";
+    expect(sentencesOf2(page).some((s) => /personal doctor/.test(s))).toBe(true);
+    expect(best2(page, "Sami sells a health plan with a personal doctor.", 3)).toMatch(/Sami offers health plans/);
+  });
+});
+
+import { bestTagQuote } from "./quoteFinder";
+describe("the sides of a slash in a tag are alternatives (owner, round 10: STC)", () => {
+  const pages = [{ id: "W1", content: "STC Bank offers digital banking services, including accounts, cards and transfers that customers manage from a mobile app." }];
+  it("'Banking / Neobanking' is supported by 'banking'; a tag with no word on the page is not", () => {
+    expect(bestTagQuote(pages, "Banking / Neobanking")?.id).toBe("W1");
+    expect(bestTagQuote(pages, "Insurance / Insurtech")).toBeNull();
+    expect(bestTagQuote(pages, "Consumer / General")).toBeNull();
+  });
+});

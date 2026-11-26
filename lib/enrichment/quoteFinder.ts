@@ -10,7 +10,15 @@ const STOP = new Set(["that", "this", "with", "from", "their", "which", "have", 
 export const contentWords = (s: string): string[] => (s.toLowerCase().match(/\p{L}{4,}/gu) ?? []).filter((w) => !STOP.has(w));
 
 export function sentencesOf(text: string): string[] {
-  return text.replace(/\s+/g, " ").split(/(?<=[.!?])\s+(?=[A-Z0-9"“])/).map((s) => s.trim()).filter((s) => s.length >= 25 && s.length <= 400);
+  const keep = (s: string) => s.trim().replace(/^#+\s*/, "");
+  const fit = (s: string) => s.length >= 25 && s.length <= 400;
+  const out = new Set<string>();
+  // As the text runs on (sentences that cross a line break stay whole)…
+  for (const s of text.replace(/\s+/g, " ").split(/(?<=[.!?])\s+(?=[A-Z0-9"“])/).map(keep)) if (fit(s)) out.add(s);
+  // … and line by line: a page or a translation made of headings and short paragraphs without full stops would otherwise be one giant "sentence" that no check can use
+  // (owner, round 10: Sami's English translation was in the text and still nothing supported "Sami sells a health plan with a personal doctor").
+  for (const line of text.split(/\n+/)) for (const s of line.replace(/\s+/g, " ").split(/(?<=[.!?])\s+(?=[A-Z0-9"“])/).map(keep)) if (fit(s)) out.add(s);
+  return [...out];
 }
 
 /** A fetch that returned an error or a block page, not the page (review 6: Armorblox's "Target URL returned error 403"). */
@@ -52,6 +60,7 @@ export function bestQuote(sources: Array<{ id: string; content: string }>, terms
  * "Consumer & Media" had no sentence anywhere in the sources). A tag no sentence of an allowed page carries a word of
  * is not written.
  */
+export const NOT_A_PRODUCT_SENTENCE = /^\W*(?:drive|get|unlock|grow|boost|power|accelerate|transform|discover|start|see|learn|join|talk|book|request|enhance|experience)\b|\bcookies?\b|privacy\s+policy|\bwe use cookies|\bwas previously\b|\bpreviously\s+(?:served|worked|led|held|was)\b|\bprior to joining\b|\bjoined\s+\w+\s+(?:as|in)\b|\bhis career\b|\bher career\b/i;
 export function supportedTags(tags: string[], allPages: Array<{ id: string; content: string; url?: string }>): { kept: Array<{ tag: string; id: string; quote: string }>; dropped: string[] } {
   const kept: Array<{ tag: string; id: string; quote: string }> = [];
   const dropped: string[] = [];
@@ -59,7 +68,8 @@ export function supportedTags(tags: string[], allPages: Array<{ id: string; cont
   const pages = allPages.filter((p) => !isNonDescriptivePage(p.url));
   for (const tag of tags) {
     const hit = bestTagQuote(pages, tag);
-    if (hit) kept.push({ tag, id: hit.id, quote: hit.quote }); else dropped.push(tag);
+    // A cookie notice, a privacy line or a person's biography is not a product sentence (owner, round 10: Humi "HR Tech" on a cookie notice, Paradox "AI Agents" on a CTO's bio).
+    if (hit && !NOT_A_PRODUCT_SENTENCE.test(hit.quote)) kept.push({ tag, id: hit.id, quote: hit.quote }); else dropped.push(tag);
   }
   return { kept, dropped };
 }
@@ -91,6 +101,13 @@ export function tagIsTechnologyProtected(tag: string, sentence: string): boolean
 }
 
 export function bestTagQuote(pages: Array<{ id: string; content: string }>, tag: string): { id: string; quote: string } | null {
+  // "Banking / Neobanking", "Insurance / Insurtech", "Analytics / BI": the two sides of a slash are alternative names, not two words that must both be there (owner, round 10: STC).
+  const alts = tag.split("/").map((a) => a.trim()).filter((a) => a && !/^general$/i.test(a));
+  if (alts.length > 1) {
+    let best: { id: string; quote: string } | null = null;
+    for (const a of alts) { const hit = bestTagQuote(pages, a); if (hit) { best = hit; break; } }
+    return best;
+  }
   const want = contentWords(tag.replace(/\bgeneral\b/gi, "")).map((w) => w.slice(0, 6));
   if (!want.length) return null;
   let best: { id: string; quote: string; n: number } | null = null;

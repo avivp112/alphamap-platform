@@ -8,6 +8,12 @@
  *               address and in the page's code.
  *   finishNews  one row per event (same amount or acquisition within 7 days, or either undated), then no date, no news.
  */
+import { isListingOrSponsoredUrl } from "./pageKind.ts";
+import { completeFromSlug } from "./newsRelevance.ts";
+import { knownAcquirers, purchaseEvents } from "./acquisition.ts";
+import { acquirerIn } from "./acquisition.ts";
+import { rowProblem } from "./rowRules.ts";
+import { roundSourceStanding } from "./roundSources.ts";
 import { newsProblem, ownSiteNewsOk, dateFromUrl, dateFromHtml, dedupeNewsEvents, cleanHeadline, headlineLooksCut, headlineIncomplete, titleFromHtml } from "./newsRelevance.ts";
 
 export interface NewsItem { title: string; url: string; published_date?: string | null; title_joined?: boolean; [k: string]: unknown }
@@ -18,28 +24,50 @@ export interface NewsDeps {
   /** The text of the source behind a URL, when it was fetched. */
   content: (url: string) => string | undefined;
   isOwnSite: (url: string) => boolean;
+  /** The buyers several headlines name for the company (acquisition.ts knownAcquirers). */
+  acquirers?: string[];
   /** The page's HTML, only asked for when the address gives no date. */
   fetchHtml: (url: string) => Promise<string | null>;
   today?: string;
 }
 export type NewsVerdict = { keep: true; item: NewsItem; dated?: "address" | "page" } | { keep: false; reason: string; message: string };
 
+const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+/** Whether a text states a date: ISO, "November 12, 2026", "12 November 2026", "Nov. 12, 2026", "12.11.2026", "12/11/2026" or "11/12/2026". */
+export function dateStatedIn(text: string, iso: string): boolean {
+  const [y, m, dd] = iso.split("-"); const day = String(Number(dd)), mon = MONTHS[Number(m) - 1];
+  if (!mon) return false;
+  if (text.includes(iso)) return true;
+  const t = text.toLowerCase();
+  const short = mon.slice(0, 3);
+  const forms = [`${mon} ${day}, ${y}`, `${mon} ${day} ${y}`, `${day} ${mon} ${y}`, `${short}. ${day}, ${y}`, `${short} ${day}, ${y}`, `${day} ${short} ${y}`, `${day}.${m}.${y}`, `${day}/${m}/${y}`, `${m}/${dd}/${y}`, `${dd}.${m}.${y}`];
+  return forms.some((f) => t.includes(f));
+}
+
 export async function judgeNews(n: NewsItem, d: NewsDeps): Promise<NewsVerdict> {
+  // The source of a news item is the address of the article itself: a tag / list / search page and sponsored content are no source (owner, round 10).
+  const notArticle = isListingOrSponsoredUrl(n.url);
+  if (notArticle) return { keep: false, reason: `news_${notArticle}`, message: notArticle === "sponsored_content" ? "sponsored content, not an article" : "a tag, list or search page, not the article itself" };
   // The site's name is not part of the headline; a cut-off headline is completed from the page's own (og:title, h1, <title>).
   let title = cleanHeadline(n.title, n.url);
   let html: string | null | undefined;
   const page = async () => (html === undefined ? (html = await d.fetchHtml(n.url)) : html);
   // A headline joined from a cut source title and the model's continuation is checked against the page's own title; the page's wins.
   if (n.title_joined) {
-    const full = titleFromHtml((await page()) ?? "", n.url);
+    // The page's own title; else the whole headline in the article's address, when it carries the words of the cut one (owner, batch 7: Lone Wolf's release, cut only in the log).
+    const fromPage = titleFromHtml((await page()) ?? "", n.url);
+    const full = fromPage ?? completeFromSlug(title, n.url);
     if (!full) return { keep: false, reason: "news_title_cut", message: "the source's headline is cut off and the page does not give the whole of it" };
     title = full;
   }
   // Cut off by its marks, or stopping in the middle of a sentence: the page must give the whole headline (a headline the page confirms stays).
   if (headlineLooksCut(title) || headlineIncomplete(title)) {
-    const full = titleFromHtml((await page()) ?? "", n.url);
+    // The page's own title when it carries the headline; else the address' slug (a page title with the site's name in it does not carry it, the slug may).
     const a = title.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
-    if (full && full.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").startsWith(a.slice(0, Math.max(12, a.length - 2)))) title = full;
+    const carries = (f: string | null) => !!f && f.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").startsWith(a.slice(0, Math.max(12, a.length - 2)));
+    const fromPage = titleFromHtml((await page()) ?? "", n.url);
+    const full = carries(fromPage) ? fromPage : completeFromSlug(title, n.url);
+    if (carries(full)) title = full!;
     else return { keep: false, reason: "news_title_cut", message: "the headline is cut off and the page does not give the whole of it" };
   }
   // The page's own headline (og:title, then h1, then <title>) beats a search result's: Glilot's page says "…as mobile games break from
@@ -54,29 +82,54 @@ export async function judgeNews(n: NewsItem, d: NewsDeps): Promise<NewsVerdict> 
       if (shared >= 0.4) title = fromPage;
     }
   }
-  const problem = newsProblem({ title, content: d.content(n.url) }, d.companyName, d.about);
+  const problem = newsProblem({ title, content: d.content(n.url) }, d.companyName, d.about, { acquirers: d.acquirers });
   if (problem) return { keep: false, reason: `news_${problem}`, message: problem === "explainer" ? "a guide, a roundup or an explainer, not news" : problem === "not_about_the_company" ? "its headline and first paragraph do not name the company (a passing mention)" : "about another company of the same name (a different product)" };
   if (d.isOwnSite(n.url) && !ownSiteNewsOk(n.url, title, d.companyName)) return { keep: false, reason: "news_own_site_not_news", message: "a page of the company's own site outside its news / press pages, and not an announcement naming the company" };
   const { title_joined: _j, ...rest } = n;
   const item = { ...rest, title };
   let dated: "address" | "page" | undefined;
+  // A date in the article's own address beats a date that came with the search result (owner, batch 8: DataGateway's item dated 2019-10-15, its address 20200714).
+  if (item.published_date) {
+    const u = dateFromUrl(item.url, d.today);
+    if (u && u !== item.published_date && Math.abs(Date.parse(u) - Date.parse(item.published_date)) > 3 * 86_400_000) { item.published_date = u; dated = "address"; }
+  }
   if (!item.published_date) {
     const fromUrl = dateFromUrl(item.url, d.today);
     const h = fromUrl ? null : await page();
     const found = fromUrl ?? (h ? dateFromHtml(h, d.today) : null);
     if (found) { item.published_date = found; dated = fromUrl ? "address" : "page"; }
   }
+  // A date in the week before the run, or the day of it, must stand in the source in words (owner, round 10: "sold to US investors" 2026-11-12): otherwise it is the crawl date.
+  const today = d.today ?? new Date().toISOString().slice(0, 10);
+  const weekAgo = new Date(Date.parse(today) - 7 * 86_400_000).toISOString().slice(0, 10);
+  if (item.published_date && item.published_date >= weekAgo && !dateStatedIn(d.content(item.url) ?? "", item.published_date)) {
+    return { keep: false, reason: "news_date_not_in_source", message: `its date (${item.published_date}) is in the week before the run and the article does not state it` };
+  }
   return { keep: true, item, dated };
 }
 
-export function finishNews<T extends NewsItem>(items: T[], d: Pick<NewsDeps, "isOwnSite" | "content">): { kept: T[]; dropped: Array<{ item: T; reason: string; message: string }> } {
+export function finishNews<T extends NewsItem>(items: T[], d: Pick<NewsDeps, "isOwnSite" | "content" | "companyName">): { kept: T[]; dropped: Array<{ item: T; reason: string; message: string }> } {
   const dropped: Array<{ item: T; reason: string; message: string }> = [];
-  const distinct = dedupeNewsEvents(items, d.isOwnSite, (x) => (d.content(x.url) ?? "").slice(0, 300));
-  for (const x of items) if (!distinct.includes(x)) dropped.push({ item: x, reason: "news_same_event", message: "the same event as another item" });
-  const kept = distinct.filter((x) => {
+  // An item with no date is out first, under its own reason; only then are the dated ones merged to one per event. The other way round (merged first) kept an undated item as the event's one
+  // and dropped it for its date, and the dated items it had absorbed were reported as "the same event as another item" with no item left (owner, regression gate, Medipass).
+  const dated = items.filter((x) => {
     if (x.published_date) return true;
     dropped.push({ item: x, reason: "news_no_date", message: "no date in its address or its page" });
     return false;
   });
+  let kept = dedupeNewsEvents(dated, d.isOwnSite, (x) => (d.content(x.url) ?? "").slice(0, 300), (x) => !!d.companyName && !!acquirerIn(x.title, d.companyName));
+  // One purchase is one event, whatever the days between the reports (acquisition.ts purchaseEvents): its representative is the earliest report the writer's own rules accept, and it carries the
+  // event's buyer and status (a controlling stake said by any report of it) for the acquired field (owner, regression gate: Humi 2026-05-20 beside 2025-01-08; Dietly; UltraVox).
+  if (d.companyName) {
+    const today = new Date().toISOString().slice(0, 10);
+    const buyers = knownAcquirers(dated.map((x) => x.title), d.companyName, 1);
+    const eligible = (x: T) => !rowProblem({ field: "news", after: `${x.published_date} — ${x.title}`, source_url: x.url, quote: "" } as never, d.companyName!, today, 0, { acquirers: buyers });
+    for (const ev of purchaseEvents(dated, d.companyName, eligible, (x) => d.isOwnSite(x.url) || (() => { const st = roundSourceStanding(x.url, { companyName: d.companyName, headline: x.title, acquirers: buyers }); return st.kind === "allowed" && /^(?:party_release|wire_or_register|own_newsroom|company_site)$/.test(st.why); })())) {
+      kept = kept.filter((x) => !ev.members.includes(x));
+      Object.assign(ev.rep, { event_buyer: ev.buyer, event_majority: ev.majority });
+      kept.push(ev.rep);
+    }
+  }
+  for (const x of dated) if (!kept.includes(x)) dropped.push({ item: x, reason: "news_same_event", message: "the same event as another item" });
   return { kept, dropped };
 }

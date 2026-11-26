@@ -1,3 +1,4 @@
+import { aliasesOf } from "./aliases.ts";
 /**
  * lib/enrichment/newsRelevance.ts — what is not news about THIS company (owner, 2026-11-08, review 6).
  *   explainer          a guide or explainer, not a report of something that happened ("What to know before investing in
@@ -8,7 +9,7 @@
  * The second needs the article to say what the company makes; an article that does not is not judged (no verdict).
  */
 
-const EXPLAINER = /\b(roundup|round-up|weekly digest|newsletter|lessons from|lessons learned|tips for|tips to|how to|what (?:to know|is|are|you (?:need|should) (?:to )?know)|how to (?:buy|invest|trade|use)|should you (?:buy|invest)|is [^?]{0,50} a good (?:investment|buy)|price prediction|before investing|investing in|explained|explainer|beginner'?s guide|a guide to|everything you need to know|pros and cons|where to buy)\b/i;
+const EXPLAINER = /\b(roundup|round-up|weekly digest|newsletter|lessons from|lessons learned|tips for|tips to|how to|what (?:to know|is|are|you (?:need|should) (?:to )?know)|how to (?:buy|invest|trade|use)|should you (?:buy|invest)|is [^?]{0,50} a good (?:investment|buy)|price prediction|before investing|investing in|explained|explainer|beginner'?s guide|a guide to|everything you need to know|pros and cons|where to buy|(?:rules|ways|steps|reasons|things|tips|questions|mistakes|signs|factors)\s+(?:for|to|when)\s+(?:choosing|picking|selecting|buying|evaluating|investing)|how to choose|choosing (?:a|an|the)\b|(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:rules|ways|steps|reasons|things|tips|questions|mistakes|signs|factors)\b)\b/i;
 
 /** Tracking parameters (Google's srsltid, utm_*, fbclid…) are not part of an article's address. */
 export function stripTrackingParams(url: string): string {
@@ -25,18 +26,48 @@ export function stripTrackingParams(url: string): string {
  * that mentions this one: it counts only when the first paragraph names the company too. With no text to read, the
  * headline alone must name it (Datatruck's "IT Park Ventures: The First Venture Investments in Uzbekistan's Startups").
  */
+const TRAILING_DESCRIPTOR = new Set(["ai", "inc", "ltd", "llc", "gmbh", "corp", "co", "labs", "lab", "technologies", "technology", "tech", "systems", "medical", "applied", "group", "holdings", "solutions", "software", "bio", "health", "therapeutics", "robotics", "networks"]);
+
+/** The first paragraph of a page's text: after the reader's header lines (Title:, URL Source:, Published Time:), the first lines of real prose. */
+export function firstParagraph(content: string): string {
+  const prose = content.replace(/\r/g, "").split(/\n+/).map((l) => l.trim()).filter((l) => l.length >= 60 && !/^(?:Title|URL Source|Published Time|Markdown Content|Date):/i.test(l) && !/^(?:!?\[|https?:|\W*[-*]\s*\[)/.test(l));
+  return (prose[0] ?? content).slice(0, 500);
+}
+
+/** The name appears only as the end of a hyphenated name ("SW-Mototech" is not Mototech, owner round 10): every occurrence is glued to a word before it by a hyphen. */
+export function onlyAsHyphenatedSuffix(text: string, companyName: string): boolean {
+  const name = companyName.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+  const all = [...text.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])(?:[\\p{L}\\p{N}]+[-–])?${name}(?![\\p{L}\\p{N}])`, "giu"))];
+  return all.length > 0 && all.every((m) => /^[\p{L}\p{N}]+[-–]/u.test(m[0]));
+}
+
 export function namesCompanyUpFront(item: { title?: string | null; content?: string | null }, companyName: string): boolean {
+  // An alias of the company counts as the company (aliases.ts).
+  const aliases = aliasesOf(companyName);
+  if (aliases.length && aliases.some((a) => namesCompanyUpFrontOne(item, a))) return true;
+  return namesCompanyUpFrontOne(item, companyName);
+}
+
+function namesCompanyUpFrontOne(item: { title?: string | null; content?: string | null }, companyName: string): boolean {
   const core = companyName.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").replace(/\s+/g, " ").trim();
   if (!core) return true;
+  if (onlyAsHyphenatedSuffix(`${item.title ?? ""}\n${firstParagraph(item.content ?? "")}`, companyName)) return false;
   const flat = (s: string, poss: boolean) => ` ${s.toLowerCase().replace(/[’']s\b/g, poss ? " s" : "_poss").replace(/[^\p{L}\p{N} _]/gu, " ").replace(/\s+/g, " ")} `;
   const has = (t: string) => t.includes(` ${core} `) || t.includes(` ${core.replace(/ /g, "")} `);
   const title = item.title ?? "";
   if (has(flat(title, false))) return true; // named outright in the headline
+  // The short form a headline uses: the name without its trailing descriptor ("HIL Applied Medical" → "HIL", owner 2026-11-15, Calcalist's "Cancer Treatment Company HIL …").
+  const words = core.split(" ");
+  while (words.length > 1 && TRAILING_DESCRIPTOR.has(words[words.length - 1])) words.pop();
+  const short = words.join(" ");
+  if (short !== core && short.length >= 3 && !words.every((w) => TRAILING_DESCRIPTOR.has(w)) && flat(title, false).includes(` ${short} `)) return true;
   if (has(flat(title, true)) && flat(title, true).trim().startsWith(core)) return true; // "Speechify's new feature…"
-  return has(flat((item.content ?? "").slice(0, 400), true)); // else the first paragraph must name it
+  return has(flat(firstParagraph(item.content ?? ""), true)); // else the first paragraph must name it
 }
 
-export const isExplainer = (title: string | null | undefined): boolean => !!title && EXPLAINER.test(title);
+/** "The 8 Best ProtonMail Alternatives", "Top 10 …", "X alternatives": a list that mentions many companies, not news about one (owner, round 10: Posteo). */
+const LISTICLE = /\b\d+\s+(?:best|top|leading|greatest)\b|\b(?:best|top)\s+(?:\w+\s+){0,3}(?:alternatives?|competitors|apps|tools|services|providers|platforms|options|companies|startups|vendors)\b|\b\w+\s+alternatives?\b|\balternatives?\s+(?:to|for)\b|\btop\s+\d+\b/i;
+export const isExplainer = (title: string | null | undefined): boolean => !!title && (EXPLAINER.test(title) || LISTICLE.test(title));
 
 const GENERIC = new Set(["platform", "software", "company", "solution", "solutions", "technology", "technologies", "provider", "startup", "based", "leading", "global", "digital", "services", "service", "business", "businesses", "tools", "product", "products", "application", "applications", "system", "systems", "firm", "maker", "developer", "developers", "enterprise", "cloud", "online", "powered", "driven", "first", "next", "generation", "new", "that", "with", "from", "into", "their", "which", "your", "other"]);
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -54,10 +85,13 @@ export function describedProduct(title: string | null | undefined, content: stri
 }
 
 /** Why an article is not news about this company, or null. `description` is what the company is (its own text). */
-export function newsProblem(item: { title?: string | null; content?: string | null }, companyName: string, description: string): "explainer" | "different_product" | "not_about_the_company" | null {
+export function newsProblem(item: { title?: string | null; content?: string | null }, companyName: string, description: string, o: { acquirers?: string[] } = {}): "explainer" | "different_product" | "not_about_the_company" | null {
   if (isExplainer(item.title)) return "explainer";
   // Its headline or first paragraph must name the company (TechCrunch+ roundups mention it in passing).
   if (!namesCompanyUpFront(item, companyName)) return "not_about_the_company";
+  // When the company is known to have been bought by X (several headlines agree), a headline in which X buys it is about this company, whatever the headline calls it.
+  const t = (item.title ?? "").toLowerCase();
+  if (o.acquirers?.some((a) => a.length >= 3 && t.includes(a.toLowerCase())) && /\b(?:acqui|buys?|bought|sale of|sells?|sold|takeover|merge)/i.test(item.title ?? "")) return null;
   const product = describedProduct(item.title, item.content, companyName);
   if (!product) return null;
   const pw = words(product);
@@ -133,10 +167,20 @@ export function eventKeys(title: string): Set<string> {
 }
 
 const dayMs = 86_400_000;
-type EventItem = { title: string; published_date?: string | null };
+type EventItem = { title: string; url?: string; published_date?: string | null };
+const slugOf = (url?: string): string => { try { return decodeURIComponent(new URL(url ?? "").pathname.split("/").filter(Boolean).pop() ?? "").replace(/\.(html?|php)$/i, "").replace(/[-_+]/g, " "); } catch { return ""; } };
+const wordSet = (t: string) => new Set(t.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").split(/\s+/).filter((w) => w.length >= 4));
+/** The same day and the same story: the headline and the address's slug of one share at least half the words of the other's (Krilltech: one KPMG story at Business Wire and VentureBeat). */
+function sameStoryOnTheSameDay(a: EventItem, b: EventItem): boolean {
+  if (!a.published_date || a.published_date !== b.published_date) return false;
+  const wa = wordSet(`${a.title} ${slugOf(a.url)}`), wb = wordSet(`${b.title} ${slugOf(b.url)}`);
+  const shared = [...wa].filter((w) => wb.has(w)).length;
+  return wa.size >= 4 && wb.size >= 4 && shared / Math.min(wa.size, wb.size) >= 0.6;
+}
 /** Two reports of one event: the same amount or acquisition within 7 days, or when either has no date. */
 export function sameNewsEvent(a: EventItem, b: EventItem, leadA = "", leadB = ""): boolean {
   // The headline and the opening of the article: Bloomberg's "HeyGen Valued at $500 Million" is the $60M Series A.
+  if (sameStoryOnTheSameDay(a, b)) return true;
   const ka = eventKeys(`${a.title} ${leadA}`);
   const kb = eventKeys(`${b.title} ${leadB}`);
   if (![...ka].some((x) => kb.has(x))) return false;
@@ -148,13 +192,14 @@ export function sameNewsEvent(a: EventItem, b: EventItem, leadA = "", leadB = ""
  * One row per event (owner, 2026-11-09): the same amount, or the same acquisition, within 7 days — or when either has no
  * date — is one report. The one kept is dated over undated, then an outlet over the company's own site, then the first.
  */
-export function dedupeNewsEvents<T extends { title: string; url: string; published_date?: string | null }>(items: T[], isOwnSite: (url: string) => boolean, lead: (item: T) => string = () => ""): T[] {
+export function dedupeNewsEvents<T extends { title: string; url: string; published_date?: string | null }>(items: T[], isOwnSite: (url: string) => boolean, lead: (item: T) => string = () => "", prefer: (item: T) => boolean = () => false): T[] {
   const kept: T[] = [];
-  const rank = (x: T) => (x.published_date ? 0 : 2) + (isOwnSite(x.url) ? 1 : 0);
+  // Of one event the item that states it as the headline of the event is kept (an acquisition headline over "X expands with the Y acquisition"): its date is the announcement's.
+  const rank = (x: T) => (prefer(x) ? -1 : 0) + (x.published_date ? 0 : 2) + (isOwnSite(x.url) ? 1 : 0);
   for (const it of items) {
     const i = kept.findIndex((k) => sameNewsEvent(it, k, lead(it), lead(k)));
     if (i < 0) kept.push(it);
-    else if (rank(it) < rank(kept[i])) kept[i] = it;
+    else if (rank(it) < rank(kept[i]) || (rank(it) === rank(kept[i]) && prefer(it) && it.published_date && kept[i].published_date && it.published_date < kept[i].published_date)) kept[i] = it;   // of equal standing the earlier announcement
   }
   return kept;
 }
@@ -254,4 +299,23 @@ export function sourceHeadlineDetail(modelTitle: string, source: { title?: strin
   const carried = modelWords.length ? modelWords.filter((w) => hay.has(w)).length / modelWords.length : 0;
   if (carried >= 0.6) return { title: model, joined: false };
   return null;
+}
+
+/**
+ * A headline cut by a search result, completed from the article's own address when the address' slug carries the headline's words and goes on ("…expanding real" +
+ * ".../lone-wolf-acquires-liondesk-and-homespotter-expanding-real-estates-leading-end-to-end-technology-suite"): the whole headline, in the slug's words. Null otherwise.
+ */
+export function completeFromSlug(title: string, url: string): string | null {
+  let slug = "";
+  try { slug = decodeURIComponent(new URL(url).pathname.split("/").filter(Boolean).pop() ?? ""); } catch { return null; }
+  slug = slug.replace(/\.(?:html?|article|php|aspx?)$/i, "").replace(/[-_]\d{4,}$/, "").replace(/^\d{4,}[-_]/, "");
+  const sw = slug.toLowerCase().split(/[-_]+/).filter(Boolean);
+  const norm = (w: string) => w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  const tw = title.replace(/[…]|\.{3}$/g, "").split(/\s+/).map(norm).filter(Boolean);
+  // A short headline that is the whole of the address' slug is whole ("Alexforbes buys Outvest" at …/alexforbes-buys-outvest/): the address confirms it.
+  if (tw.length >= 3 && sw.length === tw.length && tw.every((w, i) => sw[i] === w)) return title.replace(/[…]|\.{3}$/g, "").trim();
+  if (tw.length < 4 || sw.length <= tw.length) return null;
+  // The title's words are the slug's first words (an apostrophe's s is glued in the slug: "estate's" → "estates").
+  if (!tw.every((w, i) => sw[i] === w)) return null;
+  return `${title.replace(/[…]|\.{3}$/g, "").trim()} ${sw.slice(tw.length).join(" ")}`.replace(/\s+/g, " ").trim();
 }

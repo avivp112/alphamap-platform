@@ -67,9 +67,11 @@ describe("isLeadershipRole — a leader needs a real role (BETA, 2026-10-26)", (
     expect(isLeadershipRole("Tech Lead and CTO")).toBe(true);
   });
   it("keeps executives", () => {
-    for (const r of ["CEO (Co-Founder)", "Chief Technology Officer", "VP Engineering", "SVP Sales", "EVP Operations", "CISO", "President", "Managing Director", "General Manager, EMEA", "Co-founder"]) {
+    for (const r of ["CEO (Co-Founder)", "Chief Technology Officer", "VP Engineering", "SVP Sales", "EVP Operations", "CISO", "President", "Managing Director", "General Manager, EMEA"]) {
       expect(isLeadershipRole(r)).toBe(true);
     }
+    // owner, round 10 (TymeBank): "Founder" is not a management title (founders have their own field), and a past role is no leadership
+    for (const r of ["Co-founder", "Founder", "CEO (former TymeBank CEO)", "Former CTO"]) expect(isLeadershipRole(r)).toBe(false);
   });
   it("the list is closed: Head of, Director, Manager, Lead, Chief of Staff are not leaders (owner, 2026-11-09)", () => {
     for (const r of ["Head of Product", "Director of Engineering", "Engineering Manager", "Lead Designer", "Chief of Staff", "Partner", "Advisor", "Board member"]) {
@@ -234,5 +236,84 @@ describe("a title beside the surname alone counts when the source names the pers
   it("a surname with no full name in the source is not enough; another role beside the surname is not the CEO", () => {
     expect(roleSupported("Nischal Shetty", "CEO", ["Shetty, the CEO of another startup, said"])).toBe(false);
     expect(roleSupported("Nischal Shetty", "CEO", ["Nischal Shetty started it. Shetty, the CTO, said"])).toBe(false);
+  });
+});
+
+import { mergeLeadersByPerson } from "./people";
+describe("one entry per person (owner, round 10)", () => {
+  it("merges accents and repeated names, joins titles", () => {
+    const r = mergeLeadersByPerson([{ name: "Rafał Chojecki", role: "CEO" }, { name: "Rafal Chojecki", role: "Co-founder" }, { name: "Ann Lee", role: "CFO" }]);
+    expect(r).toHaveLength(2);
+    expect(r[0].role).toBe("CEO · Co-founder");
+  });
+});
+
+import { foundersFromCards, foundersFromMentions, groundFounders, hasFounderWord } from "./people";
+describe("founders from titles, in any language (owner, round 10)", () => {
+  it("a full name beside Founder / Co-founder, in the owner's languages", () => {
+    const page = ["## Equipe", "Vitor Asseituno", "Cofundador e CEO", "", "Marcin Pióro, Współzałożyciel i CEO", "", "Przemysław Skokowski", "Założyciel", "", "Mike Frizell", "Co-Founder & CEO", "", "Rafał Chojecki — CEO, co-founder", "", "Jean Dupont — Co-fondateur", "Hans Müller, Gründer", "Marco Rossi — Cofondatore"].join("\n");
+    const got = foundersFromCards(page, "Acme").map((f) => f.name);
+    expect(got).toEqual(["Vitor Asseituno", "Marcin Pióro", "Przemysław Skokowski", "Mike Frizell", "Rafał Chojecki", "Jean Dupont", "Hans Müller", "Marco Rossi"]);
+    expect(foundersFromCards(page, "Acme")[0].quote).toContain("Cofundador");
+  });
+  it("not: another company's founder, founding engineer/member/team/partner, founder's office, a single name", () => {
+    const page = ["Ann Lee — Founder of Globex", "Bob Roy", "Founding engineer", "Cy Dee, Founding member", "Di Ray", "Founding partner", "Ed Fox — Founder's office", "Peter", "Co-founder"].join("\n");
+    expect(foundersFromCards(page, "Acme")).toEqual([]);
+    expect(hasFounderWord("Founding team")).toBe(false);
+    expect(hasFounderWord("Co-Founder & CEO")).toBe(true);
+    expect(hasFounderWord("مؤسس مشارك")).toBe(true);
+    expect(hasFounderWord("共同創業者")).toBe(true);
+    expect(hasFounderWord("מייסד שותף")).toBe(true);
+  });
+  it("'<Name>, founder of <this company>' in an article; of another company is a background, not a founder", () => {
+    expect(foundersFromMentions("Said Ann Lee, founder of Acme, in a statement on Tuesday.", "Acme").map((f) => f.name)).toEqual(["Ann Lee"]);
+    expect(foundersFromMentions("Said Ann Lee, founder of Globex, in a statement.", "Acme")).toEqual([]);
+  });
+  it("groundFounders keeps a model-proposed founder shown with the title on the company's own page, with the quote", () => {
+    const own = { url: "https://sami.com.br/equipe", content: "Equipe\nVitor Asseituno\nCofundador e CEO", source_type: "company_site" };
+    const r = groundFounders([{ name: "Vitor Asseituno" }, { name: "Ghost Person" }], [own], "Sami", []);
+    expect(r.kept.map((k) => k.name)).toEqual(["Vitor Asseituno"]);
+    expect(r.kept[0].grounded_quote).toContain("Cofundador");
+    expect(r.dropped.map((d) => d.name)).toEqual(["Ghost Person"]);
+  });
+});
+
+import { isLeadershipRole as isLeader2, canonicalTitle } from "./people";
+describe("titles that are a CEO's or a CFO's in another language (owner, round 10)", () => {
+  it("are leadership, and named with the English title beside", () => {
+    for (const r of ["Geschäftsführer", "Directeur Général", "Diretor-Presidente", "Prezes Zarządu", "Dyrektor Finansowy", "Diretor Financeiro", "Directeur Financier", "Finanzvorstand"]) expect(isLeader2(r)).toBe(true);
+    expect(canonicalTitle("Geschäftsführer")).toBe("CEO (Geschäftsführer)");
+    expect(canonicalTitle("Dyrektor Finansowy")).toBe("CFO (Dyrektor Finansowy)");
+    expect(canonicalTitle("CEO")).toBe("CEO");
+    expect(isLeader2("Head of Product")).toBe(false);
+  });
+});
+
+import { teamPeopleCount } from "./people";
+describe("a team page that shows N people (owner, round 10)", () => {
+  it("counts full names with a role, at least four", () => {
+    const page = ["Anna Kowalski", "CEO", "Robert Bishop", "Head of Product", "Carlos Mendes — Senior Engineer", "Diana Rayner", "VP Sales", "Edward Foxwell", "Designer"].join("\n");
+    expect(teamPeopleCount(page)?.count).toBe(5);
+    expect(teamPeopleCount("Anna Kowalski\nCEO\nRobert Bishop\nCTO")).toBeNull();
+    expect(teamPeopleCount("Our mission\nWe build boats\nContact us")).toBeNull();
+  });
+});
+
+import { cleanPersonName as cleanName1124 } from "./people.ts";
+import { describe as d1124, it as it1124, expect as expect1124 } from "vitest";
+d1124("a name with a dash is one name; a sentence after it is not part of it (owner, 2026-11-24: Lendo)", () => {
+  it1124("Al — Raee is Al-Raee and the role and the verb are cut", () => {
+    expect1124(cleanName1124("Osama Al — Raee, Chief Executive Officer and Co-Founder of Lendo, said:")).toBe("Osama Al-Raee");
+    expect1124(cleanName1124("Osama Al-Raee")).toBe("Osama Al-Raee");
+    expect1124(cleanName1124("Jane Doe, Jr.")).toBe("Jane Doe, Jr.");
+  });
+});
+
+import { foundersFromCards as cards1124 } from "./people.ts";
+d1124("a hyphen inside a name does not split name from title (owner, 2026-11-24: Lendo's Al-Raee)", () => {
+  it1124("Osama Al-Raee, Chief Executive Officer and Co-Founder of Lendo, said:  is no card; a real card with a hyphen name is kept whole", () => {
+    expect1124(cards1124("Osama Al-Raee, Chief Executive Officer and Co-Founder of Lendo, said:", "Lendo")).toEqual([]);
+    const r = cards1124("Osama Al-Raee - Co-Founder & CEO", "Lendo");
+    expect1124(r[0]?.name).toBe("Osama Al-Raee");
   });
 });

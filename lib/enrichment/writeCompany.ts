@@ -10,13 +10,19 @@
 // script's globals.
 // =============================================================================
 
+import type { LabeledSource } from "./sources.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CollectedCompany, V2StartupRow } from "./collect.ts";
-import { filterCrossSectorTags, type SectorTaxonomy } from "./extractProfile.ts";
+import { filterCrossSectorTags, industryFromTaxonomy, type SectorTaxonomy } from "./extractProfile.ts";
 import { normalizeUrlForMatch } from "./extractMarket.ts";
-import { normalizeIsoDate, appendNew, reconcileOnFile } from "./assemble.ts";
+import { normalizeIsoDate, appendNew, reconcileOnFile, isSameRound } from "./assemble.ts";
 import { fetchArticleOgImage } from "./ogImage.ts";
-import { cleanPeople, isFounderEntry, cleanFounderTitle } from "./people.ts";
+import { claimFromEvents, detectAcquisition } from "./acquisition.ts";
+import { detectClosure } from "./closure.ts";
+import { gateLines, parseRoundLine, pruneOfficeFromPatch } from "./reportGate.ts";
+import { ruleOf } from "./ruleRegistry.ts";
+import { brandFromTexts } from "./rowRules.ts";
+import { leaderRoleEvidence, cleanPeople, mergeFoundersByName, isFounderEntry, cleanFounderTitle, canonicalTitle } from "./people.ts";
 import { samePersonName } from "./linkedin.ts";
 import { checkHeadcountOutlier } from "./validation.ts";
 import { screenPoints, type HistoryPoint } from "./headcountHistory.ts";
@@ -28,8 +34,9 @@ import { countryFromLocationQuote } from "./location.ts";
 import { retireReplacedExecutives } from "./update.ts";
 import { MAJOR_CITIES } from "./majorCities.ts";
 import { normalizeForMatch } from "./evidence.ts";
-import { computeTotalRaised, computeDebtRaised } from "./rounds.ts";
+import { computeTotalRaised, computeDebtRaised, normalizeRoundType } from "./rounds.ts";
 import { computeFieldConfidence, meetsProfileThreshold } from "./confidence.ts";
+import { markTranslatedQuote, quotePair } from "./translate.ts";
 import { roundFieldEvidence, evidencedFillPatch } from "./roundProvenance.ts";
 import { startupChanges, roundInsertChange, roundUpdateChanges, type FieldChangeRow } from "./runChanges.ts";
 import { hintKey, type RoundHint } from "./hints.ts";
@@ -55,6 +62,14 @@ export const MAX_NEWS = 15;
 export const BULK_THRESHOLDS = { minProfileConfidence: 40, minFundingConfidence: 60 };
 
 let warnedNoEnrichedV2Column = false;
+
+/** The date column takes a full date: "2020-07" becomes 2020-07-01 (precision month) and "2020" 2020-01-01 (year) — batch 9: "invalid input syntax for type date: "2020-07"" lost a round. */
+export function roundDateForColumn(d: string | null | undefined): { date: string | null; precision: "month" | "year" | null } {
+  if (!d) return { date: null, precision: null };
+  if (/^\d{4}-\d{2}$/.test(d)) return { date: `${d}-01`, precision: "month" };
+  if (/^\d{4}$/.test(d)) return { date: `${d}-01-01`, precision: "year" };
+  return { date: d, precision: null };
+}
 
 export function bump(map: Map<string, number>, key: string): void {
   map.set(key, (map.get(key) ?? 0) + 1);
@@ -94,7 +109,15 @@ export interface WriteContext {
 }
 
 /** One field of a pilot: what is on file, what the run writes, and its source. */
-export interface PilotChange { field: string; before: unknown; after: unknown; source_url: string | null; quote: string | null }
+/** A round's date as far as its source states it: a year-only round shows the year, not 1 January (owner, 2026-11-14: KrillTech's "2024-01-01"). */
+export function dateByPrecision(date: string | null | undefined, precision: "day" | "month" | "year" | null | undefined): string {
+  if (!date) return "no date";
+  if (precision === "year") return `${date.slice(0, 4)} (year only)`;
+  if (precision === "month") return `${date.slice(0, 7)} (month only)`;
+  return date;
+}
+
+export interface PilotChange { /** The rule that made this value, when one did (ruleRegistry.ts). */ rule?: string; field: string; before: unknown; after: unknown; source_url: string | null; quote: string | null; quote_original?: string | null; quote_translated?: string | null; /** The structured value behind a report line, kept in the memory of verified sources (a round). */ payload?: unknown }
 
 /** The run totals Stage 10 adds to (the bulk run's RunSummary has these). */
 export interface WriteSummary {
@@ -176,8 +199,31 @@ export async function writeCollected(
   const planned = OPEN && !writesRounds(OPEN) ? { ...fullPlan, inserts: [], updates: [] } : fullPlan;
   // A round on file is filled only with values that have evidence behind them (an amount, valuation, date, lead investor):
   // an investor list has none, so it is never written as a fill (pilot dry run 2026-11-08: "Swan's existing investors").
+  // An acquisition is an exit, not a funding round (owner, round 10: ZestMoney "Acquired · DMI Finance" was a round row): it is taken out of the
+  // rounds and shown as its own proposal (acquired by, date) for the owner's review; the company's status is not changed by the pipeline.
+  // A round with no quote to stand on is not written (owner, round 10: Humi "Series A $10.9M · no date"): a round needs at least one evidence quote, and its amount its own.
+  const evidencedInserts = planned.inserts.filter((r) => {
+    const ev = roundFieldEvidence(r as never, funding.funding_rounds);
+    const ok = ev.length > 0 && (r.amount_raised == null || ev.some((e) => e.field === "amount_raised"));
+    if (!ok) { console.log(`    🚫  ${r.round_type} ${r.amount_raised != null ? `$${+(r.amount_raised / 1e6).toFixed(1)}M ` : ""}not written — no quote stands behind ${r.amount_raised != null ? "its amount" : "it"}.`); bump(summary.droppedByReason, "round_without_quote"); }
+    return ok;
+  });
+  // Two inserts that are one raise (the same stage, or the same type and sum with one of them undated) are one row: the dated one, with what the other adds (owner, round 10:
+  // Mintifi Series D $110M was written twice, once "no date").
+  for (let i = evidencedInserts.length - 1; i > 0; i--) {
+    const twin = evidencedInserts.slice(0, i).findIndex((o) => isSameRound(o, evidencedInserts[i]) || (normalizeRoundType(o.round_type) === normalizeRoundType(evidencedInserts[i].round_type) && o.amount_raised != null && evidencedInserts[i].amount_raised != null && Math.abs(o.amount_raised - evidencedInserts[i].amount_raised!) / o.amount_raised < 0.01));
+    if (twin < 0) continue;
+    const keep = evidencedInserts[twin], other = evidencedInserts[i];
+    for (const k of Object.keys(other) as Array<keyof typeof other>) if (keep[k] == null || keep[k] === "") (keep as Record<string, unknown>)[k as string] = other[k];
+    console.log(`    🧹  ${other.round_type} ${other.amount_raised ?? ""} listed twice in the plan — one row written.`);
+    bump(summary.droppedByReason, "round_duplicate_in_plan");
+    evidencedInserts.splice(i, 1);
+  }
+  const exitEvents = evidencedInserts.filter((r) => r.round_type === "Acquired");
+  for (const r of exitEvents) { console.log(`    🏁  Acquisition is not a funding round — "${r.lead_investor ?? "buyer not named"}", ${r.announcement_date ?? "undated"}: shown as an acquired proposal, not written as a round.`); bump(summary.droppedByReason, "acquisition_not_a_round"); }
   const plan = {
     ...planned,
+    inserts: evidencedInserts.filter((r) => r.round_type !== "Acquired"),
     updates: planned.updates.flatMap((u) => {
       const patch = evidencedFillPatch(u.patch as Record<string, unknown>, funding.funding_rounds);
       if (!patch) { bump(summary.droppedByReason, "round_fill_without_evidence"); return []; }
@@ -189,6 +235,8 @@ export async function writeCollected(
 
   // ── Stage 10: write ──────────────────────────────────────────────────────
   const patch: Record<string, unknown> = {};
+  // A round's type stated by another source of the same event (gateLines `cited`): the source and quote the type's provenance rests on, by plan insert.
+  const typeCites = new Map<unknown, { quote: string; source_url: string }>();
   const fieldWrites: Array<{ field: string; value: unknown; source_id: string; evidence_quote: string; source_type: SourceType }> = [];
   const provenance = (field: string, value: unknown, ev: { source_id: string; evidence_quote: string } | undefined) => {
     if (ev) fieldWrites.push({ field, value, source_id: ev.source_id, evidence_quote: ev.evidence_quote, source_type: sourceTypeFor(ev.source_id) ?? "model_inferred" });
@@ -290,8 +338,9 @@ export async function writeCollected(
     patch.value_proposition = valueProposition;
     refresh.delete("value_proposition");
   }
-  if (!row.industry && profile.profile.industry && descEvidence) { patch.industry = profile.profile.industry; provenance("profile.industry", profile.profile.industry, descEvidence); }
-  else if (!row.industry && profile.profile.industry) patch.industry = profile.profile.industry;   // no source: the guard below drops it
+  const industryValue = industryFromTaxonomy(profile.profile.industry, profile.profile.sector_name, taxonomy);
+  if (!row.industry && industryValue && descEvidence) { patch.industry = industryValue; provenance("profile.industry", industryValue, descEvidence); }
+  else if (!row.industry && industryValue) patch.industry = industryValue;   // no source: the guard below drops it
   if (!row.website && profile.profile.website) {
     const websiteResult = validateWebsiteCandidate(profile.profile.website.value, row.id, startupByDomain);
     if (websiteResult.website) {
@@ -313,10 +362,21 @@ export async function writeCollected(
     if (sid) { patch.sector_id = sid; provenance("profile.sector_id", profile.profile.sector_name, descEvidence); }
   }
   // Sub-sector tags (startup_sub_sectors): additive across runs, like v1.
-  const proposedTags = [...new Set([
+  const allProposed = [...new Set([
     ...(profile.profile.sub_sector_name ? [profile.profile.sub_sector_name] : []),
     ...(profile.profile.sub_sector_names ?? []),
   ])];
+  // Tags are sub-sectors only: a parent category ("AI & ML", "Consumer & Media") proposed as a tag is not one (owner, round 9).
+  const isGeneral = (t: string) => /\/\s*general$/i.test(t);
+  const proposedTags = allProposed.filter((t) => taxonomy.subNames.includes(t) && !isGeneral(t));
+  for (const t of allProposed.filter((t) => !taxonomy.subNames.includes(t))) {
+    console.log(`    🏷️   Tag "${t}" dropped — it is a main sector, not a sub-sector; tags come only from the sub-sector list.`);
+    bump(summary.droppedByReason, "tag_not_a_sub_sector");
+  }
+  for (const t of allProposed.filter((t) => taxonomy.subNames.includes(t) && isGeneral(t))) {
+    console.log(`    🏷️   Tag "${t}" dropped — a "General" sub-sector says nothing about the company; it is a classification fallback, not a tag.`);
+    bump(summary.droppedByReason, "tag_general");
+  }
   const tagFilter = filterCrossSectorTags(
     proposedTags, profile.profile.sector_name, taxonomy,
     [profile.profile.description, profile.profile.value_proposition, profile.profile.industry, row.description].filter(Boolean).join(" "),
@@ -332,14 +392,79 @@ export async function writeCollected(
     bump(summary.droppedByReason, "tag_unsupported");
   }
   const tagNames = supported.kept.map((k) => k.tag);
+  // The sub-sector the sector was classified into is the first tag, on the evidence the sector stands on — the verified description (owner, round 10); never a "/ General".
+  const mainSub = profile.profile.sub_sector_name;
+  if (mainSub && !isGeneral(mainSub) && taxonomy.subNames.includes(mainSub) && !tagNames.includes(mainSub) && profile.profile.sector_name && (profile.profile.description_sentences?.length ?? 0) > 0) {
+    tagNames.unshift(mainSub);
+    console.log(`    🏷️   "${mainSub}" is the sector's own sub-sector: entered as the first tag, on the evidence of the verified description.`);
+    bump(summary.droppedByReason, "tag_from_sector");
+  }
+  // Tags, with the fate of each (owner, 2026-11-15: five companies with a sector and no tags, nothing said why).
+  console.log(`    🏷️   Tags: ${proposedTags.length ? `proposed ${proposedTags.join(", ")}` : "the classification proposed none (no sub-sector among the main answer and the other fields)"}; kept ${tagNames.length ? tagNames.join(", ") : "none"}${tagFilter.dropped.length ? `; other sector without support in the description: ${tagFilter.dropped.join(", ")}` : ""}${supported.dropped.length ? `; no sentence of an allowed page carries: ${supported.dropped.join(", ")}` : ""}.`);
   const tagSectorIds: string[] = [];
   for (const tagName of tagNames) {
     const { data: tagId } = await supabase.rpc("sector_id_by_name", { p_name: tagName });
     if (tagId) tagSectorIds.push(tagId as string);
   }
 
+  // A purchase (owner, round 10): status acquired / majority_acquired, who bought, when (the date of the headline), and the name it trades under afterwards — from the company's
+  // accepted news alone, only for a company still "active" on file, and only when the acquired field is open. Each value has its provenance row: the headline's page.
+  {
+    const hit = row.status === "active" || row.status == null
+      ? claimFromEvents(market.news ?? []) ?? detectAcquisition((market.news ?? []).map((n) => ({ url: n.url, title: n.title, content: "", date: n.published_date ?? null })), row.name)
+      : null;
+    if (hit) {
+      let src = allSources.find((x) => x.url === hit.url);
+      if (!src) {
+        src = { source_id: `A${allSources.length + 1}`, source_type: "news", url: hit.url, title: hit.quote, content: hit.quote, provider: "serper", query_label: "acquired_news" } as LabeledSource;
+        allSources.push(src); sourceById.set(src.source_id, src);
+      }
+      const ev = { source_id: src.source_id, evidence_quote: hit.quote };
+      patch.status = hit.status; provenance("status", hit.status, ev);
+      patch.acquired_by = hit.acquirer; provenance("acquired_by", hit.acquirer, ev);
+      if (hit.date) { patch.exit_date = hit.date; provenance("exit_date", hit.date, ev); }
+      const descTexts = [profile.profile.description ?? "", ...(profile.profile.description_sentences ?? []).map((x) => x.text)];
+      const brand = brandFromTexts(row.name, descTexts);
+      if (brand) {
+        const d = profile.profile.description_sentences?.find((x) => x.text.includes(brand));
+        const dsrc = d?.source_ids?.[0] ? sourceById.get(d.source_ids[0]) : undefined;
+        patch.brand_after_acquisition = brand;
+        provenance("brand_after_acquisition", brand, { source_id: dsrc?.source_id ?? src.source_id, evidence_quote: d?.quote ?? d?.text ?? hit.quote });
+      }
+      console.log(`    🏁  ${hit.status === "acquired" ? "Acquired" : "Majority-acquired"} by ${hit.acquirer} (${hit.date ?? "undated"})${brand ? `; now ${brand}` : ""} — from "${hit.quote.slice(0, 80)}"`);
+    }
+  }
+
+  // A closure (owner, batch 6): status = closed, the headline's date, the page and the headline as provenance — from the accepted news alone, only for a company still active, and never together with a purchase.
+  {
+    const newsArticles = (market.news ?? []).map((n) => ({ url: n.url, title: n.title, content: "", date: n.published_date ?? null }));
+    const shut = (row.status === "active" || row.status == null) && !detectAcquisition(newsArticles, row.name) ? detectClosure(newsArticles, row.name) : null;
+    if (shut) {
+      let src = allSources.find((x) => x.url === shut.url);
+      if (!src) {
+        src = { source_id: `A${allSources.length + 1}`, source_type: "news", url: shut.url, title: shut.quote, content: shut.quote, provider: "serper", query_label: "closed_news" } as LabeledSource;
+        allSources.push(src); sourceById.set(src.source_id, src);
+      }
+      const ev = { source_id: src.source_id, evidence_quote: shut.quote };
+      patch.status = "closed"; provenance("status", "closed", ev);
+      if (shut.date) { patch.exit_date = shut.date; provenance("exit_date", shut.date, ev); }
+      console.log(`    🏁  Closed (${shut.date ?? "undated"}) — from "${shut.quote.slice(0, 80)}"`);
+    }
+  }
+
+  // What the registers hold, as columns of their own (registerRecord.ts): never the headquarters, never the founding year.
+  if (collected.registry) {
+    const { record, sourceId, dateSourceId } = collected.registry;
+    const ev = { source_id: sourceId, evidence_quote: record.primary.quote };
+    patch.legal_name = record.legal_name; provenance("legal_name", record.legal_name, ev);
+    patch.company_number = record.company_number; provenance("company_number", record.company_number, ev);
+    patch.incorporation_jurisdiction = record.incorporation_jurisdiction; provenance("incorporation_jurisdiction", record.incorporation_jurisdiction, ev);
+    if (record.registered_address) { patch.registered_address = record.registered_address; provenance("registered_address", record.registered_address, ev); }
+    if (record.incorporation_date) { patch.incorporation_date = record.incorporation_date; provenance("incorporation_date", record.incorporation_date, { source_id: dateSourceId, evidence_quote: (record.dateFrom ?? record.primary).quote }); }
+  }
+
   // Leadership & founders (additive merge, never destructive)
-  const founderCandidates = cleanPeople((profile.profile.founders ?? []).map((f) => keepBio({
+  const founderCandidates = cleanPeople(mergeFoundersByName(profile.profile.founders ?? []).map((f) => keepBio({
     name: f.name, title: cleanFounderTitle(f.title, row.name), bio: f.bio, linkedin_url: f.linkedin_url?.value,
     had_prior_exit: f.had_prior_exit, elite_background: f.elite_background, notable_pedigree: f.notable_pedigree,
     ...(f.background?.length && (!OPEN || writesFounderBackground(OPEN)) ? { background: f.background } : {}),
@@ -361,11 +486,37 @@ export async function writeCollected(
     // (A cleaned title can be null; the founders column takes it as is.)
     setIfChanged("founders", cleanPeople(mergePeople(row.founders ?? [], aligned as NonNullable<V2StartupRow["founders"]>)), row.founders);
   }
+  // LinkedIn links of the founders (owner, 2026-11-24): a link only, filed inside the founder's entry, with its own report line and provenance row; never a source of a field.
+  const founderLinkRows: Array<{ name: string; url: string; source_url: string; quote: string }> = [];
+  if (collected.personLinks?.length && (!OPEN || OPEN.includes("founder_linkedin"))) {
+    const base = ((patch.founders ?? row.founders ?? []) as Array<{ name?: string; linkedin_url?: string | null }>);
+    let changed = false;
+    const next = base.map((f) => {
+      const l = collected.personLinks!.find((x) => x.kind === "founder" && f?.name && samePersonName(x.name, f.name));
+      if (!l || f.linkedin_url) return f;
+      changed = true; founderLinkRows.push({ name: f.name ?? l.name, url: l.url, source_url: l.source_url, quote: l.quote });
+      return { ...f, linkedin_url: l.url };
+    });
+    if (changed) patch.founders = next;
+  }
   // The board is its own group and its own field (owner, 2026-11-09): carried through as group "board" (it was dropped here, so board
   // members were written as leaders with the role "Board member"), and written only when the board field is open.
   const boardOk = !OPEN || writesBoard(OPEN);
-  const cleanLeadership = cleanPeople((profile.leadership ?? []).filter((l) => l.group !== "board" || boardOk).map((l) => keepBio({
-    name: l.name, role: l.role, bio: l.bio, linkedin_url: l.linkedin_url?.value, joined_date: l.joined_date,
+  // An executive role is written only when a source says it next to the person's name (owner, round 10: "Founder & CEO" on a quote that says "founder"; "CEO" on a page title).
+  const roleEvidence = new Map<string, { url: string; quote: string }>();
+  const roleSources = allSources.filter((x) => profileSourceAllowed(x, row.name));
+  // (A collection stored by a user check keeps no page text: nothing can be checked there, so nothing is dropped.)
+  const canCheckRoles = roleSources.some((x) => (x.content ?? "").length > 40);
+  const leadersWithRole = (profile.leadership ?? []).filter((l) => {
+    if (l.group === "board" || !canCheckRoles) return true;
+    const ev = leaderRoleEvidence(l.name, l.role ?? "", roleSources);
+    if (ev) { roleEvidence.set(l.name, ev); return true; }
+    console.log(`    🚫  leader ${l.name} (${l.role}) not written — no source states the role next to the name`);
+    bump(summary.droppedByReason, "leader_role_not_in_source");
+    return false;
+  });
+  const cleanLeadership = cleanPeople(leadersWithRole.filter((l) => l.group !== "board" || boardOk).map((l) => keepBio({
+    name: l.name, role: canonicalTitle(l.role), bio: l.bio, linkedin_url: l.linkedin_url?.value, joined_date: l.joined_date,
     had_prior_exit: l.had_prior_exit, elite_background: l.elite_background, notable_pedigree: l.notable_pedigree,
     ...(l.group === "board" ? { group: "board" as const } : {}),
   })));
@@ -601,6 +752,14 @@ export async function writeCollected(
       headcountPoints.splice(i, 1);
     }
   }
+  // No source, no value: a point without the address it was read from is not written (a point of the run's own register/archive collectors carries one too).
+  for (let i = headcountPoints.length - 1; i >= 0; i--) {
+    if (!headcountPoints[i].sourceUrl) {
+      console.log(`    ⚠️  Headcount point ${headcountPoints[i].count}@${headcountPoints[i].date} dropped — no source address.`);
+      bump(summary.droppedByReason, "headcount_point_no_source");
+      headcountPoints.splice(i, 1);
+    }
+  }
   // Jumps and repeats within the series (headcountHistory.ts): what is dropped here is named; two points that
   // contradict each other in one month stay, both, with their types.
   {
@@ -615,7 +774,8 @@ export async function writeCollected(
   // The same check on points already on file — an earlier run wrote
   // Gladia's 70,000 point; it shouldn't stay on the growth chart forever.
   const finalHeadcount = (patch.employee_count as number | undefined) ?? row.employee_count;
-  const { data: hcOnFile } = await supabase.from("headcount_history").select("id, employee_count, snapshot_date").eq("startup_id", row.id);
+  // REGRESSION=1 runs as if nothing were on file (bulk_enrich_v2.ts).
+  const { data: hcOnFile } = process.env.REGRESSION === "1" ? { data: [] as Array<{ id: string; employee_count: number; snapshot_date: string }> } : await supabase.from("headcount_history").select("id, employee_count, snapshot_date").eq("startup_id", row.id);
   const badHeadcountOnFile = ((hcOnFile ?? []) as Array<{ id: string; employee_count: number; snapshot_date: string }>).filter((h) =>
     (!OPEN || writesHeadcount(OPEN)) && !!checkHeadcountOutlier(h.employee_count, totalRaisedEstimate, foundedForChecks) || (finalHeadcount != null && finalHeadcount > 0 && h.employee_count > finalHeadcount * 10),
   );
@@ -624,13 +784,18 @@ export async function writeCollected(
     bump(summary.droppedByReason, "on_file_contradiction_fixed");
   }
 
+  let headcountLowerBoundNow = false;
   // The current headcount and its range come from the history (owner, 2026-11-12): the latest point when it is from the last 24 months,
   // the bracket of that number ("75+" by its lower bound). No separate source.
   {
     const cur = currentFromHistory(headcountPoints.map((p) => ({ date: p.date, count: p.count, lowerBound: p.lowerBound, countMax: p.countMax })));
     if (cur) {
+      headcountLowerBoundNow = cur.lowerBound;
       setIfChanged("employee_count", cur.count, row.employee_count);
-      setIfChanged("employee_range", cur.range, row.employee_range);
+      // A count of people shown on a page ("observed", a lower bound) gives no range with a ceiling (owner, batch 7: Sycamore, "5 people" → 1-10).
+      const fromObserved = cur.lowerBound && headcountPoints.find((p) => p.date === cur.date && p.count === cur.count)?.pointType === "observed";
+      // A lower bound ("150+") has no ceiling and may be over the range's: no range is derived from it, except the open top range (owner, batch 8).
+      if (!fromObserved && !(cur.lowerBound && cur.range !== "10001+")) setIfChanged("employee_range", cur.range, row.employee_range);
       const from = headcountPoints.find((p) => p.date === cur.date && p.count === cur.count);
       let sid = from?.sourceUrl ? [...sourceById.entries()].find(([, x]) => x.url === from.sourceUrl)?.[0] : undefined;
       // A register, a plan or an archived copy is not among the pages read: it is registered as a source of its own, with the point's quote.
@@ -645,7 +810,7 @@ export async function writeCollected(
   if (profile.metrics.growth_trend) setIfChanged("growth_trend", profile.metrics.growth_trend, row.growth_trend);
 
   // ── The tracker is the gate (owner, 2026-11-05) ──
-  // Only the review fields open in eval/field_review_tracker.csv are written — in a pilot and in a
+  // Only the open fields (the core fields, tiers.ts; the old tracker is cancelled) are written — in a pilot and in a
   // wide run alike, PHASE1_PASSED or not. What is held back is named in the report. A pilot also
   // writes no tags, hints, domains, timestamps or score.
   const reportLines: PilotChange[] = [];
@@ -654,7 +819,7 @@ export async function writeCollected(
     for (const k of Object.keys(patch)) delete patch[k];
     Object.assign(patch, cut.patch);
     for (let i = fieldWrites.length - 1; i >= 0; i--) {
-      if (!(fieldWrites[i].field.replace(/^(profile|metrics)\./, "") in patch)) fieldWrites.splice(i, 1);
+      if (!(fieldWrites[i].field.replace(/^(profile|metrics|market)\./, "") in patch)) fieldWrites.splice(i, 1);
     }
     if (!writesEmployeeHistory(OPEN)) headcountPoints.length = 0;
     if (!patch.news) newsAdded = 0;
@@ -669,17 +834,20 @@ export async function writeCollected(
     const rowOf = row as unknown as Record<string, unknown>;
     const newOf = <T,>(next: unknown, prev: unknown, same: (a: T, b: T) => boolean): T[] =>
       ((next ?? []) as T[]).filter((n) => !((prev ?? []) as T[]).some((p) => p && same(p, n)));
+    // A leader's LinkedIn link is a candidate value (candidate_values), not a column.
+    for (const l of collected.personLinks ?? []) if (l.kind === "leader") reportLines.push({ field: "leader_linkedin", before: null, after: `${l.name} — ${l.url}`, source_url: l.source_url, quote: l.quote });
     for (const k of Object.keys(patch)) {
-      const fw = fieldWrites.find((w) => w.field.replace(/^(profile|metrics)\./, "") === k);
+      const fw = fieldWrites.find((w) => w.field.replace(/^(profile|metrics|market)\./, "") === k);
       const one = (field: string, after: string, source_url: string | null, quote: string | null = null) => reportLines.push({ field, before: null, after, source_url, quote });
       if (k === "news") {
-        for (const n of newOf<{ url?: string; title: string; published_date?: string | null }>(patch.news, rowOf.news, (a, b) => a.url === b.url)) one("news", `${n.published_date || "no date"} — ${n.title}`, n.url ?? null);
+        for (const n of newOf<{ url?: string; title: string; title_original?: string; published_date?: string | null }>(patch.news, rowOf.news, (a, b) => a.url === b.url)) one("news", `${n.published_date || "no date"} — ${n.title}`, n.url ?? null, n.title_original ?? null);
       } else if (k === "founders") {
         for (const f of newOf<{ name: string; title?: string | null; bio?: string | null }>(patch.founders, rowOf.founders, (a, b) => samePersonName(a.name ?? "", b.name))) {
-          const grounded = (profile.profile.founders ?? []).find((g) => samePersonName(g.name, f.name)) as { grounded_url?: string | null } | undefined;
-          one("founder", `${f.name}${f.title ? ` — ${f.title}` : ""}`, grounded?.grounded_url ?? null);
+          const grounded = (profile.profile.founders ?? []).find((g) => samePersonName(g.name, f.name)) as { grounded_url?: string | null; grounded_quote?: string } | undefined;
+          one("founder", `${f.name}${f.title ? ` — ${f.title}` : ""}`, grounded?.grounded_url ?? null, grounded?.grounded_quote ?? null);
           if (f.bio) one("founder_bio", `${f.name}: ${f.bio}`, grounded?.grounded_url ?? null);
         }
+        for (const l of founderLinkRows) one("founder_linkedin", `${l.name} — ${l.url}`, l.source_url, l.quote);
         for (const f of (patch.founders ?? []) as Array<{ name: string; background?: Array<{ kind: string; organization: string; role?: string; source_id: string; evidence_quote: string }> }>) {
           const filed = ((rowOf.founders ?? []) as Array<{ name?: string; background?: Array<{ kind: string; organization: string }> }>).find((x) => samePersonName(x.name ?? "", f.name))?.background ?? [];
           for (const b of f.background ?? []) {
@@ -690,11 +858,12 @@ export async function writeCollected(
       } else if (k === "leadership") {
         for (const l of newOf<{ name: string; role?: string | null; group?: string | null; bio?: string | null }>(patch.leadership, rowOf.leadership, (a, b) => samePersonName(a.name ?? "", b.name))) {
           // The page that names the person: the bio's allowed source, else the first allowed page that does (so the value has a source on file).
+          const roleEv = [...roleEvidence].find(([n]) => samePersonName(n, l.name))?.[1];
           const ids = (profile.leadership ?? []).find((x) => samePersonName(x.name, l.name))?.bio_source_ids;
-          const src = ((ids ?? []).map((id) => sourceById.get(id)).find((x) => x && profileSourceAllowed(x, row.name)))
+          const src = (roleEv ? allSources.find((x) => x.url === roleEv.url) : undefined) ?? ((ids ?? []).map((id) => sourceById.get(id)).find((x) => x && profileSourceAllowed(x, row.name)))
             ?? allSources.find((x) => profileSourceAllowed(x, row.name) && `${x.title ?? ""} ${x.content ?? ""}`.toLowerCase().includes((l.name.trim().split(/\s+/).pop() ?? l.name).toLowerCase()));
           const last = (l.name.trim().split(/\s+/).pop() ?? l.name).toLowerCase();
-          const quote = src ? (`${src.title ?? ""}. ${src.content ?? ""}`.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/).find((sen) => sen.length <= 300 && sen.toLowerCase().includes(last)) ?? null) : null;
+          const quote = roleEv ? roleEv.quote : src ? (`${src.title ?? ""}. ${src.content ?? ""}`.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/).find((sen) => sen.length <= 300 && sen.toLowerCase().includes(last)) ?? null) : null;
           // The board is its own group, never a leader (owner, 2026-11-09): reported, marked and verified as "board".
           one((l as { group?: string | null }).group === "board" ? "board" : "leader", `${l.name} — ${l.role ?? ""}${l.bio ? ` · ${l.bio}` : ""}`, src?.url ?? null, quote);
         }
@@ -707,7 +876,7 @@ export async function writeCollected(
       } else if (k === "patents") {
         for (const pt of newOf<{ patent_number?: string | null; title: string; url?: string | null }>(patch.patents, rowOf.patents, (a, b) => a.patent_number === b.patent_number)) one("patent", `${pt.patent_number ?? ""} ${pt.title}`.trim(), pt.url ?? null);
       } else if (k === "offices") {
-        for (const o of newOf<{ city: string; country?: string | null; source_url?: string | null }>(patch.offices, rowOf.offices, (a, b) => a.city === b.city && (a.country ?? null) === (b.country ?? null))) one("office", [o.city, o.country].filter(Boolean).join(", "), o.source_url ?? null);
+        for (const o of newOf<{ city: string; country?: string | null; source_url?: string | null }>(patch.offices, rowOf.offices, (a, b) => a.city === b.city && (a.country ?? null) === (b.country ?? null))) one("office", [o.city, o.country].filter(Boolean).join(", "), o.source_url ?? null, (profile.profile.offices ?? []).find((x) => x.city === o.city)?.evidence_quote ?? null);
       } else if (k === "office_countries" || k === "patent_count" || k === "patent_fields") {
         // Derived from offices / patents: written beside them, not a value of their own.
       } else {
@@ -718,22 +887,112 @@ export async function writeCollected(
           console.log(`    🚫  ${fieldOfColumn(k) ?? k} not written — no source on file for "${String(patch[k]).slice(0, 60)}".`);
           bump(summary.droppedByReason, "no_source_no_value");
           delete patch[k];
-          for (let i = fieldWrites.length - 1; i >= 0; i--) if (fieldWrites[i].field.replace(/^(profile|metrics)\./, "") === k) fieldWrites.splice(i, 1);
+          for (let i = fieldWrites.length - 1; i >= 0; i--) if (fieldWrites[i].field.replace(/^(profile|metrics|market)\./, "") === k) fieldWrites.splice(i, 1);
           continue;
         }
-        reportLines.push({ field: fieldOfColumn(k) ?? k, before: rowOf[k] ?? null, after: patch[k], source_url: sourceUrl, quote: fw?.evidence_quote ?? null });
+        // A sector is shown by its name, not by the id the column holds, and once: the industry column carries the parent sector (one report line for both).
+        if (k === "industry" && "sector_id" in patch) continue;
+        const shown = k === "sector_id" ? `${profile.profile.sector_name ?? patch[k]}${patch.industry && patch.industry !== profile.profile.sector_name ? ` (industry: ${patch.industry})` : ""}` : k === "employee_count" && headcountLowerBoundNow ? `${patch[k]}+` : patch[k];
+        reportLines.push({ field: fieldOfColumn(k) ?? k, before: rowOf[k] ?? null, after: shown, source_url: sourceUrl, quote: fw?.evidence_quote ?? null });
       }
     }
     for (const r of plan.inserts) {
-      const amount = r.amount_raised == null ? "amount not disclosed" : `$${+(r.amount_raised / 1e6).toFixed(1)}M`;
-      reportLines.push({ field: "round", before: null, after: `${r.round_type} ${amount} · ${r.announcement_date ?? "no date"}${r.lead_investor ? ` · lead ${r.lead_investor}` : ""}`, source_url: r.source_url ?? null, quote: null });
+      const amount = r.amount_raised == null ? "amount not disclosed" : `$${+(r.amount_raised / 1e6).toFixed(2)}M`;
+      // The quote that states the amount, so the report (and report_lint) can see the figure and its unit in the source's own words (owner, round 10: Hydrostor "$25M" against "$250 million").
+      const amountEvidence = roundFieldEvidence(r as never, funding.funding_rounds).find((e) => e.field === "amount_raised");
+      reportLines.push({ field: "round", before: null, after: `${r.round_type} ${amount} · ${dateByPrecision(r.announcement_date, r.announcement_date_precision)}${r.lead_investor ? ` · lead ${r.lead_investor}` : ""}`, source_url: r.source_url ?? null, quote: amountEvidence?.evidence_quote ?? null,
+        payload: { round: r, evidence: roundFieldEvidence(r as never, funding.funding_rounds).map((e) => ({ field: e.field, value: e.value, source_url: sourceById.get(e.source_id)?.url ?? null, quote: e.evidence_quote })) } });
     }
+    if (collected.websiteProposal) reportLines.push({ field: "website_proposal", before: collected.websiteProposal.from, after: `website = ${collected.websiteProposal.to} — the address on file is another business or unreadable; for review, not applied`, source_url: collected.websiteProposal.to, quote: collected.websiteProposal.reason });
+    const renamedTo = (profile.profile as { rebrand_to?: string }).rebrand_to;
+    if (renamedTo) reportLines.push({ field: "name_proposal", before: row.name, after: `name = "${renamedTo}", former_names += "${row.name}" — the same company renamed; for review, not applied`, source_url: row.website ? (/^https?:/.test(row.website) ? row.website : `https://${row.website}`) : null, quote: null });
     for (const u of plan.updates) {
       // A filled round field shows the source of the evidence it was filled from (it had "no source" in the report; the provenance row had it all along).
       const ev = roundFieldEvidence(u.patch, funding.funding_rounds)[0];
       reportLines.push({ field: "round", before: "(on file)", after: `${u.round_type} filled: ${JSON.stringify(u.patch)}`, source_url: ev ? sourceById.get(ev.source_id)?.url ?? null : null, quote: ev?.evidence_quote ?? null });
     }
-    for (const h of headcountPoints) reportLines.push({ field: "headcount_history", before: null, after: `${h.count} on ${h.date} (${h.pointType ?? "observed"})`, source_url: null, quote: null });
+    // A quote that stands in the machine translation of a page says so (translate.ts).
+    // Both quotes of a value (owner, round 10): the page's own words and, when the page was translated, the English it was verified against.
+    for (const l of reportLines) {
+      if (!l.quote || !l.source_url) continue;
+      const src = allSources.find((x) => x.url === l.source_url);
+      const pair = quotePair(l.quote, src);
+      l.quote_original = pair.original; l.quote_translated = pair.translated;
+      l.quote = markTranslatedQuote(l.quote, src);
+    }
+    // A description that is a verified "what" only is reported apart, so the coverage tells complete from what-only (owner, 2026-11-14).
+    if (profile.profile.description_complete === false) for (const l of reportLines) if (l.field === "description") l.field = "description_what_only";
+    // Tags (sub-sector tags): one line, with the sentence of an allowed page that carries the first (they were never in the report: "tags 0").
+    if (tagSectorIds.length > 0) {
+      // A tag from the sector's own sub-sector stands on the verified description: its source and sentence are the tag's (a tag with no source was a lint error).
+      const ds = profile.profile.description_sentences?.[0];
+      const dsUrl = ds ? sourceById.get(ds.source_ids?.[0] ?? "")?.url ?? null : null;
+      reportLines.push({ field: "tags", before: null, after: tagNames.join(", "), source_url: sourceById.get(supported.kept[0]?.id ?? "")?.url ?? dsUrl, quote: supported.kept[0]?.quote ?? ds?.quote ?? null });
+    }
+    else if (tagNames.length > 0) console.log(`    ⏸️   tags held back — field not open: ${tagNames.join(", ")}`);
+    for (const h of headcountPoints) reportLines.push({ field: "headcount_history", before: null, after: `${h.count}${h.lowerBound ? "+" : ""} on ${h.date} (${h.pointType ?? "observed"}${h.lowerBound ? ", lower bound" : ""})`, source_url: h.sourceUrl ?? null, quote: h.quote ?? null });
+    // The report's rules are the write's rules (owner, batch 6): what they drop is not written, what they change is written as changed.
+    {
+      const g = gateLines(reportLines as never, row.name, new Date().toISOString().slice(0, 10), { domain: row.website });
+      const insertLines = reportLines.map((l, i) => ({ l, i })).filter(({ l }) => l.field === "round" && l.before === null);
+      const cannotHold: string[] = [];
+      const dropInserts = new Set<number>();
+      for (const i of g.drop) {
+        const l = reportLines[i];
+        const text = typeof l.after === "string" ? l.after : JSON.stringify(l.after);
+        if (l.field === "news") { patch.news = ((patch.news ?? []) as Array<{ url?: string }>).filter((n) => n.url !== l.source_url); if (!(patch.news as unknown[]).length) { delete patch.news; newsAdded = 0; } }
+        else if (l.field === "patent") {
+          const num = text.split(/\s+/)[0];
+          patch.patents = ((patch.patents ?? []) as Array<{ patent_number?: string | null }>).filter((p) => p.patent_number !== num);
+          if (!(patch.patents as unknown[]).length) delete patch.patents;
+          if ("patent_count" in patch) patch.patent_count = ((patch.patents ?? []) as unknown[]).length || (row.patent_count ?? null);
+        }
+        else if (l.field === "round" && l.before === null) { const k = insertLines.findIndex((x) => x.i === i); if (k >= 0) dropInserts.add(k); }
+        else if (l.field === "founder" || l.field === "leader" || l.field === "board") {
+          const name = text.split(" — ")[0];
+          for (const key of ["founders", "leadership"]) if (Array.isArray(patch[key])) patch[key] = (patch[key] as Array<{ name?: string }>).filter((p) => !samePersonName(p.name ?? "", name));
+        }
+        else if (l.field === "office") pruneOfficeFromPatch(patch, text);
+        else if (l.field === "competitor_declared" || l.field === "competitor_market") patch.competitors = ((patch.competitors ?? []) as Array<{ name?: string }>).filter((c) => normalizeForMatch(c.name ?? "") !== normalizeForMatch(text));
+        else {
+          const cols = Object.keys(patch).filter((k) => fieldOfColumn(k) === l.field);
+          if (cols.length) for (const k of cols) delete patch[k]; else cannotHold.push(`${l.field}: ${text.slice(0, 60)}`);
+        }
+      }
+      for (const [i, after] of g.after) {
+        const l = reportLines[i];
+        if (l.field !== "round" || l.before !== null) continue;
+        const k = insertLines.findIndex((x) => x.i === i);
+        const r = k >= 0 ? plan.inserts[k] : undefined;
+        if (!r) continue;
+        const parsed = parseRoundLine(after);
+        if (parsed.type && parsed.type !== r.round_type) r.round_type = parsed.type as typeof r.round_type;
+        if (!parsed.lead && r.lead_investor) r.lead_investor = null as never;
+      }
+      // A round whose type another source of the same event states is cited with that source: its page and its headline (owner, regression gate: Paradox — never "Series C" with a quote that does not say it).
+      for (const [i, c] of g.cited) {
+        const l = reportLines[i];
+        if (l.field !== "round" || l.before !== null) continue;
+        const k = insertLines.findIndex((x) => x.i === i);
+        const r = k >= 0 ? plan.inserts[k] : undefined;
+        if (r && c.source_url) { (r as { source_url?: string | null }).source_url = c.source_url; typeCites.set(r, c); }
+      }
+      if (dropInserts.size) plan.inserts = plan.inserts.filter((_, k) => !dropInserts.has(k));
+      for (let i = fieldWrites.length - 1; i >= 0; i--) if (!(fieldWrites[i].field.replace(/^(profile|metrics|market)\./, "") in patch)) fieldWrites.splice(i, 1);
+      const out: PilotChange[] = [];
+      reportLines.forEach((l, i) => { if (g.drop.has(i)) return; const c = g.cited.get(i); out.push(g.after.has(i) || c ? { ...l, ...(g.after.has(i) ? { after: g.after.get(i)! } : {}), ...(c ? { quote: c.quote, source_url: c.source_url } : {}) } : l); });
+      reportLines.length = 0; reportLines.push(...out);
+      for (const why of g.reasons) console.log(`    🚦    ${why}`);
+      if (g.drop.size || g.after.size) console.log(`    🚦  The rules of the report applied before the write: ${g.drop.size} value(s) not written, ${g.after.size} changed${cannotHold.length ? ` · could not be held back: ${cannotHold.join(" | ")}` : ""}`);
+    }
+    // Which rule made each value (ruleRegistry.ts): the hits the collection kept, and three that show in the source itself.
+    for (const l of reportLines) {
+      const src = allSources.find((x) => x.url === l.source_url);
+      l.rule = ruleOf(l, collected.ruleHits)
+        || (src?.source_type === "registry" ? "register_record" : "")
+        || (src?.query_label && /_local$/.test(src.query_label) ? "local_language_search" : "")
+        || ((l.field === "competitor_declared") && /\bvs\.?\b/i.test(l.quote ?? "") ? "competitor_from_own_comparison_page" : "");
+    }
     for (const c of reportLines) console.log(`    ${DRY_RUN ? "[DRY] would write" : "✏️  writing"} ${c.field}: ${c.before == null ? "" : `${JSON.stringify(c.before)} → `}${typeof c.after === "string" ? c.after : JSON.stringify(c.after)}  (${c.source_url ?? "no source"})`);
     if (!reportLines.length) console.log("    🟠 nothing to write for the open fields");
   }
@@ -791,13 +1050,25 @@ export async function writeCollected(
       if (tagErr) console.warn(`    ⚠️  Sub-sector tag write failed: ${tagErr.message}`);
     }
 
+    // field_provenance keeps the page's own words (quote_original) and, when the page was translated, the English it was verified against (quote_translated) — owner, round 10.
+    const insertProvenance = async (record: Record<string, unknown>, quote: string | null, source: (typeof allSources)[number] | undefined): Promise<string | null> => {
+      const pair = quote ? quotePair(quote, source) : { original: "", translated: null };
+      const full = { ...record, evidence_quote: quote ? markTranslatedQuote(quote, source) : quote, quote_original: pair.original || null, quote_translated: pair.translated };
+      let { error } = await supabase.from("field_provenance").insert(full);
+      // Before migration 20261201000000 the two columns do not exist: the row is written without them rather than not at all.
+      if (error && /quote_(original|translated)/.test(error.message)) {
+        const { quote_original: _o, quote_translated: _t, ...old } = full;
+        ({ error } = await supabase.from("field_provenance").insert(old));
+        if (!error) console.warn("    ⚠️  field_provenance written without quote_original / quote_translated — run migration 20261201000000.");
+      }
+      return error ? error.message : null;
+    };
     const writeProvenance = async (fw: { field: string; value: unknown; source_id: string; evidence_quote: string; source_type: SourceType }) => {
-      const { error: provenanceErr } = await supabase.from("field_provenance").insert({
+      const provenanceErr = await insertProvenance({
         startup_id: row.id, field: fw.field, value: fw.value, source_url: sourceById.get(fw.source_id)?.url,
-        source_type: fw.source_type, evidence_quote: fw.evidence_quote,
-        confidence: computeFieldConfidence([{ source_type: fw.source_type }]), run_id: runId,
-      });
-      if (provenanceErr) console.warn(`    ⚠️  field_provenance insert failed (${fw.field}): ${provenanceErr.message}`);
+        source_type: fw.source_type, confidence: computeFieldConfidence([{ source_type: fw.source_type }]), run_id: runId,
+      }, fw.evidence_quote, sourceById.get(fw.source_id));
+      if (provenanceErr) console.warn(`    ⚠️  field_provenance insert failed (${fw.field}): ${provenanceErr}`);
     };
     for (const fw of fieldWrites) await writeProvenance(fw);
     // News, founders, leaders and patents live in jsonb lists with no source of their own: each value written gets a
@@ -805,23 +1076,32 @@ export async function writeCollected(
     const listKey: Record<string, (after: unknown) => string> = {
       news: (a) => `news.${String(a).split(" — ").slice(1).join(" — ").slice(0, 120)}`,
       founder: (a) => `founders.${String(a).split(" — ")[0]}`,
+      founder_linkedin: (a) => `founders.${String(a).split(" — ")[0]}.linkedin_url`,
+      leader_linkedin: (a) => `leadership.${String(a).split(" — ")[0]}.linkedin_url`,
       leader: (a) => `leadership.${String(a).split(" — ")[0]}`,
       board: (a) => `leadership.${String(a).split(" — ")[0]}`,
       patent: (a) => `patents.${String(a).split(" ")[0]}`,
     };
     for (const rl of reportLines.filter((r) => listKey[r.field] && r.source_url)) {
       const src = allSources.find((x) => x.url === rl.source_url);
-      const { error: lpErr } = await supabase.from("field_provenance").insert({
+      const lpErr = await insertProvenance({
         startup_id: row.id, field: listKey[rl.field](rl.after), value: rl.after, source_url: rl.source_url,
-        source_type: src?.source_type ?? (rl.field === "patent" ? "registry" : "news"), evidence_quote: rl.quote ?? (typeof rl.after === "string" ? rl.after.slice(0, 200) : null),
+        source_type: src?.source_type ?? (rl.field === "patent" ? "registry" : "news"),
         confidence: computeFieldConfidence([{ source_type: src?.source_type ?? "news" }]), run_id: runId,
-      });
-      if (lpErr) console.warn(`    ⚠️  field_provenance insert failed (${rl.field}): ${lpErr.message}`);
+      }, rl.quote ?? (typeof rl.after === "string" ? rl.after.slice(0, 200) : null), src);
+      if (lpErr) console.warn(`    ⚠️  field_provenance insert failed (${rl.field}): ${lpErr}`);
     }
     // A round's amount / valuation / date / lead: field "funding_rounds.<id>.<column>".
     const roundProvenance = async (roundId: string, written: Parameters<typeof roundFieldEvidence>[0]) => {
+      const cite = typeCites.get(written);
       for (const e of roundFieldEvidence(written, funding.funding_rounds)) {
+        if (cite && e.field === "round_type") continue;   // the type rests on the source that states it (below), not on the amount's
         await writeProvenance({ field: `funding_rounds.${roundId}.${e.field}`, value: e.value, source_id: e.source_id, evidence_quote: e.evidence_quote, source_type: sourceTypeFor(e.source_id) ?? "model_inferred" });
+      }
+      if (cite) {
+        let src = allSources.find((x) => x.url === cite.source_url);
+        if (!src) { src = { source_id: `T${allSources.length + 1}`, source_type: "news", url: cite.source_url, title: cite.quote, content: cite.quote, provider: "serper", query_label: "round_type_cited" } as LabeledSource; allSources.push(src); sourceById.set(src.source_id, src); }
+        await writeProvenance({ field: `funding_rounds.${roundId}.round_type`, value: (written as { round_type?: string }).round_type ?? "", source_id: src.source_id, evidence_quote: cite.quote, source_type: sourceTypeFor(src.source_id) ?? "news" });
       }
     };
 
@@ -836,8 +1116,13 @@ export async function writeCollected(
       const base = { startup_id: row.id, employee_count: p.count, snapshot_date: p.date, recorded_date: `${p.date}T00:00:00Z` };
       let { error: hcErr } = await supabase.from("headcount_history").upsert({
         ...base, point_type: p.pointType ?? "observed", source_url: p.sourceUrl ?? null, evidence_quote: p.quote ?? null,
-        measure: p.measure ?? null, is_lower_bound: !!p.lowerBound, employee_count_max: p.countMax ?? null,
+        measure: p.measure ?? null, is_lower_bound: !!p.lowerBound, employee_count_max: p.countMax ?? null, ...(runId ? { run_id: runId } : {}),
       }, { onConflict: "startup_id,snapshot_date,point_type" });
+      // Before migration 20261203000200 there is no run_id column: the point is written without it (and cannot be undone by run).
+      if (hcErr && /run_id/.test(hcErr.message)) ({ error: hcErr } = await supabase.from("headcount_history").upsert({
+        ...base, point_type: p.pointType ?? "observed", source_url: p.sourceUrl ?? null, evidence_quote: p.quote ?? null,
+        measure: p.measure ?? null, is_lower_bound: !!p.lowerBound, employee_count_max: p.countMax ?? null,
+      }, { onConflict: "startup_id,snapshot_date,point_type" }));
       // Before migration 20261117000000 the columns are missing: the point is still written (the older day key).
       if (hcErr && /point_type|source_url|evidence_quote|measure|is_lower_bound|employee_count_max|constraint/.test(hcErr.message)) ({ error: hcErr } = await supabase.from("headcount_history").upsert(base, { onConflict: "startup_id,snapshot_date" }));
       if (hcErr) console.warn(`    ⚠️  headcount_history upsert failed (${p.date}): ${hcErr.message}`);
@@ -849,8 +1134,8 @@ export async function writeCollected(
         amount_raised: round.amount_raised ?? null, valuation: round.valuation ?? null,
         amount_original: round.amount_currency ? (round.amount_original ?? null) : null, amount_currency: round.amount_currency ?? null,
         is_valuation_estimated: round.valuation != null ? (round.is_valuation_estimated ?? null) : null,
-        announcement_date: round.announcement_date ?? null, source_url: round.source_url ?? null,
-        announcement_date_precision: round.announcement_date ? (round.announcement_date_precision ?? null) : null,
+        announcement_date: roundDateForColumn(round.announcement_date).date, source_url: round.source_url ?? null,
+        announcement_date_precision: round.announcement_date ? (round.announcement_date_precision ?? roundDateForColumn(round.announcement_date).precision) : null,
         lead_investor: round.lead_investor ?? null,
         investors: round.other_investors && round.other_investors.length > 0 ? round.other_investors : null,
         investor_amounts: round.investor_amounts && round.investor_amounts.length > 0 ? round.investor_amounts : null,
@@ -895,7 +1180,9 @@ export async function writeCollected(
     // Only when this run wrote the description (owner, 2026-11-09): the Private Market lists every company with this stamp, whatever
     // else it holds, and a company that got a news item or a patent is not a card worth listing. Until the description field is open
     // and written, v2 puts no company on that page (a company the view's own bar admits — description and completeness ≥ 7 — still is).
-    if (!PILOT && typeof patch.description === "string" && patch.description.trim().length > 0) {
+    // A pilot run lists its companies the same way (owner, round 10: ten enriched companies were written by the pilot and did not appear on the platform, because the stamp was a
+    // full-run privilege): the stamp is set when THIS run wrote the description, in a pilot or not.
+    if (typeof patch.description === "string" && patch.description.trim().length > 0) {
       const { error: markErr } = await supabase.from("startups").update({ enriched_v2_at: new Date().toISOString() }).eq("id", row.id);
       if (markErr && !warnedNoEnrichedV2Column) {
         warnedNoEnrichedV2Column = true;

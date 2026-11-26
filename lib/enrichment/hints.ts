@@ -119,6 +119,39 @@ const NOT_THE_RAISE = [
   /[$€£]\s?\d[\d.,]*\s?(?:billion|million|bn|mm|b|m)?\s+(?:in\s+)?(?:ARR|annual\s+recurring\s+revenue|annualized\s+revenue|revenue|sales|customers)\b/gi,
 ];
 
+/** The sum an announcement's own address states beside a raise verb: "…-paradox-raises-200m-series-c-3014…" → $200M. One sum only; the slug is the quote. */
+export function amountFromAddress(url: string): { amount: number; label: string; slug: string } | null {
+  let path = ""; try { path = new URL(url.startsWith("http") ? url : `https://${url}`).pathname; } catch { return null; }
+  const slug = path.split("/").filter(Boolean).pop() ?? "";
+  const toks = slug.toLowerCase().replace(/\.[a-z]{2,5}$/, "").split("-");
+  const found: Array<{ amount: number; label: string }> = [];
+  for (let i = 0; i < toks.length; i++) {
+    if (!/^(?:raises?|raised|secures?|secured|closes?|closed|lands|nets|bags|nabs|scores?)$/.test(toks[i])) continue;
+    for (let j = i + 1; j <= Math.min(i + 4, toks.length - 1); j++) {
+      const m = toks[j].match(/^(\d+(?:\.\d+)?)(m|mm|mn|million|b|bn|billion|k)?$/);
+      if (!m) continue;
+      let unit = m[2], idx = j;
+      if (!unit && /^(?:million|billion|m|bn|b)$/.test(toks[j + 1] ?? "")) { unit = toks[j + 1]; idx = j + 1; }
+      if (!unit) continue;
+      const mult = /^(?:b|bn|billion)$/.test(unit) ? 1e9 : unit === "k" ? 1e3 : 1e6;
+      const amount = Math.round(Number(m[1]) * mult);
+      if (amount >= 100_000) { found.push({ amount, label: `$${+(amount / 1e6).toFixed(1)}M`.replace(".0M", "M") }); }
+      j = idx;
+    }
+  }
+  const distinct = found.filter((f, k) => found.findIndex((g) => g.amount === f.amount) === k);
+  if (distinct.length !== 1) return null;
+  return { ...distinct[0], slug };
+}
+
+const GENERIC_TAIL = /\s+(?:ai|labs?|tech|technologies|technology|software|systems|group|app|io|hq|inc|ltd|llc)\.?$/i;
+/** The company named in a sentence, also by its brand without a generic tail: the announcement of "Paradox AI" says "Paradox" (owner, round 10). */
+function namesBrand(text: string, companyName: string): boolean {
+  if (namesCompany(text, companyName)) return true;
+  const brand = companyName.trim().replace(GENERIC_TAIL, "");
+  return brand !== companyName.trim() && brand.replace(/[^\p{L}]/gu, "").length >= 4 && namesCompany(text, brand);
+}
+
 export function recoverMissingAmount(round: V2Round, sources: LabeledSource[], companyName: string): AmountRecovery | null {
   if (round.amount_raised?.value != null) return null;
   const byId = new Map(sources.map((x) => [x.source_id, x]));
@@ -135,7 +168,7 @@ export function recoverMissingAmount(round: V2Round, sources: LabeledSource[], c
     if (!canConfirm(src, round.lead_investor?.value)) continue;
     const text = `${src.title ?? ""}. ${src.content}`;
     for (const sen of sentences(text)) {
-      if (sen.length > 400 || !RAISE.test(sen) || !namesCompany(sen, companyName) || (stage && !stage.test(sen))) continue;
+      if (sen.length > 400 || !RAISE.test(sen) || !namesBrand(sen, companyName) || (stage && !stage.test(sen))) continue;
       let rest = sen;
       for (const re of NOT_THE_RAISE) rest = rest.replace(re, " ");
       for (const n of extractNumbersFromText(rest)) if (n >= 100_000) found.push({ amount: n, source_id: src.source_id, quote: sen.trim() });
@@ -143,6 +176,16 @@ export function recoverMissingAmount(round: V2Round, sources: LabeledSource[], c
   }
   const distinct: typeof found = [];
   for (const c of found) if (!distinct.some((d) => Math.abs(d.amount - c.amount) / c.amount < 0.01)) distinct.push(c);
+  // Nothing in the sentences, but the announcement's own address states one sum beside a raise verb: that sum — with the headline of the page as its quote
+  // (never the address: owner, round 10). No headline that carries the sum, no recovery.
+  if (distinct.length === 0) {
+    for (const src of cited.values()) {
+      if (!canConfirm(src, round.lead_investor?.value)) continue;
+      const a = amountFromAddress(src.url);
+      const title = (src.title ?? "").trim();
+      if (a && title && extractNumbersFromText(title).some((n) => Math.abs(n - a.amount) / a.amount < 0.01) && (!stage || stage.test(title))) return { kind: "recovered", amount: a.amount, source_id: src.source_id, quote: title };
+    }
+  }
   if (distinct.length === 1) return { kind: "recovered", amount: distinct[0].amount, source_id: distinct[0].source_id, quote: distinct[0].quote };
   if (distinct.length > 1) return { kind: "ambiguous", candidates: distinct.map((d) => d.amount) };
   return null;

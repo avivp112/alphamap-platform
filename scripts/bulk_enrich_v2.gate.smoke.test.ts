@@ -219,12 +219,13 @@ vi.mock("@anthropic-ai/sdk", () => ({ default: class { messages = { create: crea
 
 describe("the tracker is the gate: a wide wet run with only news open (all I/O faked)", () => {
   beforeAll(async () => {
+    process.env.DOMAIN_RESOLVE = "false"; process.env.PREFLIGHT = "off"; process.env.SITEMAP = "off"; process.env.TRANSLATE = "false"; process.env.TECH_DECISIONS = `${process.env.TMPDIR ?? "/tmp"}/tech_decisions_smoke_${Date.now()}.json`; process.env.KNOWN_SOURCES = "off";
     process.env.DRY_RUN = "false";
     // Only news is open in the tracker (owner, 2026-11-05): a WIDE run (no PILOT) writes nothing else.
     const tracker = join(mkdtempSync(join(tmpdir(), "review-")), "tracker.csv");
     writeFileSync(tracker, ["id,field,company,value,source_url,verdict,source_of_mark",
       ...["news"].flatMap((f) => Array.from({ length: 20 }, (_, i) => `${f}.${i},${f},Co,v,,correct,test`))].join("\n"));
-    process.env.FIELD_REVIEW_TRACKER = tracker;
+    process.env.OPEN_FIELDS_OVERRIDE = "news";
     // Reports and batch files go to a temp dir, never into the repository.
     const outDir = mkdtempSync(join(tmpdir(), "out-"));
     process.env.BATCH_DIR = join(outDir, "field_review");

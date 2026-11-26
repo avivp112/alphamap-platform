@@ -120,6 +120,12 @@ function fmtEmp(n: number | null): string {
 }
 // "120 (51-200)" when both an exact count and a range are known; the range
 // alone when only that's known; the plain count (or "—") otherwise.
+/** An acquired company shows "Acquired" where the stage badge would be (owner, round 10): the status of the record, not its last funding round. */
+const ACQUIRED_BADGE_STYLE = "bg-slate-800 text-white";
+function acquiredBadge(s: { status?: string | null } | null | undefined): string | null {
+  return s?.status === "acquired" ? "Acquired" : s?.status === "majority_acquired" ? "Majority acquired" : s?.status === "closed" ? "Closed" : null;
+}
+
 function formatEmployeeValue(startup: Pick<Startup, "employee_count" | "employee_range">): string {
   if (startup.employee_count) {
     return startup.employee_range ? `${fmtEmp(startup.employee_count)} (${startup.employee_range})` : fmtEmp(startup.employee_count);
@@ -2153,6 +2159,7 @@ function TearsheetModal({
   const roundType   = (detail ? latestLiveRound?.round_type : startup.latest_round_type) ?? null;
   const roundStyle  = roundType ? (ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]) : null;
   const location    = placeLabel(live.city, live.country);
+  const acq         = live as Partial<Startup>;   // exit details, when the record has them (a purchase, owner round 10)
   const origin      = originNote(originFacts(live), t);
 
   const sortedRounds = useMemo(
@@ -2402,6 +2409,16 @@ function TearsheetModal({
                     <span className="flex items-center gap-1"><Calendar className="w-3 h-3 flex-none" />Est. {live.founded_year}</span>
                   </>
                 )}
+                {(acq.status === "acquired" || acq.status === "majority_acquired") && acq.acquired_by && (
+                  <>
+                    <span className="text-[#0F172A]/30">·</span>
+                    <span className="font-medium text-[#0F172A]/80">
+                      {acq.status === "majority_acquired" ? "Majority acquired by" : "Acquired by"} {acq.acquired_by}
+                      {acq.exit_date ? ` (${acq.exit_date.slice(0, 10)})` : ""}
+                      {acq.brand_after_acquisition ? ` · now ${acq.brand_after_acquisition}` : ""}
+                    </span>
+                  </>
+                )}
                 {live.website && (
                   <>
                     <span className="text-[#0F172A]/30">·</span>
@@ -2420,7 +2437,9 @@ function TearsheetModal({
               above, so a narrow viewport wraps buttons onto a second line
               instead of squeezing or overlapping anything. */}
           <div className="flex items-center flex-wrap gap-2 mt-3">
-            {roundType && roundStyle && (
+            {acquiredBadge(acq) ? (
+              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${ACQUIRED_BADGE_STYLE}`}>{acquiredBadge(acq)}</span>
+            ) : roundType && roundStyle && (
               <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap bg-white/70`} style={{ border: "1px solid rgba(15,23,42,0.12)" }}>{roundTypeLabel(roundType)}</span>
             )}
             <button
@@ -3025,7 +3044,9 @@ function StartupCard({
               <span className="text-xs text-gray-500 font-medium">{startup.industry}</span>
             )}
           </div>
-          {roundType && (
+          {acquiredBadge(startup) ? (
+            <span className={`flex-none text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${ACQUIRED_BADGE_STYLE}`}>{acquiredBadge(startup)}</span>
+          ) : roundType && (
             <span className={`flex-none text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${ROUND_STYLE[roundType] ?? ROUND_STYLE["Other"]}`}>{roundTypeLabel(roundType)}</span>
           )}
         </div>
@@ -3127,7 +3148,7 @@ function StartupTableRow({
         </div>
       </td>
       <td className="py-3.5 px-4">
-        {roundType && roundStyle ? <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${roundStyle}`}>{roundTypeLabel(roundType)}</span> : <span className="text-xs text-gray-300">—</span>}
+        {acquiredBadge(startup) ? <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${ACQUIRED_BADGE_STYLE}`}>{acquiredBadge(startup)}</span> : roundType && roundStyle ? <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${roundStyle}`}>{roundTypeLabel(roundType)}</span> : <span className="text-xs text-gray-300">—</span>}
       </td>
       <td className="py-3.5 px-4 text-xs text-gray-500">{placeLabel(startup.city, startup.country) ?? "—"}</td>
       <td className="py-3.5 px-4 text-sm font-bold text-[#0F172A]">{fmt(startup.latest_valuation)}</td>

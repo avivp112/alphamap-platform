@@ -18,9 +18,31 @@ export interface TechGateVerdict {
   is_tech_company: boolean;
   confidence: "high" | "medium" | "low";
   reason: string;
+  /** false when the material (an unreadable, suspended or empty homepage) is too thin to say what the company does: there is no decision then. */
+  enough_information?: boolean;
   /** false when the homepage shows another business than the description on file (a parked domain, a casino…). */
   site_matches_description?: boolean;
 }
+
+/**
+ * What "technology company" means here (owner, 2026-11-13): the product falls in one of the platform's sector categories — software and AI,
+ * fintech, cybersecurity, health and life sciences, climate and energy (energy storage, clean energy, carbon), deep tech (advanced materials,
+ * robotics, space, semiconductors), industrial and manufacturing technology, food and agriculture technology (vertical farming, cultivated food),
+ * automotive and mobility, proptech, e-commerce and marketplaces run on their own platform. NOT technology: professional services (design or
+ * creative studios, agencies, consultancies), non-profits, incubators, accelerators and funds, and consumer products or shops with no technology of their own.
+ * One definition for the early check and for the profile extraction, so they cannot disagree.
+ */
+export const TECH_DEFINITION = "A technology company is one whose product falls in a technology category: software, AI/ML, fintech, cybersecurity, health or life-science technology, climate and energy technology (energy storage, clean energy, carbon capture), deep tech (advanced materials, robotics, space, semiconductors), industrial or manufacturing technology, food or agriculture technology (vertical farming, cultivated food), automotive or mobility technology, proptech, or an online-first e-commerce / marketplace business (selling online is its main business and it is venture-backed, like an online pet shop), or a business built on its own platform; financial and property-finance products sold through the company's own platform or app (lending, home-equity, insurance, payments) are fintech or proptech even when people take part in delivering them. NOT technology: professional services (design or creative studios, agencies, consultancies), non-profits, incubators, accelerators and funds, a maker of physical consumer products that also sells online (phone accessories, coffee), and physical shops with no technology of their own, IT support, systems-integration and managed IT services, staffing and recruiting services (also when AI is the theme), digital, design and creative agencies, and content, entertainment, animation and media production without a technology product of its own (a managed security or cloud platform sold as a product is technology).";
+
+/** Borderline cases the owner decided (round 10), given to the model as examples. */
+export const TECH_EXAMPLES = [
+  "NOT technology — Moft: physical consumer accessories (laptop stands, desk gadgets) that are also sold online.",
+  "NOT technology — noo.ma: designs and sells furniture and home accessories through its web shop.",
+  "NOT technology — Plott: produces short-form anime content for video platforms (content production, no technology product).",
+  "NOT technology — Routing: IT support under SLA, network installation and CCTV (managed IT services).",
+  "Technology — Pet Circle: an online-first pet retailer, venture-backed, its business is its own e-commerce platform.",
+  "Technology — Hydrostor: long-duration energy storage (a hardware product in the climate and energy category).",
+].join("\n");
 
 export function buildTechGateRequest(companyName: string, homepageText: string, description: string | null, industry: string | null) {
   const material = [
@@ -38,8 +60,9 @@ export function buildTechGateRequest(companyName: string, homepageText: string, 
       input_schema: {
         type: "object" as const,
         properties: {
-          is_tech_company: { type: "boolean", description: "TRUE for any company whose core product or competitive edge is its own technology/software/R&D (broad category — AI/ML, fintech, biotech, hardware, marketplaces and platforms run on their own app/software, etc. all count)." },
+          is_tech_company: { type: "boolean", description: TECH_DEFINITION },
           confidence: { type: "string", enum: ["high", "medium", "low"] },
+          enough_information: { type: "boolean", description: "FALSE when the homepage is unreadable, suspended, parked or too thin to tell what the company does, and nothing else on file says. Then is_tech_company is not a decision." },
           reason: { type: "string", description: "One short sentence." },
           site_matches_description: { type: "boolean", description: "FALSE when the homepage text is about a different business than the description on file — a parked or sold domain, a casino, an unrelated company. TRUE when they describe the same business, or when there is no description to compare." },
         },
@@ -49,9 +72,34 @@ export function buildTechGateRequest(companyName: string, homepageText: string, 
     tool_choice: { type: "tool" as const, name: "classify_company" },
     messages: [{
       role: "user" as const,
-      content: `Is "${companyName}" a technology company?\n\nAnswer is_tech_company=false with confidence "high" ONLY when the material clearly shows a non-technology business — e.g. a food or beverage brand, a restaurant, a charity or NGO without its own technology product, a consultancy or agency, a retailer of physical goods with no proprietary technology. A company that runs its own app, software platform, marketplace, or does R&D is a technology company. If the material is thin or ambiguous, answer true or use low/medium confidence.\n\n${material}`,
+      content: `Is "${companyName}" a technology company?\n\n${TECH_DEFINITION}\n\nDecided cases:\n${TECH_EXAMPLES}\n\nAnswer is_tech_company=false with confidence "high" ONLY when the material clearly shows a business outside those categories. A company whose product falls in one of them is a technology company, however traditional its industry sounds. If the material is thin or ambiguous, answer true or use low/medium confidence. In "reason" name the product and the category it falls in, or why it falls in none.\n\n${material}`,
     }],
   };
+}
+
+export type TechDecision = "proceed" | "reject" | "undetermined";
+/**
+ * One decision from the two looks (owner, 2026-11-13, batch 4 round 3: Hydrostor and Promethean Particles were turned away by the profile call as "not software"):
+ *   - the early check, made with the definition above, said technology with enough to go on → the company proceeds; the profile call cannot turn it away;
+ *   - the profile call (or a thin early check with nothing to describe the company with) could not tell → undetermined: not enriched, tried again later;
+ *   - otherwise the profile call's no is a rejection.
+ */
+const PRODUCT_WORDS = /\b(platform|software|app|application|saas|api|device|hardware|chip|robot|algorithm|marketplace|digital bank|product)\b/i;
+export function techDecision(
+  gate: TechGateVerdict | null,
+  profile: { is_tech_company: boolean; tech_decision?: "technology" | "not_technology" | "cannot_tell"; tech_reason?: string },
+  hasDescription: boolean,
+): TechDecision {
+  // Only a sure early "yes" stands against the profile call's "no": a medium one (Moft: a coffee-table gadget maker one run, a technology company the next) does not.
+  const gateConfirms = !!gate && gate.is_tech_company === true && gate.enough_information !== false && gate.confidence === "high";
+  if (gateConfirms) return "proceed";
+  // The early check said no with some confidence and the profile says yes: the profile's yes stands only when it rests on a product (a platform, software, an app, a device),
+  // not on a service (owner, round 10: Mototech/Celara sells AI talent recruiting and implementation services).
+  if (gate && gate.is_tech_company === false && gate.enough_information !== false && gate.confidence !== "low" && profile.is_tech_company === true && !PRODUCT_WORDS.test(profile.tech_reason ?? "")) return "reject";
+  if (profile.tech_decision === "cannot_tell" || (gate?.enough_information === false && !hasDescription)) return "undetermined";
+  // A rejection needs a described product to rest on: with nothing known about what the company sells, a "no" is not a finding (Ondato IL).
+  if (profile.is_tech_company === false && !hasDescription) return "undetermined";
+  return profile.is_tech_company === false ? "reject" : "proceed";
 }
 
 /** Skip the company only on a high-confidence non-tech verdict. */
@@ -72,7 +120,7 @@ export async function runTechGate(
   const tool = msg.content.find((b) => b.type === "tool_use");
   const input = tool && tool.type === "tool_use" ? (tool.input as Partial<TechGateVerdict>) : null;
   const verdict = input && typeof input.is_tech_company === "boolean"
-    ? { is_tech_company: input.is_tech_company, confidence: (input.confidence ?? "low") as TechGateVerdict["confidence"], reason: input.reason ?? "" }
+    ? { is_tech_company: input.is_tech_company, confidence: (input.confidence ?? "low") as TechGateVerdict["confidence"], reason: input.reason ?? "", enough_information: input.enough_information !== false }
     : null;
   return { verdict, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens };
 }

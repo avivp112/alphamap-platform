@@ -20,7 +20,7 @@
  */
 
 import { normalizeForMatch, extractNumbersFromText, parseFullDate, dateFromUrl } from "./evidence";
-import { investorNamesMatch, normalizeRoundType, type RoundLike } from "./rounds";
+import { investorNamesMatch, normalizeRoundType, refineRoundType, type RoundLike } from "./rounds";
 import { termAppearsIn, normalizeUrlForMatch, type V2MarketExtraction, type V2NewsItem } from "./extractMarket";
 import { namesCompany } from "./headcount";
 import type { V2Round, V2FundingExtraction } from "./extractFunding";
@@ -157,6 +157,9 @@ export function groundRoundType(round: V2Round, sources: LabeledSource[]): { rou
   // beside THIS figure — never because another figure in the same sentence is the loan.
   const amount = round.amount_raised?.value ?? null;
   const evidence = `${quotes}\n${roundTypeEvidence(round, byId)}`;
+  // What may NAME the type (owner, round 10: Ripio's "Series A" for a source that says only "raising $1.9m"; Brighte's, Ripio's and Sherlok's "Other"): the round's own quotes, the sentence of its
+  // amount and a headline that reports the amount — not the ±400 characters around them, where another round, another year or the word "strategic" may stand.
+  const narrowEvidence = `${quotes}\n${amountSentenceAndHeadline(round, byId)}`;
   const loanIsAnotherFigure = amount != null && !debtNextToAmount(evidence, amount) && otherFigureIsDebt(evidence, amount);
   if ((type === "Debt" || type === "Venture Debt") && loanIsAnotherFigure) {
     const named = statedRoundLabels(amountSentenceAndHeadline(round, byId));
@@ -180,7 +183,8 @@ export function groundRoundType(round: V2Round, sources: LabeledSource[]): { rou
   if (type === "Unknown" || type === "Other") {
     const named = statedRoundLabels(amountSentenceAndHeadline(round, byId));
     if (named.length === 1) return { round_type: named[0], stated: true };
-    return { round_type: type, stated: true };
+    // "Other" is a type a source names (strategic, crowdfunding, a token sale…); a round whose sources do not say what kind it is, is Unknown (owner, 2026-11-14: KrillTech, Hydrostor).
+    return { round_type: refineRoundType(type, narrowEvidence), stated: true };
   }
   // The amount's own sentence or headline names another round: that one
   // (owner, 2026-11-01 — Forbes' "Synthesia raises $50 million in Series B"
@@ -191,7 +195,7 @@ export function groundRoundType(round: V2Round, sources: LabeledSource[]): { rou
   }
   const re = TYPE_STATED[type];
   if (!re) return { round_type: type, stated: true };
-  return re.test(roundTypeEvidence(round, byId)) ? { round_type: type, stated: true } : { round_type: "Unknown", stated: false };
+  return re.test(narrowEvidence) ? { round_type: type, stated: true } : { round_type: "Unknown", stated: false };
 }
 
 /**
@@ -785,4 +789,25 @@ export function reconcileOnFile<T extends OnFileLists>(lists: T): { competitors:
     return n;
   });
   return { competitors, acquisitions, news, notes };
+}
+
+
+/**
+ * A lead investor is written only when its name stands in a source the round cites (owner, round 10: Choiz "lead Insud Pharma" was in no source).
+ * Returns the round without the lead when it does not; the rest of the round is untouched.
+ */
+export function groundLeadInvestor(round: V2Round, sources: LabeledSource[]): { round: V2Round; dropped: string | null } {
+  const lead = round.lead_investor?.value;
+  if (!lead) return { round, dropped: null };
+  const byId = new Map(sources.map((x) => [x.source_id, x]));
+  const urlKey = (u: string) => u.replace(/[?#].*$/, "").replace(/\/+$/, "").toLowerCase();
+  const cited = new Map<string, LabeledSource>();
+  for (const f of [round.amount_raised, round.announcement_date]) { const x = f?.source_id ? byId.get(f.source_id) : undefined; if (x) cited.set(x.source_id, x); }
+  if (round.source_url) for (const x of sources) if (urlKey(x.url) === urlKey(round.source_url)) cited.set(x.source_id, x);
+  if (cited.size === 0) return { round, dropped: null };
+  const core = normalizeForMatch(lead.replace(/\b(inc|ltd|llc|lp|llp|plc|gmbh|sa|ag|bv|co)\b\.?/gi, ""));
+  if (!core) return { round, dropped: null };
+  const named = [...cited.values()].some((x) => normalizeForMatch(`${x.title ?? ""} ${x.content}`).includes(core));
+  if (named) return { round, dropped: null };
+  return { round: { ...round, lead_investor: undefined }, dropped: lead };
 }

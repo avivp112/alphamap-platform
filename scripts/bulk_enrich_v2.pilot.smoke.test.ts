@@ -218,6 +218,7 @@ vi.mock("@anthropic-ai/sdk", () => ({ default: class { messages = { create: crea
 
 describe("PILOT=true: only HQ, founded year and founding country are written (owner, 2026-11-01)", () => {
   beforeAll(async () => {
+    process.env.DOMAIN_RESOLVE = "false"; process.env.PREFLIGHT = "off"; process.env.SITEMAP = "off"; process.env.TRANSLATE = "false"; process.env.TECH_DECISIONS = `${process.env.TMPDIR ?? "/tmp"}/tech_decisions_smoke_${Date.now()}.json`; process.env.KNOWN_SOURCES = "off";
     process.env.DRY_RUN = "false";
     process.env.PILOT = "true";
     process.env.ONLY = "st-1";
@@ -226,7 +227,7 @@ describe("PILOT=true: only HQ, founded year and founding country are written (ow
     const tracker = join(mkdtempSync(join(tmpdir(), "review-")), "tracker.csv");
     writeFileSync(tracker, ["id,field,company,value,source_url,verdict,source_of_mark",
       ...["hq_city", "hq_country", "founded_year", "founding_country"].flatMap((f) => Array.from({ length: 20 }, (_, i) => `${f}.${i},${f},Co,v,,correct,test`))].join("\n"));
-    process.env.FIELD_REVIEW_TRACKER = tracker;
+    process.env.OPEN_FIELDS_OVERRIDE = "hq_city,hq_country,founded_year,founding_country";
     process.env.BATCH_DIR = join(mkdtempSync(join(tmpdir(), "out-")), "field_review");
     process.env.SEARCH_CACHE = "false";
     process.env.DELAY_MS = "0";

@@ -1,3 +1,4 @@
+import { isThirdPartyPage } from "./subject.ts";
 /**
  * lib/enrichment/people.ts — deterministic, source-grounded helpers for
  * founders and leadership.
@@ -50,7 +51,7 @@ function sentencesOf(text: string): string[] {
 function namesAfterBy(rest: string): string[] {
   const list = rest
     .replace(/\([^)]*\)/g, "")
-    .split(/\b(?:in|on|back in|during)\s+(?:\d{4}|[A-Z][a-z]+ \d{4})\b|[;:]|\bto\b|\bwho\b|\bwith the\b/)[0];
+    .split(/\b(?:in|on|back in|during)\s+(?:\d{4}|[A-Z][a-z]+ \d{4})\b|[;:]|\bto\b|\bwho\b|\bwith the\b|\bas\s+(?:an?|the)\b|\bthat\b|\bwhich\b/)[0];
   // The names run until the first item that is not one: "founded by A and
   // B, raised $8M ... angel investors C, D" are A and B — not C and D
   // (huskeys.io, 2026-10-18: a missed sentence break made the angels founders).
@@ -89,9 +90,15 @@ export function cleanPersonName(name: string): string {
   // Invisible format characters (a right-to-left mark from a Hebrew page:
   // "Yonatan Boguslavsky\u200F", 2026-10-20) are never part of a name.
   let n = name.replace(/\p{Cf}/gu, "").replace(/^[^\p{L}]+/u, "").trim();
+  // A name with a dash is one name ("Osama Al-Raee" written "Osama Al — Raee"), and what a sentence puts after the name ("…, Chief Executive Officer and Co-Founder of Lendo, said:") is not part of it (owner, 2026-11-24: Lendo).
+  n = n.replace(/\b(Al|El|Abu|Abd|Ibn|Bin)\s*[–—]\s*(?=\p{Lu})/gu, "$1-");
+  { const cut = n.search(/:|,\s+(?=(?:[\p{L}'’.-]+\s+){2,}|\p{L}+\s+said)/u); if (cut > 0 && n.slice(0, cut).trim().split(/\s+/).length >= 2) n = n.slice(0, cut).trim(); }
   for (let i = 0; i < 3; i++) {
     const before = n;
     n = n.replace(NAME_PREFIX_RE, "").replace(/^(?:\p{Ll}[\p{L}'’-]*\s+)+(?=\p{Lu})/u, "").trim();
+    // A function word glued to the front ("As Karim Nour") and a role fragment glued to the end ("Karim Nour Co", "… CEO") are not part of a name (owner, batch 7: Kashat).
+    n = n.replace(/^(?:as|the|by|and|meet|with|from|also|said|says|told|according|our|his|her)\s+(?=\p{Lu}\p{L}+\s+\p{Lu})/iu, "");
+    n = n.replace(/^(\p{Lu}[\p{L}'’.-]*(?:\s+\p{Lu}[\p{L}'’.-]*)+?)\s+(?:Co|CEO|CTO|CFO|COO|Founder|Co-?founder|President|Chairman|Chair)$/u, "$1");
     if (n === before) break;
   }
   return n.replace(/[\s,;]+$/, "");
@@ -216,6 +223,17 @@ export function cleanPeople<T extends { name: string }>(people: T[]): T[] {
  * "Joe Pagett — Employee (Department/Title not specified)"). No role, or a
  * placeholder / non-leadership one, and the person is not listed.
  */
+/** Titles that are a CEO's or a CFO's in another language (owner, round 10): Geschäftsführer, Directeur Général, Diretor-Presidente, Prezes Zarządu; Dyrektor Finansowy, Diretor Financeiro, Directeur Financier, Finanzvorstand. */
+export const CEO_EQUIVALENT = /(?<![\p{L}])(?:gesch(?:ä|a)ftsf(?:ü|u)hrer(?:in)?|directeur(?:\s+g(?:é|e)n(?:é|e)ral)|directrice\s+g(?:é|e)n(?:é|e)rale|diretor(?:a)?[-\s]presidente|presidente\s+executiv[oa]|director(?:a)?\s+general|gerente\s+general|prezes(?:\s+zarz(?:ą|a)du)?|dyrektor\s+generalny|amministratore\s+delegato|algemeen\s+directeur|directeur-bestuurder)(?![\p{L}])/iu;
+export const CFO_EQUIVALENT = /(?<![\p{L}])(?:dyrektor\s+finansow[yi]|diretor(?:a)?\s+financeir[oa]|directeur(?:\s+financier)|directrice\s+financi(?:è|e)re|finanzvorstand|finanzchef(?:in)?|gesch(?:ä|a)ftsf(?:ü|u)hrer\s+finanzen|director(?:a)?\s+financier[oa]|direttore\s+finanziario|financieel\s+directeur)(?![\p{L}])/iu;
+const EQUIVALENT_TITLE = new RegExp(`${CEO_EQUIVALENT.source}|${CFO_EQUIVALENT.source}`, "iu");
+/** The title with the English one named beside the original: "Geschäftsführer" → "CEO (Geschäftsführer)". */
+export function canonicalTitle(role: string): string {
+  if (CEO_EQUIVALENT.test(role) && !/\bceo\b/i.test(role)) return `CEO (${role.trim()})`;
+  if (CFO_EQUIVALENT.test(role) && !/\bcfo\b/i.test(role)) return `CFO (${role.trim()})`;
+  return role;
+}
+
 export function isLeadershipRole(role: string | null | undefined): boolean {
   // A CLOSED list (owner, 2026-11-09, after the Orq "Tech Lead" and "Head of" entries): C-level, President,
   // Founder / Co-founder, General Manager, Managing Director, VP / SVP / EVP. Lead, Manager, Director (other than
@@ -224,7 +242,12 @@ export function isLeadershipRole(role: string | null | undefined): boolean {
   if (!r) return false;
   if (/\b(not specified|unspecified|unknown|n\/a|none|employee|staff|team member|member of|intern|contractor|volunteer|student|candidate)\b/i.test(r)) return false;
   if (/\bchief\s+of\s+staff\b/i.test(r) && !/\b(ceo|cto|cfo|coo|founder|president)\b/i.test(r)) return false;
-  return /\b(ceo|cto|cfo|coo|cmo|cpo|cro|cio|ciso|cdo|cso|cco|clo|chro|cxo|chief\b[\p{L} &,-]{0,40}\bofficer|president|founders?|co-?\s?founders?|general manager|managing director|vp|svp|evp|vice[- ]president)\b/iu.test(r);
+  // A VP of corporate affairs, communications or investor relations is a support function, not senior management (owner, batch 8: Kry's "VP Corporate Affairs").
+  if (/\b(?:vp|svp|evp|vice[- ]president)\b[^;]{0,14}\b(?:(?:corporate|public|government|external|regulatory)\s+affairs|communications|public\s+relations|investor\s+relations)\b/i.test(r) && !/\b(ceo|cto|cfo|coo|founder|president\b(?!.*affairs))/i.test(r.replace(/vice[- ]president/gi, ""))) return false;
+  // A past role is no leadership (owner, round 10: TymeBank "CEO (former TymeBank CEO)"), and "Founder" alone is not a management title: founders have their own field.
+  if (/\b(former|formerly|ex-|outgoing|retired|stepped down)\b/i.test(r)) return false;
+  if (!(/\b(ceo|cto|cfo|coo|cmo|cpo|cro|cio|ciso|cdo|cso|cco|clo|chro|cxo|chief\b|president|general manager|managing director|vp|svp|evp|vice[- ]president)\b/i.test(r) || EQUIVALENT_TITLE.test(r))) return false;
+  return EQUIVALENT_TITLE.test(r) || /\b(ceo|cto|cfo|coo|cmo|cpo|cro|cio|ciso|cdo|cso|cco|clo|chro|cxo|chief\b[\p{L} &,-]{0,40}\bofficer|president|founders?|co-?\s?founders?|general manager|managing director|vp|svp|evp|vice[- ]president)\b/iu.test(r);
 }
 
 /**
@@ -247,7 +270,13 @@ export function isFounderEntry(p: { title?: string | null; bio?: string | null }
 // Rule: a founder stays only when some source states that they founded THIS
 // company; anyone named among the investors is never a founder.
 
-const FOUNDER_WORD_RE = /\b(co-?\s?founders?|founders?|co-?\s?founded|founded|cofounded)\b/gi;
+// The founder words of the languages the owner named (round 10): English, Spanish/Portuguese, Polish, French, German, Dutch, Italian in Latin letters; Arabic, Chinese/Japanese, Hebrew
+// in their own scripts. "Founding engineer / member / team / partner" and "Founder's office" are not founders.
+const FOUNDER_LATIN = "co-?\\s?founders?|founders?|co-?\\s?fundador(?:a|es|as)?|fundador(?:a|es|as)?|założyciel(?:ka|e)?|współzałożyciel(?:ka|e)?|co-?fondateur(?:rice)?|fondateur(?:rice)?|gründer(?:in)?|mitgründer(?:in)?|medeoprichter(?:s)?|oprichter(?:s)?|co-?fondatore|cofondatrice|fondatore|fondatrice|co-?founded|founded|cofounded";
+const FOUNDER_SCRIPTS = "مؤسس(?:ة)?(?:\\s+مشارك)?|共同創業者|共同創設者|創業者|創設者|創始人|联合创始人|מייסד(?:ת|ים|ות)?(?:\\s+שותף)?";
+const FOUNDER_WORD_RE = new RegExp(`(?<![\\p{L}\\p{N}])(?:${FOUNDER_LATIN})(?![\\p{L}\\p{N}])(?![’']s\\s+office)|${FOUNDER_SCRIPTS}`, "giu");
+/** A title that makes someone a founder of the company it stands beside (not "Founding engineer", not "Founder's office"). */
+export const hasFounderWord = (text: string): boolean => new RegExp(FOUNDER_WORD_RE.source, "iu").test(text);
 // "founder of Talon", "co-founder and CEO of Descope", "founded Demisto"
 const FOUNDER_OF_OTHER_RE = /\b(?:co-?\s?founders?|founders?)(?:\s+(?:and|&)\s+(?:former\s+)?[\p{L}-]+)?\s+(?:of|at)\s+((?:[A-Z][\p{L}\d.&'’-]*)(?:\s+(?:[A-Z][\p{L}\d.&'’-]*|for|of))*)|\b(?:co-?\s?founded|founded|cofounded)\s+((?:[A-Z][\p{L}\d.&'’-]*)(?:\s+(?:[A-Z][\p{L}\d.&'’-]*|for|of))*)/gu;
 const INVESTOR_WORD_RE = /\b(angels?|investors?|invested|investing|backed|backers?|participation|participated|led by|led the|round included|joined the round)\b/gi;
@@ -293,6 +322,86 @@ export function sentenceGroundsFounder(sentence: string, name: string, companyNa
   });
 }
 
+// ── Founders from a team or about page (owner, round 10): a full name shown with the title Founder / Co-founder, in any of the languages above ──
+const CARD_NAME = /^((?:\p{Lu}[\p{L}'’.-]+)(?:\s+(?:(?:de|da|do|dos|das|del|van|von|der|den|bin|al|el|la|di|du|ibn)\s+)?\p{Lu}[\p{L}'’.-]+){1,3})$/u;
+const stripMarkdown = (line: string) => line.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[#*_`>|]+/g, " ").replace(/\s+/g, " ").trim();
+/** "Founder of <another company>", "Co-founder at Y": the title belongs to a company that is not ours. */
+function founderOfAnother(title: string, companyName: string): boolean {
+  const m = title.match(new RegExp(`(?:${FOUNDER_LATIN}|${FOUNDER_SCRIPTS})(?:\\s*(?:and|&|und|y|e|et|i)\\s*[\\p{L}-]+)?\\s+(?:of|at|de|du|von|van|di|em|w|של)\\s+(\\p{Lu}[\\p{L}\\d.&'’-]*(?:\\s+\\p{Lu}[\\p{L}\\d.&'’-]*){0,3})`, "iu"));
+  return !!m && !namesCompany(m[1], companyName);
+}
+const personName = (raw: string): string | null => {
+  const t = stripHonorific(stripMarkdown(raw)).replace(/[,:;–—-]+$/, "").trim();
+  if (!CARD_NAME.test(t)) return null;
+  const name = cleanPersonName(t);
+  return name && fold(name).split(/\s+/).filter((x) => /\p{L}{2,}/u.test(x)).length >= 2 && looksLikePersonName(name) ? name : null;
+};
+
+/**
+ * Who a page of the company's own site presents as a founder: "Name — Co-founder & CEO" on one line, or the name alone on a line and the title on the next. Full names only; the title
+ * must hold a founder word and must not be "founder of <another company>". Each comes with the line(s) it stands in, as its quote.
+ */
+export function foundersFromCards(text: string, companyName: string): Array<{ name: string; title: string; quote: string }> {
+  const out: Array<{ name: string; title: string; quote: string }> = [];
+  const lines = text.split(/\n+/).map(stripMarkdown).filter(Boolean);
+  const add = (name: string, title: string, quote: string) => {
+    if (!hasFounderWord(title) || founderOfAnother(title, companyName)) return;
+    if (/\b(?:said|says)\b|:\s*$/i.test(title)) return;   // a sentence of a quote, not a title
+    if (!out.some((o) => samePersonName(o.name, name))) out.push({ name, title: title.slice(0, 80), quote: quote.slice(0, 240) });
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Name and title on one line.
+    // A hyphen inside a word ("Al-Raee") does not separate the name from the title; a spaced hyphen does (owner, 2026-11-24: Lendo).
+    const same = line.replace(/\b(Al|El|Abu|Abd|Ibn|Bin)\s*[–—]\s*(?=\p{Lu})/gu, "$1-").match(/^(.{3,60}?)(?:\s*[,|:–—]\s*|\s+-\s+)(.{3,100})$/u);
+    if (same) { const n = personName(same[1]); if (n) { add(n, same[2], line); continue; } }
+    // The name alone, the title right below.
+    const n = personName(line);
+    if (n && lines[i + 1] && lines[i + 1].length <= 100 && !personName(lines[i + 1])) add(n, lines[i + 1], `${line}\n${lines[i + 1]}`);
+  }
+  return out;
+}
+
+/**
+ * How many people a team page of the company's own site shows: a full name with a role line (a card). A floor, not the headcount: the page may show only part of the team.
+ * Four cards or more; fewer is not a team page.
+ */
+const ROLE_LINE = /\b(ceo|cto|coo|cfo|cmo|cpo|chief|founder|co-?founder|president|vp|head|director|manager|lead|engineer|developer|designer|scientist|analyst|researcher|officer|partner|advisor|sales|marketing|product|operations|finance|support|success|counsel|consultant|specialist|architect)\b/i;
+export function teamPeopleCount(text: string): { count: number; quote: string } | null {
+  const lines = text.split(/\n+/).map(stripMarkdown).filter(Boolean);
+  const seen = new Set<string>();
+  for (let i = 0; i < lines.length; i++) {
+    const same = lines[i].match(/^(.{3,60}?)(?:\s*[,|:–—]\s*|\s+-\s+)(.{3,80})$/u);
+    const name = same ? personName(same[1]) : personName(lines[i]);
+    const title = same ? same[2] : lines[i + 1] ?? "";
+    if (name && title.length <= 100 && ROLE_LINE.test(title) && !ROLE_LINE.test(name)) seen.add(name.toLowerCase());
+  }
+  return seen.size >= 4 ? { count: seen.size, quote: `${seen.size} people with a name and a role are shown on the page` } : null;
+}
+
+/** "<Name>, founder of <our company>" in a sentence of an article (any allowed source). */
+export function foundersFromMentions(text: string, companyName: string): Array<{ name: string; title: string; quote: string }> {
+  const out: Array<{ name: string; title: string; quote: string }> = [];
+  for (const s of sentencesOf(text)) {
+    // "Sherlok founder Adam Grocke explains…": the company's own name, then the title, then the person (owner, round 10: Sherlok).
+    const nameRe = companyName.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+    for (const m of s.matchAll(new RegExp(`\\b${nameRe}\\s+((?:co-?\\s?)?founders?)\\s*,?\\s+`, "giu"))) {
+      const nm = s.slice(m.index! + m[0].length).match(/^(\p{Lu}[\p{L}'’.-]+(?:\s+\p{Lu}[\p{L}'’.-]+){1,2})/u);
+      const name = nm ? personName(nm[1]) : null;
+      if (name && !out.some((o) => samePersonName(o.name, name))) out.push({ name, title: /co-?\s?founder/i.test(m[1]) ? "Co-founder" : "Founder", quote: s.slice(0, 240) });
+    }
+    for (const m of s.matchAll(/(\p{Lu}[\p{L}'’.-]+(?:\s+\p{Lu}[\p{L}'’.-]+){1,3})\s*,?\s+(?:the\s+)?((?:co-?\s?)?founders?(?:\s*(?:and|&)\s*[\p{L}-]+(?:\s+officer)?)?)\s+(?:of|at)\s+(\p{Lu}[\p{L}\d.&'’-]*(?:\s+\p{Lu}[\p{L}\d.&'’-]*){0,3})/gu)) {
+      // A sentence-opening word glued to the name ("Said Ann Lee", "According Ann Lee") is not part of it.
+      const lead = new Set(["said", "says", "told", "according", "meet", "met", "by", "and", "with", "from", "also", "today", "then", "while"]);
+      const toks = m[1].split(/\s+/);
+      while (toks.length > 2 && lead.has(toks[0].toLowerCase())) toks.shift();
+      const name = personName(toks.join(" "));
+      if (name && namesCompany(m[3], companyName) && !out.some((o) => samePersonName(o.name, name))) out.push({ name, title: /co-?\s?founder/i.test(m[2]) ? "Co-founder" : "Founder", quote: s.slice(0, 240) });
+    }
+  }
+  return out;
+}
+
 /**
  * Keeps the founders some source grounds (sentenceGroundsFounder, or the
  * strict foundersFromText "<Company> was founded by ..." pattern); drops
@@ -303,24 +412,31 @@ export function groundFounders<T extends { name: string }>(
   sources: FounderSource[],
   companyName: string,
   investorNames: string[],
-): { kept: Array<T & { grounded_url?: string }>; dropped: Array<{ name: string; reason: FounderDropReason }> } {
-  const kept: Array<T & { grounded_url?: string }> = [];
+): { kept: Array<T & { grounded_url?: string; grounded_quote?: string }>; dropped: Array<{ name: string; reason: FounderDropReason }> } {
+  const kept: Array<T & { grounded_url?: string; grounded_quote?: string }> = [];
   const dropped: Array<{ name: string; reason: FounderDropReason }> = [];
   for (const f of founders) {
     if (!f?.name) continue;
     if (investorNames.some((n) => n && samePersonName(n, f.name))) { dropped.push({ name: f.name, reason: "founder_is_investor" }); continue; }
-    // The source that grounds the founder is kept with it (owner, 2026-11-02: every value with its source).
-    const grounded = sources.find((src) => {
+    // The source that grounds the founder is kept with it (owner, 2026-11-02: every value with its source), and the words that ground him as his quote (round 10).
+    let found: { url: string; quote: string } | null = null;
+    for (const src of sources) {
+      if (src.source_type === "company_site" && isThirdPartyPage(src.url)) continue;   // a customer / project / case-study page (subject.ts)
       // Another company's LinkedIn page ("linkedin.com/company/ceragem" for Ybrain) never grounds one.
       const li = src.url.match(/linkedin\.com\/company\/([^/?#]+)/i)?.[1]?.toLowerCase().replace(/[^a-z0-9]/g, "");
       const ownSlug = companyName.toLowerCase().replace(/[^a-z0-9]/g, "");
-      if (li && ownSlug.length >= 3 && !li.includes(ownSlug) && !ownSlug.includes(li)) return false;
+      if (li && ownSlug.length >= 3 && !li.includes(ownSlug) && !ownSlug.includes(li)) continue;
       const text = `${src.title ?? ""}\n${src.content}`;
-      if (foundersFromText(text, companyName, { url: src.url, title: src.title }).some((x) => samePersonName(x.name, f.name))) return true;
       const own = src.source_type === "company_site";
-      return sentencesOf(text).some((s) => sentenceGroundsFounder(s, f.name, companyName, own));
-    });
-    if (grounded) kept.push({ ...f, grounded_url: grounded.url });
+      const byText = foundersFromText(text, companyName, { url: src.url, title: src.title }).find((x) => samePersonName(x.name, f.name));
+      if (byText) { found = { url: src.url, quote: sentencesOf(text).find((x) => /found/i.test(x) && nameIndex(f.name, x) >= 0)?.slice(0, 240) ?? byText.name }; break; }
+      const sentence = sentencesOf(text).find((x) => sentenceGroundsFounder(x, f.name, companyName, own));
+      if (sentence) { found = { url: src.url, quote: sentence.slice(0, 240) }; break; }
+      // A team or about page of the company's own site: the full name with the title Founder / Co-founder (any language), or "<Name>, founder of <this company>" in an article.
+      const card = (own ? foundersFromCards(text, companyName) : []).find((x) => samePersonName(x.name, f.name)) ?? foundersFromMentions(text, companyName).find((x) => samePersonName(x.name, f.name));
+      if (card) { found = { url: src.url, quote: card.quote }; break; }
+    }
+    if (found) kept.push({ ...f, grounded_url: found.url, grounded_quote: found.quote });
     else dropped.push({ name: f.name, reason: "founder_not_grounded" });
   }
   return { kept, dropped };
@@ -343,7 +459,7 @@ const stem = (w: string) => w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").slice
  */
 const ROLES: Array<[RegExp, RegExp]> = [
   [/\b(vp|vice[- ]president)\b/i, /\b(vp|vice[- ]president)\b/i],
-  [/\bceo\b|chief executive/i, /\bceo\b|chief executive/i],
+  [/\bceo\b|chief executive|directeur g[ée]n[ée]ral|\bpdg\b/i, /\bceo\b|chief executive|directeur g[ée]n[ée]ral|\bpdg\b/i],
   [/\bcto\b|chief technology|chief technical/i, /\bcto\b|chief technolog|chief technical/i],
   [/\bcoo\b|chief operating/i, /\bcoo\b|chief operating/i],
   [/\bcfo\b|chief financial/i, /\bcfo\b|chief financial/i],
@@ -514,6 +630,8 @@ export function roleAtCompany(role: string | null | undefined, companyName: stri
     if (!m) return false;
     const org = fold(m[1]).toLowerCase().trim();
     if (/^(the )?(board|company|directors|advisors|advisory board)$/.test(org)) return false;
+    // A second role after the comma is not an organisation ("Co-Founder, Chief Executive Officer", "Co-founder, CTO": owner, batch 7 — Inipharm, Snupit, UltraVox).
+    if (/\b(ceo|cto|coo|cfo|cmo|cpo|cro|ciso|chief|officer|founder|co-?founder|president|vice|vp|svp|evp|head|director|manager|executive|chair\w*|partner|lead|principal|owner|managing)\b/i.test(org)) return false;
     return !(org.includes(ownName) || ownName.includes(org));
   };
   const own = parts.filter((p) => !elsewhere(p));
@@ -606,4 +724,69 @@ export function bioFromCard(card: string, personName: string, title?: string | n
   const cut = t.slice(0, 900);
   const end = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
   return end > 200 ? cut.slice(0, end + 1) : null;
+}
+
+
+/** One entry per person: the same name twice (a card and a text mention, "Rafał Chojecki" and "Rafal Chojecki") becomes one, with the titles joined (owner, round 10: Motorway, Versabox). */
+export function mergeLeadersByPerson<T extends { name: string; role?: string | null }>(people: T[]): T[] {
+  const key = (n: string) => n.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/ł/g, "l").replace(/ø/g, "o").replace(/đ/g, "d").replace(/ß/g, "ss").replace(/\b(dr|mr|mrs|ms|prof)\.?\s/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const out: T[] = [];
+  for (const p of people) {
+    const same = out.find((q) => key(q.name) === key(p.name));
+    if (!same) { out.push({ ...p }); continue; }
+    const have = (same.role ?? "").toLowerCase();
+    const add = (p.role ?? "").trim();
+    if (add && !have.includes(add.toLowerCase())) same.role = same.role ? `${same.role} · ${add}` : add;
+    for (const k of Object.keys(p) as Array<keyof T>) if (same[k] == null || same[k] === "") same[k] = p[k];
+  }
+  return out;
+}
+
+/** One founder per person (owner, round 10: "Alastair Mills — Founder" and "— Founder and CEO" are one row): the title that contains the others, else the longest; the first one's source and quote stay. */
+export function mergeFoundersByName<T extends { name: string; title?: string | null }>(founders: T[]): T[] {
+  const key = (n: string) => n.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/ł/g, "l").replace(/ø/g, "o").replace(/đ/g, "d").replace(/ß/g, "ss").replace(/\b(dr|mr|mrs|ms|prof)\.?\s/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const out: T[] = [];
+  for (const f of founders) {
+    const same = out.find((q) => key(q.name) === key(f.name));
+    if (!same) { out.push({ ...f }); continue; }
+    const a = (same.title ?? "").trim(), b = (f.title ?? "").trim();
+    if (b && (!a || (b.toLowerCase().includes(a.toLowerCase()) && b.length > a.length) || (!a.toLowerCase().includes(b.toLowerCase()) && b.length > a.length))) same.title = b;
+    for (const k of Object.keys(f) as Array<keyof T>) if (same[k] == null || same[k] === "") same[k] = f[k];
+  }
+  return out;
+}
+
+
+const FOUNDER_PART = /^(?:co-?\s?)?founders?$/i;
+/** A role part as a pattern: "CEO" also reads "Chief Executive Officer", "Chief Product Officer" also "CPO". */
+export function roleRegex(part: string): RegExp {
+  const t = part.trim().toLowerCase();
+  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const alts = [esc(t)];
+  if (t === "ceo") alts.push("chief executive(?: officer)?", "managing director");
+  const chief = t.match(/^chief (\w+)(?: \w+)? officer$/);
+  if (chief) alts.push(`c${chief[1][0]}o`);
+  if (/^c[a-z]o$/.test(t)) alts.push(`chief ${t[1] === "e" ? "executive" : t[1] === "p" ? "product" : t[1] === "t" ? "technology" : t[1] === "f" ? "financial" : t[1] === "o" ? "operating" : t[1] === "m" ? "marketing" : t[1] === "r" ? "revenue" : "\\w+"} officer`);
+  return new RegExp(`(?<![\\p{L}\\p{N}])(?:${alts.join("|")})(?![\\p{L}\\p{N}])`, "iu");
+}
+
+/**
+ * The sentence (or line) of a source that names the person AND the executive role (owner, round 10, batch 6: Sherlok's "founder Adam Grocke explains…" is no proof that he is its CEO):
+ * every executive part of the role ("Founder & CEO" → "CEO"; "Founder" alone is the founders' field) must be in it. Null when no source says it.
+ */
+export function leaderRoleEvidence(name: string, role: string, sources: Array<{ url: string; title?: string | null; content?: string | null }>): { url: string; quote: string } | null {
+  const parts = role.split(/\s*(?:&|,|\/|·|\band\b)\s*/i).map((x) => x.trim()).filter((x) => x && !FOUNDER_PART.test(x));
+  if (!parts.length) return null;
+  const res = parts.map(roleRegex);
+  const last = fold(name.trim().split(/\s+/).pop() ?? name).toLowerCase();
+  for (const src of sources) {
+    const text = `${src.title ?? ""}\n${src.content ?? ""}`;
+    for (const piece of text.split(/(?<=[.!?])\s+|\n+/)) {
+      const t = piece.trim();
+      if (t.length < 8 || t.length > 320) continue;
+      if (!fold(t).toLowerCase().includes(last)) continue;
+      if (res.every((re) => re.test(t))) return { url: src.url, quote: t };
+    }
+  }
+  return null;
 }

@@ -1,0 +1,206 @@
+#!/usr/bin/env node
+/**
+ * scripts/correct_db.ts — values in the database for which the regression gate now has a better one (owner, 2026-11-19). Nothing is written without APPROVED_BY=aviv and DRY_RUN=false.
+ * It reads the gate's reports (regression/out/batch_N/pilot_report.csv, from the last gate run) and the database, and lists, per company: old value ← new value, with the source.
+ * Supported: a purchase (status, buyer, date: startups.status / acquired_by / exit_date) and a round's type (funding_rounds.round_type, matched by amount).
+ * Every change is recorded in field_changes under a run of its own (undo_run.ts puts it back).
+ *
+ *   npx tsx scripts/correct_db.ts                                   # the list
+ *   APPROVED_BY=aviv DRY_RUN=false npx tsx scripts/correct_db.ts    # writes what is listed
+ *   ONLY="Paradox AI,UltraVox" ...                                  # some companies only
+ */
+import { createClient } from "@supabase/supabase-js";
+import { config } from "dotenv";
+import { existsSync, readFileSync } from "fs";
+import { parseCsv } from "../lib/enrichment/acceptance.ts";
+import { writtenBatches } from "../lib/enrichment/regressionGate.ts";
+import { statedRoundLabels } from "../lib/enrichment/assemble.ts";
+import { roundUpdateChanges, startupChanges } from "../lib/enrichment/runChanges.ts";
+import { samePersonName } from "../lib/enrichment/linkedin.ts";
+import { computeFieldConfidence } from "../lib/enrichment/confidence.ts";
+
+if (existsSync(".env")) config({ path: ".env" });
+const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!url || !key) { console.error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required."); process.exit(1); }
+const db = createClient(url, key, { auth: { persistSession: false } });
+const WRITE = process.env.DRY_RUN === "false";
+if (WRITE && process.env.APPROVED_BY !== "aviv") { console.error("⛔  The database is corrected only for values the owner approved: APPROVED_BY=aviv DRY_RUN=false npx tsx scripts/correct_db.ts"); process.exit(1); }
+const skip = (process.env.SKIP ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);   // "Company:column", e.g. SKIP="Dietly:acquired_by"
+const infos: string[] = [];
+const only = (process.env.ONLY ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+const fold = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, "");
+
+/**
+ * WEBSITE="Aperio=https://aperio.ai,Other=https://other.com" — a company's website corrected (owner, 2026-11-24: Aperio's address was the domain of another company of the same name). Listed first: the company, the website
+ * on file, the new one, and whether another company already has it (the column is unique). Written only with APPROVED_BY=aviv DRY_RUN=false: startups.website, a field_changes row under a run of its own (undo_run.ts).
+ * Nothing else of the company changes: what was enriched from the old address is a separate decision (undo_value).
+ */
+async function websiteMode(list: string) {
+  const picks = list.split(",").map((x) => x.trim()).filter(Boolean).map((x) => { const i = x.indexOf("="); return { name: x.slice(0, i).trim(), website: x.slice(i + 1).trim() }; });
+  const todo: Array<{ id: string; name: string; old: string | null; website: string }> = [];
+  for (const p of picks) {
+    if (!/^https:\/\/[^/\s]+\.[a-z]{2,}\/?$/i.test(p.website)) { console.log(`✗ ${p.name}: "${p.website}" is not a site address (https://host) — skipped`); continue; }
+    const { data: cs } = await db.from("startups").select("id, name, website").ilike("name", p.name);
+    const rows = (cs ?? []) as Array<{ id: string; name: string; website: string | null }>;
+    if (rows.length !== 1) { console.log(`✗ ${p.name}: ${rows.length} compan(ies) match (exactly one is needed) — skipped`); continue; }
+    const { data: other } = await db.from("startups").select("id, name").eq("website", p.website).neq("id", rows[0].id);
+    console.log(`\n${rows[0].name}: website ${rows[0].website} → ${p.website}${(other ?? []).length ? `  ⛔ already the website of ${(other as Array<{ name: string }>).map((o) => o.name).join(", ")} (unique) — skipped` : ""}`);
+    if ((other ?? []).length) continue;
+    todo.push({ id: rows[0].id, name: rows[0].name, old: rows[0].website, website: p.website });
+  }
+  if (!WRITE) { console.log(`\n${todo.length} website(s) listed — nothing written. After the owner approves: WEBSITE="…" APPROVED_BY=aviv DRY_RUN=false npx tsx scripts/correct_db.ts`); return; }
+  if (!todo.length) { console.log("nothing to write."); return; }
+  const { data: run, error } = await db.from("enrichment_runs").insert({ pipeline: "v2", run_kind: "on_demand", dry_run: false, thresholds: { MODE: "correct_db_website", changes: todo.length } }).select("run_id").single();
+  if (error || !run) { console.error(`could not register the run (${error?.message}) — nothing changed`); process.exit(1); }
+  const runId = (run as { run_id: string }).run_id;
+  for (const t of todo) {
+    const ch = await db.from("field_changes").insert(startupChanges(t.id, { website: t.old }, { website: t.website }, runId)); if (ch.error) { console.error(`✗ ${t.name}: field_changes not recorded (${ch.error.message}) — not changed`); continue; }
+    const up = await db.from("startups").update({ website: t.website }).eq("id", t.id);
+    console.log(up.error ? `✗ ${t.name}: ${up.error.message}` : `✔ ${t.name}: website ${t.old} → ${t.website}`);
+  }
+  console.log(`recorded under run ${runId} (undo: RUN_ID=${runId} DRY_RUN=false npx tsx scripts/undo_run.ts)`);
+}
+
+/**
+ * EXIT_DATE="Qnami=2026-05-28" with SOURCE=<address> QUOTE="<the sentence that states it>" — a purchase's date corrected (owner, 2026-11-24: Qnami, the first announcement is Quantum Design's press release of 28 May). Listed first: the date on
+ * file, the new one, the source and the quote. Written only with APPROVED_BY=aviv DRY_RUN=false: startups.exit_date, a field_changes row under a run of its own (undo_run.ts), and the field_provenance row of exit_date.
+ */
+async function exitDateMode(list: string) {
+  const source = process.env.SOURCE ?? "", quote = process.env.QUOTE ?? "";
+  const picks = list.split(",").map((x) => x.trim()).filter(Boolean).map((x) => { const i = x.indexOf("="); return { name: x.slice(0, i).trim(), date: x.slice(i + 1).trim() }; });
+  const todo: Array<{ id: string; name: string; old: string | null; date: string }> = [];
+  for (const p of picks) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(p.date)) { console.log(`✗ ${p.name}: "${p.date}" is not a date (YYYY-MM-DD) — skipped`); continue; }
+    const { data: cs } = await db.from("startups").select("id, name, status, acquired_by, exit_date").ilike("name", p.name);
+    const rows = (cs ?? []) as Array<{ id: string; name: string; status: string | null; acquired_by: string | null; exit_date: string | null }>;
+    if (rows.length !== 1) { console.log(`✗ ${p.name}: ${rows.length} compan(ies) match (exactly one is needed) — skipped`); continue; }
+    const c = rows[0];
+    console.log(`\n${c.name} (status ${c.status}, acquired by ${c.acquired_by}): exit_date ${c.exit_date} → ${p.date}\n   source: ${source || "(none given)"}\n   quote: "${quote.slice(0, 300)}"`);
+    if (!/acquired/.test(c.status ?? "")) { console.log("   ⛔ the company is not marked acquired — skipped"); continue; }
+    if (!source || !quote) { console.log("   ⛔ SOURCE and QUOTE are required (the date needs the sentence that states it) — skipped"); continue; }
+    todo.push({ id: c.id, name: c.name, old: c.exit_date, date: p.date });
+  }
+  if (!WRITE) { console.log(`\n${todo.length} date(s) listed — nothing written. After the owner approves: EXIT_DATE="…" SOURCE=… QUOTE=… APPROVED_BY=aviv DRY_RUN=false npx tsx scripts/correct_db.ts`); return; }
+  if (!todo.length) { console.log("nothing to write."); return; }
+  const { data: run, error } = await db.from("enrichment_runs").insert({ pipeline: "v2", run_kind: "on_demand", dry_run: false, thresholds: { MODE: "correct_db_exit_date", changes: todo.length } }).select("run_id").single();
+  if (error || !run) { console.error(`could not register the run (${error?.message}) — nothing changed`); process.exit(1); }
+  const runId = (run as { run_id: string }).run_id;
+  for (const t of todo) {
+    const ch = await db.from("field_changes").insert(startupChanges(t.id, { exit_date: t.old }, { exit_date: t.date }, runId)); if (ch.error) { console.error(`✗ ${t.name}: field_changes not recorded (${ch.error.message}) — not changed`); continue; }
+    const up = await db.from("startups").update({ exit_date: t.date }).eq("id", t.id);
+    if (up.error) { console.error(`✗ ${t.name}: ${up.error.message}`); continue; }
+    const pv = await db.from("field_provenance").insert({ startup_id: t.id, field: "exit_date", value: t.date, source_url: source, source_type: "company_site", confidence: computeFieldConfidence([{ source_type: "company_site" }]), run_id: runId, evidence_quote: quote });
+    console.log(pv.error ? `✔ ${t.name}: exit_date ${t.old} → ${t.date} — ⚠️ provenance: ${pv.error.message}` : `✔ ${t.name}: exit_date ${t.old} → ${t.date}`);
+  }
+  console.log(`recorded under run ${runId} (undo: RUN_ID=${runId} DRY_RUN=false npx tsx scripts/undo_run.ts)`);
+}
+
+/**
+ * FOUNDERS="Buildium:Michael Monteiro,Nuro:Jiajun Zhu" — founders the owner approved one by one (2026-11-23: real founders held back together with junk). Each is read, with its title, source and quote, from the
+ * carried_not_written.csv row (CARRIED=path), listed first; written only with APPROVED_BY=aviv DRY_RUN=false: appended to startups.founders (nobody is replaced or removed), with a field_changes row and a field_provenance row.
+ */
+async function foundersMode(list: string) {
+  const [head, ...body] = parseCsv(readFileSync(process.env.CARRIED ?? "carried_not_written.csv", "utf8").replace(/^\uFEFF/, ""));
+  const at = (c: string) => head.indexOf(c);
+  const rows = body.map((r) => ({ id: r[at("company_id")], company: r[at("company")], field: r[at("field")], value: r[at("value")] ?? "", source: r[at("source_url")] ?? "", quote: r[at("quote")] ?? "" })).filter((r) => r.field === "founder");
+  const picked: Array<{ id: string; company: string; name: string; title: string; value: string; source: string; quote: string }> = [];
+  for (const want of list.split(",").map((x) => x.trim()).filter(Boolean)) {
+    const [co, nm] = want.split(":").map((x) => x.trim());
+    const hit = rows.filter((r) => r.company.toLowerCase() === co.toLowerCase() && samePersonName(r.value.split(" — ")[0], nm));
+    if (hit.length !== 1) { console.log(`✗ ${want}: ${hit.length} row(s) in the file (exactly one is needed) — skipped`); continue; }
+    const h = hit[0]; picked.push({ id: h.id, company: h.company, name: h.value.split(" — ")[0].trim(), title: h.value.split(" — ").slice(1).join(" — ").trim(), value: h.value, source: h.source, quote: h.quote });
+  }
+  const todo: typeof picked = [];
+  for (const f of picked) {
+    const { data } = await db.from("startups").select("id, name, founders").eq("id", f.id).single();
+    const cur = ((data as { founders?: Array<{ name?: string; title?: string }> } | null)?.founders ?? []);
+    console.log(`\n${f.company} · founder: ${f.name} — ${f.title}\n   source: ${f.source}\n   quote: "${f.quote.slice(0, 400)}"\n   founders on file: ${cur.length ? cur.map((p) => `${p.name} (${p.title ?? ""})`).join("; ") : "none"}`);
+    console.log(`   quote names the person: ${samePersonName(f.name, f.quote) || f.quote.toLowerCase().includes(f.name.toLowerCase()) ? "yes" : "NO"} · says founder: ${/found/i.test(f.quote) ? "yes" : "NO"}`);
+    if (cur.some((p) => samePersonName(p.name ?? "", f.name))) { console.log("   already on file — nothing to write"); continue; }
+    todo.push(f);
+  }
+  if (!WRITE) { console.log(`\n${todo.length} founder(s) listed — nothing written. After the owner approves: FOUNDERS="…" APPROVED_BY=aviv DRY_RUN=false npx tsx scripts/correct_db.ts`); return; }
+  if (!todo.length) { console.log("nothing to write."); return; }
+  const { data: run, error } = await db.from("enrichment_runs").insert({ pipeline: "v2", run_kind: "on_demand", dry_run: false, thresholds: { MODE: "correct_db_founders", changes: todo.length } }).select("run_id").single();
+  if (error || !run) { console.error(`could not register the run (${error?.message}) — nothing changed`); process.exit(1); }
+  const runId = (run as { run_id: string }).run_id;
+  for (const f of todo) {
+    const { data } = await db.from("startups").select("founders").eq("id", f.id).single();
+    const cur = ((data as { founders?: Array<Record<string, unknown>> } | null)?.founders ?? []);
+    const next = [...cur, { name: f.name, title: f.title || null }];
+    const ch = await db.from("field_changes").insert(startupChanges(f.id, { founders: cur.length ? cur : null }, { founders: next }, runId)); if (ch.error) { console.error(`✗ ${f.company} ${f.name}: field_changes not recorded (${ch.error.message}) — not changed`); continue; }
+    const up = await db.from("startups").update({ founders: next }).eq("id", f.id); if (up.error) { console.error(`✗ ${f.company} ${f.name}: ${up.error.message}`); continue; }
+    const pv = await db.from("field_provenance").insert({ startup_id: f.id, field: `founders.${f.name}`, value: f.value, source_url: f.source, source_type: "news", confidence: computeFieldConfidence([{ source_type: "news" }]), run_id: runId, evidence_quote: f.quote, quote_original: f.quote });
+    console.log(pv.error ? `✔ ${f.company} ${f.name} added — ⚠️ provenance: ${pv.error.message}` : `✔ ${f.company} ${f.name} added`);
+  }
+  console.log(`recorded under run ${runId} (undo: RUN_ID=${runId} DRY_RUN=false npx tsx scripts/undo_run.ts)`);
+}
+
+interface Change { startup_id: string; company: string; table: "startups" | "funding_rounds"; id: string; column: string; old: unknown; now: unknown; source: string; quote: string }
+
+(async () => {
+  if (process.env.EXIT_DATE) { await exitDateMode(process.env.EXIT_DATE); return; }
+  if (process.env.WEBSITE) { await websiteMode(process.env.WEBSITE); return; }
+  if (process.env.FOUNDERS) { await foundersMode(process.env.FOUNDERS); return; }
+  const changes: Change[] = [];
+  for (const n of writtenBatches()) {
+    const f = `regression/out/batch_${n}/pilot_report.csv`;
+    if (!existsSync(f)) { console.log(`batch ${n}: no ${f} — run the gate first`); continue; }
+    const [head, ...body] = parseCsv(readFileSync(f, "utf8"));
+    const at = (c: string) => head.indexOf(c);
+    const rows = body.map((r) => ({ id: r[at("company_id")], company: r[at("company")], field: r[at("field")], after: r[at("after")], source: r[at("source_url")] ?? "", quote: r[at("quote")] ?? "" }));
+    for (const r of rows) {
+      if (only.length && !only.includes(r.company.toLowerCase())) continue;
+      if (r.field === "acquired") {
+        const m = r.after.match(/^status = (\S+)(?: · Acquired by (.+?) \(([^)]*)\))?\s*$/);
+        if (!m) continue;
+        const { data } = await db.from("startups").select("id, status, acquired_by, exit_date").eq("id", r.id).single();
+        if (!data) continue;
+        const cur = data as { status: string | null; acquired_by: string | null; exit_date: string | null };
+        const want: Record<string, string | null> = { status: m[1], acquired_by: m[2] ?? null, exit_date: m[3] && m[3] !== "undated" ? m[3] : null };
+        for (const col of ["status", "acquired_by", "exit_date"] as const) if (want[col] != null && String(cur[col] ?? "") !== want[col]) changes.push({ startup_id: r.id, company: r.company, table: "startups", id: r.id, column: col, old: cur[col], now: want[col], source: r.source, quote: r.quote });
+      }
+      if (r.field === "round") {
+        const m = r.after.match(/^([A-Za-z+\- ]+?) \$([\d.,]+)\s*([KMB])?\b/);
+        if (!m || /^(?:Unknown|Other)$/.test(m[1])) continue;
+        const amount = Number(m[2].replace(/,/g, "")) * (m[3] === "B" ? 1e9 : m[3] === "K" ? 1e3 : 1e6);
+        const { data } = await db.from("funding_rounds").select("id, round_type, amount_raised, source_url").eq("startup_id", r.id);
+        const same = ((data ?? []) as Array<{ id: string; round_type: string | null; amount_raised: number | null; source_url?: string | null }>).filter((x) => x.amount_raised != null && Math.abs(x.amount_raised - amount) / amount <= 0.01);
+        if (!same.length) infos.push(`${r.company} · round ${m[1].trim()} $${m[2]}${m[3] ?? "M"}: the database has no round of this amount (rounds on file: ${((data ?? []) as Array<{ round_type: string | null; amount_raised: number | null }>).map((x) => `${x.round_type} ${x.amount_raised}`).join(", ") || "none"})`);
+        for (const x of same) if (fold(x.round_type ?? "") === fold(m[1])) infos.push(`${r.company} · round ${m[1].trim()} $${m[2]}${m[3] ?? "M"}: the database already has this type (${x.round_type}) — type nothing to correct`);
+        for (const x of same) if (!/^(?:Unknown|Other)$/i.test(x.round_type ?? "") && fold(x.round_type ?? "") !== fold(m[1])) infos.push(`${r.company} · round $${m[2]}${m[3] ?? "M"}: the database says ${x.round_type}, the gate says ${m[1].trim()} — not changed (only Unknown / Other are corrected)`);
+        // The type stands on the source that states it: a round of the right type whose address is another page than the one whose quote says the type (Paradox: siliconangle for the amount, prnewswire for "Series C").
+        for (const x of same) if (fold(x.round_type ?? "") === fold(m[1]) && r.source && x.source_url !== r.source && statedRoundLabels(r.quote).includes(m[1].trim())) changes.push({ startup_id: r.id, company: r.company, table: "funding_rounds", id: x.id, column: "source_url", old: x.source_url ?? null, now: r.source, source: r.source, quote: r.quote });
+        for (const x of (data ?? []) as Array<{ id: string; round_type: string | null; amount_raised: number | null }>) {
+          if (x.amount_raised == null || Math.abs(x.amount_raised - amount) / amount > 0.01) continue;
+          if (fold(x.round_type ?? "") === fold(m[1]) || !/^(?:Unknown|Other)$/i.test(x.round_type ?? "")) continue;
+          changes.push({ startup_id: r.id, company: r.company, table: "funding_rounds", id: x.id, column: "round_type", old: x.round_type, now: m[1].trim(), source: r.source, quote: r.quote });
+        }
+      }
+    }
+  }
+  for (const i of infos) console.log(`ℹ️  ${i}`);
+  for (let i = changes.length - 1; i >= 0; i--) if (skip.includes(`${changes[i].company}:${changes[i].column}`.toLowerCase())) { console.log(`• skipped (SKIP): ${changes[i].company} ${changes[i].column}`); changes.splice(i, 1); }
+  if (!changes.length) { console.log("nothing in the database has a better value in the gate's reports."); return; }
+  for (const c of changes) console.log(`${c.company} · ${c.table === "startups" ? c.column : `round ${c.column}`}: ${JSON.stringify(c.old)} ← ${JSON.stringify(c.now)}\n     ${c.source}${c.quote ? `\n     "${c.quote.slice(0, 160)}"` : ""}`);
+  if (!WRITE) { console.log(`\n${changes.length} change(s) listed — nothing written. After the owner approves: APPROVED_BY=aviv DRY_RUN=false npx tsx scripts/correct_db.ts`); return; }
+  const { data: run, error } = await db.from("enrichment_runs").insert({ pipeline: "v2", run_kind: "on_demand", dry_run: false, thresholds: { MODE: "correct_db", changes: changes.length } }).select("run_id").single();
+  if (error || !run) { console.error(`could not register the run (${error?.message}) — nothing changed`); process.exit(1); }
+  const runId = (run as { run_id: string }).run_id;
+  for (const c of changes) {
+    const rec = c.table === "startups"
+      ? { startup_id: c.startup_id, field: c.column, old_value: c.old, new_value: c.now, source_url: c.source || null, run_id: runId }
+      : roundUpdateChanges(c.startup_id, c.id, { [c.column]: c.old }, { [c.column]: c.now }, runId)[0];
+    const ch = await db.from("field_changes").insert(rec);
+    if (ch.error) { console.error(`✗ ${c.company} ${c.column}: field_changes not recorded (${ch.error.message}) — not changed`); continue; }
+    const up = await db.from(c.table).update({ [c.column]: c.now }).eq("id", c.id);
+    console.log(up.error ? `✗ ${c.company} ${c.column}: ${up.error.message}` : `✔ ${c.company} ${c.column} corrected`);
+  }
+  console.log(`recorded under run ${runId}`);
+  // The proof: the rows as they are now.
+  const ids = [...new Set(changes.filter((c) => c.table === "startups").map((c) => c.startup_id))];
+  if (ids.length) {
+    const { data } = await db.from("startups").select("name, status, acquired_by, exit_date").in("id", ids);
+    console.log("\nstartups now:"); for (const x of (data ?? []) as Array<{ name: string; status: string | null; acquired_by: string | null; exit_date: string | null }>) console.log(`  ${x.name.padEnd(14)} status=${x.status} acquired_by=${x.acquired_by} exit_date=${x.exit_date}`);
+  }
+})().catch((e) => { console.error(e); process.exit(1); });
